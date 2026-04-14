@@ -10,7 +10,9 @@ import { useConfig } from "../../context/config";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
 import DialogLayout from "../dialog-layout";
+import type { FooterAction } from "../dialog-layout";
 import { ModelPicker } from "./ModelPicker";
+import { modelSupportsThinking } from "../../../core/ai";
 
 interface ModelPickerDialogProps {
   onClose: () => void;
@@ -27,6 +29,15 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
     setReasoningEnabled,
   } = useAgent();
 
+  const thinkingSupported = modelSupportsThinking(model.id);
+
+  const footerActions: FooterAction[] = [
+    { key: "Enter", label: "confirm", variant: "primary" },
+  ];
+  if (thinkingSupported) {
+    footerActions.push({ key: "Space", label: "Extended Thinking" });
+  }
+
   const title = (
     <text>
       <span fg={colors.primary}>Select AI Model</span>
@@ -40,10 +51,7 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
 
   return (
     <Dialog size="large" onClose={onClose}>
-      <DialogLayout
-        title={title}
-        footerActions={[{ key: "Enter", label: "confirm", variant: "primary" }]}
-      >
+      <DialogLayout title={title} footerActions={footerActions}>
         <box
           flexDirection="column"
           paddingLeft={1}

@@ -18,7 +18,7 @@ import {
 import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
 import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import { buildAuthConfig } from "../../../core/ai/utils";
-import type { CacheMetrics } from "../../../core/ai";
+import { modelSupportsThinking, type CacheMetrics } from "../../../core/ai";
 import {
   ALL_TOOL_NAMES,
   PLAN_MODE_TOOL_NAMES,
@@ -1180,7 +1180,7 @@ export default function OperatorDashboard({
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
-        enableThinking: reasoningEnabled,
+        enableThinking: reasoningEnabled && modelSupportsThinking(model.id),
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {
           addCacheUsage(
