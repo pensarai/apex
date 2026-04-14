@@ -349,6 +349,14 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     `[whitebox-workflow] Phase 2: ${serviceApps.length} service apps (pages+api each), ${cloudApps.length} cloud resources → ${serviceApps.length * 2 + cloudApps.length} total tasks`,
   );
 
+  const totalApps = appsResult.apps.length;
+  let completedAppCount = 0;
+
+  eventBus?.emit("app-analysis-progress", {
+    totalApps,
+    completedApps: 0,
+  });
+
   const tasks: AppTask[] = [
     ...serviceApps.flatMap((app) => [
       { appInfo: app, type: "pages" as const },
@@ -359,6 +367,14 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       type: "cloudResourceEndpoints" as const,
     })),
   ];
+
+  const appTaskDoneCount = new Map<string, { done: number; total: number }>();
+  for (const app of serviceApps) {
+    appTaskDoneCount.set(app.name, { done: 0, total: 2 });
+  }
+  for (const app of cloudApps) {
+    appTaskDoneCount.set(app.name, { done: 0, total: 1 });
+  }
 
   await runWithBoundedConcurrency(
     tasks,
@@ -426,6 +442,19 @@ export async function runWhiteboxAttackSurfaceWorkflow(
           subagentId,
           status: "failed",
         });
+      }
+
+      const counter = appTaskDoneCount.get(task.appInfo.name);
+      if (counter) {
+        counter.done++;
+        if (counter.done >= counter.total) {
+          completedAppCount++;
+          eventBus?.emit("app-analysis-progress", {
+            totalApps,
+            completedApps: completedAppCount,
+            appName: task.appInfo.name,
+          });
+        }
       }
     },
   );
