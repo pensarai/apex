@@ -178,6 +178,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   projectThreatModel?: string;
   /** Deployment environment names (e.g. ["production", "staging"]) from project settings. */
   environments?: string[];
+  /** Max number of apps analyzed concurrently. Defaults to {@link DEFAULT_CONCURRENCY}. */
+  concurrency?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +236,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     domains,
     projectThreatModel,
     environments,
+    concurrency: inputConcurrency,
   } = input;
+
+  const concurrency = inputConcurrency ?? DEFAULT_CONCURRENCY;
 
   // =========================================================================
   // Phase 1: Identify all apps in the repository
@@ -328,14 +333,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   }
 
   // =========================================================================
-  // Phase 2: For each app, discover pages + API endpoints via document_endpoint
-  //          Cloud resources get a specialized objective instead of pages/API.
+  // Phase 2: Per-app sequencing — pages then API endpoints run sequentially
+  //          for each app, but multiple apps run concurrently.
+  //          Cloud resources get a single task per app.
   // =========================================================================
-
-  type AppTask = {
-    appInfo: z.infer<typeof AppInfoSchema>;
-    type: "pages" | "apiEndpoints" | "cloudResourceEndpoints";
-  };
 
   const NON_SERVICE_TYPES = ["cloud_resource", "storage", "database"];
   const serviceApps = appsResult.apps.filter(
@@ -345,8 +346,11 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     NON_SERVICE_TYPES.includes(app.type),
   );
 
+  const totalTaskCount =
+    serviceApps.length * 2 + cloudApps.length;
+
   console.log(
-    `[whitebox-workflow] Phase 2: ${serviceApps.length} service apps (pages+api each), ${cloudApps.length} cloud resources → ${serviceApps.length * 2 + cloudApps.length} total tasks`,
+    `[whitebox-workflow] Phase 2: ${serviceApps.length} service apps (pages→api sequential), ${cloudApps.length} cloud resources → ${totalTaskCount} total tasks, concurrency=${concurrency}`,
   );
 
   const totalApps = appsResult.apps.length;
@@ -357,105 +361,103 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     completedApps: 0,
   });
 
-  const tasks: AppTask[] = [
-    ...serviceApps.flatMap((app) => [
-      { appInfo: app, type: "pages" as const },
-      { appInfo: app, type: "apiEndpoints" as const },
-    ]),
-    ...cloudApps.map((app) => ({
-      appInfo: app,
-      type: "cloudResourceEndpoints" as const,
-    })),
-  ];
+  /**
+   * Run a single discovery agent for one (app, taskType) pair.
+   */
+  async function runDiscoveryAgent(
+    appInfo: z.infer<typeof AppInfoSchema>,
+    taskType: "pages" | "apiEndpoints" | "cloudResourceEndpoints",
+  ): Promise<void> {
+    const subagentId = `${taskType}-${appInfo.name}`;
 
-  const appTaskDoneCount = new Map<string, { done: number; total: number }>();
-  for (const app of serviceApps) {
-    appTaskDoneCount.set(app.name, { done: 0, total: 2 });
-  }
-  for (const app of cloudApps) {
-    appTaskDoneCount.set(app.name, { done: 0, total: 1 });
-  }
+    console.log(
+      `[whitebox-workflow] Phase 2: spawning agent "${subagentId}" (app="${appInfo.name}", type=${taskType}, appType=${appInfo.type})`,
+    );
 
-  await runWithBoundedConcurrency(
-    tasks,
-    DEFAULT_CONCURRENCY,
-    async (task, _index) => {
-      const subagentId = `${task.type}-${task.appInfo.name}`;
+    eventBus?.emit("subagent-spawn", {
+      subagentId,
+      name: appInfo.name,
+      input: { app: appInfo.name, type: taskType },
+    });
+
+    const objective =
+      taskType === "pages"
+        ? buildPagesDiscoveryObjective(codebasePath, appInfo)
+        : taskType === "cloudResourceEndpoints"
+          ? buildCloudResourceEndpointsObjective(
+              codebasePath,
+              appInfo,
+              environments,
+            )
+          : buildApiEndpointsDiscoveryObjective(codebasePath, appInfo);
+
+    const agent = new CodeAgent<DiscoverySummary>({
+      codebasePath,
+      objective,
+      system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
+      model,
+      session,
+      authConfig,
+      abortSignal,
+      attackSurfaceRegistry,
+      eventBus,
+      subagentId,
+      onStepFinish: (event) => onStepFinish?.(event),
+      onCacheMetrics,
+      responseSchema: DiscoverySummarySchema,
+      excludeTools: ["document_app"],
+      projectThreatModel,
+    });
+
+    try {
+      await agent.consume();
 
       console.log(
-        `[whitebox-workflow] Phase 2: spawning agent "${subagentId}" (app="${task.appInfo.name}", type=${task.type}, appType=${task.appInfo.type})`,
+        `[whitebox-workflow] Phase 2: agent "${subagentId}" completed`,
       );
 
-      eventBus?.emit("subagent-spawn", {
+      eventBus?.emit("subagent-complete", {
         subagentId,
-        name: task.appInfo.name,
-        input: { app: task.appInfo.name, type: task.type },
+        status: "completed",
       });
+    } catch (error) {
+      console.error(
+        `[whitebox-workflow] Phase 2: agent "${subagentId}" FAILED:`,
+        error instanceof Error ? error.message : String(error),
+      );
 
-      const objective =
-        task.type === "pages"
-          ? buildPagesDiscoveryObjective(codebasePath, task.appInfo)
-          : task.type === "cloudResourceEndpoints"
-            ? buildCloudResourceEndpointsObjective(
-                codebasePath,
-                task.appInfo,
-                environments,
-              )
-            : buildApiEndpointsDiscoveryObjective(codebasePath, task.appInfo);
-
-      const agent = new CodeAgent<DiscoverySummary>({
-        codebasePath,
-        objective,
-        system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
-        model,
-        session,
-        authConfig,
-        abortSignal,
-        attackSurfaceRegistry,
-        eventBus,
+      eventBus?.emit("subagent-complete", {
         subagentId,
-        onStepFinish: (event) => onStepFinish?.(event),
-        onCacheMetrics,
-        responseSchema: DiscoverySummarySchema,
-        excludeTools: ["document_app"],
-        projectThreatModel,
+        status: "failed",
       });
+    }
+  }
 
-      try {
-        await agent.consume();
+  // Each app becomes one unit of work. Service apps run pages then API
+  // endpoints sequentially; cloud apps run a single task.
+  type AppUnit = z.infer<typeof AppInfoSchema>;
 
-        console.log(
-          `[whitebox-workflow] Phase 2: agent "${subagentId}" completed`,
-        );
+  const allApps: AppUnit[] = [...serviceApps, ...cloudApps];
 
-        eventBus?.emit("subagent-complete", {
-          subagentId,
-          status: "completed",
-        });
-      } catch (error) {
-        console.error(
-          `[whitebox-workflow] Phase 2: agent "${subagentId}" FAILED:`,
-          error instanceof Error ? error.message : String(error),
-        );
+  await runWithBoundedConcurrency(
+    allApps,
+    concurrency,
+    async (appInfo) => {
+      const isCloudApp = NON_SERVICE_TYPES.includes(appInfo.type);
 
-        eventBus?.emit("subagent-complete", {
-          subagentId,
-          status: "failed",
-        });
+      if (isCloudApp) {
+        await runDiscoveryAgent(appInfo, "cloudResourceEndpoints");
+      } else {
+        await runDiscoveryAgent(appInfo, "pages");
+        await runDiscoveryAgent(appInfo, "apiEndpoints");
       }
 
-      const counter = appTaskDoneCount.get(task.appInfo.name);
-      if (counter) {
-        counter.done++;
-        if (counter.done >= counter.total) {
-          completedAppCount++;
-          eventBus?.emit("app-analysis-progress", {
-            totalApps,
-            completedApps: completedAppCount,
-            appName: task.appInfo.name,
-          });
-        }
-      }
+      completedAppCount++;
+      eventBus?.emit("app-analysis-progress", {
+        totalApps,
+        completedApps: completedAppCount,
+        appName: appInfo.name,
+      });
     },
   );
 
