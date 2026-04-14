@@ -1176,7 +1176,12 @@ export default function OperatorDashboard({
         ] as string[],
         mode: agentMode,
         abortSignal: controller.signal,
-        authConfig: buildAuthConfig(config.data),
+        authConfig: {
+          ...buildAuthConfig(config.data),
+          ...(sessionRef.current?.id
+            ? { sessionId: sessionRef.current.id }
+            : {}),
+        },
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,

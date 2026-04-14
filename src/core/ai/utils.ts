@@ -46,6 +46,8 @@ export type AIAuthConfig = {
   gatewaySigningKey?: string;
   // Gateway URL for inference (bypasses CloudFront timeout)
   gatewayUrl?: string;
+  // Apex session ID for cross-system request correlation
+  sessionId?: string;
   bedrock?: {
     apiKey?: string;
     accessKeyId?: string;
@@ -75,6 +77,7 @@ export function buildAuthConfig(cfg: {
   workspaceId?: string | null;
   gatewaySigningKey?: string | null;
   gatewayUrl?: string | null;
+  sessionId?: string | null;
   bedrockAPIKey?: string | null;
   localModelUrl?: string | null;
 }): AIAuthConfig {
@@ -90,6 +93,7 @@ export function buildAuthConfig(cfg: {
     workspaceId: cfg.workspaceId ?? undefined,
     gatewaySigningKey: cfg.gatewaySigningKey ?? undefined,
     gatewayUrl: cfg.gatewayUrl ?? undefined,
+    sessionId: cfg.sessionId ?? undefined,
     bedrock: cfg.bedrockAPIKey ? { apiKey: cfg.bedrockAPIKey } : undefined,
     local: cfg.localModelUrl ? { baseURL: cfg.localModelUrl } : undefined,
   };
@@ -218,12 +222,12 @@ export function getProviderModel(
         );
       }
 
-      // Build config with token refresh support for WorkOS auth
       const modelConfig: Parameters<typeof createPensarModel>[1] = {
         apiKey: pensarApiKey || authConfig?.accessToken || "",
         baseUrl: gatewayUrl,
         workspaceId: authConfig?.workspaceId,
         signingKey: authConfig?.gatewaySigningKey,
+        sessionId: authConfig?.sessionId,
       };
 
       // If WorkOS tokens are available, use token refresh callback.

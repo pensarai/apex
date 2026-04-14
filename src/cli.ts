@@ -168,7 +168,10 @@ Model:   ${model}
       ...(cwd ? { cwd } : {}),
       session,
       model,
-      authConfig: buildAuthConfig(pensarConfig),
+      authConfig: {
+        ...buildAuthConfig(pensarConfig),
+        sessionId: session.id,
+      },
       eventBus: pentestBus,
     });
 
@@ -228,7 +231,10 @@ ${objectivesList}
     objectives,
     session,
     model,
-    authConfig: buildAuthConfig(pensarConfig),
+    authConfig: {
+      ...buildAuthConfig(pensarConfig),
+      sessionId: session.id,
+    },
   });
 
   console.log(`

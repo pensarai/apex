@@ -42,6 +42,11 @@ export interface PensarModelConfig {
    * allowing transparent token refresh for WorkOS auth.
    */
   getToken?: () => Promise<{ token: string; type: "workos" | "legacy" } | null>;
+  /**
+   * Optional Apex session ID for cross-system request correlation.
+   * When present, sent as X-Session-Id header on every gateway request.
+   */
+  sessionId?: string;
 }
 
 /**
@@ -97,6 +102,10 @@ export function createPensarModel(
       if (config.workspaceId && !config.apiKey.startsWith("sk-")) {
         headers["X-Workspace-Id"] = config.workspaceId;
       }
+    }
+
+    if (config.sessionId) {
+      headers["X-Session-Id"] = config.sessionId;
     }
 
     return headers;
