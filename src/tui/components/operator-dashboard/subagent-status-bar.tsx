@@ -66,6 +66,7 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
       paddingRight={2}
       flexShrink={0}
       height={1}
+      onMouseDown={onOpen}
     >
       {/* Left side: agent stats */}
       <box flexDirection="row">

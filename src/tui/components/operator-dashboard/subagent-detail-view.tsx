@@ -26,7 +26,6 @@ export interface SubagentDetailViewProps {
   total: number;
   onPrev: () => void;
   onNext: () => void;
-  onBack: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -39,7 +38,6 @@ export const SubagentDetailView = memo(function SubagentDetailView({
   total,
   onPrev,
   onNext,
-  onBack,
 }: SubagentDetailViewProps) {
   const { colors } = useTheme();
 

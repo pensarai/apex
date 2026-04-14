@@ -737,7 +737,6 @@ export default function OperatorDashboard({
       setIsExecuting(true);
       setError(null);
       textRef.current = "";
-      setSubagentSessions(new Map());
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
