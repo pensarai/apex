@@ -79,7 +79,6 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       excludeTools,
       enableThinking,
       projectThreatModel,
-      messagesDir,
     } = opts;
 
     let activeTools: string[] = [
@@ -118,7 +117,6 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       attackSurfaceRegistry,
       enableThinking,
       projectThreatModel,
-      messagesDir,
       stopWhen: stopWhen ?? stepCountIs(10000),
       activeTools,
       responseSchema,
