@@ -208,8 +208,10 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         pentestObjectives: input.pentestObjectives,
       };
 
-      const threatModelOutput =
-        await generateThreatModelForEndpoint(ctx, subagentInput);
+      const threatModelOutput = await generateThreatModelForEndpoint(
+        ctx,
+        subagentInput,
+      );
 
       const riskScore = threatModelOutput?.riskScore ?? heuristicRiskScore;
 
