@@ -230,6 +230,7 @@ export default function OperatorDashboard({
   const [showPlanReview, setShowPlanReview] = useState(false);
   const planSubmittedRef = useRef(false);
   const planRejectedRef = useRef(false);
+  const planApprovedPendingRunRef = useRef(false);
   const operatorModeRef = useRef(operatorMode);
   useEffect(() => {
     operatorModeRef.current = operatorMode;
@@ -1537,6 +1538,14 @@ export default function OperatorDashboard({
     runAgentRef.current(next);
   }, [status]);
 
+  // Auto-run agent after plan approval (waits for mode transition to render)
+  useEffect(() => {
+    if (!planApprovedPendingRunRef.current) return;
+    if (operatorMode === "plan") return;
+    planApprovedPendingRunRef.current = false;
+    runAgentRef.current("Proceed with the approved plan.");
+  }, [operatorMode]);
+
   const addSystemMessage = useCallback((content: string) => {
     setMessages((prev) => [
       ...prev,
@@ -1891,12 +1900,12 @@ export default function OperatorDashboard({
           addSystemMessage("Plan file is missing or empty. Cannot approve.");
           return;
         }
+        approvedPlanRef.current = planContent;
+        planApprovedPendingRunRef.current = true;
         setApprovedPlanContent(planContent);
         setShowPlanReview(false);
         transitionToMode("manual");
-        addSystemMessage(
-          "Plan approved. Switching to manual mode for execution.",
-        );
+        addSystemMessage("Plan approved. Executing plan.");
         return;
       }
       if (key.name === "n" || key.raw === "N") {
