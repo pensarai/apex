@@ -95,11 +95,21 @@ export function loadSubagentSessionsFromDisk(
       };
     });
 
+    // Approximate completedAt from the last message timestamp so the hub
+    // card shows the actual run duration instead of an ever-increasing
+    // elapsed time. All restored sessions are non-running (they come from
+    // a prior ended execution).
+    const completedAt =
+      messages.length > 0
+        ? messages[messages.length - 1].createdAt
+        : sub.createdAt;
+
     map.set(sub.id, {
       id: sub.id,
       name: sub.name,
       status,
       spawnedAt: sub.createdAt,
+      completedAt,
       input: { target: sub.target },
       messages,
     });

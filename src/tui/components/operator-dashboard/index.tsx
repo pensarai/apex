@@ -1848,14 +1848,19 @@ export default function OperatorDashboard({
       }
     }
 
-    // Ctrl+A to open subagent dialog
-    if (key.ctrl && key.name === "a" && subagentSessions.size > 0) {
+    const dialogOpen = stack.length > 0 || externalDialogOpen;
+
+    // Ctrl+A to open subagent dialog (skip if another dialog is open)
+    if (
+      key.ctrl &&
+      key.name === "a" &&
+      subagentSessions.size > 0 &&
+      !dialogOpen
+    ) {
       key.preventDefault?.();
       openSubagentDialog();
       return;
     }
-
-    const dialogOpen = stack.length > 0 || externalDialogOpen;
     const action = resolveKeyboardShortcut(
       key,
       status,
