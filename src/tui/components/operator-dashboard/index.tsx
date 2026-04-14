@@ -182,6 +182,27 @@ export default function OperatorDashboard({
   const subagentSessionsRef = useRef(subagentSessions);
   subagentSessionsRef.current = subagentSessions;
 
+  // Track the message count when subagents last finished so the status bar
+  // knows whether the main agent has produced new output since then.
+  const messageCountAtSubagentDoneRef = useRef<number | null>(null);
+  const hasRunningSubagent = useMemo(
+    () =>
+      Array.from(subagentSessions.values()).some((s) => s.status === "running"),
+    [subagentSessions],
+  );
+  useEffect(() => {
+    if (subagentSessions.size > 0 && !hasRunningSubagent) {
+      // Subagents just finished — snapshot current message count
+      if (messageCountAtSubagentDoneRef.current === null) {
+        messageCountAtSubagentDoneRef.current =
+          displayMessagesRef.current.length;
+      }
+    } else if (hasRunningSubagent) {
+      // Subagents are running — reset snapshot
+      messageCountAtSubagentDoneRef.current = null;
+    }
+  }, [subagentSessions, hasRunningSubagent]);
+
   const openSubagentDialog = useCallback(() => {
     replaceDialog(<SubagentDialog sessionsRef={subagentSessionsRef} />, {
       selfHandlesEscape: true,
@@ -1994,7 +2015,10 @@ export default function OperatorDashboard({
       {/* Subagent status bar */}
       <SubagentStatusBar
         sessions={subagentSessions}
-        agentStatus={status}
+        agentMovedOn={
+          messageCountAtSubagentDoneRef.current !== null &&
+          messages.length > messageCountAtSubagentDoneRef.current
+        }
         onOpen={openSubagentDialog}
       />
 
