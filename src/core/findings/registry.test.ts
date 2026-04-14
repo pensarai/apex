@@ -206,6 +206,18 @@ describe("extractVulnClass", () => {
     );
   });
 
+  it("does not misclassify titles where 'no' is a substring before 'auth'", () => {
+    expect(extractVulnClass("Known Auth Vulnerability")).toBe(
+      "known-auth-vulnerability",
+    );
+    expect(extractVulnClass("Minor Auth Misconfiguration")).toBe(
+      "minor-auth-misconfiguration",
+    );
+    expect(extractVulnClass("Canonical Auth Token Leak")).toBe(
+      "canonical-auth-token-leak",
+    );
+  });
+
   it("classifies SSRF", () => {
     expect(extractVulnClass("Server-Side Request Forgery")).toBe("ssrf");
     expect(extractVulnClass("SSRF via image upload URL")).toBe("ssrf");

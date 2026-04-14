@@ -20,7 +20,7 @@ const VULN_CLASS_PATTERNS: [RegExp, string][] = [
     "path-traversal",
   ],
   [
-    /missing.*auth|no.*auth|unauthenticated\s+access/i,
+    /\bmissing\s*auth|\bno\s*auth|unauthenticated\s+access/i,
     "missing-authentication",
   ],
   [/\bidor\b|insecure\s*direct\s*object/i, "idor"],
