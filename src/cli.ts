@@ -77,6 +77,7 @@ Usage:
   pensar fixes                        View security fixes
   pensar logs                         View agent execution logs
   pensar upgrade                      Update pensar to the latest version
+  pensar init [platform]               Set up CI/CD integration
   pensar doctor                       Check dependencies and install missing tools
   pensar help                         Show this help message
   pensar version                      Show version number
@@ -335,6 +336,9 @@ if (command === "version" || command === "--version" || command === "-v") {
   await import("./cli/logs");
 } else if (command === "threat-model") {
   await runThreatModel();
+} else if (command === "init" || command === "setup") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("./cli/init");
 } else if (command === "doctor") {
   const { runDoctor } = await import("./core/doctor");
   await runDoctor();
