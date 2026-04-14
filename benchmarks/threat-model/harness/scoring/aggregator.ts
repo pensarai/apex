@@ -167,6 +167,9 @@ export function aggregateHeadlineMetrics(
         .map((s) => s.grounding?.score)
         .filter((v): v is number => v !== undefined),
     ),
-    totalCostUsd: 0, // Computed by runner from token metrics
+    totalCostUsd: completed.reduce(
+      (sum, s) => sum + (s.behavioral.tokens?.estimatedCostUsd ?? 0),
+      0,
+    ),
   };
 }

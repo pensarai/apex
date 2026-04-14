@@ -77,7 +77,7 @@ async function runApp(
   const gt = loadGroundTruth(appDir);
 
   // Set up trace capture and abort controller
-  const trace = new TraceCollector();
+  const trace = new TraceCollector(config.model as string);
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), config.timeout);
 
@@ -147,6 +147,16 @@ async function runApp(
     } else {
       console.log(`  WARNING: Output file not written`);
     }
+
+    // Log token usage
+    const tok = behavioral.tokens;
+    console.log(`\n  Token Usage:`);
+    console.log(`    Input:        ${tok.inputTokens.toLocaleString()}`);
+    console.log(`    Output:       ${tok.outputTokens.toLocaleString()}`);
+    console.log(`    Cache read:   ${tok.cacheReadTokens.toLocaleString()}`);
+    console.log(`    Cache write:  ${tok.cacheWriteTokens.toLocaleString()}`);
+    console.log(`    Total:        ${tok.totalTokens.toLocaleString()}`);
+    console.log(`    Est. cost:    $${tok.estimatedCostUsd.toFixed(4)}`);
   } catch (error) {
     clearTimeout(timeoutHandle);
     behavioral = trace.computeMetrics();
@@ -399,16 +409,20 @@ async function main() {
   console.log(
     `  Grounding Score:    ${(headline.groundingScore * 100).toFixed(1)}%`,
   );
+  console.log(
+    `  Total Cost:          $${headline.totalCostUsd.toFixed(4)}`,
+  );
 
   console.log(`\nPer-App Results:`);
   console.log(
-    `  ${"App".padEnd(14)} ${"Status".padEnd(10)} ${"Overall".padEnd(10)} ${"Struct".padEnd(8)} ${"Ground".padEnd(8)} ${"Steps".padEnd(8)}`,
+    `  ${"App".padEnd(14)} ${"Status".padEnd(10)} ${"Overall".padEnd(9)} ${"Struct".padEnd(8)} ${"Ground".padEnd(8)} ${"Steps".padEnd(7)} ${"Tokens".padEnd(10)} ${"Cost".padEnd(8)}`,
   );
-  console.log(`  ${"-".repeat(58)}`);
+  console.log(`  ${"-".repeat(74)}`);
   for (const r of results) {
     const s = r.scorecard;
+    const tok = s.behavioral.tokens;
     console.log(
-      `  ${s.appId.padEnd(14)} ${s.status.padEnd(10)} ${s.overall.toFixed(1).padStart(6)}     ${((s.structural?.score ?? 0) * 100).toFixed(0).padStart(4)}%   ${((s.grounding?.score ?? 0) * 100).toFixed(0).padStart(4)}%   ${String(s.behavioral.totalSteps).padStart(6)}`,
+      `  ${s.appId.padEnd(14)} ${s.status.padEnd(10)} ${s.overall.toFixed(1).padStart(6)}    ${((s.structural?.score ?? 0) * 100).toFixed(0).padStart(4)}%   ${((s.grounding?.score ?? 0) * 100).toFixed(0).padStart(4)}%   ${String(s.behavioral.totalSteps).padStart(5)}  ${(tok?.totalTokens ?? 0).toLocaleString().padStart(9)}  $${(tok?.estimatedCostUsd ?? 0).toFixed(4)}`,
     );
   }
 

@@ -270,6 +270,15 @@ export interface ParsedAttackPath {
 // Behavioral Metrics (from trace)
 // ---------------------------------------------------------------------------
 
+export interface TokenMetrics {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+}
+
 export interface BehavioralMetrics {
   totalSteps: number;
   wallClockMs: number;
@@ -278,6 +287,7 @@ export interface BehavioralMetrics {
   grepCalls: number;
   shellCommands: number;
   completionSuccess: boolean;
+  tokens: TokenMetrics;
 }
 
 export interface ToolCallRecord {
