@@ -130,8 +130,12 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .describe("Additional notes or observations about the application"),
       domain: z
         .string()
+        .optional()
         .describe(
-          "Base URL / domain this application is associated with. Must be a full URL with scheme. " +
+          "Base URL / domain this application is associated with. Only provide this if you can deterministically derive it from evidence — source code, IaC, config, Known Domains list, or live discovery. " +
+            "Substituting a known environment/stage name into an IaC template IS deterministic (e.g. IaC defines '${stage}-bucket' and environments include 'production' → 'https://production-bucket.s3.amazonaws.com' is valid). " +
+            "Do NOT invent domains with no supporting evidence — if no domain can be derived, omit this field. " +
+            "Must be a full URL with scheme when provided. " +
             "For web apps/APIs: the public URL (e.g., 'https://api.example.com'). " +
             "For S3 buckets: 'https://{ACTUAL-BUCKET-NAME}.s3.amazonaws.com' — you MUST include the real bucket name from IaC, NOT 'https://s3.amazonaws.com'. " +
             "For databases (RDS/Aurora): 'https://{cluster-endpoint}.rds.amazonaws.com'. " +
