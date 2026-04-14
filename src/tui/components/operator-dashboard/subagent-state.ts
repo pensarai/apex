@@ -4,7 +4,13 @@ import {
   tryParsePartialJson,
   extractStreamableContent,
 } from "../shared/message-utils";
-import { loadSubagents } from "../../../core/session/persistence";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
+import type { ModelMessage } from "ai";
+import {
+  loadSubagents,
+  convertModelMessagesToUI,
+} from "../../../core/session/persistence";
 
 export interface SubagentSession {
   id: string;
@@ -48,9 +54,27 @@ export function loadSubagentSessionsFromDisk(
         break;
     }
 
+    // If the snapshot has no messages (agent was aborted before
+    // saveSubagentData captured them), fall back to the base class's
+    // step-by-step persistence at subagents/{id}/messages.json.
+    let sourceMessages = sub.messages;
+    if (sourceMessages.length === 0) {
+      const stepPath = join(rootPath, "subagents", sub.id, "messages.json");
+      if (existsSync(stepPath)) {
+        try {
+          const raw = JSON.parse(
+            readFileSync(stepPath, "utf-8"),
+          ) as ModelMessage[];
+          sourceMessages = convertModelMessagesToUI(raw);
+        } catch {
+          // Best-effort — keep empty
+        }
+      }
+    }
+
     // Convert UIMessage[] to DisplayMessage[] — mark any in-flight
     // tool messages as errored since the subagent is no longer running
-    const messages: DisplayMessage[] = sub.messages.map((m) => {
+    const messages: DisplayMessage[] = sourceMessages.map((m) => {
       if (m.role === "tool" && m.status === "pending") {
         return {
           ...m,
