@@ -176,6 +176,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   domains?: string[];
   /** Project-level threat model content (e.g. from .pensar/threat_model.md), if found */
   projectThreatModel?: string;
+  /** Deployment environment names (e.g. ["production", "staging"]) from project settings. */
+  environments?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +233,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onCacheMetrics,
     domains,
     projectThreatModel,
+    environments,
   } = input;
 
   // =========================================================================
@@ -239,7 +242,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
   const appsAgent = new CodeAgent<AppsDiscoveryResult>({
     codebasePath,
-    objective: buildAppsDiscoveryObjective(codebasePath, domains),
+    objective: buildAppsDiscoveryObjective(codebasePath, domains, environments),
     system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
     model,
     session,
@@ -251,6 +254,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
     responseSchema: AppsDiscoveryResultSchema,
+    projectThreatModel,
   });
 
   console.log(
@@ -376,7 +380,11 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         task.type === "pages"
           ? buildPagesDiscoveryObjective(codebasePath, task.appInfo)
           : task.type === "cloudResourceEndpoints"
-            ? buildCloudResourceEndpointsObjective(codebasePath, task.appInfo)
+            ? buildCloudResourceEndpointsObjective(
+                codebasePath,
+                task.appInfo,
+                environments,
+              )
             : buildApiEndpointsDiscoveryObjective(codebasePath, task.appInfo);
 
       const agent = new CodeAgent<DiscoverySummary>({
@@ -650,16 +658,33 @@ function isPageEndpoint(record: DocumentedEndpointRecord): boolean {
 function buildAppsDiscoveryObjective(
   codebasePath: string,
   domains?: string[],
+  environments?: string[],
 ): string {
   const domainSection = domains?.length
     ? `\n## Known Domains\nThe following domains are associated with this project. When you document an application, set the \`domain\` field on \`document_app\` if you can determine which domain the app is served from:\n${domains.map((d) => `- ${d}`).join("\n")}\n`
+    : "";
+
+  const environmentsSection = environments?.length
+    ? `\n## Target Environments\nThis project is deployed to the following environments:\n${environments.map((e) => `- **${e}**`).join("\n")}\n
+**Per-environment app creation:** When infrastructure-as-code or configuration defines resources that are dynamically named per environment (e.g. environment-prefixed S3 buckets, stage-scoped databases, per-environment API endpoints), you MUST create a **separate app entry for each environment**. Use the environment name as a prefix in the app name (e.g. \`${environments[0]}-user-uploads-bucket\`, \`${environments.length > 1 ? environments[1] : "staging"}-api-gateway\`).
+
+**How to identify environment-scoped resources:**
+- IaC that interpolates a stage/environment variable into resource names (e.g. \`\${stage}-my-bucket\`, \`\${env}-api\`, \`$app.$stage.example.com\`)
+- Separate config blocks, Terraform workspaces, SST stages, or CDK stacks per environment
+- Environment variables or config files that change resource identifiers per stage
+
+**For each environment** (${environments.join(", ")}), create an app entry with:
+- **name**: \`<environment>-<resource-name>\` (e.g. \`${environments[0]}-data-bucket\`)
+- **domain**: The environment-specific URL/ARN (e.g. \`https://${environments[0]}-api.example.com\`, \`https://${environments[0]}-data.s3.amazonaws.com\`)
+
+**Shared resources:** If a resource is clearly shared across all environments (e.g. a single CDN distribution, a shared auth service), document it once without an environment prefix.\n`
     : "";
 
   return `# Identify All Applications in the Repository
 
 ## Codebase
 - **Path:** ${codebasePath}
-${domainSection}
+${domainSection}${environmentsSection}
 ## Task
 Analyze the repository structure and identify every **deployed application or service** (APIs, web apps, microservices) defined within it. Also discover **cloud resources and external services** referenced in the code that are owned by the target (e.g. S3 buckets, cloud storage, CDN origins, message queues).
 
@@ -837,14 +862,19 @@ When finished, call \`response\` with a summary of how many endpoints you docume
 function buildCloudResourceEndpointsObjective(
   codebasePath: string,
   appInfo: z.infer<typeof AppInfoSchema>,
+  environments?: string[],
 ): string {
+  const envNote = environments?.length
+    ? `\n## Target Environments\nThis resource may exist in the following environments: ${environments.join(", ")}. When documenting entry points, use the **environment-specific resource identifiers** (e.g. environment-prefixed bucket names, stage-scoped queue URLs, per-environment ARNs). If the app name already includes an environment prefix, use that environment's resource names in the endpoints.\n`
+    : "";
+
   return `# Document Entry Points for Cloud Resource: ${appInfo.name}
 
 ## Codebase
 - **Repository root:** ${codebasePath}
 - **Resource location:** ${appInfo.location}
 - **Service:** ${appInfo.framework}
-
+${envNote}
 ## Context — Application Domain
 The parent application for this cloud resource already has a domain/URL associated with it (set via \`document_app\`). **Do NOT create endpoints that simply repeat the base domain URL.** The domain is already stored on the application record — endpoints should document **distinct access patterns** that go beyond the base domain.
 
@@ -1052,6 +1082,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     assetsPath,
     existingResult,
     input.domains,
+    input.environments,
   );
 
   const agent = new CodeAgent<IncrementalResult>({
@@ -1147,6 +1178,7 @@ function buildIncrementalObjective(
   assetsPath: string,
   existingResult: WhiteboxAttackSurfaceResult,
   domains?: string[],
+  environments?: string[],
 ): string {
   const appsSummary = existingResult.apps
     .map((app) => {
@@ -1159,6 +1191,10 @@ function buildIncrementalObjective(
     ? `\n## Known Domains\nThe following domains are associated with this project. When documenting new apps, set the \`domain\` field on \`document_app\` if you can determine which domain serves the app:\n${domains.map((d) => `- ${d}`).join("\n")}\n`
     : "";
 
+  const environmentsSection = environments?.length
+    ? `\n## Target Environments\nThis project is deployed to: ${environments.join(", ")}. When the diff introduces new dynamically-named resources (e.g. environment-prefixed S3 buckets, stage-scoped databases), create a **separate app entry per environment** using the environment name as a prefix (e.g. \`${environments[0]}-<resource>\`). Use environment-specific identifiers in domains and endpoints.\n`
+    : "";
+
   return `# Incremental Attack Surface Update
 
 ## Context
@@ -1168,8 +1204,7 @@ You are updating the attack surface map for a repository after a new commit. Rat
 - **Path:** ${codebasePath}
 - **Diff file:** ${diffPath} (contains \`git diff\` output between the previous and current commit)
 - **Existing assets directory:** ${assetsPath}
-${domainSection}
-
+${domainSection}${environmentsSection}
 ## Directory Structure
 The assets directory uses app-scoped folders:
 \`\`\`
