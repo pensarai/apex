@@ -139,7 +139,10 @@ export function getProviderModel(
       const openrouter = createOpenRouter({
         apiKey: openRouterAPIKey,
       });
-      providerModel = openrouter(model);
+      const openRouterModelId = model.startsWith("openrouter:")
+        ? model.slice("openrouter:".length)
+        : model;
+      providerModel = openrouter(openRouterModelId);
       break;
     }
 
