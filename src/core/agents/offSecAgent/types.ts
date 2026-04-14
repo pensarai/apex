@@ -311,6 +311,9 @@ export interface SpecializedAgentInput {
    */
   subagentId?: string;
 
+  /** Directory for messages.json persistence. Defaults to session.rootPath. */
+  messagesDir?: string;
+
   /** Shared findings registry for cross-agent dedup */
   findingsRegistry?: FindingsRegistry;
 
