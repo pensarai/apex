@@ -70,9 +70,12 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
       {/* Left side: agent stats */}
       <box flexDirection="row">
         {allDone ? (
-          <text fg={colors.success} content={`\u2713 ${total} agents`} />
+          <text
+            fg={colors.textMuted}
+            content={`${total} agent${total !== 1 ? "s" : ""}`}
+          />
         ) : (
-          <AsciiSpinner label={`${total} agents`} />
+          <AsciiSpinner label={`${total} agent${total !== 1 ? "s" : ""}`} />
         )}
         {parts.length > 0 && <text fg={colors.textMuted} content="  " />}
         {parts.map((part, i) => (
