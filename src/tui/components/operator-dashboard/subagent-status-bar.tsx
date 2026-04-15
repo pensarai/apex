@@ -47,7 +47,6 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
 
   const total = sessions.size;
 
-  // Build the count segments — omit categories with 0 count
   const parts: Array<{ label: string; color: typeof colors.warning }> = [];
   if (running > 0)
     parts.push({ label: `${running} running`, color: colors.warning });

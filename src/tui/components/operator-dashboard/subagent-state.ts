@@ -6,10 +6,19 @@ import {
 } from "../shared/message-utils";
 import { loadSubagents } from "../../../core/session/persistence";
 
+export type SubagentStatus = "running" | "completed" | "failed" | "cancelled";
+
+export const SUBAGENT_STATUS_ORDER: Record<SubagentStatus, number> = {
+  running: 0,
+  completed: 1,
+  cancelled: 2,
+  failed: 3,
+};
+
 export interface SubagentSession {
   id: string;
   name: string;
-  status: "running" | "completed" | "failed" | "cancelled";
+  status: SubagentStatus;
   spawnedAt: Date;
   completedAt?: Date;
   input: unknown;
@@ -28,48 +37,16 @@ export function loadSubagentSessionsFromDisk(
   const map = new Map<string, SubagentSession>();
 
   for (const sub of uiSubagents) {
-    // Map UISubagent status to SubagentSession status
-    let status: SubagentSession["status"];
-    switch (sub.status) {
-      case "completed":
-        status = "completed";
-        break;
-      case "canceled":
-        status = "cancelled";
-        break;
-      case "failed":
-        status = "failed";
-        break;
-      case "pending":
-      case "paused":
-      default:
-        // Paused/pending on disk means the agent was interrupted
-        status = "cancelled";
-        break;
-    }
+    const status: SubagentSession["status"] =
+      sub.status === "completed" || sub.status === "failed"
+        ? sub.status
+        : "cancelled";
 
-    // Convert UIMessage[] to DisplayMessage[] — mark any in-flight
-    // tool messages as errored since the subagent is no longer running
-    const messages: DisplayMessage[] = sub.messages.map((m) => {
-      if (m.role === "tool" && m.status === "pending") {
-        return {
-          ...m,
-          createdAt: m.createdAt,
-          status: "error" as const,
-          result: "Interrupted",
-        };
-      }
-      return {
-        role: m.role,
-        content: m.content,
-        createdAt: m.createdAt,
-        toolCallId: m.toolCallId,
-        toolName: m.toolName,
-        args: m.args,
-        result: m.result,
-        status: m.status,
-      };
-    });
+    const messages: DisplayMessage[] = sub.messages.map((m) =>
+      m.role === "tool" && m.status === "pending"
+        ? { ...m, status: "error" as const, result: "Interrupted" }
+        : (m as DisplayMessage),
+    );
 
     // Approximate completedAt from the last message timestamp so the hub
     // card shows the actual run duration instead of an ever-increasing
@@ -97,12 +74,56 @@ export function loadSubagentSessionsFromDisk(
 type SetState = Dispatch<SetStateAction<Map<string, SubagentSession>>>;
 
 /**
+ * External subscribable store for subagent sessions.
+ *
+ * Bridges imperative updates (from stream handlers) and the SubagentDialog,
+ * which is rendered inside a DialogProvider portal and can't receive React
+ * prop updates from the dashboard tree. Consumers subscribe via
+ * `useSyncExternalStore`.
+ */
+export interface SubagentStore {
+  getSnapshot: () => Map<string, SubagentSession>;
+  subscribe: (listener: () => void) => () => void;
+  setState: SetState;
+}
+
+export function createSubagentStore(): SubagentStore {
+  let snapshot: Map<string, SubagentSession> = new Map();
+  const listeners = new Set<() => void>();
+  const setState: SetState = (action) => {
+    const next =
+      typeof action === "function"
+        ? (
+            action as (
+              prev: Map<string, SubagentSession>,
+            ) => Map<string, SubagentSession>
+          )(snapshot)
+        : action;
+    if (next === snapshot) return;
+    snapshot = next;
+    for (const l of listeners) l();
+  };
+  return {
+    getSnapshot: () => snapshot,
+    subscribe: (l) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    setState,
+  };
+}
+
+/**
  * Creates helper functions for managing per-subagent session state.
  *
  * All helpers follow the React `setState(prev => ...)` pattern with
  * immutable updates (new Map + cloned SubagentSession objects).
  */
 export function createSubagentSessionHelpers(setState: SetState) {
+  // Streaming-delta buffers held outside the message shape so parser scratch
+  // never leaks into `args`. Keyed by toolCallId; cleared on finalization.
+  const toolArgsDeltaBuffers = new Map<string, { accumulated: string }>();
+
   const spawnSession = (id: string, name?: string, input?: unknown) => {
     setState((prev) => {
       const next = new Map(prev);
@@ -177,6 +198,16 @@ export function createSubagentSessionHelpers(setState: SetState) {
     toolCallId: string,
     argsTextDelta: string,
   ) => {
+    const existing = toolArgsDeltaBuffers.get(toolCallId);
+    const accumulated = (existing?.accumulated ?? "") + argsTextDelta;
+    toolArgsDeltaBuffers.set(toolCallId, { accumulated });
+
+    const parsed = tryParsePartialJson(accumulated);
+    if (!parsed) return;
+
+    const contentText = extractStreamableContent(parsed);
+    const logs = contentText ? contentText.split("\n") : undefined;
+
     setState((prev) => {
       const session = prev.get(id);
       if (!session) return prev;
@@ -186,24 +217,12 @@ export function createSubagentSessionHelpers(setState: SetState) {
       );
       if (idx === -1) return prev;
 
-      const msg = session.messages[idx];
-      // Accumulate the args text. We store partial JSON in args.__raw if
-      // present, otherwise start fresh.
-      const existingRaw = (msg.args as Record<string, unknown> | undefined)
-        ?.__raw;
-      const accumulated =
-        (typeof existingRaw === "string" ? existingRaw : "") + argsTextDelta;
-
-      const parsed = tryParsePartialJson(accumulated);
-      const argsObj: Record<string, unknown> = parsed
-        ? { ...parsed, __raw: accumulated }
-        : { __raw: accumulated };
-
-      const contentText = parsed ? extractStreamableContent(parsed) : null;
-      const logs = contentText ? contentText.split("\n") : undefined;
-
       const messages = [...session.messages];
-      messages[idx] = { ...msg, args: argsObj, ...(logs && { logs }) };
+      messages[idx] = {
+        ...messages[idx],
+        args: parsed,
+        ...(logs && { logs }),
+      };
 
       const next = new Map(prev);
       next.set(id, { ...session, messages });
@@ -217,6 +236,7 @@ export function createSubagentSessionHelpers(setState: SetState) {
     toolName: string,
     args?: Record<string, unknown>,
   ) => {
+    toolArgsDeltaBuffers.delete(toolCallId);
     setState((prev) => {
       const session = prev.get(id);
       if (!session) return prev;
@@ -227,12 +247,9 @@ export function createSubagentSessionHelpers(setState: SetState) {
 
       const messages = [...session.messages];
       if (idx !== -1) {
-        // Strip __raw from finalized args
-        const cleanArgs = args ? { ...args } : undefined;
-        if (cleanArgs) delete cleanArgs.__raw;
         messages[idx] = {
           ...messages[idx],
-          args: cleanArgs,
+          args,
           logs: undefined,
           status: "pending",
         };
@@ -257,9 +274,9 @@ export function createSubagentSessionHelpers(setState: SetState) {
   const updateToolResult = (
     id: string,
     toolCallId: string,
-    _toolName: string,
     result: unknown,
   ) => {
+    toolArgsDeltaBuffers.delete(toolCallId);
     setState((prev) => {
       const session = prev.get(id);
       if (!session) return prev;

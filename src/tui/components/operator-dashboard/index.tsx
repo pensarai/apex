@@ -6,7 +6,14 @@
  * Reuses MessageList and InputArea from the shared/chat components.
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 import { useKeyboard } from "@opentui/react";
 
 import {
@@ -75,6 +82,7 @@ import {
 } from "./logic";
 import {
   createSubagentSessionHelpers,
+  createSubagentStore,
   loadSubagentSessionsFromDisk,
   type SubagentSession,
 } from "./subagent-state";
@@ -171,16 +179,15 @@ export default function OperatorDashboard({
   });
   const commandCancelledRef = useRef(false);
 
-  // Subagent session state — per-subagent message histories
-  const [subagentSessions, setSubagentSessions] = useState<
-    Map<string, SubagentSession>
-  >(new Map());
-  const subagentHelpers = useMemo(
-    () => createSubagentSessionHelpers(setSubagentSessions),
-    [],
+  const subagentStore = useMemo(() => createSubagentStore(), []);
+  const subagentSessions = useSyncExternalStore(
+    subagentStore.subscribe,
+    subagentStore.getSnapshot,
   );
-  const subagentSessionsRef = useRef(subagentSessions);
-  subagentSessionsRef.current = subagentSessions;
+  const subagentHelpers = useMemo(
+    () => createSubagentSessionHelpers(subagentStore.setState),
+    [subagentStore],
+  );
 
   // Track the message count when subagents last finished so the status bar
   // knows whether the main agent has produced new output since then.
@@ -192,23 +199,21 @@ export default function OperatorDashboard({
   );
   useEffect(() => {
     if (subagentSessions.size > 0 && !hasRunningSubagent) {
-      // Subagents just finished — snapshot current message count
       if (messageCountAtSubagentDoneRef.current === null) {
         messageCountAtSubagentDoneRef.current =
           displayMessagesRef.current.length;
       }
     } else if (hasRunningSubagent) {
-      // Subagents are running — reset snapshot
       messageCountAtSubagentDoneRef.current = null;
     }
   }, [subagentSessions, hasRunningSubagent]);
 
   const openSubagentDialog = useCallback(() => {
-    replaceDialog(<SubagentDialog sessionsRef={subagentSessionsRef} />, {
+    replaceDialog(<SubagentDialog store={subagentStore} />, {
       selfHandlesEscape: true,
       size: "large",
     });
-  }, [replaceDialog]);
+  }, [replaceDialog, subagentStore]);
 
   // Messages — same pattern as pentest component
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -375,7 +380,7 @@ export default function OperatorDashboard({
               try {
                 const restored = loadSubagentSessionsFromDisk(s.rootPath);
                 if (restored.size > 0) {
-                  setSubagentSessions(restored);
+                  subagentStore.setState(restored);
                 }
               } catch {
                 // Best-effort — subagent files may not exist
@@ -908,7 +913,6 @@ export default function OperatorDashboard({
           subagentHelpers.updateToolResult(
             d.subagentId,
             d.toolCallId,
-            d.toolName,
             d.result,
           );
           return;
@@ -993,7 +997,7 @@ export default function OperatorDashboard({
         // New workflow run — clear old subagent sessions so the hub
         // shows only the current batch.
         if (d.phase === "discovery") {
-          setSubagentSessions(new Map());
+          subagentStore.setState(new Map());
         }
         updateWorkflowData((wd) => {
           const next = {
@@ -1569,7 +1573,7 @@ export default function OperatorDashboard({
     );
 
     // Mark any in-flight subagent tool messages as interrupted too
-    setSubagentSessions((prev) => {
+    subagentStore.setState((prev) => {
       let changed = false;
       const next = new Map(prev);
       for (const [id, session] of next) {

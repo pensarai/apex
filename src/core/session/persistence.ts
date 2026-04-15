@@ -608,29 +608,18 @@ export function loadSubagents(rootPath: string): UISubagent[] {
       }
     }
 
-    // --- Discover directory-only subagents ---
     // Some agents (threat model, whitebox discovery, coding agents) only
     // persist messages.json via the base class but never call
     // saveSubagentData(). Scan for subdirectories with messages.json
     // that have no matching top-level snapshot .json file.
-    const entries = readdirSync(subagentsPath);
-    for (const entry of entries) {
+    const entries = readdirSync(subagentsPath, { withFileTypes: true });
+    for (const dirent of entries) {
+      if (!dirent.isDirectory()) continue;
+      const entry = dirent.name;
       if (agentNameIndex.has(entry)) continue;
-
-      const entryPath = join(subagentsPath, entry);
-      try {
-        if (!statSync(entryPath).isDirectory()) continue;
-      } catch {
-        continue;
-      }
-
-      // Skip task directories (pentest plan phase output) and
-      // plan agent directories (plan agent messages are not standalone)
       if (entry.endsWith("-tasks") || entry.endsWith("-plan")) continue;
 
-      const messagesPath = join(entryPath, "messages.json");
-      if (!existsSync(messagesPath)) continue;
-
+      const messagesPath = join(subagentsPath, entry, "messages.json");
       try {
         const raw = JSON.parse(
           readFileSync(messagesPath, "utf-8"),
@@ -638,10 +627,7 @@ export function loadSubagents(rootPath: string): UISubagent[] {
         if (!Array.isArray(raw) || raw.length === 0) continue;
 
         const { agentType, name } = parseSubagentFilename(entry);
-
-        const dirStat = statSync(messagesPath);
-        const timestamp = dirStat.mtime;
-
+        const timestamp = statSync(messagesPath).mtime;
         const messages = convertMessagesToUI(raw, timestamp);
 
         agentNameIndex.set(entry, subagents.length);
@@ -655,7 +641,7 @@ export function loadSubagents(rootPath: string): UISubagent[] {
           status: "completed",
         });
       } catch {
-        // Skip directories with unreadable messages.json
+        // Skip directories without a readable messages.json
       }
     }
   }

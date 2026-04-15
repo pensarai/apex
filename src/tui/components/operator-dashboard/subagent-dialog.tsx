@@ -7,40 +7,38 @@
  * DialogProvider close the dialog.
  */
 
-import { useState, useEffect, useMemo, useRef, type RefObject } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { useKeyboard } from "@opentui/react";
 
 import { useDialog } from "../../context/dialog";
 import DialogLayout from "../dialog-layout";
 import { SubagentHub, sortSessions } from "./subagent-hub";
 import { SubagentDetailView } from "./subagent-detail-view";
-import type { SubagentSession } from "./subagent-state";
+import type { SubagentStore } from "./subagent-state";
 
 type View = { type: "hub" } | { type: "detail"; id: string };
 
 interface SubagentDialogProps {
-  sessionsRef: RefObject<Map<string, SubagentSession>>;
+  store: SubagentStore;
 }
 
-export default function SubagentDialog({ sessionsRef }: SubagentDialogProps) {
+export default function SubagentDialog({ store }: SubagentDialogProps) {
   const { setSize, clear } = useDialog();
   const [view, setView] = useState<View>({ type: "hub" });
-  const [, tick] = useState(0);
   const viewRef = useRef(view);
   viewRef.current = view;
 
-  // Re-render periodically while open to reflect session changes from the ref
-  useEffect(() => {
-    const id = setInterval(() => tick((n) => n + 1), 500);
-    return () => clearInterval(id);
-  }, []);
+  const sessions = useSyncExternalStore(store.subscribe, store.getSnapshot);
 
-  // Adjust dialog size when switching views
   useEffect(() => {
     setSize(view.type === "detail" ? "xlarge" : "large");
   }, [view.type, setSize]);
-
-  const sessions = sessionsRef.current;
 
   const sorted = useMemo(
     () => sortSessions(Array.from(sessions.values())),

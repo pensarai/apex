@@ -14,22 +14,16 @@ import { useDimensions } from "../../context/dimensions";
 import { AsciiSpinner } from "../shared/ascii-spinner";
 import { scrollToIndex } from "../../utils/scroll";
 import { getToolDisplayLabel } from "../shared/tool-registry";
-import type { SubagentSession } from "./subagent-state";
+import { SUBAGENT_STATUS_ORDER, type SubagentSession } from "./subagent-state";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const STATUS_ORDER: Record<SubagentSession["status"], number> = {
-  running: 0,
-  completed: 1,
-  cancelled: 2,
-  failed: 3,
-};
-
 export function sortSessions(sessions: SubagentSession[]): SubagentSession[] {
   return [...sessions].sort((a, b) => {
-    const statusDiff = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+    const statusDiff =
+      SUBAGENT_STATUS_ORDER[a.status] - SUBAGENT_STATUS_ORDER[b.status];
     if (statusDiff !== 0) return statusDiff;
     return a.spawnedAt.getTime() - b.spawnedAt.getTime();
   });
@@ -187,7 +181,6 @@ export const SubagentHub = memo(function SubagentHub({
   const [focusedIndex, setFocusedIndex] = useState(0);
   const scrollboxRef = useRef<ScrollBoxRenderable | null>(null);
 
-  // Clamp focused index when list changes
   useEffect(() => {
     if (sorted.length === 0) {
       setFocusedIndex(0);
@@ -196,7 +189,6 @@ export const SubagentHub = memo(function SubagentHub({
     }
   }, [sorted.length, focusedIndex]);
 
-  // Keep focused card visible in scrollbox
   useEffect(() => {
     scrollToIndex(scrollboxRef.current, focusedIndex, sorted, (s) => s.id);
   }, [focusedIndex, sorted]);
