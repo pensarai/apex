@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ToolContext } from "./types";
+import type { RiskScore } from "../../specialized/whiteboxAttackSurface/types";
 import { AgentEventBus, type AgentEventMap } from "../../../eventBus";
 
 const ThreatModelResultSchema = z.object({
@@ -12,9 +13,66 @@ const ThreatModelResultSchema = z.object({
         "authentication/authorization risks, input validation concerns, " +
         "business logic risks, and prioritized testing recommendations.",
     ),
+  exposure: z
+    .number()
+    .min(0)
+    .max(3)
+    .describe(
+      "Exposure Level (0-3): 3=Public endpoint no auth, 2=Requires standard user login, 1=Requires privileged/admin access, 0=Private/internal-only",
+    ),
+  exposureReasoning: z
+    .string()
+    .describe("Brief explanation for the exposure score"),
+  dataSensitivity: z
+    .number()
+    .min(0)
+    .max(3)
+    .describe(
+      "Data Sensitivity (0-3): 3=PII/PHI/financial/passwords/tokens, 2=Business operations/configs, 1=Low-value user data, 0=No meaningful data",
+    ),
+  dataSensitivityReasoning: z
+    .string()
+    .describe("Brief explanation for the data sensitivity score"),
+  functionCriticality: z
+    .number()
+    .min(0)
+    .max(2)
+    .describe(
+      "Function Criticality (0-2): 2=Auth flows/password resets/payments/state-changing mutations, 1=Core product functionality, 0=Non-critical content",
+    ),
+  functionCriticalityReasoning: z
+    .string()
+    .describe("Brief explanation for the function criticality score"),
+  securityIndicators: z
+    .number()
+    .min(0)
+    .max(2)
+    .describe(
+      "Security Indicators (0-2): 2=Critical vulnerability patterns found (SQL injection, command injection, hardcoded secrets, path traversal), 1=Moderate security concerns (missing input validation, weak error handling), 0=No obvious security issues",
+    ),
+  securityIndicatorsReasoning: z
+    .string()
+    .describe(
+      "Brief explanation for the security indicators score, including specific vulnerability patterns observed if any",
+    ),
+  riskScoreJustification: z
+    .string()
+    .describe(
+      "Overall justification summarizing why this endpoint received this risk score",
+    ),
+  pentestObjectives: z
+    .array(z.string())
+    .describe(
+      "Specific, actionable pentest objectives derived from the threat model. " +
+        "Each objective should describe exactly what to test and how, grounded in the " +
+        "attack vectors and attacker profiles identified above. " +
+        "Example: 'Test for IDOR in /api/orders/{id} by accessing other users\\' order IDs as an authenticated regular user'",
+    ),
 });
 
-const THREAT_MODEL_SYSTEM_PROMPT = `You are an Endpoint Threat Modeling Agent. Your task is to analyze a specific API endpoint or web page and produce a focused threat model that describes the relevant attackers, security risks, attack vectors, and testing priorities for that exact endpoint.
+type ThreatModelResult = z.infer<typeof ThreatModelResultSchema>;
+
+const THREAT_MODEL_SYSTEM_PROMPT = `You are an Endpoint Threat Modeling & Risk Scoring Agent. Your task is to analyze a specific API endpoint or web page, produce a focused threat model, and assign a quantitative risk score (0-10).
 
 Read the source code at the specified location. Analyze the endpoint's:
 - Input handling and validation
@@ -26,7 +84,7 @@ Read the source code at the specified location. Analyze the endpoint's:
 
 Think in terms of concrete attackers — not abstract threat categories. For this endpoint, identify the realistic attacker profiles that would actually target it, then ground every attack vector and testing priority in what a specific attacker would do. Attacker profiles should reflect the application's domain, the endpoint's exposure, and the data it handles.
 
-Produce a concise, actionable threat model that a penetration tester can use to prioritize their testing approach for this endpoint.`;
+Produce a concise, actionable threat model that a penetration tester can use to prioritize their testing approach for this endpoint, along with a structured risk score breakdown.`;
 
 export interface GenerateThreatModelInput {
   appName: string;
@@ -38,19 +96,24 @@ export interface GenerateThreatModelInput {
   handler?: string;
   authRequired?: boolean;
   description: string;
+}
+
+export interface ThreatModelOutput {
+  threatModel: string;
+  riskScore: RiskScore;
   pentestObjectives: string[];
 }
 
 /**
- * Spawn a dedicated CodeAgent to produce a focused threat model for a single
- * endpoint. Called from inside the `document_endpoint` tool's execute function
- * so that each documented endpoint gets its own analysis pass instead of
- * relying on the parent discovery agent to write the threat model inline.
+ * Spawn a dedicated CodeAgent to produce a focused threat model and
+ * quantitative risk score for a single endpoint. Both outputs come from one
+ * agent pass — the agent reads the source code once and returns the threat
+ * model text alongside a structured 4-dimension risk score breakdown.
  */
 export async function generateThreatModelForEndpoint(
   ctx: ToolContext,
   input: GenerateThreatModelInput,
-): Promise<string | null> {
+): Promise<ThreatModelOutput | null> {
   if (!ctx.model) return null;
 
   const { CodeAgent } = await import("../../specialized/codeAgent/agent");
@@ -68,7 +131,7 @@ export async function generateThreatModelForEndpoint(
 
   const prompt = buildThreatModelPrompt(input, ctx.projectThreatModel);
 
-  const agent = new CodeAgent<{ threatModel: string }>({
+  const agent = new CodeAgent<ThreatModelResult>({
     codebasePath: ctx.agentCwd,
     objective: prompt,
     system: THREAT_MODEL_SYSTEM_PROMPT,
@@ -88,7 +151,29 @@ export async function generateThreatModelForEndpoint(
       subagentId,
       status: "completed",
     });
-    return result?.threatModel ?? null;
+
+    if (!result) return null;
+
+    const totalScore =
+      result.exposure +
+      result.dataSensitivity +
+      result.functionCriticality +
+      result.securityIndicators;
+
+    return {
+      threatModel: result.threatModel,
+      riskScore: {
+        score: totalScore,
+        explanation: result.riskScoreJustification,
+        breakdown: {
+          exposure: result.exposure,
+          dataSensitivity: result.dataSensitivity,
+          functionCriticality: result.functionCriticality,
+          securityIndicators: result.securityIndicators,
+        },
+      },
+      pentestObjectives: result.pentestObjectives ?? [],
+    };
   } catch (error) {
     ctx.eventBus?.emit("subagent-complete", {
       subagentId,
@@ -113,7 +198,7 @@ function buildThreatModelPrompt(
     ? input.method.join(", ")
     : (input.method ?? "unknown");
 
-  let prompt = `# Endpoint Threat Model Assessment
+  let prompt = `# Endpoint Threat Model & Risk Score Assessment
 
 ## Target Endpoint
 - **Application**: ${input.appName}
@@ -123,13 +208,15 @@ function buildThreatModelPrompt(
 - **Handler**: ${input.handler ?? "unknown"}
 - **Auth**: ${authInfo}
 - **Description**: ${input.description}
-- **Existing Objectives**: ${input.pentestObjectives.join(", ") || "none"}
 
 ## Instructions
 1. Read the source file at \`${input.file ?? "(unknown)"}\` ${lineRange ? `(${lineRange})` : ""} to understand the implementation.
 2. If helpful, briefly explore surrounding files (auth middleware, shared handlers, type definitions) to ground your analysis — but stay focused on this endpoint.
 3. Analyze the endpoint implementation thoroughly.
-4. Produce a threat model covering:
+
+## Part 1: Threat Model
+
+Produce a threat model covering:
    - **Attacker Profiles**: 2-4 realistic attackers who would target THIS endpoint. For each profile include:
      - A descriptive name and 1-2 sentence motivation grounded in the application's domain and what this endpoint does
      - Skill level (Low / Medium / High / Expert)
@@ -142,7 +229,51 @@ function buildThreatModelPrompt(
    - **Risk Assessment**: What's the worst-case impact of a successful attack on this endpoint?
    - **Testing Priorities**: Ordered list of what a pentester should test first and why. Reference the attacker profile each test is simulating.
 
-Keep the threat model concise (400-800 words). Focus on what's specific to THIS endpoint — not generic web security advice. Every attacker profile and attack vector must be grounded in code you actually read.`;
+Keep the threat model concise (400-800 words). Focus on what's specific to THIS endpoint — not generic web security advice. Every attacker profile and attack vector must be grounded in code you actually read.
+
+## Part 2: Risk Score
+
+Score each dimension based on what you observed in the code:
+
+### 1. Exposure Level (0-3)
+| Score | Description |
+|-------|-------------|
+| 3 | Public endpoint, no authentication required |
+| 2 | Requires standard user login |
+| 1 | Requires privileged/admin access |
+| 0 | Private, IP-restricted, or internal-only |
+
+### 2. Data Sensitivity (0-3)
+| Score | Example Data |
+|-------|-------------|
+| 3 | PII, PHI, financial data, passwords, tokens, secrets |
+| 2 | Business operations data, configs, settings |
+| 1 | Low-value or non-sensitive user data |
+| 0 | No meaningful data (static content, health checks) |
+
+### 3. Function Criticality (0-2)
+| Score | Examples |
+|-------|---------|
+| 2 | Auth flows, password resets, payments, permission changes |
+| 1 | Core product functionality (CRUD on user data) |
+| 0 | Non-critical content or utility endpoints |
+
+### 4. Security Indicators (0-2)
+| Score | Indicators |
+|-------|-----------|
+| 2 | Critical vuln patterns: SQL injection, command injection, hardcoded secrets, path traversal, unsafe deserialization |
+| 1 | Moderate concerns: missing input validation, weak error handling, missing output encoding, overly permissive CORS |
+| 0 | No obvious security issues — code follows best practices |
+
+**Final Score = Exposure + DataSensitivity + FunctionCriticality + SecurityIndicators (0-10)**
+
+## Part 3: Pentest Objectives
+
+Produce **pentest objectives** — specific, actionable test cases derived directly from the threat model above. Each objective should:
+   - Reference a concrete attack vector or attacker profile from the threat model
+   - Describe exactly what to test and how (e.g., "Test for IDOR in /api/orders/{id} by accessing other users' order IDs as an authenticated regular user")
+   - Be specific enough that a pentest agent can execute the test without additional context
+   - Cover the highest-priority attack vectors identified in the threat model`;
 
   if (projectThreatModel) {
     prompt += `
@@ -157,7 +288,7 @@ ${projectThreatModel}
 
   prompt += `
 
-Call the \`response\` tool with your threat model.`;
+Call the \`response\` tool with your threat model, risk score assessment, and pentest objectives.`;
 
   return prompt;
 }

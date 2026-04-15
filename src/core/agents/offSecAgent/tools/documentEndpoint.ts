@@ -5,7 +5,6 @@ import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
 import { computeBlackboxRiskScore } from "../../specialized/attackSurface/blackboxRiskScoring";
 import { generateThreatModelForEndpoint } from "./threatModelGenerator";
-import { generateRiskScoreForEndpoint } from "./riskScoreGenerator";
 
 function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
@@ -122,12 +121,6 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         .string()
         .optional()
         .describe("Additional notes or observations about the endpoint"),
-      pentestObjectives: z
-        .array(z.string())
-        .describe(
-          "Specific pentest objectives for this endpoint — what a pentest agent should test " +
-            "(e.g., 'Test for IDOR in /api/orders/{id}')",
-        ),
       toolCallDescription: z
         .string()
         .describe(
@@ -206,23 +199,26 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         handler: input.handler,
         authRequired: input.authRequired,
         description: input.description,
-        pentestObjectives: input.pentestObjectives,
       };
 
-      const [threatModel, llmRiskScore] = await Promise.all([
-        generateThreatModelForEndpoint(ctx, subagentInput),
-        generateRiskScoreForEndpoint(ctx, subagentInput),
-      ]);
+      const threatModelOutput = await generateThreatModelForEndpoint(
+        ctx,
+        subagentInput,
+      );
 
-      const riskScore = llmRiskScore ?? heuristicRiskScore;
+      const riskScore = threatModelOutput?.riskScore ?? heuristicRiskScore;
+      const pentestObjectives = threatModelOutput?.pentestObjectives ?? [];
 
       const endpointRecord = {
         ...input,
+        pentestObjectives,
         discoveredAt: new Date().toISOString(),
         sessionId: ctx.session.id,
         target: ctx.session.targets[0],
         riskScore,
-        ...(threatModel ? { threatModel } : {}),
+        ...(threatModelOutput?.threatModel
+          ? { threatModel: threatModelOutput.threatModel }
+          : {}),
       };
 
       try {
@@ -247,7 +243,8 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         endpointType: input.endpointType,
         riskLevel: input.riskLevel,
         filepath,
-        threatModel: threatModel ?? undefined,
+        threatModel: threatModelOutput?.threatModel ?? undefined,
+        pentestObjectives,
         message: `Endpoint '${input.endpointName}' documented successfully under app '${input.appName}'`,
       };
     },
