@@ -99,6 +99,10 @@ export function askUserQuestions(_ctx: ToolContext) {
       "Do NOT include an extra 'Other' or 'Type something' option in the predefined list — the UI " +
       "renders a freeform input automatically when `allowFreeform` is true (the default). Keep " +
       "predefined options short (a few words each) so the user can scan them quickly. " +
+      "IMPORTANT: When you call this tool, do NOT write a long preamble first. Output at most " +
+      "one short sentence of context (or none) and then call the tool — the questions ARE the " +
+      "primary deliverable. Lengthy preambles can exceed the output token budget and cause the " +
+      "tool-call JSON to be truncated mid-stream. " +
       "The consumer of this agent collects answers and resumes with a tool-result in the message history.",
     inputSchema: z.object({
       questions: z.array(AskUserQuestionSchema).min(1).max(5),

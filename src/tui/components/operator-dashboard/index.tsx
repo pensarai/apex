@@ -988,7 +988,25 @@ export default function OperatorDashboard({
           return;
         }
         console.error("Agent error:", d.error);
-        setError(d.error instanceof Error ? d.error.message : "Unknown error");
+        const errorMessage =
+          d.error instanceof Error ? d.error.message : "Unknown error";
+        setError(errorMessage);
+        // Clear the spinner on any tool messages that were still streaming
+        // or pending when the agent errored — otherwise they spin forever.
+        // Common case: tool-call JSON gets truncated mid-stream → repair
+        // fails → stream errors out without firing tool-call-complete.
+        setMessages((prev) =>
+          prev.map((m) =>
+            isToolMessage(m) &&
+            (m.status === "pending" || m.status === "streaming")
+              ? {
+                  ...m,
+                  status: "error" as const,
+                  result: errorMessage,
+                }
+              : m,
+          ),
+        );
       });
 
       eventBus.on("subagent-spawn", ({ subagentId, name }) => {
@@ -1307,7 +1325,16 @@ export default function OperatorDashboard({
           const errorMsg = e instanceof Error ? e.message : "Agent failed";
           setError(errorMsg);
           setMessages((prev) => [
-            ...prev,
+            ...prev.map((m) =>
+              isToolMessage(m) &&
+              (m.status === "pending" || m.status === "streaming")
+                ? {
+                    ...m,
+                    status: "error" as const,
+                    result: errorMsg,
+                  }
+                : m,
+            ),
             {
               role: "system",
               content: `Error: ${errorMsg}`,
