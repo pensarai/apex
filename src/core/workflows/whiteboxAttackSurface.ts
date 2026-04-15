@@ -822,10 +822,6 @@ For each page, call \`document_endpoint\` with:
 - **handler**: Component or handler name
 - **authRequired**: Whether the page requires authentication
 - **riskLevel**: CRITICAL for admin/auth pages, HIGH for user data, MEDIUM for general, LOW for static/public
-- **pentestObjectives**: Specific testing goals, e.g.:
-  - "Test for XSS in user-editable fields on the profile page"
-  - "Test for authorization bypass — access admin dashboard as regular user"
-  - "Test for CSRF on the settings update form"
 
 Be thorough — examine every route file, every page directory, every template **within \`${appInfo.location}\`**.
 When finished, call \`response\` with a summary of how many pages you documented.`;
@@ -876,11 +872,6 @@ For each **unique route path**, call \`document_endpoint\` with:
 - **handler**: Handler function name (comma-separate if multiple handlers for different methods)
 - **authRequired**: Whether the endpoint requires authentication (true if ANY method requires it)
 - **riskLevel**: CRITICAL for auth/payment/admin, HIGH for user data mutations, MEDIUM for general, LOW for read-only public
-- **pentestObjectives**: Specific testing goals covering ALL methods, e.g.:
-  - "Test for SQL injection in the 'search' query parameter (GET)"
-  - "Test for IDOR by accessing /api/orders/{id} with other users' order IDs (GET)"
-  - "Test for mass assignment by sending extra fields in the POST body"
-  - "Test for privilege escalation by calling admin-only endpoint as regular user"
 
 **CRITICAL: ONE entry per route path.** If \`/api/products\` has GET (list) and POST (create), document it as ONE entry with \`method: ["GET", "POST"]\`. Do NOT create two separate entries.
 
@@ -951,12 +942,6 @@ For each entry point, call \`document_endpoint\` with:
 - **line**: Line number if determinable
 - **authRequired**: Whether external access requires authentication
 - **riskLevel**: CRITICAL for publicly accessible storage with write access or sensitive data, HIGH for resources with broad IAM permissions, MEDIUM for internal resources, LOW for read-only public assets
-- **pentestObjectives**: Testing goals for the resource itself, e.g.:
-  - "Test for public bucket access — check if objects are listable without auth"
-  - "Test for bucket policy misconfiguration — attempt to write/delete objects"
-  - "Test for pre-signed URL expiration and scope"
-  - "Test for CORS misconfiguration allowing cross-origin data exfiltration"
-  - "Test for overly permissive IAM roles attached to this resource"
 
 When finished, call \`response\` with a summary of how many entry points you documented.`;
 }
