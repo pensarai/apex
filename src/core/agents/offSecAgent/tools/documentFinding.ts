@@ -253,8 +253,9 @@ CRITICAL RULES — READ BEFORE CALLING:
           evidenceForPrompt =
             input.evidence.substring(0, EVIDENCE_FILE_THRESHOLD) +
             `\n... [truncated — full output saved to ${evidenceFilename}]`;
+          const pathPrefix = isVulnerability ? "findings" : "informational";
           evidenceFiles.push({
-            path: `findings/${evidenceFilename}`,
+            path: `${pathPrefix}/${evidenceFilename}`,
             type: "raw-evidence",
             description: `Full evidence output (${input.evidence.length} bytes)`,
           });
