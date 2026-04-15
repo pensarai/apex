@@ -421,6 +421,123 @@ describe("loadSubagents manifest merge", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Directory-only subagent discovery
+// ---------------------------------------------------------------------------
+
+describe("loadSubagents directory-only discovery", () => {
+  it("discovers threat-model agents from messages.json directories", () => {
+    const subagentsDir = join(tmpDir, "subagents");
+    const tmDir = join(subagentsDir, "threat-model-myapp-_api_users");
+    mkdirSync(tmDir, { recursive: true });
+    writeFileSync(
+      join(tmDir, "messages.json"),
+      JSON.stringify([
+        { role: "user", content: "Analyze endpoint /api/users" },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Analyzing..." }],
+        },
+      ]),
+    );
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].id).toBe("threat-model-myapp-_api_users");
+    expect(loaded[0].type).toBe("pentest");
+    expect(loaded[0].name).toContain("Threat Model");
+    expect(loaded[0].status).toBe("completed");
+    expect(loaded[0].messages.length).toBeGreaterThan(0);
+  });
+
+  it("discovers whitebox discovery agents from messages.json directories", () => {
+    const subagentsDir = join(tmpDir, "subagents");
+    for (const dirName of [
+      "whitebox-apps-discovery",
+      "pages-myapp",
+      "apiEndpoints-myapp",
+    ]) {
+      const dir = join(subagentsDir, dirName);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, "messages.json"),
+        JSON.stringify([
+          { role: "user", content: `Discover ${dirName}` },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "Found endpoints" }],
+          },
+        ]),
+      );
+    }
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(3);
+    const ids = loaded.map((s) => s.id);
+    expect(ids).toContain("whitebox-apps-discovery");
+    expect(ids).toContain("pages-myapp");
+    expect(ids).toContain("apiEndpoints-myapp");
+  });
+
+  it("does not duplicate agents that have both .json snapshot and directory", () => {
+    const session = makeSession();
+    saveSubagentData(session, {
+      agentName: "pentest-agent-1",
+      target: "http://localhost:8080",
+      status: "completed",
+      messages: [],
+    });
+
+    // Also create the messages.json directory (this happens at runtime)
+    const msgDir = join(tmpDir, "subagents", "pentest-agent-1");
+    mkdirSync(msgDir, { recursive: true });
+    writeFileSync(
+      join(msgDir, "messages.json"),
+      JSON.stringify([
+        { role: "user", content: "Test" },
+        { role: "assistant", content: [{ type: "text", text: "Testing" }] },
+      ]),
+    );
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(1);
+  });
+
+  it("skips -tasks and -plan directories", () => {
+    const subagentsDir = join(tmpDir, "subagents");
+    for (const dirName of ["pentest-agent-1-tasks", "pentest-agent-1-plan"]) {
+      const dir = join(subagentsDir, dirName);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, "messages.json"),
+        JSON.stringify([{ role: "user", content: "test" }]),
+      );
+    }
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(0);
+  });
+
+  it("skips directories without messages.json", () => {
+    const subagentsDir = join(tmpDir, "subagents");
+    const dir = join(subagentsDir, "threat-model-empty");
+    mkdirSync(dir, { recursive: true });
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(0);
+  });
+
+  it("skips directories with empty messages array", () => {
+    const subagentsDir = join(tmpDir, "subagents");
+    const dir = join(subagentsDir, "threat-model-empty");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "messages.json"), JSON.stringify([]));
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Operator state persistence (single messages field)
 // ---------------------------------------------------------------------------
 
