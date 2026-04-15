@@ -178,6 +178,7 @@ export function saveSubagentData(
     findingsCount: data.findingsCount ?? 0,
     status: data.status,
     error: data.error,
+    messages: data.messages,
     systemPrompt: data.systemPrompt,
     userPrompt: data.userPrompt,
   };

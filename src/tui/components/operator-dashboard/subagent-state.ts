@@ -300,15 +300,17 @@ export function createSubagentSessionHelpers(setState: SetState) {
       const session = prev.get(id);
       if (!session) return prev;
 
-      // Mark any in-flight tool messages as completed/error so spinners stop
+      // Tools still in-flight when the session ends never received a
+      // tool-result event, so we can't assert they succeeded. Mark as
+      // error (with a clear label) so spinners stop and the UI doesn't
+      // falsely claim success.
       const messages = session.messages.map((m) =>
         m.role === "tool" &&
         (m.status === "pending" || m.status === "streaming")
           ? {
               ...m,
-              status: (status === "failed" ? "error" : "completed") as
-                | "error"
-                | "completed",
+              status: "error" as const,
+              result: m.result ?? "No result recorded",
             }
           : m,
       );

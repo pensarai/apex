@@ -133,7 +133,7 @@ export default function SubagentDialog({ store }: SubagentDialogProps) {
       ]}
     >
       <SubagentHub
-        sessions={sessions}
+        sorted={sorted}
         onSelect={(id) => setView({ type: "detail", id })}
       />
     </DialogLayout>

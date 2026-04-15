@@ -5,7 +5,7 @@
  * keyboard-navigable list. Uses the standard Dialog + DialogLayout pattern.
  */
 
-import React, { useState, useEffect, useRef, memo, useMemo } from "react";
+import React, { useState, useEffect, useRef, memo } from "react";
 import { useKeyboard } from "@opentui/react";
 import { ScrollBoxRenderable } from "@opentui/core";
 
@@ -163,20 +163,15 @@ const SubagentHubCard = memo(function SubagentHubCard({
 // ---------------------------------------------------------------------------
 
 export interface SubagentHubProps {
-  sessions: Map<string, SubagentSession>;
+  sorted: SubagentSession[];
   onSelect: (id: string) => void;
 }
 
 export const SubagentHub = memo(function SubagentHub({
-  sessions,
+  sorted,
   onSelect,
 }: SubagentHubProps) {
   const { colors } = useTheme();
-
-  const sorted = useMemo(
-    () => sortSessions(Array.from(sessions.values())),
-    [sessions],
-  );
 
   const [focusedIndex, setFocusedIndex] = useState(0);
   const scrollboxRef = useRef<ScrollBoxRenderable | null>(null);

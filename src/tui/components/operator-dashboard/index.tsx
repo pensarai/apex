@@ -84,7 +84,6 @@ import {
   createSubagentSessionHelpers,
   createSubagentStore,
   loadSubagentSessionsFromDisk,
-  type SubagentSession,
 } from "./subagent-state";
 import { QueuedMessages } from "./queued-messages";
 import { SubagentStatusBar } from "./subagent-status-bar";
@@ -935,11 +934,13 @@ export default function OperatorDashboard({
       });
 
       eventBus.on("command-output", (d) => {
+        if (gen !== generationRef.current) return;
         if (d.subagentId) return;
         onCommandOutput(d.data);
       });
 
       eventBus.on("error", (d) => {
+        if (gen !== generationRef.current) return;
         if (d.subagentId) {
           const errMsg =
             d.error instanceof Error ? d.error.message : "Unknown error";
@@ -951,6 +952,7 @@ export default function OperatorDashboard({
       });
 
       eventBus.on("subagent-spawn", ({ subagentId, name }) => {
+        if (gen !== generationRef.current) return;
         subagentHelpers.spawnSession(subagentId, name);
         if (!isPentestAgent(subagentId)) return;
         // Pentest swarm agents → workflowData.pentesting.subagents
@@ -971,6 +973,7 @@ export default function OperatorDashboard({
       });
 
       eventBus.on("subagent-complete", ({ subagentId, status }) => {
+        if (gen !== generationRef.current) return;
         subagentHelpers.completeSession(subagentId, status);
         if (!isPentestAgent(subagentId)) return;
         // Update workflowData swarm status
