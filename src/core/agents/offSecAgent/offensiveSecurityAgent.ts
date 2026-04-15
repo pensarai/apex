@@ -205,7 +205,11 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     // -- Approval gate wrapping -----------------------------------------------
     if (input.approvalGate) {
-      tools = wrapToolsWithApprovalGate(tools, input.approvalGate);
+      tools = wrapToolsWithApprovalGate(
+        tools,
+        input.approvalGate,
+        SENTINEL_TOOL_NAMES,
+      );
     }
 
     // -- Response schema → auto capture / stop / resolve ----------------------
@@ -457,16 +461,40 @@ export class OffensiveSecurityAgent<TResult = void> {
 }
 
 /**
+ * Sentinel tools that bypass the approval gate.
+ *
+ * These tools are stop conditions for the agent loop (via
+ * `hasToolCall(...)`) and surface a UI to the consumer (operator
+ * dashboard, etc.) which then resumes the agent. Routing them through
+ * the approval gate would double-gate the interaction: the operator
+ * would have to approve the tool call before ever seeing the form it
+ * exists to render.
+ *
+ * Keep this set minimal — only add tools whose entire purpose is to
+ * pause the agent and yield control to the consumer.
+ */
+const SENTINEL_TOOL_NAMES = new Set<string>(["ask_user_questions"]);
+
+/**
  * Wrap every tool's execute function with the approval gate so that
  * tool calls are held until the operator approves them.
+ *
+ * Tools listed in `exemptToolNames` skip the wrapper entirely — useful
+ * for sentinel tools that surface their own UI to the consumer.
  */
 function wrapToolsWithApprovalGate(
   tools: ToolSet,
   gate: ApprovalGate,
+  exemptToolNames?: Set<string>,
 ): ToolSet {
   const wrapped: ToolSet = {};
 
   for (const [name, coreTool] of Object.entries(tools)) {
+    if (exemptToolNames?.has(name)) {
+      wrapped[name] = coreTool;
+      continue;
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const t = coreTool as any;
 

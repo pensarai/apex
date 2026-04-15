@@ -68,7 +68,13 @@ import {
   readExecutionMetrics,
   writeExecutionMetrics,
 } from "../../../core/session/execution-metrics";
-import { stepCountIs, type ModelMessage } from "ai";
+import { hasToolCall, stepCountIs, type ModelMessage } from "ai";
+import type {
+  AskUserQuestion,
+  AskUserQuestionAnswer,
+  AskUserQuestionsResult,
+} from "../../../core/agents/offSecAgent/tools/askUserQuestions";
+import { QuestionsForm } from "../chat/questions-form";
 import {
   type DashboardStatus,
   filterOperatorAutocomplete,
@@ -277,6 +283,14 @@ export default function OperatorDashboard({
   const planSubmittedRef = useRef(false);
   const planRejectedRef = useRef(false);
   const planApprovedPendingRunRef = useRef(false);
+
+  // ask_user_questions sentinel-tool review state — mirrors the plan-review
+  // pattern. Populated when the agent calls the tool; cleared when the user
+  // submits answers or skips.
+  const [pendingQuestions, setPendingQuestions] = useState<
+    AskUserQuestion[] | null
+  >(null);
+  const pendingToolCallIdRef = useRef<string | null>(null);
   const operatorModeRef = useRef(operatorMode);
   useEffect(() => {
     operatorModeRef.current = operatorMode;
@@ -904,6 +918,17 @@ export default function OperatorDashboard({
             ? (d.args as Record<string, unknown>)
             : undefined;
         addToolCall(d.toolCallId, d.toolName, args);
+
+        // ask_user_questions sentinel-tool detection. The agent stops on
+        // hasToolCall("ask_user_questions"); we capture the toolCallId and
+        // questions here so the form can render after the run finishes.
+        if (d.toolName === "ask_user_questions" && args) {
+          const rawQuestions = args.questions;
+          if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
+            pendingToolCallIdRef.current = d.toolCallId;
+            setPendingQuestions(rawQuestions as AskUserQuestion[]);
+          }
+        }
       });
 
       eventBus.on("tool-result", (d) => {
@@ -1071,7 +1096,7 @@ export default function OperatorDashboard({
         prompt,
         model: model.id,
         messages: nextMessages,
-        stopWhen: [stepCountIs(10000)],
+        stopWhen: [stepCountIs(10000), hasToolCall("ask_user_questions")],
         target: initialConfig?.target,
         activeTools: [
           ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
@@ -1283,7 +1308,10 @@ export default function OperatorDashboard({
           );
         }
         if (gen === generationRef.current) {
-          setStatus("idle");
+          // When ask_user_questions is pending we stay in "waiting" so the
+          // input area mirrors the pending-approval UX (input focused for
+          // optional redirect, etc.) until the user submits or skips.
+          setStatus(pendingToolCallIdRef.current ? "waiting" : "idle");
           setThinking(false);
           setIsExecuting(false);
           abortControllerRef.current = null;
@@ -1709,6 +1737,88 @@ export default function OperatorDashboard({
     });
   }, [setThinking, setIsExecuting]);
 
+  // -------------------------------------------------------------------------
+  // ask_user_questions resume — overwrite the sentinel tool-result with the
+  // real answers, persist, then re-run the agent with a brief continuation
+  // prompt (mirrors the plan-approved "Proceed with the approved plan."
+  // pattern).
+  // -------------------------------------------------------------------------
+  const resumeWithQuestionResult = useCallback(
+    (result: AskUserQuestionsResult) => {
+      const toolCallId = pendingToolCallIdRef.current;
+      if (!toolCallId) return;
+
+      // Walk the conversation in reverse to find the most recent tool message
+      // whose content includes a tool-result for our toolCallId, and replace
+      // its `output` with the real result. The sentinel value emitted by the
+      // tool's execute body is overwritten in place.
+      const updated: ModelMessage[] = conversationRef.current.map((msg) => {
+        if (msg.role !== "tool") return msg;
+        if (!Array.isArray(msg.content)) return msg;
+        let mutated = false;
+        const nextContent = msg.content.map((part) => {
+          if (
+            part &&
+            typeof part === "object" &&
+            "type" in part &&
+            (part as { type?: unknown }).type === "tool-result" &&
+            (part as { toolCallId?: unknown }).toolCallId === toolCallId
+          ) {
+            mutated = true;
+            return {
+              ...(part as Record<string, unknown>),
+              output: result,
+            };
+          }
+          return part;
+        });
+        return mutated
+          ? ({ ...msg, content: nextContent } as ModelMessage)
+          : msg;
+      });
+
+      conversationRef.current = updated;
+
+      // Persist eagerly so a session resume sees the real answers — same
+      // pattern as runAgent's eager user-message persistence.
+      const activeSession = sessionRef.current;
+      if (activeSession) {
+        try {
+          writeFileSync(
+            join(activeSession.rootPath, "messages.json"),
+            JSON.stringify(updated, null, 2),
+          );
+        } catch {
+          // Best-effort — onStepFinish will overwrite shortly.
+        }
+      }
+
+      // Reset state BEFORE resuming so the next run doesn't re-trigger
+      // the form on its own initial finally-block status flip.
+      pendingToolCallIdRef.current = null;
+      setPendingQuestions(null);
+
+      // Resume the agent. The synthetic user message gives the model a
+      // clear cue to consult the just-updated tool-result and continue.
+      const prompt = result.skipped
+        ? "I skipped the questions. Continue based on what you already know."
+        : "I answered the questions above. Continue based on my answers.";
+      runAgentRef.current(prompt);
+    },
+    [],
+  );
+
+  const handleQuestionsSubmit = useCallback(
+    (answers: AskUserQuestionAnswer[]) => {
+      resumeWithQuestionResult({ answers, skipped: false });
+    },
+    [resumeWithQuestionResult],
+  );
+
+  const handleQuestionsSkip = useCallback(() => {
+    resumeWithQuestionResult({ answers: [], skipped: true });
+  }, [resumeWithQuestionResult]);
+
   // Complete a mode transition (shared by cycleMode and plan approval)
   const transitionToMode = useCallback((next: OperatorMode) => {
     approvalGateRef.current.updateConfig({
@@ -2014,7 +2124,9 @@ export default function OperatorDashboard({
       {/* Message display */}
       <MessageList
         messages={messages}
-        isRunning={status === "running" || status === "waiting"}
+        isRunning={
+          (status === "running" || status === "waiting") && !pendingQuestions
+        }
         variant="operator"
         focused={true}
         verbose={verboseMode}
@@ -2032,6 +2144,16 @@ export default function OperatorDashboard({
         }
         onOpen={openSubagentDialog}
       />
+
+      {/* ask_user_questions form — rendered next to plan-review/approval
+          overlays. Owns its own keyboard handling while mounted. */}
+      {pendingQuestions && (
+        <QuestionsForm
+          questions={pendingQuestions}
+          onSubmit={handleQuestionsSubmit}
+          onSkip={handleQuestionsSkip}
+        />
+      )}
 
       {/* Queued follow-up messages */}
       <QueuedMessages
@@ -2064,9 +2186,11 @@ export default function OperatorDashboard({
                 : "Enter directive or / for commands & skills..."
         }
         focused={
-          status === "running"
-            ? selectedQueueIndex < 0
-            : resolveInputFocused(status, stack.length, externalDialogOpen)
+          pendingQuestions
+            ? false
+            : status === "running"
+              ? selectedQueueIndex < 0
+              : resolveInputFocused(status, stack.length, externalDialogOpen)
         }
         status={status === "waiting" ? "running" : status}
         mode="operator"
