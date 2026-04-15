@@ -60,6 +60,14 @@ const ThreatModelResultSchema = z.object({
     .describe(
       "Overall justification summarizing why this endpoint received this risk score",
     ),
+  pentestObjectives: z
+    .array(z.string())
+    .describe(
+      "Specific, actionable pentest objectives derived from the threat model. " +
+        "Each objective should describe exactly what to test and how, grounded in the " +
+        "attack vectors and attacker profiles identified above. " +
+        "Example: 'Test for IDOR in /api/orders/{id} by accessing other users\\' order IDs as an authenticated regular user'",
+    ),
 });
 
 type ThreatModelResult = z.infer<typeof ThreatModelResultSchema>;
@@ -88,12 +96,12 @@ export interface GenerateThreatModelInput {
   handler?: string;
   authRequired?: boolean;
   description: string;
-  pentestObjectives: string[];
 }
 
 export interface ThreatModelOutput {
   threatModel: string;
   riskScore: RiskScore;
+  pentestObjectives: string[];
 }
 
 /**
@@ -164,6 +172,7 @@ export async function generateThreatModelForEndpoint(
           securityIndicators: result.securityIndicators,
         },
       },
+      pentestObjectives: result.pentestObjectives ?? [],
     };
   } catch (error) {
     ctx.eventBus?.emit("subagent-complete", {
@@ -199,7 +208,6 @@ function buildThreatModelPrompt(
 - **Handler**: ${input.handler ?? "unknown"}
 - **Auth**: ${authInfo}
 - **Description**: ${input.description}
-- **Existing Objectives**: ${input.pentestObjectives.join(", ") || "none"}
 
 ## Instructions
 1. Read the source file at \`${input.file ?? "(unknown)"}\` ${lineRange ? `(${lineRange})` : ""} to understand the implementation.
@@ -257,7 +265,15 @@ Score each dimension based on what you observed in the code:
 | 1 | Moderate concerns: missing input validation, weak error handling, missing output encoding, overly permissive CORS |
 | 0 | No obvious security issues — code follows best practices |
 
-**Final Score = Exposure + DataSensitivity + FunctionCriticality + SecurityIndicators (0-10)**`;
+**Final Score = Exposure + DataSensitivity + FunctionCriticality + SecurityIndicators (0-10)**
+
+## Part 3: Pentest Objectives
+
+Produce **pentest objectives** — specific, actionable test cases derived directly from the threat model above. Each objective should:
+   - Reference a concrete attack vector or attacker profile from the threat model
+   - Describe exactly what to test and how (e.g., "Test for IDOR in /api/orders/{id} by accessing other users' order IDs as an authenticated regular user")
+   - Be specific enough that a pentest agent can execute the test without additional context
+   - Cover the highest-priority attack vectors identified in the threat model`;
 
   if (projectThreatModel) {
     prompt += `
@@ -272,7 +288,7 @@ ${projectThreatModel}
 
   prompt += `
 
-Call the \`response\` tool with your threat model and risk score assessment.`;
+Call the \`response\` tool with your threat model, risk score assessment, and pentest objectives.`;
 
   return prompt;
 }
