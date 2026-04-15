@@ -83,13 +83,24 @@ export async function runThreatModelWorkflow(
 You are generating an application-centric threat model from source code analysis.
 Working directory: ${input.codebasePath}`;
 
-  // Run the agent
+  // Run the agent.
+  //
+  // This workflow is HEADLESS — used by the CLI (`apex threat-model ...`)
+  // and by autonomous orchestrations that spawn threat-model generation
+  // programmatically. There is no human at a TTY to answer questions, so
+  // strip `ask_user_questions` from the active set. (The TUI
+  // `/threat-model` slash command does NOT route through this workflow;
+  // it runs the operator agent directly with a TUI-specific overlay
+  // prompt that uses the tool intentionally.)
+  const headlessTools = ALL_TOOL_NAMES.filter(
+    (name) => name !== "ask_user_questions",
+  );
   await runOffensiveSecurityAgent({
     system,
     prompt,
     model,
     session,
-    activeTools: [...ALL_TOOL_NAMES, ...SKILL_TOOL_NAMES] as string[],
+    activeTools: [...headlessTools, ...SKILL_TOOL_NAMES] as string[],
     authConfig: input.authConfig,
     abortSignal: input.abortSignal,
     skillsRegistry: registry,
