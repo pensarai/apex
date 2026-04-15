@@ -12,6 +12,7 @@ import {
   writeFileSync,
   readFileSync,
   readdirSync,
+  statSync,
 } from "fs";
 import { join } from "path";
 import type { SessionInfo } from "./index";
@@ -316,21 +317,54 @@ export function getCompletedAgentIds(session: SessionInfo): Set<string> {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse a subagent filename to extract agent type and display name.
+ * Parse a subagent filename (or directory name) to extract agent type and display name.
  *
  * Handles every naming convention the writer has ever used:
- *  - "attack-surface-agent-..."  → attack-surface
- *  - "pentest-agent-3-..."       → pentest, "Pentest Agent 3"
- *  - "vuln-test-sqli-..."        → pentest (back-compat)
- *  - "orchestrator-..."          → skipped upstream
- *  - fallback                    → pentest
+ *  - "attack-surface-agent-..."      → attack-surface
+ *  - "whitebox-apps-discovery"       → attack-surface
+ *  - "pages-<app>" / "apiEndpoints-<app>" / "cloudResourceEndpoints-<app>" → attack-surface (whitebox discovery)
+ *  - "threat-model-<app>-<endpoint>" → attack-surface (threat model)
+ *  - "pentest-agent-3-..."           → pentest, "Pentest Agent 3"
+ *  - "vuln-test-sqli-..."            → pentest (back-compat)
+ *  - "orchestrator-..."              → skipped upstream
+ *  - fallback                        → pentest
  */
 function parseSubagentFilename(filename: string): {
-  agentType: "attack-surface" | "pentest";
+  agentType: UISubagent["type"];
   name: string;
 } {
   if (filename.startsWith("attack-surface-agent")) {
     return { agentType: "attack-surface", name: "Attack Surface Discovery" };
+  }
+
+  if (filename === "whitebox-apps-discovery") {
+    return { agentType: "pentest", name: "Whitebox Apps Discovery" };
+  }
+
+  if (filename === "whitebox-incremental") {
+    return { agentType: "pentest", name: "Incremental Recon" };
+  }
+
+  if (filename.startsWith("pages-")) {
+    const appName = filename.replace("pages-", "");
+    return { agentType: "pentest", name: `Pages: ${appName}` };
+  }
+
+  if (filename.startsWith("apiEndpoints-")) {
+    const appName = filename.replace("apiEndpoints-", "");
+    return { agentType: "pentest", name: `API Endpoints: ${appName}` };
+  }
+
+  if (filename.startsWith("cloudResourceEndpoints-")) {
+    const appName = filename.replace("cloudResourceEndpoints-", "");
+    return { agentType: "pentest", name: `Cloud Resources: ${appName}` };
+  }
+
+  if (filename.startsWith("threat-model-")) {
+    const rest = filename.replace("threat-model-", "");
+    const parts = rest.split("-");
+    const label = parts.length > 1 ? parts.slice(1).join("-") : rest;
+    return { agentType: "pentest", name: `Threat Model: ${label}` };
   }
 
   const pentestMatch = filename.match(/^pentest-agent-(\d+)/);
@@ -475,10 +509,11 @@ export function convertModelMessagesToUI(
  *
  * This is the single reader for subagent state. It:
  *  1. Reads all .json files from {rootPath}/{SUBAGENTS_DIR}/
- *  2. Reads the agent manifest from {rootPath}/{MANIFEST_FILE}
- *  3. Matches manifest entries to loaded files by agentName === entry.id
- *  4. Marks matched "running" manifest entries as "paused"
- *  5. Creates paused stubs for unmatched "running" manifest entries
+ *  2. Discovers subdirectories with messages.json (no snapshot .json)
+ *  3. Reads the agent manifest from {rootPath}/{MANIFEST_FILE}
+ *  4. Matches manifest entries to loaded files by agentName === entry.id
+ *  5. Marks matched "running" manifest entries as "paused"
+ *  6. Creates paused stubs for unmatched "running" manifest entries
  */
 export function loadSubagents(rootPath: string): UISubagent[] {
   const subagentsPath = join(rootPath, SUBAGENTS_DIR);
@@ -558,6 +593,57 @@ export function loadSubagents(rootPath: string): UISubagent[] {
         });
       } catch (e) {
         console.error(`Failed to load subagent file ${file}:`, e);
+      }
+    }
+
+    // --- Discover directory-only subagents ---
+    // Some agents (threat model, whitebox discovery, coding agents) only
+    // persist messages.json via the base class but never call
+    // saveSubagentData(). Scan for subdirectories with messages.json
+    // that have no matching top-level snapshot .json file.
+    const entries = readdirSync(subagentsPath);
+    for (const entry of entries) {
+      if (agentNameIndex.has(entry)) continue;
+
+      const entryPath = join(subagentsPath, entry);
+      try {
+        if (!statSync(entryPath).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+
+      // Skip task directories (pentest plan phase output) and
+      // plan agent directories (plan agent messages are not standalone)
+      if (entry.endsWith("-tasks") || entry.endsWith("-plan")) continue;
+
+      const messagesPath = join(entryPath, "messages.json");
+      if (!existsSync(messagesPath)) continue;
+
+      try {
+        const raw = JSON.parse(
+          readFileSync(messagesPath, "utf-8"),
+        ) as ModelMessage[];
+        if (!Array.isArray(raw) || raw.length === 0) continue;
+
+        const { agentType, name } = parseSubagentFilename(entry);
+
+        const dirStat = statSync(messagesPath);
+        const timestamp = dirStat.mtime;
+
+        const messages = convertMessagesToUI(raw, timestamp);
+
+        agentNameIndex.set(entry, subagents.length);
+        subagents.push({
+          id: entry,
+          name,
+          type: agentType,
+          target: "Unknown",
+          messages,
+          createdAt: timestamp,
+          status: "completed",
+        });
+      } catch {
+        // Skip directories with unreadable messages.json
       }
     }
   }
