@@ -14,13 +14,16 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
+import type { ReactNode } from "react";
 import { useKeyboard } from "@opentui/react";
 
+import { useTheme } from "../../theme";
 import { useDialog } from "../../context/dialog";
 import DialogLayout from "../dialog-layout";
+import { AsciiSpinner } from "../shared/ascii-spinner";
 import { SubagentHub, sortSessions } from "./subagent-hub";
 import { SubagentDetailView } from "./subagent-detail-view";
-import type { SubagentStore } from "./subagent-state";
+import type { SubagentSession, SubagentStore } from "./subagent-state";
 
 type View = { type: "hub" } | { type: "detail"; id: string };
 
@@ -28,7 +31,24 @@ interface SubagentDialogProps {
   store: SubagentStore;
 }
 
+function renderStatusNode(
+  status: SubagentSession["status"],
+  colors: ReturnType<typeof useTheme>["colors"],
+): ReactNode {
+  switch (status) {
+    case "running":
+      return <AsciiSpinner label="running" fg={colors.warning} />;
+    case "completed":
+      return <text fg={colors.success} content={"\u2713 completed"} />;
+    case "failed":
+      return <text fg={colors.error} content={"\u2717 failed"} />;
+    case "cancelled":
+      return <text fg={colors.textMuted} content={"\u25cb cancelled"} />;
+  }
+}
+
 export default function SubagentDialog({ store }: SubagentDialogProps) {
+  const { colors } = useTheme();
   const { setSize, clear } = useDialog();
   const [view, setView] = useState<View>({ type: "hub" });
   const viewRef = useRef(view);
@@ -69,9 +89,20 @@ export default function SubagentDialog({ store }: SubagentDialogProps) {
     const currentIdx = sorted.findIndex((s) => s.id === view.id);
     const safeIdx = currentIdx === -1 ? 0 : currentIdx;
 
+    const title = (
+      <box flexDirection="row" gap={1}>
+        <text fg={colors.primary} content={session.name} />
+        <text
+          fg={colors.textMuted}
+          content={`[${safeIdx + 1}/${sorted.length}]`}
+        />
+        {renderStatusNode(session.status, colors)}
+      </box>
+    );
+
     return (
       <DialogLayout
-        title={`Agent ${safeIdx + 1} of ${sorted.length}`}
+        title={title}
         escLabel="back"
         footerActions={[
           { key: "\u2190\u2192", label: "prev/next" },
@@ -80,8 +111,6 @@ export default function SubagentDialog({ store }: SubagentDialogProps) {
       >
         <SubagentDetailView
           session={session}
-          index={safeIdx + 1}
-          total={sorted.length}
           onPrev={() => {
             const prevIdx = safeIdx === 0 ? sorted.length - 1 : safeIdx - 1;
             setView({ type: "detail", id: sorted[prevIdx].id });

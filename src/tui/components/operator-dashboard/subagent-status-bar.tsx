@@ -80,7 +80,7 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
         {parts.length > 0 && <text fg={colors.textMuted} content="  " />}
         {parts.map((part, i) => (
           <box key={part.label} flexDirection="row">
-            {i > 0 && <text fg={colors.textMuted} content=" \u00b7 " />}
+            {i > 0 && <text fg={colors.textMuted} content={" \u00b7 "} />}
             <text fg={part.color} content={part.label} />
           </box>
         ))}
