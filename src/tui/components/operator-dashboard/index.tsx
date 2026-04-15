@@ -741,7 +741,7 @@ export default function OperatorDashboard({
   // ---------------------------------------------------------------------------
 
   const runAgent = useCallback(
-    async (prompt: string) => {
+    async (prompt: string | null) => {
       // Abort any previous run before starting a new one
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -759,34 +759,49 @@ export default function OperatorDashboard({
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      // Add user message
-      setMessages((prev) => [
-        ...prev,
-        { role: "user", content: prompt, createdAt: new Date() },
-      ]);
-
-      // Build messages array — append user turn to conversation history.
-      // Update conversationRef eagerly so the user turn survives an abort.
       // Snapshot the previous state so we can roll back on API failure.
       const prevMessages = conversationRef.current;
-      const nextMessages: ModelMessage[] = normalizeMessages([
-        ...conversationRef.current,
-        { role: "user", content: prompt },
-      ]);
-      conversationRef.current = nextMessages;
 
-      // Persist the user message to disk immediately so that it is present in
-      // messages.json even if the agent is aborted before its first
-      // onStepFinish (which is the normal persistence path).  Without this,
-      // handleAbort reads back the stale file and overwrites conversationRef,
-      // losing the latest user turn.
-      if (sessionRef.current) {
-        try {
-          const mp = join(sessionRef.current.rootPath, "messages.json");
-          writeFileSync(mp, JSON.stringify(nextMessages, null, 2));
-        } catch {
-          // Best-effort — the agent's onStepFinish will persist later.
+      // When `prompt` is a string, this is a normal user-turn invocation:
+      // append the user message to the rendered list + conversationRef +
+      // disk. When `prompt` is null, this is a RESUME — e.g. after the user
+      // answers an ask_user_questions batch, the tool-result has already
+      // been patched into conversationRef and we just need streamText to
+      // pick up where it stopped. In that case, skip all user-message
+      // plumbing and go straight to streaming against the existing history.
+      let nextMessages: ModelMessage[];
+      if (prompt !== null) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "user", content: prompt, createdAt: new Date() },
+        ]);
+
+        // Build messages array — append user turn to conversation history.
+        // Update conversationRef eagerly so the user turn survives an abort.
+        nextMessages = normalizeMessages([
+          ...conversationRef.current,
+          { role: "user", content: prompt },
+        ]);
+        conversationRef.current = nextMessages;
+
+        // Persist the user message to disk immediately so that it is
+        // present in messages.json even if the agent is aborted before its
+        // first onStepFinish (which is the normal persistence path).
+        // Without this, handleAbort reads back the stale file and
+        // overwrites conversationRef, losing the latest user turn.
+        if (sessionRef.current) {
+          try {
+            const mp = join(sessionRef.current.rootPath, "messages.json");
+            writeFileSync(mp, JSON.stringify(nextMessages, null, 2));
+          } catch {
+            // Best-effort — the agent's onStepFinish will persist later.
+          }
         }
+      } else {
+        // Resume path — conversationRef was updated externally (e.g. by
+        // resumeWithQuestionResult) and persisted there. Nothing extra to
+        // do here; the existing history is what we stream against.
+        nextMessages = conversationRef.current;
       }
 
       const onStepFinish = (event: {
@@ -1093,7 +1108,11 @@ export default function OperatorDashboard({
       const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
 
       const commonInput = {
-        prompt,
+        // On resume (prompt === null), there's nothing to prepend — the
+        // user-message append above was skipped and `nextMessages`
+        // already contains the patched conversation. Use empty-string as
+        // a no-op prompt; the agent reads from `messages` first.
+        prompt: prompt ?? "",
         model: model.id,
         messages: nextMessages,
         stopWhen: [stepCountIs(10000), hasToolCall("ask_user_questions")],
@@ -1739,19 +1758,30 @@ export default function OperatorDashboard({
 
   // -------------------------------------------------------------------------
   // ask_user_questions resume — overwrite the sentinel tool-result with the
-  // real answers, persist, then re-run the agent with a brief continuation
-  // prompt (mirrors the plan-approved "Proceed with the approved plan."
-  // pattern).
+  // real answers, persist, then resume the agent WITHOUT injecting a new
+  // user message. The tool-result (real answers or skipped=true payload)
+  // is what the next streamText invocation sees; the model reads it
+  // directly and continues reasoning.
   // -------------------------------------------------------------------------
   const resumeWithQuestionResult = useCallback(
     (result: AskUserQuestionsResult) => {
       const toolCallId = pendingToolCallIdRef.current;
       if (!toolCallId) return;
 
-      // Walk the conversation in reverse to find the most recent tool message
-      // whose content includes a tool-result for our toolCallId, and replace
-      // its `output` with the real result. The sentinel value emitted by the
-      // tool's execute body is overwritten in place.
+      // Walk the conversation to find the tool message whose content
+      // includes a tool-result for our toolCallId, and replace its
+      // `output` with the real result.
+      //
+      // AI SDK's ToolResultPart.output is a tagged union — we must wrap
+      // the payload as { type: 'json', value: ... } (NOT a raw object),
+      // otherwise Bedrock Converse / Anthropic validation rejects the
+      // message array with "The messages do not match the ModelMessage[]
+      // schema."
+      const wrappedOutput = {
+        type: "json" as const,
+        value: result as unknown as Record<string, unknown>,
+      };
+
       const updated: ModelMessage[] = conversationRef.current.map((msg) => {
         if (msg.role !== "tool") return msg;
         if (!Array.isArray(msg.content)) return msg;
@@ -1767,7 +1797,7 @@ export default function OperatorDashboard({
             mutated = true;
             return {
               ...(part as Record<string, unknown>),
-              output: result,
+              output: wrappedOutput,
             };
           }
           return part;
@@ -1798,12 +1828,10 @@ export default function OperatorDashboard({
       pendingToolCallIdRef.current = null;
       setPendingQuestions(null);
 
-      // Resume the agent. The synthetic user message gives the model a
-      // clear cue to consult the just-updated tool-result and continue.
-      const prompt = result.skipped
-        ? "I skipped the questions. Continue based on what you already know."
-        : "I answered the questions above. Continue based on my answers.";
-      runAgentRef.current(prompt);
+      // Resume without appending a user message. `runAgent(null)` skips
+      // the user-turn append and streams against the already-patched
+      // conversation history.
+      runAgentRef.current(null);
     },
     [],
   );

@@ -8,7 +8,7 @@
  *     plus a trailing "Submit" tab. Active tab is highlighted.
  *   - Single tab's content below: question text, numbered option rows,
  *     optional freeform row, optional "Next" row (multi-select), a
- *     separator, then a global "Chat about this" skip row.
+ *     and (multi-select only) a "Next" row to advance.
  *   - Footer key hint line.
  *
  * Status icons on tabs:
@@ -48,8 +48,10 @@ interface QuestionsFormProps {
  * - `focusedIndex`    — focused row within the tab content; indexing:
  *                         0..N-1          = option rows (N = options.length)
  *                         N               = freeform row (when allowFreeform)
- *                         N (or N+1)      = "Next" row (multi-select only)
- *                         last            = "Chat about this" row
+ *                         last            = "Next" row (multi-select only)
+ *
+ * To exit the form without submitting, press Esc — there is no in-form
+ * skip option. (Esc maps to onSkip globally; see useKeyboard handler.)
  */
 interface QuestionState {
   selected: Set<string>;
@@ -85,8 +87,7 @@ function tabIcon(question: AskUserQuestion, state: QuestionState): string {
 type RowKind =
   | { kind: "option"; optionIndex: number }
   | { kind: "freeform" }
-  | { kind: "next" }
-  | { kind: "skip" };
+  | { kind: "next" };
 
 function buildRows(question: AskUserQuestion): RowKind[] {
   const rows: RowKind[] = question.options.map((_, optionIndex) => ({
@@ -95,7 +96,6 @@ function buildRows(question: AskUserQuestion): RowKind[] {
   }));
   if (question.allowFreeform) rows.push({ kind: "freeform" });
   if (question.multiSelect) rows.push({ kind: "next" });
-  rows.push({ kind: "skip" });
   return rows;
 }
 
@@ -268,11 +268,6 @@ export function QuestionsForm({
       advanceTab();
       return;
     }
-
-    if (focusedRow.kind === "skip") {
-      onSkip();
-      return;
-    }
   };
 
   // ── Quick-pick 1..9 ────────────────────────────────────────────────
@@ -313,12 +308,6 @@ export function QuestionsForm({
         return next;
       });
       setEditingFreeform(true);
-      return;
-    }
-    // The final "Chat about this" row is always numbered. Map presses to it.
-    const skipDigit = rows.length; // 1-indexed position of the skip row
-    if (digit === skipDigit) {
-      onSkip();
       return;
     }
   };
@@ -712,29 +701,11 @@ function Row({
     );
   }
 
-  if (row.kind === "next") {
-    return (
-      <box flexDirection="row" marginTop={1}>
-        <text fg={markerColor}>{marker + " "}</text>
-        <text fg={focused ? colors.primary : colors.textMuted}>Next</text>
-      </box>
-    );
-  }
-
-  // Skip / "Chat about this" row — separator above.
-  const number = rowIndex + 1;
+  // row.kind === "next"
   return (
-    <box flexDirection="column" marginTop={1}>
-      <text fg={colors.borderSubtle}>{"─".repeat(40)}</text>
-      <box flexDirection="row">
-        <text fg={markerColor}>{marker + " "}</text>
-        <text>
-          <span fg={colors.textMuted}>{`${number}. `}</span>
-          <span fg={focused ? colors.text : colors.textMuted}>
-            Chat about this
-          </span>
-        </text>
-      </box>
+    <box flexDirection="row" marginTop={1}>
+      <text fg={markerColor}>{marker + " "}</text>
+      <text fg={focused ? colors.primary : colors.textMuted}>Next</text>
     </box>
   );
 }
