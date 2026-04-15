@@ -27,6 +27,7 @@
 import { useState, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
+import { useDialog } from "../../context/dialog";
 import { DialogControls } from "../shared/dialog-controls";
 import type {
   AskUserQuestion,
@@ -160,6 +161,15 @@ export function QuestionsForm({
   onSkip,
 }: QuestionsFormProps) {
   const { colors } = useTheme();
+  // Track whether ANY other dialog is on top of us. `@opentui/react`'s
+  // useKeyboard fires globally for every mounted component, so without
+  // this gate the form's Esc/arrow/enter handlers would steal keys that
+  // the topmost dialog (e.g. /theme picker, /model picker, plan review)
+  // is meant to consume. When `dialogOpen`, we early-return from the
+  // handler — the form stays mounted in the bottom slot but stops
+  // reacting to input until the top dialog closes.
+  const { stack, externalDialogOpen } = useDialog();
+  const dialogOpen = stack.length > 0 || externalDialogOpen;
 
   // Normalize once per `rawQuestions` reference. All downstream code
   // can rely on header, multiSelect, allowFreeform, and options being
@@ -357,6 +367,13 @@ export function QuestionsForm({
   // ── Keyboard handling ──────────────────────────────────────────────
 
   useKeyboard((key) => {
+    // If another dialog (theme picker, model picker, plan review, etc.)
+    // is open above us, do nothing — the topmost dialog owns input. This
+    // prevents the form's Esc handler from also firing and accidentally
+    // skipping the question batch when the operator just meant to dismiss
+    // the overlay.
+    if (dialogOpen) return;
+
     // Freeform-edit mode: arrows move the cursor inside the input,
     // printable chars + backspace are handled by <input>. We only intercept
     // mode-exit keys here.
@@ -478,7 +495,7 @@ export function QuestionsForm({
       paddingTop={1}
       paddingBottom={1}
       border={true}
-      borderColor={colors.warning}
+      borderColor={colors.primary}
       // Per AGENTS.md "Terminal size resilience": fixed-bottom dialogs
       // need flexShrink={0} so the parent flex layout doesn't squash
       // them, and overflow="hidden" so internal content can't bleed
