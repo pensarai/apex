@@ -6,7 +6,14 @@
  * Reuses MessageList and InputArea from the shared/chat components.
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 import { useKeyboard } from "@opentui/react";
 
 import {
@@ -47,10 +54,6 @@ import { useTheme } from "../../theme";
 import type { DisplayMessage, WorkflowData } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
 import {
-  getToolSummary,
-  formatSubagentToolResult,
-} from "../shared/tool-registry";
-import {
   tryParsePartialJson,
   extractStreamableContent,
 } from "../shared/message-utils";
@@ -77,7 +80,14 @@ import {
   resolveInputFocused,
   accumulateTokenUsage,
 } from "./logic";
+import {
+  createSubagentSessionHelpers,
+  createSubagentStore,
+  loadSubagentSessionsFromDisk,
+} from "./subagent-state";
 import { QueuedMessages } from "./queued-messages";
+import { SubagentStatusBar } from "./subagent-status-bar";
+import SubagentDialog from "./subagent-dialog";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
@@ -128,7 +138,7 @@ export default function OperatorDashboard({
     skillsRegistry,
     skillsVersion,
   } = useCommand();
-  const { stack, externalDialogOpen } = useDialog();
+  const { stack, externalDialogOpen, replace: replaceDialog } = useDialog();
   const { refocusPrompt } = useFocus();
 
   const autocompleteOptions = useMemo(() => {
@@ -167,6 +177,42 @@ export default function OperatorDashboard({
     cancel: () => false,
   });
   const commandCancelledRef = useRef(false);
+
+  const subagentStore = useMemo(() => createSubagentStore(), []);
+  const subagentSessions = useSyncExternalStore(
+    subagentStore.subscribe,
+    subagentStore.getSnapshot,
+  );
+  const subagentHelpers = useMemo(
+    () => createSubagentSessionHelpers(subagentStore.setState),
+    [subagentStore],
+  );
+
+  // Track the message count when subagents last finished so the status bar
+  // knows whether the main agent has produced new output since then.
+  const messageCountAtSubagentDoneRef = useRef<number | null>(null);
+  const hasRunningSubagent = useMemo(
+    () =>
+      Array.from(subagentSessions.values()).some((s) => s.status === "running"),
+    [subagentSessions],
+  );
+  useEffect(() => {
+    if (subagentSessions.size > 0 && !hasRunningSubagent) {
+      if (messageCountAtSubagentDoneRef.current === null) {
+        messageCountAtSubagentDoneRef.current =
+          displayMessagesRef.current.length;
+      }
+    } else if (hasRunningSubagent) {
+      messageCountAtSubagentDoneRef.current = null;
+    }
+  }, [subagentSessions, hasRunningSubagent]);
+
+  const openSubagentDialog = useCallback(() => {
+    replaceDialog(<SubagentDialog store={subagentStore} />, {
+      selfHandlesEscape: true,
+      size: "large",
+    });
+  }, [replaceDialog, subagentStore]);
 
   // Messages — same pattern as pentest component
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -327,6 +373,16 @@ export default function OperatorDashboard({
                     status: m.status,
                   })),
                 );
+              }
+
+              // Restore subagent sessions from disk so Ctrl+A shows history
+              try {
+                const restored = loadSubagentSessionsFromDisk(s.rootPath);
+                if (restored.size > 0) {
+                  subagentStore.setState(restored);
+                }
+              } catch {
+                // Best-effort — subagent files may not exist
               }
 
               // Restore plan content from a prior session so the cycleMode
@@ -639,81 +695,6 @@ export default function OperatorDashboard({
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Per-subagent log management
-  // ---------------------------------------------------------------------------
-
-  const initSubagent = useCallback((subagentId: string, name?: string) => {
-    setMessages((prev) => {
-      const idx = prev.findLastIndex(
-        (m) =>
-          isToolMessage(m) &&
-          (m.status === "pending" || m.status === "streaming"),
-      );
-      if (idx === -1) return prev;
-      const msg = prev[idx];
-      const subagentLogs = {
-        ...(msg.subagentLogs ?? {}),
-        [subagentId]: { name, status: "pending" as const, logs: [] },
-      };
-      const updated = [...prev];
-      updated[idx] = { ...msg, subagentLogs };
-      return updated;
-    });
-  }, []);
-
-  const completeSubagent = useCallback(
-    (subagentId: string, status: "completed" | "failed") => {
-      setMessages((prev) => {
-        const idx = prev.findLastIndex(
-          (m) =>
-            isToolMessage(m) &&
-            (m.status === "pending" || m.status === "streaming"),
-        );
-        if (idx === -1) return prev;
-        const msg = prev[idx];
-        const entry = msg.subagentLogs?.[subagentId];
-        if (!entry) return prev;
-        const subagentLogs = {
-          ...(msg.subagentLogs ?? {}),
-          [subagentId]: { ...entry, status },
-        };
-        const updated = [...prev];
-        updated[idx] = { ...msg, subagentLogs };
-        return updated;
-      });
-    },
-    [],
-  );
-
-  const appendLogToSubagent = useCallback(
-    (subagentId: string, line: string) => {
-      setMessages((prev) => {
-        const idx = prev.findLastIndex(
-          (m) =>
-            isToolMessage(m) &&
-            (m.status === "pending" || m.status === "streaming"),
-        );
-        if (idx === -1) return prev;
-        const msg = prev[idx];
-        const entry = msg.subagentLogs?.[subagentId];
-        if (!entry) return prev;
-        let logs = [...entry.logs, line];
-        if (logs.length > MAX_LOG_LINES) {
-          logs = logs.slice(-MAX_LOG_LINES);
-        }
-        const subagentLogs = {
-          ...(msg.subagentLogs ?? {}),
-          [subagentId]: { ...entry, logs },
-        };
-        const updated = [...prev];
-        updated[idx] = { ...msg, subagentLogs };
-        return updated;
-      });
-    },
-    [],
-  );
-
-  // ---------------------------------------------------------------------------
   // Approval handlers
   // ---------------------------------------------------------------------------
 
@@ -823,20 +804,11 @@ export default function OperatorDashboard({
 
       const eventBus = new AgentEventBus();
 
-      // Buffer pending tool-call-complete data for subagents so we can
-      // merge with tool-result into a single rich log line.
-      const pendingSubagentCalls = new Map<
-        string,
-        { toolName: string; args: Record<string, unknown> }
-      >();
-
-      // Only pentest swarm agents (pentest-agent-*) appear in the SwarmGrid.
-      // All other subagents (discovery agents, risk scorers, whitebox analyzers)
-      // route to the discovery log instead.
+      // Only pentest swarm agents (pentest-agent-*) get entries in
+      // WorkflowData.pentesting.subagents. All others (discovery, risk
+      // scorers, whitebox analyzers) are excluded.
       const isPentestAgent = (id?: string) =>
         id !== undefined && /^pentest-agent-\d+$/.test(id);
-      const isDiscoveryAgent = (id?: string) =>
-        id !== undefined && !isPentestAgent(id);
 
       // Patch the workflowData on the active run_pentest_workflow tool message.
       const updateWorkflowData = (
@@ -867,41 +839,10 @@ export default function OperatorDashboard({
         });
       };
 
-      const appendWorkflowDiscoveryLog = (line: string) => {
-        updateWorkflowData((wd) => ({
-          ...wd,
-          discovery: {
-            ...wd.discovery,
-            logs: [...wd.discovery.logs, line].slice(-MAX_LOG_LINES),
-          },
-        }));
-      };
-
-      // Buffer partial narration text from discovery agents so we can
-      // flush complete lines to the workflow display.
-      const discoveryTextBuf: Record<string, string> = {};
-
-      const flushDiscoveryNarration = (subagentId: string) => {
-        const buf = discoveryTextBuf[subagentId];
-        if (!buf) return;
-        const lines = buf.split("\n");
-        discoveryTextBuf[subagentId] = lines.pop() ?? "";
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed.length > 0) {
-            appendWorkflowDiscoveryLog(trimmed);
-          }
-        }
-      };
-
       eventBus.on("text-delta", (d) => {
         if (gen !== generationRef.current) return;
         if (d.subagentId) {
-          if (isDiscoveryAgent(d.subagentId)) {
-            discoveryTextBuf[d.subagentId] =
-              (discoveryTextBuf[d.subagentId] ?? "") + d.text;
-            flushDiscoveryNarration(d.subagentId);
-          }
+          subagentHelpers.appendText(d.subagentId, d.text);
           return;
         }
         setThinking(false);
@@ -910,14 +851,28 @@ export default function OperatorDashboard({
 
       eventBus.on("tool-call-start", (d) => {
         if (gen !== generationRef.current) return;
-        if (d.subagentId) return;
+        if (d.subagentId) {
+          subagentHelpers.addStreamingToolCall(
+            d.subagentId,
+            d.toolCallId,
+            d.toolName,
+          );
+          return;
+        }
         setThinking(false);
         addStreamingToolCall(d.toolCallId, d.toolName);
       });
 
       eventBus.on("tool-call-delta", (d) => {
         if (gen !== generationRef.current) return;
-        if (d.subagentId) return;
+        if (d.subagentId) {
+          subagentHelpers.appendToolCallDelta(
+            d.subagentId,
+            d.toolCallId,
+            d.argsTextDelta,
+          );
+          return;
+        }
         appendToolCallDelta(d.toolCallId, d.argsTextDelta);
       });
 
@@ -931,19 +886,12 @@ export default function OperatorDashboard({
             d.args !== null
               ? (d.args as Record<string, unknown>)
               : {};
-          // Buffer the call so we can merge with tool-result for a richer line
-          pendingSubagentCalls.set(d.toolCallId, {
-            toolName: d.toolName,
+          subagentHelpers.addToolCall(
+            d.subagentId,
+            d.toolCallId,
+            d.toolName,
             args,
-          });
-          if (
-            isDiscoveryAgent(d.subagentId) &&
-            d.toolName === "execute_command"
-          ) {
-            const cmd = String(args.command ?? "").split("\n")[0];
-            const short = cmd.length > 60 ? cmd.slice(0, 57) + "…" : cmd;
-            appendWorkflowDiscoveryLog(`$ ${short}`);
-          }
+          );
           return;
         }
         setThinking(false);
@@ -961,52 +909,11 @@ export default function OperatorDashboard({
       eventBus.on("tool-result", (d) => {
         if (gen !== generationRef.current) return;
         if (d.subagentId) {
-          const pending = pendingSubagentCalls.get(d.toolCallId);
-          pendingSubagentCalls.delete(d.toolCallId);
-          const resultObj =
-            d.result &&
-            typeof d.result === "object" &&
-            !Array.isArray(d.result) &&
-            d.result !== null
-              ? (d.result as Record<string, unknown>)
-              : { result: d.result };
-
-          // Build rich merged line when we have buffered args
-          let line: string;
-          if (pending) {
-            line = formatSubagentToolResult(
-              pending.toolName,
-              pending.args,
-              resultObj,
-            );
-          } else {
-            const summary = getToolSummary(d.toolName, resultObj);
-            line = `✓ ${summary}`;
-          }
-
-          if (isDiscoveryAgent(d.subagentId)) {
-            appendWorkflowDiscoveryLog(line);
-          } else {
-            // Mirror to workflowData swarm subagent logs
-            updateWorkflowData((wd) => {
-              const entry = wd.pentesting.subagents[d.subagentId!];
-              if (!entry) return wd;
-              let logs = [...entry.logs, line];
-              if (logs.length > MAX_LOG_LINES)
-                logs = logs.slice(-MAX_LOG_LINES);
-              return {
-                ...wd,
-                pentesting: {
-                  ...wd.pentesting,
-                  subagents: {
-                    ...wd.pentesting.subagents,
-                    [d.subagentId!]: { ...entry, logs },
-                  },
-                },
-              };
-            });
-            appendLogToSubagent(d.subagentId, line);
-          }
+          subagentHelpers.updateToolResult(
+            d.subagentId,
+            d.toolCallId,
+            d.result,
+          );
           return;
         }
         flushCommandOutput();
@@ -1027,19 +934,17 @@ export default function OperatorDashboard({
       });
 
       eventBus.on("command-output", (d) => {
+        if (gen !== generationRef.current) return;
         if (d.subagentId) return;
         onCommandOutput(d.data);
       });
 
       eventBus.on("error", (d) => {
+        if (gen !== generationRef.current) return;
         if (d.subagentId) {
-          const msg =
-            d.error instanceof Error ? d.error.message : "subagent error";
-          if (isDiscoveryAgent(d.subagentId)) {
-            appendWorkflowDiscoveryLog(`✗ ${msg}`);
-          } else {
-            appendLogToActiveTool(`✗ ${msg}`);
-          }
+          const errMsg =
+            d.error instanceof Error ? d.error.message : "Unknown error";
+          subagentHelpers.appendText(d.subagentId, `\nError: ${errMsg}\n`);
           return;
         }
         console.error("Agent error:", d.error);
@@ -1047,7 +952,9 @@ export default function OperatorDashboard({
       });
 
       eventBus.on("subagent-spawn", ({ subagentId, name }) => {
-        if (isDiscoveryAgent(subagentId)) return;
+        if (gen !== generationRef.current) return;
+        subagentHelpers.spawnSession(subagentId, name);
+        if (!isPentestAgent(subagentId)) return;
         // Pentest swarm agents → workflowData.pentesting.subagents
         updateWorkflowData((wd) => ({
           ...wd,
@@ -1063,20 +970,12 @@ export default function OperatorDashboard({
             },
           },
         }));
-        initSubagent(subagentId, name);
       });
 
       eventBus.on("subagent-complete", ({ subagentId, status }) => {
-        const remaining = discoveryTextBuf[subagentId]?.trim();
-        if (remaining) {
-          if (isDiscoveryAgent(subagentId)) {
-            appendWorkflowDiscoveryLog(remaining);
-          } else {
-            appendLogToSubagent(subagentId, remaining);
-          }
-        }
-        delete discoveryTextBuf[subagentId];
-        if (isDiscoveryAgent(subagentId)) return;
+        if (gen !== generationRef.current) return;
+        subagentHelpers.completeSession(subagentId, status);
+        if (!isPentestAgent(subagentId)) return;
         // Update workflowData swarm status
         updateWorkflowData((wd) => {
           const entry = wd.pentesting.subagents[subagentId];
@@ -1092,13 +991,17 @@ export default function OperatorDashboard({
             },
           };
         });
-        completeSubagent(subagentId, status);
       });
 
       // Workflow phase events → update workflowData on the tool message
       eventBus.on("workflow-phase-start", (d) => {
         if (gen !== generationRef.current) return;
         textRef.current = "";
+        // New workflow run — clear old subagent sessions so the hub
+        // shows only the current batch.
+        if (d.phase === "discovery") {
+          subagentStore.setState(new Map());
+        }
         updateWorkflowData((wd) => {
           const next = {
             ...wd,
@@ -1409,12 +1312,9 @@ export default function OperatorDashboard({
       flushCommandOutput,
       onCommandOutput,
       appendLogToActiveTool,
-      initSubagent,
-      completeSubagent,
-      appendLogToSubagent,
+      subagentHelpers,
       setThinking,
       setIsExecuting,
-      addTokenUsage,
       addCacheUsage,
     ],
   );
@@ -1665,6 +1565,42 @@ export default function OperatorDashboard({
     setStatus("idle");
     setThinking(false);
     setIsExecuting(false);
+
+    // Mark any in-flight tool messages as interrupted so spinners stop
+    setMessages((prev) =>
+      prev.map((m) =>
+        isToolMessage(m) && (m.status === "pending" || m.status === "streaming")
+          ? { ...m, status: "error" as const, result: "Interrupted" }
+          : m,
+      ),
+    );
+
+    // Mark any in-flight subagent tool messages as interrupted too
+    subagentStore.setState((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const [id, session] of next) {
+        const hasInFlight = session.messages.some(
+          (m) =>
+            m.role === "tool" &&
+            (m.status === "pending" || m.status === "streaming"),
+        );
+        if (hasInFlight || session.status === "running") {
+          changed = true;
+          next.set(id, {
+            ...session,
+            status: session.status === "running" ? "cancelled" : session.status,
+            messages: session.messages.map((m) =>
+              m.role === "tool" &&
+              (m.status === "pending" || m.status === "streaming")
+                ? { ...m, status: "error" as const, result: "Interrupted" }
+                : m,
+            ),
+          });
+        }
+      }
+      return changed ? next : prev;
+    });
 
     // Read back persisted messages so the next run has full context.
     // Only keep a recent subset to avoid blowing the context window.
@@ -1920,6 +1856,18 @@ export default function OperatorDashboard({
     }
 
     const dialogOpen = stack.length > 0 || externalDialogOpen;
+
+    // Ctrl+A to open subagent dialog (skip if another dialog is open)
+    if (
+      key.ctrl &&
+      key.name === "a" &&
+      subagentSessions.size > 0 &&
+      !dialogOpen
+    ) {
+      key.preventDefault?.();
+      openSubagentDialog();
+      return;
+    }
     const action = resolveKeyboardShortcut(
       key,
       status,
@@ -2073,6 +2021,16 @@ export default function OperatorDashboard({
         expandedLogs={expandedLogs}
         pendingApprovals={pendingApprovals}
         lastApprovedAction={lastApprovedAction}
+      />
+
+      {/* Subagent status bar */}
+      <SubagentStatusBar
+        sessions={subagentSessions}
+        agentMovedOn={
+          messageCountAtSubagentDoneRef.current !== null &&
+          messages.length > messageCountAtSubagentDoneRef.current
+        }
+        onOpen={openSubagentDialog}
       />
 
       {/* Queued follow-up messages */}

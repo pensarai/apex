@@ -141,7 +141,11 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     // -- Step trace (trace.jsonl) ---------------------------------------------
     // Created before tools so the checkpoint_state tool can reference it.
-    const messagesDir = input.messagesDir ?? input.session.rootPath;
+    const messagesDir =
+      input.messagesDir ??
+      (input.subagentId
+        ? join(input.session.rootPath, "subagents", input.subagentId)
+        : input.session.rootPath);
     const tracePath = input.subagentId
       ? join(
           input.session.rootPath,
