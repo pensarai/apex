@@ -42,11 +42,7 @@ export function loadSubagentSessionsFromDisk(
         ? sub.status
         : "cancelled";
 
-    const messages: DisplayMessage[] = sub.messages.map((m) =>
-      m.role === "tool" && m.status === "pending"
-        ? { ...m, status: "error" as const, result: "Interrupted" }
-        : (m as DisplayMessage),
-    );
+    const messages: DisplayMessage[] = sub.messages as DisplayMessage[];
 
     // Approximate completedAt from the last message timestamp so the hub
     // card shows the actual run duration instead of an ever-increasing

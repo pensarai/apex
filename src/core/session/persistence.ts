@@ -478,6 +478,9 @@ function convertMessagesToUI(
             typeof input?.toolCallDescription === "string"
               ? input.toolCallDescription
               : part.toolName || "tool";
+          const hasResult = part.toolCallId
+            ? toolResults.has(part.toolCallId)
+            : false;
           const result = part.toolCallId
             ? toolResults.get(part.toolCallId)
             : undefined;
@@ -493,6 +496,10 @@ function convertMessagesToUI(
           const cancelled =
             typeof resultText === "string" &&
             resultText.toLowerCase().includes("cancelled");
+          // A tool-call with no matching tool-result means the agent was
+          // interrupted mid-step; surface that instead of silently falling
+          // through to "completed".
+          const interrupted = !hasResult;
           uiMessages.push({
             role: "tool",
             content: toolDescription,
@@ -500,8 +507,8 @@ function convertMessagesToUI(
             toolCallId: part.toolCallId,
             toolName: part.toolName,
             args: input,
-            result: result,
-            status: cancelled ? "error" : "completed",
+            result: interrupted ? "Interrupted" : result,
+            status: cancelled || interrupted ? "error" : "completed",
           });
         }
       }
