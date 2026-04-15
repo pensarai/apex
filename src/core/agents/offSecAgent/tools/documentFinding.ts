@@ -21,6 +21,7 @@ import {
   type FindingJudgeInput,
 } from "../../specialized/findingJudge";
 import type { Finding } from "../types";
+import { hasCanonicalName } from "../../../../lib/cwe/types";
 
 export const documentVulnerabilityInputSchema = z.object({
   title: z.string().describe("Finding title"),
@@ -415,7 +416,7 @@ CRITICAL RULES — READ BEFORE CALLING:
           const cweSection = cvssResult.cwes?.length
             ? `## CWE Classification
 
-${cvssResult.cwes.map((cwe) => `- **${cwe.id}** — ${cwe.reasoning}`).join("\n")}`
+${cvssResult.cwes.map((cwe) => `- **${cwe.id}**${hasCanonicalName(cwe) ? `: ${cwe.name}` : ""} — ${cwe.reasoning}`).join("\n")}`
             : "";
 
           const evidenceSection = evidenceFilePath

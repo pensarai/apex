@@ -9,15 +9,11 @@ import {
   FindingsRegistry,
 } from "./registry";
 
-vi.mock("fs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("fs")>();
-  return {
-    ...actual,
-    existsSync: vi.fn(actual.existsSync),
-    readdirSync: vi.fn(actual.readdirSync),
-    readFileSync: vi.fn(actual.readFileSync),
-  };
-});
+vi.mock("fs", () => ({
+  existsSync: vi.fn(),
+  readdirSync: vi.fn(),
+  readFileSync: vi.fn(),
+}));
 
 vi.mock("../ai", () => ({
   generateObjectResponse: vi.fn(),

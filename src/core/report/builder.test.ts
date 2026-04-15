@@ -119,6 +119,37 @@ describe("buildPentestReport", () => {
     });
   });
 
+  it("includes cwes in report findings when present", () => {
+    const findings: Finding[] = [
+      makeFinding({
+        title: "SQLi with CWEs",
+        cwes: [
+          {
+            id: "CWE-89",
+            reasoning: "SQL injection via unsanitized user input",
+          },
+        ],
+      }),
+    ];
+
+    const report = buildPentestReport(findings, defaultContext);
+    const result = PentestReportSchema.safeParse(report);
+
+    expect(result.success).toBe(true);
+    expect(report.findings[0].cwes).toHaveLength(1);
+    expect(report.findings[0].cwes![0].id).toBe("CWE-89");
+  });
+
+  it("handles findings without cwes (backward compat)", () => {
+    const findings: Finding[] = [makeFinding({ title: "No CWEs" })];
+
+    const report = buildPentestReport(findings, defaultContext);
+    const result = PentestReportSchema.safeParse(report);
+
+    expect(result.success).toBe(true);
+    expect(report.findings[0].cwes).toBeUndefined();
+  });
+
   it("includes optional references when present", () => {
     const findings: Finding[] = [
       makeFinding({
