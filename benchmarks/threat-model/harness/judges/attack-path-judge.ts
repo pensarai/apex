@@ -208,13 +208,27 @@ ${attackPath.mechanism.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       return defaultPathScore(attackPath.id);
     }
 
+    // Post-process: enforce hard rules that the LLM may ignore
+    const pathText = attackPath.mechanism.join(" ") + " " + attackPath.pentestGuidance + " " + attackPath.impact;
+    const hasFilePaths = /[a-zA-Z_]+\/[a-zA-Z_]+\.[a-zA-Z]{1,4}/.test(pathText);
+    const hasPayloads = /`[^`]+`|curl |UNION|SELECT|<script|\.\.\/|%[0-9a-f]{2}/i.test(pathText);
+    const hasSpecificImpact = /table|column|field|row|record|hash|token|session|credential|password|email|key/i.test(attackPath.impact);
+
+    let specificity = result.scores.specificity.score;
+    let pentestGuidance = result.scores.pentestGuidance.score;
+    let impactConcreteness = result.scores.impactConcreteness.score;
+
+    if (!hasFilePaths && specificity > 3) specificity = 3;
+    if (!hasPayloads && pentestGuidance > 3) pentestGuidance = 3;
+    if (!hasSpecificImpact && impactConcreteness > 2) impactConcreteness = 2;
+
     return {
       pathId: attackPath.id,
-      specificity: result.scores.specificity.score,
+      specificity,
       mechanismQuality: result.scores.mechanismQuality.score,
       severityCalibration: result.scores.severityCalibration.score,
-      pentestGuidance: result.scores.pentestGuidance.score,
-      impactConcreteness: result.scores.impactConcreteness.score,
+      pentestGuidance,
+      impactConcreteness,
       controlAnalysis: result.scores.controlAnalysis.score,
     };
   } catch (error) {

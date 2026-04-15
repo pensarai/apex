@@ -1,20 +1,15 @@
 /**
- * Threat Model Benchmark — Anti-Pattern Validator
+ * Threat Model Benchmark — Anti-Pattern Validator (v3)
  *
- * Detects anti-patterns that the skill prompt explicitly forbids.
- * 5 automated checks + 1 optional LLM check.
+ * 5 negative checks (avoid bad patterns) + 3 positive depth checks.
+ * Uses weighted scoring to emphasize discriminating checks.
  */
 
 import type {
   ParsedThreatModel,
   AntiPatternScore,
-  BehavioralMetrics,
   ToolCallRecord,
 } from "../types";
-
-// ---------------------------------------------------------------------------
-// STRIDE Category Names
-// ---------------------------------------------------------------------------
 
 const STRIDE_CATEGORIES = [
   "spoofing",
@@ -29,122 +24,99 @@ const SOURCE_EXTS =
   /\.(ts|tsx|py|go|rs|php|java|rb|js|jsx|vue|svelte|c|cpp|h|cs)$/;
 
 // ---------------------------------------------------------------------------
-// Automated Checks
+// Negative Checks (avoid bad patterns)
 // ---------------------------------------------------------------------------
 
-/** A-01: No STRIDE categories used as organizing headers */
+/** No STRIDE categories used as organizing headers */
 function checkNoStride(parsed: ParsedThreatModel): number {
-  const headings = [
-    ...parsed.sectionsFound,
-    ...parsed.attackPaths.map((ap) => ap.title),
-  ];
-  const headingText = headings.join(" ").toLowerCase();
-
   for (const cat of STRIDE_CATEGORIES) {
-    // Only flag if used as a heading/organizing principle, not as inline mention
-    if (
-      parsed.sectionsFound.some((s) =>
-        s.toLowerCase().includes(cat),
-      )
-    ) {
+    if (parsed.sectionsFound.some((s) => s.toLowerCase().includes(cat))) {
       return 0;
     }
   }
-
-  // Also check if multiple STRIDE terms appear as AP title prefixes
   let strideCount = 0;
   for (const ap of parsed.attackPaths) {
-    const titleLower = ap.title.toLowerCase();
-    if (STRIDE_CATEGORIES.some((c) => titleLower.startsWith(c))) {
+    if (STRIDE_CATEGORIES.some((c) => ap.title.toLowerCase().startsWith(c))) {
       strideCount++;
     }
   }
-  // If more than half of attack paths are named after STRIDE categories, fail
+  if (parsed.attackPaths.length > 0 && strideCount / parsed.attackPaths.length > 0.5) {
+    return 0;
+  }
+  return 1;
+}
+
+/** No DREAD as a scoring framework (individual terms like "exploitability" are fine) */
+function checkNoDread(parsed: ParsedThreatModel): number {
+  const rawLower = parsed.raw.toLowerCase();
+  const dreadFramework = [
+    "dread score",
+    "dread rating",
+    "dread analysis",
+    "dread methodology",
+    "dread framework",
+  ];
+  for (const term of dreadFramework) {
+    if (rawLower.includes(term)) return 0;
+  }
+  // Check for all 5 DREAD components appearing together (as a scoring table)
   if (
-    parsed.attackPaths.length > 0 &&
-    strideCount / parsed.attackPaths.length > 0.5
+    /damage\s*potential.*reproducibility.*exploitability.*affected\s*users.*discoverability/is.test(
+      rawLower,
+    )
   ) {
     return 0;
   }
-
   return 1;
 }
 
-/** A-02: No DREAD scoring */
-function checkNoDread(parsed: ParsedThreatModel): number {
-  const dreadTerms = [
-    "damage potential",
-    "reproducibility",
-    "exploitability",
-    "affected users",
-    "discoverability",
-    "dread score",
-    "dread rating",
-  ];
-  const rawLower = parsed.raw.toLowerCase();
-  for (const term of dreadTerms) {
-    if (rawLower.includes(term)) return 0;
-  }
-  return 1;
-}
-
-/** A-03: No CWE numbers as section headers or organizing principle */
+/** No CWE numbers as section headers or organizing principle */
 function checkNoCweAsAnalysis(parsed: ParsedThreatModel): number {
-  // CWE numbers in ## or ### headings = bad
   const headings = parsed.sectionsFound.join(" ");
   if (/CWE-\d+/i.test(headings)) return 0;
-
-  // CWE numbers as AP titles (not supplementary) = bad
   for (const ap of parsed.attackPaths) {
-    // If the title IS a CWE reference (not just contains one supplementarily)
     if (/^CWE-\d+/i.test(ap.title.trim())) return 0;
   }
-
   return 1;
 }
 
-/** A-04: Source code was actually read (from trace) */
+/** Source code was actually read (>= 8 unique source files from trace) */
 function checkSourceCodeRead(trace: ToolCallRecord[]): number {
   const readCalls = trace.filter((t) => t.name === "read_file");
   const sourcePaths = readCalls
     .map((t) => (t.args.file_path ?? t.args.path) as string | undefined)
     .filter((p): p is string => p !== undefined)
     .filter((p) => SOURCE_EXTS.test(p));
-
-  const uniqueSourceFiles = new Set(sourcePaths);
-
-  // Require at least 5 unique source files to be read
-  return uniqueSourceFiles.size >= 5 ? 1 : 0;
+  const unique = new Set(sourcePaths);
+  // Graduated: 8+ = 1.0, 5-7 = 0.7, <5 = 0.3
+  if (unique.size >= 8) return 1;
+  if (unique.size >= 5) return 0.7;
+  return 0.3;
 }
 
-/** A-05: No user clarification requested */
+/** No user clarification requested */
 function checkNoUserClarification(parsed: ParsedThreatModel): number {
-  const clarificationPhrases = [
-    "please clarify",
-    "could you tell me",
-    "can you provide",
-    "I need more information",
-    "would you like me to",
-    "shall I",
-    "do you want me to",
-    "please let me know",
+  const phrases = [
+    "please clarify", "could you tell me", "can you provide",
+    "I need more information", "would you like me to",
+    "shall I", "do you want me to", "please let me know",
   ];
-
   const rawLower = parsed.raw.toLowerCase();
-  for (const phrase of clarificationPhrases) {
+  for (const phrase of phrases) {
     if (rawLower.includes(phrase)) return 0;
   }
   return 1;
 }
 
 // ---------------------------------------------------------------------------
-// Positive Depth Checks (measure good practices, not just absence of bad)
+// Positive Depth Checks (measure good practices)
 // ---------------------------------------------------------------------------
 
-/** A-06: Mechanism steps reference code (file paths, inline code) */
+/** Mechanism steps reference code (file paths, inline code, line numbers) */
 function checkMechanismCodeRefs(parsed: ParsedThreatModel): number {
   if (parsed.attackPaths.length === 0) return 0;
-  const codeRefPattern = /`[^`]+`|[a-zA-Z_]+\.[a-zA-Z]{1,4}(?::\d+)?/;
+  // Require actual file paths or backtick code — not just any dot-access
+  const codeRefPattern = /`[^`]{3,}`|[a-zA-Z_]+\/[a-zA-Z_]+\.[a-zA-Z]{1,4}|line\s+\d+/i;
   let withRefs = 0;
   for (const ap of parsed.attackPaths) {
     if (ap.mechanism.some((step) => codeRefPattern.test(step))) withRefs++;
@@ -152,10 +124,11 @@ function checkMechanismCodeRefs(parsed: ParsedThreatModel): number {
   return withRefs / parsed.attackPaths.length;
 }
 
-/** A-07: Attack path entry points are specific (route, file, flag — not vague labels) */
+/** Entry points are specific — supports REST, GraphQL, gRPC, CLI, events */
 function checkEntryPointSpecificity(parsed: ParsedThreatModel): number {
   if (parsed.attackPaths.length === 0) return 0;
-  const specificPattern = /\/[a-z]|\.ts|\.py|\.go|\.rs|\.php|--[a-z]/i;
+  const specificPattern =
+    /\/[a-z]|\.ts|\.py|\.go|\.rs|\.php|\.java|--[a-z]|mutation\s|query\s|subscription\s|grpc\.|\.proto|topic:|queue:|event\.|handler|endpoint|route/i;
   let specific = 0;
   for (const ap of parsed.attackPaths) {
     if (specificPattern.test(ap.entryPoint)) specific++;
@@ -163,11 +136,11 @@ function checkEntryPointSpecificity(parsed: ParsedThreatModel): number {
   return specific / parsed.attackPaths.length;
 }
 
-/** A-08: Pentest guidance includes concrete techniques (tools, payloads, commands) */
+/** Pentest guidance includes concrete techniques (tools, payloads, commands) */
 function checkPentestGuidanceConcreteness(parsed: ParsedThreatModel): number {
   if (parsed.attackPaths.length === 0) return 0;
   const concretePattern =
-    /curl |sqlmap|burp|payload|`[^`]+`|--[a-z]|UNION|SELECT|<script|\.\.\/|%00|nmap|nikto|ffuf|wfuzz|hydra|john/i;
+    /curl |sqlmap|burp|payload|`[^`]+`|--[a-z]|UNION|SELECT|<script|\.\.\/|%00|%27|nmap|nikto|ffuf|wfuzz|hydra|john|POST\s+\/|GET\s+\//i;
   let concrete = 0;
   for (const ap of parsed.attackPaths) {
     if (concretePattern.test(ap.pentestGuidance)) concrete++;
@@ -179,25 +152,40 @@ function checkPentestGuidanceConcreteness(parsed: ParsedThreatModel): number {
 // Main Validator
 // ---------------------------------------------------------------------------
 
+/** Check weights — positive depth checks weighted higher than easy negative checks */
+const CHECK_WEIGHTS: Record<string, number> = {
+  // Negative checks (low weight — usually pass)
+  no_stride: 0.08,
+  no_dread: 0.08,
+  no_cwe_as_analysis: 0.08,
+  no_user_clarification: 0.06,
+  // Positive depth checks (high weight — real variance)
+  source_code_read: 0.15,
+  mechanism_code_refs: 0.15,
+  entry_point_specificity: 0.20,
+  pentest_guidance_concrete: 0.20,
+};
+
 export function validateAntiPatterns(
   parsed: ParsedThreatModel,
   trace: ToolCallRecord[],
 ): AntiPatternScore {
   const checks: Record<string, number> = {
-    // Negative checks (avoid bad patterns)
     no_stride: checkNoStride(parsed),
     no_dread: checkNoDread(parsed),
     no_cwe_as_analysis: checkNoCweAsAnalysis(parsed),
-    source_code_read: checkSourceCodeRead(trace),
     no_user_clarification: checkNoUserClarification(parsed),
-    // Positive depth checks (demonstrate good analysis)
+    source_code_read: checkSourceCodeRead(trace),
     mechanism_code_refs: checkMechanismCodeRefs(parsed),
     entry_point_specificity: checkEntryPointSpecificity(parsed),
     pentest_guidance_concrete: checkPentestGuidanceConcreteness(parsed),
   };
 
-  const values = Object.values(checks);
-  const score = values.reduce((a, b) => a + b, 0) / values.length;
+  // Weighted score
+  let score = 0;
+  for (const [key, weight] of Object.entries(CHECK_WEIGHTS)) {
+    score += (checks[key] ?? 0) * weight;
+  }
 
   return { score, checks };
 }

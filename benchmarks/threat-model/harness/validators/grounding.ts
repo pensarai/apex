@@ -67,18 +67,20 @@ function extractEndpoints(md: string): string[] {
   return [...eps];
 }
 
-/** Extract middleware/package names from security controls text */
+/** Extract middleware/package names from security controls and full output text */
 function extractPackageNames(parsed: ParsedThreatModel): string[] {
   const names = new Set<string>();
-  for (const sc of parsed.securityControls) {
-    // Look for known patterns
-    const text = `${sc.name} ${sc.implementation}`;
-    const packageRe =
-      /\b(helmet|cors|express-rate-limit|bcrypt|jsonwebtoken|passport|csrf|zod|joi|validator|sanitize|prisma|sequelize|mongoose|django|flask|gin|actix|axum)\b/gi;
-    let m: RegExpExecArray | null;
-    while ((m = packageRe.exec(text)) !== null) {
-      names.add(m[1].toLowerCase());
-    }
+  // Search both security controls and the full raw output
+  const searchText = [
+    ...parsed.securityControls.map((sc) => `${sc.name} ${sc.implementation} ${sc.gaps}`),
+    ...parsed.attackPaths.map((ap) => `${ap.mechanism.join(" ")} ${ap.pentestGuidance}`),
+  ].join(" ");
+
+  const packageRe =
+    /\b(helmet|cors|express-rate-limit|bcrypt|jsonwebtoken|passport|csrf|zod|joi|validator|sanitize|prisma|sequelize|mongoose|express|fastify|nest|koa|hapi|typeorm|drizzle|next|nuxt|django|flask|fastapi|sqlalchemy|pydantic|celery|gunicorn|gin|echo|fiber|chi|gorilla|gorm|sqlx|pgx|viper|actix|axum|rocket|diesel|serde|tokio|reqwest|clap)\b/gi;
+  let m: RegExpExecArray | null;
+  while ((m = packageRe.exec(searchText)) !== null) {
+    names.add(m[1].toLowerCase());
   }
   return [...names];
 }
@@ -144,9 +146,11 @@ function checkEndpoints(
       .replace(/\/+/g, "/")
       .replace(/\/$/, "");
 
-    // Grep for the literal path or significant segments
+    // Grep for path segments — require 2+ segments for specificity
     const segments = pathSegment.split("/").filter((s) => s.length > 2);
-    const searchTerm = segments.length > 0 ? segments[segments.length - 1] : pathSegment;
+    const searchTerm = segments.length >= 2
+      ? segments.slice(-2).join("/")
+      : segments[segments.length - 1] ?? pathSegment;
     if (searchTerm && grepExists(codebasePath, searchTerm)) found++;
   }
   return { score: found / eps.length, found, total: eps.length };
@@ -272,13 +276,13 @@ export function validateGrounding(
     entry_points_verified: entryPoints,
   };
 
-  // Weighted average: files 25%, endpoints 25%, entry points 25%, packages 15%, config 10%
+  // Weighted average: files dominant (most honest signal), ceiling-effect checks reduced
   const weights = {
-    files_exist: 0.25,
-    endpoints_exist: 0.25,
-    entry_points_verified: 0.25,
+    files_exist: 0.40,
+    endpoints_exist: 0.15,
+    entry_points_verified: 0.15,
     packages_exist: 0.15,
-    config_files_exist: 0.10,
+    config_files_exist: 0.15,
   };
 
   let score = 0;

@@ -44,11 +44,12 @@ const SYSTEM_PROMPT = `You are an expert application security architect evaluati
 Score each criterion from 1 to 5:
 1 = Completely fails | 2 = Major deficiencies | 3 = Solid, meets expectations | 4 = Strong, exceeds expectations | 5 = Exceptional, near-perfect
 
-## Hard Rules
-- If the automated grounding check found <60% of referenced files actually exist, Architecture Accuracy CANNOT exceed 3.
-- If fewer than 75% of the application's known features are covered, Coverage Breadth CANNOT exceed 3.
+## Hard Rules (MUST be enforced — do not override these)
+- If the automated grounding check found <50% of referenced files actually exist, Architecture Accuracy CANNOT exceed 2.
+- If fewer than 60% of the application's known features are covered, Coverage Breadth CANNOT exceed 2.
 - If attack paths lack specific payloads or test commands, Pentest Readiness CANNOT exceed 3.
 - If trust boundaries use textbook names ("External Boundary", "DMZ") rather than application-specific names, Trust Boundary Quality CANNOT exceed 3.
+- A score of 5 requires that the document goes BEYOND expectations — not just meets them. Most threat models should score 3-4.
 
 Provide a brief reason for each score.`;
 
@@ -117,6 +118,16 @@ ${truncated}
     }
 
     const s = result.scores;
+
+    // Post-process: enforce hard rules using grounding data
+    if (groundingScore) {
+      const fileScore = groundingScore.checks.files_exist?.score ?? 1;
+      if (fileScore < 0.5 && s.architectureAccuracy.score > 2) {
+        s.architectureAccuracy.score = 2;
+        s.architectureAccuracy.reason += " [CAPPED: <50% file refs verified]";
+      }
+    }
+
     const allScores = [
       s.coverageBreadth.score,
       s.attackerProfileRealism.score,
