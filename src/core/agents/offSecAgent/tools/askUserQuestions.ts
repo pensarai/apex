@@ -16,6 +16,13 @@ export const AskUserQuestionSchema = z.object({
     .describe(
       'Stable identifier for the question (e.g. "deployment-model"). Used to correlate the answer.',
     ),
+  header: z
+    .string()
+    .min(1)
+    .max(20)
+    .describe(
+      'Very short tab label (max 20 chars). Examples: "Deployment", "Auth method", "Concerns".',
+    ),
   question: z.string(),
   multiSelect: z.boolean().default(false),
   allowFreeform: z.boolean().default(true),
@@ -80,6 +87,8 @@ export function askUserQuestions(_ctx: ToolContext) {
     description:
       "Stop the agent and ask the user a batch of 2–5 grounded, multi-choice questions. " +
       "Option labels MUST reference something observed in the codebase — not generic templates. " +
+      "Each question must include a short `header` field (≤20 chars) used as the tab label in " +
+      'the UI (e.g. "Deployment", "Auth method", "Concerns"). ' +
       "The consumer of this agent is responsible for collecting answers and, if applicable, " +
       "resuming with a tool-result in the message history.",
     inputSchema: z.object({
