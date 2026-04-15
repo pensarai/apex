@@ -145,7 +145,11 @@ import { updateTask } from "./updateTask";
 import { listTasksTool } from "./listTasks";
 import { writePlan } from "./writePlan";
 import { submitPlan } from "./submitPlan";
-import { askUserQuestions } from "./askUserQuestions";
+import {
+  askUserQuestions,
+  ASK_USER_QUESTIONS_TOOL_NAME,
+} from "./askUserQuestions";
+export { ASK_USER_QUESTIONS_TOOL_NAME } from "./askUserQuestions";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -218,7 +222,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
 
     // Interactive clarification tool — always registered. Agents opt in
     // by listing `'ask_user_questions'` in their `activeTools` array.
-    ask_user_questions: askUserQuestions(ctx),
+    [ASK_USER_QUESTIONS_TOOL_NAME]: askUserQuestions(ctx),
 
     // Observability tools (conditional — only when trace writer is provided)
     ...(ctx.traceWriter ? { checkpoint_state: checkpointState(ctx) } : {}),
@@ -298,7 +302,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "write_plan",
   "submit_plan",
   // Guided onboarding
-  "ask_user_questions",
+  ASK_USER_QUESTIONS_TOOL_NAME,
 ];
 
 /**

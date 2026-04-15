@@ -3,7 +3,11 @@ import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
 import type { SessionInfo } from "../session";
 import type { AgentEventBus } from "../eventBus";
-import { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } from "../agents/offSecAgent";
+import {
+  ALL_TOOL_NAMES,
+  SKILL_TOOL_NAMES,
+  ASK_USER_QUESTIONS_TOOL_NAME,
+} from "../agents/offSecAgent";
 import { buildBaseSystemPrompt } from "../agents/offSecAgent/prompt";
 import { runOffensiveSecurityAgent } from "../api/offesecAgent";
 import { sessions } from "../session";
@@ -83,17 +87,11 @@ export async function runThreatModelWorkflow(
 You are generating an application-centric threat model from source code analysis.
 Working directory: ${input.codebasePath}`;
 
-  // Run the agent.
-  //
-  // This workflow is HEADLESS — used by the CLI (`apex threat-model ...`)
-  // and by autonomous orchestrations that spawn threat-model generation
-  // programmatically. There is no human at a TTY to answer questions, so
-  // strip `ask_user_questions` from the active set. (The TUI
-  // `/threat-model` slash command does NOT route through this workflow;
-  // it runs the operator agent directly with a TUI-specific overlay
-  // prompt that uses the tool intentionally.)
+  // Headless workflow — no TTY to answer ask_user_questions, so strip it
+  // from the active set. The TUI `/threat-model` command bypasses this
+  // workflow and runs the operator agent directly.
   const headlessTools = ALL_TOOL_NAMES.filter(
-    (name) => name !== "ask_user_questions",
+    (name) => name !== ASK_USER_QUESTIONS_TOOL_NAME,
   );
   await runOffensiveSecurityAgent({
     system,

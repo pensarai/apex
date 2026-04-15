@@ -2,6 +2,8 @@ import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 
+export const ASK_USER_QUESTIONS_TOOL_NAME = "ask_user_questions" as const;
+
 /**
  * Zod schema for a single question in an `ask_user_questions` tool call.
  *

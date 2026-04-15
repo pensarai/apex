@@ -1,27 +1,9 @@
 /**
- * Questions Form
+ * Tab-based UI for the agent's `ask_user_questions` tool.
  *
- * Tab-based UI for the agent's `ask_user_questions` tool, matching
- * Claude Code's AskUserQuestion UX:
- *
- *   - Horizontal tab bar with a status icon + short `header` per question,
- *     plus a trailing "Submit" tab. Active tab is highlighted.
- *   - Single tab's content below: question text, numbered option rows,
- *     optional freeform row, optional "Next" row (multi-select), a
- *     and (multi-select only) a "Next" row to advance.
- *   - Footer key hint line.
- *
- * Status icons on tabs:
- *   - `□` single-select, unanswered
- *   - `⊠` multi-select, unanswered
- *   - `✓` answered  OR the Submit tab itself
- *
- * Keyboard model:
- *   - Normal mode (default): arrows/Tab navigate between tabs and rows,
- *     Enter selects/advances, Space toggles (multi-select), 1-9 quick-pick.
- *   - Freeform-edit mode: the underlying `<input>` owns arrow keys for
- *     cursor movement. ↑/↓ exit edit mode; Esc exits edit mode; Enter
- *     commits (single-select advances, multi-select toggles).
+ * Freeform-edit mode: the underlying `<input>` owns arrow keys for cursor
+ * movement. ↑/↓/Esc exit edit mode; Enter commits (single-select advances,
+ * multi-select toggles).
  */
 
 import { useState, useMemo } from "react";
@@ -146,13 +128,6 @@ function buildAnswers(
       freeformText: s.freeformText.trim().length > 0 ? s.freeformText : null,
     };
   });
-}
-
-/** Truncate a tab header to fit a safe width (schema also enforces ≤20). */
-function fitHeader(header: string): string {
-  const max = 20;
-  if (header.length <= max) return header;
-  return header.slice(0, max - 1) + "…";
 }
 
 export function QuestionsForm({
@@ -570,7 +545,7 @@ function TabBar({
         const active = i === activeTabIndex;
         const s = states[i]!;
         const icon = tabIcon(q, s);
-        const label = fitHeader(q.header);
+        const label = q.header;
         const fg = active ? colors.text : colors.textMuted;
         const iconFg = isAnswered(s)
           ? colors.success
@@ -667,10 +642,14 @@ function QuestionView({
 }
 
 function rowKey(row: RowKind, rowIdx: number): string {
-  if (row.kind === "option") return `option-${row.optionIndex}`;
-  if (row.kind === "freeform") return `freeform-${rowIdx}`;
-  if (row.kind === "next") return `next-${rowIdx}`;
-  return `skip-${rowIdx}`;
+  switch (row.kind) {
+    case "option":
+      return `option-${row.optionIndex}`;
+    case "freeform":
+      return `freeform-${rowIdx}`;
+    case "next":
+      return `next-${rowIdx}`;
+  }
 }
 
 function Row({
@@ -698,7 +677,6 @@ function Row({
     const opt = question.options[row.optionIndex]!;
     const selected = state.selected.has(opt.id);
     const number = row.optionIndex + 1;
-    const labelColor = focused ? colors.text : colors.text;
     const descColor = colors.textMuted;
     return (
       <box flexDirection="column">
@@ -711,7 +689,7 @@ function Row({
                 {selected ? "[✓] " : "[ ] "}
               </span>
             ) : null}
-            <span fg={labelColor}>{opt.label}</span>
+            <span fg={colors.text}>{opt.label}</span>
           </text>
         </box>
         {opt.description ? (

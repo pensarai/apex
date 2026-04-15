@@ -14,6 +14,7 @@ import {
   PLAN_MODE_TOOL_NAMES,
 } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
+import { ASK_USER_QUESTIONS_TOOL_NAME } from "./tools/askUserQuestions";
 import { PersistentShell } from "./tools/persistentShell";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import type { ApprovalGate } from "../../operator";
@@ -473,7 +474,7 @@ export class OffensiveSecurityAgent<TResult = void> {
  * Keep this set minimal — only add tools whose entire purpose is to
  * pause the agent and yield control to the consumer.
  */
-const SENTINEL_TOOL_NAMES = new Set<string>(["ask_user_questions"]);
+const SENTINEL_TOOL_NAMES = new Set<string>([ASK_USER_QUESTIONS_TOOL_NAME]);
 
 /**
  * Wrap every tool's execute function with the approval gate so that

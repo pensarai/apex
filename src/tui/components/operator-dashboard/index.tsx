@@ -30,6 +30,7 @@ import {
   ALL_TOOL_NAMES,
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
+  ASK_USER_QUESTIONS_TOOL_NAME,
   AgentEventBus,
   type AgentMode,
 } from "../../../core/agents/offSecAgent";
@@ -100,6 +101,20 @@ import { isAbsolute, join, resolve } from "path";
 
 import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
 import { buildPentestPrompt } from "../../../core/skills/builtins/pentest";
+
+// Mark any in-flight tool messages (pending/streaming) as errored. Used
+// when the agent aborts, errors, or is interrupted — otherwise their
+// spinners would keep ticking.
+function markInFlightToolsErrored(
+  messages: DisplayMessage[],
+  result: string,
+): DisplayMessage[] {
+  return messages.map((m) =>
+    isToolMessage(m) && (m.status === "pending" || m.status === "streaming")
+      ? { ...m, status: "error" as const, result }
+      : m,
+  );
+}
 
 /**
  * Operator Dashboard - interactive chat interface with the offensive security agent
@@ -934,10 +949,10 @@ export default function OperatorDashboard({
             : undefined;
         addToolCall(d.toolCallId, d.toolName, args);
 
-        // ask_user_questions sentinel-tool detection. The agent stops on
-        // hasToolCall("ask_user_questions"); we capture the toolCallId and
-        // questions here so the form can render after the run finishes.
-        if (d.toolName === "ask_user_questions" && args) {
+        // Sentinel-tool detection: the agent stops on the ask_user_questions
+        // tool call; capture its id + questions so the form can render after
+        // the run finishes.
+        if (d.toolName === ASK_USER_QUESTIONS_TOOL_NAME && args) {
           const rawQuestions = args.questions;
           if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
             pendingToolCallIdRef.current = d.toolCallId;
@@ -991,22 +1006,10 @@ export default function OperatorDashboard({
         const errorMessage =
           d.error instanceof Error ? d.error.message : "Unknown error";
         setError(errorMessage);
-        // Clear the spinner on any tool messages that were still streaming
-        // or pending when the agent errored — otherwise they spin forever.
-        // Common case: tool-call JSON gets truncated mid-stream → repair
-        // fails → stream errors out without firing tool-call-complete.
-        setMessages((prev) =>
-          prev.map((m) =>
-            isToolMessage(m) &&
-            (m.status === "pending" || m.status === "streaming")
-              ? {
-                  ...m,
-                  status: "error" as const,
-                  result: errorMessage,
-                }
-              : m,
-          ),
-        );
+        // Common case for in-flight tools: tool-call JSON gets truncated
+        // mid-stream → repair fails → stream errors out without firing
+        // tool-call-complete, leaving spinners ticking forever.
+        setMessages((prev) => markInFlightToolsErrored(prev, errorMessage));
       });
 
       eventBus.on("subagent-spawn", ({ subagentId, name }) => {
@@ -1133,7 +1136,10 @@ export default function OperatorDashboard({
         prompt: prompt ?? "",
         model: model.id,
         messages: nextMessages,
-        stopWhen: [stepCountIs(10000), hasToolCall("ask_user_questions")],
+        stopWhen: [
+          stepCountIs(10000),
+          hasToolCall(ASK_USER_QUESTIONS_TOOL_NAME),
+        ],
         target: initialConfig?.target,
         activeTools: [
           ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
@@ -1325,16 +1331,7 @@ export default function OperatorDashboard({
           const errorMsg = e instanceof Error ? e.message : "Agent failed";
           setError(errorMsg);
           setMessages((prev) => [
-            ...prev.map((m) =>
-              isToolMessage(m) &&
-              (m.status === "pending" || m.status === "streaming")
-                ? {
-                    ...m,
-                    status: "error" as const,
-                    result: errorMsg,
-                  }
-                : m,
-            ),
+            ...markInFlightToolsErrored(prev, errorMsg),
             {
               role: "system",
               content: `Error: ${errorMsg}`,
@@ -1677,14 +1674,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     setThinking(false);
     setIsExecuting(false);
 
-    // Mark any in-flight tool messages as interrupted so spinners stop
-    setMessages((prev) =>
-      prev.map((m) =>
-        isToolMessage(m) && (m.status === "pending" || m.status === "streaming")
-          ? { ...m, status: "error" as const, result: "Interrupted" }
-          : m,
-      ),
-    );
+    setMessages((prev) => markInFlightToolsErrored(prev, "Interrupted"));
 
     // Mark any in-flight subagent tool messages as interrupted too
     subagentStore.setState((prev) => {
