@@ -102,9 +102,7 @@ import { isAbsolute, join, resolve } from "path";
 import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
 import { buildPentestPrompt } from "../../../core/skills/builtins/pentest";
 
-// Mark any in-flight tool messages (pending/streaming) as errored. Used
-// when the agent aborts, errors, or is interrupted — otherwise their
-// spinners would keep ticking.
+// Stop spinners on any in-flight tool messages by flipping them to error.
 function markInFlightToolsErrored(
   messages: DisplayMessage[],
   result: string,
@@ -299,9 +297,6 @@ export default function OperatorDashboard({
   const planRejectedRef = useRef(false);
   const planApprovedPendingRunRef = useRef(false);
 
-  // ask_user_questions sentinel-tool review state — mirrors the plan-review
-  // pattern. Populated when the agent calls the tool; cleared when the user
-  // submits answers or skips.
   const [pendingQuestions, setPendingQuestions] = useState<
     AskUserQuestion[] | null
   >(null);
@@ -777,13 +772,9 @@ export default function OperatorDashboard({
       // Snapshot the previous state so we can roll back on API failure.
       const prevMessages = conversationRef.current;
 
-      // When `prompt` is a string, this is a normal user-turn invocation:
-      // append the user message to the rendered list + conversationRef +
-      // disk. When `prompt` is null, this is a RESUME — e.g. after the user
-      // answers an ask_user_questions batch, the tool-result has already
-      // been patched into conversationRef and we just need streamText to
-      // pick up where it stopped. In that case, skip all user-message
-      // plumbing and go straight to streaming against the existing history.
+      // prompt === null means a resume (e.g. after ask_user_questions) —
+      // conversationRef was already patched by the caller, so skip the
+      // user-message plumbing and stream against existing history.
       let nextMessages: ModelMessage[];
       if (prompt !== null) {
         setMessages((prev) => [
@@ -791,31 +782,25 @@ export default function OperatorDashboard({
           { role: "user", content: prompt, createdAt: new Date() },
         ]);
 
-        // Build messages array — append user turn to conversation history.
-        // Update conversationRef eagerly so the user turn survives an abort.
         nextMessages = normalizeMessages([
           ...conversationRef.current,
           { role: "user", content: prompt },
         ]);
         conversationRef.current = nextMessages;
 
-        // Persist the user message to disk immediately so that it is
-        // present in messages.json even if the agent is aborted before its
-        // first onStepFinish (which is the normal persistence path).
-        // Without this, handleAbort reads back the stale file and
-        // overwrites conversationRef, losing the latest user turn.
+        // Eager disk persist: if the agent aborts before its first
+        // onStepFinish, handleAbort reads back messages.json — without
+        // this write it would overwrite conversationRef with stale state
+        // and lose the latest user turn.
         if (sessionRef.current) {
           try {
             const mp = join(sessionRef.current.rootPath, "messages.json");
             writeFileSync(mp, JSON.stringify(nextMessages, null, 2));
           } catch {
-            // Best-effort — the agent's onStepFinish will persist later.
+            // onStepFinish will persist later.
           }
         }
       } else {
-        // Resume path — conversationRef was updated externally (e.g. by
-        // resumeWithQuestionResult) and persisted there. Nothing extra to
-        // do here; the existing history is what we stream against.
         nextMessages = conversationRef.current;
       }
 
@@ -949,9 +934,8 @@ export default function OperatorDashboard({
             : undefined;
         addToolCall(d.toolCallId, d.toolName, args);
 
-        // Sentinel-tool detection: the agent stops on the ask_user_questions
-        // tool call; capture its id + questions so the form can render after
-        // the run finishes.
+        // Sentinel tool: capture id + questions so the form renders after
+        // the run finishes (the agent stopped on this call).
         if (d.toolName === ASK_USER_QUESTIONS_TOOL_NAME && args) {
           const rawQuestions = args.questions;
           if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
@@ -1006,9 +990,8 @@ export default function OperatorDashboard({
         const errorMessage =
           d.error instanceof Error ? d.error.message : "Unknown error";
         setError(errorMessage);
-        // Common case for in-flight tools: tool-call JSON gets truncated
-        // mid-stream → repair fails → stream errors out without firing
-        // tool-call-complete, leaving spinners ticking forever.
+        // Truncated tool-call JSON → repair fails → stream errors out
+        // without firing tool-call-complete, leaving spinners ticking.
         setMessages((prev) => markInFlightToolsErrored(prev, errorMessage));
       });
 
@@ -1129,10 +1112,8 @@ export default function OperatorDashboard({
       const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
 
       const commonInput = {
-        // On resume (prompt === null), there's nothing to prepend — the
-        // user-message append above was skipped and `nextMessages`
-        // already contains the patched conversation. Use empty-string as
-        // a no-op prompt; the agent reads from `messages` first.
+        // On resume (prompt === null) there's nothing to prepend — the
+        // patched conversation is already in `nextMessages`.
         prompt: prompt ?? "",
         model: model.id,
         messages: nextMessages,
@@ -1351,9 +1332,8 @@ export default function OperatorDashboard({
           );
         }
         if (gen === generationRef.current) {
-          // When ask_user_questions is pending we stay in "waiting" so the
-          // input area mirrors the pending-approval UX (input focused for
-          // optional redirect, etc.) until the user submits or skips.
+          // Stay "waiting" while the questions form is up so the input
+          // area mirrors the pending-approval UX.
           setStatus(pendingToolCallIdRef.current ? "waiting" : "idle");
           setThinking(false);
           setIsExecuting(false);
@@ -1457,12 +1437,9 @@ export default function OperatorDashboard({
             codebasePath: process.cwd(),
             skillContent: content,
           });
-          // TUI-ONLY interactive overlay: do initial recon, then ask the
-          // operator clarifying questions to ground the model, then
-          // continue. Headless paths (CLI, autonomous workflow) MUST NOT
-          // get this language and MUST NOT have access to
-          // `ask_user_questions` — they call `runThreatModelWorkflow`
-          // directly, which builds its own prompt without this overlay.
+          // TUI-only overlay: recon → ask → continue. Headless callers
+          // go through runThreatModelWorkflow, which has no access to
+          // ask_user_questions and builds its own prompt.
           fullContent = `${basePrompt}
 
 # Interactive Threat Model — Operator Workflow
@@ -1810,27 +1787,17 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     });
   }, [setThinking, setIsExecuting]);
 
-  // -------------------------------------------------------------------------
-  // ask_user_questions resume — overwrite the sentinel tool-result with the
-  // real answers, persist, then resume the agent WITHOUT injecting a new
-  // user message. The tool-result (real answers or skipped=true payload)
-  // is what the next streamText invocation sees; the model reads it
-  // directly and continues reasoning.
-  // -------------------------------------------------------------------------
+  // Overwrite the sentinel ask_user_questions tool-result with real
+  // answers (or skipped=true), persist, then resume without a new user
+  // message — the model reads the patched tool-result directly.
   const resumeWithQuestionResult = useCallback(
     (result: AskUserQuestionsResult) => {
       const toolCallId = pendingToolCallIdRef.current;
       if (!toolCallId) return;
 
-      // Walk the conversation to find the tool message whose content
-      // includes a tool-result for our toolCallId, and replace its
-      // `output` with the real result.
-      //
-      // AI SDK's ToolResultPart.output is a tagged union — we must wrap
-      // the payload as { type: 'json', value: ... } (NOT a raw object),
-      // otherwise Bedrock Converse / Anthropic validation rejects the
-      // message array with "The messages do not match the ModelMessage[]
-      // schema."
+      // ToolResultPart.output is a tagged union — the payload MUST be
+      // wrapped as { type: 'json', value: ... }, otherwise Bedrock
+      // Converse / Anthropic rejects the message array.
       const wrappedOutput = {
         type: "json" as const,
         value: result as unknown as Record<string, unknown>,
@@ -1863,8 +1830,6 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
       conversationRef.current = updated;
 
-      // Persist eagerly so a session resume sees the real answers — same
-      // pattern as runAgent's eager user-message persistence.
       const activeSession = sessionRef.current;
       if (activeSession) {
         try {
@@ -1873,18 +1838,15 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
             JSON.stringify(updated, null, 2),
           );
         } catch {
-          // Best-effort — onStepFinish will overwrite shortly.
+          // onStepFinish will overwrite shortly.
         }
       }
 
-      // Reset state BEFORE resuming so the next run doesn't re-trigger
-      // the form on its own initial finally-block status flip.
+      // Clear BEFORE resuming so runAgent's finally-block status flip
+      // doesn't re-open the form.
       pendingToolCallIdRef.current = null;
       setPendingQuestions(null);
 
-      // Resume without appending a user message. `runAgent(null)` skips
-      // the user-turn append and streams against the already-patched
-      // conversation history.
       runAgentRef.current(null);
     },
     [],
@@ -2227,10 +2189,8 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         onOpen={openSubagentDialog}
       />
 
-      {/* When ask_user_questions is pending, the questions form REPLACES
-          the queued-messages list and input area — it takes the entire
-          bottom slot so questions get the full available space. The
-          form owns its own keyboard handling while mounted. */}
+      {/* Questions form takes the entire bottom slot while mounted and
+          owns its own keyboard handling. */}
       {pendingQuestions ? (
         <QuestionsForm
           questions={pendingQuestions}

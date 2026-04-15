@@ -16,17 +16,8 @@ import type {
   AskUserQuestionAnswer,
 } from "../../../core/agents/offSecAgent/tools/askUserQuestions";
 
-/**
- * Normalize a single question coming off the wire from the model.
- *
- * The Zod schema for `ask_user_questions` is intentionally permissive
- * (no `min`/`max`, no `default()` on booleans) because Anthropic /
- * Bedrock has no native JSON mode and tight constraints make
- * AI-SDK-style tool-call repair fail with "No object generated".
- * We carry the constraints in the tool description and normalize
- * defensively here so the UI never has to worry about missing fields,
- * empty strings, or oversized lists.
- */
+// The AskUserQuestionSchema is permissive (see askUserQuestions.ts);
+// normalize defensively so the UI never has to handle missing fields.
 function normalizeQuestion(q: AskUserQuestion, index: number): AskUserQuestion {
   const fallbackHeader = `Q${index + 1}`;
   const trimmedHeader = (q.header ?? "").trim();
@@ -37,8 +28,6 @@ function normalizeQuestion(q: AskUserQuestion, index: number): AskUserQuestion {
         ? trimmedHeader.slice(0, 19) + "…"
         : trimmedHeader;
 
-  // Defensively cap predefined options at 4 — the schema is permissive
-  // but the UX assumes a short scannable list.
   const options = (q.options ?? []).slice(0, 4);
 
   return {
@@ -56,20 +45,8 @@ interface QuestionsFormProps {
   onSkip: () => void;
 }
 
-/**
- * Per-question selection + focus state.
- * - `selected`        — chosen option IDs (size 0 or 1 for single-select).
- * - `freeformText`    — text typed into the freeform row.
- * - `freeformSelected`— multi-select only: whether the freeform row is
- *                       toggled "on" alongside any selected options.
- * - `focusedIndex`    — focused row within the tab content; indexing:
- *                         0..N-1          = option rows (N = options.length)
- *                         N               = freeform row (when allowFreeform)
- *                         last            = "Next" row (multi-select only)
- *
- * To exit the form without submitting, press Esc — there is no in-form
- * skip option. (Esc maps to onSkip globally; see useKeyboard handler.)
- */
+// focusedIndex layout: 0..N-1 = option rows, N = freeform row (if
+// allowFreeform), last = "Next" row (multi-select only).
 interface QuestionState {
   selected: Set<string>;
   freeformText: string;
@@ -97,10 +74,6 @@ function tabIcon(question: AskUserQuestion, state: QuestionState): string {
   return question.multiSelect ? "⊠" : "□";
 }
 
-/**
- * Describe the row kinds inside a question tab, in vertical order.
- * We pre-compute this so keyboard handling and rendering stay in sync.
- */
 type RowKind =
   | { kind: "option"; optionIndex: number }
   | { kind: "freeform" }
@@ -136,19 +109,12 @@ export function QuestionsForm({
   onSkip,
 }: QuestionsFormProps) {
   const { colors } = useTheme();
-  // Track whether ANY other dialog is on top of us. `@opentui/react`'s
-  // useKeyboard fires globally for every mounted component, so without
-  // this gate the form's Esc/arrow/enter handlers would steal keys that
-  // the topmost dialog (e.g. /theme picker, /model picker, plan review)
-  // is meant to consume. When `dialogOpen`, we early-return from the
-  // handler — the form stays mounted in the bottom slot but stops
-  // reacting to input until the top dialog closes.
+  // Gate keyboard handling when another dialog is mounted above us —
+  // opentui's useKeyboard fires globally, so without this the form
+  // would steal keys from whatever is on top.
   const { stack, externalDialogOpen } = useDialog();
   const dialogOpen = stack.length > 0 || externalDialogOpen;
 
-  // Normalize once per `rawQuestions` reference. All downstream code
-  // can rely on header, multiSelect, allowFreeform, and options being
-  // well-formed without per-call optional handling.
   const questions = useMemo(
     () => rawQuestions.map(normalizeQuestion),
     [rawQuestions],
@@ -157,12 +123,8 @@ export function QuestionsForm({
   const [states, setStates] = useState<QuestionState[]>(() =>
     initialState(questions),
   );
-  // activeTabIndex: 0..questions.length. The final index (== questions.length)
-  // is the Submit tab.
   const [activeTabIndex, setActiveTabIndex] = useState(0);
-  // Focus inside the Submit tab: 0 = Submit answers, 1 = Cancel.
   const [submitFocusedIndex, setSubmitFocusedIndex] = useState(0);
-  // When true, the freeform <input> owns arrow keys (cursor movement).
   const [editingFreeform, setEditingFreeform] = useState(false);
 
   const submitTabIndex = questions.length;
@@ -222,8 +184,6 @@ export function QuestionsForm({
       const next = [...prev];
       const cur = next[questionIndex]!;
       const q = questions[questionIndex]!;
-      // In multi-select the freeform row is "selected" whenever there's
-      // text. In single-select, typing freeform clears any picked option.
       if (q.multiSelect) {
         next[questionIndex] = {
           ...cur,
@@ -268,7 +228,6 @@ export function QuestionsForm({
       if (submitFocusedIndex === 0) {
         onSubmit(buildAnswers(questions, states));
       } else {
-        // Cancel → return to last question tab.
         goToTab(Math.max(0, submitTabIndex - 1));
       }
       return;
@@ -279,10 +238,7 @@ export function QuestionsForm({
 
     if (focusedRow.kind === "option") {
       toggleOption(activeTabIndex, focusedRow.optionIndex);
-      if (!q.multiSelect) {
-        // Single-select: auto-advance to the next tab (or Submit).
-        advanceTab();
-      }
+      if (!q.multiSelect) advanceTab();
       return;
     }
 
@@ -314,7 +270,6 @@ export function QuestionsForm({
     const q = activeQuestion;
     const idx = digit - 1;
     if (idx < q.options.length) {
-      // Focus + toggle the option.
       setStates((prev) => {
         const next = [...prev];
         const cur = next[activeTabIndex]!;
@@ -325,8 +280,6 @@ export function QuestionsForm({
       if (!q.multiSelect) advanceTab();
       return;
     }
-    // For multi-select: if the user presses the number that would map to
-    // the freeform row, enter edit mode. For single-select likewise.
     if (q.allowFreeform && idx === q.options.length) {
       setStates((prev) => {
         const next = [...prev];
@@ -342,16 +295,10 @@ export function QuestionsForm({
   // ── Keyboard handling ──────────────────────────────────────────────
 
   useKeyboard((key) => {
-    // If another dialog (theme picker, model picker, plan review, etc.)
-    // is open above us, do nothing — the topmost dialog owns input. This
-    // prevents the form's Esc handler from also firing and accidentally
-    // skipping the question batch when the operator just meant to dismiss
-    // the overlay.
     if (dialogOpen) return;
 
-    // Freeform-edit mode: arrows move the cursor inside the input,
-    // printable chars + backspace are handled by <input>. We only intercept
-    // mode-exit keys here.
+    // Freeform-edit mode: the <input> owns printable chars + left/right;
+    // only intercept mode-exit keys here.
     if (editingFreeform) {
       if (key.name === "escape") {
         key.preventDefault?.();
@@ -378,11 +325,8 @@ export function QuestionsForm({
         }
         return;
       }
-      // Left/right & other keys flow to the <input>; do not intercept.
       return;
     }
-
-    // ── Normal mode ────────────────────────────────────────────────
 
     if (key.name === "escape") {
       key.preventDefault?.();
@@ -431,7 +375,6 @@ export function QuestionsForm({
       key.preventDefault?.();
       if (onSubmitTab) return;
       if (!activeQuestion || !focusedRow) return;
-      // Space toggles only for multi-select option rows and freeform row.
       if (!activeQuestion.multiSelect) return;
       if (focusedRow.kind === "option") {
         toggleOption(activeTabIndex, focusedRow.optionIndex);
@@ -450,7 +393,6 @@ export function QuestionsForm({
       return;
     }
 
-    // Number keys 1-9
     if (key.raw && /^[1-9]$/.test(key.raw)) {
       key.preventDefault?.();
       quickPick(parseInt(key.raw, 10));
@@ -471,10 +413,9 @@ export function QuestionsForm({
       paddingBottom={1}
       border={true}
       borderColor={colors.primary}
-      // Per AGENTS.md "Terminal size resilience": fixed-bottom dialogs
-      // need flexShrink={0} so the parent flex layout doesn't squash
-      // them, and overflow="hidden" so internal content can't bleed
-      // through into adjacent UI (which was causing line intersections).
+      // Fixed-bottom dialog: flexShrink={0} prevents the parent flex
+      // layout from squashing us; overflow="hidden" stops content from
+      // bleeding into adjacent UI (see AGENTS.md "Terminal size resilience").
       flexShrink={0}
       overflow="hidden"
     >
@@ -743,7 +684,6 @@ function Row({
     );
   }
 
-  // row.kind === "next"
   return (
     <box flexDirection="row" marginTop={1}>
       <text fg={markerColor}>{marker + " "}</text>
