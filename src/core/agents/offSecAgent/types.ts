@@ -234,13 +234,6 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   skillsRegistry?: SkillsRegistry;
 
   /**
-   * Gates availability of the `ask_user_questions` tool. When `true`, the
-   * base class forwards the flag via {@link ToolContext} so specialized
-   * agents (e.g. the exploration agent) can opt into interactive clarification.
-   */
-  askUserQuestionsEnabled?: boolean;
-
-  /**
    * When provided, each tool call is gated through the approval gate.
    * The gate will pause execution until the operator approves or denies
    * the call (when `requireApproval` is enabled on the gate).

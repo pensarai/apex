@@ -108,13 +108,4 @@ export type ToolContext = {
    * plan agents to write plans scoped to their corresponding execution agent.
    */
   planSubagentId?: string;
-
-  /**
-   * Opt-in flag to include the `ask_user_questions` tool in this agent's
-   * toolset. When set (and `'ask_user_questions'` is listed in `activeTools`),
-   * `createAllTools` exposes the tool. Consuming agents MUST pair this with
-   * `stopWhen(hasToolCall('ask_user_questions'))` — the real transport and
-   * resume logic is handled by the consumer (e.g. Console).
-   */
-  askUserQuestionsEnabled?: boolean;
 };

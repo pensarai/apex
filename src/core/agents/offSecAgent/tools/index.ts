@@ -216,10 +216,9 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Skill tools (conditional — only when registry is provided)
     ...(ctx.skillsRegistry ? { read_skill: readSkill(ctx) } : {}),
 
-    // Guided onboarding tools (conditional — only when ask-user-questions is enabled)
-    ...(ctx.askUserQuestionsEnabled
-      ? { ask_user_questions: askUserQuestions(ctx) }
-      : {}),
+    // Interactive clarification tool — always registered. Agents opt in
+    // by listing `'ask_user_questions'` in their `activeTools` array.
+    ask_user_questions: askUserQuestions(ctx),
 
     // Observability tools (conditional — only when trace writer is provided)
     ...(ctx.traceWriter ? { checkpoint_state: checkpointState(ctx) } : {}),
