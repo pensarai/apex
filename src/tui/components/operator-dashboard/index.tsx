@@ -2163,7 +2163,7 @@ export default function OperatorDashboard({
         lastApprovedAction={lastApprovedAction}
       />
 
-      {/* Subagent status bar */}
+      {/* Subagent status bar (renders above the form / input slot) */}
       <SubagentStatusBar
         sessions={subagentSessions}
         agentMovedOn={
@@ -2173,71 +2173,79 @@ export default function OperatorDashboard({
         onOpen={openSubagentDialog}
       />
 
-      {/* ask_user_questions form — rendered next to plan-review/approval
-          overlays. Owns its own keyboard handling while mounted. */}
-      {pendingQuestions && (
+      {/* When ask_user_questions is pending, the questions form REPLACES
+          the queued-messages list and input area — it takes the entire
+          bottom slot so questions get the full available space. The
+          form owns its own keyboard handling while mounted. */}
+      {pendingQuestions ? (
         <QuestionsForm
           questions={pendingQuestions}
           onSubmit={handleQuestionsSubmit}
           onSkip={handleQuestionsSkip}
         />
+      ) : (
+        <>
+          {/* Queued follow-up messages */}
+          <QueuedMessages
+            messages={queuedMessages}
+            selectedIndex={selectedQueueIndex}
+          />
+
+          {/* Input area */}
+          <InputArea
+            value={inputValue}
+            onChange={setInputValue}
+            onSubmit={
+              showPlanReview
+                ? (value: string) => {
+                    const trimmed = value.trim();
+                    if (!trimmed) return;
+                    planRejectedRef.current = true;
+                    setShowPlanReview(false);
+                    handleSubmit(trimmed);
+                  }
+                : handleSubmit
+            }
+            placeholder={
+              showPlanReview
+                ? "Type feedback to refine, or Y to approve, N to reject..."
+                : status === "running"
+                  ? "Queue a follow-up message..."
+                  : status === "waiting"
+                    ? "Type to redirect agent, or Y/A to approve..."
+                    : "Enter directive or / for commands & skills..."
+            }
+            focused={
+              pendingQuestions
+                ? false
+                : status === "running"
+                  ? selectedQueueIndex < 0
+                  : resolveInputFocused(
+                      status,
+                      stack.length,
+                      externalDialogOpen,
+                    )
+            }
+            status={status === "waiting" ? "running" : status}
+            mode="operator"
+            operatorMode={operatorMode}
+            pendingApproval={currentPending}
+            onApprove={handleApprove}
+            onAutoApprove={handleAutoApprove}
+            enableAutocomplete={true}
+            autocompleteOptions={autocompleteOptions}
+            commandOptionMap={commandOptionMap}
+            commandNames={commandNames}
+            autocompletePlacement="above"
+            enableCommands={true}
+            onCommandExecute={handleCommandExecute}
+            highlightSlashCommands={true}
+            disableHistoryNavigation={
+              status === "running" && queuedMessages.length > 0
+            }
+          />
+        </>
       )}
-
-      {/* Queued follow-up messages */}
-      <QueuedMessages
-        messages={queuedMessages}
-        selectedIndex={selectedQueueIndex}
-      />
-
-      {/* Input area */}
-      <InputArea
-        value={inputValue}
-        onChange={setInputValue}
-        onSubmit={
-          showPlanReview
-            ? (value: string) => {
-                const trimmed = value.trim();
-                if (!trimmed) return;
-                planRejectedRef.current = true;
-                setShowPlanReview(false);
-                handleSubmit(trimmed);
-              }
-            : handleSubmit
-        }
-        placeholder={
-          showPlanReview
-            ? "Type feedback to refine, or Y to approve, N to reject..."
-            : status === "running"
-              ? "Queue a follow-up message..."
-              : status === "waiting"
-                ? "Type to redirect agent, or Y/A to approve..."
-                : "Enter directive or / for commands & skills..."
-        }
-        focused={
-          pendingQuestions
-            ? false
-            : status === "running"
-              ? selectedQueueIndex < 0
-              : resolveInputFocused(status, stack.length, externalDialogOpen)
-        }
-        status={status === "waiting" ? "running" : status}
-        mode="operator"
-        operatorMode={operatorMode}
-        pendingApproval={currentPending}
-        onApprove={handleApprove}
-        onAutoApprove={handleAutoApprove}
-        enableAutocomplete={true}
-        autocompleteOptions={autocompleteOptions}
-        commandOptionMap={commandOptionMap}
-        commandNames={commandNames}
-        autocompletePlacement="above"
-        enableCommands={true}
-        onCommandExecute={handleCommandExecute}
-        highlightSlashCommands={true}
-        disableHistoryNavigation={
-          status === "running" && queuedMessages.length > 0
-        }
-      />
     </box>
   );
 }

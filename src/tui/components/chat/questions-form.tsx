@@ -429,7 +429,6 @@ export function QuestionsForm({
   return (
     <box
       flexDirection="column"
-      marginTop={1}
       marginLeft={1}
       marginRight={1}
       paddingLeft={1}
@@ -438,6 +437,12 @@ export function QuestionsForm({
       paddingBottom={1}
       border={true}
       borderColor={colors.warning}
+      // Per AGENTS.md "Terminal size resilience": fixed-bottom dialogs
+      // need flexShrink={0} so the parent flex layout doesn't squash
+      // them, and overflow="hidden" so internal content can't bleed
+      // through into adjacent UI (which was causing line intersections).
+      flexShrink={0}
+      overflow="hidden"
     >
       {/* Tab bar */}
       <TabBar

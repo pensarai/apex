@@ -5,10 +5,11 @@ import type { ToolContext } from "./types";
 /**
  * Zod schema for a single question in an `ask_user_questions` tool call.
  *
- * Each question has 2–6 grounded multi-choice options, an optional
- * freeform escape hatch, and an optional `multiSelect` flag. The `id`
- * is a stable identifier used to correlate the answer back to the
- * question when the consumer resumes the agent with a tool-result.
+ * Each question has 2–3 grounded multi-choice options. The freeform
+ * "Other" escape hatch is rendered separately by the UI (controlled by
+ * `allowFreeform`) and is NOT one of the predefined options — keep the
+ * predefined list short so the user can scan it quickly. The `id` is
+ * stable so the consumer can correlate the answer when resuming.
  */
 export const AskUserQuestionSchema = z.object({
   id: z
@@ -35,7 +36,13 @@ export const AskUserQuestionSchema = z.object({
       }),
     )
     .min(2)
-    .max(6),
+    .max(3)
+    .describe(
+      "2–3 predefined options for the user to choose from. Do NOT include " +
+        '"Other" or "Type something" here — the UI renders a freeform input ' +
+        "automatically when `allowFreeform` is true. Keep options short and " +
+        "grounded in observed code.",
+    ),
 });
 
 /**
@@ -85,12 +92,14 @@ export interface AskUserQuestionsResult {
 export function askUserQuestions(_ctx: ToolContext) {
   return tool({
     description:
-      "Stop the agent and ask the user a batch of 2–5 grounded, multi-choice questions. " +
+      "Stop the agent and ask the user a batch of 1–5 grounded multi-choice questions. " +
+      "Each question must include: a short `header` (≤20 chars, used as the tab label, e.g. " +
+      '"Deployment", "Auth method", "Concerns"); the `question` text; and 2–3 predefined `options`. ' +
       "Option labels MUST reference something observed in the codebase — not generic templates. " +
-      "Each question must include a short `header` field (≤20 chars) used as the tab label in " +
-      'the UI (e.g. "Deployment", "Auth method", "Concerns"). ' +
-      "The consumer of this agent is responsible for collecting answers and, if applicable, " +
-      "resuming with a tool-result in the message history.",
+      "Do NOT include an extra 'Other' or 'Type something' option in the predefined list — the UI " +
+      "renders a freeform input automatically when `allowFreeform` is true (the default). Keep " +
+      "predefined options short (a few words each) so the user can scan them quickly. " +
+      "The consumer of this agent collects answers and resumes with a tool-result in the message history.",
     inputSchema: z.object({
       questions: z.array(AskUserQuestionSchema).min(1).max(5),
     }),
