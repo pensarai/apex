@@ -10,7 +10,7 @@
  * Key: numeric CWE ID (e.g., 79 for CWE-79)
  * Value: canonical short name from MITRE
  */
-export const CWE_DATABASE: ReadonlyMap<number, string> = new Map([
+export const CWE_CATALOG: ReadonlyMap<number, string> = new Map([
   // CWE-NONE / Pillars / Categories referenced in findings
   [16, "Configuration"],
   [19, "Data Processing Errors"],
@@ -429,16 +429,16 @@ export const CWE_DATABASE: ReadonlyMap<number, string> = new Map([
 /**
  * Look up the canonical MITRE name for a CWE ID.
  * @param id Numeric CWE ID (e.g., 89 for CWE-89)
- * @returns The canonical name, or undefined if not in the database
+ * @returns The canonical name, or undefined if not in the catalog
  */
 export function lookupCweName(id: number): string | undefined {
-  return CWE_DATABASE.get(id);
+  return CWE_CATALOG.get(id);
 }
 
 /**
- * Check whether a CWE ID exists in the database.
+ * Check whether a CWE ID exists in the catalog.
  * @param id Numeric CWE ID
  */
 export function isKnownCweId(id: number): boolean {
-  return CWE_DATABASE.has(id);
+  return CWE_CATALOG.has(id);
 }

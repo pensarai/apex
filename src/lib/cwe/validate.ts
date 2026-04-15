@@ -1,5 +1,5 @@
 import type { CweEntry, ValidatedCweEntry } from "./types";
-import { CWE_DATABASE } from "./database";
+import { CWE_CATALOG } from "./cwe-catalog";
 
 export interface CweValidationResult {
   /** Validated and enriched CWE entries (only those found in the database) */
@@ -33,7 +33,7 @@ export function validateCweEntries(entries: CweEntry[]): CweValidationResult {
       continue;
     }
 
-    const canonicalName = CWE_DATABASE.get(numericId);
+    const canonicalName = CWE_CATALOG.get(numericId);
     if (canonicalName === undefined) {
       dropped.push({
         id: entry.id,
