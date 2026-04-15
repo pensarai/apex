@@ -44,7 +44,7 @@ export interface SavedSubagentData {
   findingsCount?: number;
   status?: string;
   error?: string;
-  messages: ModelMessage[];
+  messages?: ModelMessage[];
   /** System prompt used for this agent run (for training data export) */
   systemPrompt?: string;
   /** Initial user prompt / task assignment (for training data export) */
@@ -113,13 +113,32 @@ export function loadSubagentMessages(
   session: SessionInfo,
   agentName: string,
 ): ModelMessage[] {
-  const filePath = join(session.rootPath, SUBAGENTS_DIR, `${agentName}.json`);
-  if (!existsSync(filePath)) return [];
+  // Primary: base class step persistence (written incrementally, survives aborts)
+  const stepPath = join(
+    session.rootPath,
+    SUBAGENTS_DIR,
+    agentName,
+    "messages.json",
+  );
+  if (existsSync(stepPath)) {
+    try {
+      return JSON.parse(readFileSync(stepPath, "utf-8")) as ModelMessage[];
+    } catch {
+      // Fall through to snapshot
+    }
+  }
+  // Fallback: old snapshot format (pre-split sessions)
+  const snapshotPath = join(
+    session.rootPath,
+    SUBAGENTS_DIR,
+    `${agentName}.json`,
+  );
+  if (!existsSync(snapshotPath)) return [];
   try {
     const data = JSON.parse(
-      readFileSync(filePath, "utf-8"),
+      readFileSync(snapshotPath, "utf-8"),
     ) as SavedSubagentData;
-    return data.messages;
+    return data.messages ?? [];
   } catch {
     return [];
   }
@@ -158,7 +177,6 @@ export function saveSubagentData(
     findingsCount: data.findingsCount ?? 0,
     status: data.status,
     error: data.error,
-    messages: data.messages,
     systemPrompt: data.systemPrompt,
     userPrompt: data.userPrompt,
   };
@@ -487,7 +505,24 @@ export function loadSubagents(rootPath: string): UISubagent[] {
 
         const { agentType, name } = parseSubagentFilename(file);
         const timestamp = new Date(data.timestamp);
-        const messages = convertMessagesToUI(data.messages, timestamp);
+
+        // Read messages from base class step persistence (primary),
+        // fall back to snapshot's messages field (old sessions)
+        const agentName = data.agentName;
+        const stepPath = join(subagentsPath, agentName, "messages.json");
+        let messages: UIMessage[];
+        if (existsSync(stepPath)) {
+          try {
+            const raw = JSON.parse(
+              readFileSync(stepPath, "utf-8"),
+            ) as ModelMessage[];
+            messages = convertMessagesToUI(raw, timestamp);
+          } catch {
+            messages = convertMessagesToUI(data.messages ?? [], timestamp);
+          }
+        } else {
+          messages = convertMessagesToUI(data.messages ?? [], timestamp);
+        }
 
         let status: "pending" | "completed" | "failed" | "canceled" =
           "completed";
