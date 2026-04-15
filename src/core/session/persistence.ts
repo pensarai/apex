@@ -362,10 +362,10 @@ function parseSubagentFilename(filename: string): {
   }
 
   if (filename.startsWith("threat-model-")) {
+    // Writer joins app + endpoint with "-" but sanitize preserves dashes,
+    // so we can't split reliably. Show the whole trailing portion.
     const rest = filename.replace("threat-model-", "");
-    const parts = rest.split("-");
-    const label = parts.length > 1 ? parts.slice(1).join("-") : rest;
-    return { agentType: "pentest", name: `Threat Model: ${label}` };
+    return { agentType: "pentest", name: `Threat Model: ${rest}` };
   }
 
   const pentestMatch = filename.match(/^pentest-agent-(\d+)/);
