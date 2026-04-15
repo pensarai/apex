@@ -33,6 +33,40 @@ import type {
   AskUserQuestionAnswer,
 } from "../../../core/agents/offSecAgent/tools/askUserQuestions";
 
+/**
+ * Normalize a single question coming off the wire from the model.
+ *
+ * The Zod schema for `ask_user_questions` is intentionally permissive
+ * (no `min`/`max`, no `default()` on booleans) because Anthropic /
+ * Bedrock has no native JSON mode and tight constraints make
+ * AI-SDK-style tool-call repair fail with "No object generated".
+ * We carry the constraints in the tool description and normalize
+ * defensively here so the UI never has to worry about missing fields,
+ * empty strings, or oversized lists.
+ */
+function normalizeQuestion(q: AskUserQuestion, index: number): AskUserQuestion {
+  const fallbackHeader = `Q${index + 1}`;
+  const trimmedHeader = (q.header ?? "").trim();
+  const header =
+    trimmedHeader.length === 0
+      ? fallbackHeader
+      : trimmedHeader.length > 20
+        ? trimmedHeader.slice(0, 19) + "…"
+        : trimmedHeader;
+
+  // Defensively cap predefined options at 4 — the schema is permissive
+  // but the UX assumes a short scannable list.
+  const options = (q.options ?? []).slice(0, 4);
+
+  return {
+    ...q,
+    header,
+    multiSelect: q.multiSelect ?? false,
+    allowFreeform: q.allowFreeform ?? true,
+    options,
+  };
+}
+
 interface QuestionsFormProps {
   questions: AskUserQuestion[];
   onSubmit: (answers: AskUserQuestionAnswer[]) => void;
@@ -121,11 +155,19 @@ function fitHeader(header: string): string {
 }
 
 export function QuestionsForm({
-  questions,
+  questions: rawQuestions,
   onSubmit,
   onSkip,
 }: QuestionsFormProps) {
   const { colors } = useTheme();
+
+  // Normalize once per `rawQuestions` reference. All downstream code
+  // can rely on header, multiSelect, allowFreeform, and options being
+  // well-formed without per-call optional handling.
+  const questions = useMemo(
+    () => rawQuestions.map(normalizeQuestion),
+    [rawQuestions],
+  );
 
   const [states, setStates] = useState<QuestionState[]>(() =>
     initialState(questions),
