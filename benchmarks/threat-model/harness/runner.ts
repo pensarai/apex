@@ -258,6 +258,7 @@ async function runApp(
       gt,
       config.judgeModel,
       config.authConfig,
+      grounding,
     );
     console.log(`    Avg score: ${effectiveness.score.toFixed(2)}/5`);
   }

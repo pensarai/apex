@@ -138,6 +138,44 @@ function checkNoUserClarification(parsed: ParsedThreatModel): number {
 }
 
 // ---------------------------------------------------------------------------
+// Positive Depth Checks (measure good practices, not just absence of bad)
+// ---------------------------------------------------------------------------
+
+/** A-06: Mechanism steps reference code (file paths, inline code) */
+function checkMechanismCodeRefs(parsed: ParsedThreatModel): number {
+  if (parsed.attackPaths.length === 0) return 0;
+  const codeRefPattern = /`[^`]+`|[a-zA-Z_]+\.[a-zA-Z]{1,4}(?::\d+)?/;
+  let withRefs = 0;
+  for (const ap of parsed.attackPaths) {
+    if (ap.mechanism.some((step) => codeRefPattern.test(step))) withRefs++;
+  }
+  return withRefs / parsed.attackPaths.length;
+}
+
+/** A-07: Attack path entry points are specific (route, file, flag — not vague labels) */
+function checkEntryPointSpecificity(parsed: ParsedThreatModel): number {
+  if (parsed.attackPaths.length === 0) return 0;
+  const specificPattern = /\/[a-z]|\.ts|\.py|\.go|\.rs|\.php|--[a-z]/i;
+  let specific = 0;
+  for (const ap of parsed.attackPaths) {
+    if (specificPattern.test(ap.entryPoint)) specific++;
+  }
+  return specific / parsed.attackPaths.length;
+}
+
+/** A-08: Pentest guidance includes concrete techniques (tools, payloads, commands) */
+function checkPentestGuidanceConcreteness(parsed: ParsedThreatModel): number {
+  if (parsed.attackPaths.length === 0) return 0;
+  const concretePattern =
+    /curl |sqlmap|burp|payload|`[^`]+`|--[a-z]|UNION|SELECT|<script|\.\.\/|%00|nmap|nikto|ffuf|wfuzz|hydra|john/i;
+  let concrete = 0;
+  for (const ap of parsed.attackPaths) {
+    if (concretePattern.test(ap.pentestGuidance)) concrete++;
+  }
+  return concrete / parsed.attackPaths.length;
+}
+
+// ---------------------------------------------------------------------------
 // Main Validator
 // ---------------------------------------------------------------------------
 
@@ -146,11 +184,16 @@ export function validateAntiPatterns(
   trace: ToolCallRecord[],
 ): AntiPatternScore {
   const checks: Record<string, number> = {
+    // Negative checks (avoid bad patterns)
     no_stride: checkNoStride(parsed),
     no_dread: checkNoDread(parsed),
     no_cwe_as_analysis: checkNoCweAsAnalysis(parsed),
     source_code_read: checkSourceCodeRead(trace),
     no_user_clarification: checkNoUserClarification(parsed),
+    // Positive depth checks (demonstrate good analysis)
+    mechanism_code_refs: checkMechanismCodeRefs(parsed),
+    entry_point_specificity: checkEntryPointSpecificity(parsed),
+    pentest_guidance_concrete: checkPentestGuidanceConcreteness(parsed),
   };
 
   const values = Object.values(checks);

@@ -157,7 +157,7 @@ function checkPackages(
   codebasePath: string,
 ): { score: number; found: number; total: number } {
   const packages = extractPackageNames(parsed);
-  if (packages.length === 0) return { score: 1, found: 0, total: 0 };
+  if (packages.length === 0) return { score: 0, found: 0, total: 0 };
 
   let found = 0;
   for (const pkg of packages) {
@@ -185,7 +185,7 @@ function checkConfigFiles(
     );
   });
 
-  if (refs.length === 0) return { score: 1, found: 0, total: 0 };
+  if (refs.length === 0) return { score: 0, found: 0, total: 0 };
 
   let found = 0;
   for (const ref of refs) {

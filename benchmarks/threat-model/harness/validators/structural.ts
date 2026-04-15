@@ -242,6 +242,31 @@ function checkAttackerProfileCount(parsed: ParsedThreatModel): number {
   return count >= 3 && count <= 5 ? 1 : 0;
 }
 
+/** S-13: Mechanism steps have substantive content (30+ chars each) */
+function checkMechanismStepDepth(parsed: ParsedThreatModel): number {
+  if (parsed.attackPaths.length === 0) return 0;
+  const MIN_STEP_LENGTH = 30;
+  let totalSteps = 0;
+  let substantiveSteps = 0;
+  for (const ap of parsed.attackPaths) {
+    for (const step of ap.mechanism) {
+      totalSteps++;
+      if (step.length >= MIN_STEP_LENGTH) substantiveSteps++;
+    }
+  }
+  return totalSteps > 0 ? substantiveSteps / totalSteps : 0;
+}
+
+/** S-14: Security controls have non-empty gap analysis */
+function checkControlGapsPresent(parsed: ParsedThreatModel): number {
+  if (parsed.securityControls.length === 0) return 0;
+  let withGaps = 0;
+  for (const sc of parsed.securityControls) {
+    if (sc.gaps && sc.gaps.trim().length > 10) withGaps++;
+  }
+  return withGaps / parsed.securityControls.length;
+}
+
 // ---------------------------------------------------------------------------
 // Main Validator
 // ---------------------------------------------------------------------------
@@ -263,6 +288,8 @@ export function validateStructural(
     mechanism_steps: checkMechanismSteps(parsed),
     severity_distribution: checkSeverityDistribution(parsed),
     attacker_profile_count: checkAttackerProfileCount(parsed),
+    mechanism_step_depth: checkMechanismStepDepth(parsed),
+    control_gaps_present: checkControlGapsPresent(parsed),
   };
 
   const values = Object.values(checks);

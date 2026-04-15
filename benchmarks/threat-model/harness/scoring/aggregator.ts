@@ -24,11 +24,11 @@ import type {
 
 const DEFAULT_WEIGHTS = {
   structural: 0.10,
-  grounding: 0.15,
-  antipattern: 0.10,
+  grounding: 0.30,
+  antipattern: 0.05,
   discovery: 0.25,
-  attackPathDepth: 0.30,
-  effectiveness: 0.10,
+  attackPathDepth: 0.25,
+  effectiveness: 0.05,
 };
 
 // ---------------------------------------------------------------------------

@@ -97,14 +97,52 @@ function loadSourceContext(
 // Judge
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT = `You are an expert application security engineer evaluating the quality of a single attack path from a threat model.
+const SYSTEM_PROMPT = `You are an expert application security engineer evaluating the quality of a single attack path from a threat model. Be rigorous — most attack paths have room for improvement.
 
-Score each criterion from 1 to 5:
-1 = Completely fails the criterion
-2 = Major deficiencies
-3 = Adequate but with notable gaps
-4 = Good with minor issues
-5 = Excellent, no meaningful issues
+Score each criterion from 1 to 5. Use the FULL range. A score of 3 should be common for decent work, 4 for genuinely strong work, and 5 only for exceptional quality.
+
+## Scoring Scale with Examples
+
+**Specificity** — Does this path reference real code/endpoints/config?
+- 1: Generic ("the application may be vulnerable to XSS")
+- 2: Names a feature area but no code ("the login page could have injection")
+- 3: Names specific endpoints or routes ("POST /api/auth/login is vulnerable")
+- 4: References specific files AND endpoints ("src/routes/auth.ts line 42 constructs SQL via string concatenation")
+- 5: References files, line numbers, variable names, and traces the data flow through code
+
+**Mechanism Quality** — Are steps concrete and followable?
+- 1: Single vague step ("exploit the vulnerability")
+- 2: 3-4 high-level steps without technical detail
+- 3: 8+ steps but some are generic ("the attacker gains access")
+- 4: 8+ steps with specific technical actions at each stage
+- 5: 8+ steps where each step names the exact request, parameter, or code path involved
+
+**Severity Calibration** — Is the assigned severity defensible?
+- 1: Severity is clearly wrong (info disclosure rated Critical)
+- 3: Severity is reasonable but not well-justified
+- 5: Severity matches impact description with clear reasoning
+
+**Pentest Guidance** — Could a pentester start testing immediately?
+- 1: No guidance or "test for vulnerabilities"
+- 2: Names a vulnerability class to test for
+- 3: Suggests specific tools or approaches ("use sqlmap", "test with Burp")
+- 4: Includes specific payloads, parameters, or test commands
+- 5: Provides ready-to-run commands with exact endpoints, headers, and expected responses
+
+**Impact Concreteness** — What specifically happens if exploited?
+- 1: "Data breach" or "security impact"
+- 3: Names the type of data or access ("user credentials are exposed")
+- 5: Names exact tables, fields, or operations ("attacker reads users.email, users.password_hash for all rows")
+
+**Control Analysis** — Are controls and gaps correctly assessed?
+- 1: No controls mentioned
+- 3: Names relevant controls but assessment is surface-level
+- 5: Correctly identifies control IDs, assesses their effectiveness, and identifies specific bypass conditions
+
+## Hard Rules
+- If the attack path contains NO file paths or line numbers, Specificity CANNOT exceed 3.
+- If pentest guidance contains NO concrete payloads or commands, Pentest Guidance CANNOT exceed 3.
+- If impact uses only generic terms ("data breach", "unauthorized access") without specifics, Impact Concreteness CANNOT exceed 2.
 
 Provide a brief reason for each score.`;
 
