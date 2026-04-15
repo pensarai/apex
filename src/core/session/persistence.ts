@@ -375,6 +375,18 @@ function parseSubagentFilename(filename: string): {
     };
   }
 
+  const codingMatch = filename.match(/^coding-agent-(\d+)/);
+  if (codingMatch) {
+    return {
+      agentType: "pentest",
+      name: `Coding Agent ${codingMatch[1]}`,
+    };
+  }
+
+  if (filename === "auth-agent") {
+    return { agentType: "pentest", name: "Auth Agent" };
+  }
+
   // Legacy convention: vuln-test-{vulnClass}-...
   if (filename.startsWith("vuln-test-")) {
     const parts = filename.replace("vuln-test-", "").split("-");
