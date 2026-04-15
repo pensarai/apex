@@ -156,7 +156,10 @@ async function runSingleCodingAgent(
   // codeAgent → offensiveSecurityAgent → tools/index → spawnCodingAgent → codeAgent
   const { CodeAgent } = await import("../../specialized/codeAgent/agent");
 
-  const subagentId = `coding-agent-${agentIndex}`;
+  const localId = `coding-agent-${agentIndex}`;
+  const subagentId = ctx.subagentId
+    ? `${ctx.subagentId}/${localId}`
+    : localId;
 
   ctx.eventBus?.emit("subagent-spawn", {
     subagentId,
@@ -180,7 +183,7 @@ async function runSingleCodingAgent(
     authConfig: ctx.authConfig,
     abortSignal: ctx.abortSignal,
     eventBus: localBus,
-    subagentId,
+    subagentId: localId,
     enableThinking: ctx.enableThinking,
   });
 

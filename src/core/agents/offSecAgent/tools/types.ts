@@ -115,7 +115,7 @@ export type ToolContext = {
    */
   planSubagentId?: string;
 
-  /** Owner subagent id — emitted as `parentSubagentId` on lifecycle events. */
+  /** The owning agent's subagent ID, used to prefix child subagent IDs. */
   subagentId?: string;
 
   /**
