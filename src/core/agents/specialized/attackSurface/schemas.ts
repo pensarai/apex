@@ -227,8 +227,9 @@ export const DocumentEndpointSchema = z.object({
     .describe("Additional notes or observations about the endpoint"),
   pentestObjectives: z
     .array(z.string())
+    .optional()
     .describe(
-      "Specific pentest objectives for this endpoint (e.g., 'Test for IDOR in /api/orders/{id}')",
+      "Pentest objectives for this endpoint, derived from the threat model analysis.",
     ),
   threatModel: z
     .string()

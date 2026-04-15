@@ -83,7 +83,6 @@ For each app you identified, spawn a coding agent with a detailed objective. The
    - Source-code file in \`file\` (e.g., \`src/routes/users.ts\`) — this is NOT the route
    - Line number in \`line\`
    - Auth requirement in \`authRequired\`
-   - Specific pentest objectives in \`pentestObjectives\`
 
 **IMPORTANT:** Tell each coding agent to set \`appName\` on every \`document_endpoint\` call so endpoints are organized by application.
 

@@ -269,31 +269,7 @@ For each endpoint, include:
 - HTTP method(s) in \`method\` (e.g., \`["GET", "POST"]\`; use \`"PAGE"\` for web pages)
 - Authentication requirements in \`authRequired\`
 - Risk level (LOW / MEDIUM / HIGH / CRITICAL)
-- \`pentestObjectives\` — specific pentest objectives (see 5b below)
-
-## 5b. Include pentest objectives with every endpoint
-
-**Every \`document_endpoint\` call MUST include a \`pentestObjectives\` array.** These objectives are passed directly to pentest agents downstream — they define exactly what each agent will test. An endpoint without objectives will not be pentested.
-
-Map asset types to specific vulnerability classes:
-
-| Asset Type | Test For |
-|---|---|
-| API endpoints | IDOR, broken authentication, injection (SQL/NoSQL), mass assignment, rate limiting |
-| Admin panels | Auth bypass, privilege escalation, CSRF on admin actions, default credentials |
-| E-commerce / ordering | Business logic flaws, price manipulation, IDOR in orders, workflow bypass |
-| User portals | Horizontal privilege escalation, IDOR, session management, XSS |
-| File upload endpoints | RCE via upload, path traversal, unrestricted file types, XXE |
-| Search / query forms | SQL injection, NoSQL injection, SSTI, XSS |
-| URL-accepting parameters | SSRF (internal network access, cloud metadata, protocol abuse) |
-| Login / auth endpoints | SQLi bypass, credential stuffing, session fixation, 2FA bypass |
-| Encrypted session tokens | Cipher mode attacks, padding oracle, session forgery |
-
-Write objectives that are **specific**, not vague:
-- Good: \`pentestObjectives: ["Test for IDOR in /api/orders/{id} — verify whether user A can access user B's orders by manipulating the order ID"]\`
-- Bad: \`pentestObjectives: ["Test for vulnerabilities"]\`
-
-## 5c. Include authentication info with every target
+## 5b. Include authentication info with every target
 
 If credentials or auth cookies were obtained, include them with every target that requires authentication:
 \`\`\`
