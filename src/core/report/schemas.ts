@@ -12,6 +12,8 @@ export const PentestReportFindingSchema = z.object({
   remediation: z.string(),
   references: z.string().optional(),
   cwes: z.array(CweEntrySchema).optional(),
+  rootCauseGroup: z.string().optional(),
+  relatedFindings: z.array(z.string()).optional(),
 });
 
 export const PentestReportSchema = z.object({

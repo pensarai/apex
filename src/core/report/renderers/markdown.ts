@@ -65,6 +65,21 @@ function renderFinding(
           "",
         ]
       : []),
+    ...(finding.rootCauseGroup
+      ? [
+          "## Root Cause Group",
+          "",
+          `**Group:** \`${finding.rootCauseGroup}\``,
+          ...(finding.relatedFindings?.length
+            ? [
+                "",
+                "**Related Findings:**",
+                ...finding.relatedFindings.map((rf) => `- ${rf}`),
+              ]
+            : []),
+          "",
+        ]
+      : []),
     "## POC",
     "",
     `Path: \`${finding.pocPath}\``,
