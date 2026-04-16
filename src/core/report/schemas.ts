@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CweEntrySchema, ValidatedCweEntrySchema } from "../../lib/cwe/types";
+import { EvidenceFileEntrySchema } from "../../lib/evidence/types";
 
 export const PentestReportFindingSchema = z.object({
   title: z.string(),
@@ -14,6 +15,7 @@ export const PentestReportFindingSchema = z.object({
   cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
   rootCauseGroup: z.string().optional(),
   relatedFindings: z.array(z.string()).optional(),
+  evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
 });
 
 export const PentestReportSchema = z.object({
