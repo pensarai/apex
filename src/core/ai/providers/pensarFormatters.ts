@@ -20,6 +20,7 @@ export function convertToBedrockFormat(
 
 function getDefaultMaxOutputTokens(modelId: string): number {
   if (
+    modelId.includes("claude-opus-4-7") ||
     modelId.includes("claude-opus-4-6") ||
     modelId.includes("claude-sonnet-4-6")
   ) {
