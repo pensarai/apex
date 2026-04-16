@@ -240,10 +240,85 @@ describe("renderMarkdown", () => {
     );
   });
 
+  it("renders canonical CWE name when present (validated entries)", () => {
+    const report = makeSampleReport({
+      findings: [
+        {
+          title: "SQL Injection in Login Form",
+          severity: "HIGH",
+          description: "SQL injection vulnerability.",
+          impact: "Full database access.",
+          evidence: "Evidence here",
+          endpoint: "/login",
+          pocPath: "pocs/poc_sqli.sh",
+          remediation: "Use parameterized queries.",
+          cwes: [
+            {
+              id: "CWE-89",
+              name: "Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')",
+              reasoning: "SQL injection via unsanitized user input",
+            },
+          ],
+        },
+      ],
+    });
+    const output = renderMarkdown(report);
+
+    expect(output).toContain("## CWE Classification");
+    expect(output).toContain(
+      "- **CWE-89**: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection') — SQL injection via unsanitized user input",
+    );
+  });
+
   it("omits CWE Classification section when cwes are absent", () => {
     const report = makeSampleReport();
     const output = renderMarkdown(report);
 
     expect(output).not.toContain("## CWE Classification");
+  });
+
+  it("renders Evidence Files section when evidenceFiles are present", () => {
+    const report = makeSampleReport({
+      findings: [
+        {
+          title: "SQL Injection",
+          severity: "HIGH",
+          description: "Desc",
+          impact: "Impact",
+          evidence: "Evidence text",
+          endpoint: "/api",
+          pocPath: "pocs/poc.sh",
+          remediation: "Fix it",
+          evidenceFiles: [
+            {
+              path: "findings/evidence.txt",
+              type: "raw-evidence",
+              description: "Full evidence output",
+            },
+            {
+              path: "pocs/poc.sh.output.json",
+              type: "poc-output",
+              description: "POC execution output",
+            },
+          ],
+        },
+      ],
+    });
+    const output = renderMarkdown(report);
+
+    expect(output).toContain("## Evidence Files");
+    expect(output).toContain(
+      "- **[raw-evidence]** `findings/evidence.txt` — Full evidence output",
+    );
+    expect(output).toContain(
+      "- **[poc-output]** `pocs/poc.sh.output.json` — POC execution output",
+    );
+  });
+
+  it("omits Evidence Files section when evidenceFiles are absent", () => {
+    const report = makeSampleReport();
+    const output = renderMarkdown(report);
+
+    expect(output).not.toContain("## Evidence Files");
   });
 });

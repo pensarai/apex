@@ -15,7 +15,7 @@ const SPINNER_INTERVAL = 80;
 const DOTS_FRAMES = ["", ".", "..", "..."];
 const DOTS_INTERVAL = 400;
 
-export type LoadingState = "thinking" | "executing" | "streaming";
+export type LoadingState = "thinking" | "executing" | "streaming" | "waiting";
 
 interface LoadingIndicatorProps {
   /** Current loading state */
@@ -64,6 +64,8 @@ export function LoadingIndicator({
         return `Thinking${dots}`;
       case "streaming":
         return `Responding${dots}`;
+      case "waiting":
+        return `Waiting for agents${dots}`;
       case "executing":
         if (action) {
           return action;
@@ -83,6 +85,8 @@ export function LoadingIndicator({
         return colors.warning;
       case "streaming":
         return colors.primary;
+      case "waiting":
+        return colors.info;
       case "executing":
         return colors.info;
       default:

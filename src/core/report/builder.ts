@@ -47,6 +47,10 @@ export function buildPentestReport(
       pocPath: f.pocPath,
       remediation: f.remediation,
       references: f.references,
+      cwes: f.cwes,
+      rootCauseGroup: f.rootCauseGroup,
+      relatedFindings: f.relatedFindings,
+      evidenceFiles: f.evidenceFiles,
     })),
   };
 }

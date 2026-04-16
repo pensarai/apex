@@ -128,12 +128,10 @@ function wrapStreamWithErrorHandler(
           wrappedStream = (async function* () {
             try {
               for await (const chunk of originalStream.fullStream) {
-                if (chunk.type === "error" || "error" in chunk) {
-                  const error =
-                    "error" in chunk
-                      ? (chunk as unknown as { error: unknown }).error
-                      : chunk;
-                  throw error;
+                // Only stream-level errors are fatal; tool-level errors
+                // flow through so the UI renders them as failed tool results.
+                if (chunk.type === "error") {
+                  throw (chunk as unknown as { error: unknown }).error;
                 }
 
                 yield chunk;
@@ -515,9 +513,12 @@ export function streamResponse(
           // Get the actual tool definition which contains the Zod schema
           const tool = tools[toolCall.toolName];
           if (!tool || !tool.inputSchema) {
-            throw new Error(
-              `Tool ${toolCall.toolName} not found or has no schema`,
-            );
+            if (!silent) {
+              console.error(
+                `Cannot repair tool call: ${toolCall.toolName} not found or has no schema`,
+              );
+            }
+            return null;
           }
 
           // Get JSONSchema7 for display purposes
@@ -576,11 +577,13 @@ export function streamResponse(
             >[0]);
           }
 
-          // Return the tool call with stringified repaired arguments
           if (repairedArgs === undefined || repairedArgs === null) {
-            throw new Error(
-              `Tool call repair for "${toolCall.toolName}" produced no valid output`,
-            );
+            if (!silent) {
+              console.error(
+                `Tool call repair for "${toolCall.toolName}" produced no valid output`,
+              );
+            }
+            return null;
           }
           return { ...toolCall, input: JSON.stringify(repairedArgs) };
         } catch (repairError) {
@@ -592,7 +595,7 @@ export function streamResponse(
                 : String(repairError),
             );
           }
-          throw repairError;
+          return null;
         }
       },
       onFinish,

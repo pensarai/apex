@@ -14,6 +14,7 @@ import {
   PLAN_MODE_TOOL_NAMES,
 } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
+import { ASK_USER_QUESTIONS_TOOL_NAME } from "./tools/askUserQuestions";
 import { PersistentShell } from "./tools/persistentShell";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import type { ApprovalGate } from "../../operator";
@@ -141,7 +142,11 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     // -- Step trace (trace.jsonl) ---------------------------------------------
     // Created before tools so the checkpoint_state tool can reference it.
-    const messagesDir = input.messagesDir ?? input.session.rootPath;
+    const messagesDir =
+      input.messagesDir ??
+      (input.subagentId
+        ? join(input.session.rootPath, "subagents", input.subagentId)
+        : input.session.rootPath);
     const tracePath = input.subagentId
       ? join(
           input.session.rootPath,
@@ -201,7 +206,11 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     // -- Approval gate wrapping -----------------------------------------------
     if (input.approvalGate) {
-      tools = wrapToolsWithApprovalGate(tools, input.approvalGate);
+      tools = wrapToolsWithApprovalGate(
+        tools,
+        input.approvalGate,
+        AGENT_PAUSE_TOOLS,
+      );
     }
 
     // -- Response schema → auto capture / stop / resolve ----------------------
@@ -452,17 +461,23 @@ export class OffensiveSecurityAgent<TResult = void> {
   }
 }
 
-/**
- * Wrap every tool's execute function with the approval gate so that
- * tool calls are held until the operator approves them.
- */
+// These tools pause the agent and surface their own UI to the operator.
+// Gating them through the approval gate would double-prompt.
+const AGENT_PAUSE_TOOLS = new Set<string>([ASK_USER_QUESTIONS_TOOL_NAME]);
+
 function wrapToolsWithApprovalGate(
   tools: ToolSet,
   gate: ApprovalGate,
+  exemptToolNames?: Set<string>,
 ): ToolSet {
   const wrapped: ToolSet = {};
 
   for (const [name, coreTool] of Object.entries(tools)) {
+    if (exemptToolNames?.has(name)) {
+      wrapped[name] = coreTool;
+      continue;
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const t = coreTool as any;
 

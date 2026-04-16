@@ -11,10 +11,9 @@ import {
 } from "./index";
 import packageJson from "../../../package.json";
 
-vi.mock("child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("child_process")>();
-  return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
-});
+vi.mock("child_process", () => ({
+  spawnSync: vi.fn(),
+}));
 
 // ---------------------------------------------------------------------------
 // getCurrentVersion

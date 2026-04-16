@@ -119,6 +119,71 @@ describe("buildPentestReport", () => {
     });
   });
 
+  it("includes cwes in report findings when present", () => {
+    const findings: Finding[] = [
+      makeFinding({
+        title: "SQLi with CWEs",
+        cwes: [
+          {
+            id: "CWE-89",
+            reasoning: "SQL injection via unsanitized user input",
+          },
+        ],
+      }),
+    ];
+
+    const report = buildPentestReport(findings, defaultContext);
+    const result = PentestReportSchema.safeParse(report);
+
+    expect(result.success).toBe(true);
+    expect(report.findings[0].cwes).toHaveLength(1);
+    expect(report.findings[0].cwes![0].id).toBe("CWE-89");
+  });
+
+  it("handles findings without cwes (backward compat)", () => {
+    const findings: Finding[] = [makeFinding({ title: "No CWEs" })];
+
+    const report = buildPentestReport(findings, defaultContext);
+    const result = PentestReportSchema.safeParse(report);
+
+    expect(result.success).toBe(true);
+    expect(report.findings[0].cwes).toBeUndefined();
+  });
+
+  it("includes evidenceFiles when present on finding", () => {
+    const findings: Finding[] = [
+      makeFinding({
+        title: "With Evidence Files",
+        evidenceFiles: [
+          {
+            path: "findings/evidence.txt",
+            type: "raw-evidence",
+            description: "Full evidence",
+          },
+          {
+            path: "pocs/poc_test.py.output.json",
+            type: "poc-output",
+            description: "POC output",
+          },
+        ],
+      }),
+    ];
+
+    const report = buildPentestReport(findings, defaultContext);
+    const result = PentestReportSchema.safeParse(report);
+
+    expect(result.success).toBe(true);
+    expect(report.findings[0].evidenceFiles).toHaveLength(2);
+    expect(report.findings[0].evidenceFiles![0].type).toBe("raw-evidence");
+    expect(report.findings[0].evidenceFiles![1].type).toBe("poc-output");
+  });
+
+  it("omits evidenceFiles when not present on finding", () => {
+    const findings: Finding[] = [makeFinding()];
+    const report = buildPentestReport(findings, defaultContext);
+    expect(report.findings[0].evidenceFiles).toBeUndefined();
+  });
+
   it("includes optional references when present", () => {
     const findings: Finding[] = [
       makeFinding({

@@ -1,4 +1,5 @@
 import type { PentestReport, PentestReportFinding } from "../schemas";
+import { hasCanonicalName } from "../../../lib/cwe/types";
 
 export function renderMarkdown(report: PentestReport): string {
   const { metadata, findings, summary } = report;
@@ -57,11 +58,39 @@ function renderFinding(
     finding.evidence,
     "```",
     "",
+    ...(finding.evidenceFiles?.length
+      ? [
+          "## Evidence Files",
+          "",
+          ...finding.evidenceFiles.map(
+            (ef) => `- **[${ef.type}]** \`${ef.path}\` — ${ef.description}`,
+          ),
+          "",
+        ]
+      : []),
     ...(finding.cwes?.length
       ? [
           "## CWE Classification",
           "",
-          ...finding.cwes.map((cwe) => `- **${cwe.id}** — ${cwe.reasoning}`),
+          ...finding.cwes.map(
+            (cwe) =>
+              `- **${cwe.id}**${hasCanonicalName(cwe) ? `: ${cwe.name}` : ""} — ${cwe.reasoning}`,
+          ),
+          "",
+        ]
+      : []),
+    ...(finding.rootCauseGroup
+      ? [
+          "## Root Cause Group",
+          "",
+          `**Group:** \`${finding.rootCauseGroup}\``,
+          ...(finding.relatedFindings?.length
+            ? [
+                "",
+                "**Related Findings:**",
+                ...finding.relatedFindings.map((rf) => `- ${rf}`),
+              ]
+            : []),
           "",
         ]
       : []),
