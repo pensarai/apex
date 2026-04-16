@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ToolContext } from "./types";
 import type { RiskScore } from "../../specialized/whiteboxAttackSurface/types";
-import { AgentEventBus, type AgentEventMap } from "../../../eventBus";
+import { AgentEventBus } from "../../../eventBus";
 
 const ThreatModelResultSchema = z.object({
   threatModel: z
@@ -127,7 +127,7 @@ export async function generateThreatModelForEndpoint(
   });
 
   const localBus = new AgentEventBus();
-  attachChildEventBus(localBus, ctx.eventBus);
+  AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
 
   const prompt = buildThreatModelPrompt(input, ctx.projectThreatModel);
 
@@ -295,28 +295,4 @@ Call the \`response\` tool with your threat model, risk score assessment, and pe
 
 function sanitize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
-}
-
-const CHILD_BUS_EVENT_KEYS = [
-  "text-delta",
-  "tool-call-start",
-  "tool-call-delta",
-  "tool-call-complete",
-  "tool-result",
-  "subagent-spawn",
-  "subagent-complete",
-  "command-output",
-  "error",
-  "step-finish",
-] as const satisfies readonly (keyof AgentEventMap)[];
-
-function attachChildEventBus(
-  local: AgentEventBus,
-  parent: AgentEventBus | undefined,
-): void {
-  for (const key of CHILD_BUS_EVENT_KEYS) {
-    local.on(key, (payload: AgentEventMap[typeof key]) => {
-      parent?.emit(key, payload);
-    });
-  }
 }

@@ -17,6 +17,8 @@ const SUBAGENT_TOOLS = new Set([
   "run_pentest_workflow",
   "spawn_pentest_swarm",
   "run_attack_surface",
+  "spawn_coding_agent",
+  "delegate_to_auth_subagent",
 ]);
 
 /**
