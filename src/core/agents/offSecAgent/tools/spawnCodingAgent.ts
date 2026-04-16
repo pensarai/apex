@@ -1,38 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
-import { AgentEventBus, type AgentEventMap } from "../../../eventBus";
+import { AgentEventBus } from "../../../eventBus";
 
 /** Default max concurrent coding agents */
 const DEFAULT_CONCURRENCY = 5;
-
-const CHILD_BUS_EVENT_KEYS = [
-  "text-delta",
-  "tool-call-start",
-  "tool-call-delta",
-  "tool-call-complete",
-  "tool-result",
-  "subagent-spawn",
-  "subagent-complete",
-  "command-output",
-  "error",
-  "step-finish",
-] as const satisfies readonly (keyof AgentEventMap)[];
-
-function attachChildEventBus(
-  localBus: AgentEventBus,
-  parentBus: AgentEventBus | undefined,
-  accumulateText: (chunk: string) => void,
-): void {
-  for (const key of CHILD_BUS_EVENT_KEYS) {
-    localBus.on(key, (payload: AgentEventMap[typeof key]) => {
-      if (key === "text-delta") {
-        accumulateText((payload as AgentEventMap["text-delta"]).text);
-      }
-      parentBus?.emit(key, payload);
-    });
-  }
-}
 
 /**
  * Factory for the `spawn_coding_agent` tool.
@@ -194,8 +166,9 @@ async function runSingleCodingAgent(
 
   const localBus = new AgentEventBus();
   let textOutput = "";
-  attachChildEventBus(localBus, ctx.eventBus, (t) => {
-    textOutput += t;
+  AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
+  localBus.on("text-delta", (d) => {
+    textOutput += d.text;
   });
 
   const agent = new CodeAgent({

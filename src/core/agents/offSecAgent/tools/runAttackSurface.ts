@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ToolContext } from "./types";
 import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
 import type { WhiteboxAttackSurfaceResult } from "../../specialized/whiteboxAttackSurface/types";
+import { AgentEventBus } from "../../../eventBus";
 
 /**
  * Factory for the `run_attack_surface` tool.
@@ -66,6 +67,9 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           const { WhiteboxAttackSurfaceAgent } =
             await import("../../specialized/whiteboxAttackSurface/agent");
 
+          const localBus = new AgentEventBus();
+          AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
+
           const agent = new WhiteboxAttackSurfaceAgent({
             codebasePath: cwd,
             model: ctx.model,
@@ -73,7 +77,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             authConfig: ctx.authConfig,
             abortSignal: ctx.abortSignal,
             attackSurfaceRegistry: ctx.attackSurfaceRegistry,
-            eventBus: ctx.eventBus,
+            eventBus: localBus,
             subagentId,
           });
 
@@ -131,6 +135,9 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         const { BlackboxAttackSurfaceAgent } =
           await import("../../specialized/attackSurface/blackboxAgent");
 
+        const localBus = new AgentEventBus();
+        AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
+
         const agent = new BlackboxAttackSurfaceAgent({
           target: target!,
           model: ctx.model,
@@ -138,7 +145,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           authConfig: ctx.authConfig,
           abortSignal: ctx.abortSignal,
           attackSurfaceRegistry: ctx.attackSurfaceRegistry,
-          eventBus: ctx.eventBus,
+          eventBus: localBus,
           subagentId,
         });
 
