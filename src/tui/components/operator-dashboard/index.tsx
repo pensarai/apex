@@ -86,6 +86,7 @@ import {
   buildOperatorSystemPrompt,
   resolveInputFocused,
   accumulateTokenUsage,
+  patchToolResultOutput,
 } from "./logic";
 import {
   createSubagentSessionHelpers,
@@ -1780,36 +1781,14 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       const toolCallId = pendingToolCallIdRef.current;
       if (!toolCallId) return;
 
-      // Bedrock Converse / Anthropic requires { type: 'json', value: ... } wrapper.
-      const wrappedOutput = {
-        type: "json" as const,
-        value: result as unknown as Record<string, unknown>,
-      };
-
-      const updated: ModelMessage[] = conversationRef.current.map((msg) => {
-        if (msg.role !== "tool") return msg;
-        if (!Array.isArray(msg.content)) return msg;
-        let mutated = false;
-        const nextContent = msg.content.map((part) => {
-          if (
-            part &&
-            typeof part === "object" &&
-            "type" in part &&
-            (part as { type?: unknown }).type === "tool-result" &&
-            (part as { toolCallId?: unknown }).toolCallId === toolCallId
-          ) {
-            mutated = true;
-            return {
-              ...(part as Record<string, unknown>),
-              output: wrappedOutput,
-            };
-          }
-          return part;
-        });
-        return mutated
-          ? ({ ...msg, content: nextContent } as ModelMessage)
-          : msg;
-      });
+      const updated = patchToolResultOutput(
+        conversationRef.current,
+        toolCallId,
+        {
+          type: "json" as const,
+          value: result as unknown as Record<string, unknown>,
+        },
+      );
 
       conversationRef.current = updated;
 
@@ -1999,37 +1978,18 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       key.preventDefault?.();
       const toolCallId = pendingToolCallIdRef.current;
       if (toolCallId) {
-        const abortedResult = {
-          type: "json" as const,
-          value: {
-            answers: [],
-            skipped: true,
-            aborted: true,
-          } as unknown as Record<string, unknown>,
-        };
-        conversationRef.current = conversationRef.current.map((msg) => {
-          if (msg.role !== "tool" || !Array.isArray(msg.content)) return msg;
-          let mutated = false;
-          const nextContent = msg.content.map((part) => {
-            if (
-              part &&
-              typeof part === "object" &&
-              "type" in part &&
-              (part as { type?: unknown }).type === "tool-result" &&
-              (part as { toolCallId?: unknown }).toolCallId === toolCallId
-            ) {
-              mutated = true;
-              return {
-                ...(part as Record<string, unknown>),
-                output: abortedResult,
-              };
-            }
-            return part;
-          });
-          return mutated
-            ? ({ ...msg, content: nextContent } as ModelMessage)
-            : msg;
-        });
+        conversationRef.current = patchToolResultOutput(
+          conversationRef.current,
+          toolCallId,
+          {
+            type: "json" as const,
+            value: {
+              answers: [],
+              skipped: true,
+              aborted: true,
+            } as unknown as Record<string, unknown>,
+          },
+        );
         const activeSession = sessionRef.current;
         if (activeSession) {
           try {

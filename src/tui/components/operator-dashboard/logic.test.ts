@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ModelMessage } from "ai";
 import {
   filterOperatorAutocomplete,
   resolveSubmit,
@@ -8,6 +9,7 @@ import {
   buildOperatorSystemPrompt,
   resolveInputFocused,
   accumulateTokenUsage,
+  patchToolResultOutput,
   type DashboardStatus,
 } from "./logic";
 import type { AutocompleteOption } from "../shared/prompt-input";
@@ -665,5 +667,105 @@ describe("accumulateTokenUsage", () => {
       cachedTokens: 0,
       cacheWriteTokens: 0,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// patchToolResultOutput
+// ---------------------------------------------------------------------------
+
+describe("patchToolResultOutput", () => {
+  const toolCallId = "call_123";
+  const wrappedOutput = {
+    type: "json" as const,
+    value: { answers: [{ answer: "yes" }], skipped: false },
+  };
+
+  function makeToolMessage(id: string): ModelMessage {
+    return {
+      role: "tool" as const,
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: id,
+          toolName: "ask_user_questions",
+          output: { type: "text", value: "pending" },
+        },
+      ],
+    } as unknown as ModelMessage;
+  }
+
+  it("patches the matching tool-result output", () => {
+    const messages: ModelMessage[] = [
+      { role: "system", content: "hello" } as unknown as ModelMessage,
+      makeToolMessage(toolCallId),
+    ];
+    const result = patchToolResultOutput(messages, toolCallId, wrappedOutput);
+    expect(result).toHaveLength(2);
+    const toolMsg = result[1] as { content: Array<Record<string, unknown>> };
+    expect(toolMsg.content[0].output).toEqual(wrappedOutput);
+  });
+
+  it("does not mutate the original array", () => {
+    const messages: ModelMessage[] = [makeToolMessage(toolCallId)];
+    const result = patchToolResultOutput(messages, toolCallId, wrappedOutput);
+    expect(result).not.toBe(messages);
+    const original = messages[0] as {
+      content: Array<Record<string, unknown>>;
+    };
+    expect(original.content[0].output).toEqual({
+      type: "text",
+      value: "pending",
+    });
+  });
+
+  it("returns messages unchanged when no match", () => {
+    const messages: ModelMessage[] = [
+      { role: "system", content: "hello" } as unknown as ModelMessage,
+      makeToolMessage("other_id"),
+    ];
+    const result = patchToolResultOutput(messages, toolCallId, wrappedOutput);
+    expect(result[0]).toBe(messages[0]);
+    expect(result[1]).toBe(messages[1]);
+  });
+
+  it("handles empty messages array", () => {
+    const result = patchToolResultOutput([], toolCallId, wrappedOutput);
+    expect(result).toEqual([]);
+  });
+
+  it("skips tool messages with non-array content", () => {
+    const messages: ModelMessage[] = [
+      { role: "tool", content: "plain string" } as unknown as ModelMessage,
+    ];
+    const result = patchToolResultOutput(messages, toolCallId, wrappedOutput);
+    expect(result[0]).toBe(messages[0]);
+  });
+
+  it("only patches the part with the matching toolCallId", () => {
+    const messages: ModelMessage[] = [
+      {
+        role: "tool" as const,
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "other_id",
+            toolName: "other_tool",
+            output: { type: "text", value: "keep" },
+          },
+          {
+            type: "tool-result",
+            toolCallId: toolCallId,
+            toolName: "ask_user_questions",
+            output: { type: "text", value: "replace" },
+          },
+        ],
+      } as unknown as ModelMessage,
+    ];
+    const result = patchToolResultOutput(messages, toolCallId, wrappedOutput);
+    const content = (result[0] as { content: Array<Record<string, unknown>> })
+      .content;
+    expect(content[0].output).toEqual({ type: "text", value: "keep" });
+    expect(content[1].output).toEqual(wrappedOutput);
   });
 });

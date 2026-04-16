@@ -1,3 +1,4 @@
+import type { ModelMessage } from "ai";
 import type { AutocompleteOption } from "../shared/prompt-input";
 import type { OperatorSessionState } from "../../../core/operator";
 import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent/prompt";
@@ -349,4 +350,41 @@ export function accumulateTokenUsage(
     cachedTokens: current.cachedTokens,
     cacheWriteTokens: current.cacheWriteTokens,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Tool-result patching
+// ---------------------------------------------------------------------------
+
+/**
+ * Find the tool-result part matching `toolCallId` in a conversation and
+ * replace its `output` with `wrappedOutput`. Returns a new array (messages
+ * without a matching part are shared by reference).
+ */
+export function patchToolResultOutput(
+  messages: ModelMessage[],
+  toolCallId: string,
+  wrappedOutput: { type: "json"; value: Record<string, unknown> },
+): ModelMessage[] {
+  return messages.map((msg) => {
+    if (msg.role !== "tool" || !Array.isArray(msg.content)) return msg;
+    let mutated = false;
+    const nextContent = msg.content.map((part) => {
+      if (
+        part &&
+        typeof part === "object" &&
+        "type" in part &&
+        (part as { type?: unknown }).type === "tool-result" &&
+        (part as { toolCallId?: unknown }).toolCallId === toolCallId
+      ) {
+        mutated = true;
+        return {
+          ...(part as Record<string, unknown>),
+          output: wrappedOutput,
+        };
+      }
+      return part;
+    });
+    return mutated ? ({ ...msg, content: nextContent } as ModelMessage) : msg;
+  });
 }
