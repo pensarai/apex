@@ -91,8 +91,8 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 - **browser_get_cookies** — Extract all cookies (including httpOnly) from the browser context.
 
 ## Filesystem & Search
-- **read_file** — Read file contents (whole file or line range).
-- **list_files** — List directory contents (optionally recursive).
+- **read_file** — Read file contents (whole file or line range). Only works on files, not directories.
+- **list_files** — List directory contents (optionally recursive). Use this instead of read_file when you want to see what's inside a directory.
 - **grep** — Search file contents by pattern with full grep flag support.
 
 ## Authentication
