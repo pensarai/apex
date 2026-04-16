@@ -1982,7 +1982,23 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       }
     }
 
-    const dialogOpen = stack.length > 0 || externalDialogOpen;
+    // Ctrl+C while questions are pending — abort without resuming the agent.
+    // The abort controller is null at this point (runAgent's finally block
+    // already cleared it), so handleAbort() would early-return. Handle it
+    // explicitly: dismiss the form and go idle.
+    if (pendingQuestions && key.ctrl && key.name === "c") {
+      key.preventDefault?.();
+      pendingToolCallIdRef.current = null;
+      setPendingQuestions(null);
+      setStatus("idle");
+      addSystemMessage("Aborted — questions dismissed.");
+      return;
+    }
+
+    // Treat the questions form as a dialog so that dashboard-level shortcuts
+    // (Shift+Tab cycle-mode, etc.) don't fire while the form owns the keyboard.
+    const dialogOpen =
+      stack.length > 0 || externalDialogOpen || !!pendingQuestions;
 
     // Ctrl+A to open subagent dialog (skip if another dialog is open)
     if (
