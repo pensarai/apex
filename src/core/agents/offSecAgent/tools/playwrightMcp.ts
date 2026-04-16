@@ -218,11 +218,11 @@ let defaultUserAgent: string | undefined =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 /**
- * Default viewport size (format: `WIDTH,HEIGHT`) for new browser sessions.
+ * Default viewport size (format: `WIDTHxHEIGHT`) for new browser sessions.
  * 1920x1080 matches a standard desktop resolution and avoids the small
  * default viewport that some SPAs use as a mobile/bot signal.
  */
-let defaultViewportSize: string | undefined = "1920,1080";
+let defaultViewportSize: string | undefined = "1920x1080";
 
 /**
  * Configure the default headless mode for new browser sessions.
@@ -243,7 +243,7 @@ export function setUserAgent(userAgent: string | undefined): void {
 
 /**
  * Configure the default viewport size for new browser sessions.
- * Format is `"WIDTH,HEIGHT"`, e.g. `"1920,1080"`.
+ * Format is `"WIDTHxHEIGHT"`, e.g. `"1920x1080"`.
  * Pass `undefined` to fall back to Chromium's default viewport.
  */
 export function setViewportSize(viewportSize: string | undefined): void {
