@@ -209,7 +209,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       tools = wrapToolsWithApprovalGate(
         tools,
         input.approvalGate,
-        SENTINEL_TOOL_NAMES,
+        AGENT_PAUSE_TOOLS,
       );
     }
 
@@ -461,9 +461,9 @@ export class OffensiveSecurityAgent<TResult = void> {
   }
 }
 
-// Tools that bypass the approval gate — they stop the agent loop and
-// surface their own UI, so gating them would double-prompt the operator.
-const SENTINEL_TOOL_NAMES = new Set<string>([ASK_USER_QUESTIONS_TOOL_NAME]);
+// These tools pause the agent and surface their own UI to the operator.
+// Gating them through the approval gate would double-prompt.
+const AGENT_PAUSE_TOOLS = new Set<string>([ASK_USER_QUESTIONS_TOOL_NAME]);
 
 function wrapToolsWithApprovalGate(
   tools: ToolSet,

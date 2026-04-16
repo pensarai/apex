@@ -58,7 +58,7 @@ export interface AskUserQuestionsResult {
   skipped: boolean;
 }
 
-// Agent is stopped via hasToolCall before execute runs; body is a sentinel.
+// Agent is paused via hasToolCall before execute runs; body is a fallback.
 export function askUserQuestions(_ctx: ToolContext) {
   return tool({
     description:

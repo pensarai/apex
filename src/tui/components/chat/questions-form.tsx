@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
 import { useDialog } from "../../context/dialog";
+import { useDimensions } from "../../context/dimensions";
 import { DialogControls } from "../shared/dialog-controls";
 import type { ControlItem } from "../shared/dialog-controls";
 import type {
@@ -14,6 +15,8 @@ const FOOTER_CONTROLS: ControlItem[] = [
   { key: "Tab/Arrow keys", label: "to navigate" },
   { key: "Esc", label: "to cancel" },
 ];
+
+const MIN_CONTENT_HEIGHT = 10;
 
 // Schema is deliberately permissive (see askUserQuestions.ts comment).
 function normalizeQuestion(q: AskUserQuestion, index: number): AskUserQuestion {
@@ -97,12 +100,19 @@ function buildAnswers(
   });
 }
 
+// Compute how many chars a rendered tab occupies: " icon header " + gap
+function tabWidth(header: string): number {
+  // "icon " (2) + header + paddingLeft(1) + paddingRight(1) + gap(1)
+  return header.length + 5;
+}
+
 export function QuestionsForm({
   questions: rawQuestions,
   onSubmit,
   onSkip,
 }: QuestionsFormProps) {
   const { colors } = useTheme();
+  const { width: termWidth } = useDimensions();
   // useKeyboard fires globally; gate it when a dialog is above us.
   const { stack, externalDialogOpen } = useDialog();
   const dialogOpen = stack.length > 0 || externalDialogOpen;
@@ -136,6 +146,9 @@ export function QuestionsForm({
     !onSubmitTab && activeState
       ? (rows[Math.min(activeState.focusedIndex, rows.length - 1)] ?? null)
       : null;
+
+  const isFreeformFocused =
+    !onSubmitTab && focusedRow?.kind === "freeform";
 
   const updateState = (index: number, patch: Partial<QuestionState>) => {
     setStates((prev) => {
@@ -224,7 +237,10 @@ export function QuestionsForm({
     }
 
     if (focusedRow.kind === "freeform") {
-      setEditingFreeform(true);
+      // Enter on freeform commits text and advances (single-select) or
+      // just confirms (multi-select). Typing starts automatically on focus.
+      setEditingFreeform(false);
+      if (!q.multiSelect) advanceTab();
       return;
     }
 
@@ -264,10 +280,16 @@ export function QuestionsForm({
   useKeyboard((key) => {
     if (dialogOpen) return;
 
-    if (editingFreeform) {
+    // Freeform is auto-focused when its row is focused. Only intercept
+    // keys that exit or navigate away; printable chars go to <input>.
+    if (editingFreeform || isFreeformFocused) {
       if (key.name === "escape") {
         key.preventDefault?.();
         setEditingFreeform(false);
+        // Move focus off the freeform row so the input loses focus
+        if (activeState && activeState.focusedIndex > 0) {
+          moveRow(-1);
+        }
         return;
       }
       if (key.name === "up") {
@@ -288,6 +310,13 @@ export function QuestionsForm({
         if (activeQuestion && !activeQuestion.multiSelect) {
           advanceTab();
         }
+        return;
+      }
+      if (key.name === "tab") {
+        key.preventDefault?.();
+        setEditingFreeform(false);
+        if (key.shift) retreatTab();
+        else advanceTab();
         return;
       }
       return;
@@ -345,10 +374,6 @@ export function QuestionsForm({
         toggleOption(activeTabIndex, focusedRow.optionIndex);
         return;
       }
-      if (focusedRow.kind === "freeform") {
-        setEditingFreeform(true);
-        return;
-      }
       return;
     }
 
@@ -384,9 +409,15 @@ export function QuestionsForm({
         states={states}
         activeTabIndex={activeTabIndex}
         submitTabIndex={submitTabIndex}
+        availableWidth={termWidth - 6}
       />
 
-      <box flexDirection="column" marginTop={1} paddingLeft={1}>
+      <box
+        flexDirection="column"
+        marginTop={1}
+        paddingLeft={1}
+        minHeight={MIN_CONTENT_HEIGHT}
+      >
         {onSubmitTab ? (
           <SubmitView
             allAnswered={allAnswered}
@@ -397,7 +428,7 @@ export function QuestionsForm({
             question={activeQuestion}
             state={activeState}
             rows={rows}
-            editingFreeform={editingFreeform}
+            isFreeformFocused={isFreeformFocused}
             onFreeformInput={(v) => updateFreeformText(activeTabIndex, v)}
           />
         ) : null}
@@ -415,34 +446,95 @@ function TabBar({
   states,
   activeTabIndex,
   submitTabIndex,
+  availableWidth,
 }: {
   questions: AskUserQuestion[];
   states: QuestionState[];
   activeTabIndex: number;
   submitTabIndex: number;
+  availableWidth: number;
 }) {
   const { colors } = useTheme();
+
+  // All tab items: question tabs + submit tab
+  const allTabs = useMemo(() => {
+    const tabs = questions.map((q, i) => ({
+      index: i,
+      header: q.header,
+      width: tabWidth(q.header),
+    }));
+    tabs.push({ index: submitTabIndex, header: "Submit", width: tabWidth("Submit") });
+    return tabs;
+  }, [questions, submitTabIndex]);
+
+  // Determine which tabs are visible on a single line.
+  // Reserve space for arrows (2 chars each) + overflow indicators.
+  const { visibleStart, visibleEnd, hiddenBefore, hiddenAfter } = useMemo(() => {
+    const arrowSpace = 4; // "← " and " →"
+    const budget = availableWidth - arrowSpace;
+
+    // Always include the active tab; expand outward from there.
+    let start = activeTabIndex;
+    let end = activeTabIndex;
+    let used = allTabs[activeTabIndex]?.width ?? 0;
+
+    // Expand right, then left
+    while (end + 1 < allTabs.length) {
+      const next = allTabs[end + 1]!;
+      // Reserve space for "+N" indicator if there are tabs past what we show
+      const indicatorReserve = end + 2 < allTabs.length ? 5 : 0;
+      if (used + next.width + indicatorReserve > budget) break;
+      used += next.width;
+      end++;
+    }
+    while (start - 1 >= 0) {
+      const prev = allTabs[start - 1]!;
+      const indicatorReserve = start - 2 >= 0 ? 5 : 0;
+      if (used + prev.width + indicatorReserve > budget) break;
+      used += prev.width;
+      start--;
+    }
+
+    return {
+      visibleStart: start,
+      visibleEnd: end,
+      hiddenBefore: start,
+      hiddenAfter: allTabs.length - 1 - end,
+    };
+  }, [allTabs, activeTabIndex, availableWidth]);
+
   const leftActive = activeTabIndex > 0;
   const rightActive = activeTabIndex < submitTabIndex;
 
   return (
-    <box flexDirection="row" gap={1} alignItems="center">
+    <box flexDirection="row" gap={1} alignItems="center" overflow="hidden">
       <text fg={leftActive ? colors.text : colors.textMuted}>←</text>
 
-      {questions.map((q, i) => {
-        const active = i === activeTabIndex;
-        const s = states[i]!;
-        const icon = tabIcon(q, s);
-        const label = q.header;
-        const fg = active ? colors.text : colors.textMuted;
-        const iconFg = isAnswered(s)
+      {hiddenBefore > 0 && (
+        <text fg={colors.textMuted}>{`+${hiddenBefore}`}</text>
+      )}
+
+      {allTabs.slice(visibleStart, visibleEnd + 1).map((tab) => {
+        const isSubmit = tab.index === submitTabIndex;
+        const active = tab.index === activeTabIndex;
+        const s = !isSubmit ? states[tab.index]! : null;
+        const q = !isSubmit ? questions[tab.index]! : null;
+
+        const icon = isSubmit
+          ? "✓"
+          : tabIcon(q!, s!);
+        const iconFg = isSubmit
           ? colors.success
-          : active
-            ? colors.primary
-            : colors.textMuted;
+          : isAnswered(s!)
+            ? colors.success
+            : active
+              ? colors.primary
+              : colors.textMuted;
+        const fg = active ? colors.text : colors.textMuted;
+
         return (
           <box
-            key={q.id}
+            key={isSubmit ? "submit" : q!.id}
             flexDirection="row"
             paddingLeft={1}
             paddingRight={1}
@@ -450,33 +542,15 @@ function TabBar({
           >
             <text>
               <span fg={iconFg}>{icon} </span>
-              <span fg={fg}>{label}</span>
+              <span fg={fg}>{tab.header}</span>
             </text>
           </box>
         );
       })}
 
-      <box
-        flexDirection="row"
-        paddingLeft={1}
-        paddingRight={1}
-        backgroundColor={
-          activeTabIndex === submitTabIndex
-            ? colors.backgroundSelected
-            : "transparent"
-        }
-      >
-        <text>
-          <span fg={colors.success}>✓ </span>
-          <span
-            fg={
-              activeTabIndex === submitTabIndex ? colors.text : colors.textMuted
-            }
-          >
-            Submit
-          </span>
-        </text>
-      </box>
+      {hiddenAfter > 0 && (
+        <text fg={colors.textMuted}>{`+${hiddenAfter}`}</text>
+      )}
 
       <text fg={rightActive ? colors.text : colors.textMuted}>→</text>
     </box>
@@ -487,13 +561,13 @@ function QuestionView({
   question,
   state,
   rows,
-  editingFreeform,
+  isFreeformFocused,
   onFreeformInput,
 }: {
   question: AskUserQuestion;
   state: QuestionState;
   rows: RowKind[];
-  editingFreeform: boolean;
+  isFreeformFocused: boolean;
   onFreeformInput: (value: string) => void;
 }) {
   const { colors } = useTheme();
@@ -514,7 +588,7 @@ function QuestionView({
             focused={focused}
             question={question}
             state={state}
-            editingFreeform={editingFreeform}
+            isFreeformFocused={isFreeformFocused && focused}
             onFreeformInput={onFreeformInput}
           />
         );
@@ -541,7 +615,7 @@ function Row({
   focused,
   question,
   state,
-  editingFreeform,
+  isFreeformFocused,
   onFreeformInput,
 }: {
   row: RowKind;
@@ -549,7 +623,7 @@ function Row({
   focused: boolean;
   question: AskUserQuestion;
   state: QuestionState;
-  editingFreeform: boolean;
+  isFreeformFocused: boolean;
   onFreeformInput: (value: string) => void;
 }) {
   const { colors } = useTheme();
@@ -606,13 +680,13 @@ function Row({
           <span fg={colors.textMuted}>{`${number}. `}</span>
           {question.multiSelect ? <span fg={prefixColor}>{prefix}</span> : null}
         </text>
-        {focused && editingFreeform ? (
+        {isFreeformFocused ? (
           <input
             width="60%"
             value={state.freeformText}
             onInput={onFreeformInput}
             focused={true}
-            placeholder="Type something."
+            placeholder="Type something…"
             textColor={colors.text}
             backgroundColor="transparent"
             cursorColor={colors.textMuted}
@@ -620,7 +694,7 @@ function Row({
         ) : hasText ? (
           <text fg={colors.text}>{state.freeformText}</text>
         ) : (
-          <text fg={colors.textMuted}>Type something.</text>
+          <text fg={colors.textMuted}>Type something…</text>
         )}
       </box>
     );
