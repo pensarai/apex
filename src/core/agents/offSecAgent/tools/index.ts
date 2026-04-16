@@ -220,8 +220,6 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Skill tools (conditional — only when registry is provided)
     ...(ctx.skillsRegistry ? { read_skill: readSkill(ctx) } : {}),
 
-    // Interactive clarification tool — always registered. Agents opt in
-    // by listing `'ask_user_questions'` in their `activeTools` array.
     [ASK_USER_QUESTIONS_TOOL_NAME]: askUserQuestions(ctx),
 
     // Observability tools (conditional — only when trace writer is provided)
@@ -301,7 +299,6 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   // Plan mode
   "write_plan",
   "submit_plan",
-  // Guided onboarding
   ASK_USER_QUESTIONS_TOOL_NAME,
 ];
 

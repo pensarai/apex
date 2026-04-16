@@ -14,6 +14,11 @@ import { sessions } from "../session";
 import { createSkillsRegistry } from "../skills";
 import { buildThreatModelPrompt } from "../skills/builtins/threatModel";
 
+// Headless — no TTY, so strip ask_user_questions from the active set.
+const HEADLESS_TOOL_NAMES = ALL_TOOL_NAMES.filter(
+  (name) => name !== ASK_USER_QUESTIONS_TOOL_NAME,
+);
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -87,18 +92,12 @@ export async function runThreatModelWorkflow(
 You are generating an application-centric threat model from source code analysis.
 Working directory: ${input.codebasePath}`;
 
-  // Headless workflow — no TTY to answer ask_user_questions, so strip it
-  // from the active set. The TUI `/threat-model` command bypasses this
-  // workflow and runs the operator agent directly.
-  const headlessTools = ALL_TOOL_NAMES.filter(
-    (name) => name !== ASK_USER_QUESTIONS_TOOL_NAME,
-  );
   await runOffensiveSecurityAgent({
     system,
     prompt,
     model,
     session,
-    activeTools: [...headlessTools, ...SKILL_TOOL_NAMES] as string[],
+    activeTools: [...HEADLESS_TOOL_NAMES, ...SKILL_TOOL_NAMES] as string[],
     authConfig: input.authConfig,
     abortSignal: input.abortSignal,
     skillsRegistry: registry,

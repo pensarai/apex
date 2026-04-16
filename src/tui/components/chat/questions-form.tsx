@@ -1,23 +1,21 @@
-/**
- * Tab-based UI for the agent's `ask_user_questions` tool.
- *
- * Freeform-edit mode: the underlying `<input>` owns arrow keys for cursor
- * movement. ↑/↓/Esc exit edit mode; Enter commits (single-select advances,
- * multi-select toggles).
- */
-
 import { useState, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
 import { useDialog } from "../../context/dialog";
 import { DialogControls } from "../shared/dialog-controls";
+import type { ControlItem } from "../shared/dialog-controls";
 import type {
   AskUserQuestion,
   AskUserQuestionAnswer,
 } from "../../../core/agents/offSecAgent/tools/askUserQuestions";
 
-// The AskUserQuestionSchema is permissive (see askUserQuestions.ts);
-// normalize defensively so the UI never has to handle missing fields.
+const FOOTER_CONTROLS: ControlItem[] = [
+  { key: "Enter", label: "to select", variant: "primary" },
+  { key: "Tab/Arrow keys", label: "to navigate" },
+  { key: "Esc", label: "to cancel" },
+];
+
+// Schema is deliberately permissive (see askUserQuestions.ts comment).
 function normalizeQuestion(q: AskUserQuestion, index: number): AskUserQuestion {
   const fallbackHeader = `Q${index + 1}`;
   const trimmedHeader = (q.header ?? "").trim();
@@ -45,12 +43,9 @@ interface QuestionsFormProps {
   onSkip: () => void;
 }
 
-// focusedIndex layout: 0..N-1 = option rows, N = freeform row (if
-// allowFreeform), last = "Next" row (multi-select only).
 interface QuestionState {
   selected: Set<string>;
   freeformText: string;
-  freeformSelected: boolean;
   focusedIndex: number;
 }
 
@@ -58,7 +53,6 @@ function initialState(questions: AskUserQuestion[]): QuestionState[] {
   return questions.map(() => ({
     selected: new Set<string>(),
     freeformText: "",
-    freeformSelected: false,
     focusedIndex: 0,
   }));
 }
@@ -109,9 +103,7 @@ export function QuestionsForm({
   onSkip,
 }: QuestionsFormProps) {
   const { colors } = useTheme();
-  // Gate keyboard handling when another dialog is mounted above us —
-  // opentui's useKeyboard fires globally, so without this the form
-  // would steal keys from whatever is on top.
+  // useKeyboard fires globally; gate it when a dialog is above us.
   const { stack, externalDialogOpen } = useDialog();
   const dialogOpen = stack.length > 0 || externalDialogOpen;
 
@@ -132,7 +124,6 @@ export function QuestionsForm({
 
   const allAnswered = useMemo(() => states.every(isAnswered), [states]);
 
-  // Only meaningful when !onSubmitTab.
   const activeQuestion = onSubmitTab
     ? null
     : (questions[activeTabIndex] ?? null);
@@ -145,8 +136,6 @@ export function QuestionsForm({
     !onSubmitTab && activeState
       ? (rows[Math.min(activeState.focusedIndex, rows.length - 1)] ?? null)
       : null;
-
-  // ── State mutators ─────────────────────────────────────────────────
 
   const updateState = (index: number, patch: Partial<QuestionState>) => {
     setStates((prev) => {
@@ -185,11 +174,7 @@ export function QuestionsForm({
       const cur = next[questionIndex]!;
       const q = questions[questionIndex]!;
       if (q.multiSelect) {
-        next[questionIndex] = {
-          ...cur,
-          freeformText: text,
-          freeformSelected: text.trim().length > 0,
-        };
+        next[questionIndex] = { ...cur, freeformText: text };
       } else {
         next[questionIndex] = {
           ...cur,
@@ -200,8 +185,6 @@ export function QuestionsForm({
       return next;
     });
   };
-
-  // ── Tab + row navigation ───────────────────────────────────────────
 
   const goToTab = (next: number) => {
     const clamped = Math.max(0, Math.min(submitTabIndex, next));
@@ -220,8 +203,6 @@ export function QuestionsForm({
     const next = Math.max(0, Math.min(max, activeState.focusedIndex + delta));
     setFocused(activeTabIndex, next);
   };
-
-  // ── Actions on Enter ───────────────────────────────────────────────
 
   const commitActiveRow = () => {
     if (onSubmitTab) {
@@ -253,8 +234,6 @@ export function QuestionsForm({
     }
   };
 
-  // ── Quick-pick 1..9 ────────────────────────────────────────────────
-
   const quickPick = (digit: number) => {
     if (onSubmitTab) {
       if (digit === 1) {
@@ -270,35 +249,21 @@ export function QuestionsForm({
     const q = activeQuestion;
     const idx = digit - 1;
     if (idx < q.options.length) {
-      setStates((prev) => {
-        const next = [...prev];
-        const cur = next[activeTabIndex]!;
-        next[activeTabIndex] = { ...cur, focusedIndex: idx };
-        return next;
-      });
+      setFocused(activeTabIndex, idx);
       toggleOption(activeTabIndex, idx);
       if (!q.multiSelect) advanceTab();
       return;
     }
     if (q.allowFreeform && idx === q.options.length) {
-      setStates((prev) => {
-        const next = [...prev];
-        const cur = next[activeTabIndex]!;
-        next[activeTabIndex] = { ...cur, focusedIndex: idx };
-        return next;
-      });
+      setFocused(activeTabIndex, idx);
       setEditingFreeform(true);
       return;
     }
   };
 
-  // ── Keyboard handling ──────────────────────────────────────────────
-
   useKeyboard((key) => {
     if (dialogOpen) return;
 
-    // Freeform-edit mode: the <input> owns printable chars + left/right;
-    // only intercept mode-exit keys here.
     if (editingFreeform) {
       if (key.name === "escape") {
         key.preventDefault?.();
@@ -400,8 +365,6 @@ export function QuestionsForm({
     }
   });
 
-  // ── Render ─────────────────────────────────────────────────────────
-
   return (
     <box
       flexDirection="column"
@@ -413,13 +376,9 @@ export function QuestionsForm({
       paddingBottom={1}
       border={true}
       borderColor={colors.primary}
-      // Fixed-bottom dialog: flexShrink={0} prevents the parent flex
-      // layout from squashing us; overflow="hidden" stops content from
-      // bleeding into adjacent UI (see AGENTS.md "Terminal size resilience").
       flexShrink={0}
       overflow="hidden"
     >
-      {/* Tab bar */}
       <TabBar
         questions={questions}
         states={states}
@@ -427,7 +386,6 @@ export function QuestionsForm({
         submitTabIndex={submitTabIndex}
       />
 
-      {/* Content panel */}
       <box flexDirection="column" marginTop={1} paddingLeft={1}>
         {onSubmitTab ? (
           <SubmitView
@@ -445,21 +403,12 @@ export function QuestionsForm({
         ) : null}
       </box>
 
-      {/* Footer key hint */}
-      <box flexDirection="row" marginTop={1}>
-        <DialogControls
-          controls={[
-            { key: "Enter", label: "to select", variant: "primary" },
-            { key: "Tab/Arrow keys", label: "to navigate" },
-            { key: "Esc", label: "to cancel" },
-          ]}
-        />
+      <box marginTop={1}>
+        <DialogControls controls={FOOTER_CONTROLS} />
       </box>
     </box>
   );
 }
-
-// ─── Tab bar ────────────────────────────────────────────────────────
 
 function TabBar({
   questions,
@@ -478,10 +427,8 @@ function TabBar({
 
   return (
     <box flexDirection="row" gap={1} alignItems="center">
-      {/* Left chevron */}
       <text fg={leftActive ? colors.text : colors.textMuted}>←</text>
 
-      {/* Question tabs */}
       {questions.map((q, i) => {
         const active = i === activeTabIndex;
         const s = states[i]!;
@@ -509,7 +456,6 @@ function TabBar({
         );
       })}
 
-      {/* Submit tab */}
       <box
         flexDirection="row"
         paddingLeft={1}
@@ -532,13 +478,10 @@ function TabBar({
         </text>
       </box>
 
-      {/* Right chevron */}
       <text fg={rightActive ? colors.text : colors.textMuted}>→</text>
     </box>
   );
 }
-
-// ─── Question view (single tab body) ────────────────────────────────
 
 function QuestionView({
   question,
@@ -558,11 +501,9 @@ function QuestionView({
 
   return (
     <box flexDirection="column">
-      {/* Question text */}
       <text fg={colors.text}>{question.question}</text>
-      <box height={1} />
 
-      {/* Rows */}
+      <box flexDirection="column" marginTop={1}>
       {rows.map((row, rowIdx) => {
         const focused = rowIdx === focusedIdx;
         return (
@@ -578,6 +519,7 @@ function QuestionView({
           />
         );
       })}
+      </box>
     </box>
   );
 }
@@ -648,12 +590,12 @@ function Row({
     const number = rowIndex + 1;
     const hasText = state.freeformText.trim().length > 0;
     const prefix = question.multiSelect
-      ? state.freeformSelected || hasText
+      ? hasText
         ? "[✓] "
         : "[ ] "
       : "";
     const prefixColor = question.multiSelect
-      ? state.freeformSelected || hasText
+      ? hasText
         ? colors.success
         : colors.textMuted
       : colors.textMuted;
@@ -692,7 +634,7 @@ function Row({
   );
 }
 
-// ─── Submit view ────────────────────────────────────────────────────
+const SUBMIT_OPTIONS = ["Submit answers", "Cancel"] as const;
 
 function SubmitView({
   allAnswered,
@@ -710,30 +652,24 @@ function SubmitView({
           <text fg={colors.warning}>⚠ You have not answered all questions</text>
         </box>
       ) : null}
-      <box height={1} />
-      <text fg={colors.text}>Ready to submit your answers?</text>
-      <box height={1} />
-      <box flexDirection="row">
-        <text fg={focusedIndex === 0 ? colors.primary : colors.textMuted}>
-          {focusedIndex === 0 ? ") " : "  "}
-        </text>
-        <text>
-          <span fg={colors.textMuted}>{"1. "}</span>
-          <span fg={focusedIndex === 0 ? colors.text : colors.textMuted}>
-            Submit answers
-          </span>
-        </text>
-      </box>
-      <box flexDirection="row">
-        <text fg={focusedIndex === 1 ? colors.primary : colors.textMuted}>
-          {focusedIndex === 1 ? ") " : "  "}
-        </text>
-        <text>
-          <span fg={colors.textMuted}>{"2. "}</span>
-          <span fg={focusedIndex === 1 ? colors.text : colors.textMuted}>
-            Cancel
-          </span>
-        </text>
+      <text fg={colors.text} marginTop={1}>Ready to submit your answers?</text>
+      <box flexDirection="column" marginTop={1}>
+        {SUBMIT_OPTIONS.map((label, i) => {
+          const focused = i === focusedIndex;
+          return (
+            <box key={label} flexDirection="row">
+              <text fg={focused ? colors.primary : colors.textMuted}>
+                {focused ? ") " : "  "}
+              </text>
+              <text>
+                <span fg={colors.textMuted}>{`${i + 1}. `}</span>
+                <span fg={focused ? colors.text : colors.textMuted}>
+                  {label}
+                </span>
+              </text>
+            </box>
+          );
+        })}
       </box>
     </box>
   );

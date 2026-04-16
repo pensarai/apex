@@ -4,11 +4,9 @@ import type { ToolContext } from "./types";
 
 export const ASK_USER_QUESTIONS_TOOL_NAME = "ask_user_questions" as const;
 
-// Schema is deliberately permissive (no min/max, no boolean defaults).
-// Anthropic/Bedrock has no native JSON mode, so AI SDK repair falls back
-// to text-based JSON parsing — constrained schemas make the repair model
-// emit unparseable JSON and kill the stream with "No object generated".
-// Constraints live in the tool description; the UI normalizes defensively.
+// Schema is deliberately permissive — constrained schemas cause the AI SDK
+// repair model to emit unparseable JSON. Constraints live in the tool
+// description; the UI normalizes defensively.
 export const AskUserQuestionSchema = z.object({
   id: z
     .string()
@@ -55,19 +53,12 @@ export interface AskUserQuestionAnswer {
   freeformText: string | null;
 }
 
-// `skipped: true` means the user chose to skip rather than answer;
-// downstream consumers use this flag to decide whether to emit a
-// User-Provided Context block.
 export interface AskUserQuestionsResult {
   answers: AskUserQuestionAnswer[];
   skipped: boolean;
 }
 
-// The consuming agent MUST configure
-// `stopWhen(hasToolCall(ASK_USER_QUESTIONS_TOOL_NAME))` — in production the
-// agent is stopped before `execute` runs; the consumer collects answers
-// and resumes with a patched tool-result. The body below is a sentinel so
-// the tool is well-formed for in-process testing.
+// Agent is stopped via hasToolCall before execute runs; body is a sentinel.
 export function askUserQuestions(_ctx: ToolContext) {
   return tool({
     description:

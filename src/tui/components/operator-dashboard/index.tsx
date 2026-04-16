@@ -102,7 +102,6 @@ import { isAbsolute, join, resolve } from "path";
 import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
 import { buildPentestPrompt } from "../../../core/skills/builtins/pentest";
 
-// Stop spinners on any in-flight tool messages by flipping them to error.
 function markInFlightToolsErrored(
   messages: DisplayMessage[],
   result: string,
@@ -769,12 +768,8 @@ export default function OperatorDashboard({
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      // Snapshot the previous state so we can roll back on API failure.
       const prevMessages = conversationRef.current;
 
-      // prompt === null means a resume (e.g. after ask_user_questions) —
-      // conversationRef was already patched by the caller, so skip the
-      // user-message plumbing and stream against existing history.
       let nextMessages: ModelMessage[];
       if (prompt !== null) {
         setMessages((prev) => [
@@ -788,16 +783,12 @@ export default function OperatorDashboard({
         ]);
         conversationRef.current = nextMessages;
 
-        // Eager disk persist: if the agent aborts before its first
-        // onStepFinish, handleAbort reads back messages.json — without
-        // this write it would overwrite conversationRef with stale state
-        // and lose the latest user turn.
         if (sessionRef.current) {
           try {
             const mp = join(sessionRef.current.rootPath, "messages.json");
             writeFileSync(mp, JSON.stringify(nextMessages, null, 2));
           } catch {
-            // onStepFinish will persist later.
+            // Best-effort; onStepFinish persists later.
           }
         }
       } else {
@@ -934,8 +925,6 @@ export default function OperatorDashboard({
             : undefined;
         addToolCall(d.toolCallId, d.toolName, args);
 
-        // Sentinel tool: capture id + questions so the form renders after
-        // the run finishes (the agent stopped on this call).
         if (d.toolName === ASK_USER_QUESTIONS_TOOL_NAME && args) {
           const rawQuestions = args.questions;
           if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
@@ -990,8 +979,6 @@ export default function OperatorDashboard({
         const errorMessage =
           d.error instanceof Error ? d.error.message : "Unknown error";
         setError(errorMessage);
-        // Truncated tool-call JSON → repair fails → stream errors out
-        // without firing tool-call-complete, leaving spinners ticking.
         setMessages((prev) => markInFlightToolsErrored(prev, errorMessage));
       });
 
@@ -1112,8 +1099,6 @@ export default function OperatorDashboard({
       const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
 
       const commonInput = {
-        // On resume (prompt === null) there's nothing to prepend — the
-        // patched conversation is already in `nextMessages`.
         prompt: prompt ?? "",
         model: model.id,
         messages: nextMessages,
@@ -1332,8 +1317,6 @@ export default function OperatorDashboard({
           );
         }
         if (gen === generationRef.current) {
-          // Stay "waiting" while the questions form is up so the input
-          // area mirrors the pending-approval UX.
           setStatus(pendingToolCallIdRef.current ? "waiting" : "idle");
           setThinking(false);
           setIsExecuting(false);
@@ -1437,9 +1420,6 @@ export default function OperatorDashboard({
             codebasePath: process.cwd(),
             skillContent: content,
           });
-          // TUI-only overlay: recon → ask → continue. Headless callers
-          // go through runThreatModelWorkflow, which has no access to
-          // ask_user_questions and builds its own prompt.
           fullContent = `${basePrompt}
 
 # Interactive Threat Model — Operator Workflow
@@ -1787,17 +1767,12 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     });
   }, [setThinking, setIsExecuting]);
 
-  // Overwrite the sentinel ask_user_questions tool-result with real
-  // answers (or skipped=true), persist, then resume without a new user
-  // message — the model reads the patched tool-result directly.
   const resumeWithQuestionResult = useCallback(
     (result: AskUserQuestionsResult) => {
       const toolCallId = pendingToolCallIdRef.current;
       if (!toolCallId) return;
 
-      // ToolResultPart.output is a tagged union — the payload MUST be
-      // wrapped as { type: 'json', value: ... }, otherwise Bedrock
-      // Converse / Anthropic rejects the message array.
+      // Bedrock Converse / Anthropic requires { type: 'json', value: ... } wrapper.
       const wrappedOutput = {
         type: "json" as const,
         value: result as unknown as Record<string, unknown>,
@@ -1842,8 +1817,6 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         }
       }
 
-      // Clear BEFORE resuming so runAgent's finally-block status flip
-      // doesn't re-open the form.
       pendingToolCallIdRef.current = null;
       setPendingQuestions(null);
 
@@ -2179,7 +2152,6 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         lastApprovedAction={lastApprovedAction}
       />
 
-      {/* Subagent status bar (renders above the form / input slot) */}
       <SubagentStatusBar
         sessions={subagentSessions}
         agentMovedOn={
@@ -2189,8 +2161,6 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         onOpen={openSubagentDialog}
       />
 
-      {/* Questions form takes the entire bottom slot while mounted and
-          owns its own keyboard handling. */}
       {pendingQuestions ? (
         <QuestionsForm
           questions={pendingQuestions}
@@ -2199,13 +2169,11 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         />
       ) : (
         <>
-          {/* Queued follow-up messages */}
           <QueuedMessages
             messages={queuedMessages}
             selectedIndex={selectedQueueIndex}
           />
 
-          {/* Input area */}
           <InputArea
             value={inputValue}
             onChange={setInputValue}
@@ -2230,15 +2198,13 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
                     : "Enter directive or / for commands & skills..."
             }
             focused={
-              pendingQuestions
-                ? false
-                : status === "running"
-                  ? selectedQueueIndex < 0
-                  : resolveInputFocused(
-                      status,
-                      stack.length,
-                      externalDialogOpen,
-                    )
+              status === "running"
+                ? selectedQueueIndex < 0
+                : resolveInputFocused(
+                    status,
+                    stack.length,
+                    externalDialogOpen,
+                  )
             }
             status={status === "waiting" ? "running" : status}
             mode="operator"

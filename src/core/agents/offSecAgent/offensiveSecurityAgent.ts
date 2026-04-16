@@ -461,28 +461,10 @@ export class OffensiveSecurityAgent<TResult = void> {
   }
 }
 
-/**
- * Sentinel tools that bypass the approval gate.
- *
- * These tools are stop conditions for the agent loop (via
- * `hasToolCall(...)`) and surface a UI to the consumer (operator
- * dashboard, etc.) which then resumes the agent. Routing them through
- * the approval gate would double-gate the interaction: the operator
- * would have to approve the tool call before ever seeing the form it
- * exists to render.
- *
- * Keep this set minimal — only add tools whose entire purpose is to
- * pause the agent and yield control to the consumer.
- */
+// Tools that bypass the approval gate — they stop the agent loop and
+// surface their own UI, so gating them would double-prompt the operator.
 const SENTINEL_TOOL_NAMES = new Set<string>([ASK_USER_QUESTIONS_TOOL_NAME]);
 
-/**
- * Wrap every tool's execute function with the approval gate so that
- * tool calls are held until the operator approves them.
- *
- * Tools listed in `exemptToolNames` skip the wrapper entirely — useful
- * for sentinel tools that surface their own UI to the consumer.
- */
 function wrapToolsWithApprovalGate(
   tools: ToolSet,
   gate: ApprovalGate,
