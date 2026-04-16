@@ -1985,9 +1985,55 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     // Ctrl+C while questions are pending — abort without resuming the agent.
     // The abort controller is null at this point (runAgent's finally block
     // already cleared it), so handleAbort() would early-return. Handle it
-    // explicitly: dismiss the form and go idle.
+    // explicitly: overwrite the sentinel tool-result so the next run doesn't
+    // see stale "questions answered" data, then dismiss the form and go idle.
     if (pendingQuestions && key.ctrl && key.name === "c") {
       key.preventDefault?.();
+      const toolCallId = pendingToolCallIdRef.current;
+      if (toolCallId) {
+        const abortedResult = {
+          type: "json" as const,
+          value: {
+            answers: [],
+            skipped: true,
+            aborted: true,
+          } as unknown as Record<string, unknown>,
+        };
+        conversationRef.current = conversationRef.current.map((msg) => {
+          if (msg.role !== "tool" || !Array.isArray(msg.content)) return msg;
+          let mutated = false;
+          const nextContent = msg.content.map((part) => {
+            if (
+              part &&
+              typeof part === "object" &&
+              "type" in part &&
+              (part as { type?: unknown }).type === "tool-result" &&
+              (part as { toolCallId?: unknown }).toolCallId === toolCallId
+            ) {
+              mutated = true;
+              return {
+                ...(part as Record<string, unknown>),
+                output: abortedResult,
+              };
+            }
+            return part;
+          });
+          return mutated
+            ? ({ ...msg, content: nextContent } as ModelMessage)
+            : msg;
+        });
+        const activeSession = sessionRef.current;
+        if (activeSession) {
+          try {
+            writeFileSync(
+              join(activeSession.rootPath, "messages.json"),
+              JSON.stringify(conversationRef.current, null, 2),
+            );
+          } catch {
+            /* onStepFinish will overwrite shortly */
+          }
+        }
+      }
       pendingToolCallIdRef.current = null;
       setPendingQuestions(null);
       setStatus("idle");
