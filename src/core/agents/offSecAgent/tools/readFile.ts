@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { readFile as fsReadFile, stat } from "fs/promises";
+import { readFile as fsReadFile } from "fs/promises";
 import { resolve, isAbsolute } from "path";
 import type { ToolContext } from "./types";
 
@@ -49,15 +49,6 @@ Output lines are prefixed with their line number for easy reference.`,
     execute: async ({ path, startLine, endLine }): Promise<ReadFileResult> => {
       const resolved = isAbsolute(path) ? path : resolve(ctx.agentCwd, path);
       try {
-        const info = await stat(resolved);
-        if (info.isDirectory()) {
-          return {
-            success: false,
-            error: `${path} is a directory, not a file. Use the list_files tool to list directory contents.`,
-            content: "",
-            path,
-          };
-        }
         const raw = await fsReadFile(resolved, "utf-8");
         const allLines = raw.split("\n");
         const totalLines = allLines.length;
