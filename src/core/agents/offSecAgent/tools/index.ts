@@ -145,6 +145,11 @@ import { updateTask } from "./updateTask";
 import { listTasksTool } from "./listTasks";
 import { writePlan } from "./writePlan";
 import { submitPlan } from "./submitPlan";
+import {
+  askUserQuestions,
+  ASK_USER_QUESTIONS_TOOL_NAME,
+} from "./askUserQuestions";
+export { ASK_USER_QUESTIONS_TOOL_NAME } from "./askUserQuestions";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -214,6 +219,8 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
 
     // Skill tools (conditional — only when registry is provided)
     ...(ctx.skillsRegistry ? { read_skill: readSkill(ctx) } : {}),
+
+    [ASK_USER_QUESTIONS_TOOL_NAME]: askUserQuestions(ctx),
 
     // Observability tools (conditional — only when trace writer is provided)
     ...(ctx.traceWriter ? { checkpoint_state: checkpointState(ctx) } : {}),
@@ -292,6 +299,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   // Plan mode
   "write_plan",
   "submit_plan",
+  ASK_USER_QUESTIONS_TOOL_NAME,
 ];
 
 /**

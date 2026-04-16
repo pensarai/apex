@@ -37,5 +37,6 @@ export {
   ALL_TOOL_NAMES,
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
+  ASK_USER_QUESTIONS_TOOL_NAME,
   type ToolName,
 } from "./tools";
