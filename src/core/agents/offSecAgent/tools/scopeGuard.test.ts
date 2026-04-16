@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getAllowedHosts,
+  getRegistrableDomain,
   isHostAllowed,
   extractHostname,
   assertUrlInScope,
@@ -47,7 +48,7 @@ describe("getAllowedHosts", () => {
     const ctx = makeCtx();
     ctx.session.targets = ["https://api.example.com", "https://other.dev"];
     const hosts = getAllowedHosts(ctx);
-    expect(hosts).toContain("api.example.com");
+    expect(hosts).toContain("example.com");
     expect(hosts).toContain("other.dev");
   });
 
@@ -78,6 +79,39 @@ describe("getAllowedHosts", () => {
     const hosts = getAllowedHosts(ctx);
     expect(hosts).toContain("example.com");
     expect(hosts).toContain("other.dev");
+  });
+
+  it("expands target hosts to the registrable domain (eTLD+1)", () => {
+    const hosts = getAllowedHosts(
+      makeCtx({ target: "https://web.dev.diracinc.com" }),
+    );
+    expect(hosts).toEqual(["diracinc.com"]);
+  });
+
+  it("handles multi-label public suffixes (e.g. .co.uk)", () => {
+    const ctx = makeCtx({ target: "https://api.foo.co.uk" });
+    const hosts = getAllowedHosts(ctx);
+    expect(hosts).toContain("foo.co.uk");
+    expect(hosts).not.toContain("co.uk");
+  });
+
+  it("leaves IP address targets unchanged (no PSL expansion)", () => {
+    const hosts = getAllowedHosts(makeCtx({ target: "http://192.168.1.10" }));
+    expect(hosts).toEqual(["192.168.1.10"]);
+  });
+
+  it("leaves localhost/unqualified hosts unchanged", () => {
+    const hosts = getAllowedHosts(makeCtx({ target: "http://localhost:3000" }));
+    expect(hosts).toEqual(["localhost"]);
+  });
+
+  it("does not expand explicit allowedHosts entries", () => {
+    const ctx = makeCtx();
+    ctx.session.config = {
+      scopeConstraints: { allowedHosts: ["api.example.com"] },
+    };
+    const hosts = getAllowedHosts(ctx);
+    expect(hosts).toEqual(["api.example.com"]);
   });
 });
 
@@ -206,6 +240,55 @@ describe("assertUrlInScope", () => {
   it("allows unparseable URLs when no scope is configured (no-op)", () => {
     expect(() => assertUrlInScope("", makeCtx())).not.toThrow();
     expect(() => assertUrlInScope("   ", makeCtx())).not.toThrow();
+  });
+
+  it("allows sibling subdomains under the same registrable domain", () => {
+    const ctx = makeCtx({ target: "https://web.dev.diracinc.com" });
+    expect(() =>
+      assertUrlInScope("https://auth.dev.diracinc.com/login", ctx),
+    ).not.toThrow();
+    expect(() =>
+      assertUrlInScope("https://api.diracinc.com/v1", ctx),
+    ).not.toThrow();
+    expect(() => assertUrlInScope("https://diracinc.com", ctx)).not.toThrow();
+  });
+
+  it("blocks other registrable domains", () => {
+    const ctx = makeCtx({ target: "https://web.dev.diracinc.com" });
+    expect(() =>
+      assertUrlInScope("https://notdiracinc.com", ctx),
+    ).toThrow(ScopeViolationError);
+    expect(() =>
+      assertUrlInScope("https://diracinc.com.evil.com", ctx),
+    ).toThrow(ScopeViolationError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getRegistrableDomain
+// ---------------------------------------------------------------------------
+
+describe("getRegistrableDomain", () => {
+  it("returns eTLD+1 for deep subdomains", () => {
+    expect(getRegistrableDomain("web.dev.example.com")).toBe("example.com");
+    expect(getRegistrableDomain("a.b.c.d.example.com")).toBe("example.com");
+  });
+
+  it("handles multi-label public suffixes", () => {
+    expect(getRegistrableDomain("api.foo.co.uk")).toBe("foo.co.uk");
+  });
+
+  it("is case-insensitive", () => {
+    expect(getRegistrableDomain("API.EXAMPLE.COM")).toBe("example.com");
+  });
+
+  it("returns the input unchanged for IPs", () => {
+    expect(getRegistrableDomain("192.168.1.1")).toBe("192.168.1.1");
+  });
+
+  it("returns the input unchanged for localhost/bare labels", () => {
+    expect(getRegistrableDomain("localhost")).toBe("localhost");
+    expect(getRegistrableDomain("internal")).toBe("internal");
   });
 });
 

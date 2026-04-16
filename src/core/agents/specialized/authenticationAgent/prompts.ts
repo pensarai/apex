@@ -73,13 +73,14 @@ Look for:
 ### Browser path (use for SPAs, OAuth, JS-rendered forms):
 1. \`browser_navigate\` to the login URL
 2. \`browser_snapshot\` to find form fields and their refs
-3. \`browser_fill\` the username/email field (use ref from snapshot)
-4. \`browser_snapshot\` again (page may update after input)
-5. \`browser_fill\` the password field
-6. \`browser_click\` the submit/login button
-7. \`browser_snapshot\` or \`browser_screenshot\` to verify the result
-8. \`browser_get_cookies\` to extract session cookies
-9. Optionally \`browser_evaluate\` to extract tokens from localStorage/sessionStorage:
+3. \`browser_screenshot\` to capture the login page before filling credentials
+4. \`browser_fill\` the username/email field (use ref from snapshot)
+5. \`browser_snapshot\` again (page may update after input)
+6. \`browser_fill\` the password field
+7. \`browser_click\` the submit/login button
+8. \`browser_snapshot\` AND \`browser_screenshot\` to verify and document the post-submit state
+9. \`browser_get_cookies\` to extract session cookies
+10. Optionally \`browser_evaluate\` to extract tokens from localStorage/sessionStorage:
    \`\`\`javascript
    (() => {
      const tokens = {};
@@ -140,11 +141,11 @@ If you encounter rate-limiting errors (e.g. "Rate limit exceeded", HTTP 429, "to
 
 # Screenshot Evidence
 
-- Use \`browser_screenshot\` to capture the page state at key moments during authentication
-- **Always screenshot after login attempt** to document success (dashboard/welcome page) or failure (error message)
-- Screenshot any error pages, CAPTCHA challenges, MFA prompts, or unexpected barriers
-- Use descriptive filenames: "login-form", "auth-success", "auth-error", "mfa-prompt", "captcha-detected"
-- Screenshots are automatically stored and displayed in the console logs for debugging
+- **Screenshot liberally.** A human reviews your run after it completes and relies on screenshots to follow along with what the browser actually did. Every time you navigate to a new page, fill a form field, click a button, or observe a state change, call \`browser_screenshot\` so the reviewer can see exactly what you saw. Aim for at least one screenshot per distinct page or state change — screenshots are cheap, missing visual context is not.
+- **Always screenshot after login attempt** to document success (dashboard/welcome page) or failure (error message).
+- Screenshot any error pages, CAPTCHA challenges, MFA prompts, or unexpected barriers.
+- Use descriptive filenames: "login-form", "username-filled", "password-filled", "auth-success", "auth-error", "mfa-prompt", "captcha-detected".
+- Screenshots are automatically stored and displayed in the console logs for debugging and human review.
 `;
 
 /**
@@ -617,17 +618,19 @@ CRITICAL: Always call browser_snapshot BEFORE browser_fill or browser_click to g
 
 1. **Navigate**: \`browser_navigate\` to the login URL
 2. **Get Snapshot**: \`browser_snapshot\` - returns accessibility tree with element refs like [ref=e3]
-3. **Fill Email/Username**: \`browser_fill\` with element="Email field" AND ref="e3" (from snapshot)
-4. **Get New Snapshot**: \`browser_snapshot\` again (page may have changed after input)
-5. **Click Continue/Next**: \`browser_click\` with element="Continue" AND ref="eX" (from snapshot)
-6. **Get Password Page Snapshot**: \`browser_snapshot\` to find password field on new page
-7. **Fill Password**: \`browser_fill\` with element="Password field" AND ref="eY" (from snapshot)
-8. **Click Login**: \`browser_click\` with element="Sign in" AND ref="eZ" (from snapshot)
-9. **Verify Result**: \`browser_screenshot\` to capture final state
-10. **Extract Session Cookies**: \`browser_get_cookies\` to get httpOnly session cookies
+3. **Screenshot the login page**: \`browser_screenshot\` before filling any fields — gives the human reviewer context on what the starting state looks like
+4. **Fill Email/Username**: \`browser_fill\` with element="Email field" AND ref="e3" (from snapshot)
+5. **Get New Snapshot**: \`browser_snapshot\` again (page may have changed after input)
+6. **Click Continue/Next**: \`browser_click\` with element="Continue" AND ref="eX" (from snapshot)
+7. **Screenshot the transition**: \`browser_screenshot\` after navigating between login steps (e.g. email → password screen) so the reviewer can see each intermediate state
+8. **Get Password Page Snapshot**: \`browser_snapshot\` to find password field on new page
+9. **Fill Password**: \`browser_fill\` with element="Password field" AND ref="eY" (from snapshot)
+10. **Click Login**: \`browser_click\` with element="Sign in" AND ref="eZ" (from snapshot)
+11. **Verify Result**: \`browser_screenshot\` to capture the post-login state (success dashboard or error) — a human will review your run, so screenshots provide essential visual evidence of what happened
+12. **Extract Session Cookies**: \`browser_get_cookies\` to get httpOnly session cookies
     - This returns cookies including httpOnly ones that document.cookie can't access
     - **Save the \`cookieHeader\` field** — you will need it for \`complete_authentication\`
-11. **Extract Bearer Tokens**: \`browser_evaluate\` with script to get tokens from storage:
+13. **Extract Bearer Tokens**: \`browser_evaluate\` with script to get tokens from storage:
    \`\`\`javascript
    (() => {
      const tokens = {};
@@ -639,12 +642,12 @@ CRITICAL: Always call browser_snapshot BEFORE browser_fill or browser_click to g
      return JSON.stringify(tokens);
    })()
    \`\`\`
-12. **Persist credentials**: Call \`complete_authentication\` and include:
-    - \`exportedCookies\`: the \`cookieHeader\` string from step 10
-    - \`exportedHeaders\`: e.g. \`{"Authorization": "Bearer <token>"}\` if a JWT/access token was found in step 11
+14. **Persist credentials**: Call \`complete_authentication\` and include:
+    - \`exportedCookies\`: the \`cookieHeader\` string from step 12
+    - \`exportedHeaders\`: e.g. \`{"Authorization": "Bearer <token>"}\` if a JWT/access token was found in step 13
     - \`strategy\`: "browser"
     - This persists the session credentials for downstream agents
-13. **End the run**: Call the \`response\` tool with your final summary (success, summary, strategy). This terminates the agent.
+15. **End the run**: Call the \`response\` tool with your final summary (success, summary, strategy). This terminates the agent.
 
 ### Key Rules:
 - The \`ref\` parameter is REQUIRED for browser_fill and browser_click to work reliably

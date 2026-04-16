@@ -11,12 +11,34 @@
  *  2. `ctx.session.targets` (all session target URLs)
  *  3. `ctx.session.config.scopeConstraints.allowedHosts` (explicit list)
  *
+ * Scope expansion: hosts derived from session targets are expanded to
+ * their registrable domain (eTLD+1) via the Public Suffix List. So a
+ * target of `web.dev.example.com` produces an allowed host of
+ * `example.com`, which in turn permits any subdomain under it
+ * (`auth.dev.example.com`, `api.example.com`, etc.). Other registrable
+ * domains stay out of scope.
+ *
+ * Hosts in `scopeConstraints.allowedHosts` are used verbatim (not
+ * expanded), so operators can narrow scope explicitly when needed.
+ *
  * Subdomain matching: if `example.com` is allowed, `api.example.com` is
  * also allowed (suffix match on the hostname).
  */
 
+import { getDomain } from "tldts";
 import type { ToolContext } from "./types";
 import { parseTargetUrl } from "../../../../util/url";
+
+/**
+ * Compute the registrable domain (eTLD+1) for a hostname using the
+ * Public Suffix List. Falls back to the hostname itself for IPs,
+ * `localhost`, and other hosts without a recognised public suffix.
+ */
+export function getRegistrableDomain(hostname: string): string {
+  const lower = hostname.toLowerCase();
+  const domain = getDomain(lower, { allowPrivateDomains: false });
+  return domain ?? lower;
+}
 
 export class ScopeViolationError extends Error {
   constructor(
@@ -40,13 +62,13 @@ export function getAllowedHosts(ctx: ToolContext): string[] {
 
   if (ctx.target) {
     const parsed = parseTargetUrl(ctx.target);
-    if (parsed) hosts.add(parsed.hostname.toLowerCase());
+    if (parsed) hosts.add(getRegistrableDomain(parsed.hostname));
   }
 
   if (ctx.session?.targets) {
     for (const t of ctx.session.targets) {
       const parsed = parseTargetUrl(t);
-      if (parsed) hosts.add(parsed.hostname.toLowerCase());
+      if (parsed) hosts.add(getRegistrableDomain(parsed.hostname));
     }
   }
 

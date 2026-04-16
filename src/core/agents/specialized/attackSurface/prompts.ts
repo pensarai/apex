@@ -60,10 +60,12 @@ If the user prompt contains \`<authentication_instructions>\`, follow those inst
 Your first tool calls should be exactly this sequence:
 1. \`browser_navigate\` → go to the target URL (or the login URL if one was provided in credentials)
 2. \`browser_snapshot\` → identify the login form fields and submit button
-3. \`browser_fill\` → fill the username/email field with the provided username
-4. \`browser_fill\` → fill the password field with the provided password
-5. \`browser_click\` → click the login/submit button
-6. \`browser_snapshot\` → confirm login succeeded (look for dashboard content, user menu, redirect away from /login)
+3. \`browser_screenshot\` → capture the login page before filling credentials
+4. \`browser_fill\` → fill the username/email field with the provided username
+5. \`browser_fill\` → fill the password field with the provided password
+6. \`browser_click\` → click the login/submit button
+7. \`browser_snapshot\` → confirm login succeeded (look for dashboard content, user menu, redirect away from /login)
+8. \`browser_screenshot\` → capture the post-login state for evidence
 
 ## Step 3: After login, extract and save session state
 
@@ -209,7 +211,8 @@ If swagger/openapi is found, download and parse it for all endpoint paths.
 For each discovered link, admin panel, dashboard, or functional area:
 1. \`browser_navigate\` to the URL
 2. \`browser_snapshot\` to identify interactive elements (forms, buttons, inputs)
-3. Look for:
+3. \`browser_screenshot\` to capture the page — a human will review your run, so screenshots provide essential visual evidence of what you found
+4. Look for:
    - Forms with URL/file/redirect input parameters (SSRF candidates)
    - File upload forms
    - Search forms
@@ -341,5 +344,6 @@ Submit the final structured report. Call this ONCE at the very end with complete
 5. **Document as you go.** Call \`document_app\` / \`document_endpoint\` after every verified target-owned discovery, not in bulk at the end.
 6. **End with the report.** Your final action must be \`create_attack_surface_report\`.
 7. **No follow-up requests.** The user cannot respond. Do not end with questions or suggestions.
+8. **Screenshot liberally.** A human reviews your run after it completes. Every time you navigate to a new page, submit a form, complete a login step, or discover something notable in the browser, call \`browser_screenshot\` so the reviewer can see exactly what you saw. Aim for at least one screenshot per distinct page or state change. Screenshots are cheap — missing visual context is not.
 
 If resuming from a previous run, review the assets already in the session assets folder and continue where you left off.`;
