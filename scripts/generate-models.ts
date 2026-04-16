@@ -48,6 +48,7 @@ const CONTEXT_LENGTHS: Record<string, number> = {
   "claude-haiku-4": 200000,
   "claude-sonnet-4": 200000,
   "claude-opus-4": 200000,
+  "claude-opus-4-7": 1000000,
   "claude-2": 100000,
   "claude-instant": 100000,
 
@@ -107,6 +108,7 @@ const CONTEXT_LENGTHS: Record<string, number> = {
   "anthropic.claude-haiku": 200000,
   "anthropic.claude-sonnet": 200000,
   "anthropic.claude-opus": 200000,
+  "anthropic.claude-opus-4-7": 1000000,
 };
 
 function getContextLength(modelId: string): number | undefined {
@@ -548,6 +550,16 @@ function main() {
     anthropicDts,
     "AnthropicMessagesModelId",
   );
+
+  // Models available on the Anthropic API but not yet in the AI SDK type definitions
+  const EXTRA_ANTHROPIC_IDS = ["claude-opus-4-7"];
+  const existingAnthropicIds = new Set(anthropicIds);
+  for (const id of EXTRA_ANTHROPIC_IDS) {
+    if (!existingAnthropicIds.has(id)) {
+      anthropicIds.push(id);
+    }
+  }
+
   const anthropicModels: ModelEntry[] = anthropicIds.map((id) => ({
     id,
     name: formatModelName(id, "anthropic"),
@@ -596,7 +608,10 @@ function main() {
   const bedrockBaseIds = [...new Set(bedrockRawIds)];
 
   // Models available on Bedrock but not yet in the AI SDK type definitions
-  const EXTRA_BEDROCK_IDS = ["moonshotai.kimi-k2.5"];
+  const EXTRA_BEDROCK_IDS = [
+    "moonshotai.kimi-k2.5",
+    "anthropic.claude-opus-4-7",
+  ];
 
   const existingIds = new Set(bedrockBaseIds);
   for (const id of EXTRA_BEDROCK_IDS) {
