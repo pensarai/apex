@@ -2200,11 +2200,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
             focused={
               status === "running"
                 ? selectedQueueIndex < 0
-                : resolveInputFocused(
-                    status,
-                    stack.length,
-                    externalDialogOpen,
-                  )
+                : resolveInputFocused(status, stack.length, externalDialogOpen)
             }
             status={status === "waiting" ? "running" : status}
             mode="operator"

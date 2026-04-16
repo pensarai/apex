@@ -147,8 +147,7 @@ export function QuestionsForm({
       ? (rows[Math.min(activeState.focusedIndex, rows.length - 1)] ?? null)
       : null;
 
-  const isFreeformFocused =
-    !onSubmitTab && focusedRow?.kind === "freeform";
+  const isFreeformFocused = !onSubmitTab && focusedRow?.kind === "freeform";
 
   const updateState = (index: number, patch: Partial<QuestionState>) => {
     setStates((prev) => {
@@ -463,45 +462,50 @@ function TabBar({
       header: q.header,
       width: tabWidth(q.header),
     }));
-    tabs.push({ index: submitTabIndex, header: "Submit", width: tabWidth("Submit") });
+    tabs.push({
+      index: submitTabIndex,
+      header: "Submit",
+      width: tabWidth("Submit"),
+    });
     return tabs;
   }, [questions, submitTabIndex]);
 
   // Determine which tabs are visible on a single line.
   // Reserve space for arrows (2 chars each) + overflow indicators.
-  const { visibleStart, visibleEnd, hiddenBefore, hiddenAfter } = useMemo(() => {
-    const arrowSpace = 4; // "← " and " →"
-    const budget = availableWidth - arrowSpace;
+  const { visibleStart, visibleEnd, hiddenBefore, hiddenAfter } =
+    useMemo(() => {
+      const arrowSpace = 4; // "← " and " →"
+      const budget = availableWidth - arrowSpace;
 
-    // Always include the active tab; expand outward from there.
-    let start = activeTabIndex;
-    let end = activeTabIndex;
-    let used = allTabs[activeTabIndex]?.width ?? 0;
+      // Always include the active tab; expand outward from there.
+      let start = activeTabIndex;
+      let end = activeTabIndex;
+      let used = allTabs[activeTabIndex]?.width ?? 0;
 
-    // Expand right, then left
-    while (end + 1 < allTabs.length) {
-      const next = allTabs[end + 1]!;
-      // Reserve space for "+N" indicator if there are tabs past what we show
-      const indicatorReserve = end + 2 < allTabs.length ? 5 : 0;
-      if (used + next.width + indicatorReserve > budget) break;
-      used += next.width;
-      end++;
-    }
-    while (start - 1 >= 0) {
-      const prev = allTabs[start - 1]!;
-      const indicatorReserve = start - 2 >= 0 ? 5 : 0;
-      if (used + prev.width + indicatorReserve > budget) break;
-      used += prev.width;
-      start--;
-    }
+      // Expand right, then left
+      while (end + 1 < allTabs.length) {
+        const next = allTabs[end + 1]!;
+        // Reserve space for "+N" indicator if there are tabs past what we show
+        const indicatorReserve = end + 2 < allTabs.length ? 5 : 0;
+        if (used + next.width + indicatorReserve > budget) break;
+        used += next.width;
+        end++;
+      }
+      while (start - 1 >= 0) {
+        const prev = allTabs[start - 1]!;
+        const indicatorReserve = start - 2 >= 0 ? 5 : 0;
+        if (used + prev.width + indicatorReserve > budget) break;
+        used += prev.width;
+        start--;
+      }
 
-    return {
-      visibleStart: start,
-      visibleEnd: end,
-      hiddenBefore: start,
-      hiddenAfter: allTabs.length - 1 - end,
-    };
-  }, [allTabs, activeTabIndex, availableWidth]);
+      return {
+        visibleStart: start,
+        visibleEnd: end,
+        hiddenBefore: start,
+        hiddenAfter: allTabs.length - 1 - end,
+      };
+    }, [allTabs, activeTabIndex, availableWidth]);
 
   const leftActive = activeTabIndex > 0;
   const rightActive = activeTabIndex < submitTabIndex;
@@ -520,9 +524,7 @@ function TabBar({
         const s = !isSubmit ? states[tab.index]! : null;
         const q = !isSubmit ? questions[tab.index]! : null;
 
-        const icon = isSubmit
-          ? "✓"
-          : tabIcon(q!, s!);
+        const icon = isSubmit ? "✓" : tabIcon(q!, s!);
         const iconFg = isSubmit
           ? colors.success
           : isAnswered(s!)
@@ -578,21 +580,21 @@ function QuestionView({
       <text fg={colors.text}>{question.question}</text>
 
       <box flexDirection="column" marginTop={1}>
-      {rows.map((row, rowIdx) => {
-        const focused = rowIdx === focusedIdx;
-        return (
-          <Row
-            key={rowKey(row, rowIdx)}
-            row={row}
-            rowIndex={rowIdx}
-            focused={focused}
-            question={question}
-            state={state}
-            isFreeformFocused={isFreeformFocused && focused}
-            onFreeformInput={onFreeformInput}
-          />
-        );
-      })}
+        {rows.map((row, rowIdx) => {
+          const focused = rowIdx === focusedIdx;
+          return (
+            <Row
+              key={rowKey(row, rowIdx)}
+              row={row}
+              rowIndex={rowIdx}
+              focused={focused}
+              question={question}
+              state={state}
+              isFreeformFocused={isFreeformFocused && focused}
+              onFreeformInput={onFreeformInput}
+            />
+          );
+        })}
       </box>
     </box>
   );
@@ -663,11 +665,7 @@ function Row({
   if (row.kind === "freeform") {
     const number = rowIndex + 1;
     const hasText = state.freeformText.trim().length > 0;
-    const prefix = question.multiSelect
-      ? hasText
-        ? "[✓] "
-        : "[ ] "
-      : "";
+    const prefix = question.multiSelect ? (hasText ? "[✓] " : "[ ] ") : "";
     const prefixColor = question.multiSelect
       ? hasText
         ? colors.success
@@ -726,7 +724,9 @@ function SubmitView({
           <text fg={colors.warning}>⚠ You have not answered all questions</text>
         </box>
       ) : null}
-      <text fg={colors.text} marginTop={1}>Ready to submit your answers?</text>
+      <text fg={colors.text} marginTop={1}>
+        Ready to submit your answers?
+      </text>
       <box flexDirection="column" marginTop={1}>
         {SUBMIT_OPTIONS.map((label, i) => {
           const focused = i === focusedIndex;
