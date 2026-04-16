@@ -54,6 +54,49 @@ Open the Apex TUI:
 pensar
 ```
 
+### Headless CLI
+
+Run pentests without the TUI for scripting, CI, or evalgate integration:
+
+```bash
+# Basic pentest
+pensar pentest --target https://example.com
+
+# With extended thinking and task-driven mode
+pensar pentest --target https://example.com --extended-thinking --task-driven
+
+# Whitebox (with source code access)
+pensar pentest --target https://example.com --cwd ./my-app
+
+# Targeted pentest with specific objectives
+pensar targeted-pentest --target https://example.com --objective "Test authentication bypass"
+```
+
+| Flag                           | Command                   | Description                                    |
+| ------------------------------ | ------------------------- | ---------------------------------------------- |
+| `--target <url>`               | pentest, targeted-pentest | Target URL (required)                          |
+| `--cwd <path>`                 | pentest                   | Source code path for whitebox mode             |
+| `--mode <mode>`                | pentest                   | `exfil` for pivoting and flag extraction       |
+| `--model <model>`              | pentest, targeted-pentest | AI model (default: auto-selected)              |
+| `--extended-thinking`          | pentest                   | Enable extended thinking for supported models  |
+| `--task-driven`                | pentest                   | Enable task-driven architecture (experimental) |
+| `--prompt <text\|@file>`       | pentest                   | Custom guidance for the agent                  |
+| `--threat-model <text\|@file>` | pentest                   | Threat model to guide testing                  |
+| `--objective <text>`           | targeted-pentest          | Testing objective (repeatable)                 |
+
+### W&B Weave Tracing
+
+Stream step-level agent traces to Weights & Biases Weave for analysis and fine-tuning:
+
+```bash
+export WANDB_API_KEY=your-key
+export WANDB_ENTITY=your-entity
+# WANDB_PROJECT defaults to "apex-traces"
+pensar pentest --target https://example.com
+```
+
+Traces include reasoning steps, tool calls, token usage, and state checkpoints. When credentials are not set, tracing is silently disabled.
+
 ## Kali Linux Container (Optional)
 
 For **best performance**, run Apex in the included Kali Linux container with preconfigured pentest tools:
