@@ -12,6 +12,7 @@ import { getCurrentVersion, upgrade } from "./core/installation";
 import { buildAuthConfig } from "./core/ai/utils";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
+import type { SessionInfo } from "./core/session";
 import {
   resolveFlagValue,
   resolveThreatModelPrompt,
@@ -40,6 +41,10 @@ function getArgRequired(flag: string, argv = args): string {
   return val;
 }
 
+function hasFlag(flag: string, argv = args): boolean {
+  return argv.includes(flag);
+}
+
 function getAllArgs(flag: string, argv = args): string[] {
   const values: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -55,6 +60,20 @@ function attachCliAgentStreamListeners(bus: AgentEventBus): void {
   bus.on("tool-call-complete", (d) => console.log(`\n→ ${d.toolName}`));
   bus.on("tool-result", (d) => console.log(`✓ ${d.toolName} completed`));
   bus.on("error", (d) => console.error("Error:", d.error));
+}
+
+async function createInstrumentedBus(
+  session: SessionInfo,
+): Promise<{ bus: AgentEventBus; cleanup: () => Promise<void> }> {
+  const bus = new AgentEventBus();
+  attachCliAgentStreamListeners(bus);
+  const { attachWandbToEventBus } =
+    await import("./core/integrations/wandb/upload");
+  const wandbCleanup = await attachWandbToEventBus(session, bus).catch((e) => {
+    console.warn("[wandb] Tracing disabled:", (e as Error).message);
+    return null;
+  });
+  return { bus, cleanup: async () => wandbCleanup?.() };
 }
 
 // ---------------------------------------------------------------------------
@@ -86,6 +105,8 @@ pentest options:
   --cwd <path>             Source code path — enables whitebox attack surface
   --mode <mode>            Pentest mode: exfil (pivoting & flag extraction)
   --model <model>          AI model (default: claude-sonnet-4-5)
+  --extended-thinking       Enable extended thinking for supported models
+  --task-driven             Enable task-driven architecture (experimental)
   --prompt <text|@file>    Guidance for the pentest agent (inline text or @filepath)
   --threat-model <text|@file>  Threat model to guide the pentest (inline or @filepath)
 
@@ -123,6 +144,8 @@ async function runPentest() {
   const mode = getArg("--mode");
   const promptRaw = getArg("--prompt");
   const threatModelRaw = getArg("--threat-model");
+  const enableThinking = hasFlag("--extended-thinking");
+  const taskDriven = hasFlag("--task-driven");
 
   // Resolve and combine threat model + prompt
   const resolvedTm = threatModelRaw
@@ -146,7 +169,7 @@ async function runPentest() {
 PENTEST ORCHESTRATION
 ${sep}
 Target:  ${target}${cwd ? `\nCwd:     ${cwd} (whitebox)` : ""}${exfilMode ? "\nMode:    exfil" : ""}
-Model:   ${model}
+Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\nTask-driven: enabled" : ""}
 `);
 
   const session = await sessions.create({
@@ -156,29 +179,35 @@ Model:   ${model}
       ...(cwd ? { cwd } : {}),
       ...(exfilMode ? { exfilMode: true } : {}),
       ...(prompt ? { prompt } : {}),
+      ...(taskDriven ? { taskDriven: true } : {}),
     },
   });
 
-  const pentestBus = new AgentEventBus();
-  attachCliAgentStreamListeners(pentestBus);
+  const { bus: pentestBus, cleanup: wandbCleanup } =
+    await createInstrumentedBus(session);
 
-  const { findings, findingsPath, pocsPath, reportPath } =
-    await runPentestAgent({
-      target,
-      ...(cwd ? { cwd } : {}),
-      session,
-      model,
-      authConfig: buildAuthConfig(pensarConfig),
-      eventBus: pentestBus,
-    });
+  try {
+    const { findings, findingsPath, pocsPath, reportPath } =
+      await runPentestAgent({
+        target,
+        ...(cwd ? { cwd } : {}),
+        session,
+        model,
+        enableThinking,
+        authConfig: buildAuthConfig(pensarConfig),
+        eventBus: pentestBus,
+      });
 
-  console.log(`
+    console.log(`
 ${sep}
 RESULTS
 ${sep}
 Findings:  ${findings.length}
 Path:      ${findingsPath}
 POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}`);
+  } finally {
+    await wandbCleanup();
+  }
 }
 
 async function runTargetedPentest() {
@@ -223,21 +252,29 @@ ${objectivesList}
     targets: [target],
   });
 
-  const { findings, findingsPath, pocsPath } = await runTargetedPentestAgent({
-    target,
-    objectives,
-    session,
-    model,
-    authConfig: buildAuthConfig(pensarConfig),
-  });
+  const { bus: targetedBus, cleanup: wandbCleanup } =
+    await createInstrumentedBus(session);
 
-  console.log(`
+  try {
+    const { findings, findingsPath, pocsPath } = await runTargetedPentestAgent({
+      target,
+      objectives,
+      session,
+      model,
+      authConfig: buildAuthConfig(pensarConfig),
+      eventBus: targetedBus,
+    });
+
+    console.log(`
 ${sep}
 RESULTS
 ${sep}
 Findings:  ${findings.length}
 Path:      ${findingsPath}
 POCs:      ${pocsPath}`);
+  } finally {
+    await wandbCleanup();
+  }
 }
 
 async function runThreatModel() {
