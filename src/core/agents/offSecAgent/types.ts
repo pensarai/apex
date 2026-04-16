@@ -23,6 +23,7 @@ import {
   CweEntrySchema,
   ValidatedCweEntrySchema,
 } from "../../../lib/cwe/types";
+import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -51,6 +52,7 @@ export const ApexFindingObject = z.object({
   cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
   rootCauseGroup: z.string().optional(),
   relatedFindings: z.array(z.string()).optional(),
+  evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
 });
 
 export type Finding = z.infer<typeof ApexFindingObject>;
