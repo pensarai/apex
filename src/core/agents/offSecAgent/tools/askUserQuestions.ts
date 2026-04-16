@@ -72,7 +72,7 @@ export function askUserQuestions(_ctx: ToolContext) {
       "predefined options short (a few words each) so the user can scan them quickly. " +
       "The consumer of this agent collects answers and resumes with a tool-result in the message history.",
     inputSchema: z.object({
-      questions: z.array(AskUserQuestionSchema),
+      questions: z.array(AskUserQuestionSchema).nonempty(),
     }),
     execute: async ({ questions }) => {
       return { ok: true as const, pendingQuestionCount: questions.length };

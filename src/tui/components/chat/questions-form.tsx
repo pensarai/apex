@@ -175,7 +175,11 @@ export function QuestionsForm({
         nextSelected.clear();
         nextSelected.add(opt.id);
       }
-      next[questionIndex] = { ...cur, selected: nextSelected };
+      // For single-select, clear freeform text to maintain mutual exclusivity
+      // (updateFreeformText already clears selected when freeform is typed).
+      next[questionIndex] = q.multiSelect
+        ? { ...cur, selected: nextSelected }
+        : { ...cur, selected: nextSelected, freeformText: "" };
       return next;
     });
   };
