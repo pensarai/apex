@@ -276,4 +276,49 @@ describe("renderMarkdown", () => {
 
     expect(output).not.toContain("## CWE Classification");
   });
+
+  it("renders Evidence Files section when evidenceFiles are present", () => {
+    const report = makeSampleReport({
+      findings: [
+        {
+          title: "SQL Injection",
+          severity: "HIGH",
+          description: "Desc",
+          impact: "Impact",
+          evidence: "Evidence text",
+          endpoint: "/api",
+          pocPath: "pocs/poc.sh",
+          remediation: "Fix it",
+          evidenceFiles: [
+            {
+              path: "findings/evidence.txt",
+              type: "raw-evidence",
+              description: "Full evidence output",
+            },
+            {
+              path: "pocs/poc.sh.output.json",
+              type: "poc-output",
+              description: "POC execution output",
+            },
+          ],
+        },
+      ],
+    });
+    const output = renderMarkdown(report);
+
+    expect(output).toContain("## Evidence Files");
+    expect(output).toContain(
+      "- **[raw-evidence]** `findings/evidence.txt` — Full evidence output",
+    );
+    expect(output).toContain(
+      "- **[poc-output]** `pocs/poc.sh.output.json` — POC execution output",
+    );
+  });
+
+  it("omits Evidence Files section when evidenceFiles are absent", () => {
+    const report = makeSampleReport();
+    const output = renderMarkdown(report);
+
+    expect(output).not.toContain("## Evidence Files");
+  });
 });

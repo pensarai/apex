@@ -19,6 +19,19 @@ const cwes = [
   { id: "CWE-564", reasoning: "Hibernate-specific variant" },
 ];
 
+const evidenceFiles = [
+  {
+    path: "findings/2026-03-26-sqli-evidence.txt",
+    type: "raw-evidence" as const,
+    description: "Full evidence output (25000 bytes)",
+  },
+  {
+    path: "pocs/poc_sqli.sh.output.json",
+    type: "poc-output" as const,
+    description: "POC execution output for poc_sqli.sh",
+  },
+];
+
 // ---------------------------------------------------------------------------
 // ApexFindingObject
 // ---------------------------------------------------------------------------
@@ -41,6 +54,27 @@ describe("ApexFindingObject", () => {
     const result = ApexFindingObject.safeParse({
       ...baseFinding,
       cwes: [{ id: "cwe89", reasoning: "bad format" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts finding with evidenceFiles", () => {
+    const result = ApexFindingObject.safeParse({
+      ...baseFinding,
+      evidenceFiles,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.evidenceFiles).toEqual(evidenceFiles);
+    }
+  });
+
+  it("rejects finding with invalid evidence file type", () => {
+    const result = ApexFindingObject.safeParse({
+      ...baseFinding,
+      evidenceFiles: [
+        { path: "file.txt", type: "invalid-type", description: "bad" },
+      ],
     });
     expect(result.success).toBe(false);
   });
@@ -71,6 +105,27 @@ describe("DocumentFindingSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts finding with evidenceFiles", () => {
+    const result = DocumentFindingSchema.safeParse({
+      ...baseFinding,
+      evidenceFiles,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.evidenceFiles).toEqual(evidenceFiles);
+    }
+  });
+
+  it("rejects finding with invalid evidence file type", () => {
+    const result = DocumentFindingSchema.safeParse({
+      ...baseFinding,
+      evidenceFiles: [
+        { path: "file.txt", type: "unknown", description: "bad" },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -98,6 +153,27 @@ describe("PentestReportFindingSchema", () => {
     const result = PentestReportFindingSchema.safeParse({
       ...baseFinding,
       cwes: [{ id: "CWE-", reasoning: "missing number" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts finding with evidenceFiles", () => {
+    const result = PentestReportFindingSchema.safeParse({
+      ...baseFinding,
+      evidenceFiles,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.evidenceFiles).toEqual(evidenceFiles);
+    }
+  });
+
+  it("rejects finding with invalid evidence file type", () => {
+    const result = PentestReportFindingSchema.safeParse({
+      ...baseFinding,
+      evidenceFiles: [
+        { path: "file.txt", type: "not-a-type", description: "bad" },
+      ],
     });
     expect(result.success).toBe(false);
   });
