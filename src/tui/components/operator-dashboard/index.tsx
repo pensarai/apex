@@ -976,6 +976,10 @@ export default function OperatorDashboard({
           return;
         }
         console.error("Agent error:", d.error);
+        // Clear pending-questions state so an error after the tool-call event
+        // doesn't leave the questions form stuck over a failed conversation.
+        pendingToolCallIdRef.current = null;
+        setPendingQuestions(null);
         const errorMessage =
           d.error instanceof Error ? d.error.message : "Unknown error";
         setError(errorMessage);
@@ -1285,6 +1289,10 @@ export default function OperatorDashboard({
           // subsequent retries stack consecutive user messages, permanently
           // breaking the session.
           conversationRef.current = prevMessages;
+          // Clear pending-questions state so the finally block doesn't set
+          // status to "waiting" over a rolled-back conversation.
+          pendingToolCallIdRef.current = null;
+          setPendingQuestions(null);
           if (sessionRef.current) {
             try {
               const mp = join(sessionRef.current.rootPath, "messages.json");
