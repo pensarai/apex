@@ -718,7 +718,6 @@ function SubmitView({
   const { colors } = useTheme();
   return (
     <box flexDirection="column">
-      <text fg={colors.text}>Review your answers</text>
       {!allAnswered ? (
         <box marginTop={1}>
           <text fg={colors.warning}>⚠ You have not answered all questions</text>
