@@ -285,9 +285,13 @@ export function QuestionsForm({
       if (key.name === "escape") {
         key.preventDefault?.();
         setEditingFreeform(false);
-        // Move focus off the freeform row so the input loses focus
+        // Move focus off the freeform row so the input loses focus.
+        // When there are no option rows above (focusedIndex === 0), skip
+        // instead — otherwise Esc is trapped on freeform-only questions.
         if (activeState && activeState.focusedIndex > 0) {
           moveRow(-1);
+        } else {
+          onSkip();
         }
         return;
       }
