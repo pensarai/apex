@@ -12,6 +12,7 @@ import {
   writeFileSync,
   readFileSync,
   readdirSync,
+  statSync,
 } from "fs";
 import { join } from "path";
 import type { SessionInfo } from "./index";
@@ -44,7 +45,7 @@ export interface SavedSubagentData {
   findingsCount?: number;
   status?: string;
   error?: string;
-  messages: ModelMessage[];
+  messages?: ModelMessage[];
   /** System prompt used for this agent run (for training data export) */
   systemPrompt?: string;
   /** Initial user prompt / task assignment (for training data export) */
@@ -113,13 +114,32 @@ export function loadSubagentMessages(
   session: SessionInfo,
   agentName: string,
 ): ModelMessage[] {
-  const filePath = join(session.rootPath, SUBAGENTS_DIR, `${agentName}.json`);
-  if (!existsSync(filePath)) return [];
+  // Primary: base class step persistence (written incrementally, survives aborts)
+  const stepPath = join(
+    session.rootPath,
+    SUBAGENTS_DIR,
+    agentName,
+    "messages.json",
+  );
+  if (existsSync(stepPath)) {
+    try {
+      return JSON.parse(readFileSync(stepPath, "utf-8")) as ModelMessage[];
+    } catch {
+      // Fall through to snapshot
+    }
+  }
+  // Fallback: old snapshot format (pre-split sessions)
+  const snapshotPath = join(
+    session.rootPath,
+    SUBAGENTS_DIR,
+    `${agentName}.json`,
+  );
+  if (!existsSync(snapshotPath)) return [];
   try {
     const data = JSON.parse(
-      readFileSync(filePath, "utf-8"),
+      readFileSync(snapshotPath, "utf-8"),
     ) as SavedSubagentData;
-    return data.messages;
+    return data.messages ?? [];
   } catch {
     return [];
   }
@@ -298,21 +318,54 @@ export function getCompletedAgentIds(session: SessionInfo): Set<string> {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse a subagent filename to extract agent type and display name.
+ * Parse a subagent filename (or directory name) to extract agent type and display name.
  *
  * Handles every naming convention the writer has ever used:
- *  - "attack-surface-agent-..."  → attack-surface
- *  - "pentest-agent-3-..."       → pentest, "Pentest Agent 3"
- *  - "vuln-test-sqli-..."        → pentest (back-compat)
- *  - "orchestrator-..."          → skipped upstream
- *  - fallback                    → pentest
+ *  - "attack-surface-agent-..."      → attack-surface
+ *  - "whitebox-apps-discovery"       → attack-surface
+ *  - "pages-<app>" / "apiEndpoints-<app>" / "cloudResourceEndpoints-<app>" → attack-surface (whitebox discovery)
+ *  - "threat-model-<app>-<endpoint>" → attack-surface (threat model)
+ *  - "pentest-agent-3-..."           → pentest, "Pentest Agent 3"
+ *  - "vuln-test-sqli-..."            → pentest (back-compat)
+ *  - "orchestrator-..."              → skipped upstream
+ *  - fallback                        → pentest
  */
 function parseSubagentFilename(filename: string): {
-  agentType: "attack-surface" | "pentest";
+  agentType: UISubagent["type"];
   name: string;
 } {
   if (filename.startsWith("attack-surface-agent")) {
     return { agentType: "attack-surface", name: "Attack Surface Discovery" };
+  }
+
+  if (filename === "whitebox-apps-discovery") {
+    return { agentType: "pentest", name: "Whitebox Apps Discovery" };
+  }
+
+  if (filename === "whitebox-incremental") {
+    return { agentType: "pentest", name: "Incremental Recon" };
+  }
+
+  if (filename.startsWith("pages-")) {
+    const appName = filename.replace("pages-", "");
+    return { agentType: "pentest", name: `Pages: ${appName}` };
+  }
+
+  if (filename.startsWith("apiEndpoints-")) {
+    const appName = filename.replace("apiEndpoints-", "");
+    return { agentType: "pentest", name: `API Endpoints: ${appName}` };
+  }
+
+  if (filename.startsWith("cloudResourceEndpoints-")) {
+    const appName = filename.replace("cloudResourceEndpoints-", "");
+    return { agentType: "pentest", name: `Cloud Resources: ${appName}` };
+  }
+
+  if (filename.startsWith("threat-model-")) {
+    // Writer joins app + endpoint with "-" but sanitize preserves dashes,
+    // so we can't split reliably. Show the whole trailing portion.
+    const rest = filename.replace("threat-model-", "");
+    return { agentType: "pentest", name: `Threat Model: ${rest}` };
   }
 
   const pentestMatch = filename.match(/^pentest-agent-(\d+)/);
@@ -321,6 +374,18 @@ function parseSubagentFilename(filename: string): {
       agentType: "pentest",
       name: `Pentest Agent ${pentestMatch[1]}`,
     };
+  }
+
+  const codingMatch = filename.match(/^coding-agent-(\d+)/);
+  if (codingMatch) {
+    return {
+      agentType: "pentest",
+      name: `Coding Agent ${codingMatch[1]}`,
+    };
+  }
+
+  if (filename === "auth-agent") {
+    return { agentType: "pentest", name: "Auth Agent" };
   }
 
   // Legacy convention: vuln-test-{vulnClass}-...
@@ -413,6 +478,9 @@ function convertMessagesToUI(
             typeof input?.toolCallDescription === "string"
               ? input.toolCallDescription
               : part.toolName || "tool";
+          const hasResult = part.toolCallId
+            ? toolResults.has(part.toolCallId)
+            : false;
           const result = part.toolCallId
             ? toolResults.get(part.toolCallId)
             : undefined;
@@ -428,6 +496,10 @@ function convertMessagesToUI(
           const cancelled =
             typeof resultText === "string" &&
             resultText.toLowerCase().includes("cancelled");
+          // A tool-call with no matching tool-result means the agent was
+          // interrupted mid-step; surface that instead of silently falling
+          // through to "completed".
+          const interrupted = !hasResult;
           uiMessages.push({
             role: "tool",
             content: toolDescription,
@@ -435,8 +507,8 @@ function convertMessagesToUI(
             toolCallId: part.toolCallId,
             toolName: part.toolName,
             args: input,
-            result: result,
-            status: cancelled ? "error" : "completed",
+            result: interrupted ? "Interrupted" : result,
+            status: cancelled || interrupted ? "error" : "completed",
           });
         }
       }
@@ -457,10 +529,11 @@ export function convertModelMessagesToUI(
  *
  * This is the single reader for subagent state. It:
  *  1. Reads all .json files from {rootPath}/{SUBAGENTS_DIR}/
- *  2. Reads the agent manifest from {rootPath}/{MANIFEST_FILE}
- *  3. Matches manifest entries to loaded files by agentName === entry.id
- *  4. Marks matched "running" manifest entries as "paused"
- *  5. Creates paused stubs for unmatched "running" manifest entries
+ *  2. Discovers subdirectories with messages.json (no snapshot .json)
+ *  3. Reads the agent manifest from {rootPath}/{MANIFEST_FILE}
+ *  4. Matches manifest entries to loaded files by agentName === entry.id
+ *  5. Marks matched "running" manifest entries as "paused"
+ *  6. Creates paused stubs for unmatched "running" manifest entries
  */
 export function loadSubagents(rootPath: string): UISubagent[] {
   const subagentsPath = join(rootPath, SUBAGENTS_DIR);
@@ -487,7 +560,24 @@ export function loadSubagents(rootPath: string): UISubagent[] {
 
         const { agentType, name } = parseSubagentFilename(file);
         const timestamp = new Date(data.timestamp);
-        const messages = convertMessagesToUI(data.messages, timestamp);
+
+        // Read messages from base class step persistence (primary),
+        // fall back to snapshot's messages field (old sessions)
+        const agentName = data.agentName;
+        const stepPath = join(subagentsPath, agentName, "messages.json");
+        let messages: UIMessage[];
+        if (existsSync(stepPath)) {
+          try {
+            const raw = JSON.parse(
+              readFileSync(stepPath, "utf-8"),
+            ) as ModelMessage[];
+            messages = convertMessagesToUI(raw, timestamp);
+          } catch {
+            messages = convertMessagesToUI(data.messages ?? [], timestamp);
+          }
+        } else {
+          messages = convertMessagesToUI(data.messages ?? [], timestamp);
+        }
 
         let status: "pending" | "completed" | "failed" | "canceled" =
           "completed";
@@ -523,6 +613,43 @@ export function loadSubagents(rootPath: string): UISubagent[] {
         });
       } catch (e) {
         console.error(`Failed to load subagent file ${file}:`, e);
+      }
+    }
+
+    // Some agents (threat model, whitebox discovery, coding agents) only
+    // persist messages.json via the base class but never call
+    // saveSubagentData(). Scan for subdirectories with messages.json
+    // that have no matching top-level snapshot .json file.
+    const entries = readdirSync(subagentsPath, { withFileTypes: true });
+    for (const dirent of entries) {
+      if (!dirent.isDirectory()) continue;
+      const entry = dirent.name;
+      if (agentNameIndex.has(entry)) continue;
+      if (entry.endsWith("-tasks") || entry.endsWith("-plan")) continue;
+
+      const messagesPath = join(subagentsPath, entry, "messages.json");
+      try {
+        const raw = JSON.parse(
+          readFileSync(messagesPath, "utf-8"),
+        ) as ModelMessage[];
+        if (!Array.isArray(raw) || raw.length === 0) continue;
+
+        const { agentType, name } = parseSubagentFilename(entry);
+        const timestamp = statSync(messagesPath).mtime;
+        const messages = convertMessagesToUI(raw, timestamp);
+
+        agentNameIndex.set(entry, subagents.length);
+        subagents.push({
+          id: entry,
+          name,
+          type: agentType,
+          target: "Unknown",
+          messages,
+          createdAt: timestamp,
+          status: "completed",
+        });
+      } catch {
+        // Skip directories without a readable messages.json
       }
     }
   }
