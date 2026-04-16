@@ -150,6 +150,40 @@ describe("buildPentestReport", () => {
     expect(report.findings[0].cwes).toBeUndefined();
   });
 
+  it("includes evidenceFiles when present on finding", () => {
+    const findings: Finding[] = [
+      makeFinding({
+        title: "With Evidence Files",
+        evidenceFiles: [
+          {
+            path: "findings/evidence.txt",
+            type: "raw-evidence",
+            description: "Full evidence",
+          },
+          {
+            path: "pocs/poc_test.py.output.json",
+            type: "poc-output",
+            description: "POC output",
+          },
+        ],
+      }),
+    ];
+
+    const report = buildPentestReport(findings, defaultContext);
+    const result = PentestReportSchema.safeParse(report);
+
+    expect(result.success).toBe(true);
+    expect(report.findings[0].evidenceFiles).toHaveLength(2);
+    expect(report.findings[0].evidenceFiles![0].type).toBe("raw-evidence");
+    expect(report.findings[0].evidenceFiles![1].type).toBe("poc-output");
+  });
+
+  it("omits evidenceFiles when not present on finding", () => {
+    const findings: Finding[] = [makeFinding()];
+    const report = buildPentestReport(findings, defaultContext);
+    expect(report.findings[0].evidenceFiles).toBeUndefined();
+  });
+
   it("includes optional references when present", () => {
     const findings: Finding[] = [
       makeFinding({
