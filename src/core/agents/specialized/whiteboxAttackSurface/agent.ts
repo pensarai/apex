@@ -162,10 +162,11 @@ Analyze this codebase and produce a complete attack surface map:
 3. Discover cloud resources and external infrastructure referenced in the code (S3 buckets, cloud storage, CDN origins, etc.) — document these as apps with the appropriate type
 4. For each app, find all web pages and API endpoints
 5. For each endpoint, generate pentest objectives
+6. **Before submitting**, perform the Phase 3 coverage double-check from the system prompt — re-scan workspace roots, framework configs, Dockerfiles, IaC, and CI/deploy configs for apps you may have missed on the first pass, and document any that were missed.
 
 Use \`spawn_coding_agent\` to delegate app-level analysis for higher fidelity.
 
-When finished, call \`submit_results\` with the complete structured output.
+When finished, call \`submit_results\` with the complete structured output. Do NOT call \`submit_results\` until you have explicitly completed the coverage double-check.
 
 Begin now.`;
 }
