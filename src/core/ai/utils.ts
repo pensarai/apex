@@ -155,10 +155,10 @@ export function getProviderModel(
 
     case "bedrock": {
       // Bun's fetch has a 300-second default timeout that can't be disabled
-      // via AbortSignal. Pass a custom fetch that explicitly sets a 1-hour
+      // via AbortSignal. Pass a custom fetch that explicitly sets a 15-minute
       // timeout to support long-running streaming requests at large context sizes.
       const bedrockFetch = (input: RequestInfo | URL, init?: RequestInit) => {
-        const longTimeout = AbortSignal.timeout(60 * 60 * 1000);
+        const longTimeout = AbortSignal.timeout(15 * 60 * 1000);
         const signal = init?.signal
           ? AbortSignal.any([init.signal, longTimeout])
           : longTimeout;

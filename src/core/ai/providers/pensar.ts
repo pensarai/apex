@@ -260,10 +260,10 @@ export function createPensarModel(
       log(`  headers: ${Object.keys(headers).join(", ")}`);
 
       // Bun's fetch has a 300-second default timeout that can't be disabled
-      // via AbortSignal. Wrap with an explicit 1-hour timeout so long-running
-      // streaming responses aren't killed by the runtime before the model
-      // finishes. Mirrors the Bedrock provider in `utils.ts`.
-      const longTimeout = AbortSignal.timeout(60 * 60 * 1000);
+      // via AbortSignal. Wrap with an explicit 15-minute timeout so
+      // long-running streaming responses aren't killed by the runtime before
+      // the model finishes. Mirrors the Bedrock provider in `utils.ts`.
+      const longTimeout = AbortSignal.timeout(15 * 60 * 1000);
       const fetchSignal = options.abortSignal
         ? AbortSignal.any([options.abortSignal, longTimeout])
         : longTimeout;
