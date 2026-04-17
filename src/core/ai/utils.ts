@@ -31,6 +31,20 @@ export function isAnthropicProvider(model: AIModel): boolean {
   );
 }
 
+/**
+ * Bun's fetch has a 300-second default timeout that can't be disabled via
+ * AbortSignal. Providers streaming long model responses need a wider ceiling;
+ * this helper composes a 15-minute timeout with any caller-provided signal.
+ */
+const STREAMING_FETCH_TIMEOUT_MS = 15 * 60 * 1000;
+
+export function buildStreamingFetchSignal(
+  callerSignal?: AbortSignal | null,
+): AbortSignal {
+  const timeout = AbortSignal.timeout(STREAMING_FETCH_TIMEOUT_MS);
+  return callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
+}
+
 export type AIAuthConfig = {
   openAiAPIKey?: string;
   anthropicAPIKey?: string;
@@ -154,16 +168,11 @@ export function getProviderModel(
     }
 
     case "bedrock": {
-      // Bun's fetch has a 300-second default timeout that can't be disabled
-      // via AbortSignal. Pass a custom fetch that explicitly sets a 15-minute
-      // timeout to support long-running streaming requests at large context sizes.
-      const bedrockFetch = (input: RequestInfo | URL, init?: RequestInit) => {
-        const longTimeout = AbortSignal.timeout(15 * 60 * 1000);
-        const signal = init?.signal
-          ? AbortSignal.any([init.signal, longTimeout])
-          : longTimeout;
-        return globalThis.fetch(input, { ...init, signal });
-      };
+      const bedrockFetch = (input: RequestInfo | URL, init?: RequestInit) =>
+        globalThis.fetch(input, {
+          ...init,
+          signal: buildStreamingFetchSignal(init?.signal),
+        });
       const bedrock = createAmazonBedrock({
         apiKey: bedrockApiKey,
         region: bedrockRegion,

@@ -10,6 +10,7 @@ import type {
 import { convertToBedrockFormat } from "./pensarFormatters";
 import { parseSSE } from "./pensarSSE";
 import { signGatewayRequest } from "./pensarSigning";
+import { buildStreamingFetchSignal } from "../utils";
 
 const DEBUG =
   process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
@@ -259,14 +260,7 @@ export function createPensarModel(
 
       log(`  headers: ${Object.keys(headers).join(", ")}`);
 
-      // Bun's fetch has a 300-second default timeout that can't be disabled
-      // via AbortSignal. Wrap with an explicit 15-minute timeout so
-      // long-running streaming responses aren't killed by the runtime before
-      // the model finishes. Mirrors the Bedrock provider in `utils.ts`.
-      const longTimeout = AbortSignal.timeout(15 * 60 * 1000);
-      const fetchSignal = options.abortSignal
-        ? AbortSignal.any([options.abortSignal, longTimeout])
-        : longTimeout;
+      const fetchSignal = buildStreamingFetchSignal(options.abortSignal);
 
       let response: Response;
       try {
