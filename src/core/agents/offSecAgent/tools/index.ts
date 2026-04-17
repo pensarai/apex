@@ -11,6 +11,7 @@ export {
   ScopeViolationError,
   getAllowedHosts,
   isHostAllowed,
+  isPlausibleHostname,
   extractHostname,
   assertUrlInScope,
   assertCommandInScope,

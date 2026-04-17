@@ -37,6 +37,13 @@ export function parseTargetUrl(target: string): ParsedTarget | null {
     const url = new URL(urlString);
     const hostname = url.hostname;
 
+    // Reject hostnames that are just protocol names or other non-host
+    // strings — these arise when a bare "https" or similar token is
+    // prepended with "https://" and parsed as "https://https".
+    if (/^(https?|ftp|ftps|ssh|telnet|file|data|blob)$/i.test(hostname)) {
+      return null;
+    }
+
     // Extract port if explicitly specified (not default 80/443)
     let port: number | undefined;
     if (url.port) {

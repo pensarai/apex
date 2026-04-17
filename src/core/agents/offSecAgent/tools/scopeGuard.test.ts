@@ -3,6 +3,7 @@ import {
   getAllowedHosts,
   getRegistrableDomain,
   isHostAllowed,
+  isPlausibleHostname,
   extractHostname,
   assertUrlInScope,
   assertCommandInScope,
@@ -112,6 +113,71 @@ describe("getAllowedHosts", () => {
     };
     const hosts = getAllowedHosts(ctx);
     expect(hosts).toEqual(["api.example.com"]);
+  });
+
+  it("filters out implausible hostnames from targets (bare protocol names)", () => {
+    const ctx = makeCtx();
+    ctx.session.targets = ["https", "auth"];
+    const hosts = getAllowedHosts(ctx);
+    expect(hosts).toEqual([]);
+  });
+
+  it("filters out implausible explicit allowedHosts entries", () => {
+    const ctx = makeCtx();
+    ctx.session.config = {
+      scopeConstraints: { allowedHosts: ["https", "auth", "example.com"] },
+    };
+    const hosts = getAllowedHosts(ctx);
+    expect(hosts).toEqual(["example.com"]);
+  });
+
+  it("disables scope enforcement when all hosts are implausible", () => {
+    const ctx = makeCtx();
+    ctx.session.targets = ["https", "auth"];
+    // With all hosts filtered out, the allowedHosts list is empty, so
+    // scope enforcement is disabled and the command should be allowed.
+    expect(() =>
+      assertCommandInScope("curl https://web.dev.diracinc.com/auth/login", ctx),
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isPlausibleHostname
+// ---------------------------------------------------------------------------
+
+describe("isPlausibleHostname", () => {
+  it("accepts FQDNs with dots", () => {
+    expect(isPlausibleHostname("example.com")).toBe(true);
+    expect(isPlausibleHostname("api.example.com")).toBe(true);
+    expect(isPlausibleHostname("web.dev.diracinc.com")).toBe(true);
+  });
+
+  it("accepts IP addresses", () => {
+    expect(isPlausibleHostname("192.168.1.1")).toBe(true);
+    expect(isPlausibleHostname("10.0.0.1")).toBe(true);
+  });
+
+  it("accepts localhost", () => {
+    expect(isPlausibleHostname("localhost")).toBe(true);
+    expect(isPlausibleHostname("LOCALHOST")).toBe(true);
+  });
+
+  it("rejects bare protocol names", () => {
+    expect(isPlausibleHostname("https")).toBe(false);
+    expect(isPlausibleHostname("http")).toBe(false);
+    expect(isPlausibleHostname("ftp")).toBe(false);
+  });
+
+  it("rejects bare path segments", () => {
+    expect(isPlausibleHostname("auth")).toBe(false);
+    expect(isPlausibleHostname("login")).toBe(false);
+    expect(isPlausibleHostname("api")).toBe(false);
+  });
+
+  it("rejects empty/whitespace strings", () => {
+    expect(isPlausibleHostname("")).toBe(false);
+    expect(isPlausibleHostname("   ")).toBe(false);
   });
 });
 
@@ -255,9 +321,9 @@ describe("assertUrlInScope", () => {
 
   it("blocks other registrable domains", () => {
     const ctx = makeCtx({ target: "https://web.dev.diracinc.com" });
-    expect(() =>
-      assertUrlInScope("https://notdiracinc.com", ctx),
-    ).toThrow(ScopeViolationError);
+    expect(() => assertUrlInScope("https://notdiracinc.com", ctx)).toThrow(
+      ScopeViolationError,
+    );
     expect(() =>
       assertUrlInScope("https://diracinc.com.evil.com", ctx),
     ).toThrow(ScopeViolationError);

@@ -69,6 +69,13 @@ describe("URL Parsing Utilities", () => {
       });
     });
 
+    it("should reject bare protocol names as hostnames", () => {
+      expect(parseTargetUrl("https")).toBeNull();
+      expect(parseTargetUrl("http")).toBeNull();
+      expect(parseTargetUrl("ftp")).toBeNull();
+      expect(parseTargetUrl("ssh")).toBeNull();
+    });
+
     it("should handle localhost", () => {
       const result = parseTargetUrl("http://localhost:3000");
       expect(result).toEqual({

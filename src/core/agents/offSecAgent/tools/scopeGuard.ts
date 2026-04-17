@@ -30,6 +30,30 @@ import type { ToolContext } from "./types";
 import { parseTargetUrl } from "../../../../util/url";
 
 /**
+ * Check whether a string looks like a plausible hostname.
+ *
+ * Rejects bare protocol names (`http`, `https`, `ftp`), common URL path
+ * segments that aren't valid hosts, and other strings that could not
+ * reasonably be an FQDN, IP address, or `localhost`.
+ *
+ * A plausible hostname must satisfy at least one of:
+ *  - Contains a dot (FQDN like `example.com` or IP like `192.168.1.1`)
+ *  - Is exactly `localhost`
+ *  - Is a dotted IPv4 address
+ *
+ * Single-label names without dots (except `localhost`) are rejected
+ * because they are almost never intentional targets and frequently
+ * result from mis-parsed URLs.
+ */
+export function isPlausibleHostname(hostname: string): boolean {
+  const lower = hostname.toLowerCase().trim();
+  if (!lower) return false;
+  if (lower === "localhost") return true;
+  if (lower.includes(".")) return true;
+  return false;
+}
+
+/**
  * Compute the registrable domain (eTLD+1) for a hostname using the
  * Public Suffix List. Falls back to the hostname itself for IPs,
  * `localhost`, and other hosts without a recognised public suffix.
@@ -56,26 +80,37 @@ export class ScopeViolationError extends Error {
 /**
  * Build the set of allowed hostnames from the tool context.
  * Returns an empty array when no scope is configured (= no enforcement).
+ *
+ * Entries that fail the {@link isPlausibleHostname} check are silently
+ * discarded so that corrupt or mis-parsed values (e.g. bare protocol
+ * names like `"https"`) never restrict the agent to a nonsensical scope.
  */
 export function getAllowedHosts(ctx: ToolContext): string[] {
   const hosts = new Set<string>();
 
   if (ctx.target) {
     const parsed = parseTargetUrl(ctx.target);
-    if (parsed) hosts.add(getRegistrableDomain(parsed.hostname));
+    if (parsed) {
+      const domain = getRegistrableDomain(parsed.hostname);
+      if (isPlausibleHostname(domain)) hosts.add(domain);
+    }
   }
 
   if (ctx.session?.targets) {
     for (const t of ctx.session.targets) {
       const parsed = parseTargetUrl(t);
-      if (parsed) hosts.add(getRegistrableDomain(parsed.hostname));
+      if (parsed) {
+        const domain = getRegistrableDomain(parsed.hostname);
+        if (isPlausibleHostname(domain)) hosts.add(domain);
+      }
     }
   }
 
   const explicit = ctx.session?.config?.scopeConstraints?.allowedHosts;
   if (explicit) {
     for (const h of explicit) {
-      hosts.add(h.toLowerCase());
+      const lower = h.toLowerCase();
+      if (isPlausibleHostname(lower)) hosts.add(lower);
     }
   }
 
