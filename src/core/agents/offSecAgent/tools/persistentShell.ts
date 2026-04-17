@@ -10,6 +10,24 @@ export interface ShellExecuteResult {
   exitCode: number;
 }
 
+interface PendingCommand {
+  stdout: string;
+  stderr: string;
+  stdoutTruncated: boolean;
+  exitMarkerPrefix: string;
+  onData?: (chunk: string) => void;
+  resolve: (result: ShellExecuteResult) => void;
+  /**
+   * When non-null, overrides whatever exit code bash reports via the
+   * marker. Set by the timeout / abort paths so the caller always sees
+   * the documented sentinel (124 for timeout, 130 for abort) even when
+   * bash's wrapper ran to completion after our kill.
+   */
+  forcedExitCode: number | null;
+  /** Extra stderr appended by abort/timeout paths. */
+  forcedStderrSuffix: string | null;
+}
+
 /**
  * A long-lived bash process that persists across execute_command calls.
  *
@@ -17,7 +35,42 @@ export interface ShellExecuteResult {
  * caller can extract per-command stdout, stderr, and the exit code.
  * Background processes (`&`) survive between calls because the parent
  * shell never exits.
+ *
+ * Stability design notes:
+ *
+ *  - User commands are wrapped in a brace group `{ ...; }` (NOT a subshell)
+ *    so that `cd`, `export`, shell functions, and aliases persist across
+ *    calls as advertised.
+ *  - The user command block has its stdin redirected from `/dev/null` so
+ *    that children that read stdin (cat/ssh/sudo/python/mysql/read/…)
+ *    cannot hijack the shared pipe that we use to send commands to bash.
+ *  - A single persistent `data` listener is attached to the shell's
+ *    stdout/stderr at spawn time. Between commands, incoming bytes (e.g.
+ *    from backgrounded processes whose fd1 was not redirected) are
+ *    actively drained into a discard buffer so the kernel pipe buffer
+ *    never fills and blocks the shell.
+ *  - On timeout / cancel we walk the process tree under the shell and
+ *    SIGTERM → SIGKILL every descendant (not just direct children), so
+ *    pipelines and grandchildren cannot be orphaned holding our pipe.
  */
+/**
+ * Cached once: whether `stdbuf` is available. We use it to line-buffer
+ * `tail -f` so command output streams to the caller in near-real-time.
+ * When it isn't available we fall back to raw `tail -f`, which still
+ * produces correct final output but in larger chunks.
+ */
+let stdbufAvailable: boolean | null = null;
+function hasStdbuf(): boolean {
+  if (stdbufAvailable !== null) return stdbufAvailable;
+  if (process.platform === "win32") {
+    stdbufAvailable = false;
+    return false;
+  }
+  const res = spawnSync("stdbuf", ["--version"], { stdio: "ignore" });
+  stdbufAvailable = res.status === 0;
+  return stdbufAvailable;
+}
+
 export class PersistentShell {
   private proc: ChildProcess | null = null;
   private alive = false;
@@ -25,11 +78,11 @@ export class PersistentShell {
   private readonly cwd?: string;
   private readonly extraEnv?: Record<string, string>;
 
+  /** Single pending command; null between `execute()` calls. */
+  private current: PendingCommand | null = null;
+
   /** Allows cancelCurrentCommand() to force-resolve the running execute(). */
   private pendingCancel: ((result: ShellExecuteResult) => void) | null = null;
-  /** Snapshot accessors set by execute(), read by cancelCurrentCommand(). */
-  private pendingStdout: (() => string) | null = null;
-  private pendingStderr: (() => string) | null = null;
 
   constructor(opts?: { cwd?: string; env?: Record<string, string> }) {
     this.cwd = opts?.cwd;
@@ -64,9 +117,24 @@ export class PersistentShell {
 
     this.alive = true;
 
+    this.proc.stdout?.on("data", (data: Buffer) => this.onStdoutData(data));
+    this.proc.stderr?.on("data", (data: Buffer) => this.onStderrData(data));
+
     this.proc.on("close", () => {
       this.alive = false;
       this.proc = null;
+      // If a command was pending, fail it fast rather than letting it
+      // wait out its timeout.
+      const cmd = this.current;
+      if (cmd) {
+        this.current = null;
+        this.pendingCancel = null;
+        cmd.resolve({
+          stdout: cmd.stdout || "(no output)",
+          stderr: cmd.stderr || "",
+          exitCode: 1,
+        });
+      }
     });
 
     this.proc.on("error", () => {
@@ -78,6 +146,77 @@ export class PersistentShell {
   private ensureAlive(): void {
     if (!this.alive || !this.proc) {
       this.spawn();
+    }
+  }
+
+  /**
+   * Single persistent stdout handler. Between commands (`current === null`)
+   * incoming bytes are silently dropped so background-process output does
+   * not fill the kernel pipe buffer and does not bleed into the next
+   * command's captured output.
+   */
+  private onStdoutData(data: Buffer): void {
+    const cmd = this.current;
+    if (!cmd) return;
+
+    const chunk = data.toString();
+    if (cmd.onData) {
+      const mIdx = chunk.indexOf(cmd.exitMarkerPrefix);
+      const visible = mIdx === -1 ? chunk : chunk.substring(0, mIdx);
+      if (visible.length > 0) cmd.onData(visible);
+    }
+    cmd.stdout += chunk;
+
+    const markerIdx = cmd.stdout.indexOf(cmd.exitMarkerPrefix);
+    if (markerIdx !== -1) {
+      const afterPrefix = cmd.stdout.substring(
+        markerIdx + cmd.exitMarkerPrefix.length,
+      );
+      const nlIdx = afterPrefix.indexOf("\n");
+      const exitStr =
+        nlIdx >= 0 ? afterPrefix.substring(0, nlIdx) : afterPrefix;
+      const naturalExitCode = parseInt(exitStr, 10);
+
+      let commandOutput = cmd.stdout.substring(0, markerIdx);
+      if (cmd.stdoutTruncated) {
+        commandOutput = "(stdout truncated)...\n" + commandOutput;
+      }
+
+      const effectiveExit =
+        cmd.forcedExitCode != null
+          ? cmd.forcedExitCode
+          : isNaN(naturalExitCode)
+            ? 1
+            : naturalExitCode;
+      const effectiveStderr = cmd.forcedStderrSuffix
+        ? (cmd.stderr || "") + cmd.forcedStderrSuffix
+        : cmd.stderr || "";
+
+      const resolve = cmd.resolve;
+      this.current = null;
+      this.pendingCancel = null;
+      resolve({
+        stdout: commandOutput || "(no output)",
+        stderr: effectiveStderr,
+        exitCode: effectiveExit,
+      });
+      return;
+    }
+
+    if (cmd.stdout.length > MAX_BUFFER) {
+      cmd.stdout = cmd.stdout.substring(cmd.stdout.length - MAX_BUFFER);
+      cmd.stdoutTruncated = true;
+    }
+  }
+
+  private onStderrData(data: Buffer): void {
+    const cmd = this.current;
+    if (!cmd) return;
+
+    cmd.stderr += data.toString();
+    if (cmd.stderr.length > MAX_BUFFER) {
+      cmd.stderr =
+        cmd.stderr.substring(0, MAX_BUFFER) + "...\n(stderr truncated)";
     }
   }
 
@@ -110,148 +249,122 @@ export class PersistentShell {
     const exitMarkerPrefix = `${marker}_EXIT_`;
 
     return new Promise<ShellExecuteResult>((resolve) => {
-      let stdout = "";
-      let stderr = "";
-      let stdoutTruncated = false;
       let resolved = false;
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+      let killEscalationTimer: ReturnType<typeof setTimeout> | undefined;
 
-      this.pendingStdout = () => stdout;
-      this.pendingStderr = () => stderr;
-
-      const safeResolve = (result: ShellExecuteResult) => {
-        if (resolved) return;
-        resolved = true;
-        this.pendingCancel = null;
-        this.pendingStdout = null;
-        this.pendingStderr = null;
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-        if (abortCleanup) abortCleanup();
-        proc.stdout!.removeListener("data", onStdout);
-        proc.stderr!.removeListener("data", onStderr);
-        proc.removeListener("close", onClose);
-        resolve(result);
+      const pending: PendingCommand = {
+        stdout: "",
+        stderr: "",
+        stdoutTruncated: false,
+        exitMarkerPrefix,
+        onData,
+        forcedExitCode: null,
+        forcedStderrSuffix: null,
+        resolve: (result) => {
+          if (resolved) return;
+          resolved = true;
+          if (timeoutTimer) clearTimeout(timeoutTimer);
+          if (killEscalationTimer) clearTimeout(killEscalationTimer);
+          if (abortCleanup) abortCleanup();
+          resolve(result);
+        },
       };
 
-      this.pendingCancel = safeResolve;
+      this.current = pending;
+      this.pendingCancel = pending.resolve;
 
-      // Wire abort signal to cancel running command
       let abortCleanup: (() => void) | undefined;
       if (abortSignal) {
         const onAbort = () => {
           if (resolved) return;
-          const pid = proc.pid;
-          if (pid && process.platform !== "win32") {
-            try {
-              spawnSync("pkill", ["-TERM", "-P", pid.toString()], {
-                stdio: "ignore",
+          pending.forcedExitCode = 130;
+          pending.forcedStderrSuffix = pending.stderr
+            ? "\n(aborted)"
+            : "(aborted)";
+          killDescendants(proc.pid, "SIGTERM");
+          killEscalationTimer = setTimeout(() => {
+            if (resolved) return;
+            killDescendants(proc.pid, "SIGKILL");
+            // Fallback: if bash didn't emit a marker within another
+            // 2 seconds (shell wedged), resolve with whatever we have.
+            setTimeout(() => {
+              if (resolved) return;
+              pending.resolve({
+                stdout: pending.stdout || "(no output)",
+                stderr:
+                  (pending.stderr || "") + (pending.forcedStderrSuffix ?? ""),
+                exitCode: 130,
               });
-            } catch {
-              // pkill may not be available or no processes matched
-            }
-          }
-          setTimeout(() => {
-            safeResolve({
-              stdout: stdout || "(no output)",
-              stderr: stderr ? stderr + "\n(aborted)" : "(aborted)",
-              exitCode: 130,
-            });
+            }, 2_000);
           }, 500);
         };
         abortSignal.addEventListener("abort", onAbort, { once: true });
         abortCleanup = () => abortSignal.removeEventListener("abort", onAbort);
       }
 
-      const onStdout = (data: Buffer) => {
-        const chunk = data.toString();
-        if (onData && !chunk.includes(exitMarkerPrefix)) {
-          onData(chunk);
-        }
-        stdout += chunk;
-
-        const markerIdx = stdout.indexOf(exitMarkerPrefix);
-        if (markerIdx !== -1) {
-          const afterPrefix = stdout.substring(
-            markerIdx + exitMarkerPrefix.length,
-          );
-          const nlIdx = afterPrefix.indexOf("\n");
-          const exitStr =
-            nlIdx >= 0 ? afterPrefix.substring(0, nlIdx) : afterPrefix;
-          const exitCode = parseInt(exitStr, 10);
-
-          let commandOutput = stdout.substring(0, markerIdx);
-          if (stdoutTruncated) {
-            commandOutput = "(stdout truncated)...\n" + commandOutput;
-          }
-
-          safeResolve({
-            stdout: commandOutput || "(no output)",
-            stderr: stderr || "",
-            exitCode: isNaN(exitCode) ? 1 : exitCode,
-          });
-          return;
-        }
-
-        if (stdout.length > MAX_BUFFER) {
-          stdout = stdout.substring(stdout.length - MAX_BUFFER);
-          stdoutTruncated = true;
-        }
-      };
-
-      const onStderr = (data: Buffer) => {
-        stderr += data.toString();
-        if (stderr.length > MAX_BUFFER) {
-          stderr = stderr.substring(0, MAX_BUFFER) + "...\n(stderr truncated)";
-        }
-      };
-
-      proc.stdout!.on("data", onStdout);
-      proc.stderr!.on("data", onStderr);
-
-      const onClose = () => {
-        safeResolve({
-          stdout: stdout || "(no output)",
-          stderr: stderr || "",
-          exitCode: 1,
-        });
-      };
-      proc.once("close", onClose);
-
       if (timeoutSeconds != null && timeoutSeconds > 0) {
         timeoutTimer = setTimeout(() => {
           if (resolved) return;
-          // Kill child processes of the bash shell using signals.
-          // Writing to stdin doesn't work because bash is blocked on the
-          // foreground command and won't read stdin until it completes.
-          const pid = proc.pid;
-          if (pid && process.platform !== "win32") {
-            try {
-              spawnSync("pkill", ["-TERM", "-P", pid.toString()], {
-                stdio: "ignore",
+          pending.forcedExitCode = 124;
+          // Kill every descendant of the shell, not just direct children:
+          // pipelines and nested subshells are grandchildren and `pkill -P`
+          // would leak them.
+          killDescendants(proc.pid, "SIGTERM");
+          killEscalationTimer = setTimeout(() => {
+            if (resolved) return;
+            killDescendants(proc.pid, "SIGKILL");
+            // Fallback: if bash didn't emit a marker within another
+            // 2 seconds (shell wedged), resolve with whatever we have.
+            setTimeout(() => {
+              if (resolved) return;
+              pending.resolve({
+                stdout: pending.stdout || "(no output)",
+                stderr: pending.stderr || "",
+                exitCode: 124,
               });
-            } catch {
-              // pkill may not be available or no processes matched
-            }
-          }
-          setTimeout(() => {
-            safeResolve({
-              stdout: stdout || "(no output)",
-              stderr: stderr || "",
-              exitCode: 124,
-            });
-          }, 1_000);
+            }, 2_000);
+          }, 500);
         }, timeoutSeconds * 1_000);
       }
 
-      // Wrap command: capture stderr to temp file, echo exit marker on stdout.
-      // The subshell (...) isolates the command so `set -e` etc. don't kill
-      // our marker echo, and stderr redirection is clean.
+      // Wrap command:
+      //   - brace group `{ ...; }` (NOT a subshell) so `cd`, `export`,
+      //     shell functions, aliases, and option changes persist;
+      //   - stdin redirected from `/dev/null` so children that read stdin
+      //     cannot hijack our command pipe;
+      //   - stdout captured to a per-command tempfile (NOT bash's stdout
+      //     pipe) and streamed back via a background `tail -f`. This
+      //     prevents backgrounded children whose fd 1 was never redirected
+      //     (`nmap -v &`) from bleeding their output into the next
+      //     command's captured stdout, because their inherited fd 1 is
+      //     the tempfile for the command that spawned them, not the
+      //     shell's stdout pipe;
+      //   - stderr captured to another tempfile and flushed after, so we
+      //     can distinguish stdout from stderr without interleaving;
+      //   - the exit marker is echoed on bash's real stdout pipe, so the
+      //     parent Node handler always sees it immediately regardless of
+      //     how much command output the tail has left to flush.
+      // Fast-polling `tail -f -s 0.05` line-buffered via `stdbuf -oL`
+      // streams output as it is produced (well under 100 ms latency per
+      // chunk) while keeping the per-command tempfile isolation that
+      // prevents background-process output bleeding across commands.
+      const tailCmd = hasStdbuf()
+        ? `stdbuf -oL tail -n +1 -f -s 0.05 "$__APEX_OUT"`
+        : `tail -n +1 -f -s 0.05 "$__APEX_OUT"`;
       const wrapped = [
+        `__APEX_OUT=$(mktemp 2>/dev/null || echo /tmp/.apex_out_$$)`,
         `__APEX_ERR=$(mktemp 2>/dev/null || echo /tmp/.apex_err_$$)`,
-        `( ${command} ) 2>"$__APEX_ERR"`,
+        `${tailCmd} 2>/dev/null &`,
+        `__APEX_TAIL=$!`,
+        `{ ${command}\n} </dev/null >"$__APEX_OUT" 2>"$__APEX_ERR"`,
         `__APEX_EC=$?`,
+        // Let tail drain any remaining bytes before we kill it.
+        `sleep 0.1`,
+        `kill "$__APEX_TAIL" 2>/dev/null`,
+        `wait "$__APEX_TAIL" 2>/dev/null`,
         `cat "$__APEX_ERR" >&2`,
-        `rm -f "$__APEX_ERR"`,
+        `rm -f "$__APEX_OUT" "$__APEX_ERR"`,
         `echo "${exitMarkerPrefix}$__APEX_EC"`,
         ``,
       ].join("\n");
@@ -259,7 +372,7 @@ export class PersistentShell {
       try {
         proc.stdin!.write(wrapped);
       } catch {
-        safeResolve({
+        pending.resolve({
           stdout: "",
           stderr: "Failed to write to shell stdin",
           exitCode: 1,
@@ -273,36 +386,34 @@ export class PersistentShell {
    * Returns true if a command was running and was cancelled.
    */
   cancelCurrentCommand(): boolean {
-    if (!this.pendingCancel || !this.proc) return false;
+    const cmd = this.current;
+    if (!cmd || !this.proc) return false;
 
-    const cancel = this.pendingCancel;
-    const stdout = this.pendingStdout?.() ?? "";
-    const stderr = this.pendingStderr?.() ?? "";
+    cmd.forcedExitCode = 130;
+    cmd.forcedStderrSuffix = cmd.stderr
+      ? "\n(cancelled by user)"
+      : "(cancelled by user)";
 
-    // Kill child processes of the bash shell using signals.
-    // Writing to stdin doesn't work because bash is blocked on the
-    // foreground command and won't read stdin until it completes.
-    const pid = this.proc.pid;
-    if (pid && process.platform !== "win32") {
-      try {
-        spawnSync("pkill", ["-TERM", "-P", pid.toString()], {
-          stdio: "ignore",
-        });
-      } catch {
-        // pkill may not be available or no processes matched
-      }
-    }
-
-    // Give the process a moment to die, then force-resolve with partial output
-    setTimeout(() => {
-      cancel({
-        stdout: stdout || "(no output)",
-        stderr: stderr
-          ? stderr + "\n(cancelled by user)"
-          : "(cancelled by user)",
+    if (this.proc.pid && process.platform !== "win32") {
+      killDescendants(this.proc.pid, "SIGTERM");
+      setTimeout(() => {
+        if (this.proc?.pid) killDescendants(this.proc.pid, "SIGKILL");
+        // Fallback resolve if bash's wrapper never emits a marker.
+        setTimeout(() => {
+          cmd.resolve({
+            stdout: cmd.stdout || "(no output)",
+            stderr: (cmd.stderr || "") + (cmd.forcedStderrSuffix ?? ""),
+            exitCode: 130,
+          });
+        }, 2_000);
+      }, 500);
+    } else {
+      cmd.resolve({
+        stdout: cmd.stdout || "(no output)",
+        stderr: (cmd.stderr || "") + (cmd.forcedStderrSuffix ?? ""),
         exitCode: 130,
       });
-    }, 500);
+    }
 
     return true;
   }
@@ -354,5 +465,50 @@ export class PersistentShell {
 
     this.alive = false;
     this.proc = null;
+  }
+}
+
+/**
+ * Walk the process tree under `rootPid` and send `signal` to every
+ * descendant (deepest first). Does NOT signal `rootPid` itself — that's
+ * the persistent shell we want to keep alive. Used instead of
+ * `pkill -P <pid>`, which only hits direct children and so leaks
+ * pipeline stages / grandchildren of timed-out commands.
+ */
+function killDescendants(
+  rootPid: number | undefined,
+  signal: NodeJS.Signals,
+): void {
+  if (!rootPid || process.platform === "win32") return;
+
+  const toKill: number[] = [];
+  const queue = [rootPid];
+
+  while (queue.length > 0) {
+    const pid = queue.shift()!;
+    try {
+      const res = spawnSync("pgrep", ["-P", String(pid)], { encoding: "utf8" });
+      if (res.status === 0 && res.stdout) {
+        for (const line of res.stdout.split("\n")) {
+          const child = parseInt(line, 10);
+          if (Number.isFinite(child) && child > 0) {
+            toKill.push(child);
+            queue.push(child);
+          }
+        }
+      }
+    } catch {
+      // pgrep not available; nothing we can do
+    }
+  }
+
+  // Signal leaves first so intermediate processes don't see a dead child
+  // and exit before we get to their siblings.
+  for (let i = toKill.length - 1; i >= 0; i--) {
+    try {
+      process.kill(toKill[i], signal);
+    } catch {
+      // already dead / permission denied
+    }
   }
 }
