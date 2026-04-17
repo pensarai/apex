@@ -34,9 +34,9 @@ export function isAnthropicProvider(model: AIModel): boolean {
 /**
  * Bun's fetch has a 300-second default timeout that can't be disabled via
  * AbortSignal. Providers streaming long model responses need a wider ceiling;
- * this helper composes a 15-minute timeout with any caller-provided signal.
+ * this helper composes a 1-hour timeout with any caller-provided signal.
  */
-const STREAMING_FETCH_TIMEOUT_MS = 15 * 60 * 1000;
+const STREAMING_FETCH_TIMEOUT_MS = 60 * 60 * 1000;
 
 export function buildStreamingFetchSignal(
   callerSignal?: AbortSignal | null,
