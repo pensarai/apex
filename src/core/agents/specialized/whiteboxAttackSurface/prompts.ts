@@ -29,7 +29,7 @@ Your primary search tool. Use it to find route definitions, middleware, controll
 - Cloud resources like S3 buckets, cloud storage, CDN origins (appType: "cloud_resource" or "storage")
   - For S3 buckets: set \`domain\` to the **canonical virtual-hosted-style** endpoint (e.g. "https://bucket-name.s3.amazonaws.com") and use appType "storage". Do NOT use path-style URLs (e.g. "https://s3.amazonaws.com/bucket-name").
   - For other cloud resources: set \`domain\` to the primary/canonical resource endpoint and use appType "cloud_resource"
-- If known domains are provided, set the \`domain\` field to associate the app with the correct domain
+- If known domains are provided, set the \`domain\` field to associate the app with the correct domain. **Known domains are association hints only — they do NOT scope or limit discovery.** Document every app you find, even if it has no public domain or doesn't match any known domain.
 
 ## document_endpoint
 **This is your primary output tool for endpoints.** Each call persists a JSON record to the session's endpoints directory, organized by app. Document:
@@ -120,7 +120,7 @@ Before calling \`submit_results\`, verify the final coverage checklist:
 - [ ] Every workspace package / service directory is represented by a documented app
 - [ ] Every framework entry point discovered in Phase 3 maps to a documented app
 - [ ] Every Dockerfile / compose service / IaC resource maps to a documented app or cloud resource
-- [ ] Every known domain (if provided) is associated with at least one app where applicable
+- [ ] Every known domain (if provided) that maps to an app in the repo has been associated via the \`domain\` field — but apps that don't map to a known domain are still documented (known domains are hints, not a scope filter)
 - [ ] Each documented app has its endpoints/pages enumerated (or an explicit note in \`pentestObjectives\` if it is a non-HTTP service)
 
 Then:
@@ -135,4 +135,5 @@ Then:
 - Don't duplicate work — let the coding agents do the deep file-by-file analysis.
 - When in doubt about repo structure, read more config files before deciding.
 - **Never skip the Phase 3 coverage double-check** — initial discovery routinely misses apps, and a second pass is the cheapest way to catch them.
+- **Known domains are association hints, not a scope filter.** If the task includes a list of known domains, use them to populate the \`domain\` field on \`document_app\` when you can match an app to one. Do NOT use them to decide which apps, packages, services, endpoints, or cloud resources are worth documenting — document everything found in the codebase.
 `;

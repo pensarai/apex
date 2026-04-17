@@ -144,7 +144,18 @@ function buildPrompt(
   operatorPrompt?: string,
 ): string {
   const domainSection = domains?.length
-    ? `\n## Known Domains\nThe following domains are associated with this project. When documenting apps, set the \`domain\` field on \`document_app\` if you can determine which domain serves the app:\n${domains.map((d) => `- ${d}`).join("\n")}\n`
+    ? `\n## Known Domains
+The following domains are **hints for association only** — they are known to be operated by the target and should be set on the \`domain\` field of \`document_app\` when you can determine which domain serves a given app.
+
+**IMPORTANT — these domains DO NOT define the scope of discovery:**
+- Discover and document **every** app/service/cloud resource defined in the codebase, regardless of whether it maps to one of these domains.
+- Apps with no known public domain (internal services, background workers, staging-only apps, functions, admin tools, etc.) MUST still be documented. Leave \`domain\` unset or use the canonical resource URL for cloud resources.
+- Do NOT filter out apps, endpoints, subdomains, or cloud resources because they don't appear to belong to one of these domains.
+- Do NOT skip directories, packages, or services because they "look unrelated" to the listed domains.
+
+Known domains:
+${domains.map((d) => `- ${d}`).join("\n")}
+`
     : "";
   const operatorGuidanceBlock = operatorPrompt
     ? `\n## Operator Guidance\n${operatorPrompt}\n`
