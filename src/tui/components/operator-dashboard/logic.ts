@@ -356,11 +356,6 @@ export function accumulateTokenUsage(
 // Tool-result patching
 // ---------------------------------------------------------------------------
 
-/**
- * Find the tool-result part matching `toolCallId` in a conversation and
- * replace its `output` with `wrappedOutput`. Returns a new array (messages
- * without a matching part are shared by reference).
- */
 export function patchToolResultOutput(
   messages: ModelMessage[],
   toolCallId: string,
