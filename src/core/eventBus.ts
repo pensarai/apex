@@ -66,6 +66,34 @@ export type AgentEventMap = {
     record: import("./agents/offSecAgent/trace").TraceRecord;
     subagentId?: string;
   };
+  /**
+   * First-class security detection signal emitted during a test-case run.
+   * Consumers (e.g. the Console-side adapter) translate these into
+   * persistent DB rows + real-time MQTT notifications for the UI.
+   *
+   * Grounded tools (checkFileSignature, observeProcesses, observeNetwork,
+   * extractArchive, and the http_request family) auto-emit detection
+   * events from real tool results. The agent can also emit them
+   * explicitly via `emit_detection_event` for interpretive signals that
+   * require judgment (injection_detected, guardrail_fired,
+   * workflow_triggered).
+   */
+  "detection_event": {
+    kind:
+      | "process_spawn"
+      | "file_write"
+      | "network_egress"
+      | "signature_match"
+      | "alert_raised"
+      | "workflow_triggered"
+      | "injection_detected"
+      | "guardrail_fired";
+    severity?: "critical" | "high" | "medium" | "low" | null;
+    source: "apex" | "sandbox" | "rule-engine";
+    summary: string;
+    data: Record<string, unknown>;
+    subagentId?: string;
+  };
 };
 
 /**
@@ -83,6 +111,7 @@ const CHILD_BUS_FORWARDED_EVENTS = [
   "command-output",
   "error",
   "step-finish",
+  "detection_event",
 ] as const satisfies readonly (keyof AgentEventMap)[];
 
 /**

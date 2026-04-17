@@ -14,3 +14,9 @@ export {
   type ThreatModelWorkflowInput,
   type ThreatModelWorkflowResult,
 } from "./threatModel";
+
+export {
+  runTestCaseWorkflow,
+  type TestCaseWorkflowInput,
+  type TestCaseWorkflowResult,
+} from "./testCase";

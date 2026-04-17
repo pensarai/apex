@@ -151,6 +151,28 @@ import {
 } from "./askUserQuestions";
 export { ASK_USER_QUESTIONS_TOOL_NAME } from "./askUserQuestions";
 
+// ── Test-case workflow tools ──────────────────────────────────────────
+import { emitDetectionEvent } from "./emitDetectionEvent";
+import { checkFileSignature } from "./checkFileSignature";
+import { extractArchive } from "./extractArchive";
+import { observeProcesses } from "./observeProcesses";
+import { observeNetwork } from "./observeNetwork";
+import { uploadArtifactToUrl } from "./uploadArtifactToUrl";
+import { httpProbeMulti } from "./httpProbeMulti";
+import { httpBurst } from "./httpBurst";
+export {
+  emitDetectionEvent,
+  checkFileSignature,
+  extractArchive,
+  observeProcesses,
+  observeNetwork,
+  uploadArtifactToUrl,
+  httpProbeMulti,
+  httpBurst,
+};
+export { createSafetyCapState, hostnameFor } from "./_safetyCaps";
+export type { SafetyCapState, SafetyCapsConfig, SafetyCapViolation } from "./_safetyCaps";
+
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
  *
@@ -237,6 +259,16 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Plan mode tools
     write_plan: writePlan(ctx),
     submit_plan: submitPlan(ctx),
+
+    // Test-case workflow tools
+    emit_detection_event: emitDetectionEvent(ctx),
+    check_file_signature: checkFileSignature(ctx),
+    extract_archive: extractArchive(ctx),
+    observe_processes: observeProcesses(ctx),
+    observe_network: observeNetwork(ctx),
+    upload_artifact_to_url: uploadArtifactToUrl(ctx),
+    http_probe_multi: httpProbeMulti(ctx),
+    http_burst: httpBurst(ctx),
   } as const;
 }
 
@@ -300,6 +332,39 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "write_plan",
   "submit_plan",
   ASK_USER_QUESTIONS_TOOL_NAME,
+  // Test-case workflow
+  "emit_detection_event",
+  "check_file_signature",
+  "extract_archive",
+  "observe_processes",
+  "observe_network",
+  "upload_artifact_to_url",
+  "http_probe_multi",
+  "http_burst",
+];
+
+/**
+ * The subset of tools that a TestCaseAgent runs with. Deliberately narrow:
+ * a pentest-style agent focused on attacking a target system and
+ * observing responses, not a general-purpose exploration agent.
+ */
+export const TEST_CASE_TOOL_NAMES: ToolName[] = [
+  // Target-facing
+  "http_request",
+  "upload_artifact_to_url",
+  "http_probe_multi",
+  "http_burst",
+  // Sandbox-local (pre-flight, observation)
+  "extract_archive",
+  "check_file_signature",
+  "observe_processes",
+  "observe_network",
+  "execute_command",
+  "read_file",
+  "list_files",
+  "grep",
+  // Emission
+  "emit_detection_event",
 ];
 
 /**
