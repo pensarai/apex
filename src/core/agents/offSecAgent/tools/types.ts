@@ -8,6 +8,7 @@ import type { SkillsRegistry } from "../../../skills/registry";
 
 import type { AgentEventBus } from "../../../eventBus";
 import type { PersistentShell } from "./persistentShell";
+import type { SafetyCapState } from "./_safetyCaps";
 import type { UnifiedSandbox } from "./sandbox";
 import type { StepTraceWriter } from "../trace";
 
@@ -108,4 +109,20 @@ export type ToolContext = {
    * plan agents to write plans scoped to their corresponding execution agent.
    */
   planSubagentId?: string;
+
+  /**
+   * Per-run safety caps (rate limit per host, total request count, wall
+   * clock deadline). When present, HTTP-emitting tools (http_request,
+   * upload_artifact_to_url, http_probe_multi, http_burst) consult this
+   * before every outbound request. Populated by the test-case workflow.
+   */
+  safetyCaps?: SafetyCapState;
+
+  /**
+   * Default HTTP headers merged into every outbound request made by
+   * HTTP-emitting tools. Used by the test-case workflow to carry the
+   * user-provided target-authentication headers (Authorization,
+   * X-Api-Key, etc.) without the agent ever seeing them raw.
+   */
+  defaultHeaders?: Record<string, string>;
 };

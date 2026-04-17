@@ -198,6 +198,8 @@ export class OffensiveSecurityAgent<TResult = void> {
       projectThreatModel: input.projectThreatModel,
       planSubagentId: input.planSubagentId,
       subagentId: input.subagentId,
+      safetyCaps: input.safetyCaps,
+      defaultHeaders: input.defaultHeaders,
     });
 
     let tools: ToolSet = input.extraTools

@@ -215,6 +215,22 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   eventBus?: AgentEventBus;
 
   /**
+   * Per-run safety caps for HTTP-emitting tools (rate-limit per host,
+   * run-wide request total, wall-clock deadline). Threaded from the
+   * workflow into the tool context so every HTTP tool enforces the
+   * same budget. Create via `createSafetyCapState(...)`.
+   */
+  safetyCaps?: import("./tools/_safetyCaps").SafetyCapState;
+
+  /**
+   * Default HTTP headers merged into every outbound request made by
+   * the HTTP-emitting tools. Carries target authentication (Authorization,
+   * X-Api-Key, cookies, etc.) so the agent never sees the raw secret
+   * in its prompt.
+   */
+  defaultHeaders?: Record<string, string>;
+
+  /**
    * Zod schema for structured output via the `response` tool.
    *
    * When provided, the base class automatically:
