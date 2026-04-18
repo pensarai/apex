@@ -158,11 +158,17 @@ export const DocumentEndpointSchema = z.object({
       "Name of the parent application this endpoint belongs to. " +
         "Must match the appName used in a prior document_app call.",
     ),
-  endpointName: z
+  routePath: z
     .string()
     .describe(
-      "Unique name for the endpoint — typically the route path " +
-        "(e.g., '/api/users', '/dashboard', '/auth/login')",
+      "The endpoint's unique identity — its HTTP route or access pattern. " +
+        "This is the URL path a client requests, NOT a source-file path. " +
+        "Examples: '/api/users', '/dashboard', '/auth/login', " +
+        "'/{objectKey}?X-Amz-Signature=...', 'arn:aws:s3:::bucket-name'. " +
+        "For cloud-resource endpoints (endpointType 'asset') use the specific " +
+        "access pattern, not the base domain URL (which is stored on the parent " +
+        "application). The route path is the endpoint's display identity — there " +
+        "is no separate name field.",
     ),
   endpointType: EndpointTypeEnum.describe(
     "Type of endpoint: 'api-endpoint' for REST/GraphQL APIs, " +
@@ -171,14 +177,6 @@ export const DocumentEndpointSchema = z.object({
   description: z
     .string()
     .describe("Detailed description of the endpoint including what it does"),
-  routePath: z
-    .string()
-    .optional()
-    .describe(
-      "The HTTP route served by this endpoint (e.g., '/api/users', '/dashboard'). " +
-        "This is the URL path a client requests — NOT a source-file path. " +
-        "Use the separate 'file' field for the source-code location.",
-    ),
   method: z
     .union([z.string(), z.array(z.string())])
     .optional()
@@ -195,7 +193,8 @@ export const DocumentEndpointSchema = z.object({
     .optional()
     .describe(
       "Source-code file where this endpoint is defined, e.g. 'src/routes/users.ts'. " +
-        "This is NOT the HTTP route — use 'routePath' for that.",
+        "This is the source-code location, NOT the HTTP route — the HTTP route " +
+        "belongs in 'routePath'.",
     ),
   line: z
     .number()
@@ -229,14 +228,24 @@ export const DocumentEndpointSchema = z.object({
     .array(z.string())
     .optional()
     .describe(
-      "Pentest objectives for this endpoint, derived from the threat model analysis.",
+      "Flattened markdown strings — one per adversarial test objective — derived from the " +
+        "endpoint analysis. Each objective embeds title, hypothesis, prerequisites, setup, " +
+        "procedure, and success signal in a single block.",
+    ),
+  businessLogic: z
+    .string()
+    .optional()
+    .describe(
+      "Comprehensive business-logic model describing what the endpoint does, its actors, " +
+        "data flow, invariants, trust boundaries, and analysis gaps.",
     ),
   threatModel: z
     .string()
     .optional()
     .describe(
-      "Endpoint-specific threat model describing attack vectors, data sensitivity, " +
-        "trust boundaries, risk assessment, and prioritized testing recommendations (300-600 words)",
+      "Comprehensive threat model grounded in the business logic, covering attacker profiles, " +
+        "attack vectors (with entry points, mechanisms, signals, likelihood, and impact), and " +
+        "risk assessment.",
     ),
 });
 
