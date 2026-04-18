@@ -72,7 +72,16 @@ const documentEndpointInputSchema = z.object({
     .optional()
     .describe("Authentication details if known"),
   riskLevel: z
-    .enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"])
+    .preprocess((val) => {
+      if (typeof val === "string") {
+        const upper = val.toUpperCase();
+        if (upper.includes("CRITICAL")) return "CRITICAL";
+        if (upper.includes("HIGH")) return "HIGH";
+        if (upper.includes("MEDIUM")) return "MEDIUM";
+        if (upper.includes("LOW")) return "LOW";
+      }
+      return val;
+    }, z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]))
     .describe("Risk level: LOW-CRITICAL (exposed/sensitive)"),
   notes: z
     .string()
