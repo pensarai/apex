@@ -1,11 +1,11 @@
 import { useKeyboard } from "@opentui/react";
+import { decodePasteBytes, stripAnsiSequences } from "@opentui/core";
 import { useState } from "react";
 import Input from "../input";
 import { type ProviderType, verifyApiKey } from "../../../core/providers";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
 import DialogLayout from "../dialog-layout";
-import { getPasteText } from "../../utils/paste";
 
 type VerifyState = "idle" | "verifying" | "error";
 
@@ -93,8 +93,8 @@ export default function APIKeyInput({
               setApiKey(typeof value === "string" ? value : "")
             }
             onPaste={(event) => {
-              const cleaned = getPasteText(event);
-              setApiKey((prev) => `${prev}${cleaned}`);
+              const text = stripAnsiSequences(decodePasteBytes(event.bytes));
+              setApiKey((prev) => `${prev}${text}`);
             }}
             onSubmit={handleSubmit}
           />

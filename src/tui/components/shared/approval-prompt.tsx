@@ -6,10 +6,10 @@
 
 import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
+import { decodePasteBytes, stripAnsiSequences } from "@opentui/core";
 import { useTheme } from "../../theme";
 import { getToolSummary } from "./tool-registry";
 import type { PendingApproval } from "../../../core/operator";
-import { getPasteText } from "../../utils/paste";
 
 interface InlineApprovalPromptProps {
   approval: PendingApproval;
@@ -138,8 +138,8 @@ export function ApprovalInputArea({
           value={redirectInput}
           onInput={setRedirectInput}
           onPaste={(event) => {
-            const cleaned = getPasteText(event).replace(/\r?\n/g, " ");
-            setRedirectInput(cleaned);
+            const text = stripAnsiSequences(decodePasteBytes(event.bytes));
+            setRedirectInput(text.replace(/\r?\n/g, " "));
           }}
           focused={focusedElement === 2}
           placeholder="Tell the agent something else..."
