@@ -10,6 +10,92 @@ function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
 }
 
+const documentEndpointInputSchema = z.object({
+  appName: z
+    .string()
+    .describe(
+      "Name of the parent application this endpoint belongs to. " +
+        "Must match the appName used in a prior document_app call.",
+    ),
+  routePath: z
+    .string()
+    .describe(
+      "The endpoint's unique identity — its HTTP route or access pattern. " +
+        "This is the URL path a client requests, NOT a source-file path. " +
+        "Examples: '/api/users', '/dashboard', '/auth/login', " +
+        "'/{objectKey}?X-Amz-Signature=...', 'arn:aws:s3:::bucket-name'. " +
+        "For cloud-resource endpoints (endpointType 'asset') use the specific " +
+        "access pattern, not the base domain URL (which is stored on the parent " +
+        "application). The route path is the endpoint's display identity — there " +
+        "is no separate name field.",
+    ),
+  endpointType: z
+    .enum(["api-endpoint", "web-endpoint", "asset"])
+    .describe(
+      "Type of endpoint: 'api-endpoint' for REST/GraphQL APIs, " +
+        "'web-endpoint' for pages/views, 'asset' for other resources",
+    ),
+  description: z
+    .string()
+    .describe(
+      "Detailed description of the endpoint including what it does",
+    ),
+  method: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .describe(
+      "HTTP method(s) supported (e.g., 'GET', 'POST', or ['GET', 'POST', 'DELETE']). " +
+        "Use 'PAGE' for web pages/views.",
+    ),
+  handler: z
+    .string()
+    .optional()
+    .describe("Handler function or component name (whitebox analysis)"),
+  file: z
+    .string()
+    .optional()
+    .describe(
+      "Source-code file where this endpoint is defined, e.g. 'src/routes/users.ts'. " +
+        "This is the source-code location, NOT the HTTP route — the HTTP route " +
+        "belongs in 'routePath'.",
+    ),
+  line: z
+    .number()
+    .optional()
+    .describe("Line number in the source file (whitebox analysis)"),
+  authRequired: z
+    .boolean()
+    .optional()
+    .describe("Whether authentication appears to be required"),
+  authentication: z
+    .string()
+    .optional()
+    .describe("Authentication details if known"),
+  riskLevel: z
+    .preprocess((val) => {
+      if (typeof val === "string") {
+        const upper = val.toUpperCase();
+        if (upper.includes("CRITICAL")) return "CRITICAL";
+        if (upper.includes("HIGH")) return "HIGH";
+        if (upper.includes("MEDIUM")) return "MEDIUM";
+        if (upper.includes("LOW")) return "LOW";
+      }
+      return val;
+    }, z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]))
+    .describe("Risk level: LOW-CRITICAL (exposed/sensitive)"),
+  notes: z
+    .string()
+    .optional()
+    .describe("Additional notes or observations about the endpoint"),
+  toolCallDescription: z
+    .string()
+    .describe(
+      "A concise, human-readable description of what this tool call is doing",
+    ),
+});
+
+type DocumentEndpointInput = z.infer<typeof documentEndpointInputSchema>;
+
 /**
  * Factory for the `document_endpoint` tool.
  *
@@ -37,101 +123,12 @@ Use this tool to document:
 You MUST specify \`appName\` to associate the endpoint with its parent application (previously documented via \`document_app\`).
 
 Each endpoint creates a JSON file in the assets directory for tracking and analysis.`,
-    inputSchema: z.object({
-      appName: z
-        .string()
-        .describe(
-          "Name of the parent application this endpoint belongs to. " +
-            "Must match the appName used in a prior document_app call.",
-        ),
-      endpointName: z
-        .string()
-        .describe(
-          "Unique name for the endpoint — typically the route path " +
-            "(e.g., '/api/users', '/dashboard', '/auth/login')",
-        ),
-      endpointType: z
-        .enum(["api-endpoint", "web-endpoint", "asset"])
-        .describe(
-          "Type of endpoint: 'api-endpoint' for REST/GraphQL APIs, " +
-            "'web-endpoint' for pages/views, 'asset' for other resources",
-        ),
-      description: z
-        .string()
-        .describe(
-          "Detailed description of the endpoint including what it does",
-        ),
-      routePath: z
-        .string()
-        .optional()
-        .describe(
-          "The HTTP route or access path served by this endpoint (e.g., '/api/users', '/dashboard'). " +
-            "This is the URL path a client requests — NOT a source-file path. " +
-            "Use the separate 'file' field for the source-code location. " +
-            "For cloud resource endpoints (endpointType 'asset'), use the specific access pattern " +
-            "or path — NOT the base domain URL, which is already stored on the parent application. " +
-            "Examples: '/{objectKey}?X-Amz-Signature=...', '/index.html', 'arn:aws:s3:::bucket-name'.",
-        ),
-      method: z
-        .union([z.string(), z.array(z.string())])
-        .optional()
-        .describe(
-          "HTTP method(s) supported (e.g., 'GET', 'POST', or ['GET', 'POST', 'DELETE']). " +
-            "Use 'PAGE' for web pages/views.",
-        ),
-      handler: z
-        .string()
-        .optional()
-        .describe("Handler function or component name (whitebox analysis)"),
-      file: z
-        .string()
-        .optional()
-        .describe(
-          "Source-code file where this endpoint is defined, e.g. 'src/routes/users.ts'. " +
-            "This is NOT the HTTP route — use 'routePath' for that.",
-        ),
-      line: z
-        .number()
-        .optional()
-        .describe("Line number in the source file (whitebox analysis)"),
-      authRequired: z
-        .boolean()
-        .optional()
-        .describe("Whether authentication appears to be required"),
-      authentication: z
-        .string()
-        .optional()
-        .describe("Authentication details if known"),
-      riskLevel: z
-        .preprocess(
-          (val) => {
-            if (typeof val === "string") {
-              const upper = val.toUpperCase();
-              if (upper.includes("CRITICAL")) return "CRITICAL";
-              if (upper.includes("HIGH")) return "HIGH";
-              if (upper.includes("MEDIUM")) return "MEDIUM";
-              if (upper.includes("LOW")) return "LOW";
-            }
-            return val;
-          },
-          z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
-        )
-        .describe("Risk level: LOW-CRITICAL (exposed/sensitive)"),
-      notes: z
-        .string()
-        .optional()
-        .describe("Additional notes or observations about the endpoint"),
-      toolCallDescription: z
-        .string()
-        .describe(
-          "A concise, human-readable description of what this tool call is doing",
-        ),
-    }),
-    execute: async (input) => {
+    inputSchema: documentEndpointInputSchema as z.ZodType<DocumentEndpointInput>,
+    execute: async (input: DocumentEndpointInput) => {
       if (ctx.attackSurfaceRegistry) {
         const assetRecord = {
           appName: input.appName,
-          assetName: input.endpointName,
+          assetName: input.routePath,
           assetType: "endpoint" as const,
           description: input.description,
           details: { url: input.routePath },
@@ -150,9 +147,8 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
       }
 
       if (
-        input.routePath &&
-        (input.routePath.startsWith("https://") ||
-          input.routePath.startsWith("http://"))
+        input.routePath.startsWith("https://") ||
+        input.routePath.startsWith("http://")
       ) {
         return {
           success: false,
@@ -169,9 +165,9 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         mkdirSync(targetDir, { recursive: true });
       }
 
-      const sanitizedName = sanitizeName(input.endpointName);
+      const sanitizedPath = sanitizeName(input.routePath);
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const filename = `asset_${sanitizedName}_${timestamp}.json`;
+      const filename = `asset_${sanitizedPath}_${timestamp}.json`;
       const filepath = join(targetDir, filename);
 
       const heuristicRiskScore = computeBlackboxRiskScore(
@@ -191,7 +187,6 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
 
       const subagentInput = {
         appName: input.appName,
-        endpointName: input.endpointName,
         routePath: input.routePath,
         method: input.method,
         file: input.file,
@@ -208,6 +203,8 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
 
       const riskScore = threatModelOutput?.riskScore ?? heuristicRiskScore;
       const pentestObjectives = threatModelOutput?.pentestObjectives ?? [];
+      const businessLogic = threatModelOutput?.businessLogic;
+      const threatModel = threatModelOutput?.threatModel;
 
       const endpointRecord = {
         ...input,
@@ -216,9 +213,8 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         sessionId: ctx.session.id,
         target: ctx.session.targets[0],
         riskScore,
-        ...(threatModelOutput?.threatModel
-          ? { threatModel: threatModelOutput.threatModel }
-          : {}),
+        ...(businessLogic ? { businessLogic } : {}),
+        ...(threatModel ? { threatModel } : {}),
       };
 
       try {
@@ -227,7 +223,7 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         if (ctx.attackSurfaceRegistry) {
           await ctx.attackSurfaceRegistry.unregister({
             appName: input.appName,
-            assetName: input.endpointName,
+            assetName: input.routePath,
             assetType: "endpoint",
             description: input.description,
             details: { url: input.routePath },
@@ -239,13 +235,15 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
       return {
         success: true,
         appName: input.appName,
-        endpointName: input.endpointName,
+        routePath: input.routePath,
         endpointType: input.endpointType,
         riskLevel: input.riskLevel,
         filepath,
-        threatModel: threatModelOutput?.threatModel ?? undefined,
+        businessLogic: businessLogic ?? undefined,
+        threatModel: threatModel ?? undefined,
         pentestObjectives,
-        message: `Endpoint '${input.endpointName}' documented successfully under app '${input.appName}'`,
+        riskScore,
+        message: `Endpoint '${input.routePath}' documented successfully under app '${input.appName}'`,
       };
     },
   });

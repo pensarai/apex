@@ -645,8 +645,7 @@ function assetRecordToEndpoint(
     ? rawMethod.join(", ")
     : (rawMethod ?? "UNKNOWN");
 
-  const legacy = record as unknown as { url?: string };
-  const path = record.routePath ?? legacy.url ?? record.endpointName;
+  const path = record.routePath;
   const file = record.file ?? "";
 
   const parsed = EndpointSchema.safeParse({
@@ -812,10 +811,9 @@ Find ALL web pages, views, and routes that render HTML or serve client-side UI *
 ### How to document each page
 For each page, call \`document_endpoint\` with:
 - **appName**: \`${appInfo.name}\`
-- **endpointName**: The route path (e.g., \`/dashboard\`, \`/admin\`, \`/settings\`)
 - **endpointType**: \`"web-endpoint"\`
 - **description**: Brief description of what this page shows
-- **routePath**: The HTTP route this page serves (e.g., \`/dashboard\`). This is the URL path, NOT a file path.
+- **routePath**: The HTTP route this page serves (e.g., \`/dashboard\`). This is the URL path a client requests — it is the endpoint's identity. NOT a file path.
 - **method**: \`"PAGE"\`
 - **file**: Source-code file where this page is defined (e.g., \`src/pages/dashboard.tsx\`). Must be inside \`${appInfo.location}\`. This is NOT the route.
 - **line**: Line number (if determinable)
@@ -862,10 +860,9 @@ Find ALL API endpoints **whose route definitions live in this application's sour
 ### How to document each endpoint
 For each **unique route path**, call \`document_endpoint\` with:
 - **appName**: \`${appInfo.name}\`
-- **endpointName**: The route path (e.g., \`/api/users\`, \`/api/orders/:id\`)
 - **endpointType**: \`"api-endpoint"\`
 - **description**: Brief description of what this endpoint does across all its methods
-- **routePath**: The HTTP route (e.g., \`/api/users\`). This is the URL path a client requests — NOT a source-file path.
+- **routePath**: The HTTP route (e.g., \`/api/users\`, \`/api/orders/:id\`). This is the URL path a client requests — it is the endpoint's identity. NOT a source-file path.
 - **method**: Array of ALL HTTP methods this path supports (e.g., \`["GET", "POST"]\`). **Do NOT create separate entries for each method — consolidate them.**
 - **file**: Source-code file where the endpoint is defined (e.g., \`src/routes/users.ts\`). Must be inside \`${appInfo.location}\`. This is NOT the route.
 - **line**: Line number (if determinable)
@@ -933,10 +930,9 @@ Find the **distinct access patterns and resource identifiers** for this cloud re
 ### How to document each entry point
 For each entry point, call \`document_endpoint\` with:
 - **appName**: \`${appInfo.name}\`
-- **endpointName**: A descriptive name for this access pattern (e.g., "Pre-signed URL access", "Bucket ARN", "Queue URL")
 - **endpointType**: \`"asset"\`
 - **description**: What this entry point exposes (e.g., "Pre-signed HTTP URLs for temporary read access to objects", "AWS resource ARN for programmatic access through IAM policies")
-- **routePath**: The specific access pattern, path template, or ARN — NOT the base domain URL. Examples: \`/{objectKey}?X-Amz-Signature={signature}&X-Amz-Credential={credential}\`, \`arn:aws:s3:::bucket-name\`, \`https://sqs.region.amazonaws.com/account/queue-name\`
+- **routePath**: The specific access pattern, path template, or ARN — this is the endpoint's identity. NOT the base domain URL. Examples: \`/{objectKey}?X-Amz-Signature={signature}&X-Amz-Credential={credential}\`, \`arn:aws:s3:::bucket-name\`, \`https://sqs.region.amazonaws.com/account/queue-name\`
 - **method**: Access methods on the resource (e.g., \`["GET", "PUT"]\` for S3, \`["SendMessage", "ReceiveMessage"]\` for SQS, \`["READ", "WRITE"]\` for generic)
 - **file**: Infrastructure or config file where this resource is defined (e.g., \`infra/storage.ts\`). NOT application code that calls it.
 - **line**: Line number if determinable
