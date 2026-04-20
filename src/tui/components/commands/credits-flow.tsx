@@ -146,8 +146,8 @@ export default function CreditsFlow({
             </box>
             <box>
               <text fg={colors.textMuted}>
-                Run <span fg={colors.primary}>/login</span> first to connect your
-                account.
+                Run <span fg={colors.primary}>/login</span> first to connect
+                your account.
               </text>
             </box>
           </box>
