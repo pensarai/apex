@@ -78,7 +78,7 @@ export function createPensarModel(
       if (!result) {
         logError("buildHeaders: getToken() returned null — auth failed");
         throw new Error(
-          "Pensar authentication failed. Run /auth to reconnect.",
+          "Pensar authentication failed. Run /login to reconnect.",
         );
       }
       headers.Authorization = `Bearer ${result.token.slice(0, 12)}…`;

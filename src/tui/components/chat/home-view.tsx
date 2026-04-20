@@ -194,7 +194,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           {[
             { cmd: "/pentest", desc: "autonomous pentest" },
             { cmd: "/operator", desc: "interactive operator" },
-            { cmd: "/auth", desc: "login to Pensar" },
+            { cmd: "/login", desc: "login to Pensar" },
             { cmd: "/models", desc: "select AI model" },
             { cmd: "/providers", desc: "manage API keys" },
           ].map(({ cmd, desc }) => (

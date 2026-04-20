@@ -1,16 +1,17 @@
 #!/usr/bin/env bun
 
 /**
- * Pensar Auth CLI
+ * Pensar Login CLI
  *
  * Connect to Pensar Console for managed inference, directly from the CLI.
- * Mirrors the TUI /auth flow using centralized auth logic from core/auth.
+ * Mirrors the TUI /login flow using centralized auth logic from core/auth.
  *
  * Subcommands:
- *   pensar auth            Start the login flow (or show status if already connected)
- *   pensar auth login      Start the login flow
- *   pensar auth logout     Disconnect from Pensar Console
- *   pensar auth status     Show current connection status
+ *   pensar login           Start the login flow (or show status if already connected)
+ *   pensar login status    Show current connection status
+ *   pensar login logout    Disconnect from Pensar Console
+ *
+ * Legacy alias: `pensar auth` still works for backward compatibility
  */
 
 import { config } from "../core/config";
@@ -247,7 +248,7 @@ async function status(): Promise<void> {
 
   if (!isConnected(appConfig)) {
     console.log(
-      "Not connected to Pensar Console.\n\nRun `pensar auth login` to connect.",
+      "Not connected to Pensar Console.\n\nRun `pensar login` to connect.",
     );
     return;
   }
@@ -288,13 +289,14 @@ async function status(): Promise<void> {
 }
 
 function showHelp(): void {
-  console.log(`Pensar Auth — Connect to Pensar Console
+  console.log(`Pensar Login — Connect to Pensar Console
 
 Usage:
-  pensar auth              Login to Pensar Console (or show status if connected)
-  pensar auth login        Login to Pensar Console
-  pensar auth logout       Disconnect from Pensar Console
-  pensar auth status       Show connection status
+  pensar login             Login to Pensar Console (or show status if connected)
+  pensar login status      Show connection status
+  pensar login logout      Disconnect from Pensar Console
+
+Legacy alias: 'pensar auth' still works for backward compatibility
 
 Options:
   -h, --help               Show this help message`);
@@ -322,7 +324,7 @@ async function main(): Promise<void> {
       await status();
     } else {
       console.error(`Unknown auth subcommand: ${subcommand}`);
-      console.error("Run 'pensar auth --help' for usage information");
+      console.error("Run 'pensar login --help' for usage information");
       process.exit(1);
     }
   } catch (err) {

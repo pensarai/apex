@@ -83,7 +83,7 @@ COMMON SEARCH PATTERNS:
             success: false,
             results: [],
             error:
-              "Web search requires a Pensar account. Please sign in to your Pensar account to use this feature. You can sign in via the TUI settings or by running 'pensar auth login'.",
+              "Web search requires a Pensar account. Please sign in to your Pensar account to use this feature. You can sign in via the TUI settings or by running 'pensar login'.",
           };
         }
 

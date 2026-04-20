@@ -1,37 +1,43 @@
 ---
-title: "/auth"
+title: "/login"
 description: "Connect Apex to Pensar Console for managed inference and billing"
 ---
 
 ## Overview
 
-The `/auth` command connects your Apex CLI to [Pensar Console](https://console.pensar.dev) for **managed inference**. Once connected, Apex uses Pensar-hosted AI models — no API key configuration required. Inference costs are tracked and deducted from your workspace's credit balance.
+The `/login` command connects your Apex CLI to [Pensar Console](https://console.pensar.dev) for **managed inference**. Once connected, Apex uses Pensar-hosted AI models — no API key configuration required. Inference costs are tracked and deducted from your workspace's credit balance.
+
+<Note>
+  The `/auth` command still works as an alias for backward compatibility, but `/login` is now the primary command name.
+</Note>
 
 ## Usage
 
 Inside the TUI:
 
 ```bash
-/auth
+/login
 ```
 
 From the command line (headless):
 
 ```bash
-pensar auth login      # Start the login flow
-pensar auth status     # Show current connection status
-pensar auth logout     # Disconnect from Pensar Console
+pensar login           # Start the login flow
+pensar login status    # Show current connection status
+pensar login logout    # Disconnect from Pensar Console
 ```
 
-`pensar auth status` displays your auth type (WorkOS or API key) and current workspace. When using API key auth, the command resolves your workspace from the server if it isn't already stored locally.
+The legacy `pensar auth` command still works for backward compatibility.
+
+`pensar login status` displays your auth type (WorkOS or API key) and current workspace. When using API key auth, the command resolves your workspace from the server if it isn't already stored locally.
 
 ## How It Works
 
-Both the TUI `/auth` command and the CLI `pensar auth` command use a **device authorization flow** — similar to how you link a streaming device to your account. Apex displays a code, you verify it in your browser, and the CLI is automatically authenticated.
+Both the TUI `/login` command and the CLI `pensar login` command use a **device authorization flow** — similar to how you link a streaming device to your account. Apex displays a code, you verify it in your browser, and the CLI is automatically authenticated.
 
 <Steps>
   <Step title="Start Auth Flow">
-    Run `/auth` in Apex and press Enter to begin. Apex requests a device code from the Pensar authentication service.
+    Run `/login` in Apex and press Enter to begin. Apex requests a device code from the Pensar authentication service.
   </Step>
   <Step title="Verify in Browser">
     A browser window opens automatically to the verification URL. If it doesn't open, copy the URL displayed in the terminal and open it manually. Enter the **user code** shown in Apex to confirm the connection.
@@ -55,7 +61,7 @@ Both the TUI `/auth` command and the CLI `pensar auth` command use a **device au
 
 ## Pensar Console
 
-[Pensar Console](https://console.pensar.dev) is the web platform where you manage workspaces, projects, billing, and more. When you authenticate Apex with `/auth`, you're linking it to a Console workspace.
+[Pensar Console](https://console.pensar.dev) is the web platform where you manage workspaces, projects, billing, and more. When you authenticate Apex with `/login`, you're linking it to a Console workspace.
 
 If you don't have an account yet, the verification URL will guide you through sign-up and workspace creation.
 
@@ -94,7 +100,7 @@ Apex inference through the Pensar gateway uses a **pre-paid credits** model. Cre
 
 ### Setting Up Billing
 
-If Apex reports that billing isn't configured or your balance is low during `/auth`:
+If Apex reports that billing isn't configured or your balance is low during `/login`:
 
 <Steps>
   <Step title="Open Billing Page">
@@ -115,11 +121,11 @@ For detailed billing documentation including auto-reload, invoices, and usage tr
 
 ## Disconnecting
 
-When connected, press `[D]` on the `/auth` screen to disconnect. This clears the stored authentication tokens from your local Apex configuration. You can reconnect at any time by running `/auth` again.
+When connected, press `[D]` on the `/login` screen to disconnect. This clears the stored authentication tokens from your local Apex configuration. You can reconnect at any time by running `/login` again.
 
 ## Configuration
 
-Authentication state is stored in your local Apex configuration at `~/.pensar/`. The following values are managed by the `/auth` flow:
+Authentication state is stored in your local Apex configuration at `~/.pensar/`. The following values are managed by the `/login` flow:
 
 | Config Key | Description |
 |---|---|
@@ -130,7 +136,11 @@ Authentication state is stored in your local Apex configuration at `~/.pensar/`.
 | `signingKey` | HMAC signing key for authenticated gateway inference requests |
 | `gatewayUrl` | Inference gateway URL (defaults to gateway.pensar.dev) |
 
-Tokens are automatically refreshed when they expire. You do not need to re-run `/auth` unless you want to switch workspaces or have explicitly disconnected.
+Tokens are automatically refreshed when they expire. You do not need to re-run `/login` unless you want to switch workspaces or have explicitly disconnected.
+
+## Expired Session Notifications
+
+If your Pensar Console session has truly expired (access token expired and no valid refresh token), Apex will show a toast notification on startup prompting you to run `/login` to refresh. If you have a valid refresh token, your session will be silently restored on the next API call without any notification.
 
 ## Troubleshooting
 
@@ -148,11 +158,11 @@ Tokens are automatically refreshed when they expire. You do not need to re-run `
   </Accordion>
 
   <Accordion title="Want to switch workspaces">
-    Press `[D]` to disconnect, then run `/auth` again. You'll be prompted to select a workspace during the new auth flow.
+    Press `[D]` to disconnect, then run `/login` again. You'll be prompted to select a workspace during the new auth flow.
   </Accordion>
 
   <Accordion title="Auth flow times out">
-    Device codes expire after a few minutes. Run `/auth` again to restart the flow with a fresh code.
+    Device codes expire after a few minutes. Run `/login` again to restart the flow with a fresh code.
   </Accordion>
 </AccordionGroup>
 
