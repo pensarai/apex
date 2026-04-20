@@ -164,55 +164,10 @@ export interface EnsureValidTokenOptions {
   forceRefresh?: boolean;
 }
 
-/**
- * Ensure a valid access token is available.
- * If the current token is expired, attempts to refresh it.
- *
- * @returns A valid access token, or null if no valid token is available.
- *          Returns null for both "not logged in" and "refresh failed"; use
- *          ensureValidTokenOrThrow to distinguish.
- */
-export async function ensureValidToken(
-  cfg: {
-    accessToken?: string | null;
-    refreshToken?: string | null;
-    pensarAPIKey?: string | null;
-  },
-  options: EnsureValidTokenOptions = {},
-): Promise<ValidToken | null> {
-  if (cfg.accessToken) {
-    if (!options.forceRefresh && !isTokenExpired(cfg.accessToken)) {
-      return { token: cfg.accessToken, type: "workos" };
-    }
-
-    if (cfg.refreshToken) {
-      const clientId = await fetchWorkOSClientId();
-      if (clientId) {
-        try {
-          const newToken = await refreshAccessToken(
-            clientId,
-            cfg.refreshToken,
-          );
-          return { token: newToken, type: "workos" };
-        } catch (err) {
-          if (isApexAuthError(err)) {
-            // swallow here to preserve the existing null-on-failure contract;
-            // ensureValidTokenOrThrow surfaces the typed error for callers
-            // that need it (TUI preflight, 401 retry path).
-            console.error(`[pensar] Token refresh failed: ${err.message}`);
-          } else {
-            console.error("[pensar] Token refresh error:", err);
-          }
-        }
-      }
-    }
-  }
-
-  if (cfg.pensarAPIKey) {
-    return { token: cfg.pensarAPIKey, type: "legacy" };
-  }
-
-  return null;
+interface TokenCfg {
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  pensarAPIKey?: string | null;
 }
 
 /**
@@ -226,11 +181,7 @@ export async function ensureValidToken(
  *         token exists but refresh fails.
  */
 export async function ensureValidTokenOrThrow(
-  cfg: {
-    accessToken?: string | null;
-    refreshToken?: string | null;
-    pensarAPIKey?: string | null;
-  },
+  cfg: TokenCfg,
   options: EnsureValidTokenOptions = {},
 ): Promise<ValidToken> {
   if (cfg.accessToken) {
@@ -265,4 +216,27 @@ export async function ensureValidTokenOrThrow(
   }
 
   throw new ApexAuthError({ reason: "no_credentials" });
+}
+
+/**
+ * Ensure a valid access token is available. Preserves the older null-on-failure
+ * contract used by gateway/issues/webSearch callers that treat null as
+ * "not connected" rather than as an error. Callers that need the typed reason
+ * (TUI preflight, 401 retry) should use ensureValidTokenOrThrow directly.
+ */
+export async function ensureValidToken(
+  cfg: TokenCfg,
+  options: EnsureValidTokenOptions = {},
+): Promise<ValidToken | null> {
+  try {
+    return await ensureValidTokenOrThrow(cfg, options);
+  } catch (err) {
+    if (isApexAuthError(err)) {
+      if (err.reason !== "no_credentials") {
+        console.error(`[pensar] ${err.message}`);
+      }
+      return null;
+    }
+    throw err;
+  }
 }
