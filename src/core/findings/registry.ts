@@ -19,6 +19,10 @@ const VULN_CLASS_PATTERNS: [RegExp, string][] = [
     /path\s*traversal|directory\s*traversal|local\s*file\s*inclusion|\blfi\b/i,
     "path-traversal",
   ],
+  [
+    /\bmissing\s*auth|\bno\s*auth|unauthenticated\s+access/i,
+    "missing-authentication",
+  ],
   [/\bidor\b|insecure\s*direct\s*object/i, "idor"],
   [/\bxss\b|cross[\s-]*site\s*scripting/i, "xss"],
   [/missing\s*content\s*security\s*policy|missing\s*csp\b/i, "missing-csp"],
@@ -75,6 +79,31 @@ export function extractVulnClass(title: string): string {
 }
 
 /**
+ * Content-aware vulnerability classification.
+ *
+ * Starts with the title-based class from {@link extractVulnClass}, then
+ * inspects the finding's description and evidence to correct common
+ * mis-classifications.  In particular, an `idor` classification is
+ * upgraded to `missing-authentication` when the content indicates that
+ * no authentication exists at all (IDOR requires auth to be present but
+ * authorisation to be insufficient).
+ */
+export function classifyFromContent(finding: Finding): string {
+  const titleClass = extractVulnClass(finding.title);
+
+  if (titleClass === "idor") {
+    const corpus = `${finding.description ?? ""} ${finding.evidence ?? ""}`;
+    const missingAuthPattern =
+      /no\s+authentication|unauthenticated|without\s+authentication|PR:N|PR=N/i;
+    if (missingAuthPattern.test(corpus)) {
+      return "missing-authentication";
+    }
+  }
+
+  return titleClass;
+}
+
+/**
  * Derive a normalised "stem" from a finding title by stripping
  * endpoint-specific references (URLs, paths) and collapsing whitespace.
  *
@@ -128,7 +157,7 @@ export function generateFingerprint(finding: Finding): {
   exactKey: string;
   appWideKey: string;
 } {
-  const vulnClass = extractVulnClass(finding.title);
+  const vulnClass = classifyFromContent(finding);
   const stem = extractTitleStem(finding.title);
   const endpoint = normalizeEndpoint(finding.endpoint);
 

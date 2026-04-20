@@ -13,6 +13,7 @@ import { getAvailableModels } from "../../../core/providers/utils";
 import type { Config } from "../../../core/config/config";
 import { useTheme } from "../../theme";
 import { scrollToChild } from "../../utils/scroll";
+import { getPasteText } from "../../utils/paste";
 
 const providerNames: Record<string, string> = {
   anthropic: "Claude",
@@ -548,7 +549,7 @@ export function ModelPicker({
                         setLocalUrl(typeof v === "string" ? v : "")
                       }
                       onPaste={(event) => {
-                        const cleaned = String(event.text).replace(
+                        const cleaned = getPasteText(event).replace(
                           /\r?\n/g,
                           "",
                         );
@@ -592,7 +593,7 @@ export function ModelPicker({
                         setLocalModelName(typeof v === "string" ? v : "")
                       }
                       onPaste={(event) => {
-                        const cleaned = String(event.text).replace(
+                        const cleaned = getPasteText(event).replace(
                           /\r?\n/g,
                           "",
                         );

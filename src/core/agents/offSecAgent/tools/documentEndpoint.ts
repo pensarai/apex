@@ -37,9 +37,7 @@ const documentEndpointInputSchema = z.object({
     ),
   description: z
     .string()
-    .describe(
-      "Detailed description of the endpoint including what it does",
-    ),
+    .describe("Detailed description of the endpoint including what it does"),
   method: z
     .union([z.string(), z.array(z.string())])
     .optional()
@@ -72,16 +70,19 @@ const documentEndpointInputSchema = z.object({
     .optional()
     .describe("Authentication details if known"),
   riskLevel: z
-    .preprocess((val) => {
-      if (typeof val === "string") {
-        const upper = val.toUpperCase();
-        if (upper.includes("CRITICAL")) return "CRITICAL";
-        if (upper.includes("HIGH")) return "HIGH";
-        if (upper.includes("MEDIUM")) return "MEDIUM";
-        if (upper.includes("LOW")) return "LOW";
-      }
-      return val;
-    }, z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]))
+    .preprocess(
+      (val) => {
+        if (typeof val === "string") {
+          const upper = val.toUpperCase();
+          if (upper.includes("CRITICAL")) return "CRITICAL";
+          if (upper.includes("HIGH")) return "HIGH";
+          if (upper.includes("MEDIUM")) return "MEDIUM";
+          if (upper.includes("LOW")) return "LOW";
+        }
+        return val;
+      },
+      z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
+    )
     .describe("Risk level: LOW-CRITICAL (exposed/sensitive)"),
   notes: z
     .string()
@@ -123,7 +124,8 @@ Use this tool to document:
 You MUST specify \`appName\` to associate the endpoint with its parent application (previously documented via \`document_app\`).
 
 Each endpoint creates a JSON file in the assets directory for tracking and analysis.`,
-    inputSchema: documentEndpointInputSchema as z.ZodType<DocumentEndpointInput>,
+    inputSchema:
+      documentEndpointInputSchema as z.ZodType<DocumentEndpointInput>,
     execute: async (input: DocumentEndpointInput) => {
       if (ctx.attackSurfaceRegistry) {
         const assetRecord = {

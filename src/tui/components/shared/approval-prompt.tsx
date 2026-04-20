@@ -9,6 +9,7 @@ import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
 import { getToolSummary } from "./tool-registry";
 import type { PendingApproval } from "../../../core/operator";
+import { getPasteText } from "../../utils/paste";
 
 interface InlineApprovalPromptProps {
   approval: PendingApproval;
@@ -137,7 +138,7 @@ export function ApprovalInputArea({
           value={redirectInput}
           onInput={setRedirectInput}
           onPaste={(event) => {
-            const cleaned = String(event.text).replace(/\r?\n/g, " ");
+            const cleaned = getPasteText(event).replace(/\r?\n/g, " ");
             setRedirectInput(cleaned);
           }}
           focused={focusedElement === 2}
