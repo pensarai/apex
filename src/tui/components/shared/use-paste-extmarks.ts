@@ -1,5 +1,6 @@
 import { useRef } from "react";
-import type { TextareaRenderable } from "@opentui/core";
+import type { PasteEvent, TextareaRenderable } from "@opentui/core";
+import { getPasteText } from "../../utils/paste";
 
 interface PasteEntry {
   fullText: string;
@@ -35,11 +36,11 @@ export function usePasteExtmarks(
    * Intercepts large pastes (5+ lines or 500+ chars) and inserts a
    * virtual extmark placeholder instead.
    */
-  const handlePaste = (event: { text: string; preventDefault: () => void }) => {
+  const handlePaste = (event: PasteEvent) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    const text = event.text;
+    const text = getPasteText(event);
     const lineCount = text.split("\n").length;
 
     if (

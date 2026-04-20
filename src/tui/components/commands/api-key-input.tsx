@@ -5,6 +5,7 @@ import { type ProviderType, verifyApiKey } from "../../../core/providers";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
 import DialogLayout from "../dialog-layout";
+import { getPasteText } from "../../utils/paste";
 
 type VerifyState = "idle" | "verifying" | "error";
 
@@ -92,7 +93,7 @@ export default function APIKeyInput({
               setApiKey(typeof value === "string" ? value : "")
             }
             onPaste={(event) => {
-              const cleaned = String(event.text);
+              const cleaned = getPasteText(event);
               setApiKey((prev) => `${prev}${cleaned}`);
             }}
             onSubmit={handleSubmit}

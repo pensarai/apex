@@ -271,11 +271,7 @@ export class PlaywrightMcpSession {
   private readonly userAgent: string | undefined;
   private readonly viewportSize: string | undefined;
 
-  constructor(
-    headless = true,
-    userAgent?: string,
-    viewportSize?: string,
-  ) {
+  constructor(headless = true, userAgent?: string, viewportSize?: string) {
     this.headless = headless;
     this.userAgent = userAgent;
     this.viewportSize = viewportSize;

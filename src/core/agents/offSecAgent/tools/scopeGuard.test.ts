@@ -255,9 +255,9 @@ describe("assertUrlInScope", () => {
 
   it("blocks other registrable domains", () => {
     const ctx = makeCtx({ target: "https://web.dev.diracinc.com" });
-    expect(() =>
-      assertUrlInScope("https://notdiracinc.com", ctx),
-    ).toThrow(ScopeViolationError);
+    expect(() => assertUrlInScope("https://notdiracinc.com", ctx)).toThrow(
+      ScopeViolationError,
+    );
     expect(() =>
       assertUrlInScope("https://diracinc.com.evil.com", ctx),
     ).toThrow(ScopeViolationError);
