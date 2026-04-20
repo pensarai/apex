@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
+
 import { getAllPlaybooks } from "./playbooks";
 
 export interface BuildTestCasePromptInput {
@@ -11,23 +14,117 @@ export interface BuildTestCasePromptInput {
   };
   maxSteps: number;
   authHint?: string;
+  /**
+   * The running session's root directory. When set, the prompt builder
+   * reads `<sessionRootPath>/auth/auth-data.json` if present and injects
+   * the persisted cookies/headers into the user message. Matches the
+   * pattern pentest/agent.ts uses (line 558-600).
+   */
+  sessionRootPath?: string;
+}
+
+interface AuthData {
+  authenticated?: boolean;
+  cookies?: string;
+  headers?: Record<string, string>;
+  strategy?: string;
 }
 
 /**
- * Build the system prompt for TestCaseAgent. Keep the frame sharp — Apex
- * is a *pentester* probing the customer's system, not an investigator
- * inspecting a file. Grounded tools auto-emit events; the agent reserves
- * `emit_detection_event` for interpretive signals only.
+ * If the pre-run AuthenticationAgent phase completed successfully, its
+ * cookies + headers are on disk at `<sessionRootPath>/auth/auth-data.json`.
+ * Read them here and emit a prompt block instructing the agent to apply
+ * them verbatim on every outbound request.
+ *
+ * Lifted wholesale from `pentest/agent.ts:558-600` — same file path,
+ * same JSON shape, same formatting so the main agent's behavior matches
+ * the proven pentest path.
  */
-export function buildTestCaseSystemPrompt(maxSteps: number): string {
-  return `You are Apex, acting as a skilled penetration tester probing the user's SYSTEM UNDER TEST.
+function buildAuthSection(sessionRootPath?: string): string {
+  if (!sessionRootPath) return "";
+  const authDataPath = join(sessionRootPath, "auth", "auth-data.json");
+  if (!existsSync(authDataPath)) return "";
+
+  try {
+    const raw = readFileSync(authDataPath, "utf-8");
+    const authData = JSON.parse(raw) as AuthData;
+    if (!authData.authenticated) return "";
+
+    const parts: string[] = [
+      `\n## Existing Authentication Session`,
+      `An authenticated session already exists — **do NOT re-authenticate**. Apply these credentials on every outbound request.\n`,
+    ];
+
+    if (authData.cookies) {
+      parts.push(`- **Cookie header:** \`${authData.cookies}\``);
+    }
+
+    if (authData.headers && Object.keys(authData.headers).length > 0) {
+      for (const [name, value] of Object.entries(authData.headers)) {
+        parts.push(`- **${name}:** \`${value}\``);
+      }
+    }
+
+    if (authData.strategy) {
+      parts.push(`- Auth strategy: ${authData.strategy}`);
+    }
+
+    parts.push(
+      `\nFor \`http_request\`, pass these as the \`headers\` parameter.`,
+      `For \`execute_command\` (curl), add the appropriate \`-H\` or \`-b\` flags.`,
+      `For \`browser_navigate\`, cookies are already set in the MCP browser context (same sandbox as the auth phase).`,
+    );
+
+    return parts.join("\n");
+  } catch {
+    // Malformed auth data — ignore silently, agent will run unauthenticated.
+    return "";
+  }
+}
+
+export interface BuildSystemPromptOptions {
+  /**
+   * Whether the workflow has wired test-account credentials into the
+   * credentialManager. When true, the agent knows it can (and should)
+   * call `authenticate_session` before probing authenticated endpoints.
+   * When false, the agent assumes auth is either not required or
+   * already applied via `defaultHeaders`.
+   */
+  hasCredentials: boolean;
+}
+
+/**
+ * Build the system prompt for TestCaseAgent. v1.5 framing: Apex is a
+ * pentester probing a *deployed blackbox target* with pre-provided auth.
+ * No clone/build/start orchestration; no signup/MFA. If the scenario
+ * needs auth, call `authenticate_session` first.
+ */
+export function buildTestCaseSystemPrompt(
+  maxSteps: number,
+  opts: BuildSystemPromptOptions = { hasCredentials: false },
+): string {
+  const authGuidance = opts.hasCredentials
+    ? `You start **already signed in** — the workflow completed the login flow in a dedicated pre-run auth phase using a specialized AuthenticationAgent. The resulting session cookies + headers are persisted and surfaced in your user message under "Existing Authentication Session".
+
+Apply them verbatim on every outbound request:
+- \`http_request\` — pass them as the \`headers\` parameter.
+- \`execute_command\` — add the corresponding \`-H\` / \`-b\` flags on curl.
+- \`browser_navigate\` — the MCP browser context is already logged in (same sandbox as the auth phase).
+
+If a response indicates your session expired (401/403 on an endpoint the scenario expects to be reachable), emit \`alert_raised\` with source=rule-engine and stop. **You cannot re-auth mid-run by design** — session loss is a meaningful finding, not something to work around.`
+    : `No test credentials are registered for this project. You are probing as an anonymous user. If the scenario depends on authenticated access, note that in the narrative and emit fewer events rather than fabricating.`;
+
+  return `You are Apex, acting as a skilled penetration tester probing the user's DEPLOYED SYSTEM UNDER TEST (blackbox).
 
 The user has authored a test-case scenario describing what to probe and what outcome they expect. Your job is to execute it faithfully and emit detection events that reflect what you ACTUALLY observe — in target HTTP responses, in tool output, in real bytes on the wire. Not in your own priors.
 
 # Your Role
 - You are the attacker.
-- The TARGET is the customer's own system — they authorized this probe by authoring the test case.
-- The SANDBOX you have access to is your staging ground (scratch space, artifact pre-flight, local inspection). It is NOT the thing under test.
+- The TARGET is already DEPLOYED at a reachable URL. Do not try to stand it up, clone it, build it, or sign up for it — the customer has provisioned everything you need.
+- The SANDBOX you have is scratch space (artifact pre-flight, Playwright browser, filesystem). It is NOT the thing under test.
+
+# Auth
+${authGuidance}
 
 # Rules
 1. GROUND every detection event in an actual observation (HTTP response, tool result, file bytes). Do NOT emit events based on the scenario name or the user's phrasing alone.
@@ -37,10 +134,10 @@ The user has authored a test-case scenario describing what to probe and what out
    - guardrail_fired     — the target refused / blocked / sanitized (often a PASS for the test case)
    - workflow_triggered  — you observed a downstream effect (webhook fired, state change)
    - alert_raised        — rarely; when a response pattern is WAF-like but no tool auto-flagged it
-4. RATE DISCIPLINE. The runtime enforces ≤10 RPS per host, ≤500 total requests, ≤5 min wall clock. If a tool returns a safety-cap error, stop and call \`response\`.
-5. AUTH. Any Authorization / API key / cookie headers are already merged into outgoing requests automatically. Do NOT probe for credentials.
-6. HONESTY. If your probes don't succeed against the target, emit fewer events and say so in the narrative. Target resilience IS a valid outcome — a customer-run regression test that always passes is useless.
-7. ARTIFACT PRE-FLIGHT (when one is staged). Before sending a file to the target via upload_artifact_to_url, run check_file_signature to verify it contains what the scenario claims. If the user said "test this EICAR zip" but the file doesn't actually have EICAR bytes, NOTE that in the narrative rather than pretending it did.
+4. BROWSER TOOLS are for logged-in / JS-heavy targets. Typical flow: \`browser_navigate\` to the feature → \`browser_fill\` / \`browser_click\` to trigger input → \`browser_evaluate\` or \`browser_get_cookies\` to read state. The browser MCP context is already authenticated (if creds were registered); do not try to log in from inside it. Fall back to \`http_request\` for pure API endpoints.
+5. RATE DISCIPLINE. The runtime enforces ≤10 RPS per host, ≤500 total requests, ≤8 min wall clock. If a tool returns a safety-cap error, stop and call \`response\`.
+6. HONESTY. If your probes don't succeed against the target, emit fewer events and say so in the narrative. Target resilience IS a valid outcome — a regression test that always passes is useless.
+7. STAY IN SCOPE. Only probe the target URL(s) the user authorized. Do not pivot to other hosts.
 
 # Attack Playbooks (pick whichever the scenario needs)
 
@@ -86,6 +183,12 @@ export function buildTestCaseUserPrompt(
     lines.push(
       "- (no URL or artifact — reason from instructions alone; you can still probe any URL the instructions explicitly mention)",
     );
+  }
+
+  // Persisted cookies/headers from the pre-run auth phase.
+  const authSection = buildAuthSection(input.sessionRootPath);
+  if (authSection) {
+    lines.push(authSection);
   }
 
   if (input.authHint) {

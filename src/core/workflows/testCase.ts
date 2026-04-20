@@ -2,9 +2,11 @@ import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 import type { AIModel } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
+import type { CredentialManager } from "../credentials";
 import type { AgentEventBus } from "../eventBus";
 import { TestCaseAgent } from "../agents/specialized/testCase";
 import type { TestCaseResponse } from "../agents/specialized/testCase";
+import { runAuthenticationAgent } from "../agents/specialized/authenticationAgent";
 import { createSafetyCapState } from "../agents/offSecAgent/tools/_safetyCaps";
 import type { UnifiedSandbox } from "../agents/offSecAgent/tools/sandbox";
 import { sessions, type SessionInfo } from "../session";
@@ -15,8 +17,10 @@ import { sessions, type SessionInfo } from "../session";
 
 const DEFAULT_RPS_PER_HOST = 10;
 const DEFAULT_TOTAL_REQUESTS = 500;
-const DEFAULT_WALL_CLOCK_MS = 5 * 60 * 1000;
-const DEFAULT_MAX_STEPS = 50;
+// v1.5: widened from 5→8 min so blackbox auth (authenticate_session) +
+// target UI navigation + probe all fit comfortably in one run.
+const DEFAULT_WALL_CLOCK_MS = 8 * 60 * 1000;
+const DEFAULT_MAX_STEPS = 80;
 
 export interface TestCaseWorkflowInput {
   /** The user-authored test-case specification. */
@@ -47,10 +51,23 @@ export interface TestCaseWorkflowInput {
 
   /**
    * Default HTTP headers merged into every outbound request to the
-   * target URL (target authentication). The agent never sees these
-   * raw.
+   * target URL (static target authentication: API keys, bearer tokens,
+   * pre-baked session cookies). The agent never sees these raw.
+   *
+   * Use this for scenarios where auth is a static header. For
+   * browser-based login flows, pass a `credentialManager` instead —
+   * the agent will call `authenticate_session` to run the login.
    */
   targetAuthHeaders?: Record<string, string>;
+
+  /**
+   * In-memory credential store. When set, the agent can call
+   * `authenticate_session` to run the login flow against the target
+   * using the stored credentials, without ever seeing the raw secrets
+   * in its prompt. Build this from `core.credentials` entries tied to
+   * the project — reuses the blackbox-pentest auth pattern.
+   */
+  credentialManager?: CredentialManager;
 
   /** LLM model (default claude-sonnet-4-5). */
   model?: AIModel;
@@ -246,12 +263,74 @@ export async function runTestCaseWorkflow(
     eventBus: input.eventBus,
   });
 
-  // 4. Build agent input and run
+  // 4. Pre-run auth phase — the main TestCaseAgent no longer drives auth
+  //    itself; the workflow orchestrates AuthenticationAgent first so that
+  //    its resulting auth-data.json is already on disk by the time the
+  //    main agent's prompt is built (mirrors the pentest path).
+  //
+  //    The session must already carry a credentialManager (populated at
+  //    session creation via authCredentials in session.config); we honor
+  //    the explicit input.credentialManager as the primary trigger.
+  const sessionCredentialManager =
+    input.credentialManager ?? session.credentialManager;
+  if (sessionCredentialManager && sessionCredentialManager.size > 0) {
+    if (!input.testCase.targetUrl) {
+      throw new Error(
+        "test-case auth phase requires a target URL — project has credentials but no resolved target",
+      );
+    }
+    // Ensure the session object exposes the credentialManager so the
+    // AuthenticationAgent picks it up (session.credentialManager is the
+    // only auth source the agent consults).
+    if (!session.credentialManager) {
+      (session as SessionInfo & { credentialManager?: CredentialManager }).credentialManager =
+        sessionCredentialManager;
+    }
+
+    const authResult = await runAuthenticationAgent({
+      target: input.testCase.targetUrl,
+      session,
+      model: input.model ?? "claude-sonnet-4-5",
+      eventBus: input.eventBus,
+      authConfig: input.authConfig,
+      abortSignal,
+    });
+
+    if (!authResult.success) {
+      // Surface auth failure as a first-class detection event so a bad
+      // login flips the run to FAIL rather than silently proceeding
+      // unauthenticated and passing on a pipe break. Adapters (console's
+      // createMqttEventBus) re-publish these onto MQTT for the UI.
+      input.eventBus?.emit("detection_event", {
+        kind: "alert_raised",
+        source: "rule-engine",
+        severity: "high",
+        summary: `authentication failed: ${authResult.summary}`,
+        data: {
+          phase: "pre-run-auth",
+          strategy: authResult.strategy,
+          authBarrier: authResult.authBarrier,
+        },
+      });
+      clearTimeout(deadline);
+      throw new Error(`test case auth failed: ${authResult.summary}`);
+    }
+  }
+
+  // 5. Build agent input and run
   const maxSteps = Math.min(input.testCase.maxSteps ?? DEFAULT_MAX_STEPS, 200);
 
-  const authHint = input.targetAuthHeaders
-    ? `Headers present: ${Object.keys(input.targetAuthHeaders).join(", ")} (values masked)`
-    : undefined;
+  // Compose an auth-hint for the agent's user prompt. Agent never sees
+  // raw secrets; only a summary of what static headers are applied.
+  // Cookie/header state from the pre-run auth phase is injected by the
+  // prompt builder reading auth-data.json directly — not via this hint.
+  const hintParts: string[] = [];
+  if (input.targetAuthHeaders) {
+    hintParts.push(
+      `Static headers applied automatically: ${Object.keys(input.targetAuthHeaders).join(", ")}`,
+    );
+  }
+  const authHint = hintParts.length > 0 ? hintParts.join("\n") : undefined;
 
   const agent = new TestCaseAgent({
     testCase: {
@@ -276,6 +355,7 @@ export async function runTestCaseWorkflow(
     abortSignal,
     safetyCaps,
     defaultHeaders: input.targetAuthHeaders,
+    credentialManager: input.credentialManager,
     maxSteps,
   });
 

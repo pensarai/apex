@@ -300,6 +300,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "document_endpoint",
   "authenticate_session",
   "delegate_to_auth_subagent",
+  "detect_auth_scheme",
+  "probe_auth_endpoints",
   "create_attack_surface_report",
   "complete_authentication",
   "run_attack_surface",
@@ -344,16 +346,41 @@ export const ALL_TOOL_NAMES: ToolName[] = [
 ];
 
 /**
- * The subset of tools that a TestCaseAgent runs with. Deliberately narrow:
- * a pentest-style agent focused on attacking a target system and
- * observing responses, not a general-purpose exploration agent.
+ * The subset of tools that a TestCaseAgent runs with. By design, the
+ * agent does NOT carry auth tooling — the workflow orchestrates a
+ * pre-run AuthenticationAgent phase before this agent spawns, and the
+ * resulting cookies/headers are injected into the agent's user prompt
+ * via `auth-data.json`. See `runTestCaseWorkflow` in workflows/testCase.ts
+ * for the orchestration, and `buildAuthSection` in specialized/testCase/prompts.ts
+ * for the injection pattern (mirrors pentest/agent.ts:558-600).
  */
 export const TEST_CASE_TOOL_NAMES: ToolName[] = [
-  // Target-facing
+  // Target-facing HTTP
   "http_request",
   "upload_artifact_to_url",
   "http_probe_multi",
   "http_burst",
+  // Browser automation — full set (superset of pentest, parity with recon).
+  // The MCP browser context is pre-authenticated by the workflow's auth
+  // phase (same sandbox), so these tools inherit the logged-in session.
+  "browser_navigate",
+  "browser_snapshot",
+  "browser_screenshot",
+  "browser_click",
+  "browser_fill",
+  "browser_evaluate",
+  "browser_console",
+  "browser_get_cookies",
+  // Email — for probing scenarios that touch email (inbox enumeration,
+  // targeted email abuse). NOT for auth-phase MFA codes — the auth
+  // subagent owns that before this agent starts.
+  "email_list_inboxes",
+  "email_list_messages",
+  "email_search_messages",
+  "email_get_message",
+  // Web research — look up target technologies, known exploits, CVEs.
+  "web_search",
+  "get_page",
   // Sandbox-local (pre-flight, observation)
   "extract_archive",
   "check_file_signature",

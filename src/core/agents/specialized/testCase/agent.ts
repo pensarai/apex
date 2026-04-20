@@ -1,6 +1,7 @@
 import { hasToolCall, stepCountIs } from "ai";
 import type { AIModel } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
+import type { CredentialManager } from "../../../credentials";
 import type { AgentEventBus } from "../../../eventBus";
 import type { SessionInfo } from "../../../session";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
@@ -14,7 +15,10 @@ import {
 } from "./prompts";
 import { TestCaseResponseSchema, type TestCaseResponse } from "./schemas";
 
-const DEFAULT_MAX_STEPS = 50;
+// v1.5: widened from 50 to 80 so browser + auth + probe scenarios fit.
+// Browser flows (authenticate_session → navigate → fill → click) routinely
+// consume 10-20 steps before the actual probe begins.
+const DEFAULT_MAX_STEPS = 80;
 const HARD_MAX_STEPS = 200;
 
 export interface TestCaseAgentInput {
@@ -52,11 +56,19 @@ export interface TestCaseAgentInput {
    */
   defaultHeaders?: Record<string, string>;
 
-  /** Step budget (default 50, hard cap 200). */
+  /** Step budget (default 80, hard cap 200). */
   maxSteps?: number;
 
   /** Parent subagent id (when the test-case agent is spawned from another agent). */
   subagentId?: string;
+
+  /**
+   * In-memory credential store. When set, the agent can resolve credential
+   * references to full secrets without the raw values ever appearing in its
+   * prompt. The `authenticate_session` tool consumes this to run the login
+   * flow against the target; the agent never handles raw passwords / tokens.
+   */
+  credentialManager?: CredentialManager;
 }
 
 /**
@@ -81,8 +93,13 @@ export class TestCaseAgent extends OffensiveSecurityAgent<TestCaseResponse> {
     const activeTools = [...TEST_CASE_TOOL_NAMES, "response"];
 
     super({
-      system: buildTestCaseSystemPrompt(maxSteps),
-      prompt: buildTestCaseUserPrompt(opts.testCase),
+      system: buildTestCaseSystemPrompt(maxSteps, {
+        hasCredentials: !!opts.credentialManager && opts.credentialManager.size > 0,
+      }),
+      prompt: buildTestCaseUserPrompt({
+        ...opts.testCase,
+        sessionRootPath: opts.session.rootPath,
+      }),
       model: opts.model ?? "claude-sonnet-4-5",
       session: opts.session,
       sandbox: opts.sandbox,
@@ -92,6 +109,7 @@ export class TestCaseAgent extends OffensiveSecurityAgent<TestCaseResponse> {
       subagentId: opts.subagentId,
       safetyCaps: opts.safetyCaps,
       defaultHeaders: opts.defaultHeaders,
+      credentialManager: opts.credentialManager,
       stopWhen: [hasToolCall("response"), stepCountIs(maxSteps)],
       activeTools,
       responseSchema: TestCaseResponseSchema,
