@@ -78,7 +78,7 @@ Before running Apex, you need to configure your AI provider API key. Apex suppor
   </Accordion>
 
   <Accordion title="Pensar Console (Managed)" icon="shield-check">
-    Use the `/auth` command inside Apex to connect to [Pensar Console](https://console.pensar.dev) for managed inference — no API key required.
+    Use the `/login` command inside Apex to connect to [Pensar Console](https://console.pensar.dev) for managed inference — no API key required.
 
   </Accordion>
 </AccordionGroup>
@@ -117,9 +117,9 @@ Apex also supports headless CLI commands for CI/CD and scripting:
 ```bash
 pensar pentest --target <url>               # Run a full pentest orchestration
 pensar targeted-pentest --target <url>      # Run a targeted pentest
-pensar auth login                           # Connect to Pensar Console from the CLI
-pensar auth status                          # Show current auth connection status
-pensar auth logout                          # Disconnect from Pensar Console
+pensar login                                # Connect to Pensar Console from the CLI
+pensar login status                         # Show current login connection status
+pensar login logout                         # Disconnect from Pensar Console
 pensar projects                             # List workspace projects
 pensar pentests <projectId>                 # List/get/dispatch pentests
 pensar issues <projectId>                   # List/get/update security issues
@@ -160,7 +160,7 @@ Now that Apex is installed, here's how to get started:
 
 <Steps>
   <Step title="Login to Pensar">
-    Run `/auth` to login to Pensar.
+    Run `/login` to login to Pensar.
   </Step>
   <Step title="Select Model">
     Run `/models` to choose which AI model to use

@@ -17,7 +17,7 @@ Alias: `/buy`
 
 ## Prerequisites
 
-You must be connected to Pensar Console via the [`/auth`](/apex/commands/auth) command before using `/credits`. If you're not authenticated, Apex will prompt you to connect first.
+You must be connected to Pensar Console via the [`/login`](/apex/commands/auth) command before using `/credits`. If you're not authenticated, Apex will prompt you to connect first.
 
 ## What You'll See
 
@@ -58,7 +58,7 @@ Credits are a **pre-paid balance** (denominated in USD) stored at the workspace 
 
 <AccordionGroup>
   <Accordion title="'Not authenticated' error">
-    Run [`/auth`](/apex/commands/auth) first to connect Apex to your Console workspace.
+    Run [`/login`](/apex/commands/auth) first to connect Apex to your Console workspace.
   </Accordion>
 
   <Accordion title="Balance shows $0.00">
@@ -73,7 +73,7 @@ Credits are a **pre-paid balance** (denominated in USD) stored at the workspace 
 ## Related Commands
 
 <CardGroup cols={2}>
-  <Card title="/auth" icon="shield-check" href="/apex/commands/auth">
+  <Card title="/login" icon="shield-check" href="/apex/commands/auth">
     Connect to Pensar Console for managed inference.
   </Card>
   <Card title="/providers" icon="plug" href="/apex/commands/providers">

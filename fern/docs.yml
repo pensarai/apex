@@ -60,7 +60,7 @@ navigation:
             path: ./docs/commands/operator.mdx
           - page: /threat-model
             path: ./docs/commands/threat-model.mdx
-          - page: /auth
+          - page: /login
             path: ./docs/commands/auth.mdx
           - page: /models
             path: ./docs/commands/models.mdx
@@ -86,7 +86,7 @@ navigation:
             path: ./docs/cli/targeted-pentest.mdx
           - page: pensar threat-model
             path: ./docs/cli/threat-model.mdx
-          - page: pensar auth
+          - page: pensar login
             path: ./docs/cli/auth.mdx
           - page: pensar projects
             path: ./docs/cli/projects.mdx

@@ -53,7 +53,7 @@ When you run `/help`, you'll see a dialog showing:
   <Card title="/providers" icon="plug">
     Manage AI providers and configure API keys
   </Card>
-  <Card title="/auth" icon="shield-check" href="/apex/commands/auth">
+  <Card title="/login" icon="shield-check" href="/apex/commands/auth">
     Connect to Pensar Console for managed inference
   </Card>
   <Card title="/credits" icon="credit-card" href="/apex/commands/credits">
@@ -86,7 +86,7 @@ When you run `/help`, you'll see a dialog showing:
 | `/config`       |                    | Show config dialog                              |
 | `/models`       |                    | Show available AI models                        |
 | `/providers`    |                    | Manage AI providers and API keys                |
-| `/auth`         |                    | Connect to Pensar Console for managed inference |
+| `/login`        | `/auth`            | Connect to Pensar Console for managed inference |
 | `/credits`      | `/buy`             | Buy credits / check balance                     |
 | `/themes`       | `/theme`           | Manage application themes                       |
 | `/create-skill` |                    | Create a new operator skill                     |
@@ -99,7 +99,7 @@ For new users, here's the recommended order of commands:
 <Steps>
   <Step title="Configure Provider">
     Run `/providers` to set up your AI provider API key (Anthropic recommended),
-    or `/auth` to connect via Pensar Console
+    or `/login` to connect via Pensar Console
   </Step>
   <Step title="Select Model">
     Run `/models` to choose which AI model to use for testing
@@ -136,7 +136,7 @@ For new users, here's the recommended order of commands:
 
 ## Command Suggestions
 
-When typing a `/` command, Apex displays a windowed suggestions dropdown with up to 6 visible entries at a time. Commands are sorted by priority — `/pentest`, `/operator`, `/auth`, `/models`, `/sessions`, `/themes`, `/help` appear first, followed by the rest alphabetically. Scroll indicators (`↑`/`↓`) appear when more suggestions exist outside the visible window.
+When typing a `/` command, Apex displays a windowed suggestions dropdown with up to 6 visible entries at a time. Commands are sorted by priority — `/pentest`, `/operator`, `/login`, `/models`, `/sessions`, `/themes`, `/help` appear first, followed by the rest alphabetically. Scroll indicators (`↑`/`↓`) appear when more suggestions exist outside the visible window.
 
 ## CLI Commands
 
@@ -166,7 +166,7 @@ In addition to the TUI slash commands above, Apex provides headless CLI commands
   <Card title="/providers" icon="plug" href="/apex/commands/providers">
     Configure AI providers
   </Card>
-  <Card title="/auth" icon="shield-check" href="/apex/commands/auth">
+  <Card title="/login" icon="shield-check" href="/apex/commands/auth">
     Connect to Pensar Console
   </Card>
   <Card title="/credits" icon="credit-card" href="/apex/commands/credits">
