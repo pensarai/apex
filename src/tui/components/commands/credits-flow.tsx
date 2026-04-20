@@ -116,7 +116,7 @@ export default function CreditsFlow({
   // Build dynamic footer actions per step
   let footerActions: FooterAction[] = [];
   if (step === "no-auth") {
-    footerActions = [{ key: "Enter", label: "run /auth", variant: "primary" }];
+    footerActions = [{ key: "Enter", label: "run /login", variant: "primary" }];
   } else if (step === "display") {
     footerActions = [
       { key: "Enter", label: "open in browser", variant: "primary" },
@@ -146,7 +146,7 @@ export default function CreditsFlow({
             </box>
             <box>
               <text fg={colors.textMuted}>
-                Run <span fg={colors.primary}>/auth</span> first to connect your
+                Run <span fg={colors.primary}>/login</span> first to connect your
                 account.
               </text>
             </box>

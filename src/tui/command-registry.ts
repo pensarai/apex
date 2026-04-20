@@ -321,7 +321,8 @@ export const commands: CommandConfig[] = [
 
   // — Configuration —
   {
-    name: "auth",
+    name: "login",
+    aliases: ["auth"],
     description: "Connect to Pensar Console for managed inference",
     category: "Configuration",
     handler: async (args, ctx) => {

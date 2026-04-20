@@ -259,6 +259,25 @@ function AppContent({
         );
       },
     );
+
+    // Check if auth token needs refresh
+    const checkAuthToken = async () => {
+      const { isTokenExpired, isConnected } = await import(
+        "../core/auth"
+      );
+      if (
+        isConnected(config.data) &&
+        config.data.accessToken &&
+        isTokenExpired(config.data.accessToken, 60)
+      ) {
+        toast(
+          "Your Pensar Console session has expired. Run /login to refresh.",
+          "warn",
+          8000,
+        );
+      }
+    };
+    checkAuthToken();
   }, []);
 
   useEffect(() => {

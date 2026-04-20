@@ -201,7 +201,7 @@ export function getProviderModel(
 
       if (!pensarApiKey && !hasWorkOSAuth) {
         throw new Error(
-          "Pensar not configured. Run /auth to connect to Pensar Console.",
+          "Pensar not configured. Run /login to connect to Pensar Console.",
         );
       }
 
