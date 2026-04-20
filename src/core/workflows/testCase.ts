@@ -17,9 +17,13 @@ import { sessions, type SessionInfo } from "../session";
 
 const DEFAULT_RPS_PER_HOST = 10;
 const DEFAULT_TOTAL_REQUESTS = 500;
-// v1.5: widened from 5→8 min so blackbox auth (authenticate_session) +
-// target UI navigation + probe all fit comfortably in one run.
+// Main-agent budget. Auth-phase runtime no longer counts against this —
+// the pre-run auth phase has its own dedicated budget below.
 const DEFAULT_WALL_CLOCK_MS = 8 * 60 * 1000;
+// Auth-phase budget. Login flows (form submit + landing nav + confirm)
+// are typically 30-60s; 3 minutes gives ample headroom for slow SPAs
+// and CSRF-protected multi-step forms.
+const DEFAULT_AUTH_WALL_CLOCK_MS = 3 * 60 * 1000;
 const DEFAULT_MAX_STEPS = 80;
 
 export interface TestCaseWorkflowInput {
@@ -244,33 +248,16 @@ export async function runTestCaseWorkflow(
     );
   }
 
-  // 3. Safety caps + internal deadline
-  const wallClockMs =
-    input.safetyCaps?.wallClockMs ?? DEFAULT_WALL_CLOCK_MS;
-  const deadlineController = new AbortController();
-  const deadline = setTimeout(() => deadlineController.abort(), wallClockMs);
-
-  const abortSignal = anySignal([
-    input.abortSignal,
-    deadlineController.signal,
-  ]);
-
-  const safetyCaps = createSafetyCapState({
-    rpsPerHost: input.safetyCaps?.rpsPerHost ?? DEFAULT_RPS_PER_HOST,
-    totalRequests:
-      input.safetyCaps?.totalRequests ?? DEFAULT_TOTAL_REQUESTS,
-    wallClockMs,
-    eventBus: input.eventBus,
-  });
-
-  // 4. Pre-run auth phase — the main TestCaseAgent no longer drives auth
+  // 3. Pre-run auth phase — the main TestCaseAgent no longer drives auth
   //    itself; the workflow orchestrates AuthenticationAgent first so that
   //    its resulting auth-data.json is already on disk by the time the
   //    main agent's prompt is built (mirrors the pentest path).
   //
-  //    The session must already carry a credentialManager (populated at
-  //    session creation via authCredentials in session.config); we honor
-  //    the explicit input.credentialManager as the primary trigger.
+  //    Auth has its own dedicated wall-clock budget — its runtime does NOT
+  //    count against the main agent's budget. Before this split, a slow
+  //    auth flow would silently eat the main loop's budget and the main
+  //    agent would abort mid-probe with the generic "Agent aborted by user"
+  //    error even though the caller never aborted anything.
   const sessionCredentialManager =
     input.credentialManager ?? session.credentialManager;
   if (sessionCredentialManager && sessionCredentialManager.size > 0) {
@@ -287,14 +274,35 @@ export async function runTestCaseWorkflow(
         sessionCredentialManager;
     }
 
-    const authResult = await runAuthenticationAgent({
-      target: input.testCase.targetUrl,
-      session,
-      model: input.model ?? "claude-sonnet-4-5",
-      eventBus: input.eventBus,
-      authConfig: input.authConfig,
-      abortSignal,
-    });
+    const authController = new AbortController();
+    const authDeadline = setTimeout(
+      () =>
+        authController.abort(
+          new DOMException(
+            `test-case auth phase wall-clock exceeded ${DEFAULT_AUTH_WALL_CLOCK_MS / 1000}s`,
+            "TimeoutError",
+          ),
+        ),
+      DEFAULT_AUTH_WALL_CLOCK_MS,
+    );
+    const authAbortSignal = anySignal([
+      input.abortSignal,
+      authController.signal,
+    ]);
+
+    let authResult: Awaited<ReturnType<typeof runAuthenticationAgent>>;
+    try {
+      authResult = await runAuthenticationAgent({
+        target: input.testCase.targetUrl,
+        session,
+        model: input.model ?? "claude-sonnet-4-5",
+        eventBus: input.eventBus,
+        authConfig: input.authConfig,
+        abortSignal: authAbortSignal,
+      });
+    } finally {
+      clearTimeout(authDeadline);
+    }
 
     if (!authResult.success) {
       // Surface auth failure as a first-class detection event so a bad
@@ -312,10 +320,39 @@ export async function runTestCaseWorkflow(
           authBarrier: authResult.authBarrier,
         },
       });
-      clearTimeout(deadline);
       throw new Error(`test case auth failed: ${authResult.summary}`);
     }
   }
+
+  // 4. Safety caps + main-agent deadline. This timer starts NOW, after
+  //    the auth phase has already completed — so the main loop always
+  //    gets its full wallClockMs budget.
+  const wallClockMs =
+    input.safetyCaps?.wallClockMs ?? DEFAULT_WALL_CLOCK_MS;
+  const deadlineController = new AbortController();
+  const deadline = setTimeout(
+    () =>
+      deadlineController.abort(
+        new DOMException(
+          `test-case main agent wall-clock exceeded ${wallClockMs / 1000}s`,
+          "TimeoutError",
+        ),
+      ),
+    wallClockMs,
+  );
+
+  const abortSignal = anySignal([
+    input.abortSignal,
+    deadlineController.signal,
+  ]);
+
+  const safetyCaps = createSafetyCapState({
+    rpsPerHost: input.safetyCaps?.rpsPerHost ?? DEFAULT_RPS_PER_HOST,
+    totalRequests:
+      input.safetyCaps?.totalRequests ?? DEFAULT_TOTAL_REQUESTS,
+    wallClockMs,
+    eventBus: input.eventBus,
+  });
 
   // 5. Build agent input and run
   const maxSteps = Math.min(input.testCase.maxSteps ?? DEFAULT_MAX_STEPS, 200);
