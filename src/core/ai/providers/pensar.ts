@@ -79,9 +79,11 @@ export function createPensarModel(
    *
    * @throws ApexAuthError when the stored session cannot produce a token.
    */
-  async function buildHeaders(opts: {
-    forceRefresh?: boolean;
-  } = {}): Promise<Record<string, string>> {
+  async function buildHeaders(
+    opts: {
+      forceRefresh?: boolean;
+    } = {},
+  ): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
