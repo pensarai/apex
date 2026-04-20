@@ -9,7 +9,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
 import { getPensarGatewayUrl } from "../api/constants";
-import { ensureValidToken } from "../auth";
+import { ensureValidTokenOrThrow } from "../auth";
 import { config } from "../config";
 import {
   generateText,
@@ -237,7 +237,7 @@ export function getProviderModel(
       if (hasWorkOSAuth) {
         modelConfig.getToken = async (opts) => {
           const freshConfig = await config.get();
-          return ensureValidToken(
+          return ensureValidTokenOrThrow(
             {
               accessToken: freshConfig.accessToken,
               refreshToken: freshConfig.refreshToken,
