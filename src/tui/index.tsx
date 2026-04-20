@@ -260,27 +260,36 @@ function AppContent({
       },
     );
 
-    // Check if auth token needs refresh
-    const checkAuthToken = async () => {
-      const { isTokenExpired, isConnected } = await import("../core/auth");
-      // Only show toast if access token is expired AND there's no recovery path.
-      // ensureValidToken() can recover via refresh token OR fall back to pensarAPIKey,
-      // so we only warn when both are unavailable.
-      if (
-        isConnected(config.data) &&
-        config.data.accessToken &&
-        isTokenExpired(config.data.accessToken, 60) &&
-        !config.data.refreshToken &&
-        !config.data.pensarAPIKey
-      ) {
-        toast(
-          "Your Pensar Console session has expired. Run /login to refresh.",
-          "warn",
-          8000,
-        );
+    // Preflight the stored session so we catch dead refresh tokens before
+    // the user submits real work. Three outcomes:
+    //   1. No credentials — user hasn't logged in yet; route guards handle it
+    //      without a toast, so stay silent.
+    //   2. Token valid / refresh succeeds — silent pass-through.
+    //   3. Session dead (expired access + dead refresh, or other failure) —
+    //      toast the re-login prompt. This is the case the old naive check
+    //      missed: the user *has* a refresh token, but WorkOS has already
+    //      expired it on its end.
+    const preflightSession = async () => {
+      const { ensureValidTokenOrThrow, isApexAuthError, isConnected } =
+        await import("../core/auth");
+      if (!isConnected(config.data)) return;
+      try {
+        await ensureValidTokenOrThrow({
+          accessToken: config.data.accessToken,
+          refreshToken: config.data.refreshToken,
+          pensarAPIKey: config.data.pensarAPIKey,
+        });
+      } catch (err) {
+        if (isApexAuthError(err) && err.reason !== "no_credentials") {
+          toast(
+            "Your Pensar Console session has expired. Run /login to refresh.",
+            "warn",
+            8000,
+          );
+        }
       }
     };
-    checkAuthToken();
+    preflightSession();
   }, []);
 
   useEffect(() => {

@@ -127,9 +127,12 @@ async function login(): Promise<void> {
       expiresIn: deviceInfo.expires_in,
     });
 
+    const issuedAt = new Date().toISOString();
     await config.update({
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
+      accessTokenIssuedAt: issuedAt,
+      refreshTokenIssuedAt: issuedAt,
     });
 
     console.log("\nAuthenticated successfully. Fetching workspaces...");

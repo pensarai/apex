@@ -34,6 +34,10 @@ export interface Config {
   // WorkOS CLI auth (replaces pensarAPIKey for new auth flow)
   accessToken?: string | null;
   refreshToken?: string | null;
+  // ISO timestamps stamped on token issuance / refresh — used for age display
+  // and for operator troubleshooting when refresh tokens idle out.
+  accessTokenIssuedAt?: string | null;
+  refreshTokenIssuedAt?: string | null;
   workspaceId?: string | null;
   workspaceSlug?: string | null;
   // Gateway request signing key (server-issued)

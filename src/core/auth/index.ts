@@ -16,7 +16,11 @@ export {
   fetchWorkOSClientId,
   refreshAccessToken,
   ensureValidToken,
+  ensureValidTokenOrThrow,
+  ApexAuthError,
+  isApexAuthError,
 } from "./token";
+export type { ApexAuthReason, EnsureValidTokenOptions } from "./token";
 
 export {
   startDeviceFlow,

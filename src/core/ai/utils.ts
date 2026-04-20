@@ -235,13 +235,16 @@ export function getProviderModel(
       // Read fresh config each time so rotated tokens are picked up
       // (WorkOS refresh tokens are single-use).
       if (hasWorkOSAuth) {
-        modelConfig.getToken = async () => {
+        modelConfig.getToken = async (opts) => {
           const freshConfig = await config.get();
-          return ensureValidToken({
-            accessToken: freshConfig.accessToken,
-            refreshToken: freshConfig.refreshToken,
-            pensarAPIKey: freshConfig.pensarAPIKey,
-          });
+          return ensureValidToken(
+            {
+              accessToken: freshConfig.accessToken,
+              refreshToken: freshConfig.refreshToken,
+              pensarAPIKey: freshConfig.pensarAPIKey,
+            },
+            opts,
+          );
         };
       }
 

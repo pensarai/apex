@@ -176,9 +176,12 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
 
       if (ac.signal.aborted) return;
 
+      const issuedAt = new Date().toISOString();
       await config.update({
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
+        accessTokenIssuedAt: issuedAt,
+        refreshTokenIssuedAt: issuedAt,
       });
       await appConfig.reload();
 

@@ -11,6 +11,7 @@ import { convertToBedrockFormat } from "./pensarFormatters";
 import { parseSSE } from "./pensarSSE";
 import { signGatewayRequest } from "./pensarSigning";
 import { buildStreamingFetchSignal } from "../utils";
+import { ApexAuthError } from "../../auth";
 
 const DEBUG =
   process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
@@ -41,8 +42,13 @@ export interface PensarModelConfig {
    * Optional callback to get a fresh token before each request.
    * If provided, this is called instead of using `apiKey` directly,
    * allowing transparent token refresh for WorkOS auth.
+   *
+   * When `forceRefresh` is set, the callback MUST bypass any access-token
+   * expiry check and perform a refresh against WorkOS. Used on 401 retry.
    */
-  getToken?: () => Promise<{ token: string; type: "workos" | "legacy" } | null>;
+  getToken?: (options?: {
+    forceRefresh?: boolean;
+  }) => Promise<{ token: string; type: "workos" | "legacy" } | null>;
 }
 
 /**
@@ -68,28 +74,33 @@ export function createPensarModel(
 
   /**
    * Build request headers, resolving the token via getToken() if available.
+   * Pass { forceRefresh: true } to bypass the access-token expiry check and
+   * force a WorkOS refresh — used on 401 retry.
+   *
+   * @throws ApexAuthError when the stored session cannot produce a token.
    */
-  async function buildHeaders(): Promise<Record<string, string>> {
+  async function buildHeaders(opts: {
+    forceRefresh?: boolean;
+  } = {}): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
 
     if (config.getToken) {
-      const result = await config.getToken();
+      const result = await config.getToken(opts);
       if (!result) {
         logError("buildHeaders: getToken() returned null — auth failed");
-        throw new Error(
-          "Pensar authentication failed. Run /login to reconnect.",
-        );
+        throw new ApexAuthError({
+          reason: "no_credentials",
+          message: "Pensar authentication failed. Run /login to reconnect.",
+        });
       }
-      headers.Authorization = `Bearer ${result.token.slice(0, 12)}…`;
       log(`  auth: ${result.type} token (${result.token.length} chars)`);
 
       if (config.workspaceId) {
         headers["X-Workspace-Id"] = config.workspaceId;
       }
 
-      // Restore the full token after logging the truncated version
       headers.Authorization = `Bearer ${result.token}`;
     } else {
       headers.Authorization = `Bearer ${config.apiKey}`;
@@ -101,6 +112,41 @@ export function createPensarModel(
     }
 
     return headers;
+  }
+
+  /**
+   * Build headers, apply gateway signing (if configured), and send the
+   * inference request. Factored out so the 401 retry path can re-run it
+   * after forcing a token refresh.
+   */
+  async function sendGatewayRequest(
+    url: string,
+    serializedBody: string,
+    bedrockModelId: string,
+    fetchSignal: AbortSignal | undefined,
+    opts: { forceRefresh?: boolean } = {},
+  ): Promise<Response> {
+    const headers = await buildHeaders(opts);
+
+    if (config.signingKey) {
+      const sig = signGatewayRequest(
+        config.signingKey,
+        bedrockModelId,
+        serializedBody,
+      );
+      headers["X-Pensar-Signature"] = sig.signature;
+      headers["X-Pensar-Timestamp"] = sig.timestamp;
+      headers["X-Pensar-Nonce"] = sig.nonce;
+    }
+
+    log(`  headers: ${Object.keys(headers).join(", ")}`);
+
+    return fetch(url, {
+      method: "POST",
+      headers,
+      signal: fetchSignal,
+      body: serializedBody,
+    });
   }
 
   const model: LanguageModelV3 = {
@@ -245,37 +291,53 @@ export function createPensarModel(
         modelId: bedrockModelId,
         body,
       });
-      const headers = await buildHeaders();
-
-      if (config.signingKey) {
-        const sig = signGatewayRequest(
-          config.signingKey,
-          bedrockModelId,
-          serializedBody,
-        );
-        headers["X-Pensar-Signature"] = sig.signature;
-        headers["X-Pensar-Timestamp"] = sig.timestamp;
-        headers["X-Pensar-Nonce"] = sig.nonce;
-      }
-
-      log(`  headers: ${Object.keys(headers).join(", ")}`);
 
       const fetchSignal = buildStreamingFetchSignal(options.abortSignal);
 
       let response: Response;
       try {
-        response = await fetch(url, {
-          method: "POST",
-          headers,
-          signal: fetchSignal,
-          body: serializedBody,
-        });
+        response = await sendGatewayRequest(
+          url,
+          serializedBody,
+          bedrockModelId,
+          fetchSignal,
+        );
       } catch (err) {
+        if (err instanceof ApexAuthError) throw err;
         logError(`  SSE fetch failed (${Date.now() - startTime}ms):`, err);
         throw new Error(
           `Pensar Gateway request failed: ${err instanceof Error ? err.message : String(err)}`,
           { cause: err },
         );
+      }
+
+      // On 401, retry once with forceRefresh. Second 401 throws session_dead.
+      if (response.status === 401 && config.getToken) {
+        logInfo("  401 on gateway — forcing token refresh + single retry");
+        try {
+          response = await sendGatewayRequest(
+            url,
+            serializedBody,
+            bedrockModelId,
+            fetchSignal,
+            { forceRefresh: true },
+          );
+        } catch (err) {
+          if (err instanceof ApexAuthError) throw err;
+          throw new ApexAuthError({
+            reason: "session_dead",
+            message: `Token refresh retry failed: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
+        if (response.status === 401) {
+          const body = await response.text().catch(() => "");
+          throw new ApexAuthError({
+            reason: "session_dead",
+            message: "Pensar session expired. Run /login to reconnect.",
+            status: 401,
+            body,
+          });
+        }
       }
 
       const contentType = response.headers.get("content-type") ?? "unknown";
