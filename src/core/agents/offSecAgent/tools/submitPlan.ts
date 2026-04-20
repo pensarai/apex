@@ -17,7 +17,7 @@ type SubmitPlanResult = {
   path: string;
 };
 
-export function submitPlan(ctx: ToolContext) {
+export function submitPlan(ctx: ToolContext & { subagentId?: string }) {
   return tool({
     description: `Submit the pentest plan for operator review and approval.
 
@@ -28,9 +28,10 @@ reject (sending you back to refine), or edit the plan before approving.
 Only call this when the plan is complete and ready for review.`,
     inputSchema: submitPlanInputSchema,
     execute: async (): Promise<SubmitPlanResult> => {
-      const planPath = planFilePath(ctx.session.rootPath);
+      const scopeId = ctx.planSubagentId ?? ctx.subagentId;
+      const planPath = planFilePath(ctx.session.rootPath, scopeId);
       console.error(`[submit_plan] enter: path=${planPath}`);
-      const plan = readPlan(ctx.session.rootPath);
+      const plan = readPlan(ctx.session.rootPath, scopeId);
       if (!plan || !plan.trim()) {
         return {
           success: false,

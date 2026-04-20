@@ -6,7 +6,14 @@
  * Reuses MessageList and InputArea from the shared/chat components.
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 import { useKeyboard } from "@opentui/react";
 
 import {
@@ -18,11 +25,12 @@ import {
 import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
 import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import { buildAuthConfig } from "../../../core/ai/utils";
-import type { CacheMetrics } from "../../../core/ai";
+import { modelSupportsThinking, type CacheMetrics } from "../../../core/ai";
 import {
   ALL_TOOL_NAMES,
   PLAN_MODE_TOOL_NAMES,
   SKILL_TOOL_NAMES,
+  ASK_USER_QUESTIONS_TOOL_NAME,
   AgentEventBus,
   type AgentMode,
 } from "../../../core/agents/offSecAgent";
@@ -47,10 +55,6 @@ import { useTheme } from "../../theme";
 import type { DisplayMessage, WorkflowData } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
 import {
-  getToolSummary,
-  formatSubagentToolResult,
-} from "../shared/tool-registry";
-import {
   tryParsePartialJson,
   extractStreamableContent,
 } from "../shared/message-utils";
@@ -65,7 +69,13 @@ import {
   readExecutionMetrics,
   writeExecutionMetrics,
 } from "../../../core/session/execution-metrics";
-import { stepCountIs, type ModelMessage } from "ai";
+import { hasToolCall, stepCountIs, type ModelMessage } from "ai";
+import type {
+  AskUserQuestion,
+  AskUserQuestionAnswer,
+  AskUserQuestionsResult,
+} from "../../../core/agents/offSecAgent/tools/askUserQuestions";
+import { QuestionsForm } from "../chat/questions-form";
 import {
   type DashboardStatus,
   filterOperatorAutocomplete,
@@ -77,13 +87,31 @@ import {
   resolveInputFocused,
   accumulateTokenUsage,
 } from "./logic";
+import {
+  createSubagentSessionHelpers,
+  createSubagentStore,
+  loadSubagentSessionsFromDisk,
+} from "./subagent-state";
 import { QueuedMessages } from "./queued-messages";
+import { SubagentStatusBar } from "./subagent-status-bar";
+import SubagentDialog from "./subagent-dialog";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
 
 import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
 import { buildPentestPrompt } from "../../../core/skills/builtins/pentest";
+
+function markInFlightToolsErrored(
+  messages: DisplayMessage[],
+  result: string,
+): DisplayMessage[] {
+  return messages.map((m) =>
+    isToolMessage(m) && (m.status === "pending" || m.status === "streaming")
+      ? { ...m, status: "error" as const, result }
+      : m,
+  );
+}
 
 /**
  * Operator Dashboard - interactive chat interface with the offensive security agent
@@ -100,6 +128,7 @@ export default function OperatorDashboard({
     target?: string;
     operatorMode?: OperatorMode;
     sandbox?: boolean;
+    taskDriven?: boolean;
   };
 }) {
   const { colors } = useTheme();
@@ -127,7 +156,7 @@ export default function OperatorDashboard({
     skillsRegistry,
     skillsVersion,
   } = useCommand();
-  const { stack, externalDialogOpen } = useDialog();
+  const { stack, externalDialogOpen, replace: replaceDialog } = useDialog();
   const { refocusPrompt } = useFocus();
 
   const autocompleteOptions = useMemo(() => {
@@ -166,6 +195,42 @@ export default function OperatorDashboard({
     cancel: () => false,
   });
   const commandCancelledRef = useRef(false);
+
+  const subagentStore = useMemo(() => createSubagentStore(), []);
+  const subagentSessions = useSyncExternalStore(
+    subagentStore.subscribe,
+    subagentStore.getSnapshot,
+  );
+  const subagentHelpers = useMemo(
+    () => createSubagentSessionHelpers(subagentStore.setState),
+    [subagentStore],
+  );
+
+  // Track the message count when subagents last finished so the status bar
+  // knows whether the main agent has produced new output since then.
+  const messageCountAtSubagentDoneRef = useRef<number | null>(null);
+  const hasRunningSubagent = useMemo(
+    () =>
+      Array.from(subagentSessions.values()).some((s) => s.status === "running"),
+    [subagentSessions],
+  );
+  useEffect(() => {
+    if (subagentSessions.size > 0 && !hasRunningSubagent) {
+      if (messageCountAtSubagentDoneRef.current === null) {
+        messageCountAtSubagentDoneRef.current =
+          displayMessagesRef.current.length;
+      }
+    } else if (hasRunningSubagent) {
+      messageCountAtSubagentDoneRef.current = null;
+    }
+  }, [subagentSessions, hasRunningSubagent]);
+
+  const openSubagentDialog = useCallback(() => {
+    replaceDialog(<SubagentDialog store={subagentStore} />, {
+      selfHandlesEscape: true,
+      size: "large",
+    });
+  }, [replaceDialog, subagentStore]);
 
   // Messages — same pattern as pentest component
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -229,6 +294,12 @@ export default function OperatorDashboard({
   const [showPlanReview, setShowPlanReview] = useState(false);
   const planSubmittedRef = useRef(false);
   const planRejectedRef = useRef(false);
+  const planApprovedPendingRunRef = useRef(false);
+
+  const [pendingQuestions, setPendingQuestions] = useState<
+    AskUserQuestion[] | null
+  >(null);
+  const pendingToolCallIdRef = useRef<string | null>(null);
   const operatorModeRef = useRef(operatorMode);
   useEffect(() => {
     operatorModeRef.current = operatorMode;
@@ -325,6 +396,16 @@ export default function OperatorDashboard({
                     status: m.status,
                   })),
                 );
+              }
+
+              // Restore subagent sessions from disk so Ctrl+A shows history
+              try {
+                const restored = loadSubagentSessionsFromDisk(s.rootPath);
+                if (restored.size > 0) {
+                  subagentStore.setState(restored);
+                }
+              } catch {
+                // Best-effort — subagent files may not exist
               }
 
               // Restore plan content from a prior session so the cycleMode
@@ -637,81 +718,6 @@ export default function OperatorDashboard({
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Per-subagent log management
-  // ---------------------------------------------------------------------------
-
-  const initSubagent = useCallback((subagentId: string, name?: string) => {
-    setMessages((prev) => {
-      const idx = prev.findLastIndex(
-        (m) =>
-          isToolMessage(m) &&
-          (m.status === "pending" || m.status === "streaming"),
-      );
-      if (idx === -1) return prev;
-      const msg = prev[idx];
-      const subagentLogs = {
-        ...(msg.subagentLogs ?? {}),
-        [subagentId]: { name, status: "pending" as const, logs: [] },
-      };
-      const updated = [...prev];
-      updated[idx] = { ...msg, subagentLogs };
-      return updated;
-    });
-  }, []);
-
-  const completeSubagent = useCallback(
-    (subagentId: string, status: "completed" | "failed") => {
-      setMessages((prev) => {
-        const idx = prev.findLastIndex(
-          (m) =>
-            isToolMessage(m) &&
-            (m.status === "pending" || m.status === "streaming"),
-        );
-        if (idx === -1) return prev;
-        const msg = prev[idx];
-        const entry = msg.subagentLogs?.[subagentId];
-        if (!entry) return prev;
-        const subagentLogs = {
-          ...(msg.subagentLogs ?? {}),
-          [subagentId]: { ...entry, status },
-        };
-        const updated = [...prev];
-        updated[idx] = { ...msg, subagentLogs };
-        return updated;
-      });
-    },
-    [],
-  );
-
-  const appendLogToSubagent = useCallback(
-    (subagentId: string, line: string) => {
-      setMessages((prev) => {
-        const idx = prev.findLastIndex(
-          (m) =>
-            isToolMessage(m) &&
-            (m.status === "pending" || m.status === "streaming"),
-        );
-        if (idx === -1) return prev;
-        const msg = prev[idx];
-        const entry = msg.subagentLogs?.[subagentId];
-        if (!entry) return prev;
-        let logs = [...entry.logs, line];
-        if (logs.length > MAX_LOG_LINES) {
-          logs = logs.slice(-MAX_LOG_LINES);
-        }
-        const subagentLogs = {
-          ...(msg.subagentLogs ?? {}),
-          [subagentId]: { ...entry, logs },
-        };
-        const updated = [...prev];
-        updated[idx] = { ...msg, subagentLogs };
-        return updated;
-      });
-    },
-    [],
-  );
-
-  // ---------------------------------------------------------------------------
   // Approval handlers
   // ---------------------------------------------------------------------------
 
@@ -744,7 +750,7 @@ export default function OperatorDashboard({
   // ---------------------------------------------------------------------------
 
   const runAgent = useCallback(
-    async (prompt: string) => {
+    async (prompt: string | null) => {
       // Abort any previous run before starting a new one
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -762,34 +768,31 @@ export default function OperatorDashboard({
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      // Add user message
-      setMessages((prev) => [
-        ...prev,
-        { role: "user", content: prompt, createdAt: new Date() },
-      ]);
-
-      // Build messages array — append user turn to conversation history.
-      // Update conversationRef eagerly so the user turn survives an abort.
-      // Snapshot the previous state so we can roll back on API failure.
       const prevMessages = conversationRef.current;
-      const nextMessages: ModelMessage[] = normalizeMessages([
-        ...conversationRef.current,
-        { role: "user", content: prompt },
-      ]);
-      conversationRef.current = nextMessages;
 
-      // Persist the user message to disk immediately so that it is present in
-      // messages.json even if the agent is aborted before its first
-      // onStepFinish (which is the normal persistence path).  Without this,
-      // handleAbort reads back the stale file and overwrites conversationRef,
-      // losing the latest user turn.
-      if (sessionRef.current) {
-        try {
-          const mp = join(sessionRef.current.rootPath, "messages.json");
-          writeFileSync(mp, JSON.stringify(nextMessages, null, 2));
-        } catch {
-          // Best-effort — the agent's onStepFinish will persist later.
+      let nextMessages: ModelMessage[];
+      if (prompt !== null) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "user", content: prompt, createdAt: new Date() },
+        ]);
+
+        nextMessages = normalizeMessages([
+          ...conversationRef.current,
+          { role: "user", content: prompt },
+        ]);
+        conversationRef.current = nextMessages;
+
+        if (sessionRef.current) {
+          try {
+            const mp = join(sessionRef.current.rootPath, "messages.json");
+            writeFileSync(mp, JSON.stringify(nextMessages, null, 2));
+          } catch {
+            // Best-effort; onStepFinish persists later.
+          }
         }
+      } else {
+        nextMessages = conversationRef.current;
       }
 
       const onStepFinish = (event: {
@@ -821,21 +824,11 @@ export default function OperatorDashboard({
 
       const eventBus = new AgentEventBus();
 
-      // Buffer pending tool-call-complete data for subagents so we can
-      // merge with tool-result into a single rich log line.
-      const pendingSubagentCalls = new Map<
-        string,
-        { toolName: string; args: Record<string, unknown> }
-      >();
-
-      // Discovery-phase subagents route output to workflowData on the
-      // run_pentest_workflow tool message instead of the SwarmGrid.
-      const DISCOVERY_SUBAGENT_IDS = new Set([
-        "attack-surface-agent",
-        "whitebox-apps-discovery",
-      ]);
-      const isDiscoveryAgent = (id?: string) =>
-        id !== undefined && DISCOVERY_SUBAGENT_IDS.has(id);
+      // Only pentest swarm agents (pentest-agent-*) get entries in
+      // WorkflowData.pentesting.subagents. All others (discovery, risk
+      // scorers, whitebox analyzers) are excluded.
+      const isPentestAgent = (id?: string) =>
+        id !== undefined && /^pentest-agent-\d+$/.test(id);
 
       // Patch the workflowData on the active run_pentest_workflow tool message.
       const updateWorkflowData = (
@@ -866,41 +859,10 @@ export default function OperatorDashboard({
         });
       };
 
-      const appendWorkflowDiscoveryLog = (line: string) => {
-        updateWorkflowData((wd) => ({
-          ...wd,
-          discovery: {
-            ...wd.discovery,
-            logs: [...wd.discovery.logs, line].slice(-MAX_LOG_LINES),
-          },
-        }));
-      };
-
-      // Buffer partial narration text from discovery agents so we can
-      // flush complete lines to the workflow display.
-      const discoveryTextBuf: Record<string, string> = {};
-
-      const flushDiscoveryNarration = (subagentId: string) => {
-        const buf = discoveryTextBuf[subagentId];
-        if (!buf) return;
-        const lines = buf.split("\n");
-        discoveryTextBuf[subagentId] = lines.pop() ?? "";
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed.length > 0) {
-            appendWorkflowDiscoveryLog(trimmed);
-          }
-        }
-      };
-
       eventBus.on("text-delta", (d) => {
         if (gen !== generationRef.current) return;
         if (d.subagentId) {
-          if (isDiscoveryAgent(d.subagentId)) {
-            discoveryTextBuf[d.subagentId] =
-              (discoveryTextBuf[d.subagentId] ?? "") + d.text;
-            flushDiscoveryNarration(d.subagentId);
-          }
+          subagentHelpers.appendText(d.subagentId, d.text);
           return;
         }
         setThinking(false);
@@ -909,14 +871,28 @@ export default function OperatorDashboard({
 
       eventBus.on("tool-call-start", (d) => {
         if (gen !== generationRef.current) return;
-        if (d.subagentId) return;
+        if (d.subagentId) {
+          subagentHelpers.addStreamingToolCall(
+            d.subagentId,
+            d.toolCallId,
+            d.toolName,
+          );
+          return;
+        }
         setThinking(false);
         addStreamingToolCall(d.toolCallId, d.toolName);
       });
 
       eventBus.on("tool-call-delta", (d) => {
         if (gen !== generationRef.current) return;
-        if (d.subagentId) return;
+        if (d.subagentId) {
+          subagentHelpers.appendToolCallDelta(
+            d.subagentId,
+            d.toolCallId,
+            d.argsTextDelta,
+          );
+          return;
+        }
         appendToolCallDelta(d.toolCallId, d.argsTextDelta);
       });
 
@@ -930,19 +906,12 @@ export default function OperatorDashboard({
             d.args !== null
               ? (d.args as Record<string, unknown>)
               : {};
-          // Buffer the call so we can merge with tool-result for a richer line
-          pendingSubagentCalls.set(d.toolCallId, {
-            toolName: d.toolName,
+          subagentHelpers.addToolCall(
+            d.subagentId,
+            d.toolCallId,
+            d.toolName,
             args,
-          });
-          if (
-            isDiscoveryAgent(d.subagentId) &&
-            d.toolName === "execute_command"
-          ) {
-            const cmd = String(args.command ?? "").split("\n")[0];
-            const short = cmd.length > 60 ? cmd.slice(0, 57) + "…" : cmd;
-            appendWorkflowDiscoveryLog(`$ ${short}`);
-          }
+          );
           return;
         }
         setThinking(false);
@@ -955,57 +924,24 @@ export default function OperatorDashboard({
             ? (d.args as Record<string, unknown>)
             : undefined;
         addToolCall(d.toolCallId, d.toolName, args);
+
+        if (d.toolName === ASK_USER_QUESTIONS_TOOL_NAME && args) {
+          const rawQuestions = args.questions;
+          if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
+            pendingToolCallIdRef.current = d.toolCallId;
+            setPendingQuestions(rawQuestions as AskUserQuestion[]);
+          }
+        }
       });
 
       eventBus.on("tool-result", (d) => {
         if (gen !== generationRef.current) return;
         if (d.subagentId) {
-          const pending = pendingSubagentCalls.get(d.toolCallId);
-          pendingSubagentCalls.delete(d.toolCallId);
-          const resultObj =
-            d.result &&
-            typeof d.result === "object" &&
-            !Array.isArray(d.result) &&
-            d.result !== null
-              ? (d.result as Record<string, unknown>)
-              : { result: d.result };
-
-          // Build rich merged line when we have buffered args
-          let line: string;
-          if (pending) {
-            line = formatSubagentToolResult(
-              pending.toolName,
-              pending.args,
-              resultObj,
-            );
-          } else {
-            const summary = getToolSummary(d.toolName, resultObj);
-            line = `✓ ${summary}`;
-          }
-
-          if (isDiscoveryAgent(d.subagentId)) {
-            appendWorkflowDiscoveryLog(line);
-          } else {
-            // Mirror to workflowData swarm subagent logs
-            updateWorkflowData((wd) => {
-              const entry = wd.pentesting.subagents[d.subagentId!];
-              if (!entry) return wd;
-              let logs = [...entry.logs, line];
-              if (logs.length > MAX_LOG_LINES)
-                logs = logs.slice(-MAX_LOG_LINES);
-              return {
-                ...wd,
-                pentesting: {
-                  ...wd.pentesting,
-                  subagents: {
-                    ...wd.pentesting.subagents,
-                    [d.subagentId!]: { ...entry, logs },
-                  },
-                },
-              };
-            });
-            appendLogToSubagent(d.subagentId, line);
-          }
+          subagentHelpers.updateToolResult(
+            d.subagentId,
+            d.toolCallId,
+            d.result,
+          );
           return;
         }
         flushCommandOutput();
@@ -1026,27 +962,34 @@ export default function OperatorDashboard({
       });
 
       eventBus.on("command-output", (d) => {
+        if (gen !== generationRef.current) return;
         if (d.subagentId) return;
         onCommandOutput(d.data);
       });
 
       eventBus.on("error", (d) => {
+        if (gen !== generationRef.current) return;
         if (d.subagentId) {
-          const msg =
-            d.error instanceof Error ? d.error.message : "subagent error";
-          if (isDiscoveryAgent(d.subagentId)) {
-            appendWorkflowDiscoveryLog(`✗ ${msg}`);
-          } else {
-            appendLogToActiveTool(`✗ ${msg}`);
-          }
+          const errMsg =
+            d.error instanceof Error ? d.error.message : "Unknown error";
+          subagentHelpers.appendText(d.subagentId, `\nError: ${errMsg}\n`);
           return;
         }
         console.error("Agent error:", d.error);
-        setError(d.error instanceof Error ? d.error.message : "Unknown error");
+        // Clear pending-questions state so an error after the tool-call event
+        // doesn't leave the questions form stuck over a failed conversation.
+        pendingToolCallIdRef.current = null;
+        setPendingQuestions(null);
+        const errorMessage =
+          d.error instanceof Error ? d.error.message : "Unknown error";
+        setError(errorMessage);
+        setMessages((prev) => markInFlightToolsErrored(prev, errorMessage));
       });
 
       eventBus.on("subagent-spawn", ({ subagentId, name }) => {
-        if (isDiscoveryAgent(subagentId)) return;
+        if (gen !== generationRef.current) return;
+        subagentHelpers.spawnSession(subagentId, name);
+        if (!isPentestAgent(subagentId)) return;
         // Pentest swarm agents → workflowData.pentesting.subagents
         updateWorkflowData((wd) => ({
           ...wd,
@@ -1062,20 +1005,12 @@ export default function OperatorDashboard({
             },
           },
         }));
-        initSubagent(subagentId, name);
       });
 
       eventBus.on("subagent-complete", ({ subagentId, status }) => {
-        const remaining = discoveryTextBuf[subagentId]?.trim();
-        if (remaining) {
-          if (isDiscoveryAgent(subagentId)) {
-            appendWorkflowDiscoveryLog(remaining);
-          } else {
-            appendLogToSubagent(subagentId, remaining);
-          }
-        }
-        delete discoveryTextBuf[subagentId];
-        if (isDiscoveryAgent(subagentId)) return;
+        if (gen !== generationRef.current) return;
+        subagentHelpers.completeSession(subagentId, status);
+        if (!isPentestAgent(subagentId)) return;
         // Update workflowData swarm status
         updateWorkflowData((wd) => {
           const entry = wd.pentesting.subagents[subagentId];
@@ -1091,13 +1026,17 @@ export default function OperatorDashboard({
             },
           };
         });
-        completeSubagent(subagentId, status);
       });
 
       // Workflow phase events → update workflowData on the tool message
       eventBus.on("workflow-phase-start", (d) => {
         if (gen !== generationRef.current) return;
         textRef.current = "";
+        // New workflow run — clear old subagent sessions so the hub
+        // shows only the current batch.
+        if (d.phase === "discovery") {
+          subagentStore.setState(new Map());
+        }
         updateWorkflowData((wd) => {
           const next = {
             ...wd,
@@ -1164,10 +1103,13 @@ export default function OperatorDashboard({
       const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
 
       const commonInput = {
-        prompt,
+        prompt: prompt ?? "",
         model: model.id,
         messages: nextMessages,
-        stopWhen: [stepCountIs(10000)],
+        stopWhen: [
+          stepCountIs(10000),
+          hasToolCall(ASK_USER_QUESTIONS_TOOL_NAME),
+        ],
         target: initialConfig?.target,
         activeTools: [
           ...(agentMode === "plan" ? PLAN_MODE_TOOL_NAMES : ALL_TOOL_NAMES),
@@ -1179,7 +1121,7 @@ export default function OperatorDashboard({
         approvalGate: approvalGateRef.current,
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
-        enableThinking: reasoningEnabled,
+        enableThinking: reasoningEnabled && modelSupportsThinking(model.id),
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {
           addCacheUsage(
@@ -1264,6 +1206,8 @@ export default function OperatorDashboard({
                 : null,
             approvedPlanContent:
               agentMode !== "plan" ? approvedPlanRef.current : null,
+            taskDriven:
+              session?.config?.taskDriven ?? initialConfig?.taskDriven,
           },
         );
 
@@ -1284,6 +1228,7 @@ export default function OperatorDashboard({
               enableSuggestions: true,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
+            taskDriven: initialConfig?.taskDriven,
           };
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
@@ -1344,6 +1289,10 @@ export default function OperatorDashboard({
           // subsequent retries stack consecutive user messages, permanently
           // breaking the session.
           conversationRef.current = prevMessages;
+          // Clear pending-questions state so the finally block doesn't set
+          // status to "waiting" over a rolled-back conversation.
+          pendingToolCallIdRef.current = null;
+          setPendingQuestions(null);
           if (sessionRef.current) {
             try {
               const mp = join(sessionRef.current.rootPath, "messages.json");
@@ -1356,7 +1305,7 @@ export default function OperatorDashboard({
           const errorMsg = e instanceof Error ? e.message : "Agent failed";
           setError(errorMsg);
           setMessages((prev) => [
-            ...prev,
+            ...markInFlightToolsErrored(prev, errorMsg),
             {
               role: "system",
               content: `Error: ${errorMsg}`,
@@ -1376,7 +1325,7 @@ export default function OperatorDashboard({
           );
         }
         if (gen === generationRef.current) {
-          setStatus("idle");
+          setStatus(pendingToolCallIdRef.current ? "waiting" : "idle");
           setThinking(false);
           setIsExecuting(false);
           abortControllerRef.current = null;
@@ -1405,12 +1354,9 @@ export default function OperatorDashboard({
       flushCommandOutput,
       onCommandOutput,
       appendLogToActiveTool,
-      initSubagent,
-      completeSubagent,
-      appendLogToSubagent,
+      subagentHelpers,
       setThinking,
       setIsExecuting,
-      addTokenUsage,
       addCacheUsage,
     ],
   );
@@ -1477,11 +1423,42 @@ export default function OperatorDashboard({
           const resolvedPath = isAbsolute(outputPath)
             ? outputPath
             : resolve(process.cwd(), outputPath);
-          fullContent = buildThreatModelPrompt({
+          const basePrompt = buildThreatModelPrompt({
             outputPath: resolvedPath,
             codebasePath: process.cwd(),
             skillContent: content,
           });
+          fullContent = `${basePrompt}
+
+# Interactive Threat Model — Operator Workflow
+
+You're running inside the Apex TUI with a human operator at the keyboard. Before generating the final threat model, follow this three-phase sequence:
+
+## 1. Initial recon (≈10–20 tool calls)
+Spend a small budget orienting yourself on the codebase before asking anything:
+- List the repo root and any \`infra/\`, \`Dockerfile\`, \`docker-compose*\` files
+- Read manifests (\`package.json\`, \`go.mod\`, \`Cargo.toml\`, \`requirements.txt\`, \`pom.xml\`, etc.)
+- Skim auth modules and the primary API/route entry points
+- Note the framework, deployment style, and any obvious external integrations
+
+The point is to know enough to ask **grounded** questions — option labels in your batch should reference things you actually saw in the code, not generic templates.
+
+## 2. Ask the operator for context
+Once you have a baseline understanding, call \`ask_user_questions\` ONCE with 2–4 grounded questions covering the gaps your recon couldn't resolve. Prioritize:
+- Deployment topology / runtime that the code didn't make obvious
+- Sensitive data classification (PII, PCI, secrets, customer data)
+- User / actor types and how they authenticate
+- Trust boundaries (where untrusted input enters)
+- Known security concerns or prior incidents the operator wants emphasized
+
+Each option label MUST cite something concrete you observed (e.g. "AWS ECS Fargate (inferred from \`infra/ecs.ts\`)" — not "AWS deployment"). Skip categories that the recon already answered conclusively.
+
+## 3. Continue with the threat model
+After the operator submits answers (or skips), incorporate their input into the analysis and generate the threat model per the skill instructions above. The answers ARE part of the threat-model context — surface them where relevant in the output (e.g. data-sensitivity classifications inform the impact rating; user types inform the actor model).
+
+If the operator skips the question batch, proceed with the recon-only context and do your best.
+
+This three-phase flow is specific to the TUI \`/threat-model\` command. The same skill in headless / autonomous contexts skips phases 1–2 entirely (no \`ask_user_questions\` tool available there) and relies on the operator's prior context.`;
         } else if (slug === "pentest") {
           fullContent = buildPentestPrompt({
             target: args?.target || "",
@@ -1493,6 +1470,7 @@ export default function OperatorDashboard({
             hosts: args?.hosts?.split(",").filter(Boolean),
             ports: args?.ports?.split(",").filter(Boolean),
             strict: args?.strict === "true",
+            prompt: args?.prompt,
             skillContent: content,
           });
         } else {
@@ -1532,6 +1510,14 @@ export default function OperatorDashboard({
     setSelectedQueueIndex(-1);
     runAgentRef.current(next);
   }, [status]);
+
+  // Auto-run agent after plan approval (waits for mode transition to render)
+  useEffect(() => {
+    if (!planApprovedPendingRunRef.current) return;
+    if (operatorMode === "plan") return;
+    planApprovedPendingRunRef.current = false;
+    runAgentRef.current("Proceed with the approved plan.");
+  }, [operatorMode]);
 
   const addSystemMessage = useCallback((content: string) => {
     setMessages((prev) => [
@@ -1653,6 +1639,35 @@ export default function OperatorDashboard({
     setThinking(false);
     setIsExecuting(false);
 
+    setMessages((prev) => markInFlightToolsErrored(prev, "Interrupted"));
+
+    // Mark any in-flight subagent tool messages as interrupted too
+    subagentStore.setState((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const [id, session] of next) {
+        const hasInFlight = session.messages.some(
+          (m) =>
+            m.role === "tool" &&
+            (m.status === "pending" || m.status === "streaming"),
+        );
+        if (hasInFlight || session.status === "running") {
+          changed = true;
+          next.set(id, {
+            ...session,
+            status: session.status === "running" ? "cancelled" : session.status,
+            messages: session.messages.map((m) =>
+              m.role === "tool" &&
+              (m.status === "pending" || m.status === "streaming")
+                ? { ...m, status: "error" as const, result: "Interrupted" }
+                : m,
+            ),
+          });
+        }
+      }
+      return changed ? next : prev;
+    });
+
     // Read back persisted messages so the next run has full context.
     // Only keep a recent subset to avoid blowing the context window.
     // Use sessionRef (not the `session` state) so we see the session even
@@ -1759,6 +1774,75 @@ export default function OperatorDashboard({
       ];
     });
   }, [setThinking, setIsExecuting]);
+
+  const resumeWithQuestionResult = useCallback(
+    (result: AskUserQuestionsResult) => {
+      const toolCallId = pendingToolCallIdRef.current;
+      if (!toolCallId) return;
+
+      // Bedrock Converse / Anthropic requires { type: 'json', value: ... } wrapper.
+      const wrappedOutput = {
+        type: "json" as const,
+        value: result as unknown as Record<string, unknown>,
+      };
+
+      const updated: ModelMessage[] = conversationRef.current.map((msg) => {
+        if (msg.role !== "tool") return msg;
+        if (!Array.isArray(msg.content)) return msg;
+        let mutated = false;
+        const nextContent = msg.content.map((part) => {
+          if (
+            part &&
+            typeof part === "object" &&
+            "type" in part &&
+            (part as { type?: unknown }).type === "tool-result" &&
+            (part as { toolCallId?: unknown }).toolCallId === toolCallId
+          ) {
+            mutated = true;
+            return {
+              ...(part as Record<string, unknown>),
+              output: wrappedOutput,
+            };
+          }
+          return part;
+        });
+        return mutated
+          ? ({ ...msg, content: nextContent } as ModelMessage)
+          : msg;
+      });
+
+      conversationRef.current = updated;
+
+      const activeSession = sessionRef.current;
+      if (activeSession) {
+        try {
+          writeFileSync(
+            join(activeSession.rootPath, "messages.json"),
+            JSON.stringify(updated, null, 2),
+          );
+        } catch {
+          // onStepFinish will overwrite shortly.
+        }
+      }
+
+      pendingToolCallIdRef.current = null;
+      setPendingQuestions(null);
+
+      runAgentRef.current(null);
+    },
+    [],
+  );
+
+  const handleQuestionsSubmit = useCallback(
+    (answers: AskUserQuestionAnswer[]) => {
+      resumeWithQuestionResult({ answers, skipped: false });
+    },
+    [resumeWithQuestionResult],
+  );
+
+  const handleQuestionsSkip = useCallback(() => {
+    resumeWithQuestionResult({ answers: [], skipped: true });
+  }, [resumeWithQuestionResult]);
 
   // Complete a mode transition (shared by cycleMode and plan approval)
   const transitionToMode = useCallback((next: OperatorMode) => {
@@ -1887,12 +1971,12 @@ export default function OperatorDashboard({
           addSystemMessage("Plan file is missing or empty. Cannot approve.");
           return;
         }
+        approvedPlanRef.current = planContent;
+        planApprovedPendingRunRef.current = true;
         setApprovedPlanContent(planContent);
         setShowPlanReview(false);
         transitionToMode("manual");
-        addSystemMessage(
-          "Plan approved. Switching to manual mode for execution.",
-        );
+        addSystemMessage("Plan approved. Executing plan.");
         return;
       }
       if (key.name === "n" || key.raw === "N") {
@@ -1906,7 +1990,81 @@ export default function OperatorDashboard({
       }
     }
 
-    const dialogOpen = stack.length > 0 || externalDialogOpen;
+    // Ctrl+C while questions are pending — abort without resuming the agent.
+    // The abort controller is null at this point (runAgent's finally block
+    // already cleared it), so handleAbort() would early-return. Handle it
+    // explicitly: overwrite the sentinel tool-result so the next run doesn't
+    // see stale "questions answered" data, then dismiss the form and go idle.
+    if (pendingQuestions && key.ctrl && key.name === "c") {
+      key.preventDefault?.();
+      const toolCallId = pendingToolCallIdRef.current;
+      if (toolCallId) {
+        const abortedResult = {
+          type: "json" as const,
+          value: {
+            answers: [],
+            skipped: true,
+            aborted: true,
+          } as unknown as Record<string, unknown>,
+        };
+        conversationRef.current = conversationRef.current.map((msg) => {
+          if (msg.role !== "tool" || !Array.isArray(msg.content)) return msg;
+          let mutated = false;
+          const nextContent = msg.content.map((part) => {
+            if (
+              part &&
+              typeof part === "object" &&
+              "type" in part &&
+              (part as { type?: unknown }).type === "tool-result" &&
+              (part as { toolCallId?: unknown }).toolCallId === toolCallId
+            ) {
+              mutated = true;
+              return {
+                ...(part as Record<string, unknown>),
+                output: abortedResult,
+              };
+            }
+            return part;
+          });
+          return mutated
+            ? ({ ...msg, content: nextContent } as ModelMessage)
+            : msg;
+        });
+        const activeSession = sessionRef.current;
+        if (activeSession) {
+          try {
+            writeFileSync(
+              join(activeSession.rootPath, "messages.json"),
+              JSON.stringify(conversationRef.current, null, 2),
+            );
+          } catch {
+            /* onStepFinish will overwrite shortly */
+          }
+        }
+      }
+      pendingToolCallIdRef.current = null;
+      setPendingQuestions(null);
+      setStatus("idle");
+      addSystemMessage("Aborted — questions dismissed.");
+      return;
+    }
+
+    // Treat the questions form as a dialog so that dashboard-level shortcuts
+    // (Shift+Tab cycle-mode, etc.) don't fire while the form owns the keyboard.
+    const dialogOpen =
+      stack.length > 0 || externalDialogOpen || !!pendingQuestions;
+
+    // Ctrl+A to open subagent dialog (skip if another dialog is open)
+    if (
+      key.ctrl &&
+      key.name === "a" &&
+      subagentSessions.size > 0 &&
+      !dialogOpen
+    ) {
+      key.preventDefault?.();
+      openSubagentDialog();
+      return;
+    }
     const action = resolveKeyboardShortcut(
       key,
       status,
@@ -2053,7 +2211,9 @@ export default function OperatorDashboard({
       {/* Message display */}
       <MessageList
         messages={messages}
-        isRunning={status === "running" || status === "waiting"}
+        isRunning={
+          (status === "running" || status === "waiting") && !pendingQuestions
+        }
         variant="operator"
         focused={true}
         verbose={verboseMode}
@@ -2062,59 +2222,76 @@ export default function OperatorDashboard({
         lastApprovedAction={lastApprovedAction}
       />
 
-      {/* Queued follow-up messages */}
-      <QueuedMessages
-        messages={queuedMessages}
-        selectedIndex={selectedQueueIndex}
+      <SubagentStatusBar
+        sessions={subagentSessions}
+        agentMovedOn={
+          messageCountAtSubagentDoneRef.current !== null &&
+          messages.length > messageCountAtSubagentDoneRef.current
+        }
+        onOpen={openSubagentDialog}
       />
 
-      {/* Input area */}
-      <InputArea
-        value={inputValue}
-        onChange={setInputValue}
-        onSubmit={
-          showPlanReview
-            ? (value: string) => {
-                const trimmed = value.trim();
-                if (!trimmed) return;
-                planRejectedRef.current = true;
-                setShowPlanReview(false);
-                handleSubmit(trimmed);
-              }
-            : handleSubmit
-        }
-        placeholder={
-          showPlanReview
-            ? "Type feedback to refine, or Y to approve, N to reject..."
-            : status === "running"
-              ? "Queue a follow-up message..."
-              : status === "waiting"
-                ? "Type to redirect agent, or Y/A to approve..."
-                : "Enter directive or / for commands & skills..."
-        }
-        focused={
-          status === "running"
-            ? selectedQueueIndex < 0
-            : resolveInputFocused(status, stack.length, externalDialogOpen)
-        }
-        status={status === "waiting" ? "running" : status}
-        mode="operator"
-        operatorMode={operatorMode}
-        pendingApproval={currentPending}
-        onApprove={handleApprove}
-        onAutoApprove={handleAutoApprove}
-        enableAutocomplete={true}
-        autocompleteOptions={autocompleteOptions}
-        commandOptionMap={commandOptionMap}
-        commandNames={commandNames}
-        autocompletePlacement="above"
-        enableCommands={true}
-        onCommandExecute={handleCommandExecute}
-        highlightSlashCommands={true}
-        disableHistoryNavigation={
-          status === "running" && queuedMessages.length > 0
-        }
-      />
+      {pendingQuestions ? (
+        <QuestionsForm
+          questions={pendingQuestions}
+          onSubmit={handleQuestionsSubmit}
+          onSkip={handleQuestionsSkip}
+        />
+      ) : (
+        <>
+          <QueuedMessages
+            messages={queuedMessages}
+            selectedIndex={selectedQueueIndex}
+          />
+
+          <InputArea
+            value={inputValue}
+            onChange={setInputValue}
+            onSubmit={
+              showPlanReview
+                ? (value: string) => {
+                    const trimmed = value.trim();
+                    if (!trimmed) return;
+                    planRejectedRef.current = true;
+                    setShowPlanReview(false);
+                    handleSubmit(trimmed);
+                  }
+                : handleSubmit
+            }
+            placeholder={
+              showPlanReview
+                ? "Type feedback to refine, or Y to approve, N to reject..."
+                : status === "running"
+                  ? "Queue a follow-up message..."
+                  : status === "waiting"
+                    ? "Type to redirect agent, or Y/A to approve..."
+                    : "Enter directive or / for commands & skills..."
+            }
+            focused={
+              status === "running"
+                ? selectedQueueIndex < 0
+                : resolveInputFocused(status, stack.length, externalDialogOpen)
+            }
+            status={status === "waiting" ? "running" : status}
+            mode="operator"
+            operatorMode={operatorMode}
+            pendingApproval={currentPending}
+            onApprove={handleApprove}
+            onAutoApprove={handleAutoApprove}
+            enableAutocomplete={true}
+            autocompleteOptions={autocompleteOptions}
+            commandOptionMap={commandOptionMap}
+            commandNames={commandNames}
+            autocompletePlacement="above"
+            enableCommands={true}
+            onCommandExecute={handleCommandExecute}
+            highlightSlashCommands={true}
+            disableHistoryNavigation={
+              status === "running" && queuedMessages.length > 0
+            }
+          />
+        </>
+      )}
     </box>
   );
 }

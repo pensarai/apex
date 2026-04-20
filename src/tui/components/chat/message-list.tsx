@@ -12,6 +12,15 @@ import type { PendingApproval } from "../../../core/operator";
 import { InlineApprovalPrompt } from "./approval-inline";
 import { LoadingIndicator, type LoadingState } from "./loading-indicator";
 
+/** Tools that spawn subagents — show "Waiting for agents" instead of "Executing" */
+const SUBAGENT_TOOLS = new Set([
+  "run_pentest_workflow",
+  "spawn_pentest_swarm",
+  "run_attack_surface",
+  "spawn_coding_agent",
+  "delegate_to_auth_subagent",
+]);
+
 /**
  * Determine loading state based on message context
  */
@@ -19,8 +28,12 @@ function getLoadingState(
   messages: DisplayMessage[],
   hasPendingTool: boolean,
   isLastAssistant: boolean,
+  pendingToolName: string | null,
 ): LoadingState {
   if (hasPendingTool) {
+    if (pendingToolName && SUBAGENT_TOOLS.has(pendingToolName)) {
+      return "waiting";
+    }
     return "executing";
   }
   if (isLastAssistant) {
@@ -53,7 +66,7 @@ export interface MessageListProps {
   /** Is agent currently running */
   isRunning?: boolean;
   /** Display variant */
-  variant?: "chat" | "operator";
+  variant?: "chat" | "operator" | "subagent";
   /** Username for chat variant */
   username?: string;
   /** Empty state message */
@@ -144,6 +157,15 @@ export function MessageList({
         </box>
       )}
 
+      {/* Empty state - Subagent mode (minimal, no tips) */}
+      {!hasMessages && variant === "subagent" && (
+        <box marginTop={2}>
+          <text fg={colors.textMuted}>
+            {emptyMessage || "No messages from this agent yet."}
+          </text>
+        </box>
+      )}
+
       {/* Empty state - Chat mode */}
       {!hasMessages && variant === "chat" && (
         <box flexDirection="column" gap={1} marginTop={2}>
@@ -180,19 +202,32 @@ export function MessageList({
           isStreaming={isRunning && idx === streamingMessageIndex}
           verbose={verbose}
           expandedLogs={expandedLogs}
-          variant={variant}
+          variant={variant === "subagent" ? "operator" : variant}
           username={username}
         />
       ))}
 
       {/* Loading indicator - show when running but not when there's a pending approval */}
-      {isRunning && !hasPendingApproval && hasMessages && (
-        <LoadingIndicator
-          state={getLoadingState(messages, hasPendingTool, isLastAssistant)}
-          action={lastApprovedAction}
-          toolName={getPendingToolName(messages)}
-        />
-      )}
+      {isRunning &&
+        !hasPendingApproval &&
+        hasMessages &&
+        (() => {
+          const pendingTool = getPendingToolName(messages);
+          const effectiveHasPendingTool =
+            hasPendingTool || pendingTool !== null;
+          return (
+            <LoadingIndicator
+              state={getLoadingState(
+                messages,
+                effectiveHasPendingTool,
+                isLastAssistant,
+                pendingTool,
+              )}
+              action={lastApprovedAction}
+              toolName={pendingTool}
+            />
+          );
+        })()}
 
       {/* Approval prompt - shown inline at the bottom of the chat */}
       {hasPendingApproval && (

@@ -5,6 +5,7 @@ import { writeFileSync } from "fs";
 import type { ToolContext } from "./types";
 import { type AuthCredentials } from "../../specialized/authenticationAgent/types";
 import { CredentialManager } from "../../../credentials";
+import { AgentEventBus } from "../../../eventBus";
 // runAuthenticationAgent is dynamically imported inside execute() to break
 // the circular dependency: authAgent → offensiveSecurityAgent → tools → delegateAuth → authAgent
 
@@ -297,6 +298,9 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         const { runAuthenticationAgent } =
           await import("../../../api/authentication");
 
+        const localBus = new AgentEventBus();
+        AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
+
         const result = await runAuthenticationAgent({
           target,
           session: ctx.session,
@@ -304,7 +308,7 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           model: ctx.model,
           authConfig: ctx.authConfig,
           abortSignal: ctx.abortSignal,
-          eventBus: ctx.eventBus,
+          eventBus: localBus,
           subagentId,
         });
 

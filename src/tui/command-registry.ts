@@ -3,6 +3,7 @@ import type { Route, WebCommandOptions } from "./context/route";
 import {
   parseWebFlags,
   hasEnoughFlagsToSkipWizard,
+  combinePromptParts,
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
@@ -118,6 +119,16 @@ export const commands: CommandConfig[] = [
         description: "Custom header (repeatable)",
       },
       { name: "--model", valueHint: "<model>", description: "AI model to use" },
+      {
+        name: "--prompt",
+        valueHint: "<text|@file>",
+        description: "Guidance for the pentest agent",
+      },
+      {
+        name: "--threat-model",
+        valueHint: "<text|@file>",
+        description: "Threat model to guide the pentest (inline or @filepath)",
+      },
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
@@ -134,6 +145,11 @@ export const commands: CommandConfig[] = [
         if (flags.ports?.length)
           skillArgs.ports = flags.ports.map(String).join(",");
         if (flags.strict) skillArgs.strict = "true";
+        const combinedPrompt = combinePromptParts(
+          flags.threatModel,
+          flags.prompt,
+        );
+        if (combinedPrompt) skillArgs.prompt = combinedPrompt;
 
         ctx.navigate({
           type: "operator",
@@ -214,6 +230,10 @@ export const commands: CommandConfig[] = [
         name: "--sandbox",
         description: "Use isolated session directory as working directory",
       },
+      {
+        name: "--task-driven",
+        description: "Structured task tracking (experimental)",
+      },
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
@@ -224,6 +244,7 @@ export const commands: CommandConfig[] = [
           requireApproval: flags.requireApproval ?? true,
           target: flags.target,
           sandbox: flags.sandbox,
+          taskDriven: flags.taskDriven,
         },
       });
     },

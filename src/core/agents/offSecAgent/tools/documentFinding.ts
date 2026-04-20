@@ -21,6 +21,8 @@ import {
   type FindingJudgeInput,
 } from "../../specialized/findingJudge";
 import type { Finding } from "../types";
+import { hasCanonicalName } from "../../../../lib/cwe/types";
+import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
 
 export const documentVulnerabilityInputSchema = z.object({
   title: z.string().describe("Finding title"),
@@ -34,7 +36,7 @@ export const documentVulnerabilityInputSchema = z.object({
     .string()
     .optional()
     .describe(
-      "The class of vulnerability (e.g., sqli, xss, command-injection, idor, ssrf, path-traversal, crypto, cve)",
+      "The class of vulnerability (e.g., sqli, xss, command-injection, idor, ssrf, path-traversal, crypto, cve, hardcoded-credentials, information-disclosure, missing-authentication)",
     ),
   toolCallDescription: z
     .string()
@@ -222,6 +224,15 @@ CRITICAL RULES — READ BEFORE CALLING:
           input.pocDescription,
         );
 
+        // Build structured evidence file links
+        const evidenceFiles: EvidenceFileEntry[] = [];
+
+        evidenceFiles.push({
+          path: `pocs/${filename}.output.json`,
+          type: "poc-output",
+          description: `POC execution output for ${filename}`,
+        });
+
         // Phase 3: CVSS 4.0 scoring
         const timestamp = new Date().toISOString();
 
@@ -234,15 +245,20 @@ CRITICAL RULES — READ BEFORE CALLING:
         }
 
         let evidenceForPrompt = input.evidence;
-        let evidenceFilePath: string | undefined;
 
         if (input.evidence.length > EVIDENCE_FILE_THRESHOLD) {
           const evidenceFilename = `${timestamp.split("T")[0]}-${slugify(input.title, 40)}-evidence.txt`;
-          evidenceFilePath = join(outputDir, evidenceFilename);
+          const evidenceFilePath = join(outputDir, evidenceFilename);
           writeFileSync(evidenceFilePath, input.evidence);
           evidenceForPrompt =
             input.evidence.substring(0, EVIDENCE_FILE_THRESHOLD) +
             `\n... [truncated — full output saved to ${evidenceFilename}]`;
+          const pathPrefix = isVulnerability ? "findings" : "informational";
+          evidenceFiles.push({
+            path: `${pathPrefix}/${evidenceFilename}`,
+            type: "raw-evidence",
+            description: `Full evidence output (${input.evidence.length} bytes)`,
+          });
         }
 
         let cvssResult: CVSSScorerResult = FALLBACK_CVSS;
@@ -339,6 +355,7 @@ CRITICAL RULES — READ BEFORE CALLING:
             vulnerabilityClass: input.vulnerabilityClass,
           }),
           severity: severity as Finding["severity"],
+          ...(evidenceFiles.length > 0 && { evidenceFiles }),
         };
 
         if (isVulnerability && ctx.findingsRegistry) {
@@ -362,7 +379,6 @@ CRITICAL RULES — READ BEFORE CALLING:
           timestamp,
           sessionId: session.id,
           target: session.targets[0],
-          ...(evidenceFilePath && { evidenceFile: evidenceFilePath }),
           pocOutput: {
             stdout: stdout || "",
             stderr: stderr || "",
@@ -415,22 +431,31 @@ CRITICAL RULES — READ BEFORE CALLING:
           const cweSection = cvssResult.cwes?.length
             ? `## CWE Classification
 
-${cvssResult.cwes.map((cwe) => `- **${cwe.id}** — ${cwe.reasoning}`).join("\n")}`
+${cvssResult.cwes.map((cwe) => `- **${cwe.id}**${hasCanonicalName(cwe) ? `: ${cwe.name}` : ""} — ${cwe.reasoning}`).join("\n")}`
             : "";
 
-          const evidenceSection = evidenceFilePath
+          const hasLargeEvidence = finding.evidenceFiles?.some(
+            (ef) => ef.type === "raw-evidence",
+          );
+          const evidenceSection = hasLargeEvidence
             ? `## Evidence
 
 \`\`\`
 ${input.evidence.substring(0, 5_000)}
 \`\`\`
 
-> Full evidence output: \`${evidenceFilePath}\``
+> Full evidence output: see evidence files below`
             : `## Evidence
 
 \`\`\`
 ${finding.evidence}
 \`\`\``;
+
+          const evidenceFilesSection = finding.evidenceFiles?.length
+            ? `## Evidence Files
+
+${finding.evidenceFiles.map((ef) => `- **[${ef.type}]** \`${ef.path}\` — ${ef.description}`).join("\n")}`
+            : "";
 
           const headerLines = [
             `**Severity:** ${cvssWarning ? `${finding.severity} (estimated)` : finding.severity}`,
@@ -460,7 +485,7 @@ ${cvssSection}
 
 ${cweSection ? `${cweSection}\n\n` : ""}${evidenceSection}
 
-## POC
+${evidenceFilesSection ? `${evidenceFilesSection}\n\n` : ""}## POC
 
 Path: \`${finding.pocPath}\`
 
@@ -654,6 +679,71 @@ function sanitizeFilename(str: string): string {
     .substring(0, 50);
 }
 
+/**
+ * Validates PoC script for POSIX portability issues.
+ * Returns array of warning messages for non-portable patterns.
+ */
+export function validatePocPortability(
+  content: string,
+  pocType: PocType,
+): string[] {
+  const warnings: string[] = [];
+
+  // Only validate shell scripts (bash) for now
+  // Python and JavaScript have their own portable runtimes
+  if (pocType !== "bash") {
+    return warnings;
+  }
+
+  // Check for grep -P or grep -oP (Perl regex - not portable)
+  // Match -P anywhere after grep (e.g., -P, -oP, -Po, grep -i -P, etc.)
+  if (
+    /grep\s+.*?-[a-zA-Z]*P[a-zA-Z]*\b/.test(content) ||
+    /grep\s+.*?--perl-regexp\b/.test(content)
+  ) {
+    warnings.push(
+      "Non-portable: grep -P or grep -oP (Perl regex) detected. Use grep -E (extended regex) or grep -o instead for macOS/BusyBox compatibility.",
+    );
+  }
+
+  // Check for bare bc usage (not installed in sandbox)
+  // Match bc as a standalone command (piped, standalone, or in command substitution)
+  if (
+    /(\|\s*bc\b|^\s*bc\b|\$\(\s*bc\b|`\s*bc\b)/m.test(content) &&
+    !/which\s+bc|command\s+-v\s+bc/.test(content)
+  ) {
+    warnings.push(
+      "Non-portable: bc command detected but not installed in sandbox. Use $(( )) shell arithmetic, awk, or python3 -c instead.",
+    );
+  }
+
+  // Check for GNU stat with -c flag (with word boundary to avoid matching netstat, vmstat, etc.)
+  if (/\bstat\s+-c/.test(content)) {
+    warnings.push(
+      "Non-portable: stat -c is GNU-specific. Use stat -f on BSD/macOS or portable alternatives.",
+    );
+  }
+
+  // Check for GNU date with --rfc-3339 or similar (with word boundary to avoid matching update, etc.)
+  if (/\bdate\s+--[a-z]/.test(content)) {
+    warnings.push(
+      "Non-portable: GNU date long options (--rfc-3339, etc.) may not work on BSD/macOS. Use date with standard format strings instead.",
+    );
+  }
+
+  // Check for seq without command check
+  if (
+    /\bseq\b/.test(content) &&
+    !/which\s+seq|command\s+-v\s+seq/.test(content)
+  ) {
+    warnings.push(
+      "Potentially non-portable: seq may not be available. Consider using for i in $(seq ...) with a fallback or brace expansion {1..N}.",
+    );
+  }
+
+  return warnings;
+}
+
 function preparePoc(input: {
   pocName: string;
   pocType: PocType;
@@ -664,6 +754,14 @@ function preparePoc(input: {
   const filename = `poc_${sanitizedName}${POC_EXTENSIONS[input.pocType]}`;
 
   let pocContent = input.pocContent.trim();
+
+  // Validate portability before preparing the script
+  const portabilityWarnings = validatePocPortability(pocContent, input.pocType);
+  if (portabilityWarnings.length > 0) {
+    console.warn(
+      `[PoC Portability] Warnings for ${filename}:\n  ${portabilityWarnings.join("\n  ")}`,
+    );
+  }
 
   if (!pocContent.startsWith("#!")) {
     const shebangs: Record<string, string> = {

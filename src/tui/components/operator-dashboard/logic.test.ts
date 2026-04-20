@@ -41,12 +41,11 @@ describe("filterOperatorAutocomplete", () => {
     const result = filterOperatorAutocomplete(allOptions);
     const values = result.map((o) => o.value);
     expect(values).not.toContain("/scan");
-    expect(values).not.toContain("/help");
   });
 
   it("returns only allowed commands", () => {
     const result = filterOperatorAutocomplete(allOptions);
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(4);
   });
 
   it("preserves description on allowed commands", () => {

@@ -84,7 +84,7 @@ This ends the agent run — make sure all data is included.`,
 
     super({
       system: WHITEBOX_ATTACK_SURFACE_SYSTEM_PROMPT,
-      prompt: buildPrompt(codebasePath, domains),
+      prompt: buildPrompt(codebasePath, domains, session.config?.prompt),
       model,
       session,
       authConfig,
@@ -138,16 +138,34 @@ This ends the agent run — make sure all data is included.`,
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-function buildPrompt(codebasePath: string, domains?: string[]): string {
+function buildPrompt(
+  codebasePath: string,
+  domains?: string[],
+  operatorPrompt?: string,
+): string {
   const domainSection = domains?.length
-    ? `\n## Known Domains\nThe following domains are associated with this project. When documenting apps, set the \`domain\` field on \`document_app\` if you can determine which domain serves the app:\n${domains.map((d) => `- ${d}`).join("\n")}\n`
+    ? `\n## Known Domains
+The following domains are **hints for association only** — they are known to be operated by the target and should be set on the \`domain\` field of \`document_app\` when you can determine which domain serves a given app.
+
+**IMPORTANT — these domains DO NOT define the scope of discovery:**
+- Discover and document **every** app/service/cloud resource defined in the codebase, regardless of whether it maps to one of these domains.
+- Apps with no known public domain (internal services, background workers, staging-only apps, functions, admin tools, etc.) MUST still be documented. Leave \`domain\` unset or use the canonical resource URL for cloud resources.
+- Do NOT filter out apps, endpoints, subdomains, or cloud resources because they don't appear to belong to one of these domains.
+- Do NOT skip directories, packages, or services because they "look unrelated" to the listed domains.
+
+Known domains:
+${domains.map((d) => `- ${d}`).join("\n")}
+`
+    : "";
+  const operatorGuidanceBlock = operatorPrompt
+    ? `\n## Operator Guidance\n${operatorPrompt}\n`
     : "";
 
   return `# Whitebox Attack Surface Analysis
 
 ## Codebase
 - **Path:** ${codebasePath}
-${domainSection}
+${domainSection}${operatorGuidanceBlock}
 ## Task
 Analyze this codebase and produce a complete attack surface map:
 1. Identify the repo type and package manager
@@ -155,10 +173,11 @@ Analyze this codebase and produce a complete attack surface map:
 3. Discover cloud resources and external infrastructure referenced in the code (S3 buckets, cloud storage, CDN origins, etc.) — document these as apps with the appropriate type
 4. For each app, find all web pages and API endpoints
 5. For each endpoint, generate pentest objectives
+6. **Before submitting**, perform the Phase 3 coverage double-check from the system prompt — re-scan workspace roots, framework configs, Dockerfiles, IaC, and CI/deploy configs for apps you may have missed on the first pass, and document any that were missed.
 
 Use \`spawn_coding_agent\` to delegate app-level analysis for higher fidelity.
 
-When finished, call \`submit_results\` with the complete structured output.
+When finished, call \`submit_results\` with the complete structured output. Do NOT call \`submit_results\` until you have explicitly completed the coverage double-check.
 
 Begin now.`;
 }

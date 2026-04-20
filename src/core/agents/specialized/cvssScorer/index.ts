@@ -12,7 +12,11 @@ import { z } from "zod";
 import { generateObjectResponse, type AIModel } from "../../../ai";
 import { type AIAuthConfig } from "../../../ai/utils";
 import { calculateCVSS4Score, type CVSS4Metrics } from "../../../../lib/cvss";
-import { CweEntrySchema, type CweEntry } from "../../../../lib/cwe/types";
+import {
+  CweEntrySchema,
+  type ValidatedCweEntry,
+} from "../../../../lib/cwe/types";
+import { validateCweEntries } from "../../../../lib/cwe/validate";
 
 // =============================================================================
 // Types
@@ -46,8 +50,8 @@ export interface CVSSScorerResult {
   scoreType: string;
   /** AI's reasoning for metric choices */
   reasoning: string;
-  /** CWE classifications assigned to this vulnerability */
-  cwes: CweEntry[];
+  /** CWE classifications assigned to this vulnerability (validated against MITRE database) */
+  cwes: ValidatedCweEntry[];
 }
 
 // =============================================================================
@@ -356,6 +360,10 @@ export async function scoreFindingWithCVSS(
     ...assessment.metrics,
   });
 
+  // Validate CWE IDs against the canonical MITRE database.
+  // Unknown/hallucinated IDs are silently dropped.
+  const { validated: validatedCwes } = validateCweEntries(assessment.cwes);
+
   return {
     score: cvssResult.score,
     severity: cvssResult.severity,
@@ -363,7 +371,7 @@ export async function scoreFindingWithCVSS(
     metrics: cvssResult.metrics,
     scoreType: cvssResult.scoreType,
     reasoning: assessment.reasoning,
-    cwes: assessment.cwes,
+    cwes: validatedCwes,
   };
 }
 

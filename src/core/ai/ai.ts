@@ -23,6 +23,7 @@ import {
   type AIAuthConfig,
 } from "./utils";
 import { withCachedSystemPrompt, withCachedLastMessage } from "./caching";
+import { applyToolResultBudget, snipOldSteps } from "./contextManagement";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -127,12 +128,10 @@ function wrapStreamWithErrorHandler(
           wrappedStream = (async function* () {
             try {
               for await (const chunk of originalStream.fullStream) {
-                if (chunk.type === "error" || "error" in chunk) {
-                  const error =
-                    "error" in chunk
-                      ? (chunk as unknown as { error: unknown }).error
-                      : chunk;
-                  throw error;
+                // Only stream-level errors are fatal; tool-level errors
+                // flow through so the UI renders them as failed tool results.
+                if (chunk.type === "error") {
+                  throw (chunk as unknown as { error: unknown }).error;
                 }
 
                 yield chunk;
@@ -195,15 +194,65 @@ function wrapStreamWithErrorHandler(
                 } catch {
                   // Fall back to container messages if response is not available
                 }
+
+                // Layer 1+2: Try lightweight compaction before full summarization.
+                // applyToolResultBudget truncates large tool results to previews;
+                // snipOldSteps replaces old tool results with 1-line summaries.
+                const afterBudget = opts.sessionPath
+                  ? applyToolResultBudget(currentMessages, {
+                      sessionPath: opts.sessionPath,
+                    })
+                  : currentMessages;
+                const compacted = snipOldSteps(afterBudget);
+
+                // Update the container so any nested retry reads
+                // already-compacted messages instead of the original
+                // pre-compaction ones (prevents unbounded retry loops).
+                messagesContainer.current = compacted;
+
+                // snipOldSteps returns the input array unchanged when nothing was modified
+                if (compacted !== currentMessages) {
+                  if (!silent) {
+                    console.warn(
+                      `Context length error — trying lightweight compaction on ${currentMessages.length} messages`,
+                    );
+                  }
+                  try {
+                    const retried = streamResponse({
+                      ...opts,
+                      messages: compacted,
+                    });
+                    const wrappedRetry = wrapStreamWithErrorHandler(
+                      retried,
+                      messagesContainer,
+                      opts,
+                      model,
+                      silent,
+                      rateLimitRetryCount,
+                    );
+                    for await (const chunk of wrappedRetry.fullStream) {
+                      yield chunk;
+                    }
+                    return;
+                  } catch (retryError) {
+                    // Only fall through to full summarization for context length errors.
+                    // Other errors (auth failures, model errors) must propagate.
+                    if (!checkIfContextLengthError(retryError)) {
+                      throw retryError;
+                    }
+                  }
+                }
+
+                // Layer 3: Full summarization (existing behavior)
+                const messagesForSummary = messagesContainer.current;
                 if (!silent) {
                   console.warn(
-                    `Context length error in wrapper, summarizing ${messagesContainer.current.length} messages: `,
-                    errorMessage,
+                    `Context length error — summarizing ${messagesForSummary.length} messages`,
                   );
                 }
 
                 const summarizationStream = createSummarizationStream(
-                  currentMessages,
+                  messagesForSummary,
                   opts,
                   model,
                 );
@@ -297,6 +346,8 @@ export interface StreamResponseOpts {
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+) */
   enableThinking?: boolean;
+  /** Session root path — used by context management layers to persist truncated tool results */
+  sessionPath?: string;
 }
 
 export function streamResponse(
@@ -462,9 +513,12 @@ export function streamResponse(
           // Get the actual tool definition which contains the Zod schema
           const tool = tools[toolCall.toolName];
           if (!tool || !tool.inputSchema) {
-            throw new Error(
-              `Tool ${toolCall.toolName} not found or has no schema`,
-            );
+            if (!silent) {
+              console.error(
+                `Cannot repair tool call: ${toolCall.toolName} not found or has no schema`,
+              );
+            }
+            return null;
           }
 
           // Get JSONSchema7 for display purposes
@@ -523,11 +577,13 @@ export function streamResponse(
             >[0]);
           }
 
-          // Return the tool call with stringified repaired arguments
           if (repairedArgs === undefined || repairedArgs === null) {
-            throw new Error(
-              `Tool call repair for "${toolCall.toolName}" produced no valid output`,
-            );
+            if (!silent) {
+              console.error(
+                `Tool call repair for "${toolCall.toolName}" produced no valid output`,
+              );
+            }
+            return null;
           }
           return { ...toolCall, input: JSON.stringify(repairedArgs) };
         } catch (repairError) {
@@ -539,7 +595,7 @@ export function streamResponse(
                 : String(repairError),
             );
           }
-          throw repairError;
+          return null;
         }
       },
       onFinish,

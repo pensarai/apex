@@ -6,6 +6,17 @@ export {
   type SandboxExecutionResult,
 } from "./sandbox";
 
+// Scope guard utilities
+export {
+  ScopeViolationError,
+  getAllowedHosts,
+  isHostAllowed,
+  extractHostname,
+  assertUrlInScope,
+  assertCommandInScope,
+  extractHostsFromCommand,
+} from "./scopeGuard";
+
 // Browser automation tools
 export { createBrowserToolset, BROWSER_TOOL_NAMES } from "./browserTools";
 export type { BrowserToolName } from "./browserTools";
@@ -75,6 +86,11 @@ export { readSkill } from "./readSkill";
 // Observability tools
 export { checkpointState } from "./checkpointState";
 
+// Task decomposition tools
+export { createTask } from "./createTask";
+export { updateTask } from "./updateTask";
+export { listTasksTool } from "./listTasks";
+
 // Plan mode tools
 export { writePlan } from "./writePlan";
 export { submitPlan } from "./submitPlan";
@@ -124,8 +140,16 @@ import { webSearch } from "./webSearch";
 import { getPage } from "./getPage";
 import { readSkill } from "./readSkill";
 import { checkpointState } from "./checkpointState";
+import { createTask } from "./createTask";
+import { updateTask } from "./updateTask";
+import { listTasksTool } from "./listTasks";
 import { writePlan } from "./writePlan";
 import { submitPlan } from "./submitPlan";
+import {
+  askUserQuestions,
+  ASK_USER_QUESTIONS_TOOL_NAME,
+} from "./askUserQuestions";
+export { ASK_USER_QUESTIONS_TOOL_NAME } from "./askUserQuestions";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -196,8 +220,19 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Skill tools (conditional — only when registry is provided)
     ...(ctx.skillsRegistry ? { read_skill: readSkill(ctx) } : {}),
 
+    [ASK_USER_QUESTIONS_TOOL_NAME]: askUserQuestions(ctx),
+
     // Observability tools (conditional — only when trace writer is provided)
     ...(ctx.traceWriter ? { checkpoint_state: checkpointState(ctx) } : {}),
+
+    // Task decomposition tools (conditional — only when tasksDir is configured)
+    ...(ctx.tasksDir
+      ? {
+          create_task: createTask(ctx),
+          update_task: updateTask(ctx),
+          list_tasks: listTasksTool(ctx),
+        }
+      : {}),
 
     // Plan mode tools
     write_plan: writePlan(ctx),
@@ -257,9 +292,14 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "get_page",
   // Observability
   "checkpoint_state",
+  // Task decomposition
+  "create_task",
+  "update_task",
+  "list_tasks",
   // Plan mode
   "write_plan",
   "submit_plan",
+  ASK_USER_QUESTIONS_TOOL_NAME,
 ];
 
 /**
@@ -311,6 +351,9 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   // Plan mode tools
   "write_plan",
   "submit_plan",
+  "create_task",
+  "update_task",
+  "list_tasks",
 ];
 
 /** Skill tool names — conditionally included when a skills registry is provided. */

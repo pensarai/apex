@@ -71,12 +71,20 @@ export const EndpointSchema = z.object({
     .describe("Brief description of what this endpoint does"),
   pentestObjectives: z
     .array(z.string())
+    .default([])
     .describe(
-      "Specific pentest objectives for this endpoint (e.g. 'Test for IDOR by enumerating user IDs', 'Test for SQL injection in search parameter')",
+      "Pentest objectives for this endpoint, derived from the threat model when available " +
+        "(e.g. 'Test for IDOR by enumerating user IDs', 'Test for SQL injection in search parameter')",
     ),
   riskScore: RiskScoreSchema.optional().describe(
     "AI-calculated risk score for prioritizing pentest efforts",
   ),
+  threatModel: z
+    .string()
+    .optional()
+    .describe(
+      "Endpoint-specific threat model describing attack vectors, data sensitivity, and testing priorities",
+    ),
 });
 
 export type Endpoint = z.infer<typeof EndpointSchema>;

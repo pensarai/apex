@@ -51,6 +51,11 @@ export type AgentEventMap = {
     phase: "discovery" | "pentesting" | "reporting";
     summary: Record<string, unknown>;
   };
+  "app-analysis-progress": {
+    totalApps: number;
+    completedApps: number;
+    appName?: string;
+  };
   "step-finish": {
     messages: unknown[];
     subagentId?: string;
@@ -62,6 +67,23 @@ export type AgentEventMap = {
     subagentId?: string;
   };
 };
+
+/**
+ * Events forwarded from a child event bus to its parent via
+ * {@link AgentEventBus.attachChild}.
+ */
+const CHILD_BUS_FORWARDED_EVENTS = [
+  "text-delta",
+  "tool-call-start",
+  "tool-call-delta",
+  "tool-call-complete",
+  "tool-result",
+  "subagent-spawn",
+  "subagent-complete",
+  "command-output",
+  "error",
+  "step-finish",
+] as const satisfies readonly (keyof AgentEventMap)[];
 
 /**
  * Centralized, typed event bus for agent streaming output.
@@ -123,6 +145,33 @@ export class AgentEventBus {
       this.emitter.removeAllListeners();
     }
     return this;
+  }
+
+  /**
+   * Forward selected events from a child bus to a parent bus, ensuring
+   * all forwarded payloads carry the given `subagentId`.
+   *
+   * Tools running inside a subagent emit side-channel events (e.g.
+   * `command-output`) without `subagentId`. This method injects the
+   * ID so the parent's routing logic (subagent store vs main view)
+   * works correctly.
+   */
+  static attachChild(
+    child: AgentEventBus,
+    parent: AgentEventBus | undefined,
+    subagentId: string,
+  ): void {
+    for (const key of CHILD_BUS_FORWARDED_EVENTS) {
+      child.on(key, (payload: AgentEventMap[typeof key]) => {
+        if (!parent) return;
+        const p = payload as Record<string, unknown>;
+        if (!p.subagentId) {
+          parent.emit(key, { ...p, subagentId } as AgentEventMap[typeof key]);
+        } else {
+          parent.emit(key, payload);
+        }
+      });
+    }
   }
 
   /**

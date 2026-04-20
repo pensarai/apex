@@ -40,6 +40,8 @@ export interface WebCommandOptions {
   headersMode?: "none" | "default" | "custom";
   customHeaders?: Record<string, string>;
   model?: string;
+  prompt?: string;
+  threatModel?: string;
 }
 
 export type Route =
@@ -66,6 +68,7 @@ export type Route =
         target?: string;
         operatorMode?: import("../../core/operator").OperatorMode;
         sandbox?: boolean;
+        taskDriven?: boolean;
       };
       /** Skill to automatically submit on mount */
       initialSkill?: { slug: string; args?: Record<string, string> };

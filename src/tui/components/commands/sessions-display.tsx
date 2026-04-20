@@ -236,7 +236,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
             flexDirection="column"
             gap={2}
             flexGrow={1}
-            maxHeight={10}
+            flexShrink={1}
             overflow="hidden"
             marginTop={1}
           >
@@ -245,7 +245,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
               scrollbarOptions={{ visible: true }}
               style={{
                 rootOptions: {
-                  maxHeight: 10,
                   width: "100%",
                   flexGrow: 1,
                   flexShrink: 1,

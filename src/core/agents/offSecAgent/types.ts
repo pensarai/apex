@@ -19,7 +19,11 @@ import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
 import type { AgentEventBus } from "../../eventBus";
 import { z } from "zod";
-import { CweEntrySchema } from "../../../lib/cwe/types";
+import {
+  CweEntrySchema,
+  ValidatedCweEntrySchema,
+} from "../../../lib/cwe/types";
+import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -45,7 +49,10 @@ export const ApexFindingObject = z.object({
   remediation: z.string(),
   references: z.string().optional(),
   toolCallDescription: z.string().optional(), // Optional for backward compatibility
-  cwes: z.array(CweEntrySchema).optional(),
+  cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
+  rootCauseGroup: z.string().optional(),
+  relatedFindings: z.array(z.string()).optional(),
+  evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
 });
 
 export type Finding = z.infer<typeof ApexFindingObject>;
@@ -178,6 +185,20 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   subagentId?: string;
 
   /**
+   * Override the auto-computed task directory. When set, takes precedence
+   * over the directory derived from `subagentId`. Use this when a plan
+   * agent needs to write tasks to the execution agent's task directory.
+   */
+  tasksDir?: string;
+
+  /**
+   * Override for plan file scoping. When set, write_plan uses this ID
+   * instead of `subagentId` to derive the plan file path, allowing
+   * plan agents to write plans scoped to their corresponding execution agent.
+   */
+  planSubagentId?: string;
+
+  /**
    * Event bus for streaming agent output.
    *
    * When provided, the agent emits all streaming events (text deltas,
@@ -242,6 +263,14 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
+
+  /**
+   * Project-level threat model content (e.g. from `.pensar/threat_model.md`).
+   * Forwarded into the {@link ToolContext} so tools that spawn dedicated
+   * per-endpoint threat-model sub-agents can include this as additional
+   * grounding context.
+   */
+  projectThreatModel?: string;
 };
 
 /**
@@ -309,6 +338,12 @@ export interface SpecializedAgentInput {
 
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
+
+  /**
+   * Project-level threat model content. Forwarded into {@link ToolContext}
+   * so per-endpoint threat-model sub-agents can incorporate it as grounding.
+   */
+  projectThreatModel?: string;
 }
 
 /**
