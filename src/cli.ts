@@ -88,7 +88,7 @@ Usage:
   pensar pentest [options]            Run a full pentest orchestration
   pensar targeted-pentest [options]   Run a targeted pentest on a single target
   pensar threat-model [options]       Generate application-centric threat model
-  pensar auth                         Connect to Pensar Console
+  pensar login                        Connect to Pensar Console
   pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)
   pensar projects                     List workspace projects
   pensar pentests                     List and manage pentests
@@ -349,7 +349,7 @@ if (command === "version" || command === "--version" || command === "-v") {
   await runPentest();
 } else if (command === "targeted-pentest") {
   await runTargetedPentest();
-} else if (command === "auth") {
+} else if (command === "login" || command === "auth") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/auth");
 } else if (command === "uninstall") {
