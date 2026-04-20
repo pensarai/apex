@@ -9,7 +9,6 @@ import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent/prompt";
 const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/models",
   "/login",
-  "/auth",
   "/themes",
   "/new",
   "/operator",

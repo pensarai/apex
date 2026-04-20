@@ -263,14 +263,15 @@ function AppContent({
     // Check if auth token needs refresh
     const checkAuthToken = async () => {
       const { isTokenExpired, isConnected } = await import("../core/auth");
-      // Only show toast if access token is expired AND there's no refresh token
-      // to automatically recover the session. If a refresh token exists,
-      // ensureValidToken() will silently restore the session on next API call.
+      // Only show toast if access token is expired AND there's no recovery path.
+      // ensureValidToken() can recover via refresh token OR fall back to pensarAPIKey,
+      // so we only warn when both are unavailable.
       if (
         isConnected(config.data) &&
         config.data.accessToken &&
         isTokenExpired(config.data.accessToken, 60) &&
-        !config.data.refreshToken
+        !config.data.refreshToken &&
+        !config.data.pensarAPIKey
       ) {
         toast(
           "Your Pensar Console session has expired. Run /login to refresh.",
