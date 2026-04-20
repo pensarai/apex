@@ -213,6 +213,7 @@ const CVSS_SCORER_SYSTEM_PROMPT = `You are a CVSS 4.0 scoring specialist. Your t
 ### IDOR / Access Control
 - Typically: AV:N, AC:L, AT:N, PR:L (needs some access), UI:N
 - Impact varies based on what data is accessed
+- If PR=N (no authentication required), this is NOT IDOR. Reclassify as 'missing-authentication'.
 
 ### SSRF
 - Typically: AV:N, AC:L, AT:N, PR varies, UI:N

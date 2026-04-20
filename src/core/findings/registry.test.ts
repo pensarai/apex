@@ -3,6 +3,7 @@ import type { Finding } from "../agents/offSecAgent/types";
 import { generateObjectResponse } from "../ai";
 import {
   extractVulnClass,
+  classifyFromContent,
   extractTitleStem,
   normalizeEndpoint,
   generateFingerprint,
@@ -189,6 +190,30 @@ describe("extractVulnClass", () => {
     );
   });
 
+  it("classifies missing-authentication patterns", () => {
+    expect(extractVulnClass("Missing Authentication on /api/admin")).toBe(
+      "missing-authentication",
+    );
+    expect(extractVulnClass("No Authentication Required for API")).toBe(
+      "missing-authentication",
+    );
+    expect(extractVulnClass("Unauthenticated Access to Admin Dashboard")).toBe(
+      "missing-authentication",
+    );
+  });
+
+  it("does not misclassify titles where 'no' is a substring before 'auth'", () => {
+    expect(extractVulnClass("Known Auth Vulnerability")).toBe(
+      "known-auth-vulnerability",
+    );
+    expect(extractVulnClass("Minor Auth Misconfiguration")).toBe(
+      "minor-auth-misconfiguration",
+    );
+    expect(extractVulnClass("Canonical Auth Token Leak")).toBe(
+      "canonical-auth-token-leak",
+    );
+  });
+
   it("classifies SSRF", () => {
     expect(extractVulnClass("Server-Side Request Forgery")).toBe("ssrf");
     expect(extractVulnClass("SSRF via image upload URL")).toBe("ssrf");
@@ -260,6 +285,59 @@ describe("extractVulnClass", () => {
   it("is case insensitive", () => {
     expect(extractVulnClass("SQL INJECTION IN /API")).toBe("sql-injection");
     expect(extractVulnClass("sql injection in /api")).toBe("sql-injection");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// classifyFromContent
+// ---------------------------------------------------------------------------
+
+describe("classifyFromContent", () => {
+  it("reclassifies idor to missing-authentication when description indicates no auth", () => {
+    const finding = makeFinding({
+      title: "IDOR on User Profile Endpoint",
+      description:
+        "The endpoint allows unauthenticated access to user profiles by iterating IDs.",
+      evidence: "curl https://target.com/api/users/1 returns user data.",
+    });
+    expect(classifyFromContent(finding)).toBe("missing-authentication");
+  });
+
+  it("reclassifies idor to missing-authentication when evidence contains PR:N", () => {
+    const finding = makeFinding({
+      title: "IDOR on User Profile Endpoint",
+      description: "User profiles can be accessed by changing the ID.",
+      evidence: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N — no auth required.",
+    });
+    expect(classifyFromContent(finding)).toBe("missing-authentication");
+  });
+
+  it("reclassifies idor to missing-authentication when evidence contains PR=N", () => {
+    const finding = makeFinding({
+      title: "Insecure Direct Object Reference in orders",
+      description: "Orders are accessible without authentication.",
+      evidence: "Scored with PR=N since no credentials are needed.",
+    });
+    expect(classifyFromContent(finding)).toBe("missing-authentication");
+  });
+
+  it("keeps idor when description does not indicate missing auth", () => {
+    const finding = makeFinding({
+      title: "IDOR on User Profile Endpoint",
+      description:
+        "Authenticated users can access other users' profiles by changing the ID parameter.",
+      evidence:
+        "Logged in as user A, accessed user B profile by changing id=2.",
+    });
+    expect(classifyFromContent(finding)).toBe("idor");
+  });
+
+  it("does not alter non-idor classifications", () => {
+    const finding = makeFinding({
+      title: "SQL Injection in /api/products",
+      description: "The endpoint has no authentication and is SQL injectable.",
+    });
+    expect(classifyFromContent(finding)).toBe("sql-injection");
   });
 });
 

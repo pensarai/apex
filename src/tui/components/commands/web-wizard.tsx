@@ -20,6 +20,7 @@ import {
 } from "../../utils/command-flags";
 import { scrollToChild } from "../../utils/scroll";
 import { ModelPickerDialog } from "../model-picker";
+import { getPasteText } from "../../utils/paste";
 
 // Wizard state interface
 interface WizardState {
@@ -594,7 +595,7 @@ export default function WebWizard({
                 setState((prev) => ({ ...prev, target: v }));
               }}
               onPaste={(event) => {
-                const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                const cleaned = getPasteText(event).replace(/\r?\n/g, " ");
                 setTargetError(null);
                 setState((prev) => ({
                   ...prev,
@@ -662,7 +663,7 @@ export default function WebWizard({
                   value={state.prompt}
                   onInput={(v) => setState((prev) => ({ ...prev, prompt: v }))}
                   onPaste={(event) => {
-                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    const cleaned = getPasteText(event).replace(/\r?\n/g, " ");
                     setState((prev) => ({
                       ...prev,
                       prompt: prev.prompt + cleaned,
@@ -685,7 +686,7 @@ export default function WebWizard({
                   }}
                   onPaste={(event) => {
                     setThreatModelPreWrapped(false);
-                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    const cleaned = getPasteText(event).replace(/\r?\n/g, " ");
                     setState((prev) => ({
                       ...prev,
                       threatModel: prev.threatModel + cleaned,
@@ -710,7 +711,7 @@ export default function WebWizard({
                     }))
                   }
                   onPaste={(event) => {
-                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    const cleaned = getPasteText(event).replace(/\r?\n/g, " ");
                     setState((prev) => ({
                       ...prev,
                       auth: {
@@ -734,7 +735,7 @@ export default function WebWizard({
                     }))
                   }
                   onPaste={(event) => {
-                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    const cleaned = getPasteText(event).replace(/\r?\n/g, " ");
                     setState((prev) => ({
                       ...prev,
                       auth: {
@@ -758,7 +759,7 @@ export default function WebWizard({
                     }))
                   }
                   onPaste={(event) => {
-                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    const cleaned = getPasteText(event).replace(/\r?\n/g, " ");
                     setState((prev) => ({
                       ...prev,
                       auth: {
@@ -782,7 +783,7 @@ export default function WebWizard({
                     }))
                   }
                   onPaste={(event) => {
-                    const cleaned = String(event.text).replace(/\r?\n/g, " ");
+                    const cleaned = getPasteText(event).replace(/\r?\n/g, " ");
                     setState((prev) => ({
                       ...prev,
                       auth: {

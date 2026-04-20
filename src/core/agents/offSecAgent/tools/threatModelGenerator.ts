@@ -25,9 +25,7 @@ import { AgentEventBus } from "../../../eventBus";
 const PentestObjectiveSchema = z.object({
   title: z
     .string()
-    .describe(
-      "Short human-readable name. E.g. 'IDOR via orderId path param'.",
-    ),
+    .describe("Short human-readable name. E.g. 'IDOR via orderId path param'."),
   hypothesis: z
     .string()
     .describe(

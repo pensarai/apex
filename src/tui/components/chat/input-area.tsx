@@ -16,6 +16,7 @@ import type { PendingApproval } from "../../../core/operator";
 import { type OperatorMode, OPERATOR_MODES } from "../../../core/operator";
 import { useAgent } from "../../context/agent";
 import { useDimensions } from "../../context/dimensions";
+import { getPasteText } from "../../utils/paste";
 
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   anthropic: "Anthropic",
@@ -464,7 +465,7 @@ function ApprovalInputArea({
           value={redirectInput}
           onInput={setRedirectInput}
           onPaste={(event) => {
-            const cleaned = String(event.text).replace(/\r?\n/g, " ");
+            const cleaned = getPasteText(event).replace(/\r?\n/g, " ");
             setRedirectInput(cleaned);
           }}
           focused={focusedElement === 2}
