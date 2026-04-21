@@ -31,15 +31,7 @@ export function isAnthropicProvider(model: AIModel): boolean {
   );
 }
 
-/**
- * Bun's fetch has a 300-second default timeout that can't be disabled via
- * AbortSignal. Providers streaming long model responses need a wider ceiling;
- * this helper composes a 15-minute timeout with any caller-provided signal.
- * 15 minutes is tight enough to signal infrastructure failure (Lambda Function
- * URL's hard cap is also 15m) while comfortably covering any single streaming
- * response. The 90s SSE idle timeout is the primary guard against stalls;
- * this outer fetch timeout is a last-resort backstop.
- */
+// Last-resort backstop above Bun's 300s fetch default; SSE idle timeout is the primary stall guard.
 const STREAMING_FETCH_TIMEOUT_MS = 15 * 60 * 1000;
 
 export function buildStreamingFetchSignal(
