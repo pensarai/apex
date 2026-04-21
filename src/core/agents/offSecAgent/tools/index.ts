@@ -21,12 +21,12 @@ export {
 export { createBrowserToolset, BROWSER_TOOL_NAMES } from "./browserTools";
 export type { BrowserToolName } from "./browserTools";
 
-// Sandbox Playwright helpers (check / install Playwright in a sandbox)
+// Sandbox Playwright helpers (check / install Playwright in a sandbox —
+// the in-sandbox daemon depends on these to `require('playwright')`).
 export {
   checkSandboxPlaywright,
   installSandboxPlaywright,
   ensureSandboxPlaywright,
-  ensureSandboxBrowser,
 } from "./sandboxPlaywright";
 
 // Core pentest tools
@@ -171,7 +171,11 @@ export {
   httpBurst,
 };
 export { createSafetyCapState, hostnameFor } from "./_safetyCaps";
-export type { SafetyCapState, SafetyCapsConfig, SafetyCapViolation } from "./_safetyCaps";
+export type {
+  SafetyCapState,
+  SafetyCapsConfig,
+  SafetyCapViolation,
+} from "./_safetyCaps";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -284,6 +288,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "browser_click",
   "browser_fill",
   "browser_evaluate",
+  "browser_press_key",
   "browser_console",
   "browser_get_cookies",
   // Core pentest
@@ -369,6 +374,7 @@ export const TEST_CASE_TOOL_NAMES: ToolName[] = [
   "browser_click",
   "browser_fill",
   "browser_evaluate",
+  "browser_press_key",
   "browser_console",
   "browser_get_cookies",
   // Email — for probing scenarios that touch email (inbox enumeration,
@@ -409,6 +415,7 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "browser_click",
   "browser_fill",
   "browser_evaluate",
+  "browser_press_key",
   "browser_console",
   "browser_get_cookies",
   // Core pentest (read-only)

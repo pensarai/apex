@@ -20,8 +20,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { join } from "path";
-import { createBrowserTools } from "./playwrightMcp";
-import { createSandboxBrowserTools } from "./sandboxPlaywright";
+import { createBrowserTools, getOrCreateBrowserSession } from "./playwrightMcp";
+import { createDaemonBrowserTools } from "./sandboxPlaywrightDaemonTools";
 import type { ToolContext } from "./types";
 
 /**
@@ -34,6 +34,7 @@ export const BROWSER_TOOL_NAMES = [
   "browser_click",
   "browser_fill",
   "browser_evaluate",
+  "browser_press_key",
   "browser_console",
   "browser_get_cookies",
 ] as const;
@@ -54,16 +55,36 @@ export type BrowserToolName = (typeof BROWSER_TOOL_NAMES)[number];
  * credential-aware wrapper that resolves secrets from IDs at execution time.
  */
 export function createBrowserToolset(ctx: ToolContext) {
-  // Sandbox mode: use direct Playwright execution inside the sandbox
-  const tools = ctx.sandbox
-    ? createSandboxBrowserTools(ctx)
-    : createBrowserTools(
-        ctx.target ?? "",
-        join(ctx.session.rootPath, "evidence"),
-        "operator",
-        undefined,
-        ctx.abortSignal,
-      );
+  // Sandbox mode: one long-lived Chromium per workflow via the
+  // in-sandbox daemon (sandbox-pw-daemon/daemon.cjs), talked to over
+  // HTTP on 127.0.0.1 by sandboxPlaywrightClient.ts. All 8 browser_*
+  // tool contracts are preserved — this is a pure substrate swap from
+  // the agent's perspective. See ~/.claude/plans/feature-request-add-
+  // test-merry-flute.md for rationale.
+  //
+  // Local MCP mode (no sandbox) keeps the long-lived @playwright/mcp
+  // subprocess pattern — a different code path, untouched here.
+  if (ctx.sandbox) {
+    return createDaemonBrowserTools(ctx);
+  }
+
+  // Local MCP mode: reuse the workflow-scoped PlaywrightMcpSession if one
+  // is already attached to ctx.session (e.g. a prior AuthenticationAgent
+  // phase), otherwise spin up + attach a fresh one. The workflow owns
+  // the disconnect in its finally block — the factory skips its own
+  // abort→disconnect binding when a shared session is supplied.
+  const sharedBrowserSession = getOrCreateBrowserSession(ctx.session);
+  const tools = createBrowserTools(
+    ctx.target ?? "",
+    join(ctx.session.rootPath, "evidence"),
+    "operator",
+    undefined,
+    ctx.abortSignal,
+    undefined,
+    undefined,
+    undefined,
+    sharedBrowserSession,
+  );
 
   if (!ctx.credentialManager) {
     return tools;

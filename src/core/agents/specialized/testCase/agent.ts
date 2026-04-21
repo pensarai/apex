@@ -92,13 +92,32 @@ export class TestCaseAgent extends OffensiveSecurityAgent<TestCaseResponse> {
 
     const activeTools = [...TEST_CASE_TOOL_NAMES, "response"];
 
+    // Ground truth for "main agent starts already signed in" is the
+    // workflow's `session.authHandoffReady` flag. It's set to `true` in
+    // two cases:
+    //   - Local MCP mode: `session.browserSession` is shared between
+    //     the auth agent and the main agent — same Chromium process.
+    //   - Sandbox mode: the workflow captured structured cookies from
+    //     the host auth browser and pushed them into the sandbox at
+    //     /tmp/apex-cookie-seed.json, which the sandbox Playwright
+    //     script calls `context.addCookies` on during next launch.
+    // In both cases the main agent's first browser_navigate lands on
+    // an authenticated page. When the flag is `false` (auth phase
+    // didn't run, or sandbox seeding failed) the prompt falls back to
+    // "apply the cookies block on every outbound call" so the agent
+    // uses http_request / curl paths reliably.
+    const hasLiveBrowserHandoff = !!opts.session.authHandoffReady;
+
     super({
       system: buildTestCaseSystemPrompt(maxSteps, {
-        hasCredentials: !!opts.credentialManager && opts.credentialManager.size > 0,
+        hasCredentials:
+          !!opts.credentialManager && opts.credentialManager.size > 0,
+        hasLiveBrowserHandoff,
       }),
       prompt: buildTestCaseUserPrompt({
         ...opts.testCase,
         sessionRootPath: opts.session.rootPath,
+        hasLiveBrowserHandoff,
       }),
       model: opts.model ?? "claude-sonnet-4-5",
       session: opts.session,

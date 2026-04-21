@@ -371,6 +371,53 @@ export type SessionInfo = z.output<typeof SessionInfoObject> & {
   credentialManager?: CredentialManager;
   tokensIn?: number;
   tokensOut?: number;
+  /**
+   * Live Playwright MCP session shared across agents in this workflow.
+   *
+   * Test-case runs orchestrate auth as a pre-run phase: the
+   * AuthenticationAgent spawns + logs into the target, then the main
+   * TestCaseAgent inherits the exact same browser context (cookies +
+   * localStorage + sessionStorage + service workers + in-memory JS
+   * state). Without this field, each agent creates its own MCP child
+   * process and the main agent has to reconstruct auth from a lossy
+   * cookies-only snapshot — see
+   * `packages/apex/src/core/agents/offSecAgent/tools/completeAuthentication.ts`
+   * (which only captures cookies + a subset of headers).
+   *
+   * The workflow owns the lifecycle: it disconnects this session in a
+   * `finally` block after both agents complete. Individual agents MUST
+   * NOT call `.disconnect()` when they received a shared session —
+   * doing so would kill the browser out from under the next agent.
+   *
+   * Typed via a type-only import so session/index.ts doesn't pull in
+   * the Playwright MCP runtime just to compile.
+   */
+  browserSession?:
+    | import("../agents/offSecAgent/tools/playwrightMcp").PlaywrightMcpSession
+    | null;
+  /**
+   * Set by the workflow once auth state has been successfully handed off
+   * to the main agent's browser. Two paths set this to `true`:
+   *
+   *  - Local MCP mode: the auth agent's `PlaywrightMcpSession` is shared
+   *    via `browserSession`, so the main agent's browser *is* the same
+   *    one the auth phase logged in on. Set immediately on auth success.
+   *
+   *  - Sandbox mode: the workflow captures structured cookies from the
+   *    host-side auth browser via `extractStructuredCookies` and pushes
+   *    them into the sandbox at `/tmp/apex-cookie-seed.json`. The next
+   *    `launchPersistentContext` inside the sandbox calls
+   *    `context.addCookies(...)` before the agent's first browser call,
+   *    and from then on the persistent user-data dir carries the session
+   *    automatically. Set after that seeding step succeeds.
+   *
+   * The main `TestCaseAgent` prompt reads this flag to decide whether
+   * to tell the agent "your browser is already signed in" vs. "apply
+   * these cookies manually on every call." When `false`, the agent
+   * falls back to the cookie-header channel in `auth-data.json` for
+   * `http_request` / `execute_command` paths.
+   */
+  authHandoffReady?: boolean;
 };
 
 export interface CreateInputProps {

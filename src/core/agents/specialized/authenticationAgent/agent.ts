@@ -9,6 +9,7 @@ import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { AgentEventBus } from "../../../eventBus";
+import type { UnifiedSandbox } from "../../offSecAgent/tools/sandbox";
 import type { AuthBarrier } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -67,6 +68,17 @@ export interface AuthenticationAgentInput {
 
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
+
+  /**
+   * Optional sandbox for browser + shell execution. When the calling
+   * workflow (e.g. the test-case workflow) runs inside a sandbox, the
+   * AuthenticationAgent MUST execute in the same sandbox — otherwise
+   * its Playwright browser lives in a different process space than the
+   * downstream agent, and there is no way to hand off the authenticated
+   * browser context (which is the whole point of running auth as a
+   * pre-run phase).
+   */
+  sandbox?: UnifiedSandbox;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */
@@ -138,6 +150,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       context,
       environmentVariables,
       enableThinking,
+      sandbox,
     } = opts;
 
     const cm = session.credentialManager;
@@ -155,6 +168,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       subagentId,
       environmentVariables,
       enableThinking,
+      sandbox,
       toolChoice: "auto",
       activeTools: [
         // Auth flow tools
@@ -168,6 +182,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         "browser_click",
         "browser_fill",
         "browser_evaluate",
+        "browser_press_key",
         "browser_console",
         "browser_get_cookies",
         // Email tools (filtered out by base class when no inboxes configured)

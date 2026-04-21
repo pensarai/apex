@@ -124,6 +124,17 @@ const BrowserEvaluateInput = z.object({
     .describe("What you are testing with this script"),
 });
 
+const BrowserPressKeyInput = z.object({
+  key: z
+    .string()
+    .describe(
+      "Key name (Playwright format): 'Enter', 'Escape', 'Tab', 'ArrowDown', 'Backspace', or a modifier combo like 'Control+A', 'Shift+Tab'. Fires a TRUSTED keyboard event — use this instead of dispatching synthetic KeyboardEvent via browser_evaluate (which React rejects as isTrusted:false).",
+    ),
+  toolCallDescription: z
+    .string()
+    .describe("Why you are pressing this key (e.g. 'submit form via Enter')"),
+});
+
 const BrowserConsoleInput = z.object({
   toolCallDescription: z
     .string()
@@ -251,6 +262,144 @@ export function setViewportSize(viewportSize: string | undefined): void {
 }
 
 /**
+ * Shape of a single Playwright cookie as exposed by
+ * `context.cookies()`. Kept loose (`Record<string, unknown>`) on the
+ * fields Playwright can grow because `context.addCookies` accepts
+ * them unchanged — we don't want to silently drop `sameSite`,
+ * `expires`, `partitionKey`, or any future field.
+ */
+export interface PlaywrightCookie {
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+  expires?: number;
+  httpOnly?: boolean;
+  secure?: boolean;
+  sameSite?: "Strict" | "Lax" | "None";
+  [extra: string]: unknown;
+}
+
+/**
+ * Pull the raw cookie array out of a live `PlaywrightMcpSession` by
+ * running `page.context().cookies()` via the MCP `browser_run_code`
+ * tool. This is the host-side equivalent of the `browser_get_cookies`
+ * agent tool — used by workflows that need to capture post-auth
+ * state without going through the LLM (e.g. to seed a downstream
+ * sandbox Playwright context with `addCookies()` so httpOnly cookies
+ * can be restored, which JS-level `document.cookie` can't do).
+ *
+ * The MCP server wraps `browser_run_code` output in a markdown-ish
+ * envelope ("### Result\n...\n### Ran Playwright code\n..."); this
+ * helper handles both envelope-wrapped and raw array returns.
+ *
+ * Returns `[]` on any failure — this is a best-effort capture; the
+ * caller falls back to the cookies-as-string path in auth-data.json
+ * for tools that can't use structured cookies (http_request, curl).
+ */
+export async function extractStructuredCookies(
+  session: PlaywrightMcpSession,
+  abortSignal?: AbortSignal,
+): Promise<PlaywrightCookie[]> {
+  try {
+    const code = `async (page) => { const cookies = await page.context().cookies(); return cookies; }`;
+    const result = await session.callTool(
+      "browser_run_code",
+      { code },
+      abortSignal,
+    );
+
+    if (Array.isArray(result)) {
+      return result as PlaywrightCookie[];
+    }
+
+    if (typeof result === "string") {
+      const stripped = result
+        .replace(/^###\s*Result\s*\n?/, "")
+        .replace(/\n\n###[\s\S]*$/, "")
+        .trim();
+      try {
+        const parsed = JSON.parse(stripped);
+        if (Array.isArray(parsed)) return parsed as PlaywrightCookie[];
+        if (typeof parsed === "string") {
+          const inner = JSON.parse(parsed);
+          if (Array.isArray(inner)) return inner as PlaywrightCookie[];
+        }
+      } catch {
+        const jsonMatch = stripped.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          try {
+            const inner = JSON.parse(jsonMatch[0]);
+            if (Array.isArray(inner)) return inner as PlaywrightCookie[];
+          } catch {
+            // fall through
+          }
+        }
+      }
+    }
+
+    if (
+      result &&
+      typeof result === "object" &&
+      "cookies" in result &&
+      Array.isArray((result as { cookies: unknown }).cookies)
+    ) {
+      return (result as { cookies: PlaywrightCookie[] }).cookies;
+    }
+  } catch {
+    // Host-side best-effort — swallow errors, workflow continues.
+  }
+  return [];
+}
+
+/**
+ * Get or create a {@link PlaywrightMcpSession} attached to a given
+ * workflow session. If `session.browserSession` is already set, it's
+ * returned as-is — the underlying MCP process stays alive and its
+ * browser context (cookies + localStorage + sessionStorage + service
+ * workers) is preserved. Otherwise, a new session is constructed with
+ * the module-level defaults and stashed on `session.browserSession`
+ * so subsequent agents in the same workflow inherit it.
+ *
+ * This is the seam that makes test-case auth handoff work: the
+ * pre-run AuthenticationAgent spawns the first browser here; the
+ * main TestCaseAgent finds the same handle on `session.browserSession`
+ * and re-uses the logged-in context instead of starting fresh.
+ *
+ * The workflow MUST call `.disconnect()` on the returned session in
+ * a `finally` block — this helper does not own the lifecycle.
+ */
+export function getOrCreateBrowserSession(
+  session: {
+    browserSession?: PlaywrightMcpSession | null;
+  } & Record<string, unknown>,
+  opts?: {
+    headless?: boolean;
+    userAgent?: string | null;
+    viewportSize?: string | null;
+  },
+): PlaywrightMcpSession {
+  if (session.browserSession) {
+    return session.browserSession;
+  }
+  const resolvedUserAgent =
+    opts?.userAgent === null
+      ? undefined
+      : (opts?.userAgent ?? defaultUserAgent);
+  const resolvedViewportSize =
+    opts?.viewportSize === null
+      ? undefined
+      : (opts?.viewportSize ?? defaultViewportSize);
+  const created = new PlaywrightMcpSession(
+    opts?.headless ?? defaultHeadless,
+    resolvedUserAgent,
+    resolvedViewportSize,
+  );
+  session.browserSession = created;
+  return created;
+}
+
+/**
  * Isolated MCP browser session.
  *
  * Each instance owns its own Playwright MCP child-process and browser.
@@ -335,7 +484,24 @@ export class PlaywrightMcpSession {
         const mcpPkgJsonPath = require_.resolve("@playwright/mcp/package.json");
         const cliPath = join(dirname(mcpPkgJsonPath), "cli.js");
 
-        const args = [cliPath, "--isolated"];
+        // Default to Playwright's bundled Chromium. Without this, @playwright/mcp
+        // falls back to channel "chrome" which resolves to the user's system
+        // Google Chrome (/Applications/Google Chrome.app on macOS). That path
+        // fails ungracefully when system Chrome is already running with its own
+        // profile and produces a cryptic "Invalid URL: undefined" from deep in
+        // browserType.launch. The Daytona sandbox installs bundled Chromium
+        // via installPlaywright: true, so this default works everywhere.
+        //
+        // Escape hatches:
+        //   APEX_BROWSER="chrome" | "msedge" | ...   — use a specific channel
+        //   APEX_BROWSER_EXECUTABLE_PATH=/path/...   — use a specific binary
+        const browserChannel = process.env.APEX_BROWSER ?? "chromium";
+        const browserExecutablePath = process.env.APEX_BROWSER_EXECUTABLE_PATH;
+
+        const args = [cliPath, "--isolated", "--browser", browserChannel];
+        if (browserExecutablePath) {
+          args.push("--executable-path", browserExecutablePath);
+        }
         if (this.headless) {
           args.push("--headless");
         }
@@ -752,19 +918,35 @@ export function createBrowserTools(
   headless?: boolean,
   userAgent?: string | null,
   viewportSize?: string | null,
+  /**
+   * Optional PlaywrightMcpSession to reuse instead of spawning a fresh
+   * MCP child process + browser. When supplied, the caller owns the
+   * session's lifecycle — abort-driven disconnect is skipped so the
+   * session keeps living for subsequent agents (workflow-level
+   * `finally` handles cleanup). When omitted, behaviour is unchanged
+   * from v4.7-: the factory owns the session and disconnects on abort.
+   */
+  sharedSession?: PlaywrightMcpSession | null,
 ) {
   const resolvedUserAgent =
     userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
   const resolvedViewportSize =
     viewportSize === null ? undefined : (viewportSize ?? defaultViewportSize);
 
-  const session = new PlaywrightMcpSession(
-    headless ?? defaultHeadless,
-    resolvedUserAgent,
-    resolvedViewportSize,
-  );
+  const session =
+    sharedSession ??
+    new PlaywrightMcpSession(
+      headless ?? defaultHeadless,
+      resolvedUserAgent,
+      resolvedViewportSize,
+    );
 
-  if (abortSignal) {
+  // Only bind abort→disconnect when we OWN the session. Shared sessions
+  // are used across multiple agents in the same workflow (e.g. auth agent
+  // → main test-case agent). The workflow disconnects them in its finally
+  // block; if we disconnected here, one agent's abort would kill the
+  // next agent's authenticated browser context.
+  if (abortSignal && !sharedSession) {
     const onAbort = () => session.disconnect().catch(() => {});
     abortSignal.addEventListener("abort", onAbort, { once: true });
   }
@@ -1000,6 +1182,36 @@ Example workflow:
     },
   });
 
+  // Trusted keyboard events. Uses @playwright/mcp's native
+  // browser_press_key which maps to page.keyboard.press(key) — fires a
+  // real OS-level keypress that modern form handlers accept, unlike
+  // synthetic dispatchEvent(new KeyboardEvent(...)) which is
+  // isTrusted:false and rejected by React/Vue/Next.
+  const browser_press_key = tool({
+    description: `Press a keyboard key on the currently focused element.
+
+Use this when a form, button, or input responds to keyboard shortcuts but not to a plain click:
+- Submit-on-Enter: many SPAs wire submit to the form's onSubmit handler, which fires on trusted Enter keypresses but NOT on synthetic KeyboardEvents dispatched via JS.
+- Escape to close modals, Tab to navigate focus, arrow keys for option lists, etc.
+
+Playwright fires a trusted OS-level keyboard event that modern frameworks accept. Do NOT use browser_evaluate with "element.dispatchEvent(new KeyboardEvent(...))"; those events are isTrusted:false and will be ignored.
+
+Typical flow: browser_fill a value into a textarea → browser_press_key with key: "Enter" → the form submits.`,
+    inputSchema: BrowserPressKeyInput,
+    execute: async ({
+      key,
+    }): Promise<{ success: boolean; key?: string; error?: string }> => {
+      try {
+        await session.callTool("browser_press_key", { key }, abortSignal);
+        return { success: true, key };
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger?.error(`browser_press_key failed: ${message}`);
+        return { success: false, key, error: message };
+      }
+    },
+  });
+
   const browser_console = tool({
     description: descriptions.console,
     inputSchema: BrowserConsoleInput,
@@ -1143,5 +1355,6 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
     browser_evaluate,
     browser_console,
     browser_get_cookies,
+    browser_press_key,
   };
 }
