@@ -256,10 +256,11 @@ CRITICAL RULES — READ BEFORE CALLING:
         }
 
         let evidenceForPrompt = input.evidence;
+        let evidenceFilePath: string | undefined;
 
         if (input.evidence.length > EVIDENCE_FILE_THRESHOLD) {
           const evidenceFilename = `${timestamp.split("T")[0]}-${slugify(input.title, 40)}-evidence.txt`;
-          const evidenceFilePath = join(outputDir, evidenceFilename);
+          evidenceFilePath = join(outputDir, evidenceFilename);
           writeFileSync(evidenceFilePath, input.evidence);
           evidenceForPrompt =
             input.evidence.substring(0, EVIDENCE_FILE_THRESHOLD) +
