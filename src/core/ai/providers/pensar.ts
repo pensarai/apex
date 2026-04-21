@@ -350,9 +350,11 @@ export function createPensarModel(
 
           let eventCount = 0;
           let lastEventTime = Date.now();
-          const idleTimeoutMs = Number(
-            process.env.PENSAR_SSE_IDLE_TIMEOUT_MS ?? 90_000,
-          );
+          const rawIdleTimeout = Number(process.env.PENSAR_SSE_IDLE_TIMEOUT_MS);
+          const idleTimeoutMs =
+            Number.isFinite(rawIdleTimeout) && rawIdleTimeout > 0
+              ? rawIdleTimeout
+              : 90_000;
           try {
             for await (const sse of parseSSE(sseStream, { idleTimeoutMs })) {
               const now = Date.now();
