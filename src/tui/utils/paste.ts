@@ -1,6 +1,8 @@
 import type { PasteEvent } from "@opentui/core";
 
-/** Extract the pasted text from OpenTUI's `PasteEvent`. */
+const textDecoder = new TextDecoder();
+
+/** Decode pasted bytes from OpenTUI's `PasteEvent` to a JavaScript string. */
 export function getPasteText(event: PasteEvent): string {
-  return event.text;
+  return textDecoder.decode(event.bytes);
 }
