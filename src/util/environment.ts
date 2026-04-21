@@ -10,19 +10,6 @@ export interface EnvironmentContext {
 }
 
 /**
- * Create a default environment context for cases where no target information is available.
- * Used when CVSS scoring is invoked without session context.
- */
-export function createDefaultEnvironmentContext(): EnvironmentContext {
-  return {
-    signals: [],
-    description:
-      "Environment type unknown (no target information provided). Scoring assumes production-level impact.",
-    isProduction: true,
-  };
-}
-
-/**
  * Patterns that indicate non-production environments.
  * Each entry: [regex applied to the full URL or hostname, signal label].
  */
@@ -31,7 +18,7 @@ const NON_PRODUCTION_PATTERNS: [RegExp, string][] = [
   [/\bsandbox\b/i, "sandbox-keyword"],
   [/\bstaging\b/i, "staging-keyword"],
   [/\bdemo\b/i, "demo-keyword"],
-  [/\bdev\b/i, "dev-keyword"],
+  [/(?<!\.)\bdev\b/i, "dev-keyword"], // Negative lookbehind to exclude ".dev" TLD
   [/\btest\b/i, "test-keyword"],
   [/\bqa\b/i, "qa-keyword"],
   [/\buat\b/i, "uat-keyword"],
@@ -49,9 +36,9 @@ const NON_PRODUCTION_PATTERNS: [RegExp, string][] = [
   [/:8443\b/, "non-standard-port-8443"],
   [/:5000\b/, "non-standard-port-5000"],
   // Platform-specific patterns
-  [/\.herokuapp\.com$/i, "heroku-app"],
-  [/\.vercel\.app$/i, "vercel-preview"],
-  [/\.netlify\.app$/i, "netlify-preview"],
+  [/\.herokuapp\.com\b/i, "heroku-app"],
+  [/\.vercel\.app\b/i, "vercel-preview"],
+  [/\.netlify\.app\b/i, "netlify-preview"],
   [/\.ngrok\b/i, "ngrok-tunnel"],
   [/\.local\b/i, "local-domain"],
   // Protocol

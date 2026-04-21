@@ -20,7 +20,6 @@ import { validateCweEntries } from "../../../../lib/cwe/validate";
 import type { EnvironmentContext } from "../../../../util/environment";
 
 export type { EnvironmentContext } from "../../../../util/environment";
-export { createDefaultEnvironmentContext } from "../../../../util/environment";
 
 // =============================================================================
 // Types
@@ -42,7 +41,6 @@ export interface CVSSScorerInput {
   /**
    * Environment context for scoring adjustments.
    * REQUIRED: All callers must provide this to ensure consistent CVSS scoring.
-   * Use createDefaultEnvironmentContext() for callers without environment info.
    */
   environmentContext: EnvironmentContext;
 }
