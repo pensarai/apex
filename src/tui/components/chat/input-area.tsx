@@ -26,6 +26,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   bedrock: "Bedrock",
   pensar: "Pensar",
   inception: "Inception",
+  baseten: "Baseten",
   local: "Local",
 };
 export const providerDisplayName = (p: string) =>

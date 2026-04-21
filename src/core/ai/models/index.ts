@@ -11,6 +11,7 @@ import { BEDROCK_MODELS } from "./bedrock";
 import { OPENROUTER_MODELS } from "./openrouter";
 import { PENSAR_MODELS } from "./pensar";
 import { INCEPTION_MODELS } from "./inception";
+import { BASETEN_MODELS } from "./baseten";
 
 export const AVAILABLE_MODELS: ModelInfo[] = [
   ...ANTHROPIC_MODELS,
@@ -20,6 +21,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   ...OPENROUTER_MODELS,
   ...PENSAR_MODELS,
   ...INCEPTION_MODELS,
+  ...BASETEN_MODELS,
 ];
 
 export function getModelInfo(model: AIModel): ModelInfo {

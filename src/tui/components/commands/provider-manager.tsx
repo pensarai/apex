@@ -63,6 +63,9 @@ export default function ProviderManager({
       case "openrouter":
         configUpdate.openRouterAPIKey = apiKey;
         break;
+      case "baseten":
+        configUpdate.basetenAPIKey = apiKey;
+        break;
       case "bedrock":
         configUpdate.bedrockAPIKey = apiKey;
         break;

@@ -655,6 +655,7 @@ function main() {
   console.log(`✓ bedrock.ts — ${bedrockModels.length} models`);
 
   console.log("\nOpenRouter models are curated manually in openrouter.ts.");
+  console.log("Baseten models are curated manually in baseten.ts.");
   console.log("Local models are user-defined at runtime.\n");
 }
 

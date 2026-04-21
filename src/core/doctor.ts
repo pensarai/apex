@@ -42,6 +42,7 @@ function checkApiKeys(): { provider: string; configured: boolean }[] {
     { provider: "OpenAI", env: "OPENAI_API_KEY" },
     { provider: "Google", env: "GOOGLE_GENERATIVE_AI_API_KEY" },
     { provider: "OpenRouter", env: "OPENROUTER_API_KEY" },
+    { provider: "Baseten", env: "BASETEN_API_KEY" },
     { provider: "AWS Bedrock", env: "BEDROCK_API_KEY" },
     { provider: "AWS IAM", env: "AWS_ACCESS_KEY_ID" },
     { provider: "vLLM (local)", env: "LOCAL_MODEL_URL" },

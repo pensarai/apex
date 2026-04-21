@@ -5,6 +5,7 @@ export type ProviderType =
   | "bedrock"
   | "openrouter"
   | "inception"
+  | "baseten"
   | "pensar"
   | "local";
 
@@ -50,6 +51,12 @@ export const AVAILABLE_PROVIDERS: Provider[] = [
     id: "inception",
     name: "Inception",
     description: "Mercury and other Inception models",
+    requiresAPIKey: true,
+  },
+  {
+    id: "baseten",
+    name: "Baseten",
+    description: "Kimi and other open-weights models via Baseten inference",
     requiresAPIKey: true,
   },
   {

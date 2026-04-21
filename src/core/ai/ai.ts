@@ -48,6 +48,7 @@ export type AIModelProvider =
   | "bedrock"
   | "pensar"
   | "inception"
+  | "baseten"
   | "local";
 
 function checkIfRateLimitError(error: unknown): boolean {

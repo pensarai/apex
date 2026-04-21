@@ -37,6 +37,7 @@ export type AIAuthConfig = {
   googleAPIKey?: string;
   openRouterAPIKey?: string;
   inceptionAPIKey?: string;
+  basetenAPIKey?: string;
   pensarAPIKey?: string;
   // WorkOS CLI auth
   accessToken?: string;
@@ -69,6 +70,7 @@ export function buildAuthConfig(cfg: {
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
   inceptionAPIKey?: string | null;
+  basetenAPIKey?: string | null;
   pensarAPIKey?: string | null;
   accessToken?: string | null;
   refreshToken?: string | null;
@@ -84,6 +86,7 @@ export function buildAuthConfig(cfg: {
     googleAPIKey: cfg.googleAPIKey ?? undefined,
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
     inceptionAPIKey: cfg.inceptionAPIKey ?? undefined,
+    basetenAPIKey: cfg.basetenAPIKey ?? undefined,
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
     accessToken: cfg.accessToken ?? undefined,
     refreshToken: cfg.refreshToken ?? undefined,
@@ -119,6 +122,8 @@ export function getProviderModel(
   const bedrockRegion = authConfig?.bedrock?.region || process.env.AWS_REGION;
   const inceptionApiKey =
     authConfig?.inceptionAPIKey || process.env.INCEPTION_API_KEY;
+  const basetenApiKey =
+    authConfig?.basetenAPIKey || process.env.BASETEN_API_KEY;
   const localBaseURL =
     authConfig?.local?.baseURL ||
     process.env.LOCAL_MODEL_URL ||
@@ -150,6 +155,16 @@ export function getProviderModel(
         baseURL: "https://api.inceptionlabs.ai/v1",
       });
       providerModel = inception("mercury-2");
+      break;
+    }
+
+    case "baseten": {
+      const baseten = createOpenAICompatible({
+        name: "baseten",
+        apiKey: basetenApiKey,
+        baseURL: "https://inference.baseten.co/v1",
+      });
+      providerModel = baseten(model);
       break;
     }
 

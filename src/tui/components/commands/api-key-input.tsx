@@ -63,6 +63,8 @@ export default function APIKeyInput({
         return "Get your API key from aistudio.google.com/apikey";
       case "openrouter":
         return "Get your API key from openrouter.ai/keys";
+      case "baseten":
+        return "Get your API key from app.baseten.co/settings/account/api_keys";
       case "bedrock":
         return "Enter your AWS Access Key ID (configure region separately) or AWS Bedrock API Key";
       default:

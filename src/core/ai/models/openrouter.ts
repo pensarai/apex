@@ -2,6 +2,7 @@
 // Add or remove models here as needed.
 
 import type { ModelInfo } from "../ai";
+
 export const OPENROUTER_MODELS: ModelInfo[] = [
   {
     id: "anthropic/claude-haiku-4.5",
@@ -114,6 +115,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
   {
     id: "mistralai/mistral-large-2512",
     name: "Mistral Large 3 2512",
+    provider: "openrouter",
+    contextLength: 262144,
+  },
+  {
+    id: "moonshotai/kimi-k2.6",
+    name: "Kimi K2.6",
     provider: "openrouter",
     contextLength: 262144,
   },
