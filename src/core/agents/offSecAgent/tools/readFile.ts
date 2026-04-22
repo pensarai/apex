@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { readFile as fsReadFile } from "fs/promises";
-import { resolve, isAbsolute } from "path";
+import { readFile as fsReadFile, realpath } from "fs/promises";
+import { resolve, sep } from "path";
 import type { ToolContext } from "./types";
 
 export const readFileInputSchema = z.object({
@@ -47,8 +47,15 @@ the end. If only endLine is given, reads from the beginning to that line.
 Output lines are prefixed with their line number for easy reference.`,
     inputSchema: readFileInputSchema,
     execute: async ({ path, startLine, endLine }): Promise<ReadFileResult> => {
-      const resolved = isAbsolute(path) ? path : resolve(ctx.agentCwd, path);
       try {
+        const allowedRoot = await realpath(ctx.agentCwd);
+        const requestedPath = resolve(allowedRoot, path);
+        const resolved = await realpath(requestedPath);
+
+        if (resolved !== allowedRoot && !resolved.startsWith(`${allowedRoot}${sep}`)) {
+          throw new Error("Access denied: path must be within the workspace");
+        }
+
         const raw = await fsReadFile(resolved, "utf-8");
         const allLines = raw.split("\n");
         const totalLines = allLines.length;
