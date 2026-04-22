@@ -11,9 +11,20 @@ export interface SSEEvent {
   data: string;
 }
 
+export interface ParseSSEOptions {
+  /**
+   * Abort if no bytes arrive from the underlying reader for this many ms.
+   * Prevents indefinite hangs when the upstream gateway stalls mid-stream.
+   * Default: 90_000.
+   */
+  idleTimeoutMs?: number;
+}
+
 export async function* parseSSE(
   stream: ReadableStream<Uint8Array>,
+  options: ParseSSEOptions = {},
 ): AsyncGenerator<SSEEvent> {
+  const idleTimeoutMs = options.idleTimeoutMs ?? 90_000;
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -25,8 +36,27 @@ export async function* parseSSE(
 
   try {
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const idlePromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(
+            new Error(
+              `SSE stream idle for ${idleTimeoutMs}ms (${chunkCount} chunks, ${eventCount} events received so far)`,
+            ),
+          );
+        }, idleTimeoutMs);
+      });
+
+      let result: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        result = await Promise.race([reader.read(), idlePromise]);
+      } catch (err) {
+        await reader.cancel(err).catch(() => {});
+        throw err;
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
+      if (result.done) {
         console.error(
           `[parseSSE] stream done: ${chunkCount} chunks, ${totalBytes} bytes, ${eventCount} events yielded, remaining buffer=${buffer.length} chars`,
         );
@@ -36,6 +66,7 @@ export async function* parseSSE(
         break;
       }
 
+      const value = result.value;
       chunkCount++;
       totalBytes += value.byteLength;
       const decoded = decoder.decode(value, { stream: true });
