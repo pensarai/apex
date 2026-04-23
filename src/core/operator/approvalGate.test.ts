@@ -26,9 +26,8 @@ describe("ApprovalGate — operator decision timeout", () => {
     const pending = gate.check("http_request", "tc_1", { url: "https://t/" });
     // Attach the rejection assertion before advancing timers so the
     // eventual reject() lands on an already-handled promise.
-    const assertion = expect(pending).rejects.toBeInstanceOf(
-      ApprovalTimeoutError,
-    );
+    const assertion =
+      expect(pending).rejects.toBeInstanceOf(ApprovalTimeoutError);
 
     // Operator never responds — advance past the SLA.
     await vi.advanceTimersByTimeAsync(1_000);
