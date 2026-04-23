@@ -96,7 +96,7 @@ import { QueuedMessages } from "./queued-messages";
 import { SubagentStatusBar } from "./subagent-status-bar";
 import SubagentDialog from "./subagent-dialog";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
-import { spawn } from "child_process";
+import { openFileInDefaultApp } from "../../utils/open-file.js";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
 
@@ -1582,25 +1582,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         case "open-session": {
           const rootPath = sessionRef.current?.rootPath;
           if (rootPath) {
-            try {
-              const platform = process.platform;
-              const command =
-                platform === "darwin"
-                  ? "open"
-                  : platform === "win32"
-                    ? "explorer"
-                    : "xdg-open";
-              const child = spawn(command, [rootPath], {
-                detached: true,
-                stdio: "ignore",
-              });
-              child.on("error", () => {
-                addSystemMessage(`Failed to open session at ${rootPath}.`);
-              });
-              child.unref();
-            } catch {
-              addSystemMessage(`Failed to open session at ${rootPath}.`);
-            }
+            openFileInDefaultApp(rootPath);
           } else {
             addSystemMessage("No active session to open.");
           }
