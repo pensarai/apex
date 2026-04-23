@@ -96,6 +96,7 @@ import { QueuedMessages } from "./queued-messages";
 import { SubagentStatusBar } from "./subagent-status-bar";
 import SubagentDialog from "./subagent-dialog";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
+import { openFileInDefaultApp } from "../../utils/open-file.js";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
 
@@ -169,7 +170,14 @@ export default function OperatorDashboard({
         description: s.manifest.description || "Skill",
       };
     });
-    return [...commandOptions, ...skillOptions];
+    const operatorOnlyOptions = [
+      {
+        value: "/open-session",
+        label: "/open-session",
+        description: "Open session folder in Finder",
+      },
+    ];
+    return [...commandOptions, ...operatorOnlyOptions, ...skillOptions];
   }, [allAutocompleteOptions, skillsRegistry, skillsVersion]);
 
   // Session state
@@ -1568,6 +1576,15 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
             handleSubmit(
               `Use the read_skill tool to load the "${action.slug}" skill and follow its instructions.`,
             );
+          }
+          return;
+        }
+        case "open-session": {
+          const rootPath = sessionRef.current?.rootPath;
+          if (rootPath) {
+            openFileInDefaultApp(rootPath);
+          } else {
+            addSystemMessage("No active session to open.");
           }
           return;
         }
