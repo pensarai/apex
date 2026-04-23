@@ -11,7 +11,25 @@ export interface ShellExecuteResult {
 }
 
 interface PendingCommand {
-  stdout: string;
+  /**
+   * Bytes observed on bash's stdout pipe BEFORE the cutover marker. These
+   * come from the background `tail -f` of the per-command tempfile and
+   * are best-effort live UX only — on platforms where `tail`'s pipe
+   * block-buffers (macOS under SIP even with `stdbuf`), this buffer may
+   * be partial or empty. Used for `onData` streaming and as a fallback
+   * if the command is killed before the authoritative phase starts.
+   */
+  streamedStdout: string;
+  /**
+   * Bytes observed AFTER the cutover marker. Emitted by `cat "$OUT"`
+   * through bash's real stdout pipe with no tail/libc intermediary, so
+   * this is the authoritative capture of the user command's stdout.
+   */
+  authoritativeStdout: string;
+  /** True once we've seen the per-command cutover marker on the pipe. */
+  cutoverSeen: boolean;
+  /** The cutover marker string for this command (per-command random). */
+  cutoverMarker: string;
   stderr: string;
   stdoutTruncated: boolean;
   exitMarkerPrefix: string;
@@ -55,12 +73,15 @@ interface PendingCommand {
  */
 /**
  * Cached once: whether `stdbuf` is available. We use it to line-buffer
- * `tail -f` so command output streams to the caller in near-real-time.
- * When it isn't available we skip `tail -f` entirely and `cat` the
- * per-command output tempfile after the command finishes — correct final
- * output, but no real-time streaming. We can't use plain `tail -f` as a
- * fallback: when its stdout is a pipe it block-buffers, so short outputs
- * are lost when we kill the tail before it flushes.
+ * `tail -f` so command output streams to the caller in near-real-time
+ * on platforms where it's effective (Linux glibc).
+ *
+ * Final stdout correctness does NOT depend on `stdbuf` — the wrapper
+ * always emits a post-kill authoritative `cat` of the per-command
+ * output tempfile through bash's real stdout pipe, so even when
+ * `tail -f` block-buffers (macOS under SIP, Alpine, minimal containers)
+ * and its buffer is discarded when we kill it, the caller still gets
+ * the full output. `stdbuf` only affects live streaming UX quality.
  */
 let stdbufAvailable: boolean | null = null;
 function hasStdbuf(): boolean {
@@ -133,7 +154,8 @@ export class PersistentShell {
         this.current = null;
         this.pendingCancel = null;
         cmd.resolve({
-          stdout: cmd.stdout || "(no output)",
+          stdout:
+            cmd.authoritativeStdout || cmd.streamedStdout || "(no output)",
           stderr: cmd.stderr || "",
           exitCode: 1,
         });
@@ -157,22 +179,71 @@ export class PersistentShell {
    * incoming bytes are silently dropped so background-process output does
    * not fill the kernel pipe buffer and does not bleed into the next
    * command's captured output.
+   *
+   * Each wrapped command emits, in order on bash's stdout pipe:
+   *   1. Best-effort live bytes from the background `tail -f` (may be
+   *      empty if the platform's tail block-buffers).
+   *   2. A per-command cutover marker emitted by `printf` after tail is
+   *      killed.
+   *   3. Authoritative bytes from `cat "$OUT"` through bash's own pipe
+   *      (no tail, no libc buffering) — this is the source of truth for
+   *      `result.stdout`.
+   *   4. The exit marker.
+   *
+   * We split the incoming stream at the cutover marker:
+   *   - Pre-cutover → fed to `onData` for live UX, buffered in
+   *     `streamedStdout` as a fallback for kill-before-cutover paths.
+   *   - Post-cutover → accumulated in `authoritativeStdout`; exit-marker
+   *     detection runs on this buffer, so user command output cannot
+   *     accidentally match the exit marker before the authoritative
+   *     phase has been bracketed.
    */
   private onStdoutData(data: Buffer): void {
     const cmd = this.current;
     if (!cmd) return;
 
-    const chunk = data.toString();
-    if (cmd.onData) {
-      const mIdx = chunk.indexOf(cmd.exitMarkerPrefix);
-      const visible = mIdx === -1 ? chunk : chunk.substring(0, mIdx);
-      if (visible.length > 0) cmd.onData(visible);
-    }
-    cmd.stdout += chunk;
+    let chunk = data.toString();
 
-    const markerIdx = cmd.stdout.indexOf(cmd.exitMarkerPrefix);
+    if (!cmd.cutoverSeen) {
+      // Search the accumulated buffer, not just the new chunk, so a
+      // cutover marker that straddles two Buffer reads is still found.
+      const prevLen = cmd.streamedStdout.length;
+      cmd.streamedStdout += chunk;
+      const cutIdx = cmd.streamedStdout.indexOf(cmd.cutoverMarker);
+
+      if (cutIdx === -1) {
+        if (chunk.length > 0 && cmd.onData) cmd.onData(chunk);
+        if (cmd.streamedStdout.length > MAX_BUFFER) {
+          cmd.streamedStdout = cmd.streamedStdout.substring(
+            cmd.streamedStdout.length - MAX_BUFFER,
+          );
+        }
+        return;
+      }
+
+      // Feed only the pre-cutover bytes from THIS chunk to onData so we
+      // don't re-emit bytes that earlier chunks already delivered.
+      const chunkCutOffset = cutIdx - prevLen;
+      if (chunkCutOffset > 0 && cmd.onData) {
+        cmd.onData(chunk.substring(0, chunkCutOffset));
+      }
+
+      const postMarker = cmd.streamedStdout.substring(
+        cutIdx + cmd.cutoverMarker.length,
+      );
+      cmd.cutoverSeen = true;
+      cmd.streamedStdout = "";
+      chunk = postMarker.startsWith("\n")
+        ? postMarker.substring(1)
+        : postMarker;
+      if (chunk.length === 0) return;
+    }
+
+    cmd.authoritativeStdout += chunk;
+
+    const markerIdx = cmd.authoritativeStdout.indexOf(cmd.exitMarkerPrefix);
     if (markerIdx !== -1) {
-      const afterPrefix = cmd.stdout.substring(
+      const afterPrefix = cmd.authoritativeStdout.substring(
         markerIdx + cmd.exitMarkerPrefix.length,
       );
       const nlIdx = afterPrefix.indexOf("\n");
@@ -180,7 +251,7 @@ export class PersistentShell {
         nlIdx >= 0 ? afterPrefix.substring(0, nlIdx) : afterPrefix;
       const naturalExitCode = parseInt(exitStr, 10);
 
-      let commandOutput = cmd.stdout.substring(0, markerIdx);
+      let commandOutput = cmd.authoritativeStdout.substring(0, markerIdx);
       if (cmd.stdoutTruncated) {
         commandOutput = "(stdout truncated)...\n" + commandOutput;
       }
@@ -206,8 +277,10 @@ export class PersistentShell {
       return;
     }
 
-    if (cmd.stdout.length > MAX_BUFFER) {
-      cmd.stdout = cmd.stdout.substring(cmd.stdout.length - MAX_BUFFER);
+    if (cmd.authoritativeStdout.length > MAX_BUFFER) {
+      cmd.authoritativeStdout = cmd.authoritativeStdout.substring(
+        cmd.authoritativeStdout.length - MAX_BUFFER,
+      );
       cmd.stdoutTruncated = true;
     }
   }
@@ -250,6 +323,7 @@ export class PersistentShell {
 
     const marker = `__APEX_${randomBytes(8).toString("hex")}__`;
     const exitMarkerPrefix = `${marker}_EXIT_`;
+    const cutoverMarker = `${marker}_CUTOVER`;
 
     return new Promise<ShellExecuteResult>((resolve) => {
       let resolved = false;
@@ -257,7 +331,10 @@ export class PersistentShell {
       let killEscalationTimer: ReturnType<typeof setTimeout> | undefined;
 
       const pending: PendingCommand = {
-        stdout: "",
+        streamedStdout: "",
+        authoritativeStdout: "",
+        cutoverSeen: false,
+        cutoverMarker,
         stderr: "",
         stdoutTruncated: false,
         exitMarkerPrefix,
@@ -294,7 +371,10 @@ export class PersistentShell {
             setTimeout(() => {
               if (resolved) return;
               pending.resolve({
-                stdout: pending.stdout || "(no output)",
+                stdout:
+                  pending.authoritativeStdout ||
+                  pending.streamedStdout ||
+                  "(no output)",
                 stderr:
                   (pending.stderr || "") + (pending.forcedStderrSuffix ?? ""),
                 exitCode: 130,
@@ -322,7 +402,10 @@ export class PersistentShell {
             setTimeout(() => {
               if (resolved) return;
               pending.resolve({
-                stdout: pending.stdout || "(no output)",
+                stdout:
+                  pending.authoritativeStdout ||
+                  pending.streamedStdout ||
+                  "(no output)",
                 stderr: pending.stderr || "",
                 exitCode: 124,
               });
@@ -337,45 +420,52 @@ export class PersistentShell {
       //   - stdin redirected from `/dev/null` so children that read stdin
       //     cannot hijack our command pipe;
       //   - stdout captured to a per-command tempfile (NOT bash's stdout
-      //     pipe) and streamed back via a background `tail -f`. This
-      //     prevents backgrounded children whose fd 1 was never redirected
-      //     (`nmap -v &`) from bleeding their output into the next
-      //     command's captured stdout, because their inherited fd 1 is
-      //     the tempfile for the command that spawned them, not the
+      //     pipe) and streamed back via a background `tail -f` for live
+      //     UX. This prevents backgrounded children whose fd 1 was never
+      //     redirected (`nmap -v &`) from bleeding their output into the
+      //     next command's captured stdout, because their inherited fd 1
+      //     is the tempfile for the command that spawned them, not the
       //     shell's stdout pipe;
       //   - stderr captured to another tempfile and flushed after, so we
       //     can distinguish stdout from stderr without interleaving;
+      //   - after the user command finishes we kill the tail, then emit
+      //     a per-command cutover marker on bash's real stdout pipe, then
+      //     `cat` the stdout tempfile. The post-cutover `cat` bytes are
+      //     authoritative: they pass through bash's pipe with no tail /
+      //     libc block-buffering intermediary. The Node handler treats
+      //     pre-cutover bytes as live-UX streaming only and post-cutover
+      //     bytes as the authoritative capture returned in the result.
+      //     This is required because `tail`'s stdout is a pipe and
+      //     block-buffered by libc; on platforms where `stdbuf` is a
+      //     no-op (macOS under SIP, Alpine, minimal containers without
+      //     coreutils) the buffered bytes would be discarded when we
+      //     kill tail, silently losing all stdout for small commands;
       //   - the exit marker is echoed on bash's real stdout pipe, so the
       //     parent Node handler always sees it immediately regardless of
-      //     how much command output the tail has left to flush.
-      // When `stdbuf` is available (GNU coreutils), a fast-polling
-      // `stdbuf -oL tail -n +1 -f -s 0.05` is run in the background so
-      // stdout streams to the caller in near-real-time (well under 100 ms
-      // latency per chunk). Without `stdbuf` (e.g. default macOS), `tail`'s
-      // stdout is a pipe and block-buffered, so short outputs never flush
-      // before we kill it — we'd lose them entirely. In that case we skip
-      // streaming and just `cat` the tempfile after the command finishes;
-      // output is correct but no longer real-time.
-      const streaming = hasStdbuf();
+      //     how much command output the cat has left to flush.
+      // When `stdbuf` is available and effective (GNU coreutils on glibc
+      // Linux), a fast-polling `stdbuf -oL tail -n +1 -f -s 0.05` is run
+      // in the background so live streaming latency is well under 100 ms
+      // per chunk. Elsewhere the tail still runs (in case it happens to
+      // flush) but the authoritative cat guarantees correctness either
+      // way.
+      const tailCmd = hasStdbuf()
+        ? `stdbuf -oL tail -n +1 -f -s 0.05 "$__APEX_OUT"`
+        : `tail -n +1 -f -s 0.05 "$__APEX_OUT"`;
       const wrapped = [
         `__APEX_OUT=$(mktemp 2>/dev/null || echo /tmp/.apex_out_$$)`,
         `__APEX_ERR=$(mktemp 2>/dev/null || echo /tmp/.apex_err_$$)`,
-        ...(streaming
-          ? [
-              `stdbuf -oL tail -n +1 -f -s 0.05 "$__APEX_OUT" 2>/dev/null &`,
-              `__APEX_TAIL=$!`,
-            ]
-          : []),
+        `${tailCmd} 2>/dev/null &`,
+        `__APEX_TAIL=$!`,
         `{ ${command}\n} </dev/null >"$__APEX_OUT" 2>"$__APEX_ERR"`,
         `__APEX_EC=$?`,
-        ...(streaming
-          ? [
-              // Let tail drain any remaining bytes before we kill it.
-              `sleep 0.1`,
-              `kill "$__APEX_TAIL" 2>/dev/null`,
-              `wait "$__APEX_TAIL" 2>/dev/null`,
-            ]
-          : [`cat "$__APEX_OUT"`]),
+        `sleep 0.1`,
+        `kill "$__APEX_TAIL" 2>/dev/null`,
+        `wait "$__APEX_TAIL" 2>/dev/null`,
+        // Authoritative cutover: post-marker bytes come through bash's
+        // real stdout pipe via `cat`, bypassing any tail/libc buffering.
+        `printf '%s\\n' "${cutoverMarker}"`,
+        `cat "$__APEX_OUT"`,
         `cat "$__APEX_ERR" >&2`,
         `rm -f "$__APEX_OUT" "$__APEX_ERR"`,
         `echo "${exitMarkerPrefix}$__APEX_EC"`,
@@ -414,7 +504,8 @@ export class PersistentShell {
         // Fallback resolve if bash's wrapper never emits a marker.
         setTimeout(() => {
           cmd.resolve({
-            stdout: cmd.stdout || "(no output)",
+            stdout:
+              cmd.authoritativeStdout || cmd.streamedStdout || "(no output)",
             stderr: (cmd.stderr || "") + (cmd.forcedStderrSuffix ?? ""),
             exitCode: 130,
           });
@@ -422,7 +513,7 @@ export class PersistentShell {
       }, 500);
     } else {
       cmd.resolve({
-        stdout: cmd.stdout || "(no output)",
+        stdout: cmd.authoritativeStdout || cmd.streamedStdout || "(no output)",
         stderr: (cmd.stderr || "") + (cmd.forcedStderrSuffix ?? ""),
         exitCode: 130,
       });

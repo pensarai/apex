@@ -52,8 +52,10 @@ describe("PersistentShell — long-running stability", () => {
    * plain `tail -f` for streaming. Because `tail`'s stdout was a pipe it
    * block-buffered, so short outputs were killed with tail before ever
    * flushing — every `ls -la`-style command came back with empty stdout
-   * and the agent saw `(no output)`. We now skip `tail -f` in that case
-   * and `cat` the tempfile at the end, so output is always captured.
+   * and the agent saw `(no output)`. The current wrapper always runs an
+   * authoritative post-kill `cat` of the per-command tempfile through
+   * bash's real stdout pipe, so `tail` buffering can no longer cause
+   * stdout loss.
    */
   it("captures short stdout (no-stdbuf safe)", async () => {
     const shell = make();
@@ -61,6 +63,58 @@ describe("PersistentShell — long-running stability", () => {
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain("hello");
     expect(r.stdout).toContain("world");
+  });
+
+  /**
+   * Regression: on macOS with SIP, `stdbuf -oL` is a silent no-op on
+   * /usr/bin/tail (DYLD_INSERT_LIBRARIES is stripped from protected
+   * binaries). If the wrapper relies on tail alone to stream stdout,
+   * tail block-buffers (~8 KiB default) and the buffer is discarded
+   * when we kill tail 100 ms after the command finishes — every short
+   * command returns empty stdout. Executed by APEX TUI in operator mode,
+   * by the CLI pentest entrypoint, and by Evalgate-driven runs (e.g.
+   * NOCTURNE), producing `(no output)` for trivial commands and
+   * dominating eval signal with shell brokenness rather than agent
+   * capability.
+   *
+   * These assertions fail on macOS against the pre-patch wrapper and
+   * pass once the authoritative post-kill `cat` phase is in place.
+   */
+  it("captures trivial stdout even when tail block-buffers", async () => {
+    const shell = make();
+    const echo = await shell.execute("echo hello", 5);
+    expect(echo.exitCode).toBe(0);
+    expect(echo.stdout).toContain("hello");
+
+    const pwd = await shell.execute("pwd", 5);
+    expect(pwd.exitCode).toBe(0);
+    expect(pwd.stdout.trim().length).toBeGreaterThan(0);
+
+    const seq = await shell.execute("seq 1 5", 5);
+    expect(seq.exitCode).toBe(0);
+    expect(seq.stdout.trim()).toBe("1\n2\n3\n4\n5");
+  });
+
+  /**
+   * Regression: tail's default block-buffer is ~8 KiB. A command whose
+   * stdout is just under, at, and just over that boundary must come back
+   * fully intact, with no silent truncation regardless of whether tail
+   * ever flushed its buffer. Exercises the authoritative `cat` phase on
+   * a realistic recon-output size.
+   */
+  it("captures output across the 8 KiB block-buffer boundary", async () => {
+    const shell = make();
+    // Emit exactly 9000 'x' bytes followed by a newline. Uses /dev/zero
+    // to avoid bash/yes-pipeline byte-counting footguns (e.g.
+    // `yes x | head -c 9000` includes the newlines that `yes` emits, so
+    // stripping them halves the payload). 9000 > 8192 to ensure we
+    // exceed tail's default ~8 KiB block-buffer size.
+    const r = await shell.execute(
+      "head -c 9000 /dev/zero | tr '\\0' 'x'; echo",
+      5,
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout.replace(/\n$/, "").length).toBe(9000);
   });
 
   /**
@@ -235,12 +289,24 @@ describe("PersistentShell — long-running stability", () => {
   }, 10_000);
 
   /**
-   * Streaming callback still fires as output arrives, even though stdout
-   * is now routed through a per-command tempfile + `tail -f` rather than
-   * bash's raw stdout pipe. Requires GNU `stdbuf` to line-buffer `tail -f`;
-   * without it the shell skips streaming and `cat`s the tempfile at the end.
+   * Streaming callback fires as output arrives, where the platform's
+   * `tail -f` actually flushes line-by-line. Requires effective
+   * `stdbuf -oL` on `/usr/bin/tail` (or equivalent), which means:
+   *
+   *   - Linux glibc + GNU coreutils: works.
+   *   - macOS under SIP: `DYLD_INSERT_LIBRARIES` is stripped from
+   *     `/usr/bin/tail`, so `stdbuf` is a silent no-op; `tail`
+   *     block-buffers its pipe and nothing flushes until we kill it.
+   *     Final stdout is still correct (guaranteed by the authoritative
+   *     post-kill `cat` phase), but live streaming is a known lossy UX
+   *     on darwin and agents do not rely on it. Skip there.
+   *   - Alpine / musl: BusyBox `tail` ignores `libstdbuf`; same result.
+   *
+   * The patch does not fix live streaming on these platforms — it only
+   * fixes final-stdout correctness. This test guards the live-streaming
+   * property on platforms that can deliver it.
    */
-  it.skipIf(!HAS_STDBUF)(
+  it.skipIf(!HAS_STDBUF || process.platform === "darwin")(
     "streams stdout to onData as output arrives",
     async () => {
       const shell = make();
