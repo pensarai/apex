@@ -56,8 +56,11 @@ interface PendingCommand {
 /**
  * Cached once: whether `stdbuf` is available. We use it to line-buffer
  * `tail -f` so command output streams to the caller in near-real-time.
- * When it isn't available we fall back to raw `tail -f`, which still
- * produces correct final output but in larger chunks.
+ * When it isn't available we skip `tail -f` entirely and `cat` the
+ * per-command output tempfile after the command finishes — correct final
+ * output, but no real-time streaming. We can't use plain `tail -f` as a
+ * fallback: when its stdout is a pipe it block-buffers, so short outputs
+ * are lost when we kill the tail before it flushes.
  */
 let stdbufAvailable: boolean | null = null;
 function hasStdbuf(): boolean {
@@ -345,24 +348,34 @@ export class PersistentShell {
       //   - the exit marker is echoed on bash's real stdout pipe, so the
       //     parent Node handler always sees it immediately regardless of
       //     how much command output the tail has left to flush.
-      // Fast-polling `tail -f -s 0.05` line-buffered via `stdbuf -oL`
-      // streams output as it is produced (well under 100 ms latency per
-      // chunk) while keeping the per-command tempfile isolation that
-      // prevents background-process output bleeding across commands.
-      const tailCmd = hasStdbuf()
-        ? `stdbuf -oL tail -n +1 -f -s 0.05 "$__APEX_OUT"`
-        : `tail -n +1 -f -s 0.05 "$__APEX_OUT"`;
+      // When `stdbuf` is available (GNU coreutils), a fast-polling
+      // `stdbuf -oL tail -n +1 -f -s 0.05` is run in the background so
+      // stdout streams to the caller in near-real-time (well under 100 ms
+      // latency per chunk). Without `stdbuf` (e.g. default macOS), `tail`'s
+      // stdout is a pipe and block-buffered, so short outputs never flush
+      // before we kill it — we'd lose them entirely. In that case we skip
+      // streaming and just `cat` the tempfile after the command finishes;
+      // output is correct but no longer real-time.
+      const streaming = hasStdbuf();
       const wrapped = [
         `__APEX_OUT=$(mktemp 2>/dev/null || echo /tmp/.apex_out_$$)`,
         `__APEX_ERR=$(mktemp 2>/dev/null || echo /tmp/.apex_err_$$)`,
-        `${tailCmd} 2>/dev/null &`,
-        `__APEX_TAIL=$!`,
+        ...(streaming
+          ? [
+              `stdbuf -oL tail -n +1 -f -s 0.05 "$__APEX_OUT" 2>/dev/null &`,
+              `__APEX_TAIL=$!`,
+            ]
+          : []),
         `{ ${command}\n} </dev/null >"$__APEX_OUT" 2>"$__APEX_ERR"`,
         `__APEX_EC=$?`,
-        // Let tail drain any remaining bytes before we kill it.
-        `sleep 0.1`,
-        `kill "$__APEX_TAIL" 2>/dev/null`,
-        `wait "$__APEX_TAIL" 2>/dev/null`,
+        ...(streaming
+          ? [
+              // Let tail drain any remaining bytes before we kill it.
+              `sleep 0.1`,
+              `kill "$__APEX_TAIL" 2>/dev/null`,
+              `wait "$__APEX_TAIL" 2>/dev/null`,
+            ]
+          : [`cat "$__APEX_OUT"`]),
         `cat "$__APEX_ERR" >&2`,
         `rm -f "$__APEX_OUT" "$__APEX_ERR"`,
         `echo "${exitMarkerPrefix}$__APEX_EC"`,
