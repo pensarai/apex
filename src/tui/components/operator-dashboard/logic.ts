@@ -55,6 +55,7 @@ export function resolveSubmit(
 export type CommandAction =
   | { type: "show-models" }
   | { type: "show-plan" }
+  | { type: "open-session" }
   | { type: "run-skill"; slug: string; autopilot: boolean }
   | { type: "execute-command"; command: string };
 
@@ -70,6 +71,10 @@ export function routeCommand(
 
   if (commandLower === "plan" || commandLower.startsWith("plan ")) {
     return { type: "show-plan" };
+  }
+
+  if (commandLower === "open-session") {
+    return { type: "open-session" };
   }
 
   if (commandLower === "skills") {
