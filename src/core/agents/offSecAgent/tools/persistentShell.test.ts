@@ -1,6 +1,11 @@
+import { spawnSync } from "child_process";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { PersistentShell } from "./persistentShell";
+
+const HAS_STDBUF =
+  process.platform !== "win32" &&
+  spawnSync("stdbuf", ["--version"], { stdio: "ignore" }).status === 0;
 
 /**
  * These tests document and reproduce the "shell eventually stops responding"
@@ -40,6 +45,22 @@ describe("PersistentShell — long-running stability", () => {
     const r2 = await shell.execute("echo two", 5);
     expect(r2.exitCode).toBe(0);
     expect(r2.stdout).toContain("two");
+  });
+
+  /**
+   * Regression: on macOS without GNU `stdbuf`, the old wrapper relied on
+   * plain `tail -f` for streaming. Because `tail`'s stdout was a pipe it
+   * block-buffered, so short outputs were killed with tail before ever
+   * flushing — every `ls -la`-style command came back with empty stdout
+   * and the agent saw `(no output)`. We now skip `tail -f` in that case
+   * and `cat` the tempfile at the end, so output is always captured.
+   */
+  it("captures short stdout (no-stdbuf safe)", async () => {
+    const shell = make();
+    const r = await shell.execute("printf 'hello\\nworld\\n'", 5);
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("hello");
+    expect(r.stdout).toContain("world");
   });
 
   /**
@@ -216,9 +237,10 @@ describe("PersistentShell — long-running stability", () => {
   /**
    * Streaming callback still fires as output arrives, even though stdout
    * is now routed through a per-command tempfile + `tail -f` rather than
-   * bash's raw stdout pipe.
+   * bash's raw stdout pipe. Requires GNU `stdbuf` to line-buffer `tail -f`;
+   * without it the shell skips streaming and `cat`s the tempfile at the end.
    */
-  it("streams stdout to onData as output arrives", async () => {
+  it.skipIf(!HAS_STDBUF)("streams stdout to onData as output arrives", async () => {
     const shell = make();
     const events: Array<{ t: number; text: string }> = [];
     const t0 = Date.now();
