@@ -1582,7 +1582,25 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         case "open-session": {
           const rootPath = sessionRef.current?.rootPath;
           if (rootPath) {
-            spawn("open", [rootPath], { detached: true, stdio: "ignore" });
+            try {
+              const platform = process.platform;
+              const command =
+                platform === "darwin"
+                  ? "open"
+                  : platform === "win32"
+                    ? "explorer"
+                    : "xdg-open";
+              const child = spawn(command, [rootPath], {
+                detached: true,
+                stdio: "ignore",
+              });
+              child.on("error", () => {
+                addSystemMessage(`Failed to open session at ${rootPath}.`);
+              });
+              child.unref();
+            } catch {
+              addSystemMessage(`Failed to open session at ${rootPath}.`);
+            }
           } else {
             addSystemMessage("No active session to open.");
           }
