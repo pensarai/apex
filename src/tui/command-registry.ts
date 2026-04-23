@@ -431,6 +431,15 @@ export const commands: CommandConfig[] = [
 
   // — Hidden (functional but not shown in autocomplete/help) —
   {
+    name: "open-session",
+    description: "Open session folder in Finder",
+    category: "General",
+    hidden: true,
+    handler: async () => {
+      // Handled by the operator dashboard
+    },
+  },
+  {
     name: "tools",
     aliases: ["t"],
     description: "View and manage active tools (session only)",
