@@ -240,28 +240,31 @@ describe("PersistentShell — long-running stability", () => {
    * bash's raw stdout pipe. Requires GNU `stdbuf` to line-buffer `tail -f`;
    * without it the shell skips streaming and `cat`s the tempfile at the end.
    */
-  it.skipIf(!HAS_STDBUF)("streams stdout to onData as output arrives", async () => {
-    const shell = make();
-    const events: Array<{ t: number; text: string }> = [];
-    const t0 = Date.now();
-    const r = await shell.execute(
-      "echo line-a; sleep 0.3; echo line-b; sleep 0.3; echo line-c",
-      5,
-      (c) => events.push({ t: Date.now() - t0, text: c }),
-    );
-    expect(r.exitCode).toBe(0);
-    const joined = events.map((e) => e.text).join("");
-    expect(joined).toContain("line-a");
-    expect(joined).toContain("line-b");
-    expect(joined).toContain("line-c");
-    // The first chunk must arrive well before the last. If everything
-    // came in one block at the end, streaming is broken.
-    const firstA = events.find((e) => e.text.includes("line-a"));
-    const firstC = events.find((e) => e.text.includes("line-c"));
-    expect(firstA).toBeDefined();
-    expect(firstC).toBeDefined();
-    expect(firstC!.t - firstA!.t).toBeGreaterThan(200);
-  });
+  it.skipIf(!HAS_STDBUF)(
+    "streams stdout to onData as output arrives",
+    async () => {
+      const shell = make();
+      const events: Array<{ t: number; text: string }> = [];
+      const t0 = Date.now();
+      const r = await shell.execute(
+        "echo line-a; sleep 0.3; echo line-b; sleep 0.3; echo line-c",
+        5,
+        (c) => events.push({ t: Date.now() - t0, text: c }),
+      );
+      expect(r.exitCode).toBe(0);
+      const joined = events.map((e) => e.text).join("");
+      expect(joined).toContain("line-a");
+      expect(joined).toContain("line-b");
+      expect(joined).toContain("line-c");
+      // The first chunk must arrive well before the last. If everything
+      // came in one block at the end, streaming is broken.
+      const firstA = events.find((e) => e.text.includes("line-a"));
+      const firstC = events.find((e) => e.text.includes("line-c"));
+      expect(firstA).toBeDefined();
+      expect(firstC).toBeDefined();
+      expect(firstC!.t - firstA!.t).toBeGreaterThan(200);
+    },
+  );
 
   /**
    * Repro #5 — The cumulative "agent ran for a while" simulation.
