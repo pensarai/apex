@@ -1,5 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
+import type { ToolContext } from "./types";
+import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 
 /**
  * Factory for the `test_endpoint_variations` tool.
@@ -7,7 +9,7 @@ import { z } from "zod";
  * Tests multiple endpoint URLs for accessibility, useful for
  * probing authorization issues and mapping live routes.
  */
-export function testEndpointVariations(_ctx: unknown) {
+export function testEndpointVariations(ctx: ToolContext) {
   return tool({
     description: `Test multiple variations of an endpoint pattern with different parameters.
 
@@ -28,6 +30,17 @@ Use this to:
         ),
     }),
     execute: async (params) => {
+      try {
+        for (const endpoint of params.endpoints) {
+          assertUrlInScope(endpoint, ctx);
+        }
+      } catch (e) {
+        if (e instanceof ScopeViolationError) {
+          return { success: false, message: e.message };
+        }
+        throw e;
+      }
+
       try {
         const { endpoints, sessionCookie } = params;
 

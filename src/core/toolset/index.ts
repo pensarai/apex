@@ -140,15 +140,6 @@ export const ALL_TOOLS: ToolDefinition[] = [
     category: "exploitation",
     defaultEnabled: true,
   },
-  {
-    id: "create_poc",
-    name: "Create POC",
-    description: "Build & run exploits",
-    detail:
-      "Create and execute proof-of-concept scripts in Bash, Python, or JavaScript. Automatically validates exploitation success and captures evidence.",
-    category: "exploitation",
-    defaultEnabled: true,
-  },
 
   // Browser tools (Playwright MCP)
   {
@@ -208,8 +199,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
 
   // Reporting tools
   {
-    id: "document_finding",
-    name: "Document Finding",
+    id: "document_vulnerability",
+    name: "Document Vulnerability",
     description: "Record vuln finding",
     detail:
       "Document a confirmed vulnerability with title, description, severity, POC path, and evidence. Calculates CVSS score automatically.",
@@ -223,6 +214,15 @@ export const ALL_TOOLS: ToolDefinition[] = [
     detail:
       "Generate a comprehensive penetration test report in Markdown format with executive summary, findings, and remediation guidance.",
     category: "reporting",
+    defaultEnabled: true,
+  },
+  {
+    id: "run_pentest_workflow",
+    name: "Run Pentest Workflow",
+    description: "Full autonomous pentest",
+    detail:
+      "Run the complete pentest pipeline: attack surface discovery, pentest swarm, and report generation. Used by the /pentest skill.",
+    category: "exploitation",
     defaultEnabled: true,
   },
   {
@@ -420,9 +420,9 @@ export const TOOLSETS: ToolsetDefinition[] = [
       "browser_screenshot",
       "browser_console",
       // Reporting
-      "document_finding",
       "generate_report",
       "record_test_result",
+      "document_vulnerability",
       "update_attack_surface",
       "update_endpoint_status",
       // Utility
@@ -441,7 +441,7 @@ export const TOOLSETS: ToolsetDefinition[] = [
       "http_request",
       "execute_command",
       "scratchpad",
-      "document_finding",
+      "document_vulnerability",
     ],
   },
 ];

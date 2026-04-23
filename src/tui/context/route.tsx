@@ -21,8 +21,7 @@ export type RoutePath =
   | "disclosure"
   | "theme"
   | "auth"
-  | "credits"
-  | "create-skill";
+  | "credits";
 
 export interface WebCommandOptions {
   auto?: boolean;
@@ -41,6 +40,8 @@ export interface WebCommandOptions {
   headersMode?: "none" | "default" | "custom";
   customHeaders?: Record<string, string>;
   model?: string;
+  prompt?: string;
+  threatModel?: string;
 }
 
 export type Route =
@@ -65,7 +66,12 @@ export type Route =
       initialConfig?: {
         requireApproval?: boolean;
         target?: string;
+        operatorMode?: import("../../core/operator").OperatorMode;
+        sandbox?: boolean;
+        taskDriven?: boolean;
       };
+      /** Skill to automatically submit on mount */
+      initialSkill?: { slug: string; args?: Record<string, string> };
       /** Opaque value used to force a fresh remount (e.g. Date.now()) */
       nonce?: number;
     };

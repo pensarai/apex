@@ -9,6 +9,8 @@ import {
   type Provider,
 } from "../../../core/providers";
 import { useTheme } from "../../theme";
+import { Dialog } from "../../context/dialog";
+import DialogLayout from "../dialog-layout";
 
 interface ProviderSelectionProps {
   providers?: Provider[];
@@ -30,6 +32,8 @@ export default function ProviderSelection({
   const configuredProviders = getConfiguredProviders(_config.data);
 
   useKeyboard((key) => {
+    key.preventDefault();
+
     if (key.name === "escape") {
       onClose();
       return;
@@ -59,65 +63,27 @@ export default function ProviderSelection({
   });
 
   return (
-    <box
-      position="absolute"
-      top={0}
-      left={0}
-      zIndex={1000}
-      width="100%"
-      height="100%"
-      justifyContent="center"
-      alignItems="center"
-      backgroundColor={"transparent"}
-    >
-      <box
-        width={70}
-        maxHeight="80%"
-        border={true}
-        borderColor={colors.primary}
-        backgroundColor={colors.backgroundPanel}
-        flexDirection="column"
-        padding={2}
+    <Dialog size="large" onClose={onClose}>
+      <DialogLayout
+        title="Select provider"
+        footerActions={[{ key: "Enter", label: "select", variant: "primary" }]}
       >
-        {/* Header */}
-        <box
-          flexDirection="row"
-          justifyContent="space-between"
-          marginBottom={2}
-        >
-          <text fg={colors.primary}>Select provider</text>
-          <text fg={colors.textMuted}>esc</text>
-        </box>
-
         {/* Provider List */}
         <scrollbox
           style={{
             rootOptions: {
-              width: "100%",
-              flexGrow: 1,
               flexShrink: 1,
-              overflow: "hidden",
-            },
-            wrapperOptions: {
-              overflow: "hidden",
+              width: "100%",
+              maxHeight: providerList.length * 2,
             },
             contentOptions: {
               flexDirection: "column",
               gap: 1,
             },
-            scrollbarOptions: {
-              trackOptions: {
-                foregroundColor: colors.primary,
-                backgroundColor: colors.backgroundElement,
-              },
-            },
           }}
+          stickyScroll={false}
+          focused={true}
         >
-          {/* Popular providers section */}
-          <text fg={colors.textMuted} marginTop={1} marginBottom={1}>
-            Popular providers
-          </text>
-
           {providerList.map((provider, index) => {
             const isHighlighted = index === highlightedIndex;
             const configured = configuredProviders.find(
@@ -150,16 +116,7 @@ export default function ProviderSelection({
             );
           })}
         </scrollbox>
-
-        {/* Footer help text */}
-        <box marginTop={2}>
-          <text fg={colors.textMuted}>
-            <span fg={colors.primary}>[↑↓]</span> Navigate ·{" "}
-            <span fg={colors.primary}>[ENTER]</span> Select ·{" "}
-            <span fg={colors.primary}>[ESC]</span> Close
-          </text>
-        </box>
-      </box>
-    </box>
+      </DialogLayout>
+    </Dialog>
   );
 }

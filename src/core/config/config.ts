@@ -29,6 +29,8 @@ export interface Config {
   themeMode?: "dark" | "light" | "auto";
   // Model preference
   selectedModelId?: string | null;
+  // Extended thinking / reasoning
+  reasoningEnabled?: boolean;
   // WorkOS CLI auth (replaces pensarAPIKey for new auth flow)
   accessToken?: string | null;
   refreshToken?: string | null;

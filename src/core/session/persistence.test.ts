@@ -421,6 +421,123 @@ describe("loadSubagents manifest merge", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Directory-only subagent discovery
+// ---------------------------------------------------------------------------
+
+describe("loadSubagents directory-only discovery", () => {
+  it("discovers threat-model agents from messages.json directories", () => {
+    const subagentsDir = join(tmpDir, "subagents");
+    const tmDir = join(subagentsDir, "threat-model-myapp-_api_users");
+    mkdirSync(tmDir, { recursive: true });
+    writeFileSync(
+      join(tmDir, "messages.json"),
+      JSON.stringify([
+        { role: "user", content: "Analyze endpoint /api/users" },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Analyzing..." }],
+        },
+      ]),
+    );
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].id).toBe("threat-model-myapp-_api_users");
+    expect(loaded[0].type).toBe("pentest");
+    expect(loaded[0].name).toContain("Threat Model");
+    expect(loaded[0].status).toBe("completed");
+    expect(loaded[0].messages.length).toBeGreaterThan(0);
+  });
+
+  it("discovers whitebox discovery agents from messages.json directories", () => {
+    const subagentsDir = join(tmpDir, "subagents");
+    for (const dirName of [
+      "whitebox-apps-discovery",
+      "pages-myapp",
+      "apiEndpoints-myapp",
+    ]) {
+      const dir = join(subagentsDir, dirName);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, "messages.json"),
+        JSON.stringify([
+          { role: "user", content: `Discover ${dirName}` },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "Found endpoints" }],
+          },
+        ]),
+      );
+    }
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(3);
+    const ids = loaded.map((s) => s.id);
+    expect(ids).toContain("whitebox-apps-discovery");
+    expect(ids).toContain("pages-myapp");
+    expect(ids).toContain("apiEndpoints-myapp");
+  });
+
+  it("does not duplicate agents that have both .json snapshot and directory", () => {
+    const session = makeSession();
+    saveSubagentData(session, {
+      agentName: "pentest-agent-1",
+      target: "http://localhost:8080",
+      status: "completed",
+      messages: [],
+    });
+
+    // Also create the messages.json directory (this happens at runtime)
+    const msgDir = join(tmpDir, "subagents", "pentest-agent-1");
+    mkdirSync(msgDir, { recursive: true });
+    writeFileSync(
+      join(msgDir, "messages.json"),
+      JSON.stringify([
+        { role: "user", content: "Test" },
+        { role: "assistant", content: [{ type: "text", text: "Testing" }] },
+      ]),
+    );
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(1);
+  });
+
+  it("skips -tasks and -plan directories", () => {
+    const subagentsDir = join(tmpDir, "subagents");
+    for (const dirName of ["pentest-agent-1-tasks", "pentest-agent-1-plan"]) {
+      const dir = join(subagentsDir, dirName);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, "messages.json"),
+        JSON.stringify([{ role: "user", content: "test" }]),
+      );
+    }
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(0);
+  });
+
+  it("skips directories without messages.json", () => {
+    const subagentsDir = join(tmpDir, "subagents");
+    const dir = join(subagentsDir, "threat-model-empty");
+    mkdirSync(dir, { recursive: true });
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(0);
+  });
+
+  it("skips directories with empty messages array", () => {
+    const subagentsDir = join(tmpDir, "subagents");
+    const dir = join(subagentsDir, "threat-model-empty");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "messages.json"), JSON.stringify([]));
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Operator state persistence (single messages field)
 // ---------------------------------------------------------------------------
 
@@ -546,6 +663,141 @@ describe("convertModelMessagesToUI", () => {
 
     expect(uiMsgs[3].role).toBe("assistant");
     expect(uiMsgs[3].content).toBe("Found port 80 open.");
+  });
+
+  it("unwraps AI SDK json-wrapped tool output (operator messages.json resume)", () => {
+    const modelMessages: ModelMessage[] = [
+      makeMsg("user", "read it"),
+      makeMsg("assistant", [
+        { type: "text", text: "Reading" },
+        {
+          type: "tool-call",
+          toolCallId: "tc-read",
+          toolName: "read_file",
+          input: { path: "README.md", toolCallDescription: "read README.md" },
+        },
+      ]),
+      makeMsg("tool", [
+        {
+          type: "tool-result",
+          toolCallId: "tc-read",
+          toolName: "read_file",
+          output: {
+            type: "json",
+            value: {
+              success: true,
+              error: "",
+              content: "     1|hello",
+              path: "README.md",
+              totalLines: 80,
+            },
+          },
+        },
+      ]),
+    ];
+
+    const uiMsgs = convertModelMessagesToUI(modelMessages);
+    const toolMsg = uiMsgs.find((m) => m.role === "tool");
+    expect(toolMsg?.result).toEqual({
+      success: true,
+      error: "",
+      content: "     1|hello",
+      path: "README.md",
+      totalLines: 80,
+    });
+  });
+
+  it("unwraps AI SDK text-wrapped tool output without JSON-parsing", () => {
+    const modelMessages: ModelMessage[] = [
+      makeMsg("assistant", [
+        makeToolCallPart("execute_command", { cmd: "curl http://api/health" }),
+      ]),
+      makeMsg("tool", [
+        makeToolResultPart("execute_command", {
+          type: "text",
+          value: '{"status":"ok"}',
+        }),
+      ]),
+    ];
+
+    const uiMsgs = convertModelMessagesToUI(modelMessages);
+    const toolMsg = uiMsgs.find((m) => m.role === "tool");
+    // Should stay a string, not get JSON.parsed into an object
+    expect(toolMsg?.result).toBe('{"status":"ok"}');
+  });
+
+  it("unwraps AI SDK error-json-wrapped tool output", () => {
+    const modelMessages: ModelMessage[] = [
+      makeMsg("assistant", [
+        makeToolCallPart("execute_command", { cmd: "fail" }),
+      ]),
+      makeMsg("tool", [
+        makeToolResultPart("execute_command", {
+          type: "error-json",
+          value: { error: "Connection refused", code: "ECONNREFUSED" },
+        }),
+      ]),
+    ];
+
+    const uiMsgs = convertModelMessagesToUI(modelMessages);
+    const toolMsg = uiMsgs.find((m) => m.role === "tool");
+    expect(toolMsg?.result).toEqual({
+      error: "Connection refused",
+      code: "ECONNREFUSED",
+    });
+  });
+
+  it("unwraps AI SDK error-text-wrapped tool output", () => {
+    const modelMessages: ModelMessage[] = [
+      makeMsg("assistant", [
+        makeToolCallPart("read_file", { path: "/nonexistent" }),
+      ]),
+      makeMsg("tool", [
+        makeToolResultPart("read_file", {
+          type: "error-text",
+          value: "ENOENT: no such file or directory",
+        }),
+      ]),
+    ];
+
+    const uiMsgs = convertModelMessagesToUI(modelMessages);
+    const toolMsg = uiMsgs.find((m) => m.role === "tool");
+    expect(toolMsg?.result).toBe("ENOENT: no such file or directory");
+  });
+
+  it("unwraps AI SDK execution-denied tool output", () => {
+    const modelMessages: ModelMessage[] = [
+      makeMsg("assistant", [
+        makeToolCallPart("execute_command", { cmd: "rm -rf /" }),
+      ]),
+      makeMsg("tool", [
+        makeToolResultPart("execute_command", {
+          type: "execution-denied",
+          reason: "Command blocked by sandbox",
+        }),
+      ]),
+    ];
+
+    const uiMsgs = convertModelMessagesToUI(modelMessages);
+    const toolMsg = uiMsgs.find((m) => m.role === "tool");
+    expect(toolMsg?.result).toBe("Command blocked by sandbox");
+  });
+
+  it("unwraps execution-denied with no reason", () => {
+    const modelMessages: ModelMessage[] = [
+      makeMsg("assistant", [
+        makeToolCallPart("execute_command", { cmd: "bad" }),
+      ]),
+      makeMsg("tool", [
+        makeToolResultPart("execute_command", {
+          type: "execution-denied",
+        }),
+      ]),
+    ];
+
+    const uiMsgs = convertModelMessagesToUI(modelMessages);
+    const toolMsg = uiMsgs.find((m) => m.role === "tool");
+    expect(toolMsg?.result).toBe("Tool execution denied");
   });
 
   it("returns empty array for empty input", () => {

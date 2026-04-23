@@ -7,25 +7,24 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import type {
-  OffensiveSecurityAgentInput,
-  CreateAgentInput,
-  ConsumeCallbacks,
-} from "./types";
+import type { OffensiveSecurityAgentInput, CreateAgentInput } from "./types";
 import {
   createAllTools,
   EMAIL_TOOL_NAMES_ACTIVE,
   PLAN_MODE_TOOL_NAMES,
 } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
+import { ASK_USER_QUESTIONS_TOOL_NAME } from "./tools/askUserQuestions";
 import { PersistentShell } from "./tools/persistentShell";
-import { BASE_SYSTEM_PROMPT, buildSessionWorkspaceSection } from "./prompt";
+import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
+import { AgentEventBus } from "../../eventBus";
 import { join } from "path";
 import { mkdirSync, existsSync } from "fs";
 import { writeFile } from "fs/promises";
+import { StepTraceWriter } from "./trace";
 
 /**
  * General-purpose offensive security agent harness.
@@ -43,12 +42,13 @@ import { writeFile } from "fs/promises";
  *
  * ## Consumption (pick one — stream is single-read)
  *
- * **1. Typed callbacks via `.consume()` → `TResult`**
+ * **1. Emit to EventBus via `.consume()` → `TResult`**
  * ```ts
- * const result = await agent.consume({
- *   onTextDelta: (d) => process.stdout.write(d.text),
- *   onToolCall:  (d) => console.log(`→ ${d.toolName}`),
- * });
+ * const bus = new AgentEventBus();
+ * bus.on("text-delta", (e) => process.stdout.write(e.text));
+ * bus.on("tool-call-complete", (e) => console.log(`→ ${e.toolName}`));
+ * const agent = new OffensiveSecurityAgent({ ..., eventBus: bus });
+ * const result = await agent.consume();
  * ```
  *
  * **2. `for await` directly on the agent**
@@ -65,6 +65,9 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** The underlying Vercel AI SDK stream result — escape hatch for advanced use. */
   public readonly streamResult: StreamTextResult<ToolSet, never>;
 
+  /** The event bus for this agent's streaming output. */
+  public readonly eventBus: AgentEventBus;
+
   private readonly resolveResult?: (
     streamResult: StreamTextResult<ToolSet, never>,
   ) => TResult | Promise<TResult>;
@@ -76,6 +79,9 @@ export class OffensiveSecurityAgent<TResult = void> {
   private readonly persistentShell?: PersistentShell;
 
   private readonly abortSignal?: AbortSignal;
+
+  /** The user-facing prompt passed to the model. */
+  public readonly userPrompt: string;
 
   /** The session this agent is operating within. */
   private readonly _session: SessionInfo;
@@ -114,13 +120,19 @@ export class OffensiveSecurityAgent<TResult = void> {
     this._session = input.session;
     this.subagentId = input.subagentId;
     this.abortSignal = input.abortSignal;
+    this.userPrompt = input.prompt;
+    this.eventBus = input.eventBus ?? new AgentEventBus();
+
+    // -- Resolve agent working directory ----------------------------------------
+    const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
 
     // -- Persistent shell (local mode only) -----------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
     // stream ends, or when the agent is fully killed.
     if (!input.sandbox) {
       this.persistentShell = new PersistentShell({
-        cwd: input.session.rootPath,
+        cwd: agentCwd,
+        env: input.environmentVariables,
       });
       if (input.commandCancelHandle) {
         const shell = this.persistentShell;
@@ -128,27 +140,64 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
+    // -- Step trace (trace.jsonl) ---------------------------------------------
+    // Created before tools so the checkpoint_state tool can reference it.
+    const messagesDir =
+      input.messagesDir ??
+      (input.subagentId
+        ? join(input.session.rootPath, "subagents", input.subagentId)
+        : input.session.rootPath);
+    const tracePath = input.subagentId
+      ? join(
+          input.session.rootPath,
+          "subagents",
+          `${input.subagentId}.trace.jsonl`,
+        )
+      : join(messagesDir, "trace.jsonl");
+    const traceWriter = new StepTraceWriter({
+      tracePath,
+      agentId: input.subagentId ?? null,
+      eventBus: this.eventBus,
+    });
+
+    // -- Task directory (per-agent tasks, opt-in via taskDriven config) -------
+    const taskDriven = input.session.config?.taskDriven ?? false;
+    const tasksDir =
+      input.tasksDir ??
+      (taskDriven
+        ? input.subagentId
+          ? join(
+              input.session.rootPath,
+              "subagents",
+              `${input.subagentId}-tasks`,
+            )
+          : join(input.session.rootPath, "tasks")
+        : undefined);
+
     // -- Tools ----------------------------------------------------------------
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
 
-    const subagentCallbacks =
-      input.subagentCallbacks ?? input.callbacks?.subagentCallbacks;
-
     const builtinTools = createAllTools({
       session: input.session,
+      agentCwd,
       target: input.target,
       abortSignal: input.abortSignal,
       model: input.model,
       authConfig: input.authConfig,
-      callbacks: input.callbacks,
-      subagentCallbacks,
+      eventBus: this.eventBus,
       sandbox: input.sandbox,
       findingsRegistry: input.findingsRegistry,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
       persistentShell: this.persistentShell,
-      onCommandOutput: input.callbacks?.onCommandOutput,
+      skillsRegistry: input.skillsRegistry,
+      traceWriter,
+      tasksDir,
+      enableThinking: input.enableThinking,
+      projectThreatModel: input.projectThreatModel,
+      planSubagentId: input.planSubagentId,
+      subagentId: input.subagentId,
     });
 
     let tools: ToolSet = input.extraTools
@@ -157,7 +206,11 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     // -- Approval gate wrapping -----------------------------------------------
     if (input.approvalGate) {
-      tools = wrapToolsWithApprovalGate(tools, input.approvalGate);
+      tools = wrapToolsWithApprovalGate(
+        tools,
+        input.approvalGate,
+        AGENT_PAUSE_TOOLS,
+      );
     }
 
     // -- Response schema → auto capture / stop / resolve ----------------------
@@ -214,7 +267,6 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
 
     // -- Messages persistence -------------------------------------------------
-    const messagesDir = input.messagesDir ?? input.session.rootPath;
     if (!existsSync(messagesDir)) {
       mkdirSync(messagesDir, { recursive: true });
     }
@@ -250,30 +302,66 @@ export class OffensiveSecurityAgent<TResult = void> {
       }, PERSIST_INTERVAL_MS);
     };
 
+    // -- Init record (trace.jsonl first line) ---------------------------------
+    // Hash only the base system prompt (excluding session workspace paths)
+    // so the hash is stable across runs with identical prompt versions.
+    const baseSystemPrompt =
+      input.system ??
+      buildBaseSystemPrompt({
+        sandboxMode: agentCwd === input.session.rootPath,
+      });
+    const systemPrompt =
+      baseSystemPrompt + buildSessionWorkspaceSection(input.session, agentCwd);
+
+    traceWriter.writeInit({
+      model: input.model,
+      systemPrompt: baseSystemPrompt,
+      activeTools,
+      sessionId: input.session.id,
+      target: input.target,
+    });
+
     // -- Stream ---------------------------------------------------------------
+    // Mutable ref for cache metrics — onCacheMetrics fires synchronously
+    // before onStepFinish within the same step (see ai.ts:367-391).
+    let lastCacheMetrics: {
+      cacheReadTokens: number;
+      cacheWriteTokens: number;
+    } | null = null;
+
     this.streamResult = streamResponse({
       prompt: input.prompt,
-      system:
-        (input.system ?? BASE_SYSTEM_PROMPT) +
-        buildSessionWorkspaceSection(input.session),
+      system: systemPrompt,
       model: input.model,
       messages: input.messages,
       tools,
       activeTools,
       stopWhen,
       toolChoice: "auto",
-      onStepFinish: (event) => {
+      sessionPath: input.session.rootPath,
+      onStepFinish: async (event) => {
         latestMessages = [
           ...initialMessagesRef.current,
           ...event.response.messages,
         ];
         schedulePersist();
-        input.onStepFinish?.(event);
+        traceWriter.recordStep(event.response.messages as ModelMessage[], {
+          inputTokens: event.usage.inputTokens ?? 0,
+          outputTokens: event.usage.outputTokens ?? 0,
+          ...lastCacheMetrics,
+        });
+        lastCacheMetrics = null;
+        this.eventBus.emit("step-finish", {
+          messages: event.response.messages,
+          subagentId: this.subagentId,
+        });
+        await input.onStepFinish?.(event);
       },
       onSummarized: () => {
         // Context was reset by summarization — discard the old history so
         // subsequent onStepFinish writes only persist post-summary messages.
         initialMessagesRef.current = [];
+        traceWriter.markSummarized();
       },
       onFinish: async (event) => {
         // Flush any pending persistence before finishing
@@ -292,6 +380,14 @@ export class OffensiveSecurityAgent<TResult = void> {
       },
       abortSignal: input.abortSignal,
       authConfig: input.authConfig,
+      onCacheMetrics: (metrics) => {
+        lastCacheMetrics = {
+          cacheReadTokens: metrics.cacheReadInputTokens,
+          cacheWriteTokens: metrics.cacheCreationInputTokens,
+        };
+        input.onCacheMetrics?.(metrics);
+      },
+      enableThinking: input.enableThinking,
       silent: true,
     });
   }
@@ -327,66 +423,21 @@ export class OffensiveSecurityAgent<TResult = void> {
   // ---------------------------------------------------------------------------
 
   /**
-   * Consume the stream with typed callbacks, then resolve the final result.
+   * Consume the stream, emitting each chunk on the {@link eventBus}, then
+   * resolve the final result.
    *
-   * Dispatches each chunk to the appropriate callback, and after the stream
-   * is fully consumed, calls `resolveResult` (if provided at construction)
-   * to produce a typed return value.
+   * Each AI SDK stream part is forwarded to the bus via
+   * {@link AgentEventBus.emitStreamPart}, tagged with this agent's
+   * `subagentId` when present.
    *
    * @returns The value produced by `resolveResult`, or `void` if none was provided.
    */
-  async consume(callbacks: ConsumeCallbacks = {}): Promise<TResult> {
-    const {
-      onTextDelta,
-      onToolCallStreaming,
-      onToolCallDelta,
-      onToolCall,
-      onToolResult,
-      onError,
-      subagentCallbacks,
-    } = callbacks;
-
+  async consume(): Promise<TResult> {
     const sid = this.subagentId;
+    const bus = this.eventBus;
 
     for await (const chunk of this.streamResult.fullStream) {
-      switch (chunk.type) {
-        case "text-delta":
-          onTextDelta?.(chunk);
-          subagentCallbacks?.onTextDelta?.({ ...chunk, subagentId: sid });
-          break;
-        case "tool-input-start": {
-          const delta = { toolCallId: chunk.id, toolName: chunk.toolName };
-          onToolCallStreaming?.(delta);
-          subagentCallbacks?.onToolCallStreaming?.({
-            ...delta,
-            subagentId: sid,
-          });
-          break;
-        }
-        case "tool-input-delta": {
-          const delta = { toolCallId: chunk.id, argsTextDelta: chunk.delta };
-          onToolCallDelta?.(delta);
-          subagentCallbacks?.onToolCallDelta?.({
-            ...delta,
-            subagentId: sid,
-          });
-          break;
-        }
-        case "tool-call":
-          onToolCall?.(chunk);
-          subagentCallbacks?.onToolCall?.({ ...chunk, subagentId: sid });
-          break;
-        case "tool-result":
-          onToolResult?.(chunk);
-          subagentCallbacks?.onToolResult?.({ ...chunk, subagentId: sid });
-          break;
-        case "error":
-          if (onError) {
-            onError((chunk as { type: "error"; error: unknown }).error);
-          }
-          subagentCallbacks?.onError?.(chunk.error);
-          break;
-      }
+      bus.emitStreamPart(chunk, sid);
     }
 
     this.persistentShell?.dispose();
@@ -410,17 +461,23 @@ export class OffensiveSecurityAgent<TResult = void> {
   }
 }
 
-/**
- * Wrap every tool's execute function with the approval gate so that
- * tool calls are held until the operator approves them.
- */
+// These tools pause the agent and surface their own UI to the operator.
+// Gating them through the approval gate would double-prompt.
+const AGENT_PAUSE_TOOLS = new Set<string>([ASK_USER_QUESTIONS_TOOL_NAME]);
+
 function wrapToolsWithApprovalGate(
   tools: ToolSet,
   gate: ApprovalGate,
+  exemptToolNames?: Set<string>,
 ): ToolSet {
   const wrapped: ToolSet = {};
 
   for (const [name, coreTool] of Object.entries(tools)) {
+    if (exemptToolNames?.has(name)) {
+      wrapped[name] = coreTool;
+      continue;
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const t = coreTool as any;
 

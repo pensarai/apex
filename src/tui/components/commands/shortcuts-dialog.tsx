@@ -3,6 +3,7 @@ import { useFocus } from "../../context/focus";
 import { Dialog } from "../../context/dialog";
 import { keybindings } from "../../keybindings-registry";
 import { useTheme } from "../../theme";
+import DialogLayout from "../dialog-layout";
 
 interface ShortcutsDialogProps {
   open: boolean;
@@ -33,13 +34,7 @@ export default function ShortcutsDialog({
 
   return (
     <Dialog size="large" onClose={handleClose}>
-      <box flexDirection="column" padding={2} gap={2} width="100%">
-        {/* Header */}
-        <box flexDirection="row" justifyContent="space-between" width="100%">
-          <text fg={colors.text}>Keyboard Shortcuts</text>
-          <text fg={colors.textMuted}>esc to close</text>
-        </box>
-
+      <DialogLayout title="Keyboard Shortcuts">
         {/* Shortcuts List */}
         <box flexDirection="column" gap={1}>
           {keybindings.map((keybinding, index) => (
@@ -51,7 +46,7 @@ export default function ShortcutsDialog({
             </box>
           ))}
         </box>
-      </box>
+      </DialogLayout>
     </Dialog>
   );
 }

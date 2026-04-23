@@ -11,6 +11,13 @@ import packageJson from "../package.json";
 import { getCurrentVersion, upgrade } from "./core/installation";
 import { buildAuthConfig } from "./core/ai/utils";
 import { resolvePentestMode } from "./core/cli/pentestMode";
+import { AgentEventBus } from "./core/eventBus";
+import type { SessionInfo } from "./core/session";
+import {
+  resolveFlagValue,
+  resolveThreatModelPrompt,
+  combinePromptParts,
+} from "./tui/utils/command-flags";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -34,6 +41,10 @@ function getArgRequired(flag: string, argv = args): string {
   return val;
 }
 
+function hasFlag(flag: string, argv = args): boolean {
+  return argv.includes(flag);
+}
+
 function getAllArgs(flag: string, argv = args): string[] {
   const values: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -42,6 +53,27 @@ function getAllArgs(flag: string, argv = args): string[] {
     }
   }
   return values;
+}
+
+function attachCliAgentStreamListeners(bus: AgentEventBus): void {
+  bus.on("text-delta", (d) => process.stdout.write(d.text));
+  bus.on("tool-call-complete", (d) => console.log(`\n→ ${d.toolName}`));
+  bus.on("tool-result", (d) => console.log(`✓ ${d.toolName} completed`));
+  bus.on("error", (d) => console.error("Error:", d.error));
+}
+
+async function createInstrumentedBus(
+  session: SessionInfo,
+): Promise<{ bus: AgentEventBus; cleanup: () => Promise<void> }> {
+  const bus = new AgentEventBus();
+  attachCliAgentStreamListeners(bus);
+  const { attachWandbToEventBus } =
+    await import("./core/integrations/wandb/upload");
+  const wandbCleanup = await attachWandbToEventBus(session, bus).catch((e) => {
+    console.warn("[wandb] Tracing disabled:", (e as Error).message);
+    return null;
+  });
+  return { bus, cleanup: async () => wandbCleanup?.() };
 }
 
 // ---------------------------------------------------------------------------
@@ -55,7 +87,8 @@ Usage:
   pensar                             Launch the TUI
   pensar pentest [options]            Run a full pentest orchestration
   pensar targeted-pentest [options]   Run a targeted pentest on a single target
-  pensar auth                         Connect to Pensar Console
+  pensar threat-model [options]       Generate application-centric threat model
+  pensar login                        Connect to Pensar Console
   pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)
   pensar projects                     List workspace projects
   pensar pentests                     List and manage pentests
@@ -68,15 +101,23 @@ Usage:
   pensar version                      Show version number
 
 pentest options:
-  --target <url>     (required) Target URL / domain / IP
-  --cwd <path>       Source code path — enables whitebox attack surface
-  --mode <mode>      Pentest mode: exfil (pivoting & flag extraction)
-  --model <model>    AI model (default: claude-sonnet-4-5)
+  --target <url>           (required) Target URL / domain / IP
+  --cwd <path>             Source code path — enables whitebox attack surface
+  --mode <mode>            Pentest mode: exfil (pivoting & flag extraction)
+  --model <model>          AI model (default: claude-sonnet-4-5)
+  --extended-thinking       Enable extended thinking for supported models
+  --task-driven             Enable task-driven architecture (experimental)
+  --prompt <text|@file>    Guidance for the pentest agent (inline text or @filepath)
+  --threat-model <text|@file>  Threat model to guide the pentest (inline or @filepath)
 
 targeted-pentest options:
   --target <url>          (required) Target URL / domain / IP
   --objective <text>      (required, repeatable) Testing objective
   --model <model>         AI model (default: claude-sonnet-4-5)
+
+threat-model options:
+  --output, -o <path>  Output file path (default: ./threat-model.md)
+  --model <model>      AI model (default: claude-sonnet-4-5)
 
 Global options:
   -h, --help         Show this help message
@@ -101,6 +142,17 @@ async function runPentest() {
   const target = getArgRequired("--target");
   const cwd = getArg("--cwd");
   const mode = getArg("--mode");
+  const promptRaw = getArg("--prompt");
+  const threatModelRaw = getArg("--threat-model");
+  const enableThinking = hasFlag("--extended-thinking");
+  const taskDriven = hasFlag("--task-driven");
+
+  // Resolve and combine threat model + prompt
+  const resolvedTm = threatModelRaw
+    ? resolveThreatModelPrompt(threatModelRaw)
+    : undefined;
+  const resolvedPrompt = promptRaw ? resolveFlagValue(promptRaw) : undefined;
+  const prompt = combinePromptParts(resolvedTm, resolvedPrompt);
 
   const pensarConfig = await appConfig.get();
   const dynamicDefault =
@@ -117,7 +169,7 @@ async function runPentest() {
 PENTEST ORCHESTRATION
 ${sep}
 Target:  ${target}${cwd ? `\nCwd:     ${cwd} (whitebox)` : ""}${exfilMode ? "\nMode:    exfil" : ""}
-Model:   ${model}
+Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\nTask-driven: enabled" : ""}
 `);
 
   const session = await sessions.create({
@@ -126,31 +178,36 @@ Model:   ${model}
     config: {
       ...(cwd ? { cwd } : {}),
       ...(exfilMode ? { exfilMode: true } : {}),
+      ...(prompt ? { prompt } : {}),
+      ...(taskDriven ? { taskDriven: true } : {}),
     },
   });
 
-  const { findings, findingsPath, pocsPath, reportPath } =
-    await runPentestAgent({
-      target,
-      ...(cwd ? { cwd } : {}),
-      session,
-      model,
-      authConfig: buildAuthConfig(pensarConfig),
-      callbacks: {
-        onTextDelta: (d) => process.stdout.write(d.text),
-        onToolCall: (d) => console.log(`\n→ ${d.toolName}`),
-        onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-        onError: (e) => console.error("Error:", e),
-      },
-    });
+  const { bus: pentestBus, cleanup: wandbCleanup } =
+    await createInstrumentedBus(session);
 
-  console.log(`
+  try {
+    const { findings, findingsPath, pocsPath, reportPath } =
+      await runPentestAgent({
+        target,
+        ...(cwd ? { cwd } : {}),
+        session,
+        model,
+        enableThinking,
+        authConfig: buildAuthConfig(pensarConfig),
+        eventBus: pentestBus,
+      });
+
+    console.log(`
 ${sep}
 RESULTS
 ${sep}
 Findings:  ${findings.length}
 Path:      ${findingsPath}
 POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}`);
+  } finally {
+    await wandbCleanup();
+  }
 }
 
 async function runTargetedPentest() {
@@ -195,21 +252,77 @@ ${objectivesList}
     targets: [target],
   });
 
-  const { findings, findingsPath, pocsPath } = await runTargetedPentestAgent({
-    target,
-    objectives,
-    session,
-    model,
-    authConfig: buildAuthConfig(pensarConfig),
-  });
+  const { bus: targetedBus, cleanup: wandbCleanup } =
+    await createInstrumentedBus(session);
 
-  console.log(`
+  try {
+    const { findings, findingsPath, pocsPath } = await runTargetedPentestAgent({
+      target,
+      objectives,
+      session,
+      model,
+      authConfig: buildAuthConfig(pensarConfig),
+      eventBus: targetedBus,
+    });
+
+    console.log(`
 ${sep}
 RESULTS
 ${sep}
 Findings:  ${findings.length}
 Path:      ${findingsPath}
 POCs:      ${pocsPath}`);
+  } finally {
+    await wandbCleanup();
+  }
+}
+
+async function runThreatModel() {
+  const { config } = await import("dotenv");
+  config();
+
+  const { runThreatModelWorkflow } = await import("./core/api/threatModel");
+  const { config: appConfig } = await import("./core/config");
+  const { getDefaultModelForConfig } = await import("./core/providers/utils");
+  const path = await import("path");
+  type AIModel = import("./core/ai").AIModel;
+
+  const pensarConfig = await appConfig.get();
+  const dynamicDefault =
+    getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
+  const model = (getArg("--model") ?? dynamicDefault) as AIModel;
+
+  const outputArg = getArg("--output") ?? getArg("-o") ?? "threat-model.md";
+  const resolvedPath = path.isAbsolute(outputArg)
+    ? outputArg
+    : path.resolve(process.cwd(), outputArg);
+
+  const sep = "=".repeat(60);
+  console.log(`${sep}
+THREAT MODEL GENERATION
+${sep}
+Codebase: ${process.cwd()}
+Output:   ${resolvedPath}
+Model:    ${model}
+`);
+
+  const threatBus = new AgentEventBus();
+  threatBus.on("text-delta", (d) => process.stdout.write(d.text));
+  threatBus.on("tool-call-complete", (d) => console.log(`\n  → ${d.toolName}`));
+  threatBus.on("tool-result", (d) => console.log(`  ✓ ${d.toolName}`));
+  threatBus.on("error", (d) => console.error("Error:", d.error));
+
+  await runThreatModelWorkflow({
+    codebasePath: process.cwd(),
+    outputPath: resolvedPath,
+    model,
+    authConfig: buildAuthConfig(pensarConfig),
+    eventBus: threatBus,
+  });
+
+  console.log(
+    `\n${sep}\nCOMPLETE\n${sep}\nThreat model written to: ${resolvedPath}`,
+  );
 }
 
 async function runUpgrade() {
@@ -236,7 +349,7 @@ if (command === "version" || command === "--version" || command === "-v") {
   await runPentest();
 } else if (command === "targeted-pentest") {
   await runTargetedPentest();
-} else if (command === "auth") {
+} else if (command === "login" || command === "auth") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/auth");
 } else if (command === "uninstall") {
@@ -257,6 +370,8 @@ if (command === "version" || command === "--version" || command === "-v") {
 } else if (command === "logs") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/logs");
+} else if (command === "threat-model") {
+  await runThreatModel();
 } else if (command === "doctor") {
   const { runDoctor } = await import("./core/doctor");
   await runDoctor();

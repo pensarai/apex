@@ -15,15 +15,64 @@ import {
 import { runBenchmarkInDaytona } from "../agents/specialized/benchmark/remote/daytona-wrapper";
 import * as sessions from "../session";
 import { runPentestWorkflow } from "../workflows/pentest";
+import { AgentEventBus } from "../eventBus";
+import type { CacheMetrics } from "../ai/ai";
 import type {
   BenchmarkMetadata,
   BenchmarkRunResult,
   BenchmarkSuiteConfig,
   BenchmarkSuiteResult,
   BenchmarkSuiteSummary,
+  TokenMetrics,
 } from "./types";
 
 const exec = promisify(nodeExec);
+
+// Anthropic Claude Sonnet pricing per 1M tokens
+const PRICING = {
+  input: 3.0,
+  output: 15.0,
+  cacheRead: 0.3,
+  cacheWrite: 3.75,
+};
+
+function computeTokenMetrics(
+  tokenTotals: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  },
+  cacheTotals: { cacheReadTokens: number; cacheWriteTokens: number },
+  durationMs: number,
+): TokenMetrics {
+  const { inputTokens, outputTokens, totalTokens } = tokenTotals;
+  const { cacheReadTokens, cacheWriteTokens } = cacheTotals;
+  const noCacheInputTokens = Math.max(
+    0,
+    inputTokens - cacheReadTokens - cacheWriteTokens,
+  );
+
+  const estimatedCostUsd =
+    (noCacheInputTokens / 1e6) * PRICING.input +
+    (outputTokens / 1e6) * PRICING.output +
+    (cacheReadTokens / 1e6) * PRICING.cacheRead +
+    (cacheWriteTokens / 1e6) * PRICING.cacheWrite;
+
+  const estimatedCostWithoutCacheUsd =
+    (inputTokens / 1e6) * PRICING.input + (outputTokens / 1e6) * PRICING.output;
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    noCacheInputTokens,
+    estimatedCostUsd,
+    estimatedCostWithoutCacheUsd,
+    durationMs,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Suite runner
@@ -107,6 +156,7 @@ async function runDaytonaMode(
     flagValue: null,
     findingsCount: 0,
     comparisonResult: null,
+    tokenMetrics: null,
     sessionPath: r.sessionPath || "",
     duration: 0,
     error: (r.comparison as Record<string, unknown>).error as
@@ -300,6 +350,39 @@ export async function runSingleBenchmark(
       config.timeoutMinutes * 60 * 1000,
     );
 
+    const tokenTotals = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+    const cacheTotals = { cacheReadTokens: 0, cacheWriteTokens: 0 };
+    const workflowStart = Date.now();
+
+    const benchBus = new AgentEventBus();
+    benchBus.on("text-delta", (d) => process.stdout.write(d.text));
+    benchBus.on("tool-call-start", (d) => {
+      const p = d.subagentId ? `[${branch}] [${d.subagentId}]` : `[${branch}]`;
+      console.log(`${p} -> ${d.toolName} (streaming)`);
+    });
+    benchBus.on("tool-call-delta", (d) => {
+      const p = d.subagentId ? `[${branch}] [${d.subagentId}]` : `[${branch}]`;
+      console.log(`${p} -> ${d.toolCallId} delta`);
+    });
+    benchBus.on("tool-call-complete", (d) => {
+      const p = d.subagentId ? `[${branch}] [${d.subagentId}]` : `[${branch}]`;
+      console.log(`${p} -> ${d.toolName}`);
+    });
+    benchBus.on("tool-result", (d) => {
+      const p = d.subagentId ? `[${branch}] [${d.subagentId}]` : `[${branch}]`;
+      console.log(`${p} <- ${d.toolName} done`);
+    });
+    benchBus.on("error", (d) => {
+      const p = d.subagentId ? `[${branch}] [subagent]` : `[${branch}]`;
+      console.error(`${p} Error:`, d.error);
+    });
+    benchBus.on("subagent-spawn", ({ subagentId }) =>
+      console.log(`[${branch}] [${subagentId}] spawned`),
+    );
+    benchBus.on("subagent-complete", ({ subagentId, status }) =>
+      console.log(`[${branch}] [${subagentId}] ${status}`),
+    );
+
     let pentestResult;
     try {
       pentestResult = await runPentestWorkflow({
@@ -307,36 +390,19 @@ export async function runSingleBenchmark(
         model: config.model,
         session,
         abortSignal: controller.signal,
-        callbacks: {
-          onTextDelta: (d) => process.stdout.write(d.text),
-          onToolCallStreaming: (d) =>
-            console.log(`[${branch}] -> ${d.toolName} (streaming)`),
-          onToolCallDelta: (d) =>
-            console.log(`[${branch}] -> ${d.toolCallId} delta`),
-          onToolCall: (d) => console.log(`[${branch}] -> ${d.toolName}`),
-          onToolResult: (d) => console.log(`[${branch}] <- ${d.toolName} done`),
-          onError: (e) => console.error(`[${branch}] Error:`, e),
-          subagentCallbacks: {
-            onSubagentSpawn: ({ subagentId }) =>
-              console.log(`[${branch}] [${subagentId}] spawned`),
-            onSubagentComplete: ({ subagentId, status }) =>
-              console.log(`[${branch}] [${subagentId}] ${status}`),
-            onToolCallStreaming: (d) =>
-              console.log(
-                `[${branch}] [${d.subagentId}] -> ${d.toolName} (streaming)`,
-              ),
-            onToolCallDelta: (d) =>
-              console.log(
-                `[${branch}] [${d.subagentId}] -> ${d.toolCallId} delta`,
-              ),
-            onToolCall: (d) =>
-              console.log(`[${branch}] [${d.subagentId}] -> ${d.toolName}`),
-            onToolResult: (d) =>
-              console.log(
-                `[${branch}] [${d.subagentId}] <- ${d.toolName} done`,
-              ),
-            onError: (e) => console.error(`[${branch}] [subagent] Error:`, e),
-          },
+        eventBus: benchBus,
+        onStepFinish: (event) => {
+          const u = event.usage;
+          if (u) {
+            tokenTotals.inputTokens += u.inputTokens ?? 0;
+            tokenTotals.outputTokens += u.outputTokens ?? 0;
+            tokenTotals.totalTokens +=
+              u.totalTokens ?? (u.inputTokens ?? 0) + (u.outputTokens ?? 0);
+          }
+        },
+        onCacheMetrics: (metrics: CacheMetrics) => {
+          cacheTotals.cacheReadTokens += metrics.cacheReadInputTokens;
+          cacheTotals.cacheWriteTokens += metrics.cacheCreationInputTokens;
         },
       });
     } finally {
@@ -373,9 +439,10 @@ export async function runSingleBenchmark(
         model: comparisonModel,
         session,
       });
-      const compResult = await compAgent.consume({
-        onError: (e) => console.error(`[${branch}] Comparison error:`, e),
-      });
+      compAgent.eventBus.on("error", (d) =>
+        console.error(`[${branch}] Comparison error:`, d.error),
+      );
+      const compResult = await compAgent.consume();
       comparisonResult = compResult.comparison;
     } catch (e) {
       console.error(
@@ -395,6 +462,17 @@ export async function runSingleBenchmark(
     // -----------------------------------------------------------------------
     // Step 9: Save results & return
     // -----------------------------------------------------------------------
+    const tokenMetrics = computeTokenMetrics(
+      tokenTotals,
+      cacheTotals,
+      Date.now() - workflowStart,
+    );
+
+    writeFileSync(
+      path.join(session.rootPath, "token-metrics.json"),
+      JSON.stringify(tokenMetrics, null, 2),
+    );
+
     const result: BenchmarkRunResult = {
       branch,
       metadata,
@@ -403,6 +481,7 @@ export async function runSingleBenchmark(
       flagValue,
       findingsCount: pentestResult.findings.length,
       comparisonResult,
+      tokenMetrics,
       sessionPath: session.rootPath,
       duration: Date.now() - startTime,
     };
@@ -437,6 +516,7 @@ export async function runSingleBenchmark(
       flagValue: null,
       findingsCount: 0,
       comparisonResult: null,
+      tokenMetrics: null,
       sessionPath: "",
       duration: Date.now() - startTime,
       error: message,
@@ -563,6 +643,40 @@ function computeSummary(
         comparisons.length
       : 0;
 
+  const tokenResults = results
+    .map((r) => r.tokenMetrics)
+    .filter((t): t is NonNullable<typeof t> => t !== null);
+
+  const totalInputTokens = tokenResults.reduce((s, t) => s + t.inputTokens, 0);
+  const totalOutputTokens = tokenResults.reduce(
+    (s, t) => s + t.outputTokens,
+    0,
+  );
+  const totalCacheReadTokens = tokenResults.reduce(
+    (s, t) => s + t.cacheReadTokens,
+    0,
+  );
+  const totalCacheWriteTokens = tokenResults.reduce(
+    (s, t) => s + t.cacheWriteTokens,
+    0,
+  );
+  const totalNoCacheInput = tokenResults.reduce(
+    (s, t) => s + t.noCacheInputTokens,
+    0,
+  );
+  const totalEstimatedCostUsd = tokenResults.reduce(
+    (s, t) => s + t.estimatedCostUsd,
+    0,
+  );
+  const totalEstimatedCostWithoutCacheUsd = tokenResults.reduce(
+    (s, t) => s + t.estimatedCostWithoutCacheUsd,
+    0,
+  );
+  const cacheHitRate =
+    totalCacheReadTokens + totalNoCacheInput > 0
+      ? totalCacheReadTokens / (totalCacheReadTokens + totalNoCacheInput)
+      : 0;
+
   return {
     total,
     passed,
@@ -573,5 +687,12 @@ function computeSummary(
     avgPrecision,
     avgRecall,
     totalDurationMinutes: (Date.now() - suiteStartTime) / 60000,
+    totalInputTokens,
+    totalOutputTokens,
+    totalCacheReadTokens,
+    totalCacheWriteTokens,
+    totalEstimatedCostUsd,
+    totalEstimatedCostWithoutCacheUsd,
+    cacheHitRate,
   };
 }

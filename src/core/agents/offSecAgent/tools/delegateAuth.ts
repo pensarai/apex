@@ -5,6 +5,7 @@ import { writeFileSync } from "fs";
 import type { ToolContext } from "./types";
 import { type AuthCredentials } from "../../specialized/authenticationAgent/types";
 import { CredentialManager } from "../../../credentials";
+import { AgentEventBus } from "../../../eventBus";
 // runAuthenticationAgent is dynamically imported inside execute() to break
 // the circular dependency: authAgent → offensiveSecurityAgent → tools → delegateAuth → authAgent
 
@@ -216,12 +217,10 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         }
 
         const subagentId = "auth-agent";
-        const cbs = ctx.subagentCallbacks;
 
-        cbs?.onSubagentSpawn?.({
+        ctx.eventBus?.emit("subagent-spawn", {
           subagentId,
           input: { target, reason },
-          status: "pending",
         });
 
         console.log(`\n🔐 Delegating to authentication subagent...`);
@@ -299,19 +298,8 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         const { runAuthenticationAgent } =
           await import("../../../api/authentication");
 
-        const subagentCallbacks = cbs
-          ? {
-              onTextDelta: (d: { type: "text-delta"; [k: string]: unknown }) =>
-                cbs.onTextDelta?.({ ...d, subagentId } as never),
-              onToolCall: (d: { type: "tool-call"; [k: string]: unknown }) =>
-                cbs.onToolCall?.({ ...d, subagentId } as never),
-              onToolResult: (d: {
-                type: "tool-result";
-                [k: string]: unknown;
-              }) => cbs.onToolResult?.({ ...d, subagentId } as never),
-              onError: (e: unknown) => cbs.onError?.(e),
-            }
-          : undefined;
+        const localBus = new AgentEventBus();
+        AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
 
         const result = await runAuthenticationAgent({
           target,
@@ -320,15 +308,12 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           model: ctx.model,
           authConfig: ctx.authConfig,
           abortSignal: ctx.abortSignal,
-          callbacks: {
-            ...ctx.callbacks,
-            subagentCallbacks,
-          },
+          eventBus: localBus,
+          subagentId,
         });
 
-        cbs?.onSubagentComplete?.({
+        ctx.eventBus?.emit("subagent-complete", {
           subagentId,
-          input: { target, reason },
           status: result.success ? "completed" : "failed",
         });
 
@@ -393,9 +378,8 @@ When to use delegate_to_auth_subagent vs authenticate_session:
               }`,
         };
       } catch (error: unknown) {
-        ctx.subagentCallbacks?.onSubagentComplete?.({
+        ctx.eventBus?.emit("subagent-complete", {
           subagentId: "auth-agent",
-          input: { target, reason },
           status: "failed",
         });
 

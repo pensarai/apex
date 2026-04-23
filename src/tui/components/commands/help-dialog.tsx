@@ -3,60 +3,74 @@
  *
  * Modal overlay for viewing available commands.
  * Shows commands in a scrollable list with detail view for options/flags.
- * Press Enter/v to view detailed description of selected command.
  */
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useDimensions } from "../../context/dimensions";
 import { ScrollBoxRenderable } from "@opentui/core";
 import { scrollToIndex } from "../../utils/scroll";
 import { useCommand } from "../../context/command";
-import { useRoute } from "../../context/route";
-import type { CommandConfig } from "../../command-registry";
+import {
+  type CommandCategory,
+  type CommandConfig,
+  categories,
+} from "../../command-registry";
+import { Dialog } from "../../context/dialog";
+import DialogLayout from "../dialog-layout";
 import { useTheme } from "../../theme";
 
-export default function HelpDialog() {
+interface HelpDialogProps {
+  onClose: () => void;
+}
+
+export default function HelpDialog({ onClose }: HelpDialogProps) {
   const { colors } = useTheme();
   const { commands } = useCommand();
-  const route = useRoute();
-  const dimensions = useDimensions();
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showDetail, setShowDetail] = useState(false);
   const scrollboxRef = useRef<ScrollBoxRenderable | null>(null);
 
-  const visibleCommands = useMemo(
-    () => commands.filter((cmd) => !cmd.hidden),
-    [commands],
+  // Group visible commands by category, preserving array order within each group
+  const groupedCommands = useMemo(() => {
+    const visible = commands.filter((cmd) => !cmd.hidden);
+    const groups: { category: CommandCategory; commands: CommandConfig[] }[] =
+      [];
+    const byCategory = new Map<CommandCategory, CommandConfig[]>();
+
+    for (const cmd of visible) {
+      const cat: CommandCategory = cmd.category || "General";
+      if (!byCategory.has(cat)) byCategory.set(cat, []);
+      byCategory.get(cat)!.push(cmd);
+    }
+
+    for (const cat of categories) {
+      const cmds = byCategory.get(cat);
+      if (cmds?.length) groups.push({ category: cat, commands: cmds });
+    }
+
+    // Any categories not in categories go at the end
+    for (const [cat, cmds] of byCategory) {
+      if (!categories.includes(cat)) {
+        groups.push({ category: cat, commands: cmds });
+      }
+    }
+
+    return groups;
+  }, [commands]);
+
+  // Flat list for keyboard navigation (commands only, no headers)
+  const flatCommands = useMemo(
+    () => groupedCommands.flatMap((g) => g.commands),
+    [groupedCommands],
   );
 
-  // Group commands by category
-  const commandsByCategory = useMemo(() => {
-    const grouped: Record<string, CommandConfig[]> = {};
-    for (const cmd of visibleCommands) {
-      const category = cmd.category || "Other";
-      if (!grouped[category]) {
-        grouped[category] = [];
-      }
-      grouped[category].push(cmd);
-    }
-    return grouped;
-  }, [visibleCommands]);
-
-  // Flat list of commands for navigation
-  const flatCommands = useMemo(() => {
-    return visibleCommands;
-  }, [visibleCommands]);
-
-  // Ensure selected index is within bounds
   useEffect(() => {
     if (selectedIndex >= flatCommands.length) {
       setSelectedIndex(Math.max(0, flatCommands.length - 1));
     }
   }, [flatCommands.length, selectedIndex]);
 
-  // Scroll to keep selected item in view
   useEffect(() => {
     scrollToIndex(
       scrollboxRef.current,
@@ -66,27 +80,17 @@ export default function HelpDialog() {
     );
   }, [selectedIndex, flatCommands]);
 
-  const handleClose = () => {
-    route.navigate({
-      type: "base",
-      path: "home",
-    });
-  };
-
-  // Keyboard handling
   useKeyboard((evt) => {
-    // Handle escape key - either go back from detail view or close dialog
     if (evt.name === "escape") {
       evt.preventDefault();
       if (showDetail) {
         setShowDetail(false);
       } else {
-        handleClose();
+        onClose();
       }
       return;
     }
 
-    // Handle detail view
     if (showDetail) {
       if (evt.name === "return") {
         evt.preventDefault();
@@ -103,7 +107,6 @@ export default function HelpDialog() {
           prev > 0 ? prev - 1 : flatCommands.length - 1,
         );
         break;
-
       case "down":
       case "j":
         evt.preventDefault();
@@ -111,7 +114,6 @@ export default function HelpDialog() {
           prev < flatCommands.length - 1 ? prev + 1 : 0,
         );
         break;
-
       case "return":
       case "v":
         evt.preventDefault();
@@ -122,204 +124,108 @@ export default function HelpDialog() {
     }
   });
 
-  const panelWidth = Math.min(80, dimensions.width - 4);
-  const panelHeight = Math.min(30, dimensions.height - 4);
-
   const selectedCommand = flatCommands[selectedIndex];
 
   // Detail view
   if (showDetail && selectedCommand) {
     const hasOptions =
       selectedCommand.options && selectedCommand.options.length > 0;
-    const detailHeight = Math.min(
-      hasOptions ? 16 + (selectedCommand.options?.length || 0) * 2 : 12,
-      dimensions.height - 4,
-    );
 
     return (
-      <box
-        width={dimensions.width}
-        height={dimensions.height}
-        alignItems="center"
-        justifyContent="center"
-        position="absolute"
-        left={0}
-        top={0}
-        backgroundColor={colors.backgroundOverlay}
-      >
-        <box
-          width={panelWidth}
-          height={detailHeight}
-          backgroundColor={colors.backgroundPanel}
-          borderColor={colors.primary}
-          borderStyle="single"
-          flexDirection="column"
-        >
-          {/* Detail Header */}
-          <box width="100%" padding={1} flexDirection="row">
-            <text fg={colors.primary}>/{selectedCommand.name}</text>
-            <text
-              fg={colors.textMuted}
-            >{`  (${selectedCommand.category || "General"})`}</text>
-          </box>
+      <Dialog size="large" onClose={onClose}>
+        <DialogLayout title={`/${selectedCommand.name}`} escLabel="back">
+          {/* Description */}
+          <text fg={colors.text}>
+            {selectedCommand.description || "No description available"}
+          </text>
 
-          {/* Separator */}
-          <box width="100%" height={1}>
-            <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
-          </box>
+          {/* Aliases */}
+          {selectedCommand.aliases && selectedCommand.aliases.length > 0 && (
+            <box flexDirection="row" marginTop={1}>
+              <text fg={colors.textMuted}>Aliases: </text>
+              <text fg={colors.text}>
+                {selectedCommand.aliases.map((a) => `/${a}`).join(", ")}
+              </text>
+            </box>
+          )}
 
-          {/* Detail Content */}
-          <box width="100%" padding={2} flexDirection="column" flexGrow={1}>
-            {/* Description */}
-            <text fg={colors.text}>
-              {selectedCommand.description || "No description available"}
-            </text>
-
-            {/* Aliases */}
-            {selectedCommand.aliases && selectedCommand.aliases.length > 0 && (
-              <box flexDirection="row" marginTop={1}>
-                <text fg={colors.textMuted}>Aliases: </text>
-                <text fg={colors.text}>
-                  {selectedCommand.aliases.map((a) => `/${a}`).join(", ")}
-                </text>
-              </box>
-            )}
-
-            {/* Options section */}
-            {hasOptions && (
-              <>
-                <box height={1} />
-                <text fg={colors.textMuted}>Options:</text>
-                <box height={1} />
-                {selectedCommand.options?.map((opt, idx) => (
-                  <box key={idx} flexDirection="row" paddingLeft={2}>
-                    <text fg={colors.primary}>{opt.name}</text>
-                    {opt.valueHint && (
-                      <text fg={colors.textMuted}>{` ${opt.valueHint}`}</text>
-                    )}
-                    <text fg={colors.text}>{`  ${opt.description}`}</text>
-                  </box>
-                ))}
-              </>
-            )}
-          </box>
-
-          {/* Separator */}
-          <box width="100%" height={1}>
-            <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
-          </box>
-
-          {/* Detail Footer */}
-          <box width="100%" padding={1} flexDirection="row">
-            <text fg={colors.textMuted}>[enter/esc] back</text>
-          </box>
-        </box>
-      </box>
+          {/* Options */}
+          {hasOptions && (
+            <box flexDirection="column" gap={0} marginTop={1}>
+              <text fg={colors.textMuted}>Options:</text>
+              {selectedCommand.options?.map((opt, idx) => (
+                <box key={idx} flexDirection="row" paddingLeft={2} gap={1}>
+                  <text fg={colors.primary}>{opt.name}</text>
+                  {opt.valueHint && (
+                    <text fg={colors.textMuted}>{opt.valueHint}</text>
+                  )}
+                  <text fg={colors.text}>{opt.description}</text>
+                </box>
+              ))}
+            </box>
+          )}
+        </DialogLayout>
+      </Dialog>
     );
   }
 
-  // Main list view
+  // List view
   return (
-    <box
-      width={dimensions.width}
-      height={dimensions.height}
-      alignItems="center"
-      justifyContent="center"
-      position="absolute"
-      left={0}
-      top={0}
-      backgroundColor={colors.backgroundOverlay}
-    >
-      <box
-        width={panelWidth}
-        height={panelHeight}
-        backgroundColor={colors.backgroundPanel}
-        borderColor={colors.border}
-        borderStyle="single"
-        flexDirection="column"
+    <Dialog size="large" onClose={onClose}>
+      <DialogLayout
+        title="Commands"
+        footerActions={[{ key: "Enter", label: "details", variant: "primary" }]}
       >
-        {/* Header */}
-        <box width="100%" padding={1} flexDirection="row">
-          <text fg={colors.primary}>
-            {"Help - Available Commands".padEnd(panelWidth - 20)}
-          </text>
-          <text fg={colors.textMuted}>{`${flatCommands.length} commands`}</text>
-        </box>
-
-        {/* Separator */}
-        <box width="100%" height={1}>
-          <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
-        </box>
-
-        {/* Column Headers */}
-        <box width="100%" paddingLeft={2} paddingRight={2} flexDirection="row">
-          <text fg={colors.textMuted}>
-            {"Command".padEnd(18)}
-            {"Category".padEnd(14)}
-            {"Description"}
-          </text>
-        </box>
-
-        {/* Commands List - Scrollbox */}
+        {/* Commands list grouped by category */}
         <scrollbox
           ref={scrollboxRef}
           style={{
             rootOptions: { flexGrow: 1, width: "100%" },
-            contentOptions: {
-              paddingLeft: 1,
-              paddingRight: 1,
-              flexDirection: "column",
-            },
+            contentOptions: { flexDirection: "column" },
           }}
           stickyScroll={false}
           focused={true}
         >
-          {flatCommands.map((cmd, idx) => {
-            const isSelected = idx === selectedIndex;
-            const hasOptions = cmd.options && cmd.options.length > 0;
-            const name = `/${cmd.name}`.padEnd(17).slice(0, 17);
-            const category = (cmd.category || "General")
-              .slice(0, 12)
-              .padEnd(14);
-            const desc = cmd.description || "";
-            const optionHint = hasOptions ? " [...]" : "";
-
-            return (
-              <box
-                key={cmd.name}
-                id={cmd.name}
-                width="100%"
-                backgroundColor={
-                  isSelected ? colors.backgroundSelected : undefined
-                }
-                flexDirection="row"
-                paddingLeft={1}
-              >
-                <text fg={isSelected ? colors.primary : colors.text}>
-                  {name}
-                </text>
-                <text fg={colors.textMuted}>{category}</text>
-                <text fg={isSelected ? colors.text : colors.textMuted}>
-                  {desc}
-                </text>
-                {hasOptions && <text fg={colors.primary}>{optionHint}</text>}
+          {groupedCommands.map((group, groupIdx) => (
+            <box key={group.category} flexDirection="column">
+              {/* Category header */}
+              <box paddingTop={groupIdx > 0 ? 1 : 0}>
+                <text fg={colors.textMuted}>{group.category}</text>
               </box>
-            );
-          })}
+
+              {/* Commands in this category */}
+              {group.commands.map((cmd) => {
+                const flatIdx = flatCommands.indexOf(cmd);
+                const isSelected = flatIdx === selectedIndex;
+                return (
+                  <box
+                    key={cmd.name}
+                    id={cmd.name}
+                    width="100%"
+                    flexDirection="row"
+                    gap={2}
+                    paddingLeft={2}
+                    backgroundColor={
+                      isSelected ? colors.backgroundSelected : undefined
+                    }
+                    overflow="hidden"
+                  >
+                    <text
+                      fg={isSelected ? colors.primary : colors.text}
+                      width={18}
+                    >
+                      /{cmd.name}
+                    </text>
+                    <text fg={isSelected ? colors.text : colors.textMuted}>
+                      {cmd.description || ""}
+                    </text>
+                  </box>
+                );
+              })}
+            </box>
+          ))}
         </scrollbox>
-
-        {/* Separator */}
-        <box width="100%" height={1}>
-          <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
-        </box>
-
-        {/* Footer */}
-        <box width="100%" padding={1} flexDirection="row">
-          <text fg={colors.textMuted}>
-            [j/k] navigate [enter/v] details [esc] close
-          </text>
-        </box>
-      </box>
-    </box>
+      </DialogLayout>
+    </Dialog>
   );
 }

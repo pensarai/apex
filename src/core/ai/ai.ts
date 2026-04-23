@@ -19,8 +19,11 @@ import {
   checkIfContextLengthError,
   createSummarizationStream,
   getProviderModel,
+  isAnthropicProvider,
   type AIAuthConfig,
 } from "./utils";
+import { withCachedSystemPrompt, withCachedLastMessage } from "./caching";
+import { applyToolResultBudget, snipOldSteps } from "./contextManagement";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -125,12 +128,10 @@ function wrapStreamWithErrorHandler(
           wrappedStream = (async function* () {
             try {
               for await (const chunk of originalStream.fullStream) {
-                if (chunk.type === "error" || "error" in chunk) {
-                  const error =
-                    "error" in chunk
-                      ? (chunk as unknown as { error: unknown }).error
-                      : chunk;
-                  throw error;
+                // Only stream-level errors are fatal; tool-level errors
+                // flow through so the UI renders them as failed tool results.
+                if (chunk.type === "error") {
+                  throw (chunk as unknown as { error: unknown }).error;
                 }
 
                 yield chunk;
@@ -193,15 +194,65 @@ function wrapStreamWithErrorHandler(
                 } catch {
                   // Fall back to container messages if response is not available
                 }
+
+                // Layer 1+2: Try lightweight compaction before full summarization.
+                // applyToolResultBudget truncates large tool results to previews;
+                // snipOldSteps replaces old tool results with 1-line summaries.
+                const afterBudget = opts.sessionPath
+                  ? applyToolResultBudget(currentMessages, {
+                      sessionPath: opts.sessionPath,
+                    })
+                  : currentMessages;
+                const compacted = snipOldSteps(afterBudget);
+
+                // Update the container so any nested retry reads
+                // already-compacted messages instead of the original
+                // pre-compaction ones (prevents unbounded retry loops).
+                messagesContainer.current = compacted;
+
+                // snipOldSteps returns the input array unchanged when nothing was modified
+                if (compacted !== currentMessages) {
+                  if (!silent) {
+                    console.warn(
+                      `Context length error — trying lightweight compaction on ${currentMessages.length} messages`,
+                    );
+                  }
+                  try {
+                    const retried = streamResponse({
+                      ...opts,
+                      messages: compacted,
+                    });
+                    const wrappedRetry = wrapStreamWithErrorHandler(
+                      retried,
+                      messagesContainer,
+                      opts,
+                      model,
+                      silent,
+                      rateLimitRetryCount,
+                    );
+                    for await (const chunk of wrappedRetry.fullStream) {
+                      yield chunk;
+                    }
+                    return;
+                  } catch (retryError) {
+                    // Only fall through to full summarization for context length errors.
+                    // Other errors (auth failures, model errors) must propagate.
+                    if (!checkIfContextLengthError(retryError)) {
+                      throw retryError;
+                    }
+                  }
+                }
+
+                // Layer 3: Full summarization (existing behavior)
+                const messagesForSummary = messagesContainer.current;
                 if (!silent) {
                   console.warn(
-                    `Context length error in wrapper, summarizing ${messagesContainer.current.length} messages: `,
-                    errorMessage,
+                    `Context length error — summarizing ${messagesForSummary.length} messages`,
                   );
                 }
 
                 const summarizationStream = createSummarizationStream(
-                  currentMessages,
+                  messagesForSummary,
                   opts,
                   model,
                 );
@@ -241,6 +292,33 @@ export interface ModelInfo {
   contextLength?: number;
 }
 
+/**
+ * Check whether a model supports extended thinking based on its ID.
+ *
+ * Thinking is available on Claude 3.7 Sonnet and all Claude 4.x+ models
+ * (Sonnet, Opus, Haiku 4.5). Works for Anthropic direct, Bedrock, and
+ * Pensar provider IDs.
+ */
+export function modelSupportsThinking(modelId: string): boolean {
+  // Normalize: strip provider prefixes so we match the base Claude model ID
+  const normalized = modelId
+    .replace(/^pensar:/, "")
+    .replace(/^(us\.|eu\.|global\.|ap\.)?anthropic\./, "");
+
+  return (
+    /^claude-3-7-sonnet/.test(normalized) ||
+    /^claude-sonnet-4/.test(normalized) ||
+    /^claude-opus-4/.test(normalized) ||
+    /^claude-haiku-4-5/.test(normalized)
+  );
+}
+
+/** Cache token metrics extracted from Anthropic providerMetadata */
+export interface CacheMetrics {
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+}
+
 export interface StreamResponseOpts {
   prompt: string;
   system?: string;
@@ -264,6 +342,12 @@ export interface StreamResponseOpts {
    * new messages (not the full pre-summarization history).
    */
   onSummarized?: (summary: string) => void;
+  /** Called when Anthropic cache metrics are present in a step's providerMetadata */
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
+  /** Enable extended thinking for supported models (Anthropic Claude 3.7+) */
+  enableThinking?: boolean;
+  /** Session root path — used by context management layers to persist truncated tool results */
+  sessionPath?: string;
 }
 
 export function streamResponse(
@@ -283,11 +367,16 @@ export function streamResponse(
     silent,
     authConfig,
     onFinish,
+    onCacheMetrics,
+    enableThinking,
   } = opts;
 
-  // Wrap onStepFinish to fire usage callback for every step
-  const onStepFinish: typeof userOnStepFinish = (step) => {
-    userOnStepFinish?.(step);
+  // Wrap onStepFinish to fire usage callback for every step.
+  // Must be async so that callers returning a Promise (e.g. MessageManager
+  // persisting messages / queuing issues) are fully awaited before the
+  // AI SDK starts the next step.
+  const onStepFinish: typeof userOnStepFinish = async (step) => {
+    await userOnStepFinish?.(step);
     if (_usageCallback) {
       const inp = step.usage?.inputTokens ?? 0;
       const out = step.usage?.outputTokens ?? 0;
@@ -297,23 +386,105 @@ export function streamResponse(
   // Use a container object so the reference stays stable but the value can be updated
   const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
+  const useAnthropicCaching = isAnthropicProvider(model);
+
+  // For Anthropic models, move the system prompt into messages with cache_control.
+  // This caches tools + system prompt across multi-turn conversations (~90% cost reduction on cache hits).
+  let effectiveSystem: string | undefined = system;
+  let effectiveMessages: ModelMessage[] | undefined = messages;
+
+  if (useAnthropicCaching && system) {
+    const baseMessages: ModelMessage[] = messages ?? [
+      { role: "user" as const, content: prompt },
+    ];
+    effectiveMessages = withCachedSystemPrompt(system, baseMessages);
+    effectiveSystem = undefined;
+  }
+
+  // Build providerOptions for extended thinking when enabled on a supported model.
+  // Caching uses message-level cache_control (withCachedSystemPrompt / withCachedLastMessage),
+  // not providerOptions, so there is no collision.
+  // Note: when thinking is enabled, temperature must not be set (Anthropic rejects it).
+  const useThinking =
+    enableThinking &&
+    isAnthropicProvider(model) &&
+    modelSupportsThinking(model);
+  const providerOptions = useThinking
+    ? {
+        anthropic: {
+          thinking: {
+            type: "adaptive" as const,
+          },
+        },
+      }
+    : undefined;
+
+  let rateLimitRetryCount = 0;
 
   try {
     // Create the appropriate provider instance
     const response = streamText({
       model: providerModel,
-      system,
-      ...(messages ? { messages } : { prompt }),
+      system: effectiveSystem,
+      ...(effectiveMessages ? { messages: effectiveMessages } : { prompt }),
       stopWhen,
       toolChoice,
       tools,
       maxRetries: 3,
+      providerOptions,
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
+        // For Anthropic, add cache_control to the last message for incremental caching
+        if (useAnthropicCaching) {
+          return { messages: withCachedLastMessage(opts.messages) };
+        }
         return undefined;
       },
-      onStepFinish,
+      onError: async ({ error }: { error: unknown }) => {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        if (
+          errorMessage.toLowerCase().includes("too many tokens") ||
+          errorMessage.toLowerCase().includes("overloaded")
+        ) {
+          rateLimitRetryCount++;
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * rateLimitRetryCount),
+          );
+          if (rateLimitRetryCount < 20) {
+            return;
+          }
+        }
+        throw error;
+      },
+      onStepFinish: onCacheMetrics
+        ? (stepResult) => {
+            // Extract Anthropic cache metrics from providerMetadata (direct Anthropic / Bedrock SDK)
+            const meta = stepResult.providerMetadata?.anthropic as
+              | Record<string, unknown>
+              | undefined;
+            let cacheRead = (meta?.cacheReadInputTokens as number) ?? 0;
+            let cacheCreation = (meta?.cacheCreationInputTokens as number) ?? 0;
+
+            // Fallback: extract from V3 usage fields (pensar provider)
+            if (cacheRead === 0 && cacheCreation === 0) {
+              const usage = stepResult.usage as
+                | { inputTokens?: { cacheRead?: number; cacheWrite?: number } }
+                | undefined;
+              cacheRead = usage?.inputTokens?.cacheRead ?? 0;
+              cacheCreation = usage?.inputTokens?.cacheWrite ?? 0;
+            }
+
+            if (cacheRead > 0 || cacheCreation > 0) {
+              onCacheMetrics({
+                cacheReadInputTokens: cacheRead,
+                cacheCreationInputTokens: cacheCreation,
+              });
+            }
+            onStepFinish?.(stepResult);
+          }
+        : onStepFinish,
       abortSignal,
       activeTools,
       experimental_repairToolCall: async ({
@@ -342,9 +513,12 @@ export function streamResponse(
           // Get the actual tool definition which contains the Zod schema
           const tool = tools[toolCall.toolName];
           if (!tool || !tool.inputSchema) {
-            throw new Error(
-              `Tool ${toolCall.toolName} not found or has no schema`,
-            );
+            if (!silent) {
+              console.error(
+                `Cannot repair tool call: ${toolCall.toolName} not found or has no schema`,
+              );
+            }
+            return null;
           }
 
           // Get JSONSchema7 for display purposes
@@ -403,11 +577,13 @@ export function streamResponse(
             >[0]);
           }
 
-          // Return the tool call with stringified repaired arguments
           if (repairedArgs === undefined || repairedArgs === null) {
-            throw new Error(
-              `Tool call repair for "${toolCall.toolName}" produced no valid output`,
-            );
+            if (!silent) {
+              console.error(
+                `Tool call repair for "${toolCall.toolName}" produced no valid output`,
+              );
+            }
+            return null;
           }
           return { ...toolCall, input: JSON.stringify(repairedArgs) };
         } catch (repairError) {
@@ -419,7 +595,7 @@ export function streamResponse(
                 : String(repairError),
             );
           }
-          throw repairError;
+          return null;
         }
       },
       onFinish,

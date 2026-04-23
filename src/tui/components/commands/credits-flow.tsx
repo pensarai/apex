@@ -3,6 +3,9 @@ import { useKeyboard } from "@opentui/react";
 import { useRoute } from "../../context/route";
 import { getPensarConsoleUrl } from "../../../core/api/constants";
 import { validateGateway } from "../../../core/auth";
+import { Dialog } from "../../context/dialog";
+import DialogLayout, { type FooterAction } from "../dialog-layout";
+import { useTheme } from "../../theme";
 
 type CreditsStep = "loading" | "no-auth" | "display" | "browser-opened";
 
@@ -12,11 +15,16 @@ interface CreditsInfo {
 }
 
 interface CreditsFlowProps {
+  onClose?: () => void;
   onOpenAuthDialog?: () => void;
 }
 
-export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
+export default function CreditsFlow({
+  onClose,
+  onOpenAuthDialog,
+}: CreditsFlowProps) {
   const route = useRoute();
+  const { colors } = useTheme();
   const [step, setStep] = useState<CreditsStep>("loading");
   const [credits, setCredits] = useState<CreditsInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +32,11 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
   const creditsUrl = `${getPensarConsoleUrl()}/credits`;
 
   const goHome = () => {
-    route.navigate({ type: "base", path: "home" });
+    if (onClose) {
+      onClose();
+    } else {
+      route.navigate({ type: "base", path: "home" });
+    }
   };
 
   const openBrowser = () => {
@@ -72,6 +84,8 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
   }, []);
 
   useKeyboard((key) => {
+    key.preventDefault();
+
     if (key.name === "escape") {
       goHome();
       return;
@@ -99,118 +113,105 @@ export default function CreditsFlow({ onOpenAuthDialog }: CreditsFlowProps) {
     }
   });
 
+  // Build dynamic footer actions per step
+  let footerActions: FooterAction[] = [];
+  if (step === "no-auth") {
+    footerActions = [{ key: "Enter", label: "run /login", variant: "primary" }];
+  } else if (step === "display") {
+    footerActions = [
+      { key: "Enter", label: "open in browser", variant: "primary" },
+      { key: "R", label: "refresh" },
+    ];
+  } else if (step === "browser-opened") {
+    footerActions = [
+      { key: "Enter", label: "refresh balance", variant: "primary" },
+    ];
+  }
+
   return (
-    <box
-      flexDirection="column"
-      width="100%"
-      maxWidth={80}
-      alignItems="flex-start"
-      padding={1}
-    >
-      {/* Header */}
-      <box marginBottom={1}>
-        <text fg="green">Credits</text>
-      </box>
-
-      {/* Loading */}
-      {step === "loading" && (
-        <box>
-          <text fg="yellow">Fetching balance...</text>
-        </box>
-      )}
-
-      {/* No Auth */}
-      {step === "no-auth" && (
-        <box flexDirection="column" gap={1}>
+    <Dialog size="large" onClose={goHome}>
+      <DialogLayout title="Credits" footerActions={footerActions}>
+        {/* Loading */}
+        {step === "loading" && (
           <box>
-            <text fg="yellow">Not connected to Pensar Console.</text>
+            <text fg={colors.warning}>Fetching balance...</text>
           </box>
-          <box>
-            <text fg="gray">
-              Run <span fg="green">/auth</span> first to connect your account.
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Run /auth ·{" "}
-              <span fg="green">[ESC]</span> Back
-            </text>
-          </box>
-        </box>
-      )}
+        )}
 
-      {/* Display Balance */}
-      {step === "display" && (
-        <box flexDirection="column" gap={1}>
-          {error ? (
+        {/* No Auth */}
+        {step === "no-auth" && (
+          <box flexDirection="column" gap={1}>
             <box>
-              <text fg="red">Error: {error}</text>
+              <text fg={colors.warning}>Not connected to Pensar Console.</text>
             </box>
-          ) : credits ? (
-            <>
+            <box>
+              <text fg={colors.textMuted}>
+                Run <span fg={colors.primary}>/login</span> first to connect
+                your account.
+              </text>
+            </box>
+          </box>
+        )}
+
+        {/* Display Balance */}
+        {step === "display" && (
+          <box flexDirection="column" gap={1}>
+            {error ? (
               <box>
-                <text fg="white">Workspace: {credits.workspace}</text>
+                <text fg={colors.error}>Error: {error}</text>
               </box>
-              <box>
-                <text fg="white">
-                  Balance:{" "}
-                  <span fg={credits.balance < 5 ? "yellow" : "green"}>
-                    ${credits.balance.toFixed(2)}
-                  </span>
-                </text>
-              </box>
-              {credits.balance < 5 && (
-                <box marginTop={1}>
-                  <text fg="yellow">
-                    Low balance. We recommend at least $30 for uninterrupted
-                    pentest runs.
+            ) : credits ? (
+              <>
+                <box>
+                  <text>
+                    <span fg={colors.textMuted}>Workspace: </span>
+                    <span fg={colors.text}>{credits.workspace}</span>
                   </text>
                 </box>
-              )}
-            </>
-          ) : null}
+                <box>
+                  <text>
+                    <span fg={colors.textMuted}>Balance: </span>
+                    <span
+                      fg={credits.balance < 5 ? colors.warning : colors.success}
+                    >
+                      ${credits.balance.toFixed(2)}
+                    </span>
+                  </text>
+                </box>
+                {credits.balance < 5 && (
+                  <box marginTop={1}>
+                    <text fg={colors.warning}>
+                      Low balance. We recommend at least $30 for uninterrupted
+                      pentest runs.
+                    </text>
+                  </box>
+                )}
+              </>
+            ) : null}
 
-          <box marginTop={1}>
-            <text fg="gray">
-              Press <span fg="green">[ENTER]</span> to buy credits in your
-              browser.
-            </text>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>Buy credits at: {creditsUrl}</text>
+            </box>
           </box>
-          <box>
-            <text fg="gray">Or visit: {creditsUrl}</text>
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Open browser ·{" "}
-              <span fg="green">[R]</span> Refresh ·{" "}
-              <span fg="green">[ESC]</span> Back
-            </text>
-          </box>
-        </box>
-      )}
+        )}
 
-      {/* Browser Opened */}
-      {step === "browser-opened" && (
-        <box flexDirection="column" gap={1}>
-          <box>
-            <text fg="green">
-              Browser opened. Purchase credits on the Pensar Console.
-            </text>
+        {/* Browser Opened */}
+        {step === "browser-opened" && (
+          <box flexDirection="column" gap={1}>
+            <box>
+              <text fg={colors.success}>
+                Browser opened. Purchase credits on the Pensar Console.
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg={colors.textMuted}>
+                Press <span fg={colors.primary}>[ENTER]</span> to refresh your
+                balance after purchasing.
+              </text>
+            </box>
           </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              Press <span fg="green">[ENTER]</span> to refresh your balance
-              after purchasing.
-            </text>
-          </box>
-          <box marginTop={1}>
-            <text fg="gray">
-              <span fg="green">[ENTER]</span> Refresh balance ·{" "}
-              <span fg="green">[ESC]</span> Back
-            </text>
-          </box>
-        </box>
-      )}
-    </box>
+        )}
+      </DialogLayout>
+    </Dialog>
   );
 }

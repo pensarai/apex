@@ -43,10 +43,14 @@ export function normalizeAssetName(name: string): string {
 /**
  * Build fingerprint keys for an asset.
  *
- * - `urlKey`:  `<normalized_url>||<asset_type>` — precise per-URL dedup
+ * - `urlKey`:  `[<app>||]<normalized_url>||<asset_type>` — precise per-URL dedup
  *              (only set when the asset has a URL)
- * - `nameKey`: `<normalized_name>||<asset_type>` — catches the same logical
+ * - `nameKey`: `[<app>||]<normalized_name>||<asset_type>` — catches the same logical
  *              asset rediscovered with different metadata
+ *
+ * When `appName` is present, keys are scoped to that app so that
+ * `/api/users` in App A and `/api/users` in App B are treated as
+ * distinct assets.
  */
 export function generateAssetFingerprint(asset: AssetRecord): {
   urlKey: string | null;
@@ -55,10 +59,13 @@ export function generateAssetFingerprint(asset: AssetRecord): {
   const normalizedName = normalizeAssetName(asset.assetName);
   const assetType = asset.assetType.toLowerCase();
   const url = asset.details?.url;
+  const appPrefix = asset.appName
+    ? `${normalizeAssetName(asset.appName)}||`
+    : "";
 
   return {
-    urlKey: url ? `${normalizeAssetUrl(url)}||${assetType}` : null,
-    nameKey: `${normalizedName}||${assetType}`,
+    urlKey: url ? `${appPrefix}${normalizeAssetUrl(url)}||${assetType}` : null,
+    nameKey: `${appPrefix}${normalizedName}||${assetType}`,
   };
 }
 
@@ -68,10 +75,11 @@ export function generateAssetFingerprint(asset: AssetRecord): {
 
 /**
  * Minimal asset shape the registry needs for dedup.
- * Compatible with both `DocumentAssetInput` (tool input) and
- * `DocumentedAssetRecord` (persisted record).
+ * Compatible with `DocumentedEndpointRecord` (persisted record)
+ * and the inline records passed by `document_endpoint`.
  */
 export interface AssetRecord {
+  appName?: string;
   assetName: string;
   assetType: string;
   description: string;

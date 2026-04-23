@@ -1,0 +1,96 @@
+---
+title: "/threat-model"
+description: "Generate an application-centric threat model from source code analysis"
+---
+
+## Overview
+
+The `/threat-model` command generates a comprehensive, application-centric threat model by analyzing the codebase in your current working directory. It creates an operator session, explores the source code using AI, and produces a structured Markdown document covering application context, trust boundaries, attacker profiles, security controls, and attack paths with pentest guidance.
+
+## Usage
+
+```bash
+/threat-model
+```
+
+With flags:
+
+```bash
+/threat-model --output ./reports/threat-model.md
+```
+
+**Alias**: `/tm`
+
+## How It Works
+
+<Steps>
+  <Step title="Codebase Analysis">
+    The AI agent explores the codebase — reading source files, configuration, infrastructure, and security-relevant code.
+  </Step>
+  <Step title="Threat Modeling">
+    The agent identifies the application's identity, features, trust boundaries, attacker profiles, deployment model, security controls, and system architecture.
+  </Step>
+  <Step title="Attack Path Synthesis">
+    For each attacker profile, the agent traces realistic attack paths through the application with step-by-step mechanisms, impact analysis, and pentest guidance.
+  </Step>
+  <Step title="Output">
+    The complete threat model is written to a Markdown file (default: `./threat-model.md` in the current directory).
+  </Step>
+</Steps>
+
+## Command Flags
+
+| Flag              | Description                                          |
+| ----------------- | ---------------------------------------------------- |
+| `--output <path>` | Output file path (default: `./threat-model.md`)      |
+| `--model <model>` | AI model to use                                      |
+
+## Output Format
+
+The generated threat model includes these sections:
+
+- **Application Context** — identity, features & capabilities, trust boundaries, attacker profiles
+- **Deployment Model** — cloud, containers, CI/CD, environment files
+- **System Components** — component inventory with types and technologies
+- **Trust Boundaries** — infrastructure-level trust zones
+- **Data Flows** — component-to-component data flow map
+- **Security Controls** — existing controls with effectiveness and gaps
+- **Attack Paths** — detailed attack paths with mechanism steps, preconditions, existing controls, control gaps, and pentest guidance
+- **Summary** — statistics by severity
+
+## Example Workflow
+
+```bash
+# Start Apex
+pensar
+
+# Generate threat model with default output path
+/threat-model
+
+# Generate to a specific file
+/threat-model --output ./security/threat-model.md
+
+# Use the alias
+/tm
+```
+
+## Using with /pentest
+
+The generated threat model can be fed into a pentest session using the `--threat-model` flag:
+
+```bash
+/pentest --target https://example.com --threat-model @./threat-model.md
+```
+
+This guides the pentest agent to prioritize testing based on the identified attack paths and control gaps.
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/operator" icon="terminal" href="/apex/commands/operator">
+    Start an interactive operator session
+  </Card>
+  <Card title="/pentest" icon="play" href="/apex/commands/pentest">
+    Run an autonomous pentest
+  </Card>
+</CardGroup>

@@ -36,7 +36,7 @@ Apex supports the following AI providers:
     Amazon Bedrock AI models for enterprise deployments.
   </Card>
   <Card title="Pensar Console" icon="shield-check">
-    Managed inference — connect via `/auth` instead, no API key needed.
+    Managed inference — connect via `/login` instead, no API key needed.
   </Card>
 </CardGroup>
 
@@ -55,7 +55,11 @@ Apex supports the following AI providers:
     Use `↑/↓` arrows to navigate and `[Enter]` to select a provider
   </Step>
   <Step title="Enter API Key">
-    Input your API key for the selected provider
+    Input your API key for the selected provider. Apex verifies your key against the provider's API before saving — if the key is invalid, you'll see an inline error and can try again.
+
+    <Callout intent="info">
+      Selecting **Pensar Console** from the provider list routes you to the `/login` device-flow login instead of the API key input screen.
+    </Callout>
   </Step>
   <Step title="Select Model">
     After configuring, you'll be redirected to `/models` to select a model
@@ -171,7 +175,7 @@ Apex supports the following AI providers:
     Pensar Console provides managed inference so you don't need to bring your own API key.
 
     ### Connect
-    1. Run `/auth` in Apex (not `/providers`)
+    1. Run `/login` in Apex (not `/providers`)
     2. Follow the authentication flow to link your Pensar Console account
     3. Your models will appear automatically in `/models`
 
@@ -223,10 +227,11 @@ You can also access providers from the models screen:
     **Issue**: Provider shows configured but models won't load
     
     **Solutions**:
-    1. Verify the API key is correct (no extra spaces)
-    2. Check that your account has credits/access
-    3. Ensure the key has appropriate permissions
-    4. Try regenerating the key
+    1. Apex verifies keys on entry — if you see a verification error, double-check the key
+    2. Verify the API key is correct (no extra spaces)
+    3. Check that your account has credits/access
+    4. Ensure the key has appropriate permissions
+    5. Try regenerating the key
   </Accordion>
 
   <Accordion title="Provider not showing" icon="eye-slash">

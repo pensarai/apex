@@ -12,6 +12,7 @@ import { scrollToIndex } from "../../utils/scroll";
 import { useTheme } from "../../theme";
 import { useSessionsList } from "../../hooks/use-sessions-list";
 import { useToast } from "../../context/toast";
+import DialogLayout from "../dialog-layout";
 
 interface SessionsDisplayProps {
   onClose: () => void;
@@ -105,15 +106,11 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
         toast("Session not found", "error");
         return;
       }
-      const isOperator =
-        currentSelection.config?.mode === "operator" ||
-        (!currentSelection.config?.mode && currentSelection.hasOperatorState);
       refocusPrompt();
       onClose();
       route.navigate({
-        type: "pentest",
+        type: "operator",
         sessionId: currentSelection.id,
-        openAsOperator: isOperator || undefined,
       });
       return;
     }
@@ -136,9 +133,8 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       refocusPrompt();
       onClose();
       route.navigate({
-        type: "pentest",
+        type: "operator",
         sessionId: currentSelection.id,
-        openAsOperator: true,
       });
       return;
     }
@@ -200,15 +196,19 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     );
   }
 
+  const footerActions =
+    visualOrderSessions.length > 0
+      ? [
+          { key: "Enter", label: "open", variant: "primary" as const },
+          { key: "O", label: "operator" },
+          { key: "R", label: "report" },
+          { key: "Ctrl+D", label: "delete", variant: "danger" as const },
+        ]
+      : [];
+
   return (
     <Dialog size="large" onClose={handleClose}>
-      <box flexDirection="column" padding={2} gap={2} width="100%">
-        {/* Header */}
-        <box flexDirection="row" justifyContent="space-between" width="100%">
-          <text fg={colors.text}>Sessions</text>
-          <text fg={colors.textMuted}>esc to close</text>
-        </box>
-
+      <DialogLayout title="Sessions" footerActions={footerActions}>
         {/* Search Input */}
         <box
           width="100%"
@@ -236,15 +236,15 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
             flexDirection="column"
             gap={2}
             flexGrow={1}
-            maxHeight={10}
+            flexShrink={1}
             overflow="hidden"
+            marginTop={1}
           >
             <scrollbox
               ref={scroll}
-              scrollbarOptions={{ visible: false }}
+              scrollbarOptions={{ visible: true }}
               style={{
                 rootOptions: {
-                  maxHeight: 10,
                   width: "100%",
                   flexGrow: 1,
                   flexShrink: 1,
@@ -337,19 +337,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
             </scrollbox>
           </box>
         )}
-
-        {/* Actions Footer */}
-        {visualOrderSessions.length > 0 && (
-          <box flexDirection="row" gap={2}>
-            <text fg={colors.textMuted}>
-              <span fg={colors.primary}>[Enter]</span> Open ·{" "}
-              <span fg={colors.primary}>[O]</span> Operator ·{" "}
-              <span fg={colors.primary}>[R]</span> Report ·{" "}
-              <span fg={colors.primary}>[Ctrl+D]</span> Delete
-            </text>
-          </box>
-        )}
-      </box>
+      </DialogLayout>
     </Dialog>
   );
 }

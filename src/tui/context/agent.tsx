@@ -5,9 +5,10 @@ import {
   useMemo,
   useCallback,
   useEffect,
+  useRef,
   type ReactNode,
 } from "react";
-import { type ModelInfo } from "../../core/ai";
+import { type ModelInfo, modelSupportsThinking } from "../../core/ai";
 import { AVAILABLE_MODELS } from "../../core/ai/models";
 import { update as updateConfig } from "../../core/config/config";
 import {
@@ -21,6 +22,8 @@ interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  cachedTokens: number;
+  cacheWriteTokens: number;
 }
 
 interface AgentContextValue {
@@ -34,10 +37,14 @@ interface AgentContextValue {
   isModelUserSelected: boolean;
   tokenUsage: TokenUsage;
   addTokenUsage: (input: number, output: number) => void;
+  addCacheUsage: (cacheRead: number, cacheWrite: number) => void;
   resetTokenUsage: () => void;
   hasExecuted: boolean;
   thinking: boolean;
   setThinking: (thinking: boolean) => void;
+  /** Whether extended thinking is enabled for supported models (persisted to config). */
+  reasoningEnabled: boolean;
+  setReasoningEnabled: (enabled: boolean) => void;
   isExecuting: boolean;
   setIsExecuting: (isExecuting: boolean) => void;
   /** The agent's working directory (session rootPath), shown in footer. */
@@ -71,11 +78,19 @@ export function AgentProvider({ children }: AgentProviderProps) {
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,
+    cachedTokens: 0,
+    cacheWriteTokens: 0,
   });
   const [hasExecuted, setHasExecuted] = useState<boolean>(false);
   const [thinking, setThinking] = useState<boolean>(false);
+  const [reasoningEnabled, setReasoningEnabledInternal] = useState<boolean>(
+    () => appConfig.data?.reasoningEnabled ?? false,
+  );
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [sessionCwd, setSessionCwd] = useState<string | null>(null);
+
+  const reasoningEnabledRef = useRef(reasoningEnabled);
+  reasoningEnabledRef.current = reasoningEnabled;
 
   // Wrapper that marks model as user-selected and persists to config.
   // Pass `persist = false` for programmatic/initialization calls so the
@@ -84,11 +99,35 @@ export function AgentProvider({ children }: AgentProviderProps) {
     setModelInternal(newModel);
     if (persist) {
       setIsModelUserSelected(true);
-      updateConfig({ selectedModelId: newModel.id }).catch((err) => {
+      const configUpdate: {
+        selectedModelId: string;
+        reasoningEnabled?: boolean;
+      } = {
+        selectedModelId: newModel.id,
+      };
+      if (reasoningEnabledRef.current && !modelSupportsThinking(newModel.id)) {
+        configUpdate.reasoningEnabled = false;
+        setReasoningEnabledInternal(false);
+      }
+      updateConfig(configUpdate).catch((err) => {
         writeErrorLog(err, "AGENT_CONTEXT");
       });
     }
   }, []);
+
+  const setReasoningEnabled = useCallback((enabled: boolean) => {
+    setReasoningEnabledInternal(enabled);
+    updateConfig({ reasoningEnabled: enabled }).catch((err) => {
+      writeErrorLog(err, "AGENT_CONTEXT");
+    });
+  }, []);
+
+  // Sync reasoningEnabled when config loads asynchronously
+  useEffect(() => {
+    if (appConfig.data?.reasoningEnabled != null) {
+      setReasoningEnabledInternal(appConfig.data.reasoningEnabled);
+    }
+  }, [appConfig.data?.reasoningEnabled]);
 
   // Re-evaluate the default model whenever config changes (e.g. after
   // provider setup) unless the user has explicitly picked a model.
@@ -119,15 +158,30 @@ export function AgentProvider({ children }: AgentProviderProps) {
   const addTokenUsage = useCallback((input: number, output: number) => {
     setHasExecuted(true);
     setTokenUsage((prev) => ({
+      ...prev,
       inputTokens: prev.inputTokens + input,
       outputTokens: prev.outputTokens + output,
       totalTokens: prev.totalTokens + input + output,
     }));
   }, []);
 
+  const addCacheUsage = useCallback((cacheRead: number, cacheWrite: number) => {
+    setTokenUsage((prev) => ({
+      ...prev,
+      cachedTokens: prev.cachedTokens + cacheRead,
+      cacheWriteTokens: prev.cacheWriteTokens + cacheWrite,
+    }));
+  }, []);
+
   const resetTokenUsage = useCallback(() => {
     setHasExecuted(false);
-    setTokenUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
+    setTokenUsage({
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
+    });
   }, []);
 
   const contextValue = useMemo(
@@ -137,10 +191,13 @@ export function AgentProvider({ children }: AgentProviderProps) {
       isModelUserSelected,
       tokenUsage,
       addTokenUsage,
+      addCacheUsage,
       resetTokenUsage,
       hasExecuted,
       thinking,
       setThinking,
+      reasoningEnabled,
+      setReasoningEnabled,
       isExecuting,
       setIsExecuting,
       sessionCwd,
@@ -153,9 +210,11 @@ export function AgentProvider({ children }: AgentProviderProps) {
       tokenUsage,
       hasExecuted,
       thinking,
+      reasoningEnabled,
       isExecuting,
       sessionCwd,
       addTokenUsage,
+      addCacheUsage,
       resetTokenUsage,
     ],
   );

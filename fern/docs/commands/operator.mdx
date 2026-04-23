@@ -47,7 +47,7 @@ With flags:
 | Mode        | Description                                                                 |
 | ----------- | --------------------------------------------------------------------------- |
 | **Default** | All tools are available; the agent can read, write, and mutate targets      |
-| **Plan**    | Read-only tools only — mutation tools (create_file, update_file, create_poc, document_vulnerability, document_asset) are excluded so the agent can only observe and plan |
+| **Plan**    | Read-only tools only — mutation tools (create_file, update_file, create_poc, document_vulnerability, document_app, document_endpoint) are excluded so the agent can only observe and plan |
 
 You can toggle between Default and Plan mode at any time during a session using `Shift+Tab`. The current mode is shown in the operator dashboard header.
 
@@ -82,6 +82,7 @@ Toggle approval with `Option+Shift+Tab` (or `Alt+Shift+Tab` on Linux/Windows).
 | `--strict`            | Enable strict scope mode                          |
 | `--headers <mode>`    | Headers mode: none, default, or custom            |
 | `--header <Name:Val>` | Custom header (repeatable)                        |
+| `--sandbox`           | Use isolated session directory as working directory instead of current directory |
 
 ## Keyboard Shortcuts
 

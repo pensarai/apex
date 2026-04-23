@@ -1,13 +1,22 @@
 import { PatchingAgent } from "../agents/specialized/patching/agent";
 import type { PatchingAgentInput } from "../agents/specialized/patching/types";
 import type { PatchResult } from "../agents/specialized/patching/types";
-import type { ConsumeCallbacks } from "../agents/offSecAgent/types";
 
 export type { PatchResult, PatchingAgentInput };
 
-export interface RunPatchingAgentInput extends PatchingAgentInput {
-  /** Optional callbacks for stream consumption. Falls back to console logging. */
-  consumeCallbacks?: ConsumeCallbacks;
+function attachDefaultPatchingStreamListeners(agent: PatchingAgent): void {
+  agent.eventBus.on("text-delta", (e) => {
+    process.stdout.write(e.text);
+  });
+  agent.eventBus.on("tool-call-complete", (e) => {
+    console.log(`→ calling ${e.toolName}`);
+  });
+  agent.eventBus.on("tool-result", (e) => {
+    console.log(`✓ ${e.toolName} completed`);
+  });
+  agent.eventBus.on("error", (e) => {
+    console.error("Patching agent error:", e.error);
+  });
 }
 
 /**
@@ -17,23 +26,17 @@ export interface RunPatchingAgentInput extends PatchingAgentInput {
  * lint, type-check, and tests. When a sandbox is provided in the input,
  * tools automatically route operations through it.
  *
+ * When no `eventBus` is passed on the input, default stdout / console
+ * listeners are attached to the agent's bus for local CLI use.
+ *
  * @returns Structured patch result with file changes and PR metadata.
  */
 export async function runPatchingAgent(
-  input: RunPatchingAgentInput,
+  input: PatchingAgentInput,
 ): Promise<PatchResult> {
-  const { consumeCallbacks, ...agentInput } = input;
-
-  const agent = new PatchingAgent(agentInput);
-
-  const result = await agent.consume(
-    consumeCallbacks ?? {
-      onTextDelta: (d) => process.stdout.write(d.text),
-      onToolCall: (d) => console.log(`→ calling ${d.toolName}`),
-      onToolResult: (d) => console.log(`✓ ${d.toolName} completed`),
-      onError: (e) => console.error("Patching agent error:", e),
-    },
-  );
-
-  return result;
+  const agent = new PatchingAgent(input);
+  if (!input.eventBus) {
+    attachDefaultPatchingStreamListeners(agent);
+  }
+  return agent.consume();
 }

@@ -4,21 +4,26 @@ import type {
   StreamTextOnFinishCallback,
   StreamTextOnStepFinishCallback,
   StreamTextResult,
-  TextStreamPart,
   ToolChoice,
   ToolSet,
 } from "ai";
-import type { AIModel } from "../../ai";
+import type { AIModel, CacheMetrics } from "../../ai";
 import type { AIAuthConfig } from "../../ai/utils";
 import type { CredentialManager } from "../../credentials";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../findings/registry";
 import type { SessionInfo, SessionConfig } from "../../session";
 import type { ApprovalGate } from "../../operator";
+import type { SkillsRegistry } from "../../skills/registry";
 import type { ToolName } from "./tools";
 import type { UnifiedSandbox } from "./tools/sandbox";
+import type { AgentEventBus } from "../../eventBus";
 import { z } from "zod";
-import { CweEntrySchema } from "../../../lib/cwe/types";
+import {
+  CweEntrySchema,
+  ValidatedCweEntrySchema,
+} from "../../../lib/cwe/types";
+import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -44,7 +49,10 @@ export const ApexFindingObject = z.object({
   remediation: z.string(),
   references: z.string().optional(),
   toolCallDescription: z.string().optional(), // Optional for backward compatibility
-  cwes: z.array(CweEntrySchema).optional(),
+  cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
+  rootCauseGroup: z.string().optional(),
+  relatedFindings: z.array(z.string()).optional(),
+  evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
 });
 
 export type Finding = z.infer<typeof ApexFindingObject>;
@@ -78,8 +86,8 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    *
    * When set to `"plan"`, the agent's `activeTools` are intersected with
    * {@link PLAN_MODE_TOOL_NAMES} so that mutation tools (create_file,
-   * update_file, create_poc, document_vulnerability, document_asset)
-   * are excluded.
+   * update_file, document_vulnerability, document_app,
+   * document_endpoint) are excluded.
    *
    * @default "default"
    */
@@ -126,6 +134,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** Callback fired when the entire stream finishes */
   onFinish?: StreamTextOnFinishCallback<ToolSet>;
 
+  /** Called when Anthropic cache metrics are present in a step's providerMetadata */
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
+
   /** AbortSignal to cancel the agent mid-run */
   abortSignal?: AbortSignal;
 
@@ -133,7 +144,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   authConfig?: AIAuthConfig;
 
   /**
-   * When set, tools like execute_command / http_request / create_poc
+   * When set, tools like execute_command / http_request / document_vulnerability
    * route execution through this sandbox instead of running locally.
    */
   sandbox?: UnifiedSandbox;
@@ -146,7 +157,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /**
    * Shared attack surface registry for cross-agent asset dedup.
-   * When present, `document_asset` checks for duplicates before writing.
+   * When present, `document_endpoint` checks for duplicates before writing.
    */
   attackSurfaceRegistry?: AttackSurfaceRegistry;
 
@@ -174,16 +185,34 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   subagentId?: string;
 
   /**
-   * Callbacks for forwarding subagent stream events to the parent consumer.
-   *
-   * Passed through to the tool context so orchestration tools
-   * (run_attack_surface, spawn_pentest_swarm) can forward their
-   * sub-agent events back to the top-level consumer.
+   * Override the auto-computed task directory. When set, takes precedence
+   * over the directory derived from `subagentId`. Use this when a plan
+   * agent needs to write tasks to the execution agent's task directory.
    */
-  subagentCallbacks?: SubagentConsumeCallbacks;
+  tasksDir?: string;
 
-  /** Callbacks for persisting agent discoveries to external storage (e.g., database). */
-  callbacks?: ConsumeCallbacks;
+  /**
+   * Override for plan file scoping. When set, write_plan uses this ID
+   * instead of `subagentId` to derive the plan file path, allowing
+   * plan agents to write plans scoped to their corresponding execution agent.
+   */
+  planSubagentId?: string;
+
+  /**
+   * Event bus for streaming agent output.
+   *
+   * When provided, the agent emits all streaming events (text deltas,
+   * tool calls, tool results, errors) on this bus. Multiple consumers
+   * can subscribe independently — TUI, DB persistence, metrics, etc.
+   *
+   * The bus is also passed through to tools so orchestration tools
+   * (run_attack_surface, spawn_pentest_swarm) can emit subagent events
+   * on the same bus.
+   *
+   * When omitted, a fresh bus is created internally — callers can access
+   * it via `agent.eventBus` after construction.
+   */
+  eventBus?: AgentEventBus;
 
   /**
    * Zod schema for structured output via the `response` tool.
@@ -197,6 +226,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * `activeTools` to get typed structured output from `consume()`.
    */
   responseSchema?: z.ZodSchema;
+
+  /**
+   * Skills registry for on-demand skill loading.
+   * When provided, read_skill is available.
+   */
+  skillsRegistry?: SkillsRegistry;
 
   /**
    * When provided, each tool call is gated through the approval gate.
@@ -216,6 +251,26 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * currently running shell command without killing the agent.
    */
   commandCancelHandle?: CommandCancelHandle;
+
+  /**
+   * Environment variables to inject into the agent's persistent shell.
+   * Each key-value pair is set in the shell's process environment at
+   * spawn time, so they're available to every `execute_command` call.
+   * Scoped to this agent instance — other agents on the same machine
+   * never see them.
+   */
+  environmentVariables?: Record<string, string>;
+
+  /** Enable extended thinking (reasoning) for supported models. */
+  enableThinking?: boolean;
+
+  /**
+   * Project-level threat model content (e.g. from `.pensar/threat_model.md`).
+   * Forwarded into the {@link ToolContext} so tools that spawn dedicated
+   * per-endpoint threat-model sub-agents can include this as additional
+   * grounding context.
+   */
+  projectThreatModel?: string;
 };
 
 /**
@@ -248,11 +303,20 @@ export interface SpecializedAgentInput {
   /** Callback fired after each agent step */
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
 
+  /** Called when Anthropic cache metrics are present in a step's providerMetadata */
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
+
   /** AbortSignal to cancel the agent mid-run */
   abortSignal?: AbortSignal;
 
-  /** Callbacks for stream events and subagent forwarding */
-  callbacks?: ConsumeCallbacks;
+  /** Event bus for streaming agent output */
+  eventBus?: AgentEventBus;
+
+  /**
+   * When set, stream chunks emitted during {@link OffensiveSecurityAgent.consume}
+   * are tagged with this id on the event bus (for multi-agent UIs).
+   */
+  subagentId?: string;
 
   /** Shared findings registry for cross-agent dedup */
   findingsRegistry?: FindingsRegistry;
@@ -265,91 +329,22 @@ export interface SpecializedAgentInput {
 
   /** Override the default stop condition */
   stopWhen?: StopCondition<ToolSet>;
+
+  /**
+   * Environment variables to inject into the agent's persistent shell.
+   * Forwarded to the underlying {@link OffensiveSecurityAgentInput}.
+   */
+  environmentVariables?: Record<string, string>;
+
+  /** Enable extended thinking (reasoning) for supported models. */
+  enableThinking?: boolean;
+
+  /**
+   * Project-level threat model content. Forwarded into {@link ToolContext}
+   * so per-endpoint threat-model sub-agents can incorporate it as grounding.
+   */
+  projectThreatModel?: string;
 }
-
-/**
- * Typed callbacks for consuming the agent's output stream.
- * Pass to `agent.consume()` for ergonomic stream processing.
- */
-export type ConsumeCallbacks = {
-  onTextDelta?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }>,
-  ) => void;
-  /** Fired as soon as the model starts generating a tool call (tool name is known, args still streaming). */
-  onToolCallStreaming?: (delta: {
-    toolCallId: string;
-    toolName: string;
-  }) => void;
-  /** Fired as tool call arguments are being generated (partial JSON delta). */
-  onToolCallDelta?: (delta: {
-    toolCallId: string;
-    argsTextDelta: string;
-  }) => void;
-  onToolCall?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }>,
-  ) => void;
-  onToolResult?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-result" }>,
-  ) => void;
-  /** Streaming stdout chunks from execute_command while it is still running. */
-  onCommandOutput?: (data: string) => void;
-  onError?: (error: unknown) => void;
-  subagentCallbacks?: SubagentConsumeCallbacks;
-};
-
-/**
- * Typed callbacks for consuming the subagent's output stream.
- * Pass to `subagent.consume()` for ergonomic stream processing.
- */
-export type SubagentConsumeCallbacks = {
-  onSubagentSpawn?: ({
-    subagentId,
-    name,
-    input,
-    status,
-  }: {
-    subagentId: string;
-    /** Short human-readable label for this sub-agent (e.g. truncated objective). */
-    name?: string;
-    input: unknown;
-    status: "pending" | "completed" | "failed";
-  }) => void;
-  onSubagentComplete?: ({
-    subagentId,
-    input,
-    status,
-  }: {
-    subagentId: string;
-    input: unknown;
-    status: "completed" | "failed";
-  }) => void;
-  onTextDelta?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "text-delta" }> & {
-      subagentId?: string;
-    },
-  ) => void;
-  onToolCallStreaming?: (
-    delta: { toolCallId: string; toolName: string } & {
-      subagentId?: string;
-    },
-  ) => void;
-  onToolCallDelta?: (
-    delta: { toolCallId: string; argsTextDelta: string } & {
-      subagentId?: string;
-    },
-  ) => void;
-  onToolCall?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-call" }> & {
-      subagentId?: string;
-    },
-  ) => void;
-  onToolResult?: (
-    delta: Extract<TextStreamPart<ToolSet>, { type: "tool-result" }> & {
-      subagentId?: string;
-    },
-  ) => void;
-  onError?: (error: unknown) => void;
-};
 
 /**
  * Input for the `OffensiveSecurityAgent.create()` async factory.

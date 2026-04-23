@@ -1,0 +1,50 @@
+---
+title: "pensar projects"
+description: "List workspace projects from the Pensar Console API"
+---
+
+## Overview
+
+The `pensar projects` command lists all projects in your connected Pensar Console workspace. Projects are the top-level organizational unit in Console — each project maps to a codebase or application being tested.
+
+## Usage
+
+```bash
+pensar projects
+```
+
+## Prerequisites
+
+You must be connected to Pensar Console via [`pensar login`](/apex/cli/auth) before using this command.
+
+## Output
+
+Returns a JSON array of project objects:
+
+```json
+[
+  {
+    "id": "proj_abc123",
+    "name": "My Web App",
+    "slug": "my-web-app",
+    "createdAt": "2026-01-15T10:30:00Z"
+  }
+]
+```
+
+## Options
+
+| Flag         | Description             |
+| ------------ | ----------------------- |
+| `-h, --help` | Show help message       |
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="pensar pentests" icon="shield-check" href="/apex/cli/pentests">
+    List and manage pentests for a project
+  </Card>
+  <Card title="pensar issues" icon="bug" href="/apex/cli/issues">
+    List and manage security issues for a project
+  </Card>
+</CardGroup>

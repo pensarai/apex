@@ -3,6 +3,7 @@ import { z } from "zod";
 import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
+import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 
 const MAX_INLINE_BODY = 5_000;
 
@@ -98,17 +99,24 @@ export function httpRequest(ctx: ToolContext) {
 
 USAGE GUIDANCE:
 - Always check response headers for security misconfigurations
-- Look for: X-Frame-Options, X-XSS-Protection, CSP, HSTS, X-Content-Type-Options
+- Look for: X-Frame-Options, Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options, Permissions-Policy, Cross-Origin-Embedder-Policy, Cross-Origin-Opener-Policy (NOTE: X-XSS-Protection is deprecated by all major browsers — do NOT recommend it; recommend Content-Security-Policy instead)
 - Analyze cookies for HttpOnly, Secure, SameSite flags
 - Check for verbose error messages that leak information
 - Test for common web vulnerabilities (SQL injection, XSS, IDOR)
 - Monitor response times for blind injection attacks
 - Test different HTTP methods (GET, POST, PUT, DELETE, PATCH, OPTIONS)
 
+CORS TESTING (per Fetch specification browser enforcement rules):
+- Access-Control-Allow-Origin: * with NO credentials flag = any site can read non-authenticated responses. Usually LOW impact unless the response itself contains sensitive data.
+- Access-Control-Allow-Origin: * with Access-Control-Allow-Credentials: true = BROWSERS BLOCK THIS per the Fetch spec. The headers contradict each other. This is a server misconfiguration but NOT exploitable as a credential-stealing CORS bypass. Severity: LOW (misconfiguration only).
+- Reflected Origin + Access-Control-Allow-Credentials: true = ACTUAL HIGH SEVERITY. The server echoes back whatever Origin the attacker sends, allowing any site to make credentialed cross-origin requests. To test: send a request with header "Origin: https://evil.example.com" and check if Access-Control-Allow-Origin in the response reflects that exact value.
+- Access-Control-Allow-Origin: null + Access-Control-Allow-Credentials: true = exploitable from sandboxed iframes (data: URIs, sandboxed frames). Severity: MEDIUM-HIGH.
+- ALWAYS actively test for origin reflection: send an OPTIONS or GET request with "Origin: https://evil.example.com" header and inspect whether Access-Control-Allow-Origin echoes it back. This is the most dangerous CORS pattern.
+- IMPORTANT: CORS is only relevant for endpoints that use cookie-based or token-based authentication. If the endpoint requires NO authentication at all, CORS configuration does not change the risk — the endpoint is directly callable from any client regardless of CORS headers. Do not document CORS misconfigurations on unauthenticated endpoints.
+
 COMMON TESTING PATTERNS:
 - Test with/without authentication
 - Try different user agents
-- Test for CORS misconfigurations
 - Check for API endpoints (/api/, /v1/, /graphql)
 - Look for admin panels (/admin, /administrator, /wp-admin)
 - Test for backup files (.bak, .old, ~, .swp)`,
@@ -121,6 +129,25 @@ COMMON TESTING PATTERNS:
       followRedirects,
       timeout,
     }): Promise<HttpRequestResult> => {
+      try {
+        assertUrlInScope(url, ctx);
+      } catch (e) {
+        if (e instanceof ScopeViolationError) {
+          return {
+            success: false,
+            error: e.message,
+            url,
+            method,
+            status: 0,
+            statusText: "",
+            headers: {},
+            body: "",
+            redirected: false,
+          };
+        }
+        throw e;
+      }
+
       const headers = parseHeaders(rawHeaders);
 
       // Sandbox mode: build a curl command and run it inside the sandbox

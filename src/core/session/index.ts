@@ -98,6 +98,7 @@ const EmailInboxConfigObject = z.discriminatedUnion("provider", [
     refreshToken: z.string(),
     clientId: z.string().optional(),
     clientSecret: z.string().optional(),
+    tokenExpiry: z.number().optional(),
   }),
   z.object({
     provider: z.literal("outlook"),
@@ -108,6 +109,7 @@ const EmailInboxConfigObject = z.discriminatedUnion("provider", [
     refreshToken: z.string(),
     clientId: z.string().optional(),
     clientSecret: z.string().optional(),
+    tokenExpiry: z.number().optional(),
   }),
   z.object({
     provider: z.literal("imap"),
@@ -149,11 +151,19 @@ const SessionConfigObject = z.object({
   /** Whether to enumerate subdomains during attack surface discovery (default: false) */
   enumerateSubdomains: z.boolean().optional(),
   /** Local codebase path for whitebox analysis (source code access) */
-  cwd: z.string().optional(),
+  codebasePath: z.string().optional(),
   /** Email inboxes available to the agent for monitoring/reading email */
   emailIntegration: EmailIntegrationConfigObject.optional(),
   /** Enable exfiltration mode — allows internal pivoting and flag extraction through confirmed vulnerabilities */
   exfilMode: z.boolean().optional(),
+  /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
+  agentCwd: z.string().optional(),
+  /** Operator-provided guidance injected into the orchestrator/agent system prompts */
+  prompt: z.string().optional(),
+  /** Enable task-driven architecture — agents decompose objectives into tracked tasks (default: false) */
+  taskDriven: z.boolean().optional(),
+  /** When true, pentest agents run a plan phase before execution (default: false) */
+  requirePlan: z.boolean().optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;

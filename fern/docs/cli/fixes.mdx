@@ -1,0 +1,58 @@
+---
+title: "pensar fixes"
+description: "View security fixes and diffs via the Pensar Console API"
+---
+
+## Overview
+
+The `pensar fixes` command lets you view suggested security fixes for issues discovered during pentests. Fixes include code diffs that show exactly what changes are recommended.
+
+## Usage
+
+```bash
+pensar fixes <issueId>         # List fixes for an issue
+pensar fixes get <fixId>       # Get fix details (includes diff)
+```
+
+## Prerequisites
+
+You must be connected to Pensar Console via [`pensar login`](/apex/cli/auth) before using this command.
+
+## Subcommands
+
+### List Fixes
+
+```bash
+pensar fixes <issueId>
+```
+
+Lists all suggested fixes for a given issue. Returns a JSON array of fix objects.
+
+### Get Fix Details
+
+```bash
+pensar fixes get <fixId>
+```
+
+Returns detailed information about a specific fix, including the code diff.
+
+## Examples
+
+```bash
+# List fixes for an issue
+pensar fixes issue_ghi789
+
+# Get details and diff for a specific fix
+pensar fixes get fix_jkl012
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="pensar issues" icon="bug" href="/apex/cli/issues">
+    List and manage the issues that fixes address
+  </Card>
+  <Card title="pensar logs" icon="scroll" href="/apex/cli/logs">
+    View agent execution logs for debugging
+  </Card>
+</CardGroup>

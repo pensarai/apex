@@ -3,8 +3,7 @@ import type { Route, WebCommandOptions } from "./context/route";
 import {
   parseWebFlags,
   hasEnoughFlagsToSkipWizard,
-  buildOperatorSessionConfig,
-  buildSwarmSessionConfig,
+  combinePromptParts,
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
@@ -16,8 +15,13 @@ export interface AppCommandContext {
   navigate: (route: Route) => void;
   openSessionsDialog?: () => void;
   openThemeDialog?: () => void;
+  openModelDialog?: () => void;
+  openProvidersDialog?: () => void;
+  openCreditsDialog?: () => void;
+  openHelpDialog?: () => void;
   openAuthDialog?: () => void;
   openPentestDialog?: (flags?: WebCommandOptions) => void;
+  openSkillsDialog?: (slug?: string) => void;
 }
 
 /**
@@ -30,23 +34,36 @@ export interface CommandOption {
 }
 
 /**
+ * Command category type and display order.
+ */
+export type CommandCategory = "Pentesting" | "Configuration" | "General";
+
+export const categories: CommandCategory[] = [
+  "Pentesting",
+  "Configuration",
+  "General",
+];
+
+/**
  * Command configuration object - easy to map over and export
  */
 export interface CommandConfig {
   name: string;
   aliases?: string[];
   description?: string;
-  category?: string;
+  category?: CommandCategory;
   options?: CommandOption[];
-  /** If true, command works but doesn't appear in the autocomplete menu */
+  /** If true, command works but doesn't appear in the autocomplete menu or help dialog */
   hidden?: boolean;
   handler: (args: string[], ctx: AppCommandContext) => void | Promise<void>;
 }
 
 /**
- * All available commands in a simple, mappable array
+ * All available commands.
+ * Array order = display order in autocomplete dropdown and help dialog.
  */
 export const commands: CommandConfig[] = [
+  // — Pentesting —
   {
     name: "pentest",
     aliases: ["p", "web", "w"],
@@ -102,17 +119,47 @@ export const commands: CommandConfig[] = [
         description: "Custom header (repeatable)",
       },
       { name: "--model", valueHint: "<model>", description: "AI model to use" },
+      {
+        name: "--prompt",
+        valueHint: "<text|@file>",
+        description: "Guidance for the pentest agent",
+      },
+      {
+        name: "--threat-model",
+        valueHint: "<text|@file>",
+        description: "Threat model to guide the pentest (inline or @filepath)",
+      },
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
 
-      // Pentest command always uses swarm mode
       if (flags.target && hasEnoughFlagsToSkipWizard(flags)) {
-        const params = buildSwarmSessionConfig(flags);
+        const skillArgs: Record<string, string> = {};
+        if (flags.target) skillArgs.target = flags.target;
+        if (flags.authUrl) skillArgs["auth-url"] = flags.authUrl;
+        if (flags.authUser) skillArgs["auth-user"] = flags.authUser;
+        if (flags.authPass) skillArgs["auth-pass"] = flags.authPass;
+        if (flags.authInstructions)
+          skillArgs["auth-instructions"] = flags.authInstructions;
+        if (flags.hosts?.length) skillArgs.hosts = flags.hosts.join(",");
+        if (flags.ports?.length)
+          skillArgs.ports = flags.ports.map(String).join(",");
+        if (flags.strict) skillArgs.strict = "true";
+        const combinedPrompt = combinePromptParts(
+          flags.threatModel,
+          flags.prompt,
+        );
+        if (combinedPrompt) skillArgs.prompt = combinedPrompt;
+
         ctx.navigate({
-          type: "pentest",
-          targets: params.targets,
-          sessionConfig: params.config,
+          type: "operator",
+          nonce: Date.now(),
+          initialConfig: {
+            requireApproval: false,
+            target: flags.target,
+            sandbox: true,
+          },
+          initialSkill: { slug: "pentest", args: skillArgs },
         });
         return;
       }
@@ -179,69 +226,85 @@ export const commands: CommandConfig[] = [
         description: "Custom header (repeatable)",
       },
       { name: "--model", valueHint: "<model>", description: "AI model to use" },
+      {
+        name: "--sandbox",
+        description: "Use isolated session directory as working directory",
+      },
+      {
+        name: "--task-driven",
+        description: "Structured task tracking (experimental)",
+      },
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
-      const params = buildOperatorSessionConfig(flags);
       ctx.navigate({
         type: "operator",
         nonce: Date.now(),
         initialConfig: {
           requireApproval: flags.requireApproval ?? true,
           target: flags.target,
+          sandbox: flags.sandbox,
+          taskDriven: flags.taskDriven,
         },
       });
     },
   },
   {
-    name: "help",
-    description: "Show help dialog",
-    category: "General",
+    name: "plan",
+    description: "Show current pentest plan",
+    category: "Pentesting",
+    handler: async () => {
+      // Handled by the operator dashboard — this is a no-op for routing
+    },
+  },
+  {
+    name: "threat-model",
+    aliases: ["tm"],
+    description: "Generate application-centric threat model",
+    category: "Pentesting",
+    options: [
+      {
+        name: "--output",
+        valueHint: "<path>",
+        description: "Output file path (default: ./threat-model.md)",
+      },
+      {
+        name: "--model",
+        valueHint: "<model>",
+        description: "AI model to use",
+      },
+    ],
     handler: async (args, ctx) => {
+      let outputPath = "threat-model.md";
+      let model: string | undefined;
+      for (let i = 0; i < args.length; i++) {
+        if ((args[i] === "--output" || args[i] === "-o") && args[i + 1]) {
+          outputPath = args[i + 1];
+        } else if (args[i] === "--model" && args[i + 1]) {
+          model = args[i + 1];
+        }
+      }
+
+      const skillArgs: Record<string, string> = { output: outputPath };
+      if (model) skillArgs.model = model;
+
       ctx.navigate({
-        type: "base",
-        path: "help",
+        type: "operator",
+        nonce: Date.now(),
+        initialConfig: {
+          requireApproval: true,
+        },
+        initialSkill: {
+          slug: "threat-model",
+          args: skillArgs,
+        },
       });
     },
   },
   {
-    name: "config",
-    description: "Show config dialog",
-    category: "General",
-    hidden: true,
-    handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "config",
-      });
-    },
-  },
-  {
-    name: "models",
-    description: "Show available AI models",
-    category: "General",
-    handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "models",
-      });
-    },
-  },
-  {
-    name: "providers",
-    description: "Manage AI providers and API keys",
-    category: "General",
-    handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "providers",
-      });
-    },
-  },
-  {
-    name: "sessions",
-    aliases: ["s"],
-    description: "Browse previous sessions",
+    name: "resume",
+    aliases: ["sessions", "s"],
+    description: "Resume a previous session",
     category: "Pentesting",
     handler: async (_args, ctx) => {
       ctx.openSessionsDialog?.();
@@ -250,29 +313,52 @@ export const commands: CommandConfig[] = [
   {
     name: "new",
     description: "Start a new operator session",
-    category: "Session",
+    category: "Pentesting",
     handler: async (args, ctx) => {
       ctx.navigate({ type: "operator", nonce: Date.now() });
     },
   },
+
+  // — Configuration —
   {
-    name: "chat",
-    aliases: ["c"],
-    description: "Open the Chat TUI interface",
-    category: "General",
-    hidden: true,
+    name: "login",
+    aliases: ["auth"],
+    description: "Connect to Pensar Console for managed inference",
+    category: "Configuration",
     handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "home",
-      });
+      ctx.openAuthDialog?.();
+    },
+  },
+  {
+    name: "credits",
+    aliases: ["buy"],
+    description: "Buy credits / check balance",
+    category: "Configuration",
+    handler: async (args, ctx) => {
+      ctx.openCreditsDialog?.();
+    },
+  },
+  {
+    name: "models",
+    description: "Show available AI models",
+    category: "Configuration",
+    handler: async (args, ctx) => {
+      ctx.openModelDialog?.();
+    },
+  },
+  {
+    name: "providers",
+    description: "Manage AI providers and API keys",
+    category: "Configuration",
+    handler: async (args, ctx) => {
+      ctx.openProvidersDialog?.();
     },
   },
   {
     name: "themes",
     aliases: ["theme"],
     description: "Manage application themes",
-    category: "General",
+    category: "Configuration",
     options: [
       {
         name: "<name>",
@@ -315,23 +401,24 @@ export const commands: CommandConfig[] = [
       ctx.openThemeDialog?.();
     },
   },
+
+  // — General —
   {
-    name: "tools",
-    aliases: ["t"],
-    description: "View and manage active tools (session only)",
-    category: "Session",
-    hidden: true,
+    name: "skills",
+    description: "View installed skills",
+    category: "General",
     handler: async (args, ctx) => {
-      // This command is handled by the session view when in a session
-      // From home, it does nothing - tools panel only works in session context
-      if (ctx.route.type !== "pentest") {
-        // Not in a session - command is a no-op
-        return;
-      }
-      // The session view will detect this command via route options
+      ctx.openSkillsDialog?.(args[0]);
     },
   },
-
+  {
+    name: "help",
+    description: "Show help dialog",
+    category: "General",
+    handler: async (args, ctx) => {
+      ctx.openHelpDialog?.();
+    },
+  },
   {
     name: "exit",
     aliases: ["quit", "q"],
@@ -341,51 +428,31 @@ export const commands: CommandConfig[] = [
       process.kill(process.pid, "SIGINT");
     },
   },
+
+  // — Hidden (functional but not shown in autocomplete/help) —
   {
-    name: "auth",
-    description: "Connect to Pensar Console for managed inference",
+    name: "open-session",
+    description: "Open session folder in Finder",
     category: "General",
-    handler: async (args, ctx) => {
-      ctx.openAuthDialog?.();
+    hidden: true,
+    handler: async () => {
+      // Handled by the operator dashboard
     },
   },
-
   {
-    name: "credits",
-    aliases: ["buy"],
-    description: "Buy credits / check balance",
+    name: "tools",
+    aliases: ["t"],
+    description: "View and manage active tools (session only)",
     category: "General",
+    hidden: true,
     handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "credits",
-      });
+      // This command is handled by the session view when in a session
+      // From home, it does nothing - tools panel only works in session context
+      if (ctx.route.type !== "operator") {
+        return;
+      }
     },
   },
-
-  {
-    name: "create-skill",
-    description: "Create a new operator skill",
-    category: "Skills",
-    handler: async (args, ctx) => {
-      ctx.navigate({
-        type: "base",
-        path: "create-skill",
-      });
-    },
-  },
-
-  // Add more commands here...
-  // Example:
-  // {
-  //   name: "clear",
-  //   aliases: ["cls"],
-  //   description: "Clear the screen",
-  //   category: "General",
-  //   handler: async (args, ctx) => {
-  //     ctx.clearScreen?.();
-  //   },
-  // },
 ];
 
 /**

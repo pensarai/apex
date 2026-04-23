@@ -51,8 +51,10 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
       authConfig,
       onStepFinish,
       abortSignal,
-      callbacks,
+      eventBus,
+      subagentId,
       sandbox,
+      enableThinking,
     } = opts;
 
     super({
@@ -63,8 +65,10 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
       authConfig,
       onStepFinish,
       abortSignal,
-      callbacks,
+      eventBus,
+      subagentId,
       sandbox,
+      enableThinking,
 
       activeTools: [
         "read_file",

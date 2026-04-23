@@ -1,27 +1,27 @@
 import type { AutocompleteOption } from "../shared/prompt-input";
 import type { OperatorSessionState } from "../../../core/operator";
-import { BASE_SYSTEM_PROMPT } from "../../../core/agents/offSecAgent/prompt";
+import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent/prompt";
 
 // ---------------------------------------------------------------------------
 // Autocomplete option filtering for operator mode
 // ---------------------------------------------------------------------------
 
+const OPERATOR_ALLOWED_COMMANDS = new Set([
+  "/models",
+  "/login",
+  "/themes",
+  "/new",
+  "/operator",
+  "/pentest",
+  "/skills",
+  "/plan",
+  "/help",
+]);
+
 export function filterOperatorAutocomplete(
   allOptions: AutocompleteOption[],
-  skillSlugs: Set<string>,
 ): AutocompleteOption[] {
-  const allowedCommands = new Set([
-    "/create-skill",
-    "/models",
-    "/auth",
-    "/themes",
-    "/new",
-    "/operator",
-    "/pentest",
-  ]);
-  return allOptions.filter(
-    (opt) => allowedCommands.has(opt.value) || skillSlugs.has(opt.value),
-  );
+  return allOptions.filter((opt) => OPERATOR_ALLOWED_COMMANDS.has(opt.value));
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +54,9 @@ export function resolveSubmit(
 
 export type CommandAction =
   | { type: "show-models" }
-  | { type: "run-skill"; content: string; autopilot: boolean }
+  | { type: "show-plan" }
+  | { type: "open-session" }
+  | { type: "run-skill"; slug: string; autopilot: boolean }
   | { type: "execute-command"; command: string };
 
 export function routeCommand(
@@ -67,12 +69,25 @@ export function routeCommand(
     return { type: "show-models" };
   }
 
+  if (commandLower === "plan" || commandLower.startsWith("plan ")) {
+    return { type: "show-plan" };
+  }
+
+  if (commandLower === "open-session") {
+    return { type: "open-session" };
+  }
+
+  if (commandLower === "skills") {
+    return { type: "execute-command", command };
+  }
+
   const autopilot = command.includes("--autopilot");
   const cleanedCommand = command.replace(/\s*--autopilot\s*/g, "").trim();
-  const skillContent = resolveSkill(cleanedCommand);
 
-  if (skillContent) {
-    return { type: "run-skill", content: skillContent, autopilot };
+  if (resolveSkill(cleanedCommand)) {
+    // Reuse commandLower but take only the first word (slug without args)
+    const slug = commandLower.split(/\s+/)[0] ?? commandLower;
+    return { type: "run-skill", slug, autopilot };
   }
 
   return { type: "execute-command", command };
@@ -98,8 +113,7 @@ export type KeyboardAction =
   | { type: "escape" }
   | { type: "toggle-verbose" }
   | { type: "toggle-expanded-logs" }
-  | { type: "toggle-approval" }
-  | { type: "toggle-mode" }
+  | { type: "cycle-mode" }
   | { type: "approve" }
   | { type: "auto-approve" };
 
@@ -134,12 +148,8 @@ export function resolveKeyboardShortcut(
   // Ctrl+L — toggle expanded logs
   if (key.ctrl && key.name === "l") return { type: "toggle-expanded-logs" };
 
-  // Option+Shift+Tab — toggle approval
-  if (key.name === "tab" && key.shift && key.meta)
-    return { type: "toggle-approval" };
-
-  // Shift+Tab — toggle plan/default mode
-  if (key.name === "tab" && key.shift) return { type: "toggle-mode" };
+  // Shift+Tab — cycle operator mode (approvals-on → approvals-off → plan)
+  if (key.name === "tab" && key.shift) return { type: "cycle-mode" };
 
   // Y to approve
   if (
@@ -186,13 +196,42 @@ export function buildOperatorSystemPrompt(
   target: string | undefined,
   operatorState: OperatorSessionState,
   agentMode?: "default" | "plan",
+  opts?: {
+    requireApproval?: boolean;
+    sandboxMode?: boolean;
+    skillsCatalog?: string;
+    activeSkillInstructions?: Array<{ name: string; instructions: string }>;
+    planFilePath?: string;
+    existingPlanContent?: string | null;
+    approvedPlanContent?: string | null;
+    taskDriven?: boolean;
+  },
 ): string {
-  const modeNote =
-    agentMode === "plan"
-      ? "\nAgent mode: PLAN — read-only tools only, no mutations allowed"
-      : "";
+  const { skillsCatalog, activeSkillInstructions } = opts ?? {};
 
-  return `${BASE_SYSTEM_PROMPT}
+  const approvalEnabled =
+    opts?.requireApproval ?? operatorState.requireApproval;
+
+  let modeSection = "";
+
+  if (agentMode === "plan") {
+    modeSection = buildPlanModePrompt(
+      opts?.planFilePath,
+      opts?.existingPlanContent,
+    );
+  } else if (opts?.approvedPlanContent) {
+    modeSection = `
+
+# Approved Plan
+
+The operator has approved the following pentest plan. Execute it systematically, following the prioritized attack vectors and testing methodology outlined below.
+
+<plan>
+${opts.approvedPlanContent}
+</plan>`;
+  }
+
+  let prompt = `${buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode })}
 
 # Operator Mode
 
@@ -200,7 +239,82 @@ You are operating in interactive operator mode. The human operator will guide yo
 
 Target: ${target || "unknown"}
 Stage: ${operatorState.currentStage}
-Command approval: ${operatorState.requireApproval ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}${modeNote}`;
+Command approval: ${approvalEnabled ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}${modeSection}`;
+
+  if (skillsCatalog) {
+    prompt += `\n\n# Skills\n\n${skillsCatalog}`;
+  }
+
+  if (activeSkillInstructions && activeSkillInstructions.length > 0) {
+    for (const skill of activeSkillInstructions) {
+      prompt += `\n\n# Active Skill: ${skill.name}\n\n${skill.instructions}`;
+    }
+  }
+
+  if (opts?.taskDriven && agentMode !== "plan") {
+    prompt += `
+
+# Task-Driven Testing
+
+You have task decomposition tools available. Use them to structure your work:
+
+1. **DECOMPOSE** — Before testing, call \`create_task\` for each technique × endpoint combination you plan to try. One task per atomic test.
+2. **EXECUTE** — Pick a pending task, call \`update_task\` with status="in_progress", then test it.
+3. **RECORD** — After testing, call \`update_task\` with status="completed" (found something or conclusively not vulnerable) or status="failed" (technique blocked, dead end).
+4. **ADAPT** — If a task fails, call \`create_task\` with an alternative technique.
+5. **COVERAGE** — Call \`list_tasks\` to check progress. Ensure all tasks reach a terminal state before wrapping up.
+
+CRITICAL task rules:
+- BEFORE making ANY \`http_request\` or \`execute_command\` call, you MUST call \`create_task\` first. Your first tool calls for each directive must be \`create_task\`.
+- Every operator directive should map to one or more tasks
+- Always include a result or observation when completing/failing a task`;
+  }
+
+  return prompt;
+}
+
+// ---------------------------------------------------------------------------
+// Plan mode system prompt
+// ---------------------------------------------------------------------------
+
+function buildPlanModePrompt(
+  planFilePath?: string,
+  existingPlanContent?: string | null,
+): string {
+  const refinementBlock = existingPlanContent
+    ? `
+
+## Current Plan (Refine — Do NOT Rewrite)
+
+The operator has reviewed this plan and requested changes. Read the existing plan on disk via \`read_file\`, then use \`write_plan\` to apply targeted modifications. The \`write_plan\` tool overwrites the file, so include the full plan content — but only change the sections the operator requested. Do NOT regenerate the plan from scratch.
+
+<current-plan>
+${existingPlanContent}
+</current-plan>
+`
+    : "";
+
+  return `
+
+# PLAN MODE — Read-Only Reconnaissance & Planning
+
+You are in PLAN MODE. This is a read-only phase for reconnaissance and pentest planning. You MUST NOT:
+- Mutate the target's state (no POST/PUT/DELETE that changes data, no account creation, no data modification)
+- Write to the filesystem except via the \`write_plan\` tool
+- Execute exploit payloads or state-changing attacks
+- Document vulnerabilities (use the plan to propose what to test)
+
+Actively reconnoiter the target using the available read-only tools before planning.
+
+## Workflow
+
+1. **Recon** — Actively reconnoiter the target. Crawl the application, fingerprint tech stack, enumerate endpoints, discover authentication mechanisms, identify input surfaces.
+2. **Analyze** — Map what you found into an attack surface. Identify which areas are most exposed and which vulnerability classes are most likely.
+3. **Plan** — Write a structured pentest plan using \`write_plan\`.${planFilePath ? ` The plan is stored at: ${planFilePath}` : ""}
+4. **Submit** — When the plan is complete, call \`submit_plan\` to present it to the operator for approval.
+
+The \`write_plan\` tool description specifies the required plan sections. Follow that structure.
+${refinementBlock}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +337,8 @@ export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  cachedTokens: number;
+  cacheWriteTokens: number;
 }
 
 export function accumulateTokenUsage(
@@ -235,5 +351,7 @@ export function accumulateTokenUsage(
     inputTokens: current.inputTokens + stepInputTokens,
     outputTokens: current.outputTokens + stepOutputTokens,
     totalTokens: current.totalTokens + stepInputTokens + stepOutputTokens,
+    cachedTokens: current.cachedTokens,
+    cacheWriteTokens: current.cacheWriteTokens,
   };
 }

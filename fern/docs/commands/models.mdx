@@ -17,9 +17,11 @@ The `/models` command opens the model selection interface where you can view ava
 
 The models interface displays all available models from your configured providers, organized by provider name. You can navigate through the list and select your preferred model.
 
+When no model is explicitly selected, Apex automatically picks a default based on your configured provider, prioritized as: Pensar → Anthropic → OpenAI → Google → OpenRouter → Bedrock.
+
 <Callout intent="info">
   Only models from **configured providers** are shown. Use `/providers` to set
-  up additional AI providers, or `/auth` to connect via Pensar Console.
+  up additional AI providers, or `/login` to connect via Pensar Console.
 </Callout>
 
 <img
@@ -117,15 +119,30 @@ When you open `/models`, you'll see:
     Managed inference through Pensar Console — no API key required.
 
     Available models:
+    - Claude Opus 4.6 (default for Pensar)
     - Claude Sonnet 4.5 / Opus 4.5
     - Claude Sonnet 4.0 / Opus 4.0
     - Claude Haiku 4.5
     - And more...
 
-    Connect via `/auth` in Apex.
+    Connect via `/login` in Apex.
 
   </Accordion>
 </AccordionGroup>
+
+## Default Model Per Provider
+
+When you haven't explicitly selected a model, Apex automatically uses the flagship model for your highest-priority configured provider:
+
+| Provider    | Default Model                |
+| ----------- | ---------------------------- |
+| Pensar      | Claude Opus 4.6 (Pensar)    |
+| Anthropic   | Claude Opus 4.6              |
+| OpenAI      | GPT-5.2 Pro                  |
+| Google      | Gemini 3.1 Pro Preview       |
+| OpenRouter  | Claude Opus 4.6 (OpenRouter) |
+
+This also applies to the headless CLI commands (`pensar pentest`, `pensar targeted-pentest`) when the `--model` flag is not provided.
 
 ## Setting Up Providers
 

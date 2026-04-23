@@ -3,21 +3,18 @@ import type { Finding } from "../agents/offSecAgent/types";
 import { generateObjectResponse } from "../ai";
 import {
   extractVulnClass,
+  classifyFromContent,
   extractTitleStem,
   normalizeEndpoint,
   generateFingerprint,
   FindingsRegistry,
 } from "./registry";
 
-vi.mock("fs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("fs")>();
-  return {
-    ...actual,
-    existsSync: vi.fn(actual.existsSync),
-    readdirSync: vi.fn(actual.readdirSync),
-    readFileSync: vi.fn(actual.readFileSync),
-  };
-});
+vi.mock("fs", () => ({
+  existsSync: vi.fn(),
+  readdirSync: vi.fn(),
+  readFileSync: vi.fn(),
+}));
 
 vi.mock("../ai", () => ({
   generateObjectResponse: vi.fn(),
@@ -193,6 +190,30 @@ describe("extractVulnClass", () => {
     );
   });
 
+  it("classifies missing-authentication patterns", () => {
+    expect(extractVulnClass("Missing Authentication on /api/admin")).toBe(
+      "missing-authentication",
+    );
+    expect(extractVulnClass("No Authentication Required for API")).toBe(
+      "missing-authentication",
+    );
+    expect(extractVulnClass("Unauthenticated Access to Admin Dashboard")).toBe(
+      "missing-authentication",
+    );
+  });
+
+  it("does not misclassify titles where 'no' is a substring before 'auth'", () => {
+    expect(extractVulnClass("Known Auth Vulnerability")).toBe(
+      "known-auth-vulnerability",
+    );
+    expect(extractVulnClass("Minor Auth Misconfiguration")).toBe(
+      "minor-auth-misconfiguration",
+    );
+    expect(extractVulnClass("Canonical Auth Token Leak")).toBe(
+      "canonical-auth-token-leak",
+    );
+  });
+
   it("classifies SSRF", () => {
     expect(extractVulnClass("Server-Side Request Forgery")).toBe("ssrf");
     expect(extractVulnClass("SSRF via image upload URL")).toBe("ssrf");
@@ -264,6 +285,59 @@ describe("extractVulnClass", () => {
   it("is case insensitive", () => {
     expect(extractVulnClass("SQL INJECTION IN /API")).toBe("sql-injection");
     expect(extractVulnClass("sql injection in /api")).toBe("sql-injection");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// classifyFromContent
+// ---------------------------------------------------------------------------
+
+describe("classifyFromContent", () => {
+  it("reclassifies idor to missing-authentication when description indicates no auth", () => {
+    const finding = makeFinding({
+      title: "IDOR on User Profile Endpoint",
+      description:
+        "The endpoint allows unauthenticated access to user profiles by iterating IDs.",
+      evidence: "curl https://target.com/api/users/1 returns user data.",
+    });
+    expect(classifyFromContent(finding)).toBe("missing-authentication");
+  });
+
+  it("reclassifies idor to missing-authentication when evidence contains PR:N", () => {
+    const finding = makeFinding({
+      title: "IDOR on User Profile Endpoint",
+      description: "User profiles can be accessed by changing the ID.",
+      evidence: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N — no auth required.",
+    });
+    expect(classifyFromContent(finding)).toBe("missing-authentication");
+  });
+
+  it("reclassifies idor to missing-authentication when evidence contains PR=N", () => {
+    const finding = makeFinding({
+      title: "Insecure Direct Object Reference in orders",
+      description: "Orders are accessible without authentication.",
+      evidence: "Scored with PR=N since no credentials are needed.",
+    });
+    expect(classifyFromContent(finding)).toBe("missing-authentication");
+  });
+
+  it("keeps idor when description does not indicate missing auth", () => {
+    const finding = makeFinding({
+      title: "IDOR on User Profile Endpoint",
+      description:
+        "Authenticated users can access other users' profiles by changing the ID parameter.",
+      evidence:
+        "Logged in as user A, accessed user B profile by changing id=2.",
+    });
+    expect(classifyFromContent(finding)).toBe("idor");
+  });
+
+  it("does not alter non-idor classifications", () => {
+    const finding = makeFinding({
+      title: "SQL Injection in /api/products",
+      description: "The endpoint has no authentication and is SQL injectable.",
+    });
+    expect(classifyFromContent(finding)).toBe("sql-injection");
   });
 });
 
@@ -1156,5 +1230,271 @@ describe("FindingsRegistry.unregister", () => {
     // After unregister + re-register, exactly one copy should exist
     expect(secondRegResult.duplicate).toBe(false);
     expect(registry.size).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// groupByRootCause
+// ---------------------------------------------------------------------------
+
+describe("groupByRootCause", () => {
+  const mockedGenerate = vi.mocked(generateObjectResponse);
+
+  afterEach(() => {
+    mockedGenerate.mockReset();
+  });
+
+  it("groups Cognito enumeration findings on different endpoints", async () => {
+    mockedGenerate.mockResolvedValueOnce({
+      groups: [
+        {
+          groupId: "cognito-user-existence-leak",
+          findingIndices: [0, 1],
+          rootCause:
+            "Cognito leaks user-existence information through distinct error responses",
+        },
+      ],
+    });
+
+    const findings = [
+      makeFinding({
+        title: "Email Enumeration via Forgot Password Flow",
+        endpoint: "https://target.com/forgot-password",
+        description:
+          "The forgot password endpoint reveals whether an email exists via different error messages from Cognito.",
+      }),
+      makeFinding({
+        title: "Username Enumeration via Cognito Account Lockout Response",
+        endpoint: "https://target.com/login",
+        description:
+          "The login endpoint reveals user existence through Cognito lockout error responses.",
+      }),
+    ];
+    const registry = FindingsRegistry.fromFindings(findings, {
+      model: "test-model",
+    });
+
+    const groups = await registry.groupByRootCause();
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.groupId).toBe("cognito-user-existence-leak");
+    expect(groups[0]!.findingIndices).toEqual([0, 1]);
+
+    const allFindings = registry.getFindings();
+    expect(allFindings[0]!.rootCauseGroup).toBe("cognito-user-existence-leak");
+    expect(allFindings[1]!.rootCauseGroup).toBe("cognito-user-existence-leak");
+    expect(allFindings[0]!.relatedFindings).toEqual([allFindings[1]!.title]);
+    expect(allFindings[1]!.relatedFindings).toEqual([allFindings[0]!.title]);
+  });
+
+  it("groups same-endpoint auth + rate-limiting findings", async () => {
+    mockedGenerate.mockResolvedValueOnce({
+      groups: [
+        {
+          groupId: "unauth-ses-access",
+          findingIndices: [0, 1],
+          rootCause:
+            "Unauthenticated access to SES API enables both abuse scenarios",
+        },
+      ],
+    });
+
+    const findings = [
+      makeFinding({
+        title: "Missing Rate Limiting on Email API",
+        severity: "CRITICAL",
+        endpoint: "https://target.com/api/email/send",
+        description: "The email sending endpoint has no rate limiting.",
+      }),
+      makeFinding({
+        title: "Unauthenticated Email Sending via SES API",
+        severity: "HIGH",
+        endpoint: "https://target.com/api/email/send",
+        description:
+          "The email sending endpoint does not require authentication.",
+      }),
+    ];
+    const registry = FindingsRegistry.fromFindings(findings, {
+      model: "test-model",
+    });
+
+    const groups = await registry.groupByRootCause();
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.groupId).toBe("unauth-ses-access");
+
+    const allFindings = registry.getFindings();
+    expect(allFindings[0]!.rootCauseGroup).toBe("unauth-ses-access");
+    expect(allFindings[1]!.rootCauseGroup).toBe("unauth-ses-access");
+  });
+
+  it("does not group unrelated findings", async () => {
+    mockedGenerate.mockResolvedValueOnce({
+      groups: [],
+    });
+
+    const findings = [
+      makeFinding({
+        title: "SQL Injection in /api/products",
+        endpoint: "https://target.com/api/products",
+        description: "SQL injection via search parameter.",
+      }),
+      makeFinding({
+        title: "Open Redirect on Login Callback",
+        endpoint: "https://target.com/auth/callback",
+        description: "Unvalidated redirect parameter in OAuth callback.",
+      }),
+    ];
+    const registry = FindingsRegistry.fromFindings(findings, {
+      model: "test-model",
+    });
+
+    const groups = await registry.groupByRootCause();
+
+    expect(groups).toHaveLength(0);
+
+    const allFindings = registry.getFindings();
+    expect(allFindings[0]!.rootCauseGroup).toBeUndefined();
+    expect(allFindings[1]!.rootCauseGroup).toBeUndefined();
+  });
+
+  it("returns empty array when no model configured", async () => {
+    const registry = new FindingsRegistry(); // no model
+    await registry.register(
+      makeFinding({
+        title: "Finding A",
+        endpoint: "https://target.com/a",
+      }),
+    );
+    await registry.register(
+      makeFinding({
+        title: "Finding B",
+        endpoint: "https://target.com/b",
+      }),
+    );
+
+    const groups = await registry.groupByRootCause();
+
+    expect(groups).toEqual([]);
+    expect(mockedGenerate).not.toHaveBeenCalled();
+  });
+
+  it("returns empty array when fewer than 2 findings", async () => {
+    const registry = new FindingsRegistry({ model: "test-model" });
+    await registry.register(
+      makeFinding({
+        title: "Single Finding",
+        endpoint: "https://target.com/a",
+      }),
+    );
+
+    const groups = await registry.groupByRootCause();
+
+    expect(groups).toEqual([]);
+    expect(mockedGenerate).not.toHaveBeenCalled();
+  });
+
+  it("sanitises out-of-bounds indices in returned groups", async () => {
+    mockedGenerate.mockResolvedValueOnce({
+      groups: [
+        {
+          groupId: "test-group",
+          findingIndices: [0, 1, 999, -1],
+          rootCause: "Shared root cause",
+        },
+      ],
+    });
+
+    const findings = [
+      makeFinding({
+        title: "Finding A",
+        endpoint: "https://target.com/a",
+      }),
+      makeFinding({
+        title: "Finding B",
+        endpoint: "https://target.com/b",
+      }),
+    ];
+    const registry = FindingsRegistry.fromFindings(findings, {
+      model: "test-model",
+    });
+
+    const groups = await registry.groupByRootCause();
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.findingIndices).toEqual([0, 1]);
+  });
+
+  it("uses index-based exclusion for relatedFindings (handles same-titled findings)", async () => {
+    mockedGenerate.mockResolvedValueOnce({
+      groups: [
+        {
+          groupId: "same-title-group",
+          findingIndices: [0, 1, 2],
+          rootCause: "Shared root cause across endpoints",
+        },
+      ],
+    });
+
+    const findings = [
+      makeFinding({
+        title: "User Enumeration",
+        endpoint: "https://target.com/login",
+      }),
+      makeFinding({
+        title: "User Enumeration",
+        endpoint: "https://target.com/register",
+      }),
+      makeFinding({
+        title: "Different Finding",
+        endpoint: "https://target.com/api",
+      }),
+    ];
+    const registry = FindingsRegistry.fromFindings(findings, {
+      model: "test-model",
+    });
+
+    const groups = await registry.groupByRootCause();
+
+    const allFindings = registry.getFindings();
+    // Index 0 should see indices 1 and 2 as related (even though idx 1 has same title)
+    expect(allFindings[0]!.relatedFindings).toEqual([
+      "User Enumeration",
+      "Different Finding",
+    ]);
+    expect(allFindings[1]!.relatedFindings).toEqual([
+      "User Enumeration",
+      "Different Finding",
+    ]);
+    expect(allFindings[2]!.relatedFindings).toEqual([
+      "User Enumeration",
+      "User Enumeration",
+    ]);
+    expect(groups).toHaveLength(1);
+  });
+
+  it("returns empty array and logs when LLM call fails", async () => {
+    mockedGenerate.mockRejectedValueOnce(new Error("API rate limit exceeded"));
+
+    const findings = [
+      makeFinding({
+        title: "Finding A",
+        endpoint: "https://target.com/a",
+      }),
+      makeFinding({
+        title: "Finding B",
+        endpoint: "https://target.com/b",
+      }),
+    ];
+    const registry = FindingsRegistry.fromFindings(findings, {
+      model: "test-model",
+    });
+
+    const groups = await registry.groupByRootCause();
+
+    expect(groups).toEqual([]);
+    const allFindings = registry.getFindings();
+    expect(allFindings[0]!.rootCauseGroup).toBeUndefined();
+    expect(allFindings[1]!.rootCauseGroup).toBeUndefined();
   });
 });

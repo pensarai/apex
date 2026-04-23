@@ -200,10 +200,29 @@ function withTimeout<T>(
 }
 
 // ---------------------------------------------------------------------------
-// Module-level default headless setting (used when not explicitly provided)
+// Module-level defaults (used when not explicitly provided)
 // ---------------------------------------------------------------------------
 
 let defaultHeadless = true;
+
+/**
+ * Default User-Agent string for new browser sessions.
+ *
+ * Playwright MCP's Chromium default advertises `HeadlessChrome/…`, which is
+ * the single most common trigger for nginx / Cloudflare / generic-WAF 403s
+ * on targets we're otherwise authorised to test. Override the default to a
+ * real desktop Chrome UA so the browser isn't immediately fingerprinted as
+ * a headless bot at the edge.
+ */
+let defaultUserAgent: string | undefined =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+/**
+ * Default viewport size (format: `WIDTH,HEIGHT`) for new browser sessions.
+ * 1920x1080 matches a standard desktop resolution and avoids the small
+ * default viewport that some SPAs use as a mobile/bot signal.
+ */
+let defaultViewportSize: string | undefined = "1920,1080";
 
 /**
  * Configure the default headless mode for new browser sessions.
@@ -212,6 +231,23 @@ let defaultHeadless = true;
  */
 export function setHeadlessMode(headless: boolean): void {
   defaultHeadless = headless;
+}
+
+/**
+ * Configure the default User-Agent for new browser sessions.
+ * Pass `undefined` to fall back to Chromium's built-in UA.
+ */
+export function setUserAgent(userAgent: string | undefined): void {
+  defaultUserAgent = userAgent;
+}
+
+/**
+ * Configure the default viewport size for new browser sessions.
+ * Format is `"WIDTH,HEIGHT"`, e.g. `"1920,1080"`.
+ * Pass `undefined` to fall back to Chromium's default viewport.
+ */
+export function setViewportSize(viewportSize: string | undefined): void {
+  defaultViewportSize = viewportSize;
 }
 
 /**
@@ -232,9 +268,13 @@ export class PlaywrightMcpSession {
   private connectionPromise: Promise<Client> | null = null;
   private disconnecting = false;
   private readonly headless: boolean;
+  private readonly userAgent: string | undefined;
+  private readonly viewportSize: string | undefined;
 
-  constructor(headless = true) {
+  constructor(headless = true, userAgent?: string, viewportSize?: string) {
     this.headless = headless;
+    this.userAgent = userAgent;
+    this.viewportSize = viewportSize;
   }
 
   /** Immediately reset all instance state. Synchronous — no I/O. */
@@ -298,6 +338,14 @@ export class PlaywrightMcpSession {
         const args = [cliPath, "--isolated"];
         if (this.headless) {
           args.push("--headless");
+        }
+
+        if (this.userAgent) {
+          args.push("--user-agent", this.userAgent);
+        }
+
+        if (this.viewportSize) {
+          args.push(`--viewport-size=${this.viewportSize}`);
         }
 
         // Disable Chromium sandbox when running as root (e.g., in Docker/ECS containers).
@@ -688,6 +736,12 @@ Use this to check for:
  * @param abortSignal - Optional abort signal for cleanup
  * @param headless - Override headless mode for this session (defaults to the
  *   value set by {@link setHeadlessMode}, which itself defaults to `true`)
+ * @param userAgent - Override User-Agent for this session (defaults to the
+ *   value set by {@link setUserAgent}). Passing `null` forces Chromium's
+ *   built-in UA (useful if the default anti-bot UA is counter-productive).
+ * @param viewportSize - Override viewport size (format `"WIDTH,HEIGHT"`) for
+ *   this session (defaults to the value set by {@link setViewportSize}).
+ *   Passing `null` forces Chromium's default viewport.
  */
 export function createBrowserTools(
   targetUrl: string,
@@ -696,8 +750,19 @@ export function createBrowserTools(
   logger?: Logger,
   abortSignal?: AbortSignal,
   headless?: boolean,
+  userAgent?: string | null,
+  viewportSize?: string | null,
 ) {
-  const session = new PlaywrightMcpSession(headless ?? defaultHeadless);
+  const resolvedUserAgent =
+    userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
+  const resolvedViewportSize =
+    viewportSize === null ? undefined : (viewportSize ?? defaultViewportSize);
+
+  const session = new PlaywrightMcpSession(
+    headless ?? defaultHeadless,
+    resolvedUserAgent,
+    resolvedViewportSize,
+  );
 
   if (abortSignal) {
     const onAbort = () => session.disconnect().catch(() => {});

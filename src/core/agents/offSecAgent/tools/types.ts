@@ -4,10 +4,12 @@ import type { CredentialManager } from "../../../credentials";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../../findings/registry";
 import type { SessionInfo } from "../../../session";
+import type { SkillsRegistry } from "../../../skills/registry";
 
-import type { ConsumeCallbacks, SubagentConsumeCallbacks } from "../types";
+import type { AgentEventBus } from "../../../eventBus";
 import type { PersistentShell } from "./persistentShell";
 import type { UnifiedSandbox } from "./sandbox";
+import type { StepTraceWriter } from "../trace";
 
 /**
  * Shared context passed to every tool factory.
@@ -19,6 +21,9 @@ import type { UnifiedSandbox } from "./sandbox";
 export type ToolContext = {
   /** Session providing paths for findings, POCs, logs, scratchpad, etc. */
   session: SessionInfo;
+
+  /** The agent's operational working directory. Defaults to session.rootPath. */
+  agentCwd: string;
 
   /** The target URL / host — needed by browser tools for context */
   target?: string;
@@ -32,12 +37,11 @@ export type ToolContext = {
   /** Per-provider API key overrides — needed by tools that spawn sub-agents */
   authConfig?: AIAuthConfig;
 
-  /** Callbacks for forwarding subagent stream events to the parent consumer */
-  subagentCallbacks?: SubagentConsumeCallbacks;
-  callbacks?: ConsumeCallbacks;
+  /** Event bus for streaming agent output and subagent lifecycle events */
+  eventBus?: AgentEventBus;
 
   /**
-   * When set, tools like execute_command / http_request / create_poc
+   * When set, tools like execute_command / http_request / document_vulnerability
    * route execution through this sandbox instead of running locally.
    */
   sandbox?: UnifiedSandbox;
@@ -50,7 +54,7 @@ export type ToolContext = {
 
   /**
    * Shared attack surface registry for cross-agent asset dedup.
-   * When present, `document_asset` checks for duplicates before writing.
+   * When present, `document_endpoint` checks for duplicates before writing.
    */
   attackSurfaceRegistry?: AttackSurfaceRegistry;
 
@@ -68,8 +72,40 @@ export type ToolContext = {
   persistentShell?: PersistentShell;
 
   /**
-   * Side-channel callback for streaming raw stdout chunks from
-   * execute_command back to the TUI while the command is still running.
+   * Skills registry for on-demand skill loading.
+   * When present, read_skill is available.
    */
-  onCommandOutput?: (data: string) => void;
+  skillsRegistry?: SkillsRegistry;
+
+  /**
+   * Step trace writer for appending records to trace.jsonl.
+   * When present, checkpoint_state tool is available.
+   */
+  traceWriter?: StepTraceWriter;
+
+  /**
+   * Per-agent task directory for structured task decomposition.
+   * When present, task tools (create_task, update_task, list_tasks) are available.
+   * Set to `{session.rootPath}/subagents/{subagentId}-tasks/` for subagents.
+   * Only populated when `SessionConfig.taskDriven` is enabled.
+   */
+  tasksDir?: string;
+
+  /** Enable extended thinking for sub-agents spawned by orchestration tools. */
+  enableThinking?: boolean;
+
+  /**
+   * Project-level threat model content (e.g. from `.pensar/threat_model.md`).
+   * Passed to spawned per-endpoint threat-model sub-agents as additional
+   * context so they can incorporate deployment details, compliance
+   * requirements, or known concerns when analyzing each endpoint.
+   */
+  projectThreatModel?: string;
+
+  /**
+   * Override for plan file scoping. When set, write_plan uses this ID
+   * instead of `subagentId` to derive the plan file path, allowing
+   * plan agents to write plans scoped to their corresponding execution agent.
+   */
+  planSubagentId?: string;
 };

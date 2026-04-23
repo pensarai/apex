@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ToolContext } from "./types";
 import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
 import type { WhiteboxAttackSurfaceResult } from "../../specialized/whiteboxAttackSurface/types";
+import { AgentEventBus } from "../../../eventBus";
 
 /**
  * Factory for the `run_attack_surface` tool.
@@ -52,33 +53,10 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       }
 
       const subagentId = "attack-surface-agent";
-      const cbs = ctx.subagentCallbacks;
-      const subagentCallbacks = cbs
-        ? {
-            onTextDelta: (d: { type: "text-delta"; [k: string]: unknown }) =>
-              cbs.onTextDelta?.({ ...d, subagentId } as never),
-            onToolCallStreaming: (d: {
-              toolCallId: string;
-              toolName: string;
-              [k: string]: unknown;
-            }) => cbs.onToolCallStreaming?.({ ...d, subagentId } as never),
-            onToolCallDelta: (d: {
-              toolCallId: string;
-              argsTextDelta: string;
-              [k: string]: unknown;
-            }) => cbs.onToolCallDelta?.({ ...d, subagentId } as never),
-            onToolCall: (d: { type: "tool-call"; [k: string]: unknown }) =>
-              cbs.onToolCall?.({ ...d, subagentId } as never),
-            onToolResult: (d: { type: "tool-result"; [k: string]: unknown }) =>
-              cbs.onToolResult?.({ ...d, subagentId } as never),
-            onError: (e: unknown) => cbs.onError?.(e),
-          }
-        : undefined;
 
-      cbs?.onSubagentSpawn?.({
+      ctx.eventBus?.emit("subagent-spawn", {
         subagentId,
         input: { target, cwd },
-        status: "pending",
       });
 
       // -----------------------------------------------------------------------
@@ -89,6 +67,9 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           const { WhiteboxAttackSurfaceAgent } =
             await import("../../specialized/whiteboxAttackSurface/agent");
 
+          const localBus = new AgentEventBus();
+          AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
+
           const agent = new WhiteboxAttackSurfaceAgent({
             codebasePath: cwd,
             model: ctx.model,
@@ -96,16 +77,11 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             authConfig: ctx.authConfig,
             abortSignal: ctx.abortSignal,
             attackSurfaceRegistry: ctx.attackSurfaceRegistry,
-            callbacks: ctx.callbacks,
+            eventBus: localBus,
+            subagentId,
           });
 
-          const result: WhiteboxAttackSurfaceResult = await agent.consume({
-            onToolCall: (d) =>
-              console.log(`  [recon:whitebox] → ${d.toolName}`),
-            onToolResult: (d) =>
-              console.log(`  [recon:whitebox] ✓ ${d.toolName}`),
-            subagentCallbacks,
-          });
+          const result: WhiteboxAttackSurfaceResult = await agent.consume();
 
           // Flatten whitebox results into the same targets shape the swarm expects
           const targets = result.apps.flatMap((app) =>
@@ -120,9 +96,8 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             `\n✓ Whitebox attack surface complete: ${targets.length} targets from ${result.apps.length} apps`,
           );
 
-          cbs?.onSubagentComplete?.({
+          ctx.eventBus?.emit("subagent-complete", {
             subagentId,
-            input: { target, cwd },
             status: "completed",
           });
 
@@ -139,9 +114,8 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             error instanceof Error ? error.message : String(error);
           console.error(`✗ Whitebox attack surface agent failed: ${errorMsg}`);
 
-          cbs?.onSubagentComplete?.({
+          ctx.eventBus?.emit("subagent-complete", {
             subagentId,
-            input: { target, cwd },
             status: "failed",
           });
 
@@ -161,6 +135,9 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         const { BlackboxAttackSurfaceAgent } =
           await import("../../specialized/attackSurface/blackboxAgent");
 
+        const localBus = new AgentEventBus();
+        AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
+
         const agent = new BlackboxAttackSurfaceAgent({
           target: target!,
           model: ctx.model,
@@ -168,24 +145,19 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           authConfig: ctx.authConfig,
           abortSignal: ctx.abortSignal,
           attackSurfaceRegistry: ctx.attackSurfaceRegistry,
-          callbacks: ctx.callbacks,
+          eventBus: localBus,
+          subagentId,
         });
 
-        const result: AttackSurfaceResult = await agent.consume({
-          onToolCall: (d) => console.log(`  [recon:blackbox] → ${d.toolName}`),
-          onToolResult: (d) =>
-            console.log(`  [recon:blackbox] ✓ ${d.toolName}`),
-          subagentCallbacks,
-        });
+        const result: AttackSurfaceResult = await agent.consume();
 
         const targetCount = result.targets.length;
         console.log(
           `\n✓ Blackbox attack surface complete: ${targetCount} targets identified`,
         );
 
-        cbs?.onSubagentComplete?.({
+        ctx.eventBus?.emit("subagent-complete", {
           subagentId,
-          input: { target },
           status: "completed",
         });
 
@@ -208,9 +180,8 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         const errorMsg = error instanceof Error ? error.message : String(error);
         console.error(`✗ Blackbox attack surface agent failed: ${errorMsg}`);
 
-        cbs?.onSubagentComplete?.({
+        ctx.eventBus?.emit("subagent-complete", {
           subagentId,
-          input: { target },
           status: "failed",
         });
 

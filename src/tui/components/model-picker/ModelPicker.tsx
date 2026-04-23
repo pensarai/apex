@@ -8,11 +8,12 @@ import {
 } from "react";
 import { useKeyboard } from "@opentui/react";
 import { ScrollBoxRenderable } from "@opentui/core";
-import type { ModelInfo } from "../../../core/ai";
+import { modelSupportsThinking, type ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
 import type { Config } from "../../../core/config/config";
 import { useTheme } from "../../theme";
 import { scrollToChild } from "../../utils/scroll";
+import { getPasteText } from "../../utils/paste";
 
 const providerNames: Record<string, string> = {
   anthropic: "Claude",
@@ -74,13 +75,15 @@ function PickerRow({
 type NavigationItem =
   | { type: "provider"; provider: string }
   | { type: "model"; model: ModelInfo }
-  | { type: "local-input"; field: LocalInputField };
+  | { type: "local-input"; field: LocalInputField }
+  | { type: "reasoning" };
 
 type LocalInputField = "url" | "model";
 
 function getNavItemId(item: NavigationItem): string {
   if (item.type === "provider") return `provider-${item.provider}`;
   if (item.type === "model") return `model-${item.model.id}`;
+  if (item.type === "reasoning") return "reasoning-toggle";
   return `local-input-${item.field}`;
 }
 
@@ -89,9 +92,12 @@ export interface ModelPickerProps {
   selectedModel: ModelInfo;
   onSelectModel: (model: ModelInfo) => void;
   onConfirm?: () => void;
+  onCancel?: () => void;
   onConfigUpdate?: (update: Partial<Config>) => Promise<void>;
   focused?: boolean;
   isModelUserSelected?: boolean;
+  reasoningEnabled?: boolean;
+  onReasoningToggle?: (enabled: boolean) => void;
 }
 
 export function ModelPicker({
@@ -99,9 +105,12 @@ export function ModelPicker({
   selectedModel,
   onSelectModel,
   onConfirm,
+  onCancel,
   onConfigUpdate,
   focused = true,
   isModelUserSelected = false,
+  reasoningEnabled = false,
+  onReasoningToggle,
 }: ModelPickerProps) {
   const { colors } = useTheme();
   const scrollBoxRef = useRef<ScrollBoxRenderable | null>(null);
@@ -217,8 +226,11 @@ export function ModelPicker({
         }
       }
     }
+    if (onReasoningToggle && modelSupportsThinking(selectedModel.id)) {
+      items.push({ type: "reasoning" });
+    }
     return items;
-  }, [groupedModels, expandedProviders]);
+  }, [groupedModels, expandedProviders, onReasoningToggle, selectedModel.id]);
 
   // Sync focusedIndex when selected model changes (e.g. on initial load)
   useEffect(() => {
@@ -261,6 +273,10 @@ export function ModelPicker({
     commitLocalConfig(localUrl, localModelName);
   }, [localUrl, localModelName, commitLocalConfig]);
 
+  const thinkingSupported = modelSupportsThinking(selectedModel.id);
+  const isReasoningFocused =
+    navigationItems[focusedIndex]?.type === "reasoning";
+
   // Handle keyboard navigation (most keys disabled while editing local input)
   const handleKeyboard = useCallback(
     (key: {
@@ -302,9 +318,22 @@ export function ModelPicker({
         return true;
       }
 
-      // Escape - clear search (if there is one)
-      if (key.name === "escape" && searchQuery) {
-        setSearchQuery("");
+      // Escape - clear search, or cancel/close
+      if (key.name === "escape") {
+        if (searchQuery) {
+          setSearchQuery("");
+          return true;
+        }
+        if (onCancel) {
+          onCancel();
+          return true;
+        }
+        return false;
+      }
+
+      // Space - toggle reasoning checkbox from any row
+      if (key.name === "space" && onReasoningToggle && thinkingSupported) {
+        onReasoningToggle(!reasoningEnabled);
         return true;
       }
 
@@ -318,7 +347,9 @@ export function ModelPicker({
           return true;
         }
 
-        if (currentItem.type === "provider") {
+        if (currentItem.type === "reasoning") {
+          onReasoningToggle?.(!reasoningEnabled);
+        } else if (currentItem.type === "provider") {
           const targetProvider = currentItem.provider;
           setExpandedProviders((prev) => {
             const next = new Set(prev);
@@ -338,7 +369,7 @@ export function ModelPicker({
       // Left/Right - collapse/expand provider
       if (key.name === "left" || key.name === "right") {
         const currentItem = navigationItems[focusedIndex];
-        if (!currentItem) return false;
+        if (!currentItem || currentItem.type === "reasoning") return false;
 
         const targetProvider =
           currentItem.type === "provider"
@@ -389,12 +420,22 @@ export function ModelPicker({
       focusedIndex,
       onSelectModel,
       onConfirm,
+      onCancel,
       searchQuery,
+      reasoningEnabled,
+      onReasoningToggle,
+      thinkingSupported,
     ],
   );
 
   useKeyboard((key) => {
-    handleKeyboard(key);
+    const handled = handleKeyboard(key);
+    if (handled) {
+      // Only consume keystrokes that the picker actually handled,
+      // so unhandled keys (e.g. ESC without onCancel, Tab) fall through
+      // to parent components like ConfigView.
+      key.preventDefault();
+    }
   });
 
   // Helper to check if a navigation item at focusedIndex matches a provider
@@ -424,30 +465,31 @@ export function ModelPicker({
       flexDirection="column"
       gap={0}
       width="100%"
-      flexGrow={1}
       flexShrink={1}
       overflow="hidden"
     >
       {/* Search indicator */}
-      {searchQuery ? (
-        <PickerRow>
-          <text fg={colors.text}>Search: {searchQuery}</text>
-        </PickerRow>
-      ) : (
-        <PickerRow>
-          <text fg={colors.textMuted}>Type to search models...</text>
-        </PickerRow>
-      )}
+      <box flexShrink={0}>
+        {searchQuery ? (
+          <PickerRow>
+            <text fg={colors.text}>Search: {searchQuery}</text>
+          </PickerRow>
+        ) : (
+          <PickerRow>
+            <text fg={colors.textMuted}>Type to search models...</text>
+          </PickerRow>
+        )}
+      </box>
 
       {/* Scrollable provider/model list */}
       <scrollbox
         ref={scrollBoxRef}
         style={{
           rootOptions: {
-            flexGrow: 1,
             flexShrink: 1,
             width: "100%",
             overflow: "hidden",
+            maxHeight: navigationItems.length,
           },
           contentOptions: {
             flexDirection: "column",
@@ -507,7 +549,7 @@ export function ModelPicker({
                         setLocalUrl(typeof v === "string" ? v : "")
                       }
                       onPaste={(event) => {
-                        const cleaned = String(event.text).replace(
+                        const cleaned = getPasteText(event).replace(
                           /\r?\n/g,
                           "",
                         );
@@ -551,7 +593,7 @@ export function ModelPicker({
                         setLocalModelName(typeof v === "string" ? v : "")
                       }
                       onPaste={(event) => {
-                        const cleaned = String(event.text).replace(
+                        const cleaned = getPasteText(event).replace(
                           /\r?\n/g,
                           "",
                         );
@@ -645,14 +687,28 @@ export function ModelPicker({
         })}
       </scrollbox>
 
-      {/* Help text */}
-      <PickerRow>
-        <text fg={colors.textMuted}>
-          {editingLocalField
-            ? "Type or paste | Enter/Esc to confirm"
-            : "↑/↓ navigate | ←/→ collapse/expand | Type to search"}
-        </text>
-      </PickerRow>
+      {/* Reasoning toggle */}
+      {onReasoningToggle && thinkingSupported && (
+        <box flexShrink={0} paddingTop={1}>
+          <PickerRow id="reasoning-toggle">
+            <text fg={isReasoningFocused ? colors.primary : colors.text}>
+              {reasoningEnabled ? "[x]" : "[ ]"} Extended Thinking
+              (Experimental)
+            </text>
+          </PickerRow>
+        </box>
+      )}
+
+      {/* Help text for inline editing only — general controls are in ModelPickerDialog */}
+      {editingLocalField && (
+        <box flexShrink={0}>
+          <PickerRow>
+            <text fg={colors.textMuted}>
+              Type or paste | Enter/Esc to confirm
+            </text>
+          </PickerRow>
+        </box>
+      )}
     </box>
   );
 }

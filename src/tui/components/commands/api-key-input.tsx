@@ -3,6 +3,9 @@ import { useState } from "react";
 import Input from "../input";
 import { type ProviderType, verifyApiKey } from "../../../core/providers";
 import { useTheme } from "../../theme";
+import { Dialog } from "../../context/dialog";
+import DialogLayout from "../dialog-layout";
+import { getPasteText } from "../../utils/paste";
 
 type VerifyState = "idle" | "verifying" | "error";
 
@@ -26,6 +29,7 @@ export default function APIKeyInput({
 
   useKeyboard((key) => {
     if (key.name === "escape") {
+      key.preventDefault();
       if (verifyState === "verifying") return;
       onCancel();
       return;
@@ -67,42 +71,19 @@ export default function APIKeyInput({
   };
 
   return (
-    <box
-      position="absolute"
-      top={0}
-      left={0}
-      zIndex={1001}
-      width="100%"
-      height="100%"
-      justifyContent="center"
-      alignItems="center"
-      backgroundColor={colors.backgroundOverlay}
-    >
-      <box
-        width={70}
-        border={true}
-        borderColor={colors.primary}
-        backgroundColor={colors.backgroundPanel}
-        flexDirection="column"
-        padding={2}
+    <Dialog size="large" onClose={onCancel}>
+      <DialogLayout
+        title={`Connect ${providerName}`}
+        escLabel="cancel"
+        footerActions={[{ key: "Enter", label: "save", variant: "primary" }]}
       >
-        {/* Header */}
-        <box
-          flexDirection="row"
-          justifyContent="space-between"
-          marginBottom={2}
-        >
-          <text fg={colors.primary}>Connect {providerName}</text>
-          <text fg={colors.textMuted}>esc</text>
-        </box>
-
         {/* Instructions */}
-        <box marginBottom={2}>
+        <box marginBottom={1}>
           <text fg={colors.textMuted}>{getProviderInstructions(provider)}</text>
         </box>
 
         {/* Input */}
-        <box marginBottom={2}>
+        <box marginBottom={1}>
           <Input
             label="API Key"
             description="Your API key will be stored locally in ~/.pensar/config.json"
@@ -112,7 +93,7 @@ export default function APIKeyInput({
               setApiKey(typeof value === "string" ? value : "")
             }
             onPaste={(event) => {
-              const cleaned = String(event.text);
+              const cleaned = getPasteText(event);
               setApiKey((prev) => `${prev}${cleaned}`);
             }}
             onSubmit={handleSubmit}
@@ -131,15 +112,7 @@ export default function APIKeyInput({
             <text fg={colors.error}>✗ {errorMessage}</text>
           </box>
         )}
-
-        {/* Footer help text */}
-        <box marginTop={1}>
-          <text fg={colors.textMuted}>
-            <span fg={colors.primary}>[ENTER]</span> Save ·{" "}
-            <span fg={colors.primary}>[ESC]</span> Cancel
-          </text>
-        </box>
-      </box>
-    </box>
+      </DialogLayout>
+    </Dialog>
   );
 }

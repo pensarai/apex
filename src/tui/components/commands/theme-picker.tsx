@@ -12,6 +12,7 @@ import { useDimensions } from "../../context/dimensions";
 import { useTheme } from "../../theme";
 import { config } from "../../../core/config";
 import { Dialog } from "../../context/dialog";
+import DialogLayout from "../dialog-layout";
 
 interface ThemePickerProps {
   onClose: () => void;
@@ -115,10 +116,16 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
 
   return (
     <Dialog size="large" onClose={handleClose}>
-      <box width="100%" flexDirection="column" padding={1}>
-        {/* Header */}
-        <box width="100%" flexDirection="row" justifyContent="space-between">
-          <text fg={colors.primary}>Themes</text>
+      <DialogLayout
+        title="Themes"
+        escLabel="cancel"
+        footerActions={[
+          { key: "Enter", label: "select", variant: "primary" },
+          { key: "M", label: "toggle mode" },
+        ]}
+      >
+        {/* Mode indicator */}
+        <box marginBottom={1}>
           <text fg={colors.textMuted}>mode: {mode}</text>
         </box>
 
@@ -152,14 +159,7 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
         <box width="100%" height={1}>
           <text fg={colors.border}>{"─".repeat(panelWidth - 2)}</text>
         </box>
-
-        {/* Footer */}
-        <box width="100%" flexDirection="row">
-          <text fg={colors.textMuted}>
-            [↑↓] browse [enter] select [m] toggle mode [esc] cancel
-          </text>
-        </box>
-      </box>
+      </DialogLayout>
     </Dialog>
   );
 }

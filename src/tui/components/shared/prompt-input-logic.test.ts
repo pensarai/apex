@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  filterSuggestions,
-  resolveSubmitValue,
+  filterInlineSuggestions,
+  filterInlineOptionSuggestions,
+  detectInlineSlash,
+  detectInlineOption,
+  computeInlineCompletion,
   computeUpArrow,
   computeDownArrow,
   computeTab,
@@ -24,92 +27,6 @@ const options: AutocompleteOption[] = [
 ];
 
 const history = ["first cmd", "second cmd", "third cmd"];
-
-// ---------------------------------------------------------------------------
-// filterSuggestions
-// ---------------------------------------------------------------------------
-
-describe("filterSuggestions", () => {
-  it("returns empty for empty input", () => {
-    expect(filterSuggestions("", options, 10)).toEqual([]);
-  });
-
-  it("returns empty for input without leading /", () => {
-    expect(filterSuggestions("scan", options, 10)).toEqual([]);
-  });
-
-  it("returns all options matching /", () => {
-    const result = filterSuggestions("/", options, 10);
-    expect(result).toHaveLength(5);
-  });
-
-  it("filters by value substring", () => {
-    const result = filterSuggestions("/sc", options, 10);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.value).toBe("/scan");
-  });
-
-  it("filters by label substring", () => {
-    const result = filterSuggestions("/pen", options, 10);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.value).toBe("/pentest");
-  });
-
-  it("is case-insensitive", () => {
-    const result = filterSuggestions("/HELP", options, 10);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.value).toBe("/help");
-  });
-
-  it("respects maxSuggestions", () => {
-    const result = filterSuggestions("/s", options, 2);
-    expect(result).toHaveLength(2);
-  });
-
-  it("matches multiple options with shared substring", () => {
-    const result = filterSuggestions("/se", options, 10);
-    expect(result.map((s) => s.value)).toEqual(["/session", "/settings"]);
-  });
-
-  it("returns empty for no matches", () => {
-    expect(filterSuggestions("/zzz", options, 10)).toEqual([]);
-  });
-
-  it("returns empty for empty options array", () => {
-    expect(filterSuggestions("/scan", [], 10)).toEqual([]);
-  });
-
-  it("trims whitespace from input", () => {
-    const result = filterSuggestions("  /scan  ", options, 10);
-    expect(result).toHaveLength(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// resolveSubmitValue
-// ---------------------------------------------------------------------------
-
-describe("resolveSubmitValue", () => {
-  it("returns selected suggestion value when valid index", () => {
-    expect(resolveSubmitValue("typed text", options, 1)).toBe("/pentest");
-  });
-
-  it("returns trimmed raw text when no suggestions", () => {
-    expect(resolveSubmitValue("  hello  ", [], -1)).toBe("hello");
-  });
-
-  it("returns trimmed raw text when selectedIndex is -1", () => {
-    expect(resolveSubmitValue("  hello  ", options, -1)).toBe("hello");
-  });
-
-  it("returns trimmed raw text when selectedIndex is out of bounds", () => {
-    expect(resolveSubmitValue("hello", options, 999)).toBe("hello");
-  });
-
-  it("returns empty string for whitespace-only raw text with no selection", () => {
-    expect(resolveSubmitValue("   ", [], -1)).toBe("");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // computeUpArrow
@@ -424,7 +341,6 @@ describe("navigation sequences", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // computeVisibleWindow
 // ---------------------------------------------------------------------------
 
@@ -552,5 +468,315 @@ describe("computeVisibleWindow", () => {
     expect(result.visibleSuggestions).toHaveLength(3);
     expect(result.hasMore).toBe(false);
     expect(result.hasMoreBelow).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectInlineSlash
+// ---------------------------------------------------------------------------
+
+describe("detectInlineSlash", () => {
+  it("detects / at start of text", () => {
+    expect(detectInlineSlash("/", 1)).toEqual({
+      token: "/",
+      start: 0,
+      end: 1,
+    });
+  });
+
+  it("detects partial slug at start of text", () => {
+    expect(detectInlineSlash("/sc", 3)).toEqual({
+      token: "/sc",
+      start: 0,
+      end: 3,
+    });
+  });
+
+  it("detects inline / after space", () => {
+    expect(detectInlineSlash("scan this /", 11)).toEqual({
+      token: "/",
+      start: 10,
+      end: 11,
+    });
+  });
+
+  it("detects inline partial slug", () => {
+    expect(detectInlineSlash("scan this /vuln", 15)).toEqual({
+      token: "/vuln",
+      start: 10,
+      end: 15,
+    });
+  });
+
+  it("returns null when cursor is after a space following /", () => {
+    // "scan / " with cursor at 7 (after the space)
+    expect(detectInlineSlash("scan / ", 7)).toBeNull();
+  });
+
+  it("returns null when / is not preceded by whitespace", () => {
+    expect(detectInlineSlash("http://foo", 10)).toBeNull();
+  });
+
+  it("returns null for empty text", () => {
+    expect(detectInlineSlash("", 0)).toBeNull();
+  });
+
+  it("returns null when cursor is at 0", () => {
+    expect(detectInlineSlash("/foo", 0)).toBeNull();
+  });
+
+  it("detects slug with hyphens", () => {
+    expect(detectInlineSlash("run /my-cool-skill", 18)).toEqual({
+      token: "/my-cool-skill",
+      start: 4,
+      end: 18,
+    });
+  });
+
+  it("returns null when cursor is in the middle of regular text", () => {
+    expect(detectInlineSlash("no slash here", 5)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterInlineSuggestions
+// ---------------------------------------------------------------------------
+
+describe("filterInlineSuggestions", () => {
+  it("returns all options for just /", () => {
+    const result = filterInlineSuggestions("/", options, 10);
+    expect(result.length).toBe(options.length);
+  });
+
+  it("filters by prefix", () => {
+    const result = filterInlineSuggestions("/s", options, 10);
+    expect(result.every((o) => o.value.startsWith("/s"))).toBe(true);
+    expect(result.length).toBe(3); // /scan, /session, /settings
+  });
+
+  it("returns empty for exact match (already completed)", () => {
+    expect(filterInlineSuggestions("/scan", options, 10)).toEqual([]);
+  });
+
+  it("returns empty for no match", () => {
+    expect(filterInlineSuggestions("/zzz", options, 10)).toEqual([]);
+  });
+
+  it("respects maxSuggestions", () => {
+    expect(filterInlineSuggestions("/", options, 2).length).toBe(2);
+  });
+
+  it("returns empty for non-slash token", () => {
+    expect(filterInlineSuggestions("scan", options, 10)).toEqual([]);
+  });
+
+  it("returns empty for empty options", () => {
+    expect(filterInlineSuggestions("/s", [], 10)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeInlineCompletion
+// ---------------------------------------------------------------------------
+
+describe("computeInlineCompletion", () => {
+  it("replaces inline partial with completed value", () => {
+    const result = computeInlineCompletion(
+      "scan this /v",
+      { token: "/v", start: 10, end: 12 },
+      "/vulnerability-analysis",
+    );
+    expect(result.newText).toBe("scan this /vulnerability-analysis");
+    expect(result.cursorOffset).toBe(33);
+  });
+
+  it("replaces start-of-line partial", () => {
+    const result = computeInlineCompletion(
+      "/sc",
+      { token: "/sc", start: 0, end: 3 },
+      "/scan",
+    );
+    expect(result.newText).toBe("/scan");
+    expect(result.cursorOffset).toBe(5);
+  });
+
+  it("preserves text after the token", () => {
+    const result = computeInlineCompletion(
+      "run /s more text",
+      { token: "/s", start: 4, end: 6 },
+      "/scan",
+    );
+    expect(result.newText).toBe("run /scan more text");
+    expect(result.cursorOffset).toBe(9);
+  });
+
+  it("handles token at end of text", () => {
+    const result = computeInlineCompletion(
+      "test /h",
+      { token: "/h", start: 5, end: 7 },
+      "/help",
+    );
+    expect(result.newText).toBe("test /help");
+    expect(result.cursorOffset).toBe(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectInlineOption
+// ---------------------------------------------------------------------------
+
+const knownCommands = new Set(["pentest", "p", "operator", "o", "themes"]);
+
+describe("detectInlineOption", () => {
+  it("detects -- after a known command", () => {
+    expect(detectInlineOption("/pentest --", 11, knownCommands)).toEqual({
+      commandName: "pentest",
+      token: "--",
+      start: 9,
+      end: 11,
+    });
+  });
+
+  it("detects partial option", () => {
+    expect(detectInlineOption("/pentest --tar", 14, knownCommands)).toEqual({
+      commandName: "pentest",
+      token: "--tar",
+      start: 9,
+      end: 14,
+    });
+  });
+
+  it("detects option after existing flags", () => {
+    const text = "/pentest --target http://foo --na";
+    expect(detectInlineOption(text, text.length, knownCommands)).toEqual({
+      commandName: "pentest",
+      token: "--na",
+      start: 29,
+      end: 33,
+    });
+  });
+
+  it("works with aliases", () => {
+    expect(detectInlineOption("/p --target", 11, knownCommands)).toEqual({
+      commandName: "p",
+      token: "--target",
+      start: 3,
+      end: 11,
+    });
+  });
+
+  it("returns null for unknown command", () => {
+    expect(detectInlineOption("/unknown --tar", 14, knownCommands)).toBeNull();
+  });
+
+  it("returns null when no command prefix", () => {
+    expect(detectInlineOption("hello --tar", 11, knownCommands)).toBeNull();
+  });
+
+  it("returns null when -- is not preceded by whitespace", () => {
+    expect(detectInlineOption("/pentest x--tar", 15, knownCommands)).toBeNull();
+  });
+
+  it("returns null when cursor is at 0", () => {
+    expect(detectInlineOption("--target", 0, knownCommands)).toBeNull();
+  });
+
+  it("returns null for single dash", () => {
+    expect(detectInlineOption("/pentest -t", 11, knownCommands)).toBeNull();
+  });
+
+  it("returns null with empty known commands", () => {
+    expect(detectInlineOption("/pentest --tar", 14, new Set())).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterInlineOptionSuggestions
+// ---------------------------------------------------------------------------
+
+const optionSuggestions: AutocompleteOption[] = [
+  { value: "--target", label: "--target <url>", description: "Target URL" },
+  { value: "--name", label: "--name <name>", description: "Session name" },
+  { value: "--tier", label: "--tier <1-5>", description: "Permission tier" },
+  { value: "--strict", label: "--strict", description: "Strict scope mode" },
+];
+
+describe("filterInlineOptionSuggestions", () => {
+  it("returns all options for just --", () => {
+    const result = filterInlineOptionSuggestions(
+      "--",
+      optionSuggestions,
+      "/pentest --",
+      10,
+    );
+    expect(result.length).toBe(optionSuggestions.length);
+  });
+
+  it("filters by prefix", () => {
+    const result = filterInlineOptionSuggestions(
+      "--t",
+      optionSuggestions,
+      "/pentest --t",
+      10,
+    );
+    expect(result.every((o) => o.value.startsWith("--t"))).toBe(true);
+    expect(result.length).toBe(2); // --target, --tier
+  });
+
+  it("returns empty for exact match", () => {
+    expect(
+      filterInlineOptionSuggestions(
+        "--target",
+        optionSuggestions,
+        "/pentest --target",
+        10,
+      ),
+    ).toEqual([]);
+  });
+
+  it("excludes already-used options from results", () => {
+    const fullText = "/pentest --target http://foo --";
+    const result = filterInlineOptionSuggestions(
+      "--",
+      optionSuggestions,
+      fullText,
+      10,
+    );
+    expect(result.some((o) => o.value === "--target")).toBe(false);
+    expect(result.length).toBe(3); // --name, --tier, --strict
+  });
+
+  it("respects maxSuggestions", () => {
+    expect(
+      filterInlineOptionSuggestions("--", optionSuggestions, "/pentest --", 2)
+        .length,
+    ).toBe(2);
+  });
+
+  it("returns empty for non-dash token", () => {
+    expect(
+      filterInlineOptionSuggestions(
+        "target",
+        optionSuggestions,
+        "/pentest target",
+        10,
+      ),
+    ).toEqual([]);
+  });
+
+  it("returns empty for empty options", () => {
+    expect(
+      filterInlineOptionSuggestions("--t", [], "/pentest --t", 10),
+    ).toEqual([]);
+  });
+
+  it("is case-insensitive", () => {
+    const result = filterInlineOptionSuggestions(
+      "--T",
+      optionSuggestions,
+      "/pentest --T",
+      10,
+    );
+    expect(result.length).toBe(2); // --target, --tier
   });
 });

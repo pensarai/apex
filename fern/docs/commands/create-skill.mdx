@@ -1,0 +1,63 @@
+---
+title: "/create-skill"
+description: "Create a new reusable operator skill"
+---
+
+## Overview
+
+The `/create-skill` command opens a guided flow for creating a new operator skill. Skills are reusable instruction sets that teach the AI agent specialized testing techniques or workflows tailored to your environment.
+
+## Usage
+
+```bash
+/create-skill
+```
+
+## What Are Skills?
+
+Skills are YAML-based configuration files stored in `~/.pensar/skills/`. Each skill defines:
+
+- **Name** — a human-readable name for the skill
+- **Description** — what the skill does
+- **Instructions** — detailed instructions the AI agent follows when the skill is invoked
+
+Once created, skills appear as dynamic slash commands in the TUI. For example, a skill named "SQL Injection Test" becomes available as `/sql-injection-test`.
+
+## How It Works
+
+<Steps>
+  <Step title="Launch Skill Creator">
+    Run `/create-skill` to open the skill creation interface.
+  </Step>
+  <Step title="Define the Skill">
+    Provide a name, description, and detailed instructions for the AI agent.
+  </Step>
+  <Step title="Save">
+    The skill is saved to `~/.pensar/skills/` and immediately available as a slash command.
+  </Step>
+</Steps>
+
+## Using Skills
+
+After creating a skill, invoke it from the operator prompt:
+
+```bash
+/your-skill-name
+```
+
+The AI agent will follow the instructions defined in the skill, applying them to the current session context.
+
+<Callout intent="info">
+  Skills only work in operator sessions (`/operator`). They are not available in autonomous pentest mode (`/pentest`).
+</Callout>
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="/operator" icon="terminal" href="/apex/commands/operator">
+    Start an operator session to use skills
+  </Card>
+  <Card title="/help" icon="circle-question" href="/apex/commands/help">
+    View all available commands including dynamic skills
+  </Card>
+</CardGroup>

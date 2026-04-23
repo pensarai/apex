@@ -1,6 +1,6 @@
 import { hasToolCall, stepCountIs } from "ai";
 import { join } from "path";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
 import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
@@ -75,13 +75,27 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       session,
       authConfig,
       onStepFinish,
+      onCacheMetrics,
       abortSignal,
       attackSurfaceRegistry,
+      eventBus,
+      subagentId,
+      enableThinking,
     } = opts;
     const target = opts.target ?? opts.cwd!;
 
     const resultsPath = join(session.rootPath, "attack-surface-results.json");
     const assetsPath = join(session.rootPath, "assets");
+
+    const subagentFolder = join(
+      session.rootPath,
+      "subagents",
+      "attack-surface-agent",
+    );
+
+    if (!existsSync(subagentFolder)) {
+      mkdirSync(subagentFolder, { recursive: true });
+    }
 
     super({
       system: detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
@@ -90,15 +104,28 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       session,
       target,
       authConfig,
-      onStepFinish,
+      onStepFinish: (e) => {
+        onStepFinish?.(e);
+        const messages = e.response.messages;
+        if (messages !== undefined) {
+          writeFileSync(
+            join(subagentFolder, "attack-surface-agent.log"),
+            JSON.stringify(messages, null, 2),
+          );
+        }
+      },
+      onCacheMetrics,
       abortSignal,
       attackSurfaceRegistry,
+      eventBus,
+      subagentId,
+      enableThinking,
       messages: opts.messages,
-
       activeTools: [
         // Core recon tools
         "execute_command",
-        "document_asset",
+        "document_app",
+        "document_endpoint",
         "create_attack_surface_report",
         // Browser automation for SPAs, JS-heavy apps, and auth flows
         "browser_navigate",
@@ -152,6 +179,7 @@ function buildPrompt(target: string, session: SessionInfo): string {
   const scopeConstraints = session.config?.scopeConstraints;
   const authenticationInstructions = session.config?.authenticationInstructions;
   const enumerateSubdomains = session.config?.enumerateSubdomains ?? false;
+  const operatorPrompt = session.config?.prompt;
 
   const cm = session.credentialManager;
   const credBlock = cm?.formatForPrompt();
@@ -211,6 +239,10 @@ Note any login pages you find as assets and flag them for pentest agents.`;
       ? `Begin NOW by logging in. Your first tool call must be browser_navigate to ${loginTarget}. After login, continue with the remaining phases.`
       : `Begin attack surface analysis now. Follow the phases defined in your system prompt in order.`;
 
+  const operatorGuidanceBlock = operatorPrompt
+    ? `\n## Operator Guidance\n${operatorPrompt}\n`
+    : "";
+
   return `TARGET: ${target}
 
 Session: ${session.id}
@@ -222,6 +254,6 @@ SCOPE:
 ${scopeRules}
 
 ${subdomainBlock}
-
+${operatorGuidanceBlock}
 ${startDirective}`;
 }

@@ -2,9 +2,14 @@ import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import Input from "../input";
 import { useRoute } from "../../context/route";
-import type { SessionConfig } from "../../../core/session";
+
 import { SpinnerDots } from "../sprites";
+import { DialogControls } from "../shared/dialog-controls";
 import { useTheme } from "../../theme";
+import {
+  getAutoPopulatedHosts,
+  getAutoPopulatedPorts,
+} from "../../../util/url";
 
 // Simplified wizard step types
 type WizardStep = "target" | "configure" | "creating";
@@ -68,6 +73,32 @@ export default function InitWizard() {
   // Error state
   const [error, setError] = useState<string | null>(null);
 
+  // Helper to auto-populate hosts/ports from target when transitioning to configure step
+  function autoPopulateScopeFromTarget() {
+    if (!state.target.trim()) return;
+
+    const currentHosts = state.scope.allowedHosts;
+    const currentPorts = state.scope.allowedPorts.map((p) => parseInt(p, 10));
+
+    const autoHosts = getAutoPopulatedHosts(state.target, currentHosts);
+    const autoPorts = getAutoPopulatedPorts(state.target, currentPorts);
+
+    // Only update if we actually added something new
+    if (
+      autoHosts.length !== currentHosts.length ||
+      autoPorts.length !== currentPorts.length
+    ) {
+      setState((prev) => ({
+        ...prev,
+        scope: {
+          ...prev.scope,
+          allowedHosts: autoHosts,
+          allowedPorts: autoPorts.map(String),
+        },
+      }));
+    }
+  }
+
   // Create session and navigate to session route
   async function createSessionAndNavigate() {
     if (!state.target.trim()) return;
@@ -76,50 +107,28 @@ export default function InitWizard() {
     setError(null);
 
     try {
-      // Build session config
-      const sessionConfig: SessionConfig = {};
-
-      // Auth config
-      if (state.auth.instructions || state.auth.username) {
-        sessionConfig.authenticationInstructions = state.auth.instructions;
-        if (state.auth.username) {
-          sessionConfig.authCredentials = {
-            username: state.auth.username,
-            password: state.auth.password,
-            loginUrl: state.auth.loginUrl || undefined,
-          };
-        }
-      }
-
-      // Scope constraints
-      if (
-        state.scope.allowedHosts.length > 0 ||
-        state.scope.allowedPorts.length > 0
-      ) {
-        sessionConfig.scopeConstraints = {
-          allowedHosts: state.scope.allowedHosts,
-          allowedPorts: state.scope.allowedPorts
-            .map((p) => parseInt(p, 10))
-            .filter((p) => !isNaN(p)),
-          strictScope: state.scope.strictScope,
-        };
-      }
-
-      // Headers config
-      if (state.headers.mode !== "default") {
-        sessionConfig.offensiveHeaders = {
-          mode: state.headers.mode,
-          headers:
-            state.headers.mode === "custom"
-              ? state.headers.customHeaders
-              : undefined,
-        };
-      }
+      const skillArgs: Record<string, string> = {
+        target: state.target,
+      };
+      if (state.auth.loginUrl) skillArgs["auth-url"] = state.auth.loginUrl;
+      if (state.auth.username) skillArgs["auth-user"] = state.auth.username;
+      if (state.auth.password) skillArgs["auth-pass"] = state.auth.password;
+      if (state.auth.instructions)
+        skillArgs["auth-instructions"] = state.auth.instructions;
+      if (state.scope.allowedHosts.length > 0)
+        skillArgs.hosts = state.scope.allowedHosts.join(",");
+      if (state.scope.allowedPorts.length > 0)
+        skillArgs.ports = state.scope.allowedPorts.join(",");
+      if (state.scope.strictScope) skillArgs.strict = "true";
 
       route.navigate({
-        type: "pentest",
-        targets: [state.target],
-        sessionConfig,
+        type: "operator",
+        nonce: Date.now(),
+        initialConfig: {
+          requireApproval: false,
+          target: state.target,
+        },
+        initialSkill: { slug: "pentest", args: skillArgs },
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create session");
@@ -152,6 +161,7 @@ export default function InitWizard() {
     if (currentStep === "target") {
       if (key.name === "tab") {
         if (!key.shift && targetFocusedField === 0 && state.target.trim()) {
+          autoPopulateScopeFromTarget();
           setCurrentStep("configure");
         }
         return;
@@ -315,25 +325,13 @@ export default function InitWizard() {
           focused={targetFocusedField === 0}
         />
 
-        <box flexDirection="column" gap={0} marginTop={1}>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Enter]</span>
-            <span fg={colors.textMuted}> to start immediately</span>
-          </text>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[Tab]</span>
-            <span fg={colors.textMuted}> to configure options</span>
-          </text>
-          <text>
-            <span fg={colors.primary}>█ </span>
-            <span fg={colors.textMuted}>Press </span>
-            <span fg={colors.text}>[ESC]</span>
-            <span fg={colors.textMuted}> to cancel</span>
-          </text>
+        <box marginTop={1}>
+          <DialogControls
+            controls={[
+              { key: "Enter", label: "Start Immediately", variant: "primary" },
+              { key: "Tab", label: "Configure Options" },
+            ]}
+          />
         </box>
       </box>
     );
@@ -549,25 +547,13 @@ export default function InitWizard() {
         )}
       </box>
 
-      <box flexDirection="column" gap={0} marginTop={1}>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.textMuted}>Press </span>
-          <span fg={colors.text}>[Enter]</span>
-          <span fg={colors.textMuted}> to start pentest</span>
-        </text>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.textMuted}>Press </span>
-          <span fg={colors.text}>[Tab]</span>
-          <span fg={colors.textMuted}> to navigate fields</span>
-        </text>
-        <text>
-          <span fg={colors.primary}>█ </span>
-          <span fg={colors.textMuted}>Press </span>
-          <span fg={colors.text}>[ESC]</span>
-          <span fg={colors.textMuted}> to go back</span>
-        </text>
+      <box marginTop={1}>
+        <DialogControls
+          controls={[
+            { key: "Enter", label: "Start Pentest", variant: "primary" },
+            { key: "Tab", label: "Navigate Fields" },
+          ]}
+        />
       </box>
     </box>
   );

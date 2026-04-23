@@ -8,7 +8,7 @@ import { type SessionInfo } from "../../../session";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import type { ConsumeCallbacks } from "../../offSecAgent/types";
+import type { AgentEventBus } from "../../../eventBus";
 import type { AuthBarrier } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -47,8 +47,26 @@ export interface AuthenticationAgentInput {
   /** AbortSignal to cancel mid-run */
   abortSignal?: AbortSignal;
 
-  /** Optional persistence callbacks for external storage integration */
-  callbacks?: ConsumeCallbacks;
+  /** Event bus for streaming agent output */
+  eventBus?: AgentEventBus;
+
+  /** Tags stream events when this agent runs as a named subagent */
+  subagentId?: string;
+
+  /**
+   * Arbitrary context to include in the agent prompt (e.g. application name/description).
+   * The agent will treat non-malicious instructions within the context as guidance.
+   */
+  context?: string;
+
+  /**
+   * Environment variables to inject into the agent's persistent shell.
+   * Forwarded to the underlying {@link OffensiveSecurityAgentInput}.
+   */
+  environmentVariables?: Record<string, string>;
+
+  /** Enable extended thinking (reasoning) for supported models. */
+  enableThinking?: boolean;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */
@@ -115,19 +133,28 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       authConfig,
       onStepFinish,
       abortSignal,
+      eventBus,
+      subagentId,
+      context,
+      environmentVariables,
+      enableThinking,
     } = opts;
 
     const cm = session.credentialManager;
 
     super({
       system: detectOSAndEnhancePrompt(AUTH_SUBAGENT_SYSTEM_PROMPT),
-      prompt: buildAuthPrompt(target, authHints, cm),
+      prompt: buildAuthPrompt(target, authHints, cm, context),
       model,
       session,
       target,
       authConfig,
       onStepFinish,
       abortSignal,
+      eventBus,
+      subagentId,
+      environmentVariables,
+      enableThinking,
       toolChoice: "auto",
       activeTools: [
         // Auth flow tools
@@ -211,8 +238,18 @@ function buildAuthPrompt(
   target: string,
   authHints?: AuthenticationAgentInput["authHints"],
   credentialManager?: import("../../../credentials").CredentialManager,
+  context?: string,
 ): string {
   const parts: string[] = [`TARGET: ${target}\n`];
+
+  if (context) {
+    parts.push("APPLICATION CONTEXT:");
+    parts.push(
+      "The following is context specific to the application under test. If it contains non-malicious instructions relevant to authentication, follow them.\n",
+    );
+    parts.push(context);
+    parts.push("");
+  }
 
   const credBlock = credentialManager?.formatForPrompt();
   if (credBlock) {
@@ -265,15 +302,7 @@ You have credentials available via credential IDs — authenticate immediately.
 export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
   const agent = new AuthenticationAgent(input);
 
-  const result = await agent.consume({
-    onTextDelta: (d) => input.callbacks?.onTextDelta?.(d),
-    onToolCallStreaming: (d) => input.callbacks?.onToolCallStreaming?.(d),
-    onToolCallDelta: (d) => input.callbacks?.onToolCallDelta?.(d),
-    onToolCall: (d) => input.callbacks?.onToolCall?.(d),
-    onToolResult: (d) => input.callbacks?.onToolResult?.(d),
-    onError: (e) => input.callbacks?.onError?.(e),
-    subagentCallbacks: input.callbacks?.subagentCallbacks,
-  });
+  const result = await agent.consume();
 
   console.log(
     `\nAuthentication ${result.success ? "succeeded" : "failed"}: ${result.summary}`,

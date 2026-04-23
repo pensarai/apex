@@ -25,7 +25,7 @@ export default function Footer({
   showExitWarning = false,
 }: FooterProps) {
   const { colors } = useTheme();
-  const { model, isExecuting, sessionCwd } = useAgent();
+  const { isExecuting, sessionCwd } = useAgent();
   const effectiveCwd = sessionCwd || cwd;
   const relativeCwd = effectiveCwd.split(os.homedir()).pop() || "";
   const segments = relativeCwd.split("/").filter(Boolean);
@@ -34,9 +34,7 @@ export default function Footer({
       ? "~/" + segments.join("/")
       : "…/" + segments.slice(-2).join("/");
   const session = useSession();
-  const route = useRoute();
   const { isInputEmpty } = useInput();
-
   const hotkeys = isExecuting
     ? [{ key: "Ctrl+C", label: "Stop Execution" }]
     : [
@@ -56,16 +54,7 @@ export default function Footer({
     >
       <box flexDirection="row" gap={1} flexShrink={1} overflow="hidden">
         <text fg={colors.textMuted}>{displayCwd}</text>
-        <box border={["right"]} borderColor={colors.primary} />
-        <text fg={colors.textMuted}>
-          <span fg={colors.text}>{model.name}</span>
-        </text>
         <AgentStatus />
-        {route.data.type === "pentest" && session.active && (
-          <text fg={colors.text}>
-            Session: <span fg={colors.textMuted}>{session.active.name}</span>
-          </text>
-        )}
       </box>
       {showExitWarning ? (
         <box flexDirection="row" gap={1} flexShrink={0}>
@@ -92,8 +81,8 @@ export function AgentStatus() {
 
   const tokenLabel =
     route.data.type === "operator"
-      ? `${formatTokenCount(tokenUsage.outputTokens)}↑ ${formatTokenCount(tokenUsage.inputTokens)}↓`
-      : `↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)} Σ${formatTokenCount(tokenUsage.totalTokens)}`;
+      ? `${formatTokenCount(tokenUsage.outputTokens)}↑ ${formatTokenCount(tokenUsage.inputTokens)}↓${tokenUsage.cachedTokens > 0 ? ` ⚡${formatTokenCount(tokenUsage.cachedTokens)}` : ""}`
+      : `↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)}${tokenUsage.cachedTokens > 0 ? ` ⚡${formatTokenCount(tokenUsage.cachedTokens)}` : ""} Σ${formatTokenCount(tokenUsage.totalTokens)}`;
 
   return (
     <box flexDirection="row" gap={1}>

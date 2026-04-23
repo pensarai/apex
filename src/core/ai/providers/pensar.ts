@@ -10,6 +10,7 @@ import type {
 import { convertToBedrockFormat } from "./pensarFormatters";
 import { parseSSE } from "./pensarSSE";
 import { signGatewayRequest } from "./pensarSigning";
+import { buildStreamingFetchSignal } from "../utils";
 
 const DEBUG =
   process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
@@ -78,7 +79,7 @@ export function createPensarModel(
       if (!result) {
         logError("buildHeaders: getToken() returned null — auth failed");
         throw new Error(
-          "Pensar authentication failed. Run /auth to reconnect.",
+          "Pensar authentication failed. Run /login to reconnect.",
         );
       }
       headers.Authorization = `Bearer ${result.token.slice(0, 12)}…`;
@@ -137,6 +138,13 @@ export function createPensarModel(
       };
 
       const textParts: Record<string, string> = {};
+      const reasoningParts: Record<
+        string,
+        {
+          text: string;
+          providerMetadata?: Record<string, Record<string, unknown>>;
+        }
+      > = {};
       const toolInputParts: Record<
         string,
         { toolName: string; input: string }
@@ -149,6 +157,23 @@ export function createPensarModel(
           if (done) break;
 
           switch (value.type) {
+            case "reasoning-start":
+              reasoningParts[value.id] = { text: "" };
+              break;
+            case "reasoning-delta":
+              if (reasoningParts[value.id]) {
+                reasoningParts[value.id].text += value.delta;
+              }
+              break;
+            case "reasoning-end":
+              if (reasoningParts[value.id]) {
+                content.push({
+                  type: "reasoning",
+                  text: reasoningParts[value.id].text,
+                  providerMetadata: value.providerMetadata,
+                });
+              }
+              break;
             case "text-start":
               textParts[value.id] = "";
               break;
@@ -235,12 +260,14 @@ export function createPensarModel(
 
       log(`  headers: ${Object.keys(headers).join(", ")}`);
 
+      const fetchSignal = buildStreamingFetchSignal(options.abortSignal);
+
       let response: Response;
       try {
         response = await fetch(url, {
           method: "POST",
           headers,
-          signal: options.abortSignal,
+          signal: fetchSignal,
           body: serializedBody,
         });
       } catch (err) {
@@ -294,12 +321,16 @@ export function createPensarModel(
         async start(controller) {
           let inputTokens = 0;
           let outputTokens = 0;
+          let cacheReadTokens = 0;
+          let cacheCreationTokens = 0;
           let finishReasonUnified: LanguageModelV3FinishReason["unified"] =
             "other";
           let finishReasonRaw: string | undefined;
           let startEmitted = false;
           // Track active content blocks for proper id mapping
           let activeTextId: string | null = null;
+          let activeReasoningId: string | null = null;
+          let activeReasoningSignature: string | null = null;
           let activeToolId: string | null = null;
           let activeToolName: string | null = null;
           let activeToolInput = "";
@@ -319,8 +350,13 @@ export function createPensarModel(
 
           let eventCount = 0;
           let lastEventTime = Date.now();
+          const rawIdleTimeout = Number(process.env.PENSAR_SSE_IDLE_TIMEOUT_MS);
+          const idleTimeoutMs =
+            Number.isFinite(rawIdleTimeout) && rawIdleTimeout > 0
+              ? rawIdleTimeout
+              : 90_000;
           try {
-            for await (const sse of parseSSE(sseStream)) {
+            for await (const sse of parseSSE(sseStream, { idleTimeoutMs })) {
               const now = Date.now();
               const gap = now - lastEventTime;
               if (gap > 5000) {
@@ -375,6 +411,12 @@ export function createPensarModel(
                   if (usage?.input_tokens) {
                     inputTokens = usage.input_tokens;
                   }
+                  if (usage?.cache_read_input_tokens) {
+                    cacheReadTokens = usage.cache_read_input_tokens;
+                  }
+                  if (usage?.cache_creation_input_tokens) {
+                    cacheCreationTokens = usage.cache_creation_input_tokens;
+                  }
                   break;
                 }
 
@@ -387,7 +429,14 @@ export function createPensarModel(
                     | Record<string, unknown>
                     | undefined;
                   const cbType = cb?.type as string | undefined;
-                  if (cbType === "text") {
+                  if (cbType === "thinking") {
+                    activeReasoningId = `reasoning-${Date.now()}-${parsed.index}`;
+                    activeReasoningSignature = null;
+                    controller.enqueue({
+                      type: "reasoning-start",
+                      id: activeReasoningId,
+                    });
+                  } else if (cbType === "text") {
                     activeTextId = `text-${Date.now()}-${parsed.index}`;
                     controller.enqueue({
                       type: "text-start",
@@ -411,7 +460,20 @@ export function createPensarModel(
                     | Record<string, unknown>
                     | undefined;
                   const deltaType = delta?.type as string | undefined;
-                  if (deltaType === "text_delta" && activeTextId) {
+                  if (deltaType === "thinking_delta" && activeReasoningId) {
+                    controller.enqueue({
+                      type: "reasoning-delta",
+                      id: activeReasoningId,
+                      delta: (delta?.thinking as string) ?? "",
+                    });
+                  } else if (
+                    deltaType === "signature_delta" &&
+                    activeReasoningId
+                  ) {
+                    activeReasoningSignature =
+                      (activeReasoningSignature ?? "") +
+                      ((delta?.signature as string) ?? "");
+                  } else if (deltaType === "text_delta" && activeTextId) {
                     controller.enqueue({
                       type: "text-delta",
                       id: activeTextId,
@@ -430,7 +492,19 @@ export function createPensarModel(
                 }
 
                 case "content_block_stop": {
-                  if (activeTextId) {
+                  if (activeReasoningId) {
+                    controller.enqueue({
+                      type: "reasoning-end",
+                      id: activeReasoningId,
+                      ...(activeReasoningSignature && {
+                        providerMetadata: {
+                          anthropic: { signature: activeReasoningSignature },
+                        },
+                      }),
+                    });
+                    activeReasoningId = null;
+                    activeReasoningSignature = null;
+                  } else if (activeTextId) {
                     controller.enqueue({ type: "text-end", id: activeTextId });
                     activeTextId = null;
                   } else if (activeToolId && activeToolName) {
@@ -480,7 +554,7 @@ export function createPensarModel(
             }
 
             logInfo(
-              `  stream complete: ${finishReasonUnified}, ${inputTokens}in/${outputTokens}out (${Date.now() - startTime}ms)`,
+              `  stream complete: ${finishReasonUnified}, ${inputTokens}in/${outputTokens}out, cacheRead=${cacheReadTokens}, cacheWrite=${cacheCreationTokens} (${Date.now() - startTime}ms)`,
             );
 
             controller.enqueue({
@@ -493,8 +567,8 @@ export function createPensarModel(
                 inputTokens: {
                   total: inputTokens,
                   noCache: undefined,
-                  cacheRead: undefined,
-                  cacheWrite: undefined,
+                  cacheRead: cacheReadTokens || undefined,
+                  cacheWrite: cacheCreationTokens || undefined,
                 },
                 outputTokens: {
                   total: outputTokens,

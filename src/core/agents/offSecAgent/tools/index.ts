@@ -6,6 +6,17 @@ export {
   type SandboxExecutionResult,
 } from "./sandbox";
 
+// Scope guard utilities
+export {
+  ScopeViolationError,
+  getAllowedHosts,
+  isHostAllowed,
+  extractHostname,
+  assertUrlInScope,
+  assertCommandInScope,
+  extractHostsFromCommand,
+} from "./scopeGuard";
+
 // Browser automation tools
 export { createBrowserToolset, BROWSER_TOOL_NAMES } from "./browserTools";
 export type { BrowserToolName } from "./browserTools";
@@ -22,7 +33,6 @@ export {
 export { executeCommand } from "./executeCommand";
 export { httpRequest } from "./httpRequest";
 export { documentVulnerability } from "./documentFinding";
-export { createPoc } from "./createPoc";
 
 // Filesystem / search tools
 export { readFile } from "./readFile";
@@ -32,7 +42,8 @@ export { createFile } from "./createFile";
 export { updateFile } from "./updateFile";
 
 // Attack surface / recon tools
-export { documentAsset } from "./documentAsset";
+export { documentApp } from "./documentApp";
+export { documentEndpoint } from "./documentEndpoint";
 export { authenticateSession } from "./authenticateSession";
 export { delegateAuth } from "./delegateAuth";
 export { extractJsEndpoints } from "./extractJsEndpoints";
@@ -50,6 +61,7 @@ export { probeAuthEndpoints } from "./probeAuthEndpoints";
 export { runAttackSurface } from "./runAttackSurface";
 export { spawnPentestSwarm } from "./spawnPentestSwarm";
 export { spawnCodingAgent } from "./spawnCodingAgent";
+export { runPentestWorkflow } from "./runPentestWorkflow";
 
 // Reporting / benchmark tools
 // export { generateReport } from "./generateReport";
@@ -68,6 +80,21 @@ export type { EmailToolName } from "./email";
 export { webSearch } from "./webSearch";
 export { getPage } from "./getPage";
 
+// Skill tools
+export { readSkill } from "./readSkill";
+
+// Observability tools
+export { checkpointState } from "./checkpointState";
+
+// Task decomposition tools
+export { createTask } from "./createTask";
+export { updateTask } from "./updateTask";
+export { listTasksTool } from "./listTasks";
+
+// Plan mode tools
+export { writePlan } from "./writePlan";
+export { submitPlan } from "./submitPlan";
+
 // ---------------------------------------------------------------------------
 // Tool registry
 // ---------------------------------------------------------------------------
@@ -77,13 +104,14 @@ import { createBrowserToolset } from "./browserTools";
 import { executeCommand } from "./executeCommand";
 import { httpRequest } from "./httpRequest";
 import { documentVulnerability } from "./documentFinding";
-import { createPoc } from "./createPoc";
+
 import { readFile } from "./readFile";
 import { listFiles } from "./listFiles";
 import { grep } from "./grep";
 import { createFile } from "./createFile";
 import { updateFile } from "./updateFile";
-import { documentAsset } from "./documentAsset";
+import { documentApp } from "./documentApp";
+import { documentEndpoint } from "./documentEndpoint";
 import { authenticateSession } from "./authenticateSession";
 import { delegateAuth } from "./delegateAuth";
 import { extractJsEndpoints } from "./extractJsEndpoints";
@@ -97,6 +125,7 @@ import { probeAuthEndpoints } from "./probeAuthEndpoints";
 import { runAttackSurface } from "./runAttackSurface";
 import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { spawnCodingAgent } from "./spawnCodingAgent";
+import { runPentestWorkflow } from "./runPentestWorkflow";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
 import { addMemory } from "./addMemory";
@@ -109,6 +138,18 @@ import { emailSearchMessages } from "./email/searchMessages";
 import { emailGetMessage } from "./email/getMessage";
 import { webSearch } from "./webSearch";
 import { getPage } from "./getPage";
+import { readSkill } from "./readSkill";
+import { checkpointState } from "./checkpointState";
+import { createTask } from "./createTask";
+import { updateTask } from "./updateTask";
+import { listTasksTool } from "./listTasks";
+import { writePlan } from "./writePlan";
+import { submitPlan } from "./submitPlan";
+import {
+  askUserQuestions,
+  ASK_USER_QUESTIONS_TOOL_NAME,
+} from "./askUserQuestions";
+export { ASK_USER_QUESTIONS_TOOL_NAME } from "./askUserQuestions";
 
 /**
  * Create the full toolset for the OffensiveSecurityAgent.
@@ -126,7 +167,6 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     execute_command: executeCommand(ctx),
     http_request: httpRequest(ctx),
     document_vulnerability: documentVulnerability(ctx),
-    create_poc: createPoc(ctx),
 
     // Filesystem / search tools
     read_file: readFile(ctx),
@@ -136,7 +176,8 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     update_file: updateFile(ctx),
 
     // Attack surface / recon tools
-    document_asset: documentAsset(ctx),
+    document_app: documentApp(ctx),
+    document_endpoint: documentEndpoint(ctx),
     authenticate_session: authenticateSession(ctx),
     delegate_to_auth_subagent: delegateAuth(ctx),
     extract_js_endpoints: extractJsEndpoints(ctx),
@@ -154,6 +195,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     run_attack_surface: runAttackSurface(ctx),
     spawn_pentest_swarm: spawnPentestSwarm(ctx),
     spawn_coding_agent: spawnCodingAgent(ctx),
+    run_pentest_workflow: runPentestWorkflow(ctx),
 
     // Reporting / benchmark tools
     // generate_report: generateReport(ctx),
@@ -174,6 +216,27 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Web search tools (requires Pensar account)
     web_search: webSearch(ctx),
     get_page: getPage(ctx),
+
+    // Skill tools (conditional — only when registry is provided)
+    ...(ctx.skillsRegistry ? { read_skill: readSkill(ctx) } : {}),
+
+    [ASK_USER_QUESTIONS_TOOL_NAME]: askUserQuestions(ctx),
+
+    // Observability tools (conditional — only when trace writer is provided)
+    ...(ctx.traceWriter ? { checkpoint_state: checkpointState(ctx) } : {}),
+
+    // Task decomposition tools (conditional — only when tasksDir is configured)
+    ...(ctx.tasksDir
+      ? {
+          create_task: createTask(ctx),
+          update_task: updateTask(ctx),
+          list_tasks: listTasksTool(ctx),
+        }
+      : {}),
+
+    // Plan mode tools
+    write_plan: writePlan(ctx),
+    submit_plan: submitPlan(ctx),
   } as const;
 }
 
@@ -195,14 +258,14 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "execute_command",
   "http_request",
   "document_vulnerability",
-  "create_poc",
   // Filesystem / search
   "read_file",
   "list_files",
   "grep",
   "create_file",
   "update_file",
-  "document_asset",
+  "document_app",
+  "document_endpoint",
   "authenticate_session",
   "delegate_to_auth_subagent",
   "create_attack_surface_report",
@@ -210,6 +273,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "run_attack_surface",
   "spawn_pentest_swarm",
   "spawn_coding_agent",
+  "run_pentest_workflow",
   // "generate_report",
   "provide_comparison_results",
   // Memory
@@ -226,13 +290,23 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   // Web search (requires Pensar account)
   "web_search",
   "get_page",
+  // Observability
+  "checkpoint_state",
+  // Task decomposition
+  "create_task",
+  "update_task",
+  "list_tasks",
+  // Plan mode
+  "write_plan",
+  "submit_plan",
+  ASK_USER_QUESTIONS_TOOL_NAME,
 ];
 
 /**
  * Tool names available in plan mode (read-only / non-mutating).
  *
- * Excludes: create_file, update_file, create_poc, document_vulnerability,
- * document_asset. These are the mutation tools that should not be available
+ * Excludes: create_file, update_file, document_vulnerability,
+ * document_app, document_endpoint. These are the mutation tools that should not be available
  * when the operator is in plan (read-only) mode.
  */
 export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
@@ -252,30 +326,38 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "read_file",
   "list_files",
   "grep",
-  // Attack surface / recon
+  // Recon (read-only probing and discovery)
   "authenticate_session",
   "delegate_to_auth_subagent",
-  "create_attack_surface_report",
   "complete_authentication",
-  "run_attack_surface",
-  "spawn_pentest_swarm",
-  "spawn_coding_agent",
+  "extract_js_endpoints",
+  "crawl_authenticated_area",
+  "detect_auth_scheme",
+  "probe_auth_endpoints",
   "provide_comparison_results",
   // Memory
   "add_memory",
   "list_memories",
   "get_memory",
-  // Email
+  // Email (read-only)
   "email_list_inboxes",
   "email_list_messages",
   "email_get_message",
   "email_search_messages",
   "email_get_attachments",
-  "email_mark_read",
   // Web search
   "web_search",
   "get_page",
+  // Plan mode tools
+  "write_plan",
+  "submit_plan",
+  "create_task",
+  "update_task",
+  "list_tasks",
 ];
+
+/** Skill tool names — conditionally included when a skills registry is provided. */
+export const SKILL_TOOL_NAMES = ["read_skill"] as const;
 
 /** Email tool names — auto-appended to activeTools by the base class when inboxes are configured. */
 export { EMAIL_TOOL_NAMES as EMAIL_TOOL_NAMES_ACTIVE } from "./email";

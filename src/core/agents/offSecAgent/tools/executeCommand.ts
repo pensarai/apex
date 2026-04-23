@@ -3,6 +3,7 @@ import { z } from "zod";
 import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import type { ToolContext } from "./types";
+import { assertCommandInScope, ScopeViolationError } from "./scopeGuard";
 
 const MAX_INLINE = 50_000;
 const MS_TIMEOUT_THRESHOLD = 10_000;
@@ -139,6 +140,21 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
+      try {
+        assertCommandInScope(command, ctx);
+      } catch (e) {
+        if (e instanceof ScopeViolationError) {
+          return {
+            success: false,
+            error: e.message,
+            stdout: "",
+            stderr: e.message,
+            command,
+          };
+        }
+        throw e;
+      }
+
       // Sandbox mode: route execution through the sandbox
       if (ctx.sandbox) {
         try {
@@ -176,10 +192,13 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       if (ctx.persistentShell) {
         try {
           const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
+          const onData = ctx.eventBus
+            ? (data: string) => ctx.eventBus!.emit("command-output", { data })
+            : undefined;
           const result = await ctx.persistentShell.execute(
             command,
             normalizedTimeout,
-            ctx.onCommandOutput,
+            onData,
             ctx.abortSignal,
           );
           const { text: stdout, file: outputFile } = maybeSaveFullOutput(

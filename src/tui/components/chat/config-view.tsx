@@ -15,6 +15,7 @@ import {
 } from "../../../core/providers/utils";
 import type { Config } from "../../../core/config/config";
 import { useTheme } from "../../theme";
+import { useAgent } from "../../context/agent";
 
 type FocusedField = "url" | "scope" | "model" | "start";
 
@@ -32,6 +33,7 @@ export interface SessionConfig {
 
 export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
   const { colors } = useTheme();
+  const { reasoningEnabled, setReasoningEnabled } = useAgent();
   // Form state
   const [targetUrl, setTargetUrl] = useState("https://");
   const [strictScope, setStrictScope] = useState(true);
@@ -136,6 +138,7 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
       paddingLeft={4}
       paddingRight={4}
       gap={1}
+      overflow="hidden"
     >
       {/* Header */}
       <box flexDirection="row" justifyContent="space-between">
@@ -213,6 +216,8 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
             onSelectModel={handleModelSelect}
             focused={focusedField === "model"}
             isModelUserSelected={isModelUserSelected}
+            reasoningEnabled={reasoningEnabled}
+            onReasoningToggle={setReasoningEnabled}
           />
         </box>
       </box>

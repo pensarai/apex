@@ -12,10 +12,20 @@ import ProviderSelection from "./provider-selection";
 import APIKeyInput from "./api-key-input";
 import AuthFlow from "./auth-flow";
 import { useTheme } from "../../theme";
+import { Dialog } from "../../context/dialog";
+import DialogLayout from "../dialog-layout";
 
 type FlowState = "choosing" | "selecting" | "inputting" | "auth";
 
-export default function ProviderManager() {
+interface ProviderManagerProps {
+  onClose?: () => void;
+  onOpenModelDialog?: () => void;
+}
+
+export default function ProviderManager({
+  onClose,
+  onOpenModelDialog,
+}: ProviderManagerProps = {}) {
   const route = useRoute();
   const _config = useConfig();
 
@@ -61,10 +71,14 @@ export default function ProviderManager() {
     await config.update(configUpdate);
     await _config.reload();
 
-    route.navigate({
-      type: "base",
-      path: "models",
-    });
+    if (onOpenModelDialog) {
+      // Transition directly to model dialog — skip prompt cleanup
+      onOpenModelDialog();
+    } else if (onClose) {
+      onClose();
+    } else {
+      route.navigate({ type: "base", path: "home" });
+    }
   };
 
   const handleAPIKeyCancel = () => {
@@ -77,17 +91,18 @@ export default function ProviderManager() {
   };
 
   const handleClose = () => {
-    route.navigate({
-      type: "base",
-      path: "home",
-    });
+    if (onClose) {
+      onClose();
+    } else {
+      route.navigate({ type: "base", path: "home" });
+    }
   };
 
   const handleAuthClose = () => {
     if (isOnboarding) {
       setFlowState("choosing");
     } else {
-      route.navigate({ type: "base", path: "home" });
+      handleClose();
     }
   };
 
@@ -122,7 +137,9 @@ export default function ProviderManager() {
             onCancel={handleAPIKeyCancel}
           />
         )}
-      {flowState === "auth" && <AuthFlow onClose={handleAuthClose} />}
+      {flowState === "auth" && (
+        <AuthFlow onClose={handleAuthClose} hideEsc={isOnboarding} />
+      )}
     </>
   );
 }
@@ -151,6 +168,8 @@ function OnboardingChoice({
   ];
 
   useKeyboard((key) => {
+    key.preventDefault();
+
     if (key.name === "up") {
       setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : choices.length - 1));
       return;
@@ -168,38 +187,23 @@ function OnboardingChoice({
   });
 
   return (
-    <box
-      position="absolute"
-      top={0}
-      left={0}
-      zIndex={1000}
-      width="100%"
-      height="100%"
-      justifyContent="center"
-      alignItems="center"
-      backgroundColor={"transparent"}
-    >
-      <box
-        width={70}
-        border={true}
-        borderColor={colors.primary}
-        backgroundColor={colors.backgroundPanel}
-        flexDirection="column"
-        padding={2}
+    <Dialog size="large" onClose={() => {}} hideEsc>
+      <DialogLayout
+        title="Get Started"
+        escLabel={null}
+        footerActions={[
+          { key: "Enter", label: "select", variant: "primary" },
+          { key: "↑/↓", label: "browse" },
+        ]}
       >
-        {/* Header */}
-        <box flexDirection="row" marginBottom={2}>
-          <text fg={colors.primary}>Get Started</text>
-        </box>
-
-        <box marginBottom={2}>
+        <box>
           <text fg={colors.textMuted}>
             Choose how to connect an AI provider.
           </text>
         </box>
 
         {/* Choices */}
-        <box flexDirection="column" gap={1}>
+        <box flexDirection="column" gap={1} marginTop={1}>
           {choices.map((choice, index) => {
             const isHighlighted = index === highlightedIndex;
             return (
@@ -225,15 +229,7 @@ function OnboardingChoice({
             );
           })}
         </box>
-
-        {/* Footer */}
-        <box marginTop={2}>
-          <text fg={colors.textMuted}>
-            <span fg={colors.primary}>[↑↓]</span> Navigate ·{" "}
-            <span fg={colors.primary}>[ENTER]</span> Select
-          </text>
-        </box>
-      </box>
-    </box>
+      </DialogLayout>
+    </Dialog>
   );
 }

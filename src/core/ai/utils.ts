@@ -1,5 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamResponse, type AIModel, type StreamResponseOpts } from "./ai";
+import { extractTaskSummaryFromMessages } from "./contextManagement";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -18,6 +19,27 @@ import {
   type TextStreamPart,
   type ToolSet,
 } from "ai";
+
+/**
+ * Check if a model uses an Anthropic-compatible provider that supports prompt caching.
+ * Direct Anthropic, AWS Bedrock (Claude), and Pensar gateway (routes to Bedrock) all support cache_control.
+ */
+export function isAnthropicProvider(model: AIModel): boolean {
+  const { provider } = getModelInfo(model);
+  return (
+    provider === "anthropic" || provider === "bedrock" || provider === "pensar"
+  );
+}
+
+// Last-resort backstop above Bun's 300s fetch default; SSE idle timeout is the primary stall guard.
+const STREAMING_FETCH_TIMEOUT_MS = 15 * 60 * 1000;
+
+export function buildStreamingFetchSignal(
+  callerSignal?: AbortSignal | null,
+): AbortSignal {
+  const timeout = AbortSignal.timeout(STREAMING_FETCH_TIMEOUT_MS);
+  return callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
+}
 
 export type AIAuthConfig = {
   openAiAPIKey?: string;
@@ -142,6 +164,11 @@ export function getProviderModel(
     }
 
     case "bedrock": {
+      const bedrockFetch = (input: RequestInfo | URL, init?: RequestInit) =>
+        globalThis.fetch(input, {
+          ...init,
+          signal: buildStreamingFetchSignal(init?.signal),
+        });
       const bedrock = createAmazonBedrock({
         apiKey: bedrockApiKey,
         region: bedrockRegion,
@@ -152,6 +179,7 @@ export function getProviderModel(
           ?.credentialProvider as NonNullable<
           Parameters<typeof createAmazonBedrock>[0]
         >["credentialProvider"],
+        fetch: bedrockFetch as typeof globalThis.fetch,
       });
       providerModel = bedrock(model);
       break;
@@ -178,7 +206,7 @@ export function getProviderModel(
 
       if (!pensarApiKey && !hasWorkOSAuth) {
         throw new Error(
-          "Pensar not configured. Run /auth to connect to Pensar Console.",
+          "Pensar not configured. Run /login to connect to Pensar Console.",
         );
       }
 
@@ -339,13 +367,20 @@ export async function summarizeConversation(
     } as unknown as Parameters<NonNullable<typeof opts.onStepFinish>>[0]);
   }
 
+  // Preserve task state through summarization so the agent doesn't lose
+  // track of its task progress after context compaction.
+  const taskSummary = extractTaskSummaryFromMessages(messages);
+  const summaryWithTasks = taskSummary
+    ? `${summary}\n\nCurrent task state: ${taskSummary}`
+    : summary;
+
   // For very long prompts, replace with just the summary instead of appending
   const originalLength =
     typeof opts.prompt === "string" ? opts.prompt.length : 0;
   const enhancedPrompt =
     originalLength > 100000
-      ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summary}\n\nOriginal task: Please respond based on this summary.`
-      : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summary}`;
+      ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summaryWithTasks}\n\nOriginal task: Please respond based on this summary.`
+      : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summaryWithTasks}`;
 
   // Notify callers that context was reset so they can discard stale history.
   opts.onSummarized?.(summary);

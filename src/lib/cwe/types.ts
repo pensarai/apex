@@ -14,3 +14,24 @@ export const CweEntrySchema = z.object({
 });
 
 export type CweEntry = z.infer<typeof CweEntrySchema>;
+
+/**
+ * A CWE entry that has been validated against the CWE database
+ * and enriched with the canonical MITRE name.
+ */
+export const ValidatedCweEntrySchema = CweEntrySchema.extend({
+  name: z.string().describe("Canonical CWE name from the MITRE database"),
+});
+
+export type ValidatedCweEntry = z.infer<typeof ValidatedCweEntrySchema>;
+
+/**
+ * Type guard: does this CWE entry have a canonical name?
+ * Use in renderers to safely access the `name` field on entries
+ * that may be either CweEntry or ValidatedCweEntry.
+ */
+export function hasCanonicalName(
+  cwe: CweEntry | ValidatedCweEntry,
+): cwe is ValidatedCweEntry {
+  return "name" in cwe && typeof (cwe as ValidatedCweEntry).name === "string";
+}

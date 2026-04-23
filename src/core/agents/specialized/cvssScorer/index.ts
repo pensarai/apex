@@ -4,7 +4,7 @@
  * A specialized agent that analyzes vulnerability findings and their discovery context
  * to determine appropriate CVSS 4.0 metrics and calculate scores.
  *
- * This agent is spawned by the document_finding tool to provide standardized
+ * This agent is spawned by the document_vulnerability tool to provide standardized
  * severity scoring based on the CVSS 4.0 specification.
  */
 
@@ -12,7 +12,11 @@ import { z } from "zod";
 import { generateObjectResponse, type AIModel } from "../../../ai";
 import { type AIAuthConfig } from "../../../ai/utils";
 import { calculateCVSS4Score, type CVSS4Metrics } from "../../../../lib/cvss";
-import { CweEntrySchema, type CweEntry } from "../../../../lib/cwe/types";
+import {
+  CweEntrySchema,
+  type ValidatedCweEntry,
+} from "../../../../lib/cwe/types";
+import { validateCweEntries } from "../../../../lib/cwe/validate";
 
 // =============================================================================
 // Types
@@ -46,8 +50,8 @@ export interface CVSSScorerResult {
   scoreType: string;
   /** AI's reasoning for metric choices */
   reasoning: string;
-  /** CWE classifications assigned to this vulnerability */
-  cwes: CweEntry[];
+  /** CWE classifications assigned to this vulnerability (validated against MITRE database) */
+  cwes: ValidatedCweEntry[];
 }
 
 // =============================================================================
@@ -209,6 +213,7 @@ const CVSS_SCORER_SYSTEM_PROMPT = `You are a CVSS 4.0 scoring specialist. Your t
 ### IDOR / Access Control
 - Typically: AV:N, AC:L, AT:N, PR:L (needs some access), UI:N
 - Impact varies based on what data is accessed
+- If PR=N (no authentication required), this is NOT IDOR. Reclassify as 'missing-authentication'.
 
 ### SSRF
 - Typically: AV:N, AC:L, AT:N, PR varies, UI:N
@@ -217,6 +222,59 @@ const CVSS_SCORER_SYSTEM_PROMPT = `You are a CVSS 4.0 scoring specialist. Your t
 ### Path Traversal / LFI
 - Typically: AV:N, AC:L, AT:N, PR varies, UI:N
 - VC:H (file read), VI:N (unless write), VA:N
+
+### Information Disclosure (exposed secrets, JS bundle leaks, API spec exposure, sensitive data exposure)
+- **VC:L** when only metadata/structure is exposed (API routes, merchant IDs, config, version info)
+- **VC:H** when credentials, PII, auth tokens, or API secrets are exposed
+- **E:A** only when the disclosed info was actually used in further exploitation during this test
+- **E:P** when it aids reconnaissance but wasn't weaponized in this engagement
+- For public keys (pk_*, publishable keys): not typically a vulnerability unless context suggests otherwise
+- Severity range: LOW-MEDIUM for metadata, MEDIUM-HIGH for credentials/PII
+
+### Missing Rate Limiting
+- Typically: **AV:N, AC:L, AT:P** (brute-force requires time within validity window)
+- **VC/VI** depends on what the brute-force enables:
+  - **VC:H, VI:H** if account takeover is feasible (short OTP + no expiry, weak passwords)
+  - **VC:L, VI:N** if only enumeration is enabled
+- **E:P** unless actual brute-force succeeded during testing, then **E:A**
+- **Do NOT score based on theoretical full exploit chain** if only the rate limit gap was demonstrated
+- Severity range: typically LOW-MEDIUM unless demonstrated takeover elevates to HIGH
+
+### Missing Security Headers (clickjacking, CSP, X-Frame-Options, HSTS, etc.)
+- **UI:A** (requires user to visit attacker-controlled page AND interact)
+- **VC:N, VI:L** (limited actions via clickjacking), **VA:N**
+- **E:U** unless an actual clickjacking/framing attack was demonstrated, then **E:P**
+- These are typically **LOW severity** (CVSS < 4.0)
+- Only elevate if concrete attack scenario was demonstrated
+
+### User Enumeration
+- **VC:L** (limited info: email existence, username validity, account type)
+- **VI:N, VA:N, SC:N, SI:N, SA:N**
+- Typically **LOW-MEDIUM** severity range (CVSS 3.0-5.0)
+- **Do NOT inflate to HIGH** based on theoretical downstream attacks (brute-force, phishing)
+- Score what was demonstrated, not what could theoretically follow
+
+### Hardcoded Credentials / API Keys
+- Distinguish key types carefully:
+  - **Public keys** (pk_*, publishable API keys): informational, **not typically a vulnerability**
+  - **Secret keys** (sk_*, API secrets, passwords) in client code: **VC:H, VI:H**
+  - **Service keys** with billing impact (unrestricted Google Maps API key): **VA:L, VC:N**
+- **E:A** only if the key was used to access unauthorized resources during testing
+- **E:P** if the key is valid but wasn't exploited in this engagement
+- Severity: **INFORMATIONAL** for public keys, **HIGH-CRITICAL** for secret keys with access, **MEDIUM** for billing-only impact
+
+### Captcha Bypass
+- Typically: **AV:N, AC:L, AT:N, PR:N, UI:N**
+- **VI:L** (can create unauthorized accounts), **VA:L** (resource exhaustion potential)
+- **VC:N** (no data exposed by bypassing captcha alone)
+- In **sandbox/staging environments**, consider **AT:P** if captcha may be intentionally disabled
+- Severity range: typically **LOW-MEDIUM** unless chained with other impacts
+
+### Authentication Bypass (OTP bypass, default credentials, session fixation)
+- **VC:H** (full account access), **VI:L-H** (depends on account capabilities)
+- If **sandbox-only** and may be intentional (test credentials, debug mode): note in reasoning, consider **E:P** not **E:A**
+- If production-like or confirmed unintentional: **E:A**
+- Severity: typically **HIGH-CRITICAL** for real bypasses, **MEDIUM** for intentional test credentials in sandbox
 
 ## Analysis Instructions
 
@@ -250,9 +308,14 @@ In addition to CVSS metrics, assign one or more CWE identifiers to the finding. 
 | CSRF | CWE-352 | — |
 | Deserialization | CWE-502 | — |
 | Open Redirect | CWE-601 | — |
-| Information Disclosure | CWE-200 | CWE-209 (Error Messages), CWE-532 (Log Files) |
-| Authentication Bypass | CWE-287 | CWE-306 (Missing Auth) |
+| Information Disclosure | CWE-200 | CWE-209 (Error Messages), CWE-532 (Log Files), CWE-538 (File/Path Info) |
+| Authentication Bypass | CWE-287 | CWE-306 (Missing Auth), CWE-798 (Hardcoded Credentials) |
 | Cryptographic Issues | CWE-327 | CWE-328 (Weak Hash), CWE-330 (Insufficient Randomness) |
+| Missing Rate Limiting | CWE-307 | CWE-799 (Improper Input Validation - brute-force) |
+| User Enumeration | CWE-203 | CWE-204 (Observable Response Discrepancy) |
+| Hardcoded Credentials | CWE-798 | CWE-259 (Hard-coded Password), CWE-321 (Hard-coded Crypto Key) |
+| Captcha Bypass | CWE-804 | CWE-837 (Improper Enforcement of Single Access) |
+| Missing Security Headers | CWE-1021 | CWE-693 (Protection Mechanism Failure), CWE-16 (Configuration) |
 
 ### CWE Assignment Rules
 
@@ -297,6 +360,10 @@ export async function scoreFindingWithCVSS(
     ...assessment.metrics,
   });
 
+  // Validate CWE IDs against the canonical MITRE database.
+  // Unknown/hallucinated IDs are silently dropped.
+  const { validated: validatedCwes } = validateCweEntries(assessment.cwes);
+
   return {
     score: cvssResult.score,
     severity: cvssResult.severity,
@@ -304,7 +371,7 @@ export async function scoreFindingWithCVSS(
     metrics: cvssResult.metrics,
     scoreType: cvssResult.scoreType,
     reasoning: assessment.reasoning,
-    cwes: assessment.cwes,
+    cwes: validatedCwes,
   };
 }
 

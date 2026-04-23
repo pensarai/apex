@@ -5,7 +5,11 @@ import { resolve, isAbsolute } from "path";
 import type { ToolContext } from "./types";
 
 export const readFileInputSchema = z.object({
-  path: z.string().describe("Absolute or relative path to the file to read"),
+  path: z
+    .string()
+    .describe(
+      "Absolute or relative path to the file to read. Must be a file, not a directory.",
+    ),
   startLine: z
     .number()
     .optional()
@@ -34,7 +38,7 @@ export type ReadFileResult = {
 
 export function readFile(ctx: ToolContext) {
   return tool({
-    description: `Read the contents of a file from the filesystem.
+    description: `Read the contents of a file from the filesystem. This tool only works on files, NOT directories. To list directory contents, use the list_files tool instead.
 
 You can read the entire file or specify a line range using startLine / endLine
 (both 1-based, inclusive). If only startLine is given, reads from that line to
@@ -43,9 +47,7 @@ the end. If only endLine is given, reads from the beginning to that line.
 Output lines are prefixed with their line number for easy reference.`,
     inputSchema: readFileInputSchema,
     execute: async ({ path, startLine, endLine }): Promise<ReadFileResult> => {
-      const resolved = isAbsolute(path)
-        ? path
-        : resolve(ctx.session.rootPath, path);
+      const resolved = isAbsolute(path) ? path : resolve(ctx.agentCwd, path);
       try {
         const raw = await fsReadFile(resolved, "utf-8");
         const allLines = raw.split("\n");

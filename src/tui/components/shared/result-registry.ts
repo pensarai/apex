@@ -7,6 +7,7 @@
 
 import { RGBA, StyledText, type TextChunk } from "@opentui/core";
 import { highlightCode } from "./syntax-highlight";
+import type { ColorMode } from "../../theme/types";
 
 export interface ResultSummary {
   text: string;
@@ -25,12 +26,14 @@ export interface ResultSummary {
  * @param result - The raw tool result
  * @param toolName - Optional tool name for tool-specific summaries
  * @param args - Optional tool args (used by file tools to show content previews)
+ * @param mode - Color mode for syntax highlighting ("dark" or "light")
  * @returns Summary object with text and error flag, or null if no summary available
  */
 export function getResultSummary(
   result: unknown,
   toolName?: string,
   args?: Record<string, unknown>,
+  mode: ColorMode = "dark",
 ): ResultSummary | null {
   if (result === null || result === undefined) {
     return null;
@@ -65,7 +68,7 @@ export function getResultSummary(
               isError: false,
               label: `${totalLines} lines`,
               styledText:
-                highlightCode(preview + suffix, filePath) ?? undefined,
+                highlightCode(preview + suffix, filePath, mode) ?? undefined,
               fullText:
                 content.length > 400 ? content.slice(0, 2000) : undefined,
             };
@@ -140,6 +143,7 @@ export function getResultSummary(
           const styledChunks = buildWebSearchStyledText(
             shown,
             results.length > 5 ? results.length : undefined,
+            mode,
           );
           return {
             text: `${results.length} result${results.length !== 1 ? "s" : ""}`,
@@ -194,7 +198,7 @@ export function getResultSummary(
               text: preview + suffix,
               isError: false,
               styledText:
-                highlightCode(preview + suffix, filePath) ?? undefined,
+                highlightCode(preview + suffix, filePath, mode) ?? undefined,
               fullText:
                 content.length > 400 ? content.slice(0, 2000) : undefined,
             };
@@ -226,7 +230,8 @@ export function getResultSummary(
               text: `${n} replacement${n !== 1 ? "s" : ""}\n${codePreview}`,
               isError: false,
               label: `${n} replacement${n !== 1 ? "s" : ""}`,
-              styledText: highlightCode(codePreview, filePath) ?? undefined,
+              styledText:
+                highlightCode(codePreview, filePath, mode) ?? undefined,
               fullText:
                 newContent.length > 400 ? newContent.slice(0, 2000) : undefined,
             };
@@ -234,35 +239,6 @@ export function getResultSummary(
           return {
             text: `${n} replacement${n !== 1 ? "s" : ""}`,
             isError: false,
-          };
-        }
-        break;
-      }
-      case "create_poc": {
-        if (typeof result === "object" && result !== null) {
-          const obj = result as Record<string, unknown>;
-          if (obj.success === false) {
-            const errText = String(obj.error || obj.stderr || "POC failed");
-            return {
-              text: errText.split("\n")[0].slice(0, 120),
-              isError: true,
-              fullText:
-                typeof obj.stderr === "string"
-                  ? obj.stderr.slice(0, 2000)
-                  : undefined,
-            };
-          }
-          const stdout = typeof obj.stdout === "string" ? obj.stdout : "";
-          const pocPath = obj.pocPath ? String(obj.pocPath) : "";
-          const lines = stdout.split("\n").filter((l) => l.length > 0);
-          const preview = lines.slice(0, 3).join("\n");
-          const suffix = lines.length > 3 ? `\n… (${lines.length} lines)` : "";
-          return {
-            text: pocPath
-              ? `Saved ${pocPath}\n${preview}${suffix}`
-              : preview + suffix || "POC passed",
-            isError: false,
-            fullText: stdout.length > 400 ? stdout.slice(0, 2000) : undefined,
           };
         }
         break;
@@ -394,6 +370,31 @@ export function getResultSummary(
       case "document_vulnerability": {
         if (typeof result === "object" && result !== null) {
           const obj = result as Record<string, unknown>;
+          // POC execution failure
+          if (obj.pocFailed) {
+            const errText = String(obj.stderr || obj.error || "POC failed");
+            return {
+              text: `POC failed (exit ${obj.exitCode}): ${errText.split("\n")[0].slice(0, 120)}`,
+              isError: true,
+              fullText:
+                typeof obj.stdout === "string"
+                  ? obj.stdout.slice(0, 2000)
+                  : undefined,
+            };
+          }
+          // Judge rejection
+          if (obj.judgeRejected) {
+            const reasoning = String(
+              obj.judgeReasoning || "Finding rejected by judge",
+            );
+            return {
+              text: reasoning.slice(0, 120),
+              isError: true,
+              fullText: Array.isArray(obj.judgeConcerns)
+                ? (obj.judgeConcerns as string[]).join("\n")
+                : undefined,
+            };
+          }
           if (obj.success === false) {
             const msg = String(obj.message || obj.error || "Failed").slice(
               0,
@@ -586,6 +587,79 @@ export function getResultSummary(
         break;
       }
 
+      // Task decomposition tools — quiet results like Claude Code
+      case "create_task": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Failed to create task").slice(0, 120),
+              isError: true,
+            };
+          }
+          const task = obj.task as Record<string, unknown> | undefined;
+          const id = task?.id ?? "?";
+          const subject = String(task?.subject || args?.subject || "");
+          return {
+            text: `Task #${id} created: ${subject}`,
+            isError: false,
+          };
+        }
+        break;
+      }
+      case "update_task": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Failed to update task").slice(0, 120),
+              isError: true,
+            };
+          }
+          const task = obj.task as Record<string, unknown> | undefined;
+          const id = task?.id ?? args?.taskId ?? "?";
+          const status = String(task?.status || args?.status || "");
+          return {
+            text: `Updated task #${id} ${status}`,
+            isError: false,
+          };
+        }
+        break;
+      }
+      case "list_tasks": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.error || "Failed to list tasks").slice(0, 120),
+              isError: true,
+            };
+          }
+          const summary = obj.summary as Record<string, number> | undefined;
+          const tasks = Array.isArray(obj.tasks)
+            ? (obj.tasks as Array<Record<string, unknown>>)
+            : [];
+          if (summary) {
+            const header = `${summary.total ?? 0} tasks: ${summary.completed ?? 0} done, ${summary.in_progress ?? 0} in progress, ${summary.pending ?? 0} pending`;
+            const lines = tasks.map((t) => {
+              const status = String(t.status || "pending");
+              const subject = String(t.subject || "").slice(0, 50);
+              return `#${t.id} [${status}] ${subject}`;
+            });
+            return {
+              text: header,
+              isError: false,
+              fullText: lines.join("\n"),
+            };
+          }
+          return {
+            text: `${tasks.length} task${tasks.length !== 1 ? "s" : ""}`,
+            isError: false,
+          };
+        }
+        break;
+      }
+
       // Utility tools
       case "scratchpad": {
         return { text: "Note saved", isError: false };
@@ -717,12 +791,23 @@ export function getResultSummary(
 // Web search styled text helpers
 // ---------------------------------------------------------------------------
 
-const WS_COLORS = {
-  globe: RGBA.fromInts(106, 115, 125, 255), // gray
-  domain: RGBA.fromInts(86, 182, 194, 255), // cyan
-  title: RGBA.fromInts(97, 175, 239, 255), // blue
-  snippet: RGBA.fromInts(140, 148, 160, 255), // muted
-} as const;
+const WS_COLORS: Record<
+  ColorMode,
+  { globe: RGBA; domain: RGBA; title: RGBA; snippet: RGBA }
+> = {
+  dark: {
+    globe: RGBA.fromInts(106, 115, 125, 255), // gray
+    domain: RGBA.fromInts(86, 182, 194, 255), // cyan
+    title: RGBA.fromInts(97, 175, 239, 255), // blue
+    snippet: RGBA.fromInts(140, 148, 160, 255), // muted
+  },
+  light: {
+    globe: RGBA.fromInts(106, 115, 125, 255), // gray
+    domain: RGBA.fromInts(28, 120, 134, 255), // darker cyan
+    title: RGBA.fromInts(30, 100, 200, 255), // darker blue
+    snippet: RGBA.fromInts(100, 108, 120, 255), // darker muted
+  },
+};
 
 function chunk(text: string, fg?: RGBA): TextChunk {
   return { __isChunk: true, text, fg, attributes: 0 };
@@ -740,7 +825,9 @@ function extractDomain(url: string): string {
 function buildWebSearchStyledText(
   results: Array<Record<string, unknown>>,
   totalCount?: number,
+  mode: ColorMode = "dark",
 ): StyledText {
+  const wsColors = WS_COLORS[mode];
   const chunks: TextChunk[] = [];
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
@@ -748,13 +835,13 @@ function buildWebSearchStyledText(
     const title = String(r.title || "").slice(0, 70);
 
     if (i > 0) chunks.push(chunk("\n"));
-    chunks.push(chunk("🌐 ", WS_COLORS.globe));
-    chunks.push(chunk(domain, WS_COLORS.domain));
-    chunks.push(chunk(" — ", WS_COLORS.globe));
-    chunks.push(chunk(title, WS_COLORS.title));
+    chunks.push(chunk("🌐 ", wsColors.globe));
+    chunks.push(chunk(domain, wsColors.domain));
+    chunks.push(chunk(" — ", wsColors.globe));
+    chunks.push(chunk(title, wsColors.title));
   }
   if (totalCount && totalCount > results.length) {
-    chunks.push(chunk(`\n… (${totalCount} total)`, WS_COLORS.snippet));
+    chunks.push(chunk(`\n… (${totalCount} total)`, wsColors.snippet));
   }
   return new StyledText(chunks);
 }

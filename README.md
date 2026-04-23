@@ -22,36 +22,6 @@ Want to run from the cloud or integrate it with your CI/CD? See <a href="https:/
   <img src="screenshot.png" alt="Pensar Apex Screenshot" width="800">
 </p> -->
 
-## What is Apex?
-
-Apex is an autonomous penetration testing agent that runs directly in your terminal.
-
-It doesn't wrap existing scanners or chain shell scripts. Apex deploys a **swarm of specialized AI agents** — each with domain expertise in reconnaissance, authentication analysis, exploitation, and code review — that coordinate a real penetration test against your application. Every finding comes with CVSS 4.0 scoring, CWE classification, evidence, and a validated proof-of-concept.
-
-The result is a pentest that runs like `npm test` — but thinks like a red team.
-
-## Why Apex?
-
-Traditional scanners execute signatures. Apex executes a methodology.
-
-- **Swarm architecture** - Specialized agents run in parallel across your attack surface, the same way a real red team divides and conquers. Up to 10 concurrent agents, each scoped to a specific objective.
-- **Structured, auditable output** - Every vulnerability is automatically scored (CVSS 4.0), classified (CWE), and documented with evidence and remediation steps. No raw tool dumps.
-- **Real exploitation, not guesswork** - Apex writes, runs, and validates proof-of-concept scripts. If the PoC doesn't succeed, it pivots to a different technique.
-- **Blackbox and whitebox** - Test a live target with no source access, or analyze your codebase to map endpoints and test them against a running instance.
-- **30+ built-in tools** - Browser automation, shell execution, HTTP requests, file analysis, web search for CVE lookups, authenticated crawling, and more. Optional Kali Linux container adds 25+ offensive security tools (nmap, sqlmap, hydra, hashcat, gobuster, and others).
-
-## Two Modes
-
-### `/pentest` — Autonomous
-
-Fire and forget. Apex runs a full engagement end-to-end: attack surface discovery, parallel swarm testing, and a structured report with findings in Markdown and JSON. No security expertise required.
-
-### `/operator` — Interactive
-
-Full control. Steer the agent step by step, approve each action, chain exploits manually, and dig deep into specific targets. Every tool is available. The approval gate holds until you say go.
-
-Start with `/pentest` to get coverage, then reopen the session in `/operator` to investigate specific findings — all context carries over.
-
 ## Use Cases
 
 ### Developers
@@ -69,30 +39,12 @@ Start with `/pentest` to get coverage, then reopen the session in `/operator` to
 
 ## Installation
 
-#### macOS / Linux (Quick Install)
-
-```bash
-curl -fsSL https://pensarai.com/install.sh | bash
-```
-
-#### Homebrew
-
-```bash
-brew tap pensarai/tap
-brew install apex
-```
-
-#### npm
-
-```bash
-npm install -g @pensar/apex
-```
-
-#### Windows (PowerShell)
-
-```powershell
-irm https://www.pensarai.com/apex.ps1 | iex
-```
+| Method                          | Command                                              |
+| ------------------------------- | ---------------------------------------------------- |
+| **Quick Install** (macOS/Linux) | `curl -fsSL https://pensarai.com/install.sh \| bash` |
+| **Homebrew**                    | `brew tap pensarai/tap && brew install apex`         |
+| **npm**                         | `npm install -g @pensar/apex`                        |
+| **Windows** (PowerShell)        | `irm https://www.pensarai.com/apex.ps1 \| iex`       |
 
 ## Usage
 
@@ -101,6 +53,49 @@ Open the Apex TUI:
 ```bash
 pensar
 ```
+
+### Headless CLI
+
+Run pentests without the TUI for scripting, CI, or evalgate integration:
+
+```bash
+# Basic pentest
+pensar pentest --target https://example.com
+
+# With extended thinking and task-driven mode
+pensar pentest --target https://example.com --extended-thinking --task-driven
+
+# Whitebox (with source code access)
+pensar pentest --target https://example.com --cwd ./my-app
+
+# Targeted pentest with specific objectives
+pensar targeted-pentest --target https://example.com --objective "Test authentication bypass"
+```
+
+| Flag                           | Command                   | Description                                    |
+| ------------------------------ | ------------------------- | ---------------------------------------------- |
+| `--target <url>`               | pentest, targeted-pentest | Target URL (required)                          |
+| `--cwd <path>`                 | pentest                   | Source code path for whitebox mode             |
+| `--mode <mode>`                | pentest                   | `exfil` for pivoting and flag extraction       |
+| `--model <model>`              | pentest, targeted-pentest | AI model (default: auto-selected)              |
+| `--extended-thinking`          | pentest                   | Enable extended thinking for supported models  |
+| `--task-driven`                | pentest                   | Enable task-driven architecture (experimental) |
+| `--prompt <text\|@file>`       | pentest                   | Custom guidance for the agent                  |
+| `--threat-model <text\|@file>` | pentest                   | Threat model to guide testing                  |
+| `--objective <text>`           | targeted-pentest          | Testing objective (repeatable)                 |
+
+### W&B Weave Tracing
+
+Stream step-level agent traces to Weights & Biases Weave for analysis and fine-tuning:
+
+```bash
+export WANDB_API_KEY=your-key
+export WANDB_ENTITY=your-entity
+# WANDB_PROJECT defaults to "apex-traces"
+pensar pentest --target https://example.com
+```
+
+Traces include reasoning steps, tool calls, token usage, and state checkpoints. When credentials are not set, tracing is silently disabled.
 
 ## Kali Linux Container (Optional)
 
@@ -123,5 +118,5 @@ pensar
 
 ### ⚠️ Responsible Use
 
-This repository contains tools for **authorized security testing** only.  
+This repository contains tools for **authorized security testing** only.
 Before use, please read and agree to the [Responsible Use Disclosure](./RESPONSIBLE_USE.md).

@@ -4,6 +4,8 @@ import {
   extractJavascriptEndpoints,
   type EndpointInfo,
 } from "../../specialized/attackSurface/jsExtraction";
+import type { ToolContext } from "./types";
+import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 
 /**
  * Factory for the `crawl_authenticated_area` tool.
@@ -11,7 +13,7 @@ import {
  * Recursively crawls web pages starting from a URL, following links,
  * extracting forms, and running JS endpoint extraction on each page.
  */
-export function crawlAuthenticated(_ctx: unknown) {
+export function crawlAuthenticated(ctx: ToolContext) {
   return tool({
     description: `Recursively crawl web pages starting from a URL to discover links, forms, and JavaScript endpoints.
 
@@ -33,6 +35,15 @@ export function crawlAuthenticated(_ctx: unknown) {
         ),
     }),
     execute: async (params) => {
+      try {
+        assertUrlInScope(params.startUrl, ctx);
+      } catch (e) {
+        if (e instanceof ScopeViolationError) {
+          return { success: false, message: e.message };
+        }
+        throw e;
+      }
+
       try {
         const { startUrl, sessionCookie, maxDepth, maxPages } = params;
 

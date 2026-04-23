@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
+import { AgentEventBus } from "../../../eventBus";
 
 /** Default max concurrent coding agents */
 const DEFAULT_CONCURRENCY = 5;
@@ -151,16 +152,23 @@ async function runSingleCodingAgent(
   agentIndex: number,
   name: string,
 ): Promise<string> {
-  // Dynamic import to break circular dependency
+  // Dynamic import to break circular dependency:
+  // codeAgent → offensiveSecurityAgent → tools/index → spawnCodingAgent → codeAgent
   const { CodeAgent } = await import("../../specialized/codeAgent/agent");
 
   const subagentId = `coding-agent-${agentIndex}`;
 
-  ctx.subagentCallbacks?.onSubagentSpawn?.({
+  ctx.eventBus?.emit("subagent-spawn", {
     subagentId,
     name,
     input: { codebasePath, objective },
-    status: "pending",
+  });
+
+  const localBus = new AgentEventBus();
+  let textOutput = "";
+  AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
+  localBus.on("text-delta", (d) => {
+    textOutput += d.text;
   });
 
   const agent = new CodeAgent({
@@ -170,47 +178,23 @@ async function runSingleCodingAgent(
     session: ctx.session,
     authConfig: ctx.authConfig,
     abortSignal: ctx.abortSignal,
+    eventBus: localBus,
+    subagentId,
+    enableThinking: ctx.enableThinking,
   });
 
   try {
-    // Collect the agent's text output
-    let textOutput = "";
+    await agent.consume();
 
-    await agent.consume({
-      onTextDelta: (d) => {
-        textOutput += d.text;
-      },
-      subagentCallbacks: ctx.subagentCallbacks
-        ? {
-            onTextDelta: (d) =>
-              ctx.subagentCallbacks!.onTextDelta?.({ ...d, subagentId }),
-            onToolCallStreaming: (d) =>
-              ctx.subagentCallbacks!.onToolCallStreaming?.({
-                ...d,
-                subagentId,
-              }),
-            onToolCallDelta: (d) =>
-              ctx.subagentCallbacks!.onToolCallDelta?.({ ...d, subagentId }),
-            onToolCall: (d) =>
-              ctx.subagentCallbacks!.onToolCall?.({ ...d, subagentId }),
-            onToolResult: (d) =>
-              ctx.subagentCallbacks!.onToolResult?.({ ...d, subagentId }),
-            onError: (e) => ctx.subagentCallbacks!.onError?.(e),
-          }
-        : undefined,
-    });
-
-    ctx.subagentCallbacks?.onSubagentComplete?.({
+    ctx.eventBus?.emit("subagent-complete", {
       subagentId,
-      input: { codebasePath, objective },
       status: "completed",
     });
 
     return textOutput;
   } catch (error) {
-    ctx.subagentCallbacks?.onSubagentComplete?.({
+    ctx.eventBus?.emit("subagent-complete", {
       subagentId,
-      input: { codebasePath, objective },
       status: "failed",
     });
     throw error;

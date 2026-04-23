@@ -34,7 +34,13 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   Write: (args) => `write ${args.path || args.file_path || ""}`,
   create_file: (args) => `create ${args.path || ""}`,
   update_file: (args) => `update ${args.path || ""}`,
-  create_poc: (args) => `poc ${args.pocName || ""}`,
+  document_vulnerability: (args) => {
+    const title = args.title || args.name || "";
+    const pocName = args.pocName || "";
+    return pocName
+      ? `finding: ${title} (poc: ${pocName})`
+      : `finding: ${title}`;
+  },
   Edit: (args) => `edit ${args.file_path || args.path || ""}`,
   Grep: (args) => `grep ${args.pattern || ""}`,
   grep: (args) => `grep ${args.pattern || ""}`,
@@ -64,6 +70,18 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   Task: (args) => (args.description as string) || "Task",
   task: (args) => (args.description as string) || "task",
 
+  // Task decomposition tools — labels are minimal, icons on results only
+  create_task: (args) => {
+    const subject = (args.subject as string) || "task";
+    return subject;
+  },
+  update_task: (args) => {
+    const id = args.taskId ?? "?";
+    const status = (args.status as string) || "";
+    return `task #${id} → ${status}`;
+  },
+  list_tasks: () => "tasks",
+
   // Subagent-spawning tools
   run_attack_surface: (args) => {
     const mode = args.cwd ? "whitebox" : "blackbox";
@@ -76,6 +94,10 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   spawn_pentest_swarm: (args) => {
     const targets = args.targets as unknown[];
     return `pentest swarm ×${targets?.length ?? "?"}`;
+  },
+  run_pentest_workflow: (args) => {
+    const mode = args.cwd ? "whitebox" : "blackbox";
+    return `pentest workflow (${mode}) ${args.target || ""}`;
   },
   delegate_to_auth_subagent: (args) =>
     `auth ${args.target || ""} — ${args.reason || ""}`,

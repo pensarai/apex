@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { CweEntrySchema } from "../../lib/cwe/types";
+import { CweEntrySchema, ValidatedCweEntrySchema } from "../../lib/cwe/types";
+import { EvidenceFileEntrySchema } from "../../lib/evidence/types";
 
 /**
  * Supported vulnerability classes for testing
@@ -87,7 +88,7 @@ export interface VulnerabilityTestResult {
 }
 
 /**
- * Zod schema for document_finding tool input
+ * Zod schema for document_vulnerability tool input
  */
 export const DocumentFindingSchema = z.object({
   title: z.string().describe("Clear, concise finding title"),
@@ -117,47 +118,14 @@ export const DocumentFindingSchema = z.object({
     .describe("Relative path to POC script (e.g., pocs/poc_sqli_login.sh)"),
   remediation: z.string().describe("Steps to fix the vulnerability"),
   references: z.string().optional().describe("CVE, CWE, or related references"),
-  cwes: z.array(CweEntrySchema).optional(),
+  cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
+  evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
 });
 
 export type DocumentFindingInput = z.infer<typeof DocumentFindingSchema>;
 
 /**
- * Zod schema for create_poc tool input
- */
-export const CreatePocSchema = z.object({
-  pocName: z
-    .string()
-    .describe("POC filename without extension (e.g., sqli_login_bypass)"),
-  pocType: z
-    .enum(["bash", "html"])
-    .describe("POC type: bash for scripts, html for browser-based"),
-  pocContent: z.string().describe("Complete POC content"),
-  description: z
-    .string()
-    .describe("Brief description of what the POC demonstrates"),
-});
-
-export type CreatePocInput = z.infer<typeof CreatePocSchema>;
-
-/**
- * Result from create_poc tool
- */
-export interface CreatePocResult {
-  success: boolean;
-  pocPath?: string;
-  execution?: {
-    success: boolean;
-    exitCode?: number;
-    stdout?: string;
-    stderr?: string;
-  };
-  error?: string;
-  message: string;
-}
-
-/**
- * Result from document_finding tool
+ * Result from document_vulnerability tool
  */
 export interface DocumentFindingResult {
   success: boolean;

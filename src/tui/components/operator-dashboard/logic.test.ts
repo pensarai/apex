@@ -21,51 +21,41 @@ const allOptions: AutocompleteOption[] = [
   { value: "/scan", label: "/scan", description: "Run a scan" },
   { value: "/pentest", label: "/pentest", description: "Run a pentest" },
   { value: "/help", label: "/help", description: "Show help" },
-  {
-    value: "/create-skill",
-    label: "/create-skill",
-    description: "Create skill",
-  },
   { value: "/models", label: "/models", description: "Switch model" },
-  { value: "/sql-injection", label: "/sql-injection", description: "Skill" },
-  { value: "/xss-test", label: "/xss-test", description: "Skill" },
+  { value: "/skills", label: "/skills", description: "View skills" },
 ];
-
-const skillSlugs = new Set(["/sql-injection", "/xss-test"]);
 
 // ---------------------------------------------------------------------------
 // filterOperatorAutocomplete
 // ---------------------------------------------------------------------------
 
 describe("filterOperatorAutocomplete", () => {
-  it("includes allowed commands (/create-skill, /models)", () => {
-    const result = filterOperatorAutocomplete(allOptions, new Set());
+  it("includes allowed commands (/models, /skills)", () => {
+    const result = filterOperatorAutocomplete(allOptions);
     const values = result.map((o) => o.value);
-    expect(values).toContain("/create-skill");
     expect(values).toContain("/models");
+    expect(values).toContain("/skills");
   });
 
-  it("includes skill slugs", () => {
-    const result = filterOperatorAutocomplete(allOptions, skillSlugs);
-    const values = result.map((o) => o.value);
-    expect(values).toContain("/sql-injection");
-    expect(values).toContain("/xss-test");
-  });
-
-  it("excludes commands that are neither allowed nor skills", () => {
-    const result = filterOperatorAutocomplete(allOptions, skillSlugs);
+  it("excludes commands that are not in the allowed set", () => {
+    const result = filterOperatorAutocomplete(allOptions);
     const values = result.map((o) => o.value);
     expect(values).not.toContain("/scan");
-    expect(values).not.toContain("/help");
   });
 
-  it("returns only allowed commands when no skills exist", () => {
-    const result = filterOperatorAutocomplete(allOptions, new Set());
-    expect(result).toHaveLength(3);
+  it("returns only allowed commands", () => {
+    const result = filterOperatorAutocomplete(allOptions);
+    expect(result).toHaveLength(4);
+  });
+
+  it("preserves description on allowed commands", () => {
+    const result = filterOperatorAutocomplete(allOptions);
+    const modelsOpt = result.find((o) => o.value === "/models");
+    expect(modelsOpt?.description).toBe("Switch model");
   });
 
   it("returns empty for empty input", () => {
-    expect(filterOperatorAutocomplete([], new Set())).toEqual([]);
+    expect(filterOperatorAutocomplete([])).toEqual([]);
   });
 });
 
@@ -134,13 +124,13 @@ describe("routeCommand", () => {
     expect(routeCommand("/MODELS", noSkill)).toEqual({ type: "show-models" });
   });
 
-  it("routes a skill command to run-skill", () => {
+  it("routes a skill command to run-skill with slug", () => {
     const resolveSkill = (cmd: string) =>
       cmd === "/sql-injection" ? "Perform SQL injection testing" : null;
     const result = routeCommand("/sql-injection", resolveSkill);
     expect(result).toEqual({
       type: "run-skill",
-      content: "Perform SQL injection testing",
+      slug: "sql-injection",
       autopilot: false,
     });
   });
@@ -151,7 +141,7 @@ describe("routeCommand", () => {
     const result = routeCommand("/sql-injection --autopilot", resolveSkill);
     expect(result).toEqual({
       type: "run-skill",
-      content: "SQL injection",
+      slug: "sql-injection",
       autopilot: true,
     });
   });
@@ -162,11 +152,53 @@ describe("routeCommand", () => {
     expect(resolveSkill).toHaveBeenCalledWith("/my-skill");
   });
 
+  it("routes /plan to show-plan", () => {
+    expect(routeCommand("/plan", noSkill)).toEqual({ type: "show-plan" });
+  });
+
+  it("routes /plan with args to show-plan", () => {
+    expect(routeCommand("/plan open", noSkill)).toEqual({ type: "show-plan" });
+  });
+
   it("falls back to execute-command for unknown commands", () => {
     const result = routeCommand("/unknown-cmd", noSkill);
     expect(result).toEqual({
       type: "execute-command",
       command: "/unknown-cmd",
+    });
+  });
+
+  it("routes /threat-model to run-skill when skill is registered", () => {
+    const resolveSkill = (cmd: string) =>
+      cmd === "/threat-model"
+        ? "Generate application-centric threat model"
+        : null;
+    const result = routeCommand("/threat-model", resolveSkill);
+    expect(result).toEqual({
+      type: "run-skill",
+      slug: "threat-model",
+      autopilot: false,
+    });
+  });
+
+  it("routes /threat-model --autopilot with autopilot flag", () => {
+    const resolveSkill = (cmd: string) =>
+      cmd === "/threat-model"
+        ? "Generate application-centric threat model"
+        : null;
+    const result = routeCommand("/threat-model --autopilot", resolveSkill);
+    expect(result).toEqual({
+      type: "run-skill",
+      slug: "threat-model",
+      autopilot: true,
+    });
+  });
+
+  it("falls back to execute-command for /threat-model when skill is not registered", () => {
+    const result = routeCommand("/threat-model", noSkill);
+    expect(result).toEqual({
+      type: "execute-command",
+      command: "/threat-model",
     });
   });
 });
@@ -322,7 +354,7 @@ describe("resolveKeyboardShortcut", () => {
     ).toEqual({ type: "toggle-expanded-logs" });
   });
 
-  it("Shift+Tab returns toggle-mode", () => {
+  it("Shift+Tab returns cycle-mode", () => {
     expect(
       resolveKeyboardShortcut(
         { name: "tab", shift: true },
@@ -331,10 +363,10 @@ describe("resolveKeyboardShortcut", () => {
         false,
         false,
       ),
-    ).toEqual({ type: "toggle-mode" });
+    ).toEqual({ type: "cycle-mode" });
   });
 
-  it("Option+Shift+Tab returns toggle-approval", () => {
+  it("Option+Shift+Tab also returns cycle-mode", () => {
     expect(
       resolveKeyboardShortcut(
         { name: "tab", shift: true, meta: true },
@@ -343,7 +375,7 @@ describe("resolveKeyboardShortcut", () => {
         false,
         false,
       ),
-    ).toEqual({ type: "toggle-approval" });
+    ).toEqual({ type: "cycle-mode" });
   });
 
   describe("Approval shortcuts", () => {
@@ -474,20 +506,74 @@ describe("buildOperatorSystemPrompt", () => {
     expect(prompt).toContain("# Tool Reference");
   });
 
-  it("includes plan mode note when agentMode is plan", () => {
+  it("includes plan mode prompt when agentMode is plan", () => {
     const prompt = buildOperatorSystemPrompt(target, state, "plan");
-    expect(prompt).toContain("Agent mode: PLAN");
-    expect(prompt).toContain("read-only tools only");
+    expect(prompt).toContain("PLAN MODE");
+    expect(prompt).toContain("write_plan");
+    expect(prompt).toContain("submit_plan");
   });
 
-  it("does not include plan mode note when agentMode is default", () => {
+  it("does not include plan mode prompt when agentMode is default", () => {
     const prompt = buildOperatorSystemPrompt(target, state, "default");
-    expect(prompt).not.toContain("Agent mode: PLAN");
+    expect(prompt).not.toContain("PLAN MODE");
+  });
+
+  it("includes approved plan content when provided outside plan mode", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "default", {
+      approvedPlanContent: "Test plan content",
+    });
+    expect(prompt).toContain("Approved Plan");
+    expect(prompt).toContain("Test plan content");
+  });
+
+  it("includes refinement block when existingPlanContent provided in plan mode", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "plan", {
+      existingPlanContent: "Old plan content",
+    });
+    expect(prompt).toContain("Do NOT Rewrite");
+    expect(prompt).toContain("Old plan content");
   });
 
   it("does not include plan mode note when agentMode is omitted", () => {
     const prompt = buildOperatorSystemPrompt(target, state);
     expect(prompt).not.toContain("Agent mode: PLAN");
+  });
+
+  it("appends skills catalog when provided", () => {
+    const catalog =
+      "<available_skills>\n\n- **sqli** (web) — SQL injection testing\n\n</available_skills>";
+    const prompt = buildOperatorSystemPrompt(target, state, undefined, {
+      skillsCatalog: catalog,
+    });
+    expect(prompt).toContain("# Skills");
+    expect(prompt).toContain("<available_skills>");
+    expect(prompt).toContain("sqli");
+  });
+
+  it("does not include skills catalog section when catalog is undefined", () => {
+    const prompt = buildOperatorSystemPrompt(target, state);
+    expect(prompt).not.toContain("<available_skills>");
+  });
+
+  it("appends active skill instructions", () => {
+    const activeSkills = [
+      { name: "SQL Injection", instructions: "Step 1: Find params..." },
+      { name: "XSS", instructions: "Step 1: Inject payload..." },
+    ];
+    const prompt = buildOperatorSystemPrompt(target, state, undefined, {
+      activeSkillInstructions: activeSkills,
+    });
+    expect(prompt).toContain("# Active Skill: SQL Injection");
+    expect(prompt).toContain("Step 1: Find params...");
+    expect(prompt).toContain("# Active Skill: XSS");
+    expect(prompt).toContain("Step 1: Inject payload...");
+  });
+
+  it("does not include active skills section when array is empty", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, undefined, {
+      activeSkillInstructions: [],
+    });
+    expect(prompt).not.toContain("# Active Skill:");
   });
 });
 
@@ -522,7 +608,13 @@ describe("resolveInputFocused", () => {
 // ---------------------------------------------------------------------------
 
 describe("accumulateTokenUsage", () => {
-  const base = { inputTokens: 100, outputTokens: 50, totalTokens: 150 };
+  const base = {
+    inputTokens: 100,
+    outputTokens: 50,
+    totalTokens: 150,
+    cachedTokens: 10,
+    cacheWriteTokens: 5,
+  };
 
   it("accumulates input and output tokens", () => {
     const result = accumulateTokenUsage(base, 20, 10);
@@ -530,6 +622,8 @@ describe("accumulateTokenUsage", () => {
       inputTokens: 120,
       outputTokens: 60,
       totalTokens: 180,
+      cachedTokens: 10,
+      cacheWriteTokens: 5,
     });
   });
 
@@ -556,12 +650,20 @@ describe("accumulateTokenUsage", () => {
   });
 
   it("handles zero base", () => {
-    const zero = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+    const zero = {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
+    };
     const result = accumulateTokenUsage(zero, 10, 5);
     expect(result).toEqual({
       inputTokens: 10,
       outputTokens: 5,
       totalTokens: 15,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
     });
   });
 });
