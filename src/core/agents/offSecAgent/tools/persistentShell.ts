@@ -95,6 +95,61 @@ function hasStdbuf(): boolean {
   return stdbufAvailable;
 }
 
+/**
+ * Produce a clean stdout string for the timeout / abort / close / cancel
+ * fallback resolvers.
+ *
+ * The happy-path handler (`onStdoutData`) parses the cutover and exit
+ * markers as they arrive and only commits stripped bytes to
+ * `authoritativeStdout`. When a fallback resolver fires first — because
+ * the Node event loop was busy processing AI SDK streams / telemetry /
+ * other tool calls while the shell's output was queued on the pipe, so
+ * a timeout/abort timer got to run before `onStdoutData` processed the
+ * chunk containing the exit marker — the candidate stdout is
+ * `streamedStdout`, which is the raw bash pipe accumulator and may still
+ * contain the per-command markers verbatim.
+ *
+ * Observed before this helper (NOCTURNE traces): commands that had in
+ * fact completed successfully had their stdout leak as e.g.
+ *   `__APEX_7e680629f7b4a78b__CUTOVER\n/debug -> HTTP 404\n...\n__APEX_7e680629f7b4a78b__EXIT_0\n`
+ * to the agent as tool output, which the model interpreted as literal
+ * strings in the target application's response.
+ *
+ * This function performs the same stripping the happy-path parser does,
+ * so all four fallback paths produce the same shape of stdout a normal
+ * completion would.
+ *
+ * Prefers `authoritativeStdout` when populated (happy path partially
+ * ran) since those bytes are already stripped; otherwise parses the raw
+ * `streamedStdout`. Exported for direct unit testing — the real-world
+ * trigger requires a busy event loop which is hard to force in a
+ * deterministic integration test.
+ */
+export function extractFallbackStdout(cmd: {
+  authoritativeStdout: string;
+  streamedStdout: string;
+  cutoverMarker: string;
+  exitMarkerPrefix: string;
+}): string {
+  if (cmd.authoritativeStdout) return cmd.authoritativeStdout;
+
+  let s = cmd.streamedStdout;
+
+  const cutIdx = s.indexOf(cmd.cutoverMarker);
+  if (cutIdx !== -1) {
+    s = s.substring(cutIdx + cmd.cutoverMarker.length);
+    if (s.startsWith("\n")) s = s.substring(1);
+  }
+
+  const exitIdx = s.indexOf(cmd.exitMarkerPrefix);
+  if (exitIdx !== -1) {
+    s = s.substring(0, exitIdx);
+    if (s.endsWith("\n")) s = s.substring(0, s.length - 1);
+  }
+
+  return s || "(no output)";
+}
+
 export class PersistentShell {
   private proc: ChildProcess | null = null;
   private alive = false;
@@ -154,8 +209,7 @@ export class PersistentShell {
         this.current = null;
         this.pendingCancel = null;
         cmd.resolve({
-          stdout:
-            cmd.authoritativeStdout || cmd.streamedStdout || "(no output)",
+          stdout: extractFallbackStdout(cmd),
           stderr: cmd.stderr || "",
           exitCode: 1,
         });
@@ -371,10 +425,7 @@ export class PersistentShell {
             setTimeout(() => {
               if (resolved) return;
               pending.resolve({
-                stdout:
-                  pending.authoritativeStdout ||
-                  pending.streamedStdout ||
-                  "(no output)",
+                stdout: extractFallbackStdout(pending),
                 stderr:
                   (pending.stderr || "") + (pending.forcedStderrSuffix ?? ""),
                 exitCode: 130,
@@ -402,10 +453,7 @@ export class PersistentShell {
             setTimeout(() => {
               if (resolved) return;
               pending.resolve({
-                stdout:
-                  pending.authoritativeStdout ||
-                  pending.streamedStdout ||
-                  "(no output)",
+                stdout: extractFallbackStdout(pending),
                 stderr: pending.stderr || "",
                 exitCode: 124,
               });
@@ -504,8 +552,7 @@ export class PersistentShell {
         // Fallback resolve if bash's wrapper never emits a marker.
         setTimeout(() => {
           cmd.resolve({
-            stdout:
-              cmd.authoritativeStdout || cmd.streamedStdout || "(no output)",
+            stdout: extractFallbackStdout(cmd),
             stderr: (cmd.stderr || "") + (cmd.forcedStderrSuffix ?? ""),
             exitCode: 130,
           });
@@ -513,7 +560,7 @@ export class PersistentShell {
       }, 500);
     } else {
       cmd.resolve({
-        stdout: cmd.authoritativeStdout || cmd.streamedStdout || "(no output)",
+        stdout: extractFallbackStdout(cmd),
         stderr: (cmd.stderr || "") + (cmd.forcedStderrSuffix ?? ""),
         exitCode: 130,
       });

@@ -1,7 +1,7 @@
 import { spawnSync } from "child_process";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { PersistentShell } from "./persistentShell";
+import { extractFallbackStdout, PersistentShell } from "./persistentShell";
 
 const HAS_STDBUF =
   process.platform !== "win32" &&
@@ -289,6 +289,34 @@ describe("PersistentShell — long-running stability", () => {
   }, 10_000);
 
   /**
+   * Smoke test: shell's happy-path timeout doesn't leak markers either.
+   * Useful as a second line of defense against marker leaks even though
+   * the real-world trigger (busy event loop, setTimeout fires before
+   * onStdoutData processes the exit-marker chunk) is covered by the
+   * dedicated `extractFallbackStdout` unit tests below.
+   */
+  it("does not leak nonce markers on timeout", async () => {
+    const shell = make();
+    const r = await shell.execute(`printf 'hello\\n'; sleep 10`, 1);
+    expect(r.exitCode).toBe(124);
+    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+__(CUTOVER|EXIT_)/);
+  }, 10_000);
+
+  it("does not leak nonce markers on abort", async () => {
+    const shell = make();
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 200);
+    const r = await shell.execute(
+      `printf 'hi\\n'; sleep 10`,
+      30,
+      undefined,
+      ac.signal,
+    );
+    expect(r.exitCode).toBe(130);
+    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+__(CUTOVER|EXIT_)/);
+  }, 10_000);
+
+  /**
    * Streaming callback fires as output arrives, where the platform's
    * `tail -f` actually flushes line-by-line. Requires effective
    * `stdbuf -oL` on `/usr/bin/tail` (or equivalent), which means:
@@ -369,4 +397,82 @@ describe("PersistentShell — long-running stability", () => {
     expect(final.stdout).toContain("final");
     expect(elapsed).toBeLessThan(3_000);
   }, 60_000);
+});
+
+/**
+ * Direct unit tests for the fallback stdout extractor.
+ *
+ * The real-world failure (timeout or abort timer firing while Node is
+ * too busy to have processed the shell's exit-marker chunk) is too
+ * non-deterministic to force in an integration test — the shell's
+ * post-kill wrapper finishes emitting markers in a couple hundred
+ * milliseconds and almost always loses the race to the 2-second
+ * fallback timer on an idle test runner. These tests exercise the
+ * stripping logic directly on synthetic `PendingCommand` buffers that
+ * match what Node would accumulate in the pathological cases actually
+ * observed in NOCTURNE traces.
+ */
+describe("extractFallbackStdout", () => {
+  const cut = "__APEX_deadbeef00112233__CUTOVER";
+  const exitPrefix = "__APEX_deadbeef00112233__EXIT_";
+
+  const mk = (stream: string, authoritative = "") => ({
+    authoritativeStdout: authoritative,
+    streamedStdout: stream,
+    cutoverMarker: cut,
+    exitMarkerPrefix: exitPrefix,
+  });
+
+  it("returns authoritativeStdout verbatim when populated", () => {
+    expect(extractFallbackStdout(mk("ignored", "real output\n"))).toBe(
+      "real output\n",
+    );
+  });
+
+  it("strips both cutover prefix and exit-marker suffix from streamed buffer", () => {
+    // Shape observed in NOCTURNE trace step 2: command in fact completed
+    // successfully, shell emitted everything, but the fallback resolver
+    // fired before onStdoutData processed the chunk.
+    const leaked =
+      cut +
+      "\n" +
+      "/console -> HTTP 404\n/debug -> HTTP 404\n" +
+      exitPrefix +
+      "0\n";
+    expect(extractFallbackStdout(mk(leaked))).toBe(
+      "/console -> HTTP 404\n/debug -> HTTP 404",
+    );
+  });
+
+  it("strips cutover when exit marker was never emitted (killed mid-cat)", () => {
+    const leaked = cut + "\n" + "[FOUND] /health -> HTTP 200\n";
+    expect(extractFallbackStdout(mk(leaked))).toBe(
+      "[FOUND] /health -> HTTP 200\n",
+    );
+  });
+
+  it("strips exit marker when cutover was never emitted (tail never flushed)", () => {
+    // Shape from NOCTURNE step 7: only the two markers came through,
+    // no actual stdout in between.
+    const leaked = exitPrefix + "143\n";
+    expect(extractFallbackStdout(mk(leaked))).toBe("(no output)");
+  });
+
+  it("returns '(no output)' when both markers absent and buffer empty", () => {
+    expect(extractFallbackStdout(mk(""))).toBe("(no output)");
+  });
+
+  it("returns raw buffer when neither marker present but bytes did stream", () => {
+    // Tail flushed some live bytes, then the shell/pipe died before
+    // either marker reached us. Caller still sees what tail managed.
+    expect(extractFallbackStdout(mk("partial probe output\n"))).toBe(
+      "partial probe output\n",
+    );
+  });
+
+  it("handles cutover immediately followed by exit marker (empty command output)", () => {
+    // `cat $OUT` emitted zero bytes because $OUT was empty.
+    const leaked = cut + "\n" + exitPrefix + "0\n";
+    expect(extractFallbackStdout(mk(leaked))).toBe("(no output)");
+  });
 });
