@@ -431,7 +431,7 @@ describe("extractFallbackStdout", () => {
 
   it("strips exit marker from authoritativeStdout when fallback fires mid-phase", () => {
     const auth = "probe results\n" + exitPrefix + "0\n";
-    expect(extractFallbackStdout(mk("ignored", auth))).toBe("probe results");
+    expect(extractFallbackStdout(mk("ignored", auth))).toBe("probe results\n");
   });
 
   it("returns '(no output)' when authoritativeStdout contains only the exit marker", () => {
@@ -451,7 +451,7 @@ describe("extractFallbackStdout", () => {
       exitPrefix +
       "0\n";
     expect(extractFallbackStdout(mk(leaked))).toBe(
-      "/console -> HTTP 404\n/debug -> HTTP 404",
+      "/console -> HTTP 404\n/debug -> HTTP 404\n",
     );
   });
 

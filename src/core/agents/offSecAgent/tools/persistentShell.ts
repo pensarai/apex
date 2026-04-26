@@ -136,7 +136,6 @@ export function extractFallbackStdout(cmd: {
     const exitIdx = s.indexOf(cmd.exitMarkerPrefix);
     if (exitIdx !== -1) {
       s = s.substring(0, exitIdx);
-      if (s.endsWith("\n")) s = s.substring(0, s.length - 1);
     }
     return s || "(no output)";
   }
@@ -152,7 +151,6 @@ export function extractFallbackStdout(cmd: {
   const exitIdx = s.indexOf(cmd.exitMarkerPrefix);
   if (exitIdx !== -1) {
     s = s.substring(0, exitIdx);
-    if (s.endsWith("\n")) s = s.substring(0, s.length - 1);
   }
 
   return s || "(no output)";
