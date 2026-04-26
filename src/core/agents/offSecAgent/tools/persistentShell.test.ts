@@ -299,7 +299,7 @@ describe("PersistentShell — long-running stability", () => {
     const shell = make();
     const r = await shell.execute(`printf 'hello\\n'; sleep 10`, 1);
     expect(r.exitCode).toBe(124);
-    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+__(CUTOVER|EXIT_)/);
+    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
   }, 10_000);
 
   it("does not leak nonce markers on abort", async () => {
@@ -313,7 +313,7 @@ describe("PersistentShell — long-running stability", () => {
       ac.signal,
     );
     expect(r.exitCode).toBe(130);
-    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+__(CUTOVER|EXIT_)/);
+    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
   }, 10_000);
 
   /**
