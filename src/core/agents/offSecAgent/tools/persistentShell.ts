@@ -131,7 +131,15 @@ export function extractFallbackStdout(cmd: {
   cutoverMarker: string;
   exitMarkerPrefix: string;
 }): string {
-  if (cmd.authoritativeStdout) return cmd.authoritativeStdout;
+  if (cmd.authoritativeStdout) {
+    let s = cmd.authoritativeStdout;
+    const exitIdx = s.indexOf(cmd.exitMarkerPrefix);
+    if (exitIdx !== -1) {
+      s = s.substring(0, exitIdx);
+      if (s.endsWith("\n")) s = s.substring(0, s.length - 1);
+    }
+    return s || "(no output)";
+  }
 
   let s = cmd.streamedStdout;
 

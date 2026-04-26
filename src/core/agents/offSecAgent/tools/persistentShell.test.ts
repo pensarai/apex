@@ -423,9 +423,20 @@ describe("extractFallbackStdout", () => {
     exitMarkerPrefix: exitPrefix,
   });
 
-  it("returns authoritativeStdout verbatim when populated", () => {
+  it("prefers authoritativeStdout over streamedStdout when populated", () => {
     expect(extractFallbackStdout(mk("ignored", "real output\n"))).toBe(
       "real output\n",
+    );
+  });
+
+  it("strips exit marker from authoritativeStdout when fallback fires mid-phase", () => {
+    const auth = "probe results\n" + exitPrefix + "0\n";
+    expect(extractFallbackStdout(mk("ignored", auth))).toBe("probe results");
+  });
+
+  it("returns '(no output)' when authoritativeStdout contains only the exit marker", () => {
+    expect(extractFallbackStdout(mk("ignored", exitPrefix + "137\n"))).toBe(
+      "(no output)",
     );
   });
 
