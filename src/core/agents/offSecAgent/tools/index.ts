@@ -80,6 +80,10 @@ export type { EmailToolName } from "./email";
 export { webSearch } from "./webSearch";
 export { getPage } from "./getPage";
 
+// Burp Suite tools
+export { createBurpToolset, BURP_TOOL_NAMES } from "./burpMcp";
+export type { BurpToolName } from "./burpMcp";
+
 // Skill tools
 export { readSkill } from "./readSkill";
 
@@ -138,6 +142,7 @@ import { emailSearchMessages } from "./email/searchMessages";
 import { emailGetMessage } from "./email/getMessage";
 import { webSearch } from "./webSearch";
 import { getPage } from "./getPage";
+import { createBurpToolset } from "./burpMcp";
 import { readSkill } from "./readSkill";
 import { checkpointState } from "./checkpointState";
 import { createTask } from "./createTask";
@@ -217,6 +222,9 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     web_search: webSearch(ctx),
     get_page: getPage(ctx),
 
+    // Burp Suite integration tools
+    ...createBurpToolset(ctx),
+
     // Skill tools (conditional — only when registry is provided)
     ...(ctx.skillsRegistry ? { read_skill: readSkill(ctx) } : {}),
 
@@ -290,6 +298,19 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   // Web search (requires Pensar account)
   "web_search",
   "get_page",
+  // Burp Suite
+  "burp_check_connection",
+  "burp_get_proxy_http_history",
+  "burp_search_proxy_http_history",
+  "burp_get_proxy_websocket_history",
+  "burp_send_to_repeater",
+  "burp_send_to_intruder",
+  "burp_send_http_request",
+  "burp_generate_collaborator_payload",
+  "burp_poll_collaborator_interactions",
+  "burp_get_proxy_intercept_state",
+  "burp_set_proxy_intercept_state",
+  "burp_get_scanner_issues",
   // Observability
   "checkpoint_state",
   // Task decomposition
@@ -348,6 +369,14 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   // Web search
   "web_search",
   "get_page",
+  // Burp Suite (read-only history / connection checks only)
+  "burp_check_connection",
+  "burp_get_proxy_http_history",
+  "burp_search_proxy_http_history",
+  "burp_get_proxy_websocket_history",
+  "burp_poll_collaborator_interactions",
+  "burp_get_proxy_intercept_state",
+  "burp_get_scanner_issues",
   // Plan mode tools
   "write_plan",
   "submit_plan",
@@ -361,3 +390,6 @@ export const SKILL_TOOL_NAMES = ["read_skill"] as const;
 
 /** Email tool names — auto-appended to activeTools by the base class when inboxes are configured. */
 export { EMAIL_TOOL_NAMES as EMAIL_TOOL_NAMES_ACTIVE } from "./email";
+
+/** Burp tool names — auto-filtered by the base class when Burp is not configured. */
+export { BURP_TOOL_NAMES as BURP_TOOL_NAMES_ACTIVE } from "./burpMcp";

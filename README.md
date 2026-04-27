@@ -70,19 +70,46 @@ pensar pentest --target https://example.com --cwd ./my-app
 
 # Targeted pentest with specific objectives
 pensar targeted-pentest --target https://example.com --objective "Test authentication bypass"
+
+# Pair with Burp Suite Proxy and MCP
+pensar burp config set --enabled true --url http://127.0.0.1:9876/sse
+pensar burp status
+pensar pentest --target https://example.com --burp
 ```
 
-| Flag                           | Command                   | Description                                    |
-| ------------------------------ | ------------------------- | ---------------------------------------------- |
-| `--target <url>`               | pentest, targeted-pentest | Target URL (required)                          |
-| `--cwd <path>`                 | pentest                   | Source code path for whitebox mode             |
-| `--mode <mode>`                | pentest                   | `exfil` for pivoting and flag extraction       |
-| `--model <model>`              | pentest, targeted-pentest | AI model (default: auto-selected)              |
-| `--extended-thinking`          | pentest                   | Enable extended thinking for supported models  |
-| `--task-driven`                | pentest                   | Enable task-driven architecture (experimental) |
-| `--prompt <text\|@file>`       | pentest                   | Custom guidance for the agent                  |
-| `--threat-model <text\|@file>` | pentest                   | Threat model to guide testing                  |
-| `--objective <text>`           | targeted-pentest          | Testing objective (repeatable)                 |
+| Flag                              | Command                   | Description                                              |
+| --------------------------------- | ------------------------- | -------------------------------------------------------- |
+| `--target <url>`                  | pentest, targeted-pentest | Target URL (required)                                    |
+| `--cwd <path>`                    | pentest                   | Source code path for whitebox mode                       |
+| `--mode <mode>`                   | pentest                   | `exfil` for pivoting and flag extraction                 |
+| `--model <model>`                 | pentest, targeted-pentest | AI model (default: auto-selected)                        |
+| `--extended-thinking`             | pentest                   | Enable extended thinking for supported models            |
+| `--task-driven`                   | pentest                   | Enable task-driven architecture (experimental)           |
+| `--prompt <text\|@file>`          | pentest                   | Custom guidance for the agent                            |
+| `--threat-model <text\|@file>`    | pentest                   | Threat model to guide testing                            |
+| `--objective <text>`              | targeted-pentest          | Testing objective (repeatable)                           |
+| `--burp`                          | pentest, targeted-pentest | Route traffic through Burp and enable Burp MCP           |
+| `--burp-proxy <url>`              | pentest, targeted-pentest | Burp Proxy URL (default `http://127.0.0.1:8080`)         |
+| `--burp-mcp-url <url>`            | pentest, targeted-pentest | Burp MCP SSE URL (default `http://127.0.0.1:9876/sse`)   |
+| `--burp-mcp-proxy-jar <path>`     | pentest, targeted-pentest | Path to PortSwigger's MCP stdio proxy JAR                |
+| `--burp-mcp-proxy-command <path>` | pentest, targeted-pentest | Java executable for the MCP stdio proxy (default `java`) |
+| `--burp-insecure-tls`             | pentest, targeted-pentest | Ignore TLS errors when proxying through Burp             |
+
+### Burp Suite MCP
+
+Apex can connect to PortSwigger's Burp Suite MCP Server over its local SSE endpoint. Install the MCP Server extension in Burp, enable the MCP tab/server, then configure Apex:
+
+```bash
+pensar burp config set --enabled true --url http://127.0.0.1:9876/sse
+pensar burp status
+pensar burp tools
+pensar burp proxy-history --target https://example.com --limit 20
+pensar burp repeater --request-file request.txt
+```
+
+In `/operator`, use `/burp status`, `/burp tools`, `/burp history`, and `/burp repeater`. Burp tools are only available to agents when Burp is enabled for the session and actions remain subject to Apex scope and Burp's own target approval model.
+
+Security notes: proxy history and raw requests may contain cookies, credentials, request bodies, and manually browsed traffic. Apex defaults to localhost Burp MCP endpoints, warns on non-local URLs, redacts sensitive headers in Burp action logs, and blocks config-modifying MCP tools unless explicitly enabled. Data returned from Burp tools can be processed by your configured AI provider.
 
 ### W&B Weave Tracing
 

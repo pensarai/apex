@@ -18,6 +18,7 @@ import {
   resolveThreatModelPrompt,
   combinePromptParts,
 } from "./tui/utils/command-flags";
+import type { SessionConfig } from "./core/session";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -67,6 +68,79 @@ function getAllArgs(flag: string, argv = args): string[] {
   return values;
 }
 
+function buildBurpSuiteConfig(argv = args): SessionConfig["burpSuite"] {
+  const enabled =
+    hasFlag("--burp", argv) ||
+    getArg("--burp-proxy", argv) !== undefined ||
+    getArg("--burp-transport", argv) !== undefined ||
+    getArg("--burp-mcp-url", argv) !== undefined ||
+    getArg("--burp-mcp-proxy-jar", argv) !== undefined ||
+    getArg("--burp-mcp-proxy-command", argv) !== undefined ||
+    getArg("--burp-timeout-ms", argv) !== undefined ||
+    hasFlag("--burp-allow-config-mutation", argv) ||
+    hasFlag("--burp-insecure-tls", argv);
+
+  if (!enabled) return undefined;
+
+  const mcpSseUrl = getArg("--burp-mcp-url", argv);
+  const mcpProxyJar = getArg("--burp-mcp-proxy-jar", argv);
+  const transport = getArg("--burp-transport", argv);
+  const timeoutMsRaw = getArg("--burp-timeout-ms", argv);
+  const timeoutMs = timeoutMsRaw ? parseInt(timeoutMsRaw, 10) : undefined;
+  const mcpProxyArgs = mcpProxyJar
+    ? [
+        "-jar",
+        mcpProxyJar,
+        "--sse-url",
+        mcpSseUrl ?? "http://127.0.0.1:9876/sse",
+      ]
+    : undefined;
+
+  return {
+    enabled: true,
+    ...(transport === "sse" || transport === "stdio" ? { transport } : {}),
+    ...(getArg("--burp-proxy", argv)
+      ? { proxyUrl: getArg("--burp-proxy", argv) }
+      : {}),
+    ...(mcpSseUrl ? { mcpSseUrl } : {}),
+    ...(getArg("--burp-mcp-proxy-command", argv)
+      ? { mcpProxyCommand: getArg("--burp-mcp-proxy-command", argv) }
+      : {}),
+    ...(mcpProxyArgs ? { mcpProxyArgs } : {}),
+    ...(timeoutMs && Number.isFinite(timeoutMs) ? { timeoutMs } : {}),
+    ...(hasFlag("--burp-allow-config-mutation", argv)
+      ? { allowConfigMutation: true }
+      : {}),
+    ...(hasFlag("--burp-insecure-tls", argv) ? { ignoreTlsErrors: true } : {}),
+  };
+}
+
+function mergeBurpSuiteConfig(
+  sessionConfig: SessionConfig["burpSuite"],
+  userConfig: Awaited<
+    ReturnType<typeof import("./core/config").config.get>
+  >["burpMcp"],
+): SessionConfig["burpSuite"] {
+  if (!sessionConfig?.enabled) return sessionConfig;
+  return {
+    enabled: true,
+    transport: sessionConfig.transport ?? userConfig?.transport,
+    proxyUrl: sessionConfig.proxyUrl ?? userConfig?.proxyUrl,
+    sseUrl:
+      sessionConfig.sseUrl ?? sessionConfig.mcpSseUrl ?? userConfig?.sseUrl,
+    mcpSseUrl:
+      sessionConfig.mcpSseUrl ?? sessionConfig.sseUrl ?? userConfig?.sseUrl,
+    mcpProxyCommand: sessionConfig.mcpProxyCommand ?? userConfig?.stdioCommand,
+    mcpProxyArgs: sessionConfig.mcpProxyArgs ?? userConfig?.stdioArgs,
+    timeoutMs: sessionConfig.timeoutMs ?? userConfig?.timeoutMs,
+    allowedTargets: sessionConfig.allowedTargets ?? userConfig?.allowedTargets,
+    allowConfigMutation:
+      sessionConfig.allowConfigMutation ?? userConfig?.allowConfigMutation,
+    ignoreTlsErrors:
+      sessionConfig.ignoreTlsErrors ?? userConfig?.ignoreTlsErrors,
+  };
+}
+
 function attachCliAgentStreamListeners(bus: AgentEventBus): void {
   bus.on("text-delta", (d) => process.stdout.write(d.text));
   bus.on("tool-call-complete", (d) => console.log(`\n→ ${d.toolName}`));
@@ -106,6 +180,7 @@ Usage:
   pensar pentests                     List and manage pentests
   pensar issues                       List and manage security issues
   pensar fixes                        View security fixes
+  pensar burp <command>               Manage Burp Suite MCP integration
   pensar logs                         View agent execution logs
   pensar upgrade                      Update pensar to the latest version
   pensar doctor                       Check dependencies and install missing tools
@@ -121,11 +196,21 @@ pentest options:
   --task-driven             Enable task-driven architecture (experimental)
   --prompt <text|@file>    Guidance for the pentest agent (inline text or @filepath)
   --threat-model <text|@file>  Threat model to guide the pentest (inline or @filepath)
+  --burp                   Pair with Burp Suite (proxy + MCP when configured)
+  --burp-proxy <url>       Burp Proxy URL (default: http://127.0.0.1:8080)
+  --burp-transport <type>  Burp MCP transport: sse or stdio (default: sse)
+  --burp-mcp-url <url>     Burp MCP SSE URL (default: http://127.0.0.1:9876/sse)
+  --burp-mcp-proxy-jar <path>  Path to Burp MCP stdio proxy JAR
+  --burp-mcp-proxy-command <path>  Java executable for the Burp MCP proxy (default: java)
+  --burp-timeout-ms <ms>   Burp MCP connection/tool timeout
+  --burp-allow-config-mutation  Allow Burp MCP config-modifying tools
+  --burp-insecure-tls      Ignore TLS errors when proxying through Burp
 
 targeted-pentest options:
   --target <url>          (required) Target URL / domain / IP
   --objective <text>      (required, repeatable) Testing objective
   --model <model>         AI model (default: claude-sonnet-4-5)
+  --burp                  Pair with Burp Suite (proxy + MCP when configured)
 
 threat-model options:
   --output, -o <path>  Output file path (default: ./threat-model.md)
@@ -161,6 +246,7 @@ async function runPentest() {
   const threatModelRaw = getArg("--threat-model");
   const enableThinking = hasFlag("--extended-thinking");
   const taskDriven = hasFlag("--task-driven");
+  const burpSuite = buildBurpSuiteConfig();
 
   // Resolve and combine threat model + prompt
   const resolvedTm = threatModelRaw
@@ -170,6 +256,10 @@ async function runPentest() {
   const prompt = combinePromptParts(resolvedTm, resolvedPrompt);
 
   const pensarConfig = await appConfig.get();
+  const effectiveBurpSuite = mergeBurpSuiteConfig(
+    burpSuite,
+    pensarConfig.burpMcp,
+  );
   const dynamicDefault =
     getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
   const model = (getArg("--model") ?? dynamicDefault) as AIModel;
@@ -183,7 +273,7 @@ async function runPentest() {
   console.log(`${sep}
 PENTEST ORCHESTRATION
 ${sep}
-Target:  ${target}${cwd ? `\nCwd:     ${cwd} (whitebox)` : ""}${exfilMode ? "\nMode:    exfil" : ""}
+Target:  ${target}${cwd ? `\nCwd:     ${cwd} (whitebox)` : ""}${exfilMode ? "\nMode:    exfil" : ""}${effectiveBurpSuite?.enabled ? "\nBurp:    enabled" : ""}
 Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\nTask-driven: enabled" : ""}
 `);
 
@@ -195,6 +285,7 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
       ...(exfilMode ? { exfilMode: true } : {}),
       ...(prompt ? { prompt } : {}),
       ...(taskDriven ? { taskDriven: true } : {}),
+      ...(effectiveBurpSuite ? { burpSuite: effectiveBurpSuite } : {}),
     },
   });
 
@@ -238,8 +329,13 @@ async function runTargetedPentest() {
 
   const target = getArgRequired("--target");
   const objectives = getAllArgs("--objective");
+  const burpSuite = buildBurpSuiteConfig();
 
   const pensarConfig = await appConfig.get();
+  const effectiveBurpSuite = mergeBurpSuiteConfig(
+    burpSuite,
+    pensarConfig.burpMcp,
+  );
   const dynamicDefault =
     getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
   const model = (getArg("--model") ?? dynamicDefault) as AIModel;
@@ -257,6 +353,7 @@ async function runTargetedPentest() {
 TARGETED PENTEST
 ${sep}
 Target:  ${target}
+${effectiveBurpSuite?.enabled ? "Burp:    enabled\n" : ""}
 Model:   ${model}
 Objectives:
 ${objectivesList}
@@ -265,6 +362,9 @@ ${objectivesList}
   const session = await sessions.create({
     name: "Targeted Pentest",
     targets: [target],
+    config: {
+      ...(effectiveBurpSuite ? { burpSuite: effectiveBurpSuite } : {}),
+    },
   });
 
   const { bus: targetedBus, cleanup: wandbCleanup } =
@@ -385,6 +485,9 @@ if (command === "version" || command === "--version" || command === "-v") {
 } else if (command === "logs") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/logs");
+} else if (command === "burp") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("./cli/burp");
 } else if (command === "threat-model") {
   await runThreatModel();
 } else if (command === "doctor") {

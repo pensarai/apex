@@ -130,6 +130,7 @@ export default function OperatorDashboard({
     operatorMode?: OperatorMode;
     sandbox?: boolean;
     taskDriven?: boolean;
+    burpSuite?: SessionConfig["burpSuite"];
   };
 }) {
   const { colors } = useTheme();
@@ -1241,6 +1242,9 @@ export default function OperatorDashboard({
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
             taskDriven: initialConfig?.taskDriven,
+            ...(initialConfig?.burpSuite
+              ? { burpSuite: initialConfig.burpSuite }
+              : {}),
           };
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
@@ -1544,6 +1548,26 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
   const handleCommandExecute = useCallback(
     async (command: string) => {
+      const burpCommand = command.trim().replace(/^\/+/, "");
+      if (burpCommand === "burp" || burpCommand.startsWith("burp ")) {
+        const subcommand = burpCommand.split(/\s+/)[1] ?? "status";
+        const promptBySubcommand: Record<string, string> = {
+          status:
+            "Check the Burp MCP integration status using burp_check_connection and summarize the endpoint, transport, discovered tool count, and key capabilities.",
+          tools:
+            "List the available Burp MCP tools using burp_check_connection and summarize what capabilities are available.",
+          history:
+            "Inspect in-scope Burp proxy HTTP history for the current target using burp_search_proxy_http_history. Do not read unrelated targets.",
+          repeater:
+            "Create a Burp Repeater tab only for an in-scope request that is relevant to the current investigation. Ask me for the raw request if you do not already have one.",
+        };
+        handleSubmit(
+          promptBySubcommand[subcommand] ??
+            `Handle the Burp MCP operator command: ${command}`,
+        );
+        return;
+      }
+
       const action = routeCommand(command, resolveSkillContent);
 
       switch (action.type) {

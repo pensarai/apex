@@ -134,6 +134,24 @@ export type EmailIntegrationConfig = z.infer<
   typeof EmailIntegrationConfigObject
 >;
 
+const BurpSuiteIntegrationConfigObject = z.object({
+  enabled: z.boolean(),
+  transport: z.enum(["sse", "stdio"]).optional(),
+  proxyUrl: z.string().optional(),
+  sseUrl: z.string().optional(),
+  mcpSseUrl: z.string().optional(),
+  mcpProxyCommand: z.string().optional(),
+  mcpProxyArgs: z.array(z.string()).optional(),
+  timeoutMs: z.number().positive().optional(),
+  allowedTargets: z.array(z.string()).optional(),
+  allowConfigMutation: z.boolean().optional(),
+  ignoreTlsErrors: z.boolean().optional(),
+});
+
+export type BurpSuiteIntegrationConfig = z.infer<
+  typeof BurpSuiteIntegrationConfigObject
+>;
+
 const SessionConfigObject = z.object({
   offensiveHeaders: OffensiveHeadersConfigObject.optional(),
   sessionType: z.enum(["web-app"]).optional(),
@@ -154,6 +172,8 @@ const SessionConfigObject = z.object({
   codebasePath: z.string().optional(),
   /** Email inboxes available to the agent for monitoring/reading email */
   emailIntegration: EmailIntegrationConfigObject.optional(),
+  /** Burp Suite pairing for proxy capture and MCP access */
+  burpSuite: BurpSuiteIntegrationConfigObject.optional(),
   /** Enable exfiltration mode — allows internal pivoting and flag extraction through confirmed vulnerabilities */
   exfilMode: z.boolean().optional(),
   /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
