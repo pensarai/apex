@@ -471,7 +471,11 @@ export default function OperatorDashboard({
   }, [loading, refocusPrompt]);
 
   useEffect(() => {
-    if (!session) return;
+    // Only run the reset / hydrate cycle for *resumed* sessions (those
+    // with a `sessionId` prop). Brand-new sessions reach this effect after
+    // their first agent step has already accumulated tokens via
+    // `addTokenUsage`, and a reset here would wipe that initial usage.
+    if (!session || !sessionId) return;
 
     resetTokenUsage();
     tokenUsageRef.current = {
@@ -504,7 +508,7 @@ export default function OperatorDashboard({
     } catch {
       // Best effort hydration write.
     }
-  }, [session, addTokenUsage, resetTokenUsage]);
+  }, [session, sessionId, addTokenUsage, resetTokenUsage]);
 
   // ---------------------------------------------------------------------------
   // Message helpers — same pattern as pentest component
