@@ -6,7 +6,7 @@ import { AgentEventBus } from "../../../eventBus";
 
 // Process-wide cap — parents emit `document_endpoint` tool calls in parallel,
 // so without this gate each parent fans out unboundedly.
-const THREAT_MODEL_CONCURRENCY = 5;
+const THREAT_MODEL_CONCURRENCY = 10;
 const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 
 // ---------------------------------------------------------------------------
