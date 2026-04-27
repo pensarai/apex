@@ -14,6 +14,7 @@ const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/new",
   "/operator",
   "/pentest",
+  "/burp",
   "/skills",
   "/plan",
   "/obfuscate",

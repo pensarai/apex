@@ -42,6 +42,15 @@ export interface WebCommandOptions {
   model?: string;
   prompt?: string;
   threatModel?: string;
+  burp?: boolean;
+  burpTransport?: "sse" | "stdio";
+  burpProxy?: string;
+  burpMcpUrl?: string;
+  burpMcpProxyJar?: string;
+  burpMcpProxyCommand?: string;
+  burpTimeoutMs?: number;
+  burpAllowConfigMutation?: boolean;
+  burpInsecureTls?: boolean;
 }
 
 export type Route =
@@ -69,6 +78,7 @@ export type Route =
         operatorMode?: import("../../core/operator").OperatorMode;
         sandbox?: boolean;
         taskDriven?: boolean;
+        burpSuite?: SessionConfig["burpSuite"];
       };
       /** Skill to automatically submit on mount */
       initialSkill?: { slug: string; args?: Record<string, string> };

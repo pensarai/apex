@@ -7,6 +7,19 @@ const DEFAULT_CONFIG: Config = {
   responsibleUseAccepted: false,
 };
 
+export interface BurpMcpUserConfig {
+  enabled?: boolean;
+  transport?: "sse" | "stdio";
+  sseUrl?: string;
+  proxyUrl?: string;
+  timeoutMs?: number;
+  allowedTargets?: string[];
+  allowConfigMutation?: boolean;
+  ignoreTlsErrors?: boolean;
+  stdioCommand?: string;
+  stdioArgs?: string[];
+}
+
 export interface Config {
   version?: string;
   openAiAPIKey?: string | null;
@@ -40,6 +53,8 @@ export interface Config {
   gatewaySigningKey?: string | null;
   // Gateway URL for inference (server-issued, bypasses CloudFront timeout)
   gatewayUrl?: string | null;
+  // Burp Suite MCP integration
+  burpMcp?: BurpMcpUserConfig;
 }
 
 export async function init() {

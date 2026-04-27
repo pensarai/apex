@@ -24,6 +24,7 @@ import { join, dirname } from "path";
 import { mkdirSync, existsSync, writeFileSync } from "fs";
 import type { UnifiedSandbox } from "./sandbox";
 import type { ToolContext } from "./types";
+import { resolveBurpSuiteConfig } from "./burpConfig";
 import type {
   BrowserNavigateResult,
   BrowserScreenshotResult,
@@ -229,7 +230,14 @@ async function runPlaywrightScript(
   sandbox: UnifiedSandbox,
   body: string,
   timeout = 60,
+  options?: { proxyServer?: string; ignoreHTTPSErrors?: boolean },
 ): Promise<unknown> {
+  const proxyOption = options?.proxyServer
+    ? `proxy: { server: ${JSON.stringify(options.proxyServer)} },`
+    : "";
+  const ignoreHttpsOption = options?.ignoreHTTPSErrors
+    ? "ignoreHTTPSErrors: true,"
+    : "";
   const script = `
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -251,6 +259,8 @@ const fs = require('fs');
     context = await chromium.launchPersistentContext('/tmp/pw-user-data', {
       headless: true,
       ...(executablePath ? { executablePath } : {}),
+      ${proxyOption}
+      ${ignoreHttpsOption}
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
     });
     const pages = context.pages();
@@ -420,6 +430,17 @@ export function createSandboxBrowserTools(ctx: ToolContext) {
   const sandbox = ctx.sandbox!;
   const evidenceDir = join(ctx.session.rootPath, "evidence");
   const targetUrl = ctx.target ?? "";
+  const burp = resolveBurpSuiteConfig(ctx.session.config?.burpSuite);
+  const playwrightOptions = burp
+    ? {
+        proxyServer: burp.proxyUrl,
+        ignoreHTTPSErrors: burp.ignoreTlsErrors,
+      }
+    : undefined;
+
+  function runScript(body: string, timeout?: number): Promise<unknown> {
+    return runPlaywrightScript(sandbox, body, timeout, playwrightOptions);
+  }
 
   if (!existsSync(evidenceDir)) {
     mkdirSync(evidenceDir, { recursive: true });
@@ -447,8 +468,7 @@ Target base URL: ${targetUrl}`,
     execute: async ({ url }): Promise<BrowserNavigateResult> => {
       try {
         await setup();
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     await page.goto(${JSON.stringify(url)}, { waitUntil: 'domcontentloaded', timeout: 30000 });
     // Persist current URL so subsequent tool calls can restore the page
@@ -485,8 +505,7 @@ Use this to document:
         const screenshotFilename = `${filename}_${timestamp}.png`;
         const sandboxPath = `${SANDBOX_EVIDENCE_DIR}/${screenshotFilename}`;
 
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     const buf = await page.screenshot({ fullPage: false });
     const b64 = buf.toString('base64');
@@ -545,8 +564,7 @@ Example workflow:
     }> => {
       try {
         await setup();
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     // Build accessibility snapshot via page.evaluate — works on all
     // Playwright versions and doesn't depend on the deprecated
@@ -661,8 +679,7 @@ IMPORTANT: For reliable clicking, first call browser_snapshot to get element ref
     execute: async ({ element, ref }): Promise<BrowserClickResult> => {
       try {
         await setup();
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     const ref = ${JSON.stringify(ref || "")};
     const element = ${JSON.stringify(element)};
@@ -739,8 +756,7 @@ IMPORTANT: For reliable form filling, first call browser_snapshot to get element
     execute: async ({ element, ref, value }): Promise<BrowserFillResult> => {
       try {
         await setup();
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     const ref = ${JSON.stringify(ref || "")};
     const element = ${JSON.stringify(element)};
@@ -828,8 +844,7 @@ The JavaScript is executed in the page context and the result is returned.`,
           /^\s*(async\s+)?function\s*\(/.test(script);
         const fnScript = isFunction ? script : `() => (${script})`;
 
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     const fnStr = ${JSON.stringify(fnScript)};
     const fn = new Function('return (' + fnStr + ')')();
@@ -862,8 +877,7 @@ Use this to check for:
     execute: async (): Promise<BrowserConsoleResult> => {
       try {
         await setup();
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     const fs = require('fs');
     let persisted = [];
@@ -915,8 +929,7 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
     }> => {
       try {
         await setup();
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     const urls = ${JSON.stringify(urls || [])};
     const cookies = urls.length > 0

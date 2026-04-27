@@ -2,8 +2,10 @@ import { tool } from "ai";
 import { z } from "zod";
 import { join } from "path";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { execFile } from "child_process";
 import type { ToolContext } from "./types";
 import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
+import { resolveBurpSuiteConfig } from "./burpConfig";
 
 const MAX_INLINE_BODY = 5_000;
 
@@ -93,6 +95,158 @@ function parseHeaders(raw: string | undefined): Record<string, string> {
   return {};
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+export function buildCurlArgs(opts: {
+  url: string;
+  method: string;
+  headers?: Record<string, string>;
+  body?: string;
+  followRedirects: boolean;
+  timeout: number;
+  proxyUrl?: string;
+  ignoreTlsErrors?: boolean;
+}): string[] {
+  const args = ["-i", "-X", opts.method];
+
+  if (opts.headers) {
+    for (const [key, value] of Object.entries(opts.headers)) {
+      args.push("-H", `${key}: ${value}`);
+    }
+  }
+
+  if (opts.body && ["POST", "PUT", "PATCH"].includes(opts.method)) {
+    args.push("-d", opts.body);
+  }
+
+  if (opts.followRedirects) args.push("-L");
+  if (opts.proxyUrl) args.push("--proxy", opts.proxyUrl);
+  if (opts.ignoreTlsErrors) args.push("-k");
+
+  args.push("--max-time", String(Math.ceil(opts.timeout / 1000)));
+  args.push(opts.url);
+  return args;
+}
+
+export function parseCurlResponse(output: string, url: string): HttpRequestResult {
+  const normalized = output.replace(/\r\n/g, "\n");
+  const headerMatches = [...normalized.matchAll(/^HTTP\/[\d.]+ .+$/gm)];
+  const lastHeader = headerMatches[headerMatches.length - 1];
+
+  if (!lastHeader || lastHeader.index == null) {
+    return {
+      success: false,
+      error: "No HTTP response headers found",
+      status: 0,
+      statusText: "Unknown",
+      headers: {},
+      body: normalized,
+      url,
+      redirected: false,
+    };
+  }
+
+  const responseText = normalized.slice(lastHeader.index);
+  const lines = responseText.split("\n");
+  const statusLine = lines[0] ?? "";
+  const responseHeaders: Record<string, string> = {};
+  let bodyStartIndex = 1;
+
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === "") {
+      bodyStartIndex = i + 1;
+      break;
+    }
+    const headerMatch = lines[i].match(/^([^:]+):\s*(.+)$/);
+    if (headerMatch) {
+      responseHeaders[headerMatch[1].toLowerCase()] = headerMatch[2];
+    }
+  }
+
+  const statusMatch = statusLine.match(/HTTP\/[\d.]+\s+(\d+)\s*(.*)/);
+  const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+  const statusText = statusMatch ? statusMatch[2] || "OK" : "Unknown";
+
+  return {
+    success: status >= 200 && status < 400,
+    status,
+    statusText,
+    headers: responseHeaders,
+    body: lines.slice(bodyStartIndex).join("\n"),
+    url,
+    redirected: headerMatches.length > 1,
+  };
+}
+
+async function executeLocalCurlHttpRequest(
+  ctx: ToolContext,
+  opts: {
+    url: string;
+    method: string;
+    headers?: Record<string, string>;
+    body?: string;
+    followRedirects: boolean;
+    timeout: number;
+    proxyUrl?: string;
+    ignoreTlsErrors?: boolean;
+  },
+): Promise<HttpRequestResult> {
+  const args = buildCurlArgs(opts);
+
+  return new Promise((resolve) => {
+    const child = execFile(
+      "curl",
+      args,
+      {
+        timeout: opts.timeout + 1_000,
+        maxBuffer: 10 * 1024 * 1024,
+      },
+      (error, stdout, stderr) => {
+        if (ctx.abortSignal?.aborted) {
+          resolve({
+            success: false,
+            error: "Request aborted by user",
+            status: 0,
+            statusText: "",
+            headers: {},
+            body: "",
+            url: opts.url,
+            redirected: false,
+            method: opts.method,
+          });
+          return;
+        }
+
+        const output = [stdout, stderr].filter(Boolean).join("\n");
+        const parsed = parseCurlResponse(output, opts.url);
+        const { text: truncatedBody } = maybeSaveBody(parsed.body, ctx);
+
+        resolve({
+          ...parsed,
+          body: truncatedBody,
+          method: opts.method,
+          error:
+            error && !parsed.status
+              ? error instanceof Error
+                ? error.message
+                : String(error)
+              : undefined,
+        });
+      },
+    );
+
+    if (ctx.abortSignal) {
+      const onAbort = () => child.kill("SIGTERM");
+      ctx.abortSignal.addEventListener("abort", onAbort, { once: true });
+      child.on("exit", () =>
+        ctx.abortSignal?.removeEventListener("abort", onAbort),
+      );
+    }
+  });
+}
+
 export function httpRequest(ctx: ToolContext) {
   return tool({
     description: `Make HTTP requests with detailed response analysis for web application testing.
@@ -149,6 +303,7 @@ COMMON TESTING PATTERNS:
       }
 
       const headers = parseHeaders(rawHeaders);
+      const burp = resolveBurpSuiteConfig(ctx.session.config?.burpSuite);
 
       // Sandbox mode: build a curl command and run it inside the sandbox
       if (ctx.sandbox) {
@@ -159,6 +314,21 @@ COMMON TESTING PATTERNS:
           body,
           followRedirects,
           timeout,
+          proxyUrl: burp?.proxyUrl,
+          ignoreTlsErrors: burp?.ignoreTlsErrors,
+        });
+      }
+
+      if (burp) {
+        return executeLocalCurlHttpRequest(ctx, {
+          url,
+          method,
+          headers,
+          body,
+          followRedirects,
+          timeout,
+          proxyUrl: burp.proxyUrl,
+          ignoreTlsErrors: burp.ignoreTlsErrors,
         });
       }
 
@@ -261,76 +431,49 @@ async function executeSandboxHttpRequest(
     body?: string;
     followRedirects: boolean;
     timeout: number;
+    proxyUrl?: string;
+    ignoreTlsErrors?: boolean;
   },
 ): Promise<HttpRequestResult> {
-  const { url, method, headers, body, followRedirects, timeout } = opts;
+  const {
+    url,
+    method,
+    headers,
+    body,
+    followRedirects,
+    timeout,
+    proxyUrl,
+    ignoreTlsErrors,
+  } = opts;
 
   try {
-    let curlCommand = `curl -i -X ${method}`;
-
-    if (headers) {
-      for (const [key, value] of Object.entries(headers)) {
-        curlCommand += ` -H "${key}: ${value}"`;
-      }
-    }
-
-    if (body && ["POST", "PUT", "PATCH"].includes(method)) {
-      const escapedBody = body.replace(/"/g, '\\"').replace(/\$/g, "\\$");
-      curlCommand += ` -d "${escapedBody}"`;
-    }
-
-    if (followRedirects) {
-      curlCommand += " -L";
-    }
-
     const timeoutSeconds = Math.ceil(timeout / 1000);
-    curlCommand += ` --max-time ${timeoutSeconds}`;
-    curlCommand += ` "${url}" 2>&1`;
+    const curlCommand = [
+      "curl",
+      ...buildCurlArgs({
+        url,
+        method,
+        headers,
+        body,
+        followRedirects,
+        timeout,
+        proxyUrl,
+        ignoreTlsErrors,
+      }).map(shellQuote),
+      "2>&1",
+    ].join(" ");
 
     const ssmTimeout = Math.max(timeoutSeconds, 30);
     const result = await ctx.sandbox!.execute(curlCommand, {
       timeout: ssmTimeout,
     });
 
-    const output = result.stdout || "";
-    const lines = output.split("\n");
-    let statusLine = "";
-    const responseHeaders: Record<string, string> = {};
-    let bodyStartIndex = 0;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line.startsWith("HTTP/")) {
-        statusLine = line;
-        for (let j = i + 1; j < lines.length; j++) {
-          if (lines[j].trim() === "") {
-            bodyStartIndex = j + 1;
-            break;
-          }
-          const headerMatch = lines[j].match(/^([^:]+):\s*(.+)$/);
-          if (headerMatch) {
-            responseHeaders[headerMatch[1].toLowerCase()] = headerMatch[2];
-          }
-        }
-        break;
-      }
-    }
-
-    const statusMatch = statusLine.match(/HTTP\/[\d.]+\s+(\d+)\s+(.+)/);
-    const status = statusMatch ? parseInt(statusMatch[1]) : 0;
-    const statusText = statusMatch ? statusMatch[2] : "Unknown";
-    const responseBody = lines.slice(bodyStartIndex).join("\n");
-
-    const { text: truncatedBody } = maybeSaveBody(responseBody, ctx);
+    const parsed = parseCurlResponse(result.stdout || "", url);
+    const { text: truncatedBody } = maybeSaveBody(parsed.body, ctx);
 
     return {
-      success: status >= 200 && status < 400,
-      status,
-      statusText,
-      headers: responseHeaders,
+      ...parsed,
       body: truncatedBody,
-      url,
-      redirected: false,
     };
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);

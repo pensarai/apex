@@ -196,6 +196,113 @@ export const ALL_TOOLS: ToolDefinition[] = [
     category: "browser",
     defaultEnabled: true,
   },
+  {
+    id: "burp_check_connection",
+    name: "Burp Check",
+    description: "Check Burp MCP",
+    detail:
+      "Verify that Apex can connect to Burp Suite through the configured MCP server or stdio proxy.",
+    category: "utility",
+    defaultEnabled: true,
+  },
+  {
+    id: "burp_get_proxy_http_history",
+    name: "Burp HTTP History",
+    description: "Read proxy history",
+    detail:
+      "Read paginated items from Burp Proxy HTTP history for traffic captured during the session.",
+    category: "reconnaissance",
+    defaultEnabled: true,
+  },
+  {
+    id: "burp_search_proxy_http_history",
+    name: "Search Burp History",
+    description: "Regex search history",
+    detail:
+      "Search Burp Proxy HTTP history with a regular expression and return matching captured traffic.",
+    category: "reconnaissance",
+    defaultEnabled: true,
+  },
+  {
+    id: "burp_get_proxy_websocket_history",
+    name: "Burp WebSocket History",
+    description: "Read WS history",
+    detail:
+      "Read paginated items from Burp Proxy WebSocket history when available.",
+    category: "reconnaissance",
+    defaultEnabled: true,
+  },
+  {
+    id: "burp_send_to_repeater",
+    name: "Send To Repeater",
+    description: "Open in Burp Repeater",
+    detail:
+      "Create a Burp Repeater tab for an interesting in-scope HTTP request.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "burp_send_to_intruder",
+    name: "Send To Intruder",
+    description: "Open in Burp Intruder",
+    detail:
+      "Send an interesting in-scope HTTP request to Burp Intruder when available.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "burp_send_http_request",
+    name: "Burp Send Request",
+    description: "Send via Burp MCP",
+    detail:
+      "Send an in-scope raw HTTP request through Burp MCP when request-sending tools are exposed and Burp approval allows it.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "burp_generate_collaborator_payload",
+    name: "Collaborator Payload",
+    description: "Generate OOB payload",
+    detail:
+      "Generate a Burp Collaborator payload when available for authorized out-of-band testing.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "burp_poll_collaborator_interactions",
+    name: "Poll Collaborator",
+    description: "Read OOB interactions",
+    detail:
+      "Poll Burp Collaborator interactions when available and relevant to the current authorized test.",
+    category: "reconnaissance",
+    defaultEnabled: true,
+  },
+  {
+    id: "burp_get_proxy_intercept_state",
+    name: "Get Burp Intercept",
+    description: "Read intercept state",
+    detail: "Read Burp Proxy intercept state when exposed by Burp MCP.",
+    category: "utility",
+    defaultEnabled: true,
+  },
+  {
+    id: "burp_set_proxy_intercept_state",
+    name: "Set Burp Intercept",
+    description: "Change intercept state",
+    detail:
+      "Set Burp Proxy intercept state when exposed by Burp MCP. Requires explicit operator intent.",
+    category: "utility",
+    defaultEnabled: false,
+  },
+  {
+    id: "burp_get_scanner_issues",
+    name: "Burp Scanner Issues",
+    description: "Read scanner issues",
+    detail:
+      "Read Burp Scanner issues when available. Burp Community usually does not expose scanner findings.",
+    category: "reporting",
+    defaultEnabled: true,
+  },
 
   // Reporting tools
   {

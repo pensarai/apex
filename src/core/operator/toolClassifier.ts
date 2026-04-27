@@ -44,6 +44,20 @@ const TOOL_BASE_TIERS: Record<string, PermissionTier> = {
   browser_click: 3, // T3 - Probing (user interaction simulation)
   browser_fill: 3, // T3 - Probing (form filling with payloads)
   browser_evaluate: 4, // T4 - Intrusive (JavaScript execution)
+
+  // Burp MCP tools
+  burp_check_connection: 1,
+  burp_get_proxy_http_history: 1,
+  burp_search_proxy_http_history: 1,
+  burp_get_proxy_websocket_history: 1,
+  burp_get_scanner_issues: 1,
+  burp_get_proxy_intercept_state: 1,
+  burp_poll_collaborator_interactions: 1,
+  burp_send_to_repeater: 2,
+  burp_send_to_intruder: 3,
+  burp_send_http_request: 3,
+  burp_generate_collaborator_payload: 3,
+  burp_set_proxy_intercept_state: 3,
 };
 
 /**

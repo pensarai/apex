@@ -4,10 +4,12 @@ import {
   parseWebFlags,
   hasEnoughFlagsToSkipWizard,
   combinePromptParts,
+  buildOperatorSessionConfig,
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
 import { isObfuscationEnabled } from "../core/obfuscation";
+import type { SessionConfig } from "../core/session";
 /**
  * Define your application's CommandContext type with specific methods
  */
@@ -70,6 +72,30 @@ export interface CommandConfig {
   /** If true, command works but doesn't appear in the autocomplete menu or help dialog */
   hidden?: boolean;
   handler: (args: string[], ctx: AppCommandContext) => void | Promise<void>;
+}
+
+function mergeBurpSuiteConfig(
+  sessionConfig: SessionConfig["burpSuite"],
+  userConfig: Awaited<ReturnType<typeof config.get>>["burpMcp"],
+): SessionConfig["burpSuite"] {
+  if (!sessionConfig?.enabled) return sessionConfig;
+  return {
+    enabled: true,
+    transport: sessionConfig.transport ?? userConfig?.transport,
+    proxyUrl: sessionConfig.proxyUrl ?? userConfig?.proxyUrl,
+    sseUrl:
+      sessionConfig.sseUrl ?? sessionConfig.mcpSseUrl ?? userConfig?.sseUrl,
+    mcpSseUrl:
+      sessionConfig.mcpSseUrl ?? sessionConfig.sseUrl ?? userConfig?.sseUrl,
+    mcpProxyCommand: sessionConfig.mcpProxyCommand ?? userConfig?.stdioCommand,
+    mcpProxyArgs: sessionConfig.mcpProxyArgs ?? userConfig?.stdioArgs,
+    timeoutMs: sessionConfig.timeoutMs ?? userConfig?.timeoutMs,
+    allowedTargets: sessionConfig.allowedTargets ?? userConfig?.allowedTargets,
+    allowConfigMutation:
+      sessionConfig.allowConfigMutation ?? userConfig?.allowConfigMutation,
+    ignoreTlsErrors:
+      sessionConfig.ignoreTlsErrors ?? userConfig?.ignoreTlsErrors,
+  };
 }
 
 /**
@@ -143,6 +169,12 @@ export const commands: CommandConfig[] = [
         valueHint: "<text|@file>",
         description: "Threat model to guide the pentest (inline or @filepath)",
       },
+      { name: "--burp", description: "Enable Burp Suite integration" },
+      {
+        name: "--burp-mcp-url",
+        valueHint: "<url>",
+        description: "Burp MCP SSE URL",
+      },
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
@@ -164,6 +196,11 @@ export const commands: CommandConfig[] = [
           flags.prompt,
         );
         if (combinedPrompt) skillArgs.prompt = combinedPrompt;
+        const currentConfig = await config.get();
+        const burpSuite = mergeBurpSuiteConfig(
+          buildOperatorSessionConfig(flags).config.burpSuite,
+          currentConfig.burpMcp,
+        );
 
         ctx.navigate({
           type: "operator",
@@ -172,6 +209,7 @@ export const commands: CommandConfig[] = [
             requireApproval: false,
             target: flags.target,
             sandbox: true,
+            burpSuite,
           },
           initialSkill: { slug: "pentest", args: skillArgs },
         });
@@ -248,9 +286,20 @@ export const commands: CommandConfig[] = [
         name: "--task-driven",
         description: "Structured task tracking (experimental)",
       },
+      { name: "--burp", description: "Enable Burp Suite integration" },
+      {
+        name: "--burp-mcp-url",
+        valueHint: "<url>",
+        description: "Burp MCP SSE URL",
+      },
     ],
     handler: async (args, ctx) => {
       const flags = parseWebFlags(args);
+      const currentConfig = await config.get();
+      const burpSuite = mergeBurpSuiteConfig(
+        buildOperatorSessionConfig(flags).config.burpSuite,
+        currentConfig.burpMcp,
+      );
       ctx.navigate({
         type: "operator",
         nonce: Date.now(),
@@ -259,6 +308,7 @@ export const commands: CommandConfig[] = [
           target: flags.target,
           sandbox: flags.sandbox,
           taskDriven: flags.taskDriven,
+          burpSuite,
         },
       });
     },
@@ -269,6 +319,20 @@ export const commands: CommandConfig[] = [
     category: "Pentesting",
     handler: async () => {
       // Handled by the operator dashboard — this is a no-op for routing
+    },
+  },
+  {
+    name: "burp",
+    description: "Use Burp MCP tools in operator sessions",
+    category: "Pentesting",
+    options: [
+      { name: "status", description: "Check Burp MCP status" },
+      { name: "tools", description: "List Burp MCP tools" },
+      { name: "history", description: "Inspect in-scope proxy history" },
+      { name: "repeater", description: "Send an in-scope request to Repeater" },
+    ],
+    handler: async () => {
+      // Handled by the operator dashboard.
     },
   },
   {
