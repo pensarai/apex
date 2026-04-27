@@ -102,9 +102,7 @@ export const ToolMessage = memo(function ToolMessage({
             <text fg={isError ? colors.error : colors.success}>
               {isError ? "✗" : "✓"}
             </text>
-            <text fg={colors.info}>
-              {execDescription || summary}
-            </text>
+            <text fg={colors.info}>{execDescription || summary}</text>
           </>
         )}
       </box>

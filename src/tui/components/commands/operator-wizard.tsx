@@ -231,7 +231,10 @@ export default function HITLWizard(props: HITLWizardProps) {
         flexGrow={1}
         gap={2}
       >
-        <SpinningDots label="Creating operator session..." fg={colors.primary} />
+        <SpinningDots
+          label="Creating operator session..."
+          fg={colors.primary}
+        />
       </box>
     );
   }

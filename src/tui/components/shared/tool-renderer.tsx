@@ -116,9 +116,7 @@ export const ToolRenderer = memo(function ToolRenderer({
               <text fg={isError ? colors.error : colors.success}>
                 {isError ? "✗" : "✓"}
               </text>
-              <text fg={colors.info}>
-                {execDescription || summary}
-              </text>
+              <text fg={colors.info}>{execDescription || summary}</text>
             </>
           )}
         </box>
