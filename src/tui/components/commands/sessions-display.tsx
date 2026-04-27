@@ -13,6 +13,7 @@ import { useTheme } from "../../theme";
 import { useSessionsList } from "../../hooks/use-sessions-list";
 import { useToast } from "../../context/toast";
 import DialogLayout from "../dialog-layout";
+import { useDimensions } from "../../context/dimensions";
 
 interface SessionsDisplayProps {
   onClose: () => void;
@@ -30,6 +31,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   );
 
   const route = useRoute();
+  const dimensions = useDimensions();
 
   const scroll = useRef<ScrollBoxRenderable>(null);
 
@@ -40,6 +42,27 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     setSearchTerm,
     deleteSession: hookDeleteSession,
   } = useSessionsList();
+
+  // Dialog inner box maxHeight is dimensions.height - 4.
+  // DialogLayout chrome (padding, header, body marginTop, footer) uses ~8 rows.
+  const availableListHeight = dimensions.height - 4 - 8;
+
+  // Track whether the initial load had enough sessions to fill the dialog
+  // (i.e., a scrollbar was needed). When true, pin the list height so
+  // deleting sessions doesn't shrink the dialog.
+  const initialOverflowRef = useRef<boolean | null>(null);
+  if (!loading && initialOverflowRef.current === null) {
+    // Each session row = 1 line, each date group header = 1 line,
+    // gap between groups = 2, gap between sessions in group = 1.
+    const groupCount = groupedSessions.length;
+    const estimatedRows =
+      visualOrderSessions.length + groupCount * 3 - (groupCount > 0 ? 2 : 0);
+    initialOverflowRef.current = estimatedRows > availableListHeight;
+  }
+
+  // Only pin the height when the initial set overflowed the dialog
+  const listHeight =
+    initialOverflowRef.current ? availableListHeight : undefined;
 
   const viewReport = useCallback(async (sessionId: string) => {
     const session = await sessions.get(sessionId);
@@ -239,6 +262,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
             flexShrink={1}
             overflow="hidden"
             marginTop={1}
+            height={listHeight}
           >
             <scrollbox
               ref={scroll}
