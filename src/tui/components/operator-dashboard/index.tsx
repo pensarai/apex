@@ -51,8 +51,6 @@ import { useDialog } from "../../context/dialog";
 import { useFocus } from "../../context/focus";
 import { MessageList } from "../chat/message-list";
 import { InputArea } from "../chat/input-area";
-import { LaserBar } from "../loaders";
-import { useDimensions } from "../../context/dimensions";
 import { useTheme } from "../../theme";
 import type { DisplayMessage, WorkflowData } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
@@ -143,7 +141,6 @@ export default function OperatorDashboard({
     isModelUserSelected,
     setThinking,
     setIsExecuting,
-    isExecuting,
     tokenUsage,
     addTokenUsage,
     addCacheUsage,
@@ -151,7 +148,6 @@ export default function OperatorDashboard({
     setSessionCwd,
     reasoningEnabled,
   } = useAgent();
-  const { width: termWidth } = useDimensions();
   const {
     autocompleteOptions: allAutocompleteOptions,
     commandOptionMap,
@@ -2197,19 +2193,6 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       flexGrow={1}
       overflow="hidden"
     >
-      {/* Activity indicator — pulses while the agent is working */}
-      <box height={1} width="100%" flexShrink={0} overflow="hidden">
-        {isExecuting && (
-          <LaserBar
-            width={termWidth}
-            fg={colors.primary}
-            speed={4}
-            trailLen={28}
-            track={false}
-          />
-        )}
-      </box>
-
       {/* Header bar */}
       <box
         flexDirection="row"

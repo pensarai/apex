@@ -81,26 +81,17 @@ export default function Footer({
 export function AgentStatus() {
   const { colors } = useTheme();
   const route = useRoute();
-  const { tokenUsage, hasExecuted, isExecuting } = useAgent();
+  const { tokenUsage, isExecuting } = useAgent();
 
-  const tokenLabel =
-    route.data.type === "operator"
-      ? `${formatTokenCount(tokenUsage.outputTokens)}↑ ${formatTokenCount(tokenUsage.inputTokens)}↓${tokenUsage.cachedTokens > 0 ? ` ⚡${formatTokenCount(tokenUsage.cachedTokens)}` : ""}`
-      : `↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)}${tokenUsage.cachedTokens > 0 ? ` ⚡${formatTokenCount(tokenUsage.cachedTokens)}` : ""} Σ${formatTokenCount(tokenUsage.totalTokens)}`;
+  const tokenLabel = `↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)}${tokenUsage.cachedTokens > 0 ? ` ⚡${formatTokenCount(tokenUsage.cachedTokens)}` : ""} Σ${formatTokenCount(tokenUsage.totalTokens)}`;
 
   return (
     <box flexDirection="row" gap={1}>
-      {hasExecuted && (
-        <>
-          <box border={["right"]} borderColor={colors.primary} />
-          <text fg={colors.text}>{tokenLabel}</text>
-        </>
-      )}
+      <box border={["right"]} borderColor={colors.primary} />
+      <text fg={colors.text}>{tokenLabel}</text>
+      <box border={["right"]} borderColor={colors.primary} />
       {isExecuting && (
-        <>
-          <box border={["right"]} borderColor={colors.primary} />
-          <BracketBounce width={16} fg={colors.primary} speed={0.75} />
-        </>
+        <BracketBounce width={16} fg={colors.primary} speed={0.75} />
       )}
     </box>
   );

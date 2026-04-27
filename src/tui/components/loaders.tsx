@@ -634,7 +634,7 @@ export function LaserBar({
 export function ShiningText({
   text,
   fg,
-  speed = 3,
+  speed = 2,
   shimmerWidth = 9,
   baseAlpha = 0.35,
 }: {
@@ -646,13 +646,17 @@ export function ShiningText({
 }) {
   const { colors } = useTheme();
   const base = fg ?? colors.text;
-  const t = useTick();
+  // Subscribe to the shared tick to drive re-renders, but derive the cycle
+  // position from absolute wall-clock time so multiple ShiningText instances
+  // (with different text lengths) start each shimmer pass in lockstep.
+  useTick();
 
   const len = text.length;
   const totalFrames = len + shimmerWidth;
+  const periodMs = 1250 / speed;
+  const cyclePos = (Date.now() % periodMs) / periodMs;
   // Smoothstep easing per cycle so the highlight glides through the middle
   // and softens near the edges — gives a more natural "shine" sweep.
-  const cyclePos = ((t * speed * 0.4) % totalFrames) / totalFrames;
   const eased = cyclePos * cyclePos * (3 - 2 * cyclePos);
   const head = Math.floor(eased * totalFrames);
 
