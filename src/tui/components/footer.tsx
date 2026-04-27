@@ -1,10 +1,12 @@
 import os from "os";
 import { useAgent } from "../context/agent";
-import { ProgressBar, SpinnerDots } from "./sprites";
+import { ProgressBar } from "./sprites";
+import { BracketBounce } from "./loaders";
 import { useSession } from "../context/session";
 import { useRoute } from "../context/route";
 import { useInput } from "../context/input";
 import { useTheme } from "../theme";
+import { useDimensions } from "../context/dimensions";
 
 interface FooterProps {
   cwd?: string;
@@ -26,6 +28,7 @@ export default function Footer({
 }: FooterProps) {
   const { colors } = useTheme();
   const { isExecuting, sessionCwd } = useAgent();
+  const { width: termWidth } = useDimensions();
   const effectiveCwd = sessionCwd || cwd;
   const relativeCwd = effectiveCwd.split(os.homedir()).pop() || "";
   const segments = relativeCwd.split("/").filter(Boolean);
@@ -33,6 +36,7 @@ export default function Footer({
     segments.length <= 2
       ? "~/" + segments.join("/")
       : "…/" + segments.slice(-2).join("/");
+  const showCwd = termWidth >= 100;
   const session = useSession();
   const { isInputEmpty } = useInput();
   const hotkeys = isExecuting
@@ -53,7 +57,7 @@ export default function Footer({
       overflow="hidden"
     >
       <box flexDirection="row" gap={1} flexShrink={1} overflow="hidden">
-        <text fg={colors.textMuted}>{displayCwd}</text>
+        {showCwd && <text fg={colors.textMuted}>{displayCwd}</text>}
         <AgentStatus />
       </box>
       {showExitWarning ? (
@@ -77,7 +81,7 @@ export default function Footer({
 export function AgentStatus() {
   const { colors } = useTheme();
   const route = useRoute();
-  const { tokenUsage, hasExecuted, thinking } = useAgent();
+  const { tokenUsage, hasExecuted, isExecuting } = useAgent();
 
   const tokenLabel =
     route.data.type === "operator"
@@ -92,10 +96,10 @@ export function AgentStatus() {
           <text fg={colors.text}>{tokenLabel}</text>
         </>
       )}
-      {thinking && (
+      {isExecuting && (
         <>
           <box border={["right"]} borderColor={colors.primary} />
-          <SpinnerDots label="Thinking" fg={colors.primary} />
+          <BracketBounce width={16} fg={colors.primary} speed={0.75} />
         </>
       )}
     </box>

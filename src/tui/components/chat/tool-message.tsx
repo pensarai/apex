@@ -10,7 +10,7 @@
 
 import { memo, useState } from "react";
 import { useTheme } from "../../theme";
-import { AsciiSpinner } from "../shared/ascii-spinner";
+import { ShiningText } from "../loaders";
 import { getToolDisplayLabel } from "../shared/tool-registry";
 import {
   getResultSummary,
@@ -96,7 +96,7 @@ export const ToolMessage = memo(function ToolMessage({
       {/* Tool header line */}
       <box flexDirection="row" gap={1}>
         {isPending ? (
-          <AsciiSpinner label={summary} />
+          <ShiningText text={summary} fg={colors.warning} />
         ) : (
           <>
             <text fg={isError ? colors.error : colors.success}>

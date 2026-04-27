@@ -7,7 +7,7 @@
 
 import { memo, useState } from "react";
 import { useTheme } from "../../theme";
-import { AsciiSpinner } from "./ascii-spinner";
+import { ShiningText } from "../loaders";
 import { getToolDisplayLabel } from "./tool-registry";
 import { getResultSummary, type ResultSummary } from "./result-registry";
 import { isToolMessage } from "./type-guards";
@@ -110,7 +110,7 @@ export const ToolRenderer = memo(function ToolRenderer({
         {/* Tool header line */}
         <box flexDirection="row" gap={1}>
           {isPending ? (
-            <AsciiSpinner label={summary} fg={colors.warning} />
+            <ShiningText text={summary} fg={colors.warning} />
           ) : (
             <>
               <text fg={isError ? colors.error : colors.success}>
