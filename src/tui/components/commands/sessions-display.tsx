@@ -61,8 +61,9 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   }
 
   // Only pin the height when the initial set overflowed the dialog
-  const listHeight =
-    initialOverflowRef.current ? availableListHeight : undefined;
+  const listHeight = initialOverflowRef.current
+    ? availableListHeight
+    : undefined;
 
   const viewReport = useCallback(async (sessionId: string) => {
     const session = await sessions.get(sessionId);
