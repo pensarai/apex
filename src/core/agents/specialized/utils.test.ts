@@ -27,9 +27,27 @@ describe("detectOSAndEnhancePrompt", () => {
 
   it("includes the reactive disclaimer to prevent prescriptive prompt drift", () => {
     const out = detectOSAndEnhancePrompt(STUB);
-    expect(out).toContain("Reference only");
-    expect(out).toContain("not a reason to run such a tool");
+    expect(out).toContain("NOT a reason to run a wordlist-based tool");
     expect(out).toContain("Do NOT chain tiers automatically");
+  });
+
+  it("frames the block as a capability inventory for self-introspection", () => {
+    const out = detectOSAndEnhancePrompt(STUB);
+    expect(out).toContain("authoritative inventory");
+    expect(out).toMatch(/answer directly from the entries below/);
+  });
+
+  it("instructs the agent not to probe the filesystem when asked about wordlists", () => {
+    const out = detectOSAndEnhancePrompt(STUB);
+    expect(out).toContain("do NOT probe the filesystem");
+    expect(out).toContain("/usr/share/wordlists");
+    expect(out).toContain("which gobuster");
+  });
+
+  it("broadens use beyond -w args to include line-by-line iteration", () => {
+    const out = detectOSAndEnhancePrompt(STUB);
+    expect(out).toMatch(/iterated line-by-line/);
+    expect(out).toContain("http_request");
   });
 
   it("forbids hardcoded /usr/share/wordlists paths", () => {
