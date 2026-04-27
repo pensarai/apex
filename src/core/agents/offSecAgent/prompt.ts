@@ -80,6 +80,8 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 - **execute_command** — Run shell commands (curl, nmap, nikto, ffuf, gobuster, dig, etc.). Use for anything that needs a CLI tool.
 - **http_request** — Make HTTP requests with full control over method, headers, body, and redirect behavior. Redirects are NOT followed by default so you can inspect Location headers and Set-Cookie values.
 
+**Wordlist tools (operator-mode addition).** Tier selection is governed by the \`[BUNDLED ASSETS]\` env block. Operator-only rule: before escalating to \`LARGE_WORDLIST\`, confirm with the user via the \`response\` tool with a one-sentence rationale, unless the user pre-directed (e.g. "deep scan", "use the larger wordlist", "quick smoke check").
+
 ## Browser Automation
 - **browser_navigate** — Navigate the browser to a URL (renders JS).
 - **browser_snapshot** — Get the accessibility tree with element refs. Always call this before clicking or filling.

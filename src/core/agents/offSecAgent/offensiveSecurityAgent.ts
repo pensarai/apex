@@ -17,6 +17,7 @@ import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
 import { ASK_USER_QUESTIONS_TOOL_NAME } from "./tools/askUserQuestions";
 import { PersistentShell } from "./tools/persistentShell";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
@@ -307,9 +308,11 @@ export class OffensiveSecurityAgent<TResult = void> {
     // so the hash is stable across runs with identical prompt versions.
     const baseSystemPrompt =
       input.system ??
-      buildBaseSystemPrompt({
-        sandboxMode: agentCwd === input.session.rootPath,
-      });
+      detectOSAndEnhancePrompt(
+        buildBaseSystemPrompt({
+          sandboxMode: agentCwd === input.session.rootPath,
+        }),
+      );
     const systemPrompt =
       baseSystemPrompt + buildSessionWorkspaceSection(input.session, agentCwd);
 
