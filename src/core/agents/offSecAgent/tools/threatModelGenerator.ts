@@ -1,7 +1,13 @@
+import pLimit from "p-limit";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 import type { RiskScore } from "../../specialized/whiteboxAttackSurface/types";
 import { AgentEventBus } from "../../../eventBus";
+
+// Process-wide cap — parents emit `document_endpoint` tool calls in parallel,
+// so without this gate each parent fans out unboundedly.
+const THREAT_MODEL_CONCURRENCY = 5;
+const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 
 // ---------------------------------------------------------------------------
 // Response schema
@@ -278,78 +284,81 @@ export async function generateThreatModelForEndpoint(
   input: GenerateThreatModelInput,
 ): Promise<ThreatModelOutput | null> {
   if (!ctx.model) return null;
+  const model = ctx.model;
 
-  const { CodeAgent } = await import("../../specialized/codeAgent/agent");
+  return threatModelLimiter(async () => {
+    const { CodeAgent } = await import("../../specialized/codeAgent/agent");
 
-  const subagentId = `threat-model-${sanitize(input.appName)}-${sanitize(input.routePath)}`;
+    const subagentId = `threat-model-${sanitize(input.appName)}-${sanitize(input.routePath)}`;
 
-  ctx.eventBus?.emit("subagent-spawn", {
-    subagentId,
-    name: `Threat Model: ${input.routePath}`,
-    input: { app: input.appName, endpoint: input.routePath },
-  });
-
-  const localBus = new AgentEventBus();
-  AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
-
-  const prompt = buildThreatModelPrompt(input, ctx.projectThreatModel);
-
-  const agent = new CodeAgent<ThreatModelResult>({
-    codebasePath: ctx.agentCwd,
-    objective: prompt,
-    system: THREAT_MODEL_SYSTEM_PROMPT,
-    model: ctx.model,
-    session: ctx.session,
-    authConfig: ctx.authConfig,
-    abortSignal: ctx.abortSignal,
-    eventBus: localBus,
-    subagentId,
-    responseSchema: ThreatModelResultSchema,
-    excludeTools: ["document_endpoint", "document_app"],
-  });
-
-  try {
-    const result = await agent.consume();
-    ctx.eventBus?.emit("subagent-complete", {
+    ctx.eventBus?.emit("subagent-spawn", {
       subagentId,
-      status: "completed",
+      name: `Threat Model: ${input.routePath}`,
+      input: { app: input.appName, endpoint: input.routePath },
     });
 
-    if (!result) return null;
+    const localBus = new AgentEventBus();
+    AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
 
-    const totalScore =
-      result.exposure +
-      result.dataSensitivity +
-      result.functionCriticality +
-      result.securityIndicators;
+    const prompt = buildThreatModelPrompt(input, ctx.projectThreatModel);
 
-    return {
-      businessLogic: result.businessLogic,
-      threatModel: result.threatModel,
-      riskScore: {
-        score: totalScore,
-        explanation: result.riskScoreJustification,
-        breakdown: {
-          exposure: result.exposure,
-          dataSensitivity: result.dataSensitivity,
-          functionCriticality: result.functionCriticality,
-          securityIndicators: result.securityIndicators,
+    const agent = new CodeAgent<ThreatModelResult>({
+      codebasePath: ctx.agentCwd,
+      objective: prompt,
+      system: THREAT_MODEL_SYSTEM_PROMPT,
+      model,
+      session: ctx.session,
+      authConfig: ctx.authConfig,
+      abortSignal: ctx.abortSignal,
+      eventBus: localBus,
+      subagentId,
+      responseSchema: ThreatModelResultSchema,
+      excludeTools: ["document_endpoint", "document_app"],
+    });
+
+    try {
+      const result = await agent.consume();
+      ctx.eventBus?.emit("subagent-complete", {
+        subagentId,
+        status: "completed",
+      });
+
+      if (!result) return null;
+
+      const totalScore =
+        result.exposure +
+        result.dataSensitivity +
+        result.functionCriticality +
+        result.securityIndicators;
+
+      return {
+        businessLogic: result.businessLogic,
+        threatModel: result.threatModel,
+        riskScore: {
+          score: totalScore,
+          explanation: result.riskScoreJustification,
+          breakdown: {
+            exposure: result.exposure,
+            dataSensitivity: result.dataSensitivity,
+            functionCriticality: result.functionCriticality,
+            securityIndicators: result.securityIndicators,
+          },
         },
-      },
-      pentestObjectives: (result.pentestObjectives ?? []).map(
-        flattenPentestObjective,
-      ),
-    };
-  } catch (error) {
-    ctx.eventBus?.emit("subagent-complete", {
-      subagentId,
-      status: "failed",
-    });
-    console.error(
-      `Threat model generation failed for ${input.routePath}: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return null;
-  }
+        pentestObjectives: (result.pentestObjectives ?? []).map(
+          flattenPentestObjective,
+        ),
+      };
+    } catch (error) {
+      ctx.eventBus?.emit("subagent-complete", {
+        subagentId,
+        status: "failed",
+      });
+      console.error(
+        `Threat model generation failed for ${input.routePath}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
