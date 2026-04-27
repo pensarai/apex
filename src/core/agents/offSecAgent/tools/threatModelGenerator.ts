@@ -287,6 +287,8 @@ export async function generateThreatModelForEndpoint(
   const model = ctx.model;
 
   return threatModelLimiter(async () => {
+    if (ctx.abortSignal?.aborted) return null;
+
     const { CodeAgent } = await import("../../specialized/codeAgent/agent");
 
     const subagentId = `threat-model-${sanitize(input.appName)}-${sanitize(input.routePath)}`;
