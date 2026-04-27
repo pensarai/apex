@@ -36,21 +36,33 @@ export function webSearch(_ctx: ToolContext) {
   return tool({
     description: `Search the web for real-time information about any topic. Returns summarized information from search results.
 
-USAGE GUIDANCE:
-- Use this tool to look up CVEs, security advisories, and vulnerability details
-- Search for exploit techniques, payloads, and bypass methods
-- Research target technologies, frameworks, and their known vulnerabilities
-- Find documentation for tools, APIs, and security testing techniques
-- Look up default credentials, common misconfigurations, and hardening guides
+USE THIS TOOL LIBERALLY. It is one of your most powerful advantages over static
+scanners — you can look things up in real time. Whenever you discover a technology,
+version, header, or behavior you're not 100% sure about, search for it. The cost
+of a search is near-zero; the cost of missing a known vulnerability is high.
+
+WHEN TO SEARCH (non-exhaustive — err on the side of searching):
+- You identify a technology or version (e.g., Apache 2.4.49, Next.js 13.2, OpenSSH 8.9)
+  → search for known CVEs and exploits against that exact version
+- You find an unusual header, cookie name, endpoint, or error message
+  → search to identify the framework/product and its known weaknesses
+- You want exploit techniques, payloads, or bypass methods for a vulnerability class
+- You need default credentials, common misconfigurations, or hardening gaps
+- You want to discover novel attack paths — search for "<technology> pentest",
+  "<technology> bug bounty writeups", or "<technology> security research"
+- You're stuck or making no progress → search for writeups on similar targets
 
 IMPORTANT: This tool requires a Pensar account. If you're not signed in, you'll receive an error message with instructions to sign in.
 
 COMMON SEARCH PATTERNS:
 - "CVE-2024-XXXX exploit" — Find details about specific CVEs
+- "Apache 2.4.49 CVE" — Find CVEs for an exact version you discovered
 - "Apache Struts RCE vulnerability" — Research known vulnerabilities in specific software
-- "SSRF bypass techniques" — Find security testing techniques
+- "SSRF bypass techniques 2024" — Find current security testing techniques
 - "Spring Boot actuator default credentials" — Look up default credentials
-- "JWT token security vulnerabilities" — Research vulnerability classes`,
+- "JWT token security vulnerabilities" — Research vulnerability classes
+- "nginx 1.25 known vulnerabilities" — Version-specific vulnerability lookup
+- "<product name> bug bounty writeup" — Find real-world attack paths others have found`,
     inputSchema: webSearchInputSchema,
     execute: async ({ query }): Promise<WebSearchResponse> => {
       try {

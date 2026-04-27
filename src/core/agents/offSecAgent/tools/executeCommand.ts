@@ -104,10 +104,25 @@ keep processes alive between calls; just background them normally with &.
 COMMON COMMANDS FOR BLACK BOX TESTING:
 
 RECONNAISSANCE:
-- nmap -sV -sC <target>              # Service version detection + default scripts
-- nmap -p- <target>                  # Scan all ports
 - dig <domain>                       # DNS lookup
 - whois <domain>                     # Domain registration info
+
+NMAP PORT SCANNING STRATEGY — FAST TARGETED SCANS FIRST:
+Always start with a fast, lightweight scan on specific ports. Do NOT begin
+with -sV -sC or --top-ports — those are slow. Get open ports first, then
+probe only the ports that are actually open.
+
+Step 1 — Fast port discovery (no version detection, no scripts):
+  nmap -T4 --open -p 21,22,80,443,2121,8080,8443,3000,3306,4000,5000,5432,6379,8000,9000,27017 <target> 2>&1
+  This finishes in seconds and tells you which ports are open.
+
+Step 2 — Version/script scan ONLY on the open ports found in Step 1:
+  nmap -sV -sC -p <open-ports-from-step-1> <target> 2>&1
+  e.g. nmap -sV -sC -p 22,80,443 <target> 2>&1
+
+Step 3 — Only if Steps 1-2 find nothing interesting, broaden:
+  nmap -T4 --open --top-ports 1000 <target> 2>&1   # Wider discovery
+  nmap -p- <target> 2>&1                            # Full port scan (last resort, very slow)
 
 WEB APPLICATION TESTING:
 - curl -i <url>                      # HTTP request with headers
@@ -126,6 +141,15 @@ OUTPUT HANDLING:
 - The tool's timeout parameter is in SECONDS, not milliseconds
 - Good timeout examples: 30, 60, 120
 - Do NOT pass millisecond values like 30000 or 120000
+
+TIMEOUTS — MATCH TO SCAN TYPE:
+- Fast nmap discovery (Step 1, no -sV/-sC): 60–120s is plenty.
+- Version/script scans (-sV -sC on known open ports): 300s (5 min).
+- Full-port or heavy script scans (-p-, --script): 600+s.
+  A premature timeout wastes all the work done so far.
+- For other network tools (nikto, gobuster, masscan), default to a longer
+  timeout rather than a short one.
+- Quick commands (curl, dig, whois) are fine with 30–60s.
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
