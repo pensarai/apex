@@ -49,11 +49,15 @@ export function parseRawHttpTarget(content: string): {
   const [hostname, portText] = host.split(":");
   if (!hostname) return null;
 
-  const targetPort = portText ? parseInt(portText, 10) : 443;
+  const parsedPort = portText ? parseInt(portText, 10) : undefined;
+  const targetPort =
+    typeof parsedPort === "number" && Number.isFinite(parsedPort)
+      ? parsedPort
+      : 80;
   return {
     targetHostname: hostname,
-    targetPort: Number.isFinite(targetPort) ? targetPort : 443,
-    usesHttps: targetPort !== 80,
+    targetPort,
+    usesHttps: targetPort === 443,
   };
 }
 
