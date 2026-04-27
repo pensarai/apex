@@ -5,6 +5,9 @@ import {
   type StateCheckpoint,
   type InitRecord,
   type TraceRecord,
+  type HashChainEnvelope,
+  verifyTraceChain,
+  computeEntryHash,
 } from "./trace";
 import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
@@ -20,11 +23,18 @@ function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "trace-test-"));
 }
 
+function readTraceLines(tracePath: string): string[] {
+  return readFileSync(tracePath, "utf-8").trim().split("\n");
+}
+
+function readEnvelopes(tracePath: string): HashChainEnvelope[] {
+  return readTraceLines(tracePath).map(
+    (line) => JSON.parse(line) as HashChainEnvelope,
+  );
+}
+
 function readTraceRecords(tracePath: string): TraceRecord[] {
-  return readFileSync(tracePath, "utf-8")
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line) as TraceRecord);
+  return readEnvelopes(tracePath).map((env) => env.record);
 }
 
 function readStepRecords(tracePath: string): StepRecord[] {
@@ -424,7 +434,7 @@ describe("StepTraceWriter", () => {
     expect(record.actions[0].inputLength).toBeGreaterThan(1000);
   });
 
-  it("produces valid JSON on every line", () => {
+  it("produces valid JSON envelopes on every line", () => {
     const tracePath = join(tmpDir, "trace.jsonl");
     const writer = new StepTraceWriter({ tracePath, agentId: null });
     const msgs = buildMessages();
@@ -435,7 +445,11 @@ describe("StepTraceWriter", () => {
 
     const lines = readFileSync(tracePath, "utf-8").trim().split("\n");
     for (const line of lines) {
-      expect(() => JSON.parse(line)).not.toThrow();
+      const parsed = JSON.parse(line) as HashChainEnvelope;
+      expect(parsed).toHaveProperty("seq");
+      expect(parsed).toHaveProperty("previousHash");
+      expect(parsed).toHaveProperty("currentHash");
+      expect(parsed).toHaveProperty("record");
     }
   });
 
@@ -767,5 +781,416 @@ describe("StepTraceWriter", () => {
 
     expect(received).toHaveLength(3);
     expect(received.map((r) => r.type)).toEqual(["init", "step", "checkpoint"]);
+  });
+
+  // -------------------------------------------------------------------------
+  // APTS-AR-012: Hash chain / tamper-evident logging tests
+  // -------------------------------------------------------------------------
+
+  describe("APTS-AR-012 hash chain", () => {
+    it("wraps every record in a HashChainEnvelope with seq, previousHash, currentHash", () => {
+      const tracePath = join(tmpDir, "trace.jsonl");
+      const writer = new StepTraceWriter({ tracePath, agentId: null });
+      const msgs = buildMessages();
+
+      writer.writeInit({
+        model: "test",
+        systemPrompt: "test prompt",
+        activeTools: [],
+        sessionId: "ses_test",
+      });
+      writer.recordStep(msgs.afterStep0, {
+        inputTokens: 100,
+        outputTokens: 50,
+      });
+
+      const envelopes = readEnvelopes(tracePath);
+      expect(envelopes).toHaveLength(2);
+
+      for (const env of envelopes) {
+        expect(env).toHaveProperty("seq");
+        expect(env).toHaveProperty("previousHash");
+        expect(env).toHaveProperty("currentHash");
+        expect(env).toHaveProperty("record");
+        expect(env.currentHash).toMatch(/^[0-9a-f]{64}$/);
+      }
+    });
+
+    it("assigns monotonically increasing seq across all record types", () => {
+      const tracePath = join(tmpDir, "trace.jsonl");
+      const writer = new StepTraceWriter({ tracePath, agentId: null });
+      const msgs = buildMessages();
+
+      writer.writeInit({
+        model: "test",
+        systemPrompt: "test",
+        activeTools: [],
+        sessionId: "ses_test",
+      });
+      writer.recordStep(msgs.afterStep0, {
+        inputTokens: 10,
+        outputTokens: 5,
+      });
+      writer.appendCheckpoint({
+        targetState: {
+          discoveredSurface: [],
+          credentialsObtained: [],
+          confirmedVulnerabilities: [],
+        },
+        actionsAttempted: [],
+        nextSteps: [],
+        blockers: [],
+        assessment: "test",
+      });
+      writer.recordStep(msgs.afterStep1, {
+        inputTokens: 20,
+        outputTokens: 10,
+      });
+
+      const envelopes = readEnvelopes(tracePath);
+      expect(envelopes.map((e) => e.seq)).toEqual([0, 1, 2, 3]);
+    });
+
+    it("first entry has empty string as previousHash", () => {
+      const tracePath = join(tmpDir, "trace.jsonl");
+      const writer = new StepTraceWriter({ tracePath, agentId: null });
+
+      writer.writeInit({
+        model: "test",
+        systemPrompt: "test",
+        activeTools: [],
+        sessionId: "ses_test",
+      });
+
+      const [first] = readEnvelopes(tracePath);
+      expect(first.previousHash).toBe("");
+    });
+
+    it("chains previousHash to the currentHash of the prior entry", () => {
+      const tracePath = join(tmpDir, "trace.jsonl");
+      const writer = new StepTraceWriter({ tracePath, agentId: null });
+      const msgs = buildMessages();
+
+      writer.writeInit({
+        model: "test",
+        systemPrompt: "test",
+        activeTools: [],
+        sessionId: "ses_test",
+      });
+      writer.recordStep(msgs.afterStep0, {
+        inputTokens: 10,
+        outputTokens: 5,
+      });
+      writer.recordStep(msgs.afterStep1, {
+        inputTokens: 20,
+        outputTokens: 10,
+      });
+
+      const envelopes = readEnvelopes(tracePath);
+      expect(envelopes[1].previousHash).toBe(envelopes[0].currentHash);
+      expect(envelopes[2].previousHash).toBe(envelopes[1].currentHash);
+    });
+
+    it("currentHash is a valid SHA-256 of record + previousHash", () => {
+      const tracePath = join(tmpDir, "trace.jsonl");
+      const writer = new StepTraceWriter({ tracePath, agentId: null });
+      const msgs = buildMessages();
+
+      writer.writeInit({
+        model: "test",
+        systemPrompt: "test",
+        activeTools: [],
+        sessionId: "ses_test",
+      });
+      writer.recordStep(msgs.afterStep0, {
+        inputTokens: 10,
+        outputTokens: 5,
+      });
+
+      const envelopes = readEnvelopes(tracePath);
+      for (const env of envelopes) {
+        const expected = computeEntryHash(env.record, env.previousHash);
+        expect(env.currentHash).toBe(expected);
+      }
+    });
+
+    it("verifyTraceChain returns valid for an intact chain", () => {
+      const tracePath = join(tmpDir, "trace.jsonl");
+      const writer = new StepTraceWriter({ tracePath, agentId: null });
+      const msgs = buildMessages();
+
+      writer.writeInit({
+        model: "test",
+        systemPrompt: "test",
+        activeTools: [],
+        sessionId: "ses_test",
+      });
+      writer.recordStep(msgs.afterStep0, {
+        inputTokens: 100,
+        outputTokens: 50,
+      });
+      writer.appendCheckpoint({
+        targetState: {
+          discoveredSurface: [],
+          credentialsObtained: [],
+          confirmedVulnerabilities: [],
+        },
+        actionsAttempted: [],
+        nextSteps: [],
+        blockers: [],
+        assessment: "ok",
+      });
+      writer.recordStep(msgs.afterStep1, {
+        inputTokens: 200,
+        outputTokens: 80,
+      });
+
+      const lines = readTraceLines(tracePath);
+      const result = verifyTraceChain(lines);
+      expect(result.valid).toBe(true);
+      expect(result.entriesChecked).toBe(4);
+      expect(result.breakAtSeq).toBeNull();
+      expect(result.reason).toBeNull();
+    });
+
+    it("verifyTraceChain detects content tampering", () => {
+      const tracePath = join(tmpDir, "trace.jsonl");
+      const writer = new StepTraceWriter({ tracePath, agentId: null });
+      const msgs = buildMessages();
+
+      writer.writeInit({
+        model: "test",
+        systemPrompt: "test",
+        activeTools: [],
+        sessionId: "ses_test",
+      });
+      writer.recordStep(msgs.afterStep0, {
+        inputTokens: 10,
+        outputTokens: 5,
+      });
+      writer.recordStep(msgs.afterStep1, {
+        inputTokens: 20,
+        outputTokens: 10,
+      });
+
+      const lines = readTraceLines(tracePath);
+      // Tamper with the middle entry's record content
+      const tampered = JSON.parse(lines[1]) as HashChainEnvelope;
+      tampered.record = {
+        ...tampered.record,
+        timestamp: "1999-01-01T00:00:00.000Z",
+      };
+      lines[1] = JSON.stringify(tampered);
+
+      const result = verifyTraceChain(lines);
+      expect(result.valid).toBe(false);
+      expect(result.breakAtSeq).toBe(1);
+      expect(result.reason).toContain("currentHash mismatch");
+    });
+
+    it("verifyTraceChain detects deleted entries (seq gap)", () => {
+      const tracePath = join(tmpDir, "trace.jsonl");
+      const writer = new StepTraceWriter({ tracePath, agentId: null });
+      const msgs = buildMessages();
+
+      writer.writeInit({
+        model: "test",
+        systemPrompt: "test",
+        activeTools: [],
+        sessionId: "ses_test",
+      });
+      writer.recordStep(msgs.afterStep0, {
+        inputTokens: 10,
+        outputTokens: 5,
+      });
+      writer.recordStep(msgs.afterStep1, {
+        inputTokens: 20,
+        outputTokens: 10,
+      });
+
+      const lines = readTraceLines(tracePath);
+      // Delete the middle entry
+      const withDeletion = [lines[0], lines[2]];
+
+      const result = verifyTraceChain(withDeletion);
+      expect(result.valid).toBe(false);
+      expect(result.breakAtSeq).toBe(1);
+      expect(result.reason).toContain("expected seq 1");
+    });
+
+    it("verifyTraceChain detects reordered entries", () => {
+      const tracePath = join(tmpDir, "trace.jsonl");
+      const writer = new StepTraceWriter({ tracePath, agentId: null });
+      const msgs = buildMessages();
+
+      writer.writeInit({
+        model: "test",
+        systemPrompt: "test",
+        activeTools: [],
+        sessionId: "ses_test",
+      });
+      writer.recordStep(msgs.afterStep0, {
+        inputTokens: 10,
+        outputTokens: 5,
+      });
+
+      const lines = readTraceLines(tracePath);
+      const reordered = [lines[1], lines[0]];
+
+      const result = verifyTraceChain(reordered);
+      expect(result.valid).toBe(false);
+      expect(result.breakAtSeq).toBe(0);
+    });
+
+    it("verifyTraceChain handles empty input", () => {
+      const result = verifyTraceChain([]);
+      expect(result.valid).toBe(true);
+      expect(result.entriesChecked).toBe(0);
+    });
+
+    it("verifyTraceChain detects invalid JSON", () => {
+      const result = verifyTraceChain(["not valid json"]);
+      expect(result.valid).toBe(false);
+      expect(result.breakAtSeq).toBe(0);
+      expect(result.reason).toContain("invalid JSON");
+    });
+
+    it("verifyTraceChain detects previousHash chain break", () => {
+      const tracePath = join(tmpDir, "trace.jsonl");
+      const writer = new StepTraceWriter({ tracePath, agentId: null });
+      const msgs = buildMessages();
+
+      writer.writeInit({
+        model: "test",
+        systemPrompt: "test",
+        activeTools: [],
+        sessionId: "ses_test",
+      });
+      writer.recordStep(msgs.afterStep0, {
+        inputTokens: 10,
+        outputTokens: 5,
+      });
+
+      const lines = readTraceLines(tracePath);
+      // Modify the second entry's previousHash to something wrong
+      const broken = JSON.parse(lines[1]) as HashChainEnvelope;
+      broken.previousHash =
+        "0000000000000000000000000000000000000000000000000000000000000000";
+      lines[1] = JSON.stringify(broken);
+
+      const result = verifyTraceChain(lines);
+      expect(result.valid).toBe(false);
+      expect(result.breakAtSeq).toBe(1);
+      expect(result.reason).toContain("previousHash mismatch");
+    });
+
+    it("task records are included in the hash chain", () => {
+      const tracePath = join(tmpDir, "trace.jsonl");
+      const writer = new StepTraceWriter({ tracePath, agentId: null });
+
+      writer.writeInit({
+        model: "test",
+        systemPrompt: "test",
+        activeTools: [],
+        sessionId: "ses_test",
+      });
+      writer.appendTaskRecord({
+        action: "created",
+        taskId: 1,
+        data: {
+          subject: "Test SQLi",
+          status: "pending",
+          objective: "Find SQL injection",
+          technique: "sqlmap",
+        },
+      });
+
+      const envelopes = readEnvelopes(tracePath);
+      expect(envelopes).toHaveLength(2);
+      expect(envelopes[0].seq).toBe(0);
+      expect(envelopes[1].seq).toBe(1);
+      expect(envelopes[1].previousHash).toBe(envelopes[0].currentHash);
+
+      const lines = readTraceLines(tracePath);
+      const result = verifyTraceChain(lines);
+      expect(result.valid).toBe(true);
+    });
+
+    it("full workflow chain is verifiable end-to-end", () => {
+      const tracePath = join(tmpDir, "trace.jsonl");
+      const writer = new StepTraceWriter({
+        tracePath,
+        agentId: "pentest-1",
+      });
+      const msgs = buildMessages();
+
+      writer.writeInit({
+        model: "claude-sonnet-4-20250514",
+        systemPrompt: "You are a pentest agent. Test for XSS.",
+        activeTools: ["http_request", "execute_command"],
+        sessionId: "ses_full",
+        target: "https://example.com",
+        objectives: ["Test XSS"],
+      });
+      writer.recordStep(msgs.afterStep0, {
+        inputTokens: 100,
+        outputTokens: 50,
+      });
+      writer.appendCheckpoint({
+        targetState: {
+          discoveredSurface: ["GET /search"],
+          credentialsObtained: [],
+          confirmedVulnerabilities: [],
+        },
+        actionsAttempted: [
+          { description: "Initial recon", outcome: "success" },
+        ],
+        nextSteps: [
+          {
+            action: "Test XSS on /search",
+            rationale: "Reflected input",
+            priority: "high",
+          },
+        ],
+        blockers: [],
+        assessment: "Recon complete",
+      });
+      writer.appendTaskRecord({
+        action: "created",
+        taskId: 1,
+        data: {
+          subject: "Test XSS",
+          status: "in_progress",
+          objective: "Confirm XSS",
+          technique: "manual",
+        },
+      });
+      writer.recordStep(msgs.afterStep1, {
+        inputTokens: 200,
+        outputTokens: 80,
+      });
+      writer.recordStep(msgs.afterStep2, {
+        inputTokens: 150,
+        outputTokens: 60,
+      });
+
+      const lines = readTraceLines(tracePath);
+      expect(lines).toHaveLength(6);
+
+      const result = verifyTraceChain(lines);
+      expect(result.valid).toBe(true);
+      expect(result.entriesChecked).toBe(6);
+
+      const envelopes = readEnvelopes(tracePath);
+      expect(envelopes.map((e) => e.seq)).toEqual([0, 1, 2, 3, 4, 5]);
+      expect(envelopes.map((e) => e.record.type)).toEqual([
+        "init",
+        "step",
+        "checkpoint",
+        "task",
+        "step",
+        "step",
+      ]);
+    });
   });
 });

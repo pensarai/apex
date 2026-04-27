@@ -253,6 +253,120 @@ export type TraceRecord =
   | TaskRecord;
 
 // ---------------------------------------------------------------------------
+// Hash-chained envelope (APTS-AR-012)
+// ---------------------------------------------------------------------------
+
+/**
+ * Every record persisted to trace.jsonl is wrapped in this envelope.
+ * The hash chain makes the log tamper-evident: modifying or deleting
+ * any entry breaks the chain and is detectable by {@link verifyTraceChain}.
+ *
+ * Fields follow OWASP APTS-AR-012:
+ *  - `seq`: monotonically increasing, starting at 0, no gaps
+ *  - `previousHash`: hex SHA-256 of the previous envelope line (empty string for seq 0)
+ *  - `currentHash`: hex SHA-256 of `JSON.stringify(record) + previousHash`
+ */
+export interface HashChainEnvelope {
+  seq: number;
+  previousHash: string;
+  currentHash: string;
+  record: TraceRecord;
+}
+
+/**
+ * Result of verifying one entry in the hash chain.
+ */
+export interface ChainVerificationResult {
+  valid: boolean;
+  entriesChecked: number;
+  /** Sequence number where the first break was detected, or null if valid. */
+  breakAtSeq: number | null;
+  /** Human-readable reason when invalid. */
+  reason: string | null;
+}
+
+/**
+ * Verify the integrity of a trace.jsonl hash chain.
+ *
+ * Reads every line, recomputes hashes, and checks sequence continuity.
+ * Returns a result indicating whether the chain is intact.
+ */
+export function verifyTraceChain(lines: string[]): ChainVerificationResult {
+  if (lines.length === 0) {
+    return { valid: true, entriesChecked: 0, breakAtSeq: null, reason: null };
+  }
+
+  let previousHash = "";
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    let envelope: HashChainEnvelope;
+    try {
+      envelope = JSON.parse(line);
+    } catch {
+      return {
+        valid: false,
+        entriesChecked: i,
+        breakAtSeq: i,
+        reason: `Line ${i}: invalid JSON`,
+      };
+    }
+
+    if (envelope.seq !== i) {
+      return {
+        valid: false,
+        entriesChecked: i,
+        breakAtSeq: i,
+        reason: `Line ${i}: expected seq ${i}, got ${envelope.seq}`,
+      };
+    }
+
+    if (envelope.previousHash !== previousHash) {
+      return {
+        valid: false,
+        entriesChecked: i,
+        breakAtSeq: i,
+        reason: `Line ${i}: previousHash mismatch`,
+      };
+    }
+
+    const expectedHash = computeEntryHash(envelope.record, previousHash);
+    if (envelope.currentHash !== expectedHash) {
+      return {
+        valid: false,
+        entriesChecked: i,
+        breakAtSeq: i,
+        reason: `Line ${i}: currentHash mismatch (tampering detected)`,
+      };
+    }
+
+    previousHash = envelope.currentHash;
+  }
+
+  return {
+    valid: true,
+    entriesChecked: lines.length,
+    breakAtSeq: null,
+    reason: null,
+  };
+}
+
+/**
+ * Compute the SHA-256 hash for a trace entry.
+ * Hash input = JSON.stringify(record) + previousHash
+ */
+export function computeEntryHash(
+  record: TraceRecord,
+  previousHash: string,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify(record) + previousHash)
+    .digest("hex");
+}
+
+// ---------------------------------------------------------------------------
 // Extraction helpers
 // ---------------------------------------------------------------------------
 
@@ -355,6 +469,11 @@ export class StepTraceWriter {
   private readonly agentStartTime: number;
   private summarized = false;
   private previousMessageCount = 0;
+
+  /** APTS-AR-012: monotonically increasing sequence across all record types */
+  private seq = 0;
+  /** APTS-AR-012: SHA-256 hash of the previous envelope line */
+  private previousHash = "";
 
   constructor(opts: StepTraceWriterOpts) {
     this.tracePath = opts.tracePath;
@@ -575,13 +694,28 @@ export class StepTraceWriter {
     this.appendRecord(record);
   }
 
-  /** Sync append — ~1-3KB per line, sub-ms. Sync ensures crash safety. */
+  /**
+   * Sync append wrapped in an APTS-AR-012 hash-chain envelope.
+   * ~1-3KB per line, sub-ms. Sync ensures crash safety.
+   */
   private appendRecord(record: TraceRecord): void {
+    const currentHash = computeEntryHash(record, this.previousHash);
+    const envelope: HashChainEnvelope = {
+      seq: this.seq,
+      previousHash: this.previousHash,
+      currentHash,
+      record,
+    };
+
     try {
-      appendFileSync(this.tracePath, JSON.stringify(record) + "\n");
+      appendFileSync(this.tracePath, JSON.stringify(envelope) + "\n");
     } catch {
       // Trace is non-critical observability — never crash the agent for it.
     }
+
+    this.seq++;
+    this.previousHash = currentHash;
+
     try {
       this.eventBus?.emit("trace-record", {
         record,

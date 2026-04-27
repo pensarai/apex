@@ -248,8 +248,8 @@ describe("EventBus trace-record pipeline", () => {
 
     const lines = readFileSync(tracePath, "utf-8").trim().split("\n");
     expect(lines).toHaveLength(2);
-    expect(JSON.parse(lines[0]).type).toBe("init");
-    expect(JSON.parse(lines[1]).type).toBe("step");
+    expect(JSON.parse(lines[0]).record.type).toBe("init");
+    expect(JSON.parse(lines[1]).record.type).toBe("step");
   });
 
   it("EventBus listener can be removed without affecting file writes", () => {
@@ -335,14 +335,14 @@ describe("InitRecord hashing contract", () => {
 
     const hash1 = (
       JSON.parse(readFileSync(join(tmpDir, "a.jsonl"), "utf-8")) as {
-        systemPromptHash: string;
+        record: { systemPromptHash: string };
       }
-    ).systemPromptHash;
+    ).record.systemPromptHash;
     const hash2 = (
       JSON.parse(readFileSync(join(tmpDir, "b.jsonl"), "utf-8")) as {
-        systemPromptHash: string;
+        record: { systemPromptHash: string };
       }
-    ).systemPromptHash;
+    ).record.systemPromptHash;
 
     expect(hash1).toBe(hash2);
   });
@@ -372,14 +372,14 @@ describe("InitRecord hashing contract", () => {
 
     const hash1 = (
       JSON.parse(readFileSync(join(tmpDir, "a.jsonl"), "utf-8")) as {
-        systemPromptHash: string;
+        record: { systemPromptHash: string };
       }
-    ).systemPromptHash;
+    ).record.systemPromptHash;
     const hash2 = (
       JSON.parse(readFileSync(join(tmpDir, "b.jsonl"), "utf-8")) as {
-        systemPromptHash: string;
+        record: { systemPromptHash: string };
       }
-    ).systemPromptHash;
+    ).record.systemPromptHash;
 
     expect(hash1).not.toBe(hash2);
   });
@@ -406,10 +406,10 @@ describe("InitRecord hashing contract", () => {
         sessionId: "ses_1",
       });
 
-      const record = JSON.parse(readFileSync(tracePath, "utf-8")) as {
-        systemPromptHash: string;
+      const envelope = JSON.parse(readFileSync(tracePath, "utf-8")) as {
+        record: { systemPromptHash: string };
       };
-      expect(record.systemPromptHash).toMatch(/^[0-9a-f]{12}$/);
+      expect(envelope.record.systemPromptHash).toMatch(/^[0-9a-f]{12}$/);
     }
   });
 });
