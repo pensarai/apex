@@ -183,8 +183,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     onClose();
   };
 
-  if (loading) return null;
-
   if (showReportViewer && reportContent && reportSessionPath) {
     return (
       <ReportViewerDialog
@@ -229,7 +227,9 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
         </box>
 
         {/* Sessions List */}
-        {visualOrderSessions.length === 0 ? (
+        {loading ? (
+          <text fg={colors.textMuted}>Loading sessions...</text>
+        ) : visualOrderSessions.length === 0 ? (
           <text fg={colors.textMuted}>No sessions found</text>
         ) : (
           <box
