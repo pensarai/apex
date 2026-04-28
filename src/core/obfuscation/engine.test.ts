@@ -151,7 +151,9 @@ describe("obfuscation engine", () => {
   });
 
   it("redacts template-style relative paths", () => {
-    const out = obfuscate("media/{tenant_id} and access/users/${userId}/tenants");
+    const out = obfuscate(
+      "media/{tenant_id} and access/users/${userId}/tenants",
+    );
     expect(out).not.toContain("media/{tenant_id}");
     expect(out).not.toContain("access/users/${userId}/tenants");
     expect(out).toMatch(/\[PATH_\d+\]/);

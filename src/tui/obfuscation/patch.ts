@@ -84,10 +84,7 @@ function patchChildrenSetter(): void {
   const originalSetter = descriptor.set;
   Object.defineProperty(TextNodeRenderable.prototype, "children", {
     ...descriptor,
-    set(
-      this: Carrier,
-      next: ReadonlyArray<string | TextNodeRenderable>,
-    ) {
+    set(this: Carrier, next: ReadonlyArray<string | TextNodeRenderable>) {
       this[ORIGINAL] = Array.isArray(next) ? [...next] : next;
       const transformed = next.map((child) =>
         typeof child === "string" ? transform(child) : child,
@@ -124,10 +121,7 @@ export function refreshObfuscatedText(renderer: CliRenderer): void {
   });
 }
 
-function walk(
-  node: BaseRenderable,
-  fn: (node: BaseRenderable) => void,
-): void {
+function walk(node: BaseRenderable, fn: (node: BaseRenderable) => void): void {
   fn(node);
 
   // `<text>` keeps its TextNodeRenderable subtree on a side-channel
