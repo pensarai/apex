@@ -284,26 +284,31 @@ const PATH_WIN_REGEX =
 /**
  * URL-style filesystem and HTTP route paths with a leading slash, e.g.
  * `/v1/external/sendgrid/{tenant_id}`, `/__debug/pprof/heap`,
- * `/tmp/cache.json`, `/docs/`, `/__health`.
+ * `/tmp/cache.json`, `/docs/`, `/__health`, `/login,`.
  *
- * Three alternatives, ordered greediest-first so multi-segment matches
+ * Four alternatives, ordered greediest-first so multi-segment matches
  * absorb `__`-prefixed first segments:
  *   1. multi-segment path: `/foo/bar`, `/v1/users/{id}`
  *   2. `__`-prefixed single segment: `/__debug`, `/__health`
  *   3. single segment with trailing slash: `/docs/`
+ *   4. single segment followed by some character or whitespace
+ *      (anything but newline/EOS): `/login,`, `/dashboard `, `/leads.`
  *
- * This deliberately leaves bare single-token slash commands (`/help`,
- * `/obfuscate`, `/threat-model`) untouched so the command router still
- * sees them. The PromptInput layer additionally skips real-time
- * obfuscation when the buffer begins with `/`, so even multi-segment
- * commands like `/threat-model --output foo/bar` aren't mangled.
+ * Alternative 4 deliberately requires SOMETHING after the segment so
+ * a bare standalone slash command (`/help`, `/obfuscate` at end of
+ * input or end of line) stays intact for the command router. The
+ * PromptInput layer additionally skips real-time obfuscation when the
+ * buffer begins with `/`, so user-typed commands with arguments
+ * (`/threat-model --output foo/bar`) aren't mangled either; the
+ * remaining false positives are agent prose like "run /obfuscate now",
+ * which we accept.
  *
  * Inner segment chars accept `{}`, `[]`, and `$` so existing
  * placeholder values (`{tenant_id}`, `${userId}`, `[UUID_3]`) and
  * earlier obfuscation results get folded into the surrounding path.
  */
 const ROUTE_PATH_REGEX =
-  /(?<![A-Za-z0-9_./-])\/(?:[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.{}$[\]-]*)+\/?|__[A-Za-z0-9_.-]+\/?|[A-Za-z0-9_.-]+\/)/g;
+  /(?<![A-Za-z0-9_./-])\/(?:[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.{}$[\]-]*)+\/?|__[A-Za-z0-9_.-]+\/?|[A-Za-z0-9_.-]+\/|[A-Za-z0-9_.-]+(?=[^A-Za-z0-9_.\-\n\r]))/g;
 
 /**
  * Multi-segment path WITHOUT a leading slash: `__debug/config`,

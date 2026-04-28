@@ -157,9 +157,26 @@ describe("obfuscation engine", () => {
     expect(out).toMatch(/\[PATH_\d+\]/);
   });
 
-  it("does not redact bare single-token slash commands", () => {
+  it("does not redact a bare slash command standing alone", () => {
+    // No char follows → command router still sees it intact. This
+    // matters in two places: (1) the engine being called on an input
+    // buffer that starts with `/` (PromptInput already bypasses, but
+    // the engine itself stays safe as a defence-in-depth), and (2)
+    // a slash command that ends a line in agent prose.
     expect(obfuscate("/help")).toBe("/help");
-    expect(obfuscate("Run /obfuscate now")).toBe("Run /obfuscate now");
+    expect(obfuscate("/obfuscate")).toBe("/obfuscate");
+    expect(obfuscate("see /obfuscate\nthen continue")).toBe(
+      "see /obfuscate\nthen continue",
+    );
+  });
+
+  it("redacts single-segment paths followed by char or space", () => {
+    // The screenshot case: "/login, /tenant-selector, /dashboard, ..."
+    const out = obfuscate("Routes: /login, /dashboard, /leads here.");
+    expect(out).not.toContain("/login");
+    expect(out).not.toContain("/dashboard");
+    expect(out).not.toContain("/leads");
+    expect(out).toMatch(/\[PATH_\d+\]/);
   });
 
   it("gives distinct route paths distinct placeholders", () => {

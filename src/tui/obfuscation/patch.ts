@@ -31,6 +31,7 @@
 
 import {
   TextNodeRenderable,
+  TextRenderable,
   type CliRenderer,
   type BaseRenderable,
 } from "@opentui/core";
@@ -128,6 +129,16 @@ function walk(
   fn: (node: BaseRenderable) => void,
 ): void {
   fn(node);
+
+  // `<text>` keeps its TextNodeRenderable subtree on a side-channel
+  // (`textNode`) because TextNodeRenderable extends BaseRenderable but
+  // not Renderable, so it's invisible to Renderable.getChildren(). Cross
+  // the boundary explicitly or we never visit the leaves where the
+  // [ORIGINAL] markers live.
+  if (node instanceof TextRenderable) {
+    walk(node.textNode as unknown as BaseRenderable, fn);
+  }
+
   const children = node.getChildren?.();
   if (!children) return;
   for (const child of children) walk(child, fn);
