@@ -13,6 +13,7 @@ import {
 } from "@opentui/core";
 import { marked } from "marked";
 import type { ThemeColors } from "../../theme";
+import { obfuscate } from "../../../core/obfuscation";
 
 /**
  * Convert markdown content to StyledText for terminal rendering.
@@ -29,9 +30,12 @@ import type { ThemeColors } from "../../theme";
  * - Paragraphs
  */
 export function markdownToStyledText(
-  content: string,
+  rawContent: string,
   colors?: ThemeColors,
 ): StyledText {
+  // Apply obfuscation before any tokenisation so emails/URLs/hostnames are
+  // redacted before they get coloured as links/codespans.
+  const content = obfuscate(rawContent);
   // Resolve colors with fallbacks for backwards compatibility
   const codeColor = colors?.markdownCode ?? RGBA.fromInts(100, 255, 100, 255);
   const linkColor = colors?.markdownLink ?? RGBA.fromInts(100, 200, 255, 255);
@@ -50,6 +54,7 @@ export function markdownToStyledText(
     type InlineToken = {
       type?: string;
       text?: string;
+      raw?: string;
       tokens?: InlineToken[];
       [key: string]: unknown;
     };
@@ -93,6 +98,15 @@ export function markdownToStyledText(
           chunks.push({
             __isChunk: true,
             text: "\n",
+            attributes: defaultAttrs,
+          });
+        } else if (token.type === "html") {
+          // Inline HTML — emit as literal text so any angle-bracketed
+          // content the assistant produces appears on screen instead of
+          // being silently consumed by the markdown lexer.
+          chunks.push({
+            __isChunk: true,
+            text: token.raw || token.text || "",
             attributes: defaultAttrs,
           });
         } else if (token.tokens) {
@@ -143,6 +157,16 @@ export function markdownToStyledText(
         chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
       } else if (token.type === "space") {
         chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
+      } else if (token.type === "html") {
+        // Block-level HTML — pass through as literal text. Mirrors the
+        // inline `html` handler so angle-bracketed obfuscation
+        // placeholders survive a full-line emission.
+        const tk = token as { raw?: string; text?: string };
+        chunks.push({
+          __isChunk: true,
+          text: tk.raw || tk.text || "",
+          attributes: 0,
+        });
       }
     }
 

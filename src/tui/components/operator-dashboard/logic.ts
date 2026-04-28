@@ -16,6 +16,7 @@ const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/pentest",
   "/skills",
   "/plan",
+  "/obfuscate",
   "/help",
 ]);
 

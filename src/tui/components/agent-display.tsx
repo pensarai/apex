@@ -8,6 +8,7 @@ import {
 } from "./shared";
 import { useTheme } from "../theme";
 import { useDimensions } from "../context/dimensions";
+import { useObfuscation } from "../context/obfuscation";
 
 export type Subagent = {
   id: string;
@@ -211,6 +212,8 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
   subagent: Subagent;
 }) {
   const { colors } = useTheme();
+  // Subscribe so memoised render bypasses cached output on /obfuscate toggle.
+  useObfuscation();
   const [open, setOpen] = useState(false);
 
   return (
@@ -257,6 +260,8 @@ const AgentMessage = memo(function AgentMessage({
 }) {
   const { colors } = useTheme();
   const dimensions = useDimensions();
+  // Subscribe so memoised render bypasses cached output on /obfuscate toggle.
+  useObfuscation();
   let content = "";
 
   if (typeof message.content === "string") {
@@ -280,7 +285,9 @@ const AgentMessage = memo(function AgentMessage({
     content = JSON.stringify(message.content, null, 2);
   }
 
-  // Render markdown for assistant messages
+  // Render markdown for assistant messages (markdown pipeline obfuscates
+  // internally). Plain-text branches flow into `<text>` children, where
+  // the central TextNodeRenderable patch handles redaction.
   const displayContent =
     message.role === "assistant"
       ? markdownToStyledText(content, colors)
@@ -336,13 +343,15 @@ const AgentMessage = memo(function AgentMessage({
               {/* Streaming logs for pending tools */}
               {streamingLogs.length > 0 && (
                 <box flexDirection="column" marginTop={0} paddingLeft={2}>
-                  {streamingLogs.slice(-3).map((log, idx) => (
-                    <text
-                      key={idx}
-                      fg={colors.textMuted}
-                      content={log.length > 100 ? log.slice(0, 100) + "…" : log}
-                    />
-                  ))}
+                  {streamingLogs.slice(-3).map((log, idx) => {
+                    const trimmed =
+                      log.length > 100 ? log.slice(0, 100) + "…" : log;
+                    return (
+                      <text key={idx} fg={colors.textMuted}>
+                        {trimmed}
+                      </text>
+                    );
+                  })}
                 </box>
               )}
             </>
@@ -397,18 +406,19 @@ function ToolDetails({ message }: { message: DisplayMessage }) {
     return null;
   }
 
-  // Format result for display (truncate if too long)
+  // Format result for display (truncate if too long). Redaction is
+  // handled by the central TextNodeRenderable patch when this string
+  // hits a `<text>` child.
   const formatResult = (result: unknown): string => {
+    let str: string;
     try {
-      const str = JSON.stringify(result, null, 2);
-      // Truncate very long results
-      if (str.length > 2000) {
-        return str.substring(0, 2000) + "\n... (truncated)";
-      }
-      return str;
+      str = JSON.stringify(result, null, 2);
     } catch {
-      return String(result);
+      str = String(result);
     }
+    const truncated =
+      str.length > 2000 ? str.substring(0, 2000) + "\n... (truncated)" : str;
+    return truncated;
   };
 
   return (

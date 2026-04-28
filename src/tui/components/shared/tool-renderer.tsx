@@ -13,6 +13,7 @@ import { getResultSummary, type ResultSummary } from "./result-registry";
 import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
 import { PentestWorkflowDisplay } from "./pentest-workflow-display";
+import { useObfuscation } from "../../context/obfuscation";
 
 const TOOLS_WITH_LOG_WINDOW = new Set([
   "execute_command",
@@ -41,6 +42,11 @@ export const ToolRenderer = memo(function ToolRenderer({
   expandedLogs = false,
 }: ToolRendererProps) {
   const { colors, mode } = useTheme();
+  // Subscribe so the result summary's `content`-prop StyledText
+  // (precomputed in `result-registry.ts`) re-runs when `/obfuscate`
+  // toggles. Plain string children are handled centrally by the
+  // TextNodeRenderable patch and don't require this subscription.
+  useObfuscation();
   const [showOutput, setShowOutput] = useState(false);
 
   // Type guard ensures we have a tool message
@@ -71,7 +77,10 @@ export const ToolRenderer = memo(function ToolRenderer({
     preferDescription: isPending,
   });
 
-  // For execute_command, extract both description and command so we can show both
+  // For execute_command, extract both description and command so we can show
+  // both. Strings flow into `<text>` children, so the centralised
+  // `TextNodeRenderable` patch (src/tui/obfuscation/patch.ts) handles
+  // redaction transparently.
   const execDescription =
     toolName === "execute_command" &&
     typeof args.toolCallDescription === "string" &&
