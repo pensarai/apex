@@ -43,7 +43,7 @@ function sanitizeName(name: string): string {
 // System prompt for whitebox workflow coding agents
 // ---------------------------------------------------------------------------
 
-const WHITEBOX_CODE_AGENT_SYSTEM_PROMPT = `You are an expert source-code analyst with direct filesystem access. You will be given a specific objective — focus exclusively on completing it.
+export const WHITEBOX_CODE_AGENT_SYSTEM_PROMPT = `You are an expert source-code analyst with direct filesystem access. You will be given a specific objective — focus exclusively on completing it.
 
 Your focus is on **deployed applications and services** — APIs, web apps, microservices — that listen on a port and serve traffic, as well as **owned cloud resources** (S3 buckets, cloud storage, CDN origins, etc.) that are part of the attack surface. Ignore libraries, shared packages, SDKs, CLI tools, build scripts, and test suites unless they are part of a deployable service.
 
@@ -115,7 +115,7 @@ When your objective includes structured output, call \`response\` with your fina
 // Intermediate schemas (structured output for each workflow step)
 // ---------------------------------------------------------------------------
 
-const AppInfoSchema = z.object({
+export const AppInfoSchema = z.object({
   name: z.string().describe("Application or service name"),
   framework: z
     .string()
@@ -159,14 +159,14 @@ const AppsDiscoveryResultSchema = z.object({
 
 type AppsDiscoveryResult = z.infer<typeof AppsDiscoveryResultSchema>;
 
-const DiscoverySummarySchema = z.object({
+export const DiscoverySummarySchema = z.object({
   endpointsDocumented: z
     .number()
     .describe("Number of endpoints documented via document_endpoint"),
   summary: z.string().describe("Brief summary of what was found"),
 });
 
-type DiscoverySummary = z.infer<typeof DiscoverySummarySchema>;
+export type DiscoverySummary = z.infer<typeof DiscoverySummarySchema>;
 
 // ---------------------------------------------------------------------------
 // Input type
