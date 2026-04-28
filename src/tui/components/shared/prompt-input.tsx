@@ -237,8 +237,13 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       if (ta.extmarks.getAll().length > 0) return;
       const current = ta.plainText;
       if (!current) return;
+      // Slash-commands (`/threat-model --output foo/bar`) must reach the
+      // command router intact. The path patterns are aggressive enough
+      // that they would otherwise rewrite the command itself or its
+      // file-path arguments.
+      if (current.startsWith("/")) return;
       const next = obfuscateEnabled
-        ? engineObfuscate(current)
+        ? engineObfuscate(current, { aliases: false })
         : engineDeobfuscate(current);
       if (next === current) return;
       isObfuscatingRef.current = true;
@@ -602,9 +607,10 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         ta &&
         !isObfuscatingRef.current &&
         isObfuscationEnabled() &&
-        ta.extmarks.getAll().length === 0
+        ta.extmarks.getAll().length === 0 &&
+        !text.startsWith("/")
       ) {
-        const redacted = engineObfuscate(text);
+        const redacted = engineObfuscate(text, { aliases: false });
         if (redacted !== text) {
           isObfuscatingRef.current = true;
           ta.setText(redacted);

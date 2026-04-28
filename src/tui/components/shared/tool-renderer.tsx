@@ -14,6 +14,7 @@ import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
 import { PentestWorkflowDisplay } from "./pentest-workflow-display";
 import { useObfuscation } from "../../context/obfuscation";
+import { obfuscate } from "../../../core/obfuscation";
 
 const TOOLS_WITH_LOG_WINDOW = new Set([
   "execute_command",
@@ -76,21 +77,26 @@ export const ToolRenderer = memo(function ToolRenderer({
     preferDescription: isPending,
   });
 
-  // For execute_command, extract both description and command so we can show both
+  // For execute_command, extract both description and command so we can show
+  // both. Both flow through obfuscate() so a toggled `/obfuscate` mid-stream
+  // immediately redacts the command preview and human description (which can
+  // freely include hosts, paths, emails, etc.).
   const execDescription =
     toolName === "execute_command" &&
     typeof args.toolCallDescription === "string" &&
     args.toolCallDescription.trim().length > 0
-      ? args.toolCallDescription.trim()
+      ? obfuscate(args.toolCallDescription.trim())
       : null;
   const execCommand =
     toolName === "execute_command" && typeof args.command === "string"
       ? args.command.split("\n")[0]
       : null;
   const execCommandDisplay = execCommand
-    ? execCommand.length > 80
-      ? `$ ${execCommand.slice(0, 80)}…`
-      : `$ ${execCommand}`
+    ? obfuscate(
+        execCommand.length > 80
+          ? `$ ${execCommand.slice(0, 80)}…`
+          : `$ ${execCommand}`,
+      )
     : null;
 
   // Get result summary for completed tools
@@ -142,7 +148,9 @@ export const ToolRenderer = memo(function ToolRenderer({
               <box marginLeft={0}>
                 <text fg={colors.textMuted}>
                   {"  │ "}
-                  {(expandedLogs ? logs : logs.slice(-15)).join("\n  │ ")}
+                  {obfuscate(
+                    (expandedLogs ? logs : logs.slice(-15)).join("\n  │ "),
+                  )}
                 </text>
               </box>
               <text fg={colors.textMuted}>{"  └─"}</text>
@@ -156,7 +164,9 @@ export const ToolRenderer = memo(function ToolRenderer({
           logs.length > 0 && (
             <box marginLeft={2}>
               <text fg={colors.textMuted}>
-                {expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n")}
+                {obfuscate(
+                  expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n"),
+                )}
               </text>
             </box>
           )}

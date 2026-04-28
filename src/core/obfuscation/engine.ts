@@ -40,7 +40,102 @@ const STATE = {
   enabled: false,
   counters: new Map<ObfuscationCategory, number>(),
   mapping: new Map<string, Mapping>(),
+  /**
+   * Lowercase `label → Mapping` aliases derived from previously-redacted
+   * values: when we redact `acme.com → [HOST_42]` we also register
+   * `acme → [HOST_42]` so bare references to the same org get the
+   * same placeholder. Same idea for `Acme Corp → [ORG_3]` registering
+   * `acme → [ORG_3]`.
+   *
+   * Aliases share placeholders with their parent value, so deobfuscation
+   * resolves `[HOST_42]` to the canonical hostname regardless of which
+   * surface (full host vs. bare label) produced the placeholder.
+   */
+  aliases: new Map<string, Mapping>(),
 };
+
+/**
+ * Generic SaaS / cloud / infra labels that should never be aliased even
+ * when they appear inside a redacted hostname. Without this filter,
+ * `s3.amazonaws.com` would teach the engine that `amazonaws` is a
+ * sensitive label and start redacting every mention of "Amazon" or
+ * "AWS" in agent prose.
+ */
+const PROVIDER_LABELS = new Set<string>([
+  "amazon",
+  "amazonaws",
+  "amazonses",
+  "amazonsns",
+  "amazoncognito",
+  "google",
+  "googleapis",
+  "googleusercontent",
+  "gstatic",
+  "github",
+  "githubusercontent",
+  "gitlab",
+  "bitbucket",
+  "cloudflare",
+  "cloudflareinsights",
+  "cloudfront",
+  "azure",
+  "azurewebsites",
+  "microsoft",
+  "microsoftonline",
+  "office",
+  "windows",
+  "outlook",
+  "slack",
+  "atlassian",
+  "jira",
+  "heroku",
+  "vercel",
+  "netlify",
+  "digitalocean",
+  "linode",
+  "fastly",
+  "akamai",
+  "edgekey",
+  "edgesuite",
+  "stripe",
+  "paypal",
+  "shopify",
+  "wordpress",
+  "blogspot",
+  "twitter",
+  "facebook",
+  "instagram",
+  "linkedin",
+  "youtube",
+  "discord",
+  "twitch",
+  "zoom",
+  "dropbox",
+  "okta",
+  "auth0",
+  "duo",
+  "cognito",
+  "salesforce",
+  "hubspot",
+  "intercom",
+  "zendesk",
+  "sendgrid",
+  "twilio",
+  "mailgun",
+  "datadog",
+  "sentry",
+  "newrelic",
+  "rollbar",
+  "segment",
+  "mixpanel",
+  "amplitude",
+  "stackoverflow",
+  "medium",
+  "reddit",
+  "wikipedia",
+  "localhost",
+  "example",
+]);
 
 /** Words used as `org` placeholder bait — these are not redacted. */
 const ORG_STOPWORDS = new Set<string>([
@@ -187,6 +282,64 @@ const PATH_WIN_REGEX =
   /[A-Za-z]:\\Users\\[A-Za-z0-9._-]+(?:\\[A-Za-z0-9._\- \\+]*)?/g;
 
 /**
+ * URL-style filesystem and HTTP route paths with a leading slash, e.g.
+ * `/v1/external/sendgrid/{tenant_id}`, `/__debug/pprof/heap`,
+ * `/tmp/cache.json`, `/docs/`, `/__health`.
+ *
+ * Three alternatives, ordered greediest-first so multi-segment matches
+ * absorb `__`-prefixed first segments:
+ *   1. multi-segment path: `/foo/bar`, `/v1/users/{id}`
+ *   2. `__`-prefixed single segment: `/__debug`, `/__health`
+ *   3. single segment with trailing slash: `/docs/`
+ *
+ * This deliberately leaves bare single-token slash commands (`/help`,
+ * `/obfuscate`, `/threat-model`) untouched so the command router still
+ * sees them. The PromptInput layer additionally skips real-time
+ * obfuscation when the buffer begins with `/`, so even multi-segment
+ * commands like `/threat-model --output foo/bar` aren't mangled.
+ *
+ * Inner segment chars accept `{}`, `[]`, and `$` so existing
+ * placeholder values (`{tenant_id}`, `${userId}`, `[UUID_3]`) and
+ * earlier obfuscation results get folded into the surrounding path.
+ */
+const ROUTE_PATH_REGEX =
+  /(?<![A-Za-z0-9_./-])\/(?:[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.{}$[\]-]*)+\/?|__[A-Za-z0-9_.-]+\/?|[A-Za-z0-9_.-]+\/)/g;
+
+/**
+ * Multi-segment path WITHOUT a leading slash: `__debug/config`,
+ * `docs/media/`, `v2/access/users/type`, `media/{tenant_id}`,
+ * `access/users/${userId}/tenants`.
+ *
+ * Aggressive on purpose — operators would rather over-redact paths
+ * than leak endpoint surface. Side effect: trivially matches phrases
+ * like `and/or`, `key/value`, dates such as `04/28/2026`, and
+ * `12/30/2025`. We accept those false positives.
+ */
+const RELATIVE_PATH_REGEX =
+  /(?<![A-Za-z0-9_./\\-])[A-Za-z0-9_.-]+\/(?:[A-Za-z0-9_.{}$[\]-]*\/)*[A-Za-z0-9_.{}$[\]-]*/g;
+
+/**
+ * Region-prefixed AWS identifiers such as Cognito user-pool IDs
+ * (`us-east-1_X8rlYugE7`) and similar `<region>_<base62>` blobs.
+ * Region alone (`us-east-1`) is left intact — only the suffixed form
+ * is sensitive.
+ */
+const AWS_REGION_ID_REGEX =
+  /\b(?:us|eu|ap|sa|ca|me|af|cn)-(?:north|south|east|west|central|southeast|northeast|southwest|northwest)-\d_[A-Za-z0-9]{6,}\b/g;
+
+/**
+ * Opaque alphanumeric blob 20+ chars containing both letters and at
+ * least one digit. Catches AWS/GCP client IDs, Cognito identity blobs,
+ * session tokens, and other long mixed-case identifiers that don't
+ * match a vendor-specific prefix. The double lookahead requires both
+ * a digit and a letter so we don't redact long all-letter strings
+ * (concatenated identifiers like `getUserTenants`) or all-digit
+ * strings (handled by phone/card patterns).
+ */
+const OPAQUE_ID_REGEX =
+  /\b(?=[A-Za-z0-9]{20,}\b)(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{20,}\b/g;
+
+/**
  * Bare hostnames such as `acme-corp.internal`, `target.example.com`,
  * `s3-bucket.eu-west-1.amazonaws.com`. Caught after URLs so the URL
  * pass takes precedence.
@@ -239,8 +392,12 @@ const PATTERNS: Pattern[] = [
       return m[0];
     },
   },
+  { category: "TOKEN", regex: AWS_REGION_ID_REGEX },
   { category: "PATH", regex: PATH_UNIX_REGEX },
   { category: "PATH", regex: PATH_WIN_REGEX },
+  { category: "PATH", regex: ROUTE_PATH_REGEX },
+  { category: "PATH", regex: RELATIVE_PATH_REGEX },
+  { category: "TOKEN", regex: OPAQUE_ID_REGEX },
   {
     category: "HOST",
     regex: HOST_REGEX,
@@ -289,12 +446,110 @@ function luhn(digits: string): boolean {
 function placeholderFor(value: string, category: ObfuscationCategory): string {
   const existing = STATE.mapping.get(value);
   if (existing) {
+    learnAliases(value, category, existing);
     return `[${existing.category}_${existing.index}]`;
   }
   const next = (STATE.counters.get(category) ?? 0) + 1;
   STATE.counters.set(category, next);
-  STATE.mapping.set(value, { category, index: next });
+  const mapping: Mapping = { category, index: next };
+  STATE.mapping.set(value, mapping);
+  learnAliases(value, category, mapping);
   return `[${category}_${next}]`;
+}
+
+/**
+ * Pull a "registrable" label out of a hostname, e.g. `acme` from
+ * `acme.com` or `staging-console.acme.dev`. Returns null when the
+ * label is too short, looks like a TLD, has no letters, or is in the
+ * global provider blocklist.
+ */
+function extractHostLabel(host: string): string | null {
+  const cleaned = host.toLowerCase().replace(/^\[|\]$/g, "");
+  const parts = cleaned.split(".").filter(Boolean);
+  if (parts.length < 2) return null;
+  const label = parts[parts.length - 2];
+  if (!label) return null;
+  if (label.length < 4) return null;
+  if (!/[a-z]/.test(label)) return null;
+  if (PROVIDER_LABELS.has(label)) return null;
+  return label;
+}
+
+/** Pull the host out of an `https://host[:port]/path...` URL match. */
+function extractHostFromUrl(url: string): string | null {
+  const m = /^https?:\/\/([^\/?#:]+)/i.exec(url);
+  return m && m[1] ? m[1] : null;
+}
+
+/**
+ * Pull the leading capitalised word out of an org match, e.g. `Acme`
+ * from `Acme Corp` or `Globex Industries`. Skips the corporate suffix
+ * itself (`Corp`, `LLC`, ...) and any token already in the stopword
+ * list so well-known platforms don't get aliased.
+ */
+function extractOrgLabel(text: string): string | null {
+  const first = text.trim().split(/\s+/)[0];
+  if (!first) return null;
+  if (first.length < 4) return null;
+  if (ORG_STOPWORDS.has(first)) return null;
+  const lower = first.toLowerCase();
+  if (PROVIDER_LABELS.has(lower)) return null;
+  return lower;
+}
+
+function recordAlias(label: string | null, mapping: Mapping): void {
+  if (!label) return;
+  if (STATE.aliases.has(label)) return;
+  STATE.aliases.set(label, mapping);
+}
+
+function learnAliases(
+  value: string,
+  category: ObfuscationCategory,
+  mapping: Mapping,
+): void {
+  switch (category) {
+    case "HOST":
+      recordAlias(extractHostLabel(value), mapping);
+      break;
+    case "URL": {
+      const host = extractHostFromUrl(value);
+      if (host) recordAlias(extractHostLabel(host), mapping);
+      break;
+    }
+    case "ORG":
+      recordAlias(extractOrgLabel(value), mapping);
+      break;
+    default:
+      break;
+  }
+}
+
+/** Escape regex metacharacters in a literal string. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Replace every learned alias with its placeholder, case-insensitive,
+ * whole-word. Run as a final pass after the regex patterns so the
+ * aliases mostly act on agent prose ("the Acme corporate tenant")
+ * rather than the structured values the patterns already handled.
+ */
+function applyAliases(input: string): string {
+  if (STATE.aliases.size === 0) return input;
+  const labels = Array.from(STATE.aliases.keys()).sort(
+    (a, b) => b.length - a.length,
+  );
+  const regex = new RegExp(
+    `\\b(?:${labels.map(escapeRegex).join("|")})\\b`,
+    "gi",
+  );
+  return input.replace(regex, (match) => {
+    const mapping = STATE.aliases.get(match.toLowerCase());
+    if (!mapping) return match;
+    return `[${mapping.category}_${mapping.index}]`;
+  });
 }
 
 /** Globally enable/disable obfuscation. */
@@ -311,14 +566,25 @@ export function isObfuscationEnabled(): boolean {
 export function resetObfuscation(): void {
   STATE.counters.clear();
   STATE.mapping.clear();
+  STATE.aliases.clear();
 }
 
 /**
  * Redact a string. When obfuscation is disabled, the input is returned
  * unchanged. When enabled, every recognised pattern is replaced with a
  * stable placeholder.
+ *
+ * `options.aliases` (default `true`) controls the final org-label
+ * replacement pass. The PromptInput layer disables it because aliases
+ * are lossy to round-trip: typing the bare label `Acme` would
+ * obfuscate to `[HOST_42]` and deobfuscate back to the canonical host
+ * (`acme.com`), corrupting the user's input. Display surfaces
+ * (renderer, tool output) keep aliasing on since they never round-trip.
  */
-export function obfuscate(input: string): string {
+export function obfuscate(
+  input: string,
+  options?: { aliases?: boolean },
+): string {
   if (!STATE.enabled) return input;
   if (!input) return input;
 
@@ -333,6 +599,13 @@ export function obfuscate(input: string): string {
       if (tracked === null) return match;
       return placeholderFor(tracked, pattern.category);
     });
+  }
+  // Final pass: case-insensitive whole-word replacement of any org
+  // labels we learned from previously-redacted hosts/URLs/orgs. This
+  // is what catches bare references like "the Acme subdomain"
+  // once the engine has seen `acme.com` or `Acme Inc.`.
+  if (options?.aliases !== false) {
+    output = applyAliases(output);
   }
   return output;
 }

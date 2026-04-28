@@ -19,6 +19,7 @@ import {
 import { isToolMessage } from "../shared/type-guards";
 import type { DisplayMessage } from "../agent-display";
 import { useObfuscation } from "../../context/obfuscation";
+import { obfuscate } from "../../../core/obfuscation";
 
 // Tool category icons
 const TOOL_ICONS: Record<string, string> = {
@@ -68,21 +69,24 @@ export const ToolMessage = memo(function ToolMessage({
     preferDescription: isPending,
   });
 
-  // For execute_command, extract both description and command so we can show both
+  // For execute_command, extract both description and command. Both flow
+  // through obfuscate() so /obfuscate redacts them dynamically.
   const execDescription =
     toolName === "execute_command" &&
     typeof args.toolCallDescription === "string" &&
     args.toolCallDescription.trim().length > 0
-      ? args.toolCallDescription.trim()
+      ? obfuscate(args.toolCallDescription.trim())
       : null;
   const execCommand =
     toolName === "execute_command" && typeof args.command === "string"
       ? args.command.split("\n")[0]
       : null;
   const execCommandDisplay = execCommand
-    ? execCommand.length > 80
-      ? `$ ${execCommand.slice(0, 80)}…`
-      : `$ ${execCommand}`
+    ? obfuscate(
+        execCommand.length > 80
+          ? `$ ${execCommand.slice(0, 80)}…`
+          : `$ ${execCommand}`,
+      )
     : null;
 
   // Get result summary for completed tools
@@ -120,7 +124,9 @@ export const ToolMessage = memo(function ToolMessage({
       {isPending && logs && logs.length > 0 && (
         <box marginLeft={2}>
           <text fg={colors.textMuted}>
-            {expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n")}
+            {obfuscate(
+              expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n"),
+            )}
           </text>
         </box>
       )}
@@ -140,7 +146,7 @@ export const ToolMessage = memo(function ToolMessage({
           </box>
           {showArgs && (
             <box marginLeft={2}>
-              <text fg={colors.textMuted}>{formatArgs(args)}</text>
+              <text fg={colors.textMuted}>{obfuscate(formatArgs(args))}</text>
             </box>
           )}
         </box>

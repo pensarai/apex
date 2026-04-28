@@ -67,13 +67,17 @@ describe("obfuscation engine", () => {
 
   it("redacts every hostname including the operator's own infra", () => {
     // No allowlist: pensar.dev, github.com, subdomains thereof are all redacted.
+    // A bare host gets a HOST placeholder; a host followed by a slash-path is
+    // absorbed by the route pattern as a single PATH placeholder, which is
+    // strictly more conservative.
     const out = obfuscate(
       "See staging-console.pensar.dev and github.com/org/repo",
     );
     expect(out).toContain("[HOST_1]");
-    expect(out).toContain("[HOST_2]");
+    expect(out).toContain("[PATH_1]");
     expect(out).not.toContain("pensar.dev");
     expect(out).not.toContain("github.com");
+    expect(out).not.toContain("/org/repo");
   });
 
   it("redacts JWTs and bearer-style tokens", () => {
@@ -93,6 +97,128 @@ describe("obfuscation engine", () => {
     const out = obfuscate("/Users/alice/code/acme/src/index.ts");
     expect(out).toContain("[PATH_1]");
     expect(out).not.toContain("alice");
+  });
+
+  it("redacts API endpoint paths", () => {
+    const out = obfuscate(
+      "POST /v1/external/sendgrid/{tenant_id} returned 500",
+    );
+    expect(out).toContain("[PATH_1]");
+    expect(out).not.toContain("/v1/external/sendgrid");
+    expect(out).not.toContain("{tenant_id}");
+  });
+
+  it("redacts debug endpoint paths", () => {
+    const out = obfuscate("Hit /__debug/pprof/heap on staging");
+    expect(out).toContain("[PATH_1]");
+    expect(out).not.toContain("/__debug/pprof/heap");
+  });
+
+  it("redacts single-segment debug endpoints", () => {
+    const out = obfuscate("Health check at /__health returned 200");
+    expect(out).toContain("[PATH_1]");
+    expect(out).not.toContain("/__health");
+  });
+
+  it("redacts single-segment paths with trailing slash", () => {
+    const out = obfuscate("Found /docs/ exposing the OpenAPI spec");
+    expect(out).toContain("[PATH_1]");
+    expect(out).not.toContain("/docs/");
+  });
+
+  it("redacts non-home filesystem paths", () => {
+    const out = obfuscate(
+      "AI catalog path: /tmp/ai_search_trimmed_catalog_tenant123.json",
+    );
+    expect(out).toContain("[PATH_1]");
+    expect(out).not.toContain("tenant123");
+  });
+
+  it("absorbs nested placeholders into the surrounding route", () => {
+    const out = obfuscate(
+      "Internal document path: /core/documents/550e8400-e29b-41d4-a716-446655440000",
+    );
+    expect(out).toContain("[PATH_1]");
+    expect(out).not.toContain("/core/documents");
+    expect(out).not.toContain("550e8400");
+  });
+
+  it("redacts multi-segment paths without a leading slash", () => {
+    const out = obfuscate("see __debug/config and __debug/endpoints");
+    expect(out).not.toContain("__debug/config");
+    expect(out).not.toContain("__debug/endpoints");
+    expect(out).toMatch(/\[PATH_\d+\]/);
+  });
+
+  it("redacts template-style relative paths", () => {
+    const out = obfuscate("media/{tenant_id} and access/users/${userId}/tenants");
+    expect(out).not.toContain("media/{tenant_id}");
+    expect(out).not.toContain("access/users/${userId}/tenants");
+    expect(out).toMatch(/\[PATH_\d+\]/);
+  });
+
+  it("does not redact bare single-token slash commands", () => {
+    expect(obfuscate("/help")).toBe("/help");
+    expect(obfuscate("Run /obfuscate now")).toBe("Run /obfuscate now");
+  });
+
+  it("gives distinct route paths distinct placeholders", () => {
+    const out = obfuscate("Hit /v1/users then /v1/orders next.");
+    expect(out).toContain("[PATH_1]");
+    expect(out).toContain("[PATH_2]");
+  });
+
+  it("redacts AWS Cognito-style region-prefixed identifiers", () => {
+    const out = obfuscate("pool_id: us-east-1_X8rlYugE7");
+    expect(out).toContain("[TOKEN_1]");
+    expect(out).not.toContain("X8rlYugE7");
+  });
+
+  it("redacts opaque alphanumeric IDs with mixed letters and digits", () => {
+    const out = obfuscate("client_id: q0vuru56saramn8hbgljgmuva");
+    expect(out).toContain("[TOKEN_1]");
+    expect(out).not.toContain("q0vuru56saramn8hbgljgmuva");
+  });
+
+  it("does not redact long all-letter identifiers", () => {
+    const sentence = "function getUserTenantsFromCognitoPool() {}";
+    expect(obfuscate(sentence)).toBe(sentence);
+  });
+
+  it("aliases bare org references once the host has been seen", () => {
+    const first = obfuscate("Visited https://contoso.com for recon.");
+    expect(first).toContain("[URL_1]");
+    const second = obfuscate(
+      "Only the contoso subdomain returned full data, the Contoso corporate tenant.",
+    );
+    expect(second).not.toContain("contoso");
+    expect(second).not.toContain("Contoso");
+    expect(second).toMatch(/\[URL_1\]/);
+  });
+
+  it("aliases the leading word of a redacted org name", () => {
+    const first = obfuscate("Engagement scoped for Acme Corp.");
+    expect(first).toContain("[ORG_1]");
+    const second = obfuscate("Acme had three open S3 buckets.");
+    expect(second).not.toContain("Acme");
+    expect(second).toContain("[ORG_1]");
+  });
+
+  it("does not alias generic provider labels", () => {
+    obfuscate("Bucket lives on s3.amazonaws.com behind cloudfront.net.");
+    const out = obfuscate(
+      "AWS announced a new Amazon S3 feature today, also Cloudflare.",
+    );
+    expect(out).toContain("Amazon");
+    expect(out).toContain("Cloudflare");
+  });
+
+  it("alias replacement can be disabled per call (input round-trip)", () => {
+    obfuscate("Reviewed https://contoso.com");
+    const withAliases = obfuscate("Contoso is great");
+    expect(withAliases).not.toContain("Contoso");
+    const withoutAliases = obfuscate("Contoso is great", { aliases: false });
+    expect(withoutAliases).toBe("Contoso is great");
   });
 
   it("redacts apparent company names with corporate suffixes", () => {
