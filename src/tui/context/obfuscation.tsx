@@ -4,8 +4,15 @@
  * Activates when the CLI was started with `--obfuscate` (which sets
  * `PENSAR_OBFUSCATE=1`) or when the user toggles it at runtime via the
  * `/obfuscate` slash command. When active, the engine inside
- * `core/obfuscation` is enabled globally so any module that imports
- * `obfuscate()` will redact text consistently across the UI.
+ * `core/obfuscation` is enabled globally; the actual redaction at
+ * render time is handled by the central `TextNodeRenderable` patch in
+ * `src/tui/obfuscation/patch.ts`, which intercepts every JSX `<text>`
+ * leaf the @opentui/react reconciler creates or updates. Components
+ * therefore don't need to call `obfuscate()` on their own strings.
+ *
+ * On toggle this provider walks the renderer's tree and re-emits each
+ * text node from its stored original so already-rendered prose
+ * retroactively reflects the new state.
  */
 
 import {
@@ -16,12 +23,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useRenderer } from "@opentui/react";
 import {
   resetObfuscation,
   setObfuscationEnabled,
   isObfuscationEnabled,
   obfuscate as engineObfuscate,
 } from "../../core/obfuscation";
+import { refreshObfuscatedText } from "../obfuscation/patch";
 
 interface ObfuscationContextValue {
   enabled: boolean;
@@ -59,6 +68,7 @@ export function ObfuscationProvider({
     setObfuscationEnabled(initialEnabled);
   }
   const [enabled, setEnabledState] = useState<boolean>(initialEnabled);
+  const renderer = useRenderer();
 
   const value = useMemo<ObfuscationContextValue>(() => {
     const setEnabled = (next?: boolean) => {
@@ -78,6 +88,11 @@ export function ObfuscationProvider({
       // by the state setter below already sees the new state.
       setObfuscationEnabled(target);
       setEnabledState(target);
+      // Walk the renderable tree and re-emit every text node from its
+      // stored original. Without this, React's reconciler would skip
+      // `commitTextUpdate` on existing text whose string value hasn't
+      // changed, so already-rendered prose would lag behind the toggle.
+      if (renderer) refreshObfuscatedText(renderer);
     };
     return {
       enabled,
@@ -85,7 +100,7 @@ export function ObfuscationProvider({
       toggle: () => setEnabled(),
       redact: (input: string) => (enabled ? engineObfuscate(input) : input),
     };
-  }, [enabled]);
+  }, [enabled, renderer]);
 
   return (
     <ObfuscationContext.Provider value={value}>

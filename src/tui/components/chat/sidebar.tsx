@@ -15,8 +15,6 @@ import type {
   VerifiedVuln,
   Credential,
 } from "../operator-dashboard/types";
-import { obfuscate } from "../../../core/obfuscation";
-import { useObfuscation } from "../../context/obfuscation";
 
 // ============================================
 // Sidebar State Types
@@ -53,9 +51,8 @@ interface SidebarProps {
  */
 export function Sidebar({ collapsed, state, width = "30%" }: SidebarProps) {
   const { colors } = useTheme();
-  // Subscribe so all child panels re-render their obfuscate(...) calls
-  // when /obfuscate toggles.
-  useObfuscation();
+  // Sensitive strings flow into `<text>`, so the central
+  // TextNodeRenderable patch redacts them transparently.
   if (collapsed) {
     return null;
   }
@@ -101,9 +98,7 @@ function TargetPanel({ host, ports }: TargetPanelProps) {
   return (
     <box flexDirection="column" gap={1}>
       <text fg={colors.text}>Target</text>
-      <text fg={colors.primary}>
-        {host ? obfuscate(host) : "Not configured"}
-      </text>
+      <text fg={colors.primary}>{host || "Not configured"}</text>
       <box flexDirection="row" gap={1}>
         <text fg={colors.textMuted}>Ports:</text>
         <text fg={colors.textMuted}>{portsStr}</text>
@@ -162,7 +157,7 @@ function AttackSurfacePanel({
               <box key={ep.id || idx} flexDirection="row" gap={1}>
                 <text fg={color}>{icon}</text>
                 <text fg={colors.textMuted}>{ep.method}</text>
-                <text fg={colors.text}>{obfuscate(ep.path)}</text>
+                <text fg={colors.text}>{ep.path}</text>
                 {ep.vulnType && <text fg={colors.error}>({ep.vulnType})</text>}
               </box>
             );
@@ -223,7 +218,7 @@ function CredentialsPanel({
             <box key={cred.id || idx} flexDirection="column">
               <box flexDirection="row" gap={1}>
                 {cred.isActive && <text fg={colors.warning}>★</text>}
-                <text fg={colors.text}>{obfuscate(cred.username)}</text>
+                <text fg={colors.text}>{cred.username}</text>
                 <text fg={colors.textMuted}>:</text>
                 <text fg={colors.textMuted}>{redactSecret(cred.secret)}</text>
               </box>
@@ -300,7 +295,7 @@ function VulnsPanel({ vulns, maxVisible = 3 }: VulnsPanelProps) {
                 <text fg={colors.text}>{vuln.type}</text>
               </box>
               <box marginLeft={2}>
-                <text fg={colors.textMuted}>{obfuscate(vuln.endpoint)}</text>
+                <text fg={colors.textMuted}>{vuln.endpoint}</text>
               </box>
             </box>
           ))}

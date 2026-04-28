@@ -8,7 +8,6 @@ import {
 } from "./shared";
 import { useTheme } from "../theme";
 import { useDimensions } from "../context/dimensions";
-import { obfuscate } from "../../core/obfuscation";
 import { useObfuscation } from "../context/obfuscation";
 
 export type Subagent = {
@@ -228,16 +227,16 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
     >
       <box flexDirection="row" alignItems="center" gap={1}>
         {subagent.status === "pending" && (
-          <SpinningDots label={obfuscate(subagent.name)} fg={colors.primary} />
+          <SpinningDots label={subagent.name} fg={colors.primary} />
         )}
         {subagent.status === "completed" && (
-          <text fg={colors.primary}> ✓ {obfuscate(subagent.name)}</text>
+          <text fg={colors.primary}> ✓ {subagent.name}</text>
         )}
         {subagent.status === "failed" && (
-          <text fg={colors.error}>✗ {obfuscate(subagent.name)}</text>
+          <text fg={colors.error}>✗ {subagent.name}</text>
         )}
         {subagent.status === "paused" && (
-          <text fg={colors.tierRisky}>⏸ {obfuscate(subagent.name)}</text>
+          <text fg={colors.tierRisky}>⏸ {subagent.name}</text>
         )}
         <text fg={colors.textMuted}>{open ? "▼" : "▶"}</text>
       </box>
@@ -286,12 +285,13 @@ const AgentMessage = memo(function AgentMessage({
     content = JSON.stringify(message.content, null, 2);
   }
 
-  // Render markdown for assistant messages (markdown pipeline obfuscates internally).
-  // Plain-text branches (user/system/tool labels) are obfuscated here.
+  // Render markdown for assistant messages (markdown pipeline obfuscates
+  // internally). Plain-text branches flow into `<text>` children, where
+  // the central TextNodeRenderable patch handles redaction.
   const displayContent =
     message.role === "assistant"
       ? markdownToStyledText(content, colors)
-      : obfuscate(content);
+      : content;
 
   const isPendingTool =
     message.role === "tool" &&
@@ -347,11 +347,9 @@ const AgentMessage = memo(function AgentMessage({
                     const trimmed =
                       log.length > 100 ? log.slice(0, 100) + "…" : log;
                     return (
-                      <text
-                        key={idx}
-                        fg={colors.textMuted}
-                        content={obfuscate(trimmed)}
-                      />
+                      <text key={idx} fg={colors.textMuted}>
+                        {trimmed}
+                      </text>
                     );
                   })}
                 </box>
@@ -408,7 +406,9 @@ function ToolDetails({ message }: { message: DisplayMessage }) {
     return null;
   }
 
-  // Format result for display (truncate if too long, redact PII when active).
+  // Format result for display (truncate if too long). Redaction is
+  // handled by the central TextNodeRenderable patch when this string
+  // hits a `<text>` child.
   const formatResult = (result: unknown): string => {
     let str: string;
     try {
@@ -418,7 +418,7 @@ function ToolDetails({ message }: { message: DisplayMessage }) {
     }
     const truncated =
       str.length > 2000 ? str.substring(0, 2000) + "\n... (truncated)" : str;
-    return obfuscate(truncated);
+    return truncated;
   };
 
   return (
@@ -437,7 +437,7 @@ function ToolDetails({ message }: { message: DisplayMessage }) {
           </box>
           {showArgs && (
             <text fg={colors.text}>
-              {obfuscate(JSON.stringify(message.args, null, 2))}
+              {JSON.stringify(message.args, null, 2)}
             </text>
           )}
         </box>

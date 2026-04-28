@@ -12,7 +12,6 @@ import { ToolRenderer } from "./tool-renderer";
 import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
 import { PlanReviewMessage } from "../chat/plan-review-message";
-import { obfuscate } from "../../../core/obfuscation";
 import { useObfuscation } from "../../context/obfuscation";
 
 interface MessageRendererProps {
@@ -51,19 +50,17 @@ export const MessageRenderer = memo(function MessageRenderer({
   username = "user",
 }: MessageRendererProps) {
   const { colors } = useTheme();
-  // Subscribe to obfuscation toggles so this component re-renders (and
-  // re-runs `obfuscate()` / `markdownToStyledText()` with the new engine
-  // state) when the operator toggles `/obfuscate` on or off.
+  // Subscribe to obfuscation toggles so the assistant-message branch
+  // re-runs `markdownToStyledText()` with the new engine state. The
+  // `<text>` children paths (user/system/tool labels) are handled by
+  // the central TextNodeRenderable patch and don't need this hook —
+  // we keep it for the markdown branch only.
   const { enabled: obfuscateEnabled } = useObfuscation();
-  // Get string content
   const rawContent =
     typeof message.content === "string"
       ? message.content
       : JSON.stringify(message.content);
-  // Assistant content gets obfuscated downstream by markdownToStyledText.
-  // For all other roles we redact here so the same EMAIL_1 mapping is reused.
-  const content =
-    message.role === "assistant" ? rawContent : obfuscate(rawContent);
+  const content = rawContent;
 
   // Memoize markdown conversion for assistant messages.
   // `obfuscateEnabled` is included in deps so toggling /obfuscate busts
@@ -91,13 +88,7 @@ export const MessageRenderer = memo(function MessageRenderer({
   // Parse from the raw content because obfuscation turns the target into [URL_1]
   // which still satisfies the regex but we want to redact the target after the fact.
   if (message.role === "user") {
-    const rawSkill = parseSkillTag(rawContent);
-    const skill = rawSkill
-      ? {
-          name: rawSkill.name,
-          target: rawSkill.target ? obfuscate(rawSkill.target) : undefined,
-        }
-      : null;
+    const skill = parseSkillTag(rawContent);
 
     if (variant === "chat") {
       return (

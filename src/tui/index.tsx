@@ -62,6 +62,9 @@ import { TerminalDimensionsProvider } from "./context/dimensions";
 import { TerminalFocusHandler } from "./components/terminal-focus-handler";
 import { cleanupTerminalFocusMode } from "./terminal-focus";
 import { ObfuscationProvider } from "./context/obfuscation";
+import { installObfuscationTextPatch } from "./obfuscation/patch";
+
+installObfuscationTextPatch();
 
 interface AppProps {
   appConfig: Config;

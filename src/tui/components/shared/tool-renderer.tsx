@@ -14,7 +14,6 @@ import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
 import { PentestWorkflowDisplay } from "./pentest-workflow-display";
 import { useObfuscation } from "../../context/obfuscation";
-import { obfuscate } from "../../../core/obfuscation";
 
 const TOOLS_WITH_LOG_WINDOW = new Set([
   "execute_command",
@@ -43,9 +42,10 @@ export const ToolRenderer = memo(function ToolRenderer({
   expandedLogs = false,
 }: ToolRendererProps) {
   const { colors, mode } = useTheme();
-  // Subscribe so tool labels and result summaries (both flow through
-  // `obfuscate()` in tool-registry / result-registry) re-render when
-  // /obfuscate is toggled.
+  // Subscribe so the result summary's `content`-prop StyledText
+  // (precomputed in `result-registry.ts`) re-runs when `/obfuscate`
+  // toggles. Plain string children are handled centrally by the
+  // TextNodeRenderable patch and don't require this subscription.
   useObfuscation();
   const [showOutput, setShowOutput] = useState(false);
 
@@ -78,25 +78,23 @@ export const ToolRenderer = memo(function ToolRenderer({
   });
 
   // For execute_command, extract both description and command so we can show
-  // both. Both flow through obfuscate() so a toggled `/obfuscate` mid-stream
-  // immediately redacts the command preview and human description (which can
-  // freely include hosts, paths, emails, etc.).
+  // both. Strings flow into `<text>` children, so the centralised
+  // `TextNodeRenderable` patch (src/tui/obfuscation/patch.ts) handles
+  // redaction transparently.
   const execDescription =
     toolName === "execute_command" &&
     typeof args.toolCallDescription === "string" &&
     args.toolCallDescription.trim().length > 0
-      ? obfuscate(args.toolCallDescription.trim())
+      ? args.toolCallDescription.trim()
       : null;
   const execCommand =
     toolName === "execute_command" && typeof args.command === "string"
       ? args.command.split("\n")[0]
       : null;
   const execCommandDisplay = execCommand
-    ? obfuscate(
-        execCommand.length > 80
-          ? `$ ${execCommand.slice(0, 80)}…`
-          : `$ ${execCommand}`,
-      )
+    ? execCommand.length > 80
+      ? `$ ${execCommand.slice(0, 80)}…`
+      : `$ ${execCommand}`
     : null;
 
   // Get result summary for completed tools
@@ -148,9 +146,7 @@ export const ToolRenderer = memo(function ToolRenderer({
               <box marginLeft={0}>
                 <text fg={colors.textMuted}>
                   {"  │ "}
-                  {obfuscate(
-                    (expandedLogs ? logs : logs.slice(-15)).join("\n  │ "),
-                  )}
+                  {(expandedLogs ? logs : logs.slice(-15)).join("\n  │ ")}
                 </text>
               </box>
               <text fg={colors.textMuted}>{"  └─"}</text>
@@ -164,9 +160,7 @@ export const ToolRenderer = memo(function ToolRenderer({
           logs.length > 0 && (
             <box marginLeft={2}>
               <text fg={colors.textMuted}>
-                {obfuscate(
-                  expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n"),
-                )}
+                {expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n")}
               </text>
             </box>
           )}

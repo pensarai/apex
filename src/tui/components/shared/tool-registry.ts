@@ -7,8 +7,6 @@
  * Inspired by OpenCode's extensible tool display pattern.
  */
 
-import { obfuscate } from "../../../core/obfuscation";
-
 type ToolSummaryFn = (args: Record<string, unknown>) => string;
 
 /**
@@ -145,7 +143,7 @@ export function getToolSummary(
       ? `${toolName} ${String(firstArg).slice(0, 50)}`
       : toolName;
   }
-  return obfuscate(summary);
+  return summary;
 }
 
 /**
@@ -162,7 +160,7 @@ export function getToolDisplayLabel(
   if (options.preferDescription && toolName === "execute_command") {
     const description = args.toolCallDescription;
     if (typeof description === "string" && description.trim().length > 0) {
-      return obfuscate(description.trim());
+      return description.trim();
     }
   }
 
@@ -214,7 +212,7 @@ export function getArgsPreview(
     const str = typeof value === "string" ? value : JSON.stringify(value);
     const truncated =
       str.length > maxLength ? str.slice(0, maxLength) + "…" : str;
-    return obfuscate(truncated);
+    return truncated;
   }
 
   // For multi-arg tools, show key:value pairs
@@ -241,5 +239,5 @@ export function getArgsPreview(
   const preview = parts.join(" ");
   const truncated =
     preview.length > maxLength ? preview.slice(0, maxLength) + "…" : preview;
-  return obfuscate(truncated);
+  return truncated;
 }

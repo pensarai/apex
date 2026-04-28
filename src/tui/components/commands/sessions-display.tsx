@@ -13,8 +13,6 @@ import { useTheme } from "../../theme";
 import { useSessionsList } from "../../hooks/use-sessions-list";
 import { useToast } from "../../context/toast";
 import DialogLayout from "../dialog-layout";
-import { obfuscate } from "../../../core/obfuscation";
-import { useObfuscation } from "../../context/obfuscation";
 
 interface SessionsDisplayProps {
   onClose: () => void;
@@ -22,8 +20,6 @@ interface SessionsDisplayProps {
 
 export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   const { colors } = useTheme();
-  // Subscribe so the list re-renders session names when /obfuscate toggles.
-  useObfuscation();
   const { refocusPrompt } = useFocus();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const { toast } = useToast();
@@ -308,7 +304,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                           <text
                             fg={isSelected ? colors.text : colors.textMuted}
                           >
-                            {obfuscate(session.name ?? "")}
+                            {session.name ?? ""}
                           </text>
                           <text
                             fg={

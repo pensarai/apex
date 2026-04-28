@@ -7,8 +7,6 @@
 
 import { useTheme } from "../../theme";
 import type { OperatorMode, OperatorStage } from "../../../core/operator";
-import { obfuscate } from "../../../core/obfuscation";
-import { useObfuscation } from "../../context/obfuscation";
 
 export interface HeaderProps {
   /** Session mode */
@@ -56,9 +54,8 @@ export function Header({
   toolCallsCount = 0,
 }: HeaderProps) {
   const { colors } = useTheme();
-  // Subscribe so the header re-renders when /obfuscate is toggled,
-  // restoring or redacting the target string in real time.
-  useObfuscation();
+  // Target & session strings flow through `<text>`, so the central
+  // TextNodeRenderable patch handles redaction transparently.
   // Get mode display
   const getModeDisplay = () => {
     if (mode === "chat") {
@@ -97,7 +94,7 @@ export function Header({
         {target && (
           <>
             <text fg={colors.textMuted}>│</text>
-            <text fg={colors.text}>{obfuscate(target)}</text>
+            <text fg={colors.text}>{target}</text>
           </>
         )}
 

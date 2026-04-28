@@ -19,7 +19,6 @@ import {
 import { isToolMessage } from "../shared/type-guards";
 import type { DisplayMessage } from "../agent-display";
 import { useObfuscation } from "../../context/obfuscation";
-import { obfuscate } from "../../../core/obfuscation";
 
 // Tool category icons
 const TOOL_ICONS: Record<string, string> = {
@@ -49,7 +48,10 @@ export const ToolMessage = memo(function ToolMessage({
   expandedLogs = false,
 }: ToolMessageProps) {
   const { colors, mode } = useTheme();
-  // Subscribe so memoised tool messages re-render on /obfuscate toggle.
+  // Subscribe so the result summary's `content`-prop StyledText
+  // (precomputed in `result-registry.ts`) re-runs on /obfuscate
+  // toggle. String children are redacted centrally by the
+  // TextNodeRenderable patch.
   useObfuscation();
   const [showArgs, setShowArgs] = useState(false);
   const [showOutput, setShowOutput] = useState(false);
@@ -69,24 +71,23 @@ export const ToolMessage = memo(function ToolMessage({
     preferDescription: isPending,
   });
 
-  // For execute_command, extract both description and command. Both flow
-  // through obfuscate() so /obfuscate redacts them dynamically.
+  // For execute_command, extract both description and command. Strings
+  // flow into `<text>` children, so the central TextNodeRenderable patch
+  // handles obfuscation transparently.
   const execDescription =
     toolName === "execute_command" &&
     typeof args.toolCallDescription === "string" &&
     args.toolCallDescription.trim().length > 0
-      ? obfuscate(args.toolCallDescription.trim())
+      ? args.toolCallDescription.trim()
       : null;
   const execCommand =
     toolName === "execute_command" && typeof args.command === "string"
       ? args.command.split("\n")[0]
       : null;
   const execCommandDisplay = execCommand
-    ? obfuscate(
-        execCommand.length > 80
-          ? `$ ${execCommand.slice(0, 80)}…`
-          : `$ ${execCommand}`,
-      )
+    ? execCommand.length > 80
+      ? `$ ${execCommand.slice(0, 80)}…`
+      : `$ ${execCommand}`
     : null;
 
   // Get result summary for completed tools
@@ -124,9 +125,7 @@ export const ToolMessage = memo(function ToolMessage({
       {isPending && logs && logs.length > 0 && (
         <box marginLeft={2}>
           <text fg={colors.textMuted}>
-            {obfuscate(
-              expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n"),
-            )}
+            {expandedLogs ? logs.join("\n") : logs.slice(-2).join("\n")}
           </text>
         </box>
       )}
@@ -146,7 +145,7 @@ export const ToolMessage = memo(function ToolMessage({
           </box>
           {showArgs && (
             <box marginLeft={2}>
-              <text fg={colors.textMuted}>{obfuscate(formatArgs(args))}</text>
+              <text fg={colors.textMuted}>{formatArgs(args)}</text>
             </box>
           )}
         </box>
