@@ -62,13 +62,18 @@ export function getTierColor(
 
 /**
  * Format token count for display.
- * Shows K for thousands, M for millions.
+ * Shows K for thousands, M for millions. Whole-number K/M values
+ * render without a trailing `.0` (e.g. `200K`, `1M`); fractional
+ * values keep one decimal (`1.2K`, `1.5M`).
  */
 export function formatTokenCount(count: number): string {
-  if (count >= 1000000) {
-    return `${(count / 1000000).toFixed(1)}M`;
-  } else if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}K`;
+  if (count >= 1_000_000) {
+    const v = count / 1_000_000;
+    return `${Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1)}M`;
+  }
+  if (count >= 1000) {
+    const v = count / 1000;
+    return `${Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1)}K`;
   }
   return count.toString();
 }

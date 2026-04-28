@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
 import AgentDisplay, { type DisplayMessage } from "../agent-display";
-import { SpinnerDots } from "../sprites";
+import { SpinningDots } from "../loaders";
 import { useDialog } from "../../context/dialog";
 import type { ResumeInfo } from "../../../core/session/loader";
 import { REPORT_FILENAME_MD } from "../../../core/report";
@@ -288,7 +288,7 @@ export default function SwarmDashboard({
                 </box>
               ) : discoveryAgent?.status === "pending" ? (
                 <box flexDirection="column" alignItems="center" gap={1}>
-                  <SpinnerDots
+                  <SpinningDots
                     label="Discovering attack surface..."
                     fg={colors.primary}
                   />
@@ -396,7 +396,7 @@ function DiscoveryPanel({
         >
           <box flexDirection="row" gap={1}>
             {agent.status === "pending" && (
-              <SpinnerDots
+              <SpinningDots
                 label="Attack Surface Discovery"
                 fg={colors.primary}
               />
@@ -468,7 +468,7 @@ function DiscoveryPanel({
         <box flexDirection="row" gap={1}>
           {!agent && <text fg={colors.textMuted}>Waiting...</text>}
           {agent?.status === "pending" && (
-            <SpinnerDots label="Discovery" fg={colors.primary} />
+            <SpinningDots label="Discovery" fg={colors.primary} />
           )}
           {agent?.status === "completed" && (
             <text fg={colors.primary}>✓ Discovery</text>
@@ -626,7 +626,7 @@ function AgentCard({ agent, focused, onSelect }: AgentCardProps) {
         {agent.status === "canceled" ? (
           <text fg={colors.textMuted}>⊘ Canceled</text>
         ) : agent.status === "pending" ? (
-          <SpinnerDots label={lastActivity} fg={colors.primary} />
+          <SpinningDots label={lastActivity} fg={colors.primary} />
         ) : agent.status === "paused" ? (
           <text fg={colors.tierRisky}>
             ⏸ Paused — press Enter then R to resume
