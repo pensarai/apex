@@ -7,6 +7,7 @@ import {
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
+import { isObfuscationEnabled } from "../core/obfuscation";
 /**
  * Define your application's CommandContext type with specific methods
  */
@@ -389,11 +390,12 @@ export const commands: CommandConfig[] = [
     handler: async (args, ctx) => {
       if (!ctx.setObfuscation || !ctx.getObfuscation) return;
       const subcommand = (args[0] || "").toLowerCase();
-      let target: boolean | undefined;
+      let target: boolean;
       if (subcommand === "on" || subcommand === "enable") target = true;
       else if (subcommand === "off" || subcommand === "disable") target = false;
-      else if (subcommand === "toggle" || subcommand === "") target = undefined;
-      else {
+      else if (subcommand === "toggle" || subcommand === "") {
+        target = !isObfuscationEnabled();
+      } else {
         ctx.toast?.(
           `Unknown /obfuscate argument "${subcommand}". Use on, off, or toggle.`,
           "error",
