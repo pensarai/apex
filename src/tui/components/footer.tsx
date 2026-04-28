@@ -133,13 +133,7 @@ function ContextProgress({
   const inner = Math.max(1, width - 2);
   const filledCells = Math.round(fraction * inner);
 
-  // Color the bar by usage tier so the user can read severity at a glance.
-  const fillColor =
-    fraction >= 0.85
-      ? colors.error
-      : fraction >= 0.6
-        ? colors.warning
-        : colors.primary;
+  const fillColor = colors.success;
 
   const sizeText = formatTokenCount(contextLength);
   const labelText = showPercent
