@@ -94,6 +94,7 @@
     "@openrouter/ai-sdk-provider": "^2.2.3",
     "@opentui/core": "^0.1.80",
     "@opentui/react": "^0.1.80",
+    "@pensar/surface": "~0.1.1",
     "@playwright/mcp": "^0.0.54",
     "ai": "^6.0.105",
     "glob": "^13.0.0",
