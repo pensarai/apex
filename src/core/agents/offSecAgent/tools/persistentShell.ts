@@ -169,6 +169,22 @@ export class PersistentShell {
   /** Allows cancelCurrentCommand() to force-resolve the running execute(). */
   private pendingCancel: ((result: ShellExecuteResult) => void) | null = null;
 
+  /**
+   * FIFO queue for `execute()` calls. Each call awaits the previous tail of
+   * the chain before assigning `this.current`, so concurrent calls in the
+   * same JS tick can no longer race on a shared pending pointer and
+   * cross-contaminate stdout/stderr.
+   *
+   * Without this, two `execute()` calls in the same microtask both reach
+   * `this.current = pending` synchronously — last writer wins — and bash's
+   * stdout/stderr handlers (which read `this.current` per chunk) pin both
+   * wrappers' bytes onto the second pending. The first pending returns
+   * `(no output)`; the second leaks the first's wrapper markers and bash
+   * job-control stderr (e.g. SIGTERM messages for processes it didn't
+   * spawn). See issue #645 for the full forensic trace.
+   */
+  private writeChain: Promise<void> = Promise.resolve();
+
   constructor(opts?: { cwd?: string; env?: Record<string, string> }) {
     this.cwd = opts?.cwd;
     this.extraEnv = opts?.env;
@@ -374,166 +390,229 @@ export class PersistentShell {
       };
     }
 
+    // Take a turn in the FIFO queue. Concurrent calls in the same JS tick
+    // would otherwise both reach `this.current = pending` synchronously
+    // and cross-contaminate stdout/stderr (issue #645). Each call snapshots
+    // the current chain tail, installs a new tail, and waits for the
+    // previous tail to resolve. `releaseTurn` is called from
+    // `pending.resolve` (wrapped below) so every completion path — happy,
+    // timeout, abort, close, cancel, write-error — frees the next caller.
+    const myTurn = this.writeChain;
+    let releaseTurn!: () => void;
+    let turnReleased = false;
+    this.writeChain = new Promise<void>((res) => {
+      releaseTurn = () => {
+        if (turnReleased) return;
+        turnReleased = true;
+        res();
+      };
+    });
+    await myTurn;
+
+    // A queued call can wait minutes; re-validate runtime state after the
+    // wait so disposal or abort during the queue doesn't consume bash time.
+    if (this.disposed) {
+      releaseTurn();
+      return { stdout: "", stderr: "Shell has been disposed", exitCode: 1 };
+    }
+    if (abortSignal?.aborted) {
+      releaseTurn();
+      return { stdout: "", stderr: "Command aborted", exitCode: 130 };
+    }
+
     this.ensureAlive();
 
     const proc = this.proc;
     if (!proc || !proc.stdin || !proc.stdout || !proc.stderr) {
+      releaseTurn();
       return { stdout: "", stderr: "Failed to spawn shell", exitCode: 1 };
     }
-
-    const marker = `__APEX_${randomBytes(8).toString("hex")}__`;
-    const exitMarkerPrefix = `${marker}_EXIT_`;
-    const cutoverMarker = `${marker}_CUTOVER`;
 
     return new Promise<ShellExecuteResult>((resolve) => {
       let resolved = false;
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
       let killEscalationTimer: ReturnType<typeof setTimeout> | undefined;
-
-      const pending: PendingCommand = {
-        streamedStdout: "",
-        authoritativeStdout: "",
-        cutoverSeen: false,
-        cutoverMarker,
-        stderr: "",
-        stdoutTruncated: false,
-        exitMarkerPrefix,
-        onData,
-        forcedExitCode: null,
-        forcedStderrSuffix: null,
-        resolve: (result) => {
-          if (resolved) return;
-          resolved = true;
-          if (timeoutTimer) clearTimeout(timeoutTimer);
-          if (killEscalationTimer) clearTimeout(killEscalationTimer);
-          if (abortCleanup) abortCleanup();
-          resolve(result);
-        },
-      };
-
-      this.current = pending;
-      this.pendingCancel = pending.resolve;
-
       let abortCleanup: (() => void) | undefined;
-      if (abortSignal) {
-        const onAbort = () => {
-          if (resolved) return;
-          pending.forcedExitCode = 130;
-          pending.forcedStderrSuffix = pending.stderr
-            ? "\n(aborted)"
-            : "(aborted)";
-          killDescendants(proc.pid, "SIGTERM");
-          killEscalationTimer = setTimeout(() => {
-            if (resolved) return;
-            killDescendants(proc.pid, "SIGKILL");
-            // Fallback: if bash didn't emit a marker within another
-            // 2 seconds (shell wedged), resolve with whatever we have.
-            setTimeout(() => {
-              if (resolved) return;
-              pending.resolve({
-                stdout: extractFallbackStdout(pending),
-                stderr:
-                  (pending.stderr || "") + (pending.forcedStderrSuffix ?? ""),
-                exitCode: 130,
-              });
-            }, 2_000);
-          }, 500);
-        };
-        abortSignal.addEventListener("abort", onAbort, { once: true });
-        abortCleanup = () => abortSignal.removeEventListener("abort", onAbort);
-      }
-
-      if (timeoutSeconds != null && timeoutSeconds > 0) {
-        timeoutTimer = setTimeout(() => {
-          if (resolved) return;
-          pending.forcedExitCode = 124;
-          // Kill every descendant of the shell, not just direct children:
-          // pipelines and nested subshells are grandchildren and `pkill -P`
-          // would leak them.
-          killDescendants(proc.pid, "SIGTERM");
-          killEscalationTimer = setTimeout(() => {
-            if (resolved) return;
-            killDescendants(proc.pid, "SIGKILL");
-            // Fallback: if bash didn't emit a marker within another
-            // 2 seconds (shell wedged), resolve with whatever we have.
-            setTimeout(() => {
-              if (resolved) return;
-              pending.resolve({
-                stdout: extractFallbackStdout(pending),
-                stderr: pending.stderr || "",
-                exitCode: 124,
-              });
-            }, 2_000);
-          }, 500);
-        }, timeoutSeconds * 1_000);
-      }
-
-      // Wrap command:
-      //   - brace group `{ ...; }` (NOT a subshell) so `cd`, `export`,
-      //     shell functions, aliases, and option changes persist;
-      //   - stdin redirected from `/dev/null` so children that read stdin
-      //     cannot hijack our command pipe;
-      //   - stdout captured to a per-command tempfile (NOT bash's stdout
-      //     pipe) and streamed back via a background `tail -f` for live
-      //     UX. This prevents backgrounded children whose fd 1 was never
-      //     redirected (`nmap -v &`) from bleeding their output into the
-      //     next command's captured stdout, because their inherited fd 1
-      //     is the tempfile for the command that spawned them, not the
-      //     shell's stdout pipe;
-      //   - stderr captured to another tempfile and flushed after, so we
-      //     can distinguish stdout from stderr without interleaving;
-      //   - after the user command finishes we kill the tail, then emit
-      //     a per-command cutover marker on bash's real stdout pipe, then
-      //     `cat` the stdout tempfile. The post-cutover `cat` bytes are
-      //     authoritative: they pass through bash's pipe with no tail /
-      //     libc block-buffering intermediary. The Node handler treats
-      //     pre-cutover bytes as live-UX streaming only and post-cutover
-      //     bytes as the authoritative capture returned in the result.
-      //     This is required because `tail`'s stdout is a pipe and
-      //     block-buffered by libc; on platforms where `stdbuf` is a
-      //     no-op (macOS under SIP, Alpine, minimal containers without
-      //     coreutils) the buffered bytes would be discarded when we
-      //     kill tail, silently losing all stdout for small commands;
-      //   - the exit marker is echoed on bash's real stdout pipe, so the
-      //     parent Node handler always sees it immediately regardless of
-      //     how much command output the cat has left to flush.
-      // When `stdbuf` is available and effective (GNU coreutils on glibc
-      // Linux), a fast-polling `stdbuf -oL tail -n +1 -f -s 0.05` is run
-      // in the background so live streaming latency is well under 100 ms
-      // per chunk. Elsewhere the tail still runs (in case it happens to
-      // flush) but the authoritative cat guarantees correctness either
-      // way.
-      const tailCmd = hasStdbuf()
-        ? `stdbuf -oL tail -n +1 -f -s 0.05 "$__APEX_OUT"`
-        : `tail -n +1 -f -s 0.05 "$__APEX_OUT"`;
-      const wrapped = [
-        `__APEX_OUT=$(mktemp 2>/dev/null || echo /tmp/.apex_out_$$)`,
-        `__APEX_ERR=$(mktemp 2>/dev/null || echo /tmp/.apex_err_$$)`,
-        `${tailCmd} 2>/dev/null &`,
-        `__APEX_TAIL=$!`,
-        `{ ${command}\n} </dev/null >"$__APEX_OUT" 2>"$__APEX_ERR"`,
-        `__APEX_EC=$?`,
-        `sleep 0.1`,
-        `kill "$__APEX_TAIL" 2>/dev/null`,
-        `wait "$__APEX_TAIL" 2>/dev/null`,
-        // Authoritative cutover: post-marker bytes come through bash's
-        // real stdout pipe via `cat`, bypassing any tail/libc buffering.
-        `printf '%s\\n' "${cutoverMarker}"`,
-        `cat "$__APEX_OUT"`,
-        `cat "$__APEX_ERR" >&2`,
-        `rm -f "$__APEX_OUT" "$__APEX_ERR"`,
-        `echo "${exitMarkerPrefix}$__APEX_EC"`,
-        ``,
-      ].join("\n");
+      // Allocate the per-command markers inside the Promise body so any
+      // throw during construction (e.g. exhausted entropy on `randomBytes`)
+      // is caught by the outer try/catch below and the queue turn is
+      // released — without this, a throw between `await myTurn` and the
+      // installation of `pending.resolve` would deadlock the shell.
+      let pending: PendingCommand | null = null;
 
       try {
-        proc.stdin!.write(wrapped);
-      } catch {
-        pending.resolve({
-          stdout: "",
-          stderr: "Failed to write to shell stdin",
-          exitCode: 1,
-        });
+        const marker = `__APEX_${randomBytes(8).toString("hex")}__`;
+        const exitMarkerPrefix = `${marker}_EXIT_`;
+        const cutoverMarker = `${marker}_CUTOVER`;
+
+        pending = {
+          streamedStdout: "",
+          authoritativeStdout: "",
+          cutoverSeen: false,
+          cutoverMarker,
+          stderr: "",
+          stdoutTruncated: false,
+          exitMarkerPrefix,
+          onData,
+          forcedExitCode: null,
+          forcedStderrSuffix: null,
+          resolve: (result) => {
+            if (resolved) return;
+            resolved = true;
+            if (timeoutTimer) clearTimeout(timeoutTimer);
+            if (killEscalationTimer) clearTimeout(killEscalationTimer);
+            if (abortCleanup) abortCleanup();
+            // Release the queue turn before resolving so the next queued
+            // execute() can assign `this.current` in the same tick the
+            // caller observes the result.
+            releaseTurn();
+            resolve(result);
+          },
+        };
+
+        this.current = pending;
+        this.pendingCancel = pending.resolve;
+
+        if (abortSignal) {
+          const p = pending;
+          const onAbort = () => {
+            if (resolved) return;
+            p.forcedExitCode = 130;
+            p.forcedStderrSuffix = p.stderr ? "\n(aborted)" : "(aborted)";
+            killDescendants(proc.pid, "SIGTERM");
+            killEscalationTimer = setTimeout(() => {
+              if (resolved) return;
+              killDescendants(proc.pid, "SIGKILL");
+              // Fallback: if bash didn't emit a marker within another
+              // 2 seconds (shell wedged), resolve with whatever we have.
+              setTimeout(() => {
+                if (resolved) return;
+                p.resolve({
+                  stdout: extractFallbackStdout(p),
+                  stderr: (p.stderr || "") + (p.forcedStderrSuffix ?? ""),
+                  exitCode: 130,
+                });
+              }, 2_000);
+            }, 500);
+          };
+          abortSignal.addEventListener("abort", onAbort, { once: true });
+          abortCleanup = () =>
+            abortSignal.removeEventListener("abort", onAbort);
+        }
+
+        if (timeoutSeconds != null && timeoutSeconds > 0) {
+          const p = pending;
+          timeoutTimer = setTimeout(() => {
+            if (resolved) return;
+            p.forcedExitCode = 124;
+            // Kill every descendant of the shell, not just direct children:
+            // pipelines and nested subshells are grandchildren and `pkill -P`
+            // would leak them.
+            killDescendants(proc.pid, "SIGTERM");
+            killEscalationTimer = setTimeout(() => {
+              if (resolved) return;
+              killDescendants(proc.pid, "SIGKILL");
+              // Fallback: if bash didn't emit a marker within another
+              // 2 seconds (shell wedged), resolve with whatever we have.
+              setTimeout(() => {
+                if (resolved) return;
+                p.resolve({
+                  stdout: extractFallbackStdout(p),
+                  stderr: p.stderr || "",
+                  exitCode: 124,
+                });
+              }, 2_000);
+            }, 500);
+          }, timeoutSeconds * 1_000);
+        }
+
+        // Wrap command:
+        //   - brace group `{ ...; }` (NOT a subshell) so `cd`, `export`,
+        //     shell functions, aliases, and option changes persist;
+        //   - stdin redirected from `/dev/null` so children that read stdin
+        //     cannot hijack our command pipe;
+        //   - stdout captured to a per-command tempfile (NOT bash's stdout
+        //     pipe) and streamed back via a background `tail -f` for live
+        //     UX. This prevents backgrounded children whose fd 1 was never
+        //     redirected (`nmap -v &`) from bleeding their output into the
+        //     next command's captured stdout, because their inherited fd 1
+        //     is the tempfile for the command that spawned them, not the
+        //     shell's stdout pipe;
+        //   - stderr captured to another tempfile and flushed after, so we
+        //     can distinguish stdout from stderr without interleaving;
+        //   - after the user command finishes we kill the tail, then emit
+        //     a per-command cutover marker on bash's real stdout pipe, then
+        //     `cat` the stdout tempfile. The post-cutover `cat` bytes are
+        //     authoritative: they pass through bash's pipe with no tail /
+        //     libc block-buffering intermediary. The Node handler treats
+        //     pre-cutover bytes as live-UX streaming only and post-cutover
+        //     bytes as the authoritative capture returned in the result.
+        //     This is required because `tail`'s stdout is a pipe and
+        //     block-buffered by libc; on platforms where `stdbuf` is a
+        //     no-op (macOS under SIP, Alpine, minimal containers without
+        //     coreutils) the buffered bytes would be discarded when we
+        //     kill tail, silently losing all stdout for small commands;
+        //   - the exit marker is echoed on bash's real stdout pipe, so the
+        //     parent Node handler always sees it immediately regardless of
+        //     how much command output the cat has left to flush.
+        // When `stdbuf` is available and effective (GNU coreutils on glibc
+        // Linux), a fast-polling `stdbuf -oL tail -n +1 -f -s 0.05` is run
+        // in the background so live streaming latency is well under 100 ms
+        // per chunk. Elsewhere the tail still runs (in case it happens to
+        // flush) but the authoritative cat guarantees correctness either
+        // way.
+        const tailCmd = hasStdbuf()
+          ? `stdbuf -oL tail -n +1 -f -s 0.05 "$__APEX_OUT"`
+          : `tail -n +1 -f -s 0.05 "$__APEX_OUT"`;
+        const wrapped = [
+          `__APEX_OUT=$(mktemp 2>/dev/null || echo /tmp/.apex_out_$$)`,
+          `__APEX_ERR=$(mktemp 2>/dev/null || echo /tmp/.apex_err_$$)`,
+          `${tailCmd} 2>/dev/null &`,
+          `__APEX_TAIL=$!`,
+          `{ ${command}\n} </dev/null >"$__APEX_OUT" 2>"$__APEX_ERR"`,
+          `__APEX_EC=$?`,
+          `sleep 0.1`,
+          `kill "$__APEX_TAIL" 2>/dev/null`,
+          `wait "$__APEX_TAIL" 2>/dev/null`,
+          // Authoritative cutover: post-marker bytes come through bash's
+          // real stdout pipe via `cat`, bypassing any tail/libc buffering.
+          `printf '%s\\n' "${cutoverMarker}"`,
+          `cat "$__APEX_OUT"`,
+          `cat "$__APEX_ERR" >&2`,
+          `rm -f "$__APEX_OUT" "$__APEX_ERR"`,
+          `echo "${exitMarkerPrefix}$__APEX_EC"`,
+          ``,
+        ].join("\n");
+
+        try {
+          proc.stdin!.write(wrapped);
+        } catch {
+          pending.resolve({
+            stdout: "",
+            stderr: "Failed to write to shell stdin",
+            exitCode: 1,
+          });
+        }
+      } catch (e) {
+        // Defense in depth: if anything between `await myTurn` and
+        // installation of `pending.resolve` threw, the wrapped resolver
+        // never ran and the queue turn would leak, deadlocking subsequent
+        // execute() calls. Catch, release the turn directly, and surface
+        // the error to the caller.
+        if (pending) {
+          pending.resolve({
+            stdout: "",
+            stderr: e instanceof Error ? e.message : String(e),
+            exitCode: 1,
+          });
+        } else {
+          releaseTurn();
+          resolve({
+            stdout: "",
+            stderr: e instanceof Error ? e.message : String(e),
+            exitCode: 1,
+          });
+        }
       }
     });
   }
