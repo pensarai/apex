@@ -1,0 +1,355 @@
+/**
+ * Pattern-based obfuscation engine.
+ *
+ * The engine maintains a process-lifetime map of `original → placeholder`
+ * so the same value produces the same placeholder every time. Placeholders
+ * use angle brackets (`<EMAIL_1>`) so they are obviously not real data and
+ * cannot collide with any of the regexes below.
+ */
+
+export type ObfuscationCategory =
+  | "EMAIL"
+  | "UUID"
+  | "URL"
+  | "HOST"
+  | "IPV4"
+  | "IPV6"
+  | "MAC"
+  | "PATH"
+  | "JWT"
+  | "TOKEN"
+  | "HEX"
+  | "PHONE"
+  | "CARD"
+  | "ORG"
+  | "USER";
+
+interface Mapping {
+  category: ObfuscationCategory;
+  index: number;
+}
+
+const STATE = {
+  enabled: false,
+  counters: new Map<ObfuscationCategory, number>(),
+  mapping: new Map<string, Mapping>(),
+};
+
+/** Allowlisted hosts/domains we never redact (well-known public infra). */
+const HOST_ALLOWLIST = new Set<string>([
+  "localhost",
+  "localhost.localdomain",
+  "example.com",
+  "example.org",
+  "example.net",
+  "example",
+  "pensar.dev",
+  "pensar.com",
+  "pensar.io",
+  "github.com",
+  "githubusercontent.com",
+  "gitlab.com",
+  "bun.sh",
+  "nodejs.org",
+  "npmjs.com",
+  "anthropic.com",
+  "openai.com",
+  "google.com",
+  "googleapis.com",
+  "amazonaws.com",
+  "cloudflare.com",
+]);
+
+/** Words used as `org` placeholder bait — these are not redacted. */
+const ORG_STOPWORDS = new Set<string>([
+  "Pensar",
+  "Apex",
+  "Linux",
+  "Windows",
+  "MacOS",
+  "Ubuntu",
+  "Debian",
+  "Fedora",
+  "Bun",
+  "Node",
+  "TypeScript",
+  "JavaScript",
+  "Python",
+  "Java",
+  "Go",
+  "Rust",
+  "Docker",
+  "Kubernetes",
+  "GitHub",
+  "Anthropic",
+  "OpenAI",
+  "Google",
+  "AWS",
+  "Azure",
+  "Claude",
+  "GPT",
+  "Sonnet",
+  "Opus",
+  "Haiku",
+  "User",
+  "Admin",
+  "Test",
+  "Dev",
+  "Prod",
+  "Staging",
+  "TODO",
+  "README",
+  "API",
+  "URL",
+  "HTTP",
+  "HTTPS",
+  "JSON",
+  "XML",
+  "YAML",
+  "CSV",
+  "PDF",
+  "HTML",
+  "CSS",
+  "SQL",
+  "TLS",
+  "SSL",
+  "JWT",
+  "UUID",
+  "CWE",
+  "CVE",
+  "OS",
+  "PII",
+  "URI",
+  "IDE",
+  "CLI",
+  "TUI",
+  "SDK",
+  "MCP",
+  "REST",
+  "GraphQL",
+  "OAuth",
+  "SSO",
+  "IAM",
+  "VPN",
+  "DNS",
+  "ICMP",
+  "TCP",
+  "UDP",
+]);
+
+/**
+ * Patterns are run in this order. Order matters because once a substring
+ * is replaced with `<CATEGORY_N>`, it can no longer match later patterns.
+ *
+ * Each pattern receives the full match and returns the substring that
+ * should be tracked / replaced. This lets us, for example, skip
+ * allowlisted hosts but still match every other host.
+ */
+interface Pattern {
+  category: ObfuscationCategory;
+  /** Regex with the global flag set. */
+  regex: RegExp;
+  /**
+   * Optional filter: return null to keep the original substring,
+   * otherwise return the substring to track + replace.
+   */
+  pick?: (match: RegExpExecArray) => string | null;
+}
+
+const URL_REGEX =
+  /\bhttps?:\/\/(?:[A-Za-z0-9._~%!$&'()*+,;=:@-]+\/?)+(?:\?[^\s<>"]*)?(?:#[^\s<>"]*)?/g;
+
+const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\b/g;
+
+const UUID_REGEX =
+  /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g;
+
+const IPV4_REGEX =
+  /\b(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])){3}\b/g;
+
+const IPV6_REGEX = /\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\b/g;
+
+const MAC_REGEX = /\b(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}\b/g;
+
+const JWT_REGEX =
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
+
+const TOKEN_REGEX =
+  /\b(?:sk-[A-Za-z0-9_-]{20,}|sk_(?:live|test)_[A-Za-z0-9]{20,}|pk_(?:live|test)_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|ghs_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16})\b/g;
+
+const HEX_REGEX = /\b[0-9a-fA-F]{32,128}\b/g;
+
+const CARD_REGEX = /\b(?:\d[ -]?){13,19}\b/g;
+
+const PHONE_REGEX = /\+?\d{1,3}[ -]?\(?\d{2,4}\)?[ -]?\d{3,4}[ -]?\d{3,4}\b/g;
+
+const PATH_UNIX_REGEX =
+  /\/(?:Users|home)\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._\- /+]*)?/g;
+const PATH_WIN_REGEX =
+  /[A-Za-z]:\\Users\\[A-Za-z0-9._-]+(?:\\[A-Za-z0-9._\- \\+]*)?/g;
+
+/**
+ * Bare hostnames such as `acme-corp.internal`, `target.example.com`,
+ * `s3-bucket.eu-west-1.amazonaws.com`. Caught after URLs so the URL
+ * pass takes precedence.
+ */
+const HOST_REGEX =
+  /\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,24}\b/g;
+
+/**
+ * Capitalised compound nouns that look like company / product names,
+ * e.g. `Acme Corp`, `Globex Industries`, `Initech LLC`.
+ *
+ * Uses a sliding window of capitalised tokens. Single capitalised words
+ * are too noisy (every sentence start would match), so we require either
+ * a corporate suffix (`Inc`, `LLC`, ...) or two consecutive capitalised
+ * words.
+ */
+const ORG_SUFFIXES =
+  "(?:Inc|LLC|Ltd|Limited|Corp|Corporation|Co|Holdings|Group|GmbH|S\\.?A\\.?|Industries|Solutions|Systems|Technologies|Labs|Networks|Bank|Capital|Partners|Pty)";
+
+const ORG_REGEX = new RegExp(
+  `\\b(?:[A-Z][a-zA-Z0-9&'-]+(?:\\s+[A-Z][a-zA-Z0-9&'-]+){0,3})\\s+${ORG_SUFFIXES}\\.?\\b`,
+  "g",
+);
+
+const PATTERNS: Pattern[] = [
+  { category: "URL", regex: URL_REGEX },
+  { category: "EMAIL", regex: EMAIL_REGEX },
+  { category: "JWT", regex: JWT_REGEX },
+  { category: "TOKEN", regex: TOKEN_REGEX },
+  { category: "UUID", regex: UUID_REGEX },
+  { category: "MAC", regex: MAC_REGEX },
+  { category: "IPV6", regex: IPV6_REGEX },
+  { category: "IPV4", regex: IPV4_REGEX },
+  {
+    category: "CARD",
+    regex: CARD_REGEX,
+    pick: (m) => {
+      const digits = m[0].replace(/[ -]/g, "");
+      if (digits.length < 13 || digits.length > 19) return null;
+      return luhn(digits) ? m[0] : null;
+    },
+  },
+  {
+    category: "PHONE",
+    regex: PHONE_REGEX,
+    pick: (m) => {
+      const digits = m[0].replace(/\D/g, "");
+      if (digits.length < 10 || digits.length > 15) return null;
+      return m[0];
+    },
+  },
+  { category: "PATH", regex: PATH_UNIX_REGEX },
+  { category: "PATH", regex: PATH_WIN_REGEX },
+  {
+    category: "HOST",
+    regex: HOST_REGEX,
+    pick: (m) => {
+      const host = m[0].toLowerCase();
+      if (HOST_ALLOWLIST.has(host)) return null;
+      const labels = host.split(".");
+      const apex = labels.slice(-2).join(".");
+      if (HOST_ALLOWLIST.has(apex)) return null;
+      // Skip anything that looks like a filename (`config.json`, `app.py`).
+      if (
+        /^[a-z]+\.(?:json|js|ts|tsx|jsx|md|txt|csv|xml|yaml|yml|toml|sh|py|rb|go|rs|java|css|html|log|lock|env)$/.test(
+          host,
+        )
+      ) {
+        return null;
+      }
+      return m[0];
+    },
+  },
+  { category: "HEX", regex: HEX_REGEX },
+  {
+    category: "ORG",
+    regex: ORG_REGEX,
+    pick: (m) => {
+      const text = m[0].trim();
+      if (ORG_STOPWORDS.has(text.split(/\s+/)[0]!)) return null;
+      return text;
+    },
+  },
+];
+
+function luhn(digits: string): boolean {
+  let sum = 0;
+  let alt = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let n = digits.charCodeAt(i) - 48;
+    if (n < 0 || n > 9) return false;
+    if (alt) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    alt = !alt;
+  }
+  return sum % 10 === 0;
+}
+
+function placeholderFor(value: string, category: ObfuscationCategory): string {
+  const existing = STATE.mapping.get(value);
+  if (existing) {
+    return `<${existing.category}_${existing.index}>`;
+  }
+  const next = (STATE.counters.get(category) ?? 0) + 1;
+  STATE.counters.set(category, next);
+  STATE.mapping.set(value, { category, index: next });
+  return `<${category}_${next}>`;
+}
+
+/** Globally enable/disable obfuscation. */
+export function setObfuscationEnabled(enabled: boolean): void {
+  STATE.enabled = enabled;
+}
+
+/** Whether obfuscation is currently active. */
+export function isObfuscationEnabled(): boolean {
+  return STATE.enabled;
+}
+
+/** Reset the placeholder mapping. Mostly useful in tests. */
+export function resetObfuscation(): void {
+  STATE.counters.clear();
+  STATE.mapping.clear();
+}
+
+/**
+ * Redact a string. When obfuscation is disabled, the input is returned
+ * unchanged. When enabled, every recognised pattern is replaced with a
+ * stable placeholder.
+ */
+export function obfuscate(input: string): string {
+  if (!STATE.enabled) return input;
+  if (!input) return input;
+
+  let output = input;
+  for (const pattern of PATTERNS) {
+    const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
+    output = output.replace(regex, (match, ..._rest) => {
+      const arr = [match] as unknown as RegExpExecArray;
+      arr.index = 0;
+      arr.input = output;
+      const tracked = pattern.pick ? pattern.pick(arr) : match;
+      if (tracked === null) return match;
+      return placeholderFor(tracked, pattern.category);
+    });
+  }
+  return output;
+}
+
+/**
+ * Generate a stable placeholder for a known sensitive value.
+ * Use when the value is already isolated (e.g. a credential field) and
+ * you don't need pattern detection.
+ */
+export function obfuscateValue(
+  value: string,
+  category: ObfuscationCategory = "USER",
+): string {
+  if (!STATE.enabled || !value) return value;
+  return placeholderFor(value, category);
+}

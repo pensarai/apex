@@ -102,6 +102,7 @@ import { isAbsolute, join, resolve } from "path";
 
 import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
 import { buildPentestPrompt } from "../../../core/skills/builtins/pentest";
+import { obfuscate } from "../../../core/obfuscation";
 
 function markInFlightToolsErrored(
   messages: DisplayMessage[],
@@ -2208,12 +2209,14 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         flexShrink={0}
       >
         <box flexDirection="row" gap={2}>
-          <text fg={colors.text}>{session?.name ?? "New Session"}</text>
+          <text fg={colors.text}>
+            {obfuscate(session?.name ?? "New Session")}
+          </text>
           {(session?.targets[0] || initialConfig?.target) && (
             <>
               <text fg={colors.textMuted}>•</text>
               <text fg={colors.textMuted}>
-                {session?.targets[0] || initialConfig?.target}
+                {obfuscate(session?.targets[0] || initialConfig?.target || "")}
               </text>
             </>
           )}

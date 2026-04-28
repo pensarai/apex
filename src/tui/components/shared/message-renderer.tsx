@@ -12,6 +12,7 @@ import { ToolRenderer } from "./tool-renderer";
 import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
 import { PlanReviewMessage } from "../chat/plan-review-message";
+import { obfuscate } from "../../../core/obfuscation";
 
 interface MessageRendererProps {
   message: DisplayMessage;
@@ -50,10 +51,14 @@ export const MessageRenderer = memo(function MessageRenderer({
 }: MessageRendererProps) {
   const { colors } = useTheme();
   // Get string content
-  const content =
+  const rawContent =
     typeof message.content === "string"
       ? message.content
       : JSON.stringify(message.content);
+  // Assistant content gets obfuscated downstream by markdownToStyledText.
+  // For all other roles we redact here so the same EMAIL_1 mapping is reused.
+  const content =
+    message.role === "assistant" ? rawContent : obfuscate(rawContent);
 
   // Memoize markdown conversion for assistant messages
   const displayContent = useMemo(
@@ -75,9 +80,17 @@ export const MessageRenderer = memo(function MessageRenderer({
     );
   }
 
-  // User messages — detect <skill name="..." target="..."> wrapper and display as /command
+  // User messages — detect <skill name="..." target="..."> wrapper and display as /command.
+  // Parse from the raw content because obfuscation turns the target into <URL_1>
+  // which still satisfies the regex but we want to redact the target after the fact.
   if (message.role === "user") {
-    const skill = parseSkillTag(content);
+    const rawSkill = parseSkillTag(rawContent);
+    const skill = rawSkill
+      ? {
+          name: rawSkill.name,
+          target: rawSkill.target ? obfuscate(rawSkill.target) : undefined,
+        }
+      : null;
 
     if (variant === "chat") {
       return (

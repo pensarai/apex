@@ -13,6 +13,7 @@ import {
 } from "@opentui/core";
 import { marked } from "marked";
 import type { ThemeColors } from "../../theme";
+import { obfuscate } from "../../../core/obfuscation";
 
 /**
  * Convert markdown content to StyledText for terminal rendering.
@@ -29,9 +30,12 @@ import type { ThemeColors } from "../../theme";
  * - Paragraphs
  */
 export function markdownToStyledText(
-  content: string,
+  rawContent: string,
   colors?: ThemeColors,
 ): StyledText {
+  // Apply obfuscation before any tokenisation so emails/URLs/hostnames are
+  // redacted before they get coloured as links/codespans.
+  const content = obfuscate(rawContent);
   // Resolve colors with fallbacks for backwards compatibility
   const codeColor = colors?.markdownCode ?? RGBA.fromInts(100, 255, 100, 255);
   const linkColor = colors?.markdownLink ?? RGBA.fromInts(100, 200, 255, 255);

@@ -6,6 +6,7 @@ import { useSession } from "../context/session";
 import { useInput } from "../context/input";
 import { useTheme } from "../theme";
 import { useDimensions } from "../context/dimensions";
+import { useObfuscation } from "../context/obfuscation";
 
 interface FooterProps {
   cwd?: string;
@@ -34,13 +35,17 @@ export default function Footer({
   const { colors } = useTheme();
   const { isExecuting, sessionCwd } = useAgent();
   const { width: termWidth } = useDimensions();
+  const { enabled: obfuscateEnabled } = useObfuscation();
   const effectiveCwd = sessionCwd || cwd;
   const relativeCwd = effectiveCwd.split(os.homedir()).pop() || "";
   const segments = relativeCwd.split("/").filter(Boolean);
-  const displayCwd =
+  const rawDisplayCwd =
     segments.length <= 2
       ? "~/" + segments.join("/")
       : "…/" + segments.slice(-2).join("/");
+  // When obfuscation is on, show a generic placeholder rather than leaking
+  // the operator's local working directory in screenshots.
+  const displayCwd = obfuscateEnabled ? "~/[workdir]" : rawDisplayCwd;
   const showCwd = termWidth >= 100;
   const session = useSession();
   const { isInputEmpty } = useInput();

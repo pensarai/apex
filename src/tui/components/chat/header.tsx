@@ -7,6 +7,7 @@
 
 import { useTheme } from "../../theme";
 import type { OperatorMode, OperatorStage } from "../../../core/operator";
+import { obfuscate } from "../../../core/obfuscation";
 
 export interface HeaderProps {
   /** Session mode */
@@ -92,7 +93,7 @@ export function Header({
         {target && (
           <>
             <text fg={colors.textMuted}>│</text>
-            <text fg={colors.text}>{target}</text>
+            <text fg={colors.text}>{obfuscate(target)}</text>
           </>
         )}
 

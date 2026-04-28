@@ -7,6 +7,8 @@
  * Inspired by OpenCode's extensible tool display pattern.
  */
 
+import { obfuscate } from "../../../core/obfuscation";
+
 type ToolSummaryFn = (args: Record<string, unknown>) => string;
 
 /**
@@ -129,17 +131,21 @@ export function getToolSummary(
 ): string {
   // Check registry first
   const summaryFn = TOOL_SUMMARY_MAP[toolName];
+  let summary: string;
   if (summaryFn) {
-    return summaryFn(args);
+    summary = summaryFn(args);
+  } else {
+    // Fallback: use first non-description arg value
+    const firstArg = Object.entries(args)
+      .filter(([k]) => k !== "toolCallDescription")
+      .map(([, v]) => (typeof v === "string" ? v : JSON.stringify(v)))
+      .find((v) => v && v.length > 0);
+
+    summary = firstArg
+      ? `${toolName} ${String(firstArg).slice(0, 50)}`
+      : toolName;
   }
-
-  // Fallback: use first non-description arg value
-  const firstArg = Object.entries(args)
-    .filter(([k]) => k !== "toolCallDescription")
-    .map(([, v]) => (typeof v === "string" ? v : JSON.stringify(v)))
-    .find((v) => v && v.length > 0);
-
-  return firstArg ? `${toolName} ${String(firstArg).slice(0, 50)}` : toolName;
+  return obfuscate(summary);
 }
 
 /**
@@ -156,7 +162,7 @@ export function getToolDisplayLabel(
   if (options.preferDescription && toolName === "execute_command") {
     const description = args.toolCallDescription;
     if (typeof description === "string" && description.trim().length > 0) {
-      return description.trim();
+      return obfuscate(description.trim());
     }
   }
 
@@ -206,7 +212,9 @@ export function getArgsPreview(
   if (filteredArgs.length === 1) {
     const [, value] = filteredArgs[0];
     const str = typeof value === "string" ? value : JSON.stringify(value);
-    return str.length > maxLength ? str.slice(0, maxLength) + "…" : str;
+    const truncated =
+      str.length > maxLength ? str.slice(0, maxLength) + "…" : str;
+    return obfuscate(truncated);
   }
 
   // For multi-arg tools, show key:value pairs
@@ -231,7 +239,7 @@ export function getArgsPreview(
   });
 
   const preview = parts.join(" ");
-  return preview.length > maxLength
-    ? preview.slice(0, maxLength) + "…"
-    : preview;
+  const truncated =
+    preview.length > maxLength ? preview.slice(0, maxLength) + "…" : preview;
+  return obfuscate(truncated);
 }

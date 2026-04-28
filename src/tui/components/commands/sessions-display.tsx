@@ -13,6 +13,7 @@ import { useTheme } from "../../theme";
 import { useSessionsList } from "../../hooks/use-sessions-list";
 import { useToast } from "../../context/toast";
 import DialogLayout from "../dialog-layout";
+import { obfuscate } from "../../../core/obfuscation";
 
 interface SessionsDisplayProps {
   onClose: () => void;
@@ -304,7 +305,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                           <text
                             fg={isSelected ? colors.text : colors.textMuted}
                           >
-                            {session.name}
+                            {obfuscate(session.name ?? "")}
                           </text>
                           <text
                             fg={

@@ -8,6 +8,7 @@ import {
 } from "./shared";
 import { useTheme } from "../theme";
 import { useDimensions } from "../context/dimensions";
+import { obfuscate } from "../../core/obfuscation";
 
 export type Subagent = {
   id: string;
@@ -224,16 +225,16 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
     >
       <box flexDirection="row" alignItems="center" gap={1}>
         {subagent.status === "pending" && (
-          <SpinningDots label={subagent.name} fg={colors.primary} />
+          <SpinningDots label={obfuscate(subagent.name)} fg={colors.primary} />
         )}
         {subagent.status === "completed" && (
-          <text fg={colors.primary}> ✓ {subagent.name}</text>
+          <text fg={colors.primary}> ✓ {obfuscate(subagent.name)}</text>
         )}
         {subagent.status === "failed" && (
-          <text fg={colors.error}>✗ {subagent.name}</text>
+          <text fg={colors.error}>✗ {obfuscate(subagent.name)}</text>
         )}
         {subagent.status === "paused" && (
-          <text fg={colors.tierRisky}>⏸ {subagent.name}</text>
+          <text fg={colors.tierRisky}>⏸ {obfuscate(subagent.name)}</text>
         )}
         <text fg={colors.textMuted}>{open ? "▼" : "▶"}</text>
       </box>
@@ -280,11 +281,12 @@ const AgentMessage = memo(function AgentMessage({
     content = JSON.stringify(message.content, null, 2);
   }
 
-  // Render markdown for assistant messages
+  // Render markdown for assistant messages (markdown pipeline obfuscates internally).
+  // Plain-text branches (user/system/tool labels) are obfuscated here.
   const displayContent =
     message.role === "assistant"
       ? markdownToStyledText(content, colors)
-      : content;
+      : obfuscate(content);
 
   const isPendingTool =
     message.role === "tool" &&
@@ -336,13 +338,17 @@ const AgentMessage = memo(function AgentMessage({
               {/* Streaming logs for pending tools */}
               {streamingLogs.length > 0 && (
                 <box flexDirection="column" marginTop={0} paddingLeft={2}>
-                  {streamingLogs.slice(-3).map((log, idx) => (
-                    <text
-                      key={idx}
-                      fg={colors.textMuted}
-                      content={log.length > 100 ? log.slice(0, 100) + "…" : log}
-                    />
-                  ))}
+                  {streamingLogs.slice(-3).map((log, idx) => {
+                    const trimmed =
+                      log.length > 100 ? log.slice(0, 100) + "…" : log;
+                    return (
+                      <text
+                        key={idx}
+                        fg={colors.textMuted}
+                        content={obfuscate(trimmed)}
+                      />
+                    );
+                  })}
                 </box>
               )}
             </>
@@ -397,18 +403,17 @@ function ToolDetails({ message }: { message: DisplayMessage }) {
     return null;
   }
 
-  // Format result for display (truncate if too long)
+  // Format result for display (truncate if too long, redact PII when active).
   const formatResult = (result: unknown): string => {
+    let str: string;
     try {
-      const str = JSON.stringify(result, null, 2);
-      // Truncate very long results
-      if (str.length > 2000) {
-        return str.substring(0, 2000) + "\n... (truncated)";
-      }
-      return str;
+      str = JSON.stringify(result, null, 2);
     } catch {
-      return String(result);
+      str = String(result);
     }
+    const truncated =
+      str.length > 2000 ? str.substring(0, 2000) + "\n... (truncated)" : str;
+    return obfuscate(truncated);
   };
 
   return (
@@ -427,7 +432,7 @@ function ToolDetails({ message }: { message: DisplayMessage }) {
           </box>
           {showArgs && (
             <text fg={colors.text}>
-              {JSON.stringify(message.args, null, 2)}
+              {obfuscate(JSON.stringify(message.args, null, 2))}
             </text>
           )}
         </box>

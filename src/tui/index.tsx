@@ -61,6 +61,7 @@ import { setupAutoCopy } from "./auto-copy";
 import { TerminalDimensionsProvider } from "./context/dimensions";
 import { TerminalFocusHandler } from "./components/terminal-focus-handler";
 import { cleanupTerminalFocusMode } from "./terminal-focus";
+import { ObfuscationProvider } from "./context/obfuscation";
 
 interface AppProps {
   appConfig: Config;
@@ -698,18 +699,22 @@ async function main() {
     process.exit(1);
   });
 
+  const obfuscateEnabled = process.env.PENSAR_OBFUSCATE === "1";
+
   createRoot(renderer).render(
-    <ThemeProvider initialTheme={themeName} initialMode={mode}>
-      <ConsoleThemeSync />
-      <TerminalDimensionsProvider>
-        <ToastProvider>
-          <ErrorBoundary>
-            <App appConfig={appConfig} />
-          </ErrorBoundary>
-          <ToastContainer />
-        </ToastProvider>
-      </TerminalDimensionsProvider>
-    </ThemeProvider>,
+    <ObfuscationProvider enabled={obfuscateEnabled}>
+      <ThemeProvider initialTheme={themeName} initialMode={mode}>
+        <ConsoleThemeSync />
+        <TerminalDimensionsProvider>
+          <ToastProvider>
+            <ErrorBoundary>
+              <App appConfig={appConfig} />
+            </ErrorBoundary>
+            <ToastContainer />
+          </ToastProvider>
+        </TerminalDimensionsProvider>
+      </ThemeProvider>
+    </ObfuscationProvider>,
   );
 }
 
