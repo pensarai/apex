@@ -18,6 +18,7 @@ import {
 } from "../shared/result-registry";
 import { isToolMessage } from "../shared/type-guards";
 import type { DisplayMessage } from "../agent-display";
+import { useObfuscation } from "../../context/obfuscation";
 
 // Tool category icons
 const TOOL_ICONS: Record<string, string> = {
@@ -47,6 +48,11 @@ export const ToolMessage = memo(function ToolMessage({
   expandedLogs = false,
 }: ToolMessageProps) {
   const { colors, mode } = useTheme();
+  // Subscribe so the result summary's `content`-prop StyledText
+  // (precomputed in `result-registry.ts`) re-runs on /obfuscate
+  // toggle. String children are redacted centrally by the
+  // TextNodeRenderable patch.
+  useObfuscation();
   const [showArgs, setShowArgs] = useState(false);
   const [showOutput, setShowOutput] = useState(false);
 
@@ -65,7 +71,9 @@ export const ToolMessage = memo(function ToolMessage({
     preferDescription: isPending,
   });
 
-  // For execute_command, extract both description and command so we can show both
+  // For execute_command, extract both description and command. Strings
+  // flow into `<text>` children, so the central TextNodeRenderable patch
+  // handles obfuscation transparently.
   const execDescription =
     toolName === "execute_command" &&
     typeof args.toolCallDescription === "string" &&

@@ -2213,7 +2213,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
             <>
               <text fg={colors.textMuted}>•</text>
               <text fg={colors.textMuted}>
-                {session?.targets[0] || initialConfig?.target}
+                {session?.targets[0] || initialConfig?.target || ""}
               </text>
             </>
           )}
