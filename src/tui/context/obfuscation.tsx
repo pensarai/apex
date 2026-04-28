@@ -12,6 +12,7 @@ import {
   createContext,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -46,12 +47,15 @@ export function ObfuscationProvider({
   initialEnabled,
   children,
 }: ObfuscationProviderProps) {
-  // Initialise the engine eagerly, before any consumer renders, so the
-  // first frame sees the right state. Done at module-call time rather
-  // than via useEffect because effects run AFTER render — any component
-  // that calls `obfuscate()` during the first render would otherwise see
-  // stale engine state.
-  if (isObfuscationEnabled() !== initialEnabled) {
+  // Initialise the engine ONCE on first mount, before any consumer
+  // renders, so the first frame sees the right state. Critically this
+  // must NOT run on every render — otherwise the next render after a
+  // toggle would overwrite the just-flipped engine state with the
+  // (forever-`false`) `initialEnabled` prop and the toggle would be
+  // silently undone.
+  const initializedRef = useRef(false);
+  if (!initializedRef.current) {
+    initializedRef.current = true;
     setObfuscationEnabled(initialEnabled);
   }
   const [enabled, setEnabledState] = useState<boolean>(initialEnabled);
