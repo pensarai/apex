@@ -90,9 +90,12 @@ export function AgentStatus() {
       <box border={["right"]} borderColor={colors.primary} />
       <text fg={colors.text}>{tokenLabel}</text>
       <box border={["right"]} borderColor={colors.primary} />
-      {isExecuting && (
-        <BracketBounce width={16} fg={colors.primary} speed={0.75} />
-      )}
+      <BracketBounce
+        width={16}
+        fg={colors.primary}
+        speed={0.75}
+        active={isExecuting}
+      />
     </box>
   );
 }

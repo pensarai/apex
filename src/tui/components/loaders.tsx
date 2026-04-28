@@ -184,6 +184,10 @@ const DASH = "─";
 /**
  * A marker that bounces left-to-right inside `[──────]` brackets,
  * with a dashed line through the middle and a fading trail.
+ *
+ * When `active` is false the component still renders the bracketed
+ * track (so layout stays stable) but the marker is hidden and the
+ * shared tick is not subscribed to — the visual is fully static.
  */
 export function BracketBounce({
   width = 24,
@@ -191,17 +195,71 @@ export function BracketBounce({
   speed = 3,
   label,
   trailLen = 4,
+  active = true,
 }: {
   width?: number;
   fg?: RGBA;
   speed?: number;
   label?: string;
   trailLen?: number;
+  active?: boolean;
 }) {
   const { colors } = useTheme();
   const base = fg ?? colors.primary;
-  const t = useTick();
   const inner = Math.max(1, width - 2);
+
+  const dashColor = withAlpha(colors.textMuted, 0.3);
+  const bracketColor = withAlpha(colors.textMuted, 0.6);
+
+  if (!active) {
+    return (
+      <box flexDirection="column">
+        <box flexDirection="row">
+          <text fg={bracketColor} content="[" />
+          {Array.from({ length: inner }, (_, i) => (
+            <text key={i} fg={dashColor} content={DASH} />
+          ))}
+          <text fg={bracketColor} content="]" />
+        </box>
+        {label && <text fg={colors.textMuted}>{label}</text>}
+      </box>
+    );
+  }
+
+  return (
+    <BracketBounceActive
+      inner={inner}
+      base={base}
+      speed={speed}
+      trailLen={trailLen}
+      dashColor={dashColor}
+      bracketColor={bracketColor}
+      label={label}
+      mutedColor={colors.textMuted}
+    />
+  );
+}
+
+function BracketBounceActive({
+  inner,
+  base,
+  speed,
+  trailLen,
+  dashColor,
+  bracketColor,
+  label,
+  mutedColor,
+}: {
+  inner: number;
+  base: RGBA;
+  speed: number;
+  trailLen: number;
+  dashColor: RGBA;
+  bracketColor: RGBA;
+  label?: string;
+  mutedColor: RGBA;
+}) {
+  const t = useTick();
 
   const halfCycle = inner - 1;
   const fullCycle = halfCycle * 2;
@@ -222,9 +280,6 @@ export function BracketBounce({
     }
     return steps;
   }, [base, trailLen]);
-
-  const dashColor = withAlpha(colors.textMuted, 0.3);
-  const bracketColor = withAlpha(colors.textMuted, 0.6);
 
   const cells = useMemo(() => {
     const out: { ch: string; color: RGBA }[] = [];
@@ -250,7 +305,7 @@ export function BracketBounce({
           <text key={i} fg={cell.color} content={cell.ch} />
         ))}
       </box>
-      {label && <text fg={colors.textMuted}>{label}</text>}
+      {label && <text fg={mutedColor}>{label}</text>}
     </box>
   );
 }
