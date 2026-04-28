@@ -5,6 +5,11 @@
  * so the same value produces the same placeholder every time. Placeholders
  * use angle brackets (`<EMAIL_1>`) so they are obviously not real data and
  * cannot collide with any of the regexes below.
+ *
+ * Hosts have **no allowlist**: every detected hostname is redacted, even
+ * apparently public ones (e.g. `pensar.dev`, `github.com`). The point of
+ * obfuscate-mode is screenshot safety, and any host in the transcript is
+ * potential signal — including the operator's own infrastructure.
  */
 
 export type ObfuscationCategory =
@@ -34,31 +39,6 @@ const STATE = {
   counters: new Map<ObfuscationCategory, number>(),
   mapping: new Map<string, Mapping>(),
 };
-
-/** Allowlisted hosts/domains we never redact (well-known public infra). */
-const HOST_ALLOWLIST = new Set<string>([
-  "localhost",
-  "localhost.localdomain",
-  "example.com",
-  "example.org",
-  "example.net",
-  "example",
-  "pensar.dev",
-  "pensar.com",
-  "pensar.io",
-  "github.com",
-  "githubusercontent.com",
-  "gitlab.com",
-  "bun.sh",
-  "nodejs.org",
-  "npmjs.com",
-  "anthropic.com",
-  "openai.com",
-  "google.com",
-  "googleapis.com",
-  "amazonaws.com",
-  "cloudflare.com",
-]);
 
 /** Words used as `org` placeholder bait — these are not redacted. */
 const ORG_STOPWORDS = new Set<string>([
@@ -142,8 +122,9 @@ const ORG_STOPWORDS = new Set<string>([
  * is replaced with `<CATEGORY_N>`, it can no longer match later patterns.
  *
  * Each pattern receives the full match and returns the substring that
- * should be tracked / replaced. This lets us, for example, skip
- * allowlisted hosts but still match every other host.
+ * should be tracked / replaced. The optional `pick` filter exists so a
+ * pattern can opt out of redacting specific matches (e.g. anything that
+ * looks like a source-code filename).
  */
 interface Pattern {
   category: ObfuscationCategory;
@@ -166,6 +147,18 @@ const UUID_REGEX =
 
 const IPV4_REGEX =
   /\b(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])){3}\b/g;
+
+/**
+ * IPv4 written with hyphens instead of dots (e.g. `10-0-0-1`). Common in
+ * filesystem-safe session names and reverse-DNS labels like
+ * `pentest-10-0-0-1` or `ec2-54-12-34-56.compute.amazonaws.com`.
+ *
+ * Lookbehind/lookahead reject continuation of a longer hyphenated number
+ * sequence (so `1-2-3-4-5` does not match `2-3-4-5` once `1-2-3-4` is
+ * rejected by the trailing lookahead).
+ */
+const IPV4_DASHED_REGEX =
+  /(?<![0-9])(?<!\d-)(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(?:-(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])){3}(?![0-9])(?!-\d)/g;
 
 // Match both full and compressed (`fe80::1`, `2001:db8::8a2e`) IPv6 forms.
 // Compressed: contains `::`. Full: has 7 colons separating 8 hex groups.
@@ -225,6 +218,7 @@ const PATTERNS: Pattern[] = [
   { category: "MAC", regex: MAC_REGEX },
   { category: "IPV6", regex: IPV6_REGEX },
   { category: "IPV4", regex: IPV4_REGEX },
+  { category: "IPV4", regex: IPV4_DASHED_REGEX },
   {
     category: "CARD",
     regex: CARD_REGEX,
@@ -250,11 +244,8 @@ const PATTERNS: Pattern[] = [
     regex: HOST_REGEX,
     pick: (m) => {
       const host = m[0].toLowerCase();
-      if (HOST_ALLOWLIST.has(host)) return null;
-      const labels = host.split(".");
-      const apex = labels.slice(-2).join(".");
-      if (HOST_ALLOWLIST.has(apex)) return null;
-      // Skip anything that looks like a filename (`config.json`, `app.py`).
+      // Skip anything that looks like a filename (`config.json`, `app.py`)
+      // so source-code references don't get redacted as fake hostnames.
       if (
         /^[a-z]+\.(?:json|js|ts|tsx|jsx|md|txt|csv|xml|yaml|yml|toml|sh|py|rb|go|rs|java|css|html|log|lock|env)$/.test(
           host,

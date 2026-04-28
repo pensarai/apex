@@ -47,19 +47,32 @@ describe("obfuscation engine", () => {
     expect(out).not.toContain("10.0.42.17");
   });
 
+  it("redacts IPv4 addresses written with hyphens (session-name style)", () => {
+    const out = obfuscate("session pentest-10-0-0-1 ready");
+    expect(out).toContain("pentest-<IPV4_1>");
+    expect(out).not.toContain("10-0-0-1");
+  });
+
+  it("does not redact non-octet hyphen sequences (dates, versions)", () => {
+    const out = obfuscate("Build 2026-04-28-12 shipped");
+    expect(out).toContain("2026-04-28-12");
+  });
+
   it("redacts URLs and underlying hosts consistently", () => {
     const out = obfuscate("GET https://api.acme-corp.internal/v1/users → 200");
     expect(out).toContain("<URL_1>");
     expect(out).not.toContain("acme-corp.internal");
   });
 
-  it("preserves allowlisted hosts (example.com, github.com)", () => {
+  it("redacts every hostname including the operator's own infra", () => {
+    // No allowlist: pensar.dev, github.com, subdomains thereof are all redacted.
     const out = obfuscate(
-      "See https://example.com/foo and github.com/org/repo",
+      "See staging-console.pensar.dev and github.com/org/repo",
     );
-    // example.com is allowlisted as host but the URL pattern wins, so we
-    // expect the URL to be redacted while the bare github.com mention is kept.
-    expect(out).toContain("github.com/org/repo");
+    expect(out).toContain("<HOST_1>");
+    expect(out).toContain("<HOST_2>");
+    expect(out).not.toContain("pensar.dev");
+    expect(out).not.toContain("github.com");
   });
 
   it("redacts JWTs and bearer-style tokens", () => {
