@@ -10,6 +10,7 @@ import type {
 import { convertToBedrockFormat } from "./pensarFormatters";
 import { parseSSE } from "./pensarSSE";
 import { signGatewayRequest } from "./pensarSigning";
+import { buildStreamingFetchSignal } from "../utils";
 
 const DEBUG =
   process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
@@ -259,12 +260,14 @@ export function createPensarModel(
 
       log(`  headers: ${Object.keys(headers).join(", ")}`);
 
+      const fetchSignal = buildStreamingFetchSignal(options.abortSignal);
+
       let response: Response;
       try {
         response = await fetch(url, {
           method: "POST",
           headers,
-          signal: options.abortSignal,
+          signal: fetchSignal,
           body: serializedBody,
         });
       } catch (err) {
@@ -347,8 +350,13 @@ export function createPensarModel(
 
           let eventCount = 0;
           let lastEventTime = Date.now();
+          const rawIdleTimeout = Number(process.env.PENSAR_SSE_IDLE_TIMEOUT_MS);
+          const idleTimeoutMs =
+            Number.isFinite(rawIdleTimeout) && rawIdleTimeout > 0
+              ? rawIdleTimeout
+              : 90_000;
           try {
-            for await (const sse of parseSSE(sseStream)) {
+            for await (const sse of parseSSE(sseStream, { idleTimeoutMs })) {
               const now = Date.now();
               const gap = now - lastEventTime;
               if (gap > 5000) {
