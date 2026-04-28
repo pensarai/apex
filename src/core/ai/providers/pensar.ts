@@ -39,12 +39,8 @@ export interface PensarModelConfig {
    */
   signingKey?: string;
   /**
-   * Optional callback to get a fresh token before each request.
-   * If provided, this is called instead of using `apiKey` directly,
-   * allowing transparent token refresh for WorkOS auth.
-   *
-   * When `forceRefresh` is set, the callback MUST bypass any access-token
-   * expiry check and perform a refresh against WorkOS. Used on 401 retry.
+   * Token callback for WorkOS auth. When `forceRefresh` is true, must
+   * bypass expiry check and force a refresh (used on 401 retry).
    */
   getToken?: (options?: {
     forceRefresh?: boolean;
@@ -52,16 +48,8 @@ export interface PensarModelConfig {
 }
 
 /**
- * Creates a LanguageModelV2-compatible model that proxies requests through
- * the Pensar Gateway. This allows Apex CLI users to use Pensar-managed
- * inference with usage-based billing.
- *
- * Supports both legacy API key auth and WorkOS JWT auth.
- * When workspaceId is provided, sends X-Workspace-Id header for WorkOS auth.
- *
- * Both doGenerate() and doStream() use the same /gateway/invoke endpoint.
- * doGenerate() delegates to doStream() and collects the full result.
- * Streaming is true SSE via the Pensar Gateway.
+ * Language model that proxies to the Pensar Gateway. Supports both legacy
+ * API key and WorkOS JWT auth. doGenerate() delegates to doStream().
  */
 export function createPensarModel(
   bedrockModelId: string,
@@ -73,11 +61,7 @@ export function createPensarModel(
   );
 
   /**
-   * Build request headers, resolving the token via getToken() if available.
-   * Pass { forceRefresh: true } to bypass the access-token expiry check and
-   * force a WorkOS refresh — used on 401 retry.
-   *
-   * @throws ApexAuthError when the stored session cannot produce a token.
+   * @throws ApexAuthError when token cannot be obtained.
    */
   async function buildHeaders(
     opts: {
@@ -116,11 +100,6 @@ export function createPensarModel(
     return headers;
   }
 
-  /**
-   * Build headers, apply gateway signing (if configured), and send the
-   * inference request. Factored out so the 401 retry path can re-run it
-   * after forcing a token refresh.
-   */
   async function sendGatewayRequest(
     url: string,
     serializedBody: string,

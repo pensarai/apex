@@ -85,9 +85,7 @@ export async function fetchWorkOSClientId(): Promise<string | null> {
   }
 }
 
-// Serializes concurrent refresh attempts. WorkOS refresh tokens rotate on
-// every use, so two parallel callers using the same refresh_token would cause
-// the second to fail with an already-rotated token.
+// WorkOS refresh tokens rotate on every use; serialize concurrent attempts.
 let inFlightRefresh: Promise<string> | null = null;
 
 async function doRefresh(
@@ -171,14 +169,9 @@ interface TokenCfg {
 }
 
 /**
- * Like ensureValidToken, but throws ApexAuthError when the user is configured
- * but cannot produce a valid token (dead refresh, WorkOS unreachable, etc).
- * Used by the TUI startup preflight and the 401 retry path in pensar.ts.
+ * Throws ApexAuthError on any token failure (used by TUI preflight and 401 retry).
  *
- * @throws ApexAuthError({ reason: 'no_credentials' }) when neither WorkOS
- *         tokens nor a legacy API key are configured.
- * @throws ApexAuthError({ reason: 'session_dead' }) when an access/refresh
- *         token exists but refresh fails.
+ * @throws ApexAuthError with typed reason on any auth failure.
  */
 export async function ensureValidTokenOrThrow(
   cfg: TokenCfg,
@@ -219,10 +212,7 @@ export async function ensureValidTokenOrThrow(
 }
 
 /**
- * Ensure a valid access token is available. Preserves the older null-on-failure
- * contract used by gateway/issues/webSearch callers that treat null as
- * "not connected" rather than as an error. Callers that need the typed reason
- * (TUI preflight, 401 retry) should use ensureValidTokenOrThrow directly.
+ * Returns null on failure (for legacy callers). Use ensureValidTokenOrThrow for typed errors.
  */
 export async function ensureValidToken(
   cfg: TokenCfg,

@@ -260,15 +260,6 @@ function AppContent({
       },
     );
 
-    // Preflight the stored session so we catch dead refresh tokens before
-    // the user submits real work. Three outcomes:
-    //   1. No credentials — user hasn't logged in yet; route guards handle it
-    //      without a toast, so stay silent.
-    //   2. Token valid / refresh succeeds — silent pass-through.
-    //   3. Session dead (expired access + dead refresh, or other failure) —
-    //      toast the re-login prompt. This is the case the old naive check
-    //      missed: the user *has* a refresh token, but WorkOS has already
-    //      expired it on its end.
     const preflightSession = async () => {
       const { ensureValidTokenOrThrow, isApexAuthError, isConnected } =
         await import("../core/auth");
