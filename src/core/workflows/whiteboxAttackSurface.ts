@@ -24,6 +24,11 @@ import { runWithBoundedConcurrency } from "../utils/concurrency";
 import { execFileSync } from "child_process";
 import { createHash } from "crypto";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
+import { mapAppWithSurface } from "../integrations/surface";
+import {
+  runEnrichmentAgent,
+  type EnrichmentEndpoint,
+} from "../agents/specialized/whiteboxAttackSurface/enrichmentAgent";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -338,14 +343,15 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   }
 
   // =========================================================================
-  // Phase 2: For each app, discover pages + API endpoints via document_endpoint
-  //          Cloud resources get a specialized objective instead of pages/API.
+  // Phase 2: Per-app dispatch — surface-driven enrichment vs. fallback agents.
+  //          For service apps (web_application, api, full_stack, subdomain,
+  //          domain): try `mapAppWithSurface`; on `surface` mode run a single
+  //          per-app enrichment CodeAgent over the deterministic endpoint list,
+  //          on `fallback` run the legacy pages+apiEndpoints CodeAgent pair.
+  //          Cloud resources (cloud_resource, storage, database) always use
+  //          the specialized objective — surface is HTTP-route-focused and
+  //          doesn't enumerate cloud assets. See design doc section 1.1.
   // =========================================================================
-
-  type AppTask = {
-    appInfo: z.infer<typeof AppInfoSchema>;
-    type: "pages" | "apiEndpoints" | "cloudResourceEndpoints";
-  };
 
   const NON_SERVICE_TYPES = ["cloud_resource", "storage", "database"];
   const serviceApps = appsResult.apps.filter(
@@ -356,7 +362,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   );
 
   console.log(
-    `[whitebox-workflow] Phase 2: ${serviceApps.length} service apps (pages+api each), ${cloudApps.length} cloud resources → ${serviceApps.length * 2 + cloudApps.length} total tasks`,
+    `[whitebox-workflow] Phase 2: ${serviceApps.length} service apps (surface or fallback per app), ${cloudApps.length} cloud resources → ${appsResult.apps.length} total apps`,
   );
 
   const totalApps = appsResult.apps.length;
@@ -367,104 +373,152 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     completedApps: 0,
   });
 
-  const tasks: AppTask[] = [
-    ...serviceApps.flatMap((app) => [
-      { appInfo: app, type: "pages" as const },
-      { appInfo: app, type: "apiEndpoints" as const },
-    ]),
-    ...cloudApps.map((app) => ({
-      appInfo: app,
-      type: "cloudResourceEndpoints" as const,
-    })),
-  ];
+  // Local helpers — closure-capture the workflow inputs so each spawn site
+  // doesn't re-thread the same args. These mirror the pre-rewrite per-task
+  // CodeAgent block byte-for-byte (same subagentId pattern, same callback
+  // shape, same try/catch + onSubagentComplete completed/failed semantics).
 
-  const appTaskDoneCount = new Map<string, { done: number; total: number }>();
-  for (const app of serviceApps) {
-    appTaskDoneCount.set(app.name, { done: 0, total: 2 });
-  }
-  for (const app of cloudApps) {
-    appTaskDoneCount.set(app.name, { done: 0, total: 1 });
-  }
+  type AppInfo = z.infer<typeof AppInfoSchema>;
 
-  await runWithBoundedConcurrency(
-    tasks,
-    DEFAULT_CONCURRENCY,
-    async (task, _index) => {
-      const subagentId = `${task.type}-${task.appInfo.name}`;
+  const spawnDiscoveryAgent = async (
+    app: AppInfo,
+    type: "pages" | "apiEndpoints" | "cloudResourceEndpoints",
+    objective: string,
+  ): Promise<void> => {
+    const subagentId = `${type}-${app.name}`;
+
+    console.log(
+      `[whitebox-workflow] Phase 2: spawning agent "${subagentId}" (app="${app.name}", type=${type}, appType=${app.type})`,
+    );
+
+    eventBus?.emit("subagent-spawn", {
+      subagentId,
+      name: app.name,
+      input: { app: app.name, type },
+    });
+
+    const agent = new CodeAgent<DiscoverySummary>({
+      codebasePath,
+      objective,
+      system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
+      model,
+      session,
+      authConfig,
+      abortSignal,
+      attackSurfaceRegistry,
+      eventBus,
+      subagentId,
+      onStepFinish: (event) => onStepFinish?.(event),
+      onCacheMetrics,
+      responseSchema: DiscoverySummarySchema,
+      excludeTools: ["document_app"],
+      projectThreatModel,
+    });
+
+    try {
+      await agent.consume();
 
       console.log(
-        `[whitebox-workflow] Phase 2: spawning agent "${subagentId}" (app="${task.appInfo.name}", type=${task.type}, appType=${task.appInfo.type})`,
+        `[whitebox-workflow] Phase 2: agent "${subagentId}" completed`,
       );
 
-      eventBus?.emit("subagent-spawn", {
+      eventBus?.emit("subagent-complete", {
         subagentId,
-        name: task.appInfo.name,
-        input: { app: task.appInfo.name, type: task.type },
+        status: "completed",
       });
+    } catch (error) {
+      console.error(
+        `[whitebox-workflow] Phase 2: agent "${subagentId}" FAILED:`,
+        error instanceof Error ? error.message : String(error),
+      );
 
-      const objective =
-        task.type === "pages"
-          ? buildPagesDiscoveryObjective(codebasePath, task.appInfo)
-          : task.type === "cloudResourceEndpoints"
-            ? buildCloudResourceEndpointsObjective(
-                codebasePath,
-                task.appInfo,
-                environments,
-              )
-            : buildApiEndpointsDiscoveryObjective(codebasePath, task.appInfo);
-
-      const agent = new CodeAgent<DiscoverySummary>({
-        codebasePath,
-        objective,
-        system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
-        model,
-        session,
-        authConfig,
-        abortSignal,
-        attackSurfaceRegistry,
-        eventBus,
+      eventBus?.emit("subagent-complete", {
         subagentId,
-        onStepFinish: (event) => onStepFinish?.(event),
-        onCacheMetrics,
-        responseSchema: DiscoverySummarySchema,
-        excludeTools: ["document_app"],
-        projectThreatModel,
+        status: "failed",
       });
+    }
+  };
 
+  const spawnPagesAgent = (app: AppInfo): Promise<void> =>
+    spawnDiscoveryAgent(
+      app,
+      "pages",
+      buildPagesDiscoveryObjective(codebasePath, app),
+    );
+
+  const spawnApiEndpointsAgent = (app: AppInfo): Promise<void> =>
+    spawnDiscoveryAgent(
+      app,
+      "apiEndpoints",
+      buildApiEndpointsDiscoveryObjective(codebasePath, app),
+    );
+
+  const spawnCloudResourceAgent = (app: AppInfo): Promise<void> =>
+    spawnDiscoveryAgent(
+      app,
+      "cloudResourceEndpoints",
+      buildCloudResourceEndpointsObjective(codebasePath, app, environments),
+    );
+
+  await runWithBoundedConcurrency(
+    appsResult.apps,
+    DEFAULT_CONCURRENCY,
+    async (app) => {
       try {
-        await agent.consume();
+        if (NON_SERVICE_TYPES.includes(app.type)) {
+          // Cloud resources: surface doesn't enumerate these — always fallback.
+          await spawnCloudResourceAgent(app);
+        } else {
+          const surfaceResult = await mapAppWithSurface(
+            join(codebasePath, app.location),
+          );
+          if (surfaceResult.mode === "surface") {
+            console.log(
+              `[whitebox] ${app.name}: surface-driven (${surfaceResult.endpoints.length} endpoints, frameworks=${surfaceResult.frameworks.join(",")})`,
+            );
 
-        console.log(
-          `[whitebox-workflow] Phase 2: agent "${subagentId}" completed`,
-        );
+            // Bridge `mapAppWithSurface`'s post-classification endpoints into
+            // the `EnrichmentEndpoint` shape the enrichment agent expects.
+            // The classifier overwrites `method` with the classified array
+            // (e.g. `["PAGE"]` for renderable pages); the enrichment objective
+            // reads `classifiedMethod` only, so passing the same value through
+            // both fields is structurally correct.
+            const enrichmentEndpoints: EnrichmentEndpoint[] =
+              surfaceResult.endpoints.map((ep) => ({
+                ...ep,
+                classifiedMethod: ep.method,
+                isPage: ep.method.includes("PAGE"),
+              }));
 
-        eventBus?.emit("subagent-complete", {
-          subagentId,
-          status: "completed",
-        });
-      } catch (error) {
-        console.error(
-          `[whitebox-workflow] Phase 2: agent "${subagentId}" FAILED:`,
-          error instanceof Error ? error.message : String(error),
-        );
-
-        eventBus?.emit("subagent-complete", {
-          subagentId,
-          status: "failed",
-        });
-      }
-
-      const counter = appTaskDoneCount.get(task.appInfo.name);
-      if (counter) {
-        counter.done++;
-        if (counter.done >= counter.total) {
-          completedAppCount++;
-          eventBus?.emit("app-analysis-progress", {
-            totalApps,
-            completedApps: completedAppCount,
-            appName: task.appInfo.name,
-          });
+            await runEnrichmentAgent({
+              codebasePath,
+              app,
+              endpoints: enrichmentEndpoints,
+              frameworks: surfaceResult.frameworks,
+              model,
+              session,
+              authConfig,
+              abortSignal,
+              eventBus,
+              attackSurfaceRegistry,
+              onStepFinish,
+              onCacheMetrics,
+              projectThreatModel,
+            });
+          } else {
+            console.log(
+              `[whitebox] ${app.name}: fallback (${surfaceResult.reason})`,
+            );
+            await Promise.all([spawnPagesAgent(app), spawnApiEndpointsAgent(app)]);
+          }
         }
+      } finally {
+        completedAppCount++;
+        eventBus?.emit("app-analysis-progress", {
+          totalApps,
+          completedApps: completedAppCount,
+          appName: app.name,
+        });
       }
     },
   );
