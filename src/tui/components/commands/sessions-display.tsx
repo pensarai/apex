@@ -304,7 +304,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                           <text
                             fg={isSelected ? colors.text : colors.textMuted}
                           >
-                            {session.name}
+                            {session.name ?? ""}
                           </text>
                           <text
                             fg={

@@ -6,6 +6,7 @@ import { useSession } from "../context/session";
 import { useInput } from "../context/input";
 import { useTheme } from "../theme";
 import { useDimensions } from "../context/dimensions";
+import { useObfuscation } from "../context/obfuscation";
 
 interface FooterProps {
   cwd?: string;
@@ -34,13 +35,17 @@ export default function Footer({
   const { colors } = useTheme();
   const { isExecuting, sessionCwd } = useAgent();
   const { width: termWidth } = useDimensions();
+  const { enabled: obfuscateEnabled } = useObfuscation();
   const effectiveCwd = sessionCwd || cwd;
   const relativeCwd = effectiveCwd.split(os.homedir()).pop() || "";
   const segments = relativeCwd.split("/").filter(Boolean);
-  const displayCwd =
+  const rawDisplayCwd =
     segments.length <= 2
       ? "~/" + segments.join("/")
       : "…/" + segments.slice(-2).join("/");
+  // When obfuscation is on, show a generic placeholder rather than leaking
+  // the operator's local working directory in screenshots.
+  const displayCwd = obfuscateEnabled ? "~/[workdir]" : rawDisplayCwd;
   const showCwd = termWidth >= 100;
   const session = useSession();
   const { isInputEmpty } = useInput();
@@ -86,14 +91,20 @@ export default function Footer({
 export function AgentStatus() {
   const { colors } = useTheme();
   const { tokenUsage } = useAgent();
+  const { width: termWidth } = useDimensions();
+  const showTokenCount = termWidth > 85;
 
   const tokenLabel = `↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)}${tokenUsage.cachedTokens > 0 ? ` ⚡${formatTokenCount(tokenUsage.cachedTokens)}` : ""} Σ${formatTokenCount(tokenUsage.totalTokens)}`;
 
   return (
     <box flexDirection="row" gap={1}>
-      <box border={["right"]} borderColor={colors.primary} />
-      <text fg={colors.text}>{tokenLabel}</text>
-      <box border={["right"]} borderColor={colors.primary} />
+      {showTokenCount && (
+        <>
+          <box border={["right"]} borderColor={colors.primary} />
+          <text fg={colors.text}>{tokenLabel}</text>
+          <box border={["right"]} borderColor={colors.primary} />
+        </>
+      )}
       <ContextProgress width={16} showPercent={true} />
     </box>
   );

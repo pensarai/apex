@@ -7,6 +7,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { RGBA } from "@opentui/core";
 import { useTheme } from "../theme";
+import { useObfuscation } from "../context/obfuscation";
 
 // ---------------------------------------------------------------------------
 // Shared tick system — all loaders share one interval to avoid timer bloat
@@ -706,7 +707,16 @@ export function ShiningText({
   // (with different text lengths) start each shimmer pass in lockstep.
   useTick();
 
-  const len = text.length;
+  // Each character gets its own `<text content={ch} />`. The content setter
+  // sits on TextRenderable, not TextNodeRenderable, so it bypasses the
+  // central obfuscation patch in `tui/obfuscation/patch.ts`. Apply
+  // obfuscation here at the component boundary so the per-char split
+  // operates on the already-redacted string. Subscribing via
+  // `useObfuscation()` also forces a re-render on toggle.
+  const { redact } = useObfuscation();
+  const displayText = redact(text);
+
+  const len = displayText.length;
   const totalFrames = len + shimmerWidth;
   const periodMs = 1250 / speed;
   const cyclePos = (Date.now() % periodMs) / periodMs;
@@ -723,13 +733,13 @@ export function ShiningText({
         const norm = dist / (shimmerWidth - 1);
         const bell = 1.0 - (2 * norm - 1) * (2 * norm - 1);
         const alpha = baseAlpha + (1.0 - baseAlpha) * bell;
-        out.push({ ch: text[i], color: withAlpha(base, alpha) });
+        out.push({ ch: displayText[i], color: withAlpha(base, alpha) });
       } else {
-        out.push({ ch: text[i], color: withAlpha(base, baseAlpha) });
+        out.push({ ch: displayText[i], color: withAlpha(base, baseAlpha) });
       }
     }
     return out;
-  }, [head, text, base, shimmerWidth, baseAlpha, len]);
+  }, [head, displayText, base, shimmerWidth, baseAlpha, len]);
 
   return (
     <box flexDirection="row">
