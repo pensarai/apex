@@ -162,7 +162,7 @@ function ContextProgress({
     if (inLabel) {
       cells.push({
         ch: labelText[col - labelStart]!,
-        fg: isFilled ? fillColor : colors.text,
+        fg: colors.text,
       });
     } else if (isFilled) {
       cells.push({ ch: FILL_CHAR, fg: fillColor });
