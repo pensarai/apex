@@ -15,6 +15,7 @@
   "files": [
     "build",
     "bin",
+    "assets",
     "pensar.svg",
     "LICENSE"
   ],
