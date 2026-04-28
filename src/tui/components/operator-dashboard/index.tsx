@@ -471,7 +471,11 @@ export default function OperatorDashboard({
   }, [loading, refocusPrompt]);
 
   useEffect(() => {
-    if (!session) return;
+    // Only run the reset / hydrate cycle for *resumed* sessions (those
+    // with a `sessionId` prop). Brand-new sessions reach this effect after
+    // their first agent step has already accumulated tokens via
+    // `addTokenUsage`, and a reset here would wipe that initial usage.
+    if (!session || !sessionId) return;
 
     resetTokenUsage();
     tokenUsageRef.current = {
@@ -504,7 +508,7 @@ export default function OperatorDashboard({
     } catch {
       // Best effort hydration write.
     }
-  }, [session, addTokenUsage, resetTokenUsage]);
+  }, [session, sessionId, addTokenUsage, resetTokenUsage]);
 
   // ---------------------------------------------------------------------------
   // Message helpers — same pattern as pentest component
@@ -2204,8 +2208,6 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         flexShrink={0}
       >
         <box flexDirection="row" gap={2}>
-          <text fg={colors.primary}>Operator</text>
-          <text fg={colors.textMuted}>•</text>
           <text fg={colors.text}>{session?.name ?? "New Session"}</text>
           {(session?.targets[0] || initialConfig?.target) && (
             <>

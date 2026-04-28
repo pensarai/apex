@@ -565,8 +565,11 @@ export function createPensarModel(
               },
               usage: {
                 inputTokens: {
-                  total: inputTokens,
-                  noCache: undefined,
+                  total:
+                    inputTokens +
+                    (cacheReadTokens || 0) +
+                    (cacheCreationTokens || 0),
+                  noCache: inputTokens,
                   cacheRead: cacheReadTokens || undefined,
                   cacheWrite: cacheCreationTokens || undefined,
                 },

@@ -78,6 +78,16 @@ Use this to document each application/service you identify. Persists a JSON reco
 ## document_endpoint
 **This is your primary output tool for endpoints.** Use it to document every endpoint you discover. Each call persists a JSON record to the session's endpoints directory, organized by app.
 
+**HARD RULE — call this tool DIRECTLY, one route at a time.** The moment you have enough information about a route to document it, your very next tool call must be \`document_endpoint\` for that route. Do not defer. Do not batch. Do not collect routes into a list to "process later."
+
+**You MUST NOT, under any circumstances:**
+- Build a manifest, JSON file, list, or array of routes to document later (e.g. \`cat > /tmp/pages.json << EOF [...] EOF\`).
+- Write a shell, Python, or any other script whose purpose is to generate \`document_endpoint\` tool calls.
+- Use a single message to "summarize all the routes I'll document" before documenting them.
+- Stop documentation early because you "have enough" or it's "getting repetitive." If you discovered N routes, you must produce N \`document_endpoint\` calls.
+
+These patterns silently truncate at output-token limits and routes get dropped. The only correct workflow is: discover a route → call \`document_endpoint\` for it → discover the next route → call \`document_endpoint\` for it → ... until every route is documented. Repetition is expected and required.
+
 **CRITICAL — endpoint documentation rules:**
 - **One entry per unique route path.** Do NOT create separate entries for different HTTP methods on the same path. If \`/api/users\` supports GET, POST, and DELETE, that is ONE entry with \`method: ["GET", "POST", "DELETE"]\`.
 - **Use \`method: "PAGE"\`** for web pages and views (non-API routes).
@@ -96,9 +106,9 @@ When your objective includes structured output, call \`response\` with your fina
 1. **Orient first** — list files and read key entry points to understand the structure.
 2. **Ignore submodules** — check for a \`.gitmodules\` file or run \`git submodule status\`. Any directories that are git submodules are external dependencies and must be **completely excluded** from your analysis.
 3. **Search, then read** — use grep to locate what you need, then read the relevant files.
-4. **Document as you go** — call document_app for apps and document_endpoint for every endpoint you discover. Don't batch them up.
+4. **Document each item the instant you discover it** — every \`document_app\` / \`document_endpoint\` call must be made directly, one item per call, immediately after you identify it. Never collect items into a manifest, JSON file, or batch script. If you find yourself thinking "let me list all of these and then document them," stop — that pattern silently drops items when output tokens run out.
 5. **Follow the trail** — trace through imports, function calls, and references to build full understanding.
-6. **Be thorough** — don't stop at the first match. Cover everything relevant to the objective.
+6. **Be thorough** — don't stop at the first match. Cover everything relevant to the objective. Repetitive \`document_endpoint\` calls are expected; do not summarize, deduplicate, or shortcut them.
 `;
 
 // ---------------------------------------------------------------------------
@@ -821,8 +831,20 @@ For each page, call \`document_endpoint\` with:
 - **authRequired**: Whether the page requires authentication
 - **riskLevel**: CRITICAL for admin/auth pages, HIGH for user data, MEDIUM for general, LOW for static/public
 
-Be thorough — examine every route file, every page directory, every template **within \`${appInfo.location}\`**.
-When finished, call \`response\` with a summary of how many pages you documented.`;
+### Required workflow — NO MANIFESTS, NO BATCHING
+**You MUST call \`document_endpoint\` directly, one page at a time, the moment you identify a route.** It is a hard error to:
+- Build a JSON file, array, or list of pages-to-document and then "process" it (e.g. \`cat > /tmp/pages.json << EOF [...] EOF\`).
+- Write a Python or shell script that emits \`document_endpoint\` calls.
+- Defer documentation until "the end" or until "you have the full picture."
+- Stop early because the calls feel repetitive or because you've documented "the important ones."
+
+These patterns hit per-message output-token limits and silently drop pages — usually the alphabetically-later ones. The only correct loop is: identify route → call \`document_endpoint\` → identify next route → call \`document_endpoint\` → ...
+
+You may use \`list_files\`, \`grep\`, or \`execute_command\` (e.g. \`find ... -name page.tsx\`) to **enumerate** the routes that exist. That enumeration step is fine and encouraged. What is not allowed is using a script to **emit the documentation calls themselves** — those must come directly from you, one tool call per route.
+
+Be thorough — examine every route file, every page directory, every template **within \`${appInfo.location}\`**. Every page surfaced by your enumeration must result in its own \`document_endpoint\` call. Repetitive calls are expected; do not summarize, deduplicate to "interesting" routes, or skip any.
+
+When finished, call \`response\` with a summary of how many pages you documented. The reported count must equal the number of successful \`document_endpoint\` calls you made.`;
 }
 
 function buildApiEndpointsDiscoveryObjective(
@@ -874,8 +896,20 @@ For each **unique route path**, call \`document_endpoint\` with:
 
 **IMPORTANT — Method consolidation for document_endpoint:** When using the \`document_endpoint\` tool, do NOT create separate entries for different HTTP methods on the same route path. For example, if \`/api/users\` supports GET, POST, and DELETE, document it as ONE entry with \`method: ["GET", "POST", "DELETE"]\` and include pentest objectives covering all methods.
 
-Be thorough — trace through all route registrations, middleware chains, and controller files **within \`${appInfo.location}\`**.
-When finished, call \`response\` with a summary of how many endpoints you documented.`;
+### Required workflow — NO MANIFESTS, NO BATCHING
+**You MUST call \`document_endpoint\` directly, one route at a time, the moment you identify it.** It is a hard error to:
+- Build a JSON file, array, or list of endpoints-to-document and then "process" it (e.g. \`cat > /tmp/endpoints.json << EOF [...] EOF\`).
+- Write a Python or shell script that emits \`document_endpoint\` calls.
+- Defer documentation until you've "mapped everything out."
+- Stop early because the calls feel repetitive or because you've covered "the important ones."
+
+These patterns hit per-message output-token limits and silently drop endpoints — usually the alphabetically-later ones. The only correct loop is: identify route → call \`document_endpoint\` → identify next route → call \`document_endpoint\` → ...
+
+You may use \`list_files\`, \`grep\`, or \`execute_command\` to **enumerate** routes (e.g. extracting all route registrations into a list to read). That enumeration step is fine. What is not allowed is using a script to **emit the documentation calls themselves** — those must come directly from you, one tool call per unique route path.
+
+Be thorough — trace through all route registrations, middleware chains, and controller files **within \`${appInfo.location}\`**. Every unique route path your enumeration surfaces must result in its own \`document_endpoint\` call.
+
+When finished, call \`response\` with a summary of how many endpoints you documented. The reported count must equal the number of successful \`document_endpoint\` calls you made.`;
 }
 
 function buildCloudResourceEndpointsObjective(
@@ -939,7 +973,10 @@ For each entry point, call \`document_endpoint\` with:
 - **authRequired**: Whether external access requires authentication
 - **riskLevel**: CRITICAL for publicly accessible storage with write access or sensitive data, HIGH for resources with broad IAM permissions, MEDIUM for internal resources, LOW for read-only public assets
 
-When finished, call \`response\` with a summary of how many entry points you documented.`;
+### Required workflow — NO MANIFESTS, NO BATCHING
+**You MUST call \`document_endpoint\` directly, one entry point at a time, the moment you identify it.** Do not build a JSON file or list of entry points to "process later," and do not write a script that emits \`document_endpoint\` calls. Those patterns hit per-message output-token limits and silently drop entries. The only correct loop is: identify entry point → call \`document_endpoint\` → identify next → call \`document_endpoint\` → ...
+
+When finished, call \`response\` with a summary of how many entry points you documented. The reported count must equal the number of successful \`document_endpoint\` calls you made.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1253,6 +1290,8 @@ For modified endpoints, update the existing JSON file via \`execute_command\`.
 For removed endpoints, delete the file via \`execute_command\`.
 
 **IMPORTANT: ONE entry per route path.** Do NOT create separate entries for different HTTP methods on the same path.
+
+**IMPORTANT: NO MANIFESTS, NO BATCHING.** Call \`document_endpoint\` directly, one new endpoint at a time, the moment you identify it. Do not build a JSON file or list of endpoints-to-document and process it later, and do not write a script that emits \`document_endpoint\` calls — that pattern hits output-token limits and silently drops endpoints.
 
 ### Step 4: Report
 When finished, call the \`response\` tool with a summary of your changes.

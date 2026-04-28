@@ -8,19 +8,26 @@ import type {
 } from "./types";
 
 /**
- * Approval gate configuration — simple boolean toggle.
+ * Approval gate configuration.
+ *
+ * `decisionTimeoutMs` sets the operator decision SLA: when the operator
+ * does not respond within this window, the pending approval is resolved
+ * by the default-safe action (currently `"deny"`). `undefined` disables
+ * the timeout (operator decides when to act).
  */
 export interface ApprovalGateConfig {
   requireApproval: boolean;
+  decisionTimeoutMs?: number;
 }
 
-/**
- * Deferred promise for pending approvals
- */
+/** Default operator decision SLA when `requireApproval` is true. */
+export const DEFAULT_DECISION_TIMEOUT_MS = 15 * 60 * 1000;
+
 interface DeferredApproval {
   approval: PendingApproval;
   resolve: (decision: ApprovalDecision) => void;
   reject: (error: Error) => void;
+  timeoutHandle?: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -37,7 +44,10 @@ export class ApprovalGate extends EventEmitter {
 
   constructor(config: ApprovalGateConfig) {
     super();
-    this.config = config;
+    this.config = {
+      decisionTimeoutMs: DEFAULT_DECISION_TIMEOUT_MS,
+      ...config,
+    };
   }
 
   updateConfig(config: Partial<ApprovalGateConfig>): void {
@@ -94,8 +104,44 @@ export class ApprovalGate extends EventEmitter {
     return new Promise((resolve, reject) => {
       const deferred: DeferredApproval = { approval, resolve, reject };
       this.pendingApprovals.set(approval.id, deferred);
+
+      // Enforce the operator decision SLA: on timeout, resolve to the
+      // default-safe action (deny) so the agent never hangs on an
+      // unresponsive operator.
+      const timeoutMs = this.config.decisionTimeoutMs;
+      if (timeoutMs !== undefined && timeoutMs > 0) {
+        deferred.timeoutHandle = setTimeout(() => {
+          this.timeoutApproval(approval.id, timeoutMs);
+        }, timeoutMs);
+      }
+
       this.emitEvent({ type: "approval-needed", approval });
     });
+  }
+
+  private timeoutApproval(approvalId: string, timeoutMs: number): void {
+    const deferred = this.pendingApprovals.get(approvalId);
+    if (!deferred) return;
+
+    this.pendingApprovals.delete(approvalId);
+    const entry = this.recordAction(
+      deferred.approval.toolName,
+      deferred.approval.toolCallId,
+      "denied",
+    );
+    entry.resultSummary = `decision_timeout:${timeoutMs}ms`;
+
+    this.emitEvent({
+      type: "approval-resolved",
+      id: approvalId,
+      decision: "denied",
+    });
+    this.emitEvent({ type: "action-completed", entry });
+    deferred.reject(
+      new ApprovalTimeoutError(
+        `Operator decision timeout after ${timeoutMs}ms for ${deferred.approval.toolName} — default-safe deny`,
+      ),
+    );
   }
 
   approve(approvalId: string): void {
@@ -104,6 +150,7 @@ export class ApprovalGate extends EventEmitter {
       throw new Error(`No pending approval with id: ${approvalId}`);
     }
 
+    if (deferred.timeoutHandle) clearTimeout(deferred.timeoutHandle);
     this.pendingApprovals.delete(approvalId);
     const entry = this.recordAction(
       deferred.approval.toolName,
@@ -124,6 +171,7 @@ export class ApprovalGate extends EventEmitter {
     const deferred = this.pendingApprovals.get(approvalId);
     if (!deferred) return;
 
+    if (deferred.timeoutHandle) clearTimeout(deferred.timeoutHandle);
     this.pendingApprovals.delete(approvalId);
     const entry = this.recordAction(
       deferred.approval.toolName,
@@ -193,6 +241,18 @@ export class ApprovalDeniedError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ApprovalDeniedError";
+  }
+}
+
+/**
+ * Raised when an approval request exceeds the operator decision SLA.
+ * Extends `ApprovalDeniedError` so callers that already treat denial as
+ * fail-closed will treat a timeout the same way.
+ */
+export class ApprovalTimeoutError extends ApprovalDeniedError {
+  constructor(message: string) {
+    super(message);
+    this.name = "ApprovalTimeoutError";
   }
 }
 
