@@ -170,18 +170,11 @@ export class PersistentShell {
   private pendingCancel: ((result: ShellExecuteResult) => void) | null = null;
 
   /**
-   * FIFO queue for `execute()` calls. Each call awaits the previous tail of
-   * the chain before assigning `this.current`, so concurrent calls in the
-   * same JS tick can no longer race on a shared pending pointer and
-   * cross-contaminate stdout/stderr.
-   *
-   * Without this, two `execute()` calls in the same microtask both reach
-   * `this.current = pending` synchronously — last writer wins — and bash's
-   * stdout/stderr handlers (which read `this.current` per chunk) pin both
-   * wrappers' bytes onto the second pending. The first pending returns
-   * `(no output)`; the second leaks the first's wrapper markers and bash
-   * job-control stderr (e.g. SIGTERM messages for processes it didn't
-   * spawn). See issue #645 for the full forensic trace.
+   * Tail of the FIFO mutex chain used by `acquireTurn()`. Each `execute()`
+   * call snapshots this, installs a new tail, and awaits its snapshot —
+   * serializing all calls so concurrent ones in the same JS tick can no
+   * longer race on `this.current` and cross-contaminate stdout/stderr.
+   * See issue #645 for the forensic trace of the underlying bug.
    */
   private writeChain: Promise<void> = Promise.resolve();
 
@@ -381,71 +374,39 @@ export class PersistentShell {
     if (this.disposed) {
       return { stdout: "", stderr: "Shell has been disposed", exitCode: 1 };
     }
-
     if (abortSignal?.aborted) {
-      return {
-        stdout: "",
-        stderr: "Command aborted",
-        exitCode: 130,
-      };
-    }
-
-    // Take a turn in the FIFO queue. Concurrent calls in the same JS tick
-    // would otherwise both reach `this.current = pending` synchronously
-    // and cross-contaminate stdout/stderr (issue #645). Each call snapshots
-    // the current chain tail, installs a new tail, and waits for the
-    // previous tail to resolve. `releaseTurn` is called from
-    // `pending.resolve` (wrapped below) so every completion path — happy,
-    // timeout, abort, close, cancel, write-error — frees the next caller.
-    const myTurn = this.writeChain;
-    let releaseTurn!: () => void;
-    let turnReleased = false;
-    this.writeChain = new Promise<void>((res) => {
-      releaseTurn = () => {
-        if (turnReleased) return;
-        turnReleased = true;
-        res();
-      };
-    });
-    await myTurn;
-
-    // A queued call can wait minutes; re-validate runtime state after the
-    // wait so disposal or abort during the queue doesn't consume bash time.
-    if (this.disposed) {
-      releaseTurn();
-      return { stdout: "", stderr: "Shell has been disposed", exitCode: 1 };
-    }
-    if (abortSignal?.aborted) {
-      releaseTurn();
       return { stdout: "", stderr: "Command aborted", exitCode: 130 };
     }
 
-    this.ensureAlive();
+    const release = await this.acquireTurn();
+    try {
+      // A queued call can wait minutes; re-validate runtime state after the
+      // wait so disposal or abort during the queue doesn't consume bash time.
+      if (this.disposed) {
+        return { stdout: "", stderr: "Shell has been disposed", exitCode: 1 };
+      }
+      if (abortSignal?.aborted) {
+        return { stdout: "", stderr: "Command aborted", exitCode: 130 };
+      }
 
-    const proc = this.proc;
-    if (!proc || !proc.stdin || !proc.stdout || !proc.stderr) {
-      releaseTurn();
-      return { stdout: "", stderr: "Failed to spawn shell", exitCode: 1 };
-    }
+      this.ensureAlive();
 
-    return new Promise<ShellExecuteResult>((resolve) => {
-      let resolved = false;
-      let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
-      let killEscalationTimer: ReturnType<typeof setTimeout> | undefined;
-      let abortCleanup: (() => void) | undefined;
-      // Allocate the per-command markers inside the Promise body so any
-      // throw during construction (e.g. exhausted entropy on `randomBytes`)
-      // is caught by the outer try/catch below and the queue turn is
-      // released — without this, a throw between `await myTurn` and the
-      // installation of `pending.resolve` would deadlock the shell.
-      let pending: PendingCommand | null = null;
+      const proc = this.proc;
+      if (!proc || !proc.stdin || !proc.stdout || !proc.stderr) {
+        return { stdout: "", stderr: "Failed to spawn shell", exitCode: 1 };
+      }
 
-      try {
+      return await new Promise<ShellExecuteResult>((resolve) => {
+        let resolved = false;
+        let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+        let killEscalationTimer: ReturnType<typeof setTimeout> | undefined;
+        let abortCleanup: (() => void) | undefined;
+
         const marker = `__APEX_${randomBytes(8).toString("hex")}__`;
         const exitMarkerPrefix = `${marker}_EXIT_`;
         const cutoverMarker = `${marker}_CUTOVER`;
 
-        pending = {
+        const pending: PendingCommand = {
           streamedStdout: "",
           authoritativeStdout: "",
           cutoverSeen: false,
@@ -462,10 +423,6 @@ export class PersistentShell {
             if (timeoutTimer) clearTimeout(timeoutTimer);
             if (killEscalationTimer) clearTimeout(killEscalationTimer);
             if (abortCleanup) abortCleanup();
-            // Release the queue turn before resolving so the next queued
-            // execute() can assign `this.current` in the same tick the
-            // caller observes the result.
-            releaseTurn();
             resolve(result);
           },
         };
@@ -474,11 +431,12 @@ export class PersistentShell {
         this.pendingCancel = pending.resolve;
 
         if (abortSignal) {
-          const p = pending;
           const onAbort = () => {
             if (resolved) return;
-            p.forcedExitCode = 130;
-            p.forcedStderrSuffix = p.stderr ? "\n(aborted)" : "(aborted)";
+            pending.forcedExitCode = 130;
+            pending.forcedStderrSuffix = pending.stderr
+              ? "\n(aborted)"
+              : "(aborted)";
             killDescendants(proc.pid, "SIGTERM");
             killEscalationTimer = setTimeout(() => {
               if (resolved) return;
@@ -487,9 +445,10 @@ export class PersistentShell {
               // 2 seconds (shell wedged), resolve with whatever we have.
               setTimeout(() => {
                 if (resolved) return;
-                p.resolve({
-                  stdout: extractFallbackStdout(p),
-                  stderr: (p.stderr || "") + (p.forcedStderrSuffix ?? ""),
+                pending.resolve({
+                  stdout: extractFallbackStdout(pending),
+                  stderr:
+                    (pending.stderr || "") + (pending.forcedStderrSuffix ?? ""),
                   exitCode: 130,
                 });
               }, 2_000);
@@ -501,10 +460,9 @@ export class PersistentShell {
         }
 
         if (timeoutSeconds != null && timeoutSeconds > 0) {
-          const p = pending;
           timeoutTimer = setTimeout(() => {
             if (resolved) return;
-            p.forcedExitCode = 124;
+            pending.forcedExitCode = 124;
             // Kill every descendant of the shell, not just direct children:
             // pipelines and nested subshells are grandchildren and `pkill -P`
             // would leak them.
@@ -516,9 +474,9 @@ export class PersistentShell {
               // 2 seconds (shell wedged), resolve with whatever we have.
               setTimeout(() => {
                 if (resolved) return;
-                p.resolve({
-                  stdout: extractFallbackStdout(p),
-                  stderr: p.stderr || "",
+                pending.resolve({
+                  stdout: extractFallbackStdout(pending),
+                  stderr: pending.stderr || "",
                   exitCode: 124,
                 });
               }, 2_000);
@@ -593,28 +551,36 @@ export class PersistentShell {
             exitCode: 1,
           });
         }
-      } catch (e) {
-        // Defense in depth: if anything between `await myTurn` and
-        // installation of `pending.resolve` threw, the wrapped resolver
-        // never ran and the queue turn would leak, deadlocking subsequent
-        // execute() calls. Catch, release the turn directly, and surface
-        // the error to the caller.
-        if (pending) {
-          pending.resolve({
-            stdout: "",
-            stderr: e instanceof Error ? e.message : String(e),
-            exitCode: 1,
-          });
-        } else {
-          releaseTurn();
-          resolve({
-            stdout: "",
-            stderr: e instanceof Error ? e.message : String(e),
-            exitCode: 1,
-          });
-        }
-      }
+      });
+    } catch (e) {
+      // Synchronous throws between `acquireTurn()` and resolver installation
+      // (e.g. `child_process.spawn` rejecting bad args, `randomBytes`
+      // exhausting entropy) land here so `finally` still releases the turn
+      // and the queue can't deadlock.
+      return {
+        stdout: "",
+        stderr: e instanceof Error ? e.message : String(e),
+        exitCode: 1,
+      };
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * Take the next slot in the FIFO mutex chain. Returns a release function
+   * that the caller must invoke (typically in `finally`) to free the next
+   * queued caller. Promise resolution is idempotent, so double-release is a
+   * no-op.
+   */
+  private async acquireTurn(): Promise<() => void> {
+    const myTurn = this.writeChain;
+    let release!: () => void;
+    this.writeChain = new Promise<void>((res) => {
+      release = res;
     });
+    await myTurn;
+    return release;
   }
 
   /**
