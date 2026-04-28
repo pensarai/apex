@@ -11,7 +11,6 @@
 import {
   createContext,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -19,6 +18,7 @@ import {
 import {
   resetObfuscation,
   setObfuscationEnabled,
+  isObfuscationEnabled,
   obfuscate as engineObfuscate,
 } from "../../core/obfuscation";
 
@@ -46,27 +46,29 @@ export function ObfuscationProvider({
   initialEnabled,
   children,
 }: ObfuscationProviderProps) {
+  // Initialise the engine eagerly, before any consumer renders, so the
+  // first frame sees the right state. Done at module-call time rather
+  // than via useEffect because effects run AFTER render — any component
+  // that calls `obfuscate()` during the first render would otherwise see
+  // stale engine state.
+  if (isObfuscationEnabled() !== initialEnabled) {
+    setObfuscationEnabled(initialEnabled);
+  }
   const [enabled, setEnabledState] = useState<boolean>(initialEnabled);
-
-  // Keep the global engine state in sync with React state. The engine is a
-  // module-level singleton because many code paths (markdown rendering,
-  // syntax highlighting, footer status text) are not React components and
-  // need a synchronous gate without prop drilling.
-  useEffect(() => {
-    setObfuscationEnabled(enabled);
-  }, [enabled]);
 
   const value = useMemo<ObfuscationContextValue>(() => {
     const setEnabled = (next?: boolean) => {
-      setEnabledState((prev) => {
-        const target = typeof next === "boolean" ? next : !prev;
-        if (target === prev) return prev;
-        // Reset placeholder counters when turning obfuscation on so a fresh
-        // mapping starts at <CATEGORY_1>. Leave the mapping alone on disable
-        // so re-enabling within the same session reuses prior placeholders.
-        if (target && !prev) resetObfuscation();
-        return target;
-      });
+      const target = typeof next === "boolean" ? next : !enabled;
+      if (target === enabled) return;
+      // Reset placeholder counters when turning obfuscation on so a fresh
+      // mapping starts at <CATEGORY_1>. Leave the mapping alone on disable
+      // so re-enabling within the same session reuses prior placeholders
+      // and `deobfuscate()` can still expand them back to originals.
+      if (target && !enabled) resetObfuscation();
+      // Update the engine FIRST, synchronously, so any render kicked off
+      // by the state setter below already sees the new state.
+      setObfuscationEnabled(target);
+      setEnabledState(target);
     };
     return {
       enabled,

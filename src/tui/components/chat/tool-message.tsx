@@ -18,6 +18,7 @@ import {
 } from "../shared/result-registry";
 import { isToolMessage } from "../shared/type-guards";
 import type { DisplayMessage } from "../agent-display";
+import { useObfuscation } from "../../context/obfuscation";
 
 // Tool category icons
 const TOOL_ICONS: Record<string, string> = {
@@ -47,6 +48,8 @@ export const ToolMessage = memo(function ToolMessage({
   expandedLogs = false,
 }: ToolMessageProps) {
   const { colors, mode } = useTheme();
+  // Subscribe so memoised tool messages re-render on /obfuscate toggle.
+  useObfuscation();
   const [showArgs, setShowArgs] = useState(false);
   const [showOutput, setShowOutput] = useState(false);
 

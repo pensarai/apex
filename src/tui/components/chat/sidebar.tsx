@@ -16,6 +16,7 @@ import type {
   Credential,
 } from "../operator-dashboard/types";
 import { obfuscate } from "../../../core/obfuscation";
+import { useObfuscation } from "../../context/obfuscation";
 
 // ============================================
 // Sidebar State Types
@@ -52,6 +53,9 @@ interface SidebarProps {
  */
 export function Sidebar({ collapsed, state, width = "30%" }: SidebarProps) {
   const { colors } = useTheme();
+  // Subscribe so all child panels re-render their obfuscate(...) calls
+  // when /obfuscate toggles.
+  useObfuscation();
   if (collapsed) {
     return null;
   }

@@ -13,6 +13,7 @@ import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
 import { PlanReviewMessage } from "../chat/plan-review-message";
 import { obfuscate } from "../../../core/obfuscation";
+import { useObfuscation } from "../../context/obfuscation";
 
 interface MessageRendererProps {
   message: DisplayMessage;
@@ -50,6 +51,10 @@ export const MessageRenderer = memo(function MessageRenderer({
   username = "user",
 }: MessageRendererProps) {
   const { colors } = useTheme();
+  // Subscribe to obfuscation toggles so this component re-renders (and
+  // re-runs `obfuscate()` / `markdownToStyledText()` with the new engine
+  // state) when the operator toggles `/obfuscate` on or off.
+  const { enabled: obfuscateEnabled } = useObfuscation();
   // Get string content
   const rawContent =
     typeof message.content === "string"
@@ -60,13 +65,15 @@ export const MessageRenderer = memo(function MessageRenderer({
   const content =
     message.role === "assistant" ? rawContent : obfuscate(rawContent);
 
-  // Memoize markdown conversion for assistant messages
+  // Memoize markdown conversion for assistant messages.
+  // `obfuscateEnabled` is included in deps so toggling /obfuscate busts
+  // the cache: the same rawContent must re-render with the new state.
   const displayContent = useMemo(
     () =>
       message.role === "assistant"
         ? markdownToStyledText(content, colors)
         : content,
-    [content, message.role, colors],
+    [content, message.role, colors, obfuscateEnabled],
   );
 
   // Tool messages

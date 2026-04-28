@@ -8,6 +8,7 @@
 import { useTheme } from "../../theme";
 import type { OperatorMode, OperatorStage } from "../../../core/operator";
 import { obfuscate } from "../../../core/obfuscation";
+import { useObfuscation } from "../../context/obfuscation";
 
 export interface HeaderProps {
   /** Session mode */
@@ -55,6 +56,9 @@ export function Header({
   toolCallsCount = 0,
 }: HeaderProps) {
   const { colors } = useTheme();
+  // Subscribe so the header re-renders when /obfuscate is toggled,
+  // restoring or redacting the target string in real time.
+  useObfuscation();
   // Get mode display
   const getModeDisplay = () => {
     if (mode === "chat") {

@@ -13,6 +13,7 @@ import { getResultSummary, type ResultSummary } from "./result-registry";
 import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
 import { PentestWorkflowDisplay } from "./pentest-workflow-display";
+import { useObfuscation } from "../../context/obfuscation";
 
 const TOOLS_WITH_LOG_WINDOW = new Set([
   "execute_command",
@@ -41,6 +42,10 @@ export const ToolRenderer = memo(function ToolRenderer({
   expandedLogs = false,
 }: ToolRendererProps) {
   const { colors, mode } = useTheme();
+  // Subscribe so tool labels and result summaries (both flow through
+  // `obfuscate()` in tool-registry / result-registry) re-render when
+  // /obfuscate is toggled.
+  useObfuscation();
   const [showOutput, setShowOutput] = useState(false);
 
   // Type guard ensures we have a tool message

@@ -347,3 +347,34 @@ export function obfuscateValue(
   if (!STATE.enabled || !value) return value;
   return placeholderFor(value, category);
 }
+
+/**
+ * Reverse `obfuscate()`/`obfuscateValue()` — replace every known
+ * `<CATEGORY_N>` placeholder with the original value it was generated
+ * from. Unknown placeholders are left intact.
+ *
+ * Used by inputs that redact text in-place while the user types: the
+ * textarea displays placeholders, but the agent must receive the
+ * original values on submit.
+ *
+ * Reversal is unconditional — it works even when obfuscation is
+ * disabled, so a value that was redacted before obfuscation was toggled
+ * off still resolves cleanly.
+ */
+export function deobfuscate(input: string): string {
+  if (!input || STATE.mapping.size === 0) return input;
+  // Sort by descending index per category so longer placeholders
+  // (`<HOST_10>`) are tried before their prefixes (`<HOST_1>`). Both are
+  // unique strings, but ordering keeps the regex shape simple if we
+  // ever switch to a single combined pass.
+  const entries = Array.from(STATE.mapping.entries()).sort(
+    ([, a], [, b]) => b.index - a.index,
+  );
+  let output = input;
+  for (const [original, { category, index }] of entries) {
+    const placeholder = `<${category}_${index}>`;
+    if (!output.includes(placeholder)) continue;
+    output = output.split(placeholder).join(original);
+  }
+  return output;
+}

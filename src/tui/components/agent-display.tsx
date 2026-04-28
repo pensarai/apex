@@ -9,6 +9,7 @@ import {
 import { useTheme } from "../theme";
 import { useDimensions } from "../context/dimensions";
 import { obfuscate } from "../../core/obfuscation";
+import { useObfuscation } from "../context/obfuscation";
 
 export type Subagent = {
   id: string;
@@ -212,6 +213,8 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
   subagent: Subagent;
 }) {
   const { colors } = useTheme();
+  // Subscribe so memoised render bypasses cached output on /obfuscate toggle.
+  useObfuscation();
   const [open, setOpen] = useState(false);
 
   return (
@@ -258,6 +261,8 @@ const AgentMessage = memo(function AgentMessage({
 }) {
   const { colors } = useTheme();
   const dimensions = useDimensions();
+  // Subscribe so memoised render bypasses cached output on /obfuscate toggle.
+  useObfuscation();
   let content = "";
 
   if (typeof message.content === "string") {

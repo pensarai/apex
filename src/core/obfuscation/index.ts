@@ -19,6 +19,7 @@
 export {
   obfuscate,
   obfuscateValue,
+  deobfuscate,
   resetObfuscation,
   isObfuscationEnabled,
   setObfuscationEnabled,

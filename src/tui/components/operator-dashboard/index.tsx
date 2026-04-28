@@ -103,6 +103,7 @@ import { isAbsolute, join, resolve } from "path";
 import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
 import { buildPentestPrompt } from "../../../core/skills/builtins/pentest";
 import { obfuscate } from "../../../core/obfuscation";
+import { useObfuscation } from "../../context/obfuscation";
 
 function markInFlightToolsErrored(
   messages: DisplayMessage[],
@@ -134,6 +135,9 @@ export default function OperatorDashboard({
   };
 }) {
   const { colors } = useTheme();
+  // Subscribe so the dashboard header (session name + target) re-renders
+  // when /obfuscate is toggled at runtime.
+  useObfuscation();
   const route = useRoute();
   const config = useConfig();
   const {

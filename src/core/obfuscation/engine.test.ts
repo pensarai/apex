@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   obfuscate,
   obfuscateValue,
+  deobfuscate,
   resetObfuscation,
   setObfuscationEnabled,
   isObfuscationEnabled,
@@ -144,5 +145,37 @@ describe("obfuscation engine", () => {
     const out = obfuscate("Edit config.json then run app.py");
     expect(out).toContain("config.json");
     expect(out).toContain("app.py");
+  });
+
+  it("deobfuscate restores originals from placeholders", () => {
+    const original = "Scan staging-console.pensar.dev and 10.0.0.1";
+    const redacted = obfuscate(original);
+    expect(redacted).not.toContain("staging-console.pensar.dev");
+    expect(redacted).not.toContain("10.0.0.1");
+    expect(deobfuscate(redacted)).toBe(original);
+  });
+
+  it("deobfuscate handles two-digit indices without prefix collision", () => {
+    // Build 11 host entries so we have <HOST_10> and <HOST_1> coexisting.
+    for (let i = 1; i <= 11; i++) {
+      obfuscate(`host-${i}.example.com`);
+    }
+    const text = "see <HOST_1> and <HOST_10>";
+    const restored = deobfuscate(text);
+    expect(restored).toContain("host-1.example.com");
+    expect(restored).toContain("host-10.example.com");
+    expect(restored).not.toContain("<HOST_1>");
+    expect(restored).not.toContain("<HOST_10>");
+  });
+
+  it("deobfuscate is a no-op when nothing has been obfuscated", () => {
+    resetObfuscation();
+    expect(deobfuscate("plain text <HOST_1>")).toBe("plain text <HOST_1>");
+  });
+
+  it("deobfuscate works even when obfuscation is disabled", () => {
+    obfuscate("acme.example.com");
+    setObfuscationEnabled(false);
+    expect(deobfuscate("seen at <HOST_1>")).toBe("seen at acme.example.com");
   });
 });
