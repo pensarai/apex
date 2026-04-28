@@ -91,14 +91,20 @@ export default function Footer({
 export function AgentStatus() {
   const { colors } = useTheme();
   const { tokenUsage } = useAgent();
+  const { width: termWidth } = useDimensions();
+  const showTokenCount = termWidth > 85;
 
   const tokenLabel = `↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)}${tokenUsage.cachedTokens > 0 ? ` ⚡${formatTokenCount(tokenUsage.cachedTokens)}` : ""} Σ${formatTokenCount(tokenUsage.totalTokens)}`;
 
   return (
     <box flexDirection="row" gap={1}>
-      <box border={["right"]} borderColor={colors.primary} />
-      <text fg={colors.text}>{tokenLabel}</text>
-      <box border={["right"]} borderColor={colors.primary} />
+      {showTokenCount && (
+        <>
+          <box border={["right"]} borderColor={colors.primary} />
+          <text fg={colors.text}>{tokenLabel}</text>
+          <box border={["right"]} borderColor={colors.primary} />
+        </>
+      )}
       <ContextProgress width={16} showPercent={true} />
     </box>
   );
