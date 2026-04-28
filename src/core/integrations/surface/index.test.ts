@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { EndpointIndex, type EndpointInfo, type MapResult } from "@pensar/surface";
+import {
+  EndpointIndex,
+  type EndpointInfo,
+  type MapResult,
+} from "@pensar/surface";
 
 import {
   consolidateBySameRoute,
@@ -21,7 +25,10 @@ function makeEndpointInfo(
   };
 }
 
-function makeMapResult(endpoints: EndpointInfo[], overrides?: Partial<MapResult>): MapResult {
+function makeMapResult(
+  endpoints: EndpointInfo[],
+  overrides?: Partial<MapResult>,
+): MapResult {
   const frameworks = overrides?.frameworks ?? [];
   return {
     repoPath: "/fake/repo",
@@ -80,7 +87,7 @@ describe("consolidateBySameRoute", () => {
     const out = consolidateBySameRoute(rows);
 
     expect(out).toHaveLength(2);
-    expect(out.map(e => e.file).sort()).toEqual([
+    expect(out.map((e) => e.file).sort()).toEqual([
       "src/admin/users.ts",
       "src/api/users.ts",
     ]);
@@ -198,8 +205,8 @@ describe("mapAppWithSurface (via synthetic MapResult — integration of consolid
     const consolidated = consolidateBySameRoute(rows);
     expect(consolidated).toHaveLength(2);
 
-    const page = consolidated.find(e => e.file.endsWith("page.tsx"));
-    const api = consolidated.find(e => e.file.endsWith("route.ts"));
+    const page = consolidated.find((e) => e.file.endsWith("page.tsx"));
+    const api = consolidated.find((e) => e.file.endsWith("route.ts"));
     expect(page).toBeDefined();
     expect(api).toBeDefined();
     expect(api!.method).toEqual(["GET", "POST"]);

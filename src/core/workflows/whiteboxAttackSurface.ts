@@ -509,7 +509,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
             console.log(
               `[whitebox] ${app.name}: fallback (${surfaceResult.reason})`,
             );
-            await Promise.all([spawnPagesAgent(app), spawnApiEndpointsAgent(app)]);
+            await Promise.all([
+              spawnPagesAgent(app),
+              spawnApiEndpointsAgent(app),
+            ]);
           }
         }
       } finally {

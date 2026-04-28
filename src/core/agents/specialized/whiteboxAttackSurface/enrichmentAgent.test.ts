@@ -67,9 +67,7 @@ describe("buildEnrichmentObjective", () => {
   });
 
   it("renders file:line and handler sub-bullets per endpoint", () => {
-    expect(objective).toContain(
-      "file: apps/myapp/app/dashboard/page.tsx:12",
-    );
+    expect(objective).toContain("file: apps/myapp/app/dashboard/page.tsx:12");
     expect(objective).toContain("handler: DashboardPage");
     expect(objective).toContain("file: apps/myapp/app/api/users/route.ts:7");
     expect(objective).toContain("handler: GET, POST");
@@ -88,7 +86,7 @@ describe("buildEnrichmentObjective", () => {
 
   it("instructs the agent to call document_asset with the apex-shape fields", () => {
     expect(objective).toContain("document_asset");
-    expect(objective).toContain('appName');
+    expect(objective).toContain("appName");
     expect(objective).toContain('"myapp"');
     expect(objective).toContain("details");
     expect(objective).toContain("description");
