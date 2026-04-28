@@ -58,13 +58,18 @@ export function ObfuscationProvider({
 
   const value = useMemo<ObfuscationContextValue>(() => {
     const setEnabled = (next?: boolean) => {
-      const target = typeof next === "boolean" ? next : !enabled;
-      if (target === enabled) return;
+      // Read live engine state rather than the captured `enabled` from
+      // closure. This makes the function safe against stale references
+      // — a caller that grabbed `setEnabled` on an early render still
+      // toggles correctly after subsequent flips.
+      const current = isObfuscationEnabled();
+      const target = typeof next === "boolean" ? next : !current;
+      if (target === current) return;
       // Reset placeholder counters when turning obfuscation on so a fresh
       // mapping starts at <CATEGORY_1>. Leave the mapping alone on disable
       // so re-enabling within the same session reuses prior placeholders
       // and `deobfuscate()` can still expand them back to originals.
-      if (target && !enabled) resetObfuscation();
+      if (target && !current) resetObfuscation();
       // Update the engine FIRST, synchronously, so any render kicked off
       // by the state setter below already sees the new state.
       setObfuscationEnabled(target);

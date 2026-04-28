@@ -17,6 +17,7 @@ import type { AutocompleteOption } from "../components/shared/prompt-input";
 import { useRoute, type WebCommandOptions } from "./route";
 import { createSkillsRegistry, type SkillsRegistry } from "../../core/skills";
 import { useObfuscation } from "./obfuscation";
+import { isObfuscationEnabled } from "../../core/obfuscation";
 import { useToast } from "./toast";
 
 interface CommandContextValue {
@@ -96,15 +97,15 @@ export function CommandProvider({
       openPentestDialog: onOpenPentestDialog,
       openSkillsDialog: onOpenSkillsDialog,
       setObfuscation: (enabled) => {
-        // The React state update is async, so compute the resulting value
-        // up-front (matching the toggle semantics inside the provider) and
-        // return it for command handlers that want to display feedback.
-        const next =
-          typeof enabled === "boolean" ? enabled : !obfuscation.enabled;
+        // Read live engine state so toast feedback is accurate even if
+        // this closure was captured on an earlier render. The provider's
+        // `setEnabled` is itself idempotent against stale closures.
+        const current = isObfuscationEnabled();
+        const next = typeof enabled === "boolean" ? enabled : !current;
         obfuscation.setEnabled(next);
         return next;
       },
-      getObfuscation: () => obfuscation.enabled,
+      getObfuscation: () => isObfuscationEnabled(),
       toast,
     };
     return ctx;
