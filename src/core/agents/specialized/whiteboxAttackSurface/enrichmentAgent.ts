@@ -7,7 +7,10 @@ import {
   WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
   type DiscoverySummary,
 } from "../../../workflows/whiteboxAttackSurface";
-import type { ConsolidatedEndpoint, FrameworkId } from "../../../integrations/surface/types";
+import type {
+  ConsolidatedEndpoint,
+  FrameworkId,
+} from "../../../integrations/surface/types";
 import type { ClassifiedEndpoint } from "../../../integrations/surface/classifier";
 import type { AIModel, CacheMetrics } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
@@ -73,7 +76,8 @@ interface BuildObjectiveOpts {
 export function buildEnrichmentObjective(opts: BuildObjectiveOpts): string {
   const { app, codebasePath, endpoints, frameworks } = opts;
 
-  const frameworkLabel = frameworks.length > 0 ? frameworks.join(", ") : "unknown";
+  const frameworkLabel =
+    frameworks.length > 0 ? frameworks.join(", ") : "unknown";
 
   const endpointList = endpoints
     .map((ep, i) => {
@@ -156,7 +160,11 @@ export async function runEnrichmentAgent(
   eventBus?.emit("subagent-spawn", {
     subagentId,
     name: app.name,
-    input: { app: app.name, type: "enrichment", endpointCount: endpoints.length },
+    input: {
+      app: app.name,
+      type: "enrichment",
+      endpointCount: endpoints.length,
+    },
   });
 
   const objective = buildEnrichmentObjective({

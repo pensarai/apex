@@ -1,8 +1,4 @@
-import type {
-  EndpointInfo,
-  FrameworkId,
-  HttpMethod,
-} from "@pensar/surface";
+import type { EndpointInfo, FrameworkId, HttpMethod } from "@pensar/surface";
 
 /**
  * Apex-internal endpoint shape used by the surface-driven workflow.

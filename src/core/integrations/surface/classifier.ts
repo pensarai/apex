@@ -36,7 +36,8 @@ const NEXTJS_PAGES_DIR_RE = /(?:^|\/)pages\//;
 const NEXTJS_PAGES_API_RE = /(?:^|\/)pages\/api\//;
 // Pages Router special files like `_app.tsx`, `_document.tsx`, `_error.tsx`
 // are framework chrome rather than user-visible pages — exclude them.
-const NEXTJS_PAGES_SPECIAL_RE = /(?:^|\/)pages\/_(?:app|document|error|middleware)\.(?:t|j)sx?$/;
+const NEXTJS_PAGES_SPECIAL_RE =
+  /(?:^|\/)pages\/_(?:app|document|error|middleware)\.(?:t|j)sx?$/;
 
 function isNextjsPage(file: string): boolean {
   if (NEXTJS_PAGE_FILE_RE.test(file)) return true;
