@@ -1,6 +1,7 @@
 import type { AutocompleteOption } from "../shared/prompt-input";
 import type { OperatorSessionState } from "../../../core/operator";
 import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent/prompt";
+import { detectOSAndEnhancePrompt } from "../../../core/agents/specialized/utils";
 
 // ---------------------------------------------------------------------------
 // Autocomplete option filtering for operator mode
@@ -231,7 +232,7 @@ ${opts.approvedPlanContent}
 </plan>`;
   }
 
-  let prompt = `${buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode })}
+  let prompt = `${detectOSAndEnhancePrompt(buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode }))}
 
 # Operator Mode
 
