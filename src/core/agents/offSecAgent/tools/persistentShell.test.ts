@@ -361,6 +361,154 @@ describe("PersistentShell — long-running stability", () => {
   );
 
   /**
+   * Repro #6 — Concurrent execute() calls cross-contaminate stdout.
+   *
+   * Two `execute()` calls fired in the same JS tick used to share
+   * `this.current` (last writer wins). Bash drained both wrappers serially
+   * but every byte on the stdout/stderr pipes routed to whichever pending
+   * was assigned last, so call A's wrapper output (including its CUTOVER
+   * and EXIT markers under A's nonce) ended up on call B's `streamedStdout`
+   * accumulator. The fallback extractor correctly refused to strip a
+   * foreign nonce and the markers leaked verbatim to the agent.
+   *
+   * Post-fix: each call takes a turn in the FIFO queue, so each pending
+   * receives only its own wrapper's bytes. See issue #645.
+   */
+  it("does not cross-contaminate stdout across parallel execute() calls", async () => {
+    const shell = make();
+    const [a, b] = await Promise.all([
+      shell.execute("echo apex-call-a-output", 5),
+      shell.execute("echo apex-call-b-output", 5),
+    ]);
+
+    expect(a.exitCode).toBe(0);
+    expect(b.exitCode).toBe(0);
+    expect(a.stdout).toContain("apex-call-a-output");
+    expect(a.stdout).not.toContain("apex-call-b-output");
+    expect(b.stdout).toContain("apex-call-b-output");
+    expect(b.stdout).not.toContain("apex-call-a-output");
+    expect(a.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+    expect(b.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+  }, 15_000);
+
+  /**
+   * Repro #7 — Concurrent execute() calls cross-contaminate stderr.
+   *
+   * Same race as the stdout test, but on the stderr pipe. The wrapper
+   * redirects user-command stderr to a tempfile and only flushes it after
+   * the cutover, but bash's own job-control messages (e.g. SIGTERM
+   * notifications, syntax errors) emit on bash's real stderr pipe — those
+   * route through `onStderrData`, which reads `this.current`. With two
+   * concurrent calls, those bytes bled onto whichever pending was last
+   * assigned. There's no marker on stderr at all, so the leak was silent.
+   */
+  it("does not cross-contaminate stderr across parallel execute() calls", async () => {
+    const shell = make();
+    const [a, b] = await Promise.all([
+      shell.execute(">&2 echo apex-call-a-stderr", 5),
+      shell.execute("echo apex-call-b-stdout", 5),
+    ]);
+
+    expect(a.exitCode).toBe(0);
+    expect(b.exitCode).toBe(0);
+    expect(a.stderr).toContain("apex-call-a-stderr");
+    expect(b.stderr).not.toContain("apex-call-a-stderr");
+    expect(b.stdout).toContain("apex-call-b-stdout");
+  }, 15_000);
+
+  /**
+   * Repro #8 — Concurrent execute() with a timing-out sibling.
+   *
+   * The forensic case from NOCTURNE 004 step 4: a long-running command
+   * fired alongside a shorter one. Pre-fix, the timed-out command's
+   * SIGTERM/SIGKILL bash messages, CUTOVER marker, and EXIT_137 marker
+   * all leaked onto the sibling's buffers. Post-fix, the second call
+   * queues behind the first, so by the time it runs the timed-out
+   * command's wrapper has fully drained.
+   */
+  it("isolates parallel-call timeouts (no marker or kill-message leakage)", async () => {
+    const shell = make();
+    const [timedOut, ok] = await Promise.all([
+      shell.execute("sleep 30", 1),
+      shell.execute("echo apex-after-timeout", 5),
+    ]);
+
+    expect(timedOut.exitCode).toBe(124);
+    expect(timedOut.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+
+    expect(ok.exitCode).toBe(0);
+    expect(ok.stdout).toContain("apex-after-timeout");
+    expect(ok.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+    expect(ok.stderr).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+    // Bash's own job-control kill messages from the timed-out sibling must
+    // not show up on the surviving call's stderr.
+    expect(ok.stderr).not.toMatch(/Terminated|Killed/);
+  }, 15_000);
+
+  /**
+   * Repro #9 — Queue preserves FIFO ordering.
+   *
+   * Pins against any regression to "queue exists but runs out of order"
+   * (e.g. switching to a Set-based ready set, awaiting the wrong promise,
+   * etc.). Each call resolves with its own command's output indexed in
+   * call order.
+   */
+  it("preserves FIFO ordering for parallel execute() calls", async () => {
+    const shell = make();
+    const results = await Promise.all([
+      shell.execute("echo 1", 5),
+      shell.execute("echo 2", 5),
+      shell.execute("echo 3", 5),
+    ]);
+
+    expect(results[0].stdout.trim()).toBe("1");
+    expect(results[1].stdout.trim()).toBe("2");
+    expect(results[2].stdout.trim()).toBe("3");
+    for (const r of results) expect(r.exitCode).toBe(0);
+  }, 15_000);
+
+  /**
+   * Repro #10 — Aborted-while-queued bails without running its own command.
+   *
+   * A queued call must wait its turn (single-shell FIFO is the design),
+   * but if the agent aborts before the turn arrives, the queued call
+   * should bail WITHOUT running its wrapped command in bash. Validates
+   * the post-await disposal/abort short-circuit.
+   *
+   * Setup: first command takes ~1s. Queued command, if it ran, would
+   * take ~5s. After abort the queued call must resolve close to the
+   * first call's completion time (waited for queue, then bailed) — not
+   * 5s+ later (waited for queue, then ran its own sleep) and not 0s
+   * (which would mean we jumped the queue, a design we explicitly
+   * rejected to preserve single-shell FIFO ordering).
+   */
+  it("aborts a queued execute() without running its bash command", async () => {
+    const shell = make();
+    const ac = new AbortController();
+
+    const first = shell.execute("sleep 1", 10);
+    // Fire the second call synchronously so it's queued behind the first,
+    // then abort before it gets a turn.
+    const queued = shell.execute("sleep 5", 10, undefined, ac.signal);
+    ac.abort();
+
+    const start = Date.now();
+    const queuedResult = await queued;
+    const elapsed = Date.now() - start;
+
+    expect(queuedResult.exitCode).toBe(130);
+    expect(queuedResult.stderr).toContain("aborted");
+    // Must not have run its own 5s sleep — aborted calls bail on turn
+    // arrival without writing to bash.
+    expect(elapsed).toBeLessThan(3_000);
+
+    // First call should still complete normally, proving the queue
+    // didn't deadlock.
+    const firstResult = await first;
+    expect(firstResult.exitCode).toBe(0);
+  }, 15_000);
+
+  /**
    * Repro #5 — The cumulative "agent ran for a while" simulation.
    *
    * After many commands — some of which read stdin, some of which
