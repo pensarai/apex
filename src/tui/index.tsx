@@ -702,7 +702,7 @@ async function main() {
   const obfuscateEnabled = process.env.PENSAR_OBFUSCATE === "1";
 
   createRoot(renderer).render(
-    <ObfuscationProvider enabled={obfuscateEnabled}>
+    <ObfuscationProvider initialEnabled={obfuscateEnabled}>
       <ThemeProvider initialTheme={themeName} initialMode={mode}>
         <ConsoleThemeSync />
         <TerminalDimensionsProvider>
