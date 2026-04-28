@@ -10,7 +10,7 @@
 
 import { memo, useState } from "react";
 import { useTheme } from "../../theme";
-import { AsciiSpinner } from "../shared/ascii-spinner";
+import { ShiningText } from "../loaders";
 import { getToolDisplayLabel } from "../shared/tool-registry";
 import {
   getResultSummary,
@@ -65,6 +65,23 @@ export const ToolMessage = memo(function ToolMessage({
     preferDescription: isPending,
   });
 
+  // For execute_command, extract both description and command so we can show both
+  const execDescription =
+    toolName === "execute_command" &&
+    typeof args.toolCallDescription === "string" &&
+    args.toolCallDescription.trim().length > 0
+      ? args.toolCallDescription.trim()
+      : null;
+  const execCommand =
+    toolName === "execute_command" && typeof args.command === "string"
+      ? args.command.split("\n")[0]
+      : null;
+  const execCommandDisplay = execCommand
+    ? execCommand.length > 80
+      ? `$ ${execCommand.slice(0, 80)}…`
+      : `$ ${execCommand}`
+    : null;
+
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =
     isCompleted || isError
@@ -79,16 +96,22 @@ export const ToolMessage = memo(function ToolMessage({
       {/* Tool header line */}
       <box flexDirection="row" gap={1}>
         {isPending ? (
-          <AsciiSpinner label={summary} />
+          <ShiningText text={summary} fg={colors.warning} />
         ) : (
           <>
             <text fg={isError ? colors.error : colors.success}>
               {isError ? "✗" : "✓"}
             </text>
-            <text fg={colors.info}>{summary}</text>
+            <text fg={colors.info}>{execDescription || summary}</text>
           </>
         )}
       </box>
+      {/* Show command underneath description for execute_command */}
+      {execDescription && execCommandDisplay && (
+        <box marginLeft={2}>
+          <text fg={colors.textMuted}>{execCommandDisplay}</text>
+        </box>
+      )}
 
       {/* Streaming logs while pending */}
       {isPending && logs && logs.length > 0 && (

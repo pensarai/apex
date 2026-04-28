@@ -1,4 +1,4 @@
-import { SpinnerDots } from "./sprites";
+import { SpinningDots, ShiningText } from "./loaders";
 import { useState, memo } from "react";
 import type { Message } from "../../core/messages/types";
 import {
@@ -196,7 +196,7 @@ export default function AgentDisplay({
 
       {isStreaming && (
         <box flexDirection="row" alignItems="center">
-          <SpinnerDots label="Thinking..." fg={colors.primary} />
+          <SpinningDots label="Thinking..." fg={colors.primary} />
         </box>
       )}
 
@@ -224,7 +224,7 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
     >
       <box flexDirection="row" alignItems="center" gap={1}>
         {subagent.status === "pending" && (
-          <SpinnerDots label={subagent.name} fg={colors.primary} />
+          <SpinningDots label={subagent.name} fg={colors.primary} />
         )}
         {subagent.status === "completed" && (
           <text fg={colors.primary}> ✓ {subagent.name}</text>
@@ -328,12 +328,7 @@ const AgentMessage = memo(function AgentMessage({
         >
           {isPendingTool ? (
             <>
-              <SpinnerDots
-                label={
-                  typeof displayContent === "string" ? displayContent : content
-                }
-                fg={colors.primary}
-              />
+              <ShiningText text={content} fg={colors.warning} />
               {/* Args preview for pending tools */}
               {argsPreview && (
                 <text fg={colors.textMuted} content={`  ${argsPreview}`} />

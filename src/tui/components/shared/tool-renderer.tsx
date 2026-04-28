@@ -7,7 +7,7 @@
 
 import { memo, useState } from "react";
 import { useTheme } from "../../theme";
-import { AsciiSpinner } from "./ascii-spinner";
+import { ShiningText } from "../loaders";
 import { getToolDisplayLabel } from "./tool-registry";
 import { getResultSummary, type ResultSummary } from "./result-registry";
 import { isToolMessage } from "./type-guards";
@@ -71,6 +71,23 @@ export const ToolRenderer = memo(function ToolRenderer({
     preferDescription: isPending,
   });
 
+  // For execute_command, extract both description and command so we can show both
+  const execDescription =
+    toolName === "execute_command" &&
+    typeof args.toolCallDescription === "string" &&
+    args.toolCallDescription.trim().length > 0
+      ? args.toolCallDescription.trim()
+      : null;
+  const execCommand =
+    toolName === "execute_command" && typeof args.command === "string"
+      ? args.command.split("\n")[0]
+      : null;
+  const execCommandDisplay = execCommand
+    ? execCommand.length > 80
+      ? `$ ${execCommand.slice(0, 80)}…`
+      : `$ ${execCommand}`
+    : null;
+
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =
     isCompleted || isError
@@ -93,16 +110,22 @@ export const ToolRenderer = memo(function ToolRenderer({
         {/* Tool header line */}
         <box flexDirection="row" gap={1}>
           {isPending ? (
-            <AsciiSpinner label={summary} fg={colors.warning} />
+            <ShiningText text={summary} fg={colors.warning} />
           ) : (
             <>
               <text fg={isError ? colors.error : colors.success}>
                 {isError ? "✗" : "✓"}
               </text>
-              <text fg={colors.info}>{summary}</text>
+              <text fg={colors.info}>{execDescription || summary}</text>
             </>
           )}
         </box>
+        {/* Show command underneath description for execute_command */}
+        {execDescription && execCommandDisplay && (
+          <box marginLeft={2}>
+            <text fg={colors.textMuted}>{execCommandDisplay}</text>
+          </box>
+        )}
 
         {/* Log window for tools with streaming output */}
         {isPending &&
