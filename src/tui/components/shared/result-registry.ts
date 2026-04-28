@@ -8,6 +8,7 @@
 import { RGBA, StyledText, type TextChunk } from "@opentui/core";
 import { highlightCode } from "./syntax-highlight";
 import type { ColorMode } from "../../theme/types";
+import { obfuscate, isObfuscationEnabled } from "../../../core/obfuscation";
 
 export interface ResultSummary {
   text: string;
@@ -30,6 +31,35 @@ export interface ResultSummary {
  * @returns Summary object with text and error flag, or null if no summary available
  */
 export function getResultSummary(
+  result: unknown,
+  toolName?: string,
+  args?: Record<string, unknown>,
+  mode: ColorMode = "dark",
+): ResultSummary | null {
+  const summary = getResultSummaryRaw(result, toolName, args, mode);
+  if (!summary) return summary;
+  // `text`, `fullText`, and `label` are rendered as string children of
+  // `<text>` by tool-message / tool-renderer, so the central
+  // TextNodeRenderable patch in `tui/obfuscation/patch.ts` redacts them
+  // automatically. `styledText` is the exception: it goes through
+  // `<text content={...}>`, which routes through TextRenderable's
+  // content setter and bypasses the patch. We obfuscate that one
+  // upstream so the redacted chunks bake into the StyledText before it
+  // reaches the renderer.
+  if (!isObfuscationEnabled()) return summary;
+  if (!summary.styledText) return summary;
+  return { ...summary, styledText: obfuscateStyledText(summary.styledText) };
+}
+
+function obfuscateStyledText(styled: StyledText): StyledText {
+  const next: TextChunk[] = styled.chunks.map((c) => ({
+    ...c,
+    text: typeof c.text === "string" ? obfuscate(c.text) : c.text,
+  }));
+  return new StyledText(next);
+}
+
+function getResultSummaryRaw(
   result: unknown,
   toolName?: string,
   args?: Record<string, unknown>,
@@ -853,13 +883,17 @@ export function formatResultDetail(
   result: unknown,
   maxLength: number = 2000,
 ): string {
+  let str: string;
   try {
-    const str = JSON.stringify(result, null, 2);
-    if (str.length > maxLength) {
-      return str.substring(0, maxLength) + "\n... (truncated)";
-    }
-    return str;
+    str = JSON.stringify(result, null, 2);
   } catch {
-    return String(result);
+    str = String(result);
   }
+  const truncated =
+    str.length > maxLength
+      ? str.substring(0, maxLength) + "\n... (truncated)"
+      : str;
+  // No obfuscation here — callers render this through `<text>` string
+  // children, which the central TextNodeRenderable patch redacts.
+  return truncated;
 }

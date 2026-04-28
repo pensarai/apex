@@ -31,6 +31,12 @@ import {
   type InlineOptionContext,
 } from "./prompt-input-logic";
 import { usePasteExtmarks } from "./use-paste-extmarks";
+import {
+  obfuscate as engineObfuscate,
+  deobfuscate as engineDeobfuscate,
+  isObfuscationEnabled,
+} from "../../../core/obfuscation";
+import { useObfuscation } from "../../context/obfuscation";
 /** Word-wrap text and return at most `maxLines` lines, adding ellipsis if truncated. */
 function truncateToLines(
   text: string,
@@ -215,6 +221,38 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
 
     const { handlePaste, resolveText, clearPaste } =
       usePasteExtmarks(textareaRef);
+
+    // Guard for our own obfuscation-driven setText calls so the
+    // re-entrant onContentChange doesn't try to obfuscate again.
+    const isObfuscatingRef = useRef(false);
+
+    // Subscribe to obfuscation toggles so we can re-process the buffer
+    // when the operator flips `/obfuscate` mid-edit.
+    const { enabled: obfuscateEnabled } = useObfuscation();
+    useEffect(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      // Skip while a large paste is active — its extmark offsets must
+      // not shift under us.
+      if (ta.extmarks.getAll().length > 0) return;
+      const current = ta.plainText;
+      if (!current) return;
+      // Slash-commands (`/threat-model --output foo/bar`) must reach the
+      // command router intact. The path patterns are aggressive enough
+      // that they would otherwise rewrite the command itself or its
+      // file-path arguments.
+      if (current.startsWith("/")) return;
+      const next = obfuscateEnabled
+        ? engineObfuscate(current, { aliases: false })
+        : engineDeobfuscate(current);
+      if (next === current) return;
+      isObfuscatingRef.current = true;
+      ta.setText(next);
+      ta.cursorOffset = next.length;
+      isObfuscatingRef.current = false;
+      setInputValue(next);
+      fullTextRef.current = next;
+    }, [obfuscateEnabled, setInputValue]);
 
     // Inline slash detection state — drives autocomplete filtering
     const [inlineSlashToken, setInlineSlashToken] = useState<string | null>(
@@ -527,8 +565,11 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         }
       }
 
-      // Resolve paste placeholders to full text before submit
-      const rawText = resolveText(textareaRef.current?.plainText ?? "");
+      // Resolve paste placeholders → full text, then expand any
+      // obfuscation placeholders the user-typed text may contain back to
+      // their original values so the agent receives real input.
+      const pasteResolved = resolveText(textareaRef.current?.plainText ?? "");
+      const rawText = engineDeobfuscate(pasteResolved);
       const valueToSubmit = rawText.trim();
 
       if (!valueToSubmit) return;
@@ -550,8 +591,39 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
 
     // Content change syncs to context and resets history browsing
     const handleContentChange = () => {
-      const text = textareaRef.current?.plainText ?? "";
-      const cursorOffset = textareaRef.current?.cursorOffset ?? text.length;
+      const ta = textareaRef.current;
+      let text = ta?.plainText ?? "";
+      let cursorOffset = ta?.cursorOffset ?? text.length;
+
+      // Real-time redaction: when obfuscation is on, replace recognised
+      // patterns (URLs, hosts, IPs, emails, …) with stable placeholders
+      // as the user types. The originals are recovered on submit via
+      // `deobfuscate` so the agent still receives real values.
+      //
+      // Skipped while paste-extmarks are present: the paste mechanism
+      // already shows its own atomic placeholder and the offsets that
+      // its `resolveText` walks would shift if we mutated the buffer.
+      if (
+        ta &&
+        !isObfuscatingRef.current &&
+        isObfuscationEnabled() &&
+        ta.extmarks.getAll().length === 0 &&
+        !text.startsWith("/")
+      ) {
+        const redacted = engineObfuscate(text, { aliases: false });
+        if (redacted !== text) {
+          isObfuscatingRef.current = true;
+          ta.setText(redacted);
+          // Replacement may shorten the buffer; the user just typed a
+          // value at the end of a token, so end-of-text is the natural
+          // cursor home.
+          ta.cursorOffset = redacted.length;
+          isObfuscatingRef.current = false;
+          text = redacted;
+          cursorOffset = redacted.length;
+        }
+      }
+
       setInputValue(text);
       fullTextRef.current = text;
 

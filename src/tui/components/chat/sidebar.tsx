@@ -51,6 +51,8 @@ interface SidebarProps {
  */
 export function Sidebar({ collapsed, state, width = "30%" }: SidebarProps) {
   const { colors } = useTheme();
+  // Sensitive strings flow into `<text>`, so the central
+  // TextNodeRenderable patch redacts them transparently.
   if (collapsed) {
     return null;
   }

@@ -54,6 +54,8 @@ export function Header({
   toolCallsCount = 0,
 }: HeaderProps) {
   const { colors } = useTheme();
+  // Target & session strings flow through `<text>`, so the central
+  // TextNodeRenderable patch handles redaction transparently.
   // Get mode display
   const getModeDisplay = () => {
     if (mode === "chat") {
