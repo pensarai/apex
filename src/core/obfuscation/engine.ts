@@ -167,7 +167,10 @@ const UUID_REGEX =
 const IPV4_REGEX =
   /\b(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])){3}\b/g;
 
-const IPV6_REGEX = /\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\b/g;
+// Match both full and compressed (`fe80::1`, `2001:db8::8a2e`) IPv6 forms.
+// Compressed: contains `::`. Full: has 7 colons separating 8 hex groups.
+const IPV6_REGEX =
+  /\b(?:(?:[0-9a-fA-F]{1,4}:){1,7}:[0-9a-fA-F]{0,4}|(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}|::(?:[0-9a-fA-F]{1,4})|[0-9a-fA-F]{1,4}::(?:[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{1,4})*)?)\b/g;
 
 const MAC_REGEX = /\b(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}\b/g;
 

@@ -99,6 +99,13 @@ describe("obfuscation engine", () => {
     expect(out).toContain("<MAC_1>");
   });
 
+  it("redacts compressed IPv6 addresses", () => {
+    const out = obfuscate("Bound to fe80::1 and 2001:db8::8a2e:370:7334");
+    expect(out).toContain("<IPV6_1>");
+    expect(out).toContain("<IPV6_2>");
+    expect(out).not.toContain("fe80::1");
+  });
+
   it("redacts a credit card number that passes Luhn", () => {
     const out = obfuscate("Card 4111 1111 1111 1111 on file");
     expect(out).toContain("<CARD_1>");
