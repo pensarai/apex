@@ -88,7 +88,7 @@ export const MessageRenderer = memo(function MessageRenderer({
   }
 
   // User messages — detect <skill name="..." target="..."> wrapper and display as /command.
-  // Parse from the raw content because obfuscation turns the target into <URL_1>
+  // Parse from the raw content because obfuscation turns the target into [URL_1]
   // which still satisfies the regex but we want to redact the target after the fact.
   if (message.role === "user") {
     const rawSkill = parseSkillTag(rawContent);

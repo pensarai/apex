@@ -8,12 +8,13 @@
  * Design goals:
  *  - **Stable mapping**: the same input value always produces the same
  *    placeholder within a process lifetime, so redacted output stays
- *    legible (the same email becomes `<EMAIL_1>` everywhere).
+ *    legible (the same email becomes `[EMAIL_1]` everywhere).
  *  - **Pattern-based**: no LLM call is required — every detection is a
  *    regex over the text. This keeps redaction synchronous, deterministic
  *    and cheap enough to run on every render.
- *  - **Allowlist**: well-known public hostnames and reserved/example
- *    domains are not redacted, since they don't leak engagement detail.
+ *  - **No allowlist**: every recognised value is redacted. Any hostname
+ *    or identifier in the transcript is potential signal, including the
+ *    operator's own infra.
  */
 
 export {

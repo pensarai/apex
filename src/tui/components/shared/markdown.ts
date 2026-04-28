@@ -54,6 +54,7 @@ export function markdownToStyledText(
     type InlineToken = {
       type?: string;
       text?: string;
+      raw?: string;
       tokens?: InlineToken[];
       [key: string]: unknown;
     };
@@ -97,6 +98,15 @@ export function markdownToStyledText(
           chunks.push({
             __isChunk: true,
             text: "\n",
+            attributes: defaultAttrs,
+          });
+        } else if (token.type === "html") {
+          // Inline HTML — emit as literal text so any angle-bracketed
+          // content the assistant produces appears on screen instead of
+          // being silently consumed by the markdown lexer.
+          chunks.push({
+            __isChunk: true,
+            text: token.raw || token.text || "",
             attributes: defaultAttrs,
           });
         } else if (token.tokens) {
@@ -147,6 +157,16 @@ export function markdownToStyledText(
         chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
       } else if (token.type === "space") {
         chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
+      } else if (token.type === "html") {
+        // Block-level HTML — pass through as literal text. Mirrors the
+        // inline `html` handler so angle-bracketed obfuscation
+        // placeholders survive a full-line emission.
+        const tk = token as { raw?: string; text?: string };
+        chunks.push({
+          __isChunk: true,
+          text: tk.raw || tk.text || "",
+          attributes: 0,
+        });
       }
     }
 

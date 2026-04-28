@@ -70,7 +70,7 @@ export function ObfuscationProvider({
       const target = typeof next === "boolean" ? next : !current;
       if (target === current) return;
       // Reset placeholder counters when turning obfuscation on so a fresh
-      // mapping starts at <CATEGORY_1>. Leave the mapping alone on disable
+      // mapping starts at [CATEGORY_1]. Leave the mapping alone on disable
       // so re-enabling within the same session reuses prior placeholders
       // and `deobfuscate()` can still expand them back to originals.
       if (target && !current) resetObfuscation();

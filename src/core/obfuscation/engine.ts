@@ -3,8 +3,10 @@
  *
  * The engine maintains a process-lifetime map of `original → placeholder`
  * so the same value produces the same placeholder every time. Placeholders
- * use angle brackets (`<EMAIL_1>`) so they are obviously not real data and
- * cannot collide with any of the regexes below.
+ * use square brackets (`[EMAIL_1]`) — angle brackets would be parsed as
+ * inline HTML by the markdown renderer and disappear from the rendered
+ * message, so brackets keep the placeholder visible across every render
+ * path.
  *
  * Hosts have **no allowlist**: every detected hostname is redacted, even
  * apparently public ones (e.g. `pensar.dev`, `github.com`). The point of
@@ -119,7 +121,7 @@ const ORG_STOPWORDS = new Set<string>([
 
 /**
  * Patterns are run in this order. Order matters because once a substring
- * is replaced with `<CATEGORY_N>`, it can no longer match later patterns.
+ * is replaced with `[CATEGORY_N]`, it can no longer match later patterns.
  *
  * Each pattern receives the full match and returns the substring that
  * should be tracked / replaced. The optional `pick` filter exists so a
@@ -287,12 +289,12 @@ function luhn(digits: string): boolean {
 function placeholderFor(value: string, category: ObfuscationCategory): string {
   const existing = STATE.mapping.get(value);
   if (existing) {
-    return `<${existing.category}_${existing.index}>`;
+    return `[${existing.category}_${existing.index}]`;
   }
   const next = (STATE.counters.get(category) ?? 0) + 1;
   STATE.counters.set(category, next);
   STATE.mapping.set(value, { category, index: next });
-  return `<${category}_${next}>`;
+  return `[${category}_${next}]`;
 }
 
 /** Globally enable/disable obfuscation. */
@@ -350,7 +352,7 @@ export function obfuscateValue(
 
 /**
  * Reverse `obfuscate()`/`obfuscateValue()` — replace every known
- * `<CATEGORY_N>` placeholder with the original value it was generated
+ * `[CATEGORY_N]` placeholder with the original value it was generated
  * from. Unknown placeholders are left intact.
  *
  * Used by inputs that redact text in-place while the user types: the
@@ -364,7 +366,7 @@ export function obfuscateValue(
 export function deobfuscate(input: string): string {
   if (!input || STATE.mapping.size === 0) return input;
   // Sort by descending index per category so longer placeholders
-  // (`<HOST_10>`) are tried before their prefixes (`<HOST_1>`). Both are
+  // (`[HOST_10]`) are tried before their prefixes (`[HOST_1]`). Both are
   // unique strings, but ordering keeps the regex shape simple if we
   // ever switch to a single combined pass.
   const entries = Array.from(STATE.mapping.entries()).sort(
@@ -372,7 +374,7 @@ export function deobfuscate(input: string): string {
   );
   let output = input;
   for (const [original, { category, index }] of entries) {
-    const placeholder = `<${category}_${index}>`;
+    const placeholder = `[${category}_${index}]`;
     if (!output.includes(placeholder)) continue;
     output = output.split(placeholder).join(original);
   }
