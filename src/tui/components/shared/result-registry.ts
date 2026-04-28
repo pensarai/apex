@@ -38,16 +38,17 @@ export function getResultSummary(
 ): ResultSummary | null {
   const summary = getResultSummaryRaw(result, toolName, args, mode);
   if (!summary) return summary;
+  // `text`, `fullText`, and `label` are rendered as string children of
+  // `<text>` by tool-message / tool-renderer, so the central
+  // TextNodeRenderable patch in `tui/obfuscation/patch.ts` redacts them
+  // automatically. `styledText` is the exception: it goes through
+  // `<text content={...}>`, which routes through TextRenderable's
+  // content setter and bypasses the patch. We obfuscate that one
+  // upstream so the redacted chunks bake into the StyledText before it
+  // reaches the renderer.
   if (!isObfuscationEnabled()) return summary;
-  return {
-    ...summary,
-    text: obfuscate(summary.text),
-    fullText: summary.fullText ? obfuscate(summary.fullText) : summary.fullText,
-    label: summary.label ? obfuscate(summary.label) : summary.label,
-    styledText: summary.styledText
-      ? obfuscateStyledText(summary.styledText)
-      : summary.styledText,
-  };
+  if (!summary.styledText) return summary;
+  return { ...summary, styledText: obfuscateStyledText(summary.styledText) };
 }
 
 function obfuscateStyledText(styled: StyledText): StyledText {
@@ -892,5 +893,7 @@ export function formatResultDetail(
     str.length > maxLength
       ? str.substring(0, maxLength) + "\n... (truncated)"
       : str;
-  return obfuscate(truncated);
+  // No obfuscation here — callers render this through `<text>` string
+  // children, which the central TextNodeRenderable patch redacts.
+  return truncated;
 }
