@@ -126,6 +126,65 @@ export const AppSchema = z.object({
 export type App = z.infer<typeof AppSchema>;
 
 // ---------------------------------------------------------------------------
+// Workflow intermediate schemas
+// ---------------------------------------------------------------------------
+
+export const AppInfoSchema = z.object({
+  name: z.string().describe("Application or service name"),
+  framework: z
+    .string()
+    .describe(
+      "Framework or cloud service (e.g. Express, Next.js, Django, FastAPI, Rails, AWS S3, CloudFront)",
+    ),
+  description: z.string().describe("Brief description of what this app does"),
+  location: z
+    .string()
+    .describe(
+      "Path to the app root relative to the repository root, or resource identifier for cloud resources",
+    ),
+  type: z
+    .enum([
+      "web_application",
+      "api",
+      "full_stack",
+      "domain",
+      "subdomain",
+      "database",
+      "cloud_resource",
+      "storage",
+    ])
+    .default("web_application")
+    .describe(
+      "Application type — web_application for frontend apps, api for backend services, " +
+        "full_stack for frameworks like Next.js/Remix that serve both, " +
+        "database for databases, cloud_resource for owned cloud infra, storage for S3/GCS/blob storage",
+    ),
+});
+
+export type AppInfo = z.infer<typeof AppInfoSchema>;
+
+export const AppsDiscoveryResultSchema = z.object({
+  repoType: z.string().describe("e.g. monorepo, single-app, multi-package"),
+  packageManager: z
+    .string()
+    .describe("e.g. npm, yarn, pnpm, pip, cargo, go modules"),
+  apps: z
+    .array(AppInfoSchema)
+    .describe("All applications/services discovered in the repository"),
+});
+
+export type AppsDiscoveryResult = z.infer<typeof AppsDiscoveryResultSchema>;
+
+export const DiscoverySummarySchema = z.object({
+  endpointsDocumented: z
+    .number()
+    .describe("Number of endpoints documented via document_endpoint"),
+  summary: z.string().describe("Brief summary of what was found"),
+});
+
+export type DiscoverySummary = z.infer<typeof DiscoverySummarySchema>;
+
+// ---------------------------------------------------------------------------
 // Top-level result schema
 // ---------------------------------------------------------------------------
 
