@@ -84,13 +84,19 @@ describe("buildEnrichmentObjective", () => {
     expect(objective).toContain("prefilled authRequired: false");
   });
 
-  it("instructs the agent to call document_asset with the apex-shape fields", () => {
-    expect(objective).toContain("document_asset");
+  it("renders endpointType per entry (PAGE → web-endpoint, otherwise api-endpoint)", () => {
+    expect(objective).toContain("endpointType: web-endpoint");
+    expect(objective).toContain("endpointType: api-endpoint");
+  });
+
+  it("instructs the agent to call document_endpoint with the canary-shape flat fields", () => {
+    expect(objective).toContain("document_endpoint");
+    expect(objective).not.toContain("document_asset");
     expect(objective).toContain("appName");
     expect(objective).toContain('"myapp"');
-    expect(objective).toContain("details");
+    expect(objective).toContain("routePath");
+    expect(objective).toContain("endpointType");
     expect(objective).toContain("description");
-    expect(objective).toContain("pentestObjectives");
     expect(objective).toContain("riskLevel");
     expect(objective).toContain("CRITICAL");
     expect(objective).toContain("HIGH");
@@ -98,15 +104,18 @@ describe("buildEnrichmentObjective", () => {
     expect(objective).toContain("LOW");
   });
 
-  it("describes existing-asset preservation per Phase 2.1", () => {
-    expect(objective).toMatch(/asset_\*\.json/);
-    expect(objective.toLowerCase()).toContain("preservation");
+  it("does not instruct the agent to pass pentestObjectives — they are auto-generated", () => {
+    expect(objective).toContain("auto");
+    expect(objective).toContain("automatically");
+    // The agent should NOT be told to provide pentestObjectives as a field.
+    expect(objective).not.toMatch(
+      /pentestObjectives.*: \d-\d specific testing/,
+    );
   });
 
-  it("ends with the response-tool summary instruction", () => {
-    expect(objective).toContain(
-      "call `response` with a summary of how many endpoints you documented",
-    );
+  it("ends with the response-tool summary instruction including the count", () => {
+    expect(objective).toContain("call `response` with the count of endpoints");
+    expect(objective).toContain("must equal the number above: 2");
   });
 
   it("falls back to 'unknown' when no frameworks are detected", () => {
