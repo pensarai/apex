@@ -708,8 +708,7 @@ export function ShiningText({
   const { colors, mode } = useTheme();
   const base = fg ?? colors.text;
 
-  const resolvedBaseAlpha =
-    baseAlpha ?? (mode === "light" ? 0.55 : 0.35);
+  const resolvedBaseAlpha = baseAlpha ?? (mode === "light" ? 0.55 : 0.35);
 
   // Subscribe to the shared tick to drive re-renders, but derive the cycle
   // position from absolute wall-clock time so multiple ShiningText instances
