@@ -686,22 +686,31 @@ export function LaserBar({
  * Renders `text` with a bright shimmer that sweeps left-to-right,
  * like light glinting off a surface. Base text stays dim, and a
  * bell-curve bright window slides across continuously.
+ *
+ * @param pauseMs - dead time between shimmer passes (ms). Default 600.
  */
 export function ShiningText({
   text,
   fg,
-  speed = 2,
+  speed = 1,
   shimmerWidth = 9,
-  baseAlpha = 0.35,
+  baseAlpha,
+  pauseMs = 600,
 }: {
   text: string;
   fg?: RGBA;
   speed?: number;
   shimmerWidth?: number;
   baseAlpha?: number;
+  /** Dead time between shimmer passes (ms). 0 = continuous. */
+  pauseMs?: number;
 }) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const base = fg ?? colors.text;
+
+  const resolvedBaseAlpha =
+    baseAlpha ?? (mode === "light" ? 0.55 : 0.35);
+
   // Subscribe to the shared tick to drive re-renders, but derive the cycle
   // position from absolute wall-clock time so multiple ShiningText instances
   // (with different text lengths) start each shimmer pass in lockstep.
@@ -718,8 +727,12 @@ export function ShiningText({
 
   const len = displayText.length;
   const totalFrames = len + shimmerWidth;
-  const periodMs = 1250 / speed;
-  const cyclePos = (Date.now() % periodMs) / periodMs;
+  const sweepMs = 1250 / speed;
+  const cycleMs = sweepMs + pauseMs;
+  const elapsed = Date.now() % cycleMs;
+  const inPause = elapsed >= sweepMs;
+
+  const cyclePos = inPause ? 1 : elapsed / sweepMs;
   // Smoothstep easing per cycle so the highlight glides through the middle
   // and softens near the edges — gives a more natural "shine" sweep.
   const eased = cyclePos * cyclePos * (3 - 2 * cyclePos);
@@ -728,18 +741,28 @@ export function ShiningText({
   const chars = useMemo(() => {
     const out: { ch: string; color: RGBA }[] = [];
     for (let i = 0; i < len; i++) {
+      if (inPause) {
+        out.push({
+          ch: displayText[i],
+          color: withAlpha(base, resolvedBaseAlpha),
+        });
+        continue;
+      }
       const dist = head - i;
       if (dist >= 0 && dist < shimmerWidth) {
         const norm = dist / (shimmerWidth - 1);
         const bell = 1.0 - (2 * norm - 1) * (2 * norm - 1);
-        const alpha = baseAlpha + (1.0 - baseAlpha) * bell;
+        const alpha = resolvedBaseAlpha + (1.0 - resolvedBaseAlpha) * bell;
         out.push({ ch: displayText[i], color: withAlpha(base, alpha) });
       } else {
-        out.push({ ch: displayText[i], color: withAlpha(base, baseAlpha) });
+        out.push({
+          ch: displayText[i],
+          color: withAlpha(base, resolvedBaseAlpha),
+        });
       }
     }
     return out;
-  }, [head, displayText, base, shimmerWidth, baseAlpha, len]);
+  }, [head, displayText, base, shimmerWidth, resolvedBaseAlpha, len, inPause]);
 
   return (
     <box flexDirection="row">
