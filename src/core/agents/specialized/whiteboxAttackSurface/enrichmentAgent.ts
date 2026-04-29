@@ -1,12 +1,11 @@
-import type { z } from "zod";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { CodeAgent } from "../codeAgent/agent";
 import {
-  AppInfoSchema,
   DiscoverySummarySchema,
-  WHITEBOX_ENRICHMENT_SYSTEM_PROMPT,
+  type AppInfo,
   type DiscoverySummary,
-} from "../../../workflows/whiteboxAttackSurface";
+} from "./types";
+import { WHITEBOX_ENRICHMENT_SYSTEM_PROMPT } from "./prompts";
 import type {
   ConsolidatedEndpoint,
   FrameworkId,
@@ -33,8 +32,6 @@ const ENRICHMENT_CONCURRENCY = 5;
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-export type AppInfo = z.infer<typeof AppInfoSchema>;
 
 interface SharedAgentOptions {
   codebasePath: string;
@@ -82,13 +79,24 @@ export function buildEnrichmentObjective(opts: {
 
   const frameworkLabel =
     frameworks.length > 0 ? frameworks.join(", ") : "unknown";
-  const method = endpoint.method.join(",");
-  const auth = endpoint.auth.length > 0 ? endpoint.auth.join(", ") : "none";
-  const authPrefill = endpoint.auth.length > 0;
+
+  // Apex's downstream storage convention is method="PAGE" for renderable
+  // pages. Surface emits the raw HTTP method (e.g. "GET") with kind="page";
+  // we translate at this write boundary so the surface integration layer
+  // stays a pure pass-through.
+  const documentMethod =
+    endpoint.kind === "page" ? ["PAGE"] : endpoint.method;
+  const methodDisplay = documentMethod.join(",");
+  const methodValue = JSON.stringify(
+    documentMethod.length === 1 ? documentMethod[0] : documentMethod,
+  );
   const endpointType =
     endpoint.kind === "page" ? "web-endpoint" : "api-endpoint";
 
-  return `# Enrich Endpoint: ${method} ${endpoint.path}
+  const auth = endpoint.auth.length > 0 ? endpoint.auth.join(", ") : "none";
+  const authPrefill = endpoint.auth.length > 0;
+
+  return `# Enrich Endpoint: ${methodDisplay} ${endpoint.path}
 
 ## Codebase
 - **Repository root:** ${codebasePath}
@@ -98,7 +106,7 @@ export function buildEnrichmentObjective(opts: {
 
 ## Endpoint (deterministically extracted by surface)
 
-- **method**: ${method}
+- **method**: ${methodDisplay}
 - **routePath**: ${endpoint.path}
 - **file**: ${endpoint.file}:${endpoint.line}
 - **handler**: ${endpoint.handler}
@@ -108,21 +116,13 @@ export function buildEnrichmentObjective(opts: {
 
 ## Task
 
-Document this **single endpoint** by calling \`document_endpoint\` exactly once with these flat fields:
+Document this **single endpoint** by calling \`document_endpoint\` exactly once. Use the deterministic fields above as-is for \`appName\` (\`"${app.name}"\`), \`routePath\`, \`method\` (\`${methodValue}\`), \`endpointType\` (\`"${endpointType}"\`), \`file\`, \`line\`, and \`handler\`. The remaining fields you must produce yourself:
 
-- **appName**: \`"${app.name}"\`
-- **routePath**: \`"${endpoint.path}"\` (the HTTP route — NOT a source-file path).
-- **method**: \`${JSON.stringify(endpoint.method.length === 1 ? endpoint.method[0] : endpoint.method)}\` (use the value above as-is).
-- **endpointType**: \`"${endpointType}"\`.
-- **file**: \`"${endpoint.file}"\` (do not modify).
-- **line**: \`${endpoint.line}\` (do not modify).
-- **handler**: \`"${endpoint.handler}"\` (do not modify).
 - **authRequired**: start from the prefilled value above. Override only after reading the middleware chain at the indicated file when the signals are genuinely ambiguous.
 - **description**: 1–2 sentences explaining what this endpoint does in plain English. Read the handler at \`${endpoint.file}:${endpoint.line}\` to ground it.
-- **riskLevel**: one of \`CRITICAL\`, \`HIGH\`, \`MEDIUM\`, or \`LOW\`. CRITICAL for auth/payment/admin or unauthenticated state-changing routes; HIGH for authenticated user-data mutations; MEDIUM for general; LOW for static/public reads.
-- **toolCallDescription**: one short line, e.g. \`"Documenting ${method} ${endpoint.path}"\`.
+- **riskLevel**: \`CRITICAL\` for auth/payment/admin or unauthenticated state-changing routes; \`HIGH\` for authenticated user-data mutations; \`MEDIUM\` for general; \`LOW\` for static/public reads.
 
-You do NOT pass \`pentestObjectives\` — \`document_endpoint\` generates them automatically.
+Do NOT pass \`pentestObjectives\` — \`document_endpoint\` generates them automatically.
 
 ## Scope
 
@@ -161,7 +161,9 @@ export async function runEnrichmentAgent(
   } = opts;
 
   const subagentId = `enrich-${slug(app.name)}-${slug(endpoint.path)}`;
-  const displayName = `${app.name}: ${endpoint.method.join(",")} ${endpoint.path}`;
+  const displayMethod =
+    endpoint.kind === "page" ? ["PAGE"] : endpoint.method;
+  const displayName = `${app.name}: ${displayMethod.join(",")} ${endpoint.path}`;
 
   eventBus?.emit("subagent-spawn", {
     subagentId,
@@ -169,7 +171,7 @@ export async function runEnrichmentAgent(
     input: {
       app: app.name,
       type: "enrichment",
-      method: endpoint.method,
+      method: displayMethod,
       path: endpoint.path,
     },
   });
