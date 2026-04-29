@@ -25,10 +25,7 @@ import { execFileSync } from "child_process";
 import { createHash } from "crypto";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { mapAppWithSurface } from "../integrations/surface";
-import {
-  runAppEnrichment,
-  type EnrichmentEndpoint,
-} from "../agents/specialized/whiteboxAttackSurface/enrichmentAgent";
+import { runAppEnrichment } from "../agents/specialized/whiteboxAttackSurface/enrichmentAgent";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -604,23 +601,13 @@ export async function runWhiteboxAttackSurfaceWorkflow(
               `[whitebox] ${app.name}: surface-driven (${surfaceResult.endpoints.length} endpoints, frameworks=${surfaceResult.frameworks.join(",")})`,
             );
 
-            // Bridge `mapAppWithSurface`'s post-classification endpoints into
-            // the `EnrichmentEndpoint` shape the enrichment agent expects.
-            // The classifier overwrites `method` with the classified array
-            // (e.g. `["PAGE"]` for renderable pages); the enrichment objective
-            // reads `classifiedMethod` only, so passing the same value through
-            // both fields is structurally correct.
-            const enrichmentEndpoints: EnrichmentEndpoint[] =
-              surfaceResult.endpoints.map((ep) => ({
-                ...ep,
-                classifiedMethod: ep.method,
-                isPage: ep.method.includes("PAGE"),
-              }));
-
+            // `EnrichmentEndpoint` is a pass-through alias for
+            // `ConsolidatedEndpoint` since surface 0.2.1 — kind lives on the
+            // record directly, no bridging needed.
             await runAppEnrichment({
               codebasePath,
               app,
-              endpoints: enrichmentEndpoints,
+              endpoints: surfaceResult.endpoints,
               frameworks: surfaceResult.frameworks,
               model,
               session,

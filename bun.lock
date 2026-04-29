@@ -17,7 +17,7 @@
         "@openrouter/ai-sdk-provider": "^2.2.3",
         "@opentui/core": "^0.1.80",
         "@opentui/react": "^0.1.80",
-        "@pensar/surface": "~0.1.1",
+        "@pensar/surface": "0.2.1",
         "@playwright/mcp": "^0.0.54",
         "ai": "^6.0.105",
         "glob": "^13.0.0",
@@ -388,7 +388,7 @@
 
     "@opentui/react": ["@opentui/react@0.1.100", "", { "dependencies": { "@opentui/core": "0.1.100", "react-reconciler": "^0.32.0" }, "peerDependencies": { "react": ">=19.0.0", "react-devtools-core": "^7.0.1", "ws": "^8.18.0" } }, "sha512-4mIkrioQE/qMB3ItzZyKMhP6iEMiY0pwqHyeG4ANqY1Qe6xLvzYOfzQ0qG0iVVVM+FSo2YfcwMWKaij9iP3/BA=="],
 
-    "@pensar/surface": ["@pensar/surface@0.1.1", "", { "dependencies": { "js-yaml": "^4.1.1" }, "peerDependencies": { "typescript": "^5" }, "bin": { "surface": "dist/cli.js" } }, "sha512-NIZeUC0c4TbrUUgzECyno3PCeELNCLPGdpkgx6P3h/FajC87uUeVR6RVv6QtM7pCBDXAbaz0xUhwCENRBuSb5g=="],
+    "@pensar/surface": ["@pensar/surface@0.2.1", "", { "dependencies": { "js-yaml": "^4.1.1" }, "peerDependencies": { "typescript": "^5" }, "bin": { "surface": "dist/cli.js" } }, "sha512-RgStnnre304CFN7B8A4wMraNFiL63iGPiwrASa46DEvU0s7HTS8hNjUqm1zgEkCTRy3r2TOp8u4JCfVBxZiWEQ=="],
 
     "@pinojs/redact": ["@pinojs/redact@0.4.0", "", {}, "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="],
 
