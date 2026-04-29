@@ -22,6 +22,7 @@ function makeEndpointInfo(
   return {
     handler: "handler",
     line: 1,
+    kind: "api",
     params: [],
     auth: [],
     internal: false,
@@ -176,11 +177,11 @@ describe("shouldFallback", () => {
   });
 });
 
-describe("mapAppWithSurface (via synthetic MapResult — integration of consolidate + classify)", () => {
-  // Note: we don't shell out to the real `surface.map()` filesystem walker.
-  // Instead, we exercise the consolidation + classification path directly
-  // via the helper functions, which is what `mapAppWithSurface` composes.
-  it("classifies a nextjs page route as PAGE and preserves API method on a route handler", () => {
+describe("mapAppWithSurface — kind-driven page mapping", () => {
+  // Surface emits `kind: "page"` (since v0.2.0); apex no longer
+  // file-pattern-classifies. We just substitute method=["PAGE"] for page-kind
+  // entries and pass everything else through.
+  it("substitutes method=['PAGE'] for kind='page' and preserves API method otherwise", () => {
     const rows: EndpointInfo[] = [
       makeEndpointInfo({
         framework: "nextjs",
@@ -188,6 +189,7 @@ describe("mapAppWithSurface (via synthetic MapResult — integration of consolid
         method: "GET",
         path: "/dashboard",
         handler: "Page",
+        kind: "page",
       }),
       makeEndpointInfo({
         framework: "nextjs",
@@ -195,6 +197,7 @@ describe("mapAppWithSurface (via synthetic MapResult — integration of consolid
         method: "GET",
         path: "/api/users",
         handler: "GET",
+        kind: "api",
       }),
       makeEndpointInfo({
         framework: "nextjs",
@@ -202,17 +205,22 @@ describe("mapAppWithSurface (via synthetic MapResult — integration of consolid
         method: "POST",
         path: "/api/users",
         handler: "POST",
+        kind: "api",
       }),
     ];
 
-    // Replicate what mapAppWithSurface does internally on the success path.
+    // Replicate the post-consolidation map step from mapAppWithSurface.
     const consolidated = consolidateBySameRoute(rows);
-    expect(consolidated).toHaveLength(2);
+    const mapped = consolidated.map((ep) =>
+      ep.kind === "page" ? { ...ep, method: ["PAGE"] } : ep,
+    );
+    expect(mapped).toHaveLength(2);
 
-    const page = consolidated.find((e) => e.file.endsWith("page.tsx"));
-    const api = consolidated.find((e) => e.file.endsWith("route.ts"));
-    expect(page).toBeDefined();
-    expect(api).toBeDefined();
+    const page = mapped.find((e) => e.file.endsWith("page.tsx"));
+    const api = mapped.find((e) => e.file.endsWith("route.ts"));
+    expect(page!.kind).toBe("page");
+    expect(page!.method).toEqual(["PAGE"]);
+    expect(api!.kind).toBe("api");
     expect(api!.method).toEqual(["GET", "POST"]);
   });
 

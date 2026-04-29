@@ -1,4 +1,9 @@
-import type { EndpointInfo, FrameworkId, HttpMethod } from "@pensar/surface";
+import type {
+  EndpointInfo,
+  FrameworkId,
+  HttpMethod,
+  EndpointKind,
+} from "@pensar/surface";
 
 /**
  * Apex-internal endpoint shape used by the surface-driven workflow.
@@ -14,7 +19,8 @@ import type { EndpointInfo, FrameworkId, HttpMethod } from "@pensar/surface";
  *   - `handler` is a comma-joined string of distinct handler names across
  *     the consolidated rows (typically just one).
  *
- * See design doc section 1.3 ("Endpoint mapping") for the full rationale.
+ * `kind` carries the categorical role (api / page / action / websocket)
+ * straight from surface — apex no longer derives this from file paths.
  */
 export interface ConsolidatedEndpoint {
   method: string[];
@@ -23,6 +29,7 @@ export interface ConsolidatedEndpoint {
   file: string;
   line: number;
   framework: FrameworkId;
+  kind: EndpointKind;
   auth: string[];
   internal: boolean;
 }
@@ -31,4 +38,4 @@ export interface ConsolidatedEndpoint {
  * Re-exports for downstream consumers so they can refer to surface types
  * through a single import path.
  */
-export type { EndpointInfo, FrameworkId, HttpMethod };
+export type { EndpointInfo, FrameworkId, HttpMethod, EndpointKind };

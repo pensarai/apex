@@ -14,10 +14,11 @@ describe("buildEnrichmentObjective (per-endpoint)", () => {
     type: "full_stack",
   };
 
+  // Page endpoint: surface emits kind=page; the integration helper has
+  // already substituted method=["PAGE"] before the agent sees it.
   const pageEndpoint: EnrichmentEndpoint = {
-    method: ["GET"],
-    classifiedMethod: ["PAGE"],
-    isPage: true,
+    method: ["PAGE"],
+    kind: "page",
     path: "/dashboard",
     handler: "DashboardPage",
     file: "apps/myapp/app/dashboard/page.tsx",
@@ -29,8 +30,7 @@ describe("buildEnrichmentObjective (per-endpoint)", () => {
 
   const apiEndpoint: EnrichmentEndpoint = {
     method: ["GET", "POST"],
-    classifiedMethod: ["GET", "POST"],
-    isPage: false,
+    kind: "api",
     path: "/api/users",
     handler: "GET, POST",
     file: "apps/myapp/app/api/users/route.ts",

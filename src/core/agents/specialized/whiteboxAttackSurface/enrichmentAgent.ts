@@ -11,7 +11,6 @@ import type {
   ConsolidatedEndpoint,
   FrameworkId,
 } from "../../../integrations/surface/types";
-import type { ClassifiedEndpoint } from "../../../integrations/surface/classifier";
 import type { AIModel, CacheMetrics } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { SessionInfo } from "../../../session";
@@ -39,15 +38,15 @@ const ENRICHMENT_CONCURRENCY = 5;
 export type AppInfo = z.infer<typeof AppInfoSchema>;
 
 /**
- * A consolidated endpoint plus its page-vs-API classification — the unit
- * each per-endpoint enrichment agent reasons over. Structural fields are
- * deterministic (from surface); `classifiedMethod` carries the apex-shape
- * method array (e.g. `["PAGE"]` for renderable pages).
+ * The unit each per-endpoint enrichment agent reasons over.
+ *
+ * Today this is a pass-through alias for `ConsolidatedEndpoint` — surface
+ * (since v0.2.0) emits both the structural fields and the `kind` directly,
+ * so apex no longer adds derived fields here. Kept as a named type so
+ * callers express enrichment intent (vs. raw consolidated rows from
+ * surface).
  */
-export interface EnrichmentEndpoint extends ConsolidatedEndpoint {
-  classifiedMethod: ClassifiedEndpoint["method"];
-  isPage: boolean;
-}
+export type EnrichmentEndpoint = ConsolidatedEndpoint;
 
 /**
  * Shared agent-runtime options threaded through every per-endpoint agent
@@ -123,10 +122,11 @@ export function buildEnrichmentObjective(opts: {
 
   const frameworkLabel =
     frameworks.length > 0 ? frameworks.join(", ") : "unknown";
-  const method = endpoint.classifiedMethod.join(",");
+  const method = endpoint.method.join(",");
   const auth = endpoint.auth.length > 0 ? endpoint.auth.join(", ") : "none";
   const authPrefill = endpoint.auth.length > 0;
-  const endpointType = endpoint.isPage ? "web-endpoint" : "api-endpoint";
+  const endpointType =
+    endpoint.kind === "page" ? "web-endpoint" : "api-endpoint";
 
   return `# Enrich Endpoint: ${method} ${endpoint.path}
 
@@ -152,7 +152,7 @@ Document this **single endpoint** by calling \`document_endpoint\` exactly once 
 
 - **appName**: \`"${app.name}"\`
 - **routePath**: \`"${endpoint.path}"\` (the HTTP route — NOT a source-file path).
-- **method**: \`${JSON.stringify(endpoint.classifiedMethod.length === 1 ? endpoint.classifiedMethod[0] : endpoint.classifiedMethod)}\` (use the value above as-is).
+- **method**: \`${JSON.stringify(endpoint.method.length === 1 ? endpoint.method[0] : endpoint.method)}\` (use the value above as-is).
 - **endpointType**: \`"${endpointType}"\`.
 - **file**: \`"${endpoint.file}"\` (do not modify).
 - **line**: \`${endpoint.line}\` (do not modify).
@@ -209,7 +209,7 @@ export async function runEnrichmentAgent(
   } = opts;
 
   const subagentId = `enrich-${slug(app.name)}-${slug(endpoint.path)}`;
-  const displayName = `${app.name}: ${endpoint.classifiedMethod.join(",")} ${endpoint.path}`;
+  const displayName = `${app.name}: ${endpoint.method.join(",")} ${endpoint.path}`;
 
   eventBus?.emit("subagent-spawn", {
     subagentId,
@@ -217,7 +217,7 @@ export async function runEnrichmentAgent(
     input: {
       app: app.name,
       type: "enrichment",
-      method: endpoint.classifiedMethod,
+      method: endpoint.method,
       path: endpoint.path,
     },
   });
