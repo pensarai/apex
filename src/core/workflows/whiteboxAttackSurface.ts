@@ -597,6 +597,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         } else {
           const surfaceResult = await mapAppWithSurface(
             join(codebasePath, app.location),
+            codebasePath,
           );
           if (surfaceResult.mode === "surface") {
             console.log(

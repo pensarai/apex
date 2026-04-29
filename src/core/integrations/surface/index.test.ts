@@ -1,4 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import {
   EndpointIndex,
   type EndpointInfo,
@@ -9,6 +12,7 @@ import {
   consolidateBySameRoute,
   shouldFallback,
   mapAppWithSurface,
+  findDependencyRoot,
 } from "./index";
 
 function makeEndpointInfo(
@@ -226,7 +230,88 @@ describe("mapAppWithSurface (via synthetic MapResult — integration of consolid
     // Surface gracefully handles missing paths — it scans nothing, finds no
     // frameworks, and we should fall back. This exercises the real
     // mapAppWithSurface entry point without depending on a fixture repo.
-    const out = await mapAppWithSurface("/tmp/__apex_surface_does_not_exist__");
+    const out = await mapAppWithSurface(
+      "/tmp/__apex_surface_does_not_exist__",
+      "/tmp",
+    );
     expect(out.mode).toBe("fallback");
+  });
+});
+
+describe("findDependencyRoot (walk-up)", () => {
+  let repoRoot: string;
+  let appSubdir: string;
+  let nestedAppSubdir: string;
+  let pkgSubdir: string;
+
+  beforeAll(() => {
+    // Set up a fixture repo:
+    //   repoRoot/
+    //     package.json                       ← root dep manifest
+    //     app/
+    //       page.tsx
+    //       (nothing here — like single-app Next.js)
+    //     packages/
+    //       libA/
+    //         package.json                  ← package-level dep manifest
+    //         src/
+    repoRoot = mkdtempSync(join(tmpdir(), "apex-walkup-"));
+    writeFileSync(join(repoRoot, "package.json"), '{"name":"root"}');
+    appSubdir = join(repoRoot, "app");
+    mkdirSync(appSubdir);
+    writeFileSync(join(appSubdir, "page.tsx"), "// noop");
+    nestedAppSubdir = join(repoRoot, "app", "deeply", "nested");
+    mkdirSync(nestedAppSubdir, { recursive: true });
+    pkgSubdir = join(repoRoot, "packages", "libA");
+    mkdirSync(pkgSubdir, { recursive: true });
+    writeFileSync(join(pkgSubdir, "package.json"), '{"name":"libA"}');
+    mkdirSync(join(pkgSubdir, "src"));
+  });
+
+  afterAll(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  it("walks up from a sub-directory to find the parent's package.json", () => {
+    expect(findDependencyRoot(appSubdir, repoRoot)).toBe(resolve(repoRoot));
+  });
+
+  it("walks up from a deeply nested sub-directory", () => {
+    expect(findDependencyRoot(nestedAppSubdir, repoRoot)).toBe(
+      resolve(repoRoot),
+    );
+  });
+
+  it("returns the package directory itself when it has its own dep file (monorepo)", () => {
+    // Walking up from packages/libA/src finds libA's package.json — does NOT
+    // walk all the way to the root.
+    expect(findDependencyRoot(join(pkgSubdir, "src"), repoRoot)).toBe(
+      resolve(pkgSubdir),
+    );
+  });
+
+  it("returns the appPath when it already contains a dep file", () => {
+    expect(findDependencyRoot(repoRoot, repoRoot)).toBe(resolve(repoRoot));
+  });
+
+  it("does not walk past repoRoot", () => {
+    // appPath is repoRoot itself with no further parent to check.
+    // Even if no dep file existed, we'd stop at repoRoot.
+    expect(findDependencyRoot(appSubdir, repoRoot)).not.toContain("..");
+  });
+
+  it("falls back to the original appPath when no dep file is found within bounds", () => {
+    // Construct a path under repoRoot whose ancestors have no dep file
+    // (other than the root). Removing root's package.json would simulate this,
+    // but to avoid disrupting other tests we use a separate isolated dir.
+    const isolated = mkdtempSync(join(tmpdir(), "apex-walkup-empty-"));
+    try {
+      const inner = join(isolated, "app");
+      mkdirSync(inner);
+      // No dep file anywhere — should return resolve(inner).
+      expect(findDependencyRoot(inner, isolated)).toBe(resolve(inner));
+    } finally {
+      rmSync(isolated, { recursive: true, force: true });
+    }
   });
 });
