@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   buildEnrichmentObjective,
   type AppInfo,
-  type EnrichmentEndpoint,
 } from "./enrichmentAgent";
+import type { ConsolidatedEndpoint } from "../../../integrations/surface/types";
 
 describe("buildEnrichmentObjective (per-endpoint)", () => {
   const app: AppInfo = {
@@ -16,7 +16,7 @@ describe("buildEnrichmentObjective (per-endpoint)", () => {
 
   // Page endpoint: surface emits kind=page; the integration helper has
   // already substituted method=["PAGE"] before the agent sees it.
-  const pageEndpoint: EnrichmentEndpoint = {
+  const pageEndpoint: ConsolidatedEndpoint = {
     method: ["PAGE"],
     kind: "page",
     path: "/dashboard",
@@ -28,7 +28,7 @@ describe("buildEnrichmentObjective (per-endpoint)", () => {
     internal: false,
   };
 
-  const apiEndpoint: EnrichmentEndpoint = {
+  const apiEndpoint: ConsolidatedEndpoint = {
     method: ["GET", "POST"],
     kind: "api",
     path: "/api/users",
