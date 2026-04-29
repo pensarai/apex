@@ -467,13 +467,12 @@ export function streamResponse(
             let cacheRead = (meta?.cacheReadInputTokens as number) ?? 0;
             let cacheCreation = (meta?.cacheCreationInputTokens as number) ?? 0;
 
-            // Fallback: extract from V3 usage fields (pensar provider)
+            // Pensar provider doesn't populate providerMetadata.anthropic;
+            // fall back to the SDK's normalized usage.inputTokenDetails.
             if (cacheRead === 0 && cacheCreation === 0) {
-              const usage = stepResult.usage as
-                | { inputTokens?: { cacheRead?: number; cacheWrite?: number } }
-                | undefined;
-              cacheRead = usage?.inputTokens?.cacheRead ?? 0;
-              cacheCreation = usage?.inputTokens?.cacheWrite ?? 0;
+              const { inputTokenDetails } = stepResult.usage;
+              cacheRead = inputTokenDetails?.cacheReadTokens ?? 0;
+              cacheCreation = inputTokenDetails?.cacheWriteTokens ?? 0;
             }
 
             if (cacheRead > 0 || cacheCreation > 0) {

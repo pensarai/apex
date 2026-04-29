@@ -3,7 +3,7 @@ import { useKeyboard } from "@opentui/react";
 import Input from "../input";
 import { useRoute } from "../../context/route";
 
-import { SpinnerDots } from "../sprites";
+import { SpinningDots } from "../loaders";
 import { DialogControls } from "../shared/dialog-controls";
 import { useTheme } from "../../theme";
 import {
@@ -302,7 +302,7 @@ export default function InitWizard() {
         flexGrow={1}
         gap={2}
       >
-        <SpinnerDots label="Creating session..." fg={colors.primary} />
+        <SpinningDots label="Creating session..." fg={colors.primary} />
         <text fg={colors.textMuted}>Target: {state.target}</text>
       </box>
     );

@@ -23,6 +23,18 @@ const args = process.argv.slice(2);
 const command = args[0];
 const version = packageJson.version;
 
+// Detect global --obfuscate flag and propagate to the TUI via env so the
+// flag works regardless of where it appears in argv. The flag is stripped
+// before any per-command parsing so it never collides with subcommand args.
+const OBFUSCATE_FLAGS = new Set(["--obfuscate", "--redact", "-O"]);
+const obfuscateRequested = args.some((a) => OBFUSCATE_FLAGS.has(a));
+if (obfuscateRequested) {
+  process.env.PENSAR_OBFUSCATE = "1";
+  for (let i = args.length - 1; i >= 0; i--) {
+    if (OBFUSCATE_FLAGS.has(args[i]!)) args.splice(i, 1);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -122,6 +134,9 @@ threat-model options:
 Global options:
   -h, --help         Show this help message
   -v, --version      Show version number
+  --obfuscate        Run the TUI in obfuscation mode — redacts hostnames,
+                     IPs, UUIDs, emails, paths, tokens, and apparent
+                     company names so screenshots are safe to share.
 `);
 }
 

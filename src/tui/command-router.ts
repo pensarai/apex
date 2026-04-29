@@ -32,13 +32,23 @@ export class CommandRouter<TContext = AppCommandContext> {
   }
 
   /**
-   * Register a command definition that will be bound to a context
+   * Register a command definition that will be bound to a context.
+   *
+   * Metadata (name, aliases, description) is captured once at
+   * registration. The handler, however, is re-bound on every
+   * `execute()` call using the ctx passed at that time. This is
+   * critical for handlers that read live React state (e.g. obfuscation
+   * toggle) — otherwise we'd freeze the ctx from the first render and
+   * subsequent toggles would short-circuit on stale closures.
    */
   registerWithContext(definition: CommandDefinition<TContext>, ctx: TContext) {
-    const { handler, ...metadata } = definition(ctx);
+    const { handler: _frozen, ...metadata } = definition(ctx);
     this.register({
       ...metadata,
-      handler: (args) => handler(args),
+      handler: async (args, runtimeCtx) => {
+        const { handler } = definition(runtimeCtx);
+        await handler(args);
+      },
     });
   }
 

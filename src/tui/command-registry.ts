@@ -7,6 +7,7 @@ import {
 } from "./utils/command-flags";
 import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
+import { isObfuscationEnabled } from "../core/obfuscation";
 /**
  * Define your application's CommandContext type with specific methods
  */
@@ -22,6 +23,19 @@ export interface AppCommandContext {
   openAuthDialog?: () => void;
   openPentestDialog?: (flags?: WebCommandOptions) => void;
   openSkillsDialog?: (slug?: string) => void;
+  /**
+   * Toggle obfuscation mode (when called without an argument) or set it to
+   * an explicit value. Returns the new state.
+   */
+  setObfuscation?: (enabled?: boolean) => boolean;
+  /** Whether obfuscation mode is currently active. */
+  getObfuscation?: () => boolean;
+  /** Show a transient toast notification. */
+  toast?: (
+    message: string,
+    variant?: "default" | "warn" | "error",
+    duration?: number,
+  ) => void;
 }
 
 /**
@@ -352,6 +366,49 @@ export const commands: CommandConfig[] = [
     category: "Configuration",
     handler: async (args, ctx) => {
       ctx.openProvidersDialog?.();
+    },
+  },
+  {
+    name: "obfuscate",
+    aliases: ["redact"],
+    description: "Toggle screenshot-safe obfuscation mode (redact PII)",
+    category: "Configuration",
+    options: [
+      {
+        name: "on",
+        description: "Enable obfuscation",
+      },
+      {
+        name: "off",
+        description: "Disable obfuscation",
+      },
+      {
+        name: "toggle",
+        description: "Toggle obfuscation (default if no argument)",
+      },
+    ],
+    handler: async (args, ctx) => {
+      if (!ctx.setObfuscation || !ctx.getObfuscation) return;
+      const subcommand = (args[0] || "").toLowerCase();
+      let target: boolean;
+      if (subcommand === "on" || subcommand === "enable") target = true;
+      else if (subcommand === "off" || subcommand === "disable") target = false;
+      else if (subcommand === "toggle" || subcommand === "") {
+        target = !isObfuscationEnabled();
+      } else {
+        ctx.toast?.(
+          `Unknown /obfuscate argument "${subcommand}". Use on, off, or toggle.`,
+          "error",
+        );
+        return;
+      }
+      const next = ctx.setObfuscation(target);
+      ctx.toast?.(
+        next
+          ? "Obfuscation mode enabled — sensitive values will be redacted."
+          : "Obfuscation mode disabled.",
+        next ? "warn" : "default",
+      );
     },
   },
   {

@@ -1,3 +1,6 @@
+import { existsSync, readdirSync, statSync } from "fs";
+import { join } from "path";
+
 interface SessionPaths {
   rootPath: string;
   findingsPath: string;
@@ -6,11 +9,66 @@ interface SessionPaths {
   logsPath: string;
 }
 
+/**
+ * Inspect the session's `provided_files/` directory and return a prompt
+ * section enumerating the files made available to the agent. When no
+ * provided files exist the function returns an empty string so the
+ * section is omitted entirely.
+ *
+ * The directory is populated by the console (see
+ * `packages/agents/utils.ts` → `populateProvidedFiles`) from files
+ * uploaded at the project level, and may contain a generated
+ * `README.md` manifest.
+ */
+export function buildProvidedFilesSection(sessionRootPath: string): string {
+  const providedDir = join(sessionRootPath, "provided_files");
+  if (!existsSync(providedDir)) return "";
+
+  let entries: string[];
+  try {
+    entries = readdirSync(providedDir);
+  } catch {
+    return "";
+  }
+
+  // Exclude the auto-generated manifest; the agent will see the section
+  // below and can read the manifest on its own if needed.
+  const fileEntries = entries
+    .filter((name) => name !== "README.md")
+    .map((name) => {
+      try {
+        const stat = statSync(join(providedDir, name));
+        if (!stat.isFile()) return null;
+        return { name, size: stat.size };
+      } catch {
+        return null;
+      }
+    })
+    .filter((e): e is { name: string; size: number } => e !== null);
+
+  if (fileEntries.length === 0) return "";
+
+  const lines = fileEntries.map(
+    (f) => `- \`provided_files/${f.name}\` (${f.size} bytes)`,
+  );
+
+  return `
+
+# Provided Files
+
+The user has uploaded the following files for this session. They are available at \`${providedDir}\` (relative path: \`provided_files/\`) and may include sample payloads, reference documentation, test data, or other context the agent should consult when planning and executing its work.
+
+${lines.join("\n")}
+
+Read these with \`read_file\` and list directory contents with \`list_files provided_files/\` as needed. A \`README.md\` inside \`provided_files/\` may include per-file descriptions supplied by the user — check it first before diving into individual files.`;
+}
+
 export function buildSessionWorkspaceSection(
   session: SessionPaths,
   agentCwd: string,
 ): string {
   const sandboxMode = agentCwd === session.rootPath;
+  const providedFilesSection = buildProvidedFilesSection(session.rootPath);
 
   if (sandboxMode) {
     return `
@@ -25,8 +83,9 @@ The session directory (${session.rootPath}) contains these subdirectories:
 - **scratchpad/** — your scratch space for working notes, intermediate data, wordlists, temporary scripts. **Do NOT write reports, executive summaries, or finding compilations here** — reports are generated automatically from findings/.
 - **logs/** — execution logs
 - **evidence/** — screenshots and evidence (written by browser tools)
+- **provided_files/** — user-uploaded files (sample payloads, docs, test data); populated when the project has workspace files configured.
 
-Tools like \`document_vulnerability\` and browser evidence capture write to the correct subdirectories automatically.`;
+Tools like \`document_vulnerability\` and browser evidence capture write to the correct subdirectories automatically.${providedFilesSection}`;
   }
 
   return `
@@ -42,8 +101,9 @@ Session artifacts are stored separately at ${session.rootPath}:
 - **scratchpad/** — your scratch space
 - **logs/** — execution logs
 - **evidence/** — screenshots and evidence
+- **provided_files/** — user-uploaded files (sample payloads, docs, test data); populated when the project has workspace files configured.
 
-Tools like \`document_vulnerability\` and browser evidence capture write to the session directory automatically.`;
+Tools like \`document_vulnerability\` and browser evidence capture write to the session directory automatically.${providedFilesSection}`;
 }
 
 /** Options for building the base system prompt. */
@@ -79,6 +139,8 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 ## Shell & HTTP
 - **execute_command** — Run shell commands (curl, nmap, nikto, ffuf, gobuster, dig, etc.). Use for anything that needs a CLI tool.
 - **http_request** — Make HTTP requests with full control over method, headers, body, and redirect behavior. Redirects are NOT followed by default so you can inspect Location headers and Set-Cookie values.
+
+**Wordlist tools (operator-mode addition).** Tier selection is governed by the \`[BUNDLED ASSETS]\` env block. Operator-only rule: before escalating to \`LARGE_WORDLIST\`, confirm with the user via the \`response\` tool with a one-sentence rationale, unless the user pre-directed (e.g. "deep scan", "use the larger wordlist", "quick smoke check").
 
 ## Browser Automation
 - **browser_navigate** — Navigate the browser to a URL (renders JS).

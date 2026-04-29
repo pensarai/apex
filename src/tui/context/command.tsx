@@ -16,6 +16,9 @@ import {
 import type { AutocompleteOption } from "../components/shared/prompt-input";
 import { useRoute, type WebCommandOptions } from "./route";
 import { createSkillsRegistry, type SkillsRegistry } from "../../core/skills";
+import { useObfuscation } from "./obfuscation";
+import { isObfuscationEnabled } from "../../core/obfuscation";
+import { useToast } from "./toast";
 
 interface CommandContextValue {
   router: CommandRouter<AppCommandContext>;
@@ -75,6 +78,8 @@ export function CommandProvider({
   onOpenSkillsDialog,
 }: CommandProviderProps) {
   const route = useRoute();
+  const obfuscation = useObfuscation();
+  const { toast } = useToast();
   const [registry] = useState(() => createSkillsRegistry());
   const [registryVersion, setRegistryVersion] = useState(0);
 
@@ -91,6 +96,17 @@ export function CommandProvider({
       openAuthDialog: onOpenAuthDialog,
       openPentestDialog: onOpenPentestDialog,
       openSkillsDialog: onOpenSkillsDialog,
+      setObfuscation: (enabled) => {
+        // Read live engine state so toast feedback is accurate even if
+        // this closure was captured on an earlier render. The provider's
+        // `setEnabled` is itself idempotent against stale closures.
+        const current = isObfuscationEnabled();
+        const next = typeof enabled === "boolean" ? enabled : !current;
+        obfuscation.setEnabled(next);
+        return next;
+      },
+      getObfuscation: () => isObfuscationEnabled(),
+      toast,
     };
     return ctx;
   }, [
@@ -104,6 +120,8 @@ export function CommandProvider({
     onOpenAuthDialog,
     onOpenPentestDialog,
     onOpenSkillsDialog,
+    obfuscation,
+    toast,
   ]);
 
   const refreshSkills = useCallback(async () => {
