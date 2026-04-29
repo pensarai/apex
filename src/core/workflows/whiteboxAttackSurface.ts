@@ -26,7 +26,7 @@ import { createHash } from "crypto";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { mapAppWithSurface } from "../integrations/surface";
 import {
-  runEnrichmentAgent,
+  runAppEnrichment,
   type EnrichmentEndpoint,
 } from "../agents/specialized/whiteboxAttackSurface/enrichmentAgent";
 
@@ -616,7 +616,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
                 isPage: ep.method.includes("PAGE"),
               }));
 
-            await runEnrichmentAgent({
+            await runAppEnrichment({
               codebasePath,
               app,
               endpoints: enrichmentEndpoints,
