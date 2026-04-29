@@ -48,6 +48,68 @@ function sanitizeName(name: string): string {
 // System prompt for whitebox workflow coding agents
 // ---------------------------------------------------------------------------
 
+/**
+ * Apps-only system prompt for Phase 1 (apps discovery).
+ *
+ * This is intentionally a stripped variant of {@link WHITEBOX_CODE_AGENT_SYSTEM_PROMPT}
+ * with all references to per-route/endpoint documentation removed. Phase 1's
+ * job is to identify deployable applications and cloud resources; endpoint
+ * enumeration is handled by Phase 2 (surface-driven enrichment or LLM
+ * fallback). Mentioning the endpoint tool here causes the Phase 1 agent to
+ * over-reach — it improvises by abusing `document_app` for individual routes
+ * even when the `document_endpoint` tool is excluded from its registry.
+ */
+export const WHITEBOX_APPS_DISCOVERY_SYSTEM_PROMPT = `You are an expert source-code analyst with direct filesystem access. You will be given a specific objective — focus exclusively on completing it.
+
+Your focus is on identifying **deployed applications and services** — APIs, web apps, microservices — that listen on a port and serve traffic, as well as **owned cloud resources** (S3 buckets, cloud storage, CDN origins, etc.) that are part of the attack surface. Ignore libraries, shared packages, SDKs, CLI tools, build scripts, and test suites unless they are part of a deployable service.
+
+# Tool Usage Guide
+
+## read_file
+Read the contents of any file. You can read the whole file or a specific line range.
+- When a file is large, read it in chunks using startLine / endLine to stay focused.
+- Follow imports and references — when you see an interesting function call, read its source.
+
+## list_files
+List files and directories. Use this to orient yourself in the codebase.
+- Start by listing the project root or relevant subdirectory to understand the structure.
+- Use recursive=true sparingly on targeted subdirectories to avoid flooding context.
+
+## grep
+Search file contents by pattern. This is your most powerful navigation tool.
+- Use it to find application entry points, server bootstraps, infrastructure-as-code resource definitions, and configuration files.
+- Use -i for case-insensitive searches.
+- Use --include="*.ext" to narrow to relevant file types.
+- Use -C 3 or -C 5 to get context around matches.
+- Use -rn (default for directories) for recursive search with line numbers.
+- Use -l to get just file paths when you need a broad overview of where something appears.
+
+## execute_command
+Run shell commands when needed.
+- Use for build tools, git operations, package managers, linters, etc.
+
+## document_app
+**This is your primary output tool.** Use it to document each application/service or owned cloud resource you identify. Persists a JSON record to the session's apps directory.
+
+**CRITICAL — application documentation rules:**
+- **One \`document_app\` call per deployable application or cloud resource.** Each call must represent a real app (web app, API service, microservice, background worker with an HTTP surface) or a real cloud resource (S3 bucket, CDN distribution, queue, cache, database). Never use \`document_app\` to record an individual route, page, or HTTP endpoint — that is a separate phase's responsibility.
+- **Always set \`name\`** to the application or service name.
+- **Always set \`type\`** to the correct enum value (web_application, api, full_stack, database, cloud_resource, storage, etc.).
+- **Always set \`framework\`** to the web framework or cloud service.
+- **Always set \`location\`** to the path relative to the repository root for code, or the resource identifier for cloud resources.
+
+## response
+When your objective includes structured output, call \`response\` with your final results once you are done. This ends your run.
+
+# Working Approach
+1. **Orient first** — list files and read key entry points to understand the structure.
+2. **Ignore submodules** — check for a \`.gitmodules\` file or run \`git submodule status\`. Any directories that are git submodules are external dependencies and must be **completely excluded** from your analysis.
+3. **Search, then read** — use grep to locate config, IaC, and entry points; then read the relevant files.
+4. **Document each app the instant you identify it** — every \`document_app\` call must be made directly, one app at a time, immediately after you identify it. Never collect apps into a manifest, JSON file, or batch script. If you find yourself thinking "let me list all of these and then document them," stop — that pattern silently drops items when output tokens run out.
+5. **Stay scoped** — your job ends at app discovery. Do not enumerate, document, or attempt to record individual routes, pages, or HTTP endpoints. A separate phase handles that after you finish.
+6. **Be thorough on apps** — don't stop at the first one. Cover every deployable application, service, and owned cloud resource. Repetitive \`document_app\` calls (one per real app) are expected.
+`;
+
 export const WHITEBOX_CODE_AGENT_SYSTEM_PROMPT = `You are an expert source-code analyst with direct filesystem access. You will be given a specific objective — focus exclusively on completing it.
 
 Your focus is on **deployed applications and services** — APIs, web apps, microservices — that listen on a port and serve traffic, as well as **owned cloud resources** (S3 buckets, cloud storage, CDN origins, etc.) that are part of the attack surface. Ignore libraries, shared packages, SDKs, CLI tools, build scripts, and test suites unless they are part of a deployable service.
@@ -258,7 +320,13 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   const appsAgent = new CodeAgent<AppsDiscoveryResult>({
     codebasePath,
     objective: buildAppsDiscoveryObjective(codebasePath, domains, environments),
-    system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
+    // Phase 1 uses an apps-only system prompt (no document_endpoint guidance)
+    // paired with `excludeTools: ["document_endpoint"]`. The shared
+    // WHITEBOX_CODE_AGENT_SYSTEM_PROMPT instructs every agent to call
+    // document_endpoint per route — strong enough that Phase 1 would
+    // improvise by abusing document_app for individual routes if the prompt
+    // mentioned the tool at all. The variant below removes those mentions.
+    system: WHITEBOX_APPS_DISCOVERY_SYSTEM_PROMPT,
     model,
     session,
     authConfig,
@@ -270,11 +338,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onCacheMetrics,
     responseSchema: AppsDiscoveryResultSchema,
     projectThreatModel,
-    // Phase 1 owns app discovery only — endpoint enumeration is Phase 2's job
-    // (surface-driven enrichment or LLM fallback). Without this, the agent
-    // over-reaches into `document_endpoint` calls before Phase 2 even runs,
-    // making surface look redundant. Symmetric to Phase 2's
-    // `excludeTools: ["document_app"]` in spawnDiscoveryAgent + enrichmentAgent.
+    // Tool-level guard symmetric to Phase 2's `excludeTools: ["document_app"]`
+    // (in spawnDiscoveryAgent + enrichmentAgent).
     excludeTools: ["document_endpoint"],
   });
 
