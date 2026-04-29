@@ -270,6 +270,12 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onCacheMetrics,
     responseSchema: AppsDiscoveryResultSchema,
     projectThreatModel,
+    // Phase 1 owns app discovery only — endpoint enumeration is Phase 2's job
+    // (surface-driven enrichment or LLM fallback). Without this, the agent
+    // over-reaches into `document_endpoint` calls before Phase 2 even runs,
+    // making surface look redundant. Symmetric to Phase 2's
+    // `excludeTools: ["document_app"]` in spawnDiscoveryAgent + enrichmentAgent.
+    excludeTools: ["document_endpoint"],
   });
 
   console.log(
