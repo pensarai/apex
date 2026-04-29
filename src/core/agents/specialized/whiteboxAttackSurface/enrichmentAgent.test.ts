@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
-import {
-  buildEnrichmentObjective,
-  type AppInfo,
-} from "./enrichmentAgent";
+import { buildEnrichmentObjective } from "./enrichmentAgent";
+import type { AppInfo } from "./types";
 import type { ConsolidatedEndpoint } from "../../../integrations/surface/types";
 
 describe("buildEnrichmentObjective (per-endpoint)", () => {
@@ -14,10 +12,11 @@ describe("buildEnrichmentObjective (per-endpoint)", () => {
     type: "full_stack",
   };
 
-  // Page endpoint: surface emits kind=page; the integration helper has
-  // already substituted method=["PAGE"] before the agent sees it.
+  // Page endpoint: surface emits kind="page" with the raw HTTP method
+  // (e.g. "GET"). The objective builder is responsible for converting to
+  // method="PAGE" when emitting document_endpoint instructions.
   const pageEndpoint: ConsolidatedEndpoint = {
-    method: ["PAGE"],
+    method: ["GET"],
     kind: "page",
     path: "/dashboard",
     handler: "DashboardPage",

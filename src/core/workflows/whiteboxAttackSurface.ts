@@ -1,4 +1,3 @@
-import { z } from "zod";
 import {
   writeFileSync,
   mkdirSync,
@@ -8,13 +7,24 @@ import {
   statSync,
 } from "fs";
 import { join } from "path";
+import { z } from "zod";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
+  AppInfoSchema,
+  AppsDiscoveryResultSchema,
+  DiscoverySummarySchema,
   EndpointSchema,
+  type AppInfo,
+  type AppsDiscoveryResult,
+  type DiscoverySummary,
   type WhiteboxAttackSurfaceResult,
   type Endpoint,
   type App,
 } from "../agents/specialized/whiteboxAttackSurface/types";
+import {
+  WHITEBOX_APPS_DISCOVERY_SYSTEM_PROMPT,
+  WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
+} from "../agents/specialized/whiteboxAttackSurface/prompts";
 import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import type { AIModel, CacheMetrics } from "../ai";
 import type { AIAuthConfig } from "../ai/utils";
@@ -41,254 +51,31 @@ function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
 }
 
-// ---------------------------------------------------------------------------
-// System prompt for whitebox workflow coding agents
-// ---------------------------------------------------------------------------
+// Shape persisted to <app>/app.json. Equivalent to AppInfo — kept as a Pick
+// so the field list can't drift out of sync with the schema.
+type AppMetadata = Pick<
+  AppInfo,
+  "name" | "type" | "framework" | "description" | "location"
+>;
 
-/**
- * Apps-only system prompt for Phase 1 (apps discovery).
- *
- * This is intentionally a stripped variant of {@link WHITEBOX_CODE_AGENT_SYSTEM_PROMPT}
- * with all references to per-route/endpoint documentation removed. Phase 1's
- * job is to identify deployable applications and cloud resources; endpoint
- * enumeration is handled by Phase 2 (surface-driven enrichment or LLM
- * fallback). Mentioning the endpoint tool here causes the Phase 1 agent to
- * over-reach — it improvises by abusing `document_app` for individual routes
- * even when the `document_endpoint` tool is excluded from its registry.
- */
-export const WHITEBOX_APPS_DISCOVERY_SYSTEM_PROMPT = `You are an expert source-code analyst with direct filesystem access. You will be given a specific objective — focus exclusively on completing it.
+function toAppMetadata(
+  app: Pick<App, "name" | "type" | "framework" | "description" | "location">,
+): AppMetadata {
+  return {
+    name: app.name,
+    type: app.type,
+    framework: app.framework,
+    description: app.description,
+    location: app.location,
+  };
+}
 
-Your focus is on identifying **deployed applications and services** — APIs, web apps, microservices — that listen on a port and serve traffic, as well as **owned cloud resources** (S3 buckets, cloud storage, CDN origins, etc.) that are part of the attack surface. Ignore libraries, shared packages, SDKs, CLI tools, build scripts, and test suites unless they are part of a deployable service.
-
-# Tool Usage Guide
-
-## read_file
-Read the contents of any file. You can read the whole file or a specific line range.
-- When a file is large, read it in chunks using startLine / endLine to stay focused.
-- Follow imports and references — when you see an interesting function call, read its source.
-
-## list_files
-List files and directories. Use this to orient yourself in the codebase.
-- Start by listing the project root or relevant subdirectory to understand the structure.
-- Use recursive=true sparingly on targeted subdirectories to avoid flooding context.
-
-## grep
-Search file contents by pattern. This is your most powerful navigation tool.
-- Use it to find application entry points, server bootstraps, infrastructure-as-code resource definitions, and configuration files.
-- Use -i for case-insensitive searches.
-- Use --include="*.ext" to narrow to relevant file types.
-- Use -C 3 or -C 5 to get context around matches.
-- Use -rn (default for directories) for recursive search with line numbers.
-- Use -l to get just file paths when you need a broad overview of where something appears.
-
-## execute_command
-Run shell commands when needed.
-- Use for build tools, git operations, package managers, linters, etc.
-
-## document_app
-**This is your primary output tool.** Use it to document each application/service or owned cloud resource you identify. Persists a JSON record to the session's apps directory.
-
-**CRITICAL — application documentation rules:**
-- **One \`document_app\` call per deployable application or cloud resource.** Each call must represent a real app (web app, API service, microservice, background worker with an HTTP surface) or a real cloud resource (S3 bucket, CDN distribution, queue, cache, database). Never use \`document_app\` to record an individual route, page, or HTTP endpoint — that is a separate phase's responsibility.
-- **Always set \`name\`** to the application or service name.
-- **Always set \`type\`** to the correct enum value (web_application, api, full_stack, database, cloud_resource, storage, etc.).
-- **Always set \`framework\`** to the web framework or cloud service.
-- **Always set \`location\`** to the path relative to the repository root for code, or the resource identifier for cloud resources.
-
-## response
-When your objective includes structured output, call \`response\` with your final results once you are done. This ends your run.
-
-# Working Approach
-1. **Orient first** — list files and read key entry points to understand the structure.
-2. **Ignore submodules** — check for a \`.gitmodules\` file or run \`git submodule status\`. Any directories that are git submodules are external dependencies and must be **completely excluded** from your analysis.
-3. **Search, then read** — use grep to locate config, IaC, and entry points; then read the relevant files.
-4. **Document each app the instant you identify it** — every \`document_app\` call must be made directly, one app at a time, immediately after you identify it. Never collect apps into a manifest, JSON file, or batch script. If you find yourself thinking "let me list all of these and then document them," stop — that pattern silently drops items when output tokens run out.
-5. **Stay scoped** — your job ends at app discovery. Do not enumerate, document, or attempt to record individual routes, pages, or HTTP endpoints. A separate phase handles that after you finish.
-6. **Be thorough on apps** — don't stop at the first one. Cover every deployable application, service, and owned cloud resource. Repetitive \`document_app\` calls (one per real app) are expected.
-`;
-
-/**
- * Enrichment-only system prompt for the per-app enrichment agent that runs
- * on the surface-driven path of Phase 2.
- *
- * The agent receives a complete, deterministic list of endpoints (extracted
- * by `@pensar/surface`) and its only job is to enrich each one with a
- * description, refined auth assessment, and risk level — then call
- * `document_endpoint` once per entry. It must NOT re-enumerate routes,
- * grep for new ones, or list directories looking for handlers.
- *
- * The shared {@link WHITEBOX_CODE_AGENT_SYSTEM_PROMPT} contains heavy
- * "orient first / list files / search-then-read / be thorough" framing that
- * an enrichment agent reads as discovery instructions, causing it to ignore
- * the deterministic list and start over from scratch. This variant strips
- * that framing.
- */
-export const WHITEBOX_ENRICHMENT_SYSTEM_PROMPT = `You are an expert security analyst. Your job is to enrich a complete, deterministic list of endpoints that has already been extracted from the source code by a separate phase. You will be given the full list in your objective; do not re-enumerate routes.
-
-# Tool Usage Guide
-
-## read_file
-Read the handler file at the indicated \`file:line\` for each endpoint when you need context to write its description, pentest framing, or refined auth assessment. Use \`startLine\` / \`endLine\` ranges — there is no need to read whole files.
-
-## list_files
-Generally NOT needed. Your endpoint list already includes the file path for every handler. Use this only for narrow, targeted disambiguation (e.g. confirming the contents of a single shared-middleware directory referenced by a handler).
-
-## grep
-Generally NOT needed. The endpoint list is final and complete. Use this only when an endpoint's auth signal is ambiguous and you must locate a middleware definition referenced from the handler. **Do NOT use \`grep\` to look for additional routes** — route discovery is a previous phase's job and your list will not be changed.
-
-## execute_command
-Run shell commands when needed (rare for enrichment).
-
-## document_endpoint
-**This is your primary output tool.** Call it exactly once per endpoint in your input list. Each call persists a JSON record to the session's assets directory.
-
-**CRITICAL — endpoint enrichment rules:**
-- **One \`document_endpoint\` call per entry in your input list.** The number of calls you make must equal the number of endpoints provided. Do not skip entries. Do not add new entries.
-- **Use the structural fields from your input as-is:** \`routePath\`, \`method\`, \`file\`, \`line\`, \`handler\`. Don't "verify" them by re-discovering — they are deterministic.
-- **Always set \`appName\`** to the application name provided in your objective.
-- **Always set \`endpointType\`**: \`"web-endpoint"\` for renderable pages (\`method = "PAGE"\`), \`"api-endpoint"\` for HTTP APIs, \`"asset"\` for cloud-resource access patterns.
-- **Always set \`description\`** to a 1-2 sentence summary of what this endpoint does in plain English.
-- **Always set \`riskLevel\`** to \`CRITICAL\`, \`HIGH\`, \`MEDIUM\`, or \`LOW\`. CRITICAL for auth/payment/admin or unauthenticated state-changing routes; HIGH for authenticated user-data mutations; MEDIUM for general; LOW for static/public reads.
-- **Set \`authRequired\`** — start from the prefilled value in your input (true when auth signals are non-empty, false otherwise). Override only after reading the middleware chain at the indicated file when the signals are genuinely ambiguous.
-- Pentest objectives are generated automatically by \`document_endpoint\` — you do not pass them. Just provide the structural and descriptive fields above.
-
-## response
-When you have called \`document_endpoint\` for every endpoint in your input list, call \`response\` with a summary count.
-
-# Working Approach
-1. **Read your input list first.** The objective contains every endpoint with its file, line, handler, method, and prefilled auth signals already located. This is the entire scope of your work.
-2. **Per endpoint, read just enough handler code** at the indicated \`file:line\` to write a meaningful description and assess risk. Don't read whole files — use line ranges.
-3. **Document immediately.** Call \`document_endpoint\` directly per endpoint, the moment you have enough context. Do not collect entries in a buffer to "process later."
-4. **Stay scoped.** Your job is enrichment, not discovery. Do not call \`list_files\` or \`grep\` to look for additional routes — the list is final.
-`;
-
-export const WHITEBOX_CODE_AGENT_SYSTEM_PROMPT = `You are an expert source-code analyst with direct filesystem access. You will be given a specific objective — focus exclusively on completing it.
-
-Your focus is on **deployed applications and services** — APIs, web apps, microservices — that listen on a port and serve traffic, as well as **owned cloud resources** (S3 buckets, cloud storage, CDN origins, etc.) that are part of the attack surface. Ignore libraries, shared packages, SDKs, CLI tools, build scripts, and test suites unless they are part of a deployable service.
-
-# Tool Usage Guide
-
-## read_file
-Read the contents of any file. You can read the whole file or a specific line range.
-- When a file is large, read it in chunks using startLine / endLine to stay focused.
-- Follow imports and references — when you see an interesting function call, read its source.
-
-## list_files
-List files and directories. Use this to orient yourself in the codebase.
-- Start by listing the project root or relevant subdirectory to understand the structure.
-- Use recursive=true sparingly on targeted subdirectories to avoid flooding context.
-
-## grep
-Search file contents by pattern. This is your most powerful navigation tool.
-- Use it to find route definitions, middleware, controllers, endpoint registrations, etc.
-- Use -i for case-insensitive searches.
-- Use --include="*.ext" to narrow to relevant file types.
-- Use -C 3 or -C 5 to get context around matches.
-- Use -rn (default for directories) for recursive search with line numbers.
-- Use -l to get just file paths when you need a broad overview of where something appears.
-
-## execute_command
-Run shell commands when needed.
-- Use for build tools, git operations, package managers, linters, etc.
-
-## document_app
-Use this to document each application/service you identify. Persists a JSON record to the session's apps directory.
-
-## document_endpoint
-**This is your primary output tool for endpoints.** Use it to document every endpoint you discover. Each call persists a JSON record to the session's endpoints directory, organized by app.
-
-**HARD RULE — call this tool DIRECTLY, one route at a time.** The moment you have enough information about a route to document it, your very next tool call must be \`document_endpoint\` for that route. Do not defer. Do not batch. Do not collect routes into a list to "process later."
-
-**You MUST NOT, under any circumstances:**
-- Build a manifest, JSON file, list, or array of routes to document later (e.g. \`cat > /tmp/pages.json << EOF [...] EOF\`).
-- Write a shell, Python, or any other script whose purpose is to generate \`document_endpoint\` tool calls.
-- Use a single message to "summarize all the routes I'll document" before documenting them.
-- Stop documentation early because you "have enough" or it's "getting repetitive." If you discovered N routes, you must produce N \`document_endpoint\` calls.
-
-These patterns silently truncate at output-token limits and routes get dropped. The only correct workflow is: discover a route → call \`document_endpoint\` for it → discover the next route → call \`document_endpoint\` for it → ... until every route is documented. Repetition is expected and required.
-
-**CRITICAL — endpoint documentation rules:**
-- **One entry per unique route path.** Do NOT create separate entries for different HTTP methods on the same path. If \`/api/users\` supports GET, POST, and DELETE, that is ONE entry with \`method: ["GET", "POST", "DELETE"]\`.
-- **Use \`method: "PAGE"\`** for web pages and views (non-API routes).
-- **Always set \`appName\`** to the application name provided in your objective.
-- **Always set \`routePath\`** to the HTTP route this endpoint serves (e.g., \`/api/users/:id\`, \`/dashboard\`). This is the URL path a client requests — NOT a source-file path.
-- **Always set \`file\`** to the source-code file where the route is defined (e.g., \`src/routes/users.ts\`). This is NOT the HTTP route.
-- **Set \`line\`** to the line number when determinable.
-- **Set \`handler\`** to the handler function or component name.
-- **Set \`authRequired\`** to true/false based on middleware, guards, or decorators.
-
-
-## response
-When your objective includes structured output, call \`response\` with your final results once you are done. This ends your run.
-
-# Working Approach
-1. **Orient first** — list files and read key entry points to understand the structure.
-2. **Ignore submodules** — check for a \`.gitmodules\` file or run \`git submodule status\`. Any directories that are git submodules are external dependencies and must be **completely excluded** from your analysis.
-3. **Search, then read** — use grep to locate what you need, then read the relevant files.
-4. **Document each item the instant you discover it** — every \`document_app\` / \`document_endpoint\` call must be made directly, one item per call, immediately after you identify it. Never collect items into a manifest, JSON file, or batch script. If you find yourself thinking "let me list all of these and then document them," stop — that pattern silently drops items when output tokens run out.
-5. **Follow the trail** — trace through imports, function calls, and references to build full understanding.
-6. **Be thorough** — don't stop at the first match. Cover everything relevant to the objective. Repetitive \`document_endpoint\` calls are expected; do not summarize, deduplicate, or shortcut them.
-`;
+// System prompts and intermediate schemas live in
+// `src/core/agents/specialized/whiteboxAttackSurface/{prompts,types}.ts`.
+// This file is the orchestration layer that consumes them.
 
 // ---------------------------------------------------------------------------
-// Intermediate schemas (structured output for each workflow step)
-// ---------------------------------------------------------------------------
-
-export const AppInfoSchema = z.object({
-  name: z.string().describe("Application or service name"),
-  framework: z
-    .string()
-    .describe(
-      "Framework or cloud service (e.g. Express, Next.js, Django, FastAPI, Rails, AWS S3, CloudFront)",
-    ),
-  description: z.string().describe("Brief description of what this app does"),
-  location: z
-    .string()
-    .describe(
-      "Path to the app root relative to the repository root, or resource identifier for cloud resources",
-    ),
-  type: z
-    .enum([
-      "web_application",
-      "api",
-      "full_stack",
-      "domain",
-      "subdomain",
-      "database",
-      "cloud_resource",
-      "storage",
-    ])
-    .default("web_application")
-    .describe(
-      "Application type — web_application for frontend apps, api for backend services, " +
-        "full_stack for frameworks like Next.js/Remix that serve both, " +
-        "database for databases, cloud_resource for owned cloud infra, storage for S3/GCS/blob storage",
-    ),
-});
-
-const AppsDiscoveryResultSchema = z.object({
-  repoType: z.string().describe("e.g. monorepo, single-app, multi-package"),
-  packageManager: z
-    .string()
-    .describe("e.g. npm, yarn, pnpm, pip, cargo, go modules"),
-  apps: z
-    .array(AppInfoSchema)
-    .describe("All applications/services discovered in the repository"),
-});
-
-type AppsDiscoveryResult = z.infer<typeof AppsDiscoveryResultSchema>;
-
-export const DiscoverySummarySchema = z.object({
-  endpointsDocumented: z
-    .number()
-    .describe("Number of endpoints documented via document_endpoint"),
-  summary: z.string().describe("Brief summary of what was found"),
-});
-
-export type DiscoverySummary = z.infer<typeof DiscoverySummarySchema>;
-
-// ---------------------------------------------------------------------------
-// Input type
+// Input types
 // ---------------------------------------------------------------------------
 
 export interface WhiteboxAttackSurfaceWorkflowInput {
@@ -309,26 +96,11 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   environments?: string[];
 }
 
-// ---------------------------------------------------------------------------
-// Incremental input type
-// ---------------------------------------------------------------------------
-
-export interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
+export interface IncrementalWhiteboxInput
+  extends WhiteboxAttackSurfaceWorkflowInput {
   previousCommitSha: string;
   currentCommitSha: string;
   existingResult: WhiteboxAttackSurfaceResult;
-}
-
-// ---------------------------------------------------------------------------
-// App metadata schema (written to app.json in each app folder)
-// ---------------------------------------------------------------------------
-
-interface AppMetadata {
-  name: string;
-  type: string;
-  framework: string;
-  description: string;
-  location: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -340,10 +112,12 @@ interface AppMetadata {
  *
  * Phase 1: Spawn a single CodeAgent to identify all apps in the repo.
  * Phase 1.5: Create app folders with app.json metadata.
- * Phase 2: For each app, spawn two CodeAgents in parallel — one for
- *           pages, one for API endpoints — using document_endpoint.
- *           Threat models and risk scores are generated inline during
- *           this phase (inside document_endpoint).
+ * Phase 2: Per-app dispatch. Service apps run `mapAppWithSurface`; on
+ *           `surface` mode a per-endpoint enrichment CodeAgent enriches the
+ *           deterministic list, on `fallback` the legacy pages+apiEndpoints
+ *           agent pair runs. Cloud resources always use the specialized
+ *           cloud-resource agent. Threat models and risk scores are
+ *           generated inline by document_endpoint.
  * Phase 3: Read the assets directory to build endpoint data.
  * Phase 4: Final assembly.
  */
@@ -374,7 +148,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     objective: buildAppsDiscoveryObjective(codebasePath, domains, environments),
     // Phase 1 uses an apps-only system prompt (no document_endpoint guidance)
     // paired with `excludeTools: ["document_endpoint"]`. The shared
-    // WHITEBOX_CODE_AGENT_SYSTEM_PROMPT instructs every agent to call
+    // WHITEBOX_DISCOVERY_SYSTEM_PROMPT instructs every agent to call
     // document_endpoint per route — strong enough that Phase 1 would
     // improvise by abusing document_app for individual routes if the prompt
     // mentioned the tool at all. The variant below removes those mentions.
@@ -451,16 +225,9 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   for (const app of appsResult.apps) {
     const appDir = join(assetsPath, sanitizeName(app.name));
     mkdirSync(appDir, { recursive: true });
-    const metadata: AppMetadata = {
-      name: app.name,
-      type: app.type,
-      framework: app.framework,
-      description: app.description,
-      location: app.location,
-    };
     writeFileSync(
       join(appDir, "app.json"),
-      JSON.stringify(metadata, null, 2),
+      JSON.stringify(toAppMetadata(app), null, 2),
       "utf-8",
     );
   }
@@ -494,8 +261,6 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     completedApps: 0,
   });
 
-  type AppInfo = z.infer<typeof AppInfoSchema>;
-
   const spawnDiscoveryAgent = async (
     app: AppInfo,
     type: "pages" | "apiEndpoints" | "cloudResourceEndpoints",
@@ -516,7 +281,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     const agent = new CodeAgent<DiscoverySummary>({
       codebasePath,
       objective,
-      system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
+      system: WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
       model,
       session,
       authConfig,
@@ -585,7 +350,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
           // Cloud resources: surface doesn't enumerate these — always fallback.
           await spawnCloudResourceAgent(app);
         } else {
-          const surfaceResult = await mapAppWithSurface(
+          const surfaceResult = mapAppWithSurface(
             join(codebasePath, app.location),
             codebasePath,
           );
@@ -951,7 +716,7 @@ When finished, call the \`response\` tool with your structured findings. Do not 
 
 function buildPagesDiscoveryObjective(
   codebasePath: string,
-  appInfo: z.infer<typeof AppInfoSchema>,
+  appInfo: AppInfo,
 ): string {
   return `# Find All Web Pages in ${appInfo.name}
 
@@ -1011,7 +776,7 @@ When finished, call \`response\` with a summary of how many pages you documented
 
 function buildApiEndpointsDiscoveryObjective(
   codebasePath: string,
-  appInfo: z.infer<typeof AppInfoSchema>,
+  appInfo: AppInfo,
 ): string {
   return `# Find All API Endpoints in ${appInfo.name}
 
@@ -1076,7 +841,7 @@ When finished, call \`response\` with a summary of how many endpoints you docume
 
 function buildCloudResourceEndpointsObjective(
   codebasePath: string,
-  appInfo: z.infer<typeof AppInfoSchema>,
+  appInfo: AppInfo,
   environments?: string[],
 ): string {
   const envNote = environments?.length
@@ -1208,17 +973,9 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     const appDir = join(assetsPath, sanitizeName(app.name));
     mkdirSync(appDir, { recursive: true });
 
-    // Write app.json
-    const metadata: AppMetadata = {
-      name: app.name,
-      type: app.type ?? "web_application",
-      framework: app.framework,
-      description: app.description,
-      location: app.location,
-    };
     writeFileSync(
       join(appDir, "app.json"),
-      JSON.stringify(metadata, null, 2),
+      JSON.stringify(toAppMetadata(app), null, 2),
       "utf-8",
     );
 
@@ -1299,7 +1056,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
   const agent = new CodeAgent<IncrementalResult>({
     codebasePath,
     objective,
-    system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
+    system: WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
     model,
     session,
     authConfig,

@@ -161,7 +161,9 @@ describe("shouldFallback", () => {
     const decision = shouldFallback(result);
 
     expect(decision.fallback).toBe(true);
-    expect(decision.reason).toMatch(/zero endpoints/);
+    if (decision.fallback) {
+      expect(decision.reason).toMatch(/zero endpoints/);
+    }
   });
 
   it("does not fall back when frameworks and endpoints are present", () => {
@@ -177,11 +179,13 @@ describe("shouldFallback", () => {
   });
 });
 
-describe("mapAppWithSurface — kind-driven page mapping", () => {
-  // Surface emits `kind: "page"` (since v0.2.0); apex no longer
-  // file-pattern-classifies. We just substitute method=["PAGE"] for page-kind
-  // entries and pass everything else through.
-  it("substitutes method=['PAGE'] for kind='page' and preserves API method otherwise", () => {
+describe("mapAppWithSurface — pass-through behavior", () => {
+  // Surface emits `kind: "page"` (since v0.2.0). The integration layer is a
+  // pure pass-through: `kind` is preserved as the page/api signal and
+  // `method` carries surface's raw HTTP methods. The apex storage convention
+  // (method="PAGE" for pages) is applied at the document_endpoint write
+  // boundary, not here.
+  it("preserves kind and raw method for both page and api endpoints", () => {
     const rows: EndpointInfo[] = [
       makeEndpointInfo({
         framework: "nextjs",
@@ -209,36 +213,34 @@ describe("mapAppWithSurface — kind-driven page mapping", () => {
       }),
     ];
 
-    // Replicate the post-consolidation map step from mapAppWithSurface.
     const consolidated = consolidateBySameRoute(rows);
-    const mapped = consolidated.map((ep) =>
-      ep.kind === "page" ? { ...ep, method: ["PAGE"] } : ep,
-    );
-    expect(mapped).toHaveLength(2);
+    expect(consolidated).toHaveLength(2);
 
-    const page = mapped.find((e) => e.file.endsWith("page.tsx"));
-    const api = mapped.find((e) => e.file.endsWith("route.ts"));
+    const page = consolidated.find((e) => e.file.endsWith("page.tsx"));
+    const api = consolidated.find((e) => e.file.endsWith("route.ts"));
     expect(page!.kind).toBe("page");
-    expect(page!.method).toEqual(["PAGE"]);
+    expect(page!.method).toEqual(["GET"]);
     expect(api!.kind).toBe("api");
     expect(api!.method).toEqual(["GET", "POST"]);
   });
 
-  it("returns a fallback signal when surface produces no frameworks", async () => {
+  it("returns a fallback signal when surface produces no frameworks", () => {
     // Sanity check on the fallback decision reaching the public API.
     // We don't call mapAppWithSurface against a real path here; instead
     // we verify shouldFallback drives the same decision.
     const result = makeMapResult([], { frameworks: [] });
     const decision = shouldFallback(result);
     expect(decision.fallback).toBe(true);
-    expect(decision.reason).toBe("no frameworks detected");
+    if (decision.fallback) {
+      expect(decision.reason).toBe("no frameworks detected");
+    }
   });
 
-  it("end-to-end against a non-existent path returns a fallback signal (real surface.map)", async () => {
+  it("end-to-end against a non-existent path returns a fallback signal (real surface.map)", () => {
     // Surface gracefully handles missing paths — it scans nothing, finds no
     // frameworks, and we should fall back. This exercises the real
     // mapAppWithSurface entry point without depending on a fixture repo.
-    const out = await mapAppWithSurface(
+    const out = mapAppWithSurface(
       "/tmp/__apex_surface_does_not_exist__",
       "/tmp",
     );
