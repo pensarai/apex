@@ -27,7 +27,7 @@ import { runWithBoundedConcurrency } from "../../../utils/concurrency";
  * separately bounded by `DEFAULT_CONCURRENCY` in
  * `runWhiteboxAttackSurfaceWorkflow` Phase 2.
  */
-const ENRICHMENT_CONCURRENCY = 5;
+const ENRICHMENT_CONCURRENCY = 10;
 
 // ---------------------------------------------------------------------------
 // Types
