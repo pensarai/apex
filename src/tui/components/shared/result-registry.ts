@@ -826,16 +826,16 @@ const WS_COLORS: Record<
   { globe: RGBA; domain: RGBA; title: RGBA; snippet: RGBA }
 > = {
   dark: {
-    globe: RGBA.fromInts(106, 115, 125, 255), // gray
-    domain: RGBA.fromInts(86, 182, 194, 255), // cyan
-    title: RGBA.fromInts(97, 175, 239, 255), // blue
+    globe: RGBA.fromInts(110, 118, 129, 255), // gray
+    domain: RGBA.fromInts(130, 170, 175, 255), // muted teal
+    title: RGBA.fromInts(140, 170, 200, 255), // muted steel blue
     snippet: RGBA.fromInts(140, 148, 160, 255), // muted
   },
   light: {
-    globe: RGBA.fromInts(106, 115, 125, 255), // gray
-    domain: RGBA.fromInts(28, 120, 134, 255), // darker cyan
-    title: RGBA.fromInts(30, 100, 200, 255), // darker blue
-    snippet: RGBA.fromInts(100, 108, 120, 255), // darker muted
+    globe: RGBA.fromInts(120, 125, 132, 255), // mid gray
+    domain: RGBA.fromInts(40, 100, 110, 255), // muted teal
+    title: RGBA.fromInts(50, 90, 150, 255), // muted navy
+    snippet: RGBA.fromInts(100, 108, 120, 255), // muted
   },
 };
 

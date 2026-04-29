@@ -31,35 +31,35 @@ interface SyntaxPalette {
 }
 
 const DARK_PALETTE: SyntaxPalette = {
-  keyword: RGBA.fromInts(198, 120, 221, 255), // purple
-  string: RGBA.fromInts(152, 195, 121, 255), // green
-  comment: RGBA.fromInts(106, 115, 125, 255), // gray
-  number: RGBA.fromInts(209, 154, 102, 255), // orange
-  function: RGBA.fromInts(97, 175, 239, 255), // blue
-  title: RGBA.fromInts(97, 175, 239, 255), // blue
-  attr: RGBA.fromInts(229, 192, 123, 255), // yellow
-  tag: RGBA.fromInts(224, 108, 117, 255), // red
-  type: RGBA.fromInts(86, 182, 194, 255), // cyan
-  literal: RGBA.fromInts(209, 154, 102, 255), // orange
-  regexp: RGBA.fromInts(152, 195, 121, 255), // green
-  meta: RGBA.fromInts(106, 115, 125, 255), // gray
-  punctuation: RGBA.fromInts(171, 178, 191, 255), // light gray
+  keyword: RGBA.fromInts(170, 140, 190, 255), // muted lavender
+  string: RGBA.fromInts(140, 170, 130, 255), // muted sage
+  comment: RGBA.fromInts(110, 118, 129, 255), // gray
+  number: RGBA.fromInts(180, 150, 120, 255), // muted tan
+  function: RGBA.fromInts(140, 170, 200, 255), // muted steel blue
+  title: RGBA.fromInts(140, 170, 200, 255), // muted steel blue
+  attr: RGBA.fromInts(180, 170, 140, 255), // muted sand
+  tag: RGBA.fromInts(180, 130, 130, 255), // muted rose
+  type: RGBA.fromInts(130, 170, 175, 255), // muted teal
+  literal: RGBA.fromInts(180, 150, 120, 255), // muted tan
+  regexp: RGBA.fromInts(140, 170, 130, 255), // muted sage
+  meta: RGBA.fromInts(110, 118, 129, 255), // gray
+  punctuation: RGBA.fromInts(155, 162, 172, 255), // light gray
 };
 
 const LIGHT_PALETTE: SyntaxPalette = {
-  keyword: RGBA.fromInts(137, 63, 168, 255), // darker purple
-  string: RGBA.fromInts(56, 124, 56, 255), // darker green
-  comment: RGBA.fromInts(106, 115, 125, 255), // gray (works on both)
-  number: RGBA.fromInts(152, 104, 40, 255), // darker orange
-  function: RGBA.fromInts(30, 100, 200, 255), // darker blue
-  title: RGBA.fromInts(30, 100, 200, 255), // darker blue
-  attr: RGBA.fromInts(150, 120, 30, 255), // darker yellow
-  tag: RGBA.fromInts(180, 50, 55, 255), // darker red
-  type: RGBA.fromInts(28, 120, 134, 255), // darker cyan
-  literal: RGBA.fromInts(152, 104, 40, 255), // darker orange
-  regexp: RGBA.fromInts(56, 124, 56, 255), // darker green
-  meta: RGBA.fromInts(106, 115, 125, 255), // gray
-  punctuation: RGBA.fromInts(80, 85, 95, 255), // dark gray
+  keyword: RGBA.fromInts(100, 70, 120, 255), // muted plum
+  string: RGBA.fromInts(60, 100, 60, 255), // muted forest
+  comment: RGBA.fromInts(120, 125, 132, 255), // mid gray
+  number: RGBA.fromInts(130, 95, 50, 255), // muted brown
+  function: RGBA.fromInts(50, 90, 150, 255), // muted navy
+  title: RGBA.fromInts(50, 90, 150, 255), // muted navy
+  attr: RGBA.fromInts(110, 95, 50, 255), // muted olive
+  tag: RGBA.fromInts(140, 60, 65, 255), // muted burgundy
+  type: RGBA.fromInts(40, 100, 110, 255), // muted teal
+  literal: RGBA.fromInts(130, 95, 50, 255), // muted brown
+  regexp: RGBA.fromInts(60, 100, 60, 255), // muted forest
+  meta: RGBA.fromInts(120, 125, 132, 255), // mid gray
+  punctuation: RGBA.fromInts(90, 95, 105, 255), // dark gray
 };
 
 function buildClassColorMap(p: SyntaxPalette): Record<string, RGBA> {
