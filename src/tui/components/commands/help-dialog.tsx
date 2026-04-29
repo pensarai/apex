@@ -174,6 +174,7 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
     <Dialog size="large" onClose={onClose}>
       <DialogLayout
         title="Commands"
+        flushRight
         footerActions={[{ key: "Enter", label: "details", variant: "primary" }]}
       >
         {/* Commands list grouped by category */}
@@ -182,7 +183,14 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
           style={{
             rootOptions: { flexGrow: 1, width: "100%" },
             contentOptions: { flexDirection: "column" },
+            scrollbarOptions: {
+              trackOptions: {
+                foregroundColor: colors.primary,
+                backgroundColor: colors.backgroundElement,
+              },
+            },
           }}
+          scrollbarOptions={{ visible: true }}
           stickyScroll={false}
           focused={true}
         >

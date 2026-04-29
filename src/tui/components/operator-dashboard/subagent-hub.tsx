@@ -232,7 +232,14 @@ export const SubagentHub = memo(function SubagentHub({
               paddingTop: 1,
               paddingBottom: 1,
             },
+            scrollbarOptions: {
+              trackOptions: {
+                foregroundColor: colors.primary,
+                backgroundColor: colors.backgroundElement,
+              },
+            },
           }}
+          scrollbarOptions={{ visible: true }}
           stickyScroll={false}
           focused={true}
         >

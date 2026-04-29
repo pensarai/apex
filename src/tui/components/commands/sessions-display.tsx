@@ -208,7 +208,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
   return (
     <Dialog size="large" onClose={handleClose}>
-      <DialogLayout title="Sessions" footerActions={footerActions}>
+      <DialogLayout title="Sessions" flushRight footerActions={footerActions}>
         {/* Search Input */}
         <box
           width="100%"
@@ -256,6 +256,12 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                 contentOptions: {
                   gap: 2,
                   flexDirection: "column",
+                },
+                scrollbarOptions: {
+                  trackOptions: {
+                    foregroundColor: colors.primary,
+                    backgroundColor: colors.backgroundElement,
+                  },
                 },
               }}
             >
