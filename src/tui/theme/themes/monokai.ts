@@ -131,6 +131,44 @@ export const monokai: ThemeDefinition = {
       light: RGBA.fromHex("#a67f00"),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#ff6188"), // red/pink
+      light: RGBA.fromHex("#cc2944"),
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#ffd866"), // yellow
+      light: RGBA.fromHex("#a67f00"),
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#727072"), // comment
+      light: RGBA.fromHex("#9e9b9f"),
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#ab9df2"), // purple
+      light: RGBA.fromHex("#6e56cf"),
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#a9dc76"), // green
+      light: RGBA.fromHex("#4d7a27"),
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#78dce8"), // cyan
+      light: RGBA.fromHex("#0b7e8b"),
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#ff6188"), // red/pink
+      light: RGBA.fromHex("#cc2944"),
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#fc9867"), // orange
+      light: RGBA.fromHex("#c25d00"),
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#939293"), // muted fg
+      light: RGBA.fromHex("#6e6c6e"),
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#a9dc76"),

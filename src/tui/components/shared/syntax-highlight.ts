@@ -3,103 +3,53 @@
  *
  * Tokenizes code via highlight.js and maps the output to StyledText
  * chunks with per-token foreground colors for rich terminal rendering.
+ *
+ * Colors are theme-aware: each theme defines its own syntax palette
+ * with dark/light variants via ThemeColors tokens.
  */
 
 import { RGBA, StyledText, type TextChunk } from "@opentui/core";
 import hljs from "highlight.js";
 import { extname } from "path";
-import type { ColorMode } from "../../theme/types";
+import type { ThemeColors } from "../../theme/types";
 
 // ---------------------------------------------------------------------------
-// Color palettes — dark and light mode variants
+// Build hljs class → RGBA map from resolved theme colors
 // ---------------------------------------------------------------------------
 
-interface SyntaxPalette {
-  keyword: RGBA;
-  string: RGBA;
-  comment: RGBA;
-  number: RGBA;
-  function: RGBA;
-  title: RGBA;
-  attr: RGBA;
-  tag: RGBA;
-  type: RGBA;
-  literal: RGBA;
-  regexp: RGBA;
-  meta: RGBA;
-  punctuation: RGBA;
-}
-
-const DARK_PALETTE: SyntaxPalette = {
-  keyword: RGBA.fromInts(170, 140, 190, 255), // muted lavender
-  string: RGBA.fromInts(140, 170, 130, 255), // muted sage
-  comment: RGBA.fromInts(110, 118, 129, 255), // gray
-  number: RGBA.fromInts(180, 150, 120, 255), // muted tan
-  function: RGBA.fromInts(140, 170, 200, 255), // muted steel blue
-  title: RGBA.fromInts(140, 170, 200, 255), // muted steel blue
-  attr: RGBA.fromInts(180, 170, 140, 255), // muted sand
-  tag: RGBA.fromInts(180, 130, 130, 255), // muted rose
-  type: RGBA.fromInts(130, 170, 175, 255), // muted teal
-  literal: RGBA.fromInts(180, 150, 120, 255), // muted tan
-  regexp: RGBA.fromInts(140, 170, 130, 255), // muted sage
-  meta: RGBA.fromInts(110, 118, 129, 255), // gray
-  punctuation: RGBA.fromInts(155, 162, 172, 255), // light gray
-};
-
-const LIGHT_PALETTE: SyntaxPalette = {
-  keyword: RGBA.fromInts(100, 70, 120, 255), // muted plum
-  string: RGBA.fromInts(60, 100, 60, 255), // muted forest
-  comment: RGBA.fromInts(120, 125, 132, 255), // mid gray
-  number: RGBA.fromInts(130, 95, 50, 255), // muted brown
-  function: RGBA.fromInts(50, 90, 150, 255), // muted navy
-  title: RGBA.fromInts(50, 90, 150, 255), // muted navy
-  attr: RGBA.fromInts(110, 95, 50, 255), // muted olive
-  tag: RGBA.fromInts(140, 60, 65, 255), // muted burgundy
-  type: RGBA.fromInts(40, 100, 110, 255), // muted teal
-  literal: RGBA.fromInts(130, 95, 50, 255), // muted brown
-  regexp: RGBA.fromInts(60, 100, 60, 255), // muted forest
-  meta: RGBA.fromInts(120, 125, 132, 255), // mid gray
-  punctuation: RGBA.fromInts(90, 95, 105, 255), // dark gray
-};
-
-function buildClassColorMap(p: SyntaxPalette): Record<string, RGBA> {
+function buildClassColorMap(colors: ThemeColors): Record<string, RGBA> {
   return {
-    "hljs-keyword": p.keyword,
-    "hljs-built_in": p.keyword,
-    "hljs-type": p.type,
-    "hljs-literal": p.literal,
-    "hljs-number": p.number,
-    "hljs-string": p.string,
-    "hljs-regexp": p.regexp,
-    "hljs-template-variable": p.string,
-    "hljs-subst": p.string,
-    "hljs-comment": p.comment,
-    "hljs-doctag": p.comment,
-    "hljs-function": p.function,
-    "hljs-title": p.title,
-    "hljs-title.class_": p.type,
-    "hljs-title.function_": p.function,
-    "hljs-params": p.attr,
-    "hljs-attr": p.attr,
-    "hljs-attribute": p.attr,
-    "hljs-property": p.attr,
-    "hljs-variable": p.tag,
-    "hljs-tag": p.tag,
-    "hljs-name": p.tag,
-    "hljs-selector-tag": p.tag,
-    "hljs-selector-class": p.attr,
-    "hljs-selector-id": p.attr,
-    "hljs-meta": p.meta,
-    "hljs-meta keyword": p.keyword,
-    "hljs-symbol": p.literal,
-    "hljs-punctuation": p.punctuation,
+    "hljs-keyword": colors.syntaxKeyword,
+    "hljs-built_in": colors.syntaxKeyword,
+    "hljs-type": colors.syntaxType,
+    "hljs-literal": colors.syntaxNumber,
+    "hljs-number": colors.syntaxNumber,
+    "hljs-string": colors.syntaxString,
+    "hljs-regexp": colors.syntaxString,
+    "hljs-template-variable": colors.syntaxString,
+    "hljs-subst": colors.syntaxString,
+    "hljs-comment": colors.syntaxComment,
+    "hljs-doctag": colors.syntaxComment,
+    "hljs-function": colors.syntaxFunction,
+    "hljs-title": colors.syntaxFunction,
+    "hljs-title.class_": colors.syntaxType,
+    "hljs-title.function_": colors.syntaxFunction,
+    "hljs-params": colors.syntaxAttr,
+    "hljs-attr": colors.syntaxAttr,
+    "hljs-attribute": colors.syntaxAttr,
+    "hljs-property": colors.syntaxAttr,
+    "hljs-variable": colors.syntaxTag,
+    "hljs-tag": colors.syntaxTag,
+    "hljs-name": colors.syntaxTag,
+    "hljs-selector-tag": colors.syntaxTag,
+    "hljs-selector-class": colors.syntaxAttr,
+    "hljs-selector-id": colors.syntaxAttr,
+    "hljs-meta": colors.syntaxComment,
+    "hljs-meta keyword": colors.syntaxKeyword,
+    "hljs-symbol": colors.syntaxNumber,
+    "hljs-punctuation": colors.syntaxPunctuation,
   };
 }
-
-const CLASS_COLOR_MAPS: Record<ColorMode, Record<string, RGBA>> = {
-  dark: buildClassColorMap(DARK_PALETTE),
-  light: buildClassColorMap(LIGHT_PALETTE),
-};
 
 // ---------------------------------------------------------------------------
 // Extension → highlight.js language mapping
@@ -254,15 +204,16 @@ function parseHljsHtml(
  *
  * @param code - Source code to highlight
  * @param filePath - Optional file path to infer language from extension
- * @param mode - Color mode ("dark" or "light"), defaults to "dark"
+ * @param colors - Resolved ThemeColors for the current theme + mode
  * @returns StyledText with per-token colors, or null if highlighting fails
  */
 export function highlightCode(
   code: string,
   filePath?: string,
-  mode: ColorMode = "dark",
+  colors?: ThemeColors,
 ): StyledText | null {
   if (!code.trim()) return null;
+  if (!colors) return null;
 
   try {
     const lang = filePath ? inferLanguage(filePath) : undefined;
@@ -274,7 +225,8 @@ export function highlightCode(
 
     if (!result.value) return null;
 
-    const chunks = parseHljsHtml(result.value, CLASS_COLOR_MAPS[mode]);
+    const classColorMap = buildClassColorMap(colors);
+    const chunks = parseHljsHtml(result.value, classColorMap);
     if (chunks.length === 0) return null;
 
     return new StyledText(chunks);

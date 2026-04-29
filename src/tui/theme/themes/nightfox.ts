@@ -130,6 +130,44 @@ export const nightfox: ThemeDefinition = {
       light: RGBA.fromHex("#AC5402"),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#9d79d6"), // magenta
+      light: RGBA.fromHex("#6e33ce"),
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#81b29a"), // green
+      light: RGBA.fromHex("#396847"),
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#738091"), // comment
+      light: RGBA.fromHex("#837a72"),
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#f4a261"), // orange
+      light: RGBA.fromHex("#955f61"),
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#719cd6"), // blue
+      light: RGBA.fromHex("#2848a9"),
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#dbc074"), // yellow
+      light: RGBA.fromHex("#AC5402"),
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#c94f6d"), // red
+      light: RGBA.fromHex("#a5222f"),
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#63cdcf"), // cyan
+      light: RGBA.fromHex("#287980"),
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#aeafb0"), // muted fg
+      light: RGBA.fromHex("#5a5565"),
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#81b29a"),

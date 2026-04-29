@@ -130,6 +130,44 @@ export const catppuccin: ThemeDefinition = {
       light: RGBA.fromHex("#df8e1d"), // yellow (latte)
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#cba6f7"), // mauve (mocha)
+      light: RGBA.fromHex("#8839ef"), // mauve (latte)
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#a6e3a1"), // green (mocha)
+      light: RGBA.fromHex("#40a02b"), // green (latte)
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#6c7086"), // overlay0 (mocha)
+      light: RGBA.fromHex("#9ca0b0"), // overlay0 (latte)
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#fab387"), // peach (mocha)
+      light: RGBA.fromHex("#fe640b"), // peach (latte)
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#89b4fa"), // blue (mocha)
+      light: RGBA.fromHex("#1e66f5"), // blue (latte)
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#f9e2af"), // yellow (mocha)
+      light: RGBA.fromHex("#df8e1d"), // yellow (latte)
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#f38ba8"), // red (mocha)
+      light: RGBA.fromHex("#d20f39"), // red (latte)
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#94e2d5"), // teal (mocha)
+      light: RGBA.fromHex("#179299"), // teal (latte)
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#a6adc8"), // subtext0 (mocha)
+      light: RGBA.fromHex("#6c6f85"), // subtext0 (latte)
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#a6e3a1"), // green (mocha)

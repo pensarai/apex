@@ -130,6 +130,44 @@ export const tokyonight: ThemeDefinition = {
       light: RGBA.fromHex("#8c6c3e"),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#bb9af7"), // purple
+      light: RGBA.fromHex("#9854f1"),
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#9ece6a"), // green
+      light: RGBA.fromHex("#587539"),
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#565f89"), // comment
+      light: RGBA.fromHex("#8990b3"),
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#ff9e64"), // orange
+      light: RGBA.fromHex("#b15c00"),
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#7aa2f7"), // blue
+      light: RGBA.fromHex("#2e7de9"),
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#2ac3de"), // cyan
+      light: RGBA.fromHex("#07879d"),
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#f7768e"), // red
+      light: RGBA.fromHex("#c64343"),
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#e0af68"), // yellow
+      light: RGBA.fromHex("#8c6c3e"),
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#9aa5ce"), // fg_gutter
+      light: RGBA.fromHex("#6172b0"),
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#449dab"),

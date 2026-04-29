@@ -130,6 +130,44 @@ export const gruvbox: ThemeDefinition = {
       light: RGBA.fromHex("#8f3f71"),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#fb4934"), // red (bright)
+      light: RGBA.fromHex("#9d0006"), // red (faded)
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#b8bb26"), // green (bright)
+      light: RGBA.fromHex("#79740e"), // green (faded)
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#928374"), // gray
+      light: RGBA.fromHex("#928374"),
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#d3869b"), // purple
+      light: RGBA.fromHex("#8f3f71"), // purple (faded)
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#fabd2f"), // yellow (bright)
+      light: RGBA.fromHex("#b57614"), // yellow (faded)
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#83a598"), // aqua (bright)
+      light: RGBA.fromHex("#427b58"), // aqua (faded)
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#fe8019"), // orange (bright)
+      light: RGBA.fromHex("#af3a03"), // orange (faded)
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#8ec07c"), // aqua (bright)
+      light: RGBA.fromHex("#427b58"), // aqua (faded)
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#a89984"), // fg4
+      light: RGBA.fromHex("#665c54"), // fg4
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#b8bb26"),

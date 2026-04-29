@@ -130,6 +130,44 @@ export const everforest: ThemeDefinition = {
       light: RGBA.fromHex("#df69ba"),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#e67e80"), // red
+      light: RGBA.fromHex("#f85552"),
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#a7c080"), // green
+      light: RGBA.fromHex("#8da101"),
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#859289"), // grey1
+      light: RGBA.fromHex("#939f91"), // grey0
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#d699b6"), // purple
+      light: RGBA.fromHex("#df69ba"),
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#a7c080"), // green
+      light: RGBA.fromHex("#8da101"),
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#dbbc7f"), // yellow
+      light: RGBA.fromHex("#dfa000"),
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#e69875"), // orange
+      light: RGBA.fromHex("#f57d26"),
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#7fbbb3"), // aqua
+      light: RGBA.fromHex("#35a77c"),
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#d3c6aa"), // fg
+      light: RGBA.fromHex("#5c6a72"),
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#a7c080"),

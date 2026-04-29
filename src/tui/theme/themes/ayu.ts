@@ -130,6 +130,44 @@ export const ayu: ThemeDefinition = {
       light: RGBA.fromHex("#a37acc"),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#ff8f40"), // orange (keyword)
+      light: RGBA.fromHex("#fa8d3e"),
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#aad94c"), // green
+      light: RGBA.fromHex("#86b300"),
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#636a72"), // comment
+      light: RGBA.fromHex("#8a9199"),
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#e6b450"), // yellow/accent
+      light: RGBA.fromHex("#a37acc"), // purple in light
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#ffb454"), // amber (function)
+      light: RGBA.fromHex("#f2ae49"),
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#39bae6"), // blue (type)
+      light: RGBA.fromHex("#399ee6"),
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#39bae6"), // blue (tag)
+      light: RGBA.fromHex("#399ee6"),
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#f29668"), // orange (attr)
+      light: RGBA.fromHex("#e6ba7e"),
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#bfbdb6"), // fg
+      light: RGBA.fromHex("#5c6166"),
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#7fd962"),

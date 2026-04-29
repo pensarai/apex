@@ -131,6 +131,44 @@ export const dracula: ThemeDefinition = {
       light: RGBA.fromHex("#9a7b00"),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#ff79c6"), // pink
+      light: RGBA.fromHex("#d6336c"),
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#f1fa8c"), // yellow
+      light: RGBA.fromHex("#9a7b00"),
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#6272a4"), // comment
+      light: RGBA.fromHex("#8b95b8"),
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#bd93f9"), // purple
+      light: RGBA.fromHex("#7c3aed"),
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#50fa7b"), // green
+      light: RGBA.fromHex("#1b8332"),
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#8be9fd"), // cyan
+      light: RGBA.fromHex("#0e7490"),
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#ff5555"), // red
+      light: RGBA.fromHex("#c62828"),
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#ffb86c"), // orange
+      light: RGBA.fromHex("#c2410c"),
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#f8f8f2"), // fg
+      light: RGBA.fromHex("#4e5173"),
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#50fa7b"),

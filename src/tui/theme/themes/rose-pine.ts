@@ -130,6 +130,44 @@ export const rosePine: ThemeDefinition = {
       light: RGBA.fromHex("#b4637a"),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#31748f"), // pine (main)
+      light: RGBA.fromHex("#286983"), // pine (dawn)
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#f6c177"), // gold (main)
+      light: RGBA.fromHex("#ea9d34"), // gold (dawn)
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#6e6a86"), // muted (main)
+      light: RGBA.fromHex("#9893a5"), // muted (dawn)
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#c4a7e7"), // iris (main)
+      light: RGBA.fromHex("#907aa9"), // iris (dawn)
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#ebbcba"), // rose (main)
+      light: RGBA.fromHex("#d7827e"), // rose (dawn)
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#9ccfd8"), // foam (main)
+      light: RGBA.fromHex("#56949f"), // foam (dawn)
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#eb6f92"), // love (main)
+      light: RGBA.fromHex("#b4637a"), // love (dawn)
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#c4a7e7"), // iris (main)
+      light: RGBA.fromHex("#907aa9"), // iris (dawn)
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#908caa"), // subtle (main)
+      light: RGBA.fromHex("#797593"), // subtle (dawn)
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#9ccfd8"), // foam
