@@ -5,7 +5,7 @@ import {
   type EnrichmentEndpoint,
 } from "./enrichmentAgent";
 
-describe("buildEnrichmentObjective", () => {
+describe("buildEnrichmentObjective (per-endpoint)", () => {
   const app: AppInfo = {
     name: "myapp",
     framework: "Next.js 14 App Router",
@@ -40,89 +40,110 @@ describe("buildEnrichmentObjective", () => {
     internal: false,
   };
 
-  const objective = buildEnrichmentObjective({
-    app,
-    codebasePath: "/repo",
-    endpoints: [pageEndpoint, apiEndpoint],
-    frameworks: ["nextjs"],
+  describe("page endpoint", () => {
+    const objective = buildEnrichmentObjective({
+      app,
+      codebasePath: "/repo",
+      endpoint: pageEndpoint,
+      frameworks: ["nextjs"],
+    });
+
+    it("opens with the per-endpoint header (single endpoint scope)", () => {
+      expect(objective).toContain("# Enrich Endpoint: PAGE /dashboard");
+    });
+
+    it("renders codebase context (root, app name, app location, framework)", () => {
+      expect(objective).toContain("**Repository root:** /repo");
+      expect(objective).toContain("**App:** myapp");
+      expect(objective).toContain("**App location:** apps/myapp");
+      expect(objective).toContain("**Framework(s):** nextjs");
+    });
+
+    it("renders the single endpoint's structural fields", () => {
+      expect(objective).toContain("**method**: PAGE");
+      expect(objective).toContain("**routePath**: /dashboard");
+      expect(objective).toContain(
+        "**file**: apps/myapp/app/dashboard/page.tsx:12",
+      );
+      expect(objective).toContain("**handler**: DashboardPage");
+      expect(objective).toContain("**endpointType**: web-endpoint");
+    });
+
+    it("renders auth signals + prefilled authRequired", () => {
+      expect(objective).toContain("**auth signals**: middleware:requireAuth");
+      expect(objective).toContain("**prefilled authRequired**: true");
+    });
+
+    it("instructs document_endpoint with the canary-shape flat fields", () => {
+      expect(objective).toContain("document_endpoint");
+      expect(objective).not.toContain("document_asset");
+      expect(objective).toContain("appName");
+      expect(objective).toContain('"myapp"');
+      expect(objective).toContain("routePath");
+      expect(objective).toContain("endpointType");
+      expect(objective).toContain("riskLevel");
+      expect(objective).toContain("CRITICAL");
+      expect(objective).toContain("HIGH");
+      expect(objective).toContain("MEDIUM");
+      expect(objective).toContain("LOW");
+    });
+
+    it("does not instruct the agent to pass pentestObjectives — auto-generated", () => {
+      expect(objective).toContain(
+        "document_endpoint` generates them automatically",
+      );
+      expect(objective).not.toMatch(
+        /pentestObjectives.*: \d-\d specific testing/,
+      );
+    });
+
+    it("scopes the agent to a single endpoint and forbids re-discovery", () => {
+      expect(objective).toContain("**exactly one** endpoint");
+      expect(objective).toContain("Do not document other endpoints");
+      expect(objective).toContain("Do not enumerate routes");
+    });
+
+    it("ends with the response-tool ask using endpointsDocumented: 1", () => {
+      expect(objective).toContain("endpointsDocumented: 1");
+    });
+
+    it("renders PAGE methods as a single string (not array) in the document_endpoint ask", () => {
+      // Single-method endpoints serialize as the string, not the one-element array.
+      expect(objective).toContain('`"PAGE"`');
+    });
   });
 
-  it("opens with the per-app enrichment header", () => {
-    expect(objective).toContain("# Enrich Endpoints for myapp");
+  describe("api endpoint with multiple methods", () => {
+    const objective = buildEnrichmentObjective({
+      app,
+      codebasePath: "/repo",
+      endpoint: apiEndpoint,
+      frameworks: ["nextjs"],
+    });
+
+    it("opens with comma-joined methods", () => {
+      expect(objective).toContain("# Enrich Endpoint: GET,POST /api/users");
+    });
+
+    it("renders endpointType as api-endpoint", () => {
+      expect(objective).toContain("**endpointType**: api-endpoint");
+    });
+
+    it("prefills authRequired=false when no auth signals", () => {
+      expect(objective).toContain("**auth signals**: none");
+      expect(objective).toContain("**prefilled authRequired**: false");
+    });
+
+    it("serializes multi-method as a JSON array string for the document_endpoint ask", () => {
+      expect(objective).toContain('`["GET","POST"]`');
+    });
   });
 
-  it("includes the deterministic non-discovery instruction verbatim", () => {
-    expect(objective).toContain("Do NOT re-discover routes");
-  });
-
-  it("renders codebase context (root, app location, framework)", () => {
-    expect(objective).toContain("**Repository root:** /repo");
-    expect(objective).toContain("**App location:** apps/myapp");
-    expect(objective).toContain("**Framework(s):** nextjs");
-  });
-
-  it("numbers endpoints starting at 1 with method,path formatting", () => {
-    expect(objective).toContain("1. **PAGE /dashboard**");
-    expect(objective).toContain("2. **GET,POST /api/users**");
-  });
-
-  it("renders file:line and handler sub-bullets per endpoint", () => {
-    expect(objective).toContain("file: apps/myapp/app/dashboard/page.tsx:12");
-    expect(objective).toContain("handler: DashboardPage");
-    expect(objective).toContain("file: apps/myapp/app/api/users/route.ts:7");
-    expect(objective).toContain("handler: GET, POST");
-  });
-
-  it("renders auth signals (joined for non-empty, 'none' otherwise)", () => {
-    expect(objective).toContain("auth signals: middleware:requireAuth");
-    expect(objective).toContain("auth signals: none");
-  });
-
-  it("pre-fills authRequired from the auth-signal count", () => {
-    // Page has one signal → true; API has zero signals → false
-    expect(objective).toContain("prefilled authRequired: true");
-    expect(objective).toContain("prefilled authRequired: false");
-  });
-
-  it("renders endpointType per entry (PAGE → web-endpoint, otherwise api-endpoint)", () => {
-    expect(objective).toContain("endpointType: web-endpoint");
-    expect(objective).toContain("endpointType: api-endpoint");
-  });
-
-  it("instructs the agent to call document_endpoint with the canary-shape flat fields", () => {
-    expect(objective).toContain("document_endpoint");
-    expect(objective).not.toContain("document_asset");
-    expect(objective).toContain("appName");
-    expect(objective).toContain('"myapp"');
-    expect(objective).toContain("routePath");
-    expect(objective).toContain("endpointType");
-    expect(objective).toContain("description");
-    expect(objective).toContain("riskLevel");
-    expect(objective).toContain("CRITICAL");
-    expect(objective).toContain("HIGH");
-    expect(objective).toContain("MEDIUM");
-    expect(objective).toContain("LOW");
-  });
-
-  it("does not instruct the agent to pass pentestObjectives — they are auto-generated", () => {
-    expect(objective).toContain("auto");
-    expect(objective).toContain("automatically");
-    // The agent should NOT be told to provide pentestObjectives as a field.
-    expect(objective).not.toMatch(
-      /pentestObjectives.*: \d-\d specific testing/,
-    );
-  });
-
-  it("ends with the response-tool summary instruction including the count", () => {
-    expect(objective).toContain("call `response` with the count of endpoints");
-    expect(objective).toContain("must equal the number above: 2");
-  });
-
-  it("falls back to 'unknown' when no frameworks are detected", () => {
+  it("falls back to 'unknown' framework label when none detected", () => {
     const obj = buildEnrichmentObjective({
       app,
       codebasePath: "/repo",
-      endpoints: [apiEndpoint],
+      endpoint: apiEndpoint,
       frameworks: [],
     });
     expect(obj).toContain("**Framework(s):** unknown");
