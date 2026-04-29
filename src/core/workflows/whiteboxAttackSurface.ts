@@ -796,6 +796,7 @@ Analyze the repository structure and identify every **deployed application or se
 - Test suites, fixtures, and test helpers
 - Documentation packages
 - Third-party SaaS services not owned by the target (e.g. Stripe, auth providers)
+- **Individual API routes, web pages, or HTTP endpoints.** Endpoint enumeration is handled by a separate phase that runs after this one. Even if you discover route files (\`page.tsx\`, \`route.ts\`, controller methods) while navigating the codebase, do NOT call \`document_app\` for them. Each \`document_app\` call must represent a deployable application or cloud resource, never a single endpoint. The \`document_endpoint\` tool is intentionally not available to you.
 
 An app/service qualifies if it **listens on a port, serves HTTP traffic, or runs as a deployed process** (e.g. an Express server, a Next.js app, a Django project, a FastAPI service, a background worker with an API).
 
@@ -847,7 +848,7 @@ When you CAN determine the domain, each resource must have its OWN unique, resou
 
 **For WebSocket APIs:** Use the WebSocket endpoint URL if determinable, otherwise omit.
 
-When finished, call the \`response\` tool with your structured findings.`;
+When finished, call the \`response\` tool with your structured findings. Do not call \`document_app\` for individual routes, pages, or endpoints — that is a separate phase's responsibility.`;
 }
 
 function buildPagesDiscoveryObjective(
