@@ -506,6 +506,25 @@ describe("buildOperatorSystemPrompt", () => {
     expect(prompt).toContain("# Tool Reference");
   });
 
+  // Regression guard: operator mode passes its own `system:` to the agent,
+  // which short-circuits the constructor's default `detectOSAndEnhancePrompt`
+  // call. Without wrapping here, the operator prompt loses [ENV CONTEXT] and
+  // [BUNDLED ASSETS] entirely — the model has no idea what wordlists or tools
+  // are available. See the discussion around the wordlist bundling work.
+  it("includes the [ENV CONTEXT] block from detectOSAndEnhancePrompt", () => {
+    const prompt = buildOperatorSystemPrompt(target, state);
+    expect(prompt).toContain("[ENV CONTEXT]");
+    expect(prompt).toContain("[/ENV CONTEXT]");
+  });
+
+  it("includes the [BUNDLED ASSETS] inventory so the agent can answer capability questions", () => {
+    const prompt = buildOperatorSystemPrompt(target, state);
+    expect(prompt).toContain("[BUNDLED ASSETS]");
+    expect(prompt).toMatch(/TINY_WORDLIST=\S+tiny\.txt/);
+    expect(prompt).toMatch(/DEFAULT_WORDLIST=\S+common\.txt/);
+    expect(prompt).toMatch(/LARGE_WORDLIST=\S+large\.txt/);
+  });
+
   it("includes plan mode prompt when agentMode is plan", () => {
     const prompt = buildOperatorSystemPrompt(target, state, "plan");
     expect(prompt).toContain("PLAN MODE");

@@ -1,4 +1,3 @@
-import { RGBA } from "@opentui/core";
 import { useState, useEffect } from "react";
 import { useTheme } from "../theme";
 
@@ -38,27 +37,6 @@ function useGlobalTick() {
   }, []);
 
   return globalTick;
-}
-
-/** Animated spinner with rotating dots */
-export function SpinnerDots({
-  label,
-  fg,
-}: {
-  label?: string;
-  fg?: string | RGBA;
-}) {
-  const { colors } = useTheme();
-  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-  const tick = useGlobalTick();
-  const frame = tick % frames.length;
-
-  return (
-    <text
-      fg={fg || colors.info}
-      content={`${frames[frame]} ${label || "Loading"}`}
-    />
-  );
 }
 
 /** Horizontal line spinner */

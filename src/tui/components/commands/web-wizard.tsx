@@ -5,7 +5,7 @@ import Input from "../input";
 import { useConfig } from "../../context/config";
 import { useAgent } from "../../context/agent";
 import type { SessionConfig } from "../../../core/session";
-import { SpinnerDots } from "../sprites";
+import { SpinningDots } from "../loaders";
 import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
 import DialogLayout from "../dialog-layout";
@@ -524,7 +524,7 @@ export default function WebWizard({
             justifyContent="center"
             gap={2}
           >
-            <SpinnerDots label="Creating session..." fg={colors.primary} />
+            <SpinningDots label="Creating session..." fg={colors.primary} />
             <text fg={colors.textMuted}>Target: {state.target}</text>
             <text fg={colors.textMuted}>Mode: {modeLabel}</text>
           </box>
