@@ -242,7 +242,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
           >
             <scrollbox
               ref={scroll}
-              scrollbarOptions={{ visible: true }}
               style={{
                 rootOptions: {
                   width: "100%",
@@ -258,6 +257,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                   flexDirection: "column",
                 },
                 scrollbarOptions: {
+                  visible: true,
                   trackOptions: {
                     foregroundColor: colors.primary,
                     backgroundColor: colors.backgroundElement,

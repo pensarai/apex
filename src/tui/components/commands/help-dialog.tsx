@@ -184,13 +184,13 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
             rootOptions: { flexGrow: 1, width: "100%" },
             contentOptions: { flexDirection: "column" },
             scrollbarOptions: {
+              visible: true,
               trackOptions: {
                 foregroundColor: colors.primary,
                 backgroundColor: colors.backgroundElement,
               },
             },
           }}
-          scrollbarOptions={{ visible: true }}
           stickyScroll={false}
           focused={true}
         >
