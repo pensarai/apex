@@ -467,13 +467,11 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
   // =========================================================================
   // Phase 2: Per-app dispatch — surface-driven enrichment vs. fallback agents.
-  //          For service apps (web_application, api, full_stack, subdomain,
-  //          domain): try `mapAppWithSurface`; on `surface` mode run a single
-  //          per-app enrichment CodeAgent over the deterministic endpoint list,
+  //          Service apps try `mapAppWithSurface`; on `surface` mode run a
+  //          per-endpoint enrichment CodeAgent against the deterministic list,
   //          on `fallback` run the legacy pages+apiEndpoints CodeAgent pair.
-  //          Cloud resources (cloud_resource, storage, database) always use
-  //          the specialized objective — surface is HTTP-route-focused and
-  //          doesn't enumerate cloud assets. See design doc section 1.1.
+  //          Cloud resources always take the specialized objective — surface
+  //          is HTTP-route-focused and doesn't enumerate cloud assets.
   // =========================================================================
 
   const NON_SERVICE_TYPES = ["cloud_resource", "storage", "database"];
@@ -495,11 +493,6 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     totalApps,
     completedApps: 0,
   });
-
-  // Local helpers — closure-capture the workflow inputs so each spawn site
-  // doesn't re-thread the same args. These mirror the pre-rewrite per-task
-  // CodeAgent block byte-for-byte (same subagentId pattern, same callback
-  // shape, same try/catch + onSubagentComplete completed/failed semantics).
 
   type AppInfo = z.infer<typeof AppInfoSchema>;
 
@@ -601,9 +594,6 @@ export async function runWhiteboxAttackSurfaceWorkflow(
               `[whitebox] ${app.name}: surface-driven (${surfaceResult.endpoints.length} endpoints, frameworks=${surfaceResult.frameworks.join(",")})`,
             );
 
-            // `EnrichmentEndpoint` is a pass-through alias for
-            // `ConsolidatedEndpoint` since surface 0.2.1 — kind lives on the
-            // record directly, no bridging needed.
             await runAppEnrichment({
               codebasePath,
               app,
