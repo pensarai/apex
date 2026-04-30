@@ -47,6 +47,7 @@ Treat every binary, service, and kernel interface as potentially vulnerable and 
 **You must be relentless.** Do not stop after one finding, one failed attempt, or one pass through the system. There are always more attack surfaces to explore. If you've exhausted one area, move to the next. If you've tried obvious approaches, try creative ones. You have unlimited time — use it.
 
 After each finding or dead end, step back and ask:
+
 - Is this actually new, or is it already patched upstream? (Web search before logging.)
 - Can I chain this with something else for greater impact?
 - What haven't I looked at yet?
