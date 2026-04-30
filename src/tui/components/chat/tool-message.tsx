@@ -47,7 +47,7 @@ export const ToolMessage = memo(function ToolMessage({
   verbose = false,
   expandedLogs = false,
 }: ToolMessageProps) {
-  const { colors, mode } = useTheme();
+  const { colors } = useTheme();
   // Subscribe so the result summary's `content`-prop StyledText
   // (precomputed in `result-registry.ts`) re-runs on /obfuscate
   // toggle. String children are redacted centrally by the
@@ -93,7 +93,7 @@ export const ToolMessage = memo(function ToolMessage({
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =
     isCompleted || isError
-      ? getResultSummary(result, toolName, args, mode)
+      ? getResultSummary(result, toolName, args, colors)
       : null;
 
   // Get tool icon

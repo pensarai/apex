@@ -132,6 +132,44 @@ export const vesper: ThemeDefinition = {
       light: RGBA.fromHex("#a67f00"),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#ffc799"), // orange/amber
+      light: RGBA.fromHex("#b35c00"),
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#99ffe4"), // teal
+      light: RGBA.fromHex("#007a5e"),
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#5a5a5a"), // comment
+      light: RGBA.fromHex("#8f8f8f"),
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#d4a0ff"), // purple
+      light: RGBA.fromHex("#7e3aaf"),
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#a0c4ff"), // blue
+      light: RGBA.fromHex("#2563a0"),
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#ffc799"), // amber
+      light: RGBA.fromHex("#b35c00"),
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#f14c4c"), // red
+      light: RGBA.fromHex("#c62828"),
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#ffcb6b"), // yellow
+      light: RGBA.fromHex("#9c7700"),
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#7a7a7a"), // muted
+      light: RGBA.fromHex("#666666"),
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#99ffe4"),
