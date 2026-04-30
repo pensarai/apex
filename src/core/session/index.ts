@@ -134,6 +134,61 @@ export type EmailIntegrationConfig = z.infer<
   typeof EmailIntegrationConfigObject
 >;
 
+const SmtpConfigObject = z.object({
+  host: z.string(),
+  port: z.number(),
+  username: z.string(),
+  password: z.string(),
+  tls: z.boolean().default(true),
+  fromAddress: z.string().optional(),
+});
+
+export type SmtpConfig = z.infer<typeof SmtpConfigObject>;
+
+/**
+ * Resolve SMTP config from environment variables when not explicitly provided.
+ *
+ * - `RESEND_API_KEY` → Resend SMTP (smtp.resend.com:465, user "resend")
+ * - `SMTP_HOST` + `SMTP_PORT` + `SMTP_USERNAME` + `SMTP_PASSWORD` → generic SMTP
+ * - `OUTBOUND_EMAIL` → fromAddress for either path
+ */
+export function resolveSmtpConfig(
+  explicit?: SmtpConfig,
+): SmtpConfig | undefined {
+  if (explicit) return explicit;
+
+  const fromAddress = process.env.OUTBOUND_EMAIL;
+
+  const resendKey = process.env.RESEND_API_KEY;
+  if (resendKey) {
+    return {
+      host: "smtp.resend.com",
+      port: 465,
+      username: "resend",
+      password: resendKey,
+      tls: true,
+      fromAddress,
+    };
+  }
+
+  const host = process.env.SMTP_HOST;
+  const port = process.env.SMTP_PORT;
+  const username = process.env.SMTP_USERNAME;
+  const password = process.env.SMTP_PASSWORD;
+  if (host && port && username && password) {
+    return {
+      host,
+      port: parseInt(port, 10),
+      username,
+      password,
+      tls: process.env.SMTP_TLS !== "false",
+      fromAddress,
+    };
+  }
+
+  return undefined;
+}
+
 const SessionConfigObject = z.object({
   offensiveHeaders: OffensiveHeadersConfigObject.optional(),
   sessionType: z.enum(["web-app"]).optional(),
@@ -154,6 +209,8 @@ const SessionConfigObject = z.object({
   codebasePath: z.string().optional(),
   /** Email inboxes available to the agent for monitoring/reading email */
   emailIntegration: EmailIntegrationConfigObject.optional(),
+  /** SMTP config for outbound email (direct SMTP or Resend via SMTP) */
+  smtpConfig: SmtpConfigObject.optional(),
   /** Enable exfiltration mode — allows internal pivoting and flag extraction through confirmed vulnerabilities */
   exfilMode: z.boolean().optional(),
   /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
@@ -421,6 +478,8 @@ export async function create(input: CreateInputProps) {
     }
   }
 
+  const smtpConfig = resolveSmtpConfig(input.config?.smtpConfig);
+
   const result: SessionInfo = {
     id: id,
     version: getCurrentVersion(),
@@ -444,6 +503,7 @@ export async function create(input: CreateInputProps) {
         (input.config?.exfilMode
           ? EXFIL_OUTCOME_GUIDANCE
           : DEFAULT_OUTCOME_GUIDANCE),
+      smtpConfig,
     },
     _rateLimiter: rateLimiter,
     credentialManager,
