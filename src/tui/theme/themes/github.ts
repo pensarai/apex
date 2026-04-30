@@ -130,6 +130,44 @@ export const github: ThemeDefinition = {
       light: RGBA.fromHex("#9a6700"),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#ff7b72"), // red
+      light: RGBA.fromHex("#cf222e"),
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#a5d6ff"), // light blue (string)
+      light: RGBA.fromHex("#0a3069"),
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#8b949e"), // muted
+      light: RGBA.fromHex("#57606a"),
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#79c0ff"), // blue
+      light: RGBA.fromHex("#0550ae"),
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#d2a8ff"), // purple
+      light: RGBA.fromHex("#8250df"),
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#ffa657"), // orange (type)
+      light: RGBA.fromHex("#953800"),
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#7ee787"), // green (tag)
+      light: RGBA.fromHex("#116329"),
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#79c0ff"), // blue
+      light: RGBA.fromHex("#0550ae"),
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#c9d1d9"), // fg
+      light: RGBA.fromHex("#24292f"),
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#3fb950"),

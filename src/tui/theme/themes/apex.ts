@@ -131,6 +131,44 @@ export const apex: ThemeDefinition = {
       light: RGBA.fromInts(175, 160, 0, 255),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromInts(180, 126, 206, 255), // muted lavender
+      light: RGBA.fromInts(98, 37, 126, 255), // muted plum
+    },
+    syntaxString: {
+      dark: RGBA.fromInts(113, 186, 94, 255), // muted sage
+      light: RGBA.fromInts(48, 111, 32, 255), // muted forest
+    },
+    syntaxComment: {
+      dark: RGBA.fromInts(103, 115, 126, 255), // gray
+      light: RGBA.fromInts(92, 102, 112, 255), // mid gray
+    },
+    syntaxNumber: {
+      dark: RGBA.fromInts(192, 138, 89, 255), // muted tan
+      light: RGBA.fromInts(135, 79, 29, 255), // muted brown
+    },
+    syntaxFunction: {
+      dark: RGBA.fromInts(114, 160, 202, 255), // muted steel blue
+      light: RGBA.fromInts(30, 89, 143, 255), // muted navy
+    },
+    syntaxType: {
+      dark: RGBA.fromInts(114, 182, 182, 255), // muted teal
+      light: RGBA.fromInts(37, 126, 126, 255), // muted teal
+    },
+    syntaxTag: {
+      dark: RGBA.fromInts(194, 112, 112, 255), // muted rose
+      light: RGBA.fromInts(142, 41, 41, 255), // muted burgundy
+    },
+    syntaxAttr: {
+      dark: RGBA.fromInts(194, 176, 112, 255), // muted sand
+      light: RGBA.fromInts(135, 111, 29, 255), // muted olive
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromInts(148, 156, 168, 255), // light gray
+      light: RGBA.fromInts(87, 95, 107, 255), // dark gray
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromInts(76, 175, 80, 255),

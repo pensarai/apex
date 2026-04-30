@@ -124,9 +124,8 @@ export function MessageList({
           flexDirection: "column",
         },
         scrollbarOptions: {
-          visible: true,
           trackOptions: {
-            foregroundColor: colors.primary,
+            foregroundColor: colors.textMuted,
             backgroundColor: colors.backgroundElement,
           },
         },
