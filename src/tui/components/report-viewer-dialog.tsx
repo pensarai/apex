@@ -80,7 +80,7 @@ export default function ReportViewerDialog({
             },
             scrollbarOptions: {
               trackOptions: {
-                foregroundColor: colors.primary,
+                foregroundColor: colors.textMuted,
                 backgroundColor: colors.backgroundElement,
               },
             },

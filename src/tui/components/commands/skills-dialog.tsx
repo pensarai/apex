@@ -225,7 +225,7 @@ export default function SkillsDialog({
               },
               scrollbarOptions: {
                 trackOptions: {
-                  foregroundColor: colors.primary,
+                  foregroundColor: colors.textMuted,
                   backgroundColor: colors.backgroundElement,
                 },
               },

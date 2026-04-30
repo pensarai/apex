@@ -83,7 +83,7 @@ export default function ProviderSelection({
             },
             scrollbarOptions: {
               trackOptions: {
-                foregroundColor: colors.primary,
+                foregroundColor: colors.textMuted,
                 backgroundColor: colors.backgroundElement,
               },
             },
