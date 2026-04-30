@@ -454,8 +454,6 @@ export async function create(input: CreateInputProps) {
     findingsPath,
   };
 
-  console.info("created session", result);
-
   // Exclude non-serializable fields (class instances with methods)
   const { _rateLimiter, credentialManager: _cm, ...sessionData } = result;
   await createSessionDirs({ session: result });
@@ -512,7 +510,6 @@ export async function update(
       draft.time.updated = Date.now();
     },
   );
-  console.info("updated session", result);
   return result;
 }
 

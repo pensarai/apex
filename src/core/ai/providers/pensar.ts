@@ -20,7 +20,7 @@ function log(...args: unknown[]) {
 }
 
 function logInfo(...args: unknown[]) {
-  console.error("[pensar]", ...args);
+  if (DEBUG) console.error("[pensar]", ...args);
 }
 
 function logError(...args: unknown[]) {

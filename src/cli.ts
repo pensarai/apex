@@ -97,6 +97,7 @@ function showHelp() {
 
 Usage:
   pensar                             Launch the TUI
+  pensar -p <prompt>                 Start an operator session with a prompt
   pensar pentest [options]            Run a full pentest orchestration
   pensar targeted-pentest [options]   Run a targeted pentest on a single target
   pensar threat-model [options]       Generate application-centric threat model
@@ -111,6 +112,11 @@ Usage:
   pensar doctor                       Check dependencies and install missing tools
   pensar help                         Show this help message
   pensar version                      Show version number
+
+operator options (-p):
+  -p, --prompt <text|@file>  (required) Prompt for the operator agent
+  --target <url>             Target URL / domain / IP
+  --model <model>            AI model (default: claude-sonnet-4-5)
 
 pentest options:
   --target <url>           (required) Target URL / domain / IP
@@ -340,6 +346,121 @@ Model:    ${model}
   );
 }
 
+async function runOperator() {
+  const { config } = await import("dotenv");
+  config();
+
+  const { runOffensiveSecurityAgent } = await import(
+    "./core/api/offesecAgent"
+  );
+  const { sessions, normalizeMessages, getResumeMessages } = await import(
+    "./core/session"
+  );
+  const { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } = await import(
+    "./core/agents/offSecAgent"
+  );
+  const { config: appConfig } = await import("./core/config");
+  const { getDefaultModelForConfig } = await import("./core/providers/utils");
+  const { createInterface } = await import("readline");
+  const { readFileSync, existsSync } = await import("fs");
+  const path = await import("path");
+  const { stepCountIs } = await import("ai");
+  type AIModel = import("./core/ai").AIModel;
+  type ModelMessage = import("ai").ModelMessage;
+
+  const promptRaw = getArg("-p") ?? getArg("--prompt");
+  if (!promptRaw) {
+    console.error("Error: -p <prompt> is required");
+    process.exit(1);
+  }
+
+  const prompt = resolveFlagValue(promptRaw);
+  const target = getArg("--target");
+  const pensarConfig = await appConfig.get();
+  const dynamicDefault =
+    getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
+  const model = (getArg("--model") ?? dynamicDefault) as AIModel;
+
+  const sep = "─".repeat(60);
+  console.log(`${sep}
+OPERATOR SESSION
+${sep}
+Model:   ${model}${target ? `\nTarget:  ${target}` : ""}
+${sep}\n`);
+
+  const session = await sessions.create({
+    name: "Operator Session",
+    targets: target ? [target] : [],
+    config: {
+      mode: "operator",
+      agentCwd: process.cwd(),
+      operatorSettings: {
+        initialMode: "auto",
+        requireApproval: false,
+        enableSuggestions: false,
+      },
+    },
+  });
+
+  const { bus, cleanup: wandbCleanup } = await createInstrumentedBus(session);
+
+  let currentPrompt = prompt;
+  let messages: ModelMessage[] | undefined;
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const askFollowUp = (): Promise<string | null> =>
+    new Promise((resolve) => {
+      process.stdout.write(`\n${sep}\n`);
+      rl.question("follow-up (empty to exit): ", (answer) => {
+        const trimmed = answer.trim();
+        resolve(trimmed || null);
+      });
+    });
+
+  try {
+    for (;;) {
+      await runOffensiveSecurityAgent({
+        prompt: currentPrompt,
+        model,
+        target,
+        activeTools: [...ALL_TOOL_NAMES, ...SKILL_TOOL_NAMES] as string[],
+        stopWhen: stepCountIs(10000),
+        authConfig: buildAuthConfig(pensarConfig),
+        eventBus: bus,
+        session,
+        messages,
+      });
+
+      // Read back persisted messages for the next turn
+      const messagesPath = path.join(session.rootPath, "messages.json");
+      if (existsSync(messagesPath)) {
+        const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
+        const allMessages: ModelMessage[] = Array.isArray(raw) ? raw : [];
+        messages = normalizeMessages(getResumeMessages(allMessages));
+      }
+
+      const followUp = await askFollowUp();
+      if (!followUp) break;
+      currentPrompt = followUp;
+      // Append the follow-up as a user message so the conversation
+      // ends with a user turn (required by Anthropic models).
+      messages = normalizeMessages([
+        ...(messages ?? []),
+        { role: "user" as const, content: followUp },
+      ]);
+    }
+  } finally {
+    rl.close();
+    await wandbCleanup();
+  }
+
+  console.log(`\nSession: ${session.rootPath}`);
+}
+
 async function runUpgrade() {
   const currentVersion = getCurrentVersion();
   console.log(`Current version: v${currentVersion}\nChecking for updates...`);
@@ -354,7 +475,9 @@ async function runUpgrade() {
 // Router
 // ---------------------------------------------------------------------------
 
-if (command === "version" || command === "--version" || command === "-v") {
+if (hasFlag("-p") || command === "--prompt") {
+  await runOperator();
+} else if (command === "version" || command === "--version" || command === "-v") {
   console.log(`v${version}`);
 } else if (command === "help" || command === "--help" || command === "-h") {
   showHelp();
