@@ -58,7 +58,6 @@ export function useSessionsList() {
   const [searchTerm, setSearchTerm] = useState("");
 
   const loadSessions = useCallback(async () => {
-    setLoading(true);
     try {
       const enriched: EnrichedSession[] = [];
       for await (const session of sessionModule.list()) {
@@ -74,7 +73,6 @@ export function useSessionsList() {
           hasReport,
         });
       }
-      // Sort by updated time (newest first)
       enriched.sort((a, b) => b.time.updated - a.time.updated);
       setAllSessions(enriched);
     } catch (error) {
@@ -90,6 +88,7 @@ export function useSessionsList() {
 
   const deleteSession = useCallback(
     async (id: string) => {
+      setAllSessions((prev) => prev.filter((s) => s.id !== id));
       await sessionModule.remove({ sessionId: id });
       await loadSessions();
     },

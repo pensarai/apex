@@ -180,6 +180,7 @@ export default function SkillsDialog({
         <DialogLayout
           title={detailTitle}
           escLabel="back"
+          flushRight
           footerActions={[
             { key: "E", label: "open in editor", variant: "primary" },
           ]}
@@ -253,6 +254,7 @@ export default function SkillsDialog({
     <Dialog size="large" onClose={onClose}>
       <DialogLayout
         title="Skills"
+        flushRight
         footerActions={[{ key: "Enter", label: "details", variant: "primary" }]}
       >
         {/* Skill list */}

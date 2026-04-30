@@ -137,7 +137,7 @@ const SubagentHubCard = memo(function SubagentHubCard({
     <box flexDirection="column">
       {/* Line 1: prefix + status icon + name */}
       <box flexDirection="row">
-        <text content={prefix} />
+        <text fg={focused ? colors.primary : colors.text} content={prefix} />
         {statusIcon}
         <text fg={nameColor} content={session.name} />
       </box>
@@ -231,6 +231,13 @@ export const SubagentHub = memo(function SubagentHub({
               gap: 1,
               paddingTop: 1,
               paddingBottom: 1,
+            },
+            scrollbarOptions: {
+              visible: true,
+              trackOptions: {
+                foregroundColor: colors.primary,
+                backgroundColor: colors.backgroundElement,
+              },
             },
           }}
           stickyScroll={false}
