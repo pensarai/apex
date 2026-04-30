@@ -148,13 +148,20 @@ function decodeEntities(s: string): string {
  *
  * The HTML is simple: flat or shallowly nested `<span class="hljs-*">` tags.
  * We track a color stack so nested spans inherit/override correctly.
+ *
+ * `defaultColor` is used for any text outside an hljs span (whitespace,
+ * punctuation like `{`, `}`, `|`, `;`, plain identifiers). Chunks with no
+ * explicit `fg` fall back to opentui's white default rather than the parent
+ * `<text fg=…>`, so unclassed tokens render as invisible white in light
+ * themes unless we set this explicitly.
  */
 function parseHljsHtml(
   html: string,
   classColorMap: Record<string, RGBA>,
+  defaultColor: RGBA,
 ): TextChunk[] {
   const chunks: TextChunk[] = [];
-  const colorStack: (RGBA | undefined)[] = [undefined];
+  const colorStack: RGBA[] = [defaultColor];
 
   const TAG_RE = /<span\s+class="([^"]*)"[^>]*>|<\/span>|([^<]+)|(<[^>]*>)/g;
   let m: RegExpExecArray | null;
@@ -226,7 +233,7 @@ export function highlightCode(
     if (!result.value) return null;
 
     const classColorMap = buildClassColorMap(colors);
-    const chunks = parseHljsHtml(result.value, classColorMap);
+    const chunks = parseHljsHtml(result.value, classColorMap, colors.text);
     if (chunks.length === 0) return null;
 
     return new StyledText(chunks);
