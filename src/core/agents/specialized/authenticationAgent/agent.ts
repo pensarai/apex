@@ -175,6 +175,8 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         "email_list_messages",
         "email_search_messages",
         "email_get_message",
+        // Send email (filtered out by base class when no SMTP configured)
+        "send_email",
         // Web search tools — look up auth bypass techniques, default credentials
         "web_search",
         "get_page",

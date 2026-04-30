@@ -73,7 +73,7 @@ export { listMemories } from "./listMemories";
 export { getMemory } from "./getMemory";
 
 // Email tools
-export { createEmailToolset, EMAIL_TOOL_NAMES } from "./email";
+export { createEmailToolset, EMAIL_TOOL_NAMES, SEND_EMAIL_TOOL_NAME } from "./email";
 export type { EmailToolName } from "./email";
 
 // Web search tools (requires Pensar account)
@@ -206,7 +206,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     list_memories: listMemories(ctx),
     get_memory: getMemory(ctx),
 
-    // Email tools (read-only inbox access)
+    // Email tools (inbox + outbound — gated at activeTools level by base class)
     ...createEmailToolset(ctx),
     email_list_inboxes: emailListInboxes(ctx),
     email_list_messages: emailListMessages(ctx),
@@ -287,6 +287,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "email_search_messages",
   "email_get_attachments",
   "email_mark_read",
+  "send_email",
   // Web search (requires Pensar account)
   "web_search",
   "get_page",
@@ -359,5 +360,5 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
 /** Skill tool names — conditionally included when a skills registry is provided. */
 export const SKILL_TOOL_NAMES = ["read_skill"] as const;
 
-/** Email tool names — auto-appended to activeTools by the base class when inboxes are configured. */
+/** Email inbox tool names — filtered out by the base class when no inboxes are configured. */
 export { EMAIL_TOOL_NAMES as EMAIL_TOOL_NAMES_ACTIVE } from "./email";
