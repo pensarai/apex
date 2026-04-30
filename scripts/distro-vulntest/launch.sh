@@ -11,11 +11,21 @@ set -euo pipefail
 #   -r, --region REGION       AWS region (default: us-east-1)
 #   -t, --instance-type TYPE  Instance type (default: t3.medium)
 #   -k, --key-name NAME       Existing EC2 key pair for SSH (default: creates one)
-#   -d, --distros LIST        Comma-separated distro filter (default: all)
-#                              Valid: al2,al2023,ubuntu2004,ubuntu2204,ubuntu2404,
-#                                     ubuntu1804,debian11,debian12,centos9,rhel8,
-#                                     rhel9,rocky9,alma9,ol9,fedora43,sles15,
-#                                     opensuse15,azurelinux3,freebsd14,bottlerocket
+#   -d, --distros LIST        Comma-separated distro key filter
+#                              Valid keys: al2,al2023,ubuntu2004,ubuntu2204,
+#                                          ubuntu2404,ubuntu1804,debian11,debian12,
+#                                          centos9,rhel8,rhel9,rocky9,alma9,ol9,
+#                                          fedora43,sles15,opensuse15,azurelinux3,
+#                                          freebsd14,bottlerocket
+#   -c, --category LIST       Comma-separated category filter — launch a whole
+#                              category at once, independent of others. Categories:
+#                                mainstream      (AL2/AL2023, Ubuntu LTS, Debian, Fedora)
+#                                enterprise      (RHEL, Rocky, Alma, Oracle Linux, SLES, openSUSE — gov/financial)
+#                                legacy          (Ubuntu 18.04 ESM, CentOS Stream)
+#                                container_host  (Bottlerocket, Azure Linux — immutable / cloud-native)
+#                                bsd             (FreeBSD)
+#                              -d and -c are mutually exclusive. With no flag,
+#                              all non-placeholder entries from every category run.
 #   --dry-run                 Print what would be launched without launching
 #   --teardown                Terminate all instances from a previous run
 #   --status                  Show status of running instances
@@ -46,6 +56,7 @@ REGION="us-east-1"
 INSTANCE_TYPE="t3.medium"
 KEY_NAME=""
 DISTRO_FILTER=""
+CATEGORY_FILTER=""
 CUSTOM_PROMPT=""
 DRY_RUN=false
 TEARDOWN=false
@@ -65,6 +76,7 @@ while [[ $# -gt 0 ]]; do
         -t|--instance-type) INSTANCE_TYPE="$2"; shift 2 ;;
         -k|--key-name) KEY_NAME="$2"; shift 2 ;;
         -d|--distros) DISTRO_FILTER="$2"; shift 2 ;;
+        -c|--category) CATEGORY_FILTER="$2"; shift 2 ;;
         -p|--prompt) CUSTOM_PROMPT="$2"; shift 2 ;;
         --dry-run) DRY_RUN=true; shift ;;
         --teardown) TEARDOWN=true; shift ;;
@@ -137,28 +149,78 @@ done
 #     --query 'Parameter.Value' --output text
 # ---------------------------------------------------------------------------
 
-ALL_DISTROS=(
+# --- Categories ---------------------------------------------------------------
+# Each category is its own array. ALL_DISTROS is the union, built below. To add
+# a new entry, drop it in the appropriate category array — the rest (validation
+# list, default launch list, --category filter) flows automatically.
+
+# Mainstream cloud distros — broadest coverage, default targets.
+DISTROS_MAINSTREAM=(
     "al2|ami-02b9a589195146a8f|ec2-user|Amazon Linux 2|yum"
     "al2023|ami-0c1e21d82fe9c9336|ec2-user|Amazon Linux 2023|dnf"
     "ubuntu2004|ami-0fb0b230890ccd1e6|ubuntu|Ubuntu 20.04 LTS|apt"
     "ubuntu2204|ami-0647fb535573be346|ubuntu|Ubuntu 22.04 LTS|apt"
     "ubuntu2404|ami-05cf1e9f73fbad2e2|ubuntu|Ubuntu 24.04 LTS|apt"
-    "ubuntu1804|ami-055744c75048d8296|ubuntu|Ubuntu 18.04 LTS (ESM)|apt"
     "debian11|ami-01504cf49928e171e|admin|Debian 11 Bullseye|apt"
     "debian12|ami-0e7a3d4bf48d3897e|admin|Debian 12 Bookworm|apt"
-    "centos9|ami-08c4793c8e3c335e7|ec2-user|CentOS Stream 9|dnf"
+    "fedora43|ami-0999ee7db2370a764|fedora|Fedora 43|dnf"
+)
+
+# Enterprise / regulated — biggest gov + financial-services footprint.
+DISTROS_ENTERPRISE=(
     "rhel8|ami-06ab04dfd55c423e4|ec2-user|RHEL 8.10|dnf"
     "rhel9|ami-PLACEHOLDER-rhel9|ec2-user|RHEL 9|dnf"
     "rocky9|ami-PLACEHOLDER-rocky9|rocky|Rocky Linux 9|dnf"
     "alma9|ami-PLACEHOLDER-alma9|ec2-user|AlmaLinux 9|dnf"
     "ol9|ami-PLACEHOLDER-ol9|ec2-user|Oracle Linux 9 (UEK)|dnf"
-    "fedora43|ami-0999ee7db2370a764|fedora|Fedora 43|dnf"
     "sles15|ami-PLACEHOLDER-sles15|ec2-user|SUSE Linux Enterprise Server 15 SP6|zypper"
     "opensuse15|ami-PLACEHOLDER-opensuse15|ec2-user|openSUSE Leap 15.6|zypper"
+)
+
+# Legacy / extended-support — older code that's still deployed in regulated env.
+DISTROS_LEGACY=(
+    "ubuntu1804|ami-055744c75048d8296|ubuntu|Ubuntu 18.04 LTS (ESM)|apt"
+    "centos9|ami-08c4793c8e3c335e7|ec2-user|CentOS Stream 9|dnf"
+)
+
+# Container-host / immutable — minimal, cloud-native substrates.
+DISTROS_CONTAINER_HOST=(
     "azurelinux3|ami-PLACEHOLDER-azurelinux3|azureuser|Azure Linux 3.0 (CBL-Mariner)|tdnf"
-    "freebsd14|ami-PLACEHOLDER-freebsd14|ec2-user|FreeBSD 14.4-RELEASE|pkg"
     "bottlerocket|ami-PLACEHOLDER-bottlerocket|ec2-user|Bottlerocket aws-k8s|none"
 )
+
+# BSD family — separate kernel + userland entirely.
+DISTROS_BSD=(
+    "freebsd14|ami-PLACEHOLDER-freebsd14|ec2-user|FreeBSD 14.4-RELEASE|pkg"
+)
+
+# Category metadata: name -> array variable name. Order here also drives the
+# default launch order (mainstream first, then enterprise, etc.).
+CATEGORY_ORDER=(mainstream enterprise legacy container_host bsd)
+declare -A CATEGORY_VAR=(
+    [mainstream]=DISTROS_MAINSTREAM
+    [enterprise]=DISTROS_ENTERPRISE
+    [legacy]=DISTROS_LEGACY
+    [container_host]=DISTROS_CONTAINER_HOST
+    [bsd]=DISTROS_BSD
+)
+
+# Build ALL_DISTROS as the union of every category, preserving CATEGORY_ORDER.
+ALL_DISTROS=()
+for cat in "${CATEGORY_ORDER[@]}"; do
+    var="${CATEGORY_VAR[$cat]}"
+    eval "ALL_DISTROS+=(\"\${${var}[@]}\")"
+done
+
+# Reverse map: distro key -> category, used for tagging and reporting.
+declare -A DISTRO_CATEGORY=()
+for cat in "${CATEGORY_ORDER[@]}"; do
+    var="${CATEGORY_VAR[$cat]}"
+    eval "for entry in \"\${${var}[@]}\"; do
+        key=\$(echo \"\$entry\" | cut -d'|' -f1)
+        DISTRO_CATEGORY[\"\$key\"]=\"$cat\"
+    done"
+done
 
 get_field() { echo "$1" | cut -d'|' -f"$2"; }
 
@@ -186,7 +248,7 @@ if $STATUS; then
         --region "$REGION" \
         --filters "Name=tag-key,Values=$TAG_KEY" \
                   "Name=instance-state-name,Values=running,pending,stopped" \
-        --query 'Reservations[*].Instances[*].[InstanceId,Tags[?Key==`Name`].Value|[0],Tags[?Key==`ssh-user`].Value|[0],PublicIpAddress,State.Name,LaunchTime]' \
+        --query 'Reservations[*].Instances[*].[InstanceId,Tags[?Key==`Name`].Value|[0],Tags[?Key==`category`].Value|[0],Tags[?Key==`ssh-user`].Value|[0],PublicIpAddress,State.Name,LaunchTime]' \
         --output text)
 
     if [[ -z "$INSTANCES" ]]; then
@@ -194,10 +256,10 @@ if $STATUS; then
         exit 0
     fi
 
-    printf "%-22s %-26s %-16s %-10s %-12s %s\n" "INSTANCE" "NAME" "PUBLIC IP" "STATE" "USER" "LAUNCHED"
-    echo "-----------------------------------------------------------------------------------------------------------"
-    echo "$INSTANCES" | while IFS=$'\t' read -r iid name user ip state launched; do
-        printf "%-22s %-26s %-16s %-10s %-12s %s\n" "$iid" "$name" "${ip:-n/a}" "$state" "${user:-n/a}" "$launched"
+    printf "%-22s %-26s %-15s %-16s %-10s %-12s %s\n" "INSTANCE" "NAME" "CATEGORY" "PUBLIC IP" "STATE" "USER" "LAUNCHED"
+    echo "------------------------------------------------------------------------------------------------------------------------------"
+    echo "$INSTANCES" | while IFS=$'\t' read -r iid name category user ip state launched; do
+        printf "%-22s %-26s %-15s %-16s %-10s %-12s %s\n" "$iid" "$name" "${category:-n/a}" "${ip:-n/a}" "$state" "${user:-n/a}" "$launched"
     done
 
     echo ""
@@ -269,10 +331,38 @@ for entry in "${ALL_DISTROS[@]}"; do
     ALL_KEYS+=("$(get_field "$entry" 1)")
 done
 
+if [[ -n "$DISTRO_FILTER" && -n "$CATEGORY_FILTER" ]]; then
+    echo "ERROR: -d/--distros and -c/--category are mutually exclusive."
+    exit 1
+fi
+
 if [[ -n "$DISTRO_FILTER" ]]; then
     IFS=',' read -ra DISTRO_KEYS <<< "$DISTRO_FILTER"
+elif [[ -n "$CATEGORY_FILTER" ]]; then
+    IFS=',' read -ra CATEGORIES <<< "$CATEGORY_FILTER"
+    DISTRO_KEYS=()
+    for cat in "${CATEGORIES[@]}"; do
+        if [[ -z "${CATEGORY_VAR[$cat]:-}" ]]; then
+            echo "ERROR: Unknown category '$cat'"
+            echo "Valid categories: ${CATEGORY_ORDER[*]}"
+            exit 1
+        fi
+        var="${CATEGORY_VAR[$cat]}"
+        eval "for entry in \"\${${var}[@]}\"; do
+            ami=\$(echo \"\$entry\" | cut -d'|' -f2)
+            key=\$(echo \"\$entry\" | cut -d'|' -f1)
+            [[ \"\$ami\" == ami-PLACEHOLDER* ]] && continue
+            DISTRO_KEYS+=(\"\$key\")
+        done"
+    done
+    if [[ ${#DISTRO_KEYS[@]} -eq 0 ]]; then
+        echo "ERROR: No launchable entries in category filter '$CATEGORY_FILTER'."
+        echo "  All entries in those categories have placeholder AMIs."
+        echo "  Resolve them (see lookup commands at the top of the registry) and re-run."
+        exit 1
+    fi
 else
-    # Default: only the entries with real (non-PLACEHOLDER) AMIs.
+    # Default: every entry across every category that has a real (non-PLACEHOLDER) AMI.
     DISTRO_KEYS=()
     for entry in "${ALL_DISTROS[@]}"; do
         ami=$(get_field "$entry" 2)
@@ -292,8 +382,8 @@ for key in "${DISTRO_KEYS[@]}"; do
     ami=$(get_field "$entry" 2)
     if [[ "$ami" == ami-PLACEHOLDER* ]]; then
         echo "ERROR: '$key' has a placeholder AMI ($ami)."
-        echo "  Resolve it (see lookup commands at the top of ALL_DISTROS in this script),"
-        echo "  patch the registry, then re-run."
+        echo "  Resolve it (see lookup commands at the top of the registry in this script),"
+        echo "  patch the appropriate DISTROS_<CATEGORY> array, then re-run."
         exit 1
     fi
 done
@@ -538,6 +628,16 @@ echo "Instance:   $INSTANCE_TYPE"
 echo "Key:        $KEY_NAME"
 echo "Tag:        $TAG_KEY=$TAG_VALUE"
 echo "Distros:    ${#DISTRO_KEYS[@]}"
+declare -A _CATEGORY_COUNTS=()
+for k in "${DISTRO_KEYS[@]}"; do
+    c="${DISTRO_CATEGORY[$k]:-uncategorized}"
+    _CATEGORY_COUNTS[$c]=$(( ${_CATEGORY_COUNTS[$c]:-0} + 1 ))
+done
+for cat in "${CATEGORY_ORDER[@]}"; do
+    if [[ -n "${_CATEGORY_COUNTS[$cat]:-}" ]]; then
+        printf "  %-15s %d\n" "$cat" "${_CATEGORY_COUNTS[$cat]}"
+    fi
+done
 echo "Email:      $EMAIL"
 echo "=============================================="
 echo ""
@@ -588,7 +688,7 @@ for distro_key in "${DISTRO_KEYS[@]}"; do
         --key-name "$KEY_NAME" \
         --security-group-ids "$SG_ID" \
         --user-data "file://${USERDATA_FILE}" \
-        --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=apex-vulntest-${distro_key}},{Key=${TAG_KEY},Value=${TAG_VALUE}},{Key=distro,Value=${distro_key}},{Key=ssh-user,Value=${user}}]" \
+        --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=apex-vulntest-${distro_key}},{Key=${TAG_KEY},Value=${TAG_VALUE}},{Key=distro,Value=${distro_key}},{Key=category,Value=${DISTRO_CATEGORY[$distro_key]:-uncategorized}},{Key=ssh-user,Value=${user}}]" \
         --query 'Instances[0].InstanceId' \
         --output text)
 
@@ -618,8 +718,8 @@ echo ""
 echo "=============================================="
 echo "LAUNCHED INSTANCES"
 echo "=============================================="
-printf "%-22s %-22s %-16s %-12s %s\n" "DISTRO" "INSTANCE" "PUBLIC IP" "SSH USER" "SSH COMMAND"
-echo "--------------------------------------------------------------------------------------------------------------"
+printf "%-22s %-15s %-22s %-16s %-12s %s\n" "DISTRO" "CATEGORY" "INSTANCE" "PUBLIC IP" "SSH USER" "SSH COMMAND"
+echo "----------------------------------------------------------------------------------------------------------------------------"
 
 for i in "${!LAUNCHED_IDS[@]}"; do
     iid="${LAUNCHED_IDS[$i]}"
@@ -627,14 +727,15 @@ for i in "${!LAUNCHED_IDS[@]}"; do
     user="${LAUNCHED_USERS[$i]}"
     entry=$(lookup_distro "$distro_key")
     name=$(get_field "$entry" 4)
+    category="${DISTRO_CATEGORY[$distro_key]:-uncategorized}"
 
     IP=$(aws ec2 describe-instances --region "$REGION" \
         --instance-ids "$iid" \
         --query 'Reservations[0].Instances[0].PublicIpAddress' \
         --output text 2>/dev/null || echo "pending")
 
-    printf "%-22s %-22s %-16s %-12s ssh -i %s %s@%s\n" \
-        "$name" "$iid" "$IP" "$user" "$KEY_FILE" "$user" "$IP"
+    printf "%-22s %-15s %-22s %-16s %-12s ssh -i %s %s@%s\n" \
+        "$name" "$category" "$iid" "$IP" "$user" "$KEY_FILE" "$user" "$IP"
 done
 
 echo ""
