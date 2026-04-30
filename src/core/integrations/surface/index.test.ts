@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  realpathSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -322,6 +328,186 @@ describe("findDependencyRoot (walk-up)", () => {
       expect(findDependencyRoot(inner, isolated)).toBe(resolve(inner));
     } finally {
       rmSync(isolated, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("mapAppWithSurface — scope filter", () => {
+  // Each test owns its fixture so they can be ordered freely and surface
+  // file-index caching across describe blocks doesn't leak.
+
+  function writeRootPackageJson(repoRoot: string, deps: Record<string, string>) {
+    writeFileSync(
+      join(repoRoot, "package.json"),
+      JSON.stringify({ name: "fixture-root", dependencies: deps }),
+    );
+  }
+
+  // Surface's express extractor requires a marker file (`server.js`/`app.js`/
+  // `index.js`) at scan root or an immediate child for framework detection.
+  // Writing `server.js` satisfies that without changing what the regex matches.
+  function writeExpressApp(filePath: string, route: string) {
+    writeFileSync(
+      filePath,
+      [
+        'const express = require("express");',
+        "const app = express();",
+        `app.get("${route}", (_req, res) => res.send("ok"));`,
+        "app.listen(3000);",
+      ].join("\n"),
+    );
+  }
+
+  it("does not leak sibling-app endpoints when both apps share a parent manifest (regression)", () => {
+    // Two apps share one root package.json. The buggy version returns the
+    // union of both apps' routes for each call; the fix scopes per appPath.
+    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "apex-scope-siblings-")));
+    try {
+      writeRootPackageJson(repoRoot, { express: "^4.18.0" });
+      const appA = join(repoRoot, "appA");
+      const appB = join(repoRoot, "appB");
+      mkdirSync(appA);
+      mkdirSync(appB);
+      writeExpressApp(join(appA, "server.js"), "/a");
+      writeExpressApp(join(appB, "server.js"), "/b");
+
+      const outA = mapAppWithSurface(appA, repoRoot);
+      const outB = mapAppWithSurface(appB, repoRoot);
+
+      expect(outA.mode).toBe("surface");
+      expect(outB.mode).toBe("surface");
+      if (outA.mode !== "surface" || outB.mode !== "surface") return;
+
+      const pathsA = outA.endpoints.map((e) => e.path);
+      const pathsB = outB.endpoints.map((e) => e.path);
+      expect(pathsA).toContain("/a");
+      expect(pathsA).not.toContain("/b");
+      expect(pathsB).toContain("/b");
+      expect(pathsB).not.toContain("/a");
+
+      // Every endpoint's `file` should be inside its app's directory.
+      for (const e of outA.endpoints) {
+        expect(resolve(repoRoot, e.file).startsWith(resolve(appA))).toBe(true);
+      }
+      for (const e of outB.endpoints) {
+        expect(resolve(repoRoot, e.file).startsWith(resolve(appB))).toBe(true);
+      }
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("returns only routes from the file when app.location is a file path", () => {
+    // Mirrors the SST shape — Phase 1 sometimes points `location` at an
+    // IaC file rather than a code dir. The climb-up scans the whole repo,
+    // and the file-equality branch of the filter retains only that file's
+    // routes.
+    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "apex-scope-file-loc-")));
+    try {
+      writeRootPackageJson(repoRoot, { express: "^4.18.0" });
+      const infra = join(repoRoot, "infra");
+      mkdirSync(infra);
+      // `server.js` doubles as the express-extractor marker so detection fires
+      // when surface is invoked with the climb-up at repoRoot.
+      const fileA = join(infra, "server.js");
+      const fileB = join(infra, "other.js");
+      writeExpressApp(fileA, "/from-a");
+      writeExpressApp(fileB, "/from-b");
+
+      const outA = mapAppWithSurface(fileA, repoRoot);
+
+      expect(outA.mode).toBe("surface");
+      if (outA.mode !== "surface") return;
+      const paths = outA.endpoints.map((e) => e.path);
+      expect(paths).toContain("/from-a");
+      expect(paths).not.toContain("/from-b");
+      for (const e of outA.endpoints) {
+        expect(e.file).toBe("infra/server.js");
+      }
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the narrow scan directly when app.location has its own dep manifest", () => {
+    // When appPath itself has a manifest the narrow scan succeeds; the
+    // climb-up + filter branch is never reached. Sibling code outside
+    // appPath is never visible to surface in this case.
+    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "apex-scope-own-manifest-")));
+    try {
+      writeRootPackageJson(repoRoot, {});
+      const appA = join(repoRoot, "packages", "appA");
+      mkdirSync(appA, { recursive: true });
+      writeFileSync(
+        join(appA, "package.json"),
+        JSON.stringify({
+          name: "appA",
+          dependencies: { express: "^4.18.0" },
+        }),
+      );
+      writeExpressApp(join(appA, "server.js"), "/own");
+
+      // Sibling app whose routes must not appear in appA's result.
+      const appB = join(repoRoot, "packages", "appB");
+      mkdirSync(appB, { recursive: true });
+      writeFileSync(
+        join(appB, "package.json"),
+        JSON.stringify({
+          name: "appB",
+          dependencies: { express: "^4.18.0" },
+        }),
+      );
+      writeExpressApp(join(appB, "server.js"), "/sibling");
+
+      const out = mapAppWithSurface(appA, repoRoot);
+
+      expect(out.mode).toBe("surface");
+      if (out.mode !== "surface") return;
+      const paths = out.endpoints.map((e) => e.path);
+      expect(paths).toContain("/own");
+      expect(paths).not.toContain("/sibling");
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("forces fallback when app.location is the repo root", () => {
+    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "apex-scope-root-")));
+    try {
+      writeRootPackageJson(repoRoot, { express: "^4.18.0" });
+      writeExpressApp(join(repoRoot, "server.js"), "/r");
+
+      const out = mapAppWithSurface(repoRoot, repoRoot);
+
+      expect(out.mode).toBe("fallback");
+      if (out.mode === "fallback") {
+        expect(out.reason).toMatch(/repo root/);
+      }
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back when frameworks are detected but no endpoints live inside app.location", () => {
+    // Framework gets detected via the parent manifest, but the targeted
+    // app subdir contains no routes — only its sibling does.
+    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "apex-scope-empty-scoped-")));
+    try {
+      writeRootPackageJson(repoRoot, { express: "^4.18.0" });
+      const appA = join(repoRoot, "appA"); // empty dir
+      const appB = join(repoRoot, "appB");
+      mkdirSync(appA);
+      mkdirSync(appB);
+      writeExpressApp(join(appB, "server.js"), "/only-in-b");
+
+      const out = mapAppWithSurface(appA, repoRoot);
+
+      expect(out.mode).toBe("fallback");
+      if (out.mode === "fallback") {
+        expect(out.reason).toMatch(/zero endpoints in app\.location/);
+      }
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
     }
   });
 });
