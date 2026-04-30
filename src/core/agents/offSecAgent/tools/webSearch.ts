@@ -32,6 +32,72 @@ export interface WebSearchResponse {
   error?: string;
 }
 
+const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
+
+async function braveSearch(
+  query: string,
+  apiKey: string,
+): Promise<WebSearchResponse> {
+  const url = new URL(BRAVE_SEARCH_URL);
+  url.searchParams.set("q", query);
+  url.searchParams.set("count", "10");
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      "Accept-Encoding": "gzip",
+      "X-Subscription-Token": apiKey,
+    },
+  });
+
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      return {
+        success: false,
+        results: [],
+        error:
+          "Brave API authentication failed. Check that your brave_api_key is valid.",
+      };
+    }
+
+    if (response.status === 429) {
+      return {
+        success: false,
+        results: [],
+        error:
+          "Brave API rate limit exceeded. Please wait a moment before searching again.",
+      };
+    }
+
+    const errorText = await response.text().catch(() => "Unknown error");
+    return {
+      success: false,
+      results: [],
+      error: `Brave search failed: ${response.status} ${response.statusText}. ${errorText}`,
+    };
+  }
+
+  const data = (await response.json()) as {
+    web?: {
+      results?: Array<{
+        title?: string;
+        url?: string;
+        description?: string;
+      }>;
+    };
+  };
+
+  const results: WebSearchResult[] =
+    data.web?.results?.map((r) => ({
+      title: r.title ?? "",
+      url: r.url ?? "",
+      snippet: r.description ?? "",
+    })) ?? [];
+
+  return { success: true, results };
+}
+
 export function webSearch(_ctx: ToolContext) {
   return tool({
     description: `Search the web for real-time information about any topic. Returns summarized information from search results.
@@ -43,7 +109,7 @@ USAGE GUIDANCE:
 - Find documentation for tools, APIs, and security testing techniques
 - Look up default credentials, common misconfigurations, and hardening guides
 
-IMPORTANT: This tool requires a Pensar account. If you're not signed in, you'll receive an error message with instructions to sign in.
+IMPORTANT: This tool requires either a Pensar account or a Brave API key. If neither is configured, you'll receive an error message with instructions.
 
 COMMON SEARCH PATTERNS:
 - "CVE-2024-XXXX exploit" — Find details about specific CVEs
@@ -55,6 +121,12 @@ COMMON SEARCH PATTERNS:
     execute: async ({ query }): Promise<WebSearchResponse> => {
       try {
         const cfg = await config.get();
+
+        // Brave API direct mode: bypass Pensar API entirely
+        if (cfg.braveAPIKey) {
+          return braveSearch(query, cfg.braveAPIKey);
+        }
+
         const apiUrl = getPensarApiUrl();
         const body = JSON.stringify({ query });
 
@@ -83,7 +155,7 @@ COMMON SEARCH PATTERNS:
             success: false,
             results: [],
             error:
-              "Web search requires a Pensar account. Please sign in to your Pensar account to use this feature. You can sign in via the TUI settings or by running 'pensar login'.",
+              "Web search requires a Pensar account or a Brave API key. Please sign in to your Pensar account or configure a Brave API key (set BRAVE_API_KEY or brave_api_key in config).",
           };
         }
 

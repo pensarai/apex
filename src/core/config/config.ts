@@ -21,6 +21,8 @@ export interface Config {
   daytonaAPIKey?: string | null;
   daytonaOrgId?: string | null;
   runloopAPIKey?: string | null;
+  // Direct search
+  braveAPIKey?: string | null;
   // Local LLM
   localModelUrl?: string | null;
   localModelName?: string | null;
@@ -88,6 +90,7 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
     daytonaAPIKey: parsedConfig.daytonaAPIKey ?? process.env.DAYTONA_API_KEY,
     daytonaOrgId: parsedConfig.daytonaOrgId ?? process.env.DAYTONA_ORG_ID,
     runloopAPIKey: parsedConfig.runloopAPIKey ?? process.env.RUNLOOP_API_KEY,
+    braveAPIKey: parsedConfig.braveAPIKey ?? process.env.BRAVE_API_KEY,
   };
 }
 
