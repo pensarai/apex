@@ -130,7 +130,10 @@ export function buildCurlArgs(opts: {
   return args;
 }
 
-export function parseCurlResponse(output: string, url: string): HttpRequestResult {
+export function parseCurlResponse(
+  output: string,
+  url: string,
+): HttpRequestResult {
   const normalized = output.replace(/\r\n/g, "\n");
   const headerMatches = [...normalized.matchAll(/^HTTP\/[\d.]+ .+$/gm)];
   const lastHeader = headerMatches[headerMatches.length - 1];
