@@ -92,6 +92,19 @@ export function ApprovalInputArea({
       }
       return;
     }
+
+    // When redirect input is focused, prevent Y/A shortcuts from bubbling
+    // to dashboard-level handlers (they should be treated as text input)
+    if (focusedElement === 2) {
+      if (
+        key.name === "y" ||
+        key.raw === "Y" ||
+        key.name === "a" ||
+        key.raw === "A"
+      ) {
+        return;
+      }
+    }
   });
 
   return (
