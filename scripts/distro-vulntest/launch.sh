@@ -49,7 +49,7 @@ TEARDOWN=false
 STATUS=false
 TAG_KEY="apex-distro-vulntest"
 TAG_VALUE="$(date +%Y%m%d-%H%M)"
-EMAIL="${JOSH_EMAIL:-josh@pensarai.com}"
+EMAIL="${JOSH_EMAIL:-josh@pensarai.com, yuva@pensarai.com, kerem@pensarai.com, kryan@pensarai.com, jorge@pensarai.com}"
 
 usage() {
     sed -n '3,26p' "$0" | sed 's/^# \?//'
@@ -286,7 +286,6 @@ USERDATA_HEADER
     # Inject secrets/config (not single-quoted — we WANT expansion here)
     cat <<USERDATA_VARS
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}"
-export PENSAR_API_KEY="${PENSAR_API_KEY}"
 export RESEND_API_KEY="${RESEND_API_KEY}"
 export OUTBOUND_EMAIL="${OUTBOUND_EMAIL}"
 export DISTRO_NAME="${distro_name}"
