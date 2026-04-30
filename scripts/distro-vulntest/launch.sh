@@ -12,8 +12,10 @@ set -euo pipefail
 #   -t, --instance-type TYPE  Instance type (default: t3.medium)
 #   -k, --key-name NAME       Existing EC2 key pair for SSH (default: creates one)
 #   -d, --distros LIST        Comma-separated distro filter (default: all)
-#                              Valid: al2,al2023,ubuntu2004,ubuntu2204,debian11,
-#                                     debian12,centos9,rhel8,fedora43
+#                              Valid: al2,al2023,ubuntu2004,ubuntu2204,ubuntu2404,
+#                                     ubuntu1804,debian11,debian12,centos9,rhel8,
+#                                     rhel9,rocky9,alma9,ol9,fedora43,sles15,
+#                                     opensuse15,azurelinux3,freebsd14,bottlerocket
 #   --dry-run                 Print what would be launched without launching
 #   --teardown                Terminate all instances from a previous run
 #   --status                  Show status of running instances
@@ -74,6 +76,65 @@ done
 
 # ---------------------------------------------------------------------------
 # Distro registry — each entry is "key|ami|user|name|pkg_mgr"
+#
+# AMI IDs below are for the configured $REGION (default at the top of this
+# script). To resolve placeholders before launching, run these against your
+# target region:
+#
+#   # Ubuntu 24.04 LTS (Canonical, owner 099720109477) -- already filled in
+#   aws ec2 describe-images --owners 099720109477 --region "$REGION" \
+#     --filters 'Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*' \
+#     --query 'reverse(sort_by(Images,&CreationDate))[0].ImageId' --output text
+#
+#   # Ubuntu 18.04 LTS (Canonical) -- ESM-eligible
+#   aws ec2 describe-images --owners 099720109477 --region "$REGION" \
+#     --filters 'Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server-*' \
+#     --query 'reverse(sort_by(Images,&CreationDate))[0].ImageId' --output text
+#
+#   # RHEL 9 (Red Hat owner 309956199498)
+#   aws ec2 describe-images --owners 309956199498 --region "$REGION" \
+#     --filters 'Name=name,Values=RHEL-9*HVM-*x86_64*' \
+#                'Name=architecture,Values=x86_64' \
+#     --query 'reverse(sort_by(Images,&CreationDate))[0].ImageId' --output text
+#
+#   # Rocky Linux 9 (Rocky Enterprise Software Foundation owner 792107900819)
+#   aws ec2 describe-images --owners 792107900819 --region "$REGION" \
+#     --filters 'Name=name,Values=Rocky-9-EC2-Base-*.x86_64' \
+#     --query 'reverse(sort_by(Images,&CreationDate))[0].ImageId' --output text
+#
+#   # AlmaLinux 9 (AlmaLinux OS Foundation owner 764336703387)
+#   aws ec2 describe-images --owners 764336703387 --region "$REGION" \
+#     --filters 'Name=name,Values=AlmaLinux OS 9*x86_64' \
+#     --query 'reverse(sort_by(Images,&CreationDate))[0].ImageId' --output text
+#
+#   # Oracle Linux 9 (Oracle owner 131827586825)
+#   aws ec2 describe-images --owners 131827586825 --region "$REGION" \
+#     --filters 'Name=name,Values=OL9.*-x86_64-HVM-*' \
+#     --query 'reverse(sort_by(Images,&CreationDate))[0].ImageId' --output text
+#
+#   # SLES 15 (SUSE / Amazon -- subscription via marketplace)
+#   aws ec2 describe-images --owners amazon --region "$REGION" \
+#     --filters 'Name=name,Values=suse-sles-15-sp*-v*-hvm-ssd-x86_64' \
+#     --query 'reverse(sort_by(Images,&CreationDate))[0].ImageId' --output text
+#
+#   # openSUSE Leap 15 (openSUSE owner 679593333241)
+#   aws ec2 describe-images --owners 679593333241 --region "$REGION" \
+#     --filters 'Name=name,Values=openSUSE-Leap-15.*-v*-hvm-ssd-x86_64*' \
+#     --query 'reverse(sort_by(Images,&CreationDate))[0].ImageId' --output text
+#
+#   # Azure Linux 3.0 / CBL-Mariner (Microsoft owner 679593333241? -- check)
+#   # Microsoft does not publish public AMIs for Azure Linux; would need a
+#   # marketplace-subscribed AMI ID. Leaving as a placeholder.
+#
+#   # FreeBSD 14 (FreeBSD owner 782442783595)
+#   aws ec2 describe-images --owners 782442783595 --region "$REGION" \
+#     --filters 'Name=name,Values=FreeBSD 14*-RELEASE-amd64*' \
+#     --query 'reverse(sort_by(Images,&CreationDate))[0].ImageId' --output text
+#
+#   # Bottlerocket (use SSM public parameter, not describe-images)
+#   aws ssm get-parameter --region "$REGION" \
+#     --name /aws/service/bottlerocket/aws-k8s-1.31/x86_64/latest/image_id \
+#     --query 'Parameter.Value' --output text
 # ---------------------------------------------------------------------------
 
 ALL_DISTROS=(
@@ -81,11 +142,22 @@ ALL_DISTROS=(
     "al2023|ami-0c1e21d82fe9c9336|ec2-user|Amazon Linux 2023|dnf"
     "ubuntu2004|ami-0fb0b230890ccd1e6|ubuntu|Ubuntu 20.04 LTS|apt"
     "ubuntu2204|ami-0647fb535573be346|ubuntu|Ubuntu 22.04 LTS|apt"
+    "ubuntu2404|ami-05cf1e9f73fbad2e2|ubuntu|Ubuntu 24.04 LTS|apt"
+    "ubuntu1804|ami-055744c75048d8296|ubuntu|Ubuntu 18.04 LTS (ESM)|apt"
     "debian11|ami-01504cf49928e171e|admin|Debian 11 Bullseye|apt"
     "debian12|ami-0e7a3d4bf48d3897e|admin|Debian 12 Bookworm|apt"
     "centos9|ami-08c4793c8e3c335e7|ec2-user|CentOS Stream 9|dnf"
     "rhel8|ami-06ab04dfd55c423e4|ec2-user|RHEL 8.10|dnf"
+    "rhel9|ami-PLACEHOLDER-rhel9|ec2-user|RHEL 9|dnf"
+    "rocky9|ami-PLACEHOLDER-rocky9|rocky|Rocky Linux 9|dnf"
+    "alma9|ami-PLACEHOLDER-alma9|ec2-user|AlmaLinux 9|dnf"
+    "ol9|ami-PLACEHOLDER-ol9|ec2-user|Oracle Linux 9 (UEK)|dnf"
     "fedora43|ami-0999ee7db2370a764|fedora|Fedora 43|dnf"
+    "sles15|ami-PLACEHOLDER-sles15|ec2-user|SUSE Linux Enterprise Server 15 SP6|zypper"
+    "opensuse15|ami-PLACEHOLDER-opensuse15|ec2-user|openSUSE Leap 15.6|zypper"
+    "azurelinux3|ami-PLACEHOLDER-azurelinux3|azureuser|Azure Linux 3.0 (CBL-Mariner)|tdnf"
+    "freebsd14|ami-PLACEHOLDER-freebsd14|ec2-user|FreeBSD 14.4-RELEASE|pkg"
+    "bottlerocket|ami-PLACEHOLDER-bottlerocket|ec2-user|Bottlerocket aws-k8s|none"
 )
 
 get_field() { echo "$1" | cut -d'|' -f"$2"; }
@@ -192,17 +264,36 @@ OUTBOUND_EMAIL="${OUTBOUND_EMAIL:-researchagent@pensar.dev}"
 # Resolve distro list
 # ---------------------------------------------------------------------------
 
+ALL_KEYS=()
+for entry in "${ALL_DISTROS[@]}"; do
+    ALL_KEYS+=("$(get_field "$entry" 1)")
+done
+
 if [[ -n "$DISTRO_FILTER" ]]; then
     IFS=',' read -ra DISTRO_KEYS <<< "$DISTRO_FILTER"
 else
-    DISTRO_KEYS=(al2 al2023 ubuntu2004 ubuntu2204 debian11 debian12 centos9 rhel8 fedora43)
+    # Default: only the entries with real (non-PLACEHOLDER) AMIs.
+    DISTRO_KEYS=()
+    for entry in "${ALL_DISTROS[@]}"; do
+        ami=$(get_field "$entry" 2)
+        [[ "$ami" == ami-PLACEHOLDER* ]] && continue
+        DISTRO_KEYS+=("$(get_field "$entry" 1)")
+    done
 fi
 
 # Validate
 for key in "${DISTRO_KEYS[@]}"; do
     if ! lookup_distro "$key" >/dev/null; then
         echo "ERROR: Unknown distro '$key'"
-        echo "Valid: al2 al2023 ubuntu2004 ubuntu2204 debian11 debian12 centos9 rhel8 fedora43"
+        echo "Valid: ${ALL_KEYS[*]}"
+        exit 1
+    fi
+    entry=$(lookup_distro "$key")
+    ami=$(get_field "$entry" 2)
+    if [[ "$ami" == ami-PLACEHOLDER* ]]; then
+        echo "ERROR: '$key' has a placeholder AMI ($ami)."
+        echo "  Resolve it (see lookup commands at the top of ALL_DISTROS in this script),"
+        echo "  patch the registry, then re-run."
         exit 1
     fi
 done
@@ -317,6 +408,39 @@ dnf update -y
 dnf install -y curl unzip git gcc make nmap
 dnf groupinstall -y "Development Tools" || true
 BLOCK
+            ;;
+        zypper)
+            cat <<'BLOCK'
+zypper --non-interactive refresh
+zypper --non-interactive update
+zypper --non-interactive install curl unzip git gcc make nmap
+zypper --non-interactive install -t pattern devel_basis || true
+BLOCK
+            ;;
+        tdnf)
+            cat <<'BLOCK'
+tdnf -y update
+tdnf -y install curl unzip git gcc make tar ca-certificates
+BLOCK
+            ;;
+        pkg)
+            cat <<'BLOCK'
+ASSUME_ALWAYS_YES=yes pkg update -f
+ASSUME_ALWAYS_YES=yes pkg install curl unzip git gcc gmake nmap bash
+BLOCK
+            ;;
+        none)
+            cat <<'BLOCK'
+echo "WARNING: distro has no supported package manager (e.g. Bottlerocket is immutable)." >&2
+echo "  This bootstrap path will not be able to install pensar via curl|bash. You must" >&2
+echo "  pre-bake an OS that includes pensar, or run pensar in a Bottlerocket admin/control" >&2
+echo "  container. Aborting cleanly so the instance does not silently no-op." >&2
+exit 0
+BLOCK
+            ;;
+        *)
+            echo "ERROR: unknown pkg_mgr '$pkg_mgr' for distro '$distro_key'" >&2
+            return 1
             ;;
     esac
 
