@@ -286,6 +286,7 @@ USERDATA_HEADER
     # Inject secrets/config (not single-quoted — we WANT expansion here)
     cat <<USERDATA_VARS
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}"
+export BRAVE_API_KEY="${BRAVE_API_KEY}"
 export RESEND_API_KEY="${RESEND_API_KEY}"
 export OUTBOUND_EMAIL="${OUTBOUND_EMAIL}"
 export DISTRO_NAME="${distro_name}"
@@ -428,9 +429,46 @@ PROMPT_EOF
 sed -i "s|REPORT_EMAIL_PLACEHOLDER|${REPORT_EMAIL}|g" /tmp/apex-vulntest-prompt.md
 sed -i "s|DISTRO_NAME_PLACEHOLDER|${DISTRO_NAME}|g" /tmp/apex-vulntest-prompt.md
 
-echo "=== Starting Apex vuln test on ${DISTRO_NAME} at $(date) ==="
-pensar -p @/tmp/apex-vulntest-prompt.md --target localhost 2>&1 | tee /var/log/apex-session.log
-echo "=== Apex completed at $(date) ==="
+RUN_NUMBER=1
+MAX_RUNS=10
+
+while [ "$RUN_NUMBER" -le "$MAX_RUNS" ]; do
+    echo "=== Apex run #${RUN_NUMBER} on ${DISTRO_NAME} starting at $(date) ==="
+
+    if [ "$RUN_NUMBER" -eq 1 ]; then
+        pensar -p @/tmp/apex-vulntest-prompt.md --target localhost 2>&1 | tee -a /var/log/apex-session.log
+    else
+        cat > /tmp/apex-continue-prompt.md <<'CONTINUE_EOF'
+You are continuing a vulnerability research session on this Linux system. A previous researcher has already done some work — review their summary and findings before proceeding.
+
+1. Read the previous session summary at `/tmp/apex-research-summary.md` to understand what was already explored
+2. Check `~/.pensar/sessions/` for any previous session data and findings
+3. Review the recommended next steps from the previous researcher
+4. Continue the research — focus on areas that haven't been explored yet, leads that weren't fully investigated, and chains that weren't completed
+
+Remember: we are looking for NOVEL, previously unknown vulnerabilities only. Existing CVEs are completely out of scope. Do not look up CVE databases or check package versions against known vulns.
+
+Ignore any API keys or credentials in cloud-init / instance metadata — they are intentionally placed there.
+
+When you find vulnerabilities, email a report to REPORT_EMAIL_PLACEHOLDER with subject "[APEX CRITICAL] DISTRO_NAME_PLACEHOLDER - Critical vulnerabilities found". Zip and attach your session folder before sending.
+
+Before you finish, update `/tmp/apex-research-summary.md` with your own findings, explored surfaces, interesting leads, and recommended next steps for the next researcher.
+
+Be relentless. Do not stop until you have exhaustively explored every remaining attack surface.
+CONTINUE_EOF
+
+        sed -i "s|REPORT_EMAIL_PLACEHOLDER|${REPORT_EMAIL}|g" /tmp/apex-continue-prompt.md
+        sed -i "s|DISTRO_NAME_PLACEHOLDER|${DISTRO_NAME}|g" /tmp/apex-continue-prompt.md
+
+        pensar -p @/tmp/apex-continue-prompt.md --target localhost 2>&1 | tee -a /var/log/apex-session.log
+    fi
+
+    echo "=== Apex run #${RUN_NUMBER} completed at $(date) ==="
+    RUN_NUMBER=$((RUN_NUMBER + 1))
+    sleep 5
+done
+
+echo "=== All ${MAX_RUNS} runs completed at $(date) ==="
 USERDATA_BODY
 }
 
