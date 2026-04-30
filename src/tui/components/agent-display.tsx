@@ -159,7 +159,7 @@ export default function AgentDisplay({
         },
         scrollbarOptions: {
           trackOptions: {
-            foregroundColor: colors.primary,
+            foregroundColor: colors.textMuted,
             backgroundColor: colors.backgroundElement,
           },
         },

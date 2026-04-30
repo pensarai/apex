@@ -130,6 +130,44 @@ export const kanagawa: ThemeDefinition = {
       light: RGBA.fromHex("#836930"),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#957fb8"), // oniViolet (wave)
+      light: RGBA.fromHex("#624c83"), // oniViolet (lotus)
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#98bb6c"), // springGreen (wave)
+      light: RGBA.fromHex("#6a834a"), // lotusGreen
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#727169"), // fujiGray (wave)
+      light: RGBA.fromHex("#8a8980"), // fujiGray (lotus)
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#d27e99"), // sakuraPink (wave)
+      light: RGBA.fromHex("#b35b79"), // lotusPink
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#7e9cd8"), // crystalBlue (wave)
+      light: RGBA.fromHex("#4d699b"), // crystalBlue (lotus)
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#7fb4ca"), // springBlue (wave)
+      light: RGBA.fromHex("#4d699b"),
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#e6c384"), // carpYellow (wave)
+      light: RGBA.fromHex("#836930"),
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#6a9589"), // waveAqua2 (wave)
+      light: RGBA.fromHex("#5a7a68"),
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#9cabca"), // oldWhite (wave)
+      light: RGBA.fromHex("#68687a"),
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#76946a"),

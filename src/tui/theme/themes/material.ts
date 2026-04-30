@@ -131,6 +131,44 @@ export const material: ThemeDefinition = {
       light: RGBA.fromHex("#e2931d"),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#c792ea"), // purple
+      light: RGBA.fromHex("#7c4dff"),
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#c3e88d"), // green
+      light: RGBA.fromHex("#6c8d3c"),
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#607e8c"), // comment
+      light: RGBA.fromHex("#7e95a1"),
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#f78c6c"), // orange
+      light: RGBA.fromHex("#f54616"),
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#82aaff"), // blue
+      light: RGBA.fromHex("#6182b8"),
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#ffcb6b"), // yellow
+      light: RGBA.fromHex("#b57617"),
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#f07178"), // red
+      light: RGBA.fromHex("#e53935"),
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#89ddff"), // cyan
+      light: RGBA.fromHex("#2f8f96"),
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#89ddff"), // cyan (operators)
+      light: RGBA.fromHex("#2f8f96"),
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#c3e88d"),
