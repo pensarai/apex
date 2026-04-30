@@ -6,6 +6,9 @@
  * whenever a complete SSE message boundary (blank line) is encountered.
  */
 
+const DEBUG =
+  process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
+
 export interface SSEEvent {
   event: string;
   data: string;
@@ -57,11 +60,15 @@ export async function* parseSSE(
         if (timeoutId) clearTimeout(timeoutId);
       }
       if (result.done) {
-        console.error(
-          `[parseSSE] stream done: ${chunkCount} chunks, ${totalBytes} bytes, ${eventCount} events yielded, remaining buffer=${buffer.length} chars`,
-        );
-        if (buffer.length > 0) {
-          console.error(`[parseSSE] remaining buffer: ${buffer.slice(0, 500)}`);
+        if (DEBUG) {
+          console.error(
+            `[parseSSE] stream done: ${chunkCount} chunks, ${totalBytes} bytes, ${eventCount} events yielded, remaining buffer=${buffer.length} chars`,
+          );
+          if (buffer.length > 0) {
+            console.error(
+              `[parseSSE] remaining buffer: ${buffer.slice(0, 500)}`,
+            );
+          }
         }
         break;
       }
@@ -71,7 +78,7 @@ export async function* parseSSE(
       totalBytes += value.byteLength;
       const decoded = decoder.decode(value, { stream: true });
 
-      if (chunkCount <= 3) {
+      if (DEBUG && chunkCount <= 3) {
         console.error(
           `[parseSSE] chunk #${chunkCount}: ${value.byteLength} bytes, preview: ${decoded.slice(0, 200)}`,
         );
@@ -102,7 +109,8 @@ export async function* parseSSE(
 
     if (currentData.length > 0) {
       eventCount++;
-      console.error(`[parseSSE] flushing final event: ${currentEvent}`);
+      if (DEBUG)
+        console.error(`[parseSSE] flushing final event: ${currentEvent}`);
       yield { event: currentEvent, data: currentData.join("\n") };
     }
 
