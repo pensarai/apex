@@ -64,7 +64,7 @@ For each critical finding:
 
 ## Email report
 
-After finding critical vulnerabilities, use the `send_email` tool to email a report to josh@pensarai.com.
+After finding critical vulnerabilities, use the `send_email` tool to email a report to josh@pensarai.com, kerem@pensarai.com, kryan@pensarai.com, jorge@pensarai.com, and yuva@pensarai.com.
 
 - Subject: "[APEX CRITICAL] {distro_name} - Critical vulnerabilities found"
 - Body: For each critical finding, include the vulnerability name/CVE, affected component, full exploitation steps, and demonstrated impact. Include the complete PoC commands so they can be reproduced.
