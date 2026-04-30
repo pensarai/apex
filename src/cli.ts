@@ -18,6 +18,7 @@ import {
   resolveThreatModelPrompt,
   combinePromptParts,
 } from "./tui/utils/command-flags";
+import type { AIModel } from "./core/ai";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -88,6 +89,35 @@ async function createInstrumentedBus(
   return { bus, cleanup: async () => wandbCleanup?.() };
 }
 
+/**
+ * Resolve the AI model from --model flag or configured provider default.
+ * Errors clearly if no provider is configured instead of silently picking
+ * a model that will fail at the API call level.
+ */
+async function resolveCliModel(): Promise<AIModel> {
+  const explicit = getArg("--model");
+  if (explicit) return explicit as AIModel;
+
+  const { config: appConfig } = await import("./core/config");
+  const { getDefaultModelForConfig } = await import("./core/providers/utils");
+  const pensarConfig = await appConfig.get();
+  const defaultModel = getDefaultModelForConfig(pensarConfig);
+
+  if (!defaultModel) {
+    console.error(
+      "Error: No AI provider configured. Set one of:\n" +
+        "  PENSAR_API_KEY     — Pensar Console (recommended)\n" +
+        "  ANTHROPIC_API_KEY  — Anthropic direct\n" +
+        "  OPENAI_API_KEY     — OpenAI\n" +
+        "  OPENROUTER_API_KEY — OpenRouter\n" +
+        "\nOr run 'pensar login' to connect to Pensar Console.",
+    );
+    process.exit(1);
+  }
+
+  return defaultModel.id as AIModel;
+}
+
 // ---------------------------------------------------------------------------
 // Help
 // ---------------------------------------------------------------------------
@@ -116,13 +146,13 @@ Usage:
 operator options (-p):
   -p, --prompt <text|@file>  (required) Prompt for the operator agent
   --target <url>             Target URL / domain / IP
-  --model <model>            AI model (default: claude-sonnet-4-5)
+  --model <model>            AI model (default: auto-selected from configured provider)
 
 pentest options:
   --target <url>           (required) Target URL / domain / IP
   --cwd <path>             Source code path — enables whitebox attack surface
   --mode <mode>            Pentest mode: exfil (pivoting & flag extraction)
-  --model <model>          AI model (default: claude-sonnet-4-5)
+  --model <model>          AI model (default: auto-selected from configured provider)
   --extended-thinking       Enable extended thinking for supported models
   --task-driven             Enable task-driven architecture (experimental)
   --prompt <text|@file>    Guidance for the pentest agent (inline text or @filepath)
@@ -131,11 +161,11 @@ pentest options:
 targeted-pentest options:
   --target <url>          (required) Target URL / domain / IP
   --objective <text>      (required, repeatable) Testing objective
-  --model <model>         AI model (default: claude-sonnet-4-5)
+  --model <model>         AI model (default: auto-selected from configured provider)
 
 threat-model options:
   --output, -o <path>  Output file path (default: ./threat-model.md)
-  --model <model>      AI model (default: claude-sonnet-4-5)
+  --model <model>      AI model (default: auto-selected from configured provider)
 
 Global options:
   -h, --help         Show this help message
@@ -157,8 +187,6 @@ async function runPentest() {
   const { runPentestAgent } = await import("./core/api/blackboxPentest");
   const { sessions } = await import("./core/session");
   const { config: appConfig } = await import("./core/config");
-  const { getDefaultModelForConfig } = await import("./core/providers/utils");
-  type AIModel = import("./core/ai").AIModel;
 
   const target = getArgRequired("--target");
   const cwd = getArg("--cwd");
@@ -176,9 +204,7 @@ async function runPentest() {
   const prompt = combinePromptParts(resolvedTm, resolvedPrompt);
 
   const pensarConfig = await appConfig.get();
-  const dynamicDefault =
-    getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
-  const model = (getArg("--model") ?? dynamicDefault) as AIModel;
+  const model = await resolveCliModel();
   const { exfilMode, warning: modeWarning } = resolvePentestMode(mode);
 
   if (modeWarning) {
@@ -239,16 +265,12 @@ async function runTargetedPentest() {
     await import("./core/api/targetedPentest");
   const { sessions } = await import("./core/session");
   const { config: appConfig } = await import("./core/config");
-  const { getDefaultModelForConfig } = await import("./core/providers/utils");
-  type AIModel = import("./core/ai").AIModel;
 
   const target = getArgRequired("--target");
   const objectives = getAllArgs("--objective");
 
   const pensarConfig = await appConfig.get();
-  const dynamicDefault =
-    getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
-  const model = (getArg("--model") ?? dynamicDefault) as AIModel;
+  const model = await resolveCliModel();
 
   if (objectives.length === 0) {
     console.error("Error: at least one --objective is required");
@@ -304,14 +326,10 @@ async function runThreatModel() {
 
   const { runThreatModelWorkflow } = await import("./core/api/threatModel");
   const { config: appConfig } = await import("./core/config");
-  const { getDefaultModelForConfig } = await import("./core/providers/utils");
   const path = await import("path");
-  type AIModel = import("./core/ai").AIModel;
 
   const pensarConfig = await appConfig.get();
-  const dynamicDefault =
-    getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
-  const model = (getArg("--model") ?? dynamicDefault) as AIModel;
+  const model = await resolveCliModel();
 
   const outputArg = getArg("--output") ?? getArg("-o") ?? "threat-model.md";
   const resolvedPath = path.isAbsolute(outputArg)
@@ -356,12 +374,10 @@ async function runOperator() {
   const { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } =
     await import("./core/agents/offSecAgent");
   const { config: appConfig } = await import("./core/config");
-  const { getDefaultModelForConfig } = await import("./core/providers/utils");
   const { createInterface } = await import("readline");
   const { readFileSync, existsSync } = await import("fs");
   const path = await import("path");
   const { stepCountIs } = await import("ai");
-  type AIModel = import("./core/ai").AIModel;
   type ModelMessage = import("ai").ModelMessage;
 
   const promptRaw = getArg("-p") ?? getArg("--prompt");
@@ -373,9 +389,7 @@ async function runOperator() {
   const prompt = resolveFlagValue(promptRaw);
   const target = getArg("--target");
   const pensarConfig = await appConfig.get();
-  const dynamicDefault =
-    getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
-  const model = (getArg("--model") ?? dynamicDefault) as AIModel;
+  const model = await resolveCliModel();
 
   const sep = "─".repeat(60);
   console.log(`${sep}
