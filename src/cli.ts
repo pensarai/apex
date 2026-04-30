@@ -350,15 +350,11 @@ async function runOperator() {
   const { config } = await import("dotenv");
   config();
 
-  const { runOffensiveSecurityAgent } = await import(
-    "./core/api/offesecAgent"
-  );
-  const { sessions, normalizeMessages, getResumeMessages } = await import(
-    "./core/session"
-  );
-  const { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } = await import(
-    "./core/agents/offSecAgent"
-  );
+  const { runOffensiveSecurityAgent } = await import("./core/api/offesecAgent");
+  const { sessions, normalizeMessages, getResumeMessages } =
+    await import("./core/session");
+  const { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } =
+    await import("./core/agents/offSecAgent");
   const { config: appConfig } = await import("./core/config");
   const { getDefaultModelForConfig } = await import("./core/providers/utils");
   const { createInterface } = await import("readline");
@@ -477,7 +473,11 @@ async function runUpgrade() {
 
 if (hasFlag("-p") || command === "--prompt") {
   await runOperator();
-} else if (command === "version" || command === "--version" || command === "-v") {
+} else if (
+  command === "version" ||
+  command === "--version" ||
+  command === "-v"
+) {
   console.log(`v${version}`);
 } else if (command === "help" || command === "--help" || command === "-h") {
   showHelp();
