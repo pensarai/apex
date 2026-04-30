@@ -22,6 +22,7 @@ const PREFERRED_MODEL_BY_PROVIDER: Record<string, string> = {
   openai: "gpt-5.2-pro",
   google: "gemini-3.1-pro-preview",
   openrouter: "anthropic/claude-opus-4.6",
+  bedrock: "anthropic.claude-opus-4-6-v1",
 };
 
 export function getConfiguredProviders(config: Config): ConfiguredProvider[] {
