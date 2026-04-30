@@ -141,8 +141,8 @@ export const monokai: ThemeDefinition = {
       light: RGBA.fromHex("#a67f00"),
     },
     syntaxComment: {
-      dark: RGBA.fromHex("#727072"), // comment
-      light: RGBA.fromHex("#9e9b9f"),
+      dark: RGBA.fromHex("#817f81"), // comment
+      light: RGBA.fromHex("#949195"),
     },
     syntaxNumber: {
       dark: RGBA.fromHex("#ab9df2"), // purple

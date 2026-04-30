@@ -134,14 +134,14 @@ export const nord: ThemeDefinition = {
     // ── Syntax Highlighting ──────────────────────────────────
     syntaxKeyword: {
       dark: RGBA.fromHex("#81a1c1"), // nord9 (frost blue)
-      light: RGBA.fromHex("#5e81ac"), // nord10
+      light: RGBA.fromHex("#577ca9"), // nord10
     },
     syntaxString: {
       dark: RGBA.fromHex("#a3be8c"), // nord14 (aurora green)
-      light: RGBA.fromHex("#6d8a54"),
+      light: RGBA.fromHex("#688450"),
     },
     syntaxComment: {
-      dark: RGBA.fromHex("#4c566a"), // nord3 (polar night)
+      dark: RGBA.fromHex("#75829c"), // nord3 (polar night)
       light: RGBA.fromHex("#7b88a1"),
     },
     syntaxNumber: {
@@ -150,19 +150,19 @@ export const nord: ThemeDefinition = {
     },
     syntaxFunction: {
       dark: RGBA.fromHex("#88c0d0"), // nord8 (frost cyan)
-      light: RGBA.fromHex("#5e81ac"), // nord10
+      light: RGBA.fromHex("#577ca9"), // nord10
     },
     syntaxType: {
       dark: RGBA.fromHex("#ebcb8b"), // nord13 (aurora yellow)
-      light: RGBA.fromHex("#c08b30"),
+      light: RGBA.fromHex("#9f7328"),
     },
     syntaxTag: {
-      dark: RGBA.fromHex("#bf616a"), // nord11 (aurora red)
+      dark: RGBA.fromHex("#c8777f"), // nord11 (aurora red)
       light: RGBA.fromHex("#bf616a"),
     },
     syntaxAttr: {
       dark: RGBA.fromHex("#d08770"), // nord12 (aurora orange)
-      light: RGBA.fromHex("#c46840"),
+      light: RGBA.fromHex("#bf633b"),
     },
     syntaxPunctuation: {
       dark: RGBA.fromHex("#d8dee9"), // nord4 (snow storm)

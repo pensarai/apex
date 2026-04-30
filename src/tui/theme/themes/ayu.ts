@@ -133,11 +133,11 @@ export const ayu: ThemeDefinition = {
     // ── Syntax Highlighting ──────────────────────────────────
     syntaxKeyword: {
       dark: RGBA.fromHex("#ff8f40"), // orange (keyword)
-      light: RGBA.fromHex("#fa8d3e"),
+      light: RGBA.fromHex("#d75d06"),
     },
     syntaxString: {
       dark: RGBA.fromHex("#aad94c"), // green
-      light: RGBA.fromHex("#86b300"),
+      light: RGBA.fromHex("#678a00"),
     },
     syntaxComment: {
       dark: RGBA.fromHex("#636a72"), // comment
@@ -145,23 +145,23 @@ export const ayu: ThemeDefinition = {
     },
     syntaxNumber: {
       dark: RGBA.fromHex("#e6b450"), // yellow/accent
-      light: RGBA.fromHex("#a37acc"), // purple in light
+      light: RGBA.fromHex("#996bc6"), // purple in light
     },
     syntaxFunction: {
       dark: RGBA.fromHex("#ffb454"), // amber (function)
-      light: RGBA.fromHex("#f2ae49"),
+      light: RGBA.fromHex("#b4710d"),
     },
     syntaxType: {
       dark: RGBA.fromHex("#39bae6"), // blue (type)
-      light: RGBA.fromHex("#399ee6"),
+      light: RGBA.fromHex("#1a85d2"),
     },
     syntaxTag: {
       dark: RGBA.fromHex("#39bae6"), // blue (tag)
-      light: RGBA.fromHex("#399ee6"),
+      light: RGBA.fromHex("#1a85d2"),
     },
     syntaxAttr: {
       dark: RGBA.fromHex("#f29668"), // orange (attr)
-      light: RGBA.fromHex("#e6ba7e"),
+      light: RGBA.fromHex("#b37623"),
     },
     syntaxPunctuation: {
       dark: RGBA.fromHex("#bfbdb6"), // fg

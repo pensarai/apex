@@ -137,7 +137,7 @@ export const kanagawa: ThemeDefinition = {
     },
     syntaxString: {
       dark: RGBA.fromHex("#98bb6c"), // springGreen (wave)
-      light: RGBA.fromHex("#6f894e"), // lotusGreen
+      light: RGBA.fromHex("#6a834a"), // lotusGreen
     },
     syntaxComment: {
       dark: RGBA.fromHex("#727169"), // fujiGray (wave)

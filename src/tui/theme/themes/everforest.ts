@@ -133,35 +133,35 @@ export const everforest: ThemeDefinition = {
     // ── Syntax Highlighting ──────────────────────────────────
     syntaxKeyword: {
       dark: RGBA.fromHex("#e67e80"), // red
-      light: RGBA.fromHex("#f85552"),
+      light: RGBA.fromHex("#f7423e"),
     },
     syntaxString: {
       dark: RGBA.fromHex("#a7c080"), // green
-      light: RGBA.fromHex("#8da101"),
+      light: RGBA.fromHex("#7b8d01"),
     },
     syntaxComment: {
       dark: RGBA.fromHex("#859289"), // grey1
-      light: RGBA.fromHex("#939f91"), // grey0
+      light: RGBA.fromHex("#889586"), // grey0
     },
     syntaxNumber: {
       dark: RGBA.fromHex("#d699b6"), // purple
-      light: RGBA.fromHex("#df69ba"),
+      light: RGBA.fromHex("#da50ae"),
     },
     syntaxFunction: {
       dark: RGBA.fromHex("#a7c080"), // green
-      light: RGBA.fromHex("#8da101"),
+      light: RGBA.fromHex("#7b8d01"),
     },
     syntaxType: {
       dark: RGBA.fromHex("#dbbc7f"), // yellow
-      light: RGBA.fromHex("#dfa000"),
+      light: RGBA.fromHex("#ac7b00"),
     },
     syntaxTag: {
       dark: RGBA.fromHex("#e69875"), // orange
-      light: RGBA.fromHex("#f57d26"),
+      light: RGBA.fromHex("#d45f0a"),
     },
     syntaxAttr: {
       dark: RGBA.fromHex("#7fbbb3"), // aqua
-      light: RGBA.fromHex("#35a77c"),
+      light: RGBA.fromHex("#2e906b"),
     },
     syntaxPunctuation: {
       dark: RGBA.fromHex("#d3c6aa"), // fg

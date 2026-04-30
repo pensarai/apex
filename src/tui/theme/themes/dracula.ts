@@ -138,11 +138,11 @@ export const dracula: ThemeDefinition = {
     },
     syntaxString: {
       dark: RGBA.fromHex("#f1fa8c"), // yellow
-      light: RGBA.fromHex("#9a7b00"),
+      light: RGBA.fromHex("#907300"),
     },
     syntaxComment: {
-      dark: RGBA.fromHex("#6272a4"), // comment
-      light: RGBA.fromHex("#8b95b8"),
+      dark: RGBA.fromHex("#7c89b3"), // comment
+      light: RGBA.fromHex("#7884ac"),
     },
     syntaxNumber: {
       dark: RGBA.fromHex("#bd93f9"), // purple
@@ -157,7 +157,7 @@ export const dracula: ThemeDefinition = {
       light: RGBA.fromHex("#0e7490"),
     },
     syntaxTag: {
-      dark: RGBA.fromHex("#ff5555"), // red
+      dark: RGBA.fromHex("#ff5f5f"), // red
       light: RGBA.fromHex("#c62828"),
     },
     syntaxAttr: {

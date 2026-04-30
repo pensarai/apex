@@ -138,11 +138,11 @@ export const oneDark: ThemeDefinition = {
     },
     syntaxString: {
       dark: RGBA.fromHex("#98c379"), // green
-      light: RGBA.fromHex("#50a14f"),
+      light: RGBA.fromHex("#499348"),
     },
     syntaxComment: {
-      dark: RGBA.fromHex("#5c6370"), // comment
-      light: RGBA.fromHex("#a0a1a7"),
+      dark: RGBA.fromHex("#656d7b"), // comment
+      light: RGBA.fromHex("#909198"),
     },
     syntaxNumber: {
       dark: RGBA.fromHex("#d19a66"), // orange
@@ -162,7 +162,7 @@ export const oneDark: ThemeDefinition = {
     },
     syntaxAttr: {
       dark: RGBA.fromHex("#e5c07b"), // yellow
-      light: RGBA.fromHex("#c18401"),
+      light: RGBA.fromHex("#ad7601"),
     },
     syntaxPunctuation: {
       dark: RGBA.fromHex("#abb2bf"), // fg

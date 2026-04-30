@@ -142,8 +142,8 @@ export const vesper: ThemeDefinition = {
       light: RGBA.fromHex("#007a5e"),
     },
     syntaxComment: {
-      dark: RGBA.fromHex("#505050"), // comment
-      light: RGBA.fromHex("#999999"),
+      dark: RGBA.fromHex("#5a5a5a"), // comment
+      light: RGBA.fromHex("#8f8f8f"),
     },
     syntaxNumber: {
       dark: RGBA.fromHex("#d4a0ff"), // purple
@@ -163,7 +163,7 @@ export const vesper: ThemeDefinition = {
     },
     syntaxAttr: {
       dark: RGBA.fromHex("#ffcb6b"), // yellow
-      light: RGBA.fromHex("#a67f00"),
+      light: RGBA.fromHex("#9c7700"),
     },
     syntaxPunctuation: {
       dark: RGBA.fromHex("#7a7a7a"), // muted

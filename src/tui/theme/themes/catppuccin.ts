@@ -137,15 +137,15 @@ export const catppuccin: ThemeDefinition = {
     },
     syntaxString: {
       dark: RGBA.fromHex("#a6e3a1"), // green (mocha)
-      light: RGBA.fromHex("#40a02b"), // green (latte)
+      light: RGBA.fromHex("#338022"), // green (latte)
     },
     syntaxComment: {
       dark: RGBA.fromHex("#6c7086"), // overlay0 (mocha)
-      light: RGBA.fromHex("#9ca0b0"), // overlay0 (latte)
+      light: RGBA.fromHex("#7a7f95"), // overlay0 (latte)
     },
     syntaxNumber: {
       dark: RGBA.fromHex("#fab387"), // peach (mocha)
-      light: RGBA.fromHex("#fe640b"), // peach (latte)
+      light: RGBA.fromHex("#c14701"), // peach (latte)
     },
     syntaxFunction: {
       dark: RGBA.fromHex("#89b4fa"), // blue (mocha)
@@ -153,7 +153,7 @@ export const catppuccin: ThemeDefinition = {
     },
     syntaxType: {
       dark: RGBA.fromHex("#f9e2af"), // yellow (mocha)
-      light: RGBA.fromHex("#df8e1d"), // yellow (latte)
+      light: RGBA.fromHex("#a06615"), // yellow (latte)
     },
     syntaxTag: {
       dark: RGBA.fromHex("#f38ba8"), // red (mocha)
@@ -161,7 +161,7 @@ export const catppuccin: ThemeDefinition = {
     },
     syntaxAttr: {
       dark: RGBA.fromHex("#94e2d5"), // teal (mocha)
-      light: RGBA.fromHex("#179299"), // teal (latte)
+      light: RGBA.fromHex("#148187"), // teal (latte)
     },
     syntaxPunctuation: {
       dark: RGBA.fromHex("#a6adc8"), // subtext0 (mocha)

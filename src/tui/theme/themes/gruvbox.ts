@@ -149,7 +149,7 @@ export const gruvbox: ThemeDefinition = {
     },
     syntaxFunction: {
       dark: RGBA.fromHex("#fabd2f"), // yellow (bright)
-      light: RGBA.fromHex("#b57614"), // yellow (faded)
+      light: RGBA.fromHex("#ac7013"), // yellow (faded)
     },
     syntaxType: {
       dark: RGBA.fromHex("#83a598"), // aqua (bright)

@@ -133,34 +133,34 @@ export const solarized: ThemeDefinition = {
     // ── Syntax Highlighting ──────────────────────────────────
     syntaxKeyword: {
       dark: RGBA.fromHex("#859900"), // green
-      light: RGBA.fromHex("#859900"),
+      light: RGBA.fromHex("#738500"),
     },
     syntaxString: {
       dark: RGBA.fromHex("#2aa198"), // cyan
-      light: RGBA.fromHex("#2aa198"),
+      light: RGBA.fromHex("#248981"),
     },
     syntaxComment: {
-      dark: RGBA.fromHex("#586e75"), // base01
-      light: RGBA.fromHex("#93a1a1"), // base1
+      dark: RGBA.fromHex("#657e86"), // base01
+      light: RGBA.fromHex("#7d8e8e"), // base1
     },
     syntaxNumber: {
-      dark: RGBA.fromHex("#d33682"), // magenta
+      dark: RGBA.fromHex("#da5797"), // magenta
       light: RGBA.fromHex("#d33682"),
     },
     syntaxFunction: {
       dark: RGBA.fromHex("#268bd2"), // blue
-      light: RGBA.fromHex("#268bd2"),
+      light: RGBA.fromHex("#2380c1"),
     },
     syntaxType: {
       dark: RGBA.fromHex("#b58900"), // yellow
-      light: RGBA.fromHex("#b58900"),
+      light: RGBA.fromHex("#967200"),
     },
     syntaxTag: {
-      dark: RGBA.fromHex("#cb4b16"), // orange
+      dark: RGBA.fromHex("#e65519"), // orange
       light: RGBA.fromHex("#cb4b16"),
     },
     syntaxAttr: {
-      dark: RGBA.fromHex("#6c71c4"), // violet
+      dark: RGBA.fromHex("#7b7fca"), // violet
       light: RGBA.fromHex("#6c71c4"),
     },
     syntaxPunctuation: {

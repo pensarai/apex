@@ -146,7 +146,7 @@ export const flexoki: ThemeDefinition = {
     },
     syntaxNumber: {
       dark: RGBA.fromHex("#a580e2"), // purple
-      light: RGBA.fromHex("#8b7ec8"),
+      light: RGBA.fromHex("#8577c5"),
     },
     syntaxFunction: {
       dark: RGBA.fromHex("#da702c"), // orange
@@ -154,7 +154,7 @@ export const flexoki: ThemeDefinition = {
     },
     syntaxType: {
       dark: RGBA.fromHex("#d0a215"), // yellow
-      light: RGBA.fromHex("#ad8301"),
+      light: RGBA.fromHex("#a37b01"),
     },
     syntaxTag: {
       dark: RGBA.fromHex("#4385be"), // blue

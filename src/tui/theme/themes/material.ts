@@ -138,15 +138,15 @@ export const material: ThemeDefinition = {
     },
     syntaxString: {
       dark: RGBA.fromHex("#c3e88d"), // green
-      light: RGBA.fromHex("#91b859"),
+      light: RGBA.fromHex("#6c8d3c"),
     },
     syntaxComment: {
-      dark: RGBA.fromHex("#546e7a"), // comment
-      light: RGBA.fromHex("#90a4ae"),
+      dark: RGBA.fromHex("#607e8c"), // comment
+      light: RGBA.fromHex("#7e95a1"),
     },
     syntaxNumber: {
       dark: RGBA.fromHex("#f78c6c"), // orange
-      light: RGBA.fromHex("#f76d47"),
+      light: RGBA.fromHex("#f54616"),
     },
     syntaxFunction: {
       dark: RGBA.fromHex("#82aaff"), // blue
@@ -154,7 +154,7 @@ export const material: ThemeDefinition = {
     },
     syntaxType: {
       dark: RGBA.fromHex("#ffcb6b"), // yellow
-      light: RGBA.fromHex("#e2931d"),
+      light: RGBA.fromHex("#b57617"),
     },
     syntaxTag: {
       dark: RGBA.fromHex("#f07178"), // red
@@ -162,11 +162,11 @@ export const material: ThemeDefinition = {
     },
     syntaxAttr: {
       dark: RGBA.fromHex("#89ddff"), // cyan
-      light: RGBA.fromHex("#39adb5"),
+      light: RGBA.fromHex("#2f8f96"),
     },
     syntaxPunctuation: {
       dark: RGBA.fromHex("#89ddff"), // cyan (operators)
-      light: RGBA.fromHex("#39adb5"),
+      light: RGBA.fromHex("#2f8f96"),
     },
 
     // ── Diff ─────────────────────────────────────────────────

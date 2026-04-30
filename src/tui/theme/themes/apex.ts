@@ -133,40 +133,40 @@ export const apex: ThemeDefinition = {
 
     // ── Syntax Highlighting ──────────────────────────────────
     syntaxKeyword: {
-      dark: RGBA.fromInts(170, 140, 190, 255), // muted lavender
-      light: RGBA.fromInts(100, 70, 120, 255), // muted plum
+      dark: RGBA.fromInts(180, 126, 206, 255), // muted lavender
+      light: RGBA.fromInts(98, 37, 126, 255), // muted plum
     },
     syntaxString: {
-      dark: RGBA.fromInts(140, 170, 130, 255), // muted sage
-      light: RGBA.fromInts(60, 100, 60, 255), // muted forest
+      dark: RGBA.fromInts(113, 186, 94, 255), // muted sage
+      light: RGBA.fromInts(48, 111, 32, 255), // muted forest
     },
     syntaxComment: {
-      dark: RGBA.fromInts(110, 118, 129, 255), // gray
-      light: RGBA.fromInts(120, 125, 132, 255), // mid gray
+      dark: RGBA.fromInts(103, 115, 126, 255), // gray
+      light: RGBA.fromInts(92, 102, 112, 255), // mid gray
     },
     syntaxNumber: {
-      dark: RGBA.fromInts(180, 150, 120, 255), // muted tan
-      light: RGBA.fromInts(130, 95, 50, 255), // muted brown
+      dark: RGBA.fromInts(192, 138, 89, 255), // muted tan
+      light: RGBA.fromInts(135, 79, 29, 255), // muted brown
     },
     syntaxFunction: {
-      dark: RGBA.fromInts(140, 170, 200, 255), // muted steel blue
-      light: RGBA.fromInts(50, 90, 150, 255), // muted navy
+      dark: RGBA.fromInts(114, 160, 202, 255), // muted steel blue
+      light: RGBA.fromInts(30, 89, 143, 255), // muted navy
     },
     syntaxType: {
-      dark: RGBA.fromInts(130, 170, 175, 255), // muted teal
-      light: RGBA.fromInts(40, 100, 110, 255), // muted teal
+      dark: RGBA.fromInts(114, 182, 182, 255), // muted teal
+      light: RGBA.fromInts(37, 126, 126, 255), // muted teal
     },
     syntaxTag: {
-      dark: RGBA.fromInts(180, 130, 130, 255), // muted rose
-      light: RGBA.fromInts(140, 60, 65, 255), // muted burgundy
+      dark: RGBA.fromInts(194, 112, 112, 255), // muted rose
+      light: RGBA.fromInts(142, 41, 41, 255), // muted burgundy
     },
     syntaxAttr: {
-      dark: RGBA.fromInts(180, 170, 140, 255), // muted sand
-      light: RGBA.fromInts(110, 95, 50, 255), // muted olive
+      dark: RGBA.fromInts(194, 176, 112, 255), // muted sand
+      light: RGBA.fromInts(135, 111, 29, 255), // muted olive
     },
     syntaxPunctuation: {
-      dark: RGBA.fromInts(155, 162, 172, 255), // light gray
-      light: RGBA.fromInts(90, 95, 105, 255), // dark gray
+      dark: RGBA.fromInts(148, 156, 168, 255), // light gray
+      light: RGBA.fromInts(87, 95, 107, 255), // dark gray
     },
 
     // ── Diff ─────────────────────────────────────────────────
