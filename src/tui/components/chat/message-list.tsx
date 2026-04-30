@@ -123,6 +123,13 @@ export function MessageList({
           paddingBottom: 2,
           flexDirection: "column",
         },
+        scrollbarOptions: {
+          visible: true,
+          trackOptions: {
+            foregroundColor: colors.primary,
+            backgroundColor: colors.backgroundElement,
+          },
+        },
       }}
       stickyScroll={true}
       stickyStart="bottom"
