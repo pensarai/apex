@@ -556,6 +556,7 @@ export default function WebWizard({
     <Dialog size="large" onClose={onClose}>
       <DialogLayout
         title={`Configure Web App Pentest - ${modeLabel}`}
+        flushRight
         footerActions={[
           { key: "Enter", label: "start pentest", variant: "primary" },
           { key: "↑/↓", label: "navigate" },
@@ -570,6 +571,12 @@ export default function WebWizard({
               flexDirection: "column",
               gap: 1,
               paddingBottom: 1,
+            },
+            scrollbarOptions: {
+              trackOptions: {
+                foregroundColor: colors.textMuted,
+                backgroundColor: colors.backgroundElement,
+              },
             },
           }}
           stickyScroll={false}

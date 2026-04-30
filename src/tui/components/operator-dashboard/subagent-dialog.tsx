@@ -104,6 +104,7 @@ export default function SubagentDialog({ store }: SubagentDialogProps) {
       <DialogLayout
         title={title}
         escLabel="back"
+        flushRight
         footerActions={[
           { key: "\u2190\u2192", label: "prev/next" },
           { key: "\u2191\u2193", label: "scroll" },
@@ -127,6 +128,7 @@ export default function SubagentDialog({ store }: SubagentDialogProps) {
   return (
     <DialogLayout
       title={`Agents (${sessions.size})`}
+      flushRight
       footerActions={[
         { key: "Enter", label: "view", variant: "primary" },
         { key: "\u2191\u2193", label: "navigate" },

@@ -12,7 +12,7 @@ describeOrSkip("AI Stream Response", () => {
     console.log("\n=== Testing Basic Stream Response ===\n");
 
     const stream = streamResponse({
-      model: "claude-3-haiku-20240307",
+      model: "claude-haiku-4-5",
       system: "You are a helpful assistant.",
       prompt: "Say hello and explain what you can do in one sentence.",
     });
@@ -245,7 +245,7 @@ describeOrSkip("AI Stream Response", () => {
     let toolExecuted = false;
 
     const stream = streamResponse({
-      model: "claude-3-haiku-20240307",
+      model: "claude-haiku-4-5",
       system:
         "You are a test assistant. You must use the test_tool with these EXACT parameters: {wrongField: 'test', invalidNumber: 'not a number', missingEmail: true}. Do NOT try to fix or validate the parameters yourself - just use them exactly as given.",
       prompt:

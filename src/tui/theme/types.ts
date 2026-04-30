@@ -87,6 +87,26 @@ export interface ThemeColors {
   /** Italic text */
   markdownEmph: RGBA;
 
+  // ── Syntax Highlighting ──────────────────────────────────
+  /** Keywords, control flow, built-ins */
+  syntaxKeyword: RGBA;
+  /** String literals */
+  syntaxString: RGBA;
+  /** Comments */
+  syntaxComment: RGBA;
+  /** Numeric literals */
+  syntaxNumber: RGBA;
+  /** Function names and calls */
+  syntaxFunction: RGBA;
+  /** Type names, interfaces, classes */
+  syntaxType: RGBA;
+  /** HTML/XML tags, variables */
+  syntaxTag: RGBA;
+  /** Attributes, parameters, properties */
+  syntaxAttr: RGBA;
+  /** Punctuation, operators */
+  syntaxPunctuation: RGBA;
+
   // ── Diff ─────────────────────────────────────────────────
   /** Added line foreground */
   diffAdded: RGBA;

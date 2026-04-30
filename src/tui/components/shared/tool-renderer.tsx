@@ -41,7 +41,7 @@ export const ToolRenderer = memo(function ToolRenderer({
   verbose = false,
   expandedLogs = false,
 }: ToolRendererProps) {
-  const { colors, mode } = useTheme();
+  const { colors } = useTheme();
   // Subscribe so the result summary's `content`-prop StyledText
   // (precomputed in `result-registry.ts`) re-runs when `/obfuscate`
   // toggles. Plain string children are handled centrally by the
@@ -100,7 +100,7 @@ export const ToolRenderer = memo(function ToolRenderer({
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =
     isCompleted || isError
-      ? getResultSummary(result, toolName, args, mode)
+      ? getResultSummary(result, toolName, args, colors)
       : null;
 
   // Determine border color based on status
