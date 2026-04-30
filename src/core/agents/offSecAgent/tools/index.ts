@@ -73,7 +73,11 @@ export { listMemories } from "./listMemories";
 export { getMemory } from "./getMemory";
 
 // Email tools
-export { createEmailToolset, EMAIL_TOOL_NAMES, SEND_EMAIL_TOOL_NAME } from "./email";
+export {
+  createEmailToolset,
+  EMAIL_TOOL_NAMES,
+  SEND_EMAIL_TOOL_NAME,
+} from "./email";
 export type { EmailToolName } from "./email";
 
 // Web search tools (requires Pensar account)

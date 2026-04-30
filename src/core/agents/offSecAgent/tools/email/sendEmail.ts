@@ -106,16 +106,8 @@ requires sending emails from the agent.`,
         const info = await transport.sendMail({
           from: sender,
           to: Array.isArray(to) ? to.join(", ") : to,
-          cc: cc
-            ? Array.isArray(cc)
-              ? cc.join(", ")
-              : cc
-            : undefined,
-          bcc: bcc
-            ? Array.isArray(bcc)
-              ? bcc.join(", ")
-              : bcc
-            : undefined,
+          cc: cc ? (Array.isArray(cc) ? cc.join(", ") : cc) : undefined,
+          bcc: bcc ? (Array.isArray(bcc) ? bcc.join(", ") : bcc) : undefined,
           replyTo,
           subject,
           text: body,
