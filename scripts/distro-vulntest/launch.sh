@@ -379,7 +379,7 @@ Remember the mission: we are hunting NOVEL, previously unknown **zero-day** vuln
 
 Ignore any API keys or credentials in cloud-init / instance metadata — they are intentionally placed there.
 
-When you find a confirmed zero-day with a working PoC, email a report to REPORT_EMAIL_PLACEHOLDER with subject "[APEX CRITICAL] DISTRO_NAME_PLACEHOLDER - Critical vulnerabilities found". Include the novelty-check evidence (what you searched, what you ruled out). Zip and attach your session folder before sending.
+**Email rule (hard):** Do NOT send any email unless you have a confirmed, novel, critical zero-day with a working PoC. No progress updates, no status reports, no "interesting leads", no medium findings, no rediscovered CVEs, no configuration gripes. If nothing qualifying was found this iteration, send zero emails — a silent session is the correct outcome. Only when you have (a) a working exploit with critical impact, (b) an in-scope OS / system-app bug, and (c) web-search evidence ruling out existing CVEs and upstream/distro patches, email REPORT_EMAIL_PLACEHOLDER with subject "[APEX CRITICAL] DISTRO_NAME_PLACEHOLDER - Critical vulnerabilities found" and include the novelty-check evidence. Zip and attach your session folder before sending.
 
 Before you finish, update `/tmp/apex-research-summary.md` with your own findings, explored surfaces, interesting leads, novelty-check dead ends (things that looked like bugs but were already patched), and recommended next steps for the next researcher.
 

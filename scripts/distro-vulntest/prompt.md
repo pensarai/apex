@@ -63,15 +63,24 @@ Then keep going. Do NOT conclude your session until you have exhaustively explor
 4. Use `document_vulnerability` to formally log it — include the novelty-check evidence (searches performed, sources consulted, why this is not a known/patched issue)
 5. Then keep hunting — there are always more
 
-## Email report
+## Email report — ONLY when a vulnerability is confirmed
 
-Use the `send_email` tool to email findings to REPORT_EMAIL_PLACEHOLDER.
+**Do not send any email unless you have a confirmed, novel, critical zero-day with a working proof of concept.** This is a hard rule.
+
+- ❌ Do NOT email progress updates, status reports, "I'm starting", "I'm finishing", or "here's what I tried"
+- ❌ Do NOT email low/medium findings, interesting leads, hunches, "potential" issues, or theoretical bugs
+- ❌ Do NOT email configuration gripes, hardening suggestions, or version-disclosure observations
+- ❌ Do NOT email rediscoveries of existing CVEs or already-patched bugs
+- ❌ Do NOT email if the novelty check has not been performed and passed
+- ✅ DO email when ALL of the following are true: (a) you have a working exploit demonstrating critical impact (RCE, root shell, kernel compromise, etc.), (b) the bug is in OS / system-application code (in scope), and (c) you have web-search evidence that the bug is not an existing CVE and not already patched upstream or by the distro.
+
+If no qualifying finding has been produced, **send zero emails this session.** A silent session with no email is the correct outcome when nothing reportable was found — it is not a failure and is far better than a noisy email about non-findings.
+
+When (and only when) the bar above is met, use the `send_email` tool to email findings to REPORT_EMAIL_PLACEHOLDER:
 
 - Subject: "[APEX CRITICAL] DISTRO_NAME_PLACEHOLDER - Critical vulnerabilities found"
 - Body: Vulnerability class, affected component, root cause, full PoC code, demonstrated impact, and the **novelty evidence** (what you searched, what you ruled out, why this is not an existing/patched CVE). If you built chains, explain each link.
 - Attachment: Before sending, zip your session folder (`zip -r /tmp/apex-session.zip ~/.pensar/sessions/`) and attach it using the `attachments` parameter so we have the full session log and artifacts.
-
-**Only email when you have a confirmed critical zero-day with a working proof of concept** — meaning you have an exploit AND you have web-search evidence that the bug is not already known or patched. Do NOT send emails for low/medium findings, interesting leads, progress updates, "potential" issues, configuration gripes, or rediscoveries of existing CVEs. The bar is: working exploit, critical impact (RCE, root shell, etc.), and a documented novelty check.
 
 ## Before you finish
 
