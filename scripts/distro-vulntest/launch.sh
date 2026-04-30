@@ -373,13 +373,15 @@ You are continuing a vulnerability research session on this Linux system. A prev
 3. Review the recommended next steps from the previous researcher
 4. Continue the research — focus on areas that haven't been explored yet, leads that weren't fully investigated, and chains that weren't completed
 
-Remember: we are looking for NOVEL, previously unknown vulnerabilities only. Existing CVEs are completely out of scope. Do not look up CVE databases or check package versions against known vulns.
+Remember the mission: we are hunting NOVEL, previously unknown **zero-day** vulnerabilities at the **OS / system-application level** — bugs in compiled code, kernel interfaces, system daemons, SUID binaries, and shipped distro components. Out of scope: existing CVEs, configuration errors / hardening gaps, and application-logic vulnerabilities in user-installed apps. Do not try to reproduce published exploits.
+
+**Novelty filter — use web search.** Before logging or emailing any finding, use web search to confirm it is not an existing CVE and not already patched upstream or by the distro. Search for the bug pattern, affected function, component name, and check NVD / MITRE / distro security advisories / upstream commits. If the latest upstream code already fixes it, or any advisory describes it, it is NOT a zero-day — discard and move on. Only findings that survive the novelty check are reportable.
 
 Ignore any API keys or credentials in cloud-init / instance metadata — they are intentionally placed there.
 
-When you find vulnerabilities, email a report to REPORT_EMAIL_PLACEHOLDER with subject "[APEX CRITICAL] DISTRO_NAME_PLACEHOLDER - Critical vulnerabilities found". Zip and attach your session folder before sending.
+When you find a confirmed zero-day with a working PoC, email a report to REPORT_EMAIL_PLACEHOLDER with subject "[APEX CRITICAL] DISTRO_NAME_PLACEHOLDER - Critical vulnerabilities found". Include the novelty-check evidence (what you searched, what you ruled out). Zip and attach your session folder before sending.
 
-Before you finish, update `/tmp/apex-research-summary.md` with your own findings, explored surfaces, interesting leads, and recommended next steps for the next researcher.
+Before you finish, update `/tmp/apex-research-summary.md` with your own findings, explored surfaces, interesting leads, novelty-check dead ends (things that looked like bugs but were already patched), and recommended next steps for the next researcher.
 
 Be relentless. Do not stop until you have exhaustively explored every remaining attack surface.
 CONTINUE_EOF
