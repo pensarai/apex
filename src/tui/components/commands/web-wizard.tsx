@@ -574,7 +574,7 @@ export default function WebWizard({
             },
             scrollbarOptions: {
               trackOptions: {
-                foregroundColor: colors.primary,
+                foregroundColor: colors.textMuted,
                 backgroundColor: colors.backgroundElement,
               },
             },

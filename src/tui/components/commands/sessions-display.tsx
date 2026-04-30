@@ -282,9 +282,8 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                   flexDirection: "column",
                 },
                 scrollbarOptions: {
-                  visible: true,
                   trackOptions: {
-                    foregroundColor: colors.primary,
+                    foregroundColor: colors.textMuted,
                     backgroundColor: colors.backgroundElement,
                   },
                 },

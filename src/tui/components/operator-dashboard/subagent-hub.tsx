@@ -233,9 +233,8 @@ export const SubagentHub = memo(function SubagentHub({
               paddingBottom: 1,
             },
             scrollbarOptions: {
-              visible: true,
               trackOptions: {
-                foregroundColor: colors.primary,
+                foregroundColor: colors.textMuted,
                 backgroundColor: colors.backgroundElement,
               },
             },

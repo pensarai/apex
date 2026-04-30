@@ -81,7 +81,7 @@ On first launch, the TUI shows a "Responsible Use Disclosure" screen that must b
 
 **No state toggling in streaming callbacks.** Avoid calling `setState` to toggle visual indicators (like "Thinking...") directly in high-frequency streaming callbacks (`onTextDelta`, `onToolCallStreaming`). This causes per-frame flicker. Instead, derive display state from the underlying data model (e.g., check if the last message is a tool result rather than toggling a boolean).
 
-**Scrollbar visibility.** Scrollable content (lists, logs, long text) must have `scrollbarOptions={{ visible: true }}` so users can see their scroll position. Never hide scrollbars in scrollable regions.
+**Scrollbars.** Don't pass `scrollbarOptions={{ visible: true }}` — opentui auto-shows the bar when content overflows the viewport and hides it otherwise. Forcing `visible: true` paints a full-track thumb when content fits, which reads as a stray colored block. Style with `trackOptions: { foregroundColor: colors.textMuted, backgroundColor: colors.backgroundElement }` so the thumb stays subtle and theme-aware (don't use `colors.primary` — too loud). Never explicitly hide scrollbars in scrollable regions.
 
 ### Code hygiene
 

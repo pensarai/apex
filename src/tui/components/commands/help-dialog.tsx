@@ -184,9 +184,8 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
             rootOptions: { flexGrow: 1, width: "100%" },
             contentOptions: { flexDirection: "column" },
             scrollbarOptions: {
-              visible: true,
               trackOptions: {
-                foregroundColor: colors.primary,
+                foregroundColor: colors.textMuted,
                 backgroundColor: colors.backgroundElement,
               },
             },
