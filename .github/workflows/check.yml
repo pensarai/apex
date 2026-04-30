@@ -1,0 +1,20 @@
+name: fern-check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - canary
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Fern CLI tool
+        run: npm install -g fern-api
+
+      - name: Check docs and API are valid
+        run: fern check
