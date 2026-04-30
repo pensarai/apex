@@ -1,6 +1,10 @@
 import { useRef } from "react";
-import type { PasteEvent, TextareaRenderable } from "@opentui/core";
-import { getPasteText } from "../../utils/paste";
+import {
+  decodePasteBytes,
+  stripAnsiSequences,
+  type PasteEvent,
+  type TextareaRenderable,
+} from "@opentui/core";
 
 interface PasteEntry {
   fullText: string;
@@ -40,7 +44,7 @@ export function usePasteExtmarks(
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    const text = getPasteText(event);
+    const text = stripAnsiSequences(decodePasteBytes(event.bytes));
     const lineCount = text.split("\n").length;
 
     if (
