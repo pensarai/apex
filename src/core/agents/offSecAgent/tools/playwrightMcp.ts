@@ -270,11 +270,21 @@ export class PlaywrightMcpSession {
   private readonly headless: boolean;
   private readonly userAgent: string | undefined;
   private readonly viewportSize: string | undefined;
+  private readonly proxyServer: string | undefined;
+  private readonly ignoreHTTPSErrors: boolean;
 
-  constructor(headless = true, userAgent?: string, viewportSize?: string) {
+  constructor(
+    headless = true,
+    userAgent?: string,
+    viewportSize?: string,
+    proxyServer?: string,
+    ignoreHTTPSErrors = false,
+  ) {
     this.headless = headless;
     this.userAgent = userAgent;
     this.viewportSize = viewportSize;
+    this.proxyServer = proxyServer;
+    this.ignoreHTTPSErrors = ignoreHTTPSErrors;
   }
 
   /** Immediately reset all instance state. Synchronous — no I/O. */
@@ -346,6 +356,14 @@ export class PlaywrightMcpSession {
 
         if (this.viewportSize) {
           args.push(`--viewport-size=${this.viewportSize}`);
+        }
+
+        if (this.proxyServer) {
+          args.push("--proxy-server", this.proxyServer);
+        }
+
+        if (this.ignoreHTTPSErrors) {
+          args.push("--ignore-https-errors");
         }
 
         // Disable Chromium sandbox when running as root (e.g., in Docker/ECS containers).
@@ -743,6 +761,11 @@ Use this to check for:
  *   this session (defaults to the value set by {@link setViewportSize}).
  *   Passing `null` forces Chromium's default viewport.
  */
+export interface BrowserProxyOptions {
+  proxyServer?: string;
+  ignoreHTTPSErrors?: boolean;
+}
+
 export function createBrowserTools(
   targetUrl: string,
   evidenceDir: string,
@@ -752,6 +775,7 @@ export function createBrowserTools(
   headless?: boolean,
   userAgent?: string | null,
   viewportSize?: string | null,
+  proxyOptions?: BrowserProxyOptions,
 ) {
   const resolvedUserAgent =
     userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
@@ -762,6 +786,8 @@ export function createBrowserTools(
     headless ?? defaultHeadless,
     resolvedUserAgent,
     resolvedViewportSize,
+    proxyOptions?.proxyServer,
+    proxyOptions?.ignoreHTTPSErrors ?? false,
   );
 
   if (abortSignal) {

@@ -208,6 +208,17 @@ export interface WebCommandFlags {
 
   // Task-driven mode (experimental — structured task tracking for training data)
   taskDriven?: boolean;
+
+  // Burp Suite integration
+  burp?: boolean;
+  burpTransport?: "sse" | "stdio";
+  burpProxy?: string;
+  burpMcpUrl?: string;
+  burpMcpProxyJar?: string;
+  burpMcpProxyCommand?: string;
+  burpTimeoutMs?: number;
+  burpAllowConfigMutation?: boolean;
+  burpInsecureTls?: boolean;
 }
 
 /**
@@ -237,6 +248,15 @@ const webFlagSchema: FlagSchema = {
   prompt: { type: "string" },
   "threat-model": { type: "string" },
   "task-driven": { type: "boolean" },
+  burp: { type: "boolean" },
+  "burp-transport": { type: "string" },
+  "burp-proxy": { type: "string" },
+  "burp-mcp-url": { type: "string" },
+  "burp-mcp-proxy-jar": { type: "string" },
+  "burp-mcp-proxy-command": { type: "string" },
+  "burp-timeout-ms": { type: "string" },
+  "burp-allow-config-mutation": { type: "boolean" },
+  "burp-insecure-tls": { type: "boolean" },
 };
 
 /**
@@ -342,6 +362,37 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
   // Task-driven mode
   if (raw.taskDriven) flags.taskDriven = true;
 
+  // Burp Suite integration
+  if (raw.burp) flags.burp = true;
+  if (raw.burpTransport === "sse" || raw.burpTransport === "stdio") {
+    flags.burpTransport = raw.burpTransport;
+  }
+  if (raw.burpProxy) flags.burpProxy = String(raw.burpProxy);
+  if (raw.burpMcpUrl) flags.burpMcpUrl = String(raw.burpMcpUrl);
+  if (raw.burpMcpProxyJar) flags.burpMcpProxyJar = String(raw.burpMcpProxyJar);
+  if (raw.burpMcpProxyCommand)
+    flags.burpMcpProxyCommand = String(raw.burpMcpProxyCommand);
+  if (raw.burpTimeoutMs) {
+    const timeoutMs = parseInt(String(raw.burpTimeoutMs), 10);
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      flags.burpTimeoutMs = timeoutMs;
+    }
+  }
+  if (raw.burpAllowConfigMutation) flags.burpAllowConfigMutation = true;
+  if (raw.burpInsecureTls) flags.burpInsecureTls = true;
+  if (
+    flags.burpTransport ||
+    flags.burpProxy ||
+    flags.burpMcpUrl ||
+    flags.burpMcpProxyJar ||
+    flags.burpMcpProxyCommand ||
+    flags.burpTimeoutMs ||
+    flags.burpAllowConfigMutation ||
+    flags.burpInsecureTls
+  ) {
+    flags.burp = true;
+  }
+
   return flags;
 }
 
@@ -365,7 +416,8 @@ export function hasEnoughFlagsToSkipWizard(flags: WebCommandFlags): boolean {
       flags._hostsExplicitlyProvided ||
       flags.strict ||
       flags.headersMode ||
-      flags.model
+      flags.model ||
+      flags.burp
     );
   }
 
@@ -377,6 +429,36 @@ export interface SessionCreateParams {
   targets: string[];
   name?: string;
   config: SessionConfig;
+}
+
+function applyBurpSuiteConfig(
+  sessionConfig: SessionConfig,
+  flags: WebCommandFlags,
+): void {
+  if (!flags.burp) return;
+
+  const mcpProxyArgs = flags.burpMcpProxyJar
+    ? [
+        "-jar",
+        flags.burpMcpProxyJar,
+        "--sse-url",
+        flags.burpMcpUrl ?? "http://127.0.0.1:9876/sse",
+      ]
+    : undefined;
+
+  sessionConfig.burpSuite = {
+    enabled: true,
+    ...(flags.burpTransport ? { transport: flags.burpTransport } : {}),
+    ...(flags.burpProxy ? { proxyUrl: flags.burpProxy } : {}),
+    ...(flags.burpMcpUrl ? { mcpSseUrl: flags.burpMcpUrl } : {}),
+    ...(flags.burpMcpProxyCommand
+      ? { mcpProxyCommand: flags.burpMcpProxyCommand }
+      : {}),
+    ...(mcpProxyArgs ? { mcpProxyArgs } : {}),
+    ...(flags.burpTimeoutMs ? { timeoutMs: flags.burpTimeoutMs } : {}),
+    ...(flags.burpAllowConfigMutation ? { allowConfigMutation: true } : {}),
+    ...(flags.burpInsecureTls ? { ignoreTlsErrors: true } : {}),
+  };
 }
 
 /**
@@ -424,6 +506,7 @@ export function buildOperatorSessionConfig(
 
   sessionConfig.agentCwd = flags.sandbox ? undefined : process.cwd();
   if (flags.taskDriven) sessionConfig.taskDriven = true;
+  applyBurpSuiteConfig(sessionConfig, flags);
 
   // Combine threat model and prompt into a single prompt field
   const combinedPrompt = combinePromptParts(flags.threatModel, flags.prompt);
@@ -475,6 +558,8 @@ export function buildSwarmSessionConfig(
       headers: flags.headersMode === "custom" ? flags.customHeaders : undefined,
     };
   }
+
+  applyBurpSuiteConfig(sessionConfig, flags);
 
   // Combine threat model and prompt into a single prompt field
   const combinedPrompt = combinePromptParts(flags.threatModel, flags.prompt);

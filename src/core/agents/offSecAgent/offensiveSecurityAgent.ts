@@ -10,6 +10,7 @@ import { hasToolCall } from "ai";
 import type { OffensiveSecurityAgentInput, CreateAgentInput } from "./types";
 import {
   createAllTools,
+  BURP_TOOL_NAMES_ACTIVE,
   EMAIL_TOOL_NAMES_ACTIVE,
   PLAN_MODE_TOOL_NAMES,
 } from "./tools";
@@ -260,6 +261,12 @@ export class OffensiveSecurityAgent<TResult = void> {
     let activeTools = hasEmail
       ? (input.activeTools as string[])
       : (input.activeTools as string[]).filter((t) => !emailToolSet.has(t));
+
+    const hasBurp = input.session.config?.burpSuite?.enabled === true;
+    const burpToolSet = new Set<string>(BURP_TOOL_NAMES_ACTIVE);
+    activeTools = hasBurp
+      ? activeTools
+      : activeTools.filter((t) => !burpToolSet.has(t));
 
     // -- Plan mode: restrict to read-only tools -----------------------------
     if (input.mode === "plan") {

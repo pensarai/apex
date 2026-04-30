@@ -23,6 +23,7 @@ import { join } from "path";
 import { createBrowserTools } from "./playwrightMcp";
 import { createSandboxBrowserTools } from "./sandboxPlaywright";
 import type { ToolContext } from "./types";
+import { resolveBurpSuiteConfig } from "./burpConfig";
 
 /**
  * All browser tool names that get registered in the harness.
@@ -54,6 +55,8 @@ export type BrowserToolName = (typeof BROWSER_TOOL_NAMES)[number];
  * credential-aware wrapper that resolves secrets from IDs at execution time.
  */
 export function createBrowserToolset(ctx: ToolContext) {
+  const burp = resolveBurpSuiteConfig(ctx.session.config?.burpSuite);
+
   // Sandbox mode: use direct Playwright execution inside the sandbox
   const tools = ctx.sandbox
     ? createSandboxBrowserTools(ctx)
@@ -63,6 +66,15 @@ export function createBrowserToolset(ctx: ToolContext) {
         "operator",
         undefined,
         ctx.abortSignal,
+        undefined,
+        undefined,
+        undefined,
+        burp
+          ? {
+              proxyServer: burp.proxyUrl,
+              ignoreHTTPSErrors: burp.ignoreTlsErrors,
+            }
+          : undefined,
       );
 
   if (!ctx.credentialManager) {

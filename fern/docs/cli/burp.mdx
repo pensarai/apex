@@ -1,0 +1,61 @@
+---
+title: pensar burp
+---
+
+Manage Apex's Burp Suite MCP integration.
+
+## Setup
+
+1. Install PortSwigger's MCP Server extension in Burp Suite.
+2. Open Burp's MCP tab and enable the MCP server.
+3. Keep the default local listener unless you have a reason to expose it elsewhere:
+
+```bash
+http://127.0.0.1:9876/sse
+```
+
+Some Burp MCP clients use `http://127.0.0.1:9876` without `/sse`; Apex accepts either URL when configured.
+
+## Configure Apex
+
+```bash
+pensar burp config set --enabled true --url http://127.0.0.1:9876/sse
+pensar burp status
+pensar burp tools
+```
+
+Configuration is stored in `~/.pensar/config.json` under `burpMcp`. Config-modifying Burp MCP tools are disabled unless you explicitly set `--allow-config-mutation`.
+
+## Commands
+
+```bash
+pensar burp status
+pensar burp tools
+pensar burp config
+pensar burp config set --url http://127.0.0.1:9876/sse --enabled true
+pensar burp proxy-history --target https://example.com --limit 20
+pensar burp repeater --request-file request.txt
+pensar burp send --request-file request.txt
+```
+
+`proxy-history`, `repeater`, and `send` enforce configured `allowedTargets` when present and fail closed when the integration is disabled or Burp MCP is unreachable.
+
+## TUI
+
+In `/operator`, use:
+
+```text
+/burp status
+/burp tools
+/burp history
+/burp repeater
+```
+
+Burp agent tools are only visible when the session has Burp enabled.
+
+## Security Notes
+
+- Apex does not bypass Burp MCP target approval. If Burp rejects an action, Apex surfaces the failure.
+- Default endpoints are localhost-only. Non-local MCP URLs produce a warning and should only be used for trusted endpoints.
+- Proxy history may include credentials, cookies, request bodies, and traffic from manual browsing. Apex redacts sensitive headers in its Burp action logs, but agent tool inputs and outputs may still be processed by the configured AI provider.
+- Do not enable config mutation unless you understand the impact. Apex blocks config-modifying MCP tools by default.

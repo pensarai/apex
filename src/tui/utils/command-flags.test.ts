@@ -5,6 +5,7 @@ import { tmpdir } from "os";
 import {
   resolveFlagValue,
   resolveThreatModelPrompt,
+  buildOperatorSessionConfig,
   buildSwarmSessionConfig,
   parseWebFlags,
 } from "./command-flags";
@@ -45,6 +46,56 @@ describe("parseWebFlags", () => {
 
     expect(flags.hosts).toEqual(["api.example.com", "example.com"]);
     expect(flags.ports).toEqual([8443, 8080]);
+  });
+
+  it("parses Burp Suite integration flags", () => {
+    const flags = parseWebFlags([
+      "--target",
+      "https://example.com",
+      "--burp-proxy",
+      "http://127.0.0.1:8081",
+      "--burp-mcp-url",
+      "http://127.0.0.1:9877",
+      "--burp-mcp-proxy-jar",
+      "/tmp/mcp-proxy-all.jar",
+      "--burp-transport",
+      "stdio",
+      "--burp-timeout-ms",
+      "30000",
+      "--burp-allow-config-mutation",
+      "--burp-insecure-tls",
+    ]);
+
+    expect(flags.burp).toBe(true);
+    expect(flags.burpProxy).toBe("http://127.0.0.1:8081");
+    expect(flags.burpMcpUrl).toBe("http://127.0.0.1:9877");
+    expect(flags.burpMcpProxyJar).toBe("/tmp/mcp-proxy-all.jar");
+    expect(flags.burpTransport).toBe("stdio");
+    expect(flags.burpTimeoutMs).toBe(30000);
+    expect(flags.burpAllowConfigMutation).toBe(true);
+    expect(flags.burpInsecureTls).toBe(true);
+  });
+
+  it("maps Burp Suite flags into session config", () => {
+    const flags = parseWebFlags([
+      "--target",
+      "https://example.com",
+      "--burp",
+      "--burp-mcp-proxy-jar",
+      "/tmp/mcp-proxy-all.jar",
+    ]);
+
+    const params = buildOperatorSessionConfig(flags);
+
+    expect(params.config.burpSuite).toEqual({
+      enabled: true,
+      mcpProxyArgs: [
+        "-jar",
+        "/tmp/mcp-proxy-all.jar",
+        "--sse-url",
+        "http://127.0.0.1:9876/sse",
+      ],
+    });
   });
 });
 
