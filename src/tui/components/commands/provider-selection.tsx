@@ -66,6 +66,7 @@ export default function ProviderSelection({
     <Dialog size="large" onClose={onClose}>
       <DialogLayout
         title="Select provider"
+        flushRight
         footerActions={[{ key: "Enter", label: "select", variant: "primary" }]}
       >
         {/* Provider List */}
@@ -79,6 +80,12 @@ export default function ProviderSelection({
             contentOptions: {
               flexDirection: "column",
               gap: 1,
+            },
+            scrollbarOptions: {
+              trackOptions: {
+                foregroundColor: colors.primary,
+                backgroundColor: colors.backgroundElement,
+              },
             },
           }}
           stickyScroll={false}
