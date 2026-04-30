@@ -51,7 +51,7 @@ Use the `send_email` tool to email findings to REPORT_EMAIL_PLACEHOLDER.
 - Body: Vulnerability class, affected component, root cause, full PoC code, demonstrated impact. If you built chains, explain each link.
 - Attachment: Before sending, zip your session folder (`zip -r /tmp/apex-session.zip ~/.pensar/sessions/`) and attach it using the `attachments` parameter so we have the full session log and artifacts.
 
-Send an interim email on the first critical finding. Send updated emails as you find more or build chains. Do not email low/medium findings unless they're part of a chain achieving critical impact.
+**Only email when you have a confirmed critical vulnerability with a working proof of concept.** Do NOT send emails for low/medium findings, interesting leads, progress updates, or "potential" issues. The bar is: you have a working exploit that demonstrates critical impact (RCE, root shell, etc.). If you haven't found anything critical yet, keep looking — do not email.
 
 ## Before you finish
 
