@@ -64,25 +64,16 @@ export async function init() {
   return { ...DEFAULT_CONFIG, version };
 }
 
-export async function get(): Promise<Config> {
-  const folder = path.join(os.homedir(), ".pensar");
-  const file = path.join(folder, "config.json");
-  const exists = await fs
-    .access(file)
-    .then(() => true)
-    .catch(() => false);
-  if (!exists) {
-    return await init();
-  }
-  const config = await fs.readFile(file, "utf8");
-
-  const parsedConfig = JSON.parse(config);
-
+/**
+ * Apply environment variable fallbacks for API keys.
+ * Used by both `get()` and `init()` so fresh installs pick up env vars.
+ */
+function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
   const version = getCurrentVersion();
-
   return {
     ...parsedConfig,
-    version: version,
+    responsibleUseAccepted: parsedConfig.responsibleUseAccepted ?? false,
+    version,
     openAiAPIKey: parsedConfig.openAiAPIKey ?? process.env.OPENAI_API_KEY,
     anthropicAPIKey:
       parsedConfig.anthropicAPIKey ?? process.env.ANTHROPIC_API_KEY,
@@ -98,6 +89,22 @@ export async function get(): Promise<Config> {
     daytonaOrgId: parsedConfig.daytonaOrgId ?? process.env.DAYTONA_ORG_ID,
     runloopAPIKey: parsedConfig.runloopAPIKey ?? process.env.RUNLOOP_API_KEY,
   };
+}
+
+export async function get(): Promise<Config> {
+  const folder = path.join(os.homedir(), ".pensar");
+  const file = path.join(folder, "config.json");
+  const exists = await fs
+    .access(file)
+    .then(() => true)
+    .catch(() => false);
+  if (!exists) {
+    await init();
+    return applyEnvFallbacks(DEFAULT_CONFIG);
+  }
+  const config = await fs.readFile(file, "utf8");
+  const parsedConfig = JSON.parse(config);
+  return applyEnvFallbacks(parsedConfig);
 }
 
 export async function update(config: Partial<Config>) {
