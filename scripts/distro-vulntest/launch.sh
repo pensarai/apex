@@ -275,15 +275,17 @@ generate_userdata() {
     distro_name=$(get_field "$entry" 4)
     pkg_mgr=$(get_field "$entry" 5)
 
-    # Header — runs as root via cloud-init
+    # Header — runs as root via cloud-init; HOME is often unset
     cat <<'USERDATA_HEADER'
 #!/bin/bash
 set -x
+export HOME=/root
 exec > /var/log/apex-vulntest.log 2>&1
 USERDATA_HEADER
 
     # Inject secrets/config (not single-quoted — we WANT expansion here)
     cat <<USERDATA_VARS
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}"
 export PENSAR_API_KEY="${PENSAR_API_KEY}"
 export RESEND_API_KEY="${RESEND_API_KEY}"
 export OUTBOUND_EMAIL="${OUTBOUND_EMAIL}"
@@ -297,20 +299,20 @@ USERDATA_VARS
             cat <<'BLOCK'
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y curl unzip git build-essential gcc make
+apt-get install -y curl unzip git build-essential gcc make nmap
 BLOCK
             ;;
         yum)
             cat <<'BLOCK'
 yum update -y
-yum install -y curl unzip git gcc make
+yum install -y curl unzip git gcc make nmap
 yum groupinstall -y "Development Tools" || true
 BLOCK
             ;;
         dnf)
             cat <<'BLOCK'
 dnf update -y
-dnf install -y curl unzip git gcc make
+dnf install -y curl unzip git gcc make nmap
 dnf groupinstall -y "Development Tools" || true
 BLOCK
             ;;
@@ -326,11 +328,11 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 
 # Install pensar
 curl -fsSL https://pensarai.com/install.sh | bash
-export PATH="$HOME/.pensar/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.pensar/bin:$PATH"
 
 # Verify installation
 which pensar || {
-    for p in /root/.pensar/bin /home/*/.pensar/bin /usr/local/bin; do
+    for p in /root/.local/bin /root/.pensar/bin /home/*/.local/bin /home/*/.pensar/bin /usr/local/bin; do
         if [ -x "$p/pensar" ]; then
             export PATH="$p:$PATH"
             break
