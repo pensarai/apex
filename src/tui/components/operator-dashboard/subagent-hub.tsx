@@ -137,7 +137,7 @@ const SubagentHubCard = memo(function SubagentHubCard({
     <box flexDirection="column">
       {/* Line 1: prefix + status icon + name */}
       <box flexDirection="row">
-        <text content={prefix} />
+        <text fg={focused ? colors.primary : colors.text} content={prefix} />
         {statusIcon}
         <text fg={nameColor} content={session.name} />
       </box>
