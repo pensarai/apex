@@ -26,19 +26,22 @@ Explore freely. There is no prescribed checklist — use your judgment about wha
 
 Do NOT spend time on version checking or CVE lookups. Instead, treat every binary, service, and kernel interface as potentially vulnerable and test it yourself through fuzzing, code auditing, and manual probing.
 
-The only rule: **don't stop**. After each finding, step back and ask:
+**You must be relentless.** Do not stop after one finding, one failed attempt, or one pass through the system. There are always more attack surfaces to explore. If you've exhausted one area, move to the next. If you've tried obvious approaches, try creative ones. You have unlimited time — use it.
+
+After each finding or dead end, step back and ask:
 - Can I chain this with something else for greater impact?
 - What haven't I looked at yet?
 - What's the most dangerous thing on this system that I haven't tested?
+- Have I actually fuzzed the inputs, or just checked versions?
 
-Then keep going.
+Then keep going. Do NOT conclude your session until you have exhaustively explored every attack surface you can think of.
 
 ## When you find a vulnerability
 
 1. Write a complete, reproducible proof of concept
 2. Demonstrate impact (code execution, root shell, data exfiltration, etc.)
 3. Use `document_vulnerability` to formally log it
-4. Then keep hunting
+4. Then keep hunting — there are always more
 
 ## Email report
 
@@ -49,3 +52,15 @@ Use the `send_email` tool to email findings to REPORT_EMAIL_PLACEHOLDER.
 - Attachment: Before sending, zip your session folder (`zip -r /tmp/apex-session.zip ~/.pensar/sessions/`) and attach it using the `attachments` parameter so we have the full session log and artifacts.
 
 Send an interim email on the first critical finding. Send updated emails as you find more or build chains. Do not email low/medium findings unless they're part of a chain achieving critical impact.
+
+## Before you finish
+
+Before ending your session, you MUST write a summary file to `/tmp/apex-research-summary.md` containing:
+
+1. **Attack surfaces explored** — what you looked at and what you tried
+2. **Findings** — any vulnerabilities discovered, with severity and PoC references
+3. **Interesting leads** — things that looked promising but you didn't finish investigating
+4. **Recommended next steps** — specific areas the next researcher should focus on, including binaries to fuzz, interfaces to probe, or chains to complete
+5. **Dead ends** — what you tried that didn't work, so the next researcher doesn't repeat it
+
+This summary will be passed to the next research session to continue where you left off.
