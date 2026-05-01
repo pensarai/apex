@@ -1,7 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { randomBytes } from "crypto";
 
-/** Hard memory safety cap — prevents OOM on pathological output (5 MB). */
 const MAX_BUFFER = 5_000_000;
 
 export interface ShellExecuteResult {
@@ -11,78 +10,24 @@ export interface ShellExecuteResult {
 }
 
 interface PendingCommand {
-  /**
-   * Bytes observed on bash's stdout pipe BEFORE the cutover marker. These
-   * come from the background `tail -f` of the per-command tempfile and
-   * are best-effort live UX only — on platforms where `tail`'s pipe
-   * block-buffers (macOS under SIP even with `stdbuf`), this buffer may
-   * be partial or empty. Used for `onData` streaming and as a fallback
-   * if the command is killed before the authoritative phase starts.
-   */
+  // Raw bytes from `tail -f` of the per-command tempfile. Best-effort live UX
+  // only — may be partial/empty on platforms where tail block-buffers.
   streamedStdout: string;
-  /**
-   * Bytes observed AFTER the cutover marker. Emitted by `cat "$OUT"`
-   * through bash's real stdout pipe with no tail/libc intermediary, so
-   * this is the authoritative capture of the user command's stdout.
-   */
+  // Bytes from the post-cutover `cat`, the authoritative capture.
   authoritativeStdout: string;
-  /** True once we've seen the per-command cutover marker on the pipe. */
   cutoverSeen: boolean;
-  /** The cutover marker string for this command (per-command random). */
   cutoverMarker: string;
   stderr: string;
   stdoutTruncated: boolean;
   exitMarkerPrefix: string;
   onData?: (chunk: string) => void;
   resolve: (result: ShellExecuteResult) => void;
-  /**
-   * When non-null, overrides whatever exit code bash reports via the
-   * marker. Set by the timeout / abort paths so the caller always sees
-   * the documented sentinel (124 for timeout, 130 for abort) even when
-   * bash's wrapper ran to completion after our kill.
-   */
+  // When set, overrides bash's reported exit code with a sentinel
+  // (124 timeout, 130 abort) so callers see the documented value.
   forcedExitCode: number | null;
-  /** Extra stderr appended by abort/timeout paths. */
   forcedStderrSuffix: string | null;
 }
 
-/**
- * A long-lived bash process that persists across execute_command calls.
- *
- * Commands are sent to stdin and delimited with unique markers so the
- * caller can extract per-command stdout, stderr, and the exit code.
- * Background processes (`&`) survive between calls because the parent
- * shell never exits.
- *
- * Stability design notes:
- *
- *  - User commands are wrapped in a brace group `{ ...; }` (NOT a subshell)
- *    so that `cd`, `export`, shell functions, and aliases persist across
- *    calls as advertised.
- *  - The user command block has its stdin redirected from `/dev/null` so
- *    that children that read stdin (cat/ssh/sudo/python/mysql/read/…)
- *    cannot hijack the shared pipe that we use to send commands to bash.
- *  - A single persistent `data` listener is attached to the shell's
- *    stdout/stderr at spawn time. Between commands, incoming bytes (e.g.
- *    from backgrounded processes whose fd1 was not redirected) are
- *    actively drained into a discard buffer so the kernel pipe buffer
- *    never fills and blocks the shell.
- *  - On timeout / cancel we walk the process tree under the shell and
- *    SIGTERM → SIGKILL every descendant (not just direct children), so
- *    pipelines and grandchildren cannot be orphaned holding our pipe.
- */
-/**
- * Cached once: whether `stdbuf` is available. We use it to line-buffer
- * `tail -f` so command output streams to the caller in near-real-time
- * on platforms where it's effective (Linux glibc).
- *
- * Final stdout correctness does NOT depend on `stdbuf` — the wrapper
- * always emits a post-kill authoritative `cat` of the per-command
- * output tempfile through bash's real stdout pipe, so even when
- * `tail -f` block-buffers (macOS under SIP, Alpine, minimal containers)
- * and its buffer is discarded when we kill it, the caller still gets
- * the full output. `stdbuf` only affects live streaming UX quality.
- */
 let stdbufAvailable: boolean | null = null;
 function hasStdbuf(): boolean {
   if (stdbufAvailable !== null) return stdbufAvailable;
@@ -96,34 +41,13 @@ function hasStdbuf(): boolean {
 }
 
 /**
- * Produce a clean stdout string for the timeout / abort / close / cancel
- * fallback resolvers.
+ * Strip cutover/exit markers from a buffer for the timeout/abort/close/cancel
+ * fallback paths. The happy-path parser strips inline; if a fallback resolver
+ * fires before the parser saw the exit-marker chunk (busy event loop), the raw
+ * buffer can still contain markers that would otherwise leak to the agent.
  *
- * The happy-path handler (`onStdoutData`) parses the cutover and exit
- * markers as they arrive and only commits stripped bytes to
- * `authoritativeStdout`. When a fallback resolver fires first — because
- * the Node event loop was busy processing AI SDK streams / telemetry /
- * other tool calls while the shell's output was queued on the pipe, so
- * a timeout/abort timer got to run before `onStdoutData` processed the
- * chunk containing the exit marker — the candidate stdout is
- * `streamedStdout`, which is the raw bash pipe accumulator and may still
- * contain the per-command markers verbatim.
- *
- * Observed before this helper (NOCTURNE traces): commands that had in
- * fact completed successfully had their stdout leak as e.g.
- *   `__APEX_7e680629f7b4a78b__CUTOVER\n/debug -> HTTP 404\n...\n__APEX_7e680629f7b4a78b__EXIT_0\n`
- * to the agent as tool output, which the model interpreted as literal
- * strings in the target application's response.
- *
- * This function performs the same stripping the happy-path parser does,
- * so all four fallback paths produce the same shape of stdout a normal
- * completion would.
- *
- * Prefers `authoritativeStdout` when populated (happy path partially
- * ran) since those bytes are already stripped; otherwise parses the raw
- * `streamedStdout`. Exported for direct unit testing — the real-world
- * trigger requires a busy event loop which is hard to force in a
- * deterministic integration test.
+ * Prefers `authoritativeStdout` when populated (already partially stripped);
+ * otherwise parses `streamedStdout`. Exported for unit testing.
  */
 export function extractFallbackStdout(cmd: {
   authoritativeStdout: string;
@@ -156,6 +80,11 @@ export function extractFallbackStdout(cmd: {
   return s || "(no output)";
 }
 
+/**
+ * Long-lived bash process. Commands are sent to stdin and bracketed with
+ * unique markers so per-command stdout/stderr/exit can be extracted.
+ * Background processes (`&`) survive between calls.
+ */
 export class PersistentShell {
   private proc: ChildProcess | null = null;
   private alive = false;
@@ -163,19 +92,12 @@ export class PersistentShell {
   private readonly cwd?: string;
   private readonly extraEnv?: Record<string, string>;
 
-  /** Single pending command; null between `execute()` calls. */
   private current: PendingCommand | null = null;
-
-  /** Allows cancelCurrentCommand() to force-resolve the running execute(). */
   private pendingCancel: ((result: ShellExecuteResult) => void) | null = null;
 
-  /**
-   * Tail of the FIFO mutex chain used by `acquireTurn()`. Each `execute()`
-   * call snapshots this, installs a new tail, and awaits its snapshot —
-   * serializing all calls so concurrent ones in the same JS tick can no
-   * longer race on `this.current` and cross-contaminate stdout/stderr.
-   * See issue #645 for the forensic trace of the underlying bug.
-   */
+  // FIFO mutex tail. Each execute() call snapshots, installs a new tail, and
+  // awaits its snapshot — serializing concurrent calls so they can't race on
+  // `this.current` and cross-contaminate output.
   private writeChain: Promise<void> = Promise.resolve();
 
   constructor(opts?: { cwd?: string; env?: Record<string, string> }) {
@@ -192,8 +114,8 @@ export class PersistentShell {
     this.proc = spawn(shell, args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: this.cwd,
-      // New session so child has no controlling terminal — prevents
-      // interactive programs from writing prompts to the TUI's TTY.
+      // New session so children have no controlling terminal — keeps
+      // interactive prompts off the TUI's TTY.
       detached: process.platform !== "win32",
       env: {
         PATH: process.env.PATH ?? "",
@@ -217,8 +139,6 @@ export class PersistentShell {
     this.proc.on("close", () => {
       this.alive = false;
       this.proc = null;
-      // If a command was pending, fail it fast rather than letting it
-      // wait out its timeout.
       const cmd = this.current;
       if (cmd) {
         this.current = null;
@@ -243,30 +163,6 @@ export class PersistentShell {
     }
   }
 
-  /**
-   * Single persistent stdout handler. Between commands (`current === null`)
-   * incoming bytes are silently dropped so background-process output does
-   * not fill the kernel pipe buffer and does not bleed into the next
-   * command's captured output.
-   *
-   * Each wrapped command emits, in order on bash's stdout pipe:
-   *   1. Best-effort live bytes from the background `tail -f` (may be
-   *      empty if the platform's tail block-buffers).
-   *   2. A per-command cutover marker emitted by `printf` after tail is
-   *      killed.
-   *   3. Authoritative bytes from `cat "$OUT"` through bash's own pipe
-   *      (no tail, no libc buffering) — this is the source of truth for
-   *      `result.stdout`.
-   *   4. The exit marker.
-   *
-   * We split the incoming stream at the cutover marker:
-   *   - Pre-cutover → fed to `onData` for live UX, buffered in
-   *     `streamedStdout` as a fallback for kill-before-cutover paths.
-   *   - Post-cutover → accumulated in `authoritativeStdout`; exit-marker
-   *     detection runs on this buffer, so user command output cannot
-   *     accidentally match the exit marker before the authoritative
-   *     phase has been bracketed.
-   */
   private onStdoutData(data: Buffer): void {
     const cmd = this.current;
     if (!cmd) return;
@@ -274,8 +170,7 @@ export class PersistentShell {
     let chunk = data.toString();
 
     if (!cmd.cutoverSeen) {
-      // Search the accumulated buffer, not just the new chunk, so a
-      // cutover marker that straddles two Buffer reads is still found.
+      // Search the accumulated buffer so a marker straddling two chunks is found.
       const prevLen = cmd.streamedStdout.length;
       cmd.streamedStdout += chunk;
       const cutIdx = cmd.streamedStdout.indexOf(cmd.cutoverMarker);
@@ -290,8 +185,8 @@ export class PersistentShell {
         return;
       }
 
-      // Feed only the pre-cutover bytes from THIS chunk to onData so we
-      // don't re-emit bytes that earlier chunks already delivered.
+      // Only feed pre-cutover bytes from THIS chunk to onData; earlier chunks
+      // already delivered their pre-cutover portion.
       const chunkCutOffset = cutIdx - prevLen;
       if (chunkCutOffset > 0 && cmd.onData) {
         cmd.onData(chunk.substring(0, chunkCutOffset));
@@ -380,8 +275,8 @@ export class PersistentShell {
 
     const release = await this.acquireTurn();
     try {
-      // A queued call can wait minutes; re-validate runtime state after the
-      // wait so disposal or abort during the queue doesn't consume bash time.
+      // Re-validate after the queue wait — disposal/abort may have happened
+      // while we were queued.
       if (this.disposed) {
         return { stdout: "", stderr: "Shell has been disposed", exitCode: 1 };
       }
@@ -441,8 +336,6 @@ export class PersistentShell {
             killEscalationTimer = setTimeout(() => {
               if (resolved) return;
               killDescendants(proc.pid, "SIGKILL");
-              // Fallback: if bash didn't emit a marker within another
-              // 2 seconds (shell wedged), resolve with whatever we have.
               setTimeout(() => {
                 if (resolved) return;
                 pending.resolve({
@@ -463,15 +356,10 @@ export class PersistentShell {
           timeoutTimer = setTimeout(() => {
             if (resolved) return;
             pending.forcedExitCode = 124;
-            // Kill every descendant of the shell, not just direct children:
-            // pipelines and nested subshells are grandchildren and `pkill -P`
-            // would leak them.
             killDescendants(proc.pid, "SIGTERM");
             killEscalationTimer = setTimeout(() => {
               if (resolved) return;
               killDescendants(proc.pid, "SIGKILL");
-              // Fallback: if bash didn't emit a marker within another
-              // 2 seconds (shell wedged), resolve with whatever we have.
               setTimeout(() => {
                 if (resolved) return;
                 pending.resolve({
@@ -485,40 +373,13 @@ export class PersistentShell {
         }
 
         // Wrap command:
-        //   - brace group `{ ...; }` (NOT a subshell) so `cd`, `export`,
-        //     shell functions, aliases, and option changes persist;
-        //   - stdin redirected from `/dev/null` so children that read stdin
-        //     cannot hijack our command pipe;
-        //   - stdout captured to a per-command tempfile (NOT bash's stdout
-        //     pipe) and streamed back via a background `tail -f` for live
-        //     UX. This prevents backgrounded children whose fd 1 was never
-        //     redirected (`nmap -v &`) from bleeding their output into the
-        //     next command's captured stdout, because their inherited fd 1
-        //     is the tempfile for the command that spawned them, not the
-        //     shell's stdout pipe;
-        //   - stderr captured to another tempfile and flushed after, so we
-        //     can distinguish stdout from stderr without interleaving;
-        //   - after the user command finishes we kill the tail, then emit
-        //     a per-command cutover marker on bash's real stdout pipe, then
-        //     `cat` the stdout tempfile. The post-cutover `cat` bytes are
-        //     authoritative: they pass through bash's pipe with no tail /
-        //     libc block-buffering intermediary. The Node handler treats
-        //     pre-cutover bytes as live-UX streaming only and post-cutover
-        //     bytes as the authoritative capture returned in the result.
-        //     This is required because `tail`'s stdout is a pipe and
-        //     block-buffered by libc; on platforms where `stdbuf` is a
-        //     no-op (macOS under SIP, Alpine, minimal containers without
-        //     coreutils) the buffered bytes would be discarded when we
-        //     kill tail, silently losing all stdout for small commands;
-        //   - the exit marker is echoed on bash's real stdout pipe, so the
-        //     parent Node handler always sees it immediately regardless of
-        //     how much command output the cat has left to flush.
-        // When `stdbuf` is available and effective (GNU coreutils on glibc
-        // Linux), a fast-polling `stdbuf -oL tail -n +1 -f -s 0.05` is run
-        // in the background so live streaming latency is well under 100 ms
-        // per chunk. Elsewhere the tail still runs (in case it happens to
-        // flush) but the authoritative cat guarantees correctness either
-        // way.
+        //   - brace group `{ ...; }` (NOT a subshell) so cd/export/aliases persist;
+        //   - stdin from /dev/null so children can't hijack our command pipe;
+        //   - stdout/stderr to per-command tempfiles, streamed live via `tail -f`;
+        //   - after the command, kill tail, emit a cutover marker on bash's real
+        //     stdout, then `cat` the tempfile. Post-cutover bytes are
+        //     authoritative — they bypass tail's libc block-buffering, which is
+        //     a no-op `stdbuf` can't fix on macOS/SIP, Alpine, etc.
         const tailCmd = hasStdbuf()
           ? `stdbuf -oL tail -n +1 -f -s 0.05 "$__APEX_OUT"`
           : `tail -n +1 -f -s 0.05 "$__APEX_OUT"`;
@@ -532,8 +393,6 @@ export class PersistentShell {
           `sleep 0.1`,
           `kill "$__APEX_TAIL" 2>/dev/null`,
           `wait "$__APEX_TAIL" 2>/dev/null`,
-          // Authoritative cutover: post-marker bytes come through bash's
-          // real stdout pipe via `cat`, bypassing any tail/libc buffering.
           `printf '%s\\n' "${cutoverMarker}"`,
           `cat "$__APEX_OUT"`,
           `cat "$__APEX_ERR" >&2`,
@@ -553,10 +412,6 @@ export class PersistentShell {
         }
       });
     } catch (e) {
-      // Synchronous throws between `acquireTurn()` and resolver installation
-      // (e.g. `child_process.spawn` rejecting bad args, `randomBytes`
-      // exhausting entropy) land here so `finally` still releases the turn
-      // and the queue can't deadlock.
       return {
         stdout: "",
         stderr: e instanceof Error ? e.message : String(e),
@@ -567,12 +422,6 @@ export class PersistentShell {
     }
   }
 
-  /**
-   * Take the next slot in the FIFO mutex chain. Returns a release function
-   * that the caller must invoke (typically in `finally`) to free the next
-   * queued caller. Promise resolution is idempotent, so double-release is a
-   * no-op.
-   */
   private async acquireTurn(): Promise<() => void> {
     const myTurn = this.writeChain;
     let release!: () => void;
@@ -583,10 +432,6 @@ export class PersistentShell {
     return release;
   }
 
-  /**
-   * Cancel the currently running command without killing the shell.
-   * Returns true if a command was running and was cancelled.
-   */
   cancelCurrentCommand(): boolean {
     const cmd = this.current;
     if (!cmd || !this.proc) return false;
@@ -600,7 +445,6 @@ export class PersistentShell {
       killDescendants(this.proc.pid, "SIGTERM");
       setTimeout(() => {
         if (this.proc?.pid) killDescendants(this.proc.pid, "SIGKILL");
-        // Fallback resolve if bash's wrapper never emits a marker.
         setTimeout(() => {
           cmd.resolve({
             stdout: extractFallbackStdout(cmd),
@@ -634,13 +478,12 @@ export class PersistentShell {
       const p = this.proc;
       const pid = p.pid;
       setTimeout(() => {
-        // Kill the entire process group (detached session) so all
-        // child processes are cleaned up, not just the shell itself.
+        // Kill the whole process group so detached children die too.
         if (pid && process.platform !== "win32") {
           try {
             process.kill(-pid, "SIGTERM");
           } catch {
-            // group may already be gone
+            // already gone
           }
         }
         try {
@@ -653,7 +496,7 @@ export class PersistentShell {
             try {
               process.kill(-pid, "SIGKILL");
             } catch {
-              // group may already be gone
+              // already gone
             }
           }
           try {
@@ -671,11 +514,10 @@ export class PersistentShell {
 }
 
 /**
- * Walk the process tree under `rootPid` and send `signal` to every
- * descendant (deepest first). Does NOT signal `rootPid` itself — that's
- * the persistent shell we want to keep alive. Used instead of
- * `pkill -P <pid>`, which only hits direct children and so leaks
- * pipeline stages / grandchildren of timed-out commands.
+ * Walk the process tree under `rootPid` and signal every descendant
+ * (deepest first). Does NOT signal `rootPid` — that's the persistent shell.
+ * Used instead of `pkill -P` which only hits direct children and leaks
+ * pipeline grandchildren.
  */
 function killDescendants(
   rootPid: number | undefined,
@@ -700,12 +542,11 @@ function killDescendants(
         }
       }
     } catch {
-      // pgrep not available; nothing we can do
+      // pgrep not available
     }
   }
 
-  // Signal leaves first so intermediate processes don't see a dead child
-  // and exit before we get to their siblings.
+  // Leaves first so intermediates don't exit before we reach their siblings.
   for (let i = toKill.length - 1; i >= 0; i--) {
     try {
       process.kill(toKill[i], signal);
