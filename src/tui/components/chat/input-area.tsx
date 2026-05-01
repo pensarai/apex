@@ -428,6 +428,7 @@ function ApprovalInputArea({
         key.name === "a" ||
         key.raw === "A"
       ) {
+        key.preventDefault?.();
         return;
       }
     }
