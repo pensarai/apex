@@ -1,7 +1,68 @@
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { randomBytes } from "crypto";
+import {
+  closeSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+  unlinkSync,
+} from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 const MAX_BUFFER = 5_000_000;
+
+// Node-owned per-PID tempfile root. Paths are substituted into the wrapper
+// (not `mktemp` inside bash) so kill paths can fs.readFileSync directly —
+// Bun's child_process pipe drops bytes written after a descendant signal.
+// See #644.
+const APEX_TMP_ROOT = join(tmpdir(), `apex-shell-${process.pid}`);
+try {
+  mkdirSync(APEX_TMP_ROOT, { recursive: true });
+} catch {
+  // Best-effort; readTempfileCapped surfaces real I/O errors at use time.
+}
+
+/**
+ * Read up to MAX_BUFFER bytes from `path`. Larger files return the trailing
+ * window prefixed with the same truncation sentinel the in-memory path uses,
+ * so callers can't tell disk-salvage from pipe-capture truncation. Returns
+ * "" on I/O error so callers can substitute their own fallback.
+ */
+export function readTempfileCapped(path: string): string {
+  try {
+    const stat = statSync(path);
+    if (stat.size === 0) return "";
+    if (stat.size <= MAX_BUFFER) {
+      return readFileSync(path, "utf-8");
+    }
+    const fd = openSync(path, "r");
+    try {
+      const buf = Buffer.alloc(MAX_BUFFER);
+      readSync(fd, buf, 0, MAX_BUFFER, stat.size - MAX_BUFFER);
+      return "(stdout truncated)...\n" + buf.toString("utf-8");
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return "";
+  }
+}
+
+function unlinkSafe(path: string): void {
+  try {
+    unlinkSync(path);
+  } catch {
+    // Already gone, race with another process, etc.
+  }
+}
+
+/** Test-only helper: location of the per-PID tempfile root. */
+export function getApexTmpRoot(): string {
+  return APEX_TMP_ROOT;
+}
 
 export interface ShellExecuteResult {
   stdout: string;
@@ -26,6 +87,17 @@ interface PendingCommand {
   // (124 timeout, 130 abort) so callers see the documented value.
   forcedExitCode: number | null;
   forcedStderrSuffix: string | null;
+  // Per-command tempfile paths. Bash `cat`s them on the happy path; kill
+  // paths read them from disk before unlink.
+  outPath: string;
+  errPath: string;
+  // Salvage timer from timeout/abort/cancel. On the pending so dispose and
+  // cancel can clear it.
+  killEscalationTimer?: ReturnType<typeof setTimeout>;
+  // Identity token for the active salvage timer — guards against a leaked
+  // timer that already dequeued before clearTimeout running its side
+  // effects (SIGKILL on stale pids, double-resolve).
+  _activeSalvageId?: object;
 }
 
 let stdbufAvailable: boolean | null = null;
@@ -139,13 +211,20 @@ export class PersistentShell {
     this.proc.on("close", () => {
       this.alive = false;
       this.proc = null;
+      // If a command was pending, fail it fast rather than letting it wait
+      // out its timeout. Prefer disk-read (whatever the user command flushed
+      // to the tempfile) over the parsed pipe buffer.
       const cmd = this.current;
       if (cmd) {
         this.current = null;
         this.pendingCancel = null;
+        const diskStdout = readTempfileCapped(cmd.outPath);
+        const diskStderr = readTempfileCapped(cmd.errPath);
+        unlinkSafe(cmd.outPath);
+        unlinkSafe(cmd.errPath);
         cmd.resolve({
-          stdout: extractFallbackStdout(cmd),
-          stderr: cmd.stderr || "",
+          stdout: diskStdout || extractFallbackStdout(cmd) || "(no output)",
+          stderr: diskStderr || cmd.stderr || "",
           exitCode: 1,
         });
       }
@@ -230,6 +309,10 @@ export class PersistentShell {
         ? (cmd.stderr || "") + cmd.forcedStderrSuffix
         : cmd.stderr || "";
 
+      // Cleanup is owned by Node now that the wrapper no longer rm's.
+      unlinkSafe(cmd.outPath);
+      unlinkSafe(cmd.errPath);
+
       const resolve = cmd.resolve;
       this.current = null;
       this.pendingCancel = null;
@@ -294,12 +377,14 @@ export class PersistentShell {
       return await new Promise<ShellExecuteResult>((resolve) => {
         let resolved = false;
         let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
-        let killEscalationTimer: ReturnType<typeof setTimeout> | undefined;
         let abortCleanup: (() => void) | undefined;
 
-        const marker = `__APEX_${randomBytes(8).toString("hex")}__`;
+        const nonceHex = randomBytes(8).toString("hex");
+        const marker = `__APEX_${nonceHex}__`;
         const exitMarkerPrefix = `${marker}_EXIT_`;
         const cutoverMarker = `${marker}_CUTOVER`;
+        const outPath = join(APEX_TMP_ROOT, `${nonceHex}.out`);
+        const errPath = join(APEX_TMP_ROOT, `${nonceHex}.err`);
 
         const pending: PendingCommand = {
           streamedStdout: "",
@@ -312,11 +397,17 @@ export class PersistentShell {
           onData,
           forcedExitCode: null,
           forcedStderrSuffix: null,
+          outPath,
+          errPath,
           resolve: (result) => {
             if (resolved) return;
             resolved = true;
             if (timeoutTimer) clearTimeout(timeoutTimer);
-            if (killEscalationTimer) clearTimeout(killEscalationTimer);
+            if (pending.killEscalationTimer)
+              clearTimeout(pending.killEscalationTimer);
+            // Invalidate so any in-flight salvage callback that already left
+            // the timer queue skips its side effects.
+            pending._activeSalvageId = undefined;
             if (abortCleanup) abortCleanup();
             resolve(result);
           },
@@ -332,20 +423,11 @@ export class PersistentShell {
             pending.forcedStderrSuffix = pending.stderr
               ? "\n(aborted)"
               : "(aborted)";
-            killDescendants(proc.pid, "SIGTERM");
-            killEscalationTimer = setTimeout(() => {
-              if (resolved) return;
-              killDescendants(proc.pid, "SIGKILL");
-              setTimeout(() => {
-                if (resolved) return;
-                pending.resolve({
-                  stdout: extractFallbackStdout(pending),
-                  stderr:
-                    (pending.stderr || "") + (pending.forcedStderrSuffix ?? ""),
-                  exitCode: 130,
-                });
-              }, 2_000);
-            }, 500);
+            pending.killEscalationTimer = scheduleSalvageKill(
+              proc.pid,
+              pending,
+              130,
+            );
           };
           abortSignal.addEventListener("abort", onAbort, { once: true });
           abortCleanup = () =>
@@ -356,19 +438,11 @@ export class PersistentShell {
           timeoutTimer = setTimeout(() => {
             if (resolved) return;
             pending.forcedExitCode = 124;
-            killDescendants(proc.pid, "SIGTERM");
-            killEscalationTimer = setTimeout(() => {
-              if (resolved) return;
-              killDescendants(proc.pid, "SIGKILL");
-              setTimeout(() => {
-                if (resolved) return;
-                pending.resolve({
-                  stdout: extractFallbackStdout(pending),
-                  stderr: pending.stderr || "",
-                  exitCode: 124,
-                });
-              }, 2_000);
-            }, 500);
+            pending.killEscalationTimer = scheduleSalvageKill(
+              proc.pid,
+              pending,
+              124,
+            );
           }, timeoutSeconds * 1_000);
         }
 
@@ -380,12 +454,19 @@ export class PersistentShell {
         //     stdout, then `cat` the tempfile. Post-cutover bytes are
         //     authoritative — they bypass tail's libc block-buffering, which is
         //     a no-op `stdbuf` can't fix on macOS/SIP, Alpine, etc.
+        //   - tempfile paths come from Node, not `mktemp`, so kill paths can
+        //     fs.readFileSync them directly. See #644.
         const tailCmd = hasStdbuf()
           ? `stdbuf -oL tail -n +1 -f -s 0.05 "$__APEX_OUT"`
           : `tail -n +1 -f -s 0.05 "$__APEX_OUT"`;
+        const shOutPath = `'${outPath.replace(/'/g, `'\\''`)}'`;
+        const shErrPath = `'${errPath.replace(/'/g, `'\\''`)}'`;
         const wrapped = [
-          `__APEX_OUT=$(mktemp 2>/dev/null || echo /tmp/.apex_out_$$)`,
-          `__APEX_ERR=$(mktemp 2>/dev/null || echo /tmp/.apex_err_$$)`,
+          `__APEX_OUT=${shOutPath}`,
+          `__APEX_ERR=${shErrPath}`,
+          // Pre-create so `tail -f` and early-timeout disk reads don't fail.
+          `: > "$__APEX_OUT"`,
+          `: > "$__APEX_ERR"`,
           `${tailCmd} 2>/dev/null &`,
           `__APEX_TAIL=$!`,
           `{ ${command}\n} </dev/null >"$__APEX_OUT" 2>"$__APEX_ERR"`,
@@ -396,7 +477,7 @@ export class PersistentShell {
           `printf '%s\\n' "${cutoverMarker}"`,
           `cat "$__APEX_OUT"`,
           `cat "$__APEX_ERR" >&2`,
-          `rm -f "$__APEX_OUT" "$__APEX_ERR"`,
+          // Node owns tempfile cleanup so kill paths can read before unlink.
           `echo "${exitMarkerPrefix}$__APEX_EC"`,
           ``,
         ].join("\n");
@@ -432,6 +513,10 @@ export class PersistentShell {
     return release;
   }
 
+  /**
+   * Cancel the currently running command without killing the shell.
+   * Returns true if a command was running and was cancelled.
+   */
   cancelCurrentCommand(): boolean {
     const cmd = this.current;
     if (!cmd || !this.proc) return false;
@@ -442,18 +527,12 @@ export class PersistentShell {
       : "(cancelled by user)";
 
     if (this.proc.pid && process.platform !== "win32") {
-      killDescendants(this.proc.pid, "SIGTERM");
-      setTimeout(() => {
-        if (this.proc?.pid) killDescendants(this.proc.pid, "SIGKILL");
-        setTimeout(() => {
-          cmd.resolve({
-            stdout: extractFallbackStdout(cmd),
-            stderr: (cmd.stderr || "") + (cmd.forcedStderrSuffix ?? ""),
-            exitCode: 130,
-          });
-        }, 2_000);
-      }, 500);
+      cmd.killEscalationTimer = scheduleSalvageKill(this.proc.pid, cmd, 130);
     } else {
+      // Windows: no descendant signalling support, but we still own
+      // tempfile cleanup.
+      unlinkSafe(cmd.outPath);
+      unlinkSafe(cmd.errPath);
       cmd.resolve({
         stdout: extractFallbackStdout(cmd),
         stderr: (cmd.stderr || "") + (cmd.forcedStderrSuffix ?? ""),
@@ -467,6 +546,16 @@ export class PersistentShell {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+
+    // Cancel any in-flight salvage-kill so it doesn't read recycled PIDs
+    // after we unlink, then sweep the in-flight tempfiles ourselves.
+    if (this.current?.killEscalationTimer) {
+      clearTimeout(this.current.killEscalationTimer);
+    }
+    if (this.current) {
+      unlinkSafe(this.current.outPath);
+      unlinkSafe(this.current.errPath);
+    }
 
     if (this.proc) {
       try {
@@ -514,18 +603,14 @@ export class PersistentShell {
 }
 
 /**
- * Walk the process tree under `rootPid` and signal every descendant
- * (deepest first). Does NOT signal `rootPid` — that's the persistent shell.
- * Used instead of `pkill -P` which only hits direct children and leaks
- * pipeline grandchildren.
+ * BFS the process tree under `rootPid`, excluding `rootPid` itself. Used
+ * instead of `pkill -P` which only hits direct children and leaks pipeline
+ * grandchildren.
  */
-function killDescendants(
-  rootPid: number | undefined,
-  signal: NodeJS.Signals,
-): void {
-  if (!rootPid || process.platform === "win32") return;
+function enumerateDescendants(rootPid: number | undefined): number[] {
+  if (!rootPid || process.platform === "win32") return [];
 
-  const toKill: number[] = [];
+  const descendants: number[] = [];
   const queue = [rootPid];
 
   while (queue.length > 0) {
@@ -536,7 +621,7 @@ function killDescendants(
         for (const line of res.stdout.split("\n")) {
           const child = parseInt(line, 10);
           if (Number.isFinite(child) && child > 0) {
-            toKill.push(child);
+            descendants.push(child);
             queue.push(child);
           }
         }
@@ -546,12 +631,68 @@ function killDescendants(
     }
   }
 
-  // Leaves first so intermediates don't exit before we reach their siblings.
-  for (let i = toKill.length - 1; i >= 0; i--) {
+  return descendants;
+}
+
+// Leaves first so an intermediate doesn't see a dead child and exit before
+// we reach its siblings. Already-dead pids are silently ignored.
+function signalPids(pids: number[], signal: NodeJS.Signals): void {
+  if (process.platform === "win32") return;
+  for (let i = pids.length - 1; i >= 0; i--) {
     try {
-      process.kill(toKill[i], signal);
+      process.kill(pids[i], signal);
     } catch {
       // already dead / permission denied
     }
   }
+}
+
+/**
+ * Shared kill choreography for timeout/abort/cancel: snapshot descendants,
+ * SIGTERM, 200ms grace for stdio flush, disk-read salvage, SIGKILL the
+ * snapshot, resolve. Disk-read because Bun's child_process pipe drops bytes
+ * written after a descendant signal (#644). PID snapshot is reused so the
+ * SIGKILL doesn't hit wrapper helpers (`cat`, `sleep`) bash spawns after
+ * SIGTERM — and by then we've already read, so it wouldn't matter anyway.
+ */
+const SALVAGE_GRACE_MS = 200;
+
+function scheduleSalvageKill(
+  rootPid: number | undefined,
+  pending: PendingCommand,
+  exitCode: number,
+): ReturnType<typeof setTimeout> {
+  // Two kill paths can fire within the grace window (timeout then cancel);
+  // clear any predecessor so its callback can't run stale side effects
+  // before the `resolved` guard catches it.
+  if (pending.killEscalationTimer) {
+    clearTimeout(pending.killEscalationTimer);
+  }
+
+  const pids = enumerateDescendants(rootPid);
+  signalPids(pids, "SIGTERM");
+  const salvageId = {};
+  pending._activeSalvageId = salvageId;
+  return setTimeout(() => {
+    // Skip if a successor timer / dispose has invalidated us.
+    if (pending._activeSalvageId !== salvageId) return;
+
+    const diskStdout = readTempfileCapped(pending.outPath);
+    const diskStderr = readTempfileCapped(pending.errPath);
+    unlinkSafe(pending.outPath);
+    unlinkSafe(pending.errPath);
+
+    // Defense-in-depth SIGKILL after we've already read. Bash's wrapper
+    // post-cmd helpers (cat, sleep 0.1) may still be running; we don't
+    // care about their output anymore.
+    signalPids(pids, "SIGKILL");
+
+    pending.resolve({
+      stdout: diskStdout || extractFallbackStdout(pending) || "(no output)",
+      stderr:
+        (diskStderr || pending.stderr || "") +
+        (pending.forcedStderrSuffix ?? ""),
+      exitCode,
+    });
+  }, SALVAGE_GRACE_MS);
 }

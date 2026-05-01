@@ -1,7 +1,17 @@
 import { spawnSync } from "child_process";
+import { existsSync, readdirSync } from "fs";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { extractFallbackStdout, PersistentShell } from "./persistentShell";
+import {
+  extractFallbackStdout,
+  getApexTmpRoot,
+  PersistentShell,
+} from "./persistentShell";
+
+function tempfileCount(): number {
+  const root = getApexTmpRoot();
+  return existsSync(root) ? readdirSync(root).length : 0;
+}
 
 const HAS_STDBUF =
   process.platform !== "win32" &&
@@ -191,6 +201,140 @@ describe("PersistentShell — long-running stability", () => {
     expect(r.exitCode).toBe(130);
     expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
   }, 10_000);
+
+  /**
+   * Issue #644 — Partial output preservation on timeout.
+   *
+   * Long fuzzers (gobuster, ffuf) routinely outrun the per-command timeout
+   * but the bytes they printed before the kill are already on disk in the
+   * per-command tempfile. The 200ms grace + disk-read salvage surfaces
+   * those bytes; before this fix, the SIGKILL escalation re-enumerated
+   * bash's children and killed `cat` mid-flush, dropping partial output
+   * to `(no output)`.
+   */
+  it("preserves partial stdout when a command is killed by timeout", async () => {
+    const shell = make();
+    const r = await shell.execute(
+      `printf 'hit-1\\n'; printf 'hit-2\\n'; sleep 30`,
+      1,
+    );
+    expect(r.exitCode).toBe(124);
+    expect(r.stdout).toContain("hit-1");
+    expect(r.stdout).toContain("hit-2");
+    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+
+    // Shell stays responsive after a salvaged timeout.
+    const after = await shell.execute("echo ok", 5);
+    expect(after.exitCode).toBe(0);
+    expect(after.stdout).toContain("ok");
+  }, 15_000);
+
+  it("preserves partial stdout when a command is aborted", async () => {
+    const shell = make();
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 200);
+    const r = await shell.execute(
+      `printf 'hit-a\\n'; printf 'hit-b\\n'; sleep 30`,
+      30,
+      undefined,
+      ac.signal,
+    );
+    expect(r.exitCode).toBe(130);
+    expect(r.stdout).toContain("hit-a");
+    expect(r.stdout).toContain("hit-b");
+    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+  }, 15_000);
+
+  /**
+   * Salvage works even when the user command ignores SIGTERM. We read
+   * the tempfile after a 200ms grace and BEFORE escalating to SIGKILL,
+   * so anything the tool had already written reaches the agent — and
+   * SIGKILL reliably ends it afterward.
+   */
+  it("salvages stdout from a SIGTERM-resistant command", async () => {
+    const shell = make();
+    const r = await shell.execute(
+      `bash -c "trap '' TERM; printf hit-trapped; sleep 30"`,
+      1,
+    );
+    expect(r.exitCode).toBe(124);
+    expect(r.stdout).toContain("hit-trapped");
+    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+__/);
+  }, 10_000);
+
+  /**
+   * Salvage works for output that exceeds the kernel pipe buffer (~64 KB).
+   * The pre-fix in-pipe approach would block `cat` once the pipe filled and
+   * SIGKILL would truncate. Disk reads are unaffected by pipe state.
+   */
+  it("salvages large partial output (>64 KB) on timeout", async () => {
+    const shell = make();
+    const r = await shell.execute(
+      `for i in $(seq 1 4000); do printf 'line-%05d\\n' $i; done; sleep 30`,
+      1,
+    );
+    expect(r.exitCode).toBe(124);
+    expect(r.stdout).toContain("line-00001");
+    expect(r.stdout).toContain("line-04000");
+    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+__/);
+  }, 15_000);
+
+  it("returns (no output) when an empty-output command times out", async () => {
+    const shell = make();
+    const r = await shell.execute("sleep 30", 1);
+    expect(r.exitCode).toBe(124);
+    expect(r.stdout).toBe("(no output)");
+  }, 10_000);
+
+  /**
+   * Issue #644 — Tempfile lifecycle. Node owns the per-command tempfiles
+   * (the wrapper no longer `rm`s them). Every code path — happy completion,
+   * timeout, abort, cancel, shell-died, dispose — must unlink the pair.
+   */
+  it("cleans up tempfiles after happy-path completion", async () => {
+    const shell = make();
+    const before = tempfileCount();
+    await shell.execute("echo done", 5);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(tempfileCount()).toBe(before);
+  });
+
+  it("cleans up tempfiles after a timeout", async () => {
+    const shell = make();
+    const before = tempfileCount();
+    const r = await shell.execute("printf 'partial\\n'; sleep 30", 1);
+    expect(r.exitCode).toBe(124);
+    expect(r.stdout).toContain("partial");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(tempfileCount()).toBe(before);
+  }, 10_000);
+
+  it("cleans up tempfiles after an abort", async () => {
+    const shell = make();
+    const before = tempfileCount();
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 100);
+    const r = await shell.execute(
+      "printf 'partial\\n'; sleep 30",
+      30,
+      undefined,
+      ac.signal,
+    );
+    expect(r.exitCode).toBe(130);
+    expect(r.stdout).toContain("partial");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(tempfileCount()).toBe(before);
+  }, 10_000);
+
+  it("does not leak tempfiles across many sequential commands", async () => {
+    const shell = make();
+    const before = tempfileCount();
+    for (let i = 0; i < 20; i++) {
+      await shell.execute(`echo iter-${i}`, 5);
+    }
+    await new Promise((r) => setTimeout(r, 50));
+    expect(tempfileCount()).toBe(before);
+  }, 30_000);
 
   // Live-streaming UX requires effective `stdbuf -oL` on tail. macOS/SIP
   // strips DYLD_INSERT_LIBRARIES from /usr/bin/tail, and BusyBox tail ignores
