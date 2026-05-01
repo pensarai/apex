@@ -1,7 +1,24 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { createTransport } from "nodemailer";
+import { readFile } from "fs/promises";
+import { basename } from "path";
+import { lookup } from "mime-types";
 import type { ToolContext } from "../types";
+
+const attachmentSchema = z.object({
+  path: z
+    .string()
+    .describe(
+      "Absolute path to the file on disk to attach. The file is read and included inline.",
+    ),
+  filename: z
+    .string()
+    .optional()
+    .describe(
+      "Override the attachment filename (defaults to the basename of the path)",
+    ),
+});
 
 const sendEmailInputSchema = z.object({
   to: z
@@ -32,6 +49,12 @@ const sendEmailInputSchema = z.object({
     .record(z.string(), z.string())
     .optional()
     .describe("Custom email headers"),
+  attachments: z
+    .array(attachmentSchema)
+    .optional()
+    .describe(
+      "File attachments. Each entry specifies a file path on disk to read and attach.",
+    ),
   toolCallDescription: z
     .string()
     .describe(
@@ -55,12 +78,13 @@ export interface SendEmailResult {
  */
 export function sendEmail(ctx: ToolContext) {
   return tool({
-    description: `Send an email via SMTP.
+    description: `Send an email via SMTP with optional file attachments.
 
 Sends an outbound email using the configured SMTP server. Supports plain
-text and HTML bodies, CC/BCC, custom headers, and Reply-To. Use this for
-testing email injection, phishing simulations, or any scenario that
-requires sending emails from the agent.`,
+text and HTML bodies, CC/BCC, custom headers, Reply-To, and file
+attachments. Attachments are read from disk by absolute path and included
+inline. Use this for sending reports, exploit PoCs, session logs, or any
+scenario that requires sending emails from the agent.`,
     inputSchema: sendEmailInputSchema,
     execute: async ({
       to,
@@ -72,6 +96,7 @@ requires sending emails from the agent.`,
       bcc,
       replyTo,
       headers,
+      attachments,
     }): Promise<SendEmailResult> => {
       const smtp = ctx.session.config?.smtpConfig;
       if (!smtp) {
@@ -92,6 +117,15 @@ requires sending emails from the agent.`,
       }
 
       try {
+        const mailAttachments = await Promise.all(
+          (attachments ?? []).map(async (att) => {
+            const content = await readFile(att.path);
+            const filename = att.filename ?? basename(att.path);
+            const contentType = lookup(filename) || "application/octet-stream";
+            return { filename, content, contentType };
+          }),
+        );
+
         const transport = createTransport({
           host: smtp.host,
           port: smtp.port,
@@ -113,6 +147,7 @@ requires sending emails from the agent.`,
           text: body,
           html: html ?? undefined,
           headers: headers ?? undefined,
+          attachments: mailAttachments.length > 0 ? mailAttachments : undefined,
         });
 
         return {

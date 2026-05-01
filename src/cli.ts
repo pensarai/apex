@@ -145,6 +145,7 @@ Usage:
 
 operator options (-p):
   -p, --prompt <text|@file>  (required) Prompt for the operator agent
+  -s, --system <text|@file>  Override the default system prompt
   --target <url>             Target URL / domain / IP
   --model <model>            AI model (default: auto-selected from configured provider)
 
@@ -387,6 +388,8 @@ async function runOperator() {
   }
 
   const prompt = resolveFlagValue(promptRaw);
+  const systemRaw = getArg("-s") ?? getArg("--system");
+  const systemPrompt = systemRaw ? resolveFlagValue(systemRaw) : undefined;
   const target = getArg("--target");
   const pensarConfig = await appConfig.get();
   const model = await resolveCliModel();
@@ -435,6 +438,7 @@ ${sep}\n`);
     for (;;) {
       await runOffensiveSecurityAgent({
         prompt: currentPrompt,
+        ...(systemPrompt ? { system: systemPrompt } : {}),
         model,
         target,
         activeTools: [...ALL_TOOL_NAMES, ...SKILL_TOOL_NAMES] as string[],
