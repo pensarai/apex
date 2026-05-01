@@ -4,12 +4,13 @@
  * Single implementation for approval UI used in both operator and chat views.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
 import { getToolSummary } from "./tool-registry";
 import type { PendingApproval } from "../../../core/operator";
 import { getPasteText } from "../../utils/paste";
+import { useDialog } from "../../context/dialog";
 
 interface InlineApprovalPromptProps {
   approval: PendingApproval;
@@ -66,7 +67,14 @@ export function ApprovalInputArea({
   lastDeclineNote,
 }: ApprovalInputAreaProps) {
   const { colors } = useTheme();
+  const { setExternalDialogOpen } = useDialog();
   const [focusedElement, setFocusedElement] = useState(0);
+
+  // Signal to dashboard that redirect input is focused so it skips Y/A shortcuts
+  useEffect(() => {
+    setExternalDialogOpen(focusedElement === 2);
+    return () => setExternalDialogOpen(false);
+  }, [focusedElement, setExternalDialogOpen]);
 
   useKeyboard((key) => {
     if (key.name === "up") {
@@ -91,6 +99,19 @@ export function ApprovalInputArea({
         onRedirect(redirectInput);
       }
       return;
+    }
+
+    // When redirect input is focused, Y/A keys go to the input (no preventDefault).
+    // Dashboard handler is blocked via externalDialogOpen state.
+    if (focusedElement === 2) {
+      if (
+        key.name === "y" ||
+        key.raw === "Y" ||
+        key.name === "a" ||
+        key.raw === "A"
+      ) {
+        return;
+      }
     }
   });
 

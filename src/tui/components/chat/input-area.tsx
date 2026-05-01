@@ -17,6 +17,7 @@ import { type OperatorMode, OPERATOR_MODES } from "../../../core/operator";
 import { useAgent } from "../../context/agent";
 import { useDimensions } from "../../context/dimensions";
 import { getPasteText } from "../../utils/paste";
+import { useDialog } from "../../context/dialog";
 
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   anthropic: "Anthropic",
@@ -390,7 +391,14 @@ function ApprovalInputArea({
   lastDeclineNote,
 }: ApprovalInputAreaProps) {
   const { colors } = useTheme();
+  const { setExternalDialogOpen } = useDialog();
   const [focusedElement, setFocusedElement] = useState(0); // 0=Yes, 1=Auto, 2=Input
+
+  // Signal to dashboard that redirect input is focused so it skips Y/A shortcuts
+  useEffect(() => {
+    setExternalDialogOpen(focusedElement === 2);
+    return () => setExternalDialogOpen(false);
+  }, [focusedElement, setExternalDialogOpen]);
 
   useKeyboard((key) => {
     // Navigation
@@ -417,6 +425,19 @@ function ApprovalInputArea({
         onRedirect(redirectInput);
       }
       return;
+    }
+
+    // When redirect input is focused, Y/A keys go to the input (no preventDefault).
+    // Dashboard handler is blocked via externalDialogOpen state.
+    if (focusedElement === 2) {
+      if (
+        key.name === "y" ||
+        key.raw === "Y" ||
+        key.name === "a" ||
+        key.raw === "A"
+      ) {
+        return;
+      }
     }
   });
 
