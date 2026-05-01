@@ -107,6 +107,55 @@ function checkIfRateLimitError(error: unknown): boolean {
 }
 
 const MAX_RATE_LIMIT_RETRIES = 20;
+const MAX_IDLE_RESUME_RETRIES = 3;
+const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+class StreamIdleTimeoutError extends Error {
+  constructor(idleMs: number) {
+    super(`Stream idle for ${Math.round(idleMs / 1000)}s — no chunks received`);
+    this.name = "StreamIdleTimeoutError";
+  }
+}
+
+/**
+ * Wraps an async iterable with a per-chunk idle timeout. If no chunk arrives
+ * within `idleMs`, throws a {@link StreamIdleTimeoutError} so the caller can
+ * resume the conversation from accumulated messages.
+ */
+async function* withIdleTimeout<T>(
+  stream: AsyncIterable<T>,
+  idleMs: number,
+): AsyncGenerator<T> {
+  const iterator = stream[Symbol.asyncIterator]();
+  try {
+    while (true) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const result = await Promise.race([
+        iterator.next(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new StreamIdleTimeoutError(idleMs)),
+            idleMs,
+          );
+          if (typeof timer === "object" && "unref" in timer) timer.unref();
+        }),
+      ]);
+      clearTimeout(timer);
+
+      if (result.done) return;
+      yield result.value;
+    }
+  } finally {
+    // Best-effort cleanup — don't block on a stuck iterator. The underlying
+    // stream may be wedged (that's why we're here), so a hanging return()
+    // would deadlock the consumer.
+    iterator.return?.()?.catch?.(() => {});
+  }
+}
+
+function isStreamIdleTimeoutError(error: unknown): boolean {
+  return error instanceof StreamIdleTimeoutError;
+}
 
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
@@ -116,6 +165,7 @@ function wrapStreamWithErrorHandler(
   model: LanguageModel,
   silent?: boolean,
   rateLimitRetryCount: number = 0,
+  idleResumeCount: number = 0,
 ): StreamTextResult<ToolSet, never> {
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
@@ -127,7 +177,10 @@ function wrapStreamWithErrorHandler(
         if (!wrappedStream) {
           wrappedStream = (async function* () {
             try {
-              for await (const chunk of originalStream.fullStream) {
+              for await (const chunk of withIdleTimeout(
+                originalStream.fullStream,
+                STREAM_IDLE_TIMEOUT_MS,
+              )) {
                 // Only stream-level errors are fatal; tool-level errors
                 // flow through so the UI renders them as failed tool results.
                 if (chunk.type === "error") {
@@ -143,6 +196,41 @@ function wrapStreamWithErrorHandler(
               // Check context length FIRST — these should never be retried
               // as-is; the prompt must be reduced via summarization.
               const isCtxError = checkIfContextLengthError(error);
+
+              // Handle stream idle timeout — resume from accumulated messages
+              if (
+                !isCtxError &&
+                isStreamIdleTimeoutError(error) &&
+                idleResumeCount < MAX_IDLE_RESUME_RETRIES &&
+                messagesContainer.current.length > 0
+              ) {
+                const nextIdleCount = idleResumeCount + 1;
+                if (!silent) {
+                  console.warn(
+                    `Stream stalled (attempt ${nextIdleCount}/${MAX_IDLE_RESUME_RETRIES}), resuming with ${messagesContainer.current.length} messages: ${errorMessage}`,
+                  );
+                }
+
+                const retriedStream = streamResponse({
+                  ...opts,
+                  messages: messagesContainer.current,
+                });
+
+                const wrappedRetriedStream = wrapStreamWithErrorHandler(
+                  retriedStream,
+                  messagesContainer,
+                  opts,
+                  model,
+                  silent,
+                  rateLimitRetryCount,
+                  nextIdleCount,
+                );
+
+                for await (const chunk of wrappedRetriedStream.fullStream) {
+                  yield chunk;
+                }
+                return;
+              }
 
               // Handle rate limit errors with exponential backoff retry
               if (
@@ -176,6 +264,7 @@ function wrapStreamWithErrorHandler(
                   model,
                   silent,
                   nextRetryCount,
+                  idleResumeCount,
                 );
 
                 for await (const chunk of wrappedRetriedStream.fullStream) {
@@ -229,6 +318,7 @@ function wrapStreamWithErrorHandler(
                       model,
                       silent,
                       rateLimitRetryCount,
+                      idleResumeCount,
                     );
                     for await (const chunk of wrappedRetry.fullStream) {
                       yield chunk;
@@ -728,3 +818,10 @@ export class ContextLengthError extends Error {
     this.name = "ContextLengthError";
   }
 }
+
+export {
+  StreamIdleTimeoutError,
+  withIdleTimeout,
+  STREAM_IDLE_TIMEOUT_MS,
+  MAX_IDLE_RESUME_RETRIES,
+};
