@@ -24,6 +24,7 @@ import {
 } from "./utils";
 import { withCachedSystemPrompt, withCachedLastMessage } from "./caching";
 import { applyToolResultBudget, snipOldSteps } from "./contextManagement";
+import { logEvent, newCallId } from "./instrumentation";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -166,6 +167,7 @@ function wrapStreamWithErrorHandler(
   silent?: boolean,
   rateLimitRetryCount: number = 0,
   idleResumeCount: number = 0,
+  logicalCallId?: string,
 ): StreamTextResult<ToolSet, never> {
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
@@ -205,6 +207,13 @@ function wrapStreamWithErrorHandler(
                 messagesContainer.current.length > 0
               ) {
                 const nextIdleCount = idleResumeCount + 1;
+                logEvent("apex.retry.stream_idle_resume", {
+                  logicalCallId,
+                  attempt: nextIdleCount,
+                  maxRetries: MAX_IDLE_RESUME_RETRIES,
+                  messageCount: messagesContainer.current.length,
+                  errorMessage: errorMessage.slice(0, 200),
+                });
                 if (!silent) {
                   console.warn(
                     `Stream stalled (attempt ${nextIdleCount}/${MAX_IDLE_RESUME_RETRIES}), resuming with ${messagesContainer.current.length} messages: ${errorMessage}`,
@@ -224,6 +233,7 @@ function wrapStreamWithErrorHandler(
                   silent,
                   rateLimitRetryCount,
                   nextIdleCount,
+                  logicalCallId,
                 );
 
                 for await (const chunk of wrappedRetriedStream.fullStream) {
@@ -240,6 +250,18 @@ function wrapStreamWithErrorHandler(
               ) {
                 const nextRetryCount = rateLimitRetryCount + 1;
                 const delayMs = Math.min(1000 * nextRetryCount, 30000);
+
+                // Always emit the structured log so server stalls are
+                // diagnosable even when `silent: true` (CLI/TUI mode).
+                logEvent("apex.retry.rate_limit", {
+                  logicalCallId,
+                  attempt: nextRetryCount,
+                  maxRetries: MAX_RATE_LIMIT_RETRIES,
+                  delayMs,
+                  errorName:
+                    error instanceof Error ? error.name : typeof error,
+                  errorMessage: errorMessage.slice(0, 200),
+                });
 
                 if (!silent) {
                   console.warn(
@@ -265,6 +287,7 @@ function wrapStreamWithErrorHandler(
                   silent,
                   nextRetryCount,
                   idleResumeCount,
+                  logicalCallId,
                 );
 
                 for await (const chunk of wrappedRetriedStream.fullStream) {
@@ -301,6 +324,11 @@ function wrapStreamWithErrorHandler(
 
                 // snipOldSteps returns the input array unchanged when nothing was modified
                 if (compacted !== currentMessages) {
+                  logEvent("apex.retry.context_length_compact", {
+                    logicalCallId,
+                    messageCountBefore: currentMessages.length,
+                    messageCountAfter: compacted.length,
+                  });
                   if (!silent) {
                     console.warn(
                       `Context length error — trying lightweight compaction on ${currentMessages.length} messages`,
@@ -319,6 +347,7 @@ function wrapStreamWithErrorHandler(
                       silent,
                       rateLimitRetryCount,
                       idleResumeCount,
+                      logicalCallId,
                     );
                     for await (const chunk of wrappedRetry.fullStream) {
                       yield chunk;
@@ -335,6 +364,10 @@ function wrapStreamWithErrorHandler(
 
                 // Layer 3: Full summarization (existing behavior)
                 const messagesForSummary = messagesContainer.current;
+                logEvent("apex.retry.context_length_summarize", {
+                  logicalCallId,
+                  messageCount: messagesForSummary.length,
+                });
                 if (!silent) {
                   console.warn(
                     `Context length error — summarizing ${messagesForSummary.length} messages`,
@@ -350,6 +383,13 @@ function wrapStreamWithErrorHandler(
                   yield chunk;
                 }
               } else {
+                logEvent("apex.stream.unrecoverable_error", {
+                  logicalCallId,
+                  rateLimitRetryCount,
+                  errorName:
+                    error instanceof Error ? error.name : typeof error,
+                  errorMessage: errorMessage.slice(0, 200),
+                });
                 if (!silent) {
                   console.error(
                     "Non-recoverable stream error, re-throwing:",
@@ -511,6 +551,18 @@ export function streamResponse(
 
   let rateLimitRetryCount = 0;
 
+  // Correlation ID for this logical streamResponse call. Every retry within
+  // the wrapStreamWithErrorHandler chain reuses this ID; per-fetch IDs
+  // (minted in instrumentation.ts) join in as `callId` for byte-level traces.
+  const logicalCallId = newCallId();
+  logEvent("apex.streamtext.start", {
+    logicalCallId,
+    model,
+    messageCount: effectiveMessages?.length ?? (prompt ? 1 : 0),
+    hasTools: !!tools,
+    silent: !!silent,
+  });
+
   try {
     // Create the appropriate provider instance
     const response = streamText({
@@ -534,14 +586,27 @@ export function streamResponse(
       onError: async ({ error }: { error: unknown }) => {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
-        if (
+        const matchesRetryable =
           errorMessage.toLowerCase().includes("too many tokens") ||
-          errorMessage.toLowerCase().includes("overloaded")
-        ) {
+          errorMessage.toLowerCase().includes("overloaded");
+
+        logEvent("apex.streamtext.on_error", {
+          logicalCallId,
+          rateLimitRetryCount,
+          matchesRetryable,
+          errorName: error instanceof Error ? error.name : typeof error,
+          errorMessage: errorMessage.slice(0, 200),
+        });
+
+        if (matchesRetryable) {
           rateLimitRetryCount++;
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1000 * rateLimitRetryCount),
-          );
+          const delayMs = 1000 * rateLimitRetryCount;
+          logEvent("apex.streamtext.on_error_backoff", {
+            logicalCallId,
+            attempt: rateLimitRetryCount,
+            delayMs,
+          });
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
           if (rateLimitRetryCount < 20) {
             return;
           }
@@ -697,12 +762,22 @@ export function streamResponse(
       opts,
       providerModel,
       silent,
+      0,
+      0,
+      logicalCallId,
     );
   } catch (error) {
     // Check if the error is related to context length
     const isContextLengthError = checkIfContextLengthError(error);
     const outerErrorMessage =
       error instanceof Error ? error.message : String(error);
+
+    logEvent("apex.streamtext.outer_error", {
+      logicalCallId,
+      isContextLengthError,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: outerErrorMessage.slice(0, 200),
+    });
 
     if (isContextLengthError) {
       if (!silent) {

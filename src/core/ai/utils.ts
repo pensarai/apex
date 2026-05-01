@@ -8,6 +8,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
+import { wrapFetchWithBedrockLogs } from "./instrumentation";
 import { getPensarGatewayUrl } from "../api/constants";
 import { ensureValidToken } from "../auth";
 import { config } from "../config";
@@ -164,11 +165,13 @@ export function getProviderModel(
     }
 
     case "bedrock": {
-      const bedrockFetch = (input: RequestInfo | URL, init?: RequestInit) =>
-        globalThis.fetch(input, {
-          ...init,
-          signal: buildStreamingFetchSignal(init?.signal),
-        });
+      // Wrap with lifecycle logs + compose the streaming fetch timeout. The
+      // wrapper observes the composed signal so `signal_abort` log lines fire
+      // for the timeout (caller never sees it directly). Lifecycle events
+      // tell us whether bytes are flowing — the only stall guard on this path.
+      const bedrockFetch = wrapFetchWithBedrockLogs(globalThis.fetch, {
+        composeSignal: buildStreamingFetchSignal,
+      });
       const bedrock = createAmazonBedrock({
         apiKey: bedrockApiKey,
         region: bedrockRegion,
