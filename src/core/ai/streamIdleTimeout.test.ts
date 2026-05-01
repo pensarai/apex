@@ -1,8 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import {
-  StreamIdleTimeoutError,
-  withIdleTimeout,
-} from "./ai";
+import { StreamIdleTimeoutError, withIdleTimeout } from "./ai";
 
 describe("withIdleTimeout", () => {
   it("passes through chunks when stream is healthy", async () => {
@@ -37,6 +34,7 @@ describe("withIdleTimeout", () => {
   });
 
   it("throws StreamIdleTimeoutError when stream never yields", async () => {
+    // eslint-disable-next-line require-yield -- intentional: tests timeout when source never produces
     async function* neverYields() {
       await new Promise(() => {});
     }
@@ -64,7 +62,9 @@ describe("withIdleTimeout", () => {
   });
 
   it("calls iterator.return on timeout to clean up the source", async () => {
-    const returnSpy = vi.fn().mockResolvedValue({ done: true, value: undefined });
+    const returnSpy = vi
+      .fn()
+      .mockResolvedValue({ done: true, value: undefined });
 
     const fakeIterable: AsyncIterable<string> = {
       [Symbol.asyncIterator]() {
