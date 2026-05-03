@@ -303,9 +303,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                       minute: "2-digit",
                       hour12: true,
                     });
-                    const mode = session.config?.mode || "auto";
-                    const modeBadge =
-                      mode === "operator" ? "[operator]" : "[auto]";
                     const statusBadge = session.hasReport ? "✓" : "…";
                     const findingsText =
                       session.findingsCount > 0
@@ -344,15 +341,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                             }
                           >
                             {statusBadge}
-                          </text>
-                          <text
-                            fg={
-                              mode === "operator"
-                                ? colors.primary
-                                : colors.textMuted
-                            }
-                          >
-                            {modeBadge}
                           </text>
                           {findingsText ? (
                             <text fg={colors.textMuted}>{findingsText}</text>
