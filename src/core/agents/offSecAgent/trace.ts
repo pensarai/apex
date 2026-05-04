@@ -253,6 +253,32 @@ export type TraceRecord =
   | TaskRecord;
 
 // ---------------------------------------------------------------------------
+// Hash Chain Envelope — APTS-AR-012 tamper-evident integrity
+// ---------------------------------------------------------------------------
+
+/**
+ * Every line written to trace.jsonl is wrapped in this envelope.
+ * The `integrityHash` field links each entry to its predecessor,
+ * forming a cryptographic hash chain that detects any modification,
+ * insertion, deletion, or reordering of log entries.
+ *
+ * Chain algorithm: SHA-256(JSON(record) + previousHash)
+ * First entry uses a well-known genesis hash (64 zero bytes hex).
+ */
+export interface HashChainEnvelope {
+  /** Monotonically increasing sequence number starting at 0 */
+  seq: number;
+  /** SHA-256 hex of (serialized record content + previous entry's integrityHash) */
+  integrityHash: string;
+  /** The trace record payload */
+  record: TraceRecord;
+}
+
+/** Well-known genesis hash used as the "previous hash" for seq 0. */
+export const GENESIS_HASH =
+  "0000000000000000000000000000000000000000000000000000000000000000";
+
+// ---------------------------------------------------------------------------
 // Extraction helpers
 // ---------------------------------------------------------------------------
 
@@ -355,6 +381,10 @@ export class StepTraceWriter {
   private readonly agentStartTime: number;
   private summarized = false;
   private previousMessageCount = 0;
+
+  /** Hash chain state — APTS-AR-012 */
+  private chainSeq = 0;
+  private previousHash: string = GENESIS_HASH;
 
   constructor(opts: StepTraceWriterOpts) {
     this.tracePath = opts.tracePath;
@@ -575,10 +605,22 @@ export class StepTraceWriter {
     this.appendRecord(record);
   }
 
-  /** Sync append — ~1-3KB per line, sub-ms. Sync ensures crash safety. */
+  /** Sync append with hash chain envelope (APTS-AR-012). */
   private appendRecord(record: TraceRecord): void {
     try {
-      appendFileSync(this.tracePath, JSON.stringify(record) + "\n");
+      const serializedRecord = JSON.stringify(record);
+      const integrityHash = computeChainHash(
+        serializedRecord,
+        this.previousHash,
+      );
+      const envelope: HashChainEnvelope = {
+        seq: this.chainSeq,
+        integrityHash,
+        record,
+      };
+      appendFileSync(this.tracePath, JSON.stringify(envelope) + "\n");
+      this.previousHash = integrityHash;
+      this.chainSeq++;
     } catch {
       // Trace is non-critical observability — never crash the agent for it.
     }
@@ -591,4 +633,21 @@ export class StepTraceWriter {
       // Event emission failures are non-critical — never crash the agent.
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Hash chain computation — APTS-AR-012
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the integrity hash for a trace entry.
+ * Algorithm: SHA-256(serializedRecord + previousHash)
+ */
+export function computeChainHash(
+  serializedRecord: string,
+  previousHash: string,
+): string {
+  return createHash("sha256")
+    .update(serializedRecord + previousHash)
+    .digest("hex");
 }

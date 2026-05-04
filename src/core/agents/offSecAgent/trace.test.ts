@@ -5,6 +5,7 @@ import {
   type StateCheckpoint,
   type InitRecord,
   type TraceRecord,
+  type HashChainEnvelope,
 } from "./trace";
 import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
@@ -24,7 +25,14 @@ function readTraceRecords(tracePath: string): TraceRecord[] {
   return readFileSync(tracePath, "utf-8")
     .trim()
     .split("\n")
-    .map((line) => JSON.parse(line) as TraceRecord);
+    .map((line) => {
+      const parsed = JSON.parse(line);
+      // Support both envelope format (APTS-AR-012) and bare records
+      if ("record" in parsed && "seq" in parsed) {
+        return (parsed as HashChainEnvelope).record;
+      }
+      return parsed as TraceRecord;
+    });
 }
 
 function readStepRecords(tracePath: string): StepRecord[] {

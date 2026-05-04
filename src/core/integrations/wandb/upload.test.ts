@@ -4,6 +4,7 @@ import { createWandbUploader } from "./upload";
 import {
   StepTraceWriter,
   type TraceRecord,
+  type HashChainEnvelope,
 } from "../../agents/offSecAgent/trace";
 import { AgentEventBus } from "../../eventBus";
 import { mkdtempSync, readFileSync, rmSync } from "fs";
@@ -11,6 +12,15 @@ import { join } from "path";
 import { tmpdir } from "os";
 import type { SessionInfo } from "../../session";
 import type { ModelMessage } from "ai";
+
+/** Unwrap a trace line from its hash-chain envelope. */
+function unwrapTraceLine(line: string): TraceRecord {
+  const parsed = JSON.parse(line);
+  if ("record" in parsed && "seq" in parsed) {
+    return (parsed as HashChainEnvelope).record;
+  }
+  return parsed as TraceRecord;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -248,8 +258,8 @@ describe("EventBus trace-record pipeline", () => {
 
     const lines = readFileSync(tracePath, "utf-8").trim().split("\n");
     expect(lines).toHaveLength(2);
-    expect(JSON.parse(lines[0]).type).toBe("init");
-    expect(JSON.parse(lines[1]).type).toBe("step");
+    expect(unwrapTraceLine(lines[0]).type).toBe("init");
+    expect(unwrapTraceLine(lines[1]).type).toBe("step");
   });
 
   it("EventBus listener can be removed without affecting file writes", () => {
@@ -371,12 +381,16 @@ describe("InitRecord hashing contract", () => {
     });
 
     const hash1 = (
-      JSON.parse(readFileSync(join(tmpDir, "a.jsonl"), "utf-8")) as {
+      unwrapTraceLine(
+        readFileSync(join(tmpDir, "a.jsonl"), "utf-8").trim(),
+      ) as {
         systemPromptHash: string;
       }
     ).systemPromptHash;
     const hash2 = (
-      JSON.parse(readFileSync(join(tmpDir, "b.jsonl"), "utf-8")) as {
+      unwrapTraceLine(
+        readFileSync(join(tmpDir, "b.jsonl"), "utf-8").trim(),
+      ) as {
         systemPromptHash: string;
       }
     ).systemPromptHash;
@@ -406,7 +420,9 @@ describe("InitRecord hashing contract", () => {
         sessionId: "ses_1",
       });
 
-      const record = JSON.parse(readFileSync(tracePath, "utf-8")) as {
+      const record = unwrapTraceLine(
+        readFileSync(tracePath, "utf-8").trim(),
+      ) as {
         systemPromptHash: string;
       };
       expect(record.systemPromptHash).toMatch(/^[0-9a-f]{12}$/);
