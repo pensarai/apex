@@ -1,4 +1,4 @@
-import type { CommandIntent, ToolClassification } from "./types";
+import type { ToolClassification } from "./types";
 
 /**
  * Binary, rules-only tool classifier.
@@ -318,8 +318,4 @@ export function getClassificationReason(
   ctx: ToolClassificationContext,
 ): string {
   return classifyToolCall(ctx).reasoning;
-}
-
-export function isSafe(intent: CommandIntent): boolean {
-  return intent === "safe";
 }

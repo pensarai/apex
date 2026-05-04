@@ -35,7 +35,6 @@ export {
 export {
   classifyToolCall,
   getClassificationReason,
-  isSafe,
   type ToolClassificationContext,
 } from "./toolClassifier";
 
