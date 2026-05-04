@@ -335,8 +335,8 @@ describe("toolClassifier", () => {
         intent: "passive",
       },
       // `cat` is no longer in PASSIVE_COMMANDS — arbitrary file reads can
-       // leak secrets (~/.ssh/*, .env, /proc/self/environ), so they fall
-       // through to baseTier (T4) and require operator approval.
+      // leak secrets (~/.ssh/*, .env, /proc/self/environ), so they fall
+      // through to baseTier (T4) and require operator approval.
       {
         label: "cat /tmp/out.txt",
         toolName: "execute_command",
