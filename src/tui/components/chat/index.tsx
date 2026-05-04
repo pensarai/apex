@@ -100,6 +100,7 @@ export function ChatApp({
         operatorSettings: {
           initialMode: "manual",
           requireApproval: true,
+          classifierMode: "rules",
           enableSuggestions: true,
         },
       },

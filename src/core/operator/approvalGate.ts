@@ -5,7 +5,14 @@ import type {
   ApprovalDecision,
   ActionHistoryEntry,
   OperatorEvent,
+  PermissionTier,
+  ToolClassification,
 } from "./types";
+import {
+  classifyToolCallDetailed,
+  type CommandClassifierOptions,
+} from "./toolClassifier";
+import { checkPermission } from "./permissionPolicy";
 
 /**
  * Approval gate configuration.
@@ -17,6 +24,9 @@ import type {
  */
 export interface ApprovalGateConfig {
   requireApproval: boolean;
+  autoApproveUpToTier?: PermissionTier;
+  allowApprovalBypass?: boolean;
+  classifier?: CommandClassifierOptions;
   decisionTimeoutMs?: number;
 }
 
@@ -70,34 +80,50 @@ export class ApprovalGate extends EventEmitter {
   /**
    * Check whether a tool call should proceed.
    *
-   * If approval is required the call is held until the operator acts.
-   * Otherwise it is auto-approved immediately.
+   * Each call is classified once, then the configured policy decides whether
+   * it can auto-run or needs operator approval.
    */
   async check(
     toolName: string,
     toolCallId: string,
     args: Record<string, unknown>,
   ): Promise<ApprovalDecision> {
-    if (!this.config.requireApproval) {
-      const entry = this.recordAction(toolName, toolCallId, "auto-approved");
+    const classification = await classifyToolCallDetailed(
+      { toolName, args },
+      this.config.classifier,
+    );
+    const permission = checkPermission(this.config, classification);
+
+    if (permission.autoApproved) {
+      const entry = this.recordAction(
+        toolName,
+        toolCallId,
+        "auto-approved",
+        classification,
+      );
+      entry.resultSummary = permission.reason;
       this.emitEvent({ type: "action-completed", entry });
       return "auto-approved";
     }
 
-    return this.requestApproval(toolName, toolCallId, args);
+    return this.requestApproval(toolName, toolCallId, args, classification);
   }
 
   private requestApproval(
     toolName: string,
     toolCallId: string,
     args: Record<string, unknown>,
+    classification: ToolClassification,
   ): Promise<ApprovalDecision> {
     const approval: PendingApproval = {
       id: `apr_${Date.now()}_${randomBytes(4).toString("hex")}`,
       toolName,
       toolCallId,
       args,
-      tier: 1,
+      tier: classification.tier,
+      intent: classification.intent,
+      reasoning: classification.reasoning,
+      classification,
       timestamp: Date.now(),
     };
 
@@ -119,73 +145,62 @@ export class ApprovalGate extends EventEmitter {
     });
   }
 
+  approve(approvalId: string): void {
+    if (!this.pendingApprovals.has(approvalId)) {
+      throw new Error(`No pending approval with id: ${approvalId}`);
+    }
+    const settled = this.settleApproval(approvalId, "approved");
+    settled!.deferred.resolve("approved");
+  }
+
+  deny(approvalId: string): void {
+    const settled = this.settleApproval(approvalId, "denied");
+    if (!settled) return;
+    settled.deferred.reject(new ApprovalDeniedError("Action denied by user"));
+  }
+
   private timeoutApproval(approvalId: string, timeoutMs: number): void {
-    const deferred = this.pendingApprovals.get(approvalId);
-    if (!deferred) return;
-
-    this.pendingApprovals.delete(approvalId);
-    const entry = this.recordAction(
-      deferred.approval.toolName,
-      deferred.approval.toolCallId,
+    const settled = this.settleApproval(
+      approvalId,
       "denied",
+      `decision_timeout:${timeoutMs}ms`,
     );
-    entry.resultSummary = `decision_timeout:${timeoutMs}ms`;
-
-    this.emitEvent({
-      type: "approval-resolved",
-      id: approvalId,
-      decision: "denied",
-    });
-    this.emitEvent({ type: "action-completed", entry });
-    deferred.reject(
+    if (!settled) return;
+    settled.deferred.reject(
       new ApprovalTimeoutError(
-        `Operator decision timeout after ${timeoutMs}ms for ${deferred.approval.toolName} — default-safe deny`,
+        `Operator decision timeout after ${timeoutMs}ms for ${settled.deferred.approval.toolName} — default-safe deny`,
       ),
     );
   }
 
-  approve(approvalId: string): void {
+  // Shared cleanup for approve/deny/timeout: removes the deferred from the
+  // pending map, records history, and emits resolved+completed events.
+  // Callers handle the final resolve/reject so the rejection error is local
+  // to each path. Returns null when the id is unknown (idempotent denies).
+  private settleApproval(
+    approvalId: string,
+    decision: ApprovalDecision,
+    resultSummary?: string,
+  ): { entry: ActionHistoryEntry; deferred: DeferredApproval } | null {
     const deferred = this.pendingApprovals.get(approvalId);
-    if (!deferred) {
-      throw new Error(`No pending approval with id: ${approvalId}`);
-    }
+    if (!deferred) return null;
 
+    // clearTimeout on an already-fired handle is a documented no-op,
+    // so this is safe from the timeout path too.
     if (deferred.timeoutHandle) clearTimeout(deferred.timeoutHandle);
     this.pendingApprovals.delete(approvalId);
+
     const entry = this.recordAction(
       deferred.approval.toolName,
       deferred.approval.toolCallId,
-      "approved",
+      decision,
+      deferred.approval.classification,
     );
+    if (resultSummary) entry.resultSummary = resultSummary;
 
-    this.emitEvent({
-      type: "approval-resolved",
-      id: approvalId,
-      decision: "approved",
-    });
+    this.emitEvent({ type: "approval-resolved", id: approvalId, decision });
     this.emitEvent({ type: "action-completed", entry });
-    deferred.resolve("approved");
-  }
-
-  deny(approvalId: string): void {
-    const deferred = this.pendingApprovals.get(approvalId);
-    if (!deferred) return;
-
-    if (deferred.timeoutHandle) clearTimeout(deferred.timeoutHandle);
-    this.pendingApprovals.delete(approvalId);
-    const entry = this.recordAction(
-      deferred.approval.toolName,
-      deferred.approval.toolCallId,
-      "denied",
-    );
-
-    this.emitEvent({
-      type: "approval-resolved",
-      id: approvalId,
-      decision: "denied",
-    });
-    this.emitEvent({ type: "action-completed", entry });
-    deferred.reject(new ApprovalDeniedError("Action denied by user"));
+    return { entry, deferred };
   }
 
   batchApprove(approvalIds: string[]): void {
@@ -197,7 +212,7 @@ export class ApprovalGate extends EventEmitter {
   }
 
   denyAll(): void {
-    for (const id of this.pendingApprovals.keys()) {
+    for (const id of [...this.pendingApprovals.keys()]) {
       this.deny(id);
     }
   }
@@ -206,14 +221,17 @@ export class ApprovalGate extends EventEmitter {
     toolName: string,
     toolCallId: string,
     decision: ApprovalDecision,
+    classification: ToolClassification,
   ): ActionHistoryEntry {
     const entry: ActionHistoryEntry = {
       id: `act_${Date.now()}_${randomBytes(4).toString("hex")}`,
       toolName,
       toolCallId,
-      tier: 1,
+      tier: classification.tier,
+      intent: classification.intent,
       decision,
       timestamp: Date.now(),
+      classification,
     };
 
     this.actionHistory.push(entry);

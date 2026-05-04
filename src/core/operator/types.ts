@@ -6,6 +6,31 @@ import { z } from "zod";
  */
 export type PermissionTier = 1 | 2 | 3 | 4 | 5;
 
+export type CommandIntent =
+  | "passive"
+  | "active"
+  | "probing"
+  | "intrusive"
+  | "destructive"
+  | "exploit";
+
+export type ClassifierMode = "rules" | "llm";
+
+export type ClassificationSource = "rules" | "llm" | "fallback";
+
+export interface ToolClassification {
+  tier: PermissionTier;
+  intent: CommandIntent;
+  reasoning: string;
+  source: ClassificationSource;
+  classifierMode: ClassifierMode;
+  classifierVersion: string;
+  model?: string;
+  confidence?: number;
+  cacheHit?: boolean;
+  latencyMs?: number;
+}
+
 export interface TierDefinition {
   tier: PermissionTier;
   name: string;
@@ -198,7 +223,9 @@ export interface PendingApproval {
   toolCallId: string;
   args: Record<string, unknown>;
   tier: PermissionTier;
-  reasoning?: string;
+  intent: CommandIntent;
+  reasoning: string;
+  classification: ToolClassification;
   timestamp: number;
 }
 
@@ -210,8 +237,10 @@ export interface ActionHistoryEntry {
   toolName: string;
   toolCallId: string;
   tier: PermissionTier;
+  intent: CommandIntent;
   decision: ApprovalDecision;
   timestamp: number;
+  classification: ToolClassification;
   duration?: number;
   resultSummary?: string;
 }
@@ -229,6 +258,8 @@ export interface OperatorSessionState {
   mode: OperatorMode;
   currentStage: OperatorStage;
   requireApproval: boolean;
+  autoApproveUpToTier?: PermissionTier;
+  classifierMode: ClassifierMode;
   pendingApprovals: PendingApproval[];
   actionHistory: ActionHistoryEntry[];
   stageProgress: Record<OperatorStage, StageProgress>;
@@ -246,6 +277,8 @@ export function createInitialOperatorState(
     mode: initialMode,
     currentStage: "setup",
     requireApproval,
+    autoApproveUpToTier: initialMode === "auto" ? 3 : undefined,
+    classifierMode: "rules",
     pendingApprovals: [],
     actionHistory: [],
     stageProgress,
@@ -256,6 +289,17 @@ export function createInitialOperatorState(
 export const OperatorSettingsObject = z.object({
   initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
   requireApproval: z.boolean().default(true),
+  autoApproveUpToTier: z
+    .union([
+      z.literal(1),
+      z.literal(2),
+      z.literal(3),
+      z.literal(4),
+      z.literal(5),
+    ])
+    .optional(),
+  classifierMode: z.enum(["rules", "llm"]).default("rules"),
+  classifierModel: z.string().optional(),
 });
 
 export type OperatorSettings = z.infer<typeof OperatorSettingsObject>;

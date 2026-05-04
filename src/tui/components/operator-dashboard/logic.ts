@@ -200,6 +200,7 @@ export function buildOperatorSystemPrompt(
   agentMode?: "default" | "plan",
   opts?: {
     requireApproval?: boolean;
+    autoApproveUpToTier?: import("../../../core/operator").PermissionTier;
     sandboxMode?: boolean;
     skillsCatalog?: string;
     activeSkillInstructions?: Array<{ name: string; instructions: string }>;
@@ -213,6 +214,8 @@ export function buildOperatorSystemPrompt(
 
   const approvalEnabled =
     opts?.requireApproval ?? operatorState.requireApproval;
+  const autoApproveUpToTier =
+    opts?.autoApproveUpToTier ?? operatorState.autoApproveUpToTier;
 
   let modeSection = "";
 
@@ -241,7 +244,13 @@ You are operating in interactive operator mode. The human operator will guide yo
 
 Target: ${target || "unknown"}
 Stage: ${operatorState.currentStage}
-Command approval: ${approvalEnabled ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}${modeSection}`;
+Command approval: ${
+    autoApproveUpToTier !== undefined
+      ? `threshold — T1-T${autoApproveUpToTier} actions execute automatically; higher-risk actions require approval`
+      : approvalEnabled
+        ? "enabled — the operator will approve each tool call"
+        : "disabled — tool calls execute automatically"
+  }${modeSection}`;
 
   if (skillsCatalog) {
     prompt += `\n\n# Skills\n\n${skillsCatalog}`;

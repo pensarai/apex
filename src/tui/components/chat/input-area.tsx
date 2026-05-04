@@ -12,6 +12,7 @@ import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
 import { PromptInput, type PromptInputRef } from "../shared/prompt-input";
 import { InputProvider, useInput } from "../../context/input";
+import { TierBadge } from "../shared/tier-badge";
 import type { PendingApproval } from "../../../core/operator";
 import { type OperatorMode, OPERATOR_MODES } from "../../../core/operator";
 import { useAgent } from "../../context/agent";
@@ -450,6 +451,13 @@ function ApprovalInputArea({
       paddingTop={1}
       paddingBottom={1}
     >
+      <box flexDirection="row" gap={1} marginBottom={1}>
+        <TierBadge approval={approval} />
+        {approval.reasoning && (
+          <text fg={colors.textMuted} content={approval.reasoning} />
+        )}
+      </box>
+
       {/* Yes option */}
       <box flexDirection="row" gap={1}>
         <text
@@ -470,7 +478,7 @@ function ApprovalInputArea({
         />
         <text
           fg={focusedElement === 1 ? colors.text : colors.textMuted}
-          content="[A] Auto-approve all commands from now"
+          content="[A] Approve this + auto T1-T3 from now"
         />
       </box>
 
@@ -511,7 +519,7 @@ function ApprovalInputArea({
       <box flexDirection="row" gap={2} marginTop={1}>
         <text
           fg={colors.textMuted}
-          content="Y approve | A auto | Enter select"
+          content="Y approve | A auto T1-T3 | Enter select"
         />
       </box>
     </box>

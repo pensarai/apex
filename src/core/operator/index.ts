@@ -8,6 +8,10 @@
 // Types
 export type {
   PermissionTier,
+  CommandIntent,
+  ClassifierMode,
+  ClassificationSource,
+  ToolClassification,
   TierDefinition,
   OperatorMode,
   OperatorStage,
@@ -34,9 +38,18 @@ export {
 
 // Tool Classifier
 export {
+  COMMAND_CLASSIFIER_VERSION,
+  DEFAULT_CLASSIFIER_TIMEOUT_MS,
+  DEFAULT_CLASSIFIER_CACHE_TTL_MS,
+  DEFAULT_CLASSIFIER_CACHE_MAX_ENTRIES,
+  DEFAULT_MIN_CLASSIFIER_CONFIDENCE,
   classifyToolCall,
+  classifyToolCallDetailed,
+  classifyToolCallWithRules,
+  clearClassificationCache,
   getClassificationReason,
   type ToolClassificationContext,
+  type CommandClassifierOptions,
 } from "./toolClassifier";
 
 // Permission Policy

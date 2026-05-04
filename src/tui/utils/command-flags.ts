@@ -389,8 +389,14 @@ export function buildOperatorSessionConfig(
     sessionType: "web-app",
     mode: "operator",
     operatorSettings: {
-      initialMode: flags.mode || "manual",
+      initialMode:
+        flags.mode || (flags.requireApproval === false ? "auto" : "manual"),
       requireApproval: flags.requireApproval ?? true,
+      autoApproveUpToTier:
+        flags.mode === "auto" || flags.requireApproval === false
+          ? 3
+          : undefined,
+      classifierMode: "rules",
       enableSuggestions: true,
     },
     toolsetState: createToolsetState("web-pentest"),

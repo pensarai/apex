@@ -1,12 +1,13 @@
 /**
- * Permission policy — simplified to a single boolean toggle.
- *
- * When `requireApproval` is true every tool call needs manual approval.
- * When false, all calls are auto-approved.
+ * Permission policy for operator tool approvals.
  */
+
+import type { PermissionTier, ToolClassification } from "./types";
 
 export interface PermissionPolicyConfig {
   requireApproval: boolean;
+  autoApproveUpToTier?: PermissionTier;
+  allowApprovalBypass?: boolean;
 }
 
 export interface PermissionCheckResult {
@@ -17,33 +18,55 @@ export interface PermissionCheckResult {
 
 export function checkPermission(
   config: PermissionPolicyConfig,
+  classification?: ToolClassification,
 ): PermissionCheckResult {
-  if (config.requireApproval) {
+  if (config.allowApprovalBypass || !config.requireApproval) {
     return {
       allowed: true,
-      autoApproved: false,
-      reason: "Command approval is required",
+      autoApproved: true,
+      reason: "Command approval is explicitly bypassed",
     };
   }
+
+  if (
+    classification &&
+    config.autoApproveUpToTier !== undefined &&
+    classification.tier <= config.autoApproveUpToTier
+  ) {
+    return {
+      allowed: true,
+      autoApproved: true,
+      reason: `Auto-approved T${classification.tier} ${classification.intent} action`,
+    };
+  }
+
   return {
     allowed: true,
-    autoApproved: true,
-    reason: "Command approval is disabled",
+    autoApproved: false,
+    reason: "Command approval is required",
   };
 }
 
-export function shouldAutoApprove(config: PermissionPolicyConfig): boolean {
-  return !config.requireApproval;
+export function shouldAutoApprove(
+  config: PermissionPolicyConfig,
+  classification?: ToolClassification,
+): boolean {
+  return checkPermission(config, classification).autoApproved;
 }
 
 export function getApprovalRequirement(
   config: PermissionPolicyConfig,
-): "auto" | "manual" {
-  return config.requireApproval ? "manual" : "auto";
+): "auto" | "threshold" | "manual" {
+  if (config.allowApprovalBypass || !config.requireApproval) return "auto";
+  return config.autoApproveUpToTier !== undefined ? "threshold" : "manual";
 }
 
 export function getPolicySummary(config: PermissionPolicyConfig): string {
-  return config.requireApproval
-    ? "Command approval enabled — every tool call requires approval"
-    : "Command approval disabled — tool calls execute automatically";
+  if (config.allowApprovalBypass || !config.requireApproval) {
+    return "Command approval disabled — tool calls execute automatically";
+  }
+  if (config.autoApproveUpToTier !== undefined) {
+    return `Command approval threshold — auto-approve T1-T${config.autoApproveUpToTier}, prompt above`;
+  }
+  return "Command approval enabled — every tool call requires approval";
 }

@@ -444,6 +444,7 @@ function AppContent({
       nonce: Date.now(),
       initialConfig: {
         requireApproval: false,
+        operatorMode: "auto",
         target,
         sandbox: isBlackbox,
       },

@@ -118,6 +118,7 @@ export default function HITLWizard(props: HITLWizardProps) {
       type: "operator",
       initialConfig: {
         requireApproval: state.requireApproval,
+        operatorMode: state.requireApproval ? "manual" : "auto",
         target: state.target.trim() || undefined,
         sandbox: state.sandbox || undefined,
       },

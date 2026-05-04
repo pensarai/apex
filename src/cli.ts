@@ -409,7 +409,9 @@ ${sep}\n`);
       agentCwd: process.cwd(),
       operatorSettings: {
         initialMode: "auto",
-        requireApproval: false,
+        requireApproval: true,
+        autoApproveUpToTier: 3,
+        classifierMode: "rules",
         enableSuggestions: false,
       },
     },

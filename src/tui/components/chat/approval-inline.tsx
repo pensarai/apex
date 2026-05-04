@@ -7,6 +7,7 @@
 
 import { useTheme } from "../../theme";
 import { getToolSummary } from "../shared/tool-registry";
+import { TierBadge } from "../shared/tier-badge";
 import type { PendingApproval } from "../../../core/operator";
 
 interface InlineApprovalPromptProps {
@@ -37,6 +38,7 @@ export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
         {/* Approval line */}
         <box flexDirection="row" gap={1}>
           <text fg={colors.warning} content="?" />
+          <TierBadge approval={approval} />
           <text fg={colors.info} content={summary} />
         </box>
 

@@ -170,6 +170,7 @@ export const commands: CommandConfig[] = [
           nonce: Date.now(),
           initialConfig: {
             requireApproval: false,
+            operatorMode: "auto",
             target: flags.target,
             sandbox: true,
           },
@@ -256,6 +257,8 @@ export const commands: CommandConfig[] = [
         nonce: Date.now(),
         initialConfig: {
           requireApproval: flags.requireApproval ?? true,
+          operatorMode:
+            flags.mode ?? (flags.requireApproval === false ? "auto" : "manual"),
           target: flags.target,
           sandbox: flags.sandbox,
           taskDriven: flags.taskDriven,

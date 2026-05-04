@@ -126,6 +126,7 @@ export default function InitWizard() {
         nonce: Date.now(),
         initialConfig: {
           requireApproval: false,
+          operatorMode: "auto",
           target: state.target,
         },
         initialSkill: { slug: "pentest", args: skillArgs },

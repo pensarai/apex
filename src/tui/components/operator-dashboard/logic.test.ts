@@ -495,6 +495,15 @@ describe("buildOperatorSystemPrompt", () => {
     expect(prompt).toContain("Command approval: disabled");
   });
 
+  it("shows threshold approval copy when autoApproveUpToTier is set", () => {
+    const prompt = buildOperatorSystemPrompt(target, {
+      ...state,
+      autoApproveUpToTier: 3,
+    } as OperatorSessionState);
+    expect(prompt).toContain("Command approval: threshold");
+    expect(prompt).toContain("T1-T3 actions execute automatically");
+  });
+
   it("falls back to 'unknown' when no target", () => {
     const prompt = buildOperatorSystemPrompt(undefined, state);
     expect(prompt).toContain("Target: unknown");

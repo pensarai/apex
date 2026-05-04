@@ -83,6 +83,17 @@ export type OffensiveHeadersConfig = z.infer<
 const OperatorSettingsObject = z.object({
   initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
   requireApproval: z.boolean().default(true),
+  autoApproveUpToTier: z
+    .union([
+      z.literal(1),
+      z.literal(2),
+      z.literal(3),
+      z.literal(4),
+      z.literal(5),
+    ])
+    .optional(),
+  classifierMode: z.enum(["rules", "llm"]).default("rules"),
+  classifierModel: z.string().optional(),
   enableSuggestions: z.boolean().default(true),
 });
 
@@ -869,6 +880,7 @@ export async function updateOperatorSettings(
       session.config.operatorSettings = {
         initialMode: "manual",
         requireApproval: true,
+        classifierMode: "rules",
         enableSuggestions: true,
       };
     }
@@ -880,6 +892,17 @@ export async function updateOperatorSettings(
     if (settings.requireApproval !== undefined) {
       session.config.operatorSettings.requireApproval =
         settings.requireApproval;
+    }
+    if (settings.autoApproveUpToTier !== undefined) {
+      session.config.operatorSettings.autoApproveUpToTier =
+        settings.autoApproveUpToTier;
+    }
+    if (settings.classifierMode !== undefined) {
+      session.config.operatorSettings.classifierMode = settings.classifierMode;
+    }
+    if (settings.classifierModel !== undefined) {
+      session.config.operatorSettings.classifierModel =
+        settings.classifierModel;
     }
     if (settings.enableSuggestions !== undefined) {
       session.config.operatorSettings.enableSuggestions =

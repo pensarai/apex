@@ -63,6 +63,7 @@ import {
   ApprovalGate,
   createInitialOperatorState,
   OPERATOR_MODE_CYCLE,
+  type CommandClassifierOptions,
   type OperatorSessionState,
 } from "../../../core/operator";
 import {
@@ -112,6 +113,13 @@ function markInFlightToolsErrored(
       ? { ...m, status: "error" as const, result }
       : m,
   );
+}
+
+function getApprovalConfigForMode(mode: OperatorMode) {
+  return {
+    requireApproval: true,
+    autoApproveUpToTier: mode === "auto" ? (3 as const) : undefined,
+  };
 }
 
 /**
@@ -276,7 +284,7 @@ export default function OperatorDashboard({
   // Approval gate — created once and updated when config changes
   const approvalGateRef = useRef<ApprovalGate>(
     new ApprovalGate({
-      requireApproval: (initialConfig?.operatorMode ?? "manual") === "manual",
+      ...getApprovalConfigForMode(initialConfig?.operatorMode ?? "manual"),
     }),
   );
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
@@ -294,7 +302,28 @@ export default function OperatorDashboard({
     initialConfig?.operatorMode ?? "manual",
   );
   const agentMode: AgentMode = operatorMode === "plan" ? "plan" : "default";
-  const requireApproval = operatorMode === "manual";
+  const approvalConfig = getApprovalConfigForMode(operatorMode);
+  const requireApproval = approvalConfig.requireApproval;
+  const classifierMode =
+    session?.config?.operatorSettings?.classifierMode ?? "rules";
+  const classifierModel =
+    session?.config?.operatorSettings?.classifierModel ??
+    "pensar:anthropic.claude-haiku-4-5-20251001-v1:0";
+
+  useEffect(() => {
+    const classifier: CommandClassifierOptions = {
+      mode: classifierMode,
+      classifierModel,
+      authConfig: buildAuthConfig(config.data),
+      timeoutMs: 1_000,
+      p99BudgetMs: 1_000,
+      cacheScope: session?.id ?? session?.rootPath ?? "operator",
+    };
+    approvalGateRef.current.updateConfig({
+      ...getApprovalConfigForMode(operatorMode),
+      classifier,
+    });
+  }, [classifierMode, classifierModel, config.data, operatorMode]);
   // Plan mode review state
   const [approvedPlanContent, setApprovedPlanContent] = useState<string | null>(
     null,
@@ -370,14 +399,16 @@ export default function OperatorDashboard({
               setOperatorState((prev) => ({
                 ...prev,
                 mode: restoredMode,
-                requireApproval: restoredMode === "manual",
+                requireApproval: true,
+                autoApproveUpToTier:
+                  getApprovalConfigForMode(restoredMode).autoApproveUpToTier,
                 currentStage:
                   (savedState.currentStage as OperatorSessionState["currentStage"]) ||
                   prev.currentStage,
               }));
-              approvalGateRef.current.updateConfig({
-                requireApproval: restoredMode === "manual",
-              });
+              approvalGateRef.current.updateConfig(
+                getApprovalConfigForMode(restoredMode),
+              );
 
               if (
                 Array.isArray(savedState.messages) &&
@@ -432,23 +463,25 @@ export default function OperatorDashboard({
             const settingsMode =
               (settings.initialMode as OperatorMode) || "manual";
             setOperatorMode(settingsMode);
-            const requireApproval = settingsMode === "manual";
-            const initialState = createInitialOperatorState(
-              settingsMode,
-              requireApproval,
-            );
+            const initialState = createInitialOperatorState(settingsMode, true);
+            initialState.autoApproveUpToTier =
+              getApprovalConfigForMode(settingsMode).autoApproveUpToTier;
+            initialState.classifierMode = settings.classifierMode ?? "rules";
             setOperatorState(initialState);
-            approvalGateRef.current.updateConfig({ requireApproval });
+            approvalGateRef.current.updateConfig(
+              getApprovalConfigForMode(settingsMode),
+            );
           }
         } else {
           // New session — just set up operator config; the agent creates the
           // session on the first runAgent call.
           const newMode = initialConfig?.operatorMode ?? "manual";
           setOperatorMode(newMode);
-          const requireApproval = newMode === "manual";
-          const state = createInitialOperatorState(newMode, requireApproval);
+          const state = createInitialOperatorState(newMode, true);
           setOperatorState(state);
-          approvalGateRef.current.updateConfig({ requireApproval });
+          approvalGateRef.current.updateConfig(
+            getApprovalConfigForMode(newMode),
+          );
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load session");
@@ -733,6 +766,21 @@ export default function OperatorDashboard({
   // Approval handlers
   // ---------------------------------------------------------------------------
 
+  // In-memory mode switch: updates the gate, operator state, and mode setter
+  // in lockstep so the three views can't drift. Persistence is opt-in via
+  // transitionToMode below.
+  const applyOperatorMode = useCallback((next: OperatorMode) => {
+    const cfg = getApprovalConfigForMode(next);
+    approvalGateRef.current.updateConfig(cfg);
+    setOperatorState((s) => ({
+      ...s,
+      mode: next,
+      requireApproval: cfg.requireApproval,
+      autoApproveUpToTier: cfg.autoApproveUpToTier,
+    }));
+    setOperatorMode(next);
+  }, []);
+
   const handleApprove = useCallback(() => {
     const pending = approvalGateRef.current.getPendingApprovals();
     if (pending.length > 0) {
@@ -741,21 +789,17 @@ export default function OperatorDashboard({
   }, []);
 
   const handleAutoApprove = useCallback(() => {
-    // Switch to approvals-off mode
-    setOperatorMode("auto");
-    setOperatorState((prev) => ({
-      ...prev,
-      mode: "auto",
-      requireApproval: false,
-    }));
-    approvalGateRef.current.updateConfig({ requireApproval: false });
+    // Switch to threshold auto mode: low/medium risk can run, T4/T5 still prompt.
+    applyOperatorMode("auto");
 
-    // Approve all currently pending
+    // Approve the current action, then only pending actions covered by the new
+    // threshold. Higher-risk pending approvals stay visible.
     const pending = approvalGateRef.current.getPendingApprovals();
-    for (const p of pending) {
+    for (const [index, p] of pending.entries()) {
+      if (index > 0 && p.tier > 3) continue;
       approvalGateRef.current.approve(p.id);
     }
-  }, []);
+  }, [applyOperatorMode]);
 
   // ---------------------------------------------------------------------------
   // Run agent
@@ -1205,6 +1249,7 @@ export default function OperatorDashboard({
           agentMode,
           {
             requireApproval,
+            autoApproveUpToTier: approvalConfig.autoApproveUpToTier,
             sandboxMode: !!initialConfig?.sandbox,
             skillsCatalog,
             planFilePath: sessionRef.current
@@ -1237,6 +1282,9 @@ export default function OperatorDashboard({
             operatorSettings: {
               initialMode: operatorMode,
               requireApproval,
+              autoApproveUpToTier: approvalConfig.autoApproveUpToTier,
+              classifierMode,
+              classifierModel,
               enableSuggestions: true,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
@@ -1552,9 +1600,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           return;
         case "run-skill": {
           if (action.autopilot) {
-            setOperatorMode("auto");
-            approvalGateRef.current.updateConfig({ requireApproval: false });
-            setOperatorState((prev) => ({ ...prev, requireApproval: false }));
+            applyOperatorMode("auto");
           }
           // Load the skill's full instructions and send them to the agent
           // so it can act on the skill directly without an extra tool call.
@@ -1865,26 +1911,26 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     resumeWithQuestionResult({ answers: [], skipped: true });
   }, [resumeWithQuestionResult]);
 
-  // Complete a mode transition (shared by cycleMode and plan approval)
-  const transitionToMode = useCallback((next: OperatorMode) => {
-    approvalGateRef.current.updateConfig({
-      requireApproval: next === "manual",
-    });
-    setOperatorState((s) => ({
-      ...s,
-      mode: next,
-      requireApproval: next === "manual",
-    }));
-    setOperatorMode(next);
+  // Complete a mode transition (shared by cycleMode and plan approval).
+  // Like applyOperatorMode but also persists so resumed sessions remember.
+  const transitionToMode = useCallback(
+    (next: OperatorMode) => {
+      applyOperatorMode(next);
 
-    // Persist mode so resumed sessions start in the correct mode
-    const sid = sessionRef.current?.id;
-    if (sid) {
-      sessions
-        .updateOperatorSettings(sid, { initialMode: next })
-        .catch((e) => console.error("[operator] Failed to persist mode:", e));
-    }
-  }, []);
+      const sid = sessionRef.current?.id;
+      if (sid) {
+        const cfg = getApprovalConfigForMode(next);
+        sessions
+          .updateOperatorSettings(sid, {
+            initialMode: next,
+            requireApproval: cfg.requireApproval,
+            autoApproveUpToTier: cfg.autoApproveUpToTier,
+          })
+          .catch((e) => console.error("[operator] Failed to persist mode:", e));
+      }
+    },
+    [applyOperatorMode],
+  );
 
   // Cycle through operator modes: approvals-on → approvals-off → plan
   // Reads from refs to avoid stale closures — safe for rapid keypresses.
