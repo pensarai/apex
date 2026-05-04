@@ -471,12 +471,15 @@ const PASSIVE_COMMANDS = [
 const ACTIVE_COMMANDS = [
   /^curl\s+(-I|--head)(\s|$)/i,
   /^openssl\s+s_client(\s|$)/i,
-  /^nmap\s+.*(-sV|-sC|--version-all)/i,
+  // `-sC` is intentionally excluded — it is an alias for `--script=default`
+  // which runs NSE scripts against the target and must be gated with the
+  // rest of `--script`. Keeping only version-detection flags here.
+  /^nmap\s+.*(-sV|--version-all)/i,
 ];
 
 const INTRUSIVE_COMMANDS = [
   /\b(sqlmap|hydra|nikto|dirb|gobuster|ffuf|wfuzz|dirsearch)\b/i,
-  /\bnmap\b.*(-p-|--script|--min-rate|-A|-O)/i,
+  /\bnmap\b.*(-p-|-sC|--script|--min-rate|-A|-O)/i,
 ];
 
 const DESTRUCTIVE_COMMAND_PATTERNS = [
@@ -650,13 +653,27 @@ async function classifyWithLlm(
     const finalTier = (rulesPrevailed ? rules.tier : llmTier) as PermissionTier;
     const finalIntent = rulesPrevailed ? rules.intent : parsed.intent;
 
+    // Reasoning must describe the *final* (tier, intent) we actually return.
+    // Otherwise an operator sees a contradictory label + explanation (e.g.
+    // intent="intrusive" paired with reasoning that describes "destructive").
+    // Three cases to keep them aligned:
+    //   1. LLM downgrade was guarded -> rules reasoning + guardrail note.
+    //   2. Final intent matches LLM's intent -> LLM reasoning is accurate.
+    //   3. Tiers equal but intents differ -> we kept rules.intent, so we
+    //      must also keep rules reasoning to describe it.
+    let finalReasoning: string;
+    if (rulesPrevailed && finalTier > llmTier) {
+      finalReasoning = `${rules.reasoning}; LLM suggested lower risk but rules guardrail prevailed`;
+    } else if (finalIntent === parsed.intent) {
+      finalReasoning = parsed.reasoning;
+    } else {
+      finalReasoning = rules.reasoning;
+    }
+
     return {
       tier: finalTier,
       intent: finalIntent,
-      reasoning:
-        rulesPrevailed && finalTier > llmTier
-          ? `${rules.reasoning}; LLM suggested lower risk but rules guardrail prevailed`
-          : parsed.reasoning,
+      reasoning: finalReasoning,
       source: "llm",
       classifierMode: "llm",
       classifierVersion: COMMAND_CLASSIFIER_VERSION,

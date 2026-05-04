@@ -112,6 +112,12 @@ const CORPUS: Case[] = [
     expect: { tier: 4, intent: "intrusive", decision: "pending" },
   },
   {
+    label: "nmap -sC (NSE default)",
+    toolName: "execute_command",
+    args: { command: "nmap -sC example.com" },
+    expect: { tier: 4, intent: "intrusive", decision: "pending" },
+  },
+  {
     label: "http_request DELETE",
     toolName: "http_request",
     args: { method: "DELETE", url: "https://example.com/api/users/1" },

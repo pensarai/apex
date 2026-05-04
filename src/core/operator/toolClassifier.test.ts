@@ -246,6 +246,91 @@ describe("toolClassifier", () => {
     });
   });
 
+  // Regression for Bugbot finding on #706: `nmap -sC` is an alias for
+  // `--script=default` and must gate with --script, not auto-approve like
+  // `-sV` version detection.
+  it("classifies nmap -sC as intrusive, consistent with --script", () => {
+    const scDefault = classifyToolCallWithRules({
+      toolName: "execute_command",
+      args: { command: "nmap -sC example.com" },
+    });
+    const scriptDefault = classifyToolCallWithRules({
+      toolName: "execute_command",
+      args: { command: "nmap --script=default example.com" },
+    });
+
+    expect(scDefault).toMatchObject({ tier: 4, intent: "intrusive" });
+    expect(scriptDefault).toMatchObject({ tier: 4, intent: "intrusive" });
+    // They must produce identical tier + intent, regardless of reasoning text.
+    expect({
+      tier: scDefault.tier,
+      intent: scDefault.intent,
+    }).toEqual({
+      tier: scriptDefault.tier,
+      intent: scriptDefault.intent,
+    });
+  });
+
+  // Regression for Bugbot finding on #706: when rules tier equals LLM tier
+  // but the intents differ, we keep rules.intent — so we must also use rules
+  // reasoning, not the LLM's (which describes a different intent).
+  it("keeps reasoning aligned with final intent when LLM tier equals rules tier but intents differ", async () => {
+    mockedGenerateObjectResponse.mockResolvedValue({
+      // `gobuster` is rules T4 intrusive. LLM returns same tier with a
+      // different intent label and reasoning.
+      tier: 4,
+      intent: "destructive",
+      confidence: 0.99,
+      reasoning: "Looks like a write-heavy operation",
+    });
+
+    const result = await classifyToolCallDetailed(
+      {
+        toolName: "execute_command",
+        args: {
+          command: "gobuster dir -u https://example.com -w words.txt",
+        },
+      },
+      {
+        mode: "llm",
+        classifierModel: "gpt-4.1-mini",
+      },
+    );
+
+    expect(result.tier).toBe(4);
+    // Rules intent wins when rulesPrevailed is true.
+    expect(result.intent).toBe("intrusive");
+    // Reasoning must describe the kept intent, not the dropped LLM intent.
+    expect(result.reasoning).not.toContain("write-heavy operation");
+    expect(result.reasoning.toLowerCase()).toContain("intrusive");
+  });
+
+  it("uses LLM reasoning when final intent matches the LLM's intent at equal tier", async () => {
+    mockedGenerateObjectResponse.mockResolvedValue({
+      tier: 4,
+      intent: "intrusive",
+      confidence: 0.99,
+      reasoning: "Heavy fuzzing workload against wordlist",
+    });
+
+    const result = await classifyToolCallDetailed(
+      {
+        toolName: "execute_command",
+        args: {
+          command: "gobuster dir -u https://example.com -w words.txt",
+        },
+      },
+      {
+        mode: "llm",
+        classifierModel: "gpt-4.1-mini",
+      },
+    );
+
+    expect(result.tier).toBe(4);
+    expect(result.intent).toBe("intrusive");
+    expect(result.reasoning).toBe("Heavy fuzzing workload against wordlist");
+  });
+
   it("bounds LLM latency by the configured p99 budget and falls back to rules", async () => {
     mockedGenerateObjectResponse.mockImplementation(
       ({ abortSignal }: { abortSignal?: AbortSignal }) =>
