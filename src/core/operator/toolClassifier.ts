@@ -14,12 +14,18 @@ export const DEFAULT_CLASSIFIER_CACHE_TTL_MS = 10 * 60 * 1000;
 export const DEFAULT_CLASSIFIER_CACHE_MAX_ENTRIES = 1_000;
 export const DEFAULT_MIN_CLASSIFIER_CONFIDENCE = 0.65;
 
+// Intent → minimum tier floor used to clamp LLM output upward in the merge.
+// "destructive" intentionally sits at 4 because the rules classifier produces
+// (T4, destructive) for HTTP PUT/PATCH/DELETE; setting the floor to 5 caused
+// LLM agreement at T4 to be force-escalated past the rules guardrail. Higher
+// tiers (e.g. (T5, destructive) for DROP TABLE from the rules path) are still
+// respected because the merge takes the max with rules.tier.
 const intentTier: Record<CommandIntent, PermissionTier> = {
   passive: 1,
   active: 2,
   probing: 3,
   intrusive: 4,
-  destructive: 5,
+  destructive: 4,
   exploit: 5,
 };
 
@@ -448,6 +454,11 @@ function classifyFuzzingTool(
   );
 }
 
+// `cat` is intentionally NOT in this list. Path-prefix blocklists (e.g.
+// /etc/passwd) miss cases like ~/.ssh/id_rsa, /proc/self/environ, .env,
+// and arbitrary credential paths. Letting `cat` fall through to the
+// execute_command baseTier (T4) requires the operator to approve each
+// file read instead of auto-approving on a regex.
 const PASSIVE_COMMANDS = [
   /^dig(\s|$)/i,
   /^whois(\s|$)/i,
@@ -455,7 +466,6 @@ const PASSIVE_COMMANDS = [
   /^nslookup(\s|$)/i,
   /^pwd$/i,
   /^ls(\s+-[a-zA-Z]+)*(\s+[./~\w-]+)?$/i,
-  /^cat\s+([./~\w-]+)$/i,
 ];
 
 const ACTIVE_COMMANDS = [

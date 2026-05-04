@@ -55,6 +55,46 @@ describe("toolClassifier", () => {
     expect(["intrusive", "destructive", "exploit"]).toContain(result.intent);
   });
 
+  it("does not auto-classify `cat` of sensitive paths as passive", () => {
+    for (const command of [
+      "cat ~/.ssh/id_rsa",
+      "cat /proc/self/environ",
+      "cat .env",
+      "cat /root/.bash_history",
+    ]) {
+      const result = classifyToolCallWithRules({
+        toolName: "execute_command",
+        args: { command },
+      });
+      expect(result.tier).toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  it("does not escalate T4/destructive HTTP DELETE when LLM agrees", async () => {
+    mockedGenerateObjectResponse.mockResolvedValue({
+      tier: 4,
+      intent: "destructive",
+      confidence: 0.9,
+      reasoning: "DELETE is state-changing",
+    });
+
+    const result = await classifyToolCallDetailed(
+      {
+        toolName: "http_request",
+        args: { method: "DELETE", url: "https://example.com/users/1" },
+      },
+      {
+        mode: "llm",
+        classifierModel: "gpt-4.1-mini",
+      },
+    );
+
+    expect(result).toMatchObject({
+      tier: 4,
+      intent: "destructive",
+    });
+  });
+
   it("keeps deterministic high-risk classifications from being downgraded by LLM mode", async () => {
     mockedGenerateObjectResponse.mockResolvedValue({
       tier: 1,
@@ -294,12 +334,15 @@ describe("toolClassifier", () => {
         tier: 1,
         intent: "passive",
       },
+      // `cat` is no longer in PASSIVE_COMMANDS — arbitrary file reads can
+       // leak secrets (~/.ssh/*, .env, /proc/self/environ), so they fall
+       // through to baseTier (T4) and require operator approval.
       {
         label: "cat /tmp/out.txt",
         toolName: "execute_command",
         args: { command: "cat /tmp/out.txt" },
-        tier: 1,
-        intent: "passive",
+        tier: 4,
+        intent: "intrusive",
       },
 
       // Active execute_command
