@@ -7,7 +7,7 @@
 
 import { useTheme } from "../../theme";
 import { getToolSummary } from "../shared/tool-registry";
-import { TierBadge } from "../shared/tier-badge";
+import { IntentBadge } from "../shared/intent-badge";
 import type { PendingApproval } from "../../../core/operator";
 
 interface InlineApprovalPromptProps {
@@ -38,8 +38,16 @@ export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
         {/* Approval line */}
         <box flexDirection="row" gap={1}>
           <text fg={colors.warning} content="?" />
-          <TierBadge approval={approval} />
+          <IntentBadge approval={approval} />
           <text fg={colors.info} content={summary} />
+        </box>
+
+        {/* Reasoning line */}
+        <box flexDirection="row" marginLeft={2} marginTop={1}>
+          <text
+            fg={colors.textMuted}
+            content={approval.classification.reasoning}
+          />
         </box>
 
         {/* Shortcut hints */}
@@ -47,7 +55,7 @@ export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
           <text fg={colors.primary}>Y</text>
           <text fg={colors.textMuted}>approve</text>
           <text fg={colors.secondary}>A</text>
-          <text fg={colors.textMuted}>approve all</text>
+          <text fg={colors.textMuted}>approve + auto-approve safe</text>
           <text fg={colors.textMuted}>or type to redirect</text>
         </box>
       </box>

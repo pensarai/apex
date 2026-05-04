@@ -5,17 +5,19 @@ import type {
   ApprovalDecision,
   ActionHistoryEntry,
   OperatorEvent,
-  PermissionTier,
   ToolClassification,
 } from "./types";
-import {
-  classifyToolCallDetailed,
-  type CommandClassifierOptions,
-} from "./toolClassifier";
-import { checkPermission } from "./permissionPolicy";
+import { classifyToolCall } from "./toolClassifier";
 
 /**
  * Approval gate configuration.
+ *
+ * Three-field binary model:
+ *   - `requireApproval: false` — auto-approve every tool call.
+ *   - `requireApproval: true, autoApproveSafe: true` — auto-approve `safe`,
+ *     prompt on `destructive` (the "auto" operator mode).
+ *   - `requireApproval: true, autoApproveSafe: false` — prompt on everything
+ *     (the "manual" operator mode).
  *
  * `decisionTimeoutMs` sets the operator decision SLA: when the operator
  * does not respond within this window, the pending approval is resolved
@@ -24,9 +26,7 @@ import { checkPermission } from "./permissionPolicy";
  */
 export interface ApprovalGateConfig {
   requireApproval: boolean;
-  autoApproveUpToTier?: PermissionTier;
-  allowApprovalBypass?: boolean;
-  classifier?: CommandClassifierOptions;
+  autoApproveSafe?: boolean;
   decisionTimeoutMs?: number;
 }
 
@@ -43,9 +43,10 @@ interface DeferredApproval {
 /**
  * ApprovalGate intercepts tool calls and manages the approval workflow.
  *
- * When `requireApproval` is true every tool call is held until the
- * operator explicitly approves or denies it.  When false, all calls
- * are auto-approved immediately.
+ * Every call is classified once by the binary `safe | destructive` rules
+ * classifier; the 2-branch policy below decides whether it runs immediately
+ * or is held for operator review. No separate policy module — under binary,
+ * the decision is small enough to live here.
  */
 export class ApprovalGate extends EventEmitter {
   private config: ApprovalGateConfig;
@@ -80,33 +81,42 @@ export class ApprovalGate extends EventEmitter {
   /**
    * Check whether a tool call should proceed.
    *
-   * Each call is classified once, then the configured policy decides whether
-   * it can auto-run or needs operator approval.
+   * 1. `requireApproval: false` -> auto-approve every call.
+   * 2. `autoApproveSafe` + classification === "safe" -> auto-approve.
+   * 3. Everything else -> queue for operator approval.
    */
   async check(
     toolName: string,
     toolCallId: string,
     args: Record<string, unknown>,
   ): Promise<ApprovalDecision> {
-    const classification = await classifyToolCallDetailed(
-      { toolName, args },
-      this.config.classifier,
-    );
-    const permission = checkPermission(this.config, classification);
+    const classification = classifyToolCall({ toolName, args });
 
-    if (permission.autoApproved) {
-      const entry = this.recordAction(
-        toolName,
-        toolCallId,
-        "auto-approved",
-        classification,
-      );
-      entry.resultSummary = permission.reason;
-      this.emitEvent({ type: "action-completed", entry });
-      return "auto-approved";
+    if (!this.config.requireApproval) {
+      return this.autoApprove(toolName, toolCallId, classification);
+    }
+
+    if (this.config.autoApproveSafe && classification.intent === "safe") {
+      return this.autoApprove(toolName, toolCallId, classification);
     }
 
     return this.requestApproval(toolName, toolCallId, args, classification);
+  }
+
+  private autoApprove(
+    toolName: string,
+    toolCallId: string,
+    classification: ToolClassification,
+  ): ApprovalDecision {
+    const entry = this.recordAction(
+      toolName,
+      toolCallId,
+      "auto-approved",
+      classification,
+    );
+    entry.resultSummary = classification.reasoning;
+    this.emitEvent({ type: "action-completed", entry });
+    return "auto-approved";
   }
 
   private requestApproval(
@@ -120,9 +130,6 @@ export class ApprovalGate extends EventEmitter {
       toolName,
       toolCallId,
       args,
-      tier: classification.tier,
-      intent: classification.intent,
-      reasoning: classification.reasoning,
       classification,
       timestamp: Date.now(),
     };
@@ -227,11 +234,9 @@ export class ApprovalGate extends EventEmitter {
       id: `act_${Date.now()}_${randomBytes(4).toString("hex")}`,
       toolName,
       toolCallId,
-      tier: classification.tier,
-      intent: classification.intent,
+      classification,
       decision,
       timestamp: Date.now(),
-      classification,
     };
 
     this.actionHistory.push(entry);

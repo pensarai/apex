@@ -1,81 +1,23 @@
 import { z } from "zod";
 
 /**
- * Permission tiers for tool classification
- * Higher tier = more risk = more likely to need approval
+ * Command intent classification.
+ *
+ * Binary: every tool call is either `safe` (read-only or purely observational
+ * under the current threat model) or `destructive` (anything that could change
+ * state, leak sensitive data, run unbounded shell, or chain unsafely).
+ *
+ * Intentionally coarse — the operator's decision is binary Y/N, so finer
+ * granularity is display noise they can't act on. Escalation precedence
+ * (dangerous patterns checked before safe allowlists) keeps the classifier
+ * honest against obfuscated commands like `dig example.com; rm -rf /tmp`.
  */
-export type PermissionTier = 1 | 2 | 3 | 4 | 5;
-
-export type CommandIntent =
-  | "passive"
-  | "active"
-  | "probing"
-  | "intrusive"
-  | "destructive"
-  | "exploit";
-
-export type ClassifierMode = "rules" | "llm";
-
-export type ClassificationSource = "rules" | "llm" | "fallback";
+export type CommandIntent = "safe" | "destructive";
 
 export interface ToolClassification {
-  tier: PermissionTier;
   intent: CommandIntent;
   reasoning: string;
-  source: ClassificationSource;
-  classifierMode: ClassifierMode;
-  classifierVersion: string;
-  model?: string;
-  confidence?: number;
-  cacheHit?: boolean;
-  latencyMs?: number;
 }
-
-export interface TierDefinition {
-  tier: PermissionTier;
-  name: string;
-  shortName: string;
-  description: string;
-  examples: string[];
-}
-
-export const PERMISSION_TIERS: Record<PermissionTier, TierDefinition> = {
-  1: {
-    tier: 1,
-    name: "Passive",
-    shortName: "T1",
-    description: "Read-only operations, no network requests to target",
-    examples: ["DNS lookups", "Certificate inspection", "Scratchpad notes"],
-  },
-  2: {
-    tier: 2,
-    name: "Low-risk Active",
-    shortName: "T2",
-    description: "Light network interaction, observational only",
-    examples: ["Crawling", "Endpoint discovery", "GET/HEAD requests"],
-  },
-  3: {
-    tier: 3,
-    name: "Probing",
-    shortName: "T3",
-    description: "Parameter testing, fuzzing with controlled payloads",
-    examples: ["Parameter fuzzing", "Template scanning", "Auth probing"],
-  },
-  4: {
-    tier: 4,
-    name: "Intrusive",
-    shortName: "T4",
-    description: "Heavy testing that may trigger alerts",
-    examples: ["Heavy fuzzing", "Shell commands", "File upload probing"],
-  },
-  5: {
-    tier: 5,
-    name: "Exploit",
-    shortName: "T5",
-    description: "State-changing actions, exploit attempts",
-    examples: ["User creation", "Data modification", "RCE attempts"],
-  },
-};
 
 /** Operator operating modes */
 export type OperatorMode = "plan" | "manual" | "auto";
@@ -109,7 +51,7 @@ export const OPERATOR_MODES: Record<
   },
   auto: {
     name: "Auto",
-    description: "Auto-approve within tier",
+    description: "Auto-approve safe actions",
     color: "green",
     icon: "\u25B6\u25B6",
     label: "Approvals Off",
@@ -222,9 +164,6 @@ export interface PendingApproval {
   toolName: string;
   toolCallId: string;
   args: Record<string, unknown>;
-  tier: PermissionTier;
-  intent: CommandIntent;
-  reasoning: string;
   classification: ToolClassification;
   timestamp: number;
 }
@@ -236,11 +175,9 @@ export interface ActionHistoryEntry {
   id: string;
   toolName: string;
   toolCallId: string;
-  tier: PermissionTier;
-  intent: CommandIntent;
+  classification: ToolClassification;
   decision: ApprovalDecision;
   timestamp: number;
-  classification: ToolClassification;
   duration?: number;
   resultSummary?: string;
 }
@@ -258,8 +195,7 @@ export interface OperatorSessionState {
   mode: OperatorMode;
   currentStage: OperatorStage;
   requireApproval: boolean;
-  autoApproveUpToTier?: PermissionTier;
-  classifierMode: ClassifierMode;
+  autoApproveSafe: boolean;
   pendingApprovals: PendingApproval[];
   actionHistory: ActionHistoryEntry[];
   stageProgress: Record<OperatorStage, StageProgress>;
@@ -277,30 +213,27 @@ export function createInitialOperatorState(
     mode: initialMode,
     currentStage: "setup",
     requireApproval,
-    autoApproveUpToTier: initialMode === "auto" ? 3 : undefined,
-    classifierMode: "rules",
+    autoApproveSafe: initialMode === "auto",
     pendingApprovals: [],
     actionHistory: [],
     stageProgress,
   };
 }
 
-/** Operator settings for session config */
-export const OperatorSettingsObject = z.object({
-  initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
-  requireApproval: z.boolean().default(true),
-  autoApproveUpToTier: z
-    .union([
-      z.literal(1),
-      z.literal(2),
-      z.literal(3),
-      z.literal(4),
-      z.literal(5),
-    ])
-    .optional(),
-  classifierMode: z.enum(["rules", "llm"]).default("rules"),
-  classifierModel: z.string().optional(),
-});
+/**
+ * Operator settings for session config.
+ *
+ * `passthrough()` so legacy keys from older sessions (`classifierMode`,
+ * `classifierModel`, `autoApproveUpToTier`) don't fail to load — they're
+ * silently ignored by the runtime code that only reads the known fields.
+ */
+export const OperatorSettingsObject = z
+  .object({
+    initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
+    requireApproval: z.boolean().default(true),
+    autoApproveSafe: z.boolean().default(false),
+  })
+  .passthrough();
 
 export type OperatorSettings = z.infer<typeof OperatorSettingsObject>;
 

@@ -6,10 +6,9 @@ import {
   DEFAULT_DECISION_TIMEOUT_MS,
 } from "./approvalGate";
 
-describe("ApprovalGate — operator decision timeout", () => {
-  const sleep = (ms: number) =>
-    new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+describe("ApprovalGate — operator decision timeout", () => {
   it("denies the pending approval when the operator does not respond within the SLA", async () => {
     const gate = new ApprovalGate({
       requireApproval: true,
@@ -19,7 +18,10 @@ describe("ApprovalGate — operator decision timeout", () => {
     const resolvedEvents: unknown[] = [];
     gate.on("approval-resolved", (e) => resolvedEvents.push(e));
 
-    const pending = gate.check("http_request", "tc_1", { url: "https://t/" });
+    const pending = gate.check("http_request", "tc_1", {
+      method: "POST",
+      url: "https://t/",
+    });
     await Promise.resolve();
     // Attach the rejection assertion before advancing timers so the
     // eventual reject() lands on an already-handled promise.
@@ -54,7 +56,10 @@ describe("ApprovalGate — operator decision timeout", () => {
       approvalId = (e as { approval: { id: string } }).approval.id;
     });
 
-    const pending = gate.check("http_request", "tc_2", { url: "https://t/" });
+    const pending = gate.check("http_request", "tc_2", {
+      method: "POST",
+      url: "https://t/",
+    });
     await Promise.resolve();
     expect(approvalId).not.toBe("");
 
@@ -71,7 +76,10 @@ describe("ApprovalGate — operator decision timeout", () => {
       decisionTimeoutMs: 20,
     });
 
-    const pending = gate.check("http_request", "tc_3", { url: "https://t/" });
+    const pending = gate.check("http_request", "tc_3", {
+      method: "POST",
+      url: "https://t/",
+    });
     await Promise.resolve();
     const approvalId = gate.getPendingApprovals()[0]?.id;
     expect(approvalId).toBeTruthy();
@@ -91,7 +99,7 @@ describe("ApprovalGate — operator decision timeout", () => {
     );
   });
 
-  it("disables the timeout when decisionTimeoutMs is explicitly undefined-like (0)", async () => {
+  it("disables the timeout when decisionTimeoutMs is 0", async () => {
     const gate = new ApprovalGate({
       requireApproval: true,
       decisionTimeoutMs: 0,
@@ -102,7 +110,10 @@ describe("ApprovalGate — operator decision timeout", () => {
       approvalId = (e as { approval: { id: string } }).approval.id;
     });
 
-    const pending = gate.check("http_request", "tc_4", { url: "https://t/" });
+    const pending = gate.check("http_request", "tc_4", {
+      method: "POST",
+      url: "https://t/",
+    });
     await Promise.resolve();
 
     // Wait beyond the configured zero timeout — nothing should fire.
@@ -131,79 +142,93 @@ describe("ApprovalGate — operator decision timeout", () => {
       decisionTimeoutMs: 0,
     });
 
-    const pending = gate.check("execute_command", "tc_tier", {
+    const pending = gate.check("execute_command", "tc_class", {
       command: "gobuster dir -u https://example.com -w words.txt",
     });
     await Promise.resolve();
     const [approval] = gate.getPendingApprovals();
 
-    expect(approval).toMatchObject({
-      tier: 4,
-      intent: "intrusive",
+    expect(approval.classification).toMatchObject({
+      intent: "destructive",
     });
-    expect(approval.reasoning).toContain("intrusive");
+    expect(approval.classification.reasoning).toBeTruthy();
 
     gate.approve(approval.id);
     await expect(pending).resolves.toBe("approved");
     expect(gate.getActionHistory().at(-1)).toMatchObject({
-      tier: 4,
-      intent: "intrusive",
+      classification: expect.objectContaining({ intent: "destructive" }),
       decision: "approved",
     });
   });
 
-  it("auto-approves actions at or below the configured threshold", async () => {
+  it("auto-approves safe actions when autoApproveSafe is on", async () => {
     const gate = new ApprovalGate({
       requireApproval: true,
-      autoApproveUpToTier: 3,
+      autoApproveSafe: true,
       decisionTimeoutMs: 1_000,
     });
 
     await expect(
-      gate.check("execute_command", "tc_passive", {
-        command: "dig example.com",
-      }),
+      gate.check("execute_command", "tc_safe", { command: "dig example.com" }),
     ).resolves.toBe("auto-approved");
 
     expect(gate.getPendingApprovals()).toHaveLength(0);
     expect(gate.getActionHistory().at(-1)).toMatchObject({
-      tier: 1,
-      intent: "passive",
+      classification: expect.objectContaining({ intent: "safe" }),
       decision: "auto-approved",
     });
   });
 
-  it("still prompts for actions above the configured threshold", async () => {
+  it("still prompts for destructive actions when autoApproveSafe is on", async () => {
     const gate = new ApprovalGate({
       requireApproval: true,
-      autoApproveUpToTier: 3,
+      autoApproveSafe: true,
       decisionTimeoutMs: 0,
     });
 
-    const pending = gate.check("execute_command", "tc_intrusive", {
+    const pending = gate.check("execute_command", "tc_destructive", {
       command: "ffuf -u https://example.com/FUZZ -w words.txt",
     });
     await Promise.resolve();
 
     expect(gate.getPendingApprovals()).toHaveLength(1);
-    expect(gate.getPendingApprovals()[0]).toMatchObject({
-      tier: 4,
-      intent: "intrusive",
-    });
+    expect(gate.getPendingApprovals()[0].classification.intent).toBe(
+      "destructive",
+    );
     gate.approve(gate.getPendingApprovals()[0].id);
     await expect(pending).resolves.toBe("approved");
+  });
+
+  // Regression for Josh's review: POST /login must prompt even in auto mode.
+  it("does not auto-approve HTTP POST when autoApproveSafe is on", async () => {
+    const gate = new ApprovalGate({
+      requireApproval: true,
+      autoApproveSafe: true,
+      decisionTimeoutMs: 0,
+    });
+
+    const pending = gate.check("http_request", "tc_post", {
+      method: "POST",
+      url: "https://example.com/login",
+      body: "user=a&pass=b",
+    });
+    await Promise.resolve();
+
+    expect(gate.getPendingApprovals()).toHaveLength(1);
+    expect(gate.getPendingApprovals()[0].classification.intent).toBe(
+      "destructive",
+    );
+    gate.deny(gate.getPendingApprovals()[0].id);
+    await expect(pending).rejects.toBeInstanceOf(ApprovalDeniedError);
   });
 });
 
 // End-to-end integration: replicate the exact pattern offensiveSecurityAgent
 // uses to wrap tools with the gate. This covers the full chain — tool call
-// -> wrapper -> gate.check() -> classifier -> policy -> decision -> original
-// execute — in one place, so we don't have to open an operator session to
-// prove the plumbing works.
+// -> wrapper -> gate.check() -> classifier -> decision -> original execute
+// — in one place, so we don't have to open an operator session to prove the
+// plumbing works.
 describe("ApprovalGate — tool wrapping integration", () => {
-  const sleep = (ms: number) =>
-    new Promise((resolve) => setTimeout(resolve, ms));
-
   type Wrapped<T = unknown> = (
     args: Record<string, unknown> & { toolCallId?: string },
   ) => Promise<T | { blocked: true; reason: string }>;
@@ -228,10 +253,10 @@ describe("ApprovalGate — tool wrapping integration", () => {
     };
   }
 
-  it("auto-approves T1-T3 through the wrapped tool and runs the real execute", async () => {
+  it("auto-approves safe actions through the wrapped tool and runs the real execute", async () => {
     const gate = new ApprovalGate({
       requireApproval: true,
-      autoApproveUpToTier: 3,
+      autoApproveSafe: true,
     });
     const execute = vi.fn().mockResolvedValue({ stdout: "ok" });
     const tool = wrapTool(gate, "execute_command", execute);
@@ -242,16 +267,15 @@ describe("ApprovalGate — tool wrapping integration", () => {
     expect(execute).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledWith({ command: "dig example.com" });
     expect(gate.getActionHistory().at(-1)).toMatchObject({
-      tier: 1,
-      intent: "passive",
+      classification: expect.objectContaining({ intent: "safe" }),
       decision: "auto-approved",
     });
   });
 
-  it("holds T4 actions until the operator approves, then runs execute", async () => {
+  it("holds destructive actions until the operator approves, then runs execute", async () => {
     const gate = new ApprovalGate({
       requireApproval: true,
-      autoApproveUpToTier: 3,
+      autoApproveSafe: true,
       decisionTimeoutMs: 0,
     });
     const execute = vi.fn().mockResolvedValue({ stdout: "done" });
@@ -264,7 +288,7 @@ describe("ApprovalGate — tool wrapping integration", () => {
 
     expect(execute).not.toHaveBeenCalled();
     const [approval] = gate.getPendingApprovals();
-    expect(approval).toMatchObject({ tier: 4, intent: "intrusive" });
+    expect(approval.classification.intent).toBe("destructive");
 
     gate.approve(approval.id);
     await expect(pending).resolves.toEqual({ stdout: "done" });
@@ -274,7 +298,7 @@ describe("ApprovalGate — tool wrapping integration", () => {
   it("returns blocked sentinel without running execute when denied", async () => {
     const gate = new ApprovalGate({
       requireApproval: true,
-      autoApproveUpToTier: 3,
+      autoApproveSafe: true,
       decisionTimeoutMs: 0,
     });
     const execute = vi.fn().mockResolvedValue({ stdout: "should not run" });
@@ -295,8 +319,7 @@ describe("ApprovalGate — tool wrapping integration", () => {
     });
     expect(execute).not.toHaveBeenCalled();
     expect(gate.getActionHistory().at(-1)).toMatchObject({
-      tier: 4,
-      intent: "intrusive",
+      classification: expect.objectContaining({ intent: "destructive" }),
       decision: "denied",
     });
   });

@@ -466,6 +466,7 @@ describe("buildOperatorSystemPrompt", () => {
   const state = {
     mode: "auto",
     requireApproval: true,
+    autoApproveSafe: false,
     currentStage: "recon",
     pendingApprovals: [],
     actionHistory: [],
@@ -495,13 +496,15 @@ describe("buildOperatorSystemPrompt", () => {
     expect(prompt).toContain("Command approval: disabled");
   });
 
-  it("shows threshold approval copy when autoApproveUpToTier is set", () => {
+  it("shows safe/destructive copy when autoApproveSafe is set", () => {
     const prompt = buildOperatorSystemPrompt(target, {
       ...state,
-      autoApproveUpToTier: 3,
+      autoApproveSafe: true,
     } as OperatorSessionState);
-    expect(prompt).toContain("Command approval: threshold");
-    expect(prompt).toContain("T1-T3 actions execute automatically");
+    expect(prompt).toContain(
+      "safe tool calls execute automatically; destructive tool calls require operator approval",
+    );
+    expect(prompt).not.toContain("T1-T3");
   });
 
   it("falls back to 'unknown' when no target", () => {

@@ -410,8 +410,7 @@ ${sep}\n`);
       operatorSettings: {
         initialMode: "auto",
         requireApproval: true,
-        autoApproveUpToTier: 3,
-        classifierMode: "rules",
+        autoApproveSafe: true,
         enableSuggestions: false,
       },
     },

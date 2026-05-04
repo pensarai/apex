@@ -8,7 +8,7 @@ import { useState, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
 import { getToolSummary } from "./tool-registry";
-import { TierBadge } from "./tier-badge";
+import { IntentBadge } from "./intent-badge";
 import type { PendingApproval } from "../../../core/operator";
 import { getPasteText } from "../../utils/paste";
 import { useDialog } from "../../context/dialog";
@@ -38,7 +38,7 @@ export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
 
       <box flexDirection="row" gap={1} marginLeft={2}>
         <text fg={colors.warning} content="?" />
-        <TierBadge approval={approval} />
+        <IntentBadge approval={approval} />
         <text fg={colors.info} content={summary} />
       </box>
     </box>
@@ -126,10 +126,11 @@ export function ApprovalInputArea({
       paddingBottom={1}
     >
       <box flexDirection="row" gap={1} marginBottom={1}>
-        <TierBadge approval={approval} />
-        {approval.reasoning && (
-          <text fg={colors.textMuted} content={approval.reasoning} />
-        )}
+        <IntentBadge approval={approval} />
+        <text
+          fg={colors.textMuted}
+          content={approval.classification.reasoning}
+        />
       </box>
 
       {/* Yes option */}
@@ -152,7 +153,7 @@ export function ApprovalInputArea({
         />
         <text
           fg={focusedElement === 1 ? colors.text : colors.textMuted}
-          content="Auto - approve T1-T3 from now"
+          content="Approve this + auto-approve safe from now"
         />
       </box>
 
@@ -192,7 +193,7 @@ export function ApprovalInputArea({
       <box flexDirection="row" gap={2} marginTop={1}>
         <text
           fg={colors.textMuted}
-          content="Y approve | A auto T1-T3 | Enter select"
+          content="Y approve | A auto-approve safe | Enter select"
         />
       </box>
     </box>

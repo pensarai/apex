@@ -90,11 +90,6 @@ export const commands: CommandConfig[] = [
         description: "Target URL to test",
       },
       { name: "--name", valueHint: "<name>", description: "Session name" },
-      {
-        name: "--tier",
-        valueHint: "<1-5>",
-        description: "Auto-approve permission tier",
-      },
       { name: "--auth-url", valueHint: "<url>", description: "Login page URL" },
       {
         name: "--auth-user",

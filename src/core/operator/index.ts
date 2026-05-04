@@ -1,18 +1,14 @@
 /**
  * Operator Module
  *
- * Provides approval gates, permission tiers, and stage management
+ * Provides approval gates, command classification, and stage management
  * for interactive pentesting sessions.
  */
 
 // Types
 export type {
-  PermissionTier,
   CommandIntent,
-  ClassifierMode,
-  ClassificationSource,
   ToolClassification,
-  TierDefinition,
   OperatorMode,
   OperatorStage,
   StageDefinition,
@@ -26,7 +22,6 @@ export type {
 } from "./types";
 
 export {
-  PERMISSION_TIERS,
   OPERATOR_MODES,
   OPERATOR_MODE_CYCLE,
   OPERATOR_STAGES,
@@ -38,29 +33,11 @@ export {
 
 // Tool Classifier
 export {
-  COMMAND_CLASSIFIER_VERSION,
-  DEFAULT_CLASSIFIER_TIMEOUT_MS,
-  DEFAULT_CLASSIFIER_CACHE_TTL_MS,
-  DEFAULT_CLASSIFIER_CACHE_MAX_ENTRIES,
-  DEFAULT_MIN_CLASSIFIER_CONFIDENCE,
   classifyToolCall,
-  classifyToolCallDetailed,
-  classifyToolCallWithRules,
-  clearClassificationCache,
   getClassificationReason,
+  isSafe,
   type ToolClassificationContext,
-  type CommandClassifierOptions,
 } from "./toolClassifier";
-
-// Permission Policy
-export {
-  checkPermission,
-  shouldAutoApprove,
-  getApprovalRequirement,
-  getPolicySummary,
-  type PermissionPolicyConfig,
-  type PermissionCheckResult,
-} from "./permissionPolicy";
 
 // Approval Gate
 export {

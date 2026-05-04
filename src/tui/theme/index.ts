@@ -26,38 +26,21 @@ export { colors, type ColorName } from "./colors";
 
 // ── Helpers ─────────────────────────────────────────────────
 import type { ThemeColors } from "./types";
-import { colors as legacyColors } from "./colors";
-import type { PermissionTier } from "../../core/operator";
+import type { CommandIntent } from "../../core/operator";
 import type { RGBA } from "@opentui/core";
 
 /**
- * Get the appropriate color for a permission tier.
+ * Get the display color for a command intent.
  *
- * Overloaded for backwards compatibility:
- *   getTierColor(tier)          — legacy, uses hardcoded colors
- *   getTierColor(colors, tier)  — theme-aware, uses resolved ThemeColors
+ * Binary: safe → muted green token (`tierSafe`), destructive → red
+ * warning token (`tierDangerous`). The underlying theme tokens keep
+ * their names so existing dark/light palettes continue to work.
  */
-export function getTierColor(tier: PermissionTier): RGBA;
-export function getTierColor(colors: ThemeColors, tier: PermissionTier): RGBA;
-export function getTierColor(
-  colorsOrTier: ThemeColors | PermissionTier,
-  maybeTier?: PermissionTier,
+export function getIntentColor(
+  colors: ThemeColors,
+  intent: CommandIntent,
 ): RGBA {
-  if (typeof colorsOrTier === "number") {
-    // Legacy signature: getTierColor(tier)
-    const tier = colorsOrTier;
-    if (tier <= 2) return legacyColors.greenAccent;
-    if (tier === 3) return legacyColors.yellowText;
-    if (tier === 4) return legacyColors.orangeText;
-    return legacyColors.redText;
-  }
-  // New signature: getTierColor(colors, tier)
-  const colors = colorsOrTier;
-  const tier = maybeTier!;
-  if (tier <= 2) return colors.tierSafe;
-  if (tier === 3) return colors.tierModerate;
-  if (tier === 4) return colors.tierRisky;
-  return colors.tierDangerous;
+  return intent === "safe" ? colors.tierSafe : colors.tierDangerous;
 }
 
 /**
