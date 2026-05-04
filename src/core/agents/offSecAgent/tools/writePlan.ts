@@ -35,7 +35,7 @@ Required plan sections:
 - **Attack Surface Map** — entry points ranked by exposure
 - **Prioritized Attack Vectors** — ordered by impact, with endpoint, vuln class, rationale, test approach per vector
 - **Testing Methodology** — concrete techniques/payloads per vector (OWASP categories)
-- **Estimated Action Tiers** — anticipated T1-T5 action counts so the operator can make an informed approval`,
+- **Estimated Approvals** — anticipated count of destructive actions the operator will be asked to approve`,
     inputSchema: writePlanInputSchema,
     execute: async ({ content }): Promise<WritePlanResult> => {
       const scopeId = ctx.planSubagentId ?? ctx.subagentId;
