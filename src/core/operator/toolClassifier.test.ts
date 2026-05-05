@@ -272,6 +272,22 @@ describe("toolClassifier (binary)", () => {
         intent: "destructive",
       },
       {
+        label: "curl -X POST https://example.com/api/data",
+        toolName: "execute_command",
+        args: {
+          command: "curl -X POST https://example.com/api/data",
+        },
+        intent: "destructive",
+      },
+      {
+        label: "curl -I -X POST https://example.com (HEAD flag does not mask POST)",
+        toolName: "execute_command",
+        args: {
+          command: "curl -I -X POST https://example.com",
+        },
+        intent: "destructive",
+      },
+      {
         label: "curl -X DELETE https://example.com/api/users/1",
         toolName: "execute_command",
         args: {
