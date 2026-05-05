@@ -78,6 +78,7 @@ const SHELL_CONTROL_OPERATORS = [
   /(^|[^|])\|([^|]|$)/, // pipe (not `||`)
   /&&/,
   /\|\|/,
+  /(^|[^&])&([^&]|$)/, // background separator (not `&&`)
   /;/,
   />/,
   /<\s*[./~\w-]+/,

