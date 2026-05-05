@@ -225,10 +225,19 @@ function classifyHttpRequest(
 function classifyExecuteCommand(
   args: Record<string, unknown>,
 ): ToolClassification {
-  const command = normalizeCommand(String(args.command || ""));
+  const rawCommand = String(args.command || "");
+  const command = normalizeCommand(rawCommand);
 
   if (!command) {
     return destructive("Empty or missing shell command");
+  }
+
+  // Newlines are shell command separators; check the raw input before
+  // normalization collapses them so they cannot bypass gating.
+  if (/\n/.test(rawCommand)) {
+    return destructive(
+      "Command contains newlines (shell command separators) and requires review",
+    );
   }
 
   // Escalation checks run before the safe allowlist so first-token commands
