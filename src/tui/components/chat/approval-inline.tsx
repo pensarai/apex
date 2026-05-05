@@ -7,20 +7,19 @@
 
 import { useTheme } from "../../theme";
 import { getToolSummary } from "../shared/tool-registry";
+import { deriveApprovedActionLabel } from "../shared/action-label";
 import type { PendingApproval } from "../../../core/operator";
 
 interface InlineApprovalPromptProps {
   approval: PendingApproval;
 }
 
-/**
- * Inline approval prompt — shows pending tool call awaiting approval.
- */
 export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
   const { colors } = useTheme();
 
-  const description = approval.args?.toolCallDescription as string | undefined;
+  const label = deriveApprovedActionLabel(approval);
   const summary = getToolSummary(approval.toolName, approval.args || {});
+  const showSummaryLine = summary !== label;
 
   return (
     <box flexDirection="row" marginTop={1}>
@@ -28,17 +27,16 @@ export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
       <text fg={colors.warning}>{"  │ "}</text>
 
       <box flexDirection="column">
-        {description && (
-          <box flexDirection="row" marginBottom={1}>
-            <text fg={colors.text} content={description} />
+        <box flexDirection="row" marginBottom={showSummaryLine ? 1 : 0}>
+          <text fg={colors.text} content={label} />
+        </box>
+
+        {showSummaryLine && (
+          <box flexDirection="row" gap={1}>
+            <text fg={colors.warning} content="?" />
+            <text fg={colors.info} content={summary} />
           </box>
         )}
-
-        {/* Approval line */}
-        <box flexDirection="row" gap={1}>
-          <text fg={colors.warning} content="?" />
-          <text fg={colors.info} content={summary} />
-        </box>
 
         {/* Shortcut hints */}
         <box flexDirection="row" gap={2} marginLeft={2} marginTop={1}>
