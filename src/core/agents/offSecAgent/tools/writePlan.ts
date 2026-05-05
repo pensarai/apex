@@ -34,8 +34,7 @@ Required plan sections:
 - **Reconnaissance Findings** — tech stack, endpoints, auth mechanisms discovered
 - **Attack Surface Map** — entry points ranked by exposure
 - **Prioritized Attack Vectors** — ordered by impact, with endpoint, vuln class, rationale, test approach per vector
-- **Testing Methodology** — concrete techniques/payloads per vector (OWASP categories)
-- **Estimated Approvals** — anticipated count of destructive actions the operator will be asked to approve`,
+- **Testing Methodology** — concrete techniques/payloads per vector (OWASP categories)`,
     inputSchema: writePlanInputSchema,
     execute: async ({ content }): Promise<WritePlanResult> => {
       const scopeId = ctx.planSubagentId ?? ctx.subagentId;
