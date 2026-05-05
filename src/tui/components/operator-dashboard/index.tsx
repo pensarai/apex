@@ -95,6 +95,10 @@ import {
 import { QueuedMessages } from "./queued-messages";
 import { SubagentStatusBar } from "./subagent-status-bar";
 import SubagentDialog from "./subagent-dialog";
+import {
+  ScreenshotModal,
+  collectScreenshotPaths,
+} from "../screenshot-modal";
 import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
 import { openFileInDefaultApp } from "../../utils/open-file.js";
 import { existsSync, readFileSync, writeFileSync } from "fs";
@@ -157,7 +161,12 @@ export default function OperatorDashboard({
     skillsRegistry,
     skillsVersion,
   } = useCommand();
-  const { stack, externalDialogOpen, replace: replaceDialog } = useDialog();
+  const {
+    stack,
+    externalDialogOpen,
+    replace: replaceDialog,
+    clear: clearDialog,
+  } = useDialog();
   const { refocusPrompt } = useFocus();
 
   const autocompleteOptions = useMemo(() => {
@@ -2084,6 +2093,21 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     ) {
       key.preventDefault?.();
       openSubagentDialog();
+      return;
+    }
+
+    // Ctrl+I to open the screenshot stack (no-op if no screenshots yet)
+    if (key.ctrl && key.name === "i" && !dialogOpen) {
+      const screenshots = collectScreenshotPaths(displayMessagesRef.current);
+      if (screenshots.length === 0) return;
+      key.preventDefault?.();
+      replaceDialog(
+        <ScreenshotModal
+          screenshots={screenshots}
+          onClose={clearDialog}
+        />,
+        { bare: true },
+      );
       return;
     }
     const action = resolveKeyboardShortcut(

@@ -1,4 +1,5 @@
-import { createRoot } from "@opentui/react";
+import { createRoot, extend } from "@opentui/react";
+import { FrameBufferRenderable } from "@opentui/core";
 import { useState, useEffect } from "react";
 import Footer from "./components/footer";
 import { CommandProvider } from "./context/command";
@@ -65,6 +66,13 @@ import { ObfuscationProvider } from "./context/obfuscation";
 import { installObfuscationTextPatch } from "./obfuscation/patch";
 
 installObfuscationTextPatch();
+
+extend({ frameBuffer: FrameBufferRenderable });
+declare module "@opentui/react" {
+  interface OpenTUIComponents {
+    frameBuffer: typeof FrameBufferRenderable;
+  }
+}
 
 interface AppProps {
   appConfig: Config;
