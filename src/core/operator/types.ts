@@ -54,7 +54,7 @@ export const OPERATOR_MODES: Record<
     description: "Auto-approve safe actions",
     color: "green",
     icon: "\u25B6\u25B6",
-    label: "Approvals Off",
+    label: "Auto Safe",
     colorKey: "error",
   },
 };
