@@ -1,8 +1,4 @@
-import type {
-  EndpointInfo,
-  FrameworkId,
-  EndpointKind,
-} from "@pensar/surface";
+import type { EndpointInfo, FrameworkId, EndpointKind } from "@pensar/surface";
 
 /**
  * Apex's per-route view of surface output. Surface emits one row per

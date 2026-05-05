@@ -336,7 +336,10 @@ describe("mapAppWithSurface — scope filter", () => {
   // Each test owns its fixture so they can be ordered freely and surface
   // file-index caching across describe blocks doesn't leak.
 
-  function writeRootPackageJson(repoRoot: string, deps: Record<string, string>) {
+  function writeRootPackageJson(
+    repoRoot: string,
+    deps: Record<string, string>,
+  ) {
     writeFileSync(
       join(repoRoot, "package.json"),
       JSON.stringify({ name: "fixture-root", dependencies: deps }),
@@ -361,7 +364,9 @@ describe("mapAppWithSurface — scope filter", () => {
   it("does not leak sibling-app endpoints when both apps share a parent manifest (regression)", () => {
     // Two apps share one root package.json. The buggy version returns the
     // union of both apps' routes for each call; the fix scopes per appPath.
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "apex-scope-siblings-")));
+    const repoRoot = realpathSync(
+      mkdtempSync(join(tmpdir(), "apex-scope-siblings-")),
+    );
     try {
       writeRootPackageJson(repoRoot, { express: "^4.18.0" });
       const appA = join(repoRoot, "appA");
@@ -402,7 +407,9 @@ describe("mapAppWithSurface — scope filter", () => {
     // IaC file rather than a code dir. The climb-up scans the whole repo,
     // and the file-equality branch of the filter retains only that file's
     // routes.
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "apex-scope-file-loc-")));
+    const repoRoot = realpathSync(
+      mkdtempSync(join(tmpdir(), "apex-scope-file-loc-")),
+    );
     try {
       writeRootPackageJson(repoRoot, { express: "^4.18.0" });
       const infra = join(repoRoot, "infra");
@@ -433,7 +440,9 @@ describe("mapAppWithSurface — scope filter", () => {
     // When appPath itself has a manifest the narrow scan succeeds; the
     // climb-up + filter branch is never reached. Sibling code outside
     // appPath is never visible to surface in this case.
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "apex-scope-own-manifest-")));
+    const repoRoot = realpathSync(
+      mkdtempSync(join(tmpdir(), "apex-scope-own-manifest-")),
+    );
     try {
       writeRootPackageJson(repoRoot, {});
       const appA = join(repoRoot, "packages", "appA");
@@ -472,7 +481,9 @@ describe("mapAppWithSurface — scope filter", () => {
   });
 
   it("forces fallback when app.location is the repo root", () => {
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "apex-scope-root-")));
+    const repoRoot = realpathSync(
+      mkdtempSync(join(tmpdir(), "apex-scope-root-")),
+    );
     try {
       writeRootPackageJson(repoRoot, { express: "^4.18.0" });
       writeExpressApp(join(repoRoot, "server.js"), "/r");
@@ -491,7 +502,9 @@ describe("mapAppWithSurface — scope filter", () => {
   it("falls back when frameworks are detected but no endpoints live inside app.location", () => {
     // Framework gets detected via the parent manifest, but the targeted
     // app subdir contains no routes — only its sibling does.
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "apex-scope-empty-scoped-")));
+    const repoRoot = realpathSync(
+      mkdtempSync(join(tmpdir(), "apex-scope-empty-scoped-")),
+    );
     try {
       writeRootPackageJson(repoRoot, { express: "^4.18.0" });
       const appA = join(repoRoot, "appA"); // empty dir

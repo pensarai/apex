@@ -84,8 +84,7 @@ export function buildEnrichmentObjective(opts: {
   // pages. Surface emits the raw HTTP method (e.g. "GET") with kind="page";
   // we translate at this write boundary so the surface integration layer
   // stays a pure pass-through.
-  const documentMethod =
-    endpoint.kind === "page" ? ["PAGE"] : endpoint.method;
+  const documentMethod = endpoint.kind === "page" ? ["PAGE"] : endpoint.method;
   const methodDisplay = documentMethod.join(",");
   const methodValue = JSON.stringify(
     documentMethod.length === 1 ? documentMethod[0] : documentMethod,
@@ -161,8 +160,7 @@ export async function runEnrichmentAgent(
   } = opts;
 
   const subagentId = `enrich-${slug(app.name)}-${slug(endpoint.path)}`;
-  const displayMethod =
-    endpoint.kind === "page" ? ["PAGE"] : endpoint.method;
+  const displayMethod = endpoint.kind === "page" ? ["PAGE"] : endpoint.method;
   const displayName = `${app.name}: ${displayMethod.join(",")} ${endpoint.path}`;
 
   eventBus?.emit("subagent-spawn", {
