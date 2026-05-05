@@ -10,7 +10,6 @@ import { join } from "path";
 import { z } from "zod";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
-  AppInfoSchema,
   AppsDiscoveryResultSchema,
   DiscoverySummarySchema,
   EndpointSchema,
