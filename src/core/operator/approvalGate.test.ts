@@ -3,7 +3,9 @@ import {
   ApprovalGate,
   ApprovalTimeoutError,
   DEFAULT_DECISION_TIMEOUT_MS,
+  INTERNAL_ID_PATTERN,
 } from "./approvalGate";
+import type { PendingApproval } from "./types";
 
 describe("ApprovalGate — operator decision timeout", () => {
   beforeEach(() => {
@@ -128,5 +130,171 @@ describe("ApprovalGate — operator decision timeout", () => {
     expect(result).toBe("auto-approved");
     await vi.advanceTimersByTimeAsync(5_000);
     expect(gate.getPendingApprovals()).toHaveLength(0);
+  });
+});
+
+describe("ApprovalGate — approval-resolved payload shape", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("includes the full PendingApproval on approve()", async () => {
+    const gate = new ApprovalGate({
+      requireApproval: true,
+      decisionTimeoutMs: 0,
+    });
+
+    const resolvedEvents: Array<{
+      id: string;
+      decision: string;
+      approval: PendingApproval;
+    }> = [];
+    gate.on("approval-resolved", (e) => resolvedEvents.push(e));
+
+    let approvalId = "";
+    gate.once("approval-needed", (e) => {
+      approvalId = (e as { approval: { id: string } }).approval.id;
+    });
+
+    const pending = gate.check("execute_command", "tc_payload_1", {
+      command: "ffuf -u https://example.com/FUZZ -w wordlist.txt",
+      toolCallDescription: "Running ffuf against example.com",
+    });
+
+    gate.approve(approvalId);
+    await expect(pending).resolves.toBe("approved");
+
+    expect(resolvedEvents).toHaveLength(1);
+    const [event] = resolvedEvents;
+    expect(event.decision).toBe("approved");
+    expect(event.approval.toolName).toBe("execute_command");
+    expect(event.approval.args.toolCallDescription).toBe(
+      "Running ffuf against example.com",
+    );
+    expect(event.approval.args.command).toBe(
+      "ffuf -u https://example.com/FUZZ -w wordlist.txt",
+    );
+  });
+
+  it("includes the full PendingApproval on deny()", async () => {
+    const gate = new ApprovalGate({
+      requireApproval: true,
+      decisionTimeoutMs: 0,
+    });
+
+    const resolvedEvents: Array<{
+      id: string;
+      decision: string;
+      approval: PendingApproval;
+    }> = [];
+    gate.on("approval-resolved", (e) => resolvedEvents.push(e));
+
+    let approvalId = "";
+    gate.once("approval-needed", (e) => {
+      approvalId = (e as { approval: { id: string } }).approval.id;
+    });
+
+    const pending = gate.check("http_request", "tc_payload_2", {
+      url: "https://example.com/admin",
+    });
+    const assertion = expect(pending).rejects.toThrow("Action denied by user");
+
+    gate.deny(approvalId);
+    await assertion;
+
+    expect(resolvedEvents).toHaveLength(1);
+    const [event] = resolvedEvents;
+    expect(event.decision).toBe("denied");
+    expect(event.approval.toolName).toBe("http_request");
+    expect(event.approval.args.url).toBe("https://example.com/admin");
+  });
+
+  it("includes the full PendingApproval on timeout", async () => {
+    const gate = new ApprovalGate({
+      requireApproval: true,
+      decisionTimeoutMs: 1_000,
+    });
+
+    const resolvedEvents: Array<{
+      id: string;
+      decision: string;
+      approval: PendingApproval;
+    }> = [];
+    gate.on("approval-resolved", (e) => resolvedEvents.push(e));
+
+    const pending = gate.check("nuclei_scan", "tc_payload_3", {
+      target: "https://example.com",
+    });
+    const assertion =
+      expect(pending).rejects.toBeInstanceOf(ApprovalTimeoutError);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await assertion;
+
+    expect(resolvedEvents).toHaveLength(1);
+    const [event] = resolvedEvents;
+    expect(event.decision).toBe("denied");
+    expect(event.approval.toolName).toBe("nuclei_scan");
+    expect(event.approval.args.target).toBe("https://example.com");
+  });
+});
+
+/**
+ * Pin `INTERNAL_ID_PATTERN` to the format the gate actually mints. If anyone
+ * changes either side without updating the other, this test fails before the
+ * regex silently rots and stops catching leaked correlation IDs in the UI.
+ */
+describe("ApprovalGate — INTERNAL_ID_PATTERN format-source coupling", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("matches the apr_ IDs minted for pending approvals", async () => {
+    const gate = new ApprovalGate({
+      requireApproval: true,
+      decisionTimeoutMs: 0,
+    });
+
+    let approvalId = "";
+    gate.once("approval-needed", (e) => {
+      approvalId = (e as { approval: { id: string } }).approval.id;
+    });
+
+    const pending = gate.check("http_request", "tc_pin_1", {});
+    const assertion = expect(pending).rejects.toThrow("Action denied by user");
+
+    expect(approvalId).toMatch(INTERNAL_ID_PATTERN);
+    expect(approvalId.startsWith("apr_")).toBe(true);
+
+    gate.deny(approvalId);
+    await assertion;
+  });
+
+  it("matches the act_ IDs minted for action-history entries", async () => {
+    const gate = new ApprovalGate({
+      requireApproval: true,
+      decisionTimeoutMs: 0,
+    });
+
+    let approvalId = "";
+    gate.once("approval-needed", (e) => {
+      approvalId = (e as { approval: { id: string } }).approval.id;
+    });
+
+    const pending = gate.check("http_request", "tc_pin_2", {});
+    gate.approve(approvalId);
+    await expect(pending).resolves.toBe("approved");
+
+    const [historyEntry] = gate.getActionHistory();
+    expect(historyEntry.id).toMatch(INTERNAL_ID_PATTERN);
+    expect(historyEntry.id.startsWith("act_")).toBe(true);
   });
 });
