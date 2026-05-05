@@ -95,8 +95,7 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   environments?: string[];
 }
 
-export interface IncrementalWhiteboxInput
-  extends WhiteboxAttackSurfaceWorkflowInput {
+export interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
   previousCommitSha: string;
   currentCommitSha: string;
   existingResult: WhiteboxAttackSurfaceResult;
