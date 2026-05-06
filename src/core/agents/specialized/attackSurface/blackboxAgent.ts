@@ -28,9 +28,9 @@ export type AttackSurfaceAgentInput = SpecializedAgentInput &
       }
   ) & {
     /**
-     * Whitebox-only: when true, the workflow attempts the `@pensar/surface`
-     * deterministic-enumeration path. When false (the default) it uses the
-     * legacy pages+apiEndpoints discovery agents. Has no effect on blackbox runs.
+     * Whitebox-only: when false, the workflow skips the `@pensar/surface`
+     * deterministic-enumeration path and uses the legacy pages+apiEndpoints
+     * discovery agents. Defaults to `true`. Has no effect on blackbox runs.
      */
     surfaceIntegrationEnabled?: boolean;
   };

@@ -266,7 +266,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /**
    * Whitebox attack surface flag forwarded into the {@link ToolContext} for
-   * orchestrator-driven pentests. Defaults to `false` when undefined.
+   * orchestrator-driven pentests. Defaults to `true` when undefined.
    */
   surfaceIntegrationEnabled?: boolean;
 
@@ -347,7 +347,7 @@ export interface SpecializedAgentInput {
 
   /**
    * Whitebox attack surface flag forwarded into the {@link ToolContext} for
-   * orchestrator-driven pentests. Defaults to `false` when undefined.
+   * orchestrator-driven pentests. Defaults to `true` when undefined.
    */
   surfaceIntegrationEnabled?: boolean;
 

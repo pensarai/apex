@@ -33,9 +33,9 @@ export interface Config {
   selectedModelId?: string | null;
   // Extended thinking / reasoning
   reasoningEnabled?: boolean;
-  // Whitebox attack surface: when true, opt into the @pensar/surface
-  // deterministic enumeration path. When false (the default) uses the legacy
-  // pages+apiEndpoints discovery agents.
+  // Whitebox attack surface: when false, skip the @pensar/surface deterministic
+  // enumeration path and use the legacy pages+apiEndpoints discovery agents.
+  // Defaults to true when unset.
   surfaceIntegrationEnabled?: boolean;
   // WorkOS CLI auth (replaces pensarAPIKey for new auth flow)
   accessToken?: string | null;

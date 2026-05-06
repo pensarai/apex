@@ -97,7 +97,7 @@ export type ToolContext = {
   /**
    * Whitebox attack surface flag. Forwarded into `runPentestWorkflow` so the
    * orchestrator-driven pentest path honors the user's config / env override.
-   * Defaults to `false` when undefined.
+   * Defaults to `true` when undefined.
    */
   surfaceIntegrationEnabled?: boolean;
 
