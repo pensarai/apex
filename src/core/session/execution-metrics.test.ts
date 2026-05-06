@@ -2,7 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { readExecutionMetrics, writeExecutionMetrics } from "./execution-metrics";
+import {
+  readExecutionMetrics,
+  writeExecutionMetrics,
+} from "./execution-metrics";
 
 let tmpDir: string;
 
@@ -40,7 +43,9 @@ describe("writeExecutionMetrics", () => {
       outputTokens: 50,
       totalTokens: 160,
     });
-    expect(readExecutionMetrics(tmpDir)?.tokenUsage).toEqual(metrics.tokenUsage);
+    expect(readExecutionMetrics(tmpDir)?.tokenUsage).toEqual(
+      metrics.tokenUsage,
+    );
   });
 
   it("replaces token totals by default", () => {
