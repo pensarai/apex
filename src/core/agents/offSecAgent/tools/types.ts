@@ -95,6 +95,13 @@ export type ToolContext = {
   enableThinking?: boolean;
 
   /**
+   * Whitebox attack surface flag. Forwarded into `runPentestWorkflow` so the
+   * orchestrator-driven pentest path honors the user's config / env override.
+   * Defaults to `true` when undefined.
+   */
+  surfaceIntegrationEnabled?: boolean;
+
+  /**
    * Project-level threat model content (e.g. from `.pensar/threat_model.md`).
    * Passed to spawned per-endpoint threat-model sub-agents as additional
    * context so they can incorporate deployment details, compliance
