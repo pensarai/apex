@@ -280,7 +280,8 @@ describe("toolClassifier (binary)", () => {
         intent: "destructive",
       },
       {
-        label: "curl -I -X POST https://example.com (HEAD flag does not mask POST)",
+        label:
+          "curl -I -X POST https://example.com (HEAD flag does not mask POST)",
         toolName: "execute_command",
         args: {
           command: "curl -I -X POST https://example.com",
