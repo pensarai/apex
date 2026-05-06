@@ -36,7 +36,7 @@ interface AgentContextValue {
   setModel: (model: ModelInfo, persist?: boolean) => void;
   isModelUserSelected: boolean;
   tokenUsage: TokenUsage;
-  addTokenUsage: (input: number, output: number) => void;
+  addTokenUsage: (input: number, output: number, total?: number) => void;
   addCacheUsage: (cacheRead: number, cacheWrite: number) => void;
   resetTokenUsage: () => void;
   hasExecuted: boolean;
@@ -155,15 +155,18 @@ export function AgentProvider({ children }: AgentProviderProps) {
     }
   }, [appConfig.data, isModelUserSelected]);
 
-  const addTokenUsage = useCallback((input: number, output: number) => {
-    setHasExecuted(true);
-    setTokenUsage((prev) => ({
-      ...prev,
-      inputTokens: prev.inputTokens + input,
-      outputTokens: prev.outputTokens + output,
-      totalTokens: prev.totalTokens + input + output,
-    }));
-  }, []);
+  const addTokenUsage = useCallback(
+    (input: number, output: number, total?: number) => {
+      setHasExecuted(true);
+      setTokenUsage((prev) => ({
+        ...prev,
+        inputTokens: prev.inputTokens + input,
+        outputTokens: prev.outputTokens + output,
+        totalTokens: prev.totalTokens + (total ?? input + output),
+      }));
+    },
+    [],
+  );
 
   const addCacheUsage = useCallback((cacheRead: number, cacheWrite: number) => {
     setTokenUsage((prev) => ({

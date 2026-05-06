@@ -76,6 +76,7 @@
     "eslint-plugin-unused-imports": "^4.4.1",
     "prettier": "^3.8.1",
     "typescript-eslint": "^8.55.0",
+    "vite-node": "^6.0.0",
     "vitest": "^2.1.8"
   },
   "peerDependencies": {
@@ -87,6 +88,7 @@
     "@ai-sdk/google": "^3.0.37",
     "@ai-sdk/openai": "3.0.46",
     "@ai-sdk/openai-compatible": "^2.0.35",
+    "@ai-sdk/provider-utils": "4.0.23",
     "@daytonaio/sdk": "^0.112.1",
     "@googleapis/gmail": "^16.1.1",
     "@microsoft/microsoft-graph-client": "^3.0.7",

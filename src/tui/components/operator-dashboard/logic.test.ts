@@ -646,6 +646,17 @@ describe("accumulateTokenUsage", () => {
     });
   });
 
+  it("uses reported total tokens when provided", () => {
+    const result = accumulateTokenUsage(base, 20, 10, 45);
+    expect(result).toEqual({
+      inputTokens: 120,
+      outputTokens: 60,
+      totalTokens: 195,
+      cachedTokens: 10,
+      cacheWriteTokens: 5,
+    });
+  });
+
   it("returns null when both step values are zero", () => {
     expect(accumulateTokenUsage(base, 0, 0)).toBeNull();
   });

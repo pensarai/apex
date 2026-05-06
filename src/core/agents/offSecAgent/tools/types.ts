@@ -1,10 +1,12 @@
 import type { AIModel } from "../../../ai";
+import type { CacheMetrics } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { CredentialManager } from "../../../credentials";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../../findings/registry";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
+import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 
 import type { AgentEventBus } from "../../../eventBus";
 import type { PersistentShell } from "./persistentShell";
@@ -93,6 +95,12 @@ export type ToolContext = {
 
   /** Enable extended thinking for sub-agents spawned by orchestration tools. */
   enableThinking?: boolean;
+
+  /** Propagate token usage from agents spawned inside tools to the parent UI. */
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+
+  /** Propagate cache token metrics from agents spawned inside tools. */
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
 
   /**
    * Project-level threat model content (e.g. from `.pensar/threat_model.md`).

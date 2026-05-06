@@ -347,12 +347,14 @@ export function accumulateTokenUsage(
   current: TokenUsage,
   stepInputTokens: number,
   stepOutputTokens: number,
+  stepTotalTokens?: number,
 ): TokenUsage | null {
   if (stepInputTokens <= 0 && stepOutputTokens <= 0) return null;
+  const totalTokens = stepTotalTokens ?? stepInputTokens + stepOutputTokens;
   return {
     inputTokens: current.inputTokens + stepInputTokens,
     outputTokens: current.outputTokens + stepOutputTokens,
-    totalTokens: current.totalTokens + stepInputTokens + stepOutputTokens,
+    totalTokens: current.totalTokens + totalTokens,
     cachedTokens: current.cachedTokens,
     cacheWriteTokens: current.cacheWriteTokens,
   };

@@ -20,6 +20,7 @@ export interface ExecutionMetrics {
 interface WriteExecutionMetricsInput {
   sessionRootPath: string;
   tokenUsage?: Partial<TokenUsageTotals>;
+  preserveLargerTokenUsage?: boolean;
   runtime?: string;
   elapsedSeconds?: number;
 }
@@ -100,12 +101,29 @@ function writeSessionJsonTokenTotals(
   }
 }
 
+function preserveLargerTokenUsage(
+  existing: TokenUsageTotals | undefined,
+  next: TokenUsageTotals,
+): TokenUsageTotals {
+  if (!existing) return next;
+  return {
+    inputTokens: Math.max(existing.inputTokens, next.inputTokens),
+    outputTokens: Math.max(existing.outputTokens, next.outputTokens),
+    totalTokens: Math.max(existing.totalTokens, next.totalTokens),
+  };
+}
+
 export function writeExecutionMetrics(
   input: WriteExecutionMetricsInput,
 ): ExecutionMetrics {
   const existing = readExecutionMetrics(input.sessionRootPath);
-  const nextTokenUsage = input.tokenUsage
+  const normalizedInput = input.tokenUsage
     ? normalizeTokenUsage(input.tokenUsage)
+    : undefined;
+  const nextTokenUsage = normalizedInput
+    ? input.preserveLargerTokenUsage
+      ? preserveLargerTokenUsage(existing?.tokenUsage, normalizedInput)
+      : normalizedInput
     : (existing?.tokenUsage ?? {
         inputTokens: 0,
         outputTokens: 0,
