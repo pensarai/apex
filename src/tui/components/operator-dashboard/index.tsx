@@ -1134,6 +1134,7 @@ export default function OperatorDashboard({
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
         enableThinking: reasoningEnabled && modelSupportsThinking(model.id),
+        surfaceIntegrationEnabled: config.data?.surfaceIntegrationEnabled,
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {
           addCacheUsage(

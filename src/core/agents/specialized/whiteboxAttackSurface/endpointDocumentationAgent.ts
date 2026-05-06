@@ -5,7 +5,7 @@ import {
   type AppInfo,
   type DiscoverySummary,
 } from "./types";
-import { WHITEBOX_ENRICHMENT_SYSTEM_PROMPT } from "./prompts";
+import { WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT } from "./prompts";
 import type {
   ConsolidatedEndpoint,
   FrameworkId,
@@ -22,12 +22,12 @@ import { runWithBoundedConcurrency } from "../../../utils/concurrency";
 // ---------------------------------------------------------------------------
 
 /**
- * Per-app fan-out concurrency. Each app's enrichment runs N endpoint agents
- * in parallel up to this cap. Workflow-level concurrency (across apps) is
- * separately bounded by `DEFAULT_CONCURRENCY` in
+ * Per-app fan-out concurrency. Each app's documentation runs N endpoint
+ * agents in parallel up to this cap. Workflow-level concurrency (across
+ * apps) is separately bounded by `DEFAULT_CONCURRENCY` in
  * `runWhiteboxAttackSurfaceWorkflow` Phase 2.
  */
-const ENRICHMENT_CONCURRENCY = 10;
+const ENDPOINT_DOCUMENTATION_CONCURRENCY = 10;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,13 +46,13 @@ interface SharedAgentOptions {
   projectThreatModel?: string;
 }
 
-export interface EndpointEnrichmentInput extends SharedAgentOptions {
+export interface EndpointDocumentationInput extends SharedAgentOptions {
   app: AppInfo;
   endpoint: ConsolidatedEndpoint;
   frameworks: FrameworkId[];
 }
 
-export interface AppEnrichmentInput extends SharedAgentOptions {
+export interface AppEndpointDocumentationInput extends SharedAgentOptions {
   app: AppInfo;
   endpoints: ConsolidatedEndpoint[];
   frameworks: FrameworkId[];
@@ -73,7 +73,7 @@ function getDocumentMethod(endpoint: ConsolidatedEndpoint): string[] {
   return endpoint.kind === "page" ? ["PAGE"] : endpoint.method;
 }
 
-export function buildEnrichmentObjective(opts: {
+export function buildEndpointDocumentationObjective(opts: {
   app: AppInfo;
   codebasePath: string;
   endpoint: ConsolidatedEndpoint;
@@ -99,7 +99,7 @@ export function buildEnrichmentObjective(opts: {
   const auth = endpoint.auth.length > 0 ? endpoint.auth.join(", ") : "none";
   const authPrefill = endpoint.auth.length > 0;
 
-  return `# Enrich Endpoint: ${methodDisplay} ${endpoint.path}
+  return `# Document Endpoint: ${methodDisplay} ${endpoint.path}
 
 ## Codebase
 - **Repository root:** ${codebasePath}
@@ -144,8 +144,8 @@ This agent is responsible for **exactly one** endpoint. Do not document other en
 // Per-endpoint agent runner
 // ---------------------------------------------------------------------------
 
-export async function runEnrichmentAgent(
-  opts: EndpointEnrichmentInput,
+export async function runEndpointDocumentationAgent(
+  opts: EndpointDocumentationInput,
 ): Promise<void> {
   const {
     codebasePath,
@@ -163,7 +163,7 @@ export async function runEnrichmentAgent(
     projectThreatModel,
   } = opts;
 
-  const subagentId = `enrich-${slug(app.name)}-${slug(endpoint.path)}`;
+  const subagentId = `endpoint-doc-${slug(app.name)}-${slug(endpoint.path)}`;
   const displayMethod = getDocumentMethod(endpoint);
   const displayName = `${app.name}: ${displayMethod.join(",")} ${endpoint.path}`;
 
@@ -172,13 +172,13 @@ export async function runEnrichmentAgent(
     name: displayName,
     input: {
       app: app.name,
-      type: "enrichment",
+      type: "endpointDocumentation",
       method: displayMethod,
       path: endpoint.path,
     },
   });
 
-  const objective = buildEnrichmentObjective({
+  const objective = buildEndpointDocumentationObjective({
     app,
     codebasePath,
     endpoint,
@@ -188,7 +188,7 @@ export async function runEnrichmentAgent(
   const agent = new CodeAgent<DiscoverySummary>({
     codebasePath,
     objective,
-    system: WHITEBOX_ENRICHMENT_SYSTEM_PROMPT,
+    system: WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT,
     model,
     session,
     authConfig,
@@ -199,7 +199,7 @@ export async function runEnrichmentAgent(
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
     responseSchema: DiscoverySummarySchema,
-    // Hard-exclude tools an enrichment agent must never use:
+    // Hard-exclude tools an endpoint documentation agent must never use:
     // - document_app: Phase 1 owns app discovery.
     // - list_files / grep: route enumeration is surface's job; without this,
     //   soft prompt guidance gets overridden by the model's discovery instinct
@@ -216,7 +216,7 @@ export async function runEnrichmentAgent(
     });
   } catch (error) {
     console.error(
-      `[enrichment-agent] "${subagentId}" FAILED:`,
+      `[endpoint-documentation-agent] "${subagentId}" FAILED:`,
       error instanceof Error ? error.message : String(error),
     );
     eventBus?.emit("subagent-complete", {
@@ -230,17 +230,17 @@ export async function runEnrichmentAgent(
 // App-level fan-out
 // ---------------------------------------------------------------------------
 
-export async function runAppEnrichment(
-  opts: AppEnrichmentInput,
+export async function runAppEndpointDocumentation(
+  opts: AppEndpointDocumentationInput,
 ): Promise<void> {
   const { endpoints, ...shared } = opts;
   if (endpoints.length === 0) return;
 
   await runWithBoundedConcurrency(
     endpoints,
-    ENRICHMENT_CONCURRENCY,
+    ENDPOINT_DOCUMENTATION_CONCURRENCY,
     async (endpoint) => {
-      await runEnrichmentAgent({ ...shared, endpoint });
+      await runEndpointDocumentationAgent({ ...shared, endpoint });
     },
   );
 }

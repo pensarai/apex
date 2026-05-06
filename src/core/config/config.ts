@@ -33,6 +33,10 @@ export interface Config {
   selectedModelId?: string | null;
   // Extended thinking / reasoning
   reasoningEnabled?: boolean;
+  // Whitebox attack surface: when false, skip the @pensar/surface deterministic
+  // enumeration path and use the legacy pages+apiEndpoints discovery agents.
+  // Defaults to true when unset.
+  surfaceIntegrationEnabled?: boolean;
   // WorkOS CLI auth (replaces pensarAPIKey for new auth flow)
   accessToken?: string | null;
   refreshToken?: string | null;
@@ -67,6 +71,18 @@ export async function init() {
 }
 
 /**
+ * Parse a truthy/falsy env value. Returns undefined when unset so callers can
+ * fall through to their own default. "0", "false", "no", "off" → false;
+ * anything else non-empty → true.
+ */
+function parseBoolEnv(value: string | undefined): boolean | undefined {
+  if (value === undefined || value === "") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return true;
+}
+
+/**
  * Apply environment variable fallbacks for API keys.
  * Used by both `get()` and `init()` so fresh installs pick up env vars.
  */
@@ -75,6 +91,9 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
   return {
     ...parsedConfig,
     responsibleUseAccepted: parsedConfig.responsibleUseAccepted ?? false,
+    surfaceIntegrationEnabled:
+      parsedConfig.surfaceIntegrationEnabled ??
+      parseBoolEnv(process.env.PENSAR_SURFACE_INTEGRATION),
     version,
     openAiAPIKey: parsedConfig.openAiAPIKey ?? process.env.OPENAI_API_KEY,
     anthropicAPIKey:
