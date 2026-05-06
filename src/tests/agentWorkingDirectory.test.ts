@@ -1,13 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  parseWebFlags,
-  buildOperatorSessionConfig,
-} from "../tui/utils/command-flags";
-import {
-  buildSessionWorkspaceSection,
-  buildBaseSystemPrompt,
   BASE_SYSTEM_PROMPT,
+  buildBaseSystemPrompt,
+  buildSessionWorkspaceSection,
 } from "../core/agents/offSecAgent";
+import {
+  buildOperatorSessionConfig,
+  parseWebFlags,
+} from "../tui/utils/command-flags";
 
 // =============================================================================
 // Flag Parsing

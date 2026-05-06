@@ -2,10 +2,10 @@ import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall, stepCountIs } from "ai";
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
-import type { AIModel, AIAuthConfig } from "../../ai";
-import { type SessionInfo } from "../../session";
-import type { ComparisonResult } from "./benchmark";
+import type { AIAuthConfig, AIModel } from "../../ai";
+import type { SessionInfo } from "../../session";
 import { OffensiveSecurityAgent } from "../offSecAgent";
+import type { ComparisonResult } from "./benchmark";
 
 // ---------------------------------------------------------------------------
 // Types

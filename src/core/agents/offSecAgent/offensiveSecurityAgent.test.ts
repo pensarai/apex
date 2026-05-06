@@ -7,7 +7,7 @@
  * Heavy transitive dependencies (tools, AI SDK, zod) are stubbed so
  * the test loads cleanly without external provider keys.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Module stubs — prevent the full tool/AI/zod import chain from loading.
@@ -19,13 +19,13 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("zod", () => {
   const handler: ProxyHandler<CallableFunction> = {
     get(_target, _prop) {
-      return new Proxy(function () {}, handler);
+      return new Proxy(() => {}, handler);
     },
     apply(_target, _thisArg, _args) {
-      return new Proxy(function () {}, handler);
+      return new Proxy(() => {}, handler);
     },
   };
-  const z = new Proxy(function () {}, handler);
+  const z = new Proxy(() => {}, handler);
   return { z, default: z };
 });
 
@@ -58,8 +58,8 @@ vi.mock("../../operator", () => ({
 }));
 vi.mock("ai", () => ({ hasToolCall: () => () => false }));
 
-import { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
 import { AgentEventBus } from "../../eventBus";
+import { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
 
 // ---------------------------------------------------------------------------
 // Helpers

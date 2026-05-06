@@ -1,36 +1,30 @@
+export { disconnect, isConnected } from "./connection";
+export {
+  pollLegacyToken,
+  pollWorkOSToken,
+  startDeviceFlow,
+} from "./device-flow";
+export type { GatewayValidateResult } from "./gateway";
+export { validateGateway } from "./gateway";
+export { signGatewayRequest } from "./signing";
+export {
+  ensureValidToken,
+  fetchWorkOSClientId,
+  isTokenExpired,
+  refreshAccessToken,
+} from "./token";
 export type {
-  WorkOSDeviceResponse,
+  DeviceFlowInfo,
+  FetchWorkspacesResponse,
   LegacyDeviceCodeResponse,
   LegacyTokenResponse,
-  WorkspaceInfo,
-  FetchWorkspacesResponse,
   SelectWorkspaceResponse,
-  DeviceFlowInfo,
   ValidToken,
+  WorkOSDeviceResponse,
+  WorkspaceInfo,
 } from "./types";
-
-export { signGatewayRequest } from "./signing";
-
-export {
-  isTokenExpired,
-  fetchWorkOSClientId,
-  refreshAccessToken,
-  ensureValidToken,
-} from "./token";
-
-export {
-  startDeviceFlow,
-  pollWorkOSToken,
-  pollLegacyToken,
-} from "./device-flow";
-
 export {
   fetchWorkspaces,
   pollForWorkspaceCreation,
   selectWorkspace,
 } from "./workspaces";
-
-export { isConnected, disconnect } from "./connection";
-
-export { validateGateway } from "./gateway";
-export type { GatewayValidateResult } from "./gateway";

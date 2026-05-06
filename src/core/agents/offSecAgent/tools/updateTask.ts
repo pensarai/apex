@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { ToolContext } from "./types";
 import { updateTask as coreUpdateTask } from "../../../tasks";
+import type { ToolContext } from "./types";
 
 const updateTaskInputSchema = z.object({
   taskId: z.number().describe("The task ID to update"),

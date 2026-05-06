@@ -8,17 +8,17 @@
  * This file orchestrates the higher-level session state assembly.
  */
 
-import { join } from "path";
 import { existsSync, readFileSync } from "fs";
-import type { SessionInfo } from "./index";
-import { loadSubagents, type UISubagent, type UIMessage } from "./persistence";
+import { join } from "path";
 import { REPORT_FILENAME_MD } from "../report";
+import type { SessionInfo } from "./index";
+import { loadSubagents, type UIMessage, type UISubagent } from "./persistence";
 
 // Re-export types that consumers import from this module
 export type {
+  ResumeInfo,
   SavedSubagentData,
   UIMessage,
-  ResumeInfo,
   UISubagent,
 } from "./persistence";
 

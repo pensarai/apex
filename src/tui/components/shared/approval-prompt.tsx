@@ -4,14 +4,14 @@
  * Single implementation for approval UI used in both operator and chat views.
  */
 
-import { useState, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useTheme } from "../../theme";
-import { getToolSummary } from "./tool-registry";
-import { deriveApprovedActionLabel } from "./action-label";
+import { useEffect, useState } from "react";
 import type { PendingApproval } from "../../../core/operator";
-import { getPasteText } from "../../utils/paste";
 import { useDialog } from "../../context/dialog";
+import { useTheme } from "../../theme";
+import { getPasteText } from "../../utils/paste";
+import { deriveApprovedActionLabel } from "./action-label";
+import { getToolSummary } from "./tool-registry";
 
 interface InlineApprovalPromptProps {
   approval: PendingApproval;

@@ -1,7 +1,7 @@
 import {
-  BlackboxAttackSurfaceAgent,
   type AttackSurfaceAgentInput,
   type AttackSurfaceResult,
+  BlackboxAttackSurfaceAgent,
 } from "../agents/specialized/attackSurface/blackboxAgent";
 import type { WhiteboxAttackSurfaceResult } from "../agents/specialized/whiteboxAttackSurface";
 import { runWhiteboxAttackSurfaceWorkflow } from "../workflows/whiteboxAttackSurface";

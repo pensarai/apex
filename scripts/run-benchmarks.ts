@@ -17,11 +17,11 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import path from "path";
-import { runBenchmarkSuite } from "../src/core/benchmark/runner";
 import {
-  generateTextReport,
   generateJsonReport,
+  generateTextReport,
 } from "../src/core/benchmark/report";
+import { runBenchmarkSuite } from "../src/core/benchmark/runner";
 import type { BenchmarkSuiteConfig } from "../src/core/benchmark/types";
 
 // ---------------------------------------------------------------------------

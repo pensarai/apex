@@ -30,12 +30,12 @@
  */
 
 import {
+  type BaseRenderable,
+  type CliRenderer,
   TextNodeRenderable,
   TextRenderable,
-  type CliRenderer,
-  type BaseRenderable,
 } from "@opentui/core";
-import { obfuscate, isObfuscationEnabled } from "../../core/obfuscation";
+import { isObfuscationEnabled, obfuscate } from "../../core/obfuscation";
 
 const ORIGINAL = Symbol.for("pensar.obfuscation.originalChildren");
 

@@ -6,12 +6,12 @@
  */
 
 import { readFileSync } from "fs";
-import { resolve, isAbsolute } from "path";
-import type { SessionConfig } from "../../core/session";
+import { isAbsolute, resolve } from "path";
 import type { OperatorMode } from "../../core/operator";
+import type { SessionConfig } from "../../core/session";
 import { createToolsetState } from "../../core/toolset";
-import { parseTargetUrl } from "../../util/url";
 import { createThreatModelPrompt } from "../../core/utils/prompt";
+import { parseTargetUrl } from "../../util/url";
 
 /**
  * Combine resolved threat model and prompt into a single prompt string.

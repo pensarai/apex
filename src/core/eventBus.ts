@@ -1,5 +1,5 @@
-import { EventEmitter } from "events";
 import type { TextStreamPart, ToolSet } from "ai";
+import { EventEmitter } from "events";
 
 /**
  * Typed event map for the agent event bus.

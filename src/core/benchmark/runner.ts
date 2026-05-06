@@ -4,19 +4,19 @@ import path from "path";
 import { promisify } from "util";
 
 import {
-  parseDockerComposePort,
-  getActualDockerPort,
   detectFlagInArtifacts,
+  getActualDockerPort,
+  parseDockerComposePort,
   runBenchmarkInDaytona,
 } from "../agents/specialized/benchmark";
 import {
   BenchmarkComparisonAgent,
   type BenchmarkComparisonResult,
 } from "../agents/specialized/benchmarkComparisonAgent";
+import type { CacheMetrics } from "../ai";
+import { AgentEventBus } from "../eventBus";
 import * as sessions from "../session";
 import { runPentestWorkflow } from "../workflows/pentest";
-import { AgentEventBus } from "../eventBus";
-import type { CacheMetrics } from "../ai";
 import type {
   BenchmarkMetadata,
   BenchmarkRunResult,

@@ -12,9 +12,9 @@
  *   GMAIL_TEST_EMAIL      – The Gmail address under test (e.g. dev@pensarai.com)
  */
 
-import { describe, it, expect, beforeAll } from "vitest";
-import { createEmailAdapter, type EmailAdapter } from "./adapters";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { EmailInboxConfig } from "../../../../session";
+import { createEmailAdapter, type EmailAdapter } from "./adapters";
 
 const REQUIRED_ENV = [
   "GMAIL_CLIENT_ID",

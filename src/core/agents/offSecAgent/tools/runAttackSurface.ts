@@ -1,9 +1,9 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { ToolContext } from "./types";
+import { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
 import type { WhiteboxAttackSurfaceResult } from "../../specialized/whiteboxAttackSurface";
-import { AgentEventBus } from "../../../eventBus";
+import type { ToolContext } from "./types";
 
 /**
  * Factory for the `run_attack_surface` tool.
@@ -64,8 +64,9 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       // -----------------------------------------------------------------------
       if (cwd) {
         try {
-          const { WhiteboxAttackSurfaceAgent } =
-            await import("../../specialized/whiteboxAttackSurface");
+          const { WhiteboxAttackSurfaceAgent } = await import(
+            "../../specialized/whiteboxAttackSurface"
+          );
 
           const localBus = new AgentEventBus();
           AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
@@ -132,8 +133,9 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       // Blackbox mode — probe live target
       // -----------------------------------------------------------------------
       try {
-        const { BlackboxAttackSurfaceAgent } =
-          await import("../../specialized/attackSurface/blackboxAgent");
+        const { BlackboxAttackSurfaceAgent } = await import(
+          "../../specialized/attackSurface/blackboxAgent"
+        );
 
         const localBus = new AgentEventBus();
         AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);

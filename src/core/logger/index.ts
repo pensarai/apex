@@ -1,4 +1,3 @@
-import { sessions, type SessionInfo } from "../session";
 import {
   appendFileSync,
   existsSync,
@@ -8,6 +7,7 @@ import {
 } from "fs";
 import os from "os";
 import path from "path";
+import { type SessionInfo, sessions } from "../session";
 
 export enum LogLevel {
   INFO = "INFO",

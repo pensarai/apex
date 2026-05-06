@@ -393,4 +393,4 @@ export const STEP = 0.1;
 /**
  * Epsilon for floating point comparisons
  */
-export const EPSILON = Math.pow(10, -6);
+export const EPSILON = 10 ** -6;

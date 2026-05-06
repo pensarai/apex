@@ -7,17 +7,18 @@
  * - Mode and status awareness
  */
 
-import React, { useState, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useTheme } from "../../theme";
-import { PromptInput, type PromptInputRef } from "../shared";
-import { InputProvider, useInput } from "../../context/input";
+import type React from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PendingApproval } from "../../../core/operator";
-import { type OperatorMode, OPERATOR_MODES } from "../../../core/operator";
+import { OPERATOR_MODES, type OperatorMode } from "../../../core/operator";
 import { useAgent } from "../../context/agent";
-import { useDimensions } from "../../context/dimensions";
-import { getPasteText } from "../../utils/paste";
 import { useDialog } from "../../context/dialog";
+import { useDimensions } from "../../context/dimensions";
+import { InputProvider, useInput } from "../../context/input";
+import { useTheme } from "../../theme";
+import { getPasteText } from "../../utils/paste";
+import { PromptInput, type PromptInputRef } from "../shared";
 
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   anthropic: "Anthropic",

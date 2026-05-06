@@ -1,19 +1,19 @@
-import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useRoute } from "../../context/route";
-import { useConfig } from "../../context/config";
+import { useState } from "react";
 import { config } from "../../../core/config";
 import {
-  type ProviderType,
   AVAILABLE_PROVIDERS,
   hasAnyProviderConfigured,
+  type ProviderType,
 } from "../../../core/providers";
-import ProviderSelection from "./provider-selection";
+import { useConfig } from "../../context/config";
+import { Dialog } from "../../context/dialog";
+import { useRoute } from "../../context/route";
+import { useTheme } from "../../theme";
+import DialogLayout from "../dialog-layout";
 import APIKeyInput from "./api-key-input";
 import AuthFlow from "./auth-flow";
-import { useTheme } from "../../theme";
-import { Dialog } from "../../context/dialog";
-import DialogLayout from "../dialog-layout";
+import ProviderSelection from "./provider-selection";
 
 type FlowState = "choosing" | "selecting" | "inputting" | "auth";
 

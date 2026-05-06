@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { CredentialManager } from "../core/credentials";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { StoredCredential } from "../core/credentials";
+import { CredentialManager } from "../core/credentials";
 import type { AuthCredentials } from "../core/session";
 
 describe("CredentialManager", () => {

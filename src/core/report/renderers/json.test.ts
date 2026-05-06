@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { renderJson } from "./json";
-import { PentestReportSchema } from "../schemas";
 import type { PentestReport } from "../schemas";
+import { PentestReportSchema } from "../schemas";
+import { renderJson } from "./json";
 
 function makeSampleReport(): PentestReport {
   return {

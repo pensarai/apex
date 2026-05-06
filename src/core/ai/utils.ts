@@ -1,21 +1,9 @@
-import { createOpenAI } from "@ai-sdk/openai";
-import { streamResponse, type AIModel, type StreamResponseOpts } from "./ai";
-import {
-  extractTaskSummaryFromMessages,
-  truncateWithMarker,
-} from "./contextManagement";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { getModelInfo } from "./models";
-import { createPensarModel } from "./providers/pensar";
-// Importing through the api barrel would cycle: api → offesecAgent → offSecAgent
-// → ai → api. Use the leaf constants module directly.
-import { getPensarGatewayUrl } from "../api/constants";
-import { ensureValidToken } from "../auth";
-import { config } from "../config";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   generateText,
   type LanguageModel,
@@ -24,6 +12,18 @@ import {
   type TextStreamPart,
   type ToolSet,
 } from "ai";
+// Importing through the api barrel would cycle: api → offesecAgent → offSecAgent
+// → ai → api. Use the leaf constants module directly.
+import { getPensarGatewayUrl } from "../api/constants";
+import { ensureValidToken } from "../auth";
+import { config } from "../config";
+import { type AIModel, type StreamResponseOpts, streamResponse } from "./ai";
+import {
+  extractTaskSummaryFromMessages,
+  truncateWithMarker,
+} from "./contextManagement";
+import { getModelInfo } from "./models";
+import { createPensarModel } from "./providers/pensar";
 
 /**
  * Check if a model uses an Anthropic-compatible provider that supports prompt caching.

@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { streamResponse } from "./ai";
 import { consumeStream } from "./utils";
-import { z } from "zod";
 
 // Skip tests if API keys are not available (e.g., in CI)
 const hasApiKeys = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;

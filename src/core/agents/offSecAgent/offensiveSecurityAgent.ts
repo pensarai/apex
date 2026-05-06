@@ -1,6 +1,3 @@
-import { existsSync, mkdirSync } from "fs";
-import { writeFile } from "fs/promises";
-import { join } from "path";
 import type {
   ModelMessage,
   StopCondition,
@@ -9,6 +6,9 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
+import { existsSync, mkdirSync } from "fs";
+import { writeFile } from "fs/promises";
+import { join } from "path";
 import { streamResponse } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
 import type { ApprovalGate } from "../../operator";
@@ -18,13 +18,13 @@ import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
-  EMAIL_TOOL_NAMES_ACTIVE,
-  PLAN_MODE_TOOL_NAMES,
-  PersistentShell,
-  RESPONSE_TOOL_NAME,
-  SEND_EMAIL_TOOL_NAME,
   createAllTools,
   createResponseTool,
+  EMAIL_TOOL_NAMES_ACTIVE,
+  PersistentShell,
+  PLAN_MODE_TOOL_NAMES,
+  RESPONSE_TOOL_NAME,
+  SEND_EMAIL_TOOL_NAME,
 } from "./tools";
 import { StepTraceWriter } from "./trace";
 import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";

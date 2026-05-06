@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 
-import { map, type EndpointInfo, type MapResult } from "@pensar/surface";
+import { type EndpointInfo, type MapResult, map } from "@pensar/surface";
 
 import type { ConsolidatedEndpoint, FrameworkId } from "./types";
 

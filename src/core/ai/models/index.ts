@@ -3,14 +3,13 @@ import type { AIModel, ModelInfo } from "../ai";
 // Anthropic, OpenAI, Google, Bedrock — auto-generated from SDK type definitions.
 // Re-generate after bumping SDK packages: bun run generate:models
 import { ANTHROPIC_MODELS } from "./anthropic";
-import { OPENAI_MODELS } from "./openai";
-import { GOOGLE_MODELS } from "./google";
 import { BEDROCK_MODELS } from "./bedrock";
-
+import { GOOGLE_MODELS } from "./google";
+import { INCEPTION_MODELS } from "./inception";
+import { OPENAI_MODELS } from "./openai";
 // OpenRouter — curated manually (SDK doesn't enumerate models).
 import { OPENROUTER_MODELS } from "./openrouter";
 import { PENSAR_MODELS } from "./pensar";
-import { INCEPTION_MODELS } from "./inception";
 
 export const AVAILABLE_MODELS: ModelInfo[] = [
   ...ANTHROPIC_MODELS,

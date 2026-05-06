@@ -1,11 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { config } from "../../../config";
-import { ensureValidToken, signGatewayRequest } from "../../../auth";
 // Importing through the api barrel would create a circular module load:
 // api → offesecAgent → offSecAgent/tools → webSearch → api. Use the leaf
 // constants module directly.
 import { getPensarApiUrl } from "../../../api/constants";
+import { ensureValidToken, signGatewayRequest } from "../../../auth";
+import { config } from "../../../config";
 import type { ToolContext } from "./types";
 
 export const webSearchInputSchema = z.object({

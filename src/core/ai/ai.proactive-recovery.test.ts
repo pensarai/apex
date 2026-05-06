@@ -4,8 +4,9 @@
 // itself escaped uncaught — the same `AI_APICallError prompt is too long`
 // shape that motivated this work in the first place. This test exists to
 // fail loudly if a future refactor un-wraps that path.
-import { vi, describe, it, expect } from "vitest";
+
 import type { ModelMessage, StreamTextResult, ToolSet } from "ai";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./utils", async () => {
   const actual = await vi.importActual<typeof import("./utils")>("./utils");

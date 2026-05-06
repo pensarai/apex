@@ -1,14 +1,13 @@
-import type { AIModel, AIAuthConfig } from "../../../ai";
+import type { AIAuthConfig, AIModel } from "../../../ai";
 import type { CredentialManager } from "../../../credentials";
+import type { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../../findings/registry";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
-
-import type { AgentEventBus } from "../../../eventBus";
+import type { StepTraceWriter } from "../trace";
 import type { PersistentShell } from "./persistentShell";
 import type { UnifiedSandbox } from "./sandbox";
-import type { StepTraceWriter } from "../trace";
 
 /**
  * Shared context passed to every tool factory.

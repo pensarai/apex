@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
-import {
-  filterInlineSuggestions,
-  filterInlineOptionSuggestions,
-  detectInlineSlash,
-  detectInlineOption,
-  computeInlineCompletion,
-  computeUpArrow,
-  computeDownArrow,
-  computeTab,
-  shouldResetHistory,
-  computeVisibleWindow,
-  type NavState,
-} from "./prompt-input-logic";
 import type { AutocompleteOption } from "./prompt-input";
+import {
+  computeDownArrow,
+  computeInlineCompletion,
+  computeTab,
+  computeUpArrow,
+  computeVisibleWindow,
+  detectInlineOption,
+  detectInlineSlash,
+  filterInlineOptionSuggestions,
+  filterInlineSuggestions,
+  type NavState,
+  shouldResetHistory,
+} from "./prompt-input-logic";
 
 // ---------------------------------------------------------------------------
 // Shared fixtures

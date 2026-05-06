@@ -1,28 +1,28 @@
 import { tool } from "ai";
-import { z } from "zod";
-import { join } from "path";
 import { spawn } from "child_process";
 import {
-  existsSync,
-  writeFileSync,
   appendFileSync,
   chmodSync,
-  unlinkSync,
+  existsSync,
   mkdirSync,
+  unlinkSync,
+  writeFileSync,
 } from "fs";
-import type { ToolContext } from "./types";
-import {
-  scoreFindingWithCVSS,
-  type CVSSScorerInput,
-  type CVSSScorerResult,
-} from "../../specialized/cvssScorer";
-import {
-  judgeFinding,
-  type FindingJudgeInput,
-} from "../../specialized/findingJudge";
-import type { Finding } from "../types";
+import { join } from "path";
+import { z } from "zod";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
+import {
+  type CVSSScorerInput,
+  type CVSSScorerResult,
+  scoreFindingWithCVSS,
+} from "../../specialized/cvssScorer";
+import {
+  type FindingJudgeInput,
+  judgeFinding,
+} from "../../specialized/findingJudge";
+import type { Finding } from "../types";
+import type { ToolContext } from "./types";
 
 export const documentVulnerabilityInputSchema = z.object({
   title: z.string().describe("Finding title"),

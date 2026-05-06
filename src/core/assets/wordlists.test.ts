@@ -1,9 +1,9 @@
-import { describe, expect, it, beforeEach } from "vitest";
-import { existsSync, statSync, readFileSync } from "fs";
+import { existsSync, readFileSync, statSync } from "fs";
 import { isAbsolute } from "path";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
-  getBundledWordlists,
   _resetBundledWordlistsCacheForTests,
+  getBundledWordlists,
 } from "./wordlists";
 
 describe("getBundledWordlists", () => {
