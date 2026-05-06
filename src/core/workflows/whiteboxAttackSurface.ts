@@ -94,9 +94,10 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   /** Deployment environment names (e.g. ["production", "staging"]) from project settings. */
   environments?: string[];
   /**
-   * When false, Phase 2 skips the deterministic `@pensar/surface` path and
-   * always runs the legacy pages + apiEndpoints discovery agent pair for
-   * service apps. Defaults to `true`.
+   * When true, Phase 2 attempts the deterministic `@pensar/surface` path and
+   * runs the per-endpoint endpoint-documentation agent against its results.
+   * When false (the default), every service app uses the legacy pages +
+   * apiEndpoints discovery agent pair — pre-PR behavior.
    */
   surfaceIntegrationEnabled?: boolean;
 }
@@ -143,7 +144,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     domains,
     projectThreatModel,
     environments,
-    surfaceIntegrationEnabled = true,
+    surfaceIntegrationEnabled = false,
   } = input;
 
   // =========================================================================
