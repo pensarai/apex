@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { buildEnrichmentObjective } from "./enrichmentAgent";
+import { buildEndpointDocumentationObjective } from "./endpointDocumentationAgent";
 import type { AppInfo } from "./types";
 import type { ConsolidatedEndpoint } from "../../../integrations/surface/types";
 
-describe("buildEnrichmentObjective (per-endpoint)", () => {
+describe("buildEndpointDocumentationObjective (per-endpoint)", () => {
   const app: AppInfo = {
     name: "myapp",
     framework: "Next.js 14 App Router",
-    description: "Synthetic app for enrichment-prompt unit tests.",
+    description: "Synthetic app for endpoint-documentation prompt unit tests.",
     location: "apps/myapp",
     type: "full_stack",
   };
@@ -40,7 +40,7 @@ describe("buildEnrichmentObjective (per-endpoint)", () => {
   };
 
   describe("page endpoint", () => {
-    const objective = buildEnrichmentObjective({
+    const objective = buildEndpointDocumentationObjective({
       app,
       codebasePath: "/repo",
       endpoint: pageEndpoint,
@@ -48,7 +48,7 @@ describe("buildEnrichmentObjective (per-endpoint)", () => {
     });
 
     it("opens with the per-endpoint header (single endpoint scope)", () => {
-      expect(objective).toContain("# Enrich Endpoint: PAGE /dashboard");
+      expect(objective).toContain("# Document Endpoint: PAGE /dashboard");
     });
 
     it("renders codebase context (root, app name, app location, framework)", () => {
@@ -113,7 +113,7 @@ describe("buildEnrichmentObjective (per-endpoint)", () => {
   });
 
   describe("api endpoint with multiple methods", () => {
-    const objective = buildEnrichmentObjective({
+    const objective = buildEndpointDocumentationObjective({
       app,
       codebasePath: "/repo",
       endpoint: apiEndpoint,
@@ -121,7 +121,7 @@ describe("buildEnrichmentObjective (per-endpoint)", () => {
     });
 
     it("opens with comma-joined methods", () => {
-      expect(objective).toContain("# Enrich Endpoint: GET,POST /api/users");
+      expect(objective).toContain("# Document Endpoint: GET,POST /api/users");
     });
 
     it("renders endpointType as api-endpoint", () => {
@@ -139,7 +139,7 @@ describe("buildEnrichmentObjective (per-endpoint)", () => {
   });
 
   it("falls back to 'unknown' framework label when none detected", () => {
-    const obj = buildEnrichmentObjective({
+    const obj = buildEndpointDocumentationObjective({
       app,
       codebasePath: "/repo",
       endpoint: apiEndpoint,

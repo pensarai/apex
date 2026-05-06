@@ -197,6 +197,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       traceWriter,
       tasksDir,
       enableThinking: input.enableThinking,
+      surfaceIntegrationEnabled: input.surfaceIntegrationEnabled,
       projectThreatModel: input.projectThreatModel,
       planSubagentId: input.planSubagentId,
       subagentId: input.subagentId,

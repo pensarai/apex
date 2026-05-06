@@ -34,7 +34,7 @@ import { execFileSync } from "child_process";
 import { createHash } from "crypto";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { mapAppWithSurface } from "../integrations/surface";
-import { runAppEnrichment } from "../agents/specialized/whiteboxAttackSurface/enrichmentAgent";
+import { runAppEndpointDocumentation } from "../agents/specialized/whiteboxAttackSurface/endpointDocumentationAgent";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -93,6 +93,12 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   projectThreatModel?: string;
   /** Deployment environment names (e.g. ["production", "staging"]) from project settings. */
   environments?: string[];
+  /**
+   * When false, Phase 2 skips the deterministic `@pensar/surface` path and
+   * always runs the legacy pages + apiEndpoints discovery agent pair for
+   * service apps. Defaults to `true`.
+   */
+  surfaceIntegrationEnabled?: boolean;
 }
 
 export interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
@@ -110,12 +116,14 @@ export interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowI
  *
  * Phase 1: Spawn a single CodeAgent to identify all apps in the repo.
  * Phase 1.5: Create app folders with app.json metadata.
- * Phase 2: Per-app dispatch. Service apps run `mapAppWithSurface`; on
- *           `surface` mode a per-endpoint enrichment CodeAgent enriches the
- *           deterministic list, on `fallback` the legacy pages+apiEndpoints
- *           agent pair runs. Cloud resources always use the specialized
- *           cloud-resource agent. Threat models and risk scores are
- *           generated inline by document_endpoint.
+ * Phase 2: Per-app dispatch. When `surfaceIntegrationEnabled` (default), service
+ *           apps run `mapAppWithSurface`; on `surface` mode a per-endpoint
+ *           endpoint-documentation CodeAgent documents the deterministic list,
+ *           on `fallback` the legacy pages+apiEndpoints agent pair runs. When
+ *           `surfaceIntegrationEnabled` is false, every service app uses the
+ *           legacy pair directly. Cloud resources always use the specialized
+ *           cloud-resource agent. Threat models and risk scores are generated
+ *           inline by document_endpoint.
  * Phase 3: Read the assets directory to build endpoint data.
  * Phase 4: Final assembly.
  */
@@ -135,6 +143,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     domains,
     projectThreatModel,
     environments,
+    surfaceIntegrationEnabled = true,
   } = input;
 
   // =========================================================================
@@ -163,7 +172,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     responseSchema: AppsDiscoveryResultSchema,
     projectThreatModel,
     // Tool-level guard symmetric to Phase 2's `excludeTools: ["document_app"]`
-    // (in spawnDiscoveryAgent + enrichmentAgent).
+    // (in spawnDiscoveryAgent + endpointDocumentationAgent).
     excludeTools: ["document_endpoint"],
   });
 
@@ -231,13 +240,20 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   }
 
   // =========================================================================
-  // Phase 2: Per-app dispatch — surface-driven enrichment vs. fallback agents.
-  //          Service apps try `mapAppWithSurface`; on `surface` mode run a
-  //          per-endpoint enrichment CodeAgent against the deterministic list,
+  // Phase 2: Per-app dispatch — surface-driven documentation vs. fallback.
+  //          When `surfaceIntegrationEnabled` is true, service apps try
+  //          `mapAppWithSurface`; on `surface` mode run a per-endpoint
+  //          endpoint-documentation CodeAgent against the deterministic list,
   //          on `fallback` run the legacy pages+apiEndpoints CodeAgent pair.
+  //          When `surfaceIntegrationEnabled` is false, every service app
+  //          uses the legacy pair directly — pre-PR behavior.
   //          Cloud resources always take the specialized objective — surface
   //          is HTTP-route-focused and doesn't enumerate cloud assets.
   // =========================================================================
+
+  console.log(
+    `[whitebox-workflow] Phase 2: surfaceIntegrationEnabled=${surfaceIntegrationEnabled}`,
+  );
 
   const NON_SERVICE_TYPES = ["cloud_resource", "storage", "database"];
   const serviceApps = appsResult.apps.filter(
@@ -347,6 +363,14 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         if (NON_SERVICE_TYPES.includes(app.type)) {
           // Cloud resources: surface doesn't enumerate these — always fallback.
           await spawnCloudResourceAgent(app);
+        } else if (!surfaceIntegrationEnabled) {
+          console.log(
+            `[whitebox] ${app.name}: legacy (surfaceIntegrationEnabled=false)`,
+          );
+          await Promise.all([
+            spawnPagesAgent(app),
+            spawnApiEndpointsAgent(app),
+          ]);
         } else {
           const surfaceResult = mapAppWithSurface(
             join(codebasePath, app.location),
@@ -357,7 +381,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
               `[whitebox] ${app.name}: surface-driven (${surfaceResult.endpoints.length} endpoints, frameworks=${surfaceResult.frameworks.join(",")})`,
             );
 
-            await runAppEnrichment({
+            await runAppEndpointDocumentation({
               codebasePath,
               app,
               endpoints: surfaceResult.endpoints,
