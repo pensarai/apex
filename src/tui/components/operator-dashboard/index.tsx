@@ -51,6 +51,7 @@ import { useDialog } from "../../context/dialog";
 import { useFocus } from "../../context/focus";
 import { MessageList } from "../chat/message-list";
 import { InputArea } from "../chat/input-area";
+import { deriveApprovedActionLabel } from "../shared/action-label";
 import { useTheme } from "../../theme";
 import type { DisplayMessage, WorkflowData } from "../agent-display";
 import { isToolMessage } from "../shared/type-guards";
@@ -331,12 +332,17 @@ export default function OperatorDashboard({
       setStatus("waiting");
     };
 
-    const onApprovalResolved = (event: { id: string; decision: string }) => {
-      setPendingApprovals(gate.getPendingApprovals());
+    const onApprovalResolved = (event: {
+      id: string;
+      decision: string;
+      approval: PendingApproval;
+    }) => {
+      const pending = gate.getPendingApprovals();
+      setPendingApprovals(pending);
       if (event.decision === "approved") {
-        setLastApprovedAction(event.id);
+        setLastApprovedAction(deriveApprovedActionLabel(event.approval));
       }
-      if (gate.getPendingApprovals().length === 0) {
+      if (pending.length === 0) {
         setStatus("running");
       }
     };
