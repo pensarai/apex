@@ -143,6 +143,30 @@ describe("toolClassifier (binary)", () => {
 
       expect(result.intent).toBe("destructive");
     });
+
+    it("classifies GET with URL-encoded injection markers as destructive", () => {
+      const result = classifyToolCall({
+        toolName: "http_request",
+        args: {
+          method: "GET",
+          url: "https://example.com/search?q=%27%20OR%20%271%27%3D%271",
+        },
+      });
+
+      expect(result.intent).toBe("destructive");
+    });
+
+    it("classifies GET with URL-encoded XSS payload as destructive", () => {
+      const result = classifyToolCall({
+        toolName: "http_request",
+        args: {
+          method: "GET",
+          url: "https://example.com/page?name=%3Cscript%3Ealert(1)%3C/script%3E",
+        },
+      });
+
+      expect(result.intent).toBe("destructive");
+    });
   });
 
   // -----------------------------------------------------------------------

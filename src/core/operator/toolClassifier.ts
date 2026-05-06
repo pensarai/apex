@@ -198,15 +198,32 @@ function classifyHttpRequest(
   const url = String(args.url || "");
   const combined = body + " " + url;
 
+  // Also check the URL-decoded form so percent-encoded injection payloads
+  // (e.g. `%27%20OR%201%3D1`) don't slip past the regex patterns.
+  let decoded = combined;
+  try {
+    decoded = decodeURIComponent(combined);
+  } catch {
+    // Malformed encoding — check both raw and partially decoded forms.
+    try {
+      decoded = decodeURIComponent(
+        combined.replace(/%(?![0-9A-Fa-f]{2})/g, "%25"),
+      );
+    } catch {
+      decoded = combined;
+    }
+  }
+  const surfaces = decoded === combined ? [combined] : [combined, decoded];
+
   // Dangerous payloads anywhere in body or URL = destructive.
-  if (containsDangerousPatterns(combined)) {
+  if (surfaces.some(containsDangerousPatterns)) {
     return destructive(
       "HTTP request contains potentially dangerous payload patterns",
     );
   }
 
   // Common probing payloads (SQLi/XSS/SSTI markers) = destructive.
-  if (containsProbingPatterns(combined)) {
+  if (surfaces.some(containsProbingPatterns)) {
     return destructive("HTTP request contains injection-style payload markers");
   }
 
