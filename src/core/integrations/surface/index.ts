@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, resolve, sep } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
 
 import { map, type EndpointInfo, type MapResult } from "@pensar/surface";
 
@@ -126,6 +126,27 @@ export function consolidateBySameRoute(
 }
 
 /**
+ * Rewrite each endpoint's `file` to be relative to `repoRoot` rather than
+ * the directory surface scanned. Required because downstream consumers
+ * (the endpoint-documentation agent's `read_file`, the persisted
+ * `document_endpoint` records) resolve `file` against the workflow's
+ * `codebasePath`, which is `repoRoot`. Idempotent when `scanRoot === repoRoot`.
+ */
+export function rebaseFileToRepoRoot(
+  endpoints: EndpointInfo[],
+  scanRoot: string,
+  repoRoot: string,
+): EndpointInfo[] {
+  const absScan = resolve(scanRoot);
+  const absRoot = resolve(repoRoot);
+  if (absScan === absRoot) return endpoints;
+  return endpoints.map((ep) => ({
+    ...ep,
+    file: relative(absRoot, resolve(absScan, ep.file)),
+  }));
+}
+
+/**
  * Keep only endpoints whose `file` resolves under `appPath`. Surface emits
  * `file` relative to the scan root, so resolve against that. Without this,
  * a climb-up scan returns the union of every sibling app's routes — see
@@ -184,9 +205,10 @@ export function mapAppWithSurface(
   //     filter needed, no cross-sibling dedup hazard.
   const narrow = map(absApp, { includeInternal: false });
   if (narrow.frameworks.length > 0 && narrow.endpoints.all.length > 0) {
+    const rebased = rebaseFileToRepoRoot(narrow.endpoints.all, absApp, absRoot);
     return {
       mode: "surface",
-      endpoints: consolidateBySameRoute(narrow.endpoints.all),
+      endpoints: consolidateBySameRoute(rebased),
       frameworks: narrow.frameworks,
     };
   }
@@ -213,9 +235,10 @@ export function mapAppWithSurface(
     };
   }
 
+  const rebased = rebaseFileToRepoRoot(scoped, scanRoot, absRoot);
   return {
     mode: "surface",
-    endpoints: consolidateBySameRoute(scoped),
+    endpoints: consolidateBySameRoute(rebased),
     frameworks: wide.frameworks,
   };
 }

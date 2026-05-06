@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
+  existsSync,
   mkdtempSync,
   mkdirSync,
   writeFileSync,
@@ -475,6 +476,14 @@ describe("mapAppWithSurface — scope filter", () => {
       const paths = out.endpoints.map((e) => e.path);
       expect(paths).toContain("/own");
       expect(paths).not.toContain("/sibling");
+      // `file` must be repo-relative — the endpoint-documentation agent
+      // reads with `codebasePath = repoRoot` as its working directory.
+      // Surface scans at appPath in this branch and emits `server.js`;
+      // without rebasing it would be unreadable from repoRoot.
+      for (const e of out.endpoints) {
+        expect(existsSync(resolve(repoRoot, e.file))).toBe(true);
+        expect(e.file).toBe("packages/appA/server.js");
+      }
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
