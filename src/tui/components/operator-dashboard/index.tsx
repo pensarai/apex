@@ -443,6 +443,14 @@ export default function OperatorDashboard({
         } else {
           // New session — just set up operator config; the agent creates the
           // session on the first runAgent call.
+          resetTokenUsage();
+          tokenUsageRef.current = {
+            inputTokens: 0,
+            outputTokens: 0,
+            totalTokens: 0,
+            cachedTokens: 0,
+            cacheWriteTokens: 0,
+          };
           const newMode = initialConfig?.operatorMode ?? "manual";
           setOperatorMode(newMode);
           const requireApproval = newMode === "manual";
@@ -457,7 +465,7 @@ export default function OperatorDashboard({
       }
     }
     loadSession();
-  }, [sessionId]);
+  }, [sessionId, resetTokenUsage]);
 
   useEffect(() => {
     return () => setSessionCwd(null);
@@ -471,10 +479,8 @@ export default function OperatorDashboard({
   }, [loading, refocusPrompt]);
 
   useEffect(() => {
-    // Only run the reset / hydrate cycle for *resumed* sessions (those
-    // with a `sessionId` prop). Brand-new sessions reach this effect after
-    // their first agent step has already accumulated tokens via
-    // `addTokenUsage`, and a reset here would wipe that initial usage.
+    // Only hydrate resumed sessions here. Brand-new sessions reset before the
+    // first run, while their session object is created lazily by the agent.
     if (!session || !sessionId) return;
 
     resetTokenUsage();
@@ -808,12 +814,17 @@ export default function OperatorDashboard({
       }
 
       const onStepFinish = (event: {
-        usage?: { inputTokens?: number; outputTokens?: number };
+        usage?: {
+          inputTokens?: number;
+          outputTokens?: number;
+          totalTokens?: number;
+        };
       }) => {
         const nextUsage = accumulateTokenUsage(
           tokenUsageRef.current,
           event.usage?.inputTokens ?? 0,
           event.usage?.outputTokens ?? 0,
+          event.usage?.totalTokens,
         );
         if (!nextUsage) return;
         tokenUsageRef.current = nextUsage;
@@ -821,6 +832,7 @@ export default function OperatorDashboard({
         addTokenUsage(
           event.usage?.inputTokens ?? 0,
           event.usage?.outputTokens ?? 0,
+          event.usage?.totalTokens,
         );
         if (session) {
           try {
