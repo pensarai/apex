@@ -65,7 +65,8 @@ const DESTRUCTIVE_COMMAND_PATTERNS = [
   /\brm\s+(-[rfRiIvV-]*\s+)*[./~\w-]+/i,
   /\b(mv|cp|chmod|chown|truncate|dd)\b/i,
   />\s*[./~\w-]+/, // stdout/stderr redirect into a file
-  /\b(curl|http)\b.*\s-X\s*(POST|PUT|PATCH|DELETE)\b/i,
+  /\b(curl|http)\b.*\s(-X|--request)\s*(POST|PUT|PATCH|DELETE)\b/i,
+  /\bcurl\b.*\s(-d\b|--data\b|--data-raw\b|--data-binary\b|--data-urlencode\b)/i,
   /\bsqlmap\b.*\s--dump\b/i,
 ];
 

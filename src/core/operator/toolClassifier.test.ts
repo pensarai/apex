@@ -321,6 +321,23 @@ describe("toolClassifier (binary)", () => {
         intent: "destructive",
       },
       {
+        label:
+          "curl --request POST (long-form flag must also classify as destructive)",
+        toolName: "execute_command",
+        args: {
+          command: "curl --request POST https://example.com/api/data",
+        },
+        intent: "destructive",
+      },
+      {
+        label: "curl -d implies POST and is destructive",
+        toolName: "execute_command",
+        args: {
+          command: "curl -d 'user=admin&pass=test' https://example.com/login",
+        },
+        intent: "destructive",
+      },
+      {
         label: "sqlmap -u … --dump",
         toolName: "execute_command",
         args: { command: 'sqlmap -u "https://example.com" --dump' },
