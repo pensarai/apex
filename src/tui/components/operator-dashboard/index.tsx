@@ -122,10 +122,16 @@ function markInFlightToolsErrored(
  *  - `autoApproveSafe: true` auto-runs `safe`, prompts on `destructive`.
  *
  * Plan mode keeps approval on; the agent is constrained to read-only tools.
+ *
+ * When `overrides.requireApproval` is explicitly `false` (e.g. `--no-approval`,
+ * `--autopilot`), all approvals are bypassed regardless of mode.
  */
-function getApprovalConfigForMode(mode: OperatorMode) {
+function getApprovalConfigForMode(
+  mode: OperatorMode,
+  overrides?: { requireApproval?: boolean },
+) {
   return {
-    requireApproval: true,
+    requireApproval: overrides?.requireApproval ?? true,
     autoApproveSafe: mode === "auto",
   };
 }
@@ -286,13 +292,30 @@ export default function OperatorDashboard({
 
   // Operator state
   const [operatorState, setOperatorState] = useState<OperatorSessionState>(() =>
-    createInitialOperatorState("manual", true),
+    createInitialOperatorState(
+      initialConfig?.operatorMode ?? "manual",
+      initialConfig?.requireApproval ?? true,
+    ),
   );
+
+  // Tracks whether approvals were force-disabled via CLI (--no-approval,
+  // --autopilot) or launcher defaults.  Cleared on explicit mode cycling so
+  // the user can re-enable approvals interactively.
+  const forceDisableApprovalsRef = useRef(
+    initialConfig?.requireApproval === false,
+  );
+
+  const initialApprovalOverride = forceDisableApprovalsRef.current
+    ? { requireApproval: false as const }
+    : undefined;
 
   // Approval gate — created once and updated when config changes
   const approvalGateRef = useRef<ApprovalGate>(
     new ApprovalGate({
-      ...getApprovalConfigForMode(initialConfig?.operatorMode ?? "manual"),
+      ...getApprovalConfigForMode(
+        initialConfig?.operatorMode ?? "manual",
+        initialApprovalOverride,
+      ),
     }),
   );
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
@@ -310,13 +333,21 @@ export default function OperatorDashboard({
     initialConfig?.operatorMode ?? "manual",
   );
   const agentMode: AgentMode = operatorMode === "plan" ? "plan" : "default";
-  const approvalConfig = getApprovalConfigForMode(operatorMode);
+  const approvalConfig = getApprovalConfigForMode(
+    operatorMode,
+    forceDisableApprovalsRef.current ? { requireApproval: false } : undefined,
+  );
   const requireApproval = approvalConfig.requireApproval;
   const autoApproveSafe = approvalConfig.autoApproveSafe;
 
   useEffect(() => {
     approvalGateRef.current.updateConfig(
-      getApprovalConfigForMode(operatorMode),
+      getApprovalConfigForMode(
+        operatorMode,
+        forceDisableApprovalsRef.current
+          ? { requireApproval: false }
+          : undefined,
+      ),
     );
   }, [operatorMode]);
   // Plan mode review state
@@ -391,19 +422,22 @@ export default function OperatorDashboard({
               const restoredMode =
                 (savedState.mode as OperatorMode) || "manual";
               setOperatorMode(restoredMode);
+              const restoredCfg = getApprovalConfigForMode(
+                restoredMode,
+                forceDisableApprovalsRef.current
+                  ? { requireApproval: false }
+                  : undefined,
+              );
               setOperatorState((prev) => ({
                 ...prev,
                 mode: restoredMode,
-                requireApproval: true,
-                autoApproveSafe:
-                  getApprovalConfigForMode(restoredMode).autoApproveSafe,
+                requireApproval: restoredCfg.requireApproval,
+                autoApproveSafe: restoredCfg.autoApproveSafe,
                 currentStage:
                   (savedState.currentStage as OperatorSessionState["currentStage"]) ||
                   prev.currentStage,
               }));
-              approvalGateRef.current.updateConfig(
-                getApprovalConfigForMode(restoredMode),
-              );
+              approvalGateRef.current.updateConfig(restoredCfg);
 
               if (
                 Array.isArray(savedState.messages) &&
@@ -457,25 +491,38 @@ export default function OperatorDashboard({
             const settings = s.config.operatorSettings;
             const settingsMode =
               (settings.initialMode as OperatorMode) || "manual";
+            const settingsRequireApproval =
+              settings.requireApproval ??
+              (forceDisableApprovalsRef.current ? false : true);
             setOperatorMode(settingsMode);
-            const initialState = createInitialOperatorState(settingsMode, true);
-            initialState.autoApproveSafe =
-              getApprovalConfigForMode(settingsMode).autoApproveSafe;
-            setOperatorState(initialState);
-            approvalGateRef.current.updateConfig(
-              getApprovalConfigForMode(settingsMode),
+            const settingsCfg = getApprovalConfigForMode(settingsMode, {
+              requireApproval: settingsRequireApproval,
+            });
+            const initialState = createInitialOperatorState(
+              settingsMode,
+              settingsRequireApproval,
             );
+            initialState.autoApproveSafe = settingsCfg.autoApproveSafe;
+            setOperatorState(initialState);
+            approvalGateRef.current.updateConfig(settingsCfg);
           }
         } else {
           // New session — just set up operator config; the agent creates the
           // session on the first runAgent call.
           const newMode = initialConfig?.operatorMode ?? "manual";
-          setOperatorMode(newMode);
-          const state = createInitialOperatorState(newMode, true);
-          setOperatorState(state);
-          approvalGateRef.current.updateConfig(
-            getApprovalConfigForMode(newMode),
+          const newSessionCfg = getApprovalConfigForMode(
+            newMode,
+            forceDisableApprovalsRef.current
+              ? { requireApproval: false }
+              : undefined,
           );
+          setOperatorMode(newMode);
+          const state = createInitialOperatorState(
+            newMode,
+            newSessionCfg.requireApproval,
+          );
+          setOperatorState(state);
+          approvalGateRef.current.updateConfig(newSessionCfg);
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load session");
@@ -764,6 +811,7 @@ export default function OperatorDashboard({
   // in lockstep so the three views can't drift. Persistence is opt-in via
   // transitionToMode below.
   const applyOperatorMode = useCallback((next: OperatorMode) => {
+    forceDisableApprovalsRef.current = false;
     const cfg = getApprovalConfigForMode(next);
     approvalGateRef.current.updateConfig(cfg);
     setOperatorState((s) => ({
