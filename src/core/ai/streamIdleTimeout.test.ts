@@ -1,8 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  createToolExecutionGate,
   StreamIdleTimeoutError,
   withIdleTimeout,
-  createToolExecutionGate,
 } from "./ai";
 
 // Minimal chunk shape used by the gate — mirrors what the wrapper sees
@@ -42,7 +42,7 @@ describe("withIdleTimeout", () => {
   });
 
   it("throws StreamIdleTimeoutError when stream never yields", async () => {
-    // eslint-disable-next-line require-yield -- intentional: tests timeout when source never produces
+    // biome-ignore lint/correctness/useYield: intentional — this test verifies the timeout path when the source never produces.
     async function* neverYields() {
       await new Promise(() => {});
     }

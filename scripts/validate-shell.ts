@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 /**
  * Runtime-parity probe for `PersistentShell`.
  *

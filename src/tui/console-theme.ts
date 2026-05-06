@@ -1,7 +1,7 @@
-import { useEffect } from "react";
-import { useRenderer } from "@opentui/react";
 import { RGBA } from "@opentui/core";
-import { useTheme, type ThemeColors } from "./theme";
+import { useRenderer } from "@opentui/react";
+import { useEffect } from "react";
+import { type ThemeColors, useTheme } from "./theme";
 
 export const withAlpha = (rgba: RGBA, a: number) =>
   RGBA.fromValues(rgba.r, rgba.g, rgba.b, a);
@@ -40,7 +40,7 @@ export function ConsoleThemeSync() {
   const renderer = useRenderer();
   useEffect(() => {
     overlayThemeRef.current = colors;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: opentui CliRenderer.console exposes private theme fields (_rgba*) not in its public type.
     const c = renderer.console as any;
     c.backgroundColor = withAlpha(colors.backgroundPanel, 0.85);
     c._rgbaTitleBar = withAlpha(colors.backgroundElement, 0.9);

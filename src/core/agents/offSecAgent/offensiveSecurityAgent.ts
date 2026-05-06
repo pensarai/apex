@@ -1,33 +1,33 @@
-import { streamResponse } from "../../ai";
+import { existsSync, mkdirSync } from "fs";
+import { writeFile } from "fs/promises";
+import { join } from "path";
 import type {
   ModelMessage,
-  StreamTextResult,
   StopCondition,
+  StreamTextResult,
   TextStreamPart,
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import type { OffensiveSecurityAgentInput, CreateAgentInput } from "./types";
-import {
-  createAllTools,
-  EMAIL_TOOL_NAMES_ACTIVE,
-  SEND_EMAIL_TOOL_NAME,
-  PLAN_MODE_TOOL_NAMES,
-  createResponseTool,
-  RESPONSE_TOOL_NAME,
-  ASK_USER_QUESTIONS_TOOL_NAME,
-  PersistentShell,
-} from "./tools";
-import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
-import { detectOSAndEnhancePrompt } from "../specialized/utils";
+import { streamResponse } from "../../ai";
+import { AgentEventBus } from "../../eventBus";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
-import { AgentEventBus } from "../../eventBus";
-import { join } from "path";
-import { mkdirSync, existsSync } from "fs";
-import { writeFile } from "fs/promises";
+import { detectOSAndEnhancePrompt } from "../specialized/utils";
+import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+import {
+  ASK_USER_QUESTIONS_TOOL_NAME,
+  EMAIL_TOOL_NAMES_ACTIVE,
+  PLAN_MODE_TOOL_NAMES,
+  PersistentShell,
+  RESPONSE_TOOL_NAME,
+  SEND_EMAIL_TOOL_NAME,
+  createAllTools,
+  createResponseTool,
+} from "./tools";
 import { StepTraceWriter } from "./trace";
+import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
 
 /**
  * General-purpose offensive security agent harness.
@@ -489,7 +489,7 @@ function wrapToolsWithApprovalGate(
       continue;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: ai-sdk CoreTool is a discriminated union that requires runtime narrowing for the approval gate wrapper.
     const t = coreTool as any;
 
     if (!t.execute) {
@@ -501,7 +501,7 @@ function wrapToolsWithApprovalGate(
 
     wrapped[name] = {
       ...t,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: ai-sdk tool execute receives an opaque ExecuteContext we don't need to narrow.
       execute: async (args: Record<string, unknown>, options: any) => {
         const toolCallId =
           args.toolCallId ??

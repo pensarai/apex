@@ -1,0 +1,104 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.14/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!build",
+      "!dist",
+      "!bin",
+      "!node_modules",
+      "!benchmarks",
+      "!sst-env.d.ts",
+      "!*.tgz"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 80
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "jsxQuoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "domains": {
+      "react": "recommended",
+      "test": "recommended"
+    },
+    "rules": {
+      "recommended": true,
+      // Not applicable: this is a TUI codebase using opentui (terminal renderer),
+      // not a DOM-based web app. a11y rules misfire on opentui's <box>, <input>, etc.
+      "a11y": {
+        "recommended": false
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        // Carryover from previous ESLint config (no-useless-escape: off).
+        "noUselessEscapeInString": "off",
+        // Existing pattern across many TUI list components; revisit in a follow-up triage PR.
+        "noArrayIndexKey": "off",
+        // Existing pattern in tightly-scoped imperative blocks; revisit in a follow-up triage PR.
+        "noImplicitAnyLet": "off",
+        // Existing pattern in defensive/initialization code; revisit in a follow-up triage PR.
+        "noAssignInExpressions": "off",
+        // Existing pattern with intentional void callbacks; revisit in a follow-up triage PR.
+        "useIterableCallbackReturn": "off"
+      },
+      "complexity": {
+        // Carryover from previous ESLint config (no-useless-escape: off).
+        "noUselessEscapeInRegex": "off"
+      },
+      "correctness": {
+        "noUnusedImports": "error",
+        // Carryover from previous ESLint config (no-unused-vars: off).
+        "noUnusedVariables": "off",
+        // Carryover from previous ESLint config (react-hooks/exhaustive-deps: off).
+        "useExhaustiveDependencies": "off",
+        // False positives in src/tui/keybindings/registry.ts where hooks compose
+        // outside the body of a hook/component named with the use* convention.
+        "useHookAtTopLevel": "off"
+      },
+      "style": {
+        // Carryover from previous ESLint config (@typescript-eslint/no-require-imports: off).
+        "noCommonJs": "off",
+        "noNamespace": "error"
+      }
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on",
+        // Off globally to preserve manually-grouped key ordering in tsconfig.json
+        // and similar files; enabled per-file via overrides for package.json.
+        "useSortedKeys": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["package.json"],
+      "assist": {
+        "actions": {
+          "source": {
+            "useSortedKeys": "on"
+          }
+        }
+      }
+    }
+  ]
+}
