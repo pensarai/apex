@@ -10,8 +10,11 @@
  */
 
 import { z } from "zod";
-import { generateObjectResponse, type AIModel } from "../../../ai";
-import { type AIAuthConfig } from "../../../ai/utils";
+import {
+  generateObjectResponse,
+  type AIModel,
+  type AIAuthConfig,
+} from "../../../ai";
 
 // =============================================================================
 // Types

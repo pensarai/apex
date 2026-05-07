@@ -9,7 +9,7 @@
 
 import { memo } from "react";
 import { useTheme } from "../../theme";
-import { AsciiSpinner } from "../shared/ascii-spinner";
+import { AsciiSpinner } from "../shared";
 import type { SubagentSession } from "./subagent-state";
 
 interface SubagentStatusBarProps {

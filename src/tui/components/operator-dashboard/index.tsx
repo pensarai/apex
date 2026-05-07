@@ -22,10 +22,13 @@ import {
   type SessionConfig,
   normalizeMessages,
 } from "../../../core/session";
-import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
+import { runOffensiveSecurityAgent } from "../../../core/api";
 import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
-import { buildAuthConfig } from "../../../core/ai/utils";
-import { modelSupportsThinking, type CacheMetrics } from "../../../core/ai";
+import {
+  modelSupportsThinking,
+  buildAuthConfig,
+  type CacheMetrics,
+} from "../../../core/ai";
 import {
   ALL_TOOL_NAMES,
   PLAN_MODE_TOOL_NAMES,
@@ -51,14 +54,14 @@ import { useDialog } from "../../context/dialog";
 import { useFocus } from "../../context/focus";
 import { MessageList } from "../chat/message-list";
 import { InputArea } from "../chat/input-area";
-import { deriveApprovedActionLabel } from "../shared/action-label";
-import { useTheme } from "../../theme";
-import type { DisplayMessage, WorkflowData } from "../agent-display";
-import { isToolMessage } from "../shared/type-guards";
 import {
+  deriveApprovedActionLabel,
+  isToolMessage,
   tryParsePartialJson,
   extractStreamableContent,
-} from "../shared/message-utils";
+} from "../shared";
+import { useTheme } from "../../theme";
+import type { DisplayMessage, WorkflowData } from "../agent-display";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
   ApprovalGate,
@@ -75,7 +78,7 @@ import type {
   AskUserQuestion,
   AskUserQuestionAnswer,
   AskUserQuestionsResult,
-} from "../../../core/agents/offSecAgent/tools/askUserQuestions";
+} from "../../../core/agents/offSecAgent";
 import { QuestionsForm } from "../chat/questions-form";
 import {
   type DashboardStatus,
@@ -101,8 +104,10 @@ import { openFileInDefaultApp } from "../../utils/open-file.js";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
 
-import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
-import { buildPentestPrompt } from "../../../core/skills/builtins/pentest";
+import {
+  buildThreatModelPrompt,
+  buildPentestPrompt,
+} from "../../../core/skills/builtins";
 
 function markInFlightToolsErrored(
   messages: DisplayMessage[],
@@ -1162,7 +1167,7 @@ export default function OperatorDashboard({
       // For new sessions, onSessionReady fires mid-construction; we replay
       // any buffered records once the handler attaches.
       type TraceEvent = {
-        record: import("../../../core/agents/offSecAgent/trace").TraceRecord;
+        record: import("../../../core/agents/offSecAgent").TraceRecord;
         subagentId?: string;
       };
       let wandbCleanup: (() => Promise<void>) | null = null;

@@ -19,14 +19,11 @@ import {
   type WhiteboxAttackSurfaceResult,
   type Endpoint,
   type App,
-} from "../agents/specialized/whiteboxAttackSurface/types";
-import {
   WHITEBOX_APPS_DISCOVERY_SYSTEM_PROMPT,
   WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
-} from "../agents/specialized/whiteboxAttackSurface/prompts";
+} from "../agents/specialized/whiteboxAttackSurface";
 import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
-import type { AIModel, CacheMetrics } from "../ai";
-import type { AIAuthConfig } from "../ai/utils";
+import type { AIModel, CacheMetrics, AIAuthConfig } from "../ai";
 import type { SessionInfo } from "../session";
 import type { AgentEventBus } from "../eventBus";
 import { runWithBoundedConcurrency } from "../utils/concurrency";

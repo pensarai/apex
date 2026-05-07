@@ -1,4 +1,4 @@
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
+import { OffensiveSecurityAgent } from "../../offSecAgent";
 import {
   buildEnvironmentSystemPrompt,
   buildEnvironmentPrompt,

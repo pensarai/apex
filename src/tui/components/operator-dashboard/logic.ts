@@ -1,6 +1,6 @@
-import type { AutocompleteOption } from "../shared/prompt-input";
+import type { AutocompleteOption } from "../shared";
 import type { OperatorSessionState } from "../../../core/operator";
-import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent/prompt";
+import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent";
 import { detectOSAndEnhancePrompt } from "../../../core/agents/specialized/utils";
 
 // ---------------------------------------------------------------------------

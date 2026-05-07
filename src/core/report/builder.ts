@@ -1,5 +1,5 @@
 import { REPORT_VERSION, type PentestReport } from "./schemas";
-import type { Finding } from "../agents/offSecAgent/types";
+import type { Finding } from "../agents/offSecAgent";
 
 export interface ReportContext {
   target: string;

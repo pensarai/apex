@@ -7,16 +7,14 @@ import type {
   ToolChoice,
   ToolSet,
 } from "ai";
-import type { AIModel, CacheMetrics } from "../../ai";
-import type { AIAuthConfig } from "../../ai/utils";
+import type { AIModel, CacheMetrics, AIAuthConfig } from "../../ai";
 import type { CredentialManager } from "../../credentials";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../findings/registry";
 import type { SessionInfo, SessionConfig } from "../../session";
 import type { ApprovalGate } from "../../operator";
 import type { SkillsRegistry } from "../../skills/registry";
-import type { ToolName } from "./tools";
-import type { UnifiedSandbox } from "./tools/sandbox";
+import type { ToolName, UnifiedSandbox } from "./tools";
 import type { AgentEventBus } from "../../eventBus";
 import { z } from "zod";
 import {

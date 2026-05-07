@@ -7,7 +7,7 @@ import {
   buildSessionWorkspaceSection,
   buildBaseSystemPrompt,
   BASE_SYSTEM_PROMPT,
-} from "../core/agents/offSecAgent/prompt";
+} from "../core/agents/offSecAgent";
 
 // =============================================================================
 // Flag Parsing

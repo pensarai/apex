@@ -8,8 +8,11 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { type ModelInfo, modelSupportsThinking } from "../../core/ai";
-import { AVAILABLE_MODELS } from "../../core/ai/models";
+import {
+  type ModelInfo,
+  modelSupportsThinking,
+  AVAILABLE_MODELS,
+} from "../../core/ai";
 import { update as updateConfig } from "../../core/config/config";
 import {
   getAvailableModels,

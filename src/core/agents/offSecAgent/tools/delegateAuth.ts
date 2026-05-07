@@ -295,6 +295,8 @@ When to use delegate_to_auth_subagent vs authenticate_session:
 
         // Dynamic import to break circular dependency:
         // authAgent → offensiveSecurityAgent → tools/index → delegateAuth → api/authentication → authAgent
+        // Routing through the api barrel would re-introduce the cycle, so we
+        // import the per-feature module directly.
         const { runAuthenticationAgent } =
           await import("../../../api/authentication");
 

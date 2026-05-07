@@ -9,8 +9,11 @@
  */
 
 import { z } from "zod";
-import { generateObjectResponse, type AIModel } from "../../../ai";
-import { type AIAuthConfig } from "../../../ai/utils";
+import {
+  generateObjectResponse,
+  type AIModel,
+  type AIAuthConfig,
+} from "../../../ai";
 import { calculateCVSS4Score, type CVSS4Metrics } from "../../../../lib/cvss";
 import {
   CweEntrySchema,

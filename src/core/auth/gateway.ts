@@ -1,4 +1,6 @@
 import { config } from "../config";
+// Importing through the api barrel would cycle. Use the leaf constants
+// module directly.
 import { getPensarGatewayUrl } from "../api/constants";
 import { ensureValidToken } from "./token";
 

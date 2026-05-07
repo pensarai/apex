@@ -4,10 +4,7 @@ import { ScrollBoxRenderable } from "@opentui/core";
 import { useTheme } from "../theme";
 import { Dialog } from "../context/dialog";
 import DialogLayout from "./dialog-layout";
-import {
-  useMarkdownSyntaxStyle,
-  useMarkdownRenderNode,
-} from "./shared/markdown-viewer";
+import { useMarkdownSyntaxStyle, useMarkdownRenderNode } from "./shared";
 
 interface ReportViewerDialogProps {
   content: string;

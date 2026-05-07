@@ -7,7 +7,7 @@ import { SpinningDots } from "../loaders";
 import type { ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
-import { DialogControls } from "../shared/dialog-controls";
+import { DialogControls } from "../shared";
 
 type WizardStep = "config" | "creating";
 

@@ -14,8 +14,7 @@ import {
   type ToolsetState,
   toggleTool as toolsetToggle,
 } from "../toolset";
-import type { AIModel } from "../ai/ai";
-import type { AIAuthConfig } from "../ai/utils";
+import type { AIModel, AIAuthConfig } from "../ai";
 import { generateRandomName, generateSessionName } from "../../util/name";
 
 /**
