@@ -123,6 +123,24 @@ export function applyToolResultBudget(
         ? tailMatch[2]!
         : join(resultsDir, `${toolCallId}.txt`);
 
+      // Preview must never exceed `maxChars`, otherwise tighter cascading
+      // thresholds (e.g. 500) would emit the full text plus metadata —
+      // making the "truncated" message larger than the original and
+      // reporting a negative dropped-char count.
+      const previewSize = Math.min(maxChars, 2000);
+      const preview = previewBody.slice(0, previewSize);
+      const newValue = `${preview}\n\n[... truncated ${originalLength - previewSize} chars — full output saved to ${filePath}]`;
+
+      // Monotone-reduction guard: near the threshold boundary
+      // (e.g. text.length=2050 against maxChars=2000), preview + ~80
+      // chars of metadata can be LARGER than the original. Returning a
+      // bigger value would inflate `estimatedInputTokens` and break
+      // invariant I2. Bail out BEFORE persistence — we don't want to
+      // write the file for an entry we won't actually compact, and the
+      // next tighter cascading threshold (or Layer 2 / Layer 3) will get
+      // another shot at it.
+      if (newValue.length >= text.length) return part;
+
       if (!persistedIds || !persistedIds.has(toolCallId)) {
         // If this entry already carried a truncation tail, the full
         // output was persisted by an earlier pass — `text` is just the
@@ -143,17 +161,11 @@ export function applyToolResultBudget(
       }
 
       msgModified = true;
-      // Preview must never exceed `maxChars`, otherwise tighter cascading
-      // thresholds (e.g. 500) would emit the full text plus metadata —
-      // making the "truncated" message larger than the original and
-      // reporting a negative dropped-char count.
-      const previewSize = Math.min(maxChars, 2000);
-      const preview = previewBody.slice(0, previewSize);
       return {
         ...p,
         output: {
           type: "text" as const,
-          value: `${preview}\n\n[... truncated ${originalLength - previewSize} chars — full output saved to ${filePath}]`,
+          value: newValue,
         },
       };
     });
