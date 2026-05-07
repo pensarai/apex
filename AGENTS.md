@@ -91,7 +91,7 @@ On first launch, the TUI shows a "Responsible Use Disclosure" screen that must b
 
 ### Barrel files
 
-**Module barrels, not folder barrels.** A directory has an `index.ts` if and only if it is a *module* — a cohesive unit with a deliberate public API. Internal files of a module are private; cross-module imports must go through the barrel.
+**Module barrels, not folder barrels.** A directory has an `index.ts` if and only if it is a _module_ — a cohesive unit with a deliberate public API. Internal files of a module are private; cross-module imports must go through the barrel.
 
 Two-question test before adding (or keeping) an `index.ts`:
 
