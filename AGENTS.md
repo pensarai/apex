@@ -88,3 +88,24 @@ On first launch, the TUI shows a "Responsible Use Disclosure" screen that must b
 **Clean up dead code.** When removing a feature or command, delete all associated code paths — route entries, component files, registry entries. Don't leave orphaned code "in case we need it later."
 
 **Use typed enumerations.** Finite sets (command categories, provider types, agent phases) must use TypeScript union types or enums, not free-form strings. This catches invalid values at compile time and keeps ordering/grouping explicit.
+
+### Barrel files
+
+**Module barrels, not folder barrels.** A directory has an `index.ts` if and only if it is a *module* — a cohesive unit with a deliberate public API. Internal files of a module are private; cross-module imports must go through the barrel.
+
+Two-question test before adding (or keeping) an `index.ts`:
+
+1. Does the directory have a public API distinct from its internals?
+2. Is there a stable, intentional set of exports the module commits to?
+
+If both answers are "yes", keep the barrel. If either is "no", don't — import individual files directly.
+
+Anti-patterns:
+
+- **Folder barrels** — `index.ts` re-exporting unrelated siblings just because they share a directory. Adds noise, hides nothing.
+- **Half-bypassed barrels** — barrel exists; some callers use it, others reach past it. Pick one direction per module.
+- **Mixed-direction imports** — same file imports both `from "./mod"` and `from "./mod/internals"`. Never. One direction per dependency edge.
+
+Enforced via the `import/no-internal-modules` ESLint rule in `eslint.config.js`. The `forbid` list there is the source of truth for which directories are kept module barriers — adding a new kept barrel means adding a new entry to that list. Test files (`*.test.ts`) are exempt.
+
+`src/cli.ts`'s `await import("./core/api/<feature>")` calls are a documented exception (see header comment in `src/core/api/index.ts`): they stay direct so `bun build --splitting` produces per-feature chunks.
