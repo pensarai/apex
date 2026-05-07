@@ -60,6 +60,17 @@ describe("getMaxOutputTokens", () => {
     );
   });
 
+  it("matches OpenRouter Claude IDs that use dots instead of dashes", () => {
+    // OpenRouter uses dots in version numbers (anthropic/claude-opus-4.6)
+    // while native Anthropic uses dashes (claude-opus-4-6). Both must resolve
+    // to the same budget — not fall through to the 4,096 default.
+    expect(getMaxOutputTokens("anthropic/claude-opus-4.6")).toBe(128_000);
+    expect(getMaxOutputTokens("anthropic/claude-sonnet-4.5")).toBe(64_000);
+    expect(getMaxOutputTokens("anthropic/claude-opus-4.5")).toBe(64_000);
+    expect(getMaxOutputTokens("anthropic/claude-haiku-4.5")).toBe(64_000);
+    expect(getMaxOutputTokens("anthropic/claude-3.5-sonnet")).toBe(8_192);
+  });
+
   it("recognizes OpenAI family budgets", () => {
     // Bugbot flagged that the 4096 catch-all underestimated non-Claude
     // output budgets, making `fitMessagesToContext` overly permissive on

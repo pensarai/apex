@@ -51,38 +51,43 @@ export function getMaxOutputTokens(modelId: string): number {
 }
 
 function lookupOutputBudgetByPattern(modelId: string): number {
+  // OpenRouter uses dots in Claude version numbers (anthropic/claude-opus-4.6)
+  // while native Anthropic uses dashes (claude-opus-4-6-20250929). Normalize
+  // digit.digit sequences to dashes so all Claude patterns match both forms.
+  const n = modelId.replace(/(\d)\.(\d)/g, "$1-$2");
+
   // Latest-tier Claude (4.6, 4.7) ship 128K output. Match these BEFORE the
   // generic `claude-opus-4-` / `claude-sonnet-4-` catch-alls below — those
   // exist only as a 32K/64K floor for older 4.x revisions and would
   // otherwise clamp a top-tier model to a 4× smaller budget.
   if (
-    modelId.includes("claude-opus-4-6") ||
-    modelId.includes("claude-opus-4-7") ||
-    modelId.includes("claude-sonnet-4-6") ||
-    modelId.includes("claude-sonnet-4-7")
+    n.includes("claude-opus-4-6") ||
+    n.includes("claude-opus-4-7") ||
+    n.includes("claude-sonnet-4-6") ||
+    n.includes("claude-sonnet-4-7")
   ) {
     return 128_000;
   }
   if (
-    modelId.includes("claude-sonnet-4-5") ||
-    modelId.includes("claude-opus-4-5") ||
-    modelId.includes("claude-haiku-4-5")
+    n.includes("claude-sonnet-4-5") ||
+    n.includes("claude-opus-4-5") ||
+    n.includes("claude-haiku-4-5")
   ) {
     return 64_000;
   }
-  if (modelId.includes("claude-opus-4-1")) {
+  if (n.includes("claude-opus-4-1")) {
     return 32_000;
   }
   if (
-    modelId.includes("claude-sonnet-4-") ||
-    modelId.includes("claude-3-7-sonnet")
+    n.includes("claude-sonnet-4-") ||
+    n.includes("claude-3-7-sonnet")
   ) {
     return 64_000;
   }
-  if (modelId.includes("claude-opus-4-")) {
+  if (n.includes("claude-opus-4-")) {
     return 32_000;
   }
-  if (modelId.includes("claude-3-5-haiku")) {
+  if (n.includes("claude-3-5-haiku") || n.includes("claude-3-5-sonnet")) {
     return 8_192;
   }
 
