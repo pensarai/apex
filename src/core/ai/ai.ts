@@ -511,6 +511,8 @@ export interface StreamResponseOpts {
   enableThinking?: boolean;
   /** Session root path — used by context management layers to persist truncated tool results */
   sessionPath?: string;
+  /** @internal Tracks summarization recursion depth to prevent unbounded loops */
+  _restartDepth?: number;
 }
 
 export function streamResponse(

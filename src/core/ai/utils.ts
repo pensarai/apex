@@ -1,6 +1,8 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamResponse, type AIModel, type StreamResponseOpts } from "./ai";
 import { extractTaskSummaryFromMessages } from "./contextManagement";
+
+const MAX_RESTART_DEPTH = 3;
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -385,12 +387,19 @@ export async function summarizeConversation(
   // Notify callers that context was reset so they can discard stale history.
   opts.onSummarized?.(summary);
 
-  // streamResponse always wraps with error handling, so if this call
-  // also hits context length limits, it will recursively summarize again
+  const currentDepth = opts._restartDepth ?? 0;
+  if (currentDepth >= MAX_RESTART_DEPTH) {
+    throw new Error(
+      `Context length error persists after ${MAX_RESTART_DEPTH} summarization attempts. ` +
+        `The conversation cannot be reduced to fit within the model's context window.`,
+    );
+  }
+
   const resumed = streamResponse({
     ...opts,
     prompt: enhancedPrompt,
     messages: undefined,
+    _restartDepth: currentDepth + 1,
   });
   return resumed;
 }
