@@ -265,24 +265,34 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onCacheMetrics,
     responseSchema: AppsDiscoveryResultSchema,
     projectThreatModel,
+    // Phase 1 ONLY discovers apps. document_endpoint is reserved for
+    // Phase 2's per-app task agents — exposing it here causes the
+    // apps-discovery agent to document endpoints inline (and spawn
+    // threat models under itself), which flattens the UI hierarchy
+    // and makes Phase 2's per-app subagents redundant.
+    excludeTools: ["document_endpoint"],
   });
 
   console.log(
     `[whitebox-workflow] Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`,
   );
 
+  // Phase 1's subagent stays open until Phase 2 finishes — it's the
+  // umbrella under which per-app synthetic nodes nest. The agent's own
+  // run finishes inside `appsAgent.consume()`, but we hold the
+  // lifecycle row open so child events anchor here.
+  const WORKFLOW_UMBRELLA_ID = "whitebox-apps-discovery";
+
+  console.log(
+    `[whitebox-workflow] emit subagent-spawn id="${WORKFLOW_UMBRELLA_ID}" parent="(top-level)"`,
+  );
   eventBus?.emit("subagent-spawn", {
-    subagentId: "whitebox-apps-discovery",
+    subagentId: WORKFLOW_UMBRELLA_ID,
     name: "Whitebox Apps Discovery",
     input: { codebasePath },
   });
 
   const appsResult = await appsAgent.consume();
-
-  eventBus?.emit("subagent-complete", {
-    subagentId: "whitebox-apps-discovery",
-    status: "completed",
-  });
 
   console.log(
     `[whitebox-workflow] Phase 1 complete: ${appsResult?.apps.length ?? 0} apps discovered` +
@@ -300,6 +310,13 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   }
 
   if (!appsResult || appsResult.apps.length === 0) {
+    console.log(
+      `[whitebox-workflow] emit subagent-complete id="${WORKFLOW_UMBRELLA_ID}" parent="(top-level)" status=completed (no apps found, closing umbrella)`,
+    );
+    eventBus?.emit("subagent-complete", {
+      subagentId: WORKFLOW_UMBRELLA_ID,
+      status: "completed",
+    });
     return {
       repoType: appsResult?.repoType ?? "unknown",
       packageManager: appsResult?.packageManager ?? "unknown",
@@ -386,20 +403,50 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     appTaskDoneCount.set(app.name, { done: 0, total: 1 });
   }
 
+  // Per-app synthetic parent nodes. These aren't real agents — they're
+  // grouping nodes that live between the umbrella ("Whitebox Apps
+  // Discovery") and the per-task agents (pages/api/cloud). Their
+  // lifecycle anchors child events so the UI can render the desired
+  // hierarchy:
+  //   whitebox-apps-discovery
+  //     ├── app:myapp1
+  //     │     ├── pages-myapp1
+  //     │     │     └── threat-model-...
+  //     │     └── apiEndpoints-myapp1
+  //     └── app:myapp2
+  //           └── ...
+  const appNodeIdFor = (appName: string) => `app:${sanitizeName(appName)}`;
+  const appAnyTaskFailed = new Map<string, boolean>();
+  for (const app of appsResult.apps) {
+    const appNodeId = appNodeIdFor(app.name);
+    appAnyTaskFailed.set(app.name, false);
+    console.log(
+      `[whitebox-workflow] emit subagent-spawn id="${appNodeId}" parent="${WORKFLOW_UMBRELLA_ID}" (synthetic per-app node)`,
+    );
+    eventBus?.emit("subagent-spawn", {
+      subagentId: appNodeId,
+      name: app.name,
+      input: { app: app.name, type: app.type, framework: app.framework },
+      parentSubagentId: WORKFLOW_UMBRELLA_ID,
+    });
+  }
+
   await runWithBoundedConcurrency(
     tasks,
     DEFAULT_CONCURRENCY,
     async (task, _index) => {
       const subagentId = `${task.type}-${task.appInfo.name}`;
+      const appNodeId = appNodeIdFor(task.appInfo.name);
 
       console.log(
-        `[whitebox-workflow] Phase 2: spawning agent "${subagentId}" (app="${task.appInfo.name}", type=${task.type}, appType=${task.appInfo.type})`,
+        `[whitebox-workflow] Phase 2: spawning agent id="${subagentId}" parent="${appNodeId}" (app="${task.appInfo.name}", type=${task.type}, appType=${task.appInfo.type})`,
       );
 
       eventBus?.emit("subagent-spawn", {
         subagentId,
         name: task.appInfo.name,
         input: { app: task.appInfo.name, type: task.type },
+        parentSubagentId: appNodeId,
       });
 
       const objective =
@@ -441,6 +488,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         eventBus?.emit("subagent-complete", {
           subagentId,
           status: "completed",
+          parentSubagentId: appNodeId,
         });
       } catch (error) {
         console.error(
@@ -448,9 +496,11 @@ export async function runWhiteboxAttackSurfaceWorkflow(
           error instanceof Error ? error.message : String(error),
         );
 
+        appAnyTaskFailed.set(task.appInfo.name, true);
         eventBus?.emit("subagent-complete", {
           subagentId,
           status: "failed",
+          parentSubagentId: appNodeId,
         });
       }
 
@@ -459,6 +509,21 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         counter.done++;
         if (counter.done >= counter.total) {
           completedAppCount++;
+
+          // All tasks for this app finished — close the synthetic
+          // per-app node so the UI shows it as done.
+          const appStatus = appAnyTaskFailed.get(task.appInfo.name)
+            ? ("failed" as const)
+            : ("completed" as const);
+          console.log(
+            `[whitebox-workflow] emit subagent-complete id="${appNodeId}" parent="${WORKFLOW_UMBRELLA_ID}" status=${appStatus}`,
+          );
+          eventBus?.emit("subagent-complete", {
+            subagentId: appNodeId,
+            status: appStatus,
+            parentSubagentId: WORKFLOW_UMBRELLA_ID,
+          });
+
           eventBus?.emit("app-analysis-progress", {
             totalApps,
             completedApps: completedAppCount,
@@ -468,6 +533,15 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       }
     },
   );
+
+  // Close the umbrella now that all per-app nodes are done.
+  console.log(
+    `[whitebox-workflow] emit subagent-complete id="${WORKFLOW_UMBRELLA_ID}" parent="(top-level)" status=completed`,
+  );
+  eventBus?.emit("subagent-complete", {
+    subagentId: WORKFLOW_UMBRELLA_ID,
+    status: "completed",
+  });
 
   // =========================================================================
   // Phase 3: Read assets directory to build endpoint data
@@ -719,6 +793,14 @@ function buildAppsDiscoveryObjective(
     : "";
 
   return `# Identify All Applications in the Repository
+
+## Phase scope — read this first
+This objective is **Phase 1: app discovery only**. Your job is to enumerate
+applications and call \`document_app\` for each. **Do NOT call
+\`document_endpoint\` in this phase** — endpoints are documented in a later
+phase by per-app subagents. The \`document_endpoint\` tool is intentionally
+unavailable here. Ignore any general guidance in the system prompt that
+tells you to call it; that guidance applies only to later phases.
 
 ## Codebase
 - **Path:** ${codebasePath}

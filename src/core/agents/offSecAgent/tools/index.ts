@@ -158,7 +158,7 @@ export { ASK_USER_QUESTIONS_TOOL_NAME } from "./askUserQuestions";
  * pick which ones to activate via the `activeTools` string array — the
  * AI SDK handles the filtering at the model level.
  */
-export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
+export function createAllTools(ctx: ToolContext) {
   return {
     // Browser automation tools (8 tools from Playwright MCP)
     ...createBrowserToolset(ctx),

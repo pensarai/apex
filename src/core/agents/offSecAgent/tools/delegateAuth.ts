@@ -221,6 +221,7 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         ctx.eventBus?.emit("subagent-spawn", {
           subagentId,
           input: { target, reason },
+          parentSubagentId: ctx.subagentId,
         });
 
         console.log(`\n🔐 Delegating to authentication subagent...`);
@@ -315,6 +316,7 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         ctx.eventBus?.emit("subagent-complete", {
           subagentId,
           status: result.success ? "completed" : "failed",
+          parentSubagentId: ctx.subagentId,
         });
 
         if (result.success) {
@@ -381,6 +383,7 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         ctx.eventBus?.emit("subagent-complete", {
           subagentId: "auth-agent",
           status: "failed",
+          parentSubagentId: ctx.subagentId,
         });
 
         const errorMessage =

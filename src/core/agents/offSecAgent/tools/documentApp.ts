@@ -65,8 +65,8 @@ function validateDomainUrl(value: string): {
  * Documents a discovered application during attack surface analysis —
  * writes a JSON file to the session's apps directory. This tool is
  * specifically for application-level entities (web apps, APIs, admin panels,
- * services) and is designed for incremental creation via the MessageManager
- * in Console.
+ * services) and is designed for incremental creation via the agent log
+ * persister in Console.
  */
 export function documentApp(ctx: ToolContext) {
   const baseAppsPath = join(ctx.session.rootPath, "apps");

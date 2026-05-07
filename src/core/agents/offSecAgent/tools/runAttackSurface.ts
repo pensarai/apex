@@ -57,6 +57,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       ctx.eventBus?.emit("subagent-spawn", {
         subagentId,
         input: { target, cwd },
+        parentSubagentId: ctx.subagentId,
       });
 
       // -----------------------------------------------------------------------
@@ -99,6 +100,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           ctx.eventBus?.emit("subagent-complete", {
             subagentId,
             status: "completed",
+            parentSubagentId: ctx.subagentId,
           });
 
           return {
@@ -117,6 +119,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           ctx.eventBus?.emit("subagent-complete", {
             subagentId,
             status: "failed",
+            parentSubagentId: ctx.subagentId,
           });
 
           return {
@@ -159,6 +162,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         ctx.eventBus?.emit("subagent-complete", {
           subagentId,
           status: "completed",
+          parentSubagentId: ctx.subagentId,
         });
 
         return {
@@ -183,6 +187,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         ctx.eventBus?.emit("subagent-complete", {
           subagentId,
           status: "failed",
+          parentSubagentId: ctx.subagentId,
         });
 
         return {

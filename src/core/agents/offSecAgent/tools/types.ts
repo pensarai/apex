@@ -108,4 +108,12 @@ export type ToolContext = {
    * plan agents to write plans scoped to their corresponding execution agent.
    */
   planSubagentId?: string;
+
+  /**
+   * The id of the subagent that owns this tool context. Used by
+   * orchestration tools (e.g. spawn_coding_agent, delegate_to_auth_subagent)
+   * to record parent/child relationships when emitting `subagent-spawn`
+   * events on the bus.
+   */
+  subagentId?: string;
 };
