@@ -647,10 +647,20 @@ export function streamResponse(
         `Proactive context fit returned fitsBudget=false on ${fittedMessages.length} messages — escalating to summarization before send`,
       );
     }
+    // Escalation IS a depth slot — `summarizeConversation` will spawn
+    // `streamResponse({ ..., _restartDepth: depth + 1 })` for the resumed
+    // call. Pass the bumped value here so any reactive recovery inside
+    // the wrapper (when the summarization stream itself errors) starts
+    // from the correct depth, instead of granting one extra cycle by
+    // resetting `postReactiveDepth` to the outer `opts._restartDepth`.
+    const escalatedOpts: StreamResponseOpts = {
+      ...opts,
+      _restartDepth: (opts._restartDepth ?? 0) + 1,
+    };
     return wrapStreamWithErrorHandler(
-      createSummarizationStream(fittedMessages, opts, providerModel),
+      createSummarizationStream(fittedMessages, escalatedOpts, providerModel),
       messagesContainer,
-      opts,
+      escalatedOpts,
       providerModel,
       silent,
     );
