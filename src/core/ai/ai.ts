@@ -416,8 +416,24 @@ function wrapStreamWithErrorHandler(
                     }
                     return;
                   } catch (retryError) {
-                    // Auth / model errors must propagate.
-                    if (!checkIfContextLengthError(retryError)) {
+                    // Always propagate the typed terminal error and
+                    // cancellations — these MUST escape the cascade
+                    // immediately. Currently `ContextLengthExhaustedError`
+                    // propagates only by accident (its message
+                    // "Context-length recovery exhausted…" uses a hyphen
+                    // that doesn't match any `checkIfContextLengthError`
+                    // pattern); the explicit `instanceof` and abort
+                    // checks are defensive against a future message-text
+                    // tweak that would otherwise silently swallow
+                    // recovery exhaustion. Mirrors the Layer 3
+                    // `summarizeError` catch below for symmetry.
+                    if (
+                      retryError instanceof ContextLengthExhaustedError ||
+                      (retryError instanceof Error &&
+                        retryError.name === "AbortError") ||
+                      opts.abortSignal?.aborted ||
+                      !checkIfContextLengthError(retryError)
+                    ) {
                       throw retryError;
                     }
                     // Account for the depth slot the failed retry just
