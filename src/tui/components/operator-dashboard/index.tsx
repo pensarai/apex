@@ -303,6 +303,7 @@ export default function OperatorDashboard({
   const planSubmittedRef = useRef(false);
   const planRejectedRef = useRef(false);
   const planApprovedPendingRunRef = useRef(false);
+  const planGateBypassedOnResumeRef = useRef(false);
 
   const [pendingQuestions, setPendingQuestions] = useState<
     AskUserQuestion[] | null
@@ -416,13 +417,22 @@ export default function OperatorDashboard({
                 // Best-effort — subagent files may not exist
               }
 
-              // Restore plan content from a prior session so the cycleMode
-              // gate doesn't force a redundant re-approval on Shift+Tab.
-              // Always hydrate on resume — whether the previous mode was plan
-              // or not — so cycling away doesn't trigger a stale approval gate.
+              // Restore plan approval state from a prior session so the
+              // cycleMode gate doesn't force a redundant re-approval on
+              // Shift+Tab.
               const planContent = readPlan(s.rootPath);
               if (planContent) {
-                setApprovedPlanContent(planContent);
+                if (restoredMode !== "plan") {
+                  // Session left plan mode before ending — the plan was
+                  // previously approved, so hydrate it for the agent.
+                  setApprovedPlanContent(planContent);
+                } else {
+                  // Session ended while still in plan mode — the plan may
+                  // never have been approved. Don't mark it as approved (to
+                  // avoid sending it to the agent as an execution plan), but
+                  // allow the user to cycle away without the stale gate.
+                  planGateBypassedOnResumeRef.current = true;
+                }
               }
             }
           } else if (s.config?.operatorSettings) {
@@ -1891,12 +1901,15 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     const idx = OPERATOR_MODE_CYCLE.indexOf(current);
     const next = OPERATOR_MODE_CYCLE[(idx + 1) % OPERATOR_MODE_CYCLE.length];
 
-    // Gate: if leaving plan mode and a plan exists but isn't approved, show review
+    // Gate: if leaving plan mode and a plan exists but isn't approved, show review.
+    // Skip the gate when resuming a session that was already in plan mode — the
+    // user should be able to cycle away without re-approving a stale plan.
     if (
       current === "plan" &&
       sessionRef.current &&
       hasPlan(sessionRef.current.rootPath) &&
-      !approvedPlanRef.current
+      !approvedPlanRef.current &&
+      !planGateBypassedOnResumeRef.current
     ) {
       setShowPlanReview(true);
       return;
@@ -1906,6 +1919,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     if (next === "plan") {
       setApprovedPlanContent(null);
       planRejectedRef.current = false;
+      planGateBypassedOnResumeRef.current = false;
     }
 
     transitionToMode(next);
