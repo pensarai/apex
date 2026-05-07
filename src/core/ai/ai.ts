@@ -447,23 +447,6 @@ function wrapStreamWithErrorHandler(
                     yield chunk;
                   }
                 } catch (summarizeError) {
-                  // Only fall through to minimal-restart for context-length
-                  // errors. For everything else — auth failures, network
-                  // errors, abort signals, the typed terminal
-                  // `ContextLengthExhaustedError`, or non-`Error` throws —
-                  // propagate immediately. Without this, an aborted call
-                  // would spawn a new provider request, and a transient
-                  // auth failure would burn an extra cycle that fails
-                  // identically.
-                  if (
-                    summarizeError instanceof ContextLengthExhaustedError ||
-                    (summarizeError instanceof Error &&
-                      summarizeError.name === "AbortError") ||
-                    opts.abortSignal?.aborted ||
-                    !checkIfContextLengthError(summarizeError)
-                  ) {
-                    throw summarizeError;
-                  }
                   if (!silent) {
                     const sumMsg =
                       summarizeError instanceof Error
