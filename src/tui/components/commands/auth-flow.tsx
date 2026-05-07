@@ -2,10 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
 import { config } from "../../../core/config";
 import { useConfig } from "../../context/config";
-import {
-  getPensarApiUrl,
-  getPensarConsoleUrl,
-} from "../../../core/api/constants";
+import { getPensarApiUrl, getPensarConsoleUrl } from "../../../core/api";
 import {
   isConnected,
   disconnect,

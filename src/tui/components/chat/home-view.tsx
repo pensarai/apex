@@ -15,7 +15,7 @@ import { useFocus } from "../../context/focus";
 import { useConfig } from "../../context/config";
 import { useRoute } from "../../context/route";
 import { useDialog } from "../../context/dialog";
-import { PromptInput } from "../shared/prompt-input";
+import { PromptInput } from "../shared";
 import { OperatorModeBar, providerDisplayName } from "./input-area";
 import { useTheme } from "../../theme";
 import { useAgent } from "../../context/agent";

@@ -3,12 +3,11 @@ import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
 import { useDialog } from "../../context/dialog";
 import { useDimensions } from "../../context/dimensions";
-import { DialogControls } from "../shared/dialog-controls";
-import type { ControlItem } from "../shared/dialog-controls";
+import { DialogControls, type ControlItem } from "../shared";
 import type {
   AskUserQuestion,
   AskUserQuestionAnswer,
-} from "../../../core/agents/offSecAgent/tools/askUserQuestions";
+} from "../../../core/agents/offSecAgent";
 
 const FOOTER_CONTROLS: ControlItem[] = [
   { key: "Enter", label: "to select", variant: "primary" },

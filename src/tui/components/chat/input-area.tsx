@@ -10,7 +10,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
-import { PromptInput, type PromptInputRef } from "../shared/prompt-input";
+import { PromptInput, type PromptInputRef } from "../shared";
 import { InputProvider, useInput } from "../../context/input";
 import type { PendingApproval } from "../../../core/operator";
 import { type OperatorMode, OPERATOR_MODES } from "../../../core/operator";
@@ -60,7 +60,7 @@ export interface InputAreaProps {
   /** Enable autocomplete suggestions (e.g. slash commands, skills) */
   enableAutocomplete?: boolean;
   /** Autocomplete options to show */
-  autocompleteOptions?: import("../shared/prompt-input").AutocompleteOption[];
+  autocompleteOptions?: import("../shared").AutocompleteOption[];
   /** Enable slash-command handling */
   enableCommands?: boolean;
   /** Handler for slash-command execution */
@@ -74,10 +74,7 @@ export interface InputAreaProps {
   /** Highlight /slash-command patterns in the input text */
   highlightSlashCommands?: boolean;
   /** Map from command name/alias → autocomplete options for --flags */
-  commandOptionMap?: Map<
-    string,
-    import("../shared/prompt-input").AutocompleteOption[]
-  >;
+  commandOptionMap?: Map<string, import("../shared").AutocompleteOption[]>;
   /** Set of known command names for option detection */
   commandNames?: Set<string>;
 }

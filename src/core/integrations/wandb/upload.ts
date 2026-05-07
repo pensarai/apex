@@ -11,7 +11,7 @@
  */
 
 import { resolveConfig, createWeaveTracer, type WandbConfig } from "./client";
-import type { TraceRecord } from "../../agents/offSecAgent/trace";
+import type { TraceRecord } from "../../agents/offSecAgent";
 import type { AgentEventBus } from "../../eventBus";
 import type { SessionInfo } from "../../session";
 

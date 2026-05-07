@@ -2,7 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
-import type { WhiteboxAttackSurfaceResult } from "../../specialized/whiteboxAttackSurface/types";
+import type { WhiteboxAttackSurfaceResult } from "../../specialized/whiteboxAttackSurface";
 import { AgentEventBus } from "../../../eventBus";
 
 /**
@@ -65,7 +65,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       if (cwd) {
         try {
           const { WhiteboxAttackSurfaceAgent } =
-            await import("../../specialized/whiteboxAttackSurface/agent");
+            await import("../../specialized/whiteboxAttackSurface");
 
           const localBus = new AgentEventBus();
           AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);

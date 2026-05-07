@@ -20,7 +20,7 @@ import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
 import { useDialog } from "../../context/dialog";
 import DialogLayout from "../dialog-layout";
-import { AsciiSpinner } from "../shared/ascii-spinner";
+import { AsciiSpinner } from "../shared";
 import { SubagentHub, sortSessions } from "./subagent-hub";
 import { SubagentDetailView } from "./subagent-detail-view";
 import type { SubagentSession, SubagentStore } from "./subagent-state";

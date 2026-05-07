@@ -5,7 +5,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import type { PromptInputRef } from "../components/shared/prompt-input";
+import type { PromptInputRef } from "../components/shared";
 
 interface FocusContextType {
   promptRef: React.MutableRefObject<PromptInputRef | null>;

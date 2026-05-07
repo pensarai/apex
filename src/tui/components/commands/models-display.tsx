@@ -5,7 +5,7 @@ import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
 import { ModelPicker } from "../model-picker";
 import { useTheme } from "../../theme";
-import { DialogControls } from "../shared/dialog-controls";
+import { DialogControls } from "../shared";
 
 function ClippedLine({
   children,

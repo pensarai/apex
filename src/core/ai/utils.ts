@@ -11,6 +11,8 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
+// Importing through the api barrel would cycle: api → offesecAgent → offSecAgent
+// → ai → api. Use the leaf constants module directly.
 import { getPensarGatewayUrl } from "../api/constants";
 import { ensureValidToken } from "../auth";
 import { config } from "../config";

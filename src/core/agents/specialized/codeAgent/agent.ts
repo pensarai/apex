@@ -1,7 +1,9 @@
 import { stepCountIs } from "ai";
 import type { z } from "zod";
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import type { SpecializedAgentInput } from "../../offSecAgent/types";
+import {
+  OffensiveSecurityAgent,
+  type SpecializedAgentInput,
+} from "../../offSecAgent";
 import { CODE_AGENT_SYSTEM_PROMPT } from "./prompts";
 
 // ---------------------------------------------------------------------------

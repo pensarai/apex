@@ -11,9 +11,8 @@ import { ScrollBoxRenderable } from "@opentui/core";
 
 import { useTheme } from "../../theme";
 import { useDimensions } from "../../context/dimensions";
-import { AsciiSpinner } from "../shared/ascii-spinner";
+import { AsciiSpinner, getToolDisplayLabel } from "../shared";
 import { scrollToIndex } from "../../utils/scroll";
-import { getToolDisplayLabel } from "../shared/tool-registry";
 import { SUBAGENT_STATUS_ORDER, type SubagentSession } from "./subagent-state";
 
 // ---------------------------------------------------------------------------

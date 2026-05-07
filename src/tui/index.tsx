@@ -47,10 +47,10 @@ import {
   useTheme,
   resolveThemeColors,
   getTheme,
+  registerBuiltinThemes,
+  detectTerminalMode,
   type ColorMode,
 } from "./theme";
-import { registerBuiltinThemes } from "./theme/themes";
-import { detectTerminalMode } from "./theme/detect-mode";
 import {
   overlayThemeRef,
   buildConsoleOptions,

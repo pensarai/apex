@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useRoute } from "../../context/route";
-import { getPensarConsoleUrl } from "../../../core/api/constants";
+import { getPensarConsoleUrl } from "../../../core/api";
 import { validateGateway } from "../../../core/auth";
 import { Dialog } from "../../context/dialog";
 import DialogLayout, { type FooterAction } from "../dialog-layout";

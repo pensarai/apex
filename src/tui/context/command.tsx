@@ -13,7 +13,7 @@ import {
   commands,
   type AppCommandContext,
 } from "../command-registry";
-import type { AutocompleteOption } from "../components/shared/prompt-input";
+import type { AutocompleteOption } from "../components/shared";
 import { useRoute, type WebCommandOptions } from "./route";
 import { createSkillsRegistry, type SkillsRegistry } from "../../core/skills";
 import { useObfuscation } from "./obfuscation";

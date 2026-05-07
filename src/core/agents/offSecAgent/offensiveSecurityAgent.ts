@@ -13,10 +13,11 @@ import {
   EMAIL_TOOL_NAMES_ACTIVE,
   SEND_EMAIL_TOOL_NAME,
   PLAN_MODE_TOOL_NAMES,
+  createResponseTool,
+  RESPONSE_TOOL_NAME,
+  ASK_USER_QUESTIONS_TOOL_NAME,
+  PersistentShell,
 } from "./tools";
-import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
-import { ASK_USER_QUESTIONS_TOOL_NAME } from "./tools/askUserQuestions";
-import { PersistentShell } from "./tools/persistentShell";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import type { ApprovalGate } from "../../operator";

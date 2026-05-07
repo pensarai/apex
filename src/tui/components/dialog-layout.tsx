@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useTheme } from "../theme";
-import { DialogControls, type ControlItem } from "./shared/dialog-controls";
+import { DialogControls, type ControlItem } from "./shared";
 
 export type { ControlItem as FooterAction };
 
