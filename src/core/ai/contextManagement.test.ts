@@ -162,6 +162,56 @@ describe("applyToolResultBudget", () => {
     expect(value).toMatch(/truncated 700 chars/);
     expect(value).not.toMatch(/truncated -/);
   });
+
+  it("cascading thresholds preserve the ORIGINAL dropped-char count", () => {
+    // Reproduces the metadata-corruption case Bugbot flagged: 50K text
+    // truncated at 10K → ~2080-char preview, then re-truncated at 2K.
+    // Pre-fix the second pass reported "truncated 80 chars" (preview→
+    // smaller-preview delta), hiding the true ~48K of data loss. The
+    // metadata must keep referencing the ORIGINAL length and the file
+    // path written on the FIRST pass.
+    const sessionPath = mkdtempSync(join(tmpdir(), "tool-budget-cascade-"));
+    const original = "x".repeat(50_000);
+    const msgs = makeAssistantWithToolResult(
+      "execute_command",
+      original,
+      "cascade-id",
+    );
+
+    const persistedIds = new Set<string>();
+    const afterPass1 = applyToolResultBudget(msgs, {
+      sessionPath,
+      maxResultChars: 10_000,
+      persistedIds,
+    });
+    const pass1Value = (
+      (afterPass1[1]!.content as Array<Record<string, unknown>>)[0]!.output as {
+        value: string;
+      }
+    ).value;
+    expect(pass1Value).toMatch(/truncated 48000 chars/);
+    const pass1FilePath = pass1Value.match(
+      /full output saved to (.+?)\]$/,
+    )![1]!;
+
+    const afterPass2 = applyToolResultBudget(afterPass1, {
+      sessionPath,
+      maxResultChars: 2_000,
+      persistedIds,
+    });
+    const pass2Value = (
+      (afterPass2[1]!.content as Array<Record<string, unknown>>)[0]!.output as {
+        value: string;
+      }
+    ).value;
+
+    // The headline assertion: dropped-char count references the ORIGINAL
+    // 50K, not the 2080-char preview. Pre-fix this would say `truncated 80`.
+    expect(pass2Value).toMatch(/truncated 48000 chars/);
+    // Path must point to the FIRST pass's persisted file, not a fresh one.
+    expect(pass2Value).toContain(pass1FilePath);
+    expect(pass2Value).not.toMatch(/truncated 80 chars/);
+  });
 });
 
 describe("fitMessagesToContext", () => {

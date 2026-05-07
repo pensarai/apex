@@ -53,6 +53,16 @@ export function truncateWithMarker(
 // collectively exceed the budget without any single one tripping it.
 const DEFAULT_MAX_RESULT_CHARS = 10_000;
 
+/**
+ * Matches the trailing metadata block emitted by `applyToolResultBudget`.
+ * Lets cascading-threshold re-truncation recover the ORIGINAL length and
+ * disk path so the new metadata reports the correct dropped-char count
+ * instead of the (preview→smaller-preview) delta — which would hide the
+ * true magnitude of data loss from the model.
+ */
+const TOOL_RESULT_TRUNCATION_TAIL =
+  /\n\n\[\.\.\. truncated (\d+) chars — full output saved to (.+?)\]$/;
+
 /** Small + critical for agent state — never snip. */
 const TASK_TOOL_NAMES = new Set(["create_task", "update_task", "list_tasks"]);
 
@@ -92,20 +102,42 @@ export function applyToolResultBudget(
       if (TASK_TOOL_NAMES.has(toolName)) return part;
 
       const text = stringifyToolOutput(p.output ?? p.result);
-      if (text.length <= maxChars) return part;
+
+      // Detect re-entry on cascading thresholds. If this entry was
+      // truncated by an earlier pass (10K → 5K → 2K → 500), `text` is
+      // already a `<preview>\n\n[... truncated N chars — full output
+      // saved to PATH]` composite. Strip the tail so the budget check
+      // and subsequent slice operate on the preview body, and recover
+      // the original length / disk path so the new metadata stays
+      // honest instead of reporting `previewLen - newPreviewLen` (which
+      // hides the real magnitude of data loss).
+      const tailMatch = text.match(TOOL_RESULT_TRUNCATION_TAIL);
+      const previewBody = tailMatch ? text.slice(0, tailMatch.index) : text;
+      const previousDropped = tailMatch ? Number(tailMatch[1]) : 0;
+      const originalLength = previewBody.length + previousDropped;
+
+      if (previewBody.length <= maxChars) return part;
 
       const toolCallId = String(p.toolCallId ?? "unknown");
-      const filePath = join(resultsDir, `${toolCallId}.txt`);
+      const filePath = tailMatch
+        ? tailMatch[2]!
+        : join(resultsDir, `${toolCallId}.txt`);
 
       if (!persistedIds || !persistedIds.has(toolCallId)) {
-        if (!dirCreated) {
-          mkdirSync(resultsDir, { recursive: true });
-          dirCreated = true;
-        }
-        try {
-          writeFileSync(filePath, text, "utf-8");
-        } catch {
-          // Non-critical: full output may be lost.
+        // If this entry already carried a truncation tail, the full
+        // output was persisted by an earlier pass — `text` is just the
+        // preview, so writing it back would clobber the disk file with
+        // a partial. The earlier path stays the source of truth.
+        if (!tailMatch) {
+          if (!dirCreated) {
+            mkdirSync(resultsDir, { recursive: true });
+            dirCreated = true;
+          }
+          try {
+            writeFileSync(filePath, text, "utf-8");
+          } catch {
+            // Non-critical: full output may be lost.
+          }
         }
         persistedIds?.add(toolCallId);
       }
@@ -116,12 +148,12 @@ export function applyToolResultBudget(
       // making the "truncated" message larger than the original and
       // reporting a negative dropped-char count.
       const previewSize = Math.min(maxChars, 2000);
-      const preview = text.slice(0, previewSize);
+      const preview = previewBody.slice(0, previewSize);
       return {
         ...p,
         output: {
           type: "text" as const,
-          value: `${preview}\n\n[... truncated ${text.length - previewSize} chars — full output saved to ${filePath}]`,
+          value: `${preview}\n\n[... truncated ${originalLength - previewSize} chars — full output saved to ${filePath}]`,
         },
       };
     });
