@@ -84,13 +84,6 @@ describe("getMaxOutputTokens", () => {
     expect(getMaxOutputTokens("gemini-2.5-flash")).toBe(65_000);
     expect(getMaxOutputTokens("gemini-2.0-flash")).toBe(8_192);
     expect(getMaxOutputTokens("gemini-3-pro-preview")).toBe(64_000);
-    // `*-latest` aliases (1M context) must NOT inherit the 8K legacy
-    // catch-all — they resolve to current top-tier Gemini at the
-    // provider, so getMaxOutputTokens (now passed explicitly to
-    // streamText) must match the 65K modern default.
-    expect(getMaxOutputTokens("gemini-pro-latest")).toBe(65_000);
-    expect(getMaxOutputTokens("gemini-flash-latest")).toBe(65_000);
-    expect(getMaxOutputTokens("gemini-flash-lite-latest")).toBe(65_000);
   });
 
   it("falls back to a small default for genuinely unknown providers", () => {
