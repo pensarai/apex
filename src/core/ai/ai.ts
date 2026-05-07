@@ -880,11 +880,21 @@ export function streamResponse(
           outerErrorMessage,
         );
       }
-      // Return a wrapped stream that shows summarization and then continues
-      return createSummarizationStream(
-        messagesContainer.current,
+      // Wrap so a context error inside the summarization stream itself
+      // (or the resumed `streamResponse` it triggers) is caught and routed
+      // through the same recovery cascade as the proactive and reactive
+      // paths — invariant I4: every context-recovery failure must be caught
+      // at the `streamResponse` boundary, never escape raw to the consumer.
+      return wrapStreamWithErrorHandler(
+        createSummarizationStream(
+          messagesContainer.current,
+          opts,
+          providerModel,
+        ),
+        messagesContainer,
         opts,
         providerModel,
+        silent,
       );
     }
     if (!silent) {
