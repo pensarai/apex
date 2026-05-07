@@ -85,5 +85,50 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   if (modelId.includes("claude-3-5-haiku")) {
     return 8_192;
   }
+
+  // OpenAI families. `getMaxOutputTokens` is now the single source of truth
+  // for both `streamResponse`'s budget math AND the value passed as
+  // `maxOutputTokens` to `streamText`, so an underestimate here would make
+  // `fitMessagesToContext` overly permissive on input — exactly the
+  // overflow class this PR closes. Defaults below come from each family's
+  // documented max output; the per-model `contextLength` clamp in
+  // `getMaxOutputTokens` handles legacy small-window variants.
+  if (modelId.includes("gpt-5")) {
+    return 128_000;
+  }
+  if (modelId.includes("gpt-4.1")) {
+    return 32_000;
+  }
+  if (modelId.includes("gpt-4o")) {
+    return 16_000;
+  }
+  // Reasoning models (o1 / o3 / o4-*) emit up to ~100K incl. reasoning tokens.
+  if (
+    /\bo1\b/.test(modelId) ||
+    /\bo3(\b|-)/.test(modelId) ||
+    /\bo4(\b|-)/.test(modelId)
+  ) {
+    return 100_000;
+  }
+  if (modelId.includes("gpt-3.5")) {
+    return 4_096;
+  }
+
+  // Google Gemini families.
+  if (modelId.includes("gemini-3")) {
+    return 64_000;
+  }
+  if (modelId.includes("gemini-2.5")) {
+    return 65_000;
+  }
+  if (
+    modelId.includes("gemini-2.0") ||
+    modelId.includes("gemini-1.5") ||
+    modelId.includes("gemini-pro") ||
+    modelId.includes("gemini-flash")
+  ) {
+    return 8_192;
+  }
+
   return 4_096;
 }
