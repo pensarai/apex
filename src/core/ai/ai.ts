@@ -380,9 +380,18 @@ function wrapStreamWithErrorHandler(
                     );
                   }
                   try {
+                    // Bump `_restartDepth` so a tokenizer-drift loop where
+                    // every reactive retry trips the same provider rejection
+                    // (fitsBudget=true by our estimator, still rejected by
+                    // the provider) eventually exhausts the depth bound at
+                    // the top of `streamResponse` instead of looping
+                    // forever. Without this, only Layer-3 escalation
+                    // increments depth and a drift-driven loop can burn
+                    // arbitrarily many failed provider calls.
                     const retried = streamResponse({
                       ...opts,
                       messages: fitted.messages,
+                      _restartDepth: (opts._restartDepth ?? 0) + 1,
                     });
                     const wrappedRetry = wrapStreamWithErrorHandler(
                       retried,
