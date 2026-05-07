@@ -43,6 +43,23 @@ describe("getMaxOutputTokens", () => {
     expect(getMaxOutputTokens("claude-3-5-haiku-20241022")).toBe(8_192);
   });
 
+  it("pins latest-tier Claude (4.6 + 4.7) to 128K output", () => {
+    // These four ship the 128K window; they MUST not fall through to the
+    // generic `claude-opus-4-` / `claude-sonnet-4-` catch-alls (32K/64K)
+    // and silently get clamped to a 4× smaller budget. Pensar-prefixed
+    // IDs go through the same lookup, so cover them too.
+    expect(getMaxOutputTokens("claude-opus-4-6-v1")).toBe(128_000);
+    expect(getMaxOutputTokens("claude-opus-4-7")).toBe(128_000);
+    expect(getMaxOutputTokens("claude-sonnet-4-6-v1")).toBe(128_000);
+    expect(getMaxOutputTokens("claude-sonnet-4-7")).toBe(128_000);
+    expect(getMaxOutputTokens("pensar:anthropic.claude-opus-4-7")).toBe(
+      128_000,
+    );
+    expect(getMaxOutputTokens("pensar:anthropic.claude-opus-4-6-v1")).toBe(
+      128_000,
+    );
+  });
+
   it("falls back to a small default for unknown providers", () => {
     expect(getMaxOutputTokens("gpt-4o-mini")).toBe(4_096);
     expect(getMaxOutputTokens("gemini-2.5-pro")).toBe(4_096);
