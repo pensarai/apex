@@ -84,6 +84,16 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   if (n.includes("claude-opus-4-")) {
     return 32_000;
   }
+  // Bare `claude-{sonnet,opus}-4` (OpenRouter) — generation 4 with no tier
+  // suffix. Anthropic-canonical IDs always carry a date / `-v1` suffix so
+  // they hit the dashed branches above; the negative-lookahead ensures the
+  // bare-form branches only trigger when nothing follows the `-4`.
+  if (/claude-sonnet-4(?![-\d])/.test(n)) {
+    return 64_000;
+  }
+  if (/claude-opus-4(?![-\d])/.test(n)) {
+    return 32_000;
+  }
   if (n.includes("claude-3-5-haiku") || n.includes("claude-3-5-sonnet")) {
     return 8_192;
   }
