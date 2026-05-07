@@ -71,6 +71,22 @@ describe("getMaxOutputTokens", () => {
     expect(getMaxOutputTokens("anthropic/claude-3.5-sonnet")).toBe(8_192);
   });
 
+  it("matches bare generation-4 Claude IDs (OpenRouter, no tier suffix)", () => {
+    // OpenRouter ships `anthropic/claude-sonnet-4` and
+    // `anthropic/claude-opus-4` — IDs with NO tier-revision suffix.
+    // Anthropic-canonical IDs always carry a date / `-v1` suffix so they
+    // hit the dashed `claude-{tier}-4-` branches; the bare-gen-4 variants
+    // would otherwise fall through to the 4,096 catch-all (and now that
+    // `getMaxOutputTokens` is passed explicitly to `streamText`, get
+    // hard-capped at 4K instead of the documented per-tier limit).
+    expect(getMaxOutputTokens("anthropic/claude-sonnet-4")).toBe(64_000);
+    expect(getMaxOutputTokens("anthropic/claude-opus-4")).toBe(32_000);
+    // Negative-lookahead must NOT misfire on the dashed canonical
+    // forms: `claude-sonnet-4-5` still resolves via the explicit branch.
+    expect(getMaxOutputTokens("anthropic/claude-sonnet-4-5")).toBe(64_000);
+    expect(getMaxOutputTokens("anthropic/claude-opus-4-1")).toBe(32_000);
+  });
+
   it("recognizes OpenAI family budgets", () => {
     // Bugbot flagged that the 4096 catch-all underestimated non-Claude
     // output budgets, making `fitMessagesToContext` overly permissive on
