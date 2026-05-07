@@ -11,6 +11,7 @@ import type { OffensiveSecurityAgentInput, CreateAgentInput } from "./types";
 import {
   createAllTools,
   EMAIL_TOOL_NAMES_ACTIVE,
+  SEND_EMAIL_TOOL_NAME,
   PLAN_MODE_TOOL_NAMES,
 } from "./tools";
 import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
@@ -196,6 +197,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       traceWriter,
       tasksDir,
       enableThinking: input.enableThinking,
+      surfaceIntegrationEnabled: input.surfaceIntegrationEnabled,
       projectThreatModel: input.projectThreatModel,
       planSubagentId: input.planSubagentId,
       subagentId: input.subagentId,
@@ -252,14 +254,17 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
-    // -- Filter email tools when no inboxes are configured -------------------
+    // -- Filter email tools when no inboxes / SMTP are configured -----------
     const hasEmail =
       (input.session.config?.emailIntegration?.inboxes?.length ?? 0) > 0;
+    const hasSmtp = !!input.session.config?.smtpConfig;
 
     const emailToolSet = new Set<string>(EMAIL_TOOL_NAMES_ACTIVE);
-    let activeTools = hasEmail
-      ? (input.activeTools as string[])
-      : (input.activeTools as string[]).filter((t) => !emailToolSet.has(t));
+    let activeTools = (input.activeTools as string[]).filter((t) => {
+      if (!emailToolSet.has(t)) return true;
+      if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
+      return hasEmail;
+    });
 
     // -- Plan mode: restrict to read-only tools -----------------------------
     if (input.mode === "plan") {

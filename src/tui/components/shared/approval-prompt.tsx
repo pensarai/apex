@@ -4,40 +4,39 @@
  * Single implementation for approval UI used in both operator and chat views.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useTheme } from "../../theme";
 import { getToolSummary } from "./tool-registry";
+import { deriveApprovedActionLabel } from "./action-label";
 import type { PendingApproval } from "../../../core/operator";
 import { getPasteText } from "../../utils/paste";
+import { useDialog } from "../../context/dialog";
 
 interface InlineApprovalPromptProps {
   approval: PendingApproval;
 }
 
-/**
- * Inline approval prompt - shows pending tool call.
- * Displayed in the chat flow.
- */
 export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
   const { colors } = useTheme();
 
-  const description = approval.args?.toolCallDescription as string | undefined;
+  const label = deriveApprovedActionLabel(approval);
   const summary = getToolSummary(approval.toolName, approval.args || {});
+  const showSummaryLine = summary !== label;
 
   return (
     <box flexDirection="column" marginTop={2}>
-      {description && (
-        <box flexDirection="row" marginBottom={1}>
-          <text fg={colors.primary} content="| " />
-          <text fg={colors.text} content={description} />
+      <box flexDirection="row" marginBottom={showSummaryLine ? 1 : 0}>
+        <text fg={colors.primary} content="| " />
+        <text fg={colors.text} content={label} />
+      </box>
+
+      {showSummaryLine && (
+        <box flexDirection="row" gap={1} marginLeft={2}>
+          <text fg={colors.warning} content="?" />
+          <text fg={colors.info} content={summary} />
         </box>
       )}
-
-      <box flexDirection="row" gap={1} marginLeft={2}>
-        <text fg={colors.warning} content="?" />
-        <text fg={colors.info} content={summary} />
-      </box>
     </box>
   );
 }
@@ -66,7 +65,14 @@ export function ApprovalInputArea({
   lastDeclineNote,
 }: ApprovalInputAreaProps) {
   const { colors } = useTheme();
+  const { setExternalDialogOpen } = useDialog();
   const [focusedElement, setFocusedElement] = useState(0);
+
+  // Signal to dashboard that redirect input is focused so it skips Y/A shortcuts
+  useEffect(() => {
+    setExternalDialogOpen(focusedElement === 2);
+    return () => setExternalDialogOpen(false);
+  }, [focusedElement, setExternalDialogOpen]);
 
   useKeyboard((key) => {
     if (key.name === "up") {
@@ -91,6 +97,19 @@ export function ApprovalInputArea({
         onRedirect(redirectInput);
       }
       return;
+    }
+
+    // When redirect input is focused, Y/A keys go to the input (no preventDefault).
+    // Dashboard handler is blocked via externalDialogOpen state.
+    if (focusedElement === 2) {
+      if (
+        key.name === "y" ||
+        key.raw === "Y" ||
+        key.name === "a" ||
+        key.raw === "A"
+      ) {
+        return;
+      }
     }
   });
 

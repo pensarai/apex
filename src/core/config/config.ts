@@ -21,6 +21,8 @@ export interface Config {
   daytonaAPIKey?: string | null;
   daytonaOrgId?: string | null;
   runloopAPIKey?: string | null;
+  // Direct search
+  braveAPIKey?: string | null;
   // Local LLM
   localModelUrl?: string | null;
   localModelName?: string | null;
@@ -31,6 +33,10 @@ export interface Config {
   selectedModelId?: string | null;
   // Extended thinking / reasoning
   reasoningEnabled?: boolean;
+  // Whitebox attack surface: when false, skip the @pensar/surface deterministic
+  // enumeration path and use the legacy pages+apiEndpoints discovery agents.
+  // Defaults to true when unset.
+  surfaceIntegrationEnabled?: boolean;
   // WorkOS CLI auth (replaces pensarAPIKey for new auth flow)
   accessToken?: string | null;
   refreshToken?: string | null;
@@ -64,25 +70,31 @@ export async function init() {
   return { ...DEFAULT_CONFIG, version };
 }
 
-export async function get(): Promise<Config> {
-  const folder = path.join(os.homedir(), ".pensar");
-  const file = path.join(folder, "config.json");
-  const exists = await fs
-    .access(file)
-    .then(() => true)
-    .catch(() => false);
-  if (!exists) {
-    return await init();
-  }
-  const config = await fs.readFile(file, "utf8");
+/**
+ * Parse a truthy/falsy env value. Returns undefined when unset so callers can
+ * fall through to their own default. "0", "false", "no", "off" → false;
+ * anything else non-empty → true.
+ */
+function parseBoolEnv(value: string | undefined): boolean | undefined {
+  if (value === undefined || value === "") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return true;
+}
 
-  const parsedConfig = JSON.parse(config);
-
+/**
+ * Apply environment variable fallbacks for API keys.
+ * Used by both `get()` and `init()` so fresh installs pick up env vars.
+ */
+function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
   const version = getCurrentVersion();
-
   return {
     ...parsedConfig,
-    version: version,
+    responsibleUseAccepted: parsedConfig.responsibleUseAccepted ?? false,
+    surfaceIntegrationEnabled:
+      parsedConfig.surfaceIntegrationEnabled ??
+      parseBoolEnv(process.env.PENSAR_SURFACE_INTEGRATION),
+    version,
     openAiAPIKey: parsedConfig.openAiAPIKey ?? process.env.OPENAI_API_KEY,
     anthropicAPIKey:
       parsedConfig.anthropicAPIKey ?? process.env.ANTHROPIC_API_KEY,
@@ -97,7 +109,24 @@ export async function get(): Promise<Config> {
     daytonaAPIKey: parsedConfig.daytonaAPIKey ?? process.env.DAYTONA_API_KEY,
     daytonaOrgId: parsedConfig.daytonaOrgId ?? process.env.DAYTONA_ORG_ID,
     runloopAPIKey: parsedConfig.runloopAPIKey ?? process.env.RUNLOOP_API_KEY,
+    braveAPIKey: parsedConfig.braveAPIKey ?? process.env.BRAVE_API_KEY,
   };
+}
+
+export async function get(): Promise<Config> {
+  const folder = path.join(os.homedir(), ".pensar");
+  const file = path.join(folder, "config.json");
+  const exists = await fs
+    .access(file)
+    .then(() => true)
+    .catch(() => false);
+  if (!exists) {
+    await init();
+    return applyEnvFallbacks(DEFAULT_CONFIG);
+  }
+  const config = await fs.readFile(file, "utf8");
+  const parsedConfig = JSON.parse(config);
+  return applyEnvFallbacks(parsedConfig);
 }
 
 export async function update(config: Partial<Config>) {

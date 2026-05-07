@@ -265,6 +265,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   enableThinking?: boolean;
 
   /**
+   * Whitebox attack surface flag forwarded into the {@link ToolContext} for
+   * orchestrator-driven pentests. Defaults to `true` when undefined.
+   */
+  surfaceIntegrationEnabled?: boolean;
+
+  /**
    * Project-level threat model content (e.g. from `.pensar/threat_model.md`).
    * Forwarded into the {@link ToolContext} so tools that spawn dedicated
    * per-endpoint threat-model sub-agents can include this as additional
@@ -338,6 +344,12 @@ export interface SpecializedAgentInput {
 
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
+
+  /**
+   * Whitebox attack surface flag forwarded into the {@link ToolContext} for
+   * orchestrator-driven pentests. Defaults to `true` when undefined.
+   */
+  surfaceIntegrationEnabled?: boolean;
 
   /**
    * Project-level threat model content. Forwarded into {@link ToolContext}
