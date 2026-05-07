@@ -1,0 +1,23 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/cli.ts",
+    "src/core/api/index.ts",
+    "scripts/**/*.ts",
+    "src/core/benchmark/**/*.ts",
+    "src/core/agents/specialized/benchmark/**/*.{ts,tsx}",
+    "src/core/agents/specialized/benchmarkComparisonAgent.ts"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "scripts/**/*.ts"
+  ],
+  "ignoreDependencies": [
+    "@playwright/mcp"
+  ],
+  "include": [
+    "files",
+    "dependencies",
+    "unlisted"
+  ]
+}
