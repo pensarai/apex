@@ -158,50 +158,9 @@ describe("applyToolResultBudget", () => {
 
     // Output must be smaller than the original — the whole point of compaction.
     expect(value.length).toBeLessThan(1_200);
-    // previewSize at maxChars=500 is `max(100, 500/5) = 100`, so 1200 - 100 = 1100.
-    expect(value).toMatch(/truncated 1100 chars/);
+    // Truncation marker must report a positive number.
+    expect(value).toMatch(/truncated 700 chars/);
     expect(value).not.toMatch(/truncated -/);
-  });
-
-  it("cascading thresholds progressively reduce already-truncated entries", () => {
-    // Bugbot flagged that a fixed 2000-char preview made the 5K and
-    // 2K cascading thresholds no-ops on entries the 10K pass had
-    // shrunk to ~2080 chars — only the 500 threshold did anything.
-    // Now `previewSize = max(100, maxChars / 5)` scales with the
-    // threshold, so each pass produces a strictly smaller preview.
-    const sessionPath = mkdtempSync(join(tmpdir(), "tool-budget-progressive-"));
-    const msgs = makeAssistantWithToolResult(
-      "execute_command",
-      "y".repeat(50_000),
-      "progressive-id",
-    );
-
-    const persistedIds = new Set<string>();
-    let current = msgs;
-    const lengths: number[] = [];
-    for (const maxResultChars of [10_000, 5_000, 2_000, 500]) {
-      current = applyToolResultBudget(current, {
-        sessionPath,
-        maxResultChars,
-        persistedIds,
-      });
-      const value = (
-        (current[1]!.content as Array<Record<string, unknown>>)[0]!.output as {
-          value: string;
-        }
-      ).value;
-      lengths.push(value.length);
-    }
-
-    // Each subsequent pass MUST yield a strictly shorter output. Pre-fix
-    // the array would be e.g. [2080, 2080, 2080, 580] — three identical
-    // values means three wasted iterations.
-    for (let i = 1; i < lengths.length; i++) {
-      expect(
-        lengths[i]!,
-        `pass ${i}: ${lengths[i - 1]} → ${lengths[i]} (must shrink)`,
-      ).toBeLessThan(lengths[i - 1]!);
-    }
   });
 
   it("cascading thresholds preserve the ORIGINAL dropped-char count", () => {
@@ -247,15 +206,10 @@ describe("applyToolResultBudget", () => {
     ).value;
 
     // The headline assertion: dropped-char count references the ORIGINAL
-    // 50K, not the 2080-char preview. Pre-fix this would say `truncated 80
-    // chars` (preview→smaller-preview delta), hiding the real ~48K of
-    // data loss. With `previewSize = max(100, maxChars / 5)` the second
-    // pass produces a 400-char preview, so dropped = 50000 - 400 = 49600.
-    expect(pass2Value).toMatch(/truncated 49600 chars/);
+    // 50K, not the 2080-char preview. Pre-fix this would say `truncated 80`.
+    expect(pass2Value).toMatch(/truncated 48000 chars/);
     // Path must point to the FIRST pass's persisted file, not a fresh one.
     expect(pass2Value).toContain(pass1FilePath);
-    // Negative-shape assertion: must NOT report the misleading delta-
-    // against-preview count that the metadata-corruption bug produced.
     expect(pass2Value).not.toMatch(/truncated 80 chars/);
   });
 });

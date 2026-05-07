@@ -116,27 +116,18 @@ export function applyToolResultBudget(
       const previousDropped = tailMatch ? Number(tailMatch[1]) : 0;
       const originalLength = previewBody.length + previousDropped;
 
-      // Brand-new entries that already fit need no compaction. Re-entries
-      // (`tailMatch !== null`) skip this guard so the cascading thresholds
-      // {10K, 5K, 2K, 500} can each progressively tighten an already-
-      // truncated preview — the monotone-reduction guard below ensures
-      // we never replace with something larger than what's already there.
-      if (!tailMatch && previewBody.length <= maxChars) return part;
+      if (previewBody.length <= maxChars) return part;
 
       const toolCallId = String(p.toolCallId ?? "unknown");
       const filePath = tailMatch
         ? tailMatch[2]!
         : join(resultsDir, `${toolCallId}.txt`);
 
-      // Preview must scale with `maxChars` so cascading thresholds
-      // {10K, 5K, 2K, 500} achieve progressively tighter compaction on
-      // already-truncated entries (a fixed 2000-char preview would
-      // make the 5K and 2K passes no-ops on entries the 10K pass had
-      // already shrunk to ~2080 chars). 1/5 of the threshold gives:
-      // 10K → 2000-char preview, 5K → 1000, 2K → 400, 500 → 100.
-      // Floor of 100 keeps the smallest preview useful; the
-      // monotone-reduction guard below catches any pathological case.
-      const previewSize = Math.max(100, Math.floor(maxChars / 5));
+      // Preview must never exceed `maxChars`, otherwise tighter cascading
+      // thresholds (e.g. 500) would emit the full text plus metadata —
+      // making the "truncated" message larger than the original and
+      // reporting a negative dropped-char count.
+      const previewSize = Math.min(maxChars, 2000);
       const preview = previewBody.slice(0, previewSize);
       const newValue = `${preview}\n\n[... truncated ${originalLength - previewSize} chars — full output saved to ${filePath}]`;
 
