@@ -9,6 +9,7 @@ import {
   estimateMessageTokens,
   estimateToolsOverheadTokens,
   fitMessagesToContext,
+  applyToolResultBudget,
 } from "./contextManagement";
 
 function makeAssistantWithToolResult(
@@ -88,6 +89,35 @@ describe("estimateToolsOverheadTokens", () => {
     const tokens = estimateToolsOverheadTokens(tools);
     // Should reflect the multi-thousand-char `huge` tool, not be a tiny constant.
     expect(tokens).toBeGreaterThan(500);
+  });
+});
+
+describe("applyToolResultBudget", () => {
+  it("never emits a preview larger than maxResultChars at tight thresholds", () => {
+    const sessionPath = mkdtempSync(join(tmpdir(), "tool-budget-"));
+    // Result sized between the smallest cascading thresholds (500 < 1200 < 2000):
+    // the previous fixed 2000-char preview would have captured the entire
+    // text and reported a negative truncation count.
+    const msgs = makeAssistantWithToolResult(
+      "http_request",
+      "x".repeat(1_200),
+      "tight-threshold",
+    );
+
+    const result = applyToolResultBudget(msgs, {
+      sessionPath,
+      maxResultChars: 500,
+    });
+
+    const toolMsg = result[1]!;
+    const part = (toolMsg.content as Array<Record<string, unknown>>)[0]!;
+    const value = (part.output as { value: string }).value;
+
+    // Output must be smaller than the original — the whole point of compaction.
+    expect(value.length).toBeLessThan(1_200);
+    // Truncation marker must report a positive number.
+    expect(value).toMatch(/truncated 700 chars/);
+    expect(value).not.toMatch(/truncated -/);
   });
 });
 
