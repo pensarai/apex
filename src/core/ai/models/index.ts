@@ -51,9 +51,15 @@ export function getMaxOutputTokens(modelId: string): number {
 }
 
 function lookupOutputBudgetByPattern(modelId: string): number {
+  // Latest-tier Claude (4.6, 4.7) ship 128K output. Match these BEFORE the
+  // generic `claude-opus-4-` / `claude-sonnet-4-` catch-alls below — those
+  // exist only as a 32K/64K floor for older 4.x revisions and would
+  // otherwise clamp a top-tier model to a 4× smaller budget.
   if (
     modelId.includes("claude-opus-4-6") ||
-    modelId.includes("claude-sonnet-4-6")
+    modelId.includes("claude-opus-4-7") ||
+    modelId.includes("claude-sonnet-4-6") ||
+    modelId.includes("claude-sonnet-4-7")
   ) {
     return 128_000;
   }
