@@ -23,8 +23,7 @@ import {
   type AIAuthConfig,
 } from "./utils";
 import { withCachedSystemPrompt, withCachedLastMessage } from "./caching";
-import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
-import { getModelInfo, getMaxOutputTokens } from "./models";
+import { applyToolResultBudget, snipOldSteps } from "./contextManagement";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -50,11 +49,6 @@ export type AIModelProvider =
   | "pensar"
   | "inception"
   | "local";
-
-/** Conservative default when `getModelInfo` doesn't have a `contextLength`. */
-function getContextWindow(modelId: string): number {
-  return getModelInfo(modelId).contextLength ?? 200_000;
-}
 
 function checkIfRateLimitError(error: unknown): boolean {
   const errObj =
@@ -360,29 +354,35 @@ function wrapStreamWithErrorHandler(
                     currentMessages = response.messages as ModelMessage[];
                   }
                 } catch {
-                  // Fall back to container messages.
+                  // Fall back to container messages if response is not available
                 }
 
-                const fitted = fitMessagesToContext(currentMessages, {
-                  contextWindow: getContextWindow(opts.model),
-                  maxOutputTokens: getMaxOutputTokens(opts.model),
-                  system: opts.system,
-                  tools: opts.tools,
-                  sessionPath: opts.sessionPath,
-                });
+                // Layer 1+2: Try lightweight compaction before full summarization.
+                // applyToolResultBudget truncates large tool results to previews;
+                // snipOldSteps replaces old tool results with 1-line summaries.
+                const afterBudget = opts.sessionPath
+                  ? applyToolResultBudget(currentMessages, {
+                      sessionPath: opts.sessionPath,
+                    })
+                  : currentMessages;
+                const compacted = snipOldSteps(afterBudget);
 
-                messagesContainer.current = fitted.messages;
+                // Update the container so any nested retry reads
+                // already-compacted messages instead of the original
+                // pre-compaction ones (prevents unbounded retry loops).
+                messagesContainer.current = compacted;
 
-                if (fitted.fitsBudget && fitted.modified) {
+                // snipOldSteps returns the input array unchanged when nothing was modified
+                if (compacted !== currentMessages) {
                   if (!silent) {
                     console.warn(
-                      `Context length error — Layer 1+2 reduced to ~${fitted.estimatedInputTokens} tokens, retrying`,
+                      `Context length error — trying lightweight compaction on ${currentMessages.length} messages`,
                     );
                   }
                   try {
                     const retried = streamResponse({
                       ...opts,
-                      messages: fitted.messages,
+                      messages: compacted,
                     });
                     const wrappedRetry = wrapStreamWithErrorHandler(
                       retried,
@@ -398,16 +398,15 @@ function wrapStreamWithErrorHandler(
                     }
                     return;
                   } catch (retryError) {
-                    // Auth / model errors must propagate.
+                    // Only fall through to full summarization for context length errors.
+                    // Other errors (auth failures, model errors) must propagate.
                     if (!checkIfContextLengthError(retryError)) {
                       throw retryError;
                     }
                   }
                 }
 
-                // Layer 3: full summarization. Wrapped because
-                // `summarizeConversation` itself calls `generateText` and
-                // can throw — fall back to a minimal-context restart.
+                // Layer 3: Full summarization (existing behavior)
                 const messagesForSummary = messagesContainer.current;
                 if (!silent) {
                   console.warn(
@@ -415,39 +414,13 @@ function wrapStreamWithErrorHandler(
                   );
                 }
 
-                try {
-                  const summarizationStream = createSummarizationStream(
-                    messagesForSummary,
-                    opts,
-                    model,
-                  );
-                  for await (const chunk of summarizationStream.fullStream) {
-                    yield chunk;
-                  }
-                } catch (summarizeError) {
-                  if (!silent) {
-                    const sumMsg =
-                      summarizeError instanceof Error
-                        ? summarizeError.message
-                        : String(summarizeError);
-                    console.error(
-                      `Layer 3 summarization failed (${sumMsg}). Falling back to minimal-context restart.`,
-                    );
-                  }
-                  opts.onSummarized?.("");
-                  const minimalPrompt =
-                    typeof opts.prompt === "string" && opts.prompt.length > 0
-                      ? opts.prompt.slice(0, 4_000)
-                      : MINIMAL_RESTART_PROMPT;
-                  const fallback = streamResponse({
-                    ...opts,
-                    prompt: minimalPrompt,
-                    messages: undefined,
-                    _restartDepth: (opts._restartDepth ?? 0) + 1,
-                  });
-                  for await (const chunk of fallback.fullStream) {
-                    yield chunk;
-                  }
+                const summarizationStream = createSummarizationStream(
+                  messagesForSummary,
+                  opts,
+                  model,
+                );
+                for await (const chunk of summarizationStream.fullStream) {
+                  yield chunk;
                 }
               } else {
                 if (!silent) {
@@ -538,25 +511,11 @@ export interface StreamResponseOpts {
   enableThinking?: boolean;
   /** Session root path — used by context management layers to persist truncated tool results */
   sessionPath?: string;
-  /**
-   * Internal: recovery-recursion depth. Bumped at each summarize → resume
-   * boundary; throws `ContextLengthExhaustedError` past `MAX_RESTART_DEPTH`.
-   */
-  _restartDepth?: number;
 }
 
 export function streamResponse(
   opts: StreamResponseOpts,
 ): StreamTextResult<ToolSet, never> {
-  // Bound recovery recursion (summarize → resume → overflow → …).
-  const restartDepth = opts._restartDepth ?? 0;
-  if (restartDepth > MAX_RESTART_DEPTH) {
-    throw new ContextLengthExhaustedError(
-      `Context-length recovery exhausted after ${restartDepth} restart cycles`,
-      restartDepth,
-    );
-  }
-
   const {
     prompt,
     system,
@@ -587,60 +546,18 @@ export function streamResponse(
       if (inp > 0 || out > 0) _usageCallback(model, inp, out);
     }
   };
+  // Use a container object so the reference stays stable but the value can be updated
+  const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
   const useAnthropicCaching = isAnthropicProvider(model);
-
-  // Proactive context fit: compact before the call. Reactive recovery
-  // below is a safety net for tokenizer drift the estimate doesn't catch.
-  let fittedMessages = messages;
-  let proactiveFitFailed = false;
-  if (messages && messages.length > 0) {
-    const fitted = fitMessagesToContext(messages, {
-      contextWindow: getContextWindow(model),
-      maxOutputTokens: getMaxOutputTokens(model),
-      system,
-      tools,
-      sessionPath: opts.sessionPath,
-    });
-    fittedMessages = fitted.messages;
-    proactiveFitFailed = !fitted.fitsBudget;
-    if (fitted.modified && !silent) {
-      console.warn(
-        `Proactive context fit: compacted messages to ~${fitted.estimatedInputTokens} tokens (fits=${fitted.fitsBudget})`,
-      );
-    }
-  }
-
-  // Container reference is stable; value gets reassigned by `prepareStep`
-  // and the recovery paths so nested retries read the latest compacted view.
-  const messagesContainer = { current: fittedMessages || [] };
-
-  // Layer 1+2 alone can't fit — escalate before sending a doomed request.
-  // Wrap with the same error handler the streamText path uses, otherwise
-  // an overflow inside the summarization call itself escapes uncaught while
-  // the equivalent post-streamText path (line ~880) recovers.
-  if (proactiveFitFailed && fittedMessages) {
-    if (!silent) {
-      console.warn(
-        `Proactive context fit returned fitsBudget=false on ${fittedMessages.length} messages — escalating to summarization before send`,
-      );
-    }
-    return wrapStreamWithErrorHandler(
-      createSummarizationStream(fittedMessages, opts, providerModel),
-      messagesContainer,
-      opts,
-      providerModel,
-      silent,
-    );
-  }
 
   // For Anthropic models, move the system prompt into messages with cache_control.
   // This caches tools + system prompt across multi-turn conversations (~90% cost reduction on cache hits).
   let effectiveSystem: string | undefined = system;
-  let effectiveMessages: ModelMessage[] | undefined = fittedMessages;
+  let effectiveMessages: ModelMessage[] | undefined = messages;
 
   if (useAnthropicCaching && system) {
-    const baseMessages: ModelMessage[] = fittedMessages ?? [
+    const baseMessages: ModelMessage[] = messages ?? [
       { role: "user" as const, content: prompt },
     ];
     effectiveMessages = withCachedSystemPrompt(system, baseMessages);
@@ -766,21 +683,8 @@ export function streamResponse(
             return null;
           }
 
+          // Get JSONSchema7 for display purposes
           const jsonSchema = inputSchema({ toolName: toolCall.toolName });
-
-          // Bound input + schema so the repair call can't itself overflow.
-          const rawInput = toolCall.input;
-          const inputAsText =
-            typeof rawInput === "string" ? rawInput : JSON.stringify(rawInput);
-          const boundedInput = truncateWithMarker(
-            inputAsText,
-            MAX_TOOL_INPUT_CHARS,
-          );
-          const boundedSchema = truncateWithMarker(
-            JSON.stringify(jsonSchema),
-            MAX_SCHEMA_CHARS,
-            "schema",
-          );
 
           const { output: repairedArgs, usage: repairUsage } =
             await generateText({
@@ -791,9 +695,9 @@ export function streamResponse(
               prompt: [
                 `The model tried to call the tool "${toolCall.toolName}"` +
                   ` with the following inputs:`,
-                boundedInput,
+                toolCall.input,
                 `The tool accepts the following schema:`,
-                boundedSchema,
+                JSON.stringify(jsonSchema),
                 `Error encountered: ${error}`,
                 "Please fix the inputs to match the schema.",
                 "",
@@ -987,27 +891,6 @@ export class ContextLengthError extends Error {
     this.name = "ContextLengthError";
   }
 }
-
-/**
- * Terminal: all recovery paths exhausted. The only context-length error
- * allowed to escape `streamResponse` — others are recoverable by design.
- */
-export class ContextLengthExhaustedError extends Error {
-  readonly restartDepth: number;
-  constructor(message: string, restartDepth: number) {
-    super(message);
-    this.name = "ContextLengthExhaustedError";
-    this.restartDepth = restartDepth;
-  }
-}
-
-const MAX_RESTART_DEPTH = 3;
-
-const MAX_TOOL_INPUT_CHARS = 8_000;
-const MAX_SCHEMA_CHARS = 6_000;
-
-const MINIMAL_RESTART_PROMPT =
-  "Continue the previous task. Earlier context was discarded due to repeated context-length errors.";
 
 export {
   StreamIdleTimeoutError,

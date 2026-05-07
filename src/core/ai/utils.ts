@@ -1,9 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamResponse, type AIModel, type StreamResponseOpts } from "./ai";
-import {
-  extractTaskSummaryFromMessages,
-  truncateWithMarker,
-} from "./contextManagement";
+import { extractTaskSummaryFromMessages } from "./contextManagement";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -303,69 +300,32 @@ export async function summarizeConversation(
     })
     .filter(Boolean) as ModelMessage[];
 
-  // Hard caps so summarization can never itself overflow.
-  // ~30K chars ≈ ~7.5K tokens — well below any model's window.
-  const MAX_PER_MESSAGE_CHARS = 4_000;
-  const MAX_SLICED_TOTAL_CHARS = 25_000;
-  const SYSTEM_PROMPT_SNIPPET_CHARS = 2_000;
-
-  const truncateMessageContent = (msg: ModelMessage): ModelMessage => {
-    // Tool-role messages require array content; nothing to truncate by char count.
-    if (msg.role === "tool" || typeof msg.content !== "string") return msg;
-    if (msg.content.length <= MAX_PER_MESSAGE_CHARS) return msg;
-    return {
-      ...msg,
-      content: truncateWithMarker(msg.content, MAX_PER_MESSAGE_CHARS),
-    };
-  };
-
-  let slicedMessages: ModelMessage[];
+  let slicedMessages: ModelMessage[] = [];
   if (
     cleanMessages.length === 1 &&
     typeof cleanMessages[0]!.content === "string"
   ) {
+    // For a single message with very long content, take just the last portion
     const content = cleanMessages[0]!.content;
     const lines = content.split("\n");
-    const truncatedContent = lines.slice(-50).join("\n");
+    const truncatedContent = lines.slice(-50).join("\n"); // Last 50 lines
+
     slicedMessages = [
-      truncateMessageContent({
+      {
         role: "user",
         content: truncatedContent,
-      }),
+      },
     ];
   } else {
-    // Last 20 messages, drop from the front until cumulative budget fits.
-    const candidate = cleanMessages.slice(-20).map(truncateMessageContent);
-    let totalChars = 0;
-    for (const msg of candidate) {
-      totalChars +=
-        typeof msg.content === "string"
-          ? msg.content.length
-          : JSON.stringify(msg.content ?? "").length;
-    }
-    let trimmed = candidate;
-    while (totalChars > MAX_SLICED_TOTAL_CHARS && trimmed.length > 1) {
-      const dropped = trimmed[0]!;
-      const droppedChars =
-        typeof dropped.content === "string"
-          ? dropped.content.length
-          : JSON.stringify(dropped.content ?? "").length;
-      totalChars -= droppedChars;
-      trimmed = trimmed.slice(1);
-    }
-    slicedMessages = trimmed;
+    // Take the last 20 messages for context
+    slicedMessages = cleanMessages.slice(-20);
   }
-
-  const systemSnippet = truncateWithMarker(
-    opts.system ?? "",
-    SYSTEM_PROMPT_SNIPPET_CHARS,
-  );
 
   const summarizedMessages: ModelMessage[] = [
     ...slicedMessages,
     {
       role: "user",
-      content: `Summarize this conversation to pass to another agent. This was the original system prompt (truncated for safety): ${systemSnippet}`,
+      content: `Summarize this conversation to pass to another agent. This was the system prompt: ${opts.system} `,
     },
   ];
 
@@ -425,13 +385,12 @@ export async function summarizeConversation(
   // Notify callers that context was reset so they can discard stale history.
   opts.onSummarized?.(summary);
 
-  // Bump depth so a recursive overflow eventually trips
-  // `ContextLengthExhaustedError` instead of looping forever.
+  // streamResponse always wraps with error handling, so if this call
+  // also hits context length limits, it will recursively summarize again
   const resumed = streamResponse({
     ...opts,
     prompt: enhancedPrompt,
     messages: undefined,
-    _restartDepth: (opts._restartDepth ?? 0) + 1,
   });
   return resumed;
 }
