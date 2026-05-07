@@ -78,7 +78,10 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   if (n.includes("claude-opus-4-1")) {
     return 32_000;
   }
-  if (n.includes("claude-sonnet-4-") || n.includes("claude-3-7-sonnet")) {
+  if (
+    n.includes("claude-sonnet-4-") ||
+    n.includes("claude-3-7-sonnet")
+  ) {
     return 64_000;
   }
   if (n.includes("claude-opus-4-")) {
