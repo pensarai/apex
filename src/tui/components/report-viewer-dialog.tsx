@@ -61,7 +61,7 @@ export default function ReportViewerDialog({
 
   return (
     <Dialog size="xlarge" onClose={onClose}>
-      <DialogLayout title={title} footerActions={footerActions}>
+      <DialogLayout title={title} flushRight footerActions={footerActions}>
         {/* Report Content */}
         <scrollbox
           ref={scrollRef}
@@ -80,7 +80,7 @@ export default function ReportViewerDialog({
             },
             scrollbarOptions: {
               trackOptions: {
-                foregroundColor: colors.primary,
+                foregroundColor: colors.textMuted,
                 backgroundColor: colors.backgroundElement,
               },
             },

@@ -131,6 +131,44 @@ export const flexoki: ThemeDefinition = {
       light: RGBA.fromHex("#8b7ec8"),
     },
 
+    // ── Syntax Highlighting ──────────────────────────────────
+    syntaxKeyword: {
+      dark: RGBA.fromHex("#d14d41"), // red
+      light: RGBA.fromHex("#af3029"),
+    },
+    syntaxString: {
+      dark: RGBA.fromHex("#879a39"), // green
+      light: RGBA.fromHex("#66800b"),
+    },
+    syntaxComment: {
+      dark: RGBA.fromHex("#878580"), // tx-2
+      light: RGBA.fromHex("#6f6e69"),
+    },
+    syntaxNumber: {
+      dark: RGBA.fromHex("#a580e2"), // purple
+      light: RGBA.fromHex("#8577c5"),
+    },
+    syntaxFunction: {
+      dark: RGBA.fromHex("#da702c"), // orange
+      light: RGBA.fromHex("#bc5215"),
+    },
+    syntaxType: {
+      dark: RGBA.fromHex("#d0a215"), // yellow
+      light: RGBA.fromHex("#a37b01"),
+    },
+    syntaxTag: {
+      dark: RGBA.fromHex("#4385be"), // blue
+      light: RGBA.fromHex("#205ea6"),
+    },
+    syntaxAttr: {
+      dark: RGBA.fromHex("#3aa99f"), // cyan
+      light: RGBA.fromHex("#24837b"),
+    },
+    syntaxPunctuation: {
+      dark: RGBA.fromHex("#878580"), // tx-2
+      light: RGBA.fromHex("#6f6e69"),
+    },
+
     // ── Diff ─────────────────────────────────────────────────
     diffAdded: {
       dark: RGBA.fromHex("#879a39"),

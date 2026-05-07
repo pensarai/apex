@@ -107,6 +107,117 @@ function checkIfRateLimitError(error: unknown): boolean {
 }
 
 const MAX_RATE_LIMIT_RETRIES = 20;
+const MAX_IDLE_RESUME_RETRIES = 3;
+const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+class StreamIdleTimeoutError extends Error {
+  constructor(idleMs: number) {
+    super(`Stream idle for ${Math.round(idleMs / 1000)}s — no chunks received`);
+    this.name = "StreamIdleTimeoutError";
+  }
+}
+
+/**
+ * Wraps an async iterable with a per-chunk idle timeout. If no chunk arrives
+ * within `idleMs`, throws a {@link StreamIdleTimeoutError} so the caller can
+ * resume the conversation from accumulated messages.
+ *
+ * @param isIdleTimerActive Optional predicate evaluated before awaiting each
+ *   chunk. When it returns `false` the timer is skipped for that chunk and we
+ *   wait indefinitely. This lets callers suppress the timeout during expected
+ *   long pauses (e.g. while a tool call is executing) so a slow tool isn't
+ *   misread as a stalled provider stream.
+ */
+async function* withIdleTimeout<T>(
+  stream: AsyncIterable<T>,
+  idleMs: number,
+  isIdleTimerActive?: () => boolean,
+): AsyncGenerator<T> {
+  const iterator = stream[Symbol.asyncIterator]();
+  try {
+    while (true) {
+      const timerActive = isIdleTimerActive?.() ?? true;
+      let result: IteratorResult<T>;
+      if (timerActive) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        result = await Promise.race([
+          iterator.next(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new StreamIdleTimeoutError(idleMs)),
+              idleMs,
+            );
+            if (typeof timer === "object" && "unref" in timer) timer.unref();
+          }),
+        ]);
+        clearTimeout(timer);
+      } else {
+        result = await iterator.next();
+      }
+
+      if (result.done) return;
+      yield result.value;
+    }
+  } finally {
+    // Best-effort cleanup — don't block on a stuck iterator. The underlying
+    // stream may be wedged (that's why we're here), so a hanging return()
+    // would deadlock the consumer.
+    iterator.return?.()?.catch?.(() => {});
+  }
+}
+
+function isStreamIdleTimeoutError(error: unknown): boolean {
+  return error instanceof StreamIdleTimeoutError;
+}
+
+/**
+ * Gates the idle-timeout in {@link withIdleTimeout} so it only fires while
+ * we're waiting on the **model**, not while a tool is executing.
+ *
+ * The provider stream emits nothing between a `tool-call` chunk and the
+ * matching `tool-result`. A slow tool (e.g. `run_attack_surface`, which
+ * spawns a multi-minute sub-agent) would otherwise be misread as a stalled
+ * stream — triggering the auto-resume path and causing the model to re-issue
+ * the same tool call, which spawns a duplicate sub-agent.
+ *
+ * Parallel tool calls are tracked by `toolCallId`. Duplicate `tool-call`
+ * chunks for the same id (defensive — should never happen in practice) are
+ * deduplicated. `tool-result` chunks without a matching open call are
+ * ignored so the counter can never go negative.
+ */
+function createToolExecutionGate(): {
+  shouldEnforceIdleTimeout: () => boolean;
+  observe: (chunk: { type: string; toolCallId?: string }) => void;
+} {
+  let inFlight = 0;
+  const open = new Set<string>();
+
+  return {
+    shouldEnforceIdleTimeout: () => inFlight === 0,
+    observe: (chunk) => {
+      if (chunk.type === "tool-call") {
+        const id = chunk.toolCallId;
+        if (id) {
+          if (!open.has(id)) {
+            open.add(id);
+            inFlight++;
+          }
+        } else {
+          inFlight++;
+        }
+      } else if (chunk.type === "tool-result") {
+        const id = chunk.toolCallId;
+        if (id) {
+          if (open.delete(id)) {
+            inFlight = Math.max(0, inFlight - 1);
+          }
+        } else {
+          inFlight = Math.max(0, inFlight - 1);
+        }
+      }
+    },
+  };
+}
 
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
@@ -116,6 +227,7 @@ function wrapStreamWithErrorHandler(
   model: LanguageModel,
   silent?: boolean,
   rateLimitRetryCount: number = 0,
+  idleResumeCount: number = 0,
 ): StreamTextResult<ToolSet, never> {
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
@@ -125,9 +237,23 @@ function wrapStreamWithErrorHandler(
       // Intercept access to fullStream
       if (prop === "fullStream") {
         if (!wrappedStream) {
+          // Tool-execution gate: keeps the idle timer paused while a tool
+          // is in flight (see {@link createToolExecutionGate}). The gate's
+          // predicate is read by `withIdleTimeout` at the top of each
+          // iteration — which always runs AFTER the previous chunk's body
+          // finished mutating the gate, so observations are always visible
+          // before the next idle-race begins.
+          const toolGate = createToolExecutionGate();
+
           wrappedStream = (async function* () {
             try {
-              for await (const chunk of originalStream.fullStream) {
+              for await (const chunk of withIdleTimeout(
+                originalStream.fullStream,
+                STREAM_IDLE_TIMEOUT_MS,
+                toolGate.shouldEnforceIdleTimeout,
+              )) {
+                toolGate.observe(chunk);
+
                 // Only stream-level errors are fatal; tool-level errors
                 // flow through so the UI renders them as failed tool results.
                 if (chunk.type === "error") {
@@ -143,6 +269,41 @@ function wrapStreamWithErrorHandler(
               // Check context length FIRST — these should never be retried
               // as-is; the prompt must be reduced via summarization.
               const isCtxError = checkIfContextLengthError(error);
+
+              // Handle stream idle timeout — resume from accumulated messages
+              if (
+                !isCtxError &&
+                isStreamIdleTimeoutError(error) &&
+                idleResumeCount < MAX_IDLE_RESUME_RETRIES &&
+                messagesContainer.current.length > 0
+              ) {
+                const nextIdleCount = idleResumeCount + 1;
+                if (!silent) {
+                  console.warn(
+                    `Stream stalled (attempt ${nextIdleCount}/${MAX_IDLE_RESUME_RETRIES}), resuming with ${messagesContainer.current.length} messages: ${errorMessage}`,
+                  );
+                }
+
+                const retriedStream = streamResponse({
+                  ...opts,
+                  messages: messagesContainer.current,
+                });
+
+                const wrappedRetriedStream = wrapStreamWithErrorHandler(
+                  retriedStream,
+                  messagesContainer,
+                  opts,
+                  model,
+                  silent,
+                  rateLimitRetryCount,
+                  nextIdleCount,
+                );
+
+                for await (const chunk of wrappedRetriedStream.fullStream) {
+                  yield chunk;
+                }
+                return;
+              }
 
               // Handle rate limit errors with exponential backoff retry
               if (
@@ -176,6 +337,7 @@ function wrapStreamWithErrorHandler(
                   model,
                   silent,
                   nextRetryCount,
+                  idleResumeCount,
                 );
 
                 for await (const chunk of wrappedRetriedStream.fullStream) {
@@ -229,6 +391,7 @@ function wrapStreamWithErrorHandler(
                       model,
                       silent,
                       rateLimitRetryCount,
+                      idleResumeCount,
                     );
                     for await (const chunk of wrappedRetry.fullStream) {
                       yield chunk;
@@ -728,3 +891,11 @@ export class ContextLengthError extends Error {
     this.name = "ContextLengthError";
   }
 }
+
+export {
+  StreamIdleTimeoutError,
+  withIdleTimeout,
+  createToolExecutionGate,
+  STREAM_IDLE_TIMEOUT_MS,
+  MAX_IDLE_RESUME_RETRIES,
+};

@@ -36,14 +36,19 @@ export function markdownToStyledText(
   // Apply obfuscation before any tokenisation so emails/URLs/hostnames are
   // redacted before they get coloured as links/codespans.
   const content = obfuscate(rawContent);
-  // Resolve colors with fallbacks for backwards compatibility
+  // Resolve colors with fallbacks for backwards compatibility.
+  // textColor must be set on every plain-text chunk: StyledText chunks
+  // without an explicit fg fall back to opentui's default (white), which
+  // is invisible on light themes regardless of the parent <text fg=…>.
+  const textColor = colors?.text ?? RGBA.fromInts(220, 220, 220, 255);
+  const mutedColor = colors?.textMuted ?? RGBA.fromInts(150, 150, 150, 255);
   const codeColor = colors?.markdownCode ?? RGBA.fromInts(100, 255, 100, 255);
   const linkColor = colors?.markdownLink ?? RGBA.fromInts(100, 200, 255, 255);
 
   // Handle empty or whitespace-only content
   if (!content || !content.trim()) {
     return new StyledText([
-      { __isChunk: true, text: content || "", attributes: 0 },
+      { __isChunk: true, text: content || "", fg: textColor, attributes: 0 },
     ]);
   }
 
@@ -68,6 +73,7 @@ export function markdownToStyledText(
           chunks.push({
             __isChunk: true,
             text: token.text || "",
+            fg: textColor,
             attributes: defaultAttrs,
           });
         } else if (token.type === "strong") {
@@ -98,6 +104,7 @@ export function markdownToStyledText(
           chunks.push({
             __isChunk: true,
             text: "\n",
+            fg: textColor,
             attributes: defaultAttrs,
           });
         } else if (token.type === "html") {
@@ -107,6 +114,7 @@ export function markdownToStyledText(
           chunks.push({
             __isChunk: true,
             text: token.raw || token.text || "",
+            fg: textColor,
             attributes: defaultAttrs,
           });
         } else if (token.tokens) {
@@ -119,23 +127,39 @@ export function markdownToStyledText(
       if (token.type === "paragraph") {
         if (token.tokens)
           processInlineTokens(token.tokens as unknown as InlineToken[]);
-        chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
+        chunks.push({
+          __isChunk: true,
+          text: "\n",
+          fg: textColor,
+          attributes: 0,
+        });
       } else if (token.type === "heading") {
         if (token.tokens)
           processInlineTokens(
             token.tokens as unknown as InlineToken[],
             TextAttributes.BOLD,
           );
-        chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
+        chunks.push({
+          __isChunk: true,
+          text: "\n",
+          fg: textColor,
+          attributes: 0,
+        });
       } else if (token.type === "list") {
         for (const item of token.items) {
           chunks.push({
             __isChunk: true,
             text: token.ordered ? `${item.task ? "☐ " : "• "}` : "• ",
+            fg: textColor,
             attributes: 0,
           });
           processInlineTokens(item.tokens[0]?.tokens || []);
-          chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
+          chunks.push({
+            __isChunk: true,
+            text: "\n",
+            fg: textColor,
+            attributes: 0,
+          });
         }
       } else if (token.type === "code") {
         chunks.push({
@@ -149,14 +173,24 @@ export function markdownToStyledText(
         chunks.push({
           __isChunk: true,
           text: "│ ",
-          fg: colors?.textMuted ?? RGBA.fromInts(150, 150, 150, 255),
+          fg: mutedColor,
           attributes: 0,
         });
         if (token.tokens)
           processInlineTokens(token.tokens as unknown as InlineToken[]);
-        chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
+        chunks.push({
+          __isChunk: true,
+          text: "\n",
+          fg: textColor,
+          attributes: 0,
+        });
       } else if (token.type === "space") {
-        chunks.push({ __isChunk: true, text: "\n", attributes: 0 });
+        chunks.push({
+          __isChunk: true,
+          text: "\n",
+          fg: textColor,
+          attributes: 0,
+        });
       } else if (token.type === "html") {
         // Block-level HTML — pass through as literal text. Mirrors the
         // inline `html` handler so angle-bracketed obfuscation
@@ -165,6 +199,7 @@ export function markdownToStyledText(
         chunks.push({
           __isChunk: true,
           text: tk.raw || tk.text || "",
+          fg: textColor,
           attributes: 0,
         });
       }
@@ -196,6 +231,7 @@ export function markdownToStyledText(
       {
         __isChunk: true,
         text: content,
+        fg: textColor,
         attributes: 0,
       },
     ]);

@@ -5,7 +5,7 @@ description: "Connect to Pensar Console from the command line"
 
 ## Overview
 
-The `pensar login` command connects your CLI to [Pensar Console](https://console.pensar.dev) for managed inference. This is the headless equivalent of the TUI [`/login`](/apex/commands/auth) command — it uses the same device authorization flow but runs entirely in the terminal without the TUI.
+The `pensar login` command connects your CLI to [Pensar Console](https://console.pensar.dev) for managed inference. This is the headless equivalent of the TUI [`/login`](/apex/tui-slash-commands/login) command — it uses the same device authorization flow but runs entirely in the terminal without the TUI.
 
 <Note>
   The `pensar auth` command still works as an alias for backward compatibility, but `pensar login` is now the primary command name.
@@ -66,10 +66,10 @@ Clears stored authentication tokens from your local configuration. You can recon
 ## Related Commands
 
 <CardGroup cols={2}>
-  <Card title="/login" icon="shield-check" href="/apex/commands/auth">
+  <Card title="/login" icon="shield-check" href="/apex/tui-slash-commands/login">
     Connect via the TUI with the same device flow
   </Card>
-  <Card title="pensar projects" icon="folder" href="/apex/cli/projects">
+  <Card title="pensar projects" icon="folder" href="/apex/cli-commands/pensar-projects">
     List workspace projects (requires login)
   </Card>
 </CardGroup>
