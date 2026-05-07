@@ -138,7 +138,13 @@ export function applyToolResultBudget(
       // monotone-reduction guard below catches any pathological case.
       const previewSize = Math.max(100, Math.floor(maxChars / 5));
       const preview = previewBody.slice(0, previewSize);
-      const newValue = `${preview}\n\n[... truncated ${originalLength - previewSize} chars — full output saved to ${filePath}]`;
+      // `preview.length`, not `previewSize`: when re-entering on a
+      // small `previewBody` (already heavily truncated), the slice
+      // is shorter than `previewSize`, so the dropped-char count must
+      // reference what the preview ACTUALLY contains, otherwise the
+      // metadata understates the data loss by `previewSize -
+      // previewBody.length` chars.
+      const newValue = `${preview}\n\n[... truncated ${originalLength - preview.length} chars — full output saved to ${filePath}]`;
 
       // Monotone-reduction guard: near the threshold boundary
       // (e.g. text.length=2050 against maxChars=2000), preview + ~80
