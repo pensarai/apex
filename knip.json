@@ -6,7 +6,11 @@
     "scripts/**/*.ts",
     "src/core/benchmark/**/*.ts",
     "src/core/agents/specialized/benchmark/**/*.{ts,tsx}",
-    "src/core/agents/specialized/benchmarkComparisonAgent.ts"
+    "src/core/agents/specialized/benchmarkComparisonAgent.ts",
+    "src/core/agents/specialized/authenticationAgent/index.ts",
+    "src/core/agents/specialized/environment/index.ts",
+    "src/core/agents/specialized/patching/index.ts",
+    "src/core/agents/specialized/codeAgent/schemas.ts"
   ],
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
   "ignoreDependencies": ["@playwright/mcp"],
