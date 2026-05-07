@@ -978,6 +978,7 @@ export default function OperatorDashboard({
           (d.result as Record<string, unknown> | null)?.success === true
         ) {
           planSubmittedRef.current = true;
+          planGateBypassedOnResumeRef.current = false;
         }
       });
 
