@@ -93,12 +93,17 @@ export function applyToolResultBudget(
       }
 
       msgModified = true;
-      const preview = text.slice(0, 2000);
+      // Preview must never exceed `maxChars`, otherwise tighter cascading
+      // thresholds (e.g. 500) would emit the full text plus metadata —
+      // making the "truncated" message larger than the original and
+      // reporting a negative dropped-char count.
+      const previewSize = Math.min(maxChars, 2000);
+      const preview = text.slice(0, previewSize);
       return {
         ...p,
         output: {
           type: "text" as const,
-          value: `${preview}\n\n[... truncated ${text.length - 2000} chars — full output saved to ${filePath}]`,
+          value: `${preview}\n\n[... truncated ${text.length - previewSize} chars — full output saved to ${filePath}]`,
         },
       };
     });
