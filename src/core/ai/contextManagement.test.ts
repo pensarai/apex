@@ -10,6 +10,7 @@ import {
   estimateToolsOverheadTokens,
   fitMessagesToContext,
   applyToolResultBudget,
+  truncateWithMarker,
 } from "./contextManagement";
 
 function makeAssistantWithToolResult(
@@ -89,6 +90,48 @@ describe("estimateToolsOverheadTokens", () => {
     const tokens = estimateToolsOverheadTokens(tools);
     // Should reflect the multi-thousand-char `huge` tool, not be a tiny constant.
     expect(tokens).toBeGreaterThan(500);
+  });
+});
+
+describe("truncateWithMarker", () => {
+  it("returns input unchanged when text fits", () => {
+    expect(truncateWithMarker("hi", 10)).toBe("hi");
+    expect(truncateWithMarker("hi", 10, "label")).toBe("hi");
+  });
+
+  it("treats `max` as a strict upper bound — labeled marker", () => {
+    // Pinning the hard-cap contract that auxiliary-LLM input caps
+    // (MAX_TOOL_INPUT_CHARS, MAX_SCHEMA_CHARS, etc.) rely on. Soft caps
+    // would silently inflate budgets by ~30 chars per call.
+    const out = truncateWithMarker("x".repeat(10_000), 100, "schema");
+    expect(out.length).toBeLessThanOrEqual(100);
+    expect(out).toMatch(/…\[schema truncated\]$/);
+  });
+
+  it("treats `max` as a strict upper bound — unlabeled marker", () => {
+    const out = truncateWithMarker("x".repeat(10_000), 100);
+    expect(out.length).toBeLessThanOrEqual(100);
+    expect(out).toMatch(/…\[truncated \d+ chars\]$/);
+  });
+
+  it("dropped-char count reflects sliceLen (post-reservation), not max", () => {
+    // sliceLen = max - widestMarker.length, so dropped = text.length - sliceLen
+    // — strictly more chars are dropped than `text.length - max`. Pin the
+    // exact relationship so future regressions are loud.
+    const text = "x".repeat(10_000);
+    const out = truncateWithMarker(text, 100);
+    const m = out.match(/…\[truncated (\d+) chars\]$/);
+    expect(m).not.toBeNull();
+    const dropped = Number(m![1]);
+    // sliceLen is at most ~75 (100 - widestMarker(~25)), so dropped ≥ 9925.
+    expect(dropped).toBeGreaterThanOrEqual(10_000 - 100);
+    expect(dropped).toBeLessThan(10_000);
+  });
+
+  it("degenerate max < marker length still returns just the marker", () => {
+    // Better signal than a ~5-char head with no marker.
+    const out = truncateWithMarker("x".repeat(100), 5);
+    expect(out).toContain("truncated");
   });
 });
 
