@@ -121,6 +121,19 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   if (modelId.includes("gemini-2.5")) {
     return 65_000;
   }
+  // Version-less `*-latest` aliases (registered with 1M context) point to
+  // current top-tier Gemini, NOT the legacy 2.0/1.5 generations. Match
+  // these BEFORE the `gemini-pro` / `gemini-flash` catch-alls below,
+  // otherwise they'd inherit the 8192-token legacy budget — and since
+  // `getMaxOutputTokens` is now passed explicitly to `streamText`, that
+  // would hard-cap them at 8K instead of the 65K modern default.
+  if (
+    modelId === "gemini-pro-latest" ||
+    modelId === "gemini-flash-latest" ||
+    modelId === "gemini-flash-lite-latest"
+  ) {
+    return 65_000;
+  }
   if (
     modelId.includes("gemini-2.0") ||
     modelId.includes("gemini-1.5") ||
