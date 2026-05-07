@@ -664,18 +664,20 @@ export function streamResponse(
         `Proactive context fit returned fitsBudget=false on ${fittedMessages.length} messages — escalating to summarization before send`,
       );
     }
-    // Pass `opts` through unchanged. The slot for this escalation is
-    // consumed by `summarizeConversation`'s internal `_restartDepth + 1`
-    // bump on the resumed `streamResponse` call — pre-bumping here would
-    // double-count vs the reactive Layer 3 path (which also passes
-    // `opts._restartDepth` to `createSummarizationStream` after a
-    // no-retry fall-through). With the post-bump, all three escalation
-    // entry points (proactive, outer-catch, reactive Layer 3) consume
-    // exactly one depth slot per summarization attempt — symmetric.
+    // Escalation IS a depth slot — `summarizeConversation` will spawn
+    // `streamResponse({ ..., _restartDepth: depth + 1 })` for the resumed
+    // call. Pass the bumped value here so any reactive recovery inside
+    // the wrapper (when the summarization stream itself errors) starts
+    // from the correct depth, instead of granting one extra cycle by
+    // resetting `postReactiveDepth` to the outer `opts._restartDepth`.
+    const escalatedOpts: StreamResponseOpts = {
+      ...opts,
+      _restartDepth: (opts._restartDepth ?? 0) + 1,
+    };
     return wrapStreamWithErrorHandler(
-      createSummarizationStream(fittedMessages, opts, providerModel),
+      createSummarizationStream(fittedMessages, escalatedOpts, providerModel),
       messagesContainer,
-      opts,
+      escalatedOpts,
       providerModel,
       silent,
     );
@@ -939,18 +941,25 @@ export function streamResponse(
       // paths — invariant I4: every context-recovery failure must be caught
       // at the `streamResponse` boundary, never escape raw to the consumer.
       //
-      // Pass `opts` through unchanged — the slot is consumed by
-      // `summarizeConversation`'s internal `_restartDepth + 1` bump on
-      // the resumed call. See the proactive escalation comment above
-      // for the symmetry rationale.
+      // Like the proactive escalation, this fall-through to summarization
+      // IS a depth slot. Bump `_restartDepth` before passing so the
+      // wrapper's reactive recovery (when the summarization stream itself
+      // errors) starts `postReactiveDepth` from the bumped value, not from
+      // the unmodified outer `opts._restartDepth` — otherwise the cascade
+      // gets one extra cycle on top of the slot just spent. Same bug class
+      // as the proactive-side fix in 75cb1d76.
+      const escalatedOpts: StreamResponseOpts = {
+        ...opts,
+        _restartDepth: (opts._restartDepth ?? 0) + 1,
+      };
       return wrapStreamWithErrorHandler(
         createSummarizationStream(
           messagesContainer.current,
-          opts,
+          escalatedOpts,
           providerModel,
         ),
         messagesContainer,
-        opts,
+        escalatedOpts,
         providerModel,
         silent,
       );
