@@ -11,20 +11,11 @@ import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 
 /**
- * Truncate `text` so the returned string fits in **at most** `max` chars,
- * and append a marker noting how many were dropped. `label` selects the
- * marker form: omit for the verbose `"…[truncated N chars]"` (used wherever
- * the recipient might benefit from the byte count), pass a label for
- * `"…[<label> truncated]"` when the count would be misleading or noisy.
- *
- * `max` is a strict upper bound — the marker length is reserved INSIDE
- * `max`, not appended outside it. Callers (`MAX_TOOL_INPUT_CHARS`,
- * `MAX_SCHEMA_CHARS`, `MAX_PER_MESSAGE_CHARS`, `SYSTEM_PROMPT_SNIPPET_CHARS`)
- * treat the cap as a hard ceiling on auxiliary-LLM input size; soft caps
- * would silently inflate budgets by ~30 chars per call.
- *
- * Degenerate `max < marker.length` returns just the marker (still useful
- * signal vs. a meaningless ≤30-char head slice).
+ * Truncate `text` to `max` chars and append a marker noting how many were
+ * dropped. `label` selects the marker form: omit for the verbose
+ * `"…[truncated N chars]"` (used wherever the recipient might benefit from
+ * the byte count), pass a label for `"…[<label> truncated]"` when the count
+ * would be misleading or noisy.
  */
 export function truncateWithMarker(
   text: string,
@@ -32,19 +23,10 @@ export function truncateWithMarker(
   label?: string,
 ): string {
   if (text.length <= max) return text;
-  if (label) {
-    const marker = `…[${label} truncated]`;
-    const sliceLen = Math.max(0, max - marker.length);
-    return `${text.slice(0, sliceLen)}${marker}`;
-  }
-  // Marker width depends on the dropped-char count — but the count itself
-  // depends on the slice length. Reserve the worst-case width (digits of
-  // `text.length`, an upper bound on `dropped`) so the final output is
-  // always ≤ `max` regardless of how the count formats.
-  const widestMarker = `…[truncated ${text.length} chars]`;
-  const sliceLen = Math.max(0, max - widestMarker.length);
-  const dropped = text.length - sliceLen;
-  return `${text.slice(0, sliceLen)}…[truncated ${dropped} chars]`;
+  const marker = label
+    ? `…[${label} truncated]`
+    : `…[truncated ${text.length - max} chars]`;
+  return `${text.slice(0, max)}${marker}`;
 }
 
 // Layer 1: Tool Result Truncation
