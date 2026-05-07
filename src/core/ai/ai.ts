@@ -700,12 +700,6 @@ export function streamResponse(
       tools,
       maxRetries: 3,
       providerOptions,
-      // Pin actual emission to the same value `fitMessagesToContext`
-      // reserved for output. Without this, the SDK applies provider
-      // defaults that can exceed our budget — e.g. GPT-4o defaults to
-      // 16K output but our messages were sized assuming a smaller
-      // reservation. Making the value explicit closes that drift class.
-      maxOutputTokens: getMaxOutputTokens(model),
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;

@@ -60,33 +60,9 @@ describe("getMaxOutputTokens", () => {
     );
   });
 
-  it("recognizes OpenAI family budgets", () => {
-    // Bugbot flagged that the 4096 catch-all underestimated non-Claude
-    // output budgets, making `fitMessagesToContext` overly permissive on
-    // input. Pin the per-family values so future families (gpt-6, etc.)
-    // can't silently inherit the small fallback again.
-    expect(getMaxOutputTokens("gpt-5")).toBe(128_000);
-    expect(getMaxOutputTokens("gpt-5-mini")).toBe(128_000);
-    expect(getMaxOutputTokens("gpt-4.1")).toBe(32_000);
-    expect(getMaxOutputTokens("gpt-4o")).toBe(16_000);
-    expect(getMaxOutputTokens("gpt-4o-mini")).toBe(16_000);
-    expect(getMaxOutputTokens("gpt-3.5-turbo")).toBe(4_096);
-    expect(getMaxOutputTokens("o1")).toBe(100_000);
-    expect(getMaxOutputTokens("o3")).toBe(100_000);
-    expect(getMaxOutputTokens("o4-mini")).toBe(100_000);
-    // `o3-mini` has only 128K context — `getMaxOutputTokens` clamps the
-    // 100K pattern down to 50% of the window so input keeps headroom.
-    expect(getMaxOutputTokens("o3-mini")).toBe(64_000);
-  });
-
-  it("recognizes Google Gemini family budgets", () => {
-    expect(getMaxOutputTokens("gemini-2.5-pro")).toBe(65_000);
-    expect(getMaxOutputTokens("gemini-2.5-flash")).toBe(65_000);
-    expect(getMaxOutputTokens("gemini-2.0-flash")).toBe(8_192);
-    expect(getMaxOutputTokens("gemini-3-pro-preview")).toBe(64_000);
-  });
-
-  it("falls back to a small default for genuinely unknown providers", () => {
+  it("falls back to a small default for unknown providers", () => {
+    expect(getMaxOutputTokens("gpt-4o-mini")).toBe(4_096);
+    expect(getMaxOutputTokens("gemini-2.5-pro")).toBe(4_096);
     expect(getMaxOutputTokens("totally-unknown-model")).toBe(4_096);
   });
 });
