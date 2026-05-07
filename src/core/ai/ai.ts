@@ -373,15 +373,6 @@ function wrapStreamWithErrorHandler(
 
                 messagesContainer.current = fitted.messages;
 
-                // Track depth across the reactive paths so that a failed
-                // Layer 1+2 retry CONTRIBUTES to the Layer 3 budget too.
-                // Without this, a failed retry's increment is "lost" on
-                // fall-through (Layer 3 reads outer `opts._restartDepth`,
-                // not the post-retry value) and recovery can burn close
-                // to double the intended provider calls before
-                // `MAX_RESTART_DEPTH` finally trips.
-                let postReactiveDepth = opts._restartDepth ?? 0;
-
                 if (fitted.fitsBudget && fitted.modified) {
                   if (!silent) {
                     console.warn(
@@ -400,7 +391,7 @@ function wrapStreamWithErrorHandler(
                     const retried = streamResponse({
                       ...opts,
                       messages: fitted.messages,
-                      _restartDepth: postReactiveDepth + 1,
+                      _restartDepth: (opts._restartDepth ?? 0) + 1,
                     });
                     const wrappedRetry = wrapStreamWithErrorHandler(
                       retried,
@@ -420,10 +411,6 @@ function wrapStreamWithErrorHandler(
                     if (!checkIfContextLengthError(retryError)) {
                       throw retryError;
                     }
-                    // Account for the depth slot the failed retry just
-                    // consumed so the Layer 3 paths below don't grant a
-                    // fresh budget on top of the already-spent cycle.
-                    postReactiveDepth += 1;
                   }
                 }
 
@@ -440,7 +427,7 @@ function wrapStreamWithErrorHandler(
                 try {
                   const summarizationStream = createSummarizationStream(
                     messagesForSummary,
-                    { ...opts, _restartDepth: postReactiveDepth },
+                    opts,
                     model,
                   );
                   for await (const chunk of summarizationStream.fullStream) {
@@ -465,7 +452,7 @@ function wrapStreamWithErrorHandler(
                     ...opts,
                     prompt: minimalPrompt,
                     messages: undefined,
-                    _restartDepth: postReactiveDepth + 1,
+                    _restartDepth: (opts._restartDepth ?? 0) + 1,
                   });
                   for await (const chunk of fallback.fullStream) {
                     yield chunk;
