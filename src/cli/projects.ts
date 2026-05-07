@@ -8,7 +8,7 @@
  *   pensar projects --help       Show help
  */
 
-import { listProjects } from "../core/api/issues";
+import { listProjects } from "../core/api";
 
 function showHelp(): void {
   console.log(`pensar projects — List workspace projects

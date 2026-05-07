@@ -8,7 +8,7 @@
 
 import { getPensarApiUrl } from "./constants";
 import { config } from "../config";
-import { ensureValidToken } from "../auth/token";
+import { ensureValidToken } from "../auth";
 
 // ── Types ────────────────────────────────────────────────────────────
 

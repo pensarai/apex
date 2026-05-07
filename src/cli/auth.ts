@@ -15,7 +15,7 @@
  */
 
 import { config } from "../core/config";
-import { getPensarApiUrl, getPensarConsoleUrl } from "../core/api/constants";
+import { getPensarApiUrl, getPensarConsoleUrl } from "../core/api";
 import {
   isConnected,
   disconnect,

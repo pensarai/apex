@@ -2,11 +2,14 @@
 // Harness
 // ---------------------------------------------------------------------------
 export { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
-export type {
-  OffensiveSecurityAgentInput,
-  CreateAgentInput,
-  SpecializedAgentInput,
-  AgentMode,
+export {
+  ApexFindingObject,
+  type OffensiveSecurityAgentInput,
+  type CreateAgentInput,
+  type SpecializedAgentInput,
+  type AgentMode,
+  type Finding,
+  type CommandCancelHandle,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -30,13 +33,17 @@ export type {
 } from "./trace";
 
 // ---------------------------------------------------------------------------
-// Tools
+// System prompts
 // ---------------------------------------------------------------------------
 export {
-  createAllTools,
-  ALL_TOOL_NAMES,
-  PLAN_MODE_TOOL_NAMES,
-  SKILL_TOOL_NAMES,
-  ASK_USER_QUESTIONS_TOOL_NAME,
-  type ToolName,
-} from "./tools";
+  buildBaseSystemPrompt,
+  buildSessionWorkspaceSection,
+  buildProvidedFilesSection,
+  BASE_SYSTEM_PROMPT,
+  type BaseSystemPromptOptions,
+} from "./prompt";
+
+// ---------------------------------------------------------------------------
+// Tools — re-exported via the tools barrel.
+// ---------------------------------------------------------------------------
+export * from "./tools";

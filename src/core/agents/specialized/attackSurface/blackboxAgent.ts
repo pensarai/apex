@@ -5,8 +5,10 @@ import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
 import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
 import { loadAttackSurfaceResults } from "./types";
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import type { SpecializedAgentInput } from "../../offSecAgent/types";
+import {
+  OffensiveSecurityAgent,
+  type SpecializedAgentInput,
+} from "../../offSecAgent";
 import type { SessionInfo } from "../../../session";
 
 // ---------------------------------------------------------------------------

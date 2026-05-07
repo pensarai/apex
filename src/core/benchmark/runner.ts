@@ -6,17 +6,17 @@ import { promisify } from "util";
 import {
   parseDockerComposePort,
   getActualDockerPort,
-} from "../agents/specialized/benchmark/docker-utils";
-import { detectFlagInArtifacts } from "../agents/specialized/benchmark/flag-detector";
+  detectFlagInArtifacts,
+  runBenchmarkInDaytona,
+} from "../agents/specialized/benchmark";
 import {
   BenchmarkComparisonAgent,
   type BenchmarkComparisonResult,
 } from "../agents/specialized/benchmarkComparisonAgent";
-import { runBenchmarkInDaytona } from "../agents/specialized/benchmark/remote/daytona-wrapper";
 import * as sessions from "../session";
 import { runPentestWorkflow } from "../workflows/pentest";
 import { AgentEventBus } from "../eventBus";
-import type { CacheMetrics } from "../ai/ai";
+import type { CacheMetrics } from "../ai";
 import type {
   BenchmarkMetadata,
   BenchmarkRunResult,

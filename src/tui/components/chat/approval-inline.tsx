@@ -6,8 +6,7 @@
  */
 
 import { useTheme } from "../../theme";
-import { getToolSummary } from "../shared/tool-registry";
-import { deriveApprovedActionLabel } from "../shared/action-label";
+import { getToolSummary, deriveApprovedActionLabel } from "../shared";
 import type { PendingApproval } from "../../../core/operator";
 
 interface InlineApprovalPromptProps {

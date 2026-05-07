@@ -7,10 +7,7 @@
  */
 
 import { useTheme } from "../../theme";
-import {
-  useMarkdownSyntaxStyle,
-  useMarkdownRenderNode,
-} from "../shared/markdown-viewer";
+import { useMarkdownSyntaxStyle, useMarkdownRenderNode } from "../shared";
 
 interface PlanReviewMessageProps {
   planContent: string;

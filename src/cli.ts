@@ -9,7 +9,7 @@
 
 import packageJson from "../package.json";
 import { getCurrentVersion, upgrade } from "./core/installation";
-import { buildAuthConfig } from "./core/ai/utils";
+import { buildAuthConfig, type AIModel } from "./core/ai";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
 import type { SessionInfo } from "./core/session";
@@ -18,7 +18,6 @@ import {
   resolveThreatModelPrompt,
   combinePromptParts,
 } from "./tui/utils/command-flags";
-import type { AIModel } from "./core/ai";
 
 const args = process.argv.slice(2);
 const command = args[0];

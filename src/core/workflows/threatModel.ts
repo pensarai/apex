@@ -1,18 +1,17 @@
 import { stepCountIs } from "ai";
-import type { AIModel } from "../ai";
-import type { AIAuthConfig } from "../ai/utils";
+import type { AIModel, AIAuthConfig } from "../ai";
 import type { SessionInfo } from "../session";
 import type { AgentEventBus } from "../eventBus";
 import {
   ALL_TOOL_NAMES,
   SKILL_TOOL_NAMES,
   ASK_USER_QUESTIONS_TOOL_NAME,
+  buildBaseSystemPrompt,
 } from "../agents/offSecAgent";
-import { buildBaseSystemPrompt } from "../agents/offSecAgent/prompt";
-import { runOffensiveSecurityAgent } from "../api/offesecAgent";
+import { runOffensiveSecurityAgent } from "../api";
 import { sessions } from "../session";
 import { createSkillsRegistry } from "../skills";
-import { buildThreatModelPrompt } from "../skills/builtins/threatModel";
+import { buildThreatModelPrompt } from "../skills/builtins";
 
 // Headless — no TTY, so strip ask_user_questions from the active set.
 const HEADLESS_TOOL_NAMES = ALL_TOOL_NAMES.filter(

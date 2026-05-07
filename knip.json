@@ -8,16 +8,7 @@
     "src/core/agents/specialized/benchmark/**/*.{ts,tsx}",
     "src/core/agents/specialized/benchmarkComparisonAgent.ts"
   ],
-  "project": [
-    "src/**/*.{ts,tsx}",
-    "scripts/**/*.ts"
-  ],
-  "ignoreDependencies": [
-    "@playwright/mcp"
-  ],
-  "include": [
-    "files",
-    "dependencies",
-    "unlisted"
-  ]
+  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
+  "ignoreDependencies": ["@playwright/mcp"],
+  "include": ["files", "dependencies", "unlisted"]
 }

@@ -14,7 +14,7 @@ import { useTheme } from "../../theme";
 import { useToast } from "../../context/toast";
 import { Dialog } from "../../context/dialog";
 import DialogLayout from "../dialog-layout";
-import { useMarkdownSyntaxStyle } from "../shared/markdown-viewer";
+import { useMarkdownSyntaxStyle } from "../shared";
 import { openFileInDefaultApp } from "../../utils/open-file";
 import type { SkillEntry, SkillSource } from "../../../core/skills/types";
 

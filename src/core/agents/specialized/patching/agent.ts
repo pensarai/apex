@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
+import { OffensiveSecurityAgent } from "../../offSecAgent";
 import { buildSystemPrompt, buildPatchingPrompt } from "./prompts";
 import {
   PatchResultSchema,

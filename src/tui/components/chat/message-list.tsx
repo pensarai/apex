@@ -6,12 +6,16 @@
  */
 
 import { useTheme } from "../../theme";
-import { MessageRenderer, getStableMessageKey, isToolMessage } from "../shared";
+import {
+  MessageRenderer,
+  getStableMessageKey,
+  isToolMessage,
+  deriveActionLabel,
+} from "../shared";
 import type { DisplayMessage } from "../agent-display";
 import type { PendingApproval } from "../../../core/operator";
 import { InlineApprovalPrompt } from "./approval-inline";
 import { LoadingIndicator, type LoadingState } from "./loading-indicator";
-import { deriveActionLabel } from "../shared/action-label";
 
 /** Tools that spawn subagents — show "Waiting for agents" instead of "Executing" */
 const SUBAGENT_TOOLS = new Set([

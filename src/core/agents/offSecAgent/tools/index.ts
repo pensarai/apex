@@ -27,6 +27,7 @@ export {
   installSandboxPlaywright,
   ensureSandboxPlaywright,
   ensureSandboxBrowser,
+  createSandboxBrowserTools,
 } from "./sandboxPlaywright";
 
 // Core pentest tools
@@ -99,6 +100,44 @@ export { listTasksTool } from "./listTasks";
 export { writePlan } from "./writePlan";
 export { submitPlan } from "./submitPlan";
 
+// Response (structured final-output) tool — used by sub-agents that emit
+// validated result objects.
+export { createResponseTool, RESPONSE_TOOL_NAME } from "./response";
+
+// Persistent shell — long-lived shell session shared across tool calls.
+export {
+  PersistentShell,
+  readTempfileCapped,
+  getApexTmpRoot,
+  extractFallbackStdout,
+  type ShellExecuteResult,
+} from "./persistentShell";
+
+// Playwright MCP browser session helpers.
+export {
+  PlaywrightMcpSession,
+  createBrowserTools,
+  setHeadlessMode,
+  setUserAgent,
+  setViewportSize,
+  transformScriptToFunction,
+  type BrowserToolMode,
+  type BrowserNavigateResult,
+  type BrowserScreenshotResult,
+  type BrowserClickResult,
+  type BrowserFillResult,
+  type BrowserEvaluateResult,
+  type BrowserConsoleResult,
+} from "./playwrightMcp";
+
+// askUserQuestions schema/types — used by TUI for the question-prompt UX.
+export {
+  AskUserQuestionSchema,
+  type AskUserQuestion,
+  type AskUserQuestionAnswer,
+  type AskUserQuestionsResult,
+} from "./askUserQuestions";
+
 // ---------------------------------------------------------------------------
 // Tool registry
 // ---------------------------------------------------------------------------
@@ -135,11 +174,13 @@ import { provideComparisonResults } from "./provideComparisonResults";
 import { addMemory } from "./addMemory";
 import { listMemories } from "./listMemories";
 import { getMemory } from "./getMemory";
-import { createEmailToolset } from "./email";
-import { emailListInboxes } from "./email/listInboxes";
-import { emailListMessages } from "./email/listMessages";
-import { emailSearchMessages } from "./email/searchMessages";
-import { emailGetMessage } from "./email/getMessage";
+import {
+  createEmailToolset,
+  emailListInboxes,
+  emailListMessages,
+  emailSearchMessages,
+  emailGetMessage,
+} from "./email";
 import { webSearch } from "./webSearch";
 import { getPage } from "./getPage";
 import { readSkill } from "./readSkill";

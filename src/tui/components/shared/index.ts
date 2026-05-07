@@ -6,7 +6,11 @@
 
 // Markdown utilities
 export { markdownToStyledText } from "./markdown";
-export { MarkdownViewer } from "./markdown-viewer";
+export {
+  MarkdownViewer,
+  useMarkdownSyntaxStyle,
+  useMarkdownRenderNode,
+} from "./markdown-viewer";
 
 // Message utilities
 export {
@@ -32,6 +36,7 @@ export {
   registerToolSummary,
   hasToolSummary,
   getArgsPreview,
+  getToolDisplayLabel,
 } from "./tool-registry";
 export {
   getResultSummary,
@@ -56,3 +61,6 @@ export { useMessageState } from "./message-reducer";
 // Input components
 export { PromptInput, type PromptInputRef } from "./prompt-input";
 export { type AutocompleteOption } from "./prompt-input";
+
+// Action labels
+export { deriveActionLabel, deriveApprovedActionLabel } from "./action-label";

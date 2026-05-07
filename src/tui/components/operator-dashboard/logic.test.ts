@@ -10,7 +10,7 @@ import {
   accumulateTokenUsage,
   type DashboardStatus,
 } from "./logic";
-import type { AutocompleteOption } from "../shared/prompt-input";
+import type { AutocompleteOption } from "../shared";
 import type { OperatorSessionState } from "../../../core/operator";
 
 // ---------------------------------------------------------------------------

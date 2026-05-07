@@ -2,13 +2,10 @@ import { z } from "zod";
 import {
   RiskScoreSchema,
   RiskScoreBreakdownSchema,
-} from "../whiteboxAttackSurface/types";
+} from "../whiteboxAttackSurface";
 
 export { RiskScoreSchema, RiskScoreBreakdownSchema };
-export type {
-  RiskScore,
-  RiskScoreBreakdown,
-} from "../whiteboxAttackSurface/types";
+export type { RiskScore, RiskScoreBreakdown } from "../whiteboxAttackSurface";
 
 /**
  * Shared schemas for attack surface agent tools.

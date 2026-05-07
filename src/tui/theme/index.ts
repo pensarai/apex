@@ -24,6 +24,10 @@ export { ThemeProvider, useTheme, resolveThemeColors } from "./context";
 // ── Legacy exports (kept during migration) ──────────────────
 export { colors, type ColorName } from "./colors";
 
+// ── Built-in themes + terminal mode detection ───────────────
+export { registerBuiltinThemes } from "./themes";
+export { detectTerminalMode } from "./detect-mode";
+
 // ── Helpers ─────────────────────────────────────────────────
 import type { ThemeColors } from "./types";
 import { colors as legacyColors } from "./colors";

@@ -2,12 +2,11 @@ import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall } from "ai";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import type { AIModel } from "../../../ai";
-import type { AIAuthConfig } from "../../../ai/utils";
+import type { AIModel, AIAuthConfig } from "../../../ai";
 import { type SessionInfo } from "../../../session";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import { detectOSAndEnhancePrompt } from "../utils";
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
+import { OffensiveSecurityAgent } from "../../offSecAgent";
 import type { AgentEventBus } from "../../../eventBus";
 import type { AuthBarrier } from "./types";
 

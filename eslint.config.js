@@ -2,6 +2,7 @@ import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 import prettierConfig from "eslint-config-prettier";
 import unusedImports from "eslint-plugin-unused-imports";
+import importPlugin from "eslint-plugin-import";
 
 export default tseslint.config(
   eslint.configs.recommended,
@@ -20,6 +21,40 @@ export default tseslint.config(
       "no-useless-assignment": "off",
       "no-useless-escape": "off",
       "react-hooks/exhaustive-deps": "off",
+    },
+  },
+  // Barrel-file enforcement: forbid reaching past kept module barrels into
+  // their internals. The forbid list below is the source of truth for which
+  // directories are kept module barriers — adding a new kept barrel means
+  // adding a new entry here. See "Barrel files" in CLAUDE.md.
+  {
+    plugins: { import: importPlugin },
+    rules: {
+      "import/no-internal-modules": [
+        "error",
+        {
+          forbid: [
+            "**/core/ai/!(index)",
+            "**/core/ai/models/!(index)",
+            "**/core/agents/offSecAgent/!(index|*.test.ts)",
+            "**/core/agents/offSecAgent/tools/!(index|*.test.ts)",
+            "**/core/agents/offSecAgent/tools/email/!(index|*.test.ts)",
+            "**/core/skills/builtins/!(index)",
+            "**/core/report/!(index)",
+            "**/core/agents/specialized/whiteboxAttackSurface/!(index)",
+            "**/core/agents/specialized/benchmark/!(index)",
+            "**/tui/theme/!(index)",
+            "**/tui/keybindings/!(index)",
+          ],
+        },
+      ],
+    },
+  },
+  // Test files are allowed to poke at internals.
+  {
+    files: ["**/*.test.ts", "**/*.test.tsx", "**/*.test-*.ts"],
+    rules: {
+      "import/no-internal-modules": "off",
     },
   },
   prettierConfig,

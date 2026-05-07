@@ -1,5 +1,4 @@
-import type { AIModel } from "../../../ai";
-import type { AIAuthConfig } from "../../../ai/utils";
+import type { AIModel, AIAuthConfig } from "../../../ai";
 import type { CredentialManager } from "../../../credentials";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../../findings/registry";
