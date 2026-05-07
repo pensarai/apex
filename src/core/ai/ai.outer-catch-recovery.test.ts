@@ -33,7 +33,7 @@ vi.mock("./utils", async () => {
     createSummarizationStream: vi.fn(
       () =>
         ({
-          // eslint-disable-next-line require-yield
+          // biome-ignore lint/correctness/useYield: throw-only generator simulates streamText error
           fullStream: (async function* () {
             throw new Error(
               "prompt is too long: 999999 tokens > 200000 maximum",
