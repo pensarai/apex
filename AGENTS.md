@@ -106,6 +106,6 @@ Anti-patterns:
 - **Half-bypassed barrels** — barrel exists; some callers use it, others reach past it. Pick one direction per module.
 - **Mixed-direction imports** — same file imports both `from "./mod"` and `from "./mod/internals"`. Never. One direction per dependency edge.
 
-Enforced via the `import/no-internal-modules` ESLint rule in `eslint.config.js`. The `forbid` list there is the source of truth for which directories are kept module barriers — adding a new kept barrel means adding a new entry to that list. Test files (`*.test.ts`) are exempt.
+Enforced via the `import-x/no-internal-modules` ESLint rule in `eslint.config.js`. The `forbid` list there is the source of truth for which directories are kept module barriers — adding a new kept barrel means adding a new entry to that list. Test files (`*.test.ts`) are exempt.
 
 `src/cli.ts`'s `await import("./core/api/<feature>")` calls are a documented exception (see header comment in `src/core/api/index.ts`): they stay direct so `bun build --splitting` produces per-feature chunks.
