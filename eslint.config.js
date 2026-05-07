@@ -2,7 +2,7 @@ import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 import prettierConfig from "eslint-config-prettier";
 import unusedImports from "eslint-plugin-unused-imports";
-import importPlugin from "eslint-plugin-import";
+import importX from "eslint-plugin-import-x";
 
 export default tseslint.config(
   eslint.configs.recommended,
@@ -26,11 +26,11 @@ export default tseslint.config(
   // Barrel-file enforcement: forbid reaching past kept module barrels into
   // their internals. The forbid list below is the source of truth for which
   // directories are kept module barriers — adding a new kept barrel means
-  // adding a new entry here. See "Barrel files" in CLAUDE.md.
+  // adding a new entry here. See "Barrel files" in AGENTS.md.
   {
-    plugins: { import: importPlugin },
+    plugins: { "import-x": importX },
     rules: {
-      "import/no-internal-modules": [
+      "import-x/no-internal-modules": [
         "error",
         {
           forbid: [
@@ -54,7 +54,7 @@ export default tseslint.config(
   {
     files: ["**/*.test.ts", "**/*.test.tsx", "**/*.test-*.ts"],
     rules: {
-      "import/no-internal-modules": "off",
+      "import-x/no-internal-modules": "off",
     },
   },
   prettierConfig,
