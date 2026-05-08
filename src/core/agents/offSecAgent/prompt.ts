@@ -20,7 +20,7 @@ interface SessionPaths {
  * uploaded at the project level, and may contain a generated
  * `README.md` manifest.
  */
-export function buildProvidedFilesSection(sessionRootPath: string): string {
+function buildProvidedFilesSection(sessionRootPath: string): string {
   const providedDir = join(sessionRootPath, "provided_files");
   if (!existsSync(providedDir)) return "";
 

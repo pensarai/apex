@@ -8,7 +8,7 @@ import { ensureValidToken, signGatewayRequest } from "../../../auth";
 import { getPensarApiUrl } from "../../../api/constants";
 import type { ToolContext } from "./types";
 
-export const webSearchInputSchema = z.object({
+const webSearchInputSchema = z.object({
   query: z
     .string()
     .describe(

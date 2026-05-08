@@ -37,7 +37,7 @@ function checkHasReport(rootPath: string): boolean {
   return existsSync(join(rootPath, REPORT_FILENAME_MD));
 }
 
-export function formatRelativeTime(timestamp: number): string {
+function formatRelativeTime(timestamp: number): string {
   const now = Date.now();
   const diff = now - timestamp;
   const minutes = Math.floor(diff / 60000);

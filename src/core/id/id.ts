@@ -20,7 +20,7 @@ const LENGTH = 26;
 let lastTimestamp = 0;
 let counter = 0;
 
-export function ascending(prefix: IdentifierPrefix, given?: string) {
+function ascending(prefix: IdentifierPrefix, given?: string) {
   return generateID(prefix, false, given);
 }
 
@@ -54,7 +54,7 @@ function randomBase62(length: number): string {
   return result;
 }
 
-export function create(
+function create(
   prefix: IdentifierPrefix,
   descending: boolean,
   timestamp?: number,

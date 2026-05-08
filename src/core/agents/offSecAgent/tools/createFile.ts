@@ -5,7 +5,7 @@ import { dirname, resolve, isAbsolute } from "path";
 import { existsSync } from "fs";
 import type { ToolContext } from "./types";
 
-export const createFileInputSchema = z.object({
+const createFileInputSchema = z.object({
   path: z.string().describe("Absolute or relative path for the new file"),
   content: z.string().describe("Content to write to the file"),
   overwrite: z

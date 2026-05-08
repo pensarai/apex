@@ -3,7 +3,7 @@ import { z } from "zod";
 import { spawn } from "child_process";
 import type { ToolContext } from "./types";
 
-export const grepInputSchema = z.object({
+const grepInputSchema = z.object({
   pattern: z.string().describe("The pattern to search for"),
   directory: z
     .string()

@@ -6,22 +6,11 @@ export {
   type SandboxExecutionResult,
 } from "./sandbox";
 
-// Scope guard utilities
-export {
-  ScopeViolationError,
-  getAllowedHosts,
-  isHostAllowed,
-  extractHostname,
-  assertUrlInScope,
-  assertCommandInScope,
-  extractHostsFromCommand,
-} from "./scopeGuard";
-
-// Browser automation tools
-export { createBrowserToolset, BROWSER_TOOL_NAMES } from "./browserTools";
+// Browser automation tools — public types consumed by the harness.
 export type { BrowserToolName } from "./browserTools";
 
-// Sandbox Playwright helpers (check / install Playwright in a sandbox)
+// Sandbox Playwright helpers (check / install Playwright in a sandbox).
+// Consumed by external scripts via the offSecAgent barrel.
 export {
   checkSandboxPlaywright,
   installSandboxPlaywright,
@@ -30,97 +19,21 @@ export {
   createSandboxBrowserTools,
 } from "./sandboxPlaywright";
 
-// Core pentest tools
-export { executeCommand } from "./executeCommand";
-export { httpRequest } from "./httpRequest";
-export { documentVulnerability } from "./documentFinding";
-
-// Filesystem / search tools
-export { readFile } from "./readFile";
-export { listFiles } from "./listFiles";
-export { grep } from "./grep";
-export { createFile } from "./createFile";
-export { updateFile } from "./updateFile";
-
-// Attack surface / recon tools
-export { documentApp } from "./documentApp";
-export { documentEndpoint } from "./documentEndpoint";
-export { authenticateSession } from "./authenticateSession";
-export { delegateAuth } from "./delegateAuth";
-export { extractJsEndpoints } from "./extractJsEndpoints";
-export { crawlAuthenticated } from "./crawlAuthenticated";
-export { testEndpointVariations } from "./testEndpointVariations";
-export { validateDiscovery } from "./validateDiscovery";
-export { createAttackSurfaceReport } from "./createAttackSurfaceReport";
-
-// Authentication tools
-export { completeAuthentication } from "./completeAuthentication";
-export { detectAuthScheme } from "./detectAuthScheme";
-export { probeAuthEndpoints } from "./probeAuthEndpoints";
-
-// Orchestration tools
-export { runAttackSurface } from "./runAttackSurface";
-export { spawnPentestSwarm } from "./spawnPentestSwarm";
-export { spawnCodingAgent } from "./spawnCodingAgent";
-export { runPentestWorkflow } from "./runPentestWorkflow";
-
-// Reporting / benchmark tools
-// export { generateReport } from "./generateReport";
-export { provideComparisonResults } from "./provideComparisonResults";
-
-// Memory tools
-export { addMemory } from "./addMemory";
-export { listMemories } from "./listMemories";
-export { getMemory } from "./getMemory";
-
-// Email tools
-export {
-  createEmailToolset,
-  EMAIL_TOOL_NAMES,
-  SEND_EMAIL_TOOL_NAME,
-} from "./email";
+// Email tool name list — exposed for activeTools filtering.
 export type { EmailToolName } from "./email";
-
-// Web search tools (requires Pensar account)
-export { webSearch } from "./webSearch";
-export { getPage } from "./getPage";
-
-// Skill tools
-export { readSkill } from "./readSkill";
-
-// Observability tools
-export { checkpointState } from "./checkpointState";
-
-// Task decomposition tools
-export { createTask } from "./createTask";
-export { updateTask } from "./updateTask";
-export { listTasksTool } from "./listTasks";
-
-// Plan mode tools
-export { writePlan } from "./writePlan";
-export { submitPlan } from "./submitPlan";
+export { SEND_EMAIL_TOOL_NAME } from "./email";
 
 // Response (structured final-output) tool — used by sub-agents that emit
 // validated result objects.
 export { createResponseTool, RESPONSE_TOOL_NAME } from "./response";
 
 // Persistent shell — long-lived shell session shared across tool calls.
-export {
-  PersistentShell,
-  readTempfileCapped,
-  getApexTmpRoot,
-  extractFallbackStdout,
-  type ShellExecuteResult,
-} from "./persistentShell";
+// PersistentShell is consumed by external scripts via the offSecAgent barrel.
+export { PersistentShell, type ShellExecuteResult } from "./persistentShell";
 
-// Playwright MCP browser session helpers.
+// Playwright MCP browser session helpers — public types and class.
 export {
   PlaywrightMcpSession,
-  createBrowserTools,
-  setHeadlessMode,
-  setUserAgent,
-  setViewportSize,
-  transformScriptToFunction,
   type BrowserToolMode,
   type BrowserNavigateResult,
   type BrowserScreenshotResult,
@@ -130,9 +43,9 @@ export {
   type BrowserConsoleResult,
 } from "./playwrightMcp";
 
-// askUserQuestions schema/types — used by TUI for the question-prompt UX.
+// askUserQuestions — schema + types consumed by the TUI for the
+// question-prompt UX.
 export {
-  AskUserQuestionSchema,
   type AskUserQuestion,
   type AskUserQuestionAnswer,
   type AskUserQuestionsResult,

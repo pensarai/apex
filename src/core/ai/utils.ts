@@ -273,7 +273,7 @@ export function getProviderModel(
   return providerModel;
 }
 
-export async function summarizeConversation(
+async function summarizeConversation(
   messages: ModelMessage[],
   opts: StreamResponseOpts,
   model: LanguageModel,

@@ -1093,10 +1093,4 @@ const MAX_SCHEMA_CHARS = 6_000;
 const MINIMAL_RESTART_PROMPT =
   "Continue the previous task. Earlier context was discarded due to repeated context-length errors.";
 
-export {
-  StreamIdleTimeoutError,
-  withIdleTimeout,
-  createToolExecutionGate,
-  STREAM_IDLE_TIMEOUT_MS,
-  MAX_IDLE_RESUME_RETRIES,
-};
+export { StreamIdleTimeoutError, withIdleTimeout, createToolExecutionGate };

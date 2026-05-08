@@ -3,6 +3,7 @@
   "entry": [
     "src/cli.ts",
     "src/core/api/index.ts",
+    "loader-demo.tsx",
     "scripts/**/*.ts",
     "src/core/benchmark/**/*.ts",
     "src/core/agents/specialized/benchmark/**/*.{ts,tsx}",
@@ -18,7 +19,9 @@
     "src/core/agents/offSecAgent/tools/browserTools.ts",
     "src/core/agents/offSecAgent/tools/email/index.ts",
     "src/core/agents/offSecAgent/tools/persistentShell.ts",
+    "src/core/agents/offSecAgent/tools/playwrightMcp.ts",
     "src/core/agents/offSecAgent/trace.ts",
+    "src/core/ai/ai.ts",
     "src/core/findings/attackSurfaceRegistry.ts",
     "src/core/findings/registry.ts",
     "src/core/integrations/surface/types.ts",
@@ -45,6 +48,8 @@
     "unlisted",
     "duplicates",
     "types",
-    "nsTypes"
+    "nsTypes",
+    "exports",
+    "nsExports"
   ]
 }

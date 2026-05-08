@@ -11,12 +11,7 @@ export type {
 
 export { signGatewayRequest } from "./signing";
 
-export {
-  isTokenExpired,
-  fetchWorkOSClientId,
-  refreshAccessToken,
-  ensureValidToken,
-} from "./token";
+export { isTokenExpired, ensureValidToken } from "./token";
 
 export {
   startDeviceFlow,

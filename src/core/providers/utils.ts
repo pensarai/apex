@@ -35,7 +35,7 @@ export function getConfiguredProviders(config: Config): ConfiguredProvider[] {
   });
 }
 
-export function isProviderConfigured(
+function isProviderConfigured(
   providerId: ProviderType,
   config: Config,
 ): boolean {
@@ -81,7 +81,7 @@ export function hasAnyProviderConfigured(config: Config): boolean {
   );
 }
 
-export function getModelsByProvider(providerId: ProviderType): ModelInfo[] {
+function getModelsByProvider(providerId: ProviderType): ModelInfo[] {
   return AVAILABLE_MODELS.filter((model) => model.provider === providerId);
 }
 

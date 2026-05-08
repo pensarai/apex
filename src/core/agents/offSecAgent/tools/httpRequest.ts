@@ -7,7 +7,7 @@ import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 
 const MAX_INLINE_BODY = 5_000;
 
-export const httpRequestInputSchema = z.object({
+const httpRequestInputSchema = z.object({
   url: z.string().describe("The URL to request"),
   method: z
     .enum(["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])

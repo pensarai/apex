@@ -22,50 +22,14 @@ export type {
 } from "./types";
 
 export {
-  PERMISSION_TIERS,
   OPERATOR_MODES,
   OPERATOR_MODE_CYCLE,
-  OPERATOR_STAGES,
-  getStagesInOrder,
-  getNextStage,
   createInitialOperatorState,
-  OperatorSettingsObject,
 } from "./types";
-
-// Tool Classifier
-export {
-  classifyToolCall,
-  getClassificationReason,
-  type ToolClassificationContext,
-} from "./toolClassifier";
-
-// Permission Policy
-export {
-  checkPermission,
-  shouldAutoApprove,
-  getApprovalRequirement,
-  getPolicySummary,
-  type PermissionPolicyConfig,
-  type PermissionCheckResult,
-} from "./permissionPolicy";
 
 // Approval Gate
 export {
   ApprovalGate,
-  ApprovalBlockedError,
   ApprovalDeniedError,
-  ApprovalTimeoutError,
-  DEFAULT_DECISION_TIMEOUT_MS,
   INTERNAL_ID_PATTERN,
-  wrapToolWithApproval,
-  type ApprovalGateConfig,
 } from "./approvalGate";
-
-// Stage Manager
-export { StageManager } from "./stageManager";
-
-// Stage Inference
-export {
-  inferStageFromDirective,
-  type StageInferenceResult,
-} from "./stageInference";

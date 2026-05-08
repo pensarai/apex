@@ -3,7 +3,7 @@ import { useRenderer } from "@opentui/react";
 import { RGBA } from "@opentui/core";
 import { useTheme, type ThemeColors } from "./theme";
 
-export const withAlpha = (rgba: RGBA, a: number) =>
+const withAlpha = (rgba: RGBA, a: number) =>
   RGBA.fromValues(rgba.r, rgba.g, rgba.b, a);
 
 /**

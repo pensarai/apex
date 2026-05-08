@@ -4,7 +4,7 @@ import { readFile as fsReadFile } from "fs/promises";
 import { resolve, isAbsolute } from "path";
 import type { ToolContext } from "./types";
 
-export const readFileInputSchema = z.object({
+const readFileInputSchema = z.object({
   path: z
     .string()
     .describe(

@@ -503,4 +503,4 @@ function extractContextSummary(messages: Record<string, unknown>[]): string {
 // =============================================================================
 
 /** Default model for CVSS scoring (fast and cost-effective) */
-export const DEFAULT_CVSS_MODEL: AIModel = "claude-4-5-haiku";
+const DEFAULT_CVSS_MODEL: AIModel = "claude-4-5-haiku";

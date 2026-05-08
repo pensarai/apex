@@ -2,13 +2,7 @@
 export const REPORT_FILENAME_MD = "pentest-report.md";
 export const REPORT_FILENAME_JSON = "pentest-report.json";
 
-export {
-  PentestReportSchema,
-  PentestReportFindingSchema,
-  REPORT_VERSION,
-  type PentestReport,
-  type PentestReportFinding,
-} from "./schemas";
+export type { PentestReport, PentestReportFinding } from "./schemas";
 
 export { buildPentestReport, type ReportContext } from "./builder";
 

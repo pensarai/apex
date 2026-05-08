@@ -57,7 +57,7 @@ const SUPPLEMENTAL_METRICS = ["S", "AU", "R", "V", "RE", "U"] as const;
 /**
  * Build CVSS 4.0 vector string from metrics
  */
-export function buildVectorString(metrics: CVSS4Metrics): string {
+function buildVectorString(metrics: CVSS4Metrics): string {
   const parts: string[] = ["CVSS:4.0"];
 
   // Add base metrics (required)
@@ -98,7 +98,7 @@ export function buildVectorString(metrics: CVSS4Metrics): string {
 /**
  * Parse CVSS 4.0 vector string into metrics
  */
-export function parseVectorString(vectorString: string): CVSS4Metrics {
+function parseVectorString(vectorString: string): CVSS4Metrics {
   if (!vectorString.startsWith("CVSS:4.0/")) {
     throw new Error(
       "Invalid CVSS 4.0 vector string: must start with CVSS:4.0/",
@@ -288,7 +288,7 @@ function computeEQ6(metrics: CVSS4Metrics): number {
 /**
  * Compute the 6-digit MacroVector from metrics
  */
-export function computeMacroVector(metrics: CVSS4Metrics): string {
+function computeMacroVector(metrics: CVSS4Metrics): string {
   const eq1 = computeEQ1(metrics);
   const eq2 = computeEQ2(metrics);
   const eq3 = computeEQ3(metrics);
@@ -556,7 +556,7 @@ function getScoreType(metrics: CVSS4Metrics): CVSS4ScoreType {
 /**
  * Validate that all required base metrics are present
  */
-export function validateMetrics(
+function validateMetrics(
   metrics: Partial<CVSS4Metrics>,
 ): metrics is CVSS4Metrics {
   const requiredMetrics = [

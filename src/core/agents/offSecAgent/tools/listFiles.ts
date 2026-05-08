@@ -4,7 +4,7 @@ import { readdir, stat } from "fs/promises";
 import { join, relative, resolve, isAbsolute } from "path";
 import type { ToolContext } from "./types";
 
-export const listFilesInputSchema = z.object({
+const listFilesInputSchema = z.object({
   directory: z
     .string()
     .optional()

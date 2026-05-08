@@ -46,7 +46,7 @@ export function loadAttackSurfaceResults(
  * Helper function to extract pentest targets from analysis results
  * Useful for orchestrator to spawn sub-agents
  */
-export function extractPentestTargets(
+function extractPentestTargets(
   results: AttackSurfaceAnalysisResults,
 ): Array<{ target: string; objective: string }> {
   return results.targets.map((target) => ({
@@ -59,7 +59,7 @@ export function extractPentestTargets(
  * Parse discovered assets into structured data
  * Assets are stored as strings like "example.com - Web server (nginx) - Ports 80,443"
  */
-export function parseDiscoveredAsset(asset: string): {
+function parseDiscoveredAsset(asset: string): {
   identifier: string;
   description: string;
   details?: string;
@@ -76,7 +76,7 @@ export function parseDiscoveredAsset(asset: string): {
  * Parse key findings
  * Findings are stored as strings like "[HIGH] Admin panel exposed - admin.example.com"
  */
-export function parseKeyFinding(finding: string): {
+function parseKeyFinding(finding: string): {
   severity: string;
   description: string;
 } {
@@ -91,7 +91,7 @@ export function parseKeyFinding(finding: string): {
 /**
  * Get high priority targets
  */
-export function getHighPriorityKeywords(
+function getHighPriorityKeywords(
   results: AttackSurfaceAnalysisResults,
 ): string[] {
   return results.keyFindings

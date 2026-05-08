@@ -7,7 +7,7 @@ import {
 } from "../../../memory";
 import type { ToolContext } from "./types";
 
-export const listMemoriesInputSchema = z.object({
+const listMemoriesInputSchema = z.object({
   category: z
     .enum(MEMORY_CATEGORIES)
     .optional()

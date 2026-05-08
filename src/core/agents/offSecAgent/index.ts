@@ -3,7 +3,6 @@
 // ---------------------------------------------------------------------------
 export { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
 export {
-  ApexFindingObject,
   type OffensiveSecurityAgentInput,
   type CreateAgentInput,
   type SpecializedAgentInput,
@@ -21,7 +20,6 @@ export type { AgentEventMap } from "../../eventBus";
 // ---------------------------------------------------------------------------
 // Trace
 // ---------------------------------------------------------------------------
-export { StepTraceWriter } from "./trace";
 export type {
   StepRecord,
   StateCheckpoint,
@@ -38,7 +36,6 @@ export type {
 export {
   buildBaseSystemPrompt,
   buildSessionWorkspaceSection,
-  buildProvidedFilesSection,
   BASE_SYSTEM_PROMPT,
   type BaseSystemPromptOptions,
 } from "./prompt";

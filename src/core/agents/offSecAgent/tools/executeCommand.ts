@@ -8,7 +8,7 @@ import { assertCommandInScope, ScopeViolationError } from "./scopeGuard";
 const MAX_INLINE = 50_000;
 const MS_TIMEOUT_THRESHOLD = 10_000;
 
-export const executeCommandInputSchema = z.object({
+const executeCommandInputSchema = z.object({
   // not actually sure if placing this above the other keys/zod values ensures that the model generates it first...
   toolCallDescription: z
     .string()

@@ -83,7 +83,7 @@ interface FlagSchema {
  * Parse CLI-style arguments into a flags object
  * Supports: --flag value, --flag=value, --boolean-flag
  */
-export function parseFlags(args: string[], schema: FlagSchema): ParsedFlags {
+function parseFlags(args: string[], schema: FlagSchema): ParsedFlags {
   const result: ParsedFlags = {};
   let i = 0;
 

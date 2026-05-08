@@ -52,17 +52,5 @@ export type {
   CVSS4Score,
 } from "./types";
 
-// Type utilities
-export { SEVERITY_RATINGS, getSeverityFromScore } from "./types";
-
 // Calculator functions
-export {
-  calculateCVSS4Score,
-  buildVectorString,
-  parseVectorString,
-  computeMacroVector,
-  validateMetrics,
-} from "./calculator";
-
-// Lookup tables (for advanced usage)
-export { MACROVECTOR_LOOKUP, METRIC_LEVELS } from "./macrovector-scores";
+export { calculateCVSS4Score } from "./calculator";

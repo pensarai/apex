@@ -205,7 +205,7 @@ const DEFAULT_KEEP_RECENT_STEPS = 6;
  * For tool results older than `keepRecentSteps`, replace with 1-line summaries.
  * Returns a new array (does not mutate input).
  */
-export function snipOldSteps(
+function snipOldSteps(
   messages: ModelMessage[],
   opts?: { keepRecentSteps?: number },
 ): ModelMessage[] {
