@@ -44,6 +44,7 @@ export default tseslint.config(
             "**/core/agents/specialized/whiteboxAttackSurface/!(index)",
             "**/core/agents/specialized/benchmark/!(index)",
             "**/tui/theme/!(index)",
+            "**/tui/theme/themes/!(index)",
             "**/tui/keybindings/!(index)",
           ],
         },
