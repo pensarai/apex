@@ -6,13 +6,10 @@
  * Resend's SMTP relay).
  */
 
-export { emailGetAttachments } from "./getAttachments";
 export { emailGetMessage } from "./getMessage";
 export { emailListInboxes } from "./listInboxes";
 export { emailListMessages } from "./listMessages";
-export { emailMarkRead } from "./markRead";
 export { emailSearchMessages } from "./searchMessages";
-export { sendEmail } from "./sendEmail";
 
 import type { ToolContext } from "../types";
 import { emailGetAttachments } from "./getAttachments";

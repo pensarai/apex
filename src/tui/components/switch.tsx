@@ -78,5 +78,4 @@ const Switch = Object.assign(SwitchComponent, {
   Default: DefaultComponent,
 });
 
-export default Switch;
 export { createSwitch };

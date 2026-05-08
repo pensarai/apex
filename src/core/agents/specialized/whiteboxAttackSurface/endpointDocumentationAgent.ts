@@ -144,7 +144,7 @@ This agent is responsible for **exactly one** endpoint. Do not document other en
 // Per-endpoint agent runner
 // ---------------------------------------------------------------------------
 
-export async function runEndpointDocumentationAgent(
+async function runEndpointDocumentationAgent(
   opts: EndpointDocumentationInput,
 ): Promise<void> {
   const {

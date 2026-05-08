@@ -239,7 +239,7 @@ export class ApprovalGate extends EventEmitter {
   }
 }
 
-export class ApprovalBlockedError extends Error {
+class ApprovalBlockedError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ApprovalBlockedError";
@@ -271,10 +271,7 @@ export class ApprovalTimeoutError extends ApprovalDeniedError {
  * When the gate requires approval the wrapped function will block
  * until the operator approves the call.
  */
-export function wrapToolWithApproval<
-  TArgs extends Record<string, unknown>,
-  TResult,
->(
+function wrapToolWithApproval<TArgs extends Record<string, unknown>, TResult>(
   gate: ApprovalGate,
   toolName: string,
   originalTool: (args: TArgs) => Promise<TResult>,

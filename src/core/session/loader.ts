@@ -143,7 +143,7 @@ function createDiscoveryFromLogs(
 /**
  * Load complete session state from execution directory
  */
-export async function loadSessionState(
+async function loadSessionState(
   session: SessionInfo,
 ): Promise<LoadedSessionState> {
   const rootPath = session.rootPath;

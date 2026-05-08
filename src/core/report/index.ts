@@ -10,7 +10,4 @@ export { renderMarkdown } from "./renderers/markdown";
 export {
   type PentestReport,
   type PentestReportFinding,
-  PentestReportFindingSchema,
-  PentestReportSchema,
-  REPORT_VERSION,
 } from "./schemas";

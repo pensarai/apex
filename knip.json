@@ -2,6 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "src/cli.ts",
+    "loader-demo.tsx",
     "src/core/api/index.ts",
     "scripts/**/*.ts",
     "src/core/benchmark/**/*.ts",
@@ -12,6 +13,8 @@
     "src/core/agents/specialized/patching/index.ts",
     "src/core/agents/specialized/codeAgent/schemas.ts",
     "src/core/agents/specialized/attackSurface/schemas.ts",
+    "src/core/agents/offSecAgent/index.ts",
+    "src/core/agents/offSecAgent/tools/index.ts",
     "src/lib/cvss/index.ts"
   ],
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
@@ -23,6 +26,8 @@
     "unlisted",
     "duplicates",
     "types",
-    "nsTypes"
+    "nsTypes",
+    "exports",
+    "nsExports"
   ]
 }

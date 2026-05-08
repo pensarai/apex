@@ -860,10 +860,7 @@ function buildWebSearchStyledText(
 /**
  * Format a result value for detailed display (with truncation).
  */
-export function formatResultDetail(
-  result: unknown,
-  maxLength: number = 2000,
-): string {
+function formatResultDetail(result: unknown, maxLength: number = 2000): string {
   let str: string;
   try {
     str = JSON.stringify(result, null, 2);

@@ -19,7 +19,7 @@ export type ActionCategory =
   | "history"
   | "misc";
 
-export interface Action {
+interface Action {
   id: string;
   key: string;
   description: string;
@@ -31,7 +31,7 @@ export interface Action {
 // Movement Actions
 // ============================================
 
-export const movementActions: Action[] = [
+const movementActions: Action[] = [
   {
     id: "move-left",
     key: "h",
@@ -95,7 +95,7 @@ export const movementActions: Action[] = [
 // Selection Actions
 // ============================================
 
-export const selectionActions: Action[] = [
+const selectionActions: Action[] = [
   {
     id: "select-char-left",
     key: "H",
@@ -165,7 +165,7 @@ export const selectionActions: Action[] = [
 // Editing Actions
 // ============================================
 
-export const editingActions: Action[] = [
+const editingActions: Action[] = [
   {
     id: "delete-char",
     key: "x",
@@ -235,7 +235,7 @@ export const editingActions: Action[] = [
 // Clipboard Actions
 // ============================================
 
-export const clipboardActions: Action[] = [
+const clipboardActions: Action[] = [
   {
     id: "yank",
     key: "y",
@@ -274,7 +274,7 @@ export const clipboardActions: Action[] = [
 // History Actions
 // ============================================
 
-export const historyActions: Action[] = [
+const historyActions: Action[] = [
   {
     id: "undo",
     key: "u",
@@ -295,7 +295,7 @@ export const historyActions: Action[] = [
 // All Actions
 // ============================================
 
-export const allActions: Action[] = [
+const allActions: Action[] = [
   ...movementActions,
   ...selectionActions,
   ...editingActions,
@@ -307,18 +307,18 @@ export const allActions: Action[] = [
 // Action Lookup
 // ============================================
 
-export const actionsByKey = new Map<string, Action>(
+const actionsByKey = new Map<string, Action>(
   allActions.map((action) => [action.key, action]),
 );
 
-export const actionsById = new Map<string, Action>(
+const actionsById = new Map<string, Action>(
   allActions.map((action) => [action.id, action]),
 );
 
-export function getAction(keyOrId: string): Action | undefined {
+function getAction(keyOrId: string): Action | undefined {
   return actionsByKey.get(keyOrId) || actionsById.get(keyOrId);
 }
 
-export function getActionsByCategory(category: ActionCategory): Action[] {
+function getActionsByCategory(category: ActionCategory): Action[] {
   return allActions.filter((action) => action.category === category);
 }

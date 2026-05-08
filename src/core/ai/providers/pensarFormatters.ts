@@ -236,7 +236,7 @@ function convertToAnthropicFormat(
   return body;
 }
 
-export function parseBedrockResponse(
+function parseBedrockResponse(
   modelId: string,
   response: Record<string, unknown>,
   usage: { inputTokens: number; outputTokens: number },

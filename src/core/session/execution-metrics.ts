@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
-export const EXECUTION_METRICS_FILENAME = "execution-metrics.json";
+const EXECUTION_METRICS_FILENAME = "execution-metrics.json";
 
 interface TokenUsageTotals {
   inputTokens: number;

@@ -4,7 +4,7 @@ import { isAbsolute, resolve } from "path";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 
-export const updateFileInputSchema = z.object({
+const updateFileInputSchema = z.object({
   path: z.string().describe("Absolute or relative path to the file to update"),
   oldContent: z
     .string()

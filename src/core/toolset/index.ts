@@ -46,7 +46,7 @@ interface ToolDefinition {
 /**
  * All available tools organized by category
  */
-export const ALL_TOOLS: ToolDefinition[] = [
+const ALL_TOOLS: ToolDefinition[] = [
   // Reconnaissance tools
   {
     id: "http_request",
@@ -394,7 +394,7 @@ interface ToolsetDefinition {
 /**
  * Predefined toolsets for common use cases
  */
-export const TOOLSETS: ToolsetDefinition[] = [
+const TOOLSETS: ToolsetDefinition[] = [
   {
     id: "web-pentest",
     name: "Web Pentest (Full)",
@@ -500,7 +500,7 @@ export function createToolsetState(
 /**
  * Get list of active tool names from toolset state
  */
-export function getActiveToolNames(state: ToolsetState | undefined): string[] {
+function getActiveToolNames(state: ToolsetState | undefined): string[] {
   if (!state) {
     // No state = all tools enabled (fallback)
     return ALL_TOOLS.map((t) => t.id);
@@ -532,7 +532,7 @@ export function toggleTool(
 /**
  * Get tools grouped by category
  */
-export function getToolsByCategory(): Map<ToolCategory, ToolDefinition[]> {
+function getToolsByCategory(): Map<ToolCategory, ToolDefinition[]> {
   const grouped = new Map<ToolCategory, ToolDefinition[]>();
 
   for (const tool of ALL_TOOLS) {
@@ -547,7 +547,7 @@ export function getToolsByCategory(): Map<ToolCategory, ToolDefinition[]> {
 /**
  * Get human-readable category name
  */
-export function getCategoryDisplayName(category: ToolCategory): string {
+function getCategoryDisplayName(category: ToolCategory): string {
   const names: Record<ToolCategory, string> = {
     reconnaissance: "Reconnaissance",
     exploitation: "Exploitation",
@@ -561,7 +561,7 @@ export function getCategoryDisplayName(category: ToolCategory): string {
 /**
  * Count enabled tools in a state
  */
-export function countEnabledTools(state: ToolsetState | undefined): {
+function countEnabledTools(state: ToolsetState | undefined): {
   enabled: number;
   total: number;
 } {

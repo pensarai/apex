@@ -9,28 +9,13 @@
 
 import type { ParsedKey } from "@opentui/core";
 
-export {
-  type Action,
-  type ActionCategory,
-  actionsById,
-  actionsByKey,
-  allActions,
-  clipboardActions,
-  editingActions,
-  getAction,
-  getActionsByCategory,
-  historyActions,
-  movementActions,
-  selectionActions,
-} from "./actions";
+export { type ActionCategory } from "./actions";
 
 export {
-  InputBuffer,
   type InputState,
   type Selection,
   type UndoEntry,
 } from "./input-buffer";
-export { LeaderKeyProvider, useLeaderKey } from "./keybind";
 
 export {
   createKeybindings,
@@ -56,7 +41,7 @@ export function fromParsedKey(key: ParsedKey, _leader = false): KeybindInfo {
   };
 }
 
-export function keybindToString(info: KeybindInfo | undefined): string {
+function keybindToString(info: KeybindInfo | undefined): string {
   if (!info) return "";
   const parts: string[] = [];
 
