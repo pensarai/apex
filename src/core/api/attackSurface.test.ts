@@ -1,6 +1,6 @@
-import { runAttackSurfaceAgent } from "./attackSurface";
+import { describe, expect, it } from "vitest";
 import { sessions } from "../session";
-import { describe, it, expect } from "vitest";
+import { runAttackSurfaceAgent } from "./attackSurface";
 
 const TARGET_URL = "staging-console.pensar.dev";
 

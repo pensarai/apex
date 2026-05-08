@@ -1,5 +1,5 @@
-import type { Config } from "../config/config";
 import { AVAILABLE_MODELS, type ModelInfo } from "../ai";
+import type { Config } from "../config/config";
 import {
   AVAILABLE_PROVIDERS,
   type ConfiguredProvider,

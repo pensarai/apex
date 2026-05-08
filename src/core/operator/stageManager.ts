@@ -1,6 +1,6 @@
 import { EventEmitter } from "events";
-import type { OperatorStage, StageProgress, OperatorEvent } from "./types";
-import { OPERATOR_STAGES, getStagesInOrder, getNextStage } from "./types";
+import type { OperatorEvent, OperatorStage, StageProgress } from "./types";
+import { getNextStage, getStagesInOrder, OPERATOR_STAGES } from "./types";
 
 /**
  * StageManager tracks progress through the Operator workflow stages

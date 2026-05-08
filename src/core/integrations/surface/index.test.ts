@@ -1,11 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
   existsSync,
-  mkdtempSync,
   mkdirSync,
-  writeFileSync,
-  rmSync,
+  mkdtempSync,
   realpathSync,
+  rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -14,12 +13,13 @@ import {
   type EndpointInfo,
   type MapResult,
 } from "@pensar/surface";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   consolidateBySameRoute,
-  shouldFallback,
-  mapAppWithSurface,
   findDependencyRoot,
+  mapAppWithSurface,
+  shouldFallback,
 } from "./index";
 
 function makeEndpointInfo(

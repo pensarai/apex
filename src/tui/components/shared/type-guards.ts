@@ -7,8 +7,8 @@
 
 import type {
   DisplayMessage,
-  ToolStatus,
   SubagentLogEntry,
+  ToolStatus,
   WorkflowData,
 } from "../agent-display";
 

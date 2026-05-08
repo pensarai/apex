@@ -6,62 +6,38 @@
  * Reuses MessageList and InputArea from the shared/chat components.
  */
 
+import { useKeyboard } from "@opentui/react";
+import { hasToolCall, type ModelMessage, stepCountIs } from "ai";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import { isAbsolute, join, resolve } from "path";
 import {
-  useState,
-  useEffect,
-  useRef,
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
-import { useKeyboard } from "@opentui/react";
-
-import {
-  sessions,
-  type SessionInfo,
-  type SessionConfig,
-  normalizeMessages,
-} from "../../../core/session";
-import { runOffensiveSecurityAgent } from "../../../core/api";
-import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
-import {
-  modelSupportsThinking,
-  buildAuthConfig,
-  type CacheMetrics,
-} from "../../../core/ai";
-import {
-  ALL_TOOL_NAMES,
-  PLAN_MODE_TOOL_NAMES,
-  SKILL_TOOL_NAMES,
-  ASK_USER_QUESTIONS_TOOL_NAME,
-  AgentEventBus,
-  type AgentMode,
+import type {
+  AskUserQuestion,
+  AskUserQuestionAnswer,
+  AskUserQuestionsResult,
 } from "../../../core/agents/offSecAgent";
 import {
-  readPlan,
-  hasPlan,
-  planFilePath as getPlanFilePath,
-} from "../../../core/plan";
+  AgentEventBus,
+  type AgentMode,
+  ALL_TOOL_NAMES,
+  ASK_USER_QUESTIONS_TOOL_NAME,
+  PLAN_MODE_TOOL_NAMES,
+  SKILL_TOOL_NAMES,
+} from "../../../core/agents/offSecAgent";
 import {
-  convertModelMessagesToUI,
-  type UIMessage,
-} from "../../../core/session/persistence";
-import { useAgent } from "../../context/agent";
-import { useRoute } from "../../context/route";
-import { useConfig } from "../../context/config";
-import { useCommand } from "../../context/command";
-import { useDialog } from "../../context/dialog";
-import { useFocus } from "../../context/focus";
-import { MessageList } from "../chat/message-list";
-import { InputArea } from "../chat/input-area";
-import {
-  deriveApprovedActionLabel,
-  isToolMessage,
-  tryParsePartialJson,
-  extractStreamableContent,
-} from "../shared";
-import { useTheme } from "../../theme";
-import type { DisplayMessage, WorkflowData } from "../agent-display";
+  buildAuthConfig,
+  type CacheMetrics,
+  modelSupportsThinking,
+} from "../../../core/ai";
+import { runOffensiveSecurityAgent } from "../../../core/api";
+import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
   ApprovalGate,
@@ -70,44 +46,66 @@ import {
   type OperatorSessionState,
 } from "../../../core/operator";
 import {
+  planFilePath as getPlanFilePath,
+  hasPlan,
+  readPlan,
+} from "../../../core/plan";
+import {
+  normalizeMessages,
+  type SessionConfig,
+  type SessionInfo,
+  sessions,
+} from "../../../core/session";
+import {
   readExecutionMetrics,
   writeExecutionMetrics,
 } from "../../../core/session/execution-metrics";
-import { hasToolCall, stepCountIs, type ModelMessage } from "ai";
-import type {
-  AskUserQuestion,
-  AskUserQuestionAnswer,
-  AskUserQuestionsResult,
-} from "../../../core/agents/offSecAgent";
+import {
+  convertModelMessagesToUI,
+  type UIMessage,
+} from "../../../core/session/persistence";
+import {
+  buildPentestPrompt,
+  buildThreatModelPrompt,
+} from "../../../core/skills/builtins";
+import { useAgent } from "../../context/agent";
+import { useCommand } from "../../context/command";
+import { useConfig } from "../../context/config";
+import { useDialog } from "../../context/dialog";
+import { useFocus } from "../../context/focus";
+import { useRoute } from "../../context/route";
+import { useTheme } from "../../theme";
+import { openFileInDefaultApp } from "../../utils/open-file.js";
+import type { DisplayMessage, WorkflowData } from "../agent-display";
+import { InputArea } from "../chat/input-area";
+import { MessageList } from "../chat/message-list";
 import { QuestionsForm } from "../chat/questions-form";
 import {
+  deriveApprovedActionLabel,
+  extractStreamableContent,
+  isToolMessage,
+  tryParsePartialJson,
+} from "../shared";
+import {
+  accumulateTokenUsage,
+  buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
+  resolveAbortAction,
+  resolveInputFocused,
+  resolveKeyboardShortcut,
   resolveSubmit,
   routeCommand,
-  resolveKeyboardShortcut,
-  resolveAbortAction,
-  buildOperatorSystemPrompt,
-  resolveInputFocused,
-  accumulateTokenUsage,
 } from "./logic";
+import { navigateDown, navigateUp, selectionAfterRemove } from "./queue";
+import { QueuedMessages } from "./queued-messages";
+import SubagentDialog from "./subagent-dialog";
 import {
   createSubagentSessionHelpers,
   createSubagentStore,
   loadSubagentSessionsFromDisk,
 } from "./subagent-state";
-import { QueuedMessages } from "./queued-messages";
 import { SubagentStatusBar } from "./subagent-status-bar";
-import SubagentDialog from "./subagent-dialog";
-import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
-import { openFileInDefaultApp } from "../../utils/open-file.js";
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import { isAbsolute, join, resolve } from "path";
-
-import {
-  buildThreatModelPrompt,
-  buildPentestPrompt,
-} from "../../../core/skills/builtins";
 
 function markInFlightToolsErrored(
   messages: DisplayMessage[],
@@ -2329,9 +2327,9 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
 // Re-export types for backward compatibility
 export type {
-  Endpoint,
-  VerifiedVuln,
   Credential,
-  Hypothesis,
+  Endpoint,
   Evidence,
+  Hypothesis,
+  VerifiedVuln,
 } from "./types";

@@ -1,15 +1,15 @@
-import { describe, it, expect } from "vitest";
 import type { ModelMessage, ToolSet } from "ai";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
-  estimateTokens,
+  applyToolResultBudget,
   estimateMessageTokens,
+  estimateTokens,
   estimateToolsOverheadTokens,
   fitMessagesToContext,
-  applyToolResultBudget,
   truncateWithMarker,
 } from "./contextManagement";
 

@@ -1,6 +1,6 @@
+import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import fs from "fs/promises";
 import { getCurrentVersion } from "../installation";
 
 const DEFAULT_CONFIG: Config = {

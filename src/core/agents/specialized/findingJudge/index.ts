@@ -11,9 +11,9 @@
 
 import { z } from "zod";
 import {
-  generateObjectResponse,
-  type AIModel,
   type AIAuthConfig,
+  type AIModel,
+  generateObjectResponse,
 } from "../../../ai";
 
 // =============================================================================

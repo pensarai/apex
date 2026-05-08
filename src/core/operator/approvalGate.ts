@@ -1,10 +1,10 @@
-import { EventEmitter } from "events";
 import { randomBytes } from "crypto";
+import { EventEmitter } from "events";
 import type {
-  PendingApproval,
-  ApprovalDecision,
   ActionHistoryEntry,
+  ApprovalDecision,
   OperatorEvent,
+  PendingApproval,
 } from "./types";
 
 /**

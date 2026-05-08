@@ -1,16 +1,16 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import type { ModelMessage } from "ai";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AgentEventBus } from "../../eventBus";
 import {
-  StepTraceWriter,
-  type StepRecord,
-  type StateCheckpoint,
   type InitRecord,
+  type StateCheckpoint,
+  type StepRecord,
+  StepTraceWriter,
   type TraceRecord,
 } from "./trace";
-import { mkdtempSync, readFileSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
-import type { ModelMessage } from "ai";
-import { AgentEventBus } from "../../eventBus";
 
 // ---------------------------------------------------------------------------
 // Helpers

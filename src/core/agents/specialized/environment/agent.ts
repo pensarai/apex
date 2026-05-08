@@ -1,12 +1,12 @@
 import { OffensiveSecurityAgent } from "../../offSecAgent";
 import {
-  buildEnvironmentSystemPrompt,
   buildEnvironmentPrompt,
+  buildEnvironmentSystemPrompt,
 } from "./prompts";
 import {
-  EnvironmentResultSchema,
-  type EnvironmentResult,
   type EnvironmentAgentInput,
+  type EnvironmentResult,
+  EnvironmentResultSchema,
 } from "./types";
 
 /**

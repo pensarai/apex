@@ -5,11 +5,11 @@
  * Renders at ~20fps using global tick system.
  */
 
-import { useState, useEffect, useRef, useMemo } from "react";
 import { RGBA } from "@opentui/core";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useDimensions } from "../../context/dimensions";
-import { WaveSimulation } from "./lib/wave-simulation";
 import { useTheme } from "../../theme";
+import { WaveSimulation } from "./lib/wave-simulation";
 
 // Global tick system for animations (shared across components)
 let globalTick = 0;

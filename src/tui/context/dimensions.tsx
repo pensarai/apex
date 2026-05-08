@@ -1,5 +1,5 @@
-import { createContext, useContext, type ReactNode } from "react";
 import { useTerminalDimensions } from "@opentui/react";
+import { createContext, type ReactNode, useContext } from "react";
 
 interface Dimensions {
   width: number;

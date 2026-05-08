@@ -1,15 +1,15 @@
 import { hasToolCall, stepCountIs } from "ai";
-import { join } from "path";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
-import { detectOSAndEnhancePrompt } from "../utils";
-import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
-import { loadAttackSurfaceResults } from "./types";
+import { join } from "path";
+import type { SessionInfo } from "../../../session";
 import {
   OffensiveSecurityAgent,
   type SpecializedAgentInput,
 } from "../../offSecAgent";
-import type { SessionInfo } from "../../../session";
+import { detectOSAndEnhancePrompt } from "../utils";
+import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
+import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
+import { loadAttackSurfaceResults } from "./types";
 
 // ---------------------------------------------------------------------------
 // Types

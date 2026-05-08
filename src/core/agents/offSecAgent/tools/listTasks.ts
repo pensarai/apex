@@ -1,11 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { ToolContext } from "./types";
 import {
   listTasks as coreListTasks,
   getTaskSummary,
   type TaskStatus,
 } from "../../../tasks";
+import type { ToolContext } from "./types";
 
 const listTasksInputSchema = z.object({
   status: z

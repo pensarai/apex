@@ -1,10 +1,10 @@
 import { tool } from "ai";
-import { z } from "zod";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
-import type { ToolContext } from "./types";
+import { z } from "zod";
 import { computeBlackboxRiskScore } from "../../specialized/attackSurface/blackboxRiskScoring";
 import { generateThreatModelForEndpoint } from "./threatModelGenerator";
+import type { ToolContext } from "./types";
 
 function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");

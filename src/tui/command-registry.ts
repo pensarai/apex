@@ -1,13 +1,13 @@
-import type { CommandDefinition } from "./command-router";
-import type { Route, WebCommandOptions } from "./context/route";
-import {
-  parseWebFlags,
-  hasEnoughFlagsToSkipWizard,
-  combinePromptParts,
-} from "./utils/command-flags";
-import { getAllThemeNames } from "./theme";
 import { config } from "../core/config";
 import { isObfuscationEnabled } from "../core/obfuscation";
+import type { CommandDefinition } from "./command-router";
+import type { Route, WebCommandOptions } from "./context/route";
+import { getAllThemeNames } from "./theme";
+import {
+  combinePromptParts,
+  hasEnoughFlagsToSkipWizard,
+  parseWebFlags,
+} from "./utils/command-flags";
 /**
  * Define your application's CommandContext type with specific methods
  */

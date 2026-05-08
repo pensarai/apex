@@ -7,13 +7,13 @@
 
 import {
   RGBA,
-  TextAttributes,
   StyledText,
+  TextAttributes,
   type TextChunk,
 } from "@opentui/core";
 import { marked } from "marked";
-import type { ThemeColors } from "../../theme";
 import { obfuscate } from "../../../core/obfuscation";
+import type { ThemeColors } from "../../theme";
 
 /**
  * Convert markdown content to StyledText for terminal rendering.

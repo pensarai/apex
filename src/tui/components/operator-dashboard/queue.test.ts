@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampQueueSelection,
+  navigateDown,
+  navigateUp,
   queueAdd,
   queueRemove,
-  clampQueueSelection,
   selectionAfterRemove,
-  navigateUp,
-  navigateDown,
 } from "./queue";
 
 describe("queued message helpers", () => {

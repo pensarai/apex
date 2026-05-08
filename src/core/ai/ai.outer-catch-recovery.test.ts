@@ -8,8 +8,9 @@
 //
 // This test exists to fail loudly if a future refactor un-wraps that
 // path again.
-import { vi, describe, it, expect } from "vitest";
+
 import type { ModelMessage, StreamTextResult, ToolSet } from "ai";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
@@ -32,7 +33,7 @@ vi.mock("./utils", async () => {
     createSummarizationStream: vi.fn(
       () =>
         ({
-          // eslint-disable-next-line require-yield
+          // biome-ignore lint/correctness/useYield: throw-only generator simulates streamText error
           fullStream: (async function* () {
             throw new Error(
               "prompt is too long: 999999 tokens > 200000 maximum",

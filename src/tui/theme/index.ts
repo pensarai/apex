@@ -5,34 +5,33 @@
  * Re-exports the theme system API and legacy colors for backwards compatibility.
  */
 
-// ── New theme system API ────────────────────────────────────
-export type {
-  ThemeColors,
-  ThemeColorValue,
-  ThemeColorsInput,
-  ThemeDefinition,
-  ColorMode,
-} from "./types";
-export {
-  registerTheme,
-  getTheme,
-  getAllThemeNames,
-  DEFAULT_THEME_NAME,
-} from "./registry";
-export { ThemeProvider, useTheme, resolveThemeColors } from "./context";
-
 // ── Legacy exports (kept during migration) ──────────────────
-export { colors, type ColorName } from "./colors";
+export { type ColorName, colors } from "./colors";
+export { resolveThemeColors, ThemeProvider, useTheme } from "./context";
+export { detectTerminalMode } from "./detect-mode";
+export {
+  DEFAULT_THEME_NAME,
+  getAllThemeNames,
+  getTheme,
+  registerTheme,
+} from "./registry";
 
 // ── Built-in themes + terminal mode detection ───────────────
 export { registerBuiltinThemes } from "./themes";
-export { detectTerminalMode } from "./detect-mode";
+// ── New theme system API ────────────────────────────────────
+export type {
+  ColorMode,
+  ThemeColors,
+  ThemeColorsInput,
+  ThemeColorValue,
+  ThemeDefinition,
+} from "./types";
 
+import type { RGBA } from "@opentui/core";
+import type { PermissionTier } from "../../core/operator";
+import { colors as legacyColors } from "./colors";
 // ── Helpers ─────────────────────────────────────────────────
 import type { ThemeColors } from "./types";
-import { colors as legacyColors } from "./colors";
-import type { PermissionTier } from "../../core/operator";
-import type { RGBA } from "@opentui/core";
 
 /**
  * Get the appropriate color for a permission tier.

@@ -5,15 +5,15 @@
  * Unified for both chat and operator modes.
  */
 
+import type { PendingApproval } from "../../../core/operator";
 import { useTheme } from "../../theme";
+import type { DisplayMessage } from "../agent-display";
 import {
-  MessageRenderer,
+  deriveActionLabel,
   getStableMessageKey,
   isToolMessage,
-  deriveActionLabel,
+  MessageRenderer,
 } from "../shared";
-import type { DisplayMessage } from "../agent-display";
-import type { PendingApproval } from "../../../core/operator";
 import { InlineApprovalPrompt } from "./approval-inline";
 import { LoadingIndicator, type LoadingState } from "./loading-indicator";
 

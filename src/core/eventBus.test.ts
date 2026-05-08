@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
-import { join } from "path";
 import { tmpdir } from "os";
-import { AgentEventBus } from "./eventBus";
+import { join } from "path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { StepTraceWriter, type TraceRecord } from "./agents/offSecAgent/trace";
+import { AgentEventBus } from "./eventBus";
 
 // ---------------------------------------------------------------------------
 // Regression coverage for issue #707 — trace-record forwarding across

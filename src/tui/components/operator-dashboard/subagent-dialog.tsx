@@ -7,22 +7,21 @@
  * DialogProvider close the dialog.
  */
 
+import { useKeyboard } from "@opentui/react";
+import type { ReactNode } from "react";
 import {
-  useState,
   useEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
-import type { ReactNode } from "react";
-import { useKeyboard } from "@opentui/react";
-
-import { useTheme } from "../../theme";
 import { useDialog } from "../../context/dialog";
+import { useTheme } from "../../theme";
 import DialogLayout from "../dialog-layout";
 import { AsciiSpinner } from "../shared";
-import { SubagentHub, sortSessions } from "./subagent-hub";
 import { SubagentDetailView } from "./subagent-detail-view";
+import { SubagentHub, sortSessions } from "./subagent-hub";
 import type { SubagentSession, SubagentStore } from "./subagent-state";
 
 type View = { type: "hub" } | { type: "detail"; id: string };

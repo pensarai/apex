@@ -7,21 +7,21 @@ import type {
   ToolChoice,
   ToolSet,
 } from "ai";
-import type { AIModel, CacheMetrics, AIAuthConfig } from "../../ai";
-import type { CredentialManager } from "../../credentials";
-import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
-import type { FindingsRegistry } from "../../findings/registry";
-import type { SessionInfo, SessionConfig } from "../../session";
-import type { ApprovalGate } from "../../operator";
-import type { SkillsRegistry } from "../../skills/registry";
-import type { ToolName, UnifiedSandbox } from "./tools";
-import type { AgentEventBus } from "../../eventBus";
 import { z } from "zod";
 import {
   CweEntrySchema,
   ValidatedCweEntrySchema,
 } from "../../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
+import type { AIAuthConfig, AIModel, CacheMetrics } from "../../ai";
+import type { CredentialManager } from "../../credentials";
+import type { AgentEventBus } from "../../eventBus";
+import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
+import type { FindingsRegistry } from "../../findings/registry";
+import type { ApprovalGate } from "../../operator";
+import type { SessionConfig, SessionInfo } from "../../session";
+import type { SkillsRegistry } from "../../skills/registry";
+import type { ToolName, UnifiedSandbox } from "./tools";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({

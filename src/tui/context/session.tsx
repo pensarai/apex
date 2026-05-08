@@ -1,11 +1,11 @@
 import {
   createContext,
+  type ReactNode,
   useContext,
   useMemo,
   useState,
-  type ReactNode,
 } from "react";
-import { sessions, type SessionInfo } from "../../core/session";
+import { type SessionInfo, sessions } from "../../core/session";
 
 type SessionContext = {
   active?: SessionInfo;

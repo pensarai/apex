@@ -1,4 +1,4 @@
-import type { BenchmarkSuiteResult, BenchmarkRunResult } from "./types";
+import type { BenchmarkRunResult, BenchmarkSuiteResult } from "./types";
 
 // ---------------------------------------------------------------------------
 // Text report

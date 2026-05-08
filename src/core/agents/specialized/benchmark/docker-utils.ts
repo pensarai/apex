@@ -1,7 +1,7 @@
-import { existsSync, readFileSync, writeFileSync } from "fs";
 import { exec as nodeExec } from "child_process";
-import { promisify } from "util";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
+import { promisify } from "util";
 import yaml from "yaml";
 
 const exec = promisify(nodeExec);
@@ -75,9 +75,7 @@ export function parseDockerComposePort(
         for (const [serviceName, service] of Object.entries(parsed.services)) {
           // Skip infrastructure services
           if (isInfrastructureService(serviceName)) {
-            console.log(
-              `  ⏭️  Skipping infrastructure service: ${serviceName}`,
-            );
+            console.log(`  ⏭️  Skipping infrastructure service: ${serviceName}`);
             continue;
           }
 
@@ -199,9 +197,7 @@ export function parseDockerComposePort(
   }
 
   // Default to port 80 if not found
-  console.log(
-    `  ⚠️  Could not find docker-compose file, defaulting to port 80`,
-  );
+  console.log(`  ⚠️  Could not find docker-compose file, defaulting to port 80`);
   return {
     hostPort: 80,
     containerPort: 80,

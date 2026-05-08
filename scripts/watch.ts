@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
+import { type Subprocess, spawn } from "bun";
 import { watch } from "fs";
-import { spawn, type Subprocess } from "bun";
 import { resolve } from "path";
 
 const TARGET_FILE = "src/tui/index.tsx";

@@ -5,7 +5,7 @@
  * Fixes race conditions by using toolCallId for updates instead of array index.
  */
 
-import { useReducer, useCallback, useMemo } from "react";
+import { useCallback, useMemo, useReducer } from "react";
 import type { DisplayMessage, ToolStatus } from "../agent-display";
 import { isToolMessage } from "./type-guards";
 

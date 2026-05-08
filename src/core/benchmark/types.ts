@@ -1,5 +1,5 @@
-import type { AIModel } from "../ai";
 import type { ComparisonResult } from "../agents/specialized/benchmark";
+import type { AIModel } from "../ai";
 
 export type { ComparisonResult } from "../agents/specialized/benchmark";
 

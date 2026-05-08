@@ -5,9 +5,9 @@
  * Replaces 3 duplicate implementations across the codebase.
  */
 
-import { useState, useEffect } from "react";
-import { useTheme } from "../../theme";
 import type { RGBA } from "@opentui/core";
+import { useEffect, useState } from "react";
+import { useTheme } from "../../theme";
 
 const SPINNER_FRAMES = ["/", "-", "\\", "|"];
 const SPINNER_INTERVAL = 100;

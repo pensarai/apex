@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+import type { ConsolidatedEndpoint } from "../../../integrations/surface/types";
 import { buildEndpointDocumentationObjective } from "./endpointDocumentationAgent";
 import type { AppInfo } from "./types";
-import type { ConsolidatedEndpoint } from "../../../integrations/surface/types";
 
 describe("buildEndpointDocumentationObjective (per-endpoint)", () => {
   const app: AppInfo = {

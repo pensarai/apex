@@ -1,19 +1,19 @@
+import type { ScrollBoxRenderable } from "@opentui/core";
+import { useKeyboard } from "@opentui/react";
 import {
-  useState,
+  type ReactNode,
+  useCallback,
   useEffect,
   useMemo,
-  useCallback,
   useRef,
-  type ReactNode,
+  useState,
 } from "react";
-import { useKeyboard } from "@opentui/react";
-import { ScrollBoxRenderable } from "@opentui/core";
-import { modelSupportsThinking, type ModelInfo } from "../../../core/ai";
-import { getAvailableModels } from "../../../core/providers/utils";
+import { type ModelInfo, modelSupportsThinking } from "../../../core/ai";
 import type { Config } from "../../../core/config/config";
+import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
-import { scrollToChild } from "../../utils/scroll";
 import { getPasteText } from "../../utils/paste";
+import { scrollToChild } from "../../utils/scroll";
 
 const providerNames: Record<string, string> = {
   anthropic: "Claude",

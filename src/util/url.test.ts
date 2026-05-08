@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  parseTargetUrl,
   getAutoPopulatedHosts,
   getAutoPopulatedPorts,
+  parseTargetUrl,
 } from "./url";
 
 describe("URL Parsing Utilities", () => {

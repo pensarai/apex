@@ -1,0 +1,209 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.14/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!build",
+      "!dist",
+      "!bin",
+      "!node_modules",
+      "!benchmarks",
+      "!sst-env.d.ts",
+      "!*.tgz"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 80
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "jsxQuoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "domains": {
+      "react": "recommended",
+      "test": "recommended"
+    },
+    "rules": {
+      "recommended": true,
+      // Not applicable: this is a TUI codebase using opentui (terminal renderer),
+      // not a DOM-based web app. a11y rules misfire on opentui's <box>, <input>, etc.
+      "a11y": {
+        "recommended": false
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        // Carryover from previous ESLint config (no-useless-escape: off).
+        "noUselessEscapeInString": "off",
+        // Existing pattern across many TUI list components; revisit in a follow-up triage PR.
+        "noArrayIndexKey": "off",
+        // Existing pattern in tightly-scoped imperative blocks; revisit in a follow-up triage PR.
+        "noImplicitAnyLet": "off",
+        // Existing pattern in defensive/initialization code; revisit in a follow-up triage PR.
+        "noAssignInExpressions": "off",
+        // Existing pattern with intentional void callbacks; revisit in a follow-up triage PR.
+        "useIterableCallbackReturn": "off"
+      },
+      "complexity": {
+        // Carryover from previous ESLint config (no-useless-escape: off).
+        "noUselessEscapeInRegex": "off"
+      },
+      "correctness": {
+        "noUnusedImports": "error",
+        // Carryover from previous ESLint config (no-unused-vars: off).
+        "noUnusedVariables": "off",
+        // Carryover from previous ESLint config (react-hooks/exhaustive-deps: off).
+        "useExhaustiveDependencies": "off",
+        // False positives in src/tui/keybindings/registry.ts where hooks compose
+        // outside the body of a hook/component named with the use* convention.
+        "useHookAtTopLevel": "off"
+      },
+      "style": {
+        // Carryover from previous ESLint config (@typescript-eslint/no-require-imports: off).
+        "noCommonJs": "off",
+        "noNamespace": "error",
+        // Barrel-file enforcement: forbid reaching past kept module barrels into
+        // their internals. The pattern list below is the source of truth for
+        // which directories are kept module barriers — adding a new kept barrel
+        // means adding a new entry here. See "Barrel files" in AGENTS.md.
+        // Test files are exempted via the override block below.
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": ["**/core/ai/*", "!**/core/ai/index"],
+                "message": "Import from the core/ai barrel (index), not its internals."
+              },
+              {
+                "group": ["**/core/ai/models/*", "!**/core/ai/models/index"],
+                "message": "Import from the core/ai/models barrel (index), not its internals."
+              },
+              {
+                "group": [
+                  "**/core/agents/offSecAgent/*",
+                  "!**/core/agents/offSecAgent/index"
+                ],
+                "message": "Import from the offSecAgent barrel (index), not its internals."
+              },
+              {
+                "group": [
+                  "**/core/agents/offSecAgent/tools/*",
+                  "!**/core/agents/offSecAgent/tools/index"
+                ],
+                "message": "Import from the offSecAgent/tools barrel (index), not its internals."
+              },
+              {
+                "group": [
+                  "**/core/agents/offSecAgent/tools/email/*",
+                  "!**/core/agents/offSecAgent/tools/email/index"
+                ],
+                "message": "Import from the offSecAgent/tools/email barrel (index), not its internals."
+              },
+              {
+                "group": [
+                  "**/core/skills/builtins/*",
+                  "!**/core/skills/builtins/index"
+                ],
+                "message": "Import from the core/skills/builtins barrel (index), not its internals."
+              },
+              {
+                "group": ["**/core/report/*", "!**/core/report/index"],
+                "message": "Import from the core/report barrel (index), not its internals."
+              },
+              {
+                "group": [
+                  "**/core/agents/specialized/whiteboxAttackSurface/*",
+                  "!**/core/agents/specialized/whiteboxAttackSurface/index"
+                ],
+                "message": "Import from the whiteboxAttackSurface barrel (index), not its internals."
+              },
+              {
+                "group": [
+                  "**/core/agents/specialized/benchmark/*",
+                  "!**/core/agents/specialized/benchmark/index"
+                ],
+                "message": "Import from the benchmark barrel (index), not its internals."
+              },
+              {
+                "group": ["**/tui/theme/*", "!**/tui/theme/index"],
+                "message": "Import from the tui/theme barrel (index), not its internals."
+              },
+              {
+                "group": [
+                  "**/tui/theme/themes/*",
+                  "!**/tui/theme/themes/index"
+                ],
+                "message": "Import from the tui/theme/themes barrel (index), not its internals."
+              },
+              {
+                "group": ["**/tui/keybindings/*", "!**/tui/keybindings/index"],
+                "message": "Import from the tui/keybindings barrel (index), not its internals."
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on",
+        // Off globally to preserve manually-grouped key ordering in tsconfig.json
+        // and similar files; enabled per-file via overrides for package.json.
+        "useSortedKeys": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["package.json"],
+      "assist": {
+        "actions": {
+          "source": {
+            "useSortedKeys": "on"
+          }
+        }
+      }
+    },
+    {
+      // Test files are allowed to poke at internals.
+      "includes": ["**/*.test.ts", "**/*.test.tsx", "**/*.test-*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": { "level": "off" }
+          }
+        }
+      }
+    },
+    {
+      // Barrel enforcement scopes to src/ only, matching the previous
+      // `eslint src/` lint scope. Demo files at the repo root and
+      // helper scripts are not subject to module-boundary rules.
+      "includes": ["**", "!src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": { "level": "off" }
+          }
+        }
+      }
+    }
+  ]
+}

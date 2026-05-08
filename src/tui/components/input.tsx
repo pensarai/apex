@@ -1,6 +1,6 @@
-import { forwardRef } from "react";
-import type { InputProps } from "@opentui/react";
 import type { InputRenderable } from "@opentui/core";
+import type { InputProps } from "@opentui/react";
+import { forwardRef } from "react";
 import { useTheme } from "../theme";
 
 interface InputComponentProps extends InputProps {

@@ -19,50 +19,47 @@
  * ```
  */
 
-// Types
-export type {
-  AttackVector,
-  AttackComplexity,
-  AttackRequirements,
-  PrivilegesRequired,
-  UserInteraction,
-  VulnerableConfidentiality,
-  VulnerableIntegrity,
-  VulnerableAvailability,
-  SubsequentConfidentiality,
-  SubsequentIntegrity,
-  SubsequentAvailability,
-  ExploitMaturity,
-  SecurityRequirement,
-  ModifiedMetric,
-  ModifiedSubsequentImpact,
-  Safety,
-  Automatable,
-  Recovery,
-  ValueDensity,
-  ResponseEffort,
-  ProviderUrgency,
-  CVSS4BaseMetrics,
-  CVSS4ThreatMetrics,
-  CVSS4EnvironmentalMetrics,
-  CVSS4SupplementalMetrics,
-  CVSS4Metrics,
-  CVSS4Severity,
-  CVSS4ScoreType,
-  CVSS4Score,
-} from "./types";
-
-// Type utilities
-export { SEVERITY_RATINGS, getSeverityFromScore } from "./types";
-
 // Calculator functions
 export {
-  calculateCVSS4Score,
   buildVectorString,
-  parseVectorString,
+  calculateCVSS4Score,
   computeMacroVector,
+  parseVectorString,
   validateMetrics,
 } from "./calculator";
-
 // Lookup tables (for advanced usage)
 export { MACROVECTOR_LOOKUP, METRIC_LEVELS } from "./macrovector-scores";
+// Types
+export type {
+  AttackComplexity,
+  AttackRequirements,
+  AttackVector,
+  Automatable,
+  CVSS4BaseMetrics,
+  CVSS4EnvironmentalMetrics,
+  CVSS4Metrics,
+  CVSS4Score,
+  CVSS4ScoreType,
+  CVSS4Severity,
+  CVSS4SupplementalMetrics,
+  CVSS4ThreatMetrics,
+  ExploitMaturity,
+  ModifiedMetric,
+  ModifiedSubsequentImpact,
+  PrivilegesRequired,
+  ProviderUrgency,
+  Recovery,
+  ResponseEffort,
+  Safety,
+  SecurityRequirement,
+  SubsequentAvailability,
+  SubsequentConfidentiality,
+  SubsequentIntegrity,
+  UserInteraction,
+  ValueDensity,
+  VulnerableAvailability,
+  VulnerableConfidentiality,
+  VulnerableIntegrity,
+} from "./types";
+// Type utilities
+export { getSeverityFromScore, SEVERITY_RATINGS } from "./types";

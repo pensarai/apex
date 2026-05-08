@@ -14,20 +14,20 @@
  * Legacy alias: `pensar auth` still works for backward compatibility
  */
 
-import { config } from "../core/config";
-import { getPensarApiUrl, getPensarConsoleUrl } from "../core/api";
-import {
-  isConnected,
-  disconnect,
-  startDeviceFlow,
-  pollWorkOSToken,
-  pollLegacyToken,
-  fetchWorkspaces,
-  pollForWorkspaceCreation,
-  selectWorkspace,
-} from "../core/auth";
-import type { WorkspaceInfo } from "../core/auth";
 import * as readline from "readline";
+import { getPensarApiUrl, getPensarConsoleUrl } from "../core/api";
+import type { WorkspaceInfo } from "../core/auth";
+import {
+  disconnect,
+  fetchWorkspaces,
+  isConnected,
+  pollForWorkspaceCreation,
+  pollLegacyToken,
+  pollWorkOSToken,
+  selectWorkspace,
+  startDeviceFlow,
+} from "../core/auth";
+import { config } from "../core/config";
 
 // ---------------------------------------------------------------------------
 // Helpers

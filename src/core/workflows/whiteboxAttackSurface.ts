@@ -1,37 +1,37 @@
+import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
+import { execFileSync } from "child_process";
+import { createHash } from "crypto";
 import {
-  writeFileSync,
+  existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
-  existsSync,
   statSync,
+  writeFileSync,
 } from "fs";
 import { join } from "path";
 import { z } from "zod";
+import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
-  AppsDiscoveryResultSchema,
-  DiscoverySummarySchema,
-  EndpointSchema,
+  type App,
   type AppInfo,
   type AppsDiscoveryResult,
+  AppsDiscoveryResultSchema,
   type DiscoverySummary,
-  type WhiteboxAttackSurfaceResult,
+  DiscoverySummarySchema,
   type Endpoint,
-  type App,
+  EndpointSchema,
   WHITEBOX_APPS_DISCOVERY_SYSTEM_PROMPT,
   WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
+  type WhiteboxAttackSurfaceResult,
 } from "../agents/specialized/whiteboxAttackSurface";
-import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
-import type { AIModel, CacheMetrics, AIAuthConfig } from "../ai";
-import type { SessionInfo } from "../session";
-import type { AgentEventBus } from "../eventBus";
-import { runWithBoundedConcurrency } from "../utils/concurrency";
-import { execFileSync } from "child_process";
-import { createHash } from "crypto";
-import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
-import { mapAppWithSurface } from "../integrations/surface";
 import { runAppEndpointDocumentation } from "../agents/specialized/whiteboxAttackSurface/endpointDocumentationAgent";
+import type { AIAuthConfig, AIModel, CacheMetrics } from "../ai";
+import type { AgentEventBus } from "../eventBus";
+import { mapAppWithSurface } from "../integrations/surface";
+import type { SessionInfo } from "../session";
+import { runWithBoundedConcurrency } from "../utils/concurrency";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -98,7 +98,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   surfaceIntegrationEnabled?: boolean;
 }
 
-export interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
+export interface IncrementalWhiteboxInput
+  extends WhiteboxAttackSurfaceWorkflowInput {
   previousCommitSha: string;
   currentCommitSha: string;
   existingResult: WhiteboxAttackSurfaceResult;

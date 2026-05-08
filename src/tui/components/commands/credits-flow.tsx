@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useRoute } from "../../context/route";
+import { useEffect, useState } from "react";
 import { getPensarConsoleUrl } from "../../../core/api";
 import { validateGateway } from "../../../core/auth";
 import { Dialog } from "../../context/dialog";
-import DialogLayout, { type FooterAction } from "../dialog-layout";
+import { useRoute } from "../../context/route";
 import { useTheme } from "../../theme";
+import DialogLayout, { type FooterAction } from "../dialog-layout";
 
 type CreditsStep = "loading" | "no-auth" | "display" | "browser-opened";
 

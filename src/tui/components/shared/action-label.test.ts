@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { deriveActionLabel, deriveApprovedActionLabel } from "./action-label";
 import type { PendingApproval } from "../../../core/operator";
+import { deriveActionLabel, deriveApprovedActionLabel } from "./action-label";
 
 function makeApproval(
   overrides: Partial<PendingApproval> = {},

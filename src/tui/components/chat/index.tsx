@@ -8,13 +8,13 @@
  * - Collapsible sidebar with attack surface, credentials, and vulnerabilities
  */
 
-import { useState, useCallback, useEffect } from "react";
-import { sessions, type SessionInfo } from "../../../core/session";
-import { useConfig } from "../../context/config";
-import { useAgent } from "../../context/agent";
-import { HomeView } from "./home-view";
-import { ConfigView, type SessionConfig } from "./config-view";
+import { useCallback, useEffect, useState } from "react";
 import type { ModelInfo } from "../../../core/ai";
+import { type SessionInfo, sessions } from "../../../core/session";
+import { useAgent } from "../../context/agent";
+import { useConfig } from "../../context/config";
+import { ConfigView, type SessionConfig } from "./config-view";
+import { HomeView } from "./home-view";
 
 type ChatAppView = "home" | "config" | "chat";
 

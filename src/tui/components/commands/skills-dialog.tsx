@@ -5,18 +5,18 @@
  * Arrow keys to navigate, Enter for detail view, Escape to close.
  */
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { ScrollBoxRenderable } from "@opentui/core";
-import { scrollToIndex } from "../../utils/scroll";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { SkillEntry, SkillSource } from "../../../core/skills/types";
 import { useCommand } from "../../context/command";
-import { useTheme } from "../../theme";
-import { useToast } from "../../context/toast";
 import { Dialog } from "../../context/dialog";
+import { useToast } from "../../context/toast";
+import { useTheme } from "../../theme";
+import { openFileInDefaultApp } from "../../utils/open-file";
+import { scrollToIndex } from "../../utils/scroll";
 import DialogLayout from "../dialog-layout";
 import { useMarkdownSyntaxStyle } from "../shared";
-import { openFileInDefaultApp } from "../../utils/open-file";
-import type { SkillEntry, SkillSource } from "../../../core/skills/types";
 
 /** Rough token estimate: ~4 chars per token */
 function estimateTokens(text: string): number {

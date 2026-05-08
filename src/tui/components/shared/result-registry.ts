@@ -5,10 +5,10 @@
  * Handles HTTP status, errors, collections, browser results, etc.
  */
 
-import { RGBA, StyledText, type TextChunk } from "@opentui/core";
-import { highlightCode } from "./syntax-highlight";
+import { type RGBA, StyledText, type TextChunk } from "@opentui/core";
+import { isObfuscationEnabled, obfuscate } from "../../../core/obfuscation";
 import type { ThemeColors } from "../../theme";
-import { obfuscate, isObfuscationEnabled } from "../../../core/obfuscation";
+import { highlightCode } from "./syntax-highlight";
 
 export interface ResultSummary {
   text: string;

@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { ToolContext } from "./types";
 import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
+import type { ToolContext } from "./types";
 
 const AUTH_ENDPOINT_PATTERNS = {
   login: [

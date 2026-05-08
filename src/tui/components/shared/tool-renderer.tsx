@@ -6,14 +6,14 @@
  */
 
 import { memo, useState } from "react";
-import { useTheme } from "../../theme";
-import { ShiningText } from "../loaders";
-import { getToolDisplayLabel } from "./tool-registry";
-import { getResultSummary, type ResultSummary } from "./result-registry";
-import { isToolMessage } from "./type-guards";
-import type { DisplayMessage } from "../agent-display";
-import { PentestWorkflowDisplay } from "./pentest-workflow-display";
 import { useObfuscation } from "../../context/obfuscation";
+import { useTheme } from "../../theme";
+import type { DisplayMessage } from "../agent-display";
+import { ShiningText } from "../loaders";
+import { PentestWorkflowDisplay } from "./pentest-workflow-display";
+import { getResultSummary, type ResultSummary } from "./result-registry";
+import { getToolDisplayLabel } from "./tool-registry";
+import { isToolMessage } from "./type-guards";
 
 const TOOLS_WITH_LOG_WINDOW = new Set([
   "execute_command",
