@@ -18,7 +18,6 @@ import {
   checkSandboxPlaywright,
   createSandboxBrowserTools,
   ensureSandboxBrowser,
-  ensureSandboxPlaywright,
   installSandboxPlaywright,
   type SandboxExecuteOptions,
   type SandboxExecutionResult,
