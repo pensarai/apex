@@ -197,6 +197,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       traceWriter,
       tasksDir,
       enableThinking: input.enableThinking,
+      surfaceIntegrationEnabled: input.surfaceIntegrationEnabled,
       projectThreatModel: input.projectThreatModel,
       planSubagentId: input.planSubagentId,
       subagentId: input.subagentId,
@@ -443,11 +444,13 @@ export class OffensiveSecurityAgent<TResult = void> {
     const sid = this.subagentId;
     const bus = this.eventBus;
 
-    for await (const chunk of this.streamResult.fullStream) {
-      bus.emitStreamPart(chunk, sid);
+    try {
+      for await (const chunk of this.streamResult.fullStream) {
+        bus.emitStreamPart(chunk, sid);
+      }
+    } finally {
+      this.persistentShell?.dispose();
     }
-
-    this.persistentShell?.dispose();
 
     if (this.abortSignal?.aborted) {
       throw new DOMException("Agent aborted by user", "AbortError");

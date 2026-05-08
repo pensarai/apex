@@ -26,7 +26,14 @@ export type AttackSurfaceAgentInput = SpecializedAgentInput &
         /** Working directory for source-code based analysis */
         cwd: string;
       }
-  );
+  ) & {
+    /**
+     * Whitebox-only: when false, the workflow skips the `@pensar/surface`
+     * deterministic-enumeration path and uses the legacy pages+apiEndpoints
+     * discovery agents. Defaults to `true`. Has no effect on blackbox runs.
+     */
+    surfaceIntegrationEnabled?: boolean;
+  };
 
 /** The typed result returned by `AttackSurfaceAgent.consume()`. */
 export interface AttackSurfaceResult {
