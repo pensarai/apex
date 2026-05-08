@@ -36,9 +36,9 @@ export default tseslint.config(
           forbid: [
             "**/core/ai/!(index)",
             "**/core/ai/models/!(index)",
-            "**/core/agents/offSecAgent/!(index|*.test.ts)",
-            "**/core/agents/offSecAgent/tools/!(index|*.test.ts)",
-            "**/core/agents/offSecAgent/tools/email/!(index|*.test.ts)",
+            "**/core/agents/offSecAgent/!(index)",
+            "**/core/agents/offSecAgent/tools/!(index)",
+            "**/core/agents/offSecAgent/tools/email/!(index)",
             "**/core/skills/builtins/!(index)",
             "**/core/report/!(index)",
             "**/core/agents/specialized/whiteboxAttackSurface/!(index)",
