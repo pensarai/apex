@@ -139,6 +139,33 @@ function getContextLength(modelId: string): number | undefined {
   return undefined;
 }
 
+// Append IDs from `extras` that aren't already present in `target`.
+function appendMissing<T>(target: T[], extras: readonly T[]): void {
+  const seen = new Set(target);
+  for (const id of extras) {
+    if (!seen.has(id)) target.push(id);
+  }
+}
+
+// Higher score = newer. Score reflects model family generation, not release
+// date — base, dated, and variant IDs in the same family share a score so a
+// stable sort keeps the SDK's intra-family ordering intact.
+function openaiVersionScore(id: string): number {
+  const gpt = id.match(/^gpt-(\d+)(?:\.(\d+))?/);
+  if (gpt) {
+    const major = parseInt(gpt[1]!, 10);
+    const minor = gpt[2] ? parseInt(gpt[2], 10) : 0;
+    // Pro variants edge out their non-pro siblings within the same generation.
+    const pro = /-pro(?:-|$)/.test(id) ? 5 : 0;
+    return 5000 + major * 100 + minor * 10 + pro;
+  }
+  const o = id.match(/^o(\d+)(?:-|$)/);
+  if (o) {
+    return 4000 + parseInt(o[1]!, 10) * 100;
+  }
+  return 0;
+}
+
 // ---------------------------------------------------------------------------
 // 3. Human-readable display name generation
 // ---------------------------------------------------------------------------
@@ -552,13 +579,7 @@ function main() {
   );
 
   // Models available on the Anthropic API but not yet in the AI SDK type definitions
-  const EXTRA_ANTHROPIC_IDS = ["claude-opus-4-7"];
-  const existingAnthropicIds = new Set(anthropicIds);
-  for (const id of EXTRA_ANTHROPIC_IDS) {
-    if (!existingAnthropicIds.has(id)) {
-      anthropicIds.push(id);
-    }
-  }
+  appendMissing(anthropicIds, ["claude-opus-4-7"]);
 
   const anthropicModels: ModelEntry[] = anthropicIds.map((id) => ({
     id,
@@ -575,6 +596,14 @@ function main() {
   const openaiIds = extractUnionMembers(openaiDts, "OpenAIChatModelId").filter(
     isRelevantChatModel,
   );
+
+  // Models available on the OpenAI API but not yet in the AI SDK type definitions
+  appendMissing(openaiIds, ["gpt-5.5"]);
+
+  // OpenAI's SDK lists generations oldest-first; flip so the picker shows the
+  // newest family first. Stable sort preserves intra-family declaration order.
+  openaiIds.sort((a, b) => openaiVersionScore(b) - openaiVersionScore(a));
+
   const openaiModels: ModelEntry[] = openaiIds.map((id) => ({
     id,
     name: formatModelName(id, "openai"),
@@ -608,17 +637,10 @@ function main() {
   const bedrockBaseIds = [...new Set(bedrockRawIds)];
 
   // Models available on Bedrock but not yet in the AI SDK type definitions
-  const EXTRA_BEDROCK_IDS = [
+  appendMissing(bedrockBaseIds, [
     "moonshotai.kimi-k2.5",
     "anthropic.claude-opus-4-7",
-  ];
-
-  const existingIds = new Set(bedrockBaseIds);
-  for (const id of EXTRA_BEDROCK_IDS) {
-    if (!existingIds.has(id)) {
-      bedrockBaseIds.push(id);
-    }
-  }
+  ]);
 
   const bedrockRegionalIds = generateBedrockRegionalVariants(bedrockBaseIds);
   const allBedrockIds = [...bedrockBaseIds, ...bedrockRegionalIds];
