@@ -155,9 +155,10 @@ function openaiVersionScore(id: string): number {
   if (gpt) {
     const major = parseInt(gpt[1]!, 10);
     const minor = gpt[2] ? parseInt(gpt[2], 10) : 0;
-    // Pro variants edge out their non-pro siblings within the same generation.
+    // major*1000 leaves room for minor versions ≥10 (gpt-5.10 won't collide
+    // with gpt-6.0). Pro variants edge out non-pro siblings within a generation.
     const pro = /-pro(?:-|$)/.test(id) ? 5 : 0;
-    return 5000 + major * 100 + minor * 10 + pro;
+    return 5000 + major * 1000 + minor * 10 + pro;
   }
   const o = id.match(/^o(\d+)(?:-|$)/);
   if (o) {
