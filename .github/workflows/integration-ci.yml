@@ -59,8 +59,9 @@ jobs:
           bun-version: 1.3.10
 
       - name: Install console dependencies
+        # Not --frozen-lockfile: in-flight apex dep changes won't be in downstream lockfiles yet.
         working-directory: console
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Install SST providers
         working-directory: console
