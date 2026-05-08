@@ -23,7 +23,8 @@ import {
   type AIAuthConfig,
 } from "./utils";
 import { withCachedSystemPrompt, withCachedLastMessage } from "./caching";
-import { applyToolResultBudget, snipOldSteps } from "./contextManagement";
+import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
+import { getModelInfo, getMaxOutputTokens } from "./models";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -49,6 +50,11 @@ export type AIModelProvider =
   | "pensar"
   | "inception"
   | "local";
+
+/** Conservative default when `getModelInfo` doesn't have a `contextLength`. */
+function getContextWindow(modelId: string): number {
+  return getModelInfo(modelId).contextLength ?? 200_000;
+}
 
 function checkIfRateLimitError(error: unknown): boolean {
   const errObj =
@@ -121,26 +127,39 @@ class StreamIdleTimeoutError extends Error {
  * Wraps an async iterable with a per-chunk idle timeout. If no chunk arrives
  * within `idleMs`, throws a {@link StreamIdleTimeoutError} so the caller can
  * resume the conversation from accumulated messages.
+ *
+ * @param isIdleTimerActive Optional predicate evaluated before awaiting each
+ *   chunk. When it returns `false` the timer is skipped for that chunk and we
+ *   wait indefinitely. This lets callers suppress the timeout during expected
+ *   long pauses (e.g. while a tool call is executing) so a slow tool isn't
+ *   misread as a stalled provider stream.
  */
 async function* withIdleTimeout<T>(
   stream: AsyncIterable<T>,
   idleMs: number,
+  isIdleTimerActive?: () => boolean,
 ): AsyncGenerator<T> {
   const iterator = stream[Symbol.asyncIterator]();
   try {
     while (true) {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const result = await Promise.race([
-        iterator.next(),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new StreamIdleTimeoutError(idleMs)),
-            idleMs,
-          );
-          if (typeof timer === "object" && "unref" in timer) timer.unref();
-        }),
-      ]);
-      clearTimeout(timer);
+      const timerActive = isIdleTimerActive?.() ?? true;
+      let result: IteratorResult<T>;
+      if (timerActive) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        result = await Promise.race([
+          iterator.next(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new StreamIdleTimeoutError(idleMs)),
+              idleMs,
+            );
+            if (typeof timer === "object" && "unref" in timer) timer.unref();
+          }),
+        ]);
+        clearTimeout(timer);
+      } else {
+        result = await iterator.next();
+      }
 
       if (result.done) return;
       yield result.value;
@@ -155,6 +174,55 @@ async function* withIdleTimeout<T>(
 
 function isStreamIdleTimeoutError(error: unknown): boolean {
   return error instanceof StreamIdleTimeoutError;
+}
+
+/**
+ * Gates the idle-timeout in {@link withIdleTimeout} so it only fires while
+ * we're waiting on the **model**, not while a tool is executing.
+ *
+ * The provider stream emits nothing between a `tool-call` chunk and the
+ * matching `tool-result`. A slow tool (e.g. `run_attack_surface`, which
+ * spawns a multi-minute sub-agent) would otherwise be misread as a stalled
+ * stream — triggering the auto-resume path and causing the model to re-issue
+ * the same tool call, which spawns a duplicate sub-agent.
+ *
+ * Parallel tool calls are tracked by `toolCallId`. Duplicate `tool-call`
+ * chunks for the same id (defensive — should never happen in practice) are
+ * deduplicated. `tool-result` chunks without a matching open call are
+ * ignored so the counter can never go negative.
+ */
+function createToolExecutionGate(): {
+  shouldEnforceIdleTimeout: () => boolean;
+  observe: (chunk: { type: string; toolCallId?: string }) => void;
+} {
+  let inFlight = 0;
+  const open = new Set<string>();
+
+  return {
+    shouldEnforceIdleTimeout: () => inFlight === 0,
+    observe: (chunk) => {
+      if (chunk.type === "tool-call") {
+        const id = chunk.toolCallId;
+        if (id) {
+          if (!open.has(id)) {
+            open.add(id);
+            inFlight++;
+          }
+        } else {
+          inFlight++;
+        }
+      } else if (chunk.type === "tool-result") {
+        const id = chunk.toolCallId;
+        if (id) {
+          if (open.delete(id)) {
+            inFlight = Math.max(0, inFlight - 1);
+          }
+        } else {
+          inFlight = Math.max(0, inFlight - 1);
+        }
+      }
+    },
+  };
 }
 
 // Helper function to wrap a stream with error handling for async errors
@@ -175,12 +243,23 @@ function wrapStreamWithErrorHandler(
       // Intercept access to fullStream
       if (prop === "fullStream") {
         if (!wrappedStream) {
+          // Tool-execution gate: keeps the idle timer paused while a tool
+          // is in flight (see {@link createToolExecutionGate}). The gate's
+          // predicate is read by `withIdleTimeout` at the top of each
+          // iteration — which always runs AFTER the previous chunk's body
+          // finished mutating the gate, so observations are always visible
+          // before the next idle-race begins.
+          const toolGate = createToolExecutionGate();
+
           wrappedStream = (async function* () {
             try {
               for await (const chunk of withIdleTimeout(
                 originalStream.fullStream,
                 STREAM_IDLE_TIMEOUT_MS,
+                toolGate.shouldEnforceIdleTimeout,
               )) {
+                toolGate.observe(chunk);
+
                 // Only stream-level errors are fatal; tool-level errors
                 // flow through so the UI renders them as failed tool results.
                 if (chunk.type === "error") {
@@ -281,35 +360,47 @@ function wrapStreamWithErrorHandler(
                     currentMessages = response.messages as ModelMessage[];
                   }
                 } catch {
-                  // Fall back to container messages if response is not available
+                  // Fall back to container messages.
                 }
 
-                // Layer 1+2: Try lightweight compaction before full summarization.
-                // applyToolResultBudget truncates large tool results to previews;
-                // snipOldSteps replaces old tool results with 1-line summaries.
-                const afterBudget = opts.sessionPath
-                  ? applyToolResultBudget(currentMessages, {
-                      sessionPath: opts.sessionPath,
-                    })
-                  : currentMessages;
-                const compacted = snipOldSteps(afterBudget);
+                const fitted = fitMessagesToContext(currentMessages, {
+                  contextWindow: getContextWindow(opts.model),
+                  maxOutputTokens: getMaxOutputTokens(opts.model),
+                  system: opts.system,
+                  tools: opts.tools,
+                  sessionPath: opts.sessionPath,
+                });
 
-                // Update the container so any nested retry reads
-                // already-compacted messages instead of the original
-                // pre-compaction ones (prevents unbounded retry loops).
-                messagesContainer.current = compacted;
+                messagesContainer.current = fitted.messages;
 
-                // snipOldSteps returns the input array unchanged when nothing was modified
-                if (compacted !== currentMessages) {
+                // Track depth across the reactive paths so that a failed
+                // Layer 1+2 retry CONTRIBUTES to the Layer 3 budget too.
+                // Without this, a failed retry's increment is "lost" on
+                // fall-through (Layer 3 reads outer `opts._restartDepth`,
+                // not the post-retry value) and recovery can burn close
+                // to double the intended provider calls before
+                // `MAX_RESTART_DEPTH` finally trips.
+                let postReactiveDepth = opts._restartDepth ?? 0;
+
+                if (fitted.fitsBudget && fitted.modified) {
                   if (!silent) {
                     console.warn(
-                      `Context length error — trying lightweight compaction on ${currentMessages.length} messages`,
+                      `Context length error — Layer 1+2 reduced to ~${fitted.estimatedInputTokens} tokens, retrying`,
                     );
                   }
                   try {
+                    // Bump `_restartDepth` so a tokenizer-drift loop where
+                    // every reactive retry trips the same provider rejection
+                    // (fitsBudget=true by our estimator, still rejected by
+                    // the provider) eventually exhausts the depth bound at
+                    // the top of `streamResponse` instead of looping
+                    // forever. Without this, only Layer-3 escalation
+                    // increments depth and a drift-driven loop can burn
+                    // arbitrarily many failed provider calls.
                     const retried = streamResponse({
                       ...opts,
-                      messages: compacted,
+                      messages: fitted.messages,
+                      _restartDepth: postReactiveDepth + 1,
                     });
                     const wrappedRetry = wrapStreamWithErrorHandler(
                       retried,
@@ -325,15 +416,36 @@ function wrapStreamWithErrorHandler(
                     }
                     return;
                   } catch (retryError) {
-                    // Only fall through to full summarization for context length errors.
-                    // Other errors (auth failures, model errors) must propagate.
-                    if (!checkIfContextLengthError(retryError)) {
+                    // Always propagate the typed terminal error and
+                    // cancellations — these MUST escape the cascade
+                    // immediately. Currently `ContextLengthExhaustedError`
+                    // propagates only by accident (its message
+                    // "Context-length recovery exhausted…" uses a hyphen
+                    // that doesn't match any `checkIfContextLengthError`
+                    // pattern); the explicit `instanceof` and abort
+                    // checks are defensive against a future message-text
+                    // tweak that would otherwise silently swallow
+                    // recovery exhaustion. Mirrors the Layer 3
+                    // `summarizeError` catch below for symmetry.
+                    if (
+                      retryError instanceof ContextLengthExhaustedError ||
+                      (retryError instanceof Error &&
+                        retryError.name === "AbortError") ||
+                      opts.abortSignal?.aborted ||
+                      !checkIfContextLengthError(retryError)
+                    ) {
                       throw retryError;
                     }
+                    // Account for the depth slot the failed retry just
+                    // consumed so the Layer 3 paths below don't grant a
+                    // fresh budget on top of the already-spent cycle.
+                    postReactiveDepth += 1;
                   }
                 }
 
-                // Layer 3: Full summarization (existing behavior)
+                // Layer 3: full summarization. Wrapped because
+                // `summarizeConversation` itself calls `generateText` and
+                // can throw — fall back to a minimal-context restart.
                 const messagesForSummary = messagesContainer.current;
                 if (!silent) {
                   console.warn(
@@ -341,13 +453,56 @@ function wrapStreamWithErrorHandler(
                   );
                 }
 
-                const summarizationStream = createSummarizationStream(
-                  messagesForSummary,
-                  opts,
-                  model,
-                );
-                for await (const chunk of summarizationStream.fullStream) {
-                  yield chunk;
+                try {
+                  const summarizationStream = createSummarizationStream(
+                    messagesForSummary,
+                    { ...opts, _restartDepth: postReactiveDepth },
+                    model,
+                  );
+                  for await (const chunk of summarizationStream.fullStream) {
+                    yield chunk;
+                  }
+                } catch (summarizeError) {
+                  // Only fall through to minimal-restart for context-length
+                  // errors. For everything else — auth failures, network
+                  // errors, abort signals, the typed terminal
+                  // `ContextLengthExhaustedError`, or non-`Error` throws —
+                  // propagate immediately. Without this, an aborted call
+                  // would spawn a new provider request, and a transient
+                  // auth failure would burn an extra cycle that fails
+                  // identically.
+                  if (
+                    summarizeError instanceof ContextLengthExhaustedError ||
+                    (summarizeError instanceof Error &&
+                      summarizeError.name === "AbortError") ||
+                    opts.abortSignal?.aborted ||
+                    !checkIfContextLengthError(summarizeError)
+                  ) {
+                    throw summarizeError;
+                  }
+                  if (!silent) {
+                    const sumMsg =
+                      summarizeError instanceof Error
+                        ? summarizeError.message
+                        : String(summarizeError);
+                    console.error(
+                      `Layer 3 summarization failed (${sumMsg}). Falling back to minimal-context restart.`,
+                    );
+                  }
+                  opts.onSummarized?.("");
+                  const minimalPrompt =
+                    typeof opts.prompt === "string" && opts.prompt.length > 0
+                      ? opts.prompt.slice(0, 4_000)
+                      : MINIMAL_RESTART_PROMPT;
+                  const fallback = streamResponse({
+                    ...opts,
+                    prompt: minimalPrompt,
+                    messages: undefined,
+                    _restartDepth: postReactiveDepth + 1,
+                  });
+                  for await (const chunk of fallback.fullStream) {
+                    yield chunk;
+                  }
                 }
               } else {
                 if (!silent) {
@@ -438,11 +593,25 @@ export interface StreamResponseOpts {
   enableThinking?: boolean;
   /** Session root path — used by context management layers to persist truncated tool results */
   sessionPath?: string;
+  /**
+   * Internal: recovery-recursion depth. Bumped at each summarize → resume
+   * boundary; throws `ContextLengthExhaustedError` past `MAX_RESTART_DEPTH`.
+   */
+  _restartDepth?: number;
 }
 
 export function streamResponse(
   opts: StreamResponseOpts,
 ): StreamTextResult<ToolSet, never> {
+  // Bound recovery recursion (summarize → resume → overflow → …).
+  const restartDepth = opts._restartDepth ?? 0;
+  if (restartDepth > MAX_RESTART_DEPTH) {
+    throw new ContextLengthExhaustedError(
+      `Context-length recovery exhausted after ${restartDepth} restart cycles`,
+      restartDepth,
+    );
+  }
+
   const {
     prompt,
     system,
@@ -473,18 +642,68 @@ export function streamResponse(
       if (inp > 0 || out > 0) _usageCallback(model, inp, out);
     }
   };
-  // Use a container object so the reference stays stable but the value can be updated
-  const messagesContainer = { current: messages || [] };
   const providerModel = getProviderModel(model, authConfig);
   const useAnthropicCaching = isAnthropicProvider(model);
+
+  // Proactive context fit: compact before the call. Reactive recovery
+  // below is a safety net for tokenizer drift the estimate doesn't catch.
+  let fittedMessages = messages;
+  let proactiveFitFailed = false;
+  if (messages && messages.length > 0) {
+    const fitted = fitMessagesToContext(messages, {
+      contextWindow: getContextWindow(model),
+      maxOutputTokens: getMaxOutputTokens(model),
+      system,
+      tools,
+      sessionPath: opts.sessionPath,
+    });
+    fittedMessages = fitted.messages;
+    proactiveFitFailed = !fitted.fitsBudget;
+    if (fitted.modified && !silent) {
+      console.warn(
+        `Proactive context fit: compacted messages to ~${fitted.estimatedInputTokens} tokens (fits=${fitted.fitsBudget})`,
+      );
+    }
+  }
+
+  // Container reference is stable; value gets reassigned by `prepareStep`
+  // and the recovery paths so nested retries read the latest compacted view.
+  const messagesContainer = { current: fittedMessages || [] };
+
+  // Layer 1+2 alone can't fit — escalate before sending a doomed request.
+  // Wrap with the same error handler the streamText path uses, otherwise
+  // an overflow inside the summarization call itself escapes uncaught while
+  // the equivalent post-streamText path (line ~880) recovers.
+  if (proactiveFitFailed && fittedMessages) {
+    if (!silent) {
+      console.warn(
+        `Proactive context fit returned fitsBudget=false on ${fittedMessages.length} messages — escalating to summarization before send`,
+      );
+    }
+    // Pass `opts` through unchanged. The slot for this escalation is
+    // consumed by `summarizeConversation`'s internal `_restartDepth + 1`
+    // bump on the resumed `streamResponse` call — pre-bumping here would
+    // double-count vs the reactive Layer 3 path (which also passes
+    // `opts._restartDepth` to `createSummarizationStream` after a
+    // no-retry fall-through). With the post-bump, all three escalation
+    // entry points (proactive, outer-catch, reactive Layer 3) consume
+    // exactly one depth slot per summarization attempt — symmetric.
+    return wrapStreamWithErrorHandler(
+      createSummarizationStream(fittedMessages, opts, providerModel),
+      messagesContainer,
+      opts,
+      providerModel,
+      silent,
+    );
+  }
 
   // For Anthropic models, move the system prompt into messages with cache_control.
   // This caches tools + system prompt across multi-turn conversations (~90% cost reduction on cache hits).
   let effectiveSystem: string | undefined = system;
-  let effectiveMessages: ModelMessage[] | undefined = messages;
+  let effectiveMessages: ModelMessage[] | undefined = fittedMessages;
 
   if (useAnthropicCaching && system) {
-    const baseMessages: ModelMessage[] = messages ?? [
+    const baseMessages: ModelMessage[] = fittedMessages ?? [
       { role: "user" as const, content: prompt },
     ];
     effectiveMessages = withCachedSystemPrompt(system, baseMessages);
@@ -522,6 +741,12 @@ export function streamResponse(
       tools,
       maxRetries: 3,
       providerOptions,
+      // Pin actual emission to the same value `fitMessagesToContext`
+      // reserved for output. Without this, the SDK applies provider
+      // defaults that can exceed our budget — e.g. GPT-4o defaults to
+      // 16K output but our messages were sized assuming a smaller
+      // reservation. Making the value explicit closes that drift class.
+      maxOutputTokens: getMaxOutputTokens(model),
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
@@ -610,8 +835,21 @@ export function streamResponse(
             return null;
           }
 
-          // Get JSONSchema7 for display purposes
           const jsonSchema = inputSchema({ toolName: toolCall.toolName });
+
+          // Bound input + schema so the repair call can't itself overflow.
+          const rawInput = toolCall.input;
+          const inputAsText =
+            typeof rawInput === "string" ? rawInput : JSON.stringify(rawInput);
+          const boundedInput = truncateWithMarker(
+            inputAsText,
+            MAX_TOOL_INPUT_CHARS,
+          );
+          const boundedSchema = truncateWithMarker(
+            JSON.stringify(jsonSchema),
+            MAX_SCHEMA_CHARS,
+            "schema",
+          );
 
           const { output: repairedArgs, usage: repairUsage } =
             await generateText({
@@ -622,9 +860,9 @@ export function streamResponse(
               prompt: [
                 `The model tried to call the tool "${toolCall.toolName}"` +
                   ` with the following inputs:`,
-                toolCall.input,
+                boundedInput,
                 `The tool accepts the following schema:`,
-                JSON.stringify(jsonSchema),
+                boundedSchema,
                 `Error encountered: ${error}`,
                 "Please fix the inputs to match the schema.",
                 "",
@@ -711,11 +949,26 @@ export function streamResponse(
           outerErrorMessage,
         );
       }
-      // Return a wrapped stream that shows summarization and then continues
-      return createSummarizationStream(
-        messagesContainer.current,
+      // Wrap so a context error inside the summarization stream itself
+      // (or the resumed `streamResponse` it triggers) is caught and routed
+      // through the same recovery cascade as the proactive and reactive
+      // paths — invariant I4: every context-recovery failure must be caught
+      // at the `streamResponse` boundary, never escape raw to the consumer.
+      //
+      // Pass `opts` through unchanged — the slot is consumed by
+      // `summarizeConversation`'s internal `_restartDepth + 1` bump on
+      // the resumed call. See the proactive escalation comment above
+      // for the symmetry rationale.
+      return wrapStreamWithErrorHandler(
+        createSummarizationStream(
+          messagesContainer.current,
+          opts,
+          providerModel,
+        ),
+        messagesContainer,
         opts,
         providerModel,
+        silent,
       );
     }
     if (!silent) {
@@ -819,9 +1072,31 @@ export class ContextLengthError extends Error {
   }
 }
 
+/**
+ * Terminal: all recovery paths exhausted. The only context-length error
+ * allowed to escape `streamResponse` — others are recoverable by design.
+ */
+export class ContextLengthExhaustedError extends Error {
+  readonly restartDepth: number;
+  constructor(message: string, restartDepth: number) {
+    super(message);
+    this.name = "ContextLengthExhaustedError";
+    this.restartDepth = restartDepth;
+  }
+}
+
+const MAX_RESTART_DEPTH = 3;
+
+const MAX_TOOL_INPUT_CHARS = 8_000;
+const MAX_SCHEMA_CHARS = 6_000;
+
+const MINIMAL_RESTART_PROMPT =
+  "Continue the previous task. Earlier context was discarded due to repeated context-length errors.";
+
 export {
   StreamIdleTimeoutError,
   withIdleTimeout,
+  createToolExecutionGate,
   STREAM_IDLE_TIMEOUT_MS,
   MAX_IDLE_RESUME_RETRIES,
 };

@@ -1,0 +1,246 @@
+import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
+import { CodeAgent } from "../codeAgent/agent";
+import {
+  DiscoverySummarySchema,
+  type AppInfo,
+  type DiscoverySummary,
+} from "./types";
+import { WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT } from "./prompts";
+import type {
+  ConsolidatedEndpoint,
+  FrameworkId,
+} from "../../../integrations/surface/types";
+import type { AIModel, CacheMetrics } from "../../../ai";
+import type { AIAuthConfig } from "../../../ai/utils";
+import type { SessionInfo } from "../../../session";
+import type { AgentEventBus } from "../../../eventBus";
+import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
+import { runWithBoundedConcurrency } from "../../../utils/concurrency";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-app fan-out concurrency. Each app's documentation runs N endpoint
+ * agents in parallel up to this cap. Workflow-level concurrency (across
+ * apps) is separately bounded by `DEFAULT_CONCURRENCY` in
+ * `runWhiteboxAttackSurfaceWorkflow` Phase 2.
+ */
+const ENDPOINT_DOCUMENTATION_CONCURRENCY = 10;
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface SharedAgentOptions {
+  codebasePath: string;
+  model: AIModel;
+  session: SessionInfo;
+  authConfig?: AIAuthConfig;
+  abortSignal?: AbortSignal;
+  eventBus?: AgentEventBus;
+  attackSurfaceRegistry?: AttackSurfaceRegistry;
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
+  projectThreatModel?: string;
+}
+
+export interface EndpointDocumentationInput extends SharedAgentOptions {
+  app: AppInfo;
+  endpoint: ConsolidatedEndpoint;
+  frameworks: FrameworkId[];
+}
+
+export interface AppEndpointDocumentationInput extends SharedAgentOptions {
+  app: AppInfo;
+  endpoints: ConsolidatedEndpoint[];
+  frameworks: FrameworkId[];
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function slug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
+}
+
+function getDocumentMethod(endpoint: ConsolidatedEndpoint): string[] {
+  return endpoint.kind === "page" ? ["PAGE"] : endpoint.method;
+}
+
+export function buildEndpointDocumentationObjective(opts: {
+  app: AppInfo;
+  codebasePath: string;
+  endpoint: ConsolidatedEndpoint;
+  frameworks: FrameworkId[];
+}): string {
+  const { app, codebasePath, endpoint, frameworks } = opts;
+
+  const frameworkLabel =
+    frameworks.length > 0 ? frameworks.join(", ") : "unknown";
+
+  // Apex's downstream storage convention is method="PAGE" for renderable
+  // pages. Surface emits the raw HTTP method (e.g. "GET") with kind="page";
+  // we translate at this write boundary so the surface integration layer
+  // stays a pure pass-through.
+  const documentMethod = getDocumentMethod(endpoint);
+  const methodDisplay = documentMethod.join(",");
+  const methodValue = JSON.stringify(
+    documentMethod.length === 1 ? documentMethod[0] : documentMethod,
+  );
+  const endpointType =
+    endpoint.kind === "page" ? "web-endpoint" : "api-endpoint";
+
+  const auth = endpoint.auth.length > 0 ? endpoint.auth.join(", ") : "none";
+  const authPrefill = endpoint.auth.length > 0;
+
+  return `# Document Endpoint: ${methodDisplay} ${endpoint.path}
+
+## Codebase
+- **Repository root:** ${codebasePath}
+- **App:** ${app.name}
+- **App location:** ${app.location}
+- **Framework(s):** ${frameworkLabel}
+
+## Endpoint (deterministically extracted by surface)
+
+- **method**: ${methodDisplay}
+- **routePath**: ${endpoint.path}
+- **file**: ${endpoint.file}:${endpoint.line}
+- **handler**: ${endpoint.handler}
+- **endpointType**: ${endpointType}
+- **auth signals**: ${auth}
+- **prefilled authRequired**: ${authPrefill}
+
+## Task
+
+Document this **single endpoint** by calling \`document_endpoint\` exactly once. Use the deterministic fields above as-is for \`appName\` (\`"${app.name}"\`), \`routePath\`, \`method\` (\`${methodValue}\`), \`endpointType\` (\`"${endpointType}"\`), \`file\`, \`line\`, and \`handler\`. The remaining fields you must produce yourself:
+
+- **authRequired**: start from the prefilled value above. Override only after reading the middleware chain at the indicated file when the signals are genuinely ambiguous.
+- **description**: 1–2 sentences explaining what this endpoint does in plain English. Read the handler at \`${endpoint.file}:${endpoint.line}\` to ground it.
+- **riskLevel**: \`CRITICAL\` for auth/payment/admin or unauthenticated state-changing routes; \`HIGH\` for authenticated user-data mutations; \`MEDIUM\` for general; \`LOW\` for static/public reads.
+
+Do NOT pass \`pentestObjectives\` — \`document_endpoint\` generates them automatically.
+
+## Scope
+
+This agent is responsible for **exactly one** endpoint. Do not document other endpoints. Do not enumerate routes. Your tool registry blocks \`list_files\`, \`grep\`, and \`document_app\` so this is enforced at the tool layer too.
+
+## Workflow
+
+1. \`read_file\` the handler at \`${endpoint.file}:${endpoint.line}\` (use a small line range — you don't need the whole file).
+2. Optionally read the middleware referenced by auth signals if you need to refine \`authRequired\`.
+3. Call \`document_endpoint\` once with the fields above.
+4. Call \`response\` with \`{ endpointsDocumented: 1, summary: "<one-line summary>" }\`.
+`;
+}
+
+// ---------------------------------------------------------------------------
+// Per-endpoint agent runner
+// ---------------------------------------------------------------------------
+
+export async function runEndpointDocumentationAgent(
+  opts: EndpointDocumentationInput,
+): Promise<void> {
+  const {
+    codebasePath,
+    app,
+    endpoint,
+    frameworks,
+    model,
+    session,
+    authConfig,
+    abortSignal,
+    eventBus,
+    attackSurfaceRegistry,
+    onStepFinish,
+    onCacheMetrics,
+    projectThreatModel,
+  } = opts;
+
+  const subagentId = `endpoint-doc-${slug(app.name)}-${slug(endpoint.path)}`;
+  const displayMethod = getDocumentMethod(endpoint);
+  const displayName = `${app.name}: ${displayMethod.join(",")} ${endpoint.path}`;
+
+  eventBus?.emit("subagent-spawn", {
+    subagentId,
+    name: displayName,
+    input: {
+      app: app.name,
+      type: "endpointDocumentation",
+      method: displayMethod,
+      path: endpoint.path,
+    },
+  });
+
+  const objective = buildEndpointDocumentationObjective({
+    app,
+    codebasePath,
+    endpoint,
+    frameworks,
+  });
+
+  const agent = new CodeAgent<DiscoverySummary>({
+    codebasePath,
+    objective,
+    system: WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT,
+    model,
+    session,
+    authConfig,
+    abortSignal,
+    attackSurfaceRegistry,
+    eventBus,
+    subagentId,
+    onStepFinish: (event) => onStepFinish?.(event),
+    onCacheMetrics,
+    responseSchema: DiscoverySummarySchema,
+    // Hard-exclude tools an endpoint documentation agent must never use:
+    // - document_app: Phase 1 owns app discovery.
+    // - list_files / grep: route enumeration is surface's job; without this,
+    //   soft prompt guidance gets overridden by the model's discovery instinct
+    //   and the agent orients-first, looking like a discovery pass.
+    excludeTools: ["document_app", "list_files", "grep"],
+    projectThreatModel,
+  });
+
+  try {
+    await agent.consume();
+    eventBus?.emit("subagent-complete", {
+      subagentId,
+      status: "completed",
+    });
+  } catch (error) {
+    console.error(
+      `[endpoint-documentation-agent] "${subagentId}" FAILED:`,
+      error instanceof Error ? error.message : String(error),
+    );
+    eventBus?.emit("subagent-complete", {
+      subagentId,
+      status: "failed",
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// App-level fan-out
+// ---------------------------------------------------------------------------
+
+export async function runAppEndpointDocumentation(
+  opts: AppEndpointDocumentationInput,
+): Promise<void> {
+  const { endpoints, ...shared } = opts;
+  if (endpoints.length === 0) return;
+
+  await runWithBoundedConcurrency(
+    endpoints,
+    ENDPOINT_DOCUMENTATION_CONCURRENCY,
+    async (endpoint) => {
+      await runEndpointDocumentationAgent({ ...shared, endpoint });
+    },
+  );
+}

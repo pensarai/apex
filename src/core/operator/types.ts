@@ -191,7 +191,7 @@ export function getNextStage(current: OperatorStage): OperatorStage | null {
   return idx === -1 || idx === stages.length - 1 ? null : stages[idx + 1].stage;
 }
 
-/** Pending approval request */
+/** Pending approval request. `id` is an internal correlation key, not a label. */
 export interface PendingApproval {
   id: string;
   toolName: string;
@@ -323,7 +323,12 @@ export type OperatorEvent =
   | { type: "mode-changed"; mode: OperatorMode }
   | { type: "stage-changed"; stage: OperatorStage }
   | { type: "approval-needed"; approval: PendingApproval }
-  | { type: "approval-resolved"; id: string; decision: ApprovalDecision }
+  | {
+      type: "approval-resolved";
+      id: string;
+      decision: ApprovalDecision;
+      approval: PendingApproval;
+    }
   | { type: "action-completed"; entry: ActionHistoryEntry }
   // Sidebar population events
   | { type: "attack-surface-updated"; endpoints: DiscoveredEndpoint[] }

@@ -56,6 +56,7 @@ export {
   ApprovalDeniedError,
   ApprovalTimeoutError,
   DEFAULT_DECISION_TIMEOUT_MS,
+  INTERNAL_ID_PATTERN,
   wrapToolWithApproval,
   type ApprovalGateConfig,
 } from "./approvalGate";
