@@ -304,6 +304,7 @@ export default function OperatorDashboard({
   const planSubmittedRef = useRef(false);
   const planRejectedRef = useRef(false);
   const planApprovedPendingRunRef = useRef(false);
+  const planGateBypassedOnResumeRef = useRef(false);
 
   const [pendingQuestions, setPendingQuestions] = useState<
     AskUserQuestion[] | null
@@ -422,14 +423,12 @@ export default function OperatorDashboard({
                 // Best-effort — subagent files may not exist
               }
 
-              // Restore plan content from a prior session so the cycleMode
-              // gate doesn't force a redundant re-approval on Shift+Tab.
-              // Only mark the plan as approved if the user previously left
-              // plan mode (restoredMode !== "plan"), which signals prior approval.
-              if (restoredMode !== "plan") {
-                const planContent = readPlan(s.rootPath);
-                if (planContent) {
+              const planContent = readPlan(s.rootPath);
+              if (planContent) {
+                if (restoredMode !== "plan") {
                   setApprovedPlanContent(planContent);
+                } else {
+                  planGateBypassedOnResumeRef.current = true;
                 }
               }
             }
@@ -976,6 +975,7 @@ export default function OperatorDashboard({
           (d.result as Record<string, unknown> | null)?.success === true
         ) {
           planSubmittedRef.current = true;
+          planGateBypassedOnResumeRef.current = false;
         }
       });
 
@@ -1900,21 +1900,21 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     const idx = OPERATOR_MODE_CYCLE.indexOf(current);
     const next = OPERATOR_MODE_CYCLE[(idx + 1) % OPERATOR_MODE_CYCLE.length];
 
-    // Gate: if leaving plan mode and a plan exists but isn't approved, show review
     if (
       current === "plan" &&
       sessionRef.current &&
       hasPlan(sessionRef.current.rootPath) &&
-      !approvedPlanRef.current
+      !approvedPlanRef.current &&
+      !planGateBypassedOnResumeRef.current
     ) {
       setShowPlanReview(true);
       return;
     }
 
-    // Entering plan mode — reset plan state for fresh cycle
     if (next === "plan") {
       setApprovedPlanContent(null);
       planRejectedRef.current = false;
+      planGateBypassedOnResumeRef.current = false;
     }
 
     transitionToMode(next);
