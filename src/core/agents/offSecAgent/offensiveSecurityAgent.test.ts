@@ -34,15 +34,9 @@ vi.mock("./tools", () => ({
   EMAIL_TOOL_NAMES_ACTIVE: [],
   SEND_EMAIL_TOOL_NAME: "send_email",
   PLAN_MODE_TOOL_NAMES: [],
-}));
-vi.mock("./tools/response", () => ({
   createResponseTool: () => {},
   RESPONSE_TOOL_NAME: "response",
-}));
-vi.mock("./tools/askUserQuestions", () => ({
   ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
-}));
-vi.mock("./tools/persistentShell", () => ({
   PersistentShell: class {},
 }));
 vi.mock("../../ai", () => ({ streamResponse: () => {} }));
