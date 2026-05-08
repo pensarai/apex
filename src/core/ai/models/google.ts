@@ -47,12 +47,6 @@ export const GOOGLE_MODELS: ModelInfo[] = [
     contextLength: 1000000,
   },
   {
-    id: "gemini-2.5-flash-lite-preview-09-2025",
-    name: "Gemini 2.5 Flash Lite Preview 09 2025",
-    provider: "google",
-    contextLength: 1000000,
-  },
-  {
     id: "gemini-2.5-computer-use-preview-10-2025",
     name: "Gemini 2.5 Computer Use Preview 10 2025",
     provider: "google",
