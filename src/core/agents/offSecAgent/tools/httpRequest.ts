@@ -33,7 +33,7 @@ export const httpRequestInputSchema = z.object({
     ),
 });
 
-export type HttpRequestInput = z.infer<typeof httpRequestInputSchema>;
+type HttpRequestInput = z.infer<typeof httpRequestInputSchema>;
 
 export type HttpRequestResult = {
   success: boolean;

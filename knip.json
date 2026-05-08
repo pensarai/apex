@@ -10,9 +10,19 @@
     "src/core/agents/specialized/authenticationAgent/index.ts",
     "src/core/agents/specialized/environment/index.ts",
     "src/core/agents/specialized/patching/index.ts",
-    "src/core/agents/specialized/codeAgent/schemas.ts"
+    "src/core/agents/specialized/codeAgent/schemas.ts",
+    "src/core/agents/specialized/attackSurface/schemas.ts",
+    "src/lib/cvss/index.ts"
   ],
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
   "ignoreDependencies": ["@playwright/mcp"],
-  "include": ["files", "dependencies", "unlisted", "duplicates"]
+  "ignoreExportsUsedInFile": { "type": true },
+  "include": [
+    "files",
+    "dependencies",
+    "unlisted",
+    "duplicates",
+    "types",
+    "nsTypes"
+  ]
 }

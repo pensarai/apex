@@ -46,7 +46,7 @@ interface SharedAgentOptions {
   projectThreatModel?: string;
 }
 
-export interface EndpointDocumentationInput extends SharedAgentOptions {
+interface EndpointDocumentationInput extends SharedAgentOptions {
   app: AppInfo;
   endpoint: ConsolidatedEndpoint;
   frameworks: FrameworkId[];

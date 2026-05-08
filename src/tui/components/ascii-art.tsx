@@ -180,7 +180,7 @@ export async function convertImageToColoredAscii(
 /**
  * Props for the ColoredAsciiArt component
  */
-export interface ColoredAsciiArtProps {
+interface ColoredAsciiArtProps {
   ascii: { char: string; r: number; g: number; b: number }[][];
   /**
    * Optional title to display above the ASCII art

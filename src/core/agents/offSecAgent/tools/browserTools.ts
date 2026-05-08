@@ -38,8 +38,6 @@ export const BROWSER_TOOL_NAMES = [
   "browser_get_cookies",
 ] as const;
 
-export type BrowserToolName = (typeof BROWSER_TOOL_NAMES)[number];
-
 /**
  * Create the full set of browser automation tools from a {@link ToolContext}.
  *

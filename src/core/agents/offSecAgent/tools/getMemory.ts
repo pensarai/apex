@@ -21,7 +21,7 @@ export const getMemoryInputSchema = z.object({
     ),
 });
 
-export type GetMemoryInput = z.infer<typeof getMemoryInputSchema>;
+type GetMemoryInput = z.infer<typeof getMemoryInputSchema>;
 
 export type GetMemoryResult = {
   success: boolean;

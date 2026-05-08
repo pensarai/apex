@@ -53,5 +53,3 @@ export const EMAIL_TOOL_NAMES = [
 ] as const;
 
 export const SEND_EMAIL_TOOL_NAME = "send_email" as const;
-
-export type EmailToolName = (typeof EMAIL_TOOL_NAMES)[number];

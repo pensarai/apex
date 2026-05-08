@@ -24,7 +24,7 @@ export type ToolCategory =
 /**
  * Definition of an individual tool
  */
-export interface ToolDefinition {
+interface ToolDefinition {
   /** Unique tool identifier (matches tool name in code) */
   id: string;
   /** Human-readable display name */
@@ -380,7 +380,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
 /**
  * Predefined toolset configuration
  */
-export interface ToolsetDefinition {
+interface ToolsetDefinition {
   /** Unique toolset identifier */
   id: string;
   /** Human-readable name */

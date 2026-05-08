@@ -5,11 +5,11 @@
  * When false, all calls are auto-approved.
  */
 
-export interface PermissionPolicyConfig {
+interface PermissionPolicyConfig {
   requireApproval: boolean;
 }
 
-export interface PermissionCheckResult {
+interface PermissionCheckResult {
   allowed: boolean;
   autoApproved: boolean;
   reason: string;

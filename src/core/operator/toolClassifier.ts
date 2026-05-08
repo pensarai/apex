@@ -108,7 +108,7 @@ const PROBING_PATTERNS = [
 /**
  * Context for tool classification
  */
-export interface ToolClassificationContext {
+interface ToolClassificationContext {
   toolName: string;
   args: Record<string, unknown>;
 }

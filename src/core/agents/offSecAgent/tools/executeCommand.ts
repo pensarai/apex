@@ -24,7 +24,7 @@ export const executeCommandInputSchema = z.object({
     ),
 });
 
-export type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
+type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
 
 export type ExecuteCommandResult = {
   success: boolean;

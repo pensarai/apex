@@ -21,22 +21,16 @@ export {
   checkPermission,
   getApprovalRequirement,
   getPolicySummary,
-  type PermissionCheckResult,
-  type PermissionPolicyConfig,
   shouldAutoApprove,
 } from "./permissionPolicy";
 // Stage Inference
-export {
-  inferStageFromDirective,
-  type StageInferenceResult,
-} from "./stageInference";
+export { inferStageFromDirective } from "./stageInference";
 // Stage Manager
 export { StageManager } from "./stageManager";
 // Tool Classifier
 export {
   classifyToolCall,
   getClassificationReason,
-  type ToolClassificationContext,
 } from "./toolClassifier";
 // Types
 export type {
@@ -45,13 +39,11 @@ export type {
   OperatorEvent,
   OperatorMode,
   OperatorSessionState,
-  OperatorSettings,
   OperatorStage,
   PendingApproval,
   PermissionTier,
   StageDefinition,
   StageProgress,
-  TierDefinition,
 } from "./types";
 export {
   createInitialOperatorState,

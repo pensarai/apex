@@ -22,7 +22,7 @@ export const listFilesInputSchema = z.object({
     ),
 });
 
-export type ListFilesInput = z.infer<typeof listFilesInputSchema>;
+type ListFilesInput = z.infer<typeof listFilesInputSchema>;
 
 export type ListFilesResult = {
   success: boolean;

@@ -6,7 +6,7 @@ import { z } from "zod";
  */
 export type PermissionTier = 1 | 2 | 3 | 4 | 5;
 
-export interface TierDefinition {
+interface TierDefinition {
   tier: PermissionTier;
   name: string;
   shortName: string;
@@ -258,7 +258,7 @@ export const OperatorSettingsObject = z.object({
   requireApproval: z.boolean().default(true),
 });
 
-export type OperatorSettings = z.infer<typeof OperatorSettingsObject>;
+type OperatorSettings = z.infer<typeof OperatorSettingsObject>;
 
 /** Endpoint discovered during attack surface mapping */
 export interface DiscoveredEndpoint {

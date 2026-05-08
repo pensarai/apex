@@ -27,7 +27,7 @@ export const updateFileInputSchema = z.object({
     ),
 });
 
-export type UpdateFileInput = z.infer<typeof updateFileInputSchema>;
+type UpdateFileInput = z.infer<typeof updateFileInputSchema>;
 
 export type UpdateFileResult = {
   success: boolean;

@@ -2324,12 +2324,3 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     </box>
   );
 }
-
-// Re-export types for backward compatibility
-export type {
-  Credential,
-  Endpoint,
-  Evidence,
-  Hypothesis,
-  VerifiedVuln,
-} from "./types";

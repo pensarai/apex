@@ -6,7 +6,7 @@
  */
 
 // ── Legacy exports (kept during migration) ──────────────────
-export { type ColorName, colors } from "./colors";
+export { colors } from "./colors";
 export { resolveThemeColors, ThemeProvider, useTheme } from "./context";
 export { detectTerminalMode } from "./detect-mode";
 export {

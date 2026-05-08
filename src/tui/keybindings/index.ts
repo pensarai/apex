@@ -30,12 +30,7 @@ export {
   type Selection,
   type UndoEntry,
 } from "./input-buffer";
-export {
-  type LeaderKeyContextValue,
-  LeaderKeyProvider,
-  type LeaderKeyState,
-  useLeaderKey,
-} from "./keybind";
+export { LeaderKeyProvider, useLeaderKey } from "./keybind";
 
 export {
   createKeybindings,

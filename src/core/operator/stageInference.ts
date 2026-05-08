@@ -7,7 +7,7 @@
 
 import type { OperatorStage } from "./types";
 
-export interface StageInferenceResult {
+interface StageInferenceResult {
   stage: OperatorStage;
   confidence: "high" | "medium" | "low";
   reason: string;

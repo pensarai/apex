@@ -26,7 +26,7 @@ export const listMemoriesInputSchema = z.object({
     ),
 });
 
-export type ListMemoriesInput = z.infer<typeof listMemoriesInputSchema>;
+type ListMemoriesInput = z.infer<typeof listMemoriesInputSchema>;
 
 export type ListMemoriesResult = {
   success: boolean;

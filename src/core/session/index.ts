@@ -68,16 +68,14 @@ const ScopeConstraintsObject = z.object({
   strictScope: z.boolean().optional(),
 });
 
-export type ScopeConstraints = z.infer<typeof ScopeConstraintsObject>;
+type ScopeConstraints = z.infer<typeof ScopeConstraintsObject>;
 
 const OffensiveHeadersConfigObject = z.object({
   mode: z.enum(["none", "default", "custom"]),
   headers: z.record(z.string(), z.string()).optional(),
 });
 
-export type OffensiveHeadersConfig = z.infer<
-  typeof OffensiveHeadersConfigObject
->;
+type OffensiveHeadersConfig = z.infer<typeof OffensiveHeadersConfigObject>;
 
 const OperatorSettingsObject = z.object({
   initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
@@ -129,9 +127,7 @@ const EmailIntegrationConfigObject = z.object({
   inboxes: z.array(EmailInboxConfigObject),
 });
 
-export type EmailIntegrationConfig = z.infer<
-  typeof EmailIntegrationConfigObject
->;
+type EmailIntegrationConfig = z.infer<typeof EmailIntegrationConfigObject>;
 
 const SmtpConfigObject = z.object({
   host: z.string(),
@@ -234,7 +230,7 @@ export type SessionConfig = z.infer<typeof SessionConfigObject>;
  *
  * This replaces the old core/agent/sessions module with safe Storage writes.
  */
-export interface ExecutionSession {
+interface ExecutionSession {
   /** Unique session identifier (format: {prefix}-ses_{timestamp}_{random}) */
   id: string;
   /** Root path for all session artifacts (~/.pensar/sessions/{id}) */
