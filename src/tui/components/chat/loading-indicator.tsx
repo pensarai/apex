@@ -4,9 +4,9 @@
  * Animated spinner with contextual messages for agent states.
  */
 
-import { useState, useEffect, useRef } from "react";
-import { useTheme } from "../../theme";
+import { useEffect, useRef, useState } from "react";
 import { INTERNAL_ID_PATTERN } from "../../../core/operator";
+import { useTheme } from "../../theme";
 
 // Braille spinner frames for smooth animation
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];

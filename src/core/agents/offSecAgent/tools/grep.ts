@@ -1,6 +1,6 @@
 import { tool } from "ai";
-import { z } from "zod";
 import { spawn } from "child_process";
+import { z } from "zod";
 import type { ToolContext } from "./types";
 
 export const grepInputSchema = z.object({

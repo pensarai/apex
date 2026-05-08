@@ -10,10 +10,10 @@
  * ```
  */
 
-import { resolveConfig, createWeaveTracer, type WandbConfig } from "./client";
 import type { TraceRecord } from "../../agents/offSecAgent";
 import type { AgentEventBus } from "../../eventBus";
 import type { SessionInfo } from "../../session";
+import { createWeaveTracer, resolveConfig, type WandbConfig } from "./client";
 
 // ---------------------------------------------------------------------------
 // Uploader handle

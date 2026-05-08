@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
 import type { Finding } from "../agents/offSecAgent";
-import { generateObjectResponse, type AIModel, type AIAuthConfig } from "../ai";
+import { type AIAuthConfig, type AIModel, generateObjectResponse } from "../ai";
 
 // ---------------------------------------------------------------------------
 // Vuln class keyword mappings (order matters — first match wins)

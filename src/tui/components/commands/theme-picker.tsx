@@ -6,12 +6,12 @@
  * Escape reverts to the previous theme.
  */
 
-import { useState, useCallback, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useDimensions } from "../../context/dimensions";
-import { useTheme } from "../../theme";
+import { useCallback, useRef, useState } from "react";
 import { config } from "../../../core/config";
 import { Dialog } from "../../context/dialog";
+import { useDimensions } from "../../context/dimensions";
+import { useTheme } from "../../theme";
 import DialogLayout from "../dialog-layout";
 
 interface ThemePickerProps {

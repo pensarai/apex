@@ -5,14 +5,14 @@
  * Used from both home page and operator mode.
  */
 
+import { modelSupportsThinking } from "../../../core/ai";
 import { useAgent } from "../../context/agent";
 import { useConfig } from "../../context/config";
-import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
-import DialogLayout from "../dialog-layout";
+import { useTheme } from "../../theme";
 import type { FooterAction } from "../dialog-layout";
+import DialogLayout from "../dialog-layout";
 import { ModelPicker } from "./ModelPicker";
-import { modelSupportsThinking } from "../../../core/ai";
 
 interface ModelPickerDialogProps {
   onClose: () => void;

@@ -10,16 +10,19 @@ For the rationale behind every major product and architecture decision (why TUI,
 
 ### Key commands
 
-| Task               | Command                |
-| ------------------ | ---------------------- |
-| Install deps       | `bun install`          |
-| Dev (watch mode)   | `bun run dev`          |
-| Start TUI directly | `bun run start`        |
-| Lint               | `bun run lint`         |
-| Format check       | `bun run format:check` |
-| Type check         | `bun run tsc`          |
-| Unit tests         | `bun run test`         |
-| Build              | `bun run build`        |
+| Task                             | Command                |
+| -------------------------------- | ---------------------- |
+| Install deps                     | `bun install`          |
+| Dev (watch mode)                 | `bun run dev`          |
+| Start TUI directly               | `bun run start`        |
+| Lint                             | `bun run lint`         |
+| Lint (auto-fix)                  | `bun run lint:fix`     |
+| Format check                     | `bun run format:check` |
+| Format (write)                   | `bun run format`       |
+| Lint + format + organize imports | `bun run check`        |
+| Type check                       | `bun run tsc`          |
+| Unit tests                       | `bun run test`         |
+| Build                            | `bun run build`        |
 
 See `package.json` `scripts` for the full list.
 
@@ -48,7 +51,7 @@ See `package.json` `scripts` for the full list.
 
 The CI pipeline (`.github/workflows/ci.yml`) runs these jobs in parallel on every PR and push to `main`/`canary`:
 
-- **Lint** — ESLint + Prettier
+- **Lint** — Biome (lint + format + organize imports for JS/TS/JSON/CSS) + Prettier (Markdown/YAML only)
 - **TypeCheck** — `tsc --noEmit`
 - **Test** — `bun run test` (vitest)
 - **Build** — full build + smoke test

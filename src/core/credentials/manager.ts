@@ -7,12 +7,12 @@
  */
 
 import { randomBytes } from "crypto";
+import type { AuthCredentials } from "../session";
 import type {
   CredentialReference,
   CredentialType,
   StoredCredential,
 } from "./types";
-import type { AuthCredentials } from "../session";
 
 // ---------------------------------------------------------------------------
 // Helpers

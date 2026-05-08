@@ -6,13 +6,13 @@
  */
 
 import { memo, useMemo } from "react";
+import { useObfuscation } from "../../context/obfuscation";
 import { useTheme } from "../../theme";
+import type { DisplayMessage } from "../agent-display";
+import { PlanReviewMessage } from "../chat/plan-review-message";
 import { markdownToStyledText } from "./markdown";
 import { ToolRenderer } from "./tool-renderer";
 import { isToolMessage } from "./type-guards";
-import type { DisplayMessage } from "../agent-display";
-import { PlanReviewMessage } from "../chat/plan-review-message";
-import { useObfuscation } from "../../context/obfuscation";
 
 interface MessageRendererProps {
   message: DisplayMessage;

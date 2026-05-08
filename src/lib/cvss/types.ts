@@ -187,8 +187,7 @@ export interface CVSS4SupplementalMetrics {
 
 /** Complete CVSS 4.0 Metrics */
 export interface CVSS4Metrics
-  extends
-    CVSS4BaseMetrics,
+  extends CVSS4BaseMetrics,
     CVSS4ThreatMetrics,
     CVSS4EnvironmentalMetrics,
     CVSS4SupplementalMetrics {}

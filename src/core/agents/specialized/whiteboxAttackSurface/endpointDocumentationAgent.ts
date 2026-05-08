@@ -1,21 +1,21 @@
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
-import { CodeAgent } from "../codeAgent/agent";
-import {
-  DiscoverySummarySchema,
-  type AppInfo,
-  type DiscoverySummary,
-} from "./types";
-import { WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT } from "./prompts";
+import type { AIModel, CacheMetrics } from "../../../ai";
+import type { AIAuthConfig } from "../../../ai/utils";
+import type { AgentEventBus } from "../../../eventBus";
+import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
 import type {
   ConsolidatedEndpoint,
   FrameworkId,
 } from "../../../integrations/surface/types";
-import type { AIModel, CacheMetrics } from "../../../ai";
-import type { AIAuthConfig } from "../../../ai/utils";
 import type { SessionInfo } from "../../../session";
-import type { AgentEventBus } from "../../../eventBus";
-import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
 import { runWithBoundedConcurrency } from "../../../utils/concurrency";
+import { CodeAgent } from "../codeAgent/agent";
+import { WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT } from "./prompts";
+import {
+  type AppInfo,
+  type DiscoverySummary,
+  DiscoverySummarySchema,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -6,21 +6,21 @@
  * Resend's SMTP relay).
  */
 
+export { emailGetAttachments } from "./getAttachments";
+export { emailGetMessage } from "./getMessage";
 export { emailListInboxes } from "./listInboxes";
 export { emailListMessages } from "./listMessages";
-export { emailGetMessage } from "./getMessage";
-export { emailSearchMessages } from "./searchMessages";
-export { emailGetAttachments } from "./getAttachments";
 export { emailMarkRead } from "./markRead";
+export { emailSearchMessages } from "./searchMessages";
 export { sendEmail } from "./sendEmail";
 
 import type { ToolContext } from "../types";
+import { emailGetAttachments } from "./getAttachments";
+import { emailGetMessage } from "./getMessage";
 import { emailListInboxes } from "./listInboxes";
 import { emailListMessages } from "./listMessages";
-import { emailGetMessage } from "./getMessage";
-import { emailSearchMessages } from "./searchMessages";
-import { emailGetAttachments } from "./getAttachments";
 import { emailMarkRead } from "./markRead";
+import { emailSearchMessages } from "./searchMessages";
 import { sendEmail } from "./sendEmail";
 
 /**

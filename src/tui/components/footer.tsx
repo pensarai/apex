@@ -1,12 +1,12 @@
+import type { RGBA } from "@opentui/core";
 import os from "os";
-import { type RGBA } from "@opentui/core";
 import { useAgent } from "../context/agent";
-import { withAlpha } from "./loaders";
-import { useSession } from "../context/session";
-import { useInput } from "../context/input";
-import { useTheme } from "../theme";
 import { useDimensions } from "../context/dimensions";
+import { useInput } from "../context/input";
 import { useObfuscation } from "../context/obfuscation";
+import { useSession } from "../context/session";
+import { useTheme } from "../theme";
+import { withAlpha } from "./loaders";
 
 interface FooterProps {
   cwd?: string;

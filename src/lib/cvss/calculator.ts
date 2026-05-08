@@ -5,14 +5,14 @@
  * Reference: https://www.first.org/cvss/v4-0/specification-document
  */
 
-import type { CVSS4Metrics, CVSS4Score, CVSS4ScoreType } from "./types";
-import { getSeverityFromScore } from "./types";
 import {
   MACROVECTOR_LOOKUP,
-  METRIC_LEVELS,
   MAX_SEVERITY,
+  METRIC_LEVELS,
   STEP,
 } from "./macrovector-scores";
+import type { CVSS4Metrics, CVSS4Score, CVSS4ScoreType } from "./types";
+import { getSeverityFromScore } from "./types";
 
 // =============================================================================
 // Metric Ordering (required order for vector string)

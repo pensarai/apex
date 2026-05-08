@@ -1,11 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
 import {
-  extractJavascriptEndpoints,
   type EndpointInfo,
+  extractJavascriptEndpoints,
 } from "../../specialized/attackSurface/jsExtraction";
-import type { ToolContext } from "./types";
 import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
+import type { ToolContext } from "./types";
 
 /**
  * Factory for the `crawl_authenticated_area` tool.

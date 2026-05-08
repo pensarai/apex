@@ -10,11 +10,19 @@
 import type { ParsedKey } from "@opentui/core";
 
 export {
-  LeaderKeyProvider,
-  useLeaderKey,
-  type LeaderKeyState,
-  type LeaderKeyContextValue,
-} from "./keybind";
+  type Action,
+  type ActionCategory,
+  actionsById,
+  actionsByKey,
+  allActions,
+  clipboardActions,
+  editingActions,
+  getAction,
+  getActionsByCategory,
+  historyActions,
+  movementActions,
+  selectionActions,
+} from "./actions";
 
 export {
   InputBuffer,
@@ -22,26 +30,17 @@ export {
   type Selection,
   type UndoEntry,
 } from "./input-buffer";
-
 export {
-  allActions,
-  getAction,
-  getActionsByCategory,
-  actionsByKey,
-  actionsById,
-  movementActions,
-  selectionActions,
-  editingActions,
-  clipboardActions,
-  historyActions,
-  type Action,
-  type ActionCategory,
-} from "./actions";
+  type LeaderKeyContextValue,
+  LeaderKeyProvider,
+  type LeaderKeyState,
+  useLeaderKey,
+} from "./keybind";
 
 export {
   createKeybindings,
-  type KeybindingEntry,
   type KeybindingDependencies,
+  type KeybindingEntry,
 } from "./registry";
 
 export type KeybindInfo = Pick<

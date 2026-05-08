@@ -1,13 +1,13 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Finding } from "../agents/offSecAgent/types";
 import { generateObjectResponse } from "../ai";
 import {
-  extractVulnClass,
   classifyFromContent,
   extractTitleStem,
-  normalizeEndpoint,
-  generateFingerprint,
+  extractVulnClass,
   FindingsRegistry,
+  generateFingerprint,
+  normalizeEndpoint,
 } from "./registry";
 
 vi.mock("fs", () => ({

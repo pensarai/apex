@@ -1,199 +1,180 @@
-export { type ToolContext } from "./types";
+// Memory tools
+export { addMemory } from "./addMemory";
+// askUserQuestions schema/types — used by TUI for the question-prompt UX.
 export {
-  type UnifiedSandbox,
-  type SandboxType,
-  type SandboxExecuteOptions,
-  type SandboxExecutionResult,
-} from "./sandbox";
-
-// Scope guard utilities
-export {
-  ScopeViolationError,
-  getAllowedHosts,
-  isHostAllowed,
-  extractHostname,
-  assertUrlInScope,
-  assertCommandInScope,
-  extractHostsFromCommand,
-} from "./scopeGuard";
-
-// Browser automation tools
-export { createBrowserToolset, BROWSER_TOOL_NAMES } from "./browserTools";
+  type AskUserQuestion,
+  type AskUserQuestionAnswer,
+  AskUserQuestionSchema,
+  type AskUserQuestionsResult,
+} from "./askUserQuestions";
+export { authenticateSession } from "./authenticateSession";
 export type { BrowserToolName } from "./browserTools";
-
-// Sandbox Playwright helpers (check / install Playwright in a sandbox)
-export {
-  checkSandboxPlaywright,
-  installSandboxPlaywright,
-  ensureSandboxPlaywright,
-  ensureSandboxBrowser,
-  createSandboxBrowserTools,
-} from "./sandboxPlaywright";
-
-// Core pentest tools
-export { executeCommand } from "./executeCommand";
-export { httpRequest } from "./httpRequest";
-export { documentVulnerability } from "./documentFinding";
-
-// Filesystem / search tools
-export { readFile } from "./readFile";
-export { listFiles } from "./listFiles";
-export { grep } from "./grep";
+// Browser automation tools
+export { BROWSER_TOOL_NAMES, createBrowserToolset } from "./browserTools";
+// Observability tools
+export { checkpointState } from "./checkpointState";
+// Authentication tools
+export { completeAuthentication } from "./completeAuthentication";
+export { crawlAuthenticated } from "./crawlAuthenticated";
+export { createAttackSurfaceReport } from "./createAttackSurfaceReport";
 export { createFile } from "./createFile";
-export { updateFile } from "./updateFile";
-
+// Task decomposition tools
+export { createTask } from "./createTask";
+export { delegateAuth } from "./delegateAuth";
+export { detectAuthScheme } from "./detectAuthScheme";
 // Attack surface / recon tools
 export { documentApp } from "./documentApp";
 export { documentEndpoint } from "./documentEndpoint";
-export { authenticateSession } from "./authenticateSession";
-export { delegateAuth } from "./delegateAuth";
-export { extractJsEndpoints } from "./extractJsEndpoints";
-export { crawlAuthenticated } from "./crawlAuthenticated";
-export { testEndpointVariations } from "./testEndpointVariations";
-export { validateDiscovery } from "./validateDiscovery";
-export { createAttackSurfaceReport } from "./createAttackSurfaceReport";
-
-// Authentication tools
-export { completeAuthentication } from "./completeAuthentication";
-export { detectAuthScheme } from "./detectAuthScheme";
-export { probeAuthEndpoints } from "./probeAuthEndpoints";
-
-// Orchestration tools
-export { runAttackSurface } from "./runAttackSurface";
-export { spawnPentestSwarm } from "./spawnPentestSwarm";
-export { spawnCodingAgent } from "./spawnCodingAgent";
-export { runPentestWorkflow } from "./runPentestWorkflow";
-
-// Reporting / benchmark tools
-// export { generateReport } from "./generateReport";
-export { provideComparisonResults } from "./provideComparisonResults";
-
-// Memory tools
-export { addMemory } from "./addMemory";
-export { listMemories } from "./listMemories";
-export { getMemory } from "./getMemory";
-
+export { documentVulnerability } from "./documentFinding";
+export type { EmailToolName } from "./email";
 // Email tools
 export {
   createEmailToolset,
   EMAIL_TOOL_NAMES,
   SEND_EMAIL_TOOL_NAME,
 } from "./email";
-export type { EmailToolName } from "./email";
-
-// Web search tools (requires Pensar account)
-export { webSearch } from "./webSearch";
+// Core pentest tools
+export { executeCommand } from "./executeCommand";
+export { extractJsEndpoints } from "./extractJsEndpoints";
+export { getMemory } from "./getMemory";
 export { getPage } from "./getPage";
-
-// Skill tools
-export { readSkill } from "./readSkill";
-
-// Observability tools
-export { checkpointState } from "./checkpointState";
-
-// Task decomposition tools
-export { createTask } from "./createTask";
-export { updateTask } from "./updateTask";
+export { grep } from "./grep";
+export { httpRequest } from "./httpRequest";
+export { listFiles } from "./listFiles";
+export { listMemories } from "./listMemories";
 export { listTasksTool } from "./listTasks";
-
-// Plan mode tools
-export { writePlan } from "./writePlan";
-export { submitPlan } from "./submitPlan";
-
-// Response (structured final-output) tool — used by sub-agents that emit
-// validated result objects.
-export { createResponseTool, RESPONSE_TOOL_NAME } from "./response";
-
 // Persistent shell — long-lived shell session shared across tool calls.
 export {
+  extractFallbackStdout,
+  getApexTmpRoot,
   PersistentShell,
   readTempfileCapped,
-  getApexTmpRoot,
-  extractFallbackStdout,
   type ShellExecuteResult,
 } from "./persistentShell";
-
 // Playwright MCP browser session helpers.
 export {
-  PlaywrightMcpSession,
+  type BrowserClickResult,
+  type BrowserConsoleResult,
+  type BrowserEvaluateResult,
+  type BrowserFillResult,
+  type BrowserNavigateResult,
+  type BrowserScreenshotResult,
+  type BrowserToolMode,
   createBrowserTools,
+  PlaywrightMcpSession,
   setHeadlessMode,
   setUserAgent,
   setViewportSize,
   transformScriptToFunction,
-  type BrowserToolMode,
-  type BrowserNavigateResult,
-  type BrowserScreenshotResult,
-  type BrowserClickResult,
-  type BrowserFillResult,
-  type BrowserEvaluateResult,
-  type BrowserConsoleResult,
 } from "./playwrightMcp";
+export { probeAuthEndpoints } from "./probeAuthEndpoints";
 
-// askUserQuestions schema/types — used by TUI for the question-prompt UX.
+// Reporting / benchmark tools
+// export { generateReport } from "./generateReport";
+export { provideComparisonResults } from "./provideComparisonResults";
+// Filesystem / search tools
+export { readFile } from "./readFile";
+// Skill tools
+export { readSkill } from "./readSkill";
+// Response (structured final-output) tool — used by sub-agents that emit
+// validated result objects.
+export { createResponseTool, RESPONSE_TOOL_NAME } from "./response";
+// Orchestration tools
+export { runAttackSurface } from "./runAttackSurface";
+export { runPentestWorkflow } from "./runPentestWorkflow";
+export type {
+  SandboxExecuteOptions,
+  SandboxExecutionResult,
+  SandboxType,
+  UnifiedSandbox,
+} from "./sandbox";
+// Sandbox Playwright helpers (check / install Playwright in a sandbox)
 export {
-  AskUserQuestionSchema,
-  type AskUserQuestion,
-  type AskUserQuestionAnswer,
-  type AskUserQuestionsResult,
-} from "./askUserQuestions";
+  checkSandboxPlaywright,
+  createSandboxBrowserTools,
+  ensureSandboxBrowser,
+  ensureSandboxPlaywright,
+  installSandboxPlaywright,
+} from "./sandboxPlaywright";
+// Scope guard utilities
+export {
+  assertCommandInScope,
+  assertUrlInScope,
+  extractHostname,
+  extractHostsFromCommand,
+  getAllowedHosts,
+  isHostAllowed,
+  ScopeViolationError,
+} from "./scopeGuard";
+export { spawnCodingAgent } from "./spawnCodingAgent";
+export { spawnPentestSwarm } from "./spawnPentestSwarm";
+export { submitPlan } from "./submitPlan";
+export { testEndpointVariations } from "./testEndpointVariations";
+export type { ToolContext } from "./types";
+export { updateFile } from "./updateFile";
+export { updateTask } from "./updateTask";
+export { validateDiscovery } from "./validateDiscovery";
+// Web search tools (requires Pensar account)
+export { webSearch } from "./webSearch";
+// Plan mode tools
+export { writePlan } from "./writePlan";
 
 // ---------------------------------------------------------------------------
 // Tool registry
 // ---------------------------------------------------------------------------
 
-import type { ToolContext } from "./types";
+import { addMemory } from "./addMemory";
+import {
+  ASK_USER_QUESTIONS_TOOL_NAME,
+  askUserQuestions,
+} from "./askUserQuestions";
+import { authenticateSession } from "./authenticateSession";
 import { createBrowserToolset } from "./browserTools";
-import { executeCommand } from "./executeCommand";
-import { httpRequest } from "./httpRequest";
-import { documentVulnerability } from "./documentFinding";
-
-import { readFile } from "./readFile";
-import { listFiles } from "./listFiles";
-import { grep } from "./grep";
+import { checkpointState } from "./checkpointState";
+import { completeAuthentication } from "./completeAuthentication";
+import { crawlAuthenticated } from "./crawlAuthenticated";
+import { createAttackSurfaceReport } from "./createAttackSurfaceReport";
 import { createFile } from "./createFile";
-import { updateFile } from "./updateFile";
+import { createTask } from "./createTask";
+import { delegateAuth } from "./delegateAuth";
+import { detectAuthScheme } from "./detectAuthScheme";
 import { documentApp } from "./documentApp";
 import { documentEndpoint } from "./documentEndpoint";
-import { authenticateSession } from "./authenticateSession";
-import { delegateAuth } from "./delegateAuth";
-import { extractJsEndpoints } from "./extractJsEndpoints";
-import { crawlAuthenticated } from "./crawlAuthenticated";
-import { testEndpointVariations } from "./testEndpointVariations";
-import { validateDiscovery } from "./validateDiscovery";
-import { createAttackSurfaceReport } from "./createAttackSurfaceReport";
-import { completeAuthentication } from "./completeAuthentication";
-import { detectAuthScheme } from "./detectAuthScheme";
-import { probeAuthEndpoints } from "./probeAuthEndpoints";
-import { runAttackSurface } from "./runAttackSurface";
-import { spawnPentestSwarm } from "./spawnPentestSwarm";
-import { spawnCodingAgent } from "./spawnCodingAgent";
-import { runPentestWorkflow } from "./runPentestWorkflow";
-// import { generateReport } from "./generateReport";
-import { provideComparisonResults } from "./provideComparisonResults";
-import { addMemory } from "./addMemory";
-import { listMemories } from "./listMemories";
-import { getMemory } from "./getMemory";
+import { documentVulnerability } from "./documentFinding";
 import {
   createEmailToolset,
+  emailGetMessage,
   emailListInboxes,
   emailListMessages,
   emailSearchMessages,
-  emailGetMessage,
 } from "./email";
-import { webSearch } from "./webSearch";
+import { executeCommand } from "./executeCommand";
+import { extractJsEndpoints } from "./extractJsEndpoints";
+import { getMemory } from "./getMemory";
 import { getPage } from "./getPage";
-import { readSkill } from "./readSkill";
-import { checkpointState } from "./checkpointState";
-import { createTask } from "./createTask";
-import { updateTask } from "./updateTask";
+import { grep } from "./grep";
+import { httpRequest } from "./httpRequest";
+import { listFiles } from "./listFiles";
+import { listMemories } from "./listMemories";
 import { listTasksTool } from "./listTasks";
-import { writePlan } from "./writePlan";
+import { probeAuthEndpoints } from "./probeAuthEndpoints";
+// import { generateReport } from "./generateReport";
+import { provideComparisonResults } from "./provideComparisonResults";
+import { readFile } from "./readFile";
+import { readSkill } from "./readSkill";
+import { runAttackSurface } from "./runAttackSurface";
+import { runPentestWorkflow } from "./runPentestWorkflow";
+import { spawnCodingAgent } from "./spawnCodingAgent";
+import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { submitPlan } from "./submitPlan";
-import {
-  askUserQuestions,
-  ASK_USER_QUESTIONS_TOOL_NAME,
-} from "./askUserQuestions";
+import { testEndpointVariations } from "./testEndpointVariations";
+import type { ToolContext } from "./types";
+import { updateFile } from "./updateFile";
+import { updateTask } from "./updateTask";
+import { validateDiscovery } from "./validateDiscovery";
+import { webSearch } from "./webSearch";
+import { writePlan } from "./writePlan";
+
 export { ASK_USER_QUESTIONS_TOOL_NAME } from "./askUserQuestions";
 
 /**

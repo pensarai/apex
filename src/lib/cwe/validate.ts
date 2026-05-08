@@ -1,5 +1,5 @@
-import type { CweEntry, ValidatedCweEntry } from "./types";
 import { CWE_CATALOG } from "./cwe-catalog";
+import type { CweEntry, ValidatedCweEntry } from "./types";
 
 export interface CweValidationResult {
   /** Validated and enriched CWE entries (only those found in the database) */

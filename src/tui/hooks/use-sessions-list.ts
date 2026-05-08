@@ -3,14 +3,14 @@
  * Used by SessionsDisplay.
  */
 
-import { useState, useEffect, useCallback } from "react";
 import { existsSync, readdirSync } from "fs";
 import { join } from "path";
-import {
-  sessions as sessionModule,
-  type SessionInfo,
-} from "../../core/session";
+import { useCallback, useEffect, useState } from "react";
 import { REPORT_FILENAME_MD } from "../../core/report";
+import {
+  type SessionInfo,
+  sessions as sessionModule,
+} from "../../core/session";
 
 export interface EnrichedSession extends SessionInfo {
   findingsCount: number;

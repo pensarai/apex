@@ -4,10 +4,10 @@
  * High-polish animated loading indicators for the TUI.
  */
 
-import { useState, useEffect, useMemo } from "react";
 import { RGBA } from "@opentui/core";
-import { useTheme } from "../theme";
+import { useEffect, useMemo, useState } from "react";
 import { useObfuscation } from "../context/obfuscation";
+import { useTheme } from "../theme";
 
 // ---------------------------------------------------------------------------
 // Shared tick system — all loaders share one interval to avoid timer bloat
@@ -270,7 +270,7 @@ function BracketBounceActive({
   const eased =
     linear < 0.5
       ? 4 * linear * linear * linear
-      : 1 - Math.pow(-2 * linear + 2, 3) / 2;
+      : 1 - (-2 * linear + 2) ** 3 / 2;
   const pos = Math.round(eased * (inner - 1));
 
   const trailColors = useMemo(() => {

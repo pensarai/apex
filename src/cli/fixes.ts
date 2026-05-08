@@ -8,7 +8,7 @@
  *   pensar fixes get <fixId>        Get fix details (includes diff)
  */
 
-import { listFixes, getFix } from "../core/api";
+import { getFix, listFixes } from "../core/api";
 
 function showHelp(): void {
   console.log(`pensar fixes — View security fixes via the Pensar API

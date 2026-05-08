@@ -1,11 +1,12 @@
 import { tool } from "ai";
-import { z } from "zod";
-import { join } from "path";
 import { writeFileSync } from "fs";
-import type { ToolContext } from "./types";
-import { type AuthCredentials } from "../../specialized/authenticationAgent/types";
+import { join } from "path";
+import { z } from "zod";
 import { CredentialManager } from "../../../credentials";
 import { AgentEventBus } from "../../../eventBus";
+import type { AuthCredentials } from "../../specialized/authenticationAgent/types";
+import type { ToolContext } from "./types";
+
 // runAuthenticationAgent is dynamically imported inside execute() to break
 // the circular dependency: authAgent → offensiveSecurityAgent → tools → delegateAuth → authAgent
 
@@ -297,8 +298,9 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         // authAgent → offensiveSecurityAgent → tools/index → delegateAuth → api/authentication → authAgent
         // Routing through the api barrel would re-introduce the cycle, so we
         // import the per-feature module directly.
-        const { runAuthenticationAgent } =
-          await import("../../../api/authentication");
+        const { runAuthenticationAgent } = await import(
+          "../../../api/authentication"
+        );
 
         const localBus = new AgentEventBus();
         AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);

@@ -6,9 +6,9 @@
  * X-Workspace-Id header for JWT auth.
  */
 
-import { getPensarApiUrl } from "./constants";
-import { config } from "../config";
 import { ensureValidToken } from "../auth";
+import { config } from "../config";
+import { getPensarApiUrl } from "./constants";
 
 // ── Types ────────────────────────────────────────────────────────────
 

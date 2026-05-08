@@ -1,6 +1,6 @@
 // Structural contract for the context-recovery state machine. No network.
-import { describe, it, expect } from "vitest";
-import { streamResponse, ContextLengthExhaustedError } from "./ai";
+import { describe, expect, it } from "vitest";
+import { ContextLengthExhaustedError, streamResponse } from "./ai";
 
 describe("streamResponse recovery-depth contract", () => {
   it("throws ContextLengthExhaustedError when _restartDepth exceeds the bound", () => {

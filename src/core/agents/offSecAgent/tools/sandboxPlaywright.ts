@@ -19,19 +19,19 @@
  */
 
 import { tool } from "ai";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
 import { z } from "zod";
-import { join, dirname } from "path";
-import { mkdirSync, existsSync, writeFileSync } from "fs";
-import type { UnifiedSandbox } from "./sandbox";
-import type { ToolContext } from "./types";
 import type {
+  BrowserClickResult,
+  BrowserConsoleResult,
+  BrowserEvaluateResult,
+  BrowserFillResult,
   BrowserNavigateResult,
   BrowserScreenshotResult,
-  BrowserClickResult,
-  BrowserFillResult,
-  BrowserEvaluateResult,
-  BrowserConsoleResult,
 } from "./playwrightMcp";
+import type { UnifiedSandbox } from "./sandbox";
+import type { ToolContext } from "./types";
 
 // ---------------------------------------------------------------------------
 // Constants

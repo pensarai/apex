@@ -5,9 +5,9 @@
  * Provides visual context for pending approvals.
  */
 
-import { useTheme } from "../../theme";
-import { getToolSummary, deriveApprovedActionLabel } from "../shared";
 import type { PendingApproval } from "../../../core/operator";
+import { useTheme } from "../../theme";
+import { deriveApprovedActionLabel, getToolSummary } from "../shared";
 
 interface InlineApprovalPromptProps {
   approval: PendingApproval;

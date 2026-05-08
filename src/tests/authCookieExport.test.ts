@@ -1,8 +1,8 @@
+import { config } from "dotenv";
+import { describe, expect, it } from "vitest";
 import { runAuthenticationAgent } from "../core/api/authentication";
 import { AgentEventBus } from "../core/eventBus";
 import { sessions } from "../core/session";
-import { describe, it, expect } from "vitest";
-import { config } from "dotenv";
 
 config();
 

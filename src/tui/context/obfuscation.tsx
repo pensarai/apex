@@ -15,20 +15,20 @@
  * retroactively reflects the new state.
  */
 
+import { useRenderer } from "@opentui/react";
 import {
   createContext,
+  type ReactNode,
   useContext,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
-import { useRenderer } from "@opentui/react";
 import {
+  obfuscate as engineObfuscate,
+  isObfuscationEnabled,
   resetObfuscation,
   setObfuscationEnabled,
-  isObfuscationEnabled,
-  obfuscate as engineObfuscate,
 } from "../../core/obfuscation";
 import { refreshObfuscatedText } from "../obfuscation/patch";
 

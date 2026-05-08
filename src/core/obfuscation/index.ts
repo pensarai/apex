@@ -17,12 +17,12 @@
  *    operator's own infra.
  */
 
+export type { ObfuscationCategory } from "./engine";
 export {
+  deobfuscate,
+  isObfuscationEnabled,
   obfuscate,
   obfuscateValue,
-  deobfuscate,
   resetObfuscation,
-  isObfuscationEnabled,
   setObfuscationEnabled,
 } from "./engine";
-export type { ObfuscationCategory } from "./engine";

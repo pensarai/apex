@@ -1,9 +1,9 @@
 import {
   createContext,
+  type ReactNode,
+  useCallback,
   useContext,
   useRef,
-  useCallback,
-  type ReactNode,
 } from "react";
 import type { PromptInputRef } from "../components/shared";
 

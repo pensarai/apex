@@ -1,9 +1,9 @@
 import { tool } from "ai";
-import { z } from "zod";
-import { createTransport } from "nodemailer";
 import { readFile } from "fs/promises";
-import { basename } from "path";
 import { lookup } from "mime-types";
+import { createTransport } from "nodemailer";
+import { basename } from "path";
+import { z } from "zod";
 import type { ToolContext } from "../types";
 
 const attachmentSchema = z.object({

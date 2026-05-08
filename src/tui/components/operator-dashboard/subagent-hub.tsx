@@ -5,14 +5,14 @@
  * keyboard-navigable list. Uses the standard Dialog + DialogLayout pattern.
  */
 
-import React, { useState, useEffect, useRef, memo } from "react";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { ScrollBoxRenderable } from "@opentui/core";
-
-import { useTheme } from "../../theme";
+import type React from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useDimensions } from "../../context/dimensions";
-import { AsciiSpinner, getToolDisplayLabel } from "../shared";
+import { useTheme } from "../../theme";
 import { scrollToIndex } from "../../utils/scroll";
+import { AsciiSpinner, getToolDisplayLabel } from "../shared";
 import { SUBAGENT_STATUS_ORDER, type SubagentSession } from "./subagent-state";
 
 // ---------------------------------------------------------------------------

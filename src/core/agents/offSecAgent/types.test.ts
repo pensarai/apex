@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { ApexFindingObject } from "./types";
-import { DocumentFindingSchema } from "../../session/types";
+import { describe, expect, it } from "vitest";
 import { PentestReportFindingSchema } from "../../report/schemas";
+import { DocumentFindingSchema } from "../../session/types";
+import { ApexFindingObject } from "./types";
 
 const baseFinding = {
   title: "SQL Injection in /api/products",

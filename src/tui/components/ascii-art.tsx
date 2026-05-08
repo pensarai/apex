@@ -1,6 +1,5 @@
-import sharp from "sharp";
-import React from "react";
 import { RGBA } from "@opentui/core";
+import sharp from "sharp";
 
 /**
  * ASCII character sets ordered by density (light to dark)
