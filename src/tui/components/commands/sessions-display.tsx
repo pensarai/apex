@@ -280,6 +280,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                 contentOptions: {
                   gap: 2,
                   flexDirection: "column",
+                  paddingRight: 1,
                 },
                 scrollbarOptions: {
                   trackOptions: {
