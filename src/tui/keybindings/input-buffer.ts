@@ -373,5 +373,3 @@ export class InputBuffer {
     this.selection = null;
   }
 }
-
-export default InputBuffer;
