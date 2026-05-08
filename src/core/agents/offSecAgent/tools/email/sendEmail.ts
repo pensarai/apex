@@ -62,9 +62,7 @@ const sendEmailInputSchema = z.object({
     ),
 });
 
-export type SendEmailInput = z.infer<typeof sendEmailInputSchema>;
-
-export interface SendEmailResult {
+interface SendEmailResult {
   success: boolean;
   messageId?: string;
   error?: string;

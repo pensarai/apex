@@ -25,8 +25,6 @@ export const readFileInputSchema = z.object({
     ),
 });
 
-export type ReadFileInput = z.infer<typeof readFileInputSchema>;
-
 export type ReadFileResult = {
   success: boolean;
   error: string;

@@ -21,15 +21,13 @@ export const webSearchInputSchema = z.object({
     ),
 });
 
-export type WebSearchInput = z.infer<typeof webSearchInputSchema>;
-
-export interface WebSearchResult {
+interface WebSearchResult {
   title: string;
   url: string;
   snippet: string;
 }
 
-export interface WebSearchResponse {
+interface WebSearchResponse {
   success: boolean;
   results: WebSearchResult[];
   error?: string;

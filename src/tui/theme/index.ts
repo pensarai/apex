@@ -22,7 +22,7 @@ export {
 export { ThemeProvider, useTheme, resolveThemeColors } from "./context";
 
 // ── Legacy exports (kept during migration) ──────────────────
-export { colors, type ColorName } from "./colors";
+export { colors } from "./colors";
 
 // ── Built-in themes + terminal mode detection ───────────────
 export { registerBuiltinThemes } from "./themes";

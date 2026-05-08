@@ -12,13 +12,13 @@ import {
 } from "../../core/session";
 import { REPORT_FILENAME_MD } from "../../core/report";
 
-export interface EnrichedSession extends SessionInfo {
+interface EnrichedSession extends SessionInfo {
   findingsCount: number;
   hasOperatorState: boolean;
   hasReport: boolean;
 }
 
-export interface DateGroup {
+interface DateGroup {
   date: string;
   timestamp: number;
   sessions: (EnrichedSession & { index: number })[];

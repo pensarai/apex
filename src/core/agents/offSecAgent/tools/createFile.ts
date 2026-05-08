@@ -21,8 +21,6 @@ export const createFileInputSchema = z.object({
     ),
 });
 
-export type CreateFileInput = z.infer<typeof createFileInputSchema>;
-
 export type CreateFileResult = {
   success: boolean;
   error: string;

@@ -161,7 +161,7 @@ const SubagentHubCard = memo(function SubagentHubCard({
 // SubagentHub
 // ---------------------------------------------------------------------------
 
-export interface SubagentHubProps {
+interface SubagentHubProps {
   sorted: SubagentSession[];
   onSelect: (id: string) => void;
 }

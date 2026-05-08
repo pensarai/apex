@@ -5,7 +5,7 @@ import {
 } from "../whiteboxAttackSurface";
 
 export { RiskScoreSchema, RiskScoreBreakdownSchema };
-export type { RiskScore, RiskScoreBreakdown } from "../whiteboxAttackSurface";
+export type { RiskScore } from "../whiteboxAttackSurface";
 
 /**
  * Shared schemas for attack surface agent tools.

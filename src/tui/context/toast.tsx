@@ -9,7 +9,7 @@ import {
 
 export type ToastVariant = "default" | "error" | "warn";
 
-export interface Toast {
+interface Toast {
   id: number;
   message: string;
   variant: ToastVariant;

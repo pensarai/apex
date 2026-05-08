@@ -17,9 +17,7 @@ export const getPageInputSchema = z.object({
     ),
 });
 
-export type GetPageInput = z.infer<typeof getPageInputSchema>;
-
-export interface GetPageResponse {
+interface GetPageResponse {
   success: boolean;
   url: string;
   title?: string;

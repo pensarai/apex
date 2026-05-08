@@ -24,8 +24,6 @@ export const grepInputSchema = z.object({
     ),
 });
 
-export type GrepInput = z.infer<typeof grepInputSchema>;
-
 export type GrepResult = {
   success: boolean;
   error: string;

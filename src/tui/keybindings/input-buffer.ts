@@ -5,18 +5,18 @@
  * Provides undo/redo functionality and vim-like operations.
  */
 
-export interface Selection {
+interface Selection {
   start: number;
   end: number;
 }
 
-export interface InputState {
+interface InputState {
   text: string;
   cursor: number;
   selection: Selection | null;
 }
 
-export interface UndoEntry {
+interface UndoEntry {
   state: InputState;
   timestamp: number;
 }

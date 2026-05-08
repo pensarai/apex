@@ -12,7 +12,7 @@ import { useKeyboard } from "@opentui/react";
 import { MessageList } from "../chat/message-list";
 import type { SubagentSession } from "./subagent-state";
 
-export interface SubagentDetailViewProps {
+interface SubagentDetailViewProps {
   session: SubagentSession;
   onPrev: () => void;
   onNext: () => void;

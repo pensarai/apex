@@ -33,7 +33,7 @@ import { useTheme } from "../theme";
 // Context Types
 // ============================================
 
-export interface LeaderKeyState {
+interface LeaderKeyState {
   /** Whether leader mode is active */
   isActive: boolean;
   /** Current key sequence being built */
@@ -46,7 +46,7 @@ export interface LeaderKeyState {
   buffer: InputBuffer;
 }
 
-export interface LeaderKeyContextValue extends LeaderKeyState {
+interface LeaderKeyContextValue extends LeaderKeyState {
   /** Activate leader mode */
   activate: () => void;
   /** Deactivate leader mode */

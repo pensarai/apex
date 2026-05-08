@@ -39,5 +39,3 @@ export const colors = {
   // Modal overlay
   modalOverlay: RGBA.fromInts(0, 0, 0, 150),
 } as const;
-
-export type ColorName = keyof typeof colors;

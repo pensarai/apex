@@ -9,7 +9,7 @@ import {
 import os from "os";
 import path from "path";
 
-export enum LogLevel {
+enum LogLevel {
   INFO = "INFO",
   ERROR = "ERROR",
   DEBUG = "DEBUG",

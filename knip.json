@@ -10,9 +10,41 @@
     "src/core/agents/specialized/authenticationAgent/index.ts",
     "src/core/agents/specialized/environment/index.ts",
     "src/core/agents/specialized/patching/index.ts",
-    "src/core/agents/specialized/codeAgent/schemas.ts"
+    "src/core/agents/specialized/codeAgent/schemas.ts",
+    "src/core/agents/specialized/codeAgent/agent.ts",
+    "src/core/agents/specialized/whiteboxAttackSurface/agent.ts",
+    "src/core/agents/specialized/whiteboxAttackSurface/endpointDocumentationAgent.ts",
+    "src/core/agents/specialized/attackSurface/schemas.ts",
+    "src/core/agents/offSecAgent/tools/browserTools.ts",
+    "src/core/agents/offSecAgent/tools/email/index.ts",
+    "src/core/agents/offSecAgent/tools/persistentShell.ts",
+    "src/core/agents/offSecAgent/trace.ts",
+    "src/core/findings/attackSurfaceRegistry.ts",
+    "src/core/findings/registry.ts",
+    "src/core/integrations/surface/types.ts",
+    "src/core/operator/approvalGate.ts",
+    "src/core/operator/permissionPolicy.ts",
+    "src/core/operator/stageInference.ts",
+    "src/core/operator/toolClassifier.ts",
+    "src/core/operator/types.ts",
+    "src/core/session/execution-metrics.ts",
+    "src/core/session/index.ts",
+    "src/core/session/loader.ts",
+    "src/core/session/persistence.ts",
+    "src/core/session/types.ts",
+    "src/core/toolset/index.ts",
+    "src/core/workflows/whiteboxAttackSurface.ts",
+    "src/lib/cvss/types.ts"
   ],
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
   "ignoreDependencies": ["@playwright/mcp"],
-  "include": ["files", "dependencies", "unlisted", "duplicates"]
+  "ignoreExportsUsedInFile": { "type": true },
+  "include": [
+    "files",
+    "dependencies",
+    "unlisted",
+    "duplicates",
+    "types",
+    "nsTypes"
+  ]
 }

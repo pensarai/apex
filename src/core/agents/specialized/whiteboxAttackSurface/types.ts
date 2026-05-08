@@ -42,7 +42,6 @@ export const RiskScoreSchema = z.object({
 });
 
 export type RiskScore = z.infer<typeof RiskScoreSchema>;
-export type RiskScoreBreakdown = z.infer<typeof RiskScoreBreakdownSchema>;
 
 // ---------------------------------------------------------------------------
 // Endpoint & App schemas
