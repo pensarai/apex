@@ -242,6 +242,7 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
         session,
         model,
         enableThinking,
+        surfaceIntegrationEnabled: pensarConfig.surfaceIntegrationEnabled,
         authConfig: buildAuthConfig(pensarConfig),
         eventBus: pentestBus,
       });
