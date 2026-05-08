@@ -940,7 +940,7 @@ When finished, call \`response\` with a summary of how many entry points you doc
  * 4. Read the final assets directory and reconstruct the result.
  * 5. Carry forward existing risk scores for unchanged endpoints.
  */
-async function runIncrementalWhiteboxAttackSurfaceWorkflow(
+export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
   input: IncrementalWhiteboxInput,
 ): Promise<WhiteboxAttackSurfaceResult> {
   const {

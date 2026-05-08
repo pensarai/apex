@@ -37,7 +37,7 @@ type UsageCallback = (
 let _usageCallback: UsageCallback | null = null;
 
 /** Register a callback to receive token usage reports from all AI operations */
-function onUsage(cb: UsageCallback | null): void {
+export function onUsage(cb: UsageCallback | null): void {
   _usageCallback = cb;
 }
 

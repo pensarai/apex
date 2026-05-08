@@ -75,7 +75,9 @@ const OffensiveHeadersConfigObject = z.object({
   headers: z.record(z.string(), z.string()).optional(),
 });
 
-type OffensiveHeadersConfig = z.infer<typeof OffensiveHeadersConfigObject>;
+export type OffensiveHeadersConfig = z.infer<
+  typeof OffensiveHeadersConfigObject
+>;
 
 const OperatorSettingsObject = z.object({
   initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
@@ -127,7 +129,9 @@ const EmailIntegrationConfigObject = z.object({
   inboxes: z.array(EmailInboxConfigObject),
 });
 
-type EmailIntegrationConfig = z.infer<typeof EmailIntegrationConfigObject>;
+export type EmailIntegrationConfig = z.infer<
+  typeof EmailIntegrationConfigObject
+>;
 
 const SmtpConfigObject = z.object({
   host: z.string(),

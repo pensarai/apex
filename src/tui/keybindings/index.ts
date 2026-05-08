@@ -1,21 +1,4 @@
-/**
- * Keybindings Module
- *
- * Exports all keybinding-related functionality including:
- * - Leader key system
- * - Input buffer for text operations
- * - Editing actions
- */
-
 import type { ParsedKey } from "@opentui/core";
-
-export { type ActionCategory } from "./actions";
-
-export {
-  type InputState,
-  type Selection,
-  type UndoEntry,
-} from "./input-buffer";
 
 export {
   createKeybindings,

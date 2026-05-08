@@ -9,8 +9,8 @@ import { useCallback, useEffect, useState } from "react";
 import { REPORT_FILENAME_MD } from "../../core/report";
 import {
   list as listSessions,
-  sessions as sessionModule,
   type SessionInfo,
+  sessions as sessionModule,
 } from "../../core/session";
 
 export interface EnrichedSession extends SessionInfo {

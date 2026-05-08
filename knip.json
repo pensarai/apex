@@ -15,7 +15,10 @@
     "src/core/agents/specialized/attackSurface/schemas.ts",
     "src/core/agents/offSecAgent/index.ts",
     "src/core/agents/offSecAgent/tools/index.ts",
-    "src/lib/cvss/index.ts"
+    "src/lib/cvss/index.ts",
+    "src/core/ai/ai.ts",
+    "src/core/session/index.ts",
+    "src/core/workflows/whiteboxAttackSurface.ts"
   ],
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
   "ignoreDependencies": ["@playwright/mcp"],
