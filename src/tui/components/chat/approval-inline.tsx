@@ -49,5 +49,3 @@ export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
     </box>
   );
 }
-
-export default InlineApprovalPrompt;

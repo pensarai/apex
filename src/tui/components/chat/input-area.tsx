@@ -514,5 +514,3 @@ function ApprovalInputArea({
     </box>
   );
 }
-
-export default InputArea;

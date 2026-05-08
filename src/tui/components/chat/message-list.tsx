@@ -255,5 +255,3 @@ export function MessageList({
     </scrollbox>
   );
 }
-
-export default MessageList;

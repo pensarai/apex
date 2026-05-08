@@ -20,7 +20,7 @@ import { OperatorModeBar, providerDisplayName } from "./input-area";
 import { useTheme } from "../../theme";
 import { useAgent } from "../../context/agent";
 import * as History from "../../../core/history";
-import PetriAnimation from "./petri-animation";
+import { PetriAnimation } from "./petri-animation";
 
 type ViewType = "home" | "config" | "chat";
 
@@ -286,5 +286,3 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     </box>
   );
 }
-
-export default HomeView;

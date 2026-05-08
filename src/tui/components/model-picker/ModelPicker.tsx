@@ -712,5 +712,3 @@ export function ModelPicker({
     </box>
   );
 }
-
-export default ModelPicker;

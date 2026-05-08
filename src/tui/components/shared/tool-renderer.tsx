@@ -216,5 +216,3 @@ export const ToolRenderer = memo(function ToolRenderer({
     </box>
   );
 });
-
-export default ToolRenderer;

@@ -113,5 +113,3 @@ export function LoadingIndicator({
     </box>
   );
 }
-
-export default LoadingIndicator;

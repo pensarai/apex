@@ -14,5 +14,5 @@
   ],
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
   "ignoreDependencies": ["@playwright/mcp"],
-  "include": ["files", "dependencies", "unlisted"]
+  "include": ["files", "dependencies", "unlisted", "duplicates"]
 }

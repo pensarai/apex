@@ -754,5 +754,3 @@ function SubmitView({
     </box>
   );
 }
-
-export default QuestionsForm;
