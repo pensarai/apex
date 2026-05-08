@@ -73,6 +73,7 @@ async function runWhiteboxAttackSurface(
     abortSignal: input.abortSignal,
     attackSurfaceRegistry: input.attackSurfaceRegistry,
     eventBus: input.eventBus,
+    surfaceIntegrationEnabled: input.surfaceIntegrationEnabled,
   });
 
   console.log(
