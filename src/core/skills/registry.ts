@@ -1,8 +1,8 @@
 import fs from "fs/promises";
-import type { SkillEntry } from "./types";
-import { scanSkillRoots } from "./scanner";
-import { parseSkillMd } from "./parser";
 import { BUILTIN_SKILLS } from "./builtins";
+import { parseSkillMd } from "./parser";
+import { scanSkillRoots } from "./scanner";
+import type { SkillEntry } from "./types";
 
 /**
  * Central registry for all discovered skills.

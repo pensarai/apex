@@ -1,26 +1,26 @@
-import { useState, useEffect, useRef } from "react";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { ScrollBoxRenderable } from "@opentui/core";
-import Input from "../input";
-import { useConfig } from "../../context/config";
-import { useAgent } from "../../context/agent";
+import { useEffect, useRef, useState } from "react";
 import type { SessionConfig } from "../../../core/session";
-import { SpinningDots } from "../loaders";
-import { useTheme } from "../../theme";
-import { Dialog } from "../../context/dialog";
-import DialogLayout from "../dialog-layout";
+import { createThreatModelPrompt } from "../../../core/utils/prompt";
 import {
   getAutoPopulatedHosts,
   getAutoPopulatedPorts,
 } from "../../../util/url";
-import { createThreatModelPrompt } from "../../../core/utils/prompt";
+import { useAgent } from "../../context/agent";
+import { useConfig } from "../../context/config";
+import { Dialog } from "../../context/dialog";
+import { useTheme } from "../../theme";
 import {
   combinePromptParts,
   resolveFlagValue,
 } from "../../utils/command-flags";
-import { scrollToChild } from "../../utils/scroll";
-import { ModelPickerDialog } from "../model-picker";
 import { getPasteText } from "../../utils/paste";
+import { scrollToChild } from "../../utils/scroll";
+import DialogLayout from "../dialog-layout";
+import Input from "../input";
+import { SpinningDots } from "../loaders";
+import { ModelPickerDialog } from "../model-picker";
 
 // Wizard state interface
 interface WizardState {
@@ -169,8 +169,9 @@ export default function WebWizard({
   const [focusedField, setFocusedField] = useState(0);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
   // Track whether the threat model value was pre-wrapped by CLI flag parsing
-  const [threatModelPreWrapped, setThreatModelPreWrapped] =
-    useState(!!initialThreatModel);
+  const [threatModelPreWrapped, setThreatModelPreWrapped] = useState(
+    !!initialThreatModel,
+  );
   const [hostInput, setHostInput] = useState("");
   const [portInput, setPortInput] = useState("");
   const [headerNameInput, setHeaderNameInput] = useState("");

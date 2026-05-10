@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 /**
  * Runtime-parity probe for `PersistentShell`.
  *
@@ -11,7 +10,7 @@
  *
  * Exits 0 if all cases pass under the current runtime, 1 otherwise.
  */
-import { PersistentShell } from "../src/core/agents/offSecAgent/tools/persistentShell";
+import { PersistentShell } from "../src/core/agents/offSecAgent";
 
 interface Case {
   name: string;

@@ -1,15 +1,13 @@
-import type { AIModel } from "../../../ai";
-import type { AIAuthConfig } from "../../../ai/utils";
+import type { AIAuthConfig, AIModel } from "../../../ai";
 import type { CredentialManager } from "../../../credentials";
+import type { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../../findings/registry";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
-
-import type { AgentEventBus } from "../../../eventBus";
+import type { StepTraceWriter } from "../trace";
 import type { PersistentShell } from "./persistentShell";
 import type { UnifiedSandbox } from "./sandbox";
-import type { StepTraceWriter } from "../trace";
 
 /**
  * Shared context passed to every tool factory.
@@ -93,6 +91,13 @@ export type ToolContext = {
 
   /** Enable extended thinking for sub-agents spawned by orchestration tools. */
   enableThinking?: boolean;
+
+  /**
+   * Whitebox attack surface flag. Forwarded into `runPentestWorkflow` so the
+   * orchestrator-driven pentest path honors the user's config / env override.
+   * Defaults to `true` when undefined.
+   */
+  surfaceIntegrationEnabled?: boolean;
 
   /**
    * Project-level threat model content (e.g. from `.pensar/threat_model.md`).

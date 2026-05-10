@@ -9,16 +9,18 @@
 import {
   existsSync,
   mkdirSync,
-  writeFileSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   statSync,
+  writeFileSync,
 } from "fs";
 import { join } from "path";
 import type { SessionInfo } from "./index";
+
 export type { SessionInfo };
-import type { AuthenticationInfo } from "./types";
+
 import type { ModelMessage } from "ai";
+import type { AuthenticationInfo } from "./types";
 
 // ---------------------------------------------------------------------------
 // Shared path constants — used by both writer and reader

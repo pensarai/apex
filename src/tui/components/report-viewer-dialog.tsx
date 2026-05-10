@@ -1,13 +1,10 @@
-import { useRef, useMemo } from "react";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { ScrollBoxRenderable } from "@opentui/core";
-import { useTheme } from "../theme";
+import { useMemo, useRef } from "react";
 import { Dialog } from "../context/dialog";
+import { useTheme } from "../theme";
 import DialogLayout from "./dialog-layout";
-import {
-  useMarkdownSyntaxStyle,
-  useMarkdownRenderNode,
-} from "./shared/markdown-viewer";
+import { useMarkdownRenderNode, useMarkdownSyntaxStyle } from "./shared";
 
 interface ReportViewerDialogProps {
   content: string;

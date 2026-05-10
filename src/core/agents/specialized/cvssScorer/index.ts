@@ -9,14 +9,17 @@
  */
 
 import { z } from "zod";
-import { generateObjectResponse, type AIModel } from "../../../ai";
-import { type AIAuthConfig } from "../../../ai/utils";
-import { calculateCVSS4Score, type CVSS4Metrics } from "../../../../lib/cvss";
+import { type CVSS4Metrics, calculateCVSS4Score } from "../../../../lib/cvss";
 import {
   CweEntrySchema,
   type ValidatedCweEntry,
 } from "../../../../lib/cwe/types";
 import { validateCweEntries } from "../../../../lib/cwe/validate";
+import {
+  type AIAuthConfig,
+  type AIModel,
+  generateObjectResponse,
+} from "../../../ai";
 
 // =============================================================================
 // Types

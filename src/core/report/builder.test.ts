@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { Finding } from "../agents/offSecAgent/types";
 import { buildPentestReport, type ReportContext } from "./builder";
 import { PentestReportSchema, REPORT_VERSION } from "./schemas";
-import type { Finding } from "../agents/offSecAgent/types";
 
 const defaultContext: ReportContext = {
   target: "https://example.com",

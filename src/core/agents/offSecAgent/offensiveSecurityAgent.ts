@@ -1,32 +1,33 @@
-import { streamResponse } from "../../ai";
 import type {
   ModelMessage,
-  StreamTextResult,
   StopCondition,
+  StreamTextResult,
   TextStreamPart,
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import type { OffensiveSecurityAgentInput, CreateAgentInput } from "./types";
-import {
-  createAllTools,
-  EMAIL_TOOL_NAMES_ACTIVE,
-  SEND_EMAIL_TOOL_NAME,
-  PLAN_MODE_TOOL_NAMES,
-} from "./tools";
-import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
-import { ASK_USER_QUESTIONS_TOOL_NAME } from "./tools/askUserQuestions";
-import { PersistentShell } from "./tools/persistentShell";
-import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
-import { detectOSAndEnhancePrompt } from "../specialized/utils";
+import { existsSync, mkdirSync } from "fs";
+import { writeFile } from "fs/promises";
+import { join } from "path";
+import { streamResponse } from "../../ai";
+import { AgentEventBus } from "../../eventBus";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
-import { AgentEventBus } from "../../eventBus";
-import { join } from "path";
-import { mkdirSync, existsSync } from "fs";
-import { writeFile } from "fs/promises";
+import { detectOSAndEnhancePrompt } from "../specialized/utils";
+import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+import {
+  ASK_USER_QUESTIONS_TOOL_NAME,
+  createAllTools,
+  createResponseTool,
+  EMAIL_TOOL_NAMES_ACTIVE,
+  PersistentShell,
+  PLAN_MODE_TOOL_NAMES,
+  RESPONSE_TOOL_NAME,
+  SEND_EMAIL_TOOL_NAME,
+} from "./tools";
 import { StepTraceWriter } from "./trace";
+import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
 
 /**
  * General-purpose offensive security agent harness.
@@ -197,6 +198,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       traceWriter,
       tasksDir,
       enableThinking: input.enableThinking,
+      surfaceIntegrationEnabled: input.surfaceIntegrationEnabled,
       projectThreatModel: input.projectThreatModel,
       planSubagentId: input.planSubagentId,
       subagentId: input.subagentId,
@@ -443,11 +445,13 @@ export class OffensiveSecurityAgent<TResult = void> {
     const sid = this.subagentId;
     const bus = this.eventBus;
 
-    for await (const chunk of this.streamResult.fullStream) {
-      bus.emitStreamPart(chunk, sid);
+    try {
+      for await (const chunk of this.streamResult.fullStream) {
+        bus.emitStreamPart(chunk, sid);
+      }
+    } finally {
+      this.persistentShell?.dispose();
     }
-
-    this.persistentShell?.dispose();
 
     if (this.abortSignal?.aborted) {
       throw new DOMException("Agent aborted by user", "AbortError");
@@ -485,7 +489,7 @@ function wrapToolsWithApprovalGate(
       continue;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: ai-sdk CoreTool is a discriminated union that requires runtime narrowing for the approval gate wrapper.
     const t = coreTool as any;
 
     if (!t.execute) {
@@ -497,7 +501,7 @@ function wrapToolsWithApprovalGate(
 
     wrapped[name] = {
       ...t,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: ai-sdk tool execute receives an opaque ExecuteContext we don't need to narrow.
       execute: async (args: Record<string, unknown>, options: any) => {
         const toolCallId =
           args.toolCallId ??

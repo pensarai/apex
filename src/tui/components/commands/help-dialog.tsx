@@ -5,19 +5,19 @@
  * Shows commands in a scrollable list with detail view for options/flags.
  */
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { ScrollBoxRenderable } from "@opentui/core";
-import { scrollToIndex } from "../../utils/scroll";
-import { useCommand } from "../../context/command";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type CommandCategory,
   type CommandConfig,
   categories,
 } from "../../command-registry";
+import { useCommand } from "../../context/command";
 import { Dialog } from "../../context/dialog";
-import DialogLayout from "../dialog-layout";
 import { useTheme } from "../../theme";
+import { scrollToIndex } from "../../utils/scroll";
+import DialogLayout from "../dialog-layout";
 
 interface HelpDialogProps {
   onClose: () => void;

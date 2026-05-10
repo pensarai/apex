@@ -6,58 +6,38 @@
  * Reuses MessageList and InputArea from the shared/chat components.
  */
 
+import { useKeyboard } from "@opentui/react";
+import { hasToolCall, type ModelMessage, stepCountIs } from "ai";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import { isAbsolute, join, resolve } from "path";
 import {
-  useState,
-  useEffect,
-  useRef,
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
-import { useKeyboard } from "@opentui/react";
-
-import {
-  sessions,
-  type SessionInfo,
-  type SessionConfig,
-  normalizeMessages,
-} from "../../../core/session";
-import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
-import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
-import { buildAuthConfig } from "../../../core/ai/utils";
-import { modelSupportsThinking, type CacheMetrics } from "../../../core/ai";
-import {
-  ALL_TOOL_NAMES,
-  PLAN_MODE_TOOL_NAMES,
-  SKILL_TOOL_NAMES,
-  ASK_USER_QUESTIONS_TOOL_NAME,
-  AgentEventBus,
-  type AgentMode,
+import type {
+  AskUserQuestion,
+  AskUserQuestionAnswer,
+  AskUserQuestionsResult,
 } from "../../../core/agents/offSecAgent";
 import {
-  readPlan,
-  hasPlan,
-  planFilePath as getPlanFilePath,
-} from "../../../core/plan";
+  AgentEventBus,
+  type AgentMode,
+  ALL_TOOL_NAMES,
+  ASK_USER_QUESTIONS_TOOL_NAME,
+  PLAN_MODE_TOOL_NAMES,
+  SKILL_TOOL_NAMES,
+} from "../../../core/agents/offSecAgent";
 import {
-  convertModelMessagesToUI,
-  type UIMessage,
-} from "../../../core/session/persistence";
-import { useAgent } from "../../context/agent";
-import { useRoute } from "../../context/route";
-import { useConfig } from "../../context/config";
-import { useCommand } from "../../context/command";
-import { useDialog } from "../../context/dialog";
-import { useFocus } from "../../context/focus";
-import { MessageList } from "../chat/message-list";
-import { InputArea } from "../chat/input-area";
-import { useTheme } from "../../theme";
-import type { DisplayMessage, WorkflowData } from "../agent-display";
-import { isToolMessage } from "../shared/type-guards";
-import {
-  tryParsePartialJson,
-  extractStreamableContent,
-} from "../shared/message-utils";
+  buildAuthConfig,
+  type CacheMetrics,
+  modelSupportsThinking,
+} from "../../../core/ai";
+import { runOffensiveSecurityAgent } from "../../../core/api";
+import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
   ApprovalGate,
@@ -66,46 +46,70 @@ import {
   type OperatorSessionState,
 } from "../../../core/operator";
 import {
+  planFilePath as getPlanFilePath,
+  hasPlan,
+  readPlan,
+} from "../../../core/plan";
+import {
+  normalizeMessages,
+  type SessionConfig,
+  type SessionInfo,
+  sessions,
+} from "../../../core/session";
+import {
   readExecutionMetrics,
   writeExecutionMetrics,
 } from "../../../core/session/execution-metrics";
-import { hasToolCall, stepCountIs, type ModelMessage } from "ai";
-import type {
-  AskUserQuestion,
-  AskUserQuestionAnswer,
-  AskUserQuestionsResult,
-} from "../../../core/agents/offSecAgent/tools/askUserQuestions";
+import {
+  convertModelMessagesToUI,
+  type UIMessage,
+} from "../../../core/session/persistence";
+import {
+  buildPentestPrompt,
+  buildThreatModelPrompt,
+} from "../../../core/skills/builtins";
+import { useAgent } from "../../context/agent";
+import { useCommand } from "../../context/command";
+import { useConfig } from "../../context/config";
+import { useDialog } from "../../context/dialog";
+import { useFocus } from "../../context/focus";
+import { useRoute } from "../../context/route";
+import { useTheme } from "../../theme";
+import { openFileInDefaultApp } from "../../utils/open-file.js";
+import type { DisplayMessage, WorkflowData } from "../agent-display";
+import { InputArea } from "../chat/input-area";
+import { MessageList } from "../chat/message-list";
 import { QuestionsForm } from "../chat/questions-form";
 import {
+  deriveApprovedActionLabel,
+  extractStreamableContent,
+  isToolMessage,
+  tryParsePartialJson,
+} from "../shared";
+import {
+  accumulateTokenUsage,
+  buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
+  resolveAbortAction,
+  resolveInputFocused,
+  resolveKeyboardShortcut,
   resolveSubmit,
   routeCommand,
-  resolveKeyboardShortcut,
-  resolveAbortAction,
-  buildOperatorSystemPrompt,
-  resolveInputFocused,
-  accumulateTokenUsage,
 } from "./logic";
+import { navigateDown, navigateUp, selectionAfterRemove } from "./queue";
+import { QueuedMessages } from "./queued-messages";
+import SubagentDialog from "./subagent-dialog";
 import {
   createSubagentSessionHelpers,
   createSubagentStore,
   loadSubagentSessionsFromDisk,
 } from "./subagent-state";
-import { QueuedMessages } from "./queued-messages";
 import { SubagentStatusBar } from "./subagent-status-bar";
-import SubagentDialog from "./subagent-dialog";
 import {
   ScreenshotModal,
   collectScreenshotPaths,
 } from "../screenshot-modal";
-import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
-import { openFileInDefaultApp } from "../../utils/open-file.js";
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import { isAbsolute, join, resolve } from "path";
-
-import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
-import { buildPentestPrompt } from "../../../core/skills/builtins/pentest";
 
 function markInFlightToolsErrored(
   messages: DisplayMessage[],
@@ -312,6 +316,7 @@ export default function OperatorDashboard({
   const planSubmittedRef = useRef(false);
   const planRejectedRef = useRef(false);
   const planApprovedPendingRunRef = useRef(false);
+  const planGateBypassedOnResumeRef = useRef(false);
 
   const [pendingQuestions, setPendingQuestions] = useState<
     AskUserQuestion[] | null
@@ -340,12 +345,17 @@ export default function OperatorDashboard({
       setStatus("waiting");
     };
 
-    const onApprovalResolved = (event: { id: string; decision: string }) => {
-      setPendingApprovals(gate.getPendingApprovals());
+    const onApprovalResolved = (event: {
+      id: string;
+      decision: string;
+      approval: PendingApproval;
+    }) => {
+      const pending = gate.getPendingApprovals();
+      setPendingApprovals(pending);
       if (event.decision === "approved") {
-        setLastApprovedAction(event.id);
+        setLastApprovedAction(deriveApprovedActionLabel(event.approval));
       }
-      if (gate.getPendingApprovals().length === 0) {
+      if (pending.length === 0) {
         setStatus("running");
       }
     };
@@ -425,14 +435,12 @@ export default function OperatorDashboard({
                 // Best-effort — subagent files may not exist
               }
 
-              // Restore plan content from a prior session so the cycleMode
-              // gate doesn't force a redundant re-approval on Shift+Tab.
-              // Only mark the plan as approved if the user previously left
-              // plan mode (restoredMode !== "plan"), which signals prior approval.
-              if (restoredMode !== "plan") {
-                const planContent = readPlan(s.rootPath);
-                if (planContent) {
+              const planContent = readPlan(s.rootPath);
+              if (planContent) {
+                if (restoredMode !== "plan") {
                   setApprovedPlanContent(planContent);
+                } else {
+                  planGateBypassedOnResumeRef.current = true;
                 }
               }
             }
@@ -979,6 +987,7 @@ export default function OperatorDashboard({
           (d.result as Record<string, unknown> | null)?.success === true
         ) {
           planSubmittedRef.current = true;
+          planGateBypassedOnResumeRef.current = false;
         }
       });
 
@@ -1143,6 +1152,7 @@ export default function OperatorDashboard({
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
         enableThinking: reasoningEnabled && modelSupportsThinking(model.id),
+        surfaceIntegrationEnabled: config.data?.surfaceIntegrationEnabled,
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {
           addCacheUsage(
@@ -1164,7 +1174,7 @@ export default function OperatorDashboard({
       // For new sessions, onSessionReady fires mid-construction; we replay
       // any buffered records once the handler attaches.
       type TraceEvent = {
-        record: import("../../../core/agents/offSecAgent/trace").TraceRecord;
+        record: import("../../../core/agents/offSecAgent").TraceRecord;
         subagentId?: string;
       };
       let wandbCleanup: (() => Promise<void>) | null = null;
@@ -1902,21 +1912,21 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     const idx = OPERATOR_MODE_CYCLE.indexOf(current);
     const next = OPERATOR_MODE_CYCLE[(idx + 1) % OPERATOR_MODE_CYCLE.length];
 
-    // Gate: if leaving plan mode and a plan exists but isn't approved, show review
     if (
       current === "plan" &&
       sessionRef.current &&
       hasPlan(sessionRef.current.rootPath) &&
-      !approvedPlanRef.current
+      !approvedPlanRef.current &&
+      !planGateBypassedOnResumeRef.current
     ) {
       setShowPlanReview(true);
       return;
     }
 
-    // Entering plan mode — reset plan state for fresh cycle
     if (next === "plan") {
       setApprovedPlanContent(null);
       planRejectedRef.current = false;
+      planGateBypassedOnResumeRef.current = false;
     }
 
     transitionToMode(next);
@@ -2341,9 +2351,9 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
 // Re-export types for backward compatibility
 export type {
-  Endpoint,
-  VerifiedVuln,
   Credential,
-  Hypothesis,
+  Endpoint,
   Evidence,
+  Hypothesis,
+  VerifiedVuln,
 } from "./types";

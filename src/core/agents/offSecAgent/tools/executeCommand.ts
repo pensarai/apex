@@ -1,9 +1,9 @@
 import { tool } from "ai";
-import { z } from "zod";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
-import type { ToolContext } from "./types";
+import { z } from "zod";
 import { assertCommandInScope, ScopeViolationError } from "./scopeGuard";
+import type { ToolContext } from "./types";
 
 const MAX_INLINE = 50_000;
 const MS_TIMEOUT_THRESHOLD = 10_000;

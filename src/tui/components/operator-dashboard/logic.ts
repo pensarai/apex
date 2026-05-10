@@ -1,7 +1,7 @@
-import type { AutocompleteOption } from "../shared/prompt-input";
-import type { OperatorSessionState } from "../../../core/operator";
-import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent/prompt";
+import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent";
 import { detectOSAndEnhancePrompt } from "../../../core/agents/specialized/utils";
+import type { OperatorSessionState } from "../../../core/operator";
+import type { AutocompleteOption } from "../shared";
 
 // ---------------------------------------------------------------------------
 // Autocomplete option filtering for operator mode

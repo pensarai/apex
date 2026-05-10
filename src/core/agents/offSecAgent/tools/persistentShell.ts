@@ -1,4 +1,4 @@
-import { spawn, spawnSync, type ChildProcess } from "child_process";
+import { type ChildProcess, spawn, spawnSync } from "child_process";
 import { randomBytes } from "crypto";
 import {
   closeSync,

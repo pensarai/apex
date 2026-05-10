@@ -2,9 +2,10 @@
  * Direct test of browser cookie extraction via Playwright MCP.
  * Bypasses the LLM agent entirely to verify the browser_get_cookies tool works.
  */
-import { PlaywrightMcpSession } from "../core/agents/offSecAgent/tools/playwrightMcp";
-import { describe, it, expect, afterEach } from "vitest";
+
 import { config } from "dotenv";
+import { afterEach, describe, expect, it } from "vitest";
+import { PlaywrightMcpSession } from "../core/agents/offSecAgent";
 
 config();
 

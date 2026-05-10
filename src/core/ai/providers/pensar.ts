@@ -7,10 +7,10 @@ import type {
   LanguageModelV3Usage,
   SharedV3Warning,
 } from "@ai-sdk/provider";
-import { convertToBedrockFormat } from "./pensarFormatters";
-import { parseSSE } from "./pensarSSE";
-import { signGatewayRequest } from "./pensarSigning";
 import { buildStreamingFetchSignal } from "../utils";
+import { convertToBedrockFormat } from "./pensarFormatters";
+import { signGatewayRequest } from "./pensarSigning";
+import { parseSSE } from "./pensarSSE";
 
 const DEBUG =
   process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";

@@ -1,7 +1,7 @@
 import { tool } from "ai";
-import { z } from "zod";
 import { readdir, stat } from "fs/promises";
-import { join, relative, resolve, isAbsolute } from "path";
+import { isAbsolute, join, relative, resolve } from "path";
+import { z } from "zod";
 import type { ToolContext } from "./types";
 
 export const listFilesInputSchema = z.object({

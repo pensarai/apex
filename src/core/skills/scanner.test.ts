@@ -1,7 +1,7 @@
-import { describe, it, expect, afterEach, beforeEach } from "vitest";
+import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import fs from "fs/promises";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { scanSkillRoots } from "./scanner";
 
 const SKILLS_DIR = path.join(os.homedir(), ".pensar", "skills");

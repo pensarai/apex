@@ -1,23 +1,23 @@
+import type { ReactNode } from "react";
 import {
   createContext,
-  useContext,
-  useMemo,
   useCallback,
-  useState,
+  useContext,
   useEffect,
+  useMemo,
+  useState,
 } from "react";
-import type { ReactNode } from "react";
-import { CommandRouter } from "../command-router";
+import { isObfuscationEnabled } from "../../core/obfuscation";
+import { createSkillsRegistry, type SkillsRegistry } from "../../core/skills";
 import {
+  type AppCommandContext,
   commandRegistry,
   commands,
-  type AppCommandContext,
 } from "../command-registry";
-import type { AutocompleteOption } from "../components/shared/prompt-input";
-import { useRoute, type WebCommandOptions } from "./route";
-import { createSkillsRegistry, type SkillsRegistry } from "../../core/skills";
+import { CommandRouter } from "../command-router";
+import type { AutocompleteOption } from "../components/shared";
 import { useObfuscation } from "./obfuscation";
-import { isObfuscationEnabled } from "../../core/obfuscation";
+import { useRoute, type WebCommandOptions } from "./route";
 import { useToast } from "./toast";
 
 interface CommandContextValue {

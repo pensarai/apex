@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { validateCweEntries } from "./validate";
+import { describe, expect, it } from "vitest";
 import type { CweEntry } from "./types";
+import { validateCweEntries } from "./validate";
 
 describe("validateCweEntries", () => {
   it("enriches valid CWE IDs with canonical names", () => {

@@ -5,28 +5,31 @@
  * so you can preview them in the terminal.
  */
 
-import { createRoot } from "@opentui/react";
 import { createCliRenderer, RGBA } from "@opentui/core";
-import { ThemeProvider, resolveThemeColors, getTheme } from "./src/tui/theme";
-import { registerBuiltinThemes } from "./src/tui/theme/themes";
-import { TerminalDimensionsProvider } from "./src/tui/context/dimensions";
+import { createRoot, useKeyboard } from "@opentui/react";
 import {
-  SpinningDots,
+  BarPulse,
   BouncingBox,
   BracketBounce,
-  PulseRing,
-  WaveBar,
-  BarPulse,
-  OrbitDots,
-  ScanLine,
-  Typewriter,
   LaserBar,
+  OrbitDots,
+  PulseRing,
+  ScanLine,
   ShiningText,
+  SpinningDots,
+  Typewriter,
+  WaveBar,
 } from "./src/tui/components/loaders";
-import { useTheme } from "./src/tui/theme";
-import { detectTerminalMode } from "./src/tui/theme/detect-mode";
 import { buildConsoleOptions, ConsoleThemeSync } from "./src/tui/console-theme";
-import { useKeyboard } from "@opentui/react";
+import { TerminalDimensionsProvider } from "./src/tui/context/dimensions";
+import {
+  getTheme,
+  resolveThemeColors,
+  ThemeProvider,
+  useTheme,
+} from "./src/tui/theme";
+import { detectTerminalMode } from "./src/tui/theme/detect-mode";
+import { registerBuiltinThemes } from "./src/tui/theme/themes";
 
 function Demo() {
   const { colors } = useTheme();

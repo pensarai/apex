@@ -1,6 +1,6 @@
 import React, { useCallback } from "react";
-import { useToast } from "../context/toast";
 import { writeErrorLog } from "../../core/logger";
+import { useToast } from "../context/toast";
 
 const MAX_ERRORS = 3;
 const ERROR_WINDOW_MS = 5000;

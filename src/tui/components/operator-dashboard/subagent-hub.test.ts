@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  createSubagentStore,
   createSubagentSessionHelpers,
+  createSubagentStore,
   SUBAGENT_STATUS_ORDER,
   type SubagentSession,
 } from "./subagent-state";

@@ -20,14 +20,14 @@
  *   tsx scripts/auth.ts --target https://example.com
  */
 
-import { sessions } from "../src/core/session";
-import type { AIModel } from "../src/core/ai";
-import type { AuthCredentials } from "../src/core/agents/specialized/authenticationAgent/types";
+import { config } from "dotenv";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
+import type { AuthCredentials } from "../src/core/agents/specialized/authenticationAgent/types";
+import type { AIModel } from "../src/core/ai";
 import { runAuthenticationAgent } from "../src/core/api";
 import { AgentEventBus } from "../src/core/eventBus";
-import { config } from "dotenv";
+import { sessions } from "../src/core/session";
 
 config();
 
@@ -46,8 +46,8 @@ interface AuthOptions {
 }
 
 async function runAuth(options: AuthOptions): Promise<void> {
-  let username: string | undefined = undefined;
-  let password: string | undefined = undefined;
+  let username: string | undefined;
+  let password: string | undefined;
   const {
     target,
     model = "claude-sonnet-4-5" as AIModel,

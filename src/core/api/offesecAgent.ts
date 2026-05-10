@@ -1,11 +1,10 @@
-import type {
-  OffensiveSecurityAgentInput,
-  CreateAgentInput,
-} from "../agents/offSecAgent";
 import type { StreamTextResult, ToolSet } from "ai";
+import {
+  type CreateAgentInput,
+  OffensiveSecurityAgent,
+  type OffensiveSecurityAgentInput,
+} from "../agents/offSecAgent";
 import type { SessionInfo } from "../session";
-
-import { OffensiveSecurityAgent } from "../agents/offSecAgent/offensiveSecurityAgent";
 
 export interface RunAgentResult {
   streamResult: StreamTextResult<ToolSet, never>;

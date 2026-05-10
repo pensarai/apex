@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
+import type { SessionInfo } from "../../../session";
 import {
+  assertCommandInScope,
+  assertUrlInScope,
+  extractHostname,
+  extractHostsFromCommand,
   getAllowedHosts,
   getRegistrableDomain,
   isHostAllowed,
-  extractHostname,
-  assertUrlInScope,
-  assertCommandInScope,
-  extractHostsFromCommand,
   ScopeViolationError,
 } from "./scopeGuard";
 import type { ToolContext } from "./types";
-import type { SessionInfo } from "../../../session";
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {

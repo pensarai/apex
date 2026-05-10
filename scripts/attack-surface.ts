@@ -1,12 +1,12 @@
 #!/usr/bin/env tsx
 
-import type { AIModel } from "../src/core/ai";
-import { readFileSync, existsSync } from "fs";
+import { config } from "dotenv";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { sessions } from "../src/core/session";
+import type { AIModel } from "../src/core/ai";
 import { runAttackSurfaceAgent } from "../src/core/api";
 import { AgentEventBus } from "../src/core/eventBus";
-import { config } from "dotenv";
+import { sessions } from "../src/core/session";
 
 config();
 

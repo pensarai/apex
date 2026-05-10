@@ -1,7 +1,7 @@
 import type {
-  WorkspaceInfo,
   FetchWorkspacesResponse,
   SelectWorkspaceResponse,
+  WorkspaceInfo,
 } from "./types";
 
 function sleep(ms: number): Promise<void> {

@@ -1,15 +1,15 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import packageJson from "../../../package.json";
 import {
+  checkForUpdate,
+  detectInstallMethod,
   getCurrentVersion,
   getLatestVersion,
-  resolveVersion,
-  isNewerVersion,
-  detectInstallMethod,
   getUpgradeCommandString,
-  checkForUpdate,
+  isNewerVersion,
+  resolveVersion,
   upgrade,
 } from "./index";
-import packageJson from "../../../package.json";
 
 vi.mock("child_process", () => ({
   spawnSync: vi.fn(),

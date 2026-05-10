@@ -1,10 +1,10 @@
 import { tool } from "ai";
-import { z } from "zod";
 import { mkdirSync } from "fs";
 import { writeFile } from "fs/promises";
 import { dirname } from "path";
-import type { ToolContext } from "./types";
+import { z } from "zod";
 import { planFilePath } from "../../../plan";
+import type { ToolContext } from "./types";
 
 const writePlanInputSchema = z.object({
   content: z.string().describe("The full markdown content of the pentest plan"),

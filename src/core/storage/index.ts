@@ -1,7 +1,6 @@
+import fs, { readdir } from "fs/promises";
 import os from "os";
 import path from "path";
-import fs from "fs/promises";
-import { readdir } from "fs/promises";
 
 import z from "zod";
 import { NamedError } from "../../util/errors";

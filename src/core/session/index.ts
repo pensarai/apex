@@ -1,22 +1,21 @@
 import type { ModelMessage } from "ai";
-import z from "zod";
-import path from "path";
-import os from "os";
 import { existsSync, readFileSync } from "fs";
+import os from "os";
+import path from "path";
+import z from "zod";
+import { generateRandomName, generateSessionName } from "../../util/name";
+import type { AIAuthConfig, AIModel } from "../ai";
+import { CredentialManager } from "../credentials";
 import * as Identifier from "../id/id";
 import { getCurrentVersion } from "../installation";
-import * as Storage from "../storage";
 import type { Message } from "../messages/types";
 import { RateLimiter } from "../services/rateLimiter";
-import { CredentialManager } from "../credentials";
+import * as Storage from "../storage";
 import {
-  ToolsetStateSchema,
   type ToolsetState,
+  ToolsetStateSchema,
   toggleTool as toolsetToggle,
 } from "../toolset";
-import type { AIModel } from "../ai/ai";
-import type { AIAuthConfig } from "../ai/utils";
-import { generateRandomName, generateSessionName } from "../../util/name";
 
 /**
  * Default outcome guidance (safe, non-destructive)

@@ -1,8 +1,10 @@
 import { PatchingAgent } from "../agents/specialized/patching/agent";
-import type { PatchingAgentInput } from "../agents/specialized/patching/types";
-import type { PatchResult } from "../agents/specialized/patching/types";
+import type {
+  PatchingAgentInput,
+  PatchResult,
+} from "../agents/specialized/patching/types";
 
-export type { PatchResult, PatchingAgentInput };
+export type { PatchingAgentInput, PatchResult };
 
 function attachDefaultPatchingStreamListeners(agent: PatchingAgent): void {
   agent.eventBus.on("text-delta", (e) => {

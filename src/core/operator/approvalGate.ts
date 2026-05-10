@@ -1,10 +1,10 @@
-import { EventEmitter } from "events";
 import { randomBytes } from "crypto";
+import { EventEmitter } from "events";
 import type {
-  PendingApproval,
-  ApprovalDecision,
   ActionHistoryEntry,
+  ApprovalDecision,
   OperatorEvent,
+  PendingApproval,
 } from "./types";
 
 /**
@@ -22,6 +22,9 @@ export interface ApprovalGateConfig {
 
 /** Default operator decision SLA when `requireApproval` is true. */
 export const DEFAULT_DECISION_TIMEOUT_MS = 15 * 60 * 1000;
+
+/** Internal correlation IDs minted by this module: `apr_*`, `act_*`, `tc_*`. Never user-facing. */
+export const INTERNAL_ID_PATTERN = /^(apr|act|tc)_\d+_[0-9a-f]{8}$/;
 
 interface DeferredApproval {
   approval: PendingApproval;
@@ -123,10 +126,11 @@ export class ApprovalGate extends EventEmitter {
     const deferred = this.pendingApprovals.get(approvalId);
     if (!deferred) return;
 
+    const approval = deferred.approval;
     this.pendingApprovals.delete(approvalId);
     const entry = this.recordAction(
-      deferred.approval.toolName,
-      deferred.approval.toolCallId,
+      approval.toolName,
+      approval.toolCallId,
       "denied",
     );
     entry.resultSummary = `decision_timeout:${timeoutMs}ms`;
@@ -135,11 +139,12 @@ export class ApprovalGate extends EventEmitter {
       type: "approval-resolved",
       id: approvalId,
       decision: "denied",
+      approval,
     });
     this.emitEvent({ type: "action-completed", entry });
     deferred.reject(
       new ApprovalTimeoutError(
-        `Operator decision timeout after ${timeoutMs}ms for ${deferred.approval.toolName} — default-safe deny`,
+        `Operator decision timeout after ${timeoutMs}ms for ${approval.toolName} — default-safe deny`,
       ),
     );
   }
@@ -151,10 +156,11 @@ export class ApprovalGate extends EventEmitter {
     }
 
     if (deferred.timeoutHandle) clearTimeout(deferred.timeoutHandle);
+    const approval = deferred.approval;
     this.pendingApprovals.delete(approvalId);
     const entry = this.recordAction(
-      deferred.approval.toolName,
-      deferred.approval.toolCallId,
+      approval.toolName,
+      approval.toolCallId,
       "approved",
     );
 
@@ -162,6 +168,7 @@ export class ApprovalGate extends EventEmitter {
       type: "approval-resolved",
       id: approvalId,
       decision: "approved",
+      approval,
     });
     this.emitEvent({ type: "action-completed", entry });
     deferred.resolve("approved");
@@ -172,10 +179,11 @@ export class ApprovalGate extends EventEmitter {
     if (!deferred) return;
 
     if (deferred.timeoutHandle) clearTimeout(deferred.timeoutHandle);
+    const approval = deferred.approval;
     this.pendingApprovals.delete(approvalId);
     const entry = this.recordAction(
-      deferred.approval.toolName,
-      deferred.approval.toolCallId,
+      approval.toolName,
+      approval.toolCallId,
       "denied",
     );
 
@@ -183,6 +191,7 @@ export class ApprovalGate extends EventEmitter {
       type: "approval-resolved",
       id: approvalId,
       decision: "denied",
+      approval,
     });
     this.emitEvent({ type: "action-completed", entry });
     deferred.reject(new ApprovalDeniedError("Action denied by user"));

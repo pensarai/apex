@@ -1,14 +1,14 @@
-import { SpinningDots, ShiningText } from "./loaders";
-import { useState, memo } from "react";
+import { memo, useState } from "react";
 import type { Message } from "../../core/messages/types";
-import {
-  markdownToStyledText,
-  getStableMessageKey,
-  getArgsPreview,
-} from "./shared";
-import { useTheme } from "../theme";
 import { useDimensions } from "../context/dimensions";
 import { useObfuscation } from "../context/obfuscation";
+import { useTheme } from "../theme";
+import { ShiningText, SpinningDots } from "./loaders";
+import {
+  getArgsPreview,
+  getStableMessageKey,
+  markdownToStyledText,
+} from "./shared";
 
 export type Subagent = {
   id: string;

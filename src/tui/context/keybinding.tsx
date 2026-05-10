@@ -1,16 +1,16 @@
 import type { KeyEvent } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 import {
   createKeybindings,
   fromParsedKey,
-  parseKeybind,
-  matchesKeybind,
   type KeybindingDependencies,
   type KeybindingEntry,
+  matchesKeybind,
+  parseKeybind,
 } from "../keybindings";
-import { useFocus } from "./focus";
 import { useDialog } from "./dialog";
+import { useFocus } from "./focus";
 
 export type { KeybindingEntry };
 

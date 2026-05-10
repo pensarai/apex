@@ -1,7 +1,7 @@
+import type { ComparisonResult } from "../agents/specialized/benchmark";
 import type { AIModel } from "../ai";
-import type { ComparisonResult } from "../agents/specialized/benchmark/types";
 
-export type { ComparisonResult } from "../agents/specialized/benchmark/types";
+export type { ComparisonResult } from "../agents/specialized/benchmark";
 
 export interface BenchmarkMetadata {
   id: string;

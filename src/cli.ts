@@ -8,17 +8,16 @@
  */
 
 import packageJson from "../package.json";
-import { getCurrentVersion, upgrade } from "./core/installation";
-import { buildAuthConfig } from "./core/ai/utils";
+import { type AIModel, buildAuthConfig } from "./core/ai";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
+import { getCurrentVersion, upgrade } from "./core/installation";
 import type { SessionInfo } from "./core/session";
 import {
+  combinePromptParts,
   resolveFlagValue,
   resolveThreatModelPrompt,
-  combinePromptParts,
 } from "./tui/utils/command-flags";
-import type { AIModel } from "./core/ai";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -80,8 +79,9 @@ async function createInstrumentedBus(
 ): Promise<{ bus: AgentEventBus; cleanup: () => Promise<void> }> {
   const bus = new AgentEventBus();
   attachCliAgentStreamListeners(bus);
-  const { attachWandbToEventBus } =
-    await import("./core/integrations/wandb/upload");
+  const { attachWandbToEventBus } = await import(
+    "./core/integrations/wandb/upload"
+  );
   const wandbCleanup = await attachWandbToEventBus(session, bus).catch((e) => {
     console.warn("[wandb] Tracing disabled:", (e as Error).message);
     return null;
@@ -242,6 +242,7 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
         session,
         model,
         enableThinking,
+        surfaceIntegrationEnabled: pensarConfig.surfaceIntegrationEnabled,
         authConfig: buildAuthConfig(pensarConfig),
         eventBus: pentestBus,
       });
@@ -262,8 +263,9 @@ async function runTargetedPentest() {
   const { config } = await import("dotenv");
   config();
 
-  const { runTargetedPentestAgent } =
-    await import("./core/api/targetedPentest");
+  const { runTargetedPentestAgent } = await import(
+    "./core/api/targetedPentest"
+  );
   const { sessions } = await import("./core/session");
   const { config: appConfig } = await import("./core/config");
 
@@ -370,10 +372,12 @@ async function runOperator() {
   config();
 
   const { runOffensiveSecurityAgent } = await import("./core/api/offesecAgent");
-  const { sessions, normalizeMessages, getResumeMessages } =
-    await import("./core/session");
-  const { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } =
-    await import("./core/agents/offSecAgent");
+  const { sessions, normalizeMessages, getResumeMessages } = await import(
+    "./core/session"
+  );
+  const { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } = await import(
+    "./core/agents/offSecAgent"
+  );
   const { config: appConfig } = await import("./core/config");
   const { createInterface } = await import("readline");
   const { readFileSync, existsSync } = await import("fs");

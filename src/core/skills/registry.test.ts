@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import fs from "fs/promises";
-import { SkillsRegistry } from "./registry";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BUILTIN_SKILLS } from "./builtins";
+import { SkillsRegistry } from "./registry";
 import type { BuiltInSkill } from "./types";
 
 const TEST_PREFIX = "zzregtest-";

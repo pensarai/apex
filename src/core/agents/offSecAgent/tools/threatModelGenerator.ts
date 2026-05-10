@@ -1,8 +1,8 @@
 import pLimit from "p-limit";
 import { z } from "zod";
-import type { ToolContext } from "./types";
-import type { RiskScore } from "../../specialized/whiteboxAttackSurface/types";
 import { AgentEventBus } from "../../../eventBus";
+import type { RiskScore } from "../../specialized/whiteboxAttackSurface";
+import type { ToolContext } from "./types";
 
 // Process-wide cap — parents emit `document_endpoint` tool calls in parallel,
 // so without this gate each parent fans out unboundedly.

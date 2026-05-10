@@ -8,10 +8,10 @@
  * with dark/light variants via ThemeColors tokens.
  */
 
-import { RGBA, StyledText, type TextChunk } from "@opentui/core";
+import { type RGBA, StyledText, type TextChunk } from "@opentui/core";
 import hljs from "highlight.js";
 import { extname } from "path";
-import type { ThemeColors } from "../../theme/types";
+import type { ThemeColors } from "../../theme";
 
 // ---------------------------------------------------------------------------
 // Build hljs class → RGBA map from resolved theme colors

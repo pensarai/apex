@@ -4,41 +4,39 @@
  * Single implementation for approval UI used in both operator and chat views.
  */
 
-import { useState, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useTheme } from "../../theme";
-import { getToolSummary } from "./tool-registry";
+import { useEffect, useState } from "react";
 import type { PendingApproval } from "../../../core/operator";
-import { getPasteText } from "../../utils/paste";
 import { useDialog } from "../../context/dialog";
+import { useTheme } from "../../theme";
+import { getPasteText } from "../../utils/paste";
+import { deriveApprovedActionLabel } from "./action-label";
+import { getToolSummary } from "./tool-registry";
 
 interface InlineApprovalPromptProps {
   approval: PendingApproval;
 }
 
-/**
- * Inline approval prompt - shows pending tool call.
- * Displayed in the chat flow.
- */
 export function InlineApprovalPrompt({ approval }: InlineApprovalPromptProps) {
   const { colors } = useTheme();
 
-  const description = approval.args?.toolCallDescription as string | undefined;
+  const label = deriveApprovedActionLabel(approval);
   const summary = getToolSummary(approval.toolName, approval.args || {});
+  const showSummaryLine = summary !== label;
 
   return (
     <box flexDirection="column" marginTop={2}>
-      {description && (
-        <box flexDirection="row" marginBottom={1}>
-          <text fg={colors.primary} content="| " />
-          <text fg={colors.text} content={description} />
+      <box flexDirection="row" marginBottom={showSummaryLine ? 1 : 0}>
+        <text fg={colors.primary} content="| " />
+        <text fg={colors.text} content={label} />
+      </box>
+
+      {showSummaryLine && (
+        <box flexDirection="row" gap={1} marginLeft={2}>
+          <text fg={colors.warning} content="?" />
+          <text fg={colors.info} content={summary} />
         </box>
       )}
-
-      <box flexDirection="row" gap={1} marginLeft={2}>
-        <text fg={colors.warning} content="?" />
-        <text fg={colors.info} content={summary} />
-      </box>
     </box>
   );
 }

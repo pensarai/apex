@@ -1,13 +1,15 @@
 import { hasToolCall, stepCountIs } from "ai";
-import { join } from "path";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
+import { join } from "path";
+import type { SessionInfo } from "../../../session";
+import {
+  OffensiveSecurityAgent,
+  type SpecializedAgentInput,
+} from "../../offSecAgent";
 import { detectOSAndEnhancePrompt } from "../utils";
+import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
 import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
 import { loadAttackSurfaceResults } from "./types";
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import type { SpecializedAgentInput } from "../../offSecAgent/types";
-import type { SessionInfo } from "../../../session";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,7 +28,14 @@ export type AttackSurfaceAgentInput = SpecializedAgentInput &
         /** Working directory for source-code based analysis */
         cwd: string;
       }
-  );
+  ) & {
+    /**
+     * Whitebox-only: when false, the workflow skips the `@pensar/surface`
+     * deterministic-enumeration path and uses the legacy pages+apiEndpoints
+     * discovery agents. Defaults to `true`. Has no effect on blackbox runs.
+     */
+    surfaceIntegrationEnabled?: boolean;
+  };
 
 /** The typed result returned by `AttackSurfaceAgent.consume()`. */
 export interface AttackSurfaceResult {

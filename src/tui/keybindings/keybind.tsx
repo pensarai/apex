@@ -10,24 +10,24 @@
  *   Ctrl+Space, ?  -> Show help overlay
  */
 
+import { useKeyboard } from "@opentui/react";
 import {
   createContext,
-  useContext,
-  useState,
+  type ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
-  type ReactNode,
+  useState,
 } from "react";
-import { useKeyboard } from "@opentui/react";
-import { InputBuffer } from "./input-buffer";
+import { useTheme } from "../theme";
 import {
-  allActions,
-  getAction,
   type Action,
   type ActionCategory,
+  allActions,
+  getAction,
 } from "./actions";
-import { useTheme } from "../theme";
+import { InputBuffer } from "./input-buffer";
 
 // ============================================
 // Context Types
@@ -404,10 +404,10 @@ function KeybindHelpOverlay({ onClose }: KeybindHelpOverlayProps) {
 // Exports
 // ============================================
 
-export { InputBuffer } from "./input-buffer";
 export {
-  allActions,
-  getAction,
   type Action,
   type ActionCategory,
+  allActions,
+  getAction,
 } from "./actions";
+export { InputBuffer } from "./input-buffer";
