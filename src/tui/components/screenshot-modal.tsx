@@ -1,6 +1,6 @@
+import { useKeyboard } from "@opentui/react";
 import { useEffect, useState } from "react";
 import sharp from "sharp";
-import { useKeyboard } from "@opentui/react";
 import { useDimensions } from "../context/dimensions";
 import { useTheme } from "../theme";
 import {
@@ -56,11 +56,7 @@ export function collectScreenshotPaths(messages: DisplayMessage[]): string[] {
  * do kitty graphics — arrows still navigate, but the path is shown as
  * text.
  */
-export function ScreenshotModal({
-  screenshots,
-  initialIndex,
-  onClose,
-}: Props) {
+export function ScreenshotModal({ screenshots, initialIndex, onClose }: Props) {
   const { width: termW, height: termH } = useDimensions();
   const { colors } = useTheme();
   const supported = kittyGraphicsSupported();

@@ -80,6 +80,7 @@ import type { DisplayMessage, WorkflowData } from "../agent-display";
 import { InputArea } from "../chat/input-area";
 import { MessageList } from "../chat/message-list";
 import { QuestionsForm } from "../chat/questions-form";
+import { collectScreenshotPaths, ScreenshotModal } from "../screenshot-modal";
 import {
   deriveApprovedActionLabel,
   extractStreamableContent,
@@ -106,10 +107,6 @@ import {
   loadSubagentSessionsFromDisk,
 } from "./subagent-state";
 import { SubagentStatusBar } from "./subagent-status-bar";
-import {
-  ScreenshotModal,
-  collectScreenshotPaths,
-} from "../screenshot-modal";
 
 function markInFlightToolsErrored(
   messages: DisplayMessage[],
@@ -2112,10 +2109,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       if (screenshots.length === 0) return;
       key.preventDefault?.();
       replaceDialog(
-        <ScreenshotModal
-          screenshots={screenshots}
-          onClose={clearDialog}
-        />,
+        <ScreenshotModal screenshots={screenshots} onClose={clearDialog} />,
         { bare: true, selfHandlesEscape: true },
       );
       return;

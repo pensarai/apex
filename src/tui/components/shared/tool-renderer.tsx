@@ -213,7 +213,6 @@ export const ToolRenderer = memo(function ToolRenderer({
                 )}
               </box>
             )}
-
           </box>
         )}
       </box>
