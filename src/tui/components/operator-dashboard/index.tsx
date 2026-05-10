@@ -2116,7 +2116,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           screenshots={screenshots}
           onClose={clearDialog}
         />,
-        { bare: true },
+        { bare: true, selfHandlesEscape: true },
       );
       return;
     }
