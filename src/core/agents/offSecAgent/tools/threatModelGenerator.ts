@@ -95,6 +95,13 @@ const PentestObjectiveSchema = z.object({
 
 type PentestObjective = z.infer<typeof PentestObjectiveSchema>;
 
+// Reused by every schema field that demands `file:line` citation. Mirrors the
+// source-unavailable mode definition in the prompt body so the JSON-schema
+// constraints don't contradict the prompt when the handler source is
+// unreachable.
+const SCHEMA_SOURCE_UNAVAILABLE_NOTE =
+  "If the handler source is unreachable in your environment (source-unavailable mode — see prompt body), cite the grounding source you actually read (endpoint description, route table, OpenAPI spec, README) instead of `file:line` and tag the claim `[unverified: source unavailable]`. Never fabricate `file:line` references or invent code paths.";
+
 const ThreatModelResultSchema = z.object({
   businessLogic: z
     .string()
@@ -108,7 +115,8 @@ const ThreatModelResultSchema = z.object({
         "location (file:line) and confidence level. " +
         "(5) Trust boundaries — what actually guards each crossing (not what should). " +
         "(6) Analysis gaps — what you did NOT trace into and why. " +
-        "Cite file:line for every concrete claim. Prefer completeness over brevity.",
+        "Cite file:line for every concrete claim. Prefer completeness over brevity. " +
+        SCHEMA_SOURCE_UNAVAILABLE_NOTE,
     ),
 
   threatModel: z
@@ -122,7 +130,8 @@ const ThreatModelResultSchema = z.object({
         "would break, the mechanism, the observable signal of success, an attacker profile, " +
         "likelihood, and impact. Cite file:line. " +
         "(3) Risk assessment — worst-case impact and vector prioritization. " +
-        "Do not include generic OWASP filler ungrounded in code you actually read.",
+        "Do not include generic OWASP filler ungrounded in evidence you actually read. " +
+        SCHEMA_SOURCE_UNAVAILABLE_NOTE,
     ),
 
   exposure: z
@@ -142,7 +151,8 @@ const ThreatModelResultSchema = z.object({
       "Cite specific code/config signals (file:line) that determined the exposure score: " +
         "route registration, auth middleware, role guards, IP allowlists, network placement. " +
         "E.g. 'Route registered on public router with no auth middleware (app.ts:18). " +
-        "Handler does not check req.user.'",
+        "Handler does not check req.user.' " +
+        SCHEMA_SOURCE_UNAVAILABLE_NOTE,
     ),
 
   dataSensitivity: z
@@ -161,7 +171,8 @@ const ThreatModelResultSchema = z.object({
     .describe(
       "Name the concrete data observed. Reference the table, field, or response shape (file:line). " +
         "E.g. 'Response includes users.email, users.phone, and order.total (query in userRepo.ts:42). " +
-        "Email + phone are PII.'",
+        "Email + phone are PII.' " +
+        SCHEMA_SOURCE_UNAVAILABLE_NOTE,
     ),
 
   functionCriticality: z
@@ -201,7 +212,9 @@ const ThreatModelResultSchema = z.object({
       "List the specific patterns observed with file:line references. If none were observed, say so " +
         "explicitly and note what defensive patterns ARE present. " +
         "E.g. 'Observed string concatenation into raw SQL at orders.ts:77 (user-controlled orderId). " +
-        "No parameterization. No input validation upstream.'",
+        "No parameterization. No input validation upstream.' " +
+        SCHEMA_SOURCE_UNAVAILABLE_NOTE +
+        " In source-unavailable mode the appropriate score is usually `0` (no patterns observable) — say so in the reasoning rather than inferring patterns from the description.",
     ),
 
   riskScoreJustification: z
@@ -514,7 +527,7 @@ Score each dimension based on what you observed in the code. The total (0-10) is
 - 1 = Moderate concerns: weak/absent input validation, verbose error handling leaking internals, permissive CORS, missing output encoding, missing rate limiting on sensitive operations
 - 0 = No observable security issues — code follows standard defensive patterns for its context
 
-Every \`*Reasoning\` field must cite specific code (file:line). "Handler validates input" is insufficient. "Handler validates orderId via zod schema (orders.ts:40)" is required.
+Every \`*Reasoning\` field must cite specific code (file:line). "Handler validates input" is insufficient. "Handler validates orderId via zod schema (orders.ts:40)" is required. In source-unavailable mode, cite the grounding source you read (e.g. "Endpoint description says auth required; no route table available") instead of file:line, and tag the reasoning \`[unverified: source unavailable]\`.
 
 In \`riskScoreJustification\`, explain how the four sub-scores combine for this specific endpoint and which attacker profile from Part 2 is most concerning given that combination. Do not restate the rubric.
 
