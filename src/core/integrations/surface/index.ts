@@ -185,15 +185,27 @@ export function scopeEndpointsToApp(
  * authoritative page/api signal. Apex's storage convention (method="PAGE"
  * for pages) is applied at the document_endpoint write boundary, not here.
  */
+export interface MapAppWithSurfaceOptions {
+  /**
+   * When true, skip the repo-root fallback guard. Safe for single-service-app
+   * repos where Phase 1 reports `location: "."` — scoping is a no-op and the
+   * narrow scan at root does the right thing. Must stay false (default) for
+   * multi-service-app repos to prevent cross-app endpoint leakage.
+   */
+  allowRepoRoot?: boolean;
+}
+
 export function mapAppWithSurface(
   appPath: string,
   repoRoot: string,
+  options?: MapAppWithSurfaceOptions,
 ): MapAppResult {
   const absApp = resolve(appPath);
   const absRoot = resolve(repoRoot);
 
-  // (1) Force fallback when the app's location is the repo root itself.
-  if (absApp === absRoot) {
+  // (1) Force fallback when the app's location is the repo root itself,
+  //     unless the caller explicitly allows it (single-service-app repos).
+  if (absApp === absRoot && !options?.allowRepoRoot) {
     return {
       mode: "fallback",
       reason: "app.location is repo root — cannot scope",

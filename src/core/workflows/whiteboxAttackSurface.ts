@@ -370,9 +370,11 @@ export async function runWhiteboxAttackSurfaceWorkflow(
             spawnApiEndpointsAgent(app),
           ]);
         } else {
+          const allowRepoRoot = serviceApps.length === 1;
           const surfaceResult = mapAppWithSurface(
             join(codebasePath, app.location),
             codebasePath,
+            { allowRepoRoot },
           );
           if (surfaceResult.mode === "surface") {
             console.log(
