@@ -208,11 +208,11 @@ export class AgentEventBus {
           forwardKey === "subagent-complete";
 
         if (isLifecycle) {
-          const next = { ...p };
-          if (!next.parentSubagentId) {
-            next.parentSubagentId = subagentId;
+          if (p.parentSubagentId) {
+            parent.emit(forwardKey, payload as never);
+          } else {
+            parent.emit(forwardKey, { ...p, parentSubagentId: subagentId } as never);
           }
-          parent.emit(forwardKey, next as never);
           return;
         }
 

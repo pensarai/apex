@@ -306,9 +306,6 @@ export async function generateThreatModelForEndpoint(
 
     const subagentId = `threat-model-${sanitize(input.appName)}-${sanitize(input.routePath)}`;
 
-    console.log(
-      `[threatModel] emit subagent-spawn id="${subagentId}" parent="${ctx.subagentId ?? "(top-level)"}"`,
-    );
     ctx.eventBus?.emit("subagent-spawn", {
       subagentId,
       name: `Threat Model: ${input.routePath}`,

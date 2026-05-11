@@ -180,9 +180,6 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   // Held open until Phase 2 finishes so per-app synthetic nodes can nest under it.
   const WORKFLOW_UMBRELLA_ID = "whitebox-apps-discovery";
 
-  console.log(
-    `[whitebox-workflow] emit subagent-spawn id="${WORKFLOW_UMBRELLA_ID}" parent="(top-level)"`,
-  );
   eventBus?.emit("subagent-spawn", {
     subagentId: WORKFLOW_UMBRELLA_ID,
     name: "Whitebox Apps Discovery",
@@ -207,9 +204,6 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   }
 
   if (!appsResult || appsResult.apps.length === 0) {
-    console.log(
-      `[whitebox-workflow] emit subagent-complete id="${WORKFLOW_UMBRELLA_ID}" parent="(top-level)" status=completed (no apps found, closing umbrella)`,
-    );
     eventBus?.emit("subagent-complete", {
       subagentId: WORKFLOW_UMBRELLA_ID,
       status: "completed",
@@ -287,9 +281,6 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   for (const app of appsResult.apps) {
     const appNodeId = appNodeIdFor(app.name);
     appAnyTaskFailed.set(app.name, false);
-    console.log(
-      `[whitebox-workflow] emit subagent-spawn id="${appNodeId}" parent="${WORKFLOW_UMBRELLA_ID}" (synthetic per-app node)`,
-    );
     eventBus?.emit("subagent-spawn", {
       subagentId: appNodeId,
       name: app.name,
@@ -436,18 +427,14 @@ export async function runWhiteboxAttackSurfaceWorkflow(
             ]);
           }
         }
-      } catch (error) {
+      } catch {
         appAnyTaskFailed.set(app.name, true);
-        throw error;
       } finally {
         completedAppCount++;
 
         const appStatus = appAnyTaskFailed.get(app.name)
           ? ("failed" as const)
           : ("completed" as const);
-        console.log(
-          `[whitebox-workflow] emit subagent-complete id="${appNodeId}" parent="${WORKFLOW_UMBRELLA_ID}" status=${appStatus}`,
-        );
         eventBus?.emit("subagent-complete", {
           subagentId: appNodeId,
           status: appStatus,
@@ -463,9 +450,6 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     },
   );
 
-  console.log(
-    `[whitebox-workflow] emit subagent-complete id="${WORKFLOW_UMBRELLA_ID}" parent="(top-level)" status=completed`,
-  );
   eventBus?.emit("subagent-complete", {
     subagentId: WORKFLOW_UMBRELLA_ID,
     status: "completed",
