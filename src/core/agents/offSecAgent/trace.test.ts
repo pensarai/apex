@@ -1,5 +1,6 @@
 import type { ModelMessage } from "ai";
-import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { createHash } from "crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -10,6 +11,7 @@ import {
   type StepRecord,
   StepTraceWriter,
   type TraceRecord,
+  verifyTraceChain,
 } from "./trace";
 
 // ---------------------------------------------------------------------------
@@ -767,5 +769,226 @@ describe("StepTraceWriter", () => {
 
     expect(received).toHaveLength(3);
     expect(received.map((r) => r.type)).toEqual(["init", "step", "checkpoint"]);
+  });
+
+  // -------------------------------------------------------------------------
+  // Hash chain tests (APTS-AR-012)
+  // -------------------------------------------------------------------------
+
+  it("every record includes seq, previousHash, and hash fields", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: null });
+    const msgs = buildMessages();
+
+    writer.writeInit({
+      model: "test-model",
+      systemPrompt: "test prompt",
+      activeTools: ["http_request"],
+      sessionId: "ses_chain",
+    });
+    writer.recordStep(msgs.afterStep0, { inputTokens: 100, outputTokens: 50 });
+    writer.appendCheckpoint({
+      targetState: {
+        discoveredSurface: [],
+        credentialsObtained: [],
+        confirmedVulnerabilities: [],
+      },
+      actionsAttempted: [],
+      nextSteps: [],
+      blockers: [],
+      assessment: "checkpoint",
+    });
+
+    const records = readTraceRecords(tracePath);
+    for (const r of records) {
+      expect(r).toHaveProperty("seq");
+      expect(r).toHaveProperty("previousHash");
+      expect(r).toHaveProperty("hash");
+      expect(typeof r.seq).toBe("number");
+      expect(typeof r.previousHash).toBe("string");
+      expect(r.hash).toMatch(/^[0-9a-f]{64}$/);
+    }
+  });
+
+  it("assigns monotonically increasing seq starting at 0", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: null });
+    const msgs = buildMessages();
+
+    writer.writeInit({
+      model: "test",
+      systemPrompt: "prompt",
+      activeTools: [],
+      sessionId: "ses_seq",
+    });
+    writer.recordStep(msgs.afterStep0, { inputTokens: 10, outputTokens: 5 });
+    writer.recordStep(msgs.afterStep1, { inputTokens: 20, outputTokens: 10 });
+
+    const records = readTraceRecords(tracePath);
+    expect(records.map((r) => r.seq)).toEqual([0, 1, 2]);
+  });
+
+  it("first record has empty previousHash", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: null });
+    const msgs = buildMessages();
+
+    writer.recordStep(msgs.afterStep0, { inputTokens: 10, outputTokens: 5 });
+
+    const [first] = readTraceRecords(tracePath);
+    expect(first.previousHash).toBe("");
+  });
+
+  it("each record's previousHash equals the prior record's hash", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: null });
+    const msgs = buildMessages();
+
+    writer.writeInit({
+      model: "test",
+      systemPrompt: "prompt",
+      activeTools: [],
+      sessionId: "ses_chain",
+    });
+    writer.recordStep(msgs.afterStep0, { inputTokens: 100, outputTokens: 50 });
+    writer.recordStep(msgs.afterStep1, { inputTokens: 200, outputTokens: 80 });
+
+    const records = readTraceRecords(tracePath);
+    for (let i = 1; i < records.length; i++) {
+      expect(records[i].previousHash).toBe(records[i - 1].hash);
+    }
+  });
+
+  it("hash is correctly computed from record content excluding the hash field", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: null });
+    const msgs = buildMessages();
+
+    writer.recordStep(msgs.afterStep0, { inputTokens: 10, outputTokens: 5 });
+
+    const [record] = readTraceRecords(tracePath);
+    const recordCopy = { ...record, hash: "" };
+    const recomputed = createHash("sha256")
+      .update(JSON.stringify(recordCopy))
+      .digest("hex");
+    expect(recomputed).toBe(record.hash);
+  });
+
+  it("verifyTraceChain returns valid for a well-formed chain", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: null });
+    const msgs = buildMessages();
+
+    writer.writeInit({
+      model: "test",
+      systemPrompt: "prompt",
+      activeTools: [],
+      sessionId: "ses_verify",
+    });
+    writer.recordStep(msgs.afterStep0, { inputTokens: 100, outputTokens: 50 });
+    writer.appendCheckpoint({
+      targetState: {
+        discoveredSurface: ["ep1"],
+        credentialsObtained: [],
+        confirmedVulnerabilities: [],
+      },
+      actionsAttempted: [],
+      nextSteps: [],
+      blockers: [],
+      assessment: "ok",
+    });
+    writer.recordStep(msgs.afterStep1, { inputTokens: 200, outputTokens: 80 });
+
+    const records = readTraceRecords(tracePath);
+    const result = verifyTraceChain(records);
+    expect(result.valid).toBe(true);
+    expect(result.entriesChecked).toBe(4);
+  });
+
+  it("verifyTraceChain detects content tampering", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: null });
+    const msgs = buildMessages();
+
+    writer.recordStep(msgs.afterStep0, { inputTokens: 100, outputTokens: 50 });
+    writer.recordStep(msgs.afterStep1, { inputTokens: 200, outputTokens: 80 });
+
+    const records = readTraceRecords(tracePath);
+    // Tamper with the first record's text
+    (records[0] as StepRecord).text = "TAMPERED CONTENT";
+
+    const result = verifyTraceChain(records);
+    expect(result.valid).toBe(false);
+    expect(result.breakIndex).toBe(0);
+    expect(result.breakReason).toContain("Hash mismatch");
+  });
+
+  it("verifyTraceChain detects deleted records (seq gap)", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: null });
+    const msgs = buildMessages();
+
+    writer.recordStep(msgs.afterStep0, { inputTokens: 10, outputTokens: 5 });
+    writer.recordStep(msgs.afterStep1, { inputTokens: 20, outputTokens: 10 });
+    writer.recordStep(msgs.afterStep2, { inputTokens: 30, outputTokens: 15 });
+
+    const records = readTraceRecords(tracePath);
+    // Delete the middle record
+    const tampered = [records[0], records[2]];
+
+    const result = verifyTraceChain(tampered);
+    expect(result.valid).toBe(false);
+    expect(result.breakIndex).toBe(1);
+    expect(result.breakReason).toContain("Sequence gap");
+  });
+
+  it("verifyTraceChain detects broken previousHash link", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: null });
+    const msgs = buildMessages();
+
+    writer.recordStep(msgs.afterStep0, { inputTokens: 10, outputTokens: 5 });
+    writer.recordStep(msgs.afterStep1, { inputTokens: 20, outputTokens: 10 });
+
+    const records = readTraceRecords(tracePath);
+    // Corrupt the previousHash on the second record
+    records[1].previousHash =
+      "0000000000000000000000000000000000000000000000000000000000000000";
+
+    const result = verifyTraceChain(records);
+    expect(result.valid).toBe(false);
+    expect(result.breakIndex).toBe(1);
+    expect(result.breakReason).toContain("Previous hash mismatch");
+  });
+
+  it("verifyTraceChain returns valid for empty array", () => {
+    const result = verifyTraceChain([]);
+    expect(result.valid).toBe(true);
+    expect(result.entriesChecked).toBe(0);
+  });
+
+  it("task records participate in the hash chain", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: null });
+    const msgs = buildMessages();
+
+    writer.recordStep(msgs.afterStep0, { inputTokens: 10, outputTokens: 5 });
+    writer.appendTaskRecord({
+      action: "created",
+      taskId: 1,
+      data: {
+        subject: "Test task",
+        status: "pending",
+        objective: "Test",
+        technique: "scan",
+      },
+    });
+    writer.recordStep(msgs.afterStep1, { inputTokens: 20, outputTokens: 10 });
+
+    const records = readTraceRecords(tracePath);
+    expect(records).toHaveLength(3);
+    const result = verifyTraceChain(records);
+    expect(result.valid).toBe(true);
+    expect(records.map((r) => r.seq)).toEqual([0, 1, 2]);
   });
 });

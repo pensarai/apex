@@ -29,10 +29,39 @@ export type ToolOutputType =
   | "execution-denied";
 
 // ---------------------------------------------------------------------------
+// Hash chain fields (APTS-AR-012)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fields present on every trace record to form a tamper-evident hash chain.
+ *
+ * `seq` is a monotonically increasing sequence number (0-based, no gaps).
+ * `previousHash` is the SHA-256 hex digest of the previous record's JSON
+ * line (empty string for the first record).
+ * `hash` is the SHA-256 hex digest of the current record's JSON line
+ * *after* all other fields (including `previousHash`) are set but
+ * *before* `hash` itself is written — i.e. the hash covers everything
+ * except the `hash` field.
+ *
+ * Verification: for each record, strip the `hash` field, re-serialize to
+ * JSON, SHA-256 the result, and compare to the stored `hash`. Then check
+ * that `previousHash` equals the preceding record's `hash`. Gaps in `seq`
+ * indicate deletion.
+ */
+export interface HashChainFields {
+  /** Monotonically increasing sequence number (0-based, no gaps). */
+  seq: number;
+  /** SHA-256 hex digest of the previous record's JSON line (empty string for first record). */
+  previousHash: string;
+  /** SHA-256 hex digest of this record's content (excluding the `hash` field itself). */
+  hash: string;
+}
+
+// ---------------------------------------------------------------------------
 // StepRecord — one line in trace.jsonl
 // ---------------------------------------------------------------------------
 
-export interface StepRecord {
+export interface StepRecord extends HashChainFields {
   /** Discriminator — distinguishes from StateCheckpoint in trace.jsonl */
   type: "step";
 
@@ -125,7 +154,7 @@ export interface StepRecord {
 // StateCheckpoint — agent state snapshot in trace.jsonl
 // ---------------------------------------------------------------------------
 
-export interface StateCheckpoint {
+export interface StateCheckpoint extends HashChainFields {
   /** Discriminator — distinguishes from StepRecord in trace.jsonl */
   type: "checkpoint";
 
@@ -171,7 +200,7 @@ export interface StateCheckpoint {
 // InitRecord — first line in trace.jsonl, captures agent setup context
 // ---------------------------------------------------------------------------
 
-export interface InitRecord {
+export interface InitRecord extends HashChainFields {
   /** Discriminator */
   type: "init";
 
@@ -199,17 +228,17 @@ export interface InitRecord {
   objectives?: string[];
 }
 
-/** Data fields provided by the checkpoint_state tool (metadata is filled by the writer). */
+/** Data fields provided by the checkpoint_state tool (metadata + hash chain filled by the writer). */
 export type CheckpointInput = Omit<
   StateCheckpoint,
-  "type" | "stepIndex" | "timestamp" | "agentId"
+  "type" | "stepIndex" | "timestamp" | "agentId" | keyof HashChainFields
 >;
 
 // ---------------------------------------------------------------------------
 // TaskRecord — task lifecycle events in trace.jsonl
 // ---------------------------------------------------------------------------
 
-export interface TaskRecord {
+export interface TaskRecord extends HashChainFields {
   /** Discriminator — distinguishes from other record types in trace.jsonl */
   type: "task";
 
@@ -239,10 +268,10 @@ export interface TaskRecord {
   };
 }
 
-/** Data fields provided by task tools (metadata is filled by the writer). */
+/** Data fields provided by task tools (metadata + hash chain filled by the writer). */
 export type TaskRecordInput = Omit<
   TaskRecord,
-  "type" | "timestamp" | "agentId" | "stepIndex"
+  "type" | "timestamp" | "agentId" | "stepIndex" | keyof HashChainFields
 >;
 
 /** Discriminated union of all trace record types. */
@@ -251,6 +280,80 @@ export type TraceRecord =
   | StepRecord
   | StateCheckpoint
   | TaskRecord;
+
+// ---------------------------------------------------------------------------
+// Hash chain verification (APTS-AR-012)
+// ---------------------------------------------------------------------------
+
+export interface ChainVerificationResult {
+  valid: boolean;
+  entriesChecked: number;
+  /** If invalid, the 0-based index of the first record that failed verification. */
+  breakIndex?: number;
+  /** Human-readable reason for the break. */
+  breakReason?: string;
+}
+
+/**
+ * Verify the integrity of a trace hash chain per APTS-AR-012.
+ *
+ * Algorithm:
+ * 1. Read all entries in sequence order.
+ * 2. For each entry, strip the `hash` field, recompute SHA-256, compare.
+ * 3. Verify `previousHash` matches prior entry's `hash`.
+ * 4. Verify `seq` values are continuous (no gaps).
+ * 5. Any mismatch → chain is broken; return the break point.
+ */
+export function verifyTraceChain(
+  records: TraceRecord[],
+): ChainVerificationResult {
+  if (records.length === 0) {
+    return { valid: true, entriesChecked: 0 };
+  }
+
+  let expectedPreviousHash = "";
+
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+
+    if (record.seq !== i) {
+      return {
+        valid: false,
+        entriesChecked: i,
+        breakIndex: i,
+        breakReason: `Sequence gap: expected seq=${i}, got seq=${record.seq}`,
+      };
+    }
+
+    if (record.previousHash !== expectedPreviousHash) {
+      return {
+        valid: false,
+        entriesChecked: i,
+        breakIndex: i,
+        breakReason: `Previous hash mismatch at seq=${i}: expected "${expectedPreviousHash}", got "${record.previousHash}"`,
+      };
+    }
+
+    const storedHash = record.hash;
+    const recordCopy = { ...record, hash: "" };
+    const recomputed = createHash("sha256")
+      .update(JSON.stringify(recordCopy))
+      .digest("hex");
+
+    if (recomputed !== storedHash) {
+      return {
+        valid: false,
+        entriesChecked: i,
+        breakIndex: i,
+        breakReason: `Hash mismatch at seq=${i}: recomputed "${recomputed}", stored "${storedHash}"`,
+      };
+    }
+
+    expectedPreviousHash = storedHash;
+  }
+
+  return { valid: true, entriesChecked: records.length };
+}
 
 // ---------------------------------------------------------------------------
 // Extraction helpers
@@ -356,6 +459,10 @@ export class StepTraceWriter {
   private summarized = false;
   private previousMessageCount = 0;
 
+  /** Hash chain state (APTS-AR-012) */
+  private seq = 0;
+  private previousHash = "";
+
   constructor(opts: StepTraceWriterOpts) {
     this.tracePath = opts.tracePath;
     this.agentId = opts.agentId;
@@ -375,11 +482,18 @@ export class StepTraceWriter {
   writeInit(
     data: Omit<
       InitRecord,
-      "type" | "timestamp" | "agentId" | "systemPromptHash"
+      | "type"
+      | "timestamp"
+      | "agentId"
+      | "systemPromptHash"
+      | keyof HashChainFields
     > & { systemPrompt: string },
   ): void {
     const { systemPrompt, ...rest } = data;
     const record: InitRecord = {
+      seq: 0,
+      previousHash: "",
+      hash: "",
       type: "init",
       timestamp: new Date().toISOString(),
       agentId: this.agentId,
@@ -492,6 +606,9 @@ export class StepTraceWriter {
     }
 
     const record: StepRecord = {
+      seq: 0,
+      previousHash: "",
+      hash: "",
       type: "step",
       stepIndex: this.stepIndex,
       timestamp: new Date(now).toISOString(),
@@ -544,6 +661,9 @@ export class StepTraceWriter {
    */
   appendCheckpoint(data: CheckpointInput): void {
     const record: StateCheckpoint = {
+      seq: 0,
+      previousHash: "",
+      hash: "",
       type: "checkpoint",
       stepIndex: this.stepIndex,
       timestamp: new Date().toISOString(),
@@ -566,6 +686,9 @@ export class StepTraceWriter {
    */
   appendTaskRecord(data: TaskRecordInput): void {
     const record: TaskRecord = {
+      seq: 0,
+      previousHash: "",
+      hash: "",
       type: "task",
       timestamp: new Date().toISOString(),
       agentId: this.agentId,
@@ -575,10 +698,28 @@ export class StepTraceWriter {
     this.appendRecord(record);
   }
 
-  /** Sync append — ~1-3KB per line, sub-ms. Sync ensures crash safety. */
+  /**
+   * Sync append with hash chain (APTS-AR-012).
+   *
+   * Each record gets a monotonic `seq`, `previousHash` (the hash of the
+   * prior record), and `hash` (SHA-256 of the record with all fields set
+   * except `hash` itself). This makes the log tamper-evident: modifying
+   * or deleting any entry breaks the chain.
+   */
   private appendRecord(record: TraceRecord): void {
     try {
+      record.seq = this.seq;
+      record.previousHash = this.previousHash;
+      record.hash = "";
+
+      const contentToHash = JSON.stringify(record);
+      const hash = createHash("sha256").update(contentToHash).digest("hex");
+      record.hash = hash;
+
       appendFileSync(this.tracePath, JSON.stringify(record) + "\n");
+
+      this.previousHash = hash;
+      this.seq++;
     } catch {
       // Trace is non-critical observability — never crash the agent for it.
     }

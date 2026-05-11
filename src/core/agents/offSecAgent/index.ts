@@ -23,7 +23,9 @@ export {
 // ---------------------------------------------------------------------------
 export * from "./tools";
 export type {
+  ChainVerificationResult,
   CheckpointInput,
+  HashChainFields,
   InitRecord,
   StateCheckpoint,
   StepRecord,
@@ -34,7 +36,7 @@ export type {
 // ---------------------------------------------------------------------------
 // Trace
 // ---------------------------------------------------------------------------
-export { StepTraceWriter } from "./trace";
+export { StepTraceWriter, verifyTraceChain } from "./trace";
 export {
   type AgentMode,
   ApexFindingObject,
