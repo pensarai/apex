@@ -289,6 +289,19 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     });
   }
 
+  // Human-readable labels for Phase 2 task agents. The parent card
+  // (synthetic `app:<name>` node) already carries the app name, so child
+  // labels should describe what each agent *does* — that's the
+  // distinguishing axis between siblings under one app.
+  const TASK_TYPE_LABELS = {
+    pages: "Pages",
+    apiEndpoints: "API Endpoints",
+    cloudResourceEndpoints: "Cloud Resources",
+  } as const satisfies Record<
+    "pages" | "apiEndpoints" | "cloudResourceEndpoints",
+    string
+  >;
+
   const spawnDiscoveryAgent = async (
     app: AppInfo,
     type: "pages" | "apiEndpoints" | "cloudResourceEndpoints",
@@ -303,7 +316,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
     eventBus?.emit("subagent-spawn", {
       subagentId,
-      name: app.name,
+      name: TASK_TYPE_LABELS[type],
       input: { app: app.name, type },
       parentSubagentId: appNodeId,
     });
