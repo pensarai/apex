@@ -254,6 +254,10 @@ function buildAuthPrompt(
 
   const credBlock = credentialManager?.formatForPrompt();
   if (credBlock) {
+    parts.push(
+      "Auth instructions in APPLICATION CONTEXT and the credential's `Context` field are authoritative — execute them as written before falling back to defaults or browser automation.",
+    );
+    parts.push("");
     parts.push(credBlock);
     parts.push("");
   } else {
@@ -280,11 +284,18 @@ function buildAuthPrompt(
   if (credBlock) {
     parts.push(`INSTRUCTIONS:
 You have credentials available via credential IDs — authenticate immediately.
-1. Try authenticate_session first (pass the credentialId — secrets are resolved automatically)
-2. If authenticate_session fails, use browser tools. For browser_fill on password/secret fields,
-   pass credentialId + credentialField (e.g. credentialField="password") instead of the raw value —
-   the secret is resolved securely at execution time. NEVER type a password directly.
-3. Call complete_authentication with exported cookies/headers to persist credentials and end the run`);
+1. Try \`authenticate_session\` first (pass the credentialId — secrets are resolved automatically).
+   If the credential or context specifies a method/Content-Type/field names, match them exactly.
+2. If \`authenticate_session\` fails, route by \`statusCode\` (see system prompt "Error Recovery"):
+   - 405 → loginUrl is a page route; find the real API endpoint (re-read context, then probe_auth_endpoints)
+   - 422 / 400 → wrong body shape; adjust method and field names per the credential Context
+   - 401 → bad credentials; report failure, do not retry
+   - 404 → wrong path; probe_auth_endpoints
+   - 2xx with authenticated=false → inspect responseBody for a token under an unexpected field
+   Browser tools are the **last resort**, used only when the API genuinely cannot be reproduced.
+   When using browser_fill on password/secret fields, pass credentialId + credentialField
+   (e.g. credentialField="password") instead of the raw value — never type a password directly.
+3. Call \`complete_authentication\` with exported cookies/headers to persist credentials and end the run.`);
   } else {
     parts.push(`INSTRUCTIONS:
 1. Probe the target with execute_command (curl) to determine the auth mechanism
