@@ -455,6 +455,19 @@ Specific attacks relevant to this endpoint. Each vector must:
 
 Be exhaustive rather than selective. It is fine — and expected — to include vectors rated \`likelihood: unlikely\` if they are technically realizable against this endpoint. Pruning happens in Part 4 via priority, not here. If two vectors differ only in payload variant (e.g. time-based vs. error-based SQLi on the same input), list them as separate vectors — they have different test procedures and success signals.
 
+#### LLM-specific vectors (only if Part 1 identified an LLM hop)
+
+If any input from Part 1 reaches a model prompt, tool/function call, or retrieval context — directly in this handler or via a downstream service — you MUST enumerate the LLM-specific vectors that apply, in addition to the standard ones above. Treat the LLM as a trust boundary as real as a SQL query or a shell exec.
+
+- **Direct prompt injection** — attacker-controlled text in the request becomes part of the model's instruction context.
+- **Indirect prompt injection** — attacker-controlled content reaches the model via attachments, retrieved documents, tool output, or another user's data.
+- **System-prompt / context leakage** — model induced to reveal its system prompt, hidden tool definitions, or other tenants' context.
+- **Jailbreak / policy bypass** — model induced to perform actions or emit content its policy forbids.
+- **Tool / function-call hijacking** — model induced to invoke tools the user shouldn't be able to invoke, or with arguments the user shouldn't control (file reads, network calls, DB queries, payments).
+- **Unsafe handling of model output** — model output passed to \`exec\`/\`eval\`, rendered as HTML/markdown without sanitization, used to build SQL/shell, or returned to other users without trust separation.
+
+Cite file:line for the LLM hop (the SDK call, the proxy to the model service, the prompt template). If the handler is a pure proxy that forwards user content to a downstream LLM service, the LLM hop is the downstream call — say so explicitly and enumerate these vectors anyway. Endpoint descriptions that mention "AI", "assistant", "chat", "LLM", or "agent" are a strong signal that Part 1 should flag an LLM hop even when the handler itself doesn't import a model SDK.
+
 Do not list generic OWASP categories that aren't grounded in something you read. "Consider CSRF" without a state-changing endpoint and cookie auth is filler.
 
 ### Risk Assessment
