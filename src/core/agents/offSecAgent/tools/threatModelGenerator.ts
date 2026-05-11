@@ -95,6 +95,13 @@ const PentestObjectiveSchema = z.object({
 
 type PentestObjective = z.infer<typeof PentestObjectiveSchema>;
 
+// Reused by every schema field that demands `file:line` citation. Mirrors the
+// source-unavailable mode definition in the prompt body so the JSON-schema
+// constraints don't contradict the prompt when the handler source is
+// unreachable.
+const SCHEMA_SOURCE_UNAVAILABLE_NOTE =
+  "If the handler source is unreachable in your environment (source-unavailable mode — see prompt body), cite the grounding source you actually read (endpoint description, route table, OpenAPI spec, README) instead of `file:line` and tag the claim `[unverified: source unavailable]`. Never fabricate `file:line` references or invent code paths.";
+
 const ThreatModelResultSchema = z.object({
   businessLogic: z
     .string()
@@ -108,7 +115,8 @@ const ThreatModelResultSchema = z.object({
         "location (file:line) and confidence level. " +
         "(5) Trust boundaries — what actually guards each crossing (not what should). " +
         "(6) Analysis gaps — what you did NOT trace into and why. " +
-        "Cite file:line for every concrete claim. Prefer completeness over brevity.",
+        "Cite file:line for every concrete claim. Prefer completeness over brevity. " +
+        SCHEMA_SOURCE_UNAVAILABLE_NOTE,
     ),
 
   threatModel: z
@@ -122,7 +130,8 @@ const ThreatModelResultSchema = z.object({
         "would break, the mechanism, the observable signal of success, an attacker profile, " +
         "likelihood, and impact. Cite file:line. " +
         "(3) Risk assessment — worst-case impact and vector prioritization. " +
-        "Do not include generic OWASP filler ungrounded in code you actually read.",
+        "Do not include generic OWASP filler ungrounded in evidence you actually read. " +
+        SCHEMA_SOURCE_UNAVAILABLE_NOTE,
     ),
 
   exposure: z
@@ -142,7 +151,8 @@ const ThreatModelResultSchema = z.object({
       "Cite specific code/config signals (file:line) that determined the exposure score: " +
         "route registration, auth middleware, role guards, IP allowlists, network placement. " +
         "E.g. 'Route registered on public router with no auth middleware (app.ts:18). " +
-        "Handler does not check req.user.'",
+        "Handler does not check req.user.' " +
+        SCHEMA_SOURCE_UNAVAILABLE_NOTE,
     ),
 
   dataSensitivity: z
@@ -161,7 +171,8 @@ const ThreatModelResultSchema = z.object({
     .describe(
       "Name the concrete data observed. Reference the table, field, or response shape (file:line). " +
         "E.g. 'Response includes users.email, users.phone, and order.total (query in userRepo.ts:42). " +
-        "Email + phone are PII.'",
+        "Email + phone are PII.' " +
+        SCHEMA_SOURCE_UNAVAILABLE_NOTE,
     ),
 
   functionCriticality: z
@@ -201,7 +212,9 @@ const ThreatModelResultSchema = z.object({
       "List the specific patterns observed with file:line references. If none were observed, say so " +
         "explicitly and note what defensive patterns ARE present. " +
         "E.g. 'Observed string concatenation into raw SQL at orders.ts:77 (user-controlled orderId). " +
-        "No parameterization. No input validation upstream.'",
+        "No parameterization. No input validation upstream.' " +
+        SCHEMA_SOURCE_UNAVAILABLE_NOTE +
+        " In source-unavailable mode the appropriate score is usually `0` (no patterns observable) — say so in the reasoning rather than inferring patterns from the description.",
     ),
 
   riskScoreJustification: z
@@ -237,7 +250,7 @@ const THREAT_MODEL_SYSTEM_PROMPT = `You are an Endpoint Analysis Agent. For a si
   3. a quantitative **risk score** (0-10),
   4. an **adversarial test plan** — falsifiable hypotheses a pentest agent can execute deterministically.
 
-You read the source code before you reason. Every claim in your analysis must be grounded in code you actually read — cite file:line references. Generic OWASP/security filler that is not tied to a specific input, transformation, or line in this codebase is not acceptable.
+You read the source code before you reason. Every claim in your analysis must be grounded in evidence you actually read — code where available (cite file:line), or the endpoint description and upstream artifacts (route table, OpenAPI spec, README) when the handler source is unreachable. In the latter case, follow the source-unavailable mode rules in the prompt body: cite the grounding source, tag the claim \`[unverified: source unavailable]\`, and cap pentest objective priority at \`p1\`. Generic OWASP/security filler that isn't tied to a specific input, transformation, line, or upstream artifact is not acceptable.
 
 Work the four parts in order. Do not skip ahead. The business logic is the anchor for the threat model; the threat model is the anchor for the test plan. Threats that do not reference the business logic are ungrounded. Tests that do not reference a threat are ungrounded.
 
@@ -395,6 +408,7 @@ function buildThreatModelPrompt(
 1. Read the source file at \`${input.file ?? "(unknown)"}\` ${lineRange ? `(${lineRange})` : ""} to understand the implementation.
 2. Trace into anything the handler depends on that affects security: auth middleware, repositories, validators, ORM models, external SDK calls, shared helpers. Do not stop at the handler function body.
 3. If a dependency is out of scope or you chose not to trace it, record that under \`analysisGaps\` in Part 1 — do not silently assume.
+4. **Source-unavailable mode.** If the handler source isn't reachable in your environment at all — not just out of scope, but actually unavailable (not checked out, missing from the sandbox, only the route table or OpenAPI spec is present) — record this once in \`analysisGaps\` and continue. In this mode the \`Cite file:line\` requirements below loosen to "cite the grounding source you actually read" (the endpoint description, route table entry, OpenAPI spec, README, or other upstream artifact). Each emitted threat-model vector and pentest objective must be tagged \`[unverified: source unavailable]\` in its title, and pentest objectives derived only from a description are capped at priority \`p1\` (never \`p0\`) because the vector hasn't been confirmed reachable in this implementation. Never fabricate file:line citations or invent code paths.
 
 Work Parts 1 → 4 in order. Do not start Part 2 until Part 1 is complete. Do not write Part 4 until Part 2 is complete.
 
@@ -444,18 +458,43 @@ Produce a comprehensive threat model grounded in Part 1. Aim for 800-2000 words.
 Include a mix: an opportunistic external attacker, an authenticated user abusing legitimate access, and at least one more sophisticated or insider profile when realistic. Skip profiles that don't make sense for this endpoint.
 
 ### Attack Vectors
-Specific attacks relevant to this endpoint. Each vector must:
+
+Specific attacks relevant to this endpoint. Work in two steps.
+
+#### Step 1 — classify by functional role
+
+Before enumerating, name the 1–3 **functional roles** this endpoint plays (from Part 1's purpose and data flow), then for each role recall the abuse classes characteristic of endpoints of that kind. Common roles:
+
+| Role | Characteristic abuse classes |
+|---|---|
+| **Authentication / authz flow** (login, OAuth, password reset, MFA, token exchange) | Credential stuffing, account enumeration via timing or error differential, session fixation, token replay, OAuth \`state\` / \`nonce\` / \`code\` confusion, MFA bypass, password-reset token timing, cross-provider account-linking abuse |
+| **Money movement / billing** (payments, refunds, credits, subscription changes) | Double-spend race, idempotency-key replay or omission, currency or unit confusion, client-trusted totals or prices, refund-to-other-method abuse, treating a webhook as the source of truth |
+| **Webhook receiver / external callback** | Signature stripping or partial-signature accept, signature timing oracle, replay without a \`Date\` or nonce window, SSRF via callback or follow-up URL, accept-on-malformed |
+| **File / media processing** (upload, parse, transform) | Zip / decompression bombs, polyglot files, parser RCE in image / PDF / XML / archive libs, MIME spoofing across downstream handlers, path traversal in stored filenames, content-disposition or cross-site download abuse |
+| **AI / LLM interaction** (model prompt, tool call, retrieval — directly in this handler or via a downstream service it proxies user content to) | Direct prompt injection, indirect prompt injection via attachments / retrieved docs / tool output / cross-user data, system-prompt or context leakage, jailbreak or policy bypass, tool / function-call hijacking, unsafe handling of model output (passed to \`exec\` / \`eval\`, rendered as HTML or markdown, used to build SQL or shell, returned across tenants) |
+| **Search / query** (full-text, structured filters, GraphQL) | ReDoS, NoSQL operator injection, query-language eval, mass-assignment via filter or sort params, pagination boundary disclosure |
+| **Outbound messaging** (email, SMS, push) | Header injection (CRLF in subject / to / from), open-relay abuse, IDN or homoglyph spoofing, recipient enumeration, attachment-based delivery abuse |
+| **Admin / privileged operation** (bulk delete, role change, impersonation, audit) | Audit-log bypass, dangerous defaults on bulk operations, UI-only gating not enforced server-side, impersonation token misuse, takeover via support or "act-as" surfaces |
+| **Multi-tenant data access** (handler whose authority depends on a tenant or owner ID it accepts) | Cross-tenant ID injection in path / body / header, tenant-ID type confusion, shared-cache leakage across tenants, ownership check missing on referenced sub-resources |
+| **Public content / static** | Cache pollution, response-splitting or header injection, scraping or amplification, parameter-based information disclosure |
+
+This is a **recall checklist, not a license to invent.** Skip role classes that have no anchor in this endpoint's code. Endpoint-specific vectors that don't fall under a listed role are welcome — mark them "endpoint-specific". Endpoint descriptions that name a role (e.g. "AI assistant", "payment intent", "webhook receiver", "password reset") are a strong signal to classify the corresponding role; if the handler source is unreachable, classify the role anyway and proceed under **source-unavailable mode** (defined in the reading-the-code section) — vectors still emit, but they're tagged \`[unverified: source unavailable]\` and capped at \`p1\` in Part 4.
+
+#### Step 2 — enumerate
+
+Each vector must:
 - Reference a concrete **input** from Part 1's data flow (the entry point).
 - Reference the **invariant(s)** from Part 1 that it would break, when applicable. If a vector is a config/infrastructure concern with no business invariant, say so.
-- Describe the **mechanism** concretely — reference actual parameters, data flows, and code patterns you observed. Cite file:line.
+- Describe the **mechanism** concretely — reference actual parameters, data flows, and code patterns you observed. Cite file:line (or, in source-unavailable mode, the grounding source you read — see the reading-the-code section).
 - State the **observable signal** of a successful exploit (what you would see externally to confirm it worked).
 - Tie back to at least one attacker profile: "A [Profile Name] could …".
 - Note **likelihood** (unlikely / possible / likely / near-certain) based on what you actually read — not OWASP base rates.
 - Note **impact** (low / medium / high / critical).
+- Reference the **role class** from Step 1 (e.g. "AI / LLM: indirect prompt injection") or label "endpoint-specific".
 
 Be exhaustive rather than selective. It is fine — and expected — to include vectors rated \`likelihood: unlikely\` if they are technically realizable against this endpoint. Pruning happens in Part 4 via priority, not here. If two vectors differ only in payload variant (e.g. time-based vs. error-based SQLi on the same input), list them as separate vectors — they have different test procedures and success signals.
 
-Do not list generic OWASP categories that aren't grounded in something you read. "Consider CSRF" without a state-changing endpoint and cookie auth is filler.
+Do not list generic OWASP categories that aren't grounded in something you read. "Consider CSRF" without a state-changing endpoint and cookie auth is filler. The role registry above is a *recall trigger*, not a checklist of vectors to claim — every emitted vector must still trace to specific code, inputs, or invariants from Part 1.
 
 ### Risk Assessment
 Worst-case impact of successful exploitation, and which vectors matter most given the combination of attackers and business logic above.
@@ -488,7 +527,7 @@ Score each dimension based on what you observed in the code. The total (0-10) is
 - 1 = Moderate concerns: weak/absent input validation, verbose error handling leaking internals, permissive CORS, missing output encoding, missing rate limiting on sensitive operations
 - 0 = No observable security issues — code follows standard defensive patterns for its context
 
-Every \`*Reasoning\` field must cite specific code (file:line). "Handler validates input" is insufficient. "Handler validates orderId via zod schema (orders.ts:40)" is required.
+Every \`*Reasoning\` field must cite specific code (file:line). "Handler validates input" is insufficient. "Handler validates orderId via zod schema (orders.ts:40)" is required. In source-unavailable mode, cite the grounding source you read (e.g. "Endpoint description says auth required; no route table available") instead of file:line, and tag the reasoning \`[unverified: source unavailable]\`.
 
 In \`riskScoreJustification\`, explain how the four sub-scores combine for this specific endpoint and which attacker profile from Part 2 is most concerning given that combination. Do not restate the rubric.
 
