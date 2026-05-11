@@ -508,16 +508,16 @@ describe("mapAppWithSurface — scope filter", () => {
     }
   });
 
-  it("scans repo root when allowRepoRoot is true (single-app repos)", () => {
+  it("scans repo root when isSingleAppRepo is true", () => {
     const repoRoot = realpathSync(
-      mkdtempSync(join(tmpdir(), "apex-scope-root-allow-")),
+      mkdtempSync(join(tmpdir(), "apex-scope-root-single-")),
     );
     try {
       writeRootPackageJson(repoRoot, { express: "^4.18.0" });
       writeExpressApp(join(repoRoot, "server.js"), "/single");
 
       const out = mapAppWithSurface(repoRoot, repoRoot, {
-        allowRepoRoot: true,
+        isSingleAppRepo: true,
       });
 
       expect(out.mode).toBe("surface");

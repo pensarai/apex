@@ -186,8 +186,8 @@ export function scopeEndpointsToApp(
  * for pages) is applied at the document_endpoint write boundary, not here.
  */
 export interface MapAppWithSurfaceOptions {
-  /** Skip the repo-root fallback guard. Must stay false for multi-app repos. */
-  allowRepoRoot?: boolean;
+  /** True when the repo contains a single service app (no cross-app scoping needed). */
+  isSingleAppRepo?: boolean;
 }
 
 export function mapAppWithSurface(
@@ -199,7 +199,7 @@ export function mapAppWithSurface(
   const absRoot = resolve(repoRoot);
 
   // (1) Force fallback when the app's location is the repo root itself.
-  if (absApp === absRoot && !options?.allowRepoRoot) {
+  if (absApp === absRoot && !options?.isSingleAppRepo) {
     return {
       mode: "fallback",
       reason: "app.location is repo root — cannot scope",
