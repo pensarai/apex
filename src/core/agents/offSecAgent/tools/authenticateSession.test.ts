@@ -1,7 +1,15 @@
 import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type MockInstance,
+  vi,
+} from "vitest";
 import { CredentialManager } from "../../../credentials";
 import type { SessionInfo } from "../../../session";
 import {
@@ -183,7 +191,7 @@ describe("extractAuthArtifacts", () => {
 // ---------------------------------------------------------------------------
 
 describe("authenticate_session tool", () => {
-  let fetchSpy: ReturnType<typeof vi.spyOn> | undefined;
+  let fetchSpy: MockInstance<typeof fetch> | undefined;
   let rootPath: string | undefined;
 
   beforeEach(() => {
@@ -202,7 +210,18 @@ describe("authenticate_session tool", () => {
     }
   });
 
-  async function callTool(params: Record<string, unknown>) {
+  // `tool.execute` is typed as returning a value OR an AsyncIterable; the
+  // implementation never streams, so narrow to the value branch for tests.
+  type AuthToolResult = Exclude<
+    Awaited<
+      ReturnType<NonNullable<ReturnType<typeof authenticateSession>["execute"]>>
+    >,
+    AsyncIterable<unknown>
+  >;
+
+  async function callTool(
+    params: Record<string, unknown>,
+  ): Promise<{ result: AuthToolResult; rootPath: string }> {
     const setup = makeCtx();
     rootPath = setup.rootPath;
     const tool = authenticateSession(setup.ctx);
@@ -218,7 +237,7 @@ describe("authenticate_session tool", () => {
           ...params,
         },
         { toolCallId: "", messages: [], abortSignal: undefined as never },
-      )) as Awaited<ReturnType<NonNullable<typeof tool.execute>>>,
+      )) as AuthToolResult,
       rootPath: setup.rootPath,
     };
   }
@@ -400,7 +419,7 @@ describe("authenticate_session tool", () => {
         toolCallDescription: "test",
       },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
-    )) as Awaited<ReturnType<NonNullable<typeof tool.execute>>>;
+    )) as AuthToolResult;
 
     expect(result.authenticated).toBe(true);
     expect(result.bearerToken).toBe("T");
