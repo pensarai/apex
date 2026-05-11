@@ -107,6 +107,7 @@
     "prepublishOnly": "npm run build",
     "start": "bun run src/tui/index.tsx",
     "test": "vitest run",
+    "test:judge-eval": "vitest run src/core/agents/specialized/findingJudge/judge.eval.test.ts",
     "test:watch": "vitest",
     "tsc": "tsc --noEmit"
   },

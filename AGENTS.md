@@ -30,6 +30,7 @@ See `package.json` `scripts` for the full list.
 
 - Unit tests (`src/core/installation/`, `src/core/findings/`, `src/core/credentials/`) and AI stream tests (`src/core/ai/ai.test.ts`) run without API keys.
 - Integration tests (`src/tests/auth.test.ts`, `src/tests/attackSurface.test.ts`, `src/core/api/attackSurface.test.ts`) require an `ANTHROPIC_API_KEY` (or other AI provider key) and make real network calls to external services with 2-minute timeouts. They are currently skipped via `describe.skip` because they depend on a live staging server and LLM API calls.
+- Finding judge evals (`src/core/agents/specialized/findingJudge/judge.eval.test.ts`) are manual/nightly LLM evals. Run locally with `RUN_FINDING_JUDGE_EVALS=1 bun run test:judge-eval`; override the default model (`claude-haiku-4-5`) with `FINDING_JUDGE_EVAL_MODEL=<model-id>`. The selected provider must have its API key in the environment.
 - Some auth tests also require `TEST_AUTH_USERNAME` and `TEST_AUTH_PASSWORD` environment variables.
 - Tests use vitest with the `node` environment and a 120-second default timeout (see `vitest.config.ts`).
 - When making code changes, always run `bun run test` — all tests should pass (or be skipped) before committing.
