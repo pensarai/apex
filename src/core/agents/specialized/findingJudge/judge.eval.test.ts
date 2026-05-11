@@ -1,14 +1,14 @@
-import { appendFileSync } from "fs";
+import { appendFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { judgeFinding, type FindingType } from "./index";
 import type { AIModel } from "../../../ai";
 import { getModelInfo } from "../../../ai/models";
 import {
-  judgeEvalCases,
   type JudgeEvalCase,
   type JudgeEvalCategory,
+  judgeEvalCases,
 } from "./evals/cases";
+import { type FindingType, judgeFinding } from "./index";
 
 const RUN_EVALS = process.env.RUN_FINDING_JUDGE_EVALS === "1";
 const EVAL_MODEL = (process.env.FINDING_JUDGE_EVAL_MODEL ||
@@ -16,6 +16,8 @@ const EVAL_MODEL = (process.env.FINDING_JUDGE_EVAL_MODEL ||
 const CONFIDENTLY_WRONG_THRESHOLD = 0.8;
 const TRUE_POSITIVE_TARGET = 0.95;
 const FALSE_POSITIVE_REJECTION_TARGET = 0.9;
+const EXPECTED_BEHAVIOR_TARGET = 1;
+const INFORMATIONAL_TARGET = 1;
 const EVAL_TIMEOUT_MS = 30 * 60 * 1000;
 
 interface EvalRecord {
@@ -240,6 +242,27 @@ function logSummary(records: EvalRecord[]): void {
   }
 }
 
+function compactFailure(record: EvalRecord) {
+  return {
+    name: record.testCase.name,
+    category: record.testCase.category,
+    expected: record.testCase.expected,
+    actual: {
+      valid: record.actual.valid,
+      findingType: record.actual.findingType,
+      confidence: record.actual.confidence,
+      reasoning: record.actual.reasoning,
+      concerns: record.actual.concerns,
+      error: record.actual.error,
+    },
+    checks: {
+      labelPassed: record.labelPassed,
+      confidencePassed: record.confidencePassed,
+      concernsPassed: record.concernsPassed,
+    },
+  };
+}
+
 describeIfEnabled("Finding Judge evals", () => {
   it(
     "meets labeled seed dataset expectations",
@@ -259,32 +282,17 @@ describeIfEnabled("Finding Judge evals", () => {
 
       logSummary(records);
 
-      const failures = records
-        .filter((record) => !record.passed)
-        .map((record) => ({
-          name: record.testCase.name,
-          category: record.testCase.category,
-          expected: record.testCase.expected,
-          actual: {
-            valid: record.actual.valid,
-            findingType: record.actual.findingType,
-            confidence: record.actual.confidence,
-            reasoning: record.actual.reasoning,
-            concerns: record.actual.concerns,
-            error: record.actual.error,
-          },
-          checks: {
-            labelPassed: record.labelPassed,
-            confidencePassed: record.confidencePassed,
-            concernsPassed: record.concernsPassed,
-          },
-        }));
-
       const truePositiveRecords = records.filter(
         (record) => record.testCase.category === "true-positive",
       );
       const falsePositiveRecords = records.filter(
         (record) => record.testCase.category === "false-positive",
+      );
+      const expectedBehaviorRecords = records.filter(
+        (record) => record.testCase.category === "expected-behavior",
+      );
+      const informationalRecords = records.filter(
+        (record) => record.testCase.category === "informational",
       );
       const truePositiveAcceptance =
         truePositiveRecords.filter(
@@ -294,20 +302,46 @@ describeIfEnabled("Finding Judge evals", () => {
         falsePositiveRecords.filter(
           (record) => !record.actual.valid && record.labelPassed,
         ).length / falsePositiveRecords.length;
+      const expectedBehaviorAccuracy =
+        expectedBehaviorRecords.filter((record) => record.labelPassed).length /
+        expectedBehaviorRecords.length;
+      const informationalAccuracy =
+        informationalRecords.filter((record) => record.labelPassed).length /
+        informationalRecords.length;
       const confidentlyWrong = records.filter(
         (record) =>
           !record.labelPassed &&
           record.actual.confidence > CONFIDENTLY_WRONG_THRESHOLD,
       );
+      const confidenceOrConcernFailures = records
+        .filter((record) => !record.confidencePassed || !record.concernsPassed)
+        .map(compactFailure);
+      const categoryGateFailures = [
+        {
+          category: "true-positive",
+          actual: truePositiveAcceptance,
+          target: TRUE_POSITIVE_TARGET,
+        },
+        {
+          category: "false-positive",
+          actual: falsePositiveRejection,
+          target: FALSE_POSITIVE_REJECTION_TARGET,
+        },
+        {
+          category: "expected-behavior",
+          actual: expectedBehaviorAccuracy,
+          target: EXPECTED_BEHAVIOR_TARGET,
+        },
+        {
+          category: "informational",
+          actual: informationalAccuracy,
+          target: INFORMATIONAL_TARGET,
+        },
+      ].filter((gate) => gate.actual < gate.target);
 
-      expect(failures).toEqual([]);
-      expect(truePositiveAcceptance).toBeGreaterThanOrEqual(
-        TRUE_POSITIVE_TARGET,
-      );
-      expect(falsePositiveRejection).toBeGreaterThanOrEqual(
-        FALSE_POSITIVE_REJECTION_TARGET,
-      );
-      expect(confidentlyWrong).toHaveLength(0);
+      expect.soft(categoryGateFailures).toEqual([]);
+      expect.soft(confidentlyWrong.map(compactFailure)).toEqual([]);
+      expect.soft(confidenceOrConcernFailures).toEqual([]);
     },
     EVAL_TIMEOUT_MS,
   );
