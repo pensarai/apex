@@ -168,13 +168,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onCacheMetrics,
     responseSchema: AppsDiscoveryResultSchema,
     projectThreatModel,
-    // Phase 1 ONLY discovers apps. document_endpoint is reserved for
-    // Phase 2's per-app task agents — exposing it here causes the
-    // apps-discovery agent to document endpoints inline (and spawn
-    // threat models under itself), which flattens the UI hierarchy
-    // and makes Phase 2's per-app subagents redundant. Also a tool-level
-    // guard symmetric to Phase 2's `excludeTools: ["document_app"]` in
-    // spawnDiscoveryAgent and endpointDocumentationAgent.
+    // Reserved for Phase 2's per-app task agents. Inline documentation
+    // here would flatten the UI hierarchy under Phase 1.
     excludeTools: ["document_endpoint"],
   });
 
@@ -182,10 +177,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     `[whitebox-workflow] Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`,
   );
 
-  // Phase 1's subagent stays open until Phase 2 finishes — it's the
-  // umbrella under which per-app synthetic nodes nest. The agent's own
-  // run finishes inside `appsAgent.consume()`, but we hold the
-  // lifecycle row open so child events anchor here.
+  // Held open until Phase 2 finishes so per-app synthetic nodes can nest under it.
   const WORKFLOW_UMBRELLA_ID = "whitebox-apps-discovery";
 
   console.log(
@@ -288,18 +280,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     completedApps: 0,
   });
 
-  // Per-app synthetic parent nodes. These aren't real agents — they're
-  // grouping nodes that live between the umbrella ("Whitebox Apps
-  // Discovery") and the per-task agents (pages/api/cloud/endpoint-doc).
-  // Their lifecycle anchors child events so the UI can render the desired
-  // hierarchy:
-  //   whitebox-apps-discovery
-  //     ├── app:myapp1
-  //     │     ├── pages-myapp1
-  //     │     │     └── threat-model-...
-  //     │     └── apiEndpoints-myapp1
-  //     └── app:myapp2
-  //           └── ...
+  // Synthetic grouping nodes between the umbrella and per-task agents,
+  // so the UI nests pages/api/endpoint-doc agents under their app.
   const appNodeIdFor = (appName: string) => `app:${sanitizeName(appName)}`;
   const appAnyTaskFailed = new Map<string, boolean>();
   for (const app of appsResult.apps) {
@@ -460,8 +442,6 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       } finally {
         completedAppCount++;
 
-        // All tasks for this app finished — close the synthetic per-app
-        // node so the UI shows it as done.
         const appStatus = appAnyTaskFailed.get(app.name)
           ? ("failed" as const)
           : ("completed" as const);
@@ -483,7 +463,6 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     },
   );
 
-  // Close the umbrella now that all per-app nodes are done.
   console.log(
     `[whitebox-workflow] emit subagent-complete id="${WORKFLOW_UMBRELLA_ID}" parent="(top-level)" status=completed`,
   );

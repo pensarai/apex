@@ -44,12 +44,7 @@ interface SharedAgentOptions {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   projectThreatModel?: string;
-  /**
-   * Parent subagent id for hierarchy tracking. When set, emitted
-   * `subagent-spawn` / `subagent-complete` events carry this as
-   * `parentSubagentId` so the UI can nest endpoint-doc agents under
-   * their per-app synthetic node.
-   */
+  /** Parent subagent id for hierarchy tracking on emitted lifecycle events. */
   parentSubagentId?: string;
 }
 
