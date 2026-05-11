@@ -306,10 +306,14 @@ export async function generateThreatModelForEndpoint(
 
     const subagentId = `threat-model-${sanitize(input.appName)}-${sanitize(input.routePath)}`;
 
+    console.log(
+      `[threatModel] emit subagent-spawn id="${subagentId}" parent="${ctx.subagentId ?? "(top-level)"}"`,
+    );
     ctx.eventBus?.emit("subagent-spawn", {
       subagentId,
       name: `Threat Model: ${input.routePath}`,
       input: { app: input.appName, endpoint: input.routePath },
+      parentSubagentId: ctx.subagentId,
     });
 
     const localBus = new AgentEventBus();
@@ -336,6 +340,7 @@ export async function generateThreatModelForEndpoint(
       ctx.eventBus?.emit("subagent-complete", {
         subagentId,
         status: "completed",
+        parentSubagentId: ctx.subagentId,
       });
 
       if (!result) return null;
@@ -367,6 +372,7 @@ export async function generateThreatModelForEndpoint(
       ctx.eventBus?.emit("subagent-complete", {
         subagentId,
         status: "failed",
+        parentSubagentId: ctx.subagentId,
       });
       console.error(
         `Threat model generation failed for ${input.routePath}: ${error instanceof Error ? error.message : String(error)}`,

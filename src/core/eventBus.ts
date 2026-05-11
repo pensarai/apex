@@ -37,10 +37,23 @@ export type AgentEventMap = {
     subagentId: string;
     name?: string;
     input: unknown;
+    /**
+     * The subagent that spawned this subagent. When omitted, the
+     * spawned subagent is a top-level child of the root agent /
+     * workflow. Populated automatically by {@link AgentEventBus.attachChild}
+     * when not explicitly provided by the emitter.
+     */
+    parentSubagentId?: string;
   };
   "subagent-complete": {
     subagentId: string;
     status: "completed" | "failed";
+    /**
+     * Mirrors {@link AgentEventMap["subagent-spawn"].parentSubagentId}.
+     * Populated automatically by {@link AgentEventBus.attachChild}
+     * when not explicitly provided by the emitter.
+     */
+    parentSubagentId?: string;
   };
   "workflow-phase-start": {
     phase: "discovery" | "pentesting" | "reporting";
@@ -183,6 +196,13 @@ export class AgentEventBus {
    * `command-output`) without `subagentId`. This method injects the
    * ID so the parent's routing logic (subagent store vs main view)
    * works correctly.
+   *
+   * For `subagent-spawn` and `subagent-complete` events, the payload
+   * already carries the *new* subagent's ID (the one being spawned /
+   * completing). To preserve parent/child hierarchy across nested
+   * sub-agents, this method also injects `parentSubagentId` (the
+   * `subagentId` argument passed here) on those two events when not
+   * already set by the emitter.
    */
   static attachChild(
     child: AgentEventBus,
@@ -191,12 +211,33 @@ export class AgentEventBus {
   ): void {
     if (!parent) return;
     for (const key of CHILD_BUS_FORWARDED_EVENTS) {
-      child.on(key, (payload: AgentEventMap[typeof key]) => {
+      // Re-bind to a fresh local with a parametric type so TS treats
+      // `key` and the emitted payload as the same K for the duration
+      // of the handler. Without this, the union of payload shapes from
+      // AgentEventMap is too wide for `parent.emit(key, payload)` to
+      // typecheck on the forwarding branch.
+      const forwardKey = key as keyof AgentEventMap;
+      child.on(forwardKey, (payload: AgentEventMap[typeof forwardKey]) => {
         const p = payload as Record<string, unknown>;
+
+        const isLifecycle =
+          forwardKey === "subagent-spawn" ||
+          forwardKey === "subagent-complete";
+
+        if (isLifecycle) {
+          const next = { ...p };
+          // The new subagent's id always stays on the payload
+          if (!next.parentSubagentId) {
+            next.parentSubagentId = subagentId;
+          }
+          parent.emit(forwardKey, next as never);
+          return;
+        }
+
         if (!p.subagentId) {
-          parent.emit(key, { ...p, subagentId } as AgentEventMap[typeof key]);
+          parent.emit(forwardKey, { ...p, subagentId } as never);
         } else {
-          parent.emit(key, payload);
+          parent.emit(forwardKey, payload as never);
         }
       });
     }

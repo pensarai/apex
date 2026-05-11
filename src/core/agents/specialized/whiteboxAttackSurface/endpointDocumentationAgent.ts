@@ -44,6 +44,13 @@ interface SharedAgentOptions {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   projectThreatModel?: string;
+  /**
+   * Parent subagent id for hierarchy tracking. When set, emitted
+   * `subagent-spawn` / `subagent-complete` events carry this as
+   * `parentSubagentId` so the UI can nest endpoint-doc agents under
+   * their per-app synthetic node.
+   */
+  parentSubagentId?: string;
 }
 
 interface EndpointDocumentationInput extends SharedAgentOptions {
@@ -161,6 +168,7 @@ async function runEndpointDocumentationAgent(
     onStepFinish,
     onCacheMetrics,
     projectThreatModel,
+    parentSubagentId,
   } = opts;
 
   const subagentId = `endpoint-doc-${slug(app.name)}-${slug(endpoint.path)}`;
@@ -176,6 +184,7 @@ async function runEndpointDocumentationAgent(
       method: displayMethod,
       path: endpoint.path,
     },
+    parentSubagentId,
   });
 
   const objective = buildEndpointDocumentationObjective({
@@ -213,6 +222,7 @@ async function runEndpointDocumentationAgent(
     eventBus?.emit("subagent-complete", {
       subagentId,
       status: "completed",
+      parentSubagentId,
     });
   } catch (error) {
     console.error(
@@ -222,6 +232,7 @@ async function runEndpointDocumentationAgent(
     eventBus?.emit("subagent-complete", {
       subagentId,
       status: "failed",
+      parentSubagentId,
     });
   }
 }
