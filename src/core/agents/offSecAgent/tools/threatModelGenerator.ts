@@ -444,7 +444,31 @@ Produce a comprehensive threat model grounded in Part 1. Aim for 800-2000 words.
 Include a mix: an opportunistic external attacker, an authenticated user abusing legitimate access, and at least one more sophisticated or insider profile when realistic. Skip profiles that don't make sense for this endpoint.
 
 ### Attack Vectors
-Specific attacks relevant to this endpoint. Each vector must:
+
+Specific attacks relevant to this endpoint. Work in two steps.
+
+#### Step 1 — classify by functional role
+
+Before enumerating, name the 1–3 **functional roles** this endpoint plays (from Part 1's purpose and data flow), then for each role recall the abuse classes characteristic of endpoints of that kind. Common roles:
+
+| Role | Characteristic abuse classes |
+|---|---|
+| **Authentication / authz flow** (login, OAuth, password reset, MFA, token exchange) | Credential stuffing, account enumeration via timing or error differential, session fixation, token replay, OAuth \`state\` / \`nonce\` / \`code\` confusion, MFA bypass, password-reset token timing, cross-provider account-linking abuse |
+| **Money movement / billing** (payments, refunds, credits, subscription changes) | Double-spend race, idempotency-key replay or omission, currency or unit confusion, client-trusted totals or prices, refund-to-other-method abuse, treating a webhook as the source of truth |
+| **Webhook receiver / external callback** | Signature stripping or partial-signature accept, signature timing oracle, replay without a \`Date\` or nonce window, SSRF via callback or follow-up URL, accept-on-malformed |
+| **File / media processing** (upload, parse, transform) | Zip / decompression bombs, polyglot files, parser RCE in image / PDF / XML / archive libs, MIME spoofing across downstream handlers, path traversal in stored filenames, content-disposition or cross-site download abuse |
+| **AI / LLM interaction** (model prompt, tool call, retrieval — directly in this handler or via a downstream service it proxies user content to) | Direct prompt injection, indirect prompt injection via attachments / retrieved docs / tool output / cross-user data, system-prompt or context leakage, jailbreak or policy bypass, tool / function-call hijacking, unsafe handling of model output (passed to \`exec\` / \`eval\`, rendered as HTML or markdown, used to build SQL or shell, returned across tenants) |
+| **Search / query** (full-text, structured filters, GraphQL) | ReDoS, NoSQL operator injection, query-language eval, mass-assignment via filter or sort params, pagination boundary disclosure |
+| **Outbound messaging** (email, SMS, push) | Header injection (CRLF in subject / to / from), open-relay abuse, IDN or homoglyph spoofing, recipient enumeration, attachment-based delivery abuse |
+| **Admin / privileged operation** (bulk delete, role change, impersonation, audit) | Audit-log bypass, dangerous defaults on bulk operations, UI-only gating not enforced server-side, impersonation token misuse, takeover via support or "act-as" surfaces |
+| **Multi-tenant data access** (handler whose authority depends on a tenant or owner ID it accepts) | Cross-tenant ID injection in path / body / header, tenant-ID type confusion, shared-cache leakage across tenants, ownership check missing on referenced sub-resources |
+| **Public content / static** | Cache pollution, response-splitting or header injection, scraping or amplification, parameter-based information disclosure |
+
+This is a **recall checklist, not a license to invent.** Skip role classes that have no anchor in this endpoint's code. Endpoint-specific vectors that don't fall under a listed role are welcome — mark them "endpoint-specific". Endpoint descriptions that name a role (e.g. "AI assistant", "payment intent", "webhook receiver", "password reset") are a strong signal to classify the corresponding role even when the handler source isn't reachable for verification.
+
+#### Step 2 — enumerate
+
+Each vector must:
 - Reference a concrete **input** from Part 1's data flow (the entry point).
 - Reference the **invariant(s)** from Part 1 that it would break, when applicable. If a vector is a config/infrastructure concern with no business invariant, say so.
 - Describe the **mechanism** concretely — reference actual parameters, data flows, and code patterns you observed. Cite file:line.
@@ -452,23 +476,11 @@ Specific attacks relevant to this endpoint. Each vector must:
 - Tie back to at least one attacker profile: "A [Profile Name] could …".
 - Note **likelihood** (unlikely / possible / likely / near-certain) based on what you actually read — not OWASP base rates.
 - Note **impact** (low / medium / high / critical).
+- Reference the **role class** from Step 1 (e.g. "AI / LLM: indirect prompt injection") or label "endpoint-specific".
 
 Be exhaustive rather than selective. It is fine — and expected — to include vectors rated \`likelihood: unlikely\` if they are technically realizable against this endpoint. Pruning happens in Part 4 via priority, not here. If two vectors differ only in payload variant (e.g. time-based vs. error-based SQLi on the same input), list them as separate vectors — they have different test procedures and success signals.
 
-#### LLM-specific vectors (only if Part 1 identified an LLM hop)
-
-If any input from Part 1 reaches a model prompt, tool/function call, or retrieval context — directly in this handler or via a downstream service — you MUST enumerate the LLM-specific vectors that apply, in addition to the standard ones above. Treat the LLM as a trust boundary as real as a SQL query or a shell exec.
-
-- **Direct prompt injection** — attacker-controlled text in the request becomes part of the model's instruction context.
-- **Indirect prompt injection** — attacker-controlled content reaches the model via attachments, retrieved documents, tool output, or another user's data.
-- **System-prompt / context leakage** — model induced to reveal its system prompt, hidden tool definitions, or other tenants' context.
-- **Jailbreak / policy bypass** — model induced to perform actions or emit content its policy forbids.
-- **Tool / function-call hijacking** — model induced to invoke tools the user shouldn't be able to invoke, or with arguments the user shouldn't control (file reads, network calls, DB queries, payments).
-- **Unsafe handling of model output** — model output passed to \`exec\`/\`eval\`, rendered as HTML/markdown without sanitization, used to build SQL/shell, or returned to other users without trust separation.
-
-Cite file:line for the LLM hop (the SDK call, the proxy to the model service, the prompt template). If the handler is a pure proxy that forwards user content to a downstream LLM service, the LLM hop is the downstream call — say so explicitly and enumerate these vectors anyway. Endpoint descriptions that mention "AI", "assistant", "chat", "LLM", or "agent" are a strong signal that Part 1 should flag an LLM hop even when the handler itself doesn't import a model SDK.
-
-Do not list generic OWASP categories that aren't grounded in something you read. "Consider CSRF" without a state-changing endpoint and cookie auth is filler.
+Do not list generic OWASP categories that aren't grounded in something you read. "Consider CSRF" without a state-changing endpoint and cookie auth is filler. The role registry above is a *recall trigger*, not a checklist of vectors to claim — every emitted vector must still trace to specific code, inputs, or invariants from Part 1.
 
 ### Risk Assessment
 Worst-case impact of successful exploitation, and which vectors matter most given the combination of attackers and business logic above.
