@@ -183,6 +183,7 @@ Usage:
   pensar pentest [options]            Run a full pentest orchestration
   pensar targeted-pentest [options]   Run a targeted pentest on a single target
   pensar threat-model [options]       Generate application-centric threat model
+  pensar triage [options]             Triage an inbound bug bounty report
   pensar login                        Connect to Pensar Console
   pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)
   pensar projects                     List workspace projects
@@ -229,6 +230,15 @@ targeted-pentest options:
 
 threat-model options:
   --output, -o <path>  Output file path (default: ./threat-model.md)
+  --model <model>      AI model (default: auto-selected from configured provider)
+
+triage options:
+  --report <path>      (required) Path to the inbound bug bounty report file
+  --target <url>       (required) Live target URL for PoC re-verification
+  --source <src>       Report source: hackerone | auto (default: auto)
+  --output, -o <dir>   Output directory (default: ./bounty-triage/<slug>)
+  --findings <dir>     Existing findings directory to dedupe against
+  --cwd <path>         Repository root (default: process cwd)
   --model <model>      AI model (default: auto-selected from configured provider)
 
 Global options:
@@ -434,6 +444,77 @@ Model:    ${model}
   );
 }
 
+async function runTriage() {
+  const { config } = await import("dotenv");
+  config();
+
+  const { runTriageWorkflow } = await import("./core/api/triage");
+  const { config: appConfig } = await import("./core/config");
+  const path = await import("path");
+
+  const pensarConfig = await appConfig.get();
+  const model = await resolveCliModel();
+
+  const reportArg = getArgRequired("--report");
+  const target = getArgRequired("--target");
+  const sourceArg = getArg("--source");
+  const source =
+    sourceArg === "hackerone" || sourceArg === "auto" ? sourceArg : undefined;
+  if (sourceArg && !source) {
+    console.error(
+      `Error: --source must be 'hackerone' or 'auto' (got '${sourceArg}')`,
+    );
+    process.exit(1);
+  }
+  const outputArg = getArg("--output") ?? getArg("-o");
+  const findingsDir = getArg("--findings");
+  const cwdArg = getArg("--cwd") ?? process.cwd();
+
+  const cwd = path.isAbsolute(cwdArg) ? cwdArg : path.resolve(process.cwd(), cwdArg);
+  const reportPath = path.isAbsolute(reportArg)
+    ? reportArg
+    : path.resolve(process.cwd(), reportArg);
+  const outputDir = outputArg
+    ? path.isAbsolute(outputArg)
+      ? outputArg
+      : path.resolve(process.cwd(), outputArg)
+    : undefined;
+
+  const sep = "=".repeat(60);
+  console.log(`${sep}
+BUG BOUNTY TRIAGE
+${sep}
+Report:   ${reportPath}
+Target:   ${target}
+Codebase: ${cwd}
+Model:    ${model}
+`);
+
+  const bus = new AgentEventBus();
+  attachCliAgentStreamListeners(bus);
+
+  const { result, triageMarkdownPath, decisionJsonPath } = await runTriageWorkflow(
+    {
+      reportPath,
+      target,
+      cwd,
+      output: outputDir,
+      source,
+      model,
+      authConfig: buildAuthConfig(pensarConfig),
+      eventBus: bus,
+      findingsDir,
+    },
+  );
+
+  console.log(`\n${sep}
+COMPLETE
+${sep}
+Decision: ${result.decision.outcome} (${result.decision.reason})
+Triage:   ${triageMarkdownPath}
+Decision: ${decisionJsonPath}`);
+}
+
 async function runOperator() {
   const { config } = await import("dotenv");
   config();
@@ -607,6 +688,8 @@ if (hasFlag("-p") || command === "--prompt") {
   await import("./cli/config");
 } else if (command === "threat-model") {
   await runThreatModel();
+} else if (command === "triage") {
+  await runTriage();
 } else if (command === "doctor") {
   const { runDoctor } = await import("./core/doctor");
   await runDoctor();

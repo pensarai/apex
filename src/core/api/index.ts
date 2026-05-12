@@ -96,3 +96,8 @@ export type {
   ThreatModelWorkflowResult,
 } from "./threatModel";
 export { runThreatModelWorkflow } from "./threatModel";
+export type {
+  TriageWorkflowInput,
+  TriageWorkflowResult,
+} from "./triage";
+export { runTriageWorkflow } from "./triage";
