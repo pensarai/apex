@@ -36,7 +36,7 @@ import {
   type CacheMetrics,
   modelSupportsThinking,
 } from "../../../core/ai";
-import { runOffensiveSecurityAgent } from "../../../core/api";
+import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
 import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {

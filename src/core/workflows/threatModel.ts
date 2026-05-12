@@ -6,7 +6,7 @@ import {
   SKILL_TOOL_NAMES,
 } from "../agents/offSecAgent";
 import type { AIAuthConfig, AIModel } from "../ai";
-import { runOffensiveSecurityAgent } from "../api";
+import { runOffensiveSecurityAgent } from "../api/offesecAgent";
 import type { AgentEventBus } from "../eventBus";
 import type { SessionInfo } from "../session";
 import { sessions } from "../session";

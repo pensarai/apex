@@ -4,7 +4,7 @@ import { config } from "dotenv";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import type { AIModel } from "../src/core/ai";
-import { runAttackSurfaceAgent } from "../src/core/api";
+import { runAttackSurfaceAgent } from "../src/core/api/attackSurface";
 import { AgentEventBus } from "../src/core/eventBus";
 import { sessions } from "../src/core/session";
 

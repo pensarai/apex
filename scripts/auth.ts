@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { AuthCredentials } from "../src/core/agents/specialized/authenticationAgent/types";
 import type { AIModel } from "../src/core/ai";
-import { runAuthenticationAgent } from "../src/core/api";
+import { runAuthenticationAgent } from "../src/core/api/authentication";
 import { AgentEventBus } from "../src/core/eventBus";
 import { sessions } from "../src/core/session";
 
