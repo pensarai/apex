@@ -1,29 +1,9 @@
 // Stable external import path. External consumers depend on this barrel.
 // Tracked for migration into the public API in #726 — do not delete or
 // restructure until those consumers are moved off the deep import.
-export { AuthenticationAgent, runAuthenticationAgent } from "./agent";
+
 export type { AuthenticationAgentInput, AuthenticationResult } from "./agent";
-export {
-  AUTH_BARRIER_TYPES,
-  AUTH_METHODS,
-  AUTH_STATUSES,
-  AttemptRegistrationInputSchema,
-  AuthMethodSchema,
-  AuthenticateInputSchema,
-  DetectAuthSchemeInputSchema,
-  DocumentAuthFlowInputSchema,
-  ExportAuthForAgentInputSchema,
-  GetAuthStateInputSchema,
-  LoadAuthFlowInputSchema,
-  ProbeAuthEndpointsInputSchema,
-  ProbeRegistrationInputSchema,
-  REGISTRATION_BARRIERS,
-  ROLE_LEVELS,
-  RefreshSessionInputSchema,
-  TOKEN_TYPES,
-  TokenTypeSchema,
-  ValidateSessionInputSchema,
-} from "./types";
+export { AuthenticationAgent, runAuthenticationAgent } from "./agent";
 export type {
   AttemptRegistrationInput,
   AttemptRegistrationResult,
@@ -34,16 +14,16 @@ export type {
   AuthDiscoveryInput,
   AuthDiscoveryResult,
   AuthEndpoint,
+  AuthenticateInput,
+  AuthenticateResult,
+  AuthenticationSubagentInput,
+  AuthenticationSubagentResult,
   AuthFlowDocumentation,
   AuthFlowHints,
   AuthMethod,
   AuthState,
   AuthStatus,
   AuthToken,
-  AuthenticateInput,
-  AuthenticateResult,
-  AuthenticationSubagentInput,
-  AuthenticationSubagentResult,
   BrowserFlowConfig,
   CsrfExtraction,
   DetectAuthSchemeInput,
@@ -70,4 +50,25 @@ export type {
   TokenType,
   ValidateSessionInput,
   ValidateSessionResult,
+} from "./types";
+export {
+  AttemptRegistrationInputSchema,
+  AUTH_BARRIER_TYPES,
+  AUTH_METHODS,
+  AUTH_STATUSES,
+  AuthenticateInputSchema,
+  AuthMethodSchema,
+  DetectAuthSchemeInputSchema,
+  DocumentAuthFlowInputSchema,
+  ExportAuthForAgentInputSchema,
+  GetAuthStateInputSchema,
+  LoadAuthFlowInputSchema,
+  ProbeAuthEndpointsInputSchema,
+  ProbeRegistrationInputSchema,
+  REGISTRATION_BARRIERS,
+  RefreshSessionInputSchema,
+  ROLE_LEVELS,
+  TOKEN_TYPES,
+  TokenTypeSchema,
+  ValidateSessionInputSchema,
 } from "./types";

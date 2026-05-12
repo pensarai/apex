@@ -1,6 +1,6 @@
 export { runComparisonAgent } from "./comparisonAgent";
-export { getActualDockerPort, parseDockerComposePort } from "./docker-utils";
 export type { DockerComposePortInfo } from "./docker-utils";
+export { getActualDockerPort, parseDockerComposePort } from "./docker-utils";
 export {
   APEX_BENCHMARK_PATTERN,
   computeBenchmarkFlag,
@@ -13,8 +13,8 @@ export {
   isPACEBenchmark,
 } from "./flag-detector";
 export { SYSTEM } from "./prompts";
-export { runBenchmarkInDaytona } from "./remote";
 export type { DaytonaBenchmarkOptions } from "./remote";
+export { runBenchmarkInDaytona } from "./remote";
 export type {
   ActualFinding,
   BenchmarkResults,

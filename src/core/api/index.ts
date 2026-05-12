@@ -44,10 +44,10 @@ export {
   updateApp,
   updateEndpoint,
 } from "./apps";
-export { runAttackSurfaceAgent } from "./attackSurface";
 export type { AttackSurfaceInput } from "./attackSurface";
-export { runAuthenticationAgent } from "./authentication";
+export { runAttackSurfaceAgent } from "./attackSurface";
 export type { AuthenticationAgentInput } from "./authentication";
+export { runAuthenticationAgent } from "./authentication";
 export { runBenchmarkComparisonAgent } from "./benchmark";
 export { runPentestAgent } from "./blackboxPentest";
 export {
@@ -57,21 +57,8 @@ export {
   PENSAR_API_BASE_URL,
   PENSAR_CONSOLE_BASE_URL,
 } from "./constants";
-export { runEnvironmentAgent } from "./environment";
 export type { EnvironmentAgentInput, EnvironmentResult } from "./environment";
-export {
-  dispatchPentest,
-  getFix,
-  getIssue,
-  getScan,
-  listAgentLogs,
-  listFixes,
-  listIssues,
-  listProjects,
-  listScans,
-  searchAgentLogs,
-  updateIssue,
-} from "./issues";
+export { runEnvironmentAgent } from "./environment";
 export type {
   AgentLogEntry,
   DispatchPentestResult,
@@ -86,13 +73,26 @@ export type {
   SearchAgentLogsResult,
   UpdateIssueResult,
 } from "./issues";
-export { runOffensiveSecurityAgent } from "./offesecAgent";
+export {
+  dispatchPentest,
+  getFix,
+  getIssue,
+  getScan,
+  listAgentLogs,
+  listFixes,
+  listIssues,
+  listProjects,
+  listScans,
+  searchAgentLogs,
+  updateIssue,
+} from "./issues";
 export type { RunAgentResult } from "./offesecAgent";
+export { runOffensiveSecurityAgent } from "./offesecAgent";
+export type { PatchingAgentInput, PatchResult } from "./patching";
 export { runPatchingAgent } from "./patching";
-export type { PatchResult, PatchingAgentInput } from "./patching";
 export { runTargetedPentestAgent } from "./targetedPentest";
-export { runThreatModelWorkflow } from "./threatModel";
 export type {
   ThreatModelWorkflowInput,
   ThreatModelWorkflowResult,
 } from "./threatModel";
+export { runThreatModelWorkflow } from "./threatModel";

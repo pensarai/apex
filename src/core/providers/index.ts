@@ -1,5 +1,5 @@
-export { AVAILABLE_PROVIDERS } from "./types";
 export type { ConfiguredProvider, Provider, ProviderType } from "./types";
+export { AVAILABLE_PROVIDERS } from "./types";
 export {
   getAvailableModels,
   getConfiguredProviders,
@@ -8,5 +8,5 @@ export {
   hasAnyProviderConfigured,
   isProviderConfigured,
 } from "./utils";
-export { verifyApiKey } from "./verify";
 export type { VerifyResult } from "./verify";
+export { verifyApiKey } from "./verify";

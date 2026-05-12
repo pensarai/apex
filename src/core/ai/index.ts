@@ -1,3 +1,11 @@
+export type {
+  AIModel,
+  AIModelProvider,
+  CacheMetrics,
+  GenerateObjectOpts,
+  ModelInfo,
+  StreamResponseOpts,
+} from "./ai";
 export {
   ContextLengthError,
   ContextLengthExhaustedError,
@@ -11,20 +19,13 @@ export {
   streamResponse,
   withIdleTimeout,
 } from "./ai";
-export type {
-  AIModel,
-  AIModelProvider,
-  CacheMetrics,
-  GenerateObjectOpts,
-  ModelInfo,
-  StreamResponseOpts,
-} from "./ai";
 export { withCachedLastMessage, withCachedSystemPrompt } from "./caching";
 export {
   AVAILABLE_MODELS,
   getMaxOutputTokens,
   getModelInfo,
 } from "./models";
+export type { AIAuthConfig } from "./utils";
 export {
   buildAuthConfig,
   buildStreamingFetchSignal,
@@ -35,4 +36,3 @@ export {
   isAnthropicProvider,
   summarizeConversation,
 } from "./utils";
-export type { AIAuthConfig } from "./utils";
