@@ -17,3 +17,4 @@ export * from "./offesecAgent";
 export * from "./patching";
 export * from "./targetedPentest";
 export * from "./threatModel";
+export * from "./triage";

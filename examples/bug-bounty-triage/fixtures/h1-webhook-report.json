@@ -1,0 +1,86 @@
+{
+  "data": {
+    "id": "act-9001",
+    "type": "activity-report-created",
+    "attributes": {
+      "message": "A new report was submitted.",
+      "created_at": "2026-05-12T08:42:00.000Z",
+      "internal": false
+    },
+    "relationships": {
+      "actor": { "data": { "id": "u-101", "type": "user" } },
+      "report": { "data": { "id": "987654", "type": "report" } }
+    }
+  },
+  "included": [
+    {
+      "id": "987654",
+      "type": "report",
+      "attributes": {
+        "title": "Reflected XSS in /search via q parameter",
+        "state": "new",
+        "severity_rating": "high",
+        "vulnerability_information": "## Summary\nThe `/search` endpoint on https://staging.acme-shop.example.com reflects the `q` query parameter back into the response body without HTML-encoding it, allowing arbitrary JavaScript injection in the victim's browser.\n\n## Steps To Reproduce\n1. Open https://staging.acme-shop.example.com/search?q=%3Cscript%3Ealert(1)%3C/script%3E in any browser.\n2. Observe that the payload is reflected verbatim inside the rendered HTML.\n3. The injected script tag executes — confirmable via the `alert(1)` popup.\n\n```\ncurl 'https://staging.acme-shop.example.com/search?q=<script>alert(document.cookie)</script>'\n```\n\n## Impact\nAn attacker can hijack the session of any authenticated user who clicks a crafted link — exfiltrating session cookies and acting on their behalf.\n\n## Attack Scenario\nUnauthenticated attacker delivers the crafted URL to victims via phishing email or social-media post.",
+        "created_at": "2026-05-12T08:42:00.000Z",
+        "source": "hackerone"
+      },
+      "relationships": {
+        "reporter": { "data": { "id": "u-101", "type": "user" } },
+        "weakness": { "data": { "id": "w-79", "type": "weakness" } },
+        "structured_scopes": {
+          "data": [
+            { "id": "s-1", "type": "structured-scope" },
+            { "id": "s-2", "type": "structured-scope" },
+            { "id": "s-3", "type": "structured-scope" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "u-101",
+      "type": "user",
+      "attributes": {
+        "username": "researcher_lin",
+        "name": "Lin"
+      }
+    },
+    {
+      "id": "w-79",
+      "type": "weakness",
+      "attributes": {
+        "name": "Cross-site Scripting (XSS) - Reflected",
+        "external_id": "CWE-79"
+      }
+    },
+    {
+      "id": "s-1",
+      "type": "structured-scope",
+      "attributes": {
+        "asset_identifier": "*.acme-shop.example.com",
+        "asset_type": "URL",
+        "eligible_for_submission": true,
+        "eligible_for_bounty": true
+      }
+    },
+    {
+      "id": "s-2",
+      "type": "structured-scope",
+      "attributes": {
+        "asset_identifier": "marketing.acme-shop.example.com",
+        "asset_type": "URL",
+        "eligible_for_submission": false,
+        "eligible_for_bounty": false
+      }
+    },
+    {
+      "id": "s-3",
+      "type": "structured-scope",
+      "attributes": {
+        "asset_identifier": "api.acme-shop.example.com",
+        "asset_type": "URL",
+        "eligible_for_submission": true,
+        "eligible_for_bounty": true
+      }
+    }
+  ]
+}

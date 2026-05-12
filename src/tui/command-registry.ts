@@ -316,6 +316,91 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "triage",
+    description: "Triage an inbound bug bounty report",
+    category: "Pentesting",
+    options: [
+      {
+        name: "--report",
+        valueHint: "<path>",
+        description: "Path to the inbound report file (required)",
+      },
+      {
+        name: "--target",
+        valueHint: "<url>",
+        description: "Live target URL for PoC re-verification (required)",
+      },
+      {
+        name: "--source",
+        valueHint: "<src>",
+        description: "Report source: hackerone | auto (default: auto)",
+      },
+      {
+        name: "--output",
+        valueHint: "<dir>",
+        description: "Output directory for triage.md + decision.json",
+      },
+      {
+        name: "--model",
+        valueHint: "<model>",
+        description: "AI model to use",
+      },
+    ],
+    handler: async (args, ctx) => {
+      let reportPath: string | undefined;
+      let target: string | undefined;
+      let source: string | undefined;
+      let outputDir: string | undefined;
+      let model: string | undefined;
+
+      for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        const next = args[i + 1];
+        if (!next) continue;
+        if (a === "--report" || a === "-r") reportPath = next;
+        else if (a === "--target" || a === "-t") target = next;
+        else if (a === "--source") source = next;
+        else if (a === "--output" || a === "-o") outputDir = next;
+        else if (a === "--model") model = next;
+      }
+
+      if (!reportPath || !target) {
+        ctx.toast?.(
+          "Triage requires --report <path> and --target <url>",
+          "error",
+        );
+        return;
+      }
+      if (source && source !== "hackerone" && source !== "auto") {
+        ctx.toast?.(
+          `--source must be 'hackerone' or 'auto' (got '${source}')`,
+          "error",
+        );
+        return;
+      }
+
+      const skillArgs: Record<string, string> = {
+        report: reportPath,
+        target,
+      };
+      if (source) skillArgs.source = source;
+      if (outputDir) skillArgs.output = outputDir;
+      if (model) skillArgs.model = model;
+
+      ctx.navigate({
+        type: "operator",
+        nonce: Date.now(),
+        initialConfig: {
+          requireApproval: true,
+        },
+        initialSkill: {
+          slug: "triage",
+          args: skillArgs,
+        },
+      });
+    },
+  },
+  {
     name: "resume",
     aliases: ["sessions", "s"],
     description: "Resume a previous session",
