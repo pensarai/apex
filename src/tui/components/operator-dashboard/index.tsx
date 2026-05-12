@@ -1009,6 +1009,8 @@ export default function OperatorDashboard({
 
       eventBus.on("subagent-spawn", ({ subagentId, name }) => {
         if (gen !== generationRef.current) return;
+        // Hide whitebox per-app synthetic grouping nodes until #744 lands a hierarchical view.
+        if (subagentId.startsWith("app:")) return;
         subagentHelpers.spawnSession(subagentId, name);
         if (!isPentestAgent(subagentId)) return;
         // Pentest swarm agents → workflowData.pentesting.subagents
