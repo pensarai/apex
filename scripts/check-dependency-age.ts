@@ -15,8 +15,8 @@
  *   IGNORE_DEV_DEPENDENCIES - Skip checking devDependencies (default: false)
  */
 
-import { readFile } from "fs/promises";
-import { resolve } from "path";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 interface PackageJson {
   dependencies?: Record<string, string>;
@@ -66,51 +66,51 @@ function parseArgs(): { minAgeDays: number; ignoreDev: boolean } {
  * Fetch package metadata from npm registry
  */
 async function fetchPackageMetadata(
-	name: string,
-	versionSpec: string,
+  name: string,
+  versionSpec: string,
 ): Promise<PackageMetadata | null> {
-	try {
-		// Remove version prefixes (^, ~, >=, etc.) to get the actual version
-		const cleanVersion = versionSpec.replace(/^[\^~>=<]+/, "");
+  try {
+    // Remove version prefixes (^, ~, >=, etc.) to get the actual version
+    const cleanVersion = versionSpec.replace(/^[\^~>=<]+/, "");
 
-		// Fetch package metadata from npm registry
-		const response = await fetch(`${NPM_REGISTRY}/${name}`, {
-			headers: {
-				Accept: "application/json",
-			},
-		});
+    // Fetch package metadata from npm registry
+    const response = await fetch(`${NPM_REGISTRY}/${name}`, {
+      headers: {
+        Accept: "application/json",
+      },
+    });
 
-		if (!response.ok) {
-			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-		}
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
 
-		const data = await response.json();
+    const data = await response.json();
 
-		// Get publish time from the time object
-		const publishTime = data.time?.[cleanVersion];
-		if (!publishTime) {
-			throw new Error(
-				`Version ${cleanVersion} not found in registry for ${name}`,
-			);
-		}
+    // Get publish time from the time object
+    const publishTime = data.time?.[cleanVersion];
+    if (!publishTime) {
+      throw new Error(
+        `Version ${cleanVersion} not found in registry for ${name}`,
+      );
+    }
 
-		const publishedAt = new Date(publishTime);
-		const now = new Date();
-		const ageInMs = now.getTime() - publishedAt.getTime();
-		const ageInDays = ageInMs / (1000 * 60 * 60 * 24);
+    const publishedAt = new Date(publishTime);
+    const now = new Date();
+    const ageInMs = now.getTime() - publishedAt.getTime();
+    const ageInDays = ageInMs / (1000 * 60 * 60 * 24);
 
-		return {
-			name,
-			version: cleanVersion,
-			publishedAt,
-			ageInDays,
-		};
-	} catch (error) {
-		console.error(
-			`⚠️  Failed to fetch metadata for ${name}@${versionSpec}: ${error instanceof Error ? error.message : String(error)}`,
-		);
-		return null;
-	}
+    return {
+      name,
+      version: cleanVersion,
+      publishedAt,
+      ageInDays,
+    };
+  } catch (error) {
+    console.error(
+      `⚠️  Failed to fetch metadata for ${name}@${versionSpec}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
+  }
 }
 
 /**

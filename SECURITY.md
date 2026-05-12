@@ -35,11 +35,13 @@ The dependency age check runs automatically on all PRs and pushes to `main`/`can
 #### Rationale
 
 Supply chain attacks often involve:
+
 1. Compromising a package maintainer's account
 2. Publishing a malicious version of a popular package
 3. Victims auto-installing the malicious version within hours
 
 By enforcing a minimum age requirement, we ensure that:
+
 - The security community has time to detect malicious packages
 - Package registries and security tools can flag suspicious releases
 - We're not the first adopters of potentially compromised versions
