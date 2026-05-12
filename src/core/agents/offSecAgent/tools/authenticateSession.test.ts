@@ -110,6 +110,15 @@ describe("extractBearerToken", () => {
     expect(extractBearerToken({ result: { jwt: "j" } })).toBe("j");
     expect(extractBearerToken({ auth: { token: "t" } })).toBe("t");
   });
+
+  it("does NOT recurse past one level (avoids deep false positives)", () => {
+    // The wrapper-of-a-wrapper case must return "" — otherwise random fields
+    // buried deep in a response could be misclassified as bearer tokens.
+    expect(
+      extractBearerToken({ data: { auth: { access_token: "deep" } } }),
+    ).toBe("");
+    expect(extractBearerToken({ result: { session: { jwt: "x" } } })).toBe("");
+  });
 });
 
 describe("extractRefreshToken", () => {
@@ -120,6 +129,13 @@ describe("extractRefreshToken", () => {
 
   it("returns empty when absent", () => {
     expect(extractRefreshToken({ access_token: "a" })).toBe("");
+  });
+
+  it("unwraps one level of nesting but not deeper", () => {
+    expect(extractRefreshToken({ data: { refresh_token: "r" } })).toBe("r");
+    expect(
+      extractRefreshToken({ data: { auth: { refresh_token: "deep" } } }),
+    ).toBe("");
   });
 });
 

@@ -245,41 +245,68 @@ const BEARER_TOKEN_KEYS = [
 
 const REFRESH_TOKEN_KEYS = ["refresh_token", "refreshToken"] as const;
 
+/**
+ * Wrapper keys some APIs use to nest auth artifacts (e.g. `{ data: { access_token } }`).
+ * Inspected exactly one level deep — see `extractBearerToken` / `extractRefreshToken`.
+ */
+const TOKEN_WRAPPER_KEYS = ["data", "result", "auth", "session"] as const;
+
 const BODY_PREVIEW_LIMIT = 800;
+
+function scanTopLevelStringKey(
+  obj: Record<string, unknown>,
+  keys: readonly string[],
+): string {
+  for (const key of keys) {
+    const v = obj[key];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return "";
+}
 
 /**
  * Inspect a JSON-shaped value for a likely bearer token. Returns "" if none.
+ * Checks the top-level object, then exactly one level deep under common
+ * wrapper keys (`data` / `result` / `auth` / `session`). Does NOT recurse
+ * further — deeper nesting is intentionally out of scope to avoid
+ * picking up unrelated string fields buried in the body.
+ *
  * Exported for testing.
  */
 export function extractBearerToken(parsed: unknown): string {
   if (!parsed || typeof parsed !== "object") return "";
   const obj = parsed as Record<string, unknown>;
-  for (const key of BEARER_TOKEN_KEYS) {
-    const v = obj[key];
-    if (typeof v === "string" && v.length > 0) return v;
-  }
-  // Some APIs nest tokens under `data` / `result` / `auth`. Check one level deep.
-  for (const wrapper of ["data", "result", "auth", "session"]) {
+  const top = scanTopLevelStringKey(obj, BEARER_TOKEN_KEYS);
+  if (top) return top;
+  for (const wrapper of TOKEN_WRAPPER_KEYS) {
     const inner = obj[wrapper];
     if (inner && typeof inner === "object") {
-      const nested = extractBearerToken(inner);
+      const nested = scanTopLevelStringKey(
+        inner as Record<string, unknown>,
+        BEARER_TOKEN_KEYS,
+      );
       if (nested) return nested;
     }
   }
   return "";
 }
 
+/**
+ * Same single-level-nesting contract as {@link extractBearerToken}, but for
+ * refresh tokens. Exported for testing.
+ */
 export function extractRefreshToken(parsed: unknown): string {
   if (!parsed || typeof parsed !== "object") return "";
   const obj = parsed as Record<string, unknown>;
-  for (const key of REFRESH_TOKEN_KEYS) {
-    const v = obj[key];
-    if (typeof v === "string" && v.length > 0) return v;
-  }
-  for (const wrapper of ["data", "result", "auth", "session"]) {
+  const top = scanTopLevelStringKey(obj, REFRESH_TOKEN_KEYS);
+  if (top) return top;
+  for (const wrapper of TOKEN_WRAPPER_KEYS) {
     const inner = obj[wrapper];
     if (inner && typeof inner === "object") {
-      const nested = extractRefreshToken(inner);
+      const nested = scanTopLevelStringKey(
+        inner as Record<string, unknown>,
+        REFRESH_TOKEN_KEYS,
+      );
       if (nested) return nested;
     }
   }
