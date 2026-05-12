@@ -18,6 +18,9 @@ jobs:
   knip:
     uses: ./.github/workflows/knip.yml
 
+  dependency-age:
+    uses: ./.github/workflows/dependency-age.yml
+
   typecheck:
     uses: ./.github/workflows/typecheck.yml
 

@@ -1,111 +1,59 @@
 # Security Policy
 
-## Reporting a Vulnerability
+## Dependency Supply Chain Security
 
-If you discover a security vulnerability in this project, please report it responsibly. **Do not open a public GitHub issue for security vulnerabilities.**
+This project enforces a minimum release age for all dependencies to mitigate supply chain attacks.
 
-Email: **security@pensarai.com**
+### Minimum Dependency Age Check
 
-Please include:
+All npm dependencies must be at least **3 days old** before they can be added to the project. This provides time for the security community to identify and report potentially malicious packages.
 
-- A description of the vulnerability
-- Steps to reproduce the issue
-- Any potential impact you've identified
-- Your suggested fix (if you have one)
+#### Configuration
 
-## What to Expect
+The minimum age can be configured via:
 
-- We will acknowledge receipt of your report within 48 hours.
-- We will work with you to understand and validate the issue.
-- We will keep you informed of our progress toward a fix.
+- **Environment variable**: `MIN_DEPENDENCY_AGE_DAYS` (default: 3)
+- **Command line flag**: `--min-age-days N`
 
-## Scope
+#### Running the Check
 
-This policy applies to the latest version of the project on the `canary` branch.
+```bash
+# Check all dependencies (including devDependencies)
+bun run check:deps
 
-### In Scope
+# Check only production dependencies
+bun run check:deps --ignore-dev
 
-The following components are considered security-relevant and fully in scope:
+# Use custom minimum age
+bun run check:deps --min-age-days 7
+```
 
-- **Shipped CLI and TUI** — the distributed command-line interface and terminal UI (`build/`, `bin/`)
-- **Published npm package** — artifacts distributed via the `@pensar/apex` npm package
-- **Authentication, authorization, and session logic**
-- **Components that process untrusted external input as part of normal product usage**
+#### CI Integration
 
-### Limited Scope
+The dependency age check runs automatically on all PRs and pushes to `main`/`canary` branches as part of the CI pipeline.
 
-The following components are evaluated under a **restricted threat model** with contextual severity:
+#### Rationale
 
-- Developer tooling and internal scripts (`scripts/`, benchmark runners, CI utilities)
-- Test harnesses and local development utilities
-- Components that are present in the repository but **not distributed** as part of the packaged product (i.e., excluded by `package.json` `files` field and `.npmignore`)
+Supply chain attacks often involve:
+1. Compromising a package maintainer's account
+2. Publishing a malicious version of a popular package
+3. Victims auto-installing the malicious version within hours
 
-Issues in limited-scope components are evaluated based on realistic threat models aligned with their intended usage. Severity classifications for these components reflect their actual product exposure and blast radius — not theoretical worst-case impact.
+By enforcing a minimum age requirement, we ensure that:
+- The security community has time to detect malicious packages
+- Package registries and security tools can flag suspicious releases
+- We're not the first adopters of potentially compromised versions
 
-### Out of Scope
+#### Exemptions
 
-The following are generally considered **out of scope** and may be closed as informational:
+If you need to use a recently-released package (e.g., critical security patch), you can:
 
-- Issues requiring local source code modification by the reporter
-- Self-compromise scenarios (e.g., a user injecting into their own locally authored files)
-- Attacks requiring existing repository write access or local filesystem access beyond normal tool usage
-- Theoretical vulnerabilities without a practical, realistic exploitation path
-- Security best-practice suggestions without demonstrable impact
-- Findings in non-shipped experimental, example, or scaffolding code
-- Issues that require violating documented operational assumptions or intended usage patterns
+1. Wait for the package to meet the minimum age requirement
+2. Temporarily adjust the `MIN_DEPENDENCY_AGE_DAYS` threshold with explicit approval
+3. Pin to an older version of the package that meets the requirement
 
-We reserve the right to classify reports as **informational** if they do not present meaningful security impact within the intended product threat model.
+Always document the reason for any exemptions in the PR description.
 
-## Threat Model
+## Reporting Security Vulnerabilities
 
-Apex assumes the following trust boundaries:
-
-- **The user running the CLI has full control over their local machine.** Local developer tooling and service scripts operate in a trusted-user context.
-- **Files within the repository are trusted.** Internal scripts, benchmark utilities, and CI tooling assume trusted inputs from the repository itself.
-- **The CLI and hosted services are the primary security boundary.** These are the components through which untrusted external input enters the system during normal product usage.
-- **Non-shipped components are not part of the product attack surface.** Code excluded from the npm package (`src/core/benchmark/`, `scripts/`, etc.) is internal tooling and is not designed to be executed by end users or against adversarial inputs as part of product functionality.
-
-Issues that require a user to execute internal development scripts against malicious inputs outside their intended workflow, or that require modification of local configurations or files outside documented usage, may be classified as out of scope.
-
-### AI Model Trust Boundary
-
-Apex is an AI-agent system. Internal agent tools (e.g., file operations, command execution) receive their parameters from the AI model at inference time — not from external or untrusted input. The model operates as a delegate of the operator, within the operator's own system permissions.
-
-Model-generated tool parameters (file paths, command strings, etc.) are part of the model's inference output and are governed by the model's system prompt and alignment, not by input-validation controls designed for untrusted external data. The absence of path restrictions or input sanitization on agent tool parameters is a deliberate design choice consistent with the trust model of AI coding and security agents, not an implementation defect.
-
-Reports that characterize model-generated tool parameters as "unsanitized external input" do not align with the product's trust model and will generally be classified as informational.
-
-### Operational Risk Assumptions
-
-APEX is an autonomous penetration testing tool designed to intentionally interact with potentially adversarial infrastructure.
-
-Operators accept inherent risk when directing the tool at any target during authorized engagements. This includes:
-
-- Interaction with malicious or exploitative network services
-- Exposure to intentionally malformed or hostile protocol responses
-- Deceptive application-layer behavior from test targets
-- Attempts by targets to fingerprint, throttle, or retaliate against scanning infrastructure
-- Prompt injection attempts by hostile targets designed to influence AI model behavior
-
-Compromise scenarios arising from expected interaction with hostile targets — during authorized and intended usage — are considered inherent operational risk of offensive security tooling, not product vulnerabilities. This includes scenarios where a hostile target attempts to influence the AI model's tool-calling behavior via prompt injection payloads embedded in application content.
-
-Reports must demonstrate a defect in Apex's implementation that violates its documented threat model, rather than outcomes that stem from intentionally engaging adversarial systems or from the AI model's inference behavior.
-
-## Severity & Impact
-
-Severity is determined based on:
-
-- **Product exposure** — Is the affected component shipped to users?
-- **Realistic attack surface** — Does the vulnerability arise during normal, intended usage?
-- **Blast radius** — What is the scope of potential impact?
-- **Alignment with intended usage** — Does exploitation require deviating from documented workflows?
-
-Local-only code execution within internal developer tooling does not automatically equate to production remote code execution. Severity classifications reflect the actual deployment context and user exposure of affected components.
-
-## Acknowledgment
-
-We appreciate responsible security research. Valid, in-scope reports will be acknowledged in accordance with this policy. We follow a consistent, process-driven approach to disclosure and do not provide additional recognition beyond our standard acknowledgment process.
-
-## Thank You
-
-Thank you for helping keep Apex and its users safe.
+If you discover a security vulnerability in this project, please report it to the maintainers via GitHub Security Advisories.

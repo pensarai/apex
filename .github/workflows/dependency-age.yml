@@ -1,0 +1,26 @@
+# Reusable Dependency Age Check workflow
+# Checks that all dependencies meet minimum age requirement
+# to mitigate supply chain attacks.
+
+name: Dependency Age Check
+
+on:
+  workflow_call:
+
+jobs:
+  check-dependency-age:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Check dependency ages
+        run: bun run scripts/check-dependency-age.ts
+        env:
+          MIN_DEPENDENCY_AGE_DAYS: 3

@@ -92,6 +92,7 @@
     "build:binary:macos-x64": "bun build src/cli.ts --compile --target=bun-darwin-x64 --outfile dist/pensar-darwin-x64",
     "check": "biome check --write",
     "check:ci": "biome check",
+    "check:deps": "bun run scripts/check-dependency-age.ts",
     "daytona-benchmark": "bun run scripts/daytona-benchmark.ts",
     "dev": "bun run scripts/watch.ts",
     "dev:debug": "SHOW_CONSOLE=true bun run scripts/watch.ts",
