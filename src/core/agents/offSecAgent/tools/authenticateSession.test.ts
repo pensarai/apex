@@ -13,6 +13,7 @@ import {
 import { CredentialManager } from "../../../credentials";
 import type { SessionInfo } from "../../../session";
 import {
+  type AuthenticateSessionResult,
   authenticateSession,
   extractAuthArtifacts,
   extractBearerToken,
@@ -226,23 +227,17 @@ describe("authenticate_session tool", () => {
     }
   });
 
-  // `tool.execute` is typed as returning a value OR an AsyncIterable; the
-  // implementation never streams, so narrow to the value branch for tests.
-  type AuthToolResult = Exclude<
-    Awaited<
-      ReturnType<NonNullable<ReturnType<typeof authenticateSession>["execute"]>>
-    >,
-    AsyncIterable<unknown>
-  >;
-
   async function callTool(
     params: Record<string, unknown>,
-  ): Promise<{ result: AuthToolResult; rootPath: string }> {
+  ): Promise<{ result: AuthenticateSessionResult; rootPath: string }> {
     const setup = makeCtx();
     rootPath = setup.rootPath;
     const tool = authenticateSession(setup.ctx);
     // The execute signature is (params, callContext) — we don't need the
-    // call context for these tests, so we pass a minimal stub.
+    // call context for these tests, so we pass a minimal stub. The AI SDK
+    // widens `execute`'s return type with an AsyncIterable branch the
+    // implementation never uses; the explicit AuthenticateSessionResult
+    // cast collapses that back to the value shape.
     return {
       result: (await tool.execute!(
         {
@@ -253,7 +248,7 @@ describe("authenticate_session tool", () => {
           ...params,
         },
         { toolCallId: "", messages: [], abortSignal: undefined as never },
-      )) as AuthToolResult,
+      )) as AuthenticateSessionResult,
       rootPath: setup.rootPath,
     };
   }
@@ -435,7 +430,7 @@ describe("authenticate_session tool", () => {
         toolCallDescription: "test",
       },
       { toolCallId: "", messages: [], abortSignal: undefined as never },
-    )) as AuthToolResult;
+    )) as AuthenticateSessionResult;
 
     expect(result.authenticated).toBe(true);
     expect(result.bearerToken).toBe("T");

@@ -5,6 +5,49 @@ import { z } from "zod";
 import type { ToolContext } from "./types";
 
 /**
+ * Result returned when the tool aborts before issuing a request — bad
+ * credentialId, missing username/password, missing loginUrl, or a thrown
+ * exception. Carries only the diagnostic message; no HTTP status to report.
+ *
+ * The optional-`never` fields are declarative: they document which keys
+ * are *only* set on the request-result branch, and let the union remain
+ * discriminable while still permitting `result.statusCode` access at
+ * call sites that don't bother to narrow first.
+ */
+export interface AuthenticateSessionAbortResult {
+  success: false;
+  authenticated: false;
+  message: string;
+  statusCode?: undefined;
+  sessionCookie?: undefined;
+  bearerToken?: undefined;
+  refreshToken?: undefined;
+  authorizationHeader?: undefined;
+  responseBody?: undefined;
+}
+
+/**
+ * Result returned after the tool has issued the authentication request.
+ * `success` and `authenticated` reflect whether a usable session was
+ * obtained (cookie OR bearer token on a 2xx-3xx response).
+ */
+export interface AuthenticateSessionRequestResult {
+  success: boolean;
+  authenticated: boolean;
+  statusCode: number;
+  sessionCookie: string;
+  bearerToken: string;
+  refreshToken: string;
+  authorizationHeader: string;
+  responseBody: string;
+  message: string;
+}
+
+export type AuthenticateSessionResult =
+  | AuthenticateSessionAbortResult
+  | AuthenticateSessionRequestResult;
+
+/**
  * Factory for the `authenticate_session` tool.
  *
  * Performs simple credential-based authentication (form POST, JSON POST,
@@ -89,7 +132,7 @@ returns the status code AND a truncated responseBody so you can diagnose:
           "A concise, human-readable description of what this tool call is doing",
         ),
     }),
-    execute: async (params) => {
+    execute: async (params): Promise<AuthenticateSessionResult> => {
       try {
         let { loginUrl, username, password } = params;
         const {
