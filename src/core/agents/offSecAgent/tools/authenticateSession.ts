@@ -447,7 +447,7 @@ function buildMessage(opts: {
           : statusCode === 404
             ? " Status 404 means the endpoint path is wrong. Try probe_auth_endpoints against the base URL."
             : statusCode >= 200 && statusCode < 400
-              ? " Status was 2xx but no Set-Cookie or recognizable bearer token (access_token, accessToken, token, jwt, id_token) was found. Inspect responseBody — the token may be under an unexpected field."
+              ? ` Status was 2xx but no Set-Cookie or recognizable bearer token (${BEARER_TOKEN_KEYS.join(", ")}) was found. Inspect responseBody — the token may be under an unexpected field.`
               : "";
 
   const body = opts.bodyPreview

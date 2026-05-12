@@ -337,6 +337,21 @@ describe("authenticate_session tool", () => {
     expect(result.success).toBe(false);
     expect(result.authenticated).toBe(false);
     expect(result.message).toMatch(/no Set-Cookie or recognizable bearer/i);
+    // The 2xx-no-artifact hint must enumerate every key the extractor
+    // actually checks, otherwise the agent wastes turns inspecting
+    // responseBody for keys it (wrongly) thinks aren't covered.
+    for (const key of [
+      "access_token",
+      "accessToken",
+      "id_token",
+      "idToken",
+      "auth_token",
+      "authToken",
+      "jwt",
+      "token",
+    ]) {
+      expect(result.message).toContain(key);
+    }
   });
 
   it("returns a 405-specific hint and response body on Method Not Allowed", async () => {
