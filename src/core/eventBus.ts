@@ -204,14 +204,16 @@ export class AgentEventBus {
         const p = payload as Record<string, unknown>;
 
         const isLifecycle =
-          forwardKey === "subagent-spawn" ||
-          forwardKey === "subagent-complete";
+          forwardKey === "subagent-spawn" || forwardKey === "subagent-complete";
 
         if (isLifecycle) {
           if (p.parentSubagentId) {
             parent.emit(forwardKey, payload as never);
           } else {
-            parent.emit(forwardKey, { ...p, parentSubagentId: subagentId } as never);
+            parent.emit(forwardKey, {
+              ...p,
+              parentSubagentId: subagentId,
+            } as never);
           }
           return;
         }
