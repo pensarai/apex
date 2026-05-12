@@ -71,4 +71,12 @@ jobs:
 
       - name: Typecheck console
         working-directory: console
+        # tsc runs under Node (via the tsc shebang) even when launched
+        # through `bun run`, so NODE_OPTIONS applies. The default ~4 GB
+        # heap has been OOMing since 2026-05-11 ~21:22 UTC across every
+        # apex PR; the OOM is in console's tsc, not apex's. Until the
+        # console-side regression is addressed, give the compiler more
+        # headroom so the check is signal again rather than always-red.
+        env:
+          NODE_OPTIONS: "--max-old-space-size=8192"
         run: bun run tsc
