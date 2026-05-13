@@ -267,8 +267,9 @@ async function runGit(
 }
 
 async function detectTool(name: string): Promise<ToolAvailability> {
+  const cmd = process.platform === "win32" ? "where" : "which";
   try {
-    const { stdout } = await execFileAsync("which", [name], {
+    const { stdout } = await execFileAsync(cmd, [name], {
       timeout: 2_000,
       maxBuffer: 1024 * 64,
     });
