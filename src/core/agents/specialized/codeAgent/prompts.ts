@@ -28,6 +28,17 @@ Run shell commands when needed.
 - Use for any task that benefits from shell access: build tools, git operations, package managers, linters, etc.
 - Useful for running scripts, checking dependencies, inspecting git history, or any CLI tool.
 
+## Whitebox security tools (when investigating vulnerabilities)
+- **profile_codebase** — summarize languages, manifests, scanners, and repo shape; full JSON is written as a session artifact.
+- **query_whitebox_catalog** — pull focused methodology slices (sinks, scanners, review passes) instead of loading a whole playbook into context.
+- **run_code_query** — batched rg / ast-grep / comby searches with bounded output and artifact logs.
+- **run_whitebox_scan** — run installed scanners when available; triage results before treating them as confirmed issues.
+- **create_whitebox_candidate / update_whitebox_candidate / list_whitebox_candidates** — track hypotheses with explicit state and evidence.
+- **start_whitebox_job / poll_whitebox_job / stop_whitebox_job** — bounded long-running jobs (builds, fuzzers) with logs under the session.
+- **read_whitebox_artifact** — read \`logs/whitebox/\` or \`scratchpad/whitebox/\` artifact paths returned by other tools (or legacy job logs by id).
+
+Prefer catalog + code_query for sink-first work; use candidates to separate unverified ideas from \`document_vulnerability\`. Do not modify the target repo unless the operator asked you to — keep harnesses and scratch output in the session scratchpad.
+
 # Working Approach
 1. **Orient first** — list files and read key entry points to understand the structure before diving in.
 2. **Search, then read** — use grep to locate what you need, then read the relevant files.

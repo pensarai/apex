@@ -1,11 +1,16 @@
 import { tool } from "ai";
-import { spawn } from "child_process";
-import { isAbsolute, resolve } from "path";
+import { relative } from "node:path";
 import { z } from "zod";
-import { writeWhiteboxArtifact } from "../../../whitebox";
+import {
+  resolvePathWithinCodebaseRoot,
+  resolveWhiteboxCodebaseRoot,
+  runSpawnBounded,
+  writeWhiteboxArtifact,
+} from "../../../whitebox";
 import type { ToolContext } from "./types";
 
 const MAX_INLINE_MATCHES = 40;
+const MAX_QUERY_CAPTURE_BYTES = 2 * 1024 * 1024;
 
 const QueryEngineSchema = z.enum(["rg", "grep", "ast-grep", "comby"]);
 
@@ -17,6 +22,8 @@ type QueryResult = {
   matchCount: number;
   sample: string[];
   artifactPath?: string;
+  outputTruncated?: boolean;
+  timedOut?: boolean;
   error?: string;
 };
 
@@ -47,42 +54,16 @@ async function runSingleQuery(input: {
   stdout: string;
   stderr: string;
   exitCode: number | null;
+  outputTruncated: boolean;
+  timedOut: boolean;
 }> {
-  return new Promise((resolve) => {
-    const child = spawn(
-      input.engine,
-      buildArgs(input.engine, input.pattern, input.targetPath),
-      {
-        cwd: input.cwd,
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    const timeout = setTimeout(
-      () => child.kill("SIGTERM"),
-      input.timeoutSeconds * 1000,
-    );
-
-    child.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-    child.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-    child.on("close", (code) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      resolve({ stdout, stderr, exitCode: code });
-    });
-    child.on("error", (error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      resolve({ stdout, stderr: error.message, exitCode: null });
-    });
+  const argv = [input.engine, ...buildArgs(input.engine, input.pattern, input.targetPath)];
+  return runSpawnBounded({
+    command: argv,
+    cwd: input.cwd,
+    timeoutSeconds: input.timeoutSeconds,
+    maxTotalBytes: MAX_QUERY_CAPTURE_BYTES,
+    detached: false,
   });
 }
 
@@ -91,8 +72,8 @@ export function runCodeQuery(ctx: ToolContext) {
     description: `Run structured source-code searches for whitebox analysis.
 
 Supports rg, grep, ast-grep, and comby when installed. Use batch queries for
-sink-first sweeps. Returns counts, representative samples, and full artifacts
-instead of flooding context with every match.`,
+sink-first sweeps. Returns counts, representative samples, and artifact paths
+instead of flooding context with every match. Output size and runtime are bounded.`,
     inputSchema: z.object({
       engine: QueryEngineSchema.optional().default("rg"),
       queries: z
@@ -103,59 +84,112 @@ instead of flooding context with every match.`,
               .string()
               .optional()
               .describe(
-                "File or directory to search, relative to cwd by default",
+                "File or directory to search, relative to the query cwd (must stay under the codebase root).",
               ),
           }),
         )
+        .min(1)
+        .max(40)
         .describe("Independent source-code queries to run"),
       cwd: z
         .string()
         .optional()
         .describe(
-          "Repository root. Defaults to session.config.codebasePath or agent working directory.",
+          "Repository root for the query. Defaults to session.config.codebasePath or agent working directory; must stay under the configured codebase root.",
         ),
-      timeoutSeconds: z.number().optional().describe("Per-query timeout"),
+      timeoutSeconds: z
+        .number()
+        .int()
+        .positive()
+        .max(900)
+        .optional()
+        .describe("Per-query timeout in seconds (default 30, max 900)."),
       toolCallDescription: z
         .string()
         .describe("A concise description of the code query"),
     }),
     execute: async ({ engine = "rg", queries, cwd, timeoutSeconds = 30 }) => {
-      const rootPath = cwd
-        ? isAbsolute(cwd)
-          ? cwd
-          : resolve(ctx.agentCwd, cwd)
-        : (ctx.session.config?.codebasePath ?? ctx.agentCwd);
+      const codebaseRoot = resolveWhiteboxCodebaseRoot({
+        agentCwd: ctx.agentCwd,
+        codebasePath: ctx.session.config?.codebasePath,
+      });
+      let rootPath: string;
+      try {
+        rootPath = cwd
+          ? resolvePathWithinCodebaseRoot(codebaseRoot, cwd)
+          : codebaseRoot;
+      } catch (error) {
+        return {
+          success: false,
+          summary: error instanceof Error ? error.message : String(error),
+          data: { results: [] as QueryResult[] },
+          artifactPaths: [],
+          nextActions: ["Use cwd and query paths inside the configured codebase root."],
+          recovery:
+            "Relative cwd is resolved from agent cwd then constrained under the codebase root.",
+        };
+      }
 
       const results: QueryResult[] = [];
       for (const query of queries) {
-        const targetPath = query.path ?? ".";
+        let targetPathForEngine = ".";
+        try {
+          const absTarget = resolvePathWithinCodebaseRoot(
+            rootPath,
+            query.path ?? ".",
+          );
+          targetPathForEngine = relative(rootPath, absTarget) || ".";
+        } catch (error) {
+          results.push({
+            engine,
+            pattern: query.pattern,
+            path: query.path ?? ".",
+            exitCode: null,
+            matchCount: 0,
+            sample: [],
+            error: error instanceof Error ? error.message : String(error),
+          });
+          continue;
+        }
+
         const output = await runSingleQuery({
           engine,
           pattern: query.pattern,
           cwd: rootPath,
-          targetPath,
+          targetPath: targetPathForEngine,
           timeoutSeconds,
         });
         const lines = output.stdout.split("\n").filter(Boolean);
-        const artifact = await writeWhiteboxArtifact({
-          session: ctx.session,
-          type: "code-query",
-          name: `${engine}-${query.pattern.slice(0, 40)}`,
-          content:
-            output.stdout +
-            (output.stderr ? `\n\n[stderr]\n${output.stderr}` : ""),
-          description: `${engine} query for ${query.pattern}`,
-          extension: ".txt",
-        });
+        const combined =
+          output.stdout + (output.stderr ? `\n\n[stderr]\n${output.stderr}` : "");
+        let artifactPath: string | undefined;
+        if (combined.trim().length > 0 || output.timedOut || output.outputTruncated) {
+          const artifact = await writeWhiteboxArtifact({
+            session: ctx.session,
+            type: "code-query",
+            name: `${engine}-${query.pattern.slice(0, 40)}`,
+            content:
+              combined +
+              (output.outputTruncated
+                ? "\n\n[apex] stdout/stderr truncated at byte cap.\n"
+                : "") +
+              (output.timedOut ? "\n[apex] query timed out.\n" : ""),
+            description: `${engine} query for ${query.pattern}`,
+            extension: ".txt",
+          });
+          artifactPath = artifact.path;
+        }
 
         results.push({
           engine,
           pattern: query.pattern,
-          path: targetPath,
+          path: targetPathForEngine,
           exitCode: output.exitCode,
           matchCount: lines.length,
           sample: lines.slice(0, MAX_INLINE_MATCHES),
-          artifactPath: artifact.path,
+          artifactPath,
+          outputTruncated: output.outputTruncated,
+          timedOut: output.timedOut,
           error:
             output.exitCode === 0 || output.exitCode === 1
               ? undefined

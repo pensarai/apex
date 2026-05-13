@@ -2,6 +2,7 @@ export {
   readScanArtifact,
   runScanAdapter,
   selectScanAdapters,
+  selectScanAdaptersWithMeta,
   WHITEBOX_SCAN_ADAPTERS,
   type WhiteboxScanAdapter,
 } from "./adapters";
@@ -12,11 +13,14 @@ export {
   readWhiteboxArtifact,
   writeWhiteboxArtifact,
 } from "./artifacts";
+export { runSpawnBounded } from "./boundedProcess";
 export {
   createWhiteboxCandidate,
   getWhiteboxCandidatesPath,
   listWhiteboxCandidates,
+  sourceTraceHasEvidence,
   updateWhiteboxCandidate,
+  type ListWhiteboxCandidatesOptions,
 } from "./candidates";
 export {
   queryWhiteboxCatalog,
@@ -29,6 +33,11 @@ export {
   startWhiteboxJob,
   stopWhiteboxJob,
 } from "./jobs";
+export {
+  resolvePathWithinCodebaseRoot,
+  resolveSessionWhiteboxArtifactPath,
+  resolveWhiteboxCodebaseRoot,
+} from "./paths";
 export { DEFAULT_WHITEBOX_EXCLUDED_DIRS, WHITEBOX_CATALOG } from "./profiles";
 export { profileCodebase } from "./repoProfile";
 export type {

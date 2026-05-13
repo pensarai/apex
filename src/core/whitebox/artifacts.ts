@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from "fs/promises";
-import { basename, join } from "path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import type { SessionInfo } from "../session";
+import { resolveSessionWhiteboxArtifactPath } from "./paths";
 import type { WhiteboxArtifactRef, WhiteboxArtifactType } from "./types";
 
 const MAX_ARTIFACT_INLINE_CHARS = 40_000;
@@ -64,9 +65,10 @@ export async function readWhiteboxArtifact(input: {
   truncated: boolean;
   absolutePath: string;
 }> {
-  const absolutePath = input.path.startsWith("/")
-    ? input.path
-    : join(input.session.rootPath, input.path);
+  const absolutePath = resolveSessionWhiteboxArtifactPath({
+    sessionRootPath: input.session.rootPath,
+    artifactRelativePath: input.path,
+  });
   const raw = await readFile(absolutePath, "utf-8");
   if (raw.length <= MAX_ARTIFACT_INLINE_CHARS) {
     return { content: raw, truncated: false, absolutePath };

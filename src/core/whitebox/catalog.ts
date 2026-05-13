@@ -44,7 +44,7 @@ export function queryWhiteboxCatalog(input: {
 }): CatalogRecord[] {
   const languages = input.profile?.languages ?? [];
   const requiredTags = input.tags ?? [];
-  const limit = input.limit ?? 12;
+  const limit = Math.min(50, Math.max(1, Math.floor(input.limit ?? 12)));
 
   return WHITEBOX_CATALOG.filter((record) => {
     if (input.kind && record.kind !== input.kind) return false;

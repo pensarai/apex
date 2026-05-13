@@ -1,16 +1,21 @@
-import { type ChildProcess, spawn } from "child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs";
-import { join } from "path";
+import { type ChildProcess, spawn } from "node:child_process";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { SessionInfo } from "../session";
 import { getWhiteboxLogsDir } from "./artifacts";
 import type { WhiteboxJobRecord, WhiteboxJobStatus } from "./types";
 
 const MAX_JOB_LOG_INLINE = 40_000;
+const PRUNE_AFTER_MS = 60_000;
+const KILL_ESCALATE_MS = 2_000;
+
 const jobs = new Map<
   string,
   WhiteboxJobRecord & {
     process?: ChildProcess;
     timer?: ReturnType<typeof setTimeout>;
+    pruneTimer?: ReturnType<typeof setTimeout>;
+    escalateTimer?: ReturnType<typeof setTimeout>;
   }
 >();
 
@@ -20,6 +25,45 @@ function makeJobId(): string {
 
 function writeLog(path: string, text: string): void {
   appendFileSync(path, text);
+}
+
+function killJobProcess(record: {
+  process?: ChildProcess;
+  escalateTimer?: ReturnType<typeof setTimeout>;
+}): void {
+  if (record.escalateTimer) clearTimeout(record.escalateTimer);
+  record.escalateTimer = undefined;
+  const child = record.process;
+  if (!child) return;
+
+  const pid = child.pid;
+  if (pid && process.platform !== "win32") {
+    try {
+      process.kill(-pid, "SIGTERM");
+    } catch {
+      /* gone */
+    }
+  }
+  try {
+    child.kill("SIGTERM");
+  } catch {
+    /* gone */
+  }
+
+  record.escalateTimer = setTimeout(() => {
+    if (pid && process.platform !== "win32") {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        /* gone */
+      }
+    }
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      /* gone */
+    }
+  }, KILL_ESCALATE_MS);
 }
 
 function updateStatus(
@@ -32,6 +76,18 @@ function updateStatus(
   job.status = status;
   job.exitCode = exitCode;
   job.updatedAt = new Date().toISOString();
+
+  if (
+    status === "completed" ||
+    status === "failed" ||
+    status === "timed_out" ||
+    status === "stopped"
+  ) {
+    if (job.pruneTimer) clearTimeout(job.pruneTimer);
+    job.pruneTimer = setTimeout(() => {
+      jobs.delete(id);
+    }, PRUNE_AFTER_MS);
+  }
 }
 
 export function startWhiteboxJob(input: {
@@ -50,15 +106,21 @@ export function startWhiteboxJob(input: {
 
   writeLog(logPath, `$ ${input.command}\n\n`);
 
-  const child = spawn(input.command, {
+  const isWin = process.platform === "win32";
+  const shell = isWin ? process.env.ComSpec || "cmd.exe" : "/bin/sh";
+  const shellArgs = isWin ? ["/d", "/s", "/c", input.command] : ["-c", input.command];
+
+  const child = spawn(shell, shellArgs, {
     cwd: input.cwd,
-    shell: true,
     stdio: ["ignore", "pipe", "pipe"],
+    detached: !isWin,
   });
 
   const record: WhiteboxJobRecord & {
     process?: ChildProcess;
     timer?: ReturnType<typeof setTimeout>;
+    pruneTimer?: ReturnType<typeof setTimeout>;
+    escalateTimer?: ReturnType<typeof setTimeout>;
   } = {
     id,
     command: input.command,
@@ -73,7 +135,7 @@ export function startWhiteboxJob(input: {
 
   record.timer = setTimeout(() => {
     if (record.status === "running") {
-      child.kill("SIGTERM");
+      killJobProcess(record);
       updateStatus(id, "timed_out", null);
       writeLog(logPath, "\n[apex] job timed out\n");
     }
@@ -83,24 +145,38 @@ export function startWhiteboxJob(input: {
   child.stderr?.on("data", (data) => writeLog(logPath, data.toString()));
   child.on("close", (code) => {
     if (record.timer) clearTimeout(record.timer);
+    if (record.escalateTimer) clearTimeout(record.escalateTimer);
     if (record.status === "timed_out" || record.status === "stopped") return;
     updateStatus(id, code === 0 ? "completed" : "failed", code);
   });
   child.on("error", (error) => {
     if (record.timer) clearTimeout(record.timer);
+    if (record.escalateTimer) clearTimeout(record.escalateTimer);
     writeLog(logPath, `\n[apex] job error: ${error.message}\n`);
     updateStatus(id, "failed", null);
   });
 
   jobs.set(id, record);
-  const { process: _process, timer: _timer, ...publicRecord } = record;
+  const {
+    process: _process,
+    timer: _timer,
+    pruneTimer: _prune,
+    escalateTimer: _esc,
+    ...publicRecord
+  } = record;
   return publicRecord;
 }
 
 export function pollWhiteboxJob(id: string): WhiteboxJobRecord | undefined {
   const record = jobs.get(id);
   if (!record) return undefined;
-  const { process: _process, timer: _timer, ...publicRecord } = record;
+  const {
+    process: _process,
+    timer: _timer,
+    pruneTimer: _prune,
+    escalateTimer: _esc,
+    ...publicRecord
+  } = record;
   return publicRecord;
 }
 
@@ -108,7 +184,7 @@ export function stopWhiteboxJob(id: string): WhiteboxJobRecord | undefined {
   const record = jobs.get(id);
   if (!record) return undefined;
   if (record.status === "running") {
-    record.process?.kill("SIGTERM");
+    killJobProcess(record);
     if (record.timer) clearTimeout(record.timer);
     updateStatus(id, "stopped", null);
     writeLog(record.logPath, "\n[apex] job stopped\n");

@@ -1,8 +1,8 @@
-import { execFile } from "child_process";
-import { existsSync } from "fs";
-import { readdir, readFile, stat } from "fs/promises";
-import { basename, extname, join, relative } from "path";
-import { promisify } from "util";
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { basename, extname, join, relative } from "node:path";
+import { promisify } from "node:util";
 import { DEFAULT_WHITEBOX_EXCLUDED_DIRS } from "./profiles";
 import type {
   LanguageId,
@@ -37,6 +37,22 @@ const LANGUAGE_BY_EXTENSION: Record<string, LanguageId> = {
   ".hpp": "cpp",
   ".cs": "csharp",
 };
+
+const LOCKFILE_BASENAMES = new Set([
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  "bun.lock",
+  "bun.lockb",
+  "poetry.lock",
+  "Pipfile.lock",
+  "Cargo.lock",
+  "Gemfile.lock",
+  "composer.lock",
+  "go.sum",
+  "flake.lock",
+]);
 
 const MANIFEST_PACKAGE_MANAGERS: Record<string, PackageManagerId[]> = {
   "bun.lock": ["bun"],
@@ -290,7 +306,7 @@ export async function profileCodebase(rootPath: string): Promise<RepoProfile> {
     languages,
     packageManagers,
     manifestFiles: detectManifestFiles(files),
-    lockfiles: files.filter((file) => basename(file).includes("lock")),
+    lockfiles: files.filter((file) => LOCKFILE_BASENAMES.has(basename(file))),
     buildCommands: packageScripts.buildCommands,
     testCommands: packageScripts.testCommands,
     runCommands: packageScripts.runCommands,

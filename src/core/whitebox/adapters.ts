@@ -1,9 +1,8 @@
-import { spawn } from "child_process";
-import { existsSync } from "fs";
-import { readFile } from "fs/promises";
-import { join } from "path";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { SessionInfo } from "../session";
-import { writeWhiteboxArtifact } from "./artifacts";
+import { runSpawnBounded } from "./boundedProcess";
+import { readWhiteboxArtifact, writeWhiteboxArtifact } from "./artifacts";
 import type {
   RepoProfile,
   ScanKind,
@@ -193,6 +192,8 @@ export const WHITEBOX_SCAN_ADAPTERS: WhiteboxScanAdapter[] = [
   },
 ];
 
+const KNOWN_ADAPTER_IDS = new Set(WHITEBOX_SCAN_ADAPTERS.map((a) => a.id));
+
 export function selectScanAdapters(input: {
   profile: RepoProfile;
   kind?: ScanKind;
@@ -206,6 +207,26 @@ export function selectScanAdapters(input: {
   });
 }
 
+/** Like {@link selectScanAdapters} but reports adapter ids that are not recognized. */
+export function selectScanAdaptersWithMeta(input: {
+  profile: RepoProfile;
+  kind?: ScanKind;
+  scannerIds?: string[];
+}): { adapters: WhiteboxScanAdapter[]; unknownScannerIds: string[] } {
+  let unknownScannerIds: string[] = [];
+  let scannerIds = input.scannerIds;
+  if (scannerIds?.length) {
+    unknownScannerIds = scannerIds.filter((id) => !KNOWN_ADAPTER_IDS.has(id));
+    scannerIds = scannerIds.filter((id) => KNOWN_ADAPTER_IDS.has(id));
+  }
+  const adapters = selectScanAdapters({
+    profile: input.profile,
+    kind: input.kind,
+    scannerIds,
+  });
+  return { adapters, unknownScannerIds };
+}
+
 export async function runScanAdapter(input: {
   adapter: WhiteboxScanAdapter;
   profile: RepoProfile;
@@ -214,17 +235,30 @@ export async function runScanAdapter(input: {
 }): Promise<ScanRunResult> {
   const command = input.adapter.buildCommand(input.profile);
   const startedAt = Date.now();
-  const raw = await runCommand(
+  const raw = await runSpawnBounded({
     command,
-    input.profile.rootPath,
-    input.timeoutSeconds,
-  );
+    cwd: input.profile.rootPath,
+    timeoutSeconds: input.timeoutSeconds,
+    maxTotalBytes: MAX_SCAN_OUTPUT,
+    detached: false,
+  });
   const duration = Date.now() - startedAt;
+
+  let fileBody =
+    raw.stdout + (raw.stderr ? `\n\n[stderr]\n${raw.stderr}` : "");
+  if (raw.outputTruncated) {
+    fileBody +=
+      "\n\n[apex] Scanner stdout/stderr capture hit the byte cap (truncated).\n";
+  }
+  if (raw.timedOut) {
+    fileBody += "\n[apex] Scanner timed out.\n";
+  }
+
   const artifact = await writeWhiteboxArtifact({
     session: input.session,
     type: "static-scan",
     name: `${input.adapter.id}-output`,
-    content: raw.stdout + (raw.stderr ? `\n\n[stderr]\n${raw.stderr}` : ""),
+    content: fileBody,
     description: `${input.adapter.id} scan output (${duration}ms)`,
     extension: ".txt",
   });
@@ -235,51 +269,18 @@ export async function runScanAdapter(input: {
     exitCode: raw.exitCode,
     findings: input.adapter.parseSummary(raw.stdout || raw.stderr),
     artifact,
+    outputTruncated: raw.outputTruncated,
+    timedOut: raw.timedOut,
   };
-}
-
-async function runCommand(
-  command: string[],
-  cwd: string,
-  timeoutSeconds: number,
-): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
-  return new Promise((resolve) => {
-    const child = spawn(command[0]!, command.slice(1), {
-      cwd,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-
-    const timeout = setTimeout(() => {
-      child.kill("SIGTERM");
-    }, timeoutSeconds * 1000);
-
-    child.stdout.on("data", (data) => {
-      if (stdout.length < MAX_SCAN_OUTPUT) stdout += data.toString();
-    });
-    child.stderr.on("data", (data) => {
-      if (stderr.length < MAX_SCAN_OUTPUT) stderr += data.toString();
-    });
-    child.on("close", (code) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      resolve({ stdout, stderr, exitCode: code });
-    });
-    child.on("error", (error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      resolve({ stdout, stderr: error.message, exitCode: null });
-    });
-  });
 }
 
 export async function readScanArtifact(
   artifact: WhiteboxArtifactRef,
   session: SessionInfo,
 ): Promise<string> {
-  return readFile(join(session.rootPath, artifact.path), "utf-8");
+  const { content } = await readWhiteboxArtifact({
+    session,
+    path: artifact.path,
+  });
+  return content;
 }

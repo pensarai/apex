@@ -389,7 +389,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
  * Tool names available in plan mode (read-only / non-mutating).
  *
  * Excludes: create_file, update_file, document_vulnerability,
- * document_app, document_endpoint. These are the mutation tools that should not be available
+ * document_app, document_endpoint, profile_codebase, run_code_query,
+ * run_whitebox_scan (they persist session artifacts). These should not be available
  * when the operator is in plan (read-only) mode.
  */
 export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
@@ -409,9 +410,7 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "read_file",
   "list_files",
   "grep",
-  "profile_codebase",
   "query_whitebox_catalog",
-  "run_code_query",
   // Recon (read-only probing and discovery)
   "authenticate_session",
   "delegate_to_auth_subagent",
@@ -421,7 +420,6 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "detect_auth_scheme",
   "probe_auth_endpoints",
   "provide_comparison_results",
-  "run_whitebox_scan",
   "list_whitebox_candidates",
   "poll_whitebox_job",
   "read_whitebox_artifact",

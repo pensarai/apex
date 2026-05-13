@@ -1,9 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { CatalogRecordKind } from "../../../whitebox";
 import {
+  type CatalogRecordKind,
+  type RepoProfile,
   profileCodebase,
   queryWhiteboxCatalog as queryCatalog,
+  resolveWhiteboxCodebaseRoot,
 } from "../../../whitebox";
 import type { ToolContext } from "./types";
 
@@ -16,6 +18,31 @@ const CatalogKindSchema = z.enum([
   "review-pass",
   "verification",
 ]);
+
+const profileCache = new Map<
+  string,
+  { profile: RepoProfile; expiresAt: number }
+>();
+const PROFILE_CACHE_TTL_MS = 45_000;
+
+async function getCachedRepoProfile(
+  ctx: ToolContext,
+  rootPath: string,
+): Promise<RepoProfile | undefined> {
+  const key = `${ctx.session.id}\0${rootPath}`;
+  const hit = profileCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) {
+    return hit.profile;
+  }
+  const profile = await profileCodebase(rootPath).catch(() => undefined);
+  if (profile) {
+    profileCache.set(key, {
+      profile,
+      expiresAt: Date.now() + PROFILE_CACHE_TTL_MS,
+    });
+  }
+  return profile;
+}
 
 export function queryWhiteboxCatalog(ctx: ToolContext) {
   return tool({
@@ -35,14 +62,23 @@ Use this instead of asking for the whole playbook. Examples:
         .array(z.string())
         .optional()
         .describe("Tags that must be present"),
-      limit: z.number().optional().describe("Maximum records to return"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(50)
+        .optional()
+        .describe("Maximum records to return (default 12, max 50)"),
       toolCallDescription: z
         .string()
         .describe("A concise description of the catalog lookup"),
     }),
     execute: async ({ query, kind, tags, limit }) => {
-      const rootPath = ctx.session.config?.codebasePath ?? ctx.agentCwd;
-      const profile = await profileCodebase(rootPath).catch(() => undefined);
+      const rootPath = resolveWhiteboxCodebaseRoot({
+        agentCwd: ctx.agentCwd,
+        codebasePath: ctx.session.config?.codebasePath,
+      });
+      const profile = await getCachedRepoProfile(ctx, rootPath);
       const records = queryCatalog({
         profile,
         query,

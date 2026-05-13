@@ -1,11 +1,12 @@
 import { tool } from "ai";
-import { isAbsolute, resolve } from "path";
 import { z } from "zod";
 import type { ScanKind } from "../../../whitebox";
 import {
   profileCodebase,
+  resolvePathWithinCodebaseRoot,
+  resolveWhiteboxCodebaseRoot,
   runScanAdapter,
-  selectScanAdapters,
+  selectScanAdaptersWithMeta,
   writeWhiteboxArtifact,
 } from "../../../whitebox";
 import type { ToolContext } from "./types";
@@ -32,31 +33,49 @@ calling document_vulnerability.`,
         .string()
         .optional()
         .describe(
-          "Repository root to scan. Defaults to session.config.codebasePath or agent working directory.",
+          "Repository root to scan; must stay under the configured codebase root.",
         ),
       kind: ScanKindSchema.optional().describe("Restrict scan family"),
       scannerIds: z
         .array(z.string())
+        .max(20)
         .optional()
         .describe("Specific adapter IDs to run, e.g. semgrep, gitleaks"),
       timeoutSeconds: z
         .number()
+        .int()
+        .positive()
+        .max(3600)
         .optional()
-        .describe("Per-scanner timeout in seconds. Defaults to 120."),
+        .describe("Per-scanner timeout in seconds. Defaults to 120, max 3600."),
       toolCallDescription: z
         .string()
         .describe("A concise description of the scan"),
     }),
     execute: async ({ path, kind, scannerIds, timeoutSeconds = 120 }) => {
-      const rootPath = path
-        ? isAbsolute(path)
-          ? path
-          : resolve(ctx.agentCwd, path)
-        : (ctx.session.config?.codebasePath ?? ctx.agentCwd);
+      const codebaseRoot = resolveWhiteboxCodebaseRoot({
+        agentCwd: ctx.agentCwd,
+        codebasePath: ctx.session.config?.codebasePath,
+      });
+      let rootPath: string;
+      try {
+        rootPath = path
+          ? resolvePathWithinCodebaseRoot(codebaseRoot, path)
+          : codebaseRoot;
+      } catch (error) {
+        return {
+          success: false,
+          summary: error instanceof Error ? error.message : String(error),
+          artifactPaths: [],
+          nextActions: ["Use a scan path inside the configured codebase root."],
+          recovery:
+            "Paths are constrained to session.config.codebasePath (or agent cwd).",
+        };
+      }
 
       try {
         const profile = await profileCodebase(rootPath);
-        const adapters = selectScanAdapters({
+        const { adapters, unknownScannerIds } = selectScanAdaptersWithMeta({
           profile,
           kind: kind as ScanKind | undefined,
           scannerIds,
@@ -65,9 +84,12 @@ calling document_vulnerability.`,
         if (adapters.length === 0) {
           return {
             success: false,
-            summary: "No applicable installed whitebox scanners found.",
+            summary: unknownScannerIds.length
+              ? `No scanners to run (unknown ids: ${unknownScannerIds.join(", ")}).`
+              : "No applicable installed whitebox scanners found.",
             data: {
               requested: { kind, scannerIds },
+              unknownScannerIds,
               availableTools: profile.toolAvailability.filter(
                 (tool) => tool.available,
               ),
@@ -78,7 +100,9 @@ calling document_vulnerability.`,
               "Use run_code_query for targeted source searches.",
             ],
             recovery:
-              "Install one of the relevant scanners or run a code-query pass instead.",
+              unknownScannerIds.length > 0
+                ? "Remove unknown scanner ids or install matching tools."
+                : "Install one of the relevant scanners or run a code-query pass instead.",
           };
         }
 
@@ -108,15 +132,28 @@ calling document_vulnerability.`,
           0,
         );
 
+        const scannerSummaries = results.map((result) => ({
+          scanner: result.scanner,
+          exitCode: result.exitCode,
+          findingCount: result.findings.length,
+          outputTruncated: result.outputTruncated ?? false,
+          timedOut: result.timedOut ?? false,
+          artifactPath: result.artifact.path,
+        }));
+
         return {
           success: true,
           summary: `Ran ${results.length} scanner(s), found ${totalFindings} summarized result(s).`,
-          data: { results },
+          data: {
+            scanners: scannerSummaries,
+            unknownScannerIds,
+          },
           artifactPaths: [
             summaryArtifact.path,
             ...results.map((result) => result.artifact.path),
           ],
           nextActions: [
+            "Use read_whitebox_artifact for raw scanner logs and full summaries on disk.",
             "Triage scanner output against reachability and attack path.",
             "Create whitebox candidates for plausible issues.",
             "Verify candidates dynamically or with reproducers before documenting findings.",

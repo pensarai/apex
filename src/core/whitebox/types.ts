@@ -173,6 +173,10 @@ export type ScanRunResult = {
   exitCode: number | null;
   findings: ScanFindingSummary[];
   artifact: WhiteboxArtifactRef;
+  /** True when stdout/stderr capture hit the byte cap before the process ended. */
+  outputTruncated?: boolean;
+  /** True when the scanner hit the wall-clock timeout (exit code 124). */
+  timedOut?: boolean;
 };
 
 export type WhiteboxJobStatus =

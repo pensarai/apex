@@ -18,7 +18,10 @@ export function spawnCodingAgent(ctx: ToolContext) {
   return tool({
     description: `Spawn one or more coding sub-agents to perform tasks on the codebase in parallel.
 
-Each task gets its own autonomous agent with filesystem access (read_file, list_files, grep, execute_command). The agents work independently and return their text output when done.
+Each task gets its own autonomous CodeAgent with filesystem tools plus whitebox helpers
+(profile_codebase, query_whitebox_catalog, run_code_query, run_whitebox_scan, candidates, bounded jobs,
+read_whitebox_artifact), plus execute_command, http_request, web_search, and document_app/document_endpoint.
+The agents work independently and return their text output when done.
 
 Use this to fan out analysis work — e.g. analyze multiple apps, modules, or concerns in parallel for higher fidelity.
 

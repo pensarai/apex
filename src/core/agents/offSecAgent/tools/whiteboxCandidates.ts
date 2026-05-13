@@ -30,6 +30,13 @@ const SourceLocationSchema = z.object({
   symbol: z.string().optional(),
 });
 
+const SourceTraceSchema = z.object({
+  source: SourceLocationSchema.optional(),
+  sink: SourceLocationSchema.optional(),
+  path: z.array(SourceLocationSchema).optional(),
+  notes: z.string().optional(),
+});
+
 const CandidateStateSchema = z.enum([
   "hypothesis",
   "investigating",
@@ -51,14 +58,7 @@ scanner artifacts, fuzzing logs, and verification status out of official finding
       vulnerabilityClass: z.string(),
       summary: z.string(),
       confidence: z.enum(["low", "medium", "high"]),
-      sourceTrace: z
-        .object({
-          source: SourceLocationSchema.optional(),
-          sink: SourceLocationSchema.optional(),
-          path: z.array(SourceLocationSchema).optional(),
-          notes: z.string().optional(),
-        })
-        .optional(),
+      sourceTrace: SourceTraceSchema.optional(),
       artifacts: z.array(ArtifactSchema).optional(),
       toolCallDescription: z
         .string()
@@ -93,15 +93,14 @@ export function updateWhiteboxCandidate(ctx: ToolContext) {
   return tool({
     description: `Update a whitebox candidate state, evidence, or verification status.
 
-Allowed state flow: hypothesis -> investigating -> repro_attempted -> confirmed,
-rejected, or deferred. State transitions after hypothesis require artifact or
-source-trace evidence references.`,
+State machine: hypothesis -> investigating -> repro_attempted -> confirmed (requires verification.status=succeeded), or rejected/deferred from earlier states. Transitions to investigating or repro_attempted require artifact references and/or a substantive sourceTrace.`,
     inputSchema: z.object({
       id: z.string(),
       state: CandidateStateSchema.optional(),
       confidence: z.enum(["low", "medium", "high"]).optional(),
       summary: z.string().optional(),
       artifacts: z.array(ArtifactSchema).optional(),
+      sourceTrace: SourceTraceSchema.optional(),
       verification: z
         .object({
           strategy: z.string(),
@@ -122,6 +121,7 @@ source-trace evidence references.`,
           confidence: input.confidence,
           summary: input.summary,
           artifacts: input.artifacts,
+          sourceTrace: input.sourceTrace,
           verification: input.verification,
         });
         return {
@@ -146,7 +146,7 @@ source-trace evidence references.`,
           artifactPaths: [],
           nextActions: ["List candidates and retry with a valid id/evidence."],
           recovery:
-            "Transitions after hypothesis need artifact references from scans, code queries, source traces, jobs, or repro outputs.",
+            "Follow the state machine; investigating/repro_attempted need artifacts or sourceTrace; confirmed needs repro_attempted plus verification.status=succeeded.",
         };
       }
     },
@@ -156,20 +156,28 @@ source-trace evidence references.`,
 export function listWhiteboxCandidates(ctx: ToolContext) {
   return tool({
     description:
-      "List whitebox vulnerability candidates for this session, including state, confidence, source traces, and artifact references.",
+      "List whitebox vulnerability candidates for this session (capped). Returns state, confidence, traces, and artifact references.",
     inputSchema: z.object({
       state: CandidateStateSchema.optional(),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(200)
+        .optional()
+        .describe("Max candidates to return (default 50, max 200)"),
       toolCallDescription: z
         .string()
         .describe("A concise description of the candidate listing"),
     }),
-    execute: async ({ state }) => {
-      const candidates = (await listCandidates(ctx.session)).filter(
-        (candidate) => !state || candidate.state === state,
-      );
+    execute: async ({ state, limit }) => {
+      const candidates = await listCandidates(ctx.session, {
+        state,
+        limit: limit ?? 50,
+      });
       return {
         success: true,
-        summary: `Found ${candidates.length} whitebox candidate(s).`,
+        summary: `Found ${candidates.length} whitebox candidate(s) (capped).`,
         data: { candidates },
         artifactPaths: candidates.flatMap((candidate) =>
           candidate.artifacts.map((artifact) => artifact.path),
