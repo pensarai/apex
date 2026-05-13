@@ -34,7 +34,7 @@ function buildArgs(
 ): string[] {
   switch (engine) {
     case "rg":
-      return ["--line-number", "--no-heading", pattern, targetPath];
+      return ["--line-number", "--no-heading", "--", pattern, targetPath];
     case "ast-grep":
       return ["run", "--pattern", pattern, targetPath];
     case "comby":
