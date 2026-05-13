@@ -277,17 +277,20 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   projectThreatModel?: string;
 
   /**
-   * Shared Playwright MCP browser session to reuse instead of spinning up
-   * a fresh browser for this agent. When provided, all browser tools
-   * (`browser_navigate`, `browser_snapshot`, etc.) operate against the
-   * caller's existing browser context — cookies, localStorage, and the
-   * currently loaded page are inherited.
+   * Pre-constructed Playwright MCP browser session to use for this agent
+   * instead of constructing a fresh one. Used by `spawn_pentest_agent` to
+   * hand a worker a freshly-cloned-and-seeded session — fresh Chromium,
+   * own MCP child-process, but pre-loaded with a snapshot of the
+   * orchestrator's cookies + per-origin localStorage so the worker is
+   * already authenticated for the same origins the orchestrator was.
    *
-   * Used by `spawn_pentest_agent` so a worker sub-agent can pick up the
-   * orchestrator's authenticated browser state instead of starting from
-   * `about:blank` with an empty cookie jar. The agent that constructs the
-   * session (i.e. the one that did NOT receive `browserSession` as input)
-   * owns its lifecycle; inheritors never disconnect it.
+   * The agent does NOT share this session with any other agent at runtime
+   * — each agent owns its own isolated Chromium and a sub-agent's
+   * browser-side mutations (navigations, `localStorage.setItem`,
+   * `browser_evaluate` calls, alerts, etc.) never leak back into the
+   * caller's browser. Lifecycle of an externally-supplied session belongs
+   * to whoever supplied it (e.g. `spawn_pentest_agent` disconnects the
+   * worker session on completion).
    */
   browserSession?: PlaywrightMcpSession;
 };
@@ -371,10 +374,13 @@ export interface SpecializedAgentInput {
   projectThreatModel?: string;
 
   /**
-   * Shared Playwright MCP browser session inherited from a parent agent.
-   * Forwarded to the underlying {@link OffensiveSecurityAgentInput} so the
-   * sub-agent's browser tools reuse the parent's already-authenticated
-   * Chromium context instead of opening a new one.
+   * Pre-constructed Playwright MCP browser session for this sub-agent —
+   * typically a freshly-cloned-and-seeded session built by
+   * `spawn_pentest_agent` so the worker inherits the orchestrator's
+   * cookies + localStorage but operates against its OWN isolated Chromium
+   * (so its browser mutations don't leak back to the orchestrator or to
+   * sibling workers). Forwarded to the underlying
+   * {@link OffensiveSecurityAgentInput}.
    */
   browserSession?: PlaywrightMcpSession;
 }

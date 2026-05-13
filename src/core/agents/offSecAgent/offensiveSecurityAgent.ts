@@ -83,19 +83,25 @@ export class OffensiveSecurityAgent<TResult = void> {
   private readonly persistentShell?: PersistentShell;
 
   /**
-   * Shared Playwright MCP browser session. Either created by this agent
-   * (when no `browserSession` was passed in) or inherited from a parent
-   * agent (e.g. a pentest orchestrator handing its authenticated context
-   * down to a worker via `spawn_pentest_agent`).
+   * This agent's Playwright MCP browser session. Either constructed fresh
+   * by this agent (when no `browserSession` was passed in) or supplied by
+   * the caller (e.g. `spawn_pentest_agent` constructs a fresh, isolated
+   * session for each worker, seeds it with a snapshot of the orchestrator's
+   * cookies + localStorage, and hands the seeded session in here so this
+   * agent's browser tools operate against an authenticated-but-isolated
+   * Chromium).
    *
-   * Exposed publicly so sub-agent spawn tools can forward this reference
-   * into the child agent's input — the child's tool context picks it up
-   * and reuses the same browser, preserving cookies / localStorage /
-   * navigation history across the agent boundary.
+   * Exposed publicly so spawn tools can read this agent's session (e.g.
+   * the pentest orchestrator's `browserSession` is what `spawn_pentest_agent`
+   * snapshots when it builds the worker's seeded clone). The session
+   * object is NOT shared between agents at runtime — each agent gets its
+   * own isolated Chromium so a sub-agent can't clobber its parent's DOM,
+   * cookies, or navigation state.
    *
    * Only populated for non-sandbox (local MCP) mode. In sandbox mode,
    * browser state is already shared via the sandbox's per-sandbox
-   * Playwright user-data directory, so no shared session object is needed.
+   * Playwright user-data directory, so no host-side session object is
+   * needed.
    */
   public readonly browserSession?: PlaywrightMcpSession;
 

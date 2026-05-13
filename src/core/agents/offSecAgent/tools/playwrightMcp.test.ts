@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createBrowserTools,
   PlaywrightMcpSession,
+  parseStorageStateResult,
   transformScriptToFunction,
 } from "./playwrightMcp";
 
@@ -161,6 +162,41 @@ describe("transformScriptToFunction", () => {
   });
 });
 
+describe("parseStorageStateResult", () => {
+  it("returns null for null/undefined input", () => {
+    expect(parseStorageStateResult(null)).toBeNull();
+    expect(parseStorageStateResult(undefined)).toBeNull();
+  });
+
+  it("parses the Playwright-MCP wrapped string format", () => {
+    const wrapped = `### Result\n{"cookies":[{"name":"a","value":"b","domain":"x","path":"/"}],"origins":[]}\n\n### Ran Playwright code\nfoo`;
+    const out = parseStorageStateResult(wrapped);
+    expect(out).not.toBeNull();
+    expect(out!.cookies[0].name).toBe("a");
+    expect(out!.origins).toEqual([]);
+  });
+
+  it("falls back to a regex JSON extract for unwrapped strings", () => {
+    const raw = `garbage prefix {"cookies":[],"origins":[{"origin":"https://x","localStorage":[]}]} trailing`;
+    const out = parseStorageStateResult(raw);
+    expect(out).not.toBeNull();
+    expect(out!.origins[0].origin).toBe("https://x");
+  });
+
+  it("accepts a pre-parsed object directly", () => {
+    const obj = { cookies: [], origins: [] };
+    expect(parseStorageStateResult(obj)).toEqual(obj);
+  });
+
+  it("rejects objects without a cookies field", () => {
+    expect(parseStorageStateResult({ foo: 1 })).toBeNull();
+  });
+
+  it("rejects strings that are not valid JSON storageState payloads", () => {
+    expect(parseStorageStateResult("totally not json")).toBeNull();
+  });
+});
+
 describe("createBrowserTools — shared session reuse", () => {
   let evidenceDir: string;
 
@@ -204,6 +240,88 @@ describe("createBrowserTools — shared session reuse", () => {
       { url: "https://example.com/login" },
       undefined,
     );
+  });
+
+  it("captureStorageState returns null when the session has never connected", async () => {
+    const session = new PlaywrightMcpSession();
+    expect(session.isConnected()).toBe(false);
+    const state = await session.captureStorageState();
+    expect(state).toBeNull();
+  });
+
+  it("captureStorageState parses a Playwright-MCP wrapped storageState response", async () => {
+    const session = new PlaywrightMcpSession();
+    vi.spyOn(session, "isConnected").mockReturnValue(true);
+
+    const wrapped = `### Result\n${JSON.stringify({
+      cookies: [
+        {
+          name: "session",
+          value: "abc123",
+          domain: "example.com",
+          path: "/",
+          httpOnly: true,
+          secure: true,
+          sameSite: "Lax" as const,
+        },
+      ],
+      origins: [
+        {
+          origin: "https://example.com",
+          localStorage: [{ name: "uid", value: "alice" }],
+        },
+      ],
+    })}\n\n### Ran Playwright code\nawait page.context().storageState()`;
+
+    vi.spyOn(session, "callTool").mockResolvedValue(wrapped);
+
+    const state = await session.captureStorageState();
+    expect(state).not.toBeNull();
+    expect(state!.cookies).toHaveLength(1);
+    expect(state!.cookies[0].name).toBe("session");
+    expect(state!.origins).toHaveLength(1);
+    expect(state!.origins[0].localStorage[0].value).toBe("alice");
+  });
+
+  it("seedStorageState forwards cookies + origins into a browser_run_code call", async () => {
+    const session = new PlaywrightMcpSession();
+    // Skip the real MCP spawn — seedStorageState calls initialize first.
+    vi.spyOn(session, "initialize").mockResolvedValue({} as never);
+    const callSpy = vi.spyOn(session, "callTool").mockResolvedValue({});
+
+    const state = {
+      cookies: [
+        {
+          name: "session",
+          value: "tok",
+          domain: "example.com",
+          path: "/",
+          httpOnly: false,
+          secure: true,
+          sameSite: "Lax" as const,
+        },
+      ],
+      origins: [
+        {
+          origin: "https://example.com",
+          localStorage: [{ name: "uid", value: "alice" }],
+        },
+      ],
+    };
+
+    await session.seedStorageState(state);
+
+    expect(callSpy).toHaveBeenCalledTimes(1);
+    const [toolName, args] = callSpy.mock.calls[0] as [
+      string,
+      { code: string },
+    ];
+    expect(toolName).toBe("browser_run_code");
+    // The injected code carries the cookies + localStorage payload verbatim.
+    expect(args.code).toContain('"name":"session"');
+    expect(args.code).toContain('"uid"');
+    expect(args.code).toContain("addCookies");
+    expect(args.code).toContain("addInitScript");
   });
 
   it("does not register an abort handler that would tear down a borrowed session", async () => {

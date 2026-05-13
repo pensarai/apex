@@ -17,6 +17,28 @@ import { dirname, join } from "path";
 import { z } from "zod";
 import type { Logger } from "../../../logger";
 
+/**
+ * Playwright `BrowserContext.storageState()` shape — the JSON-serialisable
+ * snapshot of cookies + per-origin storage that Playwright uses to round-trip
+ * authentication state between contexts.
+ */
+export interface BrowserStorageState {
+  cookies: Array<{
+    name: string;
+    value: string;
+    domain: string;
+    path: string;
+    expires?: number;
+    httpOnly?: boolean;
+    secure?: boolean;
+    sameSite?: "Strict" | "Lax" | "None";
+  }>;
+  origins: Array<{
+    origin: string;
+    localStorage: Array<{ name: string; value: string }>;
+  }>;
+}
+
 // Types for tool results
 export interface BrowserNavigateResult {
   success: boolean;
@@ -181,6 +203,60 @@ export function transformScriptToFunction(script: string): string {
     /^\s*(async\s+)?\(/.test(script) ||
     /^\s*(async\s+)?function\s*\(/.test(script);
   return isFunction ? script : `() => (${script})`;
+}
+
+/**
+ * Parse the response payload from `browser_run_code` returning a
+ * `BrowserContext.storageState()` JSON object. Playwright MCP wraps results
+ * as `### Result\n<value>\n\n### Ran Playwright code\n...` strings, so we
+ * strip the prefix/suffix and JSON-parse the middle. Falls back to a JSON
+ * object regex extract for older MCP variants. Returns `null` for any
+ * shape we can't decode rather than throwing.
+ *
+ * @internal Exported for testing.
+ */
+export function parseStorageStateResult(
+  result: unknown,
+): BrowserStorageState | null {
+  if (!result) return null;
+
+  if (typeof result === "string") {
+    const stripped = result
+      .replace(/^###\s*Result\s*\n?/, "")
+      .replace(/\n\n###[\s\S]*$/, "")
+      .trim();
+    try {
+      const parsed = JSON.parse(stripped);
+      if (parsed && typeof parsed === "object" && "cookies" in parsed) {
+        return parsed as BrowserStorageState;
+      }
+      if (typeof parsed === "string") {
+        const inner = JSON.parse(parsed);
+        if (inner && typeof inner === "object" && "cookies" in inner) {
+          return inner as BrowserStorageState;
+        }
+      }
+    } catch {
+      const jsonMatch = stripped.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const inner = JSON.parse(jsonMatch[0]);
+          if (inner && typeof inner === "object" && "cookies" in inner) {
+            return inner as BrowserStorageState;
+          }
+        } catch {
+          /* fall through */
+        }
+      }
+    }
+    return null;
+  }
+
+  if (typeof result === "object" && "cookies" in (result as object)) {
+    return result as BrowserStorageState;
+  }
+
+  return null;
 }
 
 /**
@@ -442,6 +518,83 @@ export class PlaywrightMcpSession {
   /** Check if this session's client is currently connected. */
   isConnected(): boolean {
     return this.mcpClient !== null;
+  }
+
+  /**
+   * Snapshot this session's full Playwright storage state (cookies + per-origin
+   * localStorage) by invoking `BrowserContext.storageState()` through the
+   * MCP `browser_run_code` tool.
+   *
+   * Returns `null` when the session has never been initialised (no Chromium
+   * to ask), when no page is open, or when the call / response parse fails.
+   * Callers should treat a `null` result as "no auth state to clone" and
+   * proceed with an unseeded session.
+   *
+   * Cheap to call repeatedly — the underlying MCP call is a few KB of JSON.
+   */
+  async captureStorageState(): Promise<BrowserStorageState | null> {
+    if (!this.isConnected()) return null;
+
+    try {
+      const result = await this.callTool("browser_run_code", {
+        code: `async (page) => { return await page.context().storageState(); }`,
+      });
+
+      return parseStorageStateResult(result);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Seed this session's browser context with a previously-captured
+   * {@link BrowserStorageState}. Initialises the session if it hasn't been
+   * connected yet, then injects:
+   *
+   * - cookies, immediately, via `BrowserContext.addCookies()`
+   * - per-origin localStorage, lazily, via `BrowserContext.addInitScript()`
+   *   so the values are written into `localStorage` whenever a page from
+   *   that origin loads
+   *
+   * The init-script approach means localStorage is restored on the next
+   * `browser_navigate` call — calling `browser_evaluate` on `about:blank`
+   * before navigating won't see the seeded values (those live on the
+   * target origin). Cookies are visible immediately and will be sent on
+   * the first navigation.
+   *
+   * Best-effort: errors are swallowed so a seeding failure never blocks
+   * the worker from running with an unauthenticated session.
+   */
+  async seedStorageState(state: BrowserStorageState): Promise<void> {
+    await this.initialize();
+
+    const code = `async (page) => {
+      const ctx = page.context();
+      const state = ${JSON.stringify(state)};
+      if (state.cookies && state.cookies.length > 0) {
+        try { await ctx.addCookies(state.cookies); } catch (e) {}
+      }
+      if (state.origins && state.origins.length > 0) {
+        const parts = [];
+        for (const o of state.origins) {
+          if (!o.localStorage || o.localStorage.length === 0) continue;
+          const setters = o.localStorage.map(function(it) {
+            return 'try{localStorage.setItem(' + JSON.stringify(it.name) + ',' + JSON.stringify(it.value) + ');}catch(e){}';
+          }).join('');
+          parts.push('if (location.origin === ' + JSON.stringify(o.origin) + ') {' + setters + '}');
+        }
+        if (parts.length > 0) {
+          try { await ctx.addInitScript({ content: parts.join('\\n') }); } catch (e) {}
+        }
+      }
+      return { ok: true, cookies: (state.cookies||[]).length, origins: (state.origins||[]).length };
+    }`;
+
+    try {
+      await this.callTool("browser_run_code", { code });
+    } catch {
+      // Best-effort — proceed even if seeding partially or fully failed.
+    }
   }
 
   /**
