@@ -7,6 +7,9 @@ interface SessionPaths {
   pocsPath: string;
   scratchpadPath: string;
   logsPath: string;
+  config?: {
+    codebasePath?: string;
+  };
 }
 
 /**
@@ -69,6 +72,11 @@ export function buildSessionWorkspaceSection(
 ): string {
   const sandboxMode = agentCwd === session.rootPath;
   const providedFilesSection = buildProvidedFilesSection(session.rootPath);
+  const sourceAssessmentSection = buildSourceAssessmentSection(
+    session,
+    agentCwd,
+    sandboxMode,
+  );
 
   if (sandboxMode) {
     return `
@@ -85,7 +93,7 @@ The session directory (${session.rootPath}) contains these subdirectories:
 - **evidence/** — screenshots and evidence (written by browser tools)
 - **provided_files/** — user-uploaded files (sample payloads, docs, test data); populated when the project has workspace files configured.
 
-Tools like \`document_vulnerability\` and browser evidence capture write to the correct subdirectories automatically.${providedFilesSection}`;
+Tools like \`document_vulnerability\` and browser evidence capture write to the correct subdirectories automatically.${providedFilesSection}${sourceAssessmentSection}`;
   }
 
   return `
@@ -103,7 +111,38 @@ Session artifacts are stored separately at ${session.rootPath}:
 - **evidence/** — screenshots and evidence
 - **provided_files/** — user-uploaded files (sample payloads, docs, test data); populated when the project has workspace files configured.
 
-Tools like \`document_vulnerability\` and browser evidence capture write to the session directory automatically.${providedFilesSection}`;
+Tools like \`document_vulnerability\` and browser evidence capture write to the session directory automatically.${providedFilesSection}${sourceAssessmentSection}`;
+}
+
+function buildSourceAssessmentSection(
+  session: SessionPaths,
+  agentCwd: string,
+  sandboxMode: boolean,
+): string {
+  const codebasePath = session.config?.codebasePath;
+  const hasSourceAccess = Boolean(codebasePath) || !sandboxMode;
+  if (!hasSourceAccess) return "";
+
+  const sourceRoot = codebasePath ?? agentCwd;
+  const alignmentNote =
+    codebasePath && codebasePath !== agentCwd
+      ? `\nThe configured codebase path is ${codebasePath}, while your shell starts in ${agentCwd}. Use the configured codebase path for source analysis unless the user says otherwise.`
+      : "";
+
+  return `
+
+# Source Code Assessment
+
+Source code is in scope at ${sourceRoot}.${alignmentNote}
+
+Use source access as a force multiplier, not as a rigid workflow:
+- Start with \`profile_codebase\` when the repo is unfamiliar.
+- Query only relevant playbook slices with \`query_whitebox_catalog\`; do not carry the whole methodology in context.
+- Prefer sink-first analysis: find dangerous operations, then trace backward to attacker-controlled entry points and trust boundaries.
+- Use \`run_code_query\` for batched source searches, \`run_whitebox_scan\` for installed scanners, and \`spawn_coding_agent\` for independent deep dives.
+- Track unverified hypotheses with whitebox candidates. Only call \`document_vulnerability\` after a PoC, crash reproducer, or dynamic check confirms exploitability.
+- Run builds, local servers, sanitizer runs, and microfuzzers through bounded whitebox jobs so logs and crashes are preserved as artifacts.
+- Do not modify the target repo by default. Put harnesses, generated inputs, and scratch scripts under the session scratchpad unless the operator approves repo edits.`;
 }
 
 /** Options for building the base system prompt. */

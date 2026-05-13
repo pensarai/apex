@@ -1261,6 +1261,7 @@ export default function OperatorDashboard({
               enableSuggestions: true,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
+            codebasePath: initialConfig?.sandbox ? undefined : process.cwd(),
             taskDriven: initialConfig?.taskDriven,
           };
           agentResult = await runOffensiveSecurityAgent({

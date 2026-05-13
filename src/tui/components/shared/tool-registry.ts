@@ -103,6 +103,23 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
     const mode = args.cwd ? "whitebox" : "blackbox";
     return `pentest workflow (${mode}) ${args.target || ""}`;
   },
+  profile_codebase: (args) => `profile codebase ${args.path || ""}`,
+  query_whitebox_catalog: (args) =>
+    `whitebox catalog ${args.query || args.kind || ""}`,
+  run_code_query: (args) => {
+    const queries = args.queries as unknown[];
+    return `code query ×${queries?.length ?? "?"}`;
+  },
+  run_whitebox_scan: (args) => `whitebox scan ${args.kind || ""}`,
+  create_whitebox_candidate: (args) =>
+    `candidate ${args.vulnerabilityClass || ""}`,
+  update_whitebox_candidate: (args) => `candidate ${args.id || ""}`,
+  list_whitebox_candidates: (args) =>
+    `candidates ${args.state ? `(${args.state})` : ""}`,
+  start_whitebox_job: (args) => `whitebox job ${args.name || ""}`,
+  poll_whitebox_job: (args) => `poll job ${args.jobId || ""}`,
+  stop_whitebox_job: (args) => `stop job ${args.jobId || ""}`,
+  read_whitebox_artifact: (args) => `job log ${args.jobId || ""}`,
   delegate_to_auth_subagent: (args) =>
     `auth ${args.target || ""} — ${args.reason || ""}`,
 
