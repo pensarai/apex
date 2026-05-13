@@ -8,7 +8,7 @@ import { ensureValidToken, signGatewayRequest } from "../../../auth";
 import { config } from "../../../config";
 import type { ToolContext } from "./types";
 
-export const webSearchInputSchema = z.object({
+const webSearchInputSchema = z.object({
   query: z
     .string()
     .describe(
@@ -21,9 +21,9 @@ export const webSearchInputSchema = z.object({
     ),
 });
 
-export type WebSearchInput = z.infer<typeof webSearchInputSchema>;
+type WebSearchInput = z.infer<typeof webSearchInputSchema>;
 
-export interface WebSearchResult {
+interface WebSearchResult {
   title: string;
   url: string;
   snippet: string;

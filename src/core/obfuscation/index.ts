@@ -22,7 +22,6 @@ export {
   deobfuscate,
   isObfuscationEnabled,
   obfuscate,
-  obfuscateValue,
   resetObfuscation,
   setObfuscationEnabled,
 } from "./engine";

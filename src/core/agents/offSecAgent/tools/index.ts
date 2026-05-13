@@ -8,7 +8,6 @@ export {
   type AskUserQuestionsResult,
 } from "./askUserQuestions";
 export { authenticateSession } from "./authenticateSession";
-export type { BrowserToolName } from "./browserTools";
 // Browser automation tools
 export { BROWSER_TOOL_NAMES, createBrowserToolset } from "./browserTools";
 // Observability tools
@@ -26,7 +25,6 @@ export { detectAuthScheme } from "./detectAuthScheme";
 export { documentApp } from "./documentApp";
 export { documentEndpoint } from "./documentEndpoint";
 export { documentVulnerability } from "./documentFinding";
-export type { EmailToolName } from "./email";
 // Email tools
 export {
   createEmailToolset,

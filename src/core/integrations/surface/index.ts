@@ -132,7 +132,7 @@ export function consolidateBySameRoute(
  * `document_endpoint` records) resolve `file` against the workflow's
  * `codebasePath`, which is `repoRoot`. Idempotent when `scanRoot === repoRoot`.
  */
-export function rebaseFileToRepoRoot(
+function rebaseFileToRepoRoot(
   endpoints: EndpointInfo[],
   scanRoot: string,
   repoRoot: string,
@@ -152,7 +152,7 @@ export function rebaseFileToRepoRoot(
  * a climb-up scan returns the union of every sibling app's routes — see
  * `mapAppWithSurface` below.
  */
-export function scopeEndpointsToApp(
+function scopeEndpointsToApp(
   endpoints: EndpointInfo[],
   scanRoot: string,
   appPath: string,

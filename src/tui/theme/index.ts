@@ -5,16 +5,9 @@
  * Re-exports the theme system API and legacy colors for backwards compatibility.
  */
 
-// ── Legacy exports (kept during migration) ──────────────────
-export { type ColorName, colors } from "./colors";
 export { resolveThemeColors, ThemeProvider, useTheme } from "./context";
 export { detectTerminalMode } from "./detect-mode";
-export {
-  DEFAULT_THEME_NAME,
-  getAllThemeNames,
-  getTheme,
-  registerTheme,
-} from "./registry";
+export { getAllThemeNames, getTheme } from "./registry";
 
 // ── Built-in themes + terminal mode detection ───────────────
 export { registerBuiltinThemes } from "./themes";
@@ -40,9 +33,9 @@ import type { ThemeColors } from "./types";
  *   getTierColor(tier)          — legacy, uses hardcoded colors
  *   getTierColor(colors, tier)  — theme-aware, uses resolved ThemeColors
  */
-export function getTierColor(tier: PermissionTier): RGBA;
-export function getTierColor(colors: ThemeColors, tier: PermissionTier): RGBA;
-export function getTierColor(
+function getTierColor(tier: PermissionTier): RGBA;
+function getTierColor(colors: ThemeColors, tier: PermissionTier): RGBA;
+function getTierColor(
   colorsOrTier: ThemeColors | PermissionTier,
   maybeTier?: PermissionTier,
 ): RGBA {
@@ -69,7 +62,7 @@ export function getTierColor(
  * render without a trailing `.0` (e.g. `200K`, `1M`); fractional
  * values keep one decimal (`1.2K`, `1.5M`).
  */
-export function formatTokenCount(count: number): string {
+function formatTokenCount(count: number): string {
   if (count >= 1_000_000) {
     const v = count / 1_000_000;
     return `${Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1)}M`;

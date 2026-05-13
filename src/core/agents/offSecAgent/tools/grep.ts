@@ -3,7 +3,7 @@ import { spawn } from "child_process";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 
-export const grepInputSchema = z.object({
+const grepInputSchema = z.object({
   pattern: z.string().describe("The pattern to search for"),
   directory: z
     .string()
@@ -24,7 +24,7 @@ export const grepInputSchema = z.object({
     ),
 });
 
-export type GrepInput = z.infer<typeof grepInputSchema>;
+type GrepInput = z.infer<typeof grepInputSchema>;
 
 export type GrepResult = {
   success: boolean;

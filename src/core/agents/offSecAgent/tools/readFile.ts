@@ -4,7 +4,7 @@ import { isAbsolute, resolve } from "path";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 
-export const readFileInputSchema = z.object({
+const readFileInputSchema = z.object({
   path: z
     .string()
     .describe(
@@ -25,7 +25,7 @@ export const readFileInputSchema = z.object({
     ),
 });
 
-export type ReadFileInput = z.infer<typeof readFileInputSchema>;
+type ReadFileInput = z.infer<typeof readFileInputSchema>;
 
 export type ReadFileResult = {
   success: boolean;
