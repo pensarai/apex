@@ -32,6 +32,8 @@ Bias to caution over speed on non-trivial work. Use judgment on trivial tasks.
 
 **Match the codebase's conventions, even if you disagree.** Conformance > taste. If a convention seems harmful, surface it — don't fork silently.
 
+**Avoid verbose comments.** Code should speak for itself — well-named identifiers and small functions beat prose. If context is genuinely non-obvious (a hidden constraint, a workaround, surprising behavior), a brief one-liner is fine. Don't narrate what the code does or write multi-paragraph docstrings.
+
 **Fail loud.** "Completed" is wrong if anything was silently skipped. Default to surfacing uncertainty.
 
 ### Closing the loop
@@ -153,7 +155,4 @@ Enforced via the `import-x/no-internal-modules` ESLint rule in `eslint.config.js
 
 ### Gotchas
 
-- **Every acquire needs a release on every path.** Streams, subprocesses, intervals, and listeners need cleanup on the error path. Put disposal in `finally` (or behind an `AbortSignal`), never after the consuming loop.
-- **External I/O needs timeouts and bounded concurrency.** Anything crossing the process boundary — Redis, HTTP, LLM tool calls, subagent spawns — gets explicit timeouts and a concurrency cap. Unbounded parallel `tool_use` execution is a foot-gun.
-- **Change a contract, change every participant in the same change.** When you add or alter a write path, field, event, or persisted shape, update its readers, hydrators, and projections atomically. Don't rely on replay or backfill to catch up.
-- **Avoid primitive obsession.** Free-form strings and overloaded enums grow into kludges. Identifiers that cross process or service boundaries are UUIDs with display labels separate. Finite sets are typed unions, not strings. New "kinds" get their own field, not a third value in an existing one.
+- **Every acquire needs a release on every path.** Streams, subprocesses, intervals, and listeners should be disposed on the error path too, not just the happy path — `finally` or `AbortSignal` are usually the cleanest way.
