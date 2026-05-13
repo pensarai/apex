@@ -24,6 +24,16 @@ const profileCache = new Map<
   { profile: RepoProfile; expiresAt: number }
 >();
 const PROFILE_CACHE_TTL_MS = 45_000;
+const PROFILE_CACHE_MAX_ENTRIES = 16;
+
+function evictExpiredProfileCache(): void {
+  const now = Date.now();
+  for (const [key, entry] of profileCache) {
+    if (entry.expiresAt <= now) {
+      profileCache.delete(key);
+    }
+  }
+}
 
 async function getCachedRepoProfile(
   ctx: ToolContext,
@@ -34,8 +44,14 @@ async function getCachedRepoProfile(
   if (hit && hit.expiresAt > Date.now()) {
     return hit.profile;
   }
+  profileCache.delete(key);
   const profile = await profileCodebase(rootPath).catch(() => undefined);
   if (profile) {
+    evictExpiredProfileCache();
+    if (profileCache.size >= PROFILE_CACHE_MAX_ENTRIES) {
+      const oldestKey = profileCache.keys().next().value;
+      if (oldestKey !== undefined) profileCache.delete(oldestKey);
+    }
     profileCache.set(key, {
       profile,
       expiresAt: Date.now() + PROFILE_CACHE_TTL_MS,

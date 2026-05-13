@@ -70,7 +70,6 @@ const MANIFEST_PACKAGE_MANAGERS: Record<string, PackageManagerId[]> = {
   "build.gradle.kts": ["gradle"],
   Gemfile: ["bundler"],
   "composer.json": ["composer"],
-  "*.csproj": ["dotnet"],
 };
 
 const TOOL_NAMES = [
