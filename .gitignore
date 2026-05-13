@@ -60,3 +60,17 @@ build
 .apex-cache
 # SST auto-generated env types
 sst-env.d.ts
+
+# Agent / Claude Code personal layer.
+# Skills under .agents/skills/ and .claude/skills/ are personal symlinks (gitignored)
+# except for the .gitkeep scaffolding files and any explicitly whitelisted team-shared
+# skill directories. See ~/.claude/scripts/sync-personal-skills.sh for the workflow.
+.agents/skills/*
+!.agents/skills/.gitkeep
+.claude/skills/*
+!.claude/skills/.gitkeep
+# Personal Claude Code per-project settings (additionalDirectories etc.)
+.claude/settings.local.json
+# Whitelist team-shared skills as they're added:
+# !.agents/skills/<team-skill>/
+# !.claude/skills/<team-skill>/
