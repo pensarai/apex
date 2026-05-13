@@ -71,4 +71,6 @@ jobs:
 
       - name: Typecheck console
         working-directory: console
+        env:
+          NODE_OPTIONS: --max-old-space-size=20480
         run: bun run tsc
