@@ -18,6 +18,10 @@ Bias to caution over speed on non-trivial work. Use judgment on trivial tasks.
 
 **Surgical changes.** Touch only what you must. Don't "improve" adjacent code, comments, or formatting. Don't refactor what isn't broken. Match existing style.
 
+**Don't accumulate tech debt.** Solve today's problem in a way that won't trap tomorrow's solver. Pick the abstraction that fits and avoid shortcuts that compound silently.
+
+**Short-term fixes are okay if surfaced.** Sometimes a focused patch is the right call, not a migration — that's valid. But name what shortcut was taken and what the long-term path looks like, and ask whether to open a GitHub issue to track it.
+
 **Goal-driven execution.** Define success, loop until verified. Don't blindly follow steps.
 
 **Use the model only for judgment calls.** Classification, drafting, summarization, extraction. Not routing, retries, deterministic transforms. If code can answer, code answers.
@@ -38,13 +42,14 @@ Bias to caution over speed on non-trivial work. Use judgment on trivial tasks.
 
 ### Closing the loop
 
-At the end of a non-trivial session, reflect on what surfaced — surprises, recurring corrections, near-misses, places where guardrails were missing. If anything stands out, propose a concrete way to prevent it next time:
+At the end of a non-trivial session, reflect on what surfaced — surprises, recurring corrections, near-misses, missing guardrails, shortcuts you flagged. If anything stands out, propose a concrete way to prevent or address it next time:
 
 - An entry in this `AGENTS.md` (a new gotcha, working principle, or convention).
 - A new skill or slash command that codifies the workflow.
 - A CI/CD check (lint rule, custom script, test) that catches the class of mistake automatically.
+- A GitHub issue for follow-ups that won't land now — long-term refactors, the un-taken path behind a short-term fix, guardrails to consider.
 
-Prefer the cheapest mechanism that actually closes the gap — a CI gate beats a written rule, a written rule beats hoping you remember. Propose; don't ship the change without confirmation.
+Prefer the cheapest mechanism that actually closes the gap — a CI gate beats a written rule, a written rule beats hoping you remember. If a fix can land in this PR, propose it; otherwise, ask whether to open an issue so the follow-up stays visible. Don't ship the change without confirmation.
 
 The bar is: future agents shouldn't hit the same wall. Trust compounds when guardrails do.
 
