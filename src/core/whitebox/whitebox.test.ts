@@ -177,7 +177,7 @@ describe("whitebox candidates", () => {
     });
 
     expect(updated.state).toBe("investigating");
-    expect((await listWhiteboxCandidates(session)).length).toBe(1);
+    expect((await listWhiteboxCandidates(session)).candidates.length).toBe(1);
   });
 
   it("allows investigating with substantive sourceTrace only", async () => {
@@ -271,7 +271,7 @@ describe("whitebox candidates", () => {
       join(session.scratchpadPath, "whitebox", "candidates.json"),
       "not-json{",
     );
-    expect(await listWhiteboxCandidates(session)).toEqual([]);
+    expect((await listWhiteboxCandidates(session)).candidates).toEqual([]);
   });
 });
 

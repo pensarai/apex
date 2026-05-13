@@ -171,14 +171,18 @@ export function listWhiteboxCandidates(ctx: ToolContext) {
         .describe("A concise description of the candidate listing"),
     }),
     execute: async ({ state, limit }) => {
-      const candidates = await listCandidates(ctx.session, {
+      const effectiveLimit = limit ?? 50;
+      const { candidates, total } = await listCandidates(ctx.session, {
         state,
-        limit: limit ?? 50,
+        limit: effectiveLimit,
       });
+      const truncated = candidates.length < total;
       return {
         success: true,
-        summary: `Found ${candidates.length} whitebox candidate(s) (capped).`,
-        data: { candidates },
+        summary: truncated
+          ? `Showing ${candidates.length} of ${total} whitebox candidate(s).`
+          : `Found ${candidates.length} whitebox candidate(s).`,
+        data: { candidates, total },
         artifactPaths: candidates.flatMap((candidate) =>
           candidate.artifacts.map((artifact) => artifact.path),
         ),
@@ -186,7 +190,7 @@ export function listWhiteboxCandidates(ctx: ToolContext) {
           "Prioritize high-confidence investigating/repro_attempted candidates.",
           "Reject or defer stale hypotheses so they do not pollute the engagement.",
         ],
-        truncated: false,
+        truncated,
       };
     },
   });

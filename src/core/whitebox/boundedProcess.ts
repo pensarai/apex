@@ -58,6 +58,7 @@ export async function runSpawnBounded(input: {
 
     let stdout = "";
     let stderr = "";
+    let totalBytes = 0;
     let outputTruncated = false;
     let settled = false;
     let killedByTimeout = false;
@@ -78,17 +79,18 @@ export async function runSpawnBounded(input: {
       resolve(result);
     };
 
-    const append = (target: "stdout" | "stderr", chunk: string) => {
-      const combined = stdout.length + stderr.length;
-      if (combined >= input.maxTotalBytes) {
+    const append = (target: "stdout" | "stderr", data: Buffer) => {
+      if (totalBytes >= input.maxTotalBytes) {
         outputTruncated = true;
         return;
       }
-      const room = input.maxTotalBytes - combined;
-      const slice = chunk.length > room ? chunk.slice(0, room) : chunk;
-      if (target === "stdout") stdout += slice;
-      else stderr += slice;
-      if (slice.length < chunk.length) outputTruncated = true;
+      const room = input.maxTotalBytes - totalBytes;
+      const buf = data.byteLength > room ? data.subarray(0, room) : data;
+      const text = buf.toString();
+      if (target === "stdout") stdout += text;
+      else stderr += text;
+      totalBytes += buf.byteLength;
+      if (buf.byteLength < data.byteLength) outputTruncated = true;
     };
 
     timeoutTimer = setTimeout(() => {
@@ -107,12 +109,8 @@ export async function runSpawnBounded(input: {
       }, KILL_ESCALATE_MS);
     }, input.timeoutSeconds * 1000);
 
-    child.stdout?.on("data", (data: Buffer) =>
-      append("stdout", data.toString()),
-    );
-    child.stderr?.on("data", (data: Buffer) =>
-      append("stderr", data.toString()),
-    );
+    child.stdout?.on("data", (data: Buffer) => append("stdout", data));
+    child.stderr?.on("data", (data: Buffer) => append("stderr", data));
 
     child.on("close", (code) => {
       if (timeoutTimer) clearTimeout(timeoutTimer);

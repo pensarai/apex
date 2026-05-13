@@ -135,13 +135,17 @@ export type ListWhiteboxCandidatesOptions = {
 export async function listWhiteboxCandidates(
   session: SessionInfo,
   options?: ListWhiteboxCandidatesOptions,
-): Promise<WhiteboxCandidate[]> {
+): Promise<{ candidates: WhiteboxCandidate[]; total: number }> {
   let list = await readCandidates(session);
   if (options?.state) {
     list = list.filter((c) => c.state === options.state);
   }
+  const total = list.length;
   const limit = options?.limit ?? 50;
-  return list.slice(0, Math.max(1, Math.min(limit, 200)));
+  return {
+    candidates: list.slice(0, Math.max(1, Math.min(limit, 200))),
+    total,
+  };
 }
 
 export function createWhiteboxCandidate(input: {
