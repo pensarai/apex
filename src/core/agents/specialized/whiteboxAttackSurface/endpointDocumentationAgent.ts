@@ -46,7 +46,7 @@ interface SharedAgentOptions {
   projectThreatModel?: string;
 }
 
-export interface EndpointDocumentationInput extends SharedAgentOptions {
+interface EndpointDocumentationInput extends SharedAgentOptions {
   app: AppInfo;
   endpoint: ConsolidatedEndpoint;
   frameworks: FrameworkId[];
@@ -144,7 +144,7 @@ This agent is responsible for **exactly one** endpoint. Do not document other en
 // Per-endpoint agent runner
 // ---------------------------------------------------------------------------
 
-export async function runEndpointDocumentationAgent(
+async function runEndpointDocumentationAgent(
   opts: EndpointDocumentationInput,
 ): Promise<void> {
   const {

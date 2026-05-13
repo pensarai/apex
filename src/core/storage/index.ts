@@ -67,7 +67,7 @@ export async function writeRaw(key: string[], content: string) {
 /**
  * Append raw content to a file within the .pensar directory
  */
-export async function appendRaw(key: string[], content: string) {
+async function appendRaw(key: string[], content: string) {
   const dir = getBaseDir();
   const target = path.join(dir, ...key);
   return withErrorHandling(async () => {

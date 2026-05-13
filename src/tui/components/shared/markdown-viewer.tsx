@@ -85,7 +85,7 @@ export function useMarkdownRenderNode() {
   );
 }
 
-export function MarkdownViewer({
+function MarkdownViewer({
   content,
   loading = false,
   width,

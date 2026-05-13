@@ -151,7 +151,7 @@ If you encounter rate-limiting errors (e.g. "Rate limit exceeded", HTTP 429, "to
 /**
  * Prompt template for building user messages
  */
-export function buildAuthUserPrompt(input: {
+function buildAuthUserPrompt(input: {
   target: string;
   credentials?: {
     username?: string;
@@ -446,7 +446,7 @@ Begin registration NOW.
 /**
  * Context recovery reminder - added to prompts on resume
  */
-export const CONTEXT_RECOVERY_REMINDER = `
+const CONTEXT_RECOVERY_REMINDER = `
 ## Context Recovery
 
 This may be a resumed session. Before doing any discovery:
@@ -458,7 +458,7 @@ This may be a resumed session. Before doing any discovery:
 /**
  * Discovery mode system prompt - for standalone auth detection and reasoning
  */
-export const AUTH_DISCOVERY_SYSTEM_PROMPT = `You are an authentication analysis specialist for security testing.
+const AUTH_DISCOVERY_SYSTEM_PROMPT = `You are an authentication analysis specialist for security testing.
 
 # Mission
 
@@ -569,7 +569,7 @@ You MUST call \`complete_auth_discovery\` with your findings:
 /**
  * Build user prompt for discovery mode
  */
-export function buildAuthDiscoveryPrompt(input: {
+function buildAuthDiscoveryPrompt(input: {
   target: string;
   additionalEndpoints?: string[];
 }): string {
@@ -607,7 +607,7 @@ Begin your analysis now.
 /**
  * Browser flow prompt addition
  */
-export const BROWSER_FLOW_GUIDANCE = `
+const BROWSER_FLOW_GUIDANCE = `
 ## Browser Flow Guidance
 
 When browser authentication is required (SPA, OAuth, JS-rendered forms):

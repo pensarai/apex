@@ -1,13 +1,13 @@
-# Reusable knip workflow
+# Reusable dead-code workflow (powered by knip).
 # Detects unused files, exports, and dependencies.
 
-name: Knip
+name: Dead Code
 
 on:
   workflow_call:
 
 jobs:
-  knip:
+  dead-code:
     runs-on: ubuntu-latest
 
     steps:

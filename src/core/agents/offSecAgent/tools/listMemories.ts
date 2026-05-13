@@ -7,7 +7,7 @@ import {
 } from "../../../memory";
 import type { ToolContext } from "./types";
 
-export const listMemoriesInputSchema = z.object({
+const listMemoriesInputSchema = z.object({
   category: z
     .enum(MEMORY_CATEGORIES)
     .optional()
@@ -26,7 +26,7 @@ export const listMemoriesInputSchema = z.object({
     ),
 });
 
-export type ListMemoriesInput = z.infer<typeof listMemoriesInputSchema>;
+type ListMemoriesInput = z.infer<typeof listMemoriesInputSchema>;
 
 export type ListMemoriesResult = {
   success: boolean;

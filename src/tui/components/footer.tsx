@@ -88,7 +88,7 @@ export default function Footer({
   );
 }
 
-export function AgentStatus() {
+function AgentStatus() {
   const { colors } = useTheme();
   const { tokenUsage } = useAgent();
   const { width: termWidth } = useDimensions();

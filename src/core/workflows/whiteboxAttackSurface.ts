@@ -98,8 +98,7 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   surfaceIntegrationEnabled?: boolean;
 }
 
-export interface IncrementalWhiteboxInput
-  extends WhiteboxAttackSurfaceWorkflowInput {
+interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
   previousCommitSha: string;
   currentCommitSha: string;
   existingResult: WhiteboxAttackSurfaceResult;

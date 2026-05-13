@@ -1,4 +1,4 @@
-import type { EndpointInfo, EndpointKind, FrameworkId } from "@pensar/surface";
+import type { EndpointKind, FrameworkId } from "@pensar/surface";
 
 /**
  * Apex's per-route view of surface output. Surface emits one row per
@@ -17,4 +17,4 @@ export interface ConsolidatedEndpoint {
   internal: boolean;
 }
 
-export type { EndpointInfo, FrameworkId };
+export type { FrameworkId };

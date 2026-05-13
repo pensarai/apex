@@ -146,7 +146,7 @@ export async function checkForUpdate(): Promise<CheckUpdateResult> {
   };
 }
 
-export function runUpgrade(
+function runUpgrade(
   method: InstallMethod,
   options?: { interactive?: boolean },
 ): UpgradeResult {

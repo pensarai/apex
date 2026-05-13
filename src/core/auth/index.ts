@@ -7,12 +7,7 @@ export {
 export type { GatewayValidateResult } from "./gateway";
 export { validateGateway } from "./gateway";
 export { signGatewayRequest } from "./signing";
-export {
-  ensureValidToken,
-  fetchWorkOSClientId,
-  isTokenExpired,
-  refreshAccessToken,
-} from "./token";
+export { ensureValidToken, isTokenExpired } from "./token";
 export type {
   DeviceFlowInfo,
   FetchWorkspacesResponse,

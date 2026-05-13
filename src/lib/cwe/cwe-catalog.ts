@@ -431,7 +431,7 @@ export const CWE_CATALOG: ReadonlyMap<number, string> = new Map([
  * @param id Numeric CWE ID (e.g., 89 for CWE-89)
  * @returns The canonical name, or undefined if not in the catalog
  */
-export function lookupCweName(id: number): string | undefined {
+function lookupCweName(id: number): string | undefined {
   return CWE_CATALOG.get(id);
 }
 
@@ -439,6 +439,6 @@ export function lookupCweName(id: number): string | undefined {
  * Check whether a CWE ID exists in the catalog.
  * @param id Numeric CWE ID
  */
-export function isKnownCweId(id: number): boolean {
+function isKnownCweId(id: number): boolean {
   return CWE_CATALOG.has(id);
 }

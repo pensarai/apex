@@ -174,14 +174,14 @@ export function getToolDisplayLabel(
  * @param name - Tool name
  * @param fn - Summary function
  */
-export function registerToolSummary(name: string, fn: ToolSummaryFn): void {
+function registerToolSummary(name: string, fn: ToolSummaryFn): void {
   TOOL_SUMMARY_MAP[name] = fn;
 }
 
 /**
  * Check if a tool has a registered summary function.
  */
-export function hasToolSummary(name: string): boolean {
+function hasToolSummary(name: string): boolean {
   return name in TOOL_SUMMARY_MAP;
 }
 
