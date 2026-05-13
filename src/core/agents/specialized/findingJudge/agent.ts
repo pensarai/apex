@@ -28,7 +28,7 @@ export interface FindingJudgeAgentInput {
   enableThinking?: boolean;
 }
 
-export const FINDING_JUDGE_ACTIVE_TOOLS = [
+const FINDING_JUDGE_ACTIVE_TOOLS = [
   "execute_command",
   "http_request",
   "read_file",

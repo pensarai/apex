@@ -34,7 +34,7 @@ export interface FindingJudgeInput {
   };
 }
 
-export interface FindingJudgeVerificationDetails {
+interface FindingJudgeVerificationDetails {
   /** Concrete actions the judge took before deciding */
   verificationSteps?: string[];
   /** Specific observations from tools or provided artifacts */
