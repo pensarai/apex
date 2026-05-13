@@ -123,7 +123,9 @@ export function startWhiteboxJob(input: {
   const id = makeJobId();
   const logsDir = getWhiteboxLogsDir(input.session);
   mkdirSync(logsDir, { recursive: true });
-  const safeName = (input.name ?? "job").replace(/[^a-z0-9._-]+/gi, "-");
+  const safeName = (input.name ?? "job")
+    .replace(/[^a-z0-9._-]+/gi, "-")
+    .replace(/\.{2,}/g, ".");
   const logPath = join(logsDir, `${id}-${safeName}.log`);
   const now = new Date().toISOString();
 
