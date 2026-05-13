@@ -39,6 +39,21 @@ import { runWithBoundedConcurrency } from "../utils/concurrency";
 
 const DEFAULT_CONCURRENCY = 5;
 
+// Phase 2 spawns one CodeAgent per task type per app. The discriminated
+// union below is the source of truth — adding a value here requires a
+// matching entry in TASK_TYPE_LABELS (enforced via `satisfies`).
+type DiscoveryTaskType = "pages" | "apiEndpoints" | "cloudResourceEndpoints";
+
+// Human-readable labels for Phase 2 task agents. The parent card
+// (synthetic `app:<name>` node) already carries the app name, so child
+// labels should describe what each agent *does* — that's the
+// distinguishing axis between siblings under one app.
+const TASK_TYPE_LABELS = {
+  pages: "Pages",
+  apiEndpoints: "API Endpoints",
+  cloudResourceEndpoints: "Cloud Resources",
+} as const satisfies Record<DiscoveryTaskType, string>;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -289,22 +304,9 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     });
   }
 
-  // Human-readable labels for Phase 2 task agents. The parent card
-  // (synthetic `app:<name>` node) already carries the app name, so child
-  // labels should describe what each agent *does* — that's the
-  // distinguishing axis between siblings under one app.
-  const TASK_TYPE_LABELS = {
-    pages: "Pages",
-    apiEndpoints: "API Endpoints",
-    cloudResourceEndpoints: "Cloud Resources",
-  } as const satisfies Record<
-    "pages" | "apiEndpoints" | "cloudResourceEndpoints",
-    string
-  >;
-
   const spawnDiscoveryAgent = async (
     app: AppInfo,
-    type: "pages" | "apiEndpoints" | "cloudResourceEndpoints",
+    type: DiscoveryTaskType,
     objective: string,
   ): Promise<void> => {
     const subagentId = `${type}-${app.name}`;
