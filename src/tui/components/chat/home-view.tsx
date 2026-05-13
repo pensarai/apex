@@ -20,7 +20,7 @@ import { useRoute } from "../../context/route";
 import { useTheme } from "../../theme";
 import { PromptInput } from "../shared";
 import { OperatorModeBar, providerDisplayName } from "./input-area";
-import PetriAnimation from "./petri-animation";
+import { PetriAnimation } from "./petri-animation";
 
 type ViewType = "home" | "config" | "chat";
 
@@ -286,5 +286,3 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     </box>
   );
 }
-
-export default HomeView;

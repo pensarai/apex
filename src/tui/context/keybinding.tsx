@@ -83,7 +83,7 @@ export function KeybindingProvider({
   );
 }
 
-export function useKeybinding() {
+function useKeybinding() {
   const context = useContext(KeybindingContext);
   if (!context) {
     throw new Error("useKeybinding must be used within KeybindingProvider");

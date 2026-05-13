@@ -174,5 +174,3 @@ export const MessageRenderer = memo(function MessageRenderer({
     </box>
   );
 });
-
-export default MessageRenderer;

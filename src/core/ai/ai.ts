@@ -1065,7 +1065,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
   throw lastError;
 }
 
-export class ContextLengthError extends Error {
+class ContextLengthError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ContextLengthError";
@@ -1093,10 +1093,4 @@ const MAX_SCHEMA_CHARS = 6_000;
 const MINIMAL_RESTART_PROMPT =
   "Continue the previous task. Earlier context was discarded due to repeated context-length errors.";
 
-export {
-  createToolExecutionGate,
-  MAX_IDLE_RESUME_RETRIES,
-  STREAM_IDLE_TIMEOUT_MS,
-  StreamIdleTimeoutError,
-  withIdleTimeout,
-};
+export { createToolExecutionGate, StreamIdleTimeoutError, withIdleTimeout };
