@@ -36,7 +36,7 @@ function buildArgs(
     case "rg":
       return ["--line-number", "--no-heading", pattern, targetPath];
     case "ast-grep":
-      return ["--pattern", pattern, targetPath];
+      return ["run", "--pattern", pattern, targetPath];
     case "comby":
       return [pattern, "", "-match-only", targetPath];
     default:

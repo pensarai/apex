@@ -115,7 +115,7 @@ export async function runSpawnBounded(input: {
     child.on("close", (code) => {
       if (timeoutTimer) clearTimeout(timeoutTimer);
       if (escalateTimer) clearTimeout(escalateTimer);
-      const timedOut = killedByTimeout || code === 124;
+      const timedOut = killedByTimeout;
       finish({
         stdout,
         stderr,
