@@ -52,7 +52,9 @@ export type ToolContext = {
 
   /**
    * Shared attack surface registry for cross-agent asset dedup.
-   * When present, `document_endpoint` checks for duplicates before writing.
+   * When present, `document_app` and `document_endpoint` check for
+   * duplicates before writing and short-circuit with a `duplicate: true`
+   * tool result on a registry hit.
    */
   attackSurfaceRegistry?: AttackSurfaceRegistry;
 
