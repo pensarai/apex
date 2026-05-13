@@ -10,6 +10,7 @@ function safeName(value: string): string {
   return value
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/\.{2,}/g, ".")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
 }

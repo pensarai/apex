@@ -120,6 +120,25 @@ describe("readWhiteboxArtifact", () => {
     expect(read.content).toContain("hello-whitebox-artifact");
     expect(read.truncated).toBe(false);
   });
+
+  it("round-trips an artifact whose name contains '..' from a regex pattern", async () => {
+    const root = await tempDir("apex-whitebox-artifact-dots-");
+    const session = mockSession(root);
+    const ref = await writeWhiteboxArtifact({
+      session,
+      type: "code-query",
+      name: "rg-../../etc/passwd",
+      content: "traversal-search-results",
+      description: "path traversal query",
+      extension: ".txt",
+    });
+    expect(ref.path).not.toContain("..");
+    const read = await readWhiteboxArtifact({
+      session,
+      path: ref.path,
+    });
+    expect(read.content).toContain("traversal-search-results");
+  });
 });
 
 describe("whitebox candidates", () => {
