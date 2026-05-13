@@ -16,7 +16,11 @@ Bias to caution over speed on non-trivial work. Use judgment on trivial tasks.
 
 **Simplicity first.** Minimum code that solves the problem. No speculative abstractions. Would a senior engineer call this overcomplicated? Then simplify.
 
+**Rule of three.** First time, just write it. Second time, hold your nose and repeat. Third time, extract. Two similar things aren't enough signal to know what the right abstraction is.
+
 **Surgical changes.** Touch only what you must. Don't "improve" adjacent code, comments, or formatting. Don't refactor what isn't broken. Match existing style.
+
+**Separate refactoring from feature work.** A change is either "make existing code better" or "add new behavior" — not both. If you need to refactor to land a feature cleanly, ship the refactor first.
 
 **Don't accumulate tech debt.** Solve today's problem in a way that won't trap tomorrow's solver. Pick the abstraction that fits and avoid shortcuts that compound silently.
 
