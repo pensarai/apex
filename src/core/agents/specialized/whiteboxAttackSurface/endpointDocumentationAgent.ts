@@ -148,7 +148,7 @@ This agent is responsible for **exactly one** endpoint. Do not document other en
 
 async function runEndpointDocumentationAgent(
   opts: EndpointDocumentationInput,
-): Promise<void> {
+): Promise<boolean> {
   const {
     codebasePath,
     app,
@@ -219,6 +219,7 @@ async function runEndpointDocumentationAgent(
       status: "completed",
       parentSubagentId,
     });
+    return true;
   } catch (error) {
     console.error(
       `[endpoint-documentation-agent] "${subagentId}" FAILED:`,
@@ -229,6 +230,7 @@ async function runEndpointDocumentationAgent(
       status: "failed",
       parentSubagentId,
     });
+    return false;
   }
 }
 
@@ -242,11 +244,23 @@ export async function runAppEndpointDocumentation(
   const { endpoints, ...shared } = opts;
   if (endpoints.length === 0) return;
 
+  let anyFailed = false;
   await runWithBoundedConcurrency(
     endpoints,
     ENDPOINT_DOCUMENTATION_CONCURRENCY,
     async (endpoint) => {
-      await runEndpointDocumentationAgent({ ...shared, endpoint });
+      const ok = await runEndpointDocumentationAgent({ ...shared, endpoint });
+      if (!ok) anyFailed = true;
     },
   );
+
+  // Surface per-endpoint failure to the workflow so per-app status reflects
+  // it. Each endpoint already emits its own subagent-complete (failed); this
+  // throw lets the workflow's outer catch set appAnyTaskFailed, matching the
+  // legacy spawnDiscoveryAgent path's failure propagation.
+  if (anyFailed) {
+    throw new Error(
+      `One or more endpoint documentation agents failed for app ${opts.app.name}`,
+    );
+  }
 }

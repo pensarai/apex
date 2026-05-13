@@ -1032,6 +1032,9 @@ export default function OperatorDashboard({
 
       eventBus.on("subagent-complete", ({ subagentId, status }) => {
         if (gen !== generationRef.current) return;
+        // Mirror the spawn-handler filter: synthetic per-app grouping nodes
+        // were never registered as sessions, so don't try to complete them.
+        if (subagentId.startsWith("app:")) return;
         subagentHelpers.completeSession(subagentId, status);
         if (!isPentestAgent(subagentId)) return;
         // Update workflowData swarm status
