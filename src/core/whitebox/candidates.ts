@@ -41,7 +41,7 @@ function makeId(title: string): string {
   return `wcand_${Date.now()}_${slug || "candidate"}`;
 }
 
-export function sourceTraceHasEvidence(trace?: SourceTrace): boolean {
+function sourceTraceHasEvidence(trace?: SourceTrace): boolean {
   if (!trace) return false;
   if (trace.source?.file || trace.sink?.file) return true;
   if (trace.path && trace.path.length > 0) return true;
@@ -94,7 +94,10 @@ async function writeCandidates(
   await writeFile(candidatesPath(session), JSON.stringify(candidates, null, 2));
 }
 
-function assertTransition(from: WhiteboxCandidateState, to: WhiteboxCandidateState) {
+function assertTransition(
+  from: WhiteboxCandidateState,
+  to: WhiteboxCandidateState,
+) {
   const allowed = ALLOWED_TRANSITIONS[from];
   if (!allowed.includes(to)) {
     throw new Error(
@@ -203,7 +206,7 @@ export async function updateWhiteboxCandidate(input: {
       const v = input.verification ?? existing.verification;
       if (v?.status !== "succeeded") {
         throw new Error(
-          "Transition to confirmed requires verification.status === \"succeeded\" (set verification on the same update or beforehand).",
+          'Transition to confirmed requires verification.status === "succeeded" (set verification on the same update or beforehand).',
         );
       }
       if (!hasEvidence({ artifacts, sourceTrace: mergedSourceTrace })) {
@@ -217,9 +220,7 @@ export async function updateWhiteboxCandidate(input: {
   const updated: WhiteboxCandidate = {
     ...existing,
     ...(input.state ? { state: input.state } : {}),
-    ...(input.confidence !== undefined
-      ? { confidence: input.confidence }
-      : {}),
+    ...(input.confidence !== undefined ? { confidence: input.confidence } : {}),
     ...(input.summary !== undefined ? { summary: input.summary } : {}),
     ...(input.verification ? { verification: input.verification } : {}),
     artifacts,
@@ -230,8 +231,4 @@ export async function updateWhiteboxCandidate(input: {
   candidates[index] = updated;
   await writeCandidates(input.session, candidates);
   return updated;
-}
-
-export function getWhiteboxCandidatesPath(session: SessionInfo): string {
-  return candidatesPath(session);
 }

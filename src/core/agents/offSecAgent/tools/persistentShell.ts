@@ -24,7 +24,6 @@ try {
 } catch {
   // Best-effort; readTempfileCapped surfaces real I/O errors at use time.
 }
-
 /**
  * Read up to MAX_BUFFER bytes from `path`. Larger files return the trailing
  * window prefixed with the same truncation sentinel the in-memory path uses,

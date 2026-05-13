@@ -1,14 +1,9 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionInfo } from "../session";
+import { writeWhiteboxArtifact } from "./artifacts";
 import { runSpawnBounded } from "./boundedProcess";
-import { readWhiteboxArtifact, writeWhiteboxArtifact } from "./artifacts";
-import type {
-  RepoProfile,
-  ScanKind,
-  ScanRunResult,
-  WhiteboxArtifactRef,
-} from "./types";
+import type { RepoProfile, ScanKind, ScanRunResult } from "./types";
 
 const MAX_SCAN_OUTPUT = 2 * 1024 * 1024;
 
@@ -49,7 +44,7 @@ function simpleLineFindings(
     }));
 }
 
-export const WHITEBOX_SCAN_ADAPTERS: WhiteboxScanAdapter[] = [
+const WHITEBOX_SCAN_ADAPTERS: WhiteboxScanAdapter[] = [
   {
     id: "semgrep",
     kind: "static",
@@ -194,7 +189,7 @@ export const WHITEBOX_SCAN_ADAPTERS: WhiteboxScanAdapter[] = [
 
 const KNOWN_ADAPTER_IDS = new Set(WHITEBOX_SCAN_ADAPTERS.map((a) => a.id));
 
-export function selectScanAdapters(input: {
+function selectScanAdapters(input: {
   profile: RepoProfile;
   kind?: ScanKind;
   scannerIds?: string[];
@@ -244,8 +239,7 @@ export async function runScanAdapter(input: {
   });
   const duration = Date.now() - startedAt;
 
-  let fileBody =
-    raw.stdout + (raw.stderr ? `\n\n[stderr]\n${raw.stderr}` : "");
+  let fileBody = raw.stdout + (raw.stderr ? `\n\n[stderr]\n${raw.stderr}` : "");
   if (raw.outputTruncated) {
     fileBody +=
       "\n\n[apex] Scanner stdout/stderr capture hit the byte cap (truncated).\n";
@@ -272,15 +266,4 @@ export async function runScanAdapter(input: {
     outputTruncated: raw.outputTruncated,
     timedOut: raw.timedOut,
   };
-}
-
-export async function readScanArtifact(
-  artifact: WhiteboxArtifactRef,
-  session: SessionInfo,
-): Promise<string> {
-  const { content } = await readWhiteboxArtifact({
-    session,
-    path: artifact.path,
-  });
-  return content;
 }

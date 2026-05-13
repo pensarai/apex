@@ -27,14 +27,14 @@ function processQueue(key: string) {
   if (!lock || lock.writer || lock.readers > 0) return;
 
   if (lock.waitingWriters.length > 0) {
-    const nextWriter = lock.waitingWriters.shift()!;
-    nextWriter();
+    const nextWriter = lock.waitingWriters.shift();
+    nextWriter?.();
     return;
   }
 
   while (lock.waitingReaders.length > 0) {
-    const nextReader = lock.waitingReaders.shift()!;
-    nextReader();
+    const nextReader = lock.waitingReaders.shift();
+    nextReader?.();
   }
 
   if (

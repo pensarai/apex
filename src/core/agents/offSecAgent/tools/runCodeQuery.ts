@@ -1,5 +1,5 @@
-import { tool } from "ai";
 import { relative } from "node:path";
+import { tool } from "ai";
 import { z } from "zod";
 import {
   resolvePathWithinCodebaseRoot,
@@ -57,7 +57,10 @@ async function runSingleQuery(input: {
   outputTruncated: boolean;
   timedOut: boolean;
 }> {
-  const argv = [input.engine, ...buildArgs(input.engine, input.pattern, input.targetPath)];
+  const argv = [
+    input.engine,
+    ...buildArgs(input.engine, input.pattern, input.targetPath),
+  ];
   return runSpawnBounded({
     command: argv,
     cwd: input.cwd,
@@ -124,7 +127,9 @@ instead of flooding context with every match. Output size and runtime are bounde
           summary: error instanceof Error ? error.message : String(error),
           data: { results: [] as QueryResult[] },
           artifactPaths: [],
-          nextActions: ["Use cwd and query paths inside the configured codebase root."],
+          nextActions: [
+            "Use cwd and query paths inside the configured codebase root.",
+          ],
           recovery:
             "Relative cwd is resolved from agent cwd then constrained under the codebase root.",
         };
@@ -161,9 +166,14 @@ instead of flooding context with every match. Output size and runtime are bounde
         });
         const lines = output.stdout.split("\n").filter(Boolean);
         const combined =
-          output.stdout + (output.stderr ? `\n\n[stderr]\n${output.stderr}` : "");
+          output.stdout +
+          (output.stderr ? `\n\n[stderr]\n${output.stderr}` : "");
         let artifactPath: string | undefined;
-        if (combined.trim().length > 0 || output.timedOut || output.outputTruncated) {
+        if (
+          combined.trim().length > 0 ||
+          output.timedOut ||
+          output.outputTruncated
+        ) {
           const artifact = await writeWhiteboxArtifact({
             session: ctx.session,
             type: "code-query",

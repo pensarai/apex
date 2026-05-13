@@ -1,9 +1,9 @@
-import { tool } from "ai";
 import { isAbsolute, relative } from "node:path";
+import { tool } from "ai";
 import { z } from "zod";
 import {
-  pollWhiteboxJob as pollJob,
   readWhiteboxArtifact as loadWhiteboxSessionArtifact,
+  pollWhiteboxJob as pollJob,
   readWhiteboxJobLog,
   resolvePathWithinCodebaseRoot,
   resolveWhiteboxCodebaseRoot,
@@ -136,9 +136,7 @@ export function pollWhiteboxJob(ctx: ToolContext) {
         nextActions:
           record.status === "running"
             ? ["Poll again later or stop the job if it is no longer useful."]
-            : [
-                `Read logs with read_whitebox_artifact using path: ${logPath}`,
-              ],
+            : [`Read logs with read_whitebox_artifact using path: ${logPath}`],
         truncated: false,
       };
     },

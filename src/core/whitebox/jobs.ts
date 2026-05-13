@@ -108,7 +108,9 @@ export function startWhiteboxJob(input: {
 
   const isWin = process.platform === "win32";
   const shell = isWin ? process.env.ComSpec || "cmd.exe" : "/bin/sh";
-  const shellArgs = isWin ? ["/d", "/s", "/c", input.command] : ["-c", input.command];
+  const shellArgs = isWin
+    ? ["/d", "/s", "/c", input.command]
+    : ["-c", input.command];
 
   const child = spawn(shell, shellArgs, {
     cwd: input.cwd,

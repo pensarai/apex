@@ -18,11 +18,11 @@ export function getWhiteboxLogsDir(session: SessionInfo): string {
   return join(session.logsPath, "whitebox");
 }
 
-export function getWhiteboxScratchDir(session: SessionInfo): string {
+function getWhiteboxScratchDir(session: SessionInfo): string {
   return join(session.scratchpadPath, "whitebox");
 }
 
-export async function ensureWhiteboxDirs(session: SessionInfo): Promise<void> {
+async function ensureWhiteboxDirs(session: SessionInfo): Promise<void> {
   await Promise.all([
     mkdir(getWhiteboxLogsDir(session), { recursive: true }),
     mkdir(getWhiteboxScratchDir(session), { recursive: true }),

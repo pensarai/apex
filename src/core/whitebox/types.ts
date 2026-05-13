@@ -141,16 +141,6 @@ export type CatalogSelection = {
   recommendedPasses: CatalogRecord[];
 };
 
-export type WhiteboxToolResult<T = unknown> = {
-  success: boolean;
-  summary: string;
-  data?: T;
-  artifactPaths: string[];
-  nextActions: string[];
-  truncated?: boolean;
-  recovery?: string;
-};
-
 export type ScanKind =
   | "static"
   | "secrets"

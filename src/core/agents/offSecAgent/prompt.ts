@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, statSync } from "fs";
-import { join } from "path";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 interface SessionPaths {
   rootPath: string;

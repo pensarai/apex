@@ -42,7 +42,9 @@ export function resolveSessionWhiteboxArtifactPath(input: {
   if (normalized.includes("..")) {
     throw new Error("Invalid artifact path");
   }
-  const posixPath = normalized.startsWith("/") ? normalized.slice(1) : normalized;
+  const posixPath = normalized.startsWith("/")
+    ? normalized.slice(1)
+    : normalized;
   const allowed =
     posixPath.startsWith("logs/whitebox/") ||
     posixPath.startsWith("scratchpad/whitebox/");

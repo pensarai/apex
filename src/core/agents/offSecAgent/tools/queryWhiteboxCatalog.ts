@@ -2,9 +2,9 @@ import { tool } from "ai";
 import { z } from "zod";
 import {
   type CatalogRecordKind,
-  type RepoProfile,
   profileCodebase,
   queryWhiteboxCatalog as queryCatalog,
+  type RepoProfile,
   resolveWhiteboxCodebaseRoot,
 } from "../../../whitebox";
 import type { ToolContext } from "./types";

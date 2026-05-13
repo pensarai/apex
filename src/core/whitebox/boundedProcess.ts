@@ -47,8 +47,7 @@ export async function runSpawnBounded(input: {
     };
   }
 
-  const detached =
-    input.detached === true && process.platform !== "win32";
+  const detached = input.detached === true && process.platform !== "win32";
 
   return new Promise((resolve) => {
     const child = spawn(program, input.command.slice(1), {
@@ -108,8 +107,12 @@ export async function runSpawnBounded(input: {
       }, KILL_ESCALATE_MS);
     }, input.timeoutSeconds * 1000);
 
-    child.stdout?.on("data", (data: Buffer) => append("stdout", data.toString()));
-    child.stderr?.on("data", (data: Buffer) => append("stderr", data.toString()));
+    child.stdout?.on("data", (data: Buffer) =>
+      append("stdout", data.toString()),
+    );
+    child.stderr?.on("data", (data: Buffer) =>
+      append("stderr", data.toString()),
+    );
 
     child.on("close", (code) => {
       if (timeoutTimer) clearTimeout(timeoutTimer);

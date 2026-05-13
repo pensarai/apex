@@ -5,9 +5,9 @@
  * This allows the compiled binary to work without sharp
  */
 
-import { writeFileSync } from "fs";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
+import { writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { convertImageToColoredAscii } from "../src/tui/components/ascii-art";
 
 const __filename = fileURLToPath(import.meta.url);

@@ -122,9 +122,7 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   poll_whitebox_job: (args) => `poll job ${args.jobId || ""}`,
   stop_whitebox_job: (args) => `stop job ${args.jobId || ""}`,
   read_whitebox_artifact: (args) =>
-    args.path
-      ? `artifact ${args.path}`
-      : `job log ${args.jobId || ""}`,
+    args.path ? `artifact ${args.path}` : `job log ${args.jobId || ""}`,
   delegate_to_auth_subagent: (args) =>
     `auth ${args.target || ""} — ${args.reason || ""}`,
 
