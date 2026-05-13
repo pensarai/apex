@@ -38,7 +38,7 @@ function buildArgs(
     case "ast-grep":
       return ["--pattern", pattern, targetPath];
     case "comby":
-      return [pattern, "", targetPath];
+      return [pattern, "", "-match-only", targetPath];
     default:
       return ["-rn", "--", pattern, targetPath];
   }
