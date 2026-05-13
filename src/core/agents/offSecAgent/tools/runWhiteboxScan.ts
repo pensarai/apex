@@ -141,9 +141,15 @@ calling document_vulnerability.`,
           artifactPath: result.artifact.path,
         }));
 
+        const allSucceeded = results.every(
+          (r) => r.exitCode === 0 && !r.timedOut,
+        );
+
         return {
-          success: true,
-          summary: `Ran ${results.length} scanner(s), found ${totalFindings} summarized result(s).`,
+          success: allSucceeded,
+          summary: allSucceeded
+            ? `Ran ${results.length} scanner(s), found ${totalFindings} summarized result(s).`
+            : `Ran ${results.length} scanner(s) (some failed/timed out), found ${totalFindings} summarized result(s).`,
           data: {
             scanners: scannerSummaries,
             unknownScannerIds,
