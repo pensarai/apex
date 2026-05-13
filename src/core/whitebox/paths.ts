@@ -1,4 +1,5 @@
-import { normalize, relative, resolve } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { isAbsolute, normalize, relative, resolve } from "node:path";
 
 /**
  * Repository root used for whitebox profiling, scans, and code queries.
@@ -12,8 +13,21 @@ export function resolveWhiteboxCodebaseRoot(input: {
 }
 
 /**
- * Resolve `subPath` (file or directory) under `root` and reject `..` escapes.
- * `subPath` may be absolute only if it still lies under `root` after resolution.
+ * Return true when `candidate` is lexically under `root` (after normalization).
+ * Catches `..` traversals, Windows cross-drive escapes (relative() returns an
+ * absolute path), and empty-string edge cases.
+ */
+function isUnderRoot(root: string, candidate: string): boolean {
+  const rel = relative(root, candidate);
+  if (rel === "") return true;
+  if (rel.startsWith("..") || isAbsolute(rel)) return false;
+  return true;
+}
+
+/**
+ * Resolve `subPath` (file or directory) under `root` and reject escapes.
+ * Validates both the lexical path and, when the target exists on disk, the
+ * real (symlink-resolved) path to prevent symlink-based containment bypasses.
  */
 export function resolvePathWithinCodebaseRoot(
   root: string,
@@ -23,10 +37,19 @@ export function resolvePathWithinCodebaseRoot(
   const candidate = subPath.startsWith("/")
     ? resolve(normalize(subPath))
     : resolve(absRoot, normalize(subPath));
-  const rel = relative(absRoot, candidate);
-  if (rel.startsWith("..") || rel === "..") {
+
+  if (!isUnderRoot(absRoot, candidate)) {
     throw new Error(`Path escapes codebase root: ${subPath}`);
   }
+
+  if (existsSync(candidate)) {
+    const realCandidate = realpathSync(candidate);
+    const realRoot = realpathSync(absRoot);
+    if (!isUnderRoot(realRoot, realCandidate)) {
+      throw new Error(`Path escapes codebase root via symlink: ${subPath}`);
+    }
+  }
+
   return candidate;
 }
 
@@ -53,5 +76,19 @@ export function resolveSessionWhiteboxArtifactPath(input: {
       `Artifact path must start with logs/whitebox/ or scratchpad/whitebox/: ${input.artifactRelativePath}`,
     );
   }
-  return resolve(input.sessionRootPath, posixPath);
+  const resolved = resolve(input.sessionRootPath, posixPath);
+
+  if (!isUnderRoot(resolve(input.sessionRootPath), resolved)) {
+    throw new Error("Invalid artifact path");
+  }
+
+  if (existsSync(resolved)) {
+    const realResolved = realpathSync(resolved);
+    const realRoot = realpathSync(input.sessionRootPath);
+    if (!isUnderRoot(realRoot, realResolved)) {
+      throw new Error("Artifact path escapes session root via symlink");
+    }
+  }
+
+  return resolved;
 }

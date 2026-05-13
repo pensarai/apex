@@ -2,9 +2,13 @@ import { type ChildProcess, spawn } from "node:child_process";
 
 const KILL_ESCALATE_MS = 2_000;
 
-function killChildTree(child: ChildProcess, signal: NodeJS.Signals): void {
+function killChildTree(
+  child: ChildProcess,
+  signal: NodeJS.Signals,
+  detached: boolean,
+): void {
   const pid = child.pid;
-  if (pid && process.platform !== "win32") {
+  if (detached && pid && process.platform !== "win32") {
     try {
       process.kill(-pid, signal);
     } catch {
@@ -95,10 +99,10 @@ export async function runSpawnBounded(input: {
 
     timeoutTimer = setTimeout(() => {
       killedByTimeout = true;
-      killChildTree(child, "SIGTERM");
+      killChildTree(child, "SIGTERM", detached);
       escalateTimer = setTimeout(() => {
         if (settled) return;
-        killChildTree(child, "SIGKILL");
+        killChildTree(child, "SIGKILL", detached);
         finish({
           stdout,
           stderr: `${stderr}\n[apex] command timed out (SIGKILL)\n`,

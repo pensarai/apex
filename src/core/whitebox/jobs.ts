@@ -22,7 +22,9 @@ const KILL_ESCALATE_MS = 2_000;
 const jobs = new Map<
   string,
   WhiteboxJobRecord & {
+    sessionId: string;
     process?: ChildProcess;
+    detached?: boolean;
     timer?: ReturnType<typeof setTimeout>;
     pruneTimer?: ReturnType<typeof setTimeout>;
     escalateTimer?: ReturnType<typeof setTimeout>;
@@ -48,6 +50,7 @@ function writeLog(path: string, text: string): void {
 
 function killJobProcess(record: {
   process?: ChildProcess;
+  detached?: boolean;
   escalateTimer?: ReturnType<typeof setTimeout>;
 }): void {
   if (record.escalateTimer) clearTimeout(record.escalateTimer);
@@ -56,7 +59,7 @@ function killJobProcess(record: {
   if (!child) return;
 
   const pid = child.pid;
-  if (pid && process.platform !== "win32") {
+  if (record.detached && pid && process.platform !== "win32") {
     try {
       process.kill(-pid, "SIGTERM");
     } catch {
@@ -70,7 +73,7 @@ function killJobProcess(record: {
   }
 
   record.escalateTimer = setTimeout(() => {
-    if (pid && process.platform !== "win32") {
+    if (record.detached && pid && process.platform !== "win32") {
       try {
         process.kill(-pid, "SIGKILL");
       } catch {
@@ -138,13 +141,17 @@ export function startWhiteboxJob(input: {
     detached: !isWin,
   });
 
+  const detached = !isWin;
   const record: WhiteboxJobRecord & {
+    sessionId: string;
     process?: ChildProcess;
+    detached?: boolean;
     timer?: ReturnType<typeof setTimeout>;
     pruneTimer?: ReturnType<typeof setTimeout>;
     escalateTimer?: ReturnType<typeof setTimeout>;
   } = {
     id,
+    sessionId: input.session.id,
     command: input.command,
     cwd: input.cwd,
     logPath,
@@ -153,6 +160,7 @@ export function startWhiteboxJob(input: {
     timeoutSeconds: input.timeoutSeconds,
     status: "running",
     process: child,
+    detached,
   };
 
   record.timer = setTimeout(() => {
@@ -179,8 +187,16 @@ export function startWhiteboxJob(input: {
   });
 
   jobs.set(id, record);
+  return stripInternals(record);
+}
+
+function stripInternals(
+  record: typeof jobs extends Map<string, infer V> ? V : never,
+): WhiteboxJobRecord {
   const {
     process: _process,
+    detached: _detached,
+    sessionId: _sessionId,
     timer: _timer,
     pruneTimer: _prune,
     escalateTimer: _esc,
@@ -189,37 +205,41 @@ export function startWhiteboxJob(input: {
   return publicRecord;
 }
 
-export function pollWhiteboxJob(id: string): WhiteboxJobRecord | undefined {
+export function pollWhiteboxJob(
+  id: string,
+  sessionId?: string,
+): WhiteboxJobRecord | undefined {
   const record = jobs.get(id);
   if (!record) return undefined;
-  const {
-    process: _process,
-    timer: _timer,
-    pruneTimer: _prune,
-    escalateTimer: _esc,
-    ...publicRecord
-  } = record;
-  return publicRecord;
+  if (sessionId && record.sessionId !== sessionId) return undefined;
+  return stripInternals(record);
 }
 
-export function stopWhiteboxJob(id: string): WhiteboxJobRecord | undefined {
+export function stopWhiteboxJob(
+  id: string,
+  sessionId?: string,
+): WhiteboxJobRecord | undefined {
   const record = jobs.get(id);
   if (!record) return undefined;
+  if (sessionId && record.sessionId !== sessionId) return undefined;
   if (record.status === "running") {
     killJobProcess(record);
     if (record.timer) clearTimeout(record.timer);
     updateStatus(id, "stopped", null);
     writeLog(record.logPath, "\n[apex] job stopped\n");
   }
-  return pollWhiteboxJob(id);
+  return pollWhiteboxJob(id, sessionId);
 }
 
-export function readWhiteboxJobLog(id: string): {
+export function readWhiteboxJobLog(
+  id: string,
+  sessionId?: string,
+): {
   content: string;
   truncated: boolean;
   record?: WhiteboxJobRecord;
 } {
-  const record = pollWhiteboxJob(id);
+  const record = pollWhiteboxJob(id, sessionId);
   if (!record || !existsSync(record.logPath)) {
     return { content: "", truncated: false, record };
   }

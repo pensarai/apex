@@ -116,7 +116,7 @@ export function pollWhiteboxJob(ctx: ToolContext) {
       toolCallDescription: z.string().describe("A concise polling description"),
     }),
     execute: async ({ jobId }) => {
-      const record = pollJob(jobId);
+      const record = pollJob(jobId, ctx.session.id);
       if (!record) {
         return {
           success: false,
@@ -151,7 +151,7 @@ export function stopWhiteboxJob(ctx: ToolContext) {
       toolCallDescription: z.string().describe("A concise stop description"),
     }),
     execute: async ({ jobId }) => {
-      const record = stopJob(jobId);
+      const record = stopJob(jobId, ctx.session.id);
       if (!record) {
         return {
           success: false,
@@ -183,7 +183,7 @@ function normalizeArtifactRelativePath(
 ): string {
   if (isAbsolute(userPath)) {
     const rel = relative(ctx.session.rootPath, userPath);
-    if (rel.startsWith("..") || rel === "..") {
+    if (rel.startsWith("..") || rel === ".." || isAbsolute(rel)) {
       throw new Error("Artifact path must be inside the session directory.");
     }
     return rel.replace(/\\/g, "/");
@@ -252,7 +252,7 @@ Prefer \`path\` from tool results (e.g. scan artifacts, code-query output, job l
       }
 
       if (jobId) {
-        const result = readWhiteboxJobLog(jobId);
+        const result = readWhiteboxJobLog(jobId, ctx.session.id);
         if (!result.record) {
           return {
             success: false,
