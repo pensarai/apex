@@ -37,10 +37,14 @@ export type AgentEventMap = {
     subagentId: string;
     name?: string;
     input: unknown;
+    /** Omitted means top-level. Auto-populated by {@link AgentEventBus.attachChild}. */
+    parentSubagentId?: string;
   };
   "subagent-complete": {
     subagentId: string;
     status: "completed" | "failed";
+    /** Omitted means top-level. Auto-populated by {@link AgentEventBus.attachChild}. */
+    parentSubagentId?: string;
   };
   "workflow-phase-start": {
     phase: "discovery" | "pentesting" | "reporting";
@@ -182,7 +186,9 @@ export class AgentEventBus {
    * Tools running inside a subagent emit side-channel events (e.g.
    * `command-output`) without `subagentId`. This method injects the
    * ID so the parent's routing logic (subagent store vs main view)
-   * works correctly.
+   * works correctly. For `subagent-spawn` / `subagent-complete` it
+   * additionally injects `parentSubagentId` to preserve hierarchy
+   * across nested subagents.
    */
   static attachChild(
     child: AgentEventBus,
@@ -191,12 +197,31 @@ export class AgentEventBus {
   ): void {
     if (!parent) return;
     for (const key of CHILD_BUS_FORWARDED_EVENTS) {
-      child.on(key, (payload: AgentEventMap[typeof key]) => {
+      // Re-bind so the handler's payload type tracks `key` as a single K —
+      // without this, the union of payload shapes is too wide for `emit`.
+      const forwardKey = key as keyof AgentEventMap;
+      child.on(forwardKey, (payload: AgentEventMap[typeof forwardKey]) => {
         const p = payload as Record<string, unknown>;
+
+        const isLifecycle =
+          forwardKey === "subagent-spawn" || forwardKey === "subagent-complete";
+
+        if (isLifecycle) {
+          if (p.parentSubagentId) {
+            parent.emit(forwardKey, payload as never);
+          } else {
+            parent.emit(forwardKey, {
+              ...p,
+              parentSubagentId: subagentId,
+            } as never);
+          }
+          return;
+        }
+
         if (!p.subagentId) {
-          parent.emit(key, { ...p, subagentId } as AgentEventMap[typeof key]);
+          parent.emit(forwardKey, { ...p, subagentId } as never);
         } else {
-          parent.emit(key, payload);
+          parent.emit(forwardKey, payload as never);
         }
       });
     }

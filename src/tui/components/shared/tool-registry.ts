@@ -95,6 +95,10 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
     const targets = args.targets as unknown[];
     return `pentest swarm ×${targets?.length ?? "?"}`;
   },
+  spawn_pentest_agent: (args) => {
+    const name = (args.name as string) ?? "pentest worker";
+    return `pentest worker — ${name}`;
+  },
   run_pentest_workflow: (args) => {
     const mode = args.cwd ? "whitebox" : "blackbox";
     return `pentest workflow (${mode}) ${args.target || ""}`;

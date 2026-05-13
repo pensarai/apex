@@ -105,6 +105,7 @@ export {
   ScopeViolationError,
 } from "./scopeGuard";
 export { spawnCodingAgent } from "./spawnCodingAgent";
+export { spawnPentestAgent } from "./spawnPentestAgent";
 export { spawnPentestSwarm } from "./spawnPentestSwarm";
 export { submitPlan } from "./submitPlan";
 export { testEndpointVariations } from "./testEndpointVariations";
@@ -163,6 +164,7 @@ import { readSkill } from "./readSkill";
 import { runAttackSurface } from "./runAttackSurface";
 import { runPentestWorkflow } from "./runPentestWorkflow";
 import { spawnCodingAgent } from "./spawnCodingAgent";
+import { spawnPentestAgent } from "./spawnPentestAgent";
 import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { submitPlan } from "./submitPlan";
 import { testEndpointVariations } from "./testEndpointVariations";
@@ -182,7 +184,7 @@ export { ASK_USER_QUESTIONS_TOOL_NAME } from "./askUserQuestions";
  * pick which ones to activate via the `activeTools` string array — the
  * AI SDK handles the filtering at the model level.
  */
-export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
+export function createAllTools(ctx: ToolContext) {
   return {
     // Browser automation tools (8 tools from Playwright MCP)
     ...createBrowserToolset(ctx),
@@ -218,6 +220,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Orchestration tools
     run_attack_surface: runAttackSurface(ctx),
     spawn_pentest_swarm: spawnPentestSwarm(ctx),
+    spawn_pentest_agent: spawnPentestAgent(ctx),
     spawn_coding_agent: spawnCodingAgent(ctx),
     run_pentest_workflow: runPentestWorkflow(ctx),
 
@@ -296,6 +299,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "complete_authentication",
   "run_attack_surface",
   "spawn_pentest_swarm",
+  "spawn_pentest_agent",
   "spawn_coding_agent",
   "run_pentest_workflow",
   // "generate_report",
