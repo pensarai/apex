@@ -60,3 +60,10 @@ build
 .apex-cache
 # SST auto-generated env types
 sst-env.d.ts
+
+# Skills: ignored by default; whitelist team-shared ones explicitly below.
+.agents/skills/*
+!.agents/skills/.gitkeep
+.claude/skills/*
+!.claude/skills/.gitkeep
+.claude/settings.local.json
