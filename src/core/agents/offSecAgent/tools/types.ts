@@ -7,6 +7,7 @@ import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
 import type { StepTraceWriter } from "../trace";
 import type { PersistentShell } from "./persistentShell";
+import type { PlaywrightMcpSession } from "./playwrightMcp";
 import type { UnifiedSandbox } from "./sandbox";
 
 /**
@@ -116,4 +117,19 @@ export type ToolContext = {
 
   /** Owner subagent id — emitted as `parentSubagentId` on lifecycle events. */
   subagentId?: string;
+
+  /**
+   * Shared Playwright MCP browser session.
+   *
+   * When set, the browser tools created from this context reuse the
+   * provided session rather than spinning up their own MCP child-process /
+   * Chromium instance. This lets a parent agent (e.g. the pentest
+   * orchestrator) hand its already-authenticated browser context down to
+   * a sub-agent spawned via `spawn_pentest_agent` so cookies, localStorage,
+   * and navigation state persist across the agent boundary.
+   *
+   * Lifecycle: only the agent that created the session disconnects it.
+   * Sub-agents that inherit a session never tear it down.
+   */
+  browserSession?: PlaywrightMcpSession;
 };

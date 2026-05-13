@@ -742,6 +742,15 @@ Use this to check for:
  * @param viewportSize - Override viewport size (format `"WIDTH,HEIGHT"`) for
  *   this session (defaults to the value set by {@link setViewportSize}).
  *   Passing `null` forces Chromium's default viewport.
+ * @param existingSession - When provided, browser tools reuse this
+ *   already-constructed session instead of creating a new MCP child-process
+ *   / Chromium instance. Used by sub-agents (e.g. workers spawned via
+ *   `spawn_pentest_agent`) to inherit a parent's authenticated browser
+ *   context. Headless / userAgent / viewportSize are ignored when an
+ *   existing session is passed — those are baked into the session at
+ *   construction time. Lifecycle: the caller that originally constructed
+ *   the session owns disconnect, so `abortSignal` is NOT wired to disconnect
+ *   when reusing a session.
  */
 export function createBrowserTools(
   targetUrl: string,
@@ -752,21 +761,31 @@ export function createBrowserTools(
   headless?: boolean,
   userAgent?: string | null,
   viewportSize?: string | null,
+  existingSession?: PlaywrightMcpSession,
 ) {
-  const resolvedUserAgent =
-    userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
-  const resolvedViewportSize =
-    viewportSize === null ? undefined : (viewportSize ?? defaultViewportSize);
+  let session: PlaywrightMcpSession;
 
-  const session = new PlaywrightMcpSession(
-    headless ?? defaultHeadless,
-    resolvedUserAgent,
-    resolvedViewportSize,
-  );
+  if (existingSession) {
+    session = existingSession;
+    // Owner manages disconnect — do NOT register an abort handler here,
+    // otherwise an inheriting sub-agent finishing first would tear down
+    // the parent's browser mid-flight.
+  } else {
+    const resolvedUserAgent =
+      userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
+    const resolvedViewportSize =
+      viewportSize === null ? undefined : (viewportSize ?? defaultViewportSize);
 
-  if (abortSignal) {
-    const onAbort = () => session.disconnect().catch(() => {});
-    abortSignal.addEventListener("abort", onAbort, { once: true });
+    session = new PlaywrightMcpSession(
+      headless ?? defaultHeadless,
+      resolvedUserAgent,
+      resolvedViewportSize,
+    );
+
+    if (abortSignal) {
+      const onAbort = () => session.disconnect().catch(() => {});
+      abortSignal.addEventListener("abort", onAbort, { once: true });
+    }
   }
 
   // Ensure evidence directory exists

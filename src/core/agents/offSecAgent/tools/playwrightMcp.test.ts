@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { transformScriptToFunction } from "./playwrightMcp";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createBrowserTools,
+  PlaywrightMcpSession,
+  transformScriptToFunction,
+} from "./playwrightMcp";
 
 describe("transformScriptToFunction", () => {
   describe("plain expressions", () => {
@@ -151,5 +158,81 @@ describe("transformScriptToFunction", () => {
       const expr = "()";
       expect(transformScriptToFunction(expr)).toBe("()");
     });
+  });
+});
+
+describe("createBrowserTools — shared session reuse", () => {
+  let evidenceDir: string;
+
+  beforeEach(() => {
+    evidenceDir = mkdtempSync(join(tmpdir(), "apex-pw-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(evidenceDir, { recursive: true, force: true });
+  });
+
+  it("reuses an existing PlaywrightMcpSession when one is provided", async () => {
+    const sharedSession = new PlaywrightMcpSession();
+    const callTool = vi
+      .spyOn(sharedSession, "callTool")
+      // biome-ignore lint/suspicious/noExplicitAny: stubbing a private MCP transport for the test.
+      .mockResolvedValue({ ok: true } as any);
+
+    const tools = createBrowserTools(
+      "https://example.com",
+      evidenceDir,
+      "operator",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      sharedSession,
+    );
+
+    // Invoke a browser tool; it should call through to the SHARED session.
+    await tools.browser_navigate.execute!(
+      { url: "https://example.com/login", toolCallDescription: "test" },
+      // biome-ignore lint/suspicious/noExplicitAny: ai-sdk ToolCallOptions is opaque and irrelevant for this test.
+      { toolCallId: "tc1", messages: [], abortSignal: undefined } as any,
+    );
+
+    expect(callTool).toHaveBeenCalledTimes(1);
+    expect(callTool).toHaveBeenCalledWith(
+      "browser_navigate",
+      { url: "https://example.com/login" },
+      undefined,
+    );
+  });
+
+  it("does not register an abort handler that would tear down a borrowed session", async () => {
+    const sharedSession = new PlaywrightMcpSession();
+    const disconnectSpy = vi
+      .spyOn(sharedSession, "disconnect")
+      .mockResolvedValue(undefined);
+
+    const controller = new AbortController();
+
+    createBrowserTools(
+      "https://example.com",
+      evidenceDir,
+      "operator",
+      undefined,
+      controller.signal,
+      undefined,
+      undefined,
+      undefined,
+      sharedSession,
+    );
+
+    // Aborting the SUB-AGENT's signal must NOT disconnect the parent's
+    // shared browser session — only the original owner is allowed to
+    // tear it down.
+    controller.abort();
+    // Give the (non-)abort listener a chance to fire.
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(disconnectSpy).not.toHaveBeenCalled();
   });
 });

@@ -47,12 +47,18 @@ export const BROWSER_TOOL_NAMES = [
  *
  * Otherwise, uses `"operator"` mode with the local Playwright MCP server.
  * The evidence directory is derived from `session.rootPath + "/evidence"`.
+ * If `ctx.browserSession` is set, browser tools reuse that session instead
+ * of opening a new Chromium — sub-agents inherit the parent's
+ * authenticated context (cookies, localStorage, current page).
  *
  * When `ctx.credentialManager` is set, `browser_fill` is replaced with a
  * credential-aware wrapper that resolves secrets from IDs at execution time.
  */
 export function createBrowserToolset(ctx: ToolContext) {
-  // Sandbox mode: use direct Playwright execution inside the sandbox
+  // Sandbox mode: use direct Playwright execution inside the sandbox.
+  // The sandbox path already shares browser state across tool calls via
+  // the per-sandbox user-data dir, so a sub-agent running in the same
+  // sandbox naturally inherits cookies / localStorage with no extra plumbing.
   const tools = ctx.sandbox
     ? createSandboxBrowserTools(ctx)
     : createBrowserTools(
@@ -61,6 +67,10 @@ export function createBrowserToolset(ctx: ToolContext) {
         "operator",
         undefined,
         ctx.abortSignal,
+        undefined,
+        undefined,
+        undefined,
+        ctx.browserSession,
       );
 
   if (!ctx.credentialManager) {

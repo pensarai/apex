@@ -21,7 +21,7 @@ import type { FindingsRegistry } from "../../findings/registry";
 import type { ApprovalGate } from "../../operator";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
-import type { ToolName, UnifiedSandbox } from "./tools";
+import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -275,6 +275,21 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * grounding context.
    */
   projectThreatModel?: string;
+
+  /**
+   * Shared Playwright MCP browser session to reuse instead of spinning up
+   * a fresh browser for this agent. When provided, all browser tools
+   * (`browser_navigate`, `browser_snapshot`, etc.) operate against the
+   * caller's existing browser context — cookies, localStorage, and the
+   * currently loaded page are inherited.
+   *
+   * Used by `spawn_pentest_agent` so a worker sub-agent can pick up the
+   * orchestrator's authenticated browser state instead of starting from
+   * `about:blank` with an empty cookie jar. The agent that constructs the
+   * session (i.e. the one that did NOT receive `browserSession` as input)
+   * owns its lifecycle; inheritors never disconnect it.
+   */
+  browserSession?: PlaywrightMcpSession;
 };
 
 /**
@@ -354,6 +369,14 @@ export interface SpecializedAgentInput {
    * so per-endpoint threat-model sub-agents can incorporate it as grounding.
    */
   projectThreatModel?: string;
+
+  /**
+   * Shared Playwright MCP browser session inherited from a parent agent.
+   * Forwarded to the underlying {@link OffensiveSecurityAgentInput} so the
+   * sub-agent's browser tools reuse the parent's already-authenticated
+   * Chromium context instead of opening a new one.
+   */
+  browserSession?: PlaywrightMcpSession;
 }
 
 /**

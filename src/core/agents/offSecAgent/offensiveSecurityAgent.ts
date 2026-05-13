@@ -23,6 +23,7 @@ import {
   EMAIL_TOOL_NAMES_ACTIVE,
   PersistentShell,
   PLAN_MODE_TOOL_NAMES,
+  PlaywrightMcpSession,
   RESPONSE_TOOL_NAME,
   SEND_EMAIL_TOOL_NAME,
 } from "./tools";
@@ -80,6 +81,23 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
+
+  /**
+   * Shared Playwright MCP browser session. Either created by this agent
+   * (when no `browserSession` was passed in) or inherited from a parent
+   * agent (e.g. a pentest orchestrator handing its authenticated context
+   * down to a worker via `spawn_pentest_agent`).
+   *
+   * Exposed publicly so sub-agent spawn tools can forward this reference
+   * into the child agent's input — the child's tool context picks it up
+   * and reuses the same browser, preserving cookies / localStorage /
+   * navigation history across the agent boundary.
+   *
+   * Only populated for non-sandbox (local MCP) mode. In sandbox mode,
+   * browser state is already shared via the sandbox's per-sandbox
+   * Playwright user-data directory, so no shared session object is needed.
+   */
+  public readonly browserSession?: PlaywrightMcpSession;
 
   private readonly abortSignal?: AbortSignal;
 
@@ -143,6 +161,18 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
+    // -- Browser session (local MCP mode only) -------------------------------
+    // Either inherit from the parent agent (e.g. pentest orchestrator handing
+    // its authenticated context down via spawn_pentest_agent) or construct a
+    // fresh one. The session itself does not spawn the MCP child / Chromium
+    // until the first browser tool call, so eager construction is cheap even
+    // for agents that never use browser tools. Sandbox-mode agents already
+    // share browser state via the sandbox's per-sandbox Playwright user-data
+    // dir, so they don't need a session object on the host.
+    if (!input.sandbox) {
+      this.browserSession = input.browserSession ?? new PlaywrightMcpSession();
+    }
+
     // -- Step trace (trace.jsonl) ---------------------------------------------
     // Created before tools so the checkpoint_state tool can reference it.
     const messagesDir =
@@ -202,6 +232,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       projectThreatModel: input.projectThreatModel,
       planSubagentId: input.planSubagentId,
       subagentId: input.subagentId,
+      browserSession: this.browserSession,
     });
 
     let tools: ToolSet = input.extraTools
