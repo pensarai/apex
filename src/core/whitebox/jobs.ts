@@ -1,11 +1,21 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+} from "node:fs";
 import { join } from "node:path";
 import type { SessionInfo } from "../session";
 import { getWhiteboxLogsDir } from "./artifacts";
 import type { WhiteboxJobRecord, WhiteboxJobStatus } from "./types";
 
 const MAX_JOB_LOG_INLINE = 40_000;
+const MAX_JOB_LOG_BYTES = 10 * 1024 * 1024;
 const PRUNE_AFTER_MS = 60_000;
 const KILL_ESCALATE_MS = 2_000;
 
@@ -19,12 +29,21 @@ const jobs = new Map<
   }
 >();
 
+const logBytesWritten = new Map<string, number>();
+
 function makeJobId(): string {
   return `wjob_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
 }
 
 function writeLog(path: string, text: string): void {
+  const written = logBytesWritten.get(path) ?? 0;
+  if (written >= MAX_JOB_LOG_BYTES) return;
   appendFileSync(path, text);
+  const newTotal = written + Buffer.byteLength(text);
+  logBytesWritten.set(path, newTotal);
+  if (newTotal >= MAX_JOB_LOG_BYTES) {
+    appendFileSync(path, "\n[apex] job log truncated at byte cap\n");
+  }
 }
 
 function killJobProcess(record: {
@@ -85,6 +104,7 @@ function updateStatus(
   ) {
     if (job.pruneTimer) clearTimeout(job.pruneTimer);
     job.pruneTimer = setTimeout(() => {
+      logBytesWritten.delete(job.logPath);
       jobs.delete(id);
     }, PRUNE_AFTER_MS);
   }
@@ -204,13 +224,22 @@ export function readWhiteboxJobLog(id: string): {
     return { content: "", truncated: false, record };
   }
 
-  const raw = readFileSync(record.logPath, "utf-8");
-  if (raw.length <= MAX_JOB_LOG_INLINE) {
+  const fileSize = statSync(record.logPath).size;
+  if (fileSize <= MAX_JOB_LOG_INLINE) {
+    const raw = readFileSync(record.logPath, "utf-8");
     return { content: raw, truncated: false, record };
   }
 
+  const readBytes = Math.min(fileSize, MAX_JOB_LOG_INLINE);
+  const buf = Buffer.alloc(readBytes);
+  const fd = openSync(record.logPath, "r");
+  try {
+    readSync(fd, buf, 0, readBytes, fileSize - readBytes);
+  } finally {
+    closeSync(fd);
+  }
   return {
-    content: `${raw.slice(-MAX_JOB_LOG_INLINE)}\n\n(truncated - showing last ${MAX_JOB_LOG_INLINE} chars)`,
+    content: `${buf.toString("utf-8")}\n\n(truncated - showing last ${readBytes} bytes of ${fileSize})`,
     truncated: true,
     record,
   };
