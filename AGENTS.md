@@ -162,6 +162,16 @@ Enforced via the `import-x/no-internal-modules` ESLint rule in `eslint.config.js
 
 `src/cli.ts`'s `await import("./core/api/<feature>")` calls are a documented exception (see header comment in `src/core/api/index.ts`): they stay direct so `bun build --splitting` produces per-feature chunks.
 
+### Skills
+
+Team-shared agent skills live at `.agents/skills/<name>/SKILL.md` ([Agent Skills spec](https://agentskills.io/specification)). Each one also has a per-skill symlink at `.claude/skills/<name>` so Claude Code's `/skills` menu picks it up (per-skill rather than whole-directory works around [anthropics/claude-code#14836](https://github.com/anthropics/claude-code/issues/14836)). Personal skills land at the same paths via individual contributors' setup and stay gitignored.
+
+To add a team skill:
+
+1. Create `.agents/skills/<name>/SKILL.md` (YAML frontmatter with `name` and `description`, then the instructions).
+2. `ln -s ../../.agents/skills/<name> .claude/skills/<name>`.
+3. In `.gitignore`, whitelist both: `!.agents/skills/<name>/` and `!.claude/skills/<name>`.
+
 ### Gotchas
 
 - **Every acquire needs a release on every path.** Streams, subprocesses, intervals, and listeners should be disposed on the error path too, not just the happy path — `finally` or `AbortSignal` are usually the cleanest way.
