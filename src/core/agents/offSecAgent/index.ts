@@ -29,8 +29,6 @@ export type {
   BrowserNavigateResult,
   BrowserScreenshotResult,
   BrowserToolMode,
-  BrowserToolName,
-  EmailToolName,
   SandboxExecuteOptions,
   SandboxExecutionResult,
   SandboxType,

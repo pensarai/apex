@@ -2,9 +2,7 @@ export type { WhiteboxAttackSurfaceAgentInput } from "./agent";
 export { WhiteboxAttackSurfaceAgent } from "./agent";
 export {
   WHITEBOX_APPS_DISCOVERY_SYSTEM_PROMPT,
-  WHITEBOX_ATTACK_SURFACE_SYSTEM_PROMPT,
   WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
-  WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT,
 } from "./prompts";
 export type {
   App,
@@ -17,12 +15,9 @@ export type {
   WhiteboxAttackSurfaceResult,
 } from "./types";
 export {
-  AppInfoSchema,
-  AppSchema,
   AppsDiscoveryResultSchema,
   DiscoverySummarySchema,
   EndpointSchema,
   RiskScoreBreakdownSchema,
   RiskScoreSchema,
-  WhiteboxAttackSurfaceResultSchema,
 } from "./types";
