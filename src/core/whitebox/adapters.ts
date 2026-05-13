@@ -144,8 +144,9 @@ const WHITEBOX_SCAN_ADAPTERS: WhiteboxScanAdapter[] = [
     kind: "dependencies",
     tool: "npm",
     detect: (profile) =>
-      profile.packageManagers.includes("npm") ||
-      existsSync(join(profile.rootPath, "package-lock.json")),
+      hasTool(profile, "npm") &&
+      (profile.packageManagers.includes("npm") ||
+        existsSync(join(profile.rootPath, "package-lock.json"))),
     buildCommand: () => ["npm", "audit", "--json"],
     parseSummary: (raw) => simpleLineFindings("npm audit", raw),
   },
