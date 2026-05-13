@@ -112,6 +112,4 @@ export const FindingJudgeOutputSchema = z.object({
     .describe("Remaining verification gaps or environmental limitations."),
 });
 
-export type FindingJudgeAgentOutput = z.infer<
-  typeof FindingJudgeOutputSchema
->;
+export type FindingJudgeAgentOutput = z.infer<typeof FindingJudgeOutputSchema>;

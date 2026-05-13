@@ -195,19 +195,16 @@ CRITICAL RULES — READ BEFORE CALLING:
           },
         };
 
-        const judgeResult = await judgeFinding(
-          judgeInput,
-          {
-            model: ctx.model!,
-            session: ctx.session,
-            authConfig: ctx.authConfig,
-            abortSignal: ctx.abortSignal,
-            eventBus: ctx.eventBus,
-            sandbox: ctx.sandbox,
-            target: ctx.target,
-            enableThinking: ctx.enableThinking,
-          },
-        );
+        const judgeResult = await judgeFinding(judgeInput, {
+          model: ctx.model!,
+          session: ctx.session,
+          authConfig: ctx.authConfig,
+          abortSignal: ctx.abortSignal,
+          eventBus: ctx.eventBus,
+          sandbox: ctx.sandbox,
+          target: ctx.target,
+          enableThinking: ctx.enableThinking,
+        });
 
         if (!judgeResult.valid) {
           cleanupPocFiles(ctx, filename);

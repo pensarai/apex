@@ -1,13 +1,12 @@
-import { mkdtempSync, rmSync, existsSync, mkdirSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
+import { judgeFinding } from "../../specialized/findingJudge";
 import {
   documentVulnerability,
   validatePocPortability,
 } from "./documentFinding";
-import { judgeFinding } from "../../specialized/findingJudge";
 
 vi.mock("../../specialized/findingJudge", async (importOriginal) => {
   const actual =
@@ -141,9 +140,9 @@ describe("documentVulnerability judge handling", () => {
     expect(result.success).toBe(false);
     expect(result.judgeRejected).toBe(true);
     expect(result.judgeReasoning).toContain("does not prove exploitation");
-    expect(
-      existsSync(join(ctx.session.pocsPath, "poc_admin_data.sh")),
-    ).toBe(false);
+    expect(existsSync(join(ctx.session.pocsPath, "poc_admin_data.sh"))).toBe(
+      false,
+    );
   });
 
   it("preserves a PoC-backed finding when the judge returns degraded unverified status", async () => {
@@ -182,9 +181,9 @@ describe("documentVulnerability judge handling", () => {
     expect(result.finding?.judge.concerns[0]).toContain(
       "infrastructure failed",
     );
-    expect(
-      existsSync(join(ctx.session.pocsPath, "poc_admin_data.sh")),
-    ).toBe(true);
+    expect(existsSync(join(ctx.session.pocsPath, "poc_admin_data.sh"))).toBe(
+      true,
+    );
   });
 });
 

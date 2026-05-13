@@ -6,11 +6,14 @@ import type { SessionInfo } from "../../../session";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { UnifiedSandbox } from "../../offSecAgent/tools";
 import { detectOSAndEnhancePrompt } from "../utils";
-import { buildFindingJudgePrompt, FINDING_JUDGE_SYSTEM_PROMPT } from "./prompts";
 import {
-  FindingJudgeOutputSchema,
+  buildFindingJudgePrompt,
+  FINDING_JUDGE_SYSTEM_PROMPT,
+} from "./prompts";
+import {
   type FindingJudgeAgentOutput,
   type FindingJudgeInput,
+  FindingJudgeOutputSchema,
 } from "./types";
 
 export interface FindingJudgeAgentInput {
@@ -38,7 +41,8 @@ export const FINDING_JUDGE_ACTIVE_TOOLS = [
 
 export class FindingJudgeAgent extends OffensiveSecurityAgent<FindingJudgeAgentOutput> {
   constructor(opts: FindingJudgeAgentInput) {
-    const target = opts.finding.target ?? opts.target ?? opts.session.targets[0];
+    const target =
+      opts.finding.target ?? opts.target ?? opts.session.targets[0];
 
     super({
       system: detectOSAndEnhancePrompt(FINDING_JUDGE_SYSTEM_PROMPT),
