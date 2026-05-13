@@ -69,12 +69,6 @@ jobs:
           bun sst version
           bun sst install
 
-      - name: Increase memory limit for console typecheck
-        working-directory: console
-        run: |
-          # Increase the memory limit in the console's package.json tsc script
-          sed -i 's/--max-old-space-size=16384/--max-old-space-size=24576/g' package.json
-
       - name: Typecheck console
         working-directory: console
         run: bun run tsc
