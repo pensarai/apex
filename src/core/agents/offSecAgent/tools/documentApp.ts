@@ -164,6 +164,34 @@ Each application creates a JSON file in the apps directory for tracking and anal
         input = { ...input, domain: domainCheck.origin! };
       }
 
+      // Dedup against the shared AttackSurfaceRegistry before writing.
+      // Tier 1 catches matches by normalised domain URL (so a whitebox app
+      // tagged to `https://api.example.com` short-circuits a blackbox
+      // rediscovery of the same origin even under a different name).
+      // Tier 2 catches matches by normalised app name. Mirrors the
+      // dedup pattern already used by `document_endpoint`.
+      if (ctx.attackSurfaceRegistry) {
+        const assetRecord = {
+          assetName: input.appName,
+          assetType: input.appType,
+          description: input.description,
+          ...(input.domain ? { details: { url: input.domain } } : {}),
+        };
+        const check = await ctx.attackSurfaceRegistry.register(assetRecord);
+        if (check.duplicate) {
+          const matchName = check.matchedAsset?.assetName ?? "unknown";
+          return {
+            success: false,
+            duplicate: true,
+            matchType: check.matchType,
+            matchedAsset: matchName,
+            message:
+              `Duplicate application (${check.matchType}): already documented as "${matchName}". ` +
+              `Skip this app and continue discovering other surface — do NOT retry under a different name.`,
+          };
+        }
+      }
+
       if (!existsSync(baseAppsPath)) {
         mkdirSync(baseAppsPath, { recursive: true });
       }
@@ -180,7 +208,21 @@ Each application creates a JSON file in the apps directory for tracking and anal
         target: ctx.session.targets[0],
       };
 
-      writeFileSync(filepath, JSON.stringify(appRecord, null, 2));
+      try {
+        writeFileSync(filepath, JSON.stringify(appRecord, null, 2));
+      } catch (writeError: unknown) {
+        // Roll back the registry entry if the file write failed so a
+        // retry is possible.
+        if (ctx.attackSurfaceRegistry) {
+          await ctx.attackSurfaceRegistry.unregister({
+            assetName: input.appName,
+            assetType: input.appType,
+            description: input.description,
+            ...(input.domain ? { details: { url: input.domain } } : {}),
+          });
+        }
+        throw writeError;
+      }
 
       return {
         success: true,
