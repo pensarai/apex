@@ -89,6 +89,7 @@ const TOOL_NAMES = [
   "osv-scanner",
   "trivy",
   "grype",
+  "npm",
   "pip-audit",
   "govulncheck",
   "brakeman",
