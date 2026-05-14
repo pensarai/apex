@@ -294,11 +294,22 @@ let defaultUserAgent: string | undefined =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 /**
+ * Hard floor for viewport size — used when both the explicit constructor
+ * arg and the module-level default are `undefined`. Guarantees that
+ * `new PlaywrightMcpSession()` always launches Chromium at a real desktop
+ * resolution and never silently falls back to Chromium's tiny built-in
+ * default just because someone called `setViewportSize(undefined)`.
+ *
+ * The only way to opt out is to pass `null` explicitly to the constructor.
+ */
+const HARDCODED_VIEWPORT_FALLBACK = "1920,1080";
+
+/**
  * Default viewport size (format: `WIDTH,HEIGHT`) for new browser sessions.
  * 1920x1080 matches a standard desktop resolution and avoids the small
  * default viewport that some SPAs use as a mobile/bot signal.
  */
-let defaultViewportSize: string | undefined = "1920,1080";
+let defaultViewportSize: string | undefined = HARDCODED_VIEWPORT_FALLBACK;
 
 /**
  * Configure the default headless mode for new browser sessions.
@@ -361,6 +372,13 @@ export class PlaywrightMcpSession {
    * - explicit `null` (for `userAgent` / `viewportSize`) → opt OUT of the
    *   default and let Chromium use its built-in value (useful when the
    *   anti-bot UA / 1920x1080 are counter-productive for a target).
+   *
+   * Viewport has an additional hard floor: if neither the arg nor the
+   * module default is set (e.g. someone called
+   * `setViewportSize(undefined)`), the constructor still falls back to
+   * {@link HARDCODED_VIEWPORT_FALLBACK} (`"1920,1080"`) so we never
+   * silently launch Chromium at its tiny built-in viewport. The only way
+   * to opt out is to pass `null` explicitly.
    */
   constructor(
     headless?: boolean,
@@ -371,7 +389,9 @@ export class PlaywrightMcpSession {
     this.userAgent =
       userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
     this.viewportSize =
-      viewportSize === null ? undefined : (viewportSize ?? defaultViewportSize);
+      viewportSize === null
+        ? undefined
+        : (viewportSize ?? defaultViewportSize ?? HARDCODED_VIEWPORT_FALLBACK);
   }
 
   /** Immediately reset all instance state. Synchronous — no I/O. */

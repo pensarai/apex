@@ -6,6 +6,7 @@ import {
   createBrowserTools,
   PlaywrightMcpSession,
   parseStorageStateResult,
+  setViewportSize,
   transformScriptToFunction,
 } from "./playwrightMcp";
 
@@ -197,6 +198,18 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     ) as unknown as InternalShape;
     expect(session.userAgent).toBeUndefined();
     expect(session.viewportSize).toBeUndefined();
+  });
+
+  it("falls back to a hardcoded 1920x1080 floor for viewport even if the module default was cleared (regression: don't ship a Chromium-tiny viewport just because someone called setViewportSize(undefined))", () => {
+    const original = "1920,1080";
+    try {
+      setViewportSize(undefined);
+      const session = new PlaywrightMcpSession() as unknown as InternalShape;
+      expect(session.viewportSize).toBe("1920,1080");
+    } finally {
+      // Restore the module default for any subsequent test.
+      setViewportSize(original);
+    }
   });
 });
 
