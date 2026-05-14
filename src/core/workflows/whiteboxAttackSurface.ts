@@ -405,6 +405,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
           const surfaceResult = mapAppWithSurface(
             join(codebasePath, app.location),
             codebasePath,
+            { isSingleAppRepo: serviceApps.length === 1 },
           );
           if (surfaceResult.mode === "surface") {
             console.log(
