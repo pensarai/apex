@@ -163,10 +163,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   // description), plus 3 rows of chrome (margin + scroll indicators).
   const rowsBelowContent =
     height - footerRows - contentTopMargin - baseContentHeight;
-  const maxSuggestions = Math.max(
-    2,
-    Math.floor((rowsBelowContent - 3) / 2),
-  );
+  const maxSuggestions = Math.max(2, Math.floor((rowsBelowContent - 3) / 2));
 
   return (
     <box
