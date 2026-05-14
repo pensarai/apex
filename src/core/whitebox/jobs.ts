@@ -178,7 +178,7 @@ export function startWhiteboxJob(input: {
   child.on("close", (code) => {
     if (record.timer) clearTimeout(record.timer);
     if (record.escalateTimer) clearTimeout(record.escalateTimer);
-    if (record.status === "timed_out" || record.status === "stopped") return;
+    if (record.status !== "running") return;
     updateStatus(id, code === 0 ? "completed" : "failed", code);
   });
   child.on("error", (error) => {
