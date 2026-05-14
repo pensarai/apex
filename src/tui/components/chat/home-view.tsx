@@ -136,27 +136,36 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
 
   // Content visibility: hide decorative elements first
   const showCommands = height >= 22;
-  const showHelpText = height >= 18;
   const inputPadding = height >= 20 ? 1 : 0;
   const inputWidth = Math.min(80, dimensions.width - 10);
 
-  // Estimate rows consumed above the input to size the autocomplete dropdown
-  const rowsAboveInput =
-    animationHeight +
+  // Static content height (without the autocomplete dropdown) used to
+  // compute a fixed top-margin anchor and size the dropdown window.
+  // The petri animation is absolutely positioned and excluded from flow.
+  const baseContentHeight =
     titleMarginTop +
     2 + // title + subtitle
     (showCommands ? menuMarginTop + 5 : 0) +
     inputMarginTop +
-    inputPadding + // top padding
-    1; // input row itself
-  const rowsBelowInput =
-    (showHelpText ? 2 : 0) + // help text + marginTop
-    inputPadding + // bottom padding
-    3; // footer bar approximate
-  // Subtract 3 extra rows: 1 margin + 1 "↑ more above" + 1 "↓ more below" indicators
+    inputPadding * 2 + // top + bottom padding of the input box
+    2; // input row + operator mode bar
+
+  const footerRows = 3;
+  // Anchor the content block at a fixed vertical position so the input
+  // doesn't drift when the dropdown opens or the textarea grows.
+  const contentTopMargin = Math.max(
+    0,
+    Math.floor((height - footerRows - baseContentHeight) / 2),
+  );
+
+  // Available rows below the anchored content for the autocomplete dropdown.
+  // Each suggestion item can occupy up to 2 terminal rows (label + wrapped
+  // description), plus 3 rows of chrome (margin + scroll indicators).
+  const rowsBelowContent =
+    height - footerRows - contentTopMargin - baseContentHeight;
   const maxSuggestions = Math.max(
     2,
-    height - rowsAboveInput - rowsBelowInput - 3,
+    Math.floor((rowsBelowContent - 3) / 2),
   );
 
   return (
@@ -185,8 +194,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       <box
         flexDirection="column"
         alignItems="center"
-        justifyContent="center"
-        height="100%"
+        marginTop={contentTopMargin}
       >
         {/* Title - centered */}
         <box
