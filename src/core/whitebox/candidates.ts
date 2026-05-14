@@ -59,7 +59,8 @@ function makeId(title: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 48);
-  return `wcand_${Date.now()}_${slug || "candidate"}`;
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `wcand_${Date.now()}_${rand}_${slug || "candidate"}`;
 }
 
 function sourceTraceHasEvidence(trace?: SourceTrace): boolean {
