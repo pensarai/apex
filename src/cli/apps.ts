@@ -29,6 +29,8 @@ import {
   getEndpoint,
   listApps,
   listEndpoints,
+  searchApps,
+  searchEndpoints,
   type UpdateAppInput,
   type UpdateEndpointInput,
   updateApp,
@@ -136,6 +138,8 @@ Usage:
   pensar apps endpoint-create <appId> [options]            Create an endpoint
   pensar apps endpoint-update <endpointId> [options]       Update an endpoint
   pensar apps endpoint-delete <endpointId>                 Delete an endpoint
+  pensar apps search <query> [options]                     Substring-search apps
+  pensar apps search-endpoints <query> [options]           Substring-search endpoints
 
 App fields (create requires --name and --description):
   --name <text>                Application name
@@ -150,6 +154,16 @@ Endpoint filters (for "endpoints"):
   --min-risk <score>           Minimum risk score (0–10)
   --limit <n>                  Page size (enables paginated response)
   --offset <n>                 Page offset (enables paginated response)
+
+Search options:
+  --project <id>               Scope search to a project (search-endpoints also
+                               supports --app <id> to scope to a single app)
+  --type <type>                Filter by application or endpoint type
+  --min-risk <score>           Endpoint search only: minimum risk score
+  --auth-required              Endpoint search only: only auth-required endpoints
+  --no-auth-required           Endpoint search only: only public endpoints
+  --limit <n>                  Page size (default 50, max 200)
+  --offset <n>                 Page offset
 
 Endpoint fields (create requires --endpoint and --description):
   --endpoint <text>            Endpoint path / URL / route
@@ -388,6 +402,55 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       const result = await deleteEndpoint(endpointId);
+      console.log(JSON.stringify(result, null, 2));
+    } else if (sub === "search") {
+      const query = args[1];
+      if (!query || query.startsWith("--")) {
+        console.error("Error: search query is required");
+        console.error("Usage: pensar apps search <query> [options]");
+        process.exit(1);
+      }
+      const projectId = getFlag("--project", args);
+      const type = parseAppType(getFlag("--type", args));
+      const limit = parseInteger("--limit", getFlag("--limit", args));
+      const offset = parseInteger("--offset", getFlag("--offset", args));
+      const result = await searchApps(query, {
+        ...(projectId !== undefined ? { projectId } : {}),
+        ...(type !== undefined ? { type } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {}),
+      });
+      console.log(JSON.stringify(result, null, 2));
+    } else if (sub === "search-endpoints") {
+      const query = args[1];
+      if (!query || query.startsWith("--")) {
+        console.error("Error: search query is required");
+        console.error("Usage: pensar apps search-endpoints <query> [options]");
+        process.exit(1);
+      }
+      const applicationId = getFlag("--app", args);
+      const projectId = getFlag("--project", args);
+      const type = parseEndpointType(getFlag("--type", args));
+      const minRiskScore = parseNumber(
+        "--min-risk",
+        getFlag("--min-risk", args),
+      );
+      const authRequired = hasFlag("--auth-required", args)
+        ? true
+        : hasFlag("--no-auth-required", args)
+          ? false
+          : undefined;
+      const limit = parseInteger("--limit", getFlag("--limit", args));
+      const offset = parseInteger("--offset", getFlag("--offset", args));
+      const result = await searchEndpoints(query, {
+        ...(applicationId !== undefined ? { applicationId } : {}),
+        ...(projectId !== undefined ? { projectId } : {}),
+        ...(type !== undefined ? { type } : {}),
+        ...(minRiskScore !== undefined ? { minRiskScore } : {}),
+        ...(authRequired !== undefined ? { authRequired } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {}),
+      });
       console.log(JSON.stringify(result, null, 2));
     } else if (!sub.startsWith("-")) {
       // Default: treat first arg as a project ID and list apps.

@@ -232,3 +232,75 @@ export async function deleteEndpoint(
 ): Promise<DeleteResult> {
   return apiRequest<DeleteResult>("DELETE", `/endpoints/${endpointId}`);
 }
+
+// ── Search (Tier 1: substring ILIKE) ─────────────────────────────────
+
+export interface SearchAppsOptions {
+  /** Optional: scope to a single project. Default: search across the workspace. */
+  projectId?: string;
+  type?: ApplicationType;
+  limit?: number;
+  offset?: number;
+}
+
+export interface SearchAppsResult {
+  apps: AppSummary[];
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+  query: string;
+}
+
+export async function searchApps(
+  query: string,
+  opts?: SearchAppsOptions,
+): Promise<SearchAppsResult> {
+  const params = new URLSearchParams({ q: query });
+  if (opts?.projectId) params.set("projectId", opts.projectId);
+  if (opts?.type) params.set("type", opts.type);
+  if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
+  if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
+  return apiRequest<SearchAppsResult>("GET", `/search/apps?${params.toString()}`);
+}
+
+export interface SearchEndpointsOptions {
+  /** Scope to a single application. Most specific. */
+  applicationId?: string;
+  /** Scope to all apps in a project. */
+  projectId?: string;
+  type?: EndpointType;
+  minRiskScore?: number;
+  authRequired?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface SearchEndpointsResult {
+  endpoints: EndpointSummary[];
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+  query: string;
+}
+
+export async function searchEndpoints(
+  query: string,
+  opts?: SearchEndpointsOptions,
+): Promise<SearchEndpointsResult> {
+  const params = new URLSearchParams({ q: query });
+  if (opts?.applicationId) params.set("applicationId", opts.applicationId);
+  if (opts?.projectId) params.set("projectId", opts.projectId);
+  if (opts?.type) params.set("type", opts.type);
+  if (opts?.minRiskScore !== undefined) {
+    params.set("minRiskScore", String(opts.minRiskScore));
+  }
+  if (opts?.authRequired !== undefined) {
+    params.set("authRequired", opts.authRequired ? "true" : "false");
+  }
+  if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
+  if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
+  return apiRequest<SearchEndpointsResult>(
+    "GET",
+    `/search/endpoints?${params.toString()}`,
+  );
+}
