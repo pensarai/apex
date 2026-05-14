@@ -134,6 +134,7 @@ Usage:
   pensar login                        Connect to Pensar Console
   pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)
   pensar projects                     List workspace projects
+  pensar apps                         Manage the attack surface (apps & endpoints)
   pensar pentests                     List and manage pentests
   pensar issues                       List and manage security issues
   pensar fixes                        View security fixes
@@ -518,6 +519,9 @@ if (hasFlag("-p") || command === "--prompt") {
 } else if (command === "projects") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/projects");
+} else if (command === "apps") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("./cli/apps");
 } else if (command === "pentests") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/pentests");
