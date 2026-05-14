@@ -34,9 +34,12 @@ export function resolvePathWithinCodebaseRoot(
   subPath: string = ".",
 ): string {
   const absRoot = resolve(normalize(root));
-  const candidate = subPath.startsWith("/")
-    ? resolve(normalize(subPath))
-    : resolve(absRoot, normalize(subPath));
+  if (subPath.startsWith("/")) {
+    throw new Error(
+      `Absolute subPath not allowed (must be relative to codebase root): ${subPath}`,
+    );
+  }
+  const candidate = resolve(absRoot, normalize(subPath));
 
   if (!isUnderRoot(absRoot, candidate)) {
     throw new Error(`Path escapes codebase root: ${subPath}`);
