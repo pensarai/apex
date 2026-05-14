@@ -508,6 +508,27 @@ describe("mapAppWithSurface — scope filter", () => {
     }
   });
 
+  it("scans repo root when isSingleAppRepo is true", () => {
+    const repoRoot = realpathSync(
+      mkdtempSync(join(tmpdir(), "apex-scope-root-single-")),
+    );
+    try {
+      writeRootPackageJson(repoRoot, { express: "^4.18.0" });
+      writeExpressApp(join(repoRoot, "server.js"), "/single");
+
+      const out = mapAppWithSurface(repoRoot, repoRoot, {
+        isSingleAppRepo: true,
+      });
+
+      expect(out.mode).toBe("surface");
+      if (out.mode === "surface") {
+        expect(out.endpoints.map((e) => e.path)).toContain("/single");
+      }
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
   it("falls back when frameworks are detected but no endpoints live inside app.location", () => {
     // Framework gets detected via the parent manifest, but the targeted
     // app subdir contains no routes — only its sibling does.
