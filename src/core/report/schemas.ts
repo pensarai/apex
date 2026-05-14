@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { CweEntrySchema, ValidatedCweEntrySchema } from "../../lib/cwe/types";
+import { FindingSeveritySchema } from "../findings/severity";
 import { EvidenceFileEntrySchema } from "../../lib/evidence/types";
 
 export const PentestReportFindingSchema = z.object({
   title: z.string(),
-  severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
+  severity: FindingSeveritySchema,
   description: z.string(),
   impact: z.string(),
   evidence: z.string(),
@@ -34,6 +35,7 @@ export const PentestReportSchema = z.object({
       HIGH: z.number(),
       MEDIUM: z.number(),
       LOW: z.number(),
+      INFORMATIONAL: z.number(),
     }),
   }),
   findings: z.array(PentestReportFindingSchema),

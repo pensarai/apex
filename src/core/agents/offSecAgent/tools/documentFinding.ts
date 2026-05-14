@@ -12,6 +12,7 @@ import { join } from "path";
 import { z } from "zod";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
+import { findingSeverityFromCvssSeverity } from "../../../findings/severity";
 import {
   type CVSSScorerInput,
   type CVSSScorerResult,
@@ -338,8 +339,7 @@ CRITICAL RULES — READ BEFORE CALLING:
           }
         }
 
-        const severity =
-          cvssResult.severity === "NONE" ? "LOW" : cvssResult.severity;
+        const severity = findingSeverityFromCvssSeverity(cvssResult.severity);
 
         // Phase 4: Build finding and register with dedup
         const finding: Finding = {

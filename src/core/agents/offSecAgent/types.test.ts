@@ -42,6 +42,17 @@ describe("ApexFindingObject", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts informational severity", () => {
+    const result = ApexFindingObject.safeParse({
+      ...baseFinding,
+      severity: "INFORMATIONAL",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.severity).toBe("INFORMATIONAL");
+    }
+  });
+
   it("accepts finding with cwes", () => {
     const result = ApexFindingObject.safeParse({ ...baseFinding, cwes });
     expect(result.success).toBe(true);
@@ -90,6 +101,17 @@ describe("DocumentFindingSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("normalizes informational severity", () => {
+    const result = DocumentFindingSchema.safeParse({
+      ...baseFinding,
+      severity: "info",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.severity).toBe("INFORMATIONAL");
+    }
+  });
+
   it("accepts finding with cwes", () => {
     const result = DocumentFindingSchema.safeParse({ ...baseFinding, cwes });
     expect(result.success).toBe(true);
@@ -135,6 +157,14 @@ describe("DocumentFindingSchema", () => {
 describe("PentestReportFindingSchema", () => {
   it("accepts finding without cwes (backward compatible)", () => {
     const result = PentestReportFindingSchema.safeParse(baseFinding);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts informational report findings", () => {
+    const result = PentestReportFindingSchema.safeParse({
+      ...baseFinding,
+      severity: "INFORMATIONAL",
+    });
     expect(result.success).toBe(true);
   });
 

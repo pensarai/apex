@@ -16,7 +16,7 @@ function makeSampleReport(
     },
     summary: {
       totalFindings: 1,
-      bySeverity: { CRITICAL: 0, HIGH: 1, MEDIUM: 0, LOW: 0 },
+      bySeverity: { CRITICAL: 0, HIGH: 1, MEDIUM: 0, LOW: 0, INFORMATIONAL: 0 },
     },
     findings: [
       {
@@ -116,7 +116,13 @@ describe("renderMarkdown", () => {
       ],
       summary: {
         totalFindings: 1,
-        bySeverity: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 1 },
+        bySeverity: {
+          CRITICAL: 0,
+          HIGH: 0,
+          MEDIUM: 0,
+          LOW: 1,
+          INFORMATIONAL: 0,
+        },
       },
     });
     const output = renderMarkdown(report);
@@ -156,7 +162,13 @@ describe("renderMarkdown", () => {
       ],
       summary: {
         totalFindings: 2,
-        bySeverity: { CRITICAL: 0, HIGH: 1, MEDIUM: 1, LOW: 0 },
+        bySeverity: {
+          CRITICAL: 0,
+          HIGH: 1,
+          MEDIUM: 1,
+          LOW: 0,
+          INFORMATIONAL: 0,
+        },
       },
     });
     const output = renderMarkdown(report);

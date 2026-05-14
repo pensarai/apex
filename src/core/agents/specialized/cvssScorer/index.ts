@@ -9,7 +9,11 @@
  */
 
 import { z } from "zod";
-import { type CVSS4Metrics, calculateCVSS4Score } from "../../../../lib/cvss";
+import {
+  type CVSS4Metrics,
+  type CVSS4Severity,
+  calculateCVSS4Score,
+} from "../../../../lib/cvss";
 import {
   CweEntrySchema,
   type ValidatedCweEntry,
@@ -44,7 +48,7 @@ export interface CVSSScorerResult {
   /** Numeric score (0.0-10.0) */
   score: number;
   /** Qualitative severity (NONE, LOW, MEDIUM, HIGH, CRITICAL) */
-  severity: string;
+  severity: CVSS4Severity;
   /** Full vector string (CVSS:4.0/AV:N/...) */
   vectorString: string;
   /** Individual metric values */

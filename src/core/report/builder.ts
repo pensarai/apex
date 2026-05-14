@@ -1,4 +1,5 @@
 import type { Finding } from "../agents/offSecAgent";
+import { FINDING_SEVERITY_ORDER } from "../findings/severity";
 import { type PentestReport, REPORT_VERSION } from "./schemas";
 
 export interface ReportContext {
@@ -8,18 +9,23 @@ export interface ReportContext {
   mode: "blackbox" | "whitebox" | "targeted";
 }
 
-const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
-
 export function buildPentestReport(
   findings: Finding[],
   context: ReportContext,
 ): PentestReport {
   const sorted = [...findings].sort(
     (a, b) =>
-      SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity),
+      FINDING_SEVERITY_ORDER.indexOf(a.severity) -
+      FINDING_SEVERITY_ORDER.indexOf(b.severity),
   );
 
-  const bySeverity = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+  const bySeverity = {
+    CRITICAL: 0,
+    HIGH: 0,
+    MEDIUM: 0,
+    LOW: 0,
+    INFORMATIONAL: 0,
+  };
   for (const f of findings) {
     bySeverity[f.severity]++;
   }

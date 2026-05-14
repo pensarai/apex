@@ -15,7 +15,7 @@ function makeSampleReport(): PentestReport {
     },
     summary: {
       totalFindings: 1,
-      bySeverity: { CRITICAL: 0, HIGH: 1, MEDIUM: 0, LOW: 0 },
+      bySeverity: { CRITICAL: 0, HIGH: 1, MEDIUM: 0, LOW: 0, INFORMATIONAL: 0 },
     },
     findings: [
       {
