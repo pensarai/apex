@@ -262,7 +262,7 @@ export async function runScanAdapter(input: {
     scanner: input.adapter.id,
     command,
     exitCode: raw.exitCode,
-    findings: input.adapter.parseSummary(raw.stdout || raw.stderr),
+    findings: input.adapter.parseSummary(raw.stdout),
     artifact,
     outputTruncated: raw.outputTruncated,
     timedOut: raw.timedOut,
