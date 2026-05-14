@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CweEntrySchema, ValidatedCweEntrySchema } from "../../lib/cwe/types";
-import { FindingSeveritySchema } from "../findings/severity";
 import { EvidenceFileEntrySchema } from "../../lib/evidence/types";
+import { FindingSeveritySchema } from "../findings/severity";
 
 export const PentestReportFindingSchema = z.object({
   title: z.string(),
