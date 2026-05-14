@@ -1,4 +1,4 @@
-import { isAbsolute, relative } from "node:path";
+import { isAbsolute, relative, sep } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import {
@@ -14,7 +14,10 @@ import { assertCommandInScope, ScopeViolationError } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 function displayPath(ctx: ToolContext, path: string): string {
-  return path.startsWith(ctx.session.rootPath)
+  const prefix = ctx.session.rootPath.endsWith(sep)
+    ? ctx.session.rootPath
+    : `${ctx.session.rootPath}${sep}`;
+  return path === ctx.session.rootPath || path.startsWith(prefix)
     ? relative(ctx.session.rootPath, path)
     : path;
 }
