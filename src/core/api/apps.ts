@@ -57,6 +57,13 @@ export interface AppDetail extends AppSummary {
   disallowedActions: string | null;
 }
 
+/**
+ * Lean endpoint shape used by list/search responses. Heavy prose
+ * (description, full objectives list, businessLogic, threatModel,
+ * authentication details) is omitted to keep paginated responses well
+ * clear of the 6 MB Lambda response cap. Fetch
+ * {@link getEndpoint} for the full {@link EndpointDetail}.
+ */
 export interface EndpointSummary {
   id: string;
   endpoint: string;
@@ -64,12 +71,14 @@ export interface EndpointSummary {
   applicationId: string;
   location: string | null;
   riskScore: number | null;
-  objectives: string[];
+  objectivesCount: number;
+  authRequired: boolean | null;
   createdAt: string;
 }
 
 export interface EndpointDetail extends EndpointSummary {
   description: string;
+  objectives: string[];
   startLineNumber: number | null;
   endLineNumber: number | null;
   authenticationRequired: {
@@ -88,6 +97,13 @@ export interface EndpointDetail extends EndpointSummary {
   } | null;
   businessLogic: string | null;
   threatModel: string | null;
+}
+
+export interface ListAppsPage {
+  apps: AppSummary[];
+  hasMore: boolean;
+  limit: number;
+  offset: number;
 }
 
 export interface ListEndpointsPage {
@@ -155,8 +171,41 @@ export interface DeleteResult {
 
 // ── Apps ─────────────────────────────────────────────────────────────
 
-export async function listApps(projectId: string): Promise<AppSummary[]> {
-  return apiRequest<AppSummary[]>("GET", `/projects/${projectId}/apps`);
+export interface ListAppsOptions {
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * List apps in a project. Always paginated to avoid the 6 MB Lambda /
+ * 10 MB API Gateway response cap on large tenants. Default page size
+ * is 100 (max 200); use {@link listAppsAll} to auto-paginate.
+ */
+export async function listApps(
+  projectId: string,
+  opts?: ListAppsOptions,
+): Promise<ListAppsPage> {
+  const params = new URLSearchParams();
+  if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
+  if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
+  const qs = params.toString();
+  return apiRequest<ListAppsPage>(
+    "GET",
+    `/projects/${projectId}/apps${qs ? `?${qs}` : ""}`,
+  );
+}
+
+/** Auto-paginate {@link listApps} until exhaustion. */
+export async function listAppsAll(projectId: string): Promise<AppSummary[]> {
+  const all: AppSummary[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await listApps(projectId, { limit: 200, offset });
+    all.push(...page.apps);
+    if (!page.hasMore) break;
+    offset += page.limit;
+  }
+  return all;
 }
 
 export async function getApp(appId: string): Promise<AppDetail> {
@@ -190,10 +239,17 @@ export interface ListEndpointsFilters {
   offset?: number;
 }
 
+/**
+ * List endpoints in an application. Always paginated to avoid the 6 MB
+ * Lambda / 10 MB API Gateway response cap — endpoint rows carry heavy
+ * prose columns (threatModel, businessLogic, description, objectives).
+ * Default page size is 100 (max 200); use {@link listEndpointsAll} to
+ * auto-paginate.
+ */
 export async function listEndpoints(
   appId: string,
   filters?: ListEndpointsFilters,
-): Promise<EndpointSummary[] | ListEndpointsPage> {
+): Promise<ListEndpointsPage> {
   const params = new URLSearchParams();
   if (filters?.type) params.set("type", filters.type);
   if (filters?.minRiskScore !== undefined) {
@@ -206,7 +262,27 @@ export async function listEndpoints(
 
   const qs = params.toString();
   const path = `/apps/${appId}/endpoints${qs ? `?${qs}` : ""}`;
-  return apiRequest<EndpointSummary[] | ListEndpointsPage>("GET", path);
+  return apiRequest<ListEndpointsPage>("GET", path);
+}
+
+/** Auto-paginate {@link listEndpoints} until exhaustion. */
+export async function listEndpointsAll(
+  appId: string,
+  filters?: Omit<ListEndpointsFilters, "limit" | "offset">,
+): Promise<EndpointSummary[]> {
+  const all: EndpointSummary[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await listEndpoints(appId, {
+      ...filters,
+      limit: 200,
+      offset,
+    });
+    all.push(...page.endpoints);
+    if (!page.hasMore) break;
+    offset += page.limit;
+  }
+  return all;
 }
 
 export async function getEndpoint(endpointId: string): Promise<EndpointDetail> {

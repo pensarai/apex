@@ -149,11 +149,15 @@ App fields (create requires --name and --description):
   --domain <id>                Linked domain UUID
   --disallowed-actions <text>  Free-form disallowed actions notes
 
+List pagination (for "<projectId>" and "endpoints <appId>"):
+  --limit <n>                  Page size (default 100, max 200)
+  --offset <n>                 Page offset (default 0)
+  Responses include { ..., hasMore, limit, offset }; iterate by
+  incrementing --offset by --limit until hasMore is false.
+
 Endpoint filters (for "endpoints"):
   --type <type>                One of: ${ENDPOINT_TYPES.join(", ")}
   --min-risk <score>           Minimum risk score (0–10)
-  --limit <n>                  Page size (enables paginated response)
-  --offset <n>                 Page offset (enables paginated response)
 
 Search options:
   --project <id>               Scope search to a project (search-endpoints also
@@ -353,11 +357,18 @@ async function main(): Promise<void> {
         console.error("Usage: pensar apps endpoints <appId> [filters]");
         process.exit(1);
       }
+      const type = parseEndpointType(getFlag("--type", args));
+      const minRiskScore = parseNumber(
+        "--min-risk",
+        getFlag("--min-risk", args),
+      );
+      const limit = parseInteger("--limit", getFlag("--limit", args));
+      const offset = parseInteger("--offset", getFlag("--offset", args));
       const filters = {
-        type: parseEndpointType(getFlag("--type", args)),
-        minRiskScore: parseNumber("--min-risk", getFlag("--min-risk", args)),
-        limit: parseInteger("--limit", getFlag("--limit", args)),
-        offset: parseInteger("--offset", getFlag("--offset", args)),
+        ...(type !== undefined ? { type } : {}),
+        ...(minRiskScore !== undefined ? { minRiskScore } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {}),
       };
       const result = await listEndpoints(appId, filters);
       console.log(JSON.stringify(result, null, 2));
@@ -455,8 +466,13 @@ async function main(): Promise<void> {
     } else if (!sub.startsWith("-")) {
       // Default: treat first arg as a project ID and list apps.
       const projectId = sub;
-      const apps = await listApps(projectId);
-      console.log(JSON.stringify(apps, null, 2));
+      const limit = parseInteger("--limit", getFlag("--limit", args));
+      const offset = parseInteger("--offset", getFlag("--offset", args));
+      const result = await listApps(projectId, {
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {}),
+      });
+      console.log(JSON.stringify(result, null, 2));
     } else {
       console.error(`Error: Unknown subcommand "${sub}"`);
       showHelp();
