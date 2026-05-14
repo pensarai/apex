@@ -33,6 +33,21 @@ import { config } from "../core/config";
 // Helpers
 // ---------------------------------------------------------------------------
 
+function hasFlag(flag: string): boolean {
+  return process.argv.includes(flag);
+}
+
+function getArg(flag: string): string | undefined {
+  const idx = process.argv.indexOf(flag);
+  return idx !== -1 && idx + 1 < process.argv.length
+    ? process.argv[idx + 1]
+    : undefined;
+}
+
+function isTTY(): boolean {
+  return process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+
 function openUrl(url: string): void {
   try {
     const { spawn } =
@@ -65,6 +80,13 @@ function prompt(question: string): Promise<string> {
   });
 }
 
+function findWorkspaceBySlugOrId(
+  workspaces: WorkspaceInfo[],
+  slugOrId: string,
+): WorkspaceInfo | undefined {
+  return workspaces.find((ws) => ws.slug === slugOrId || ws.id === slugOrId);
+}
+
 async function promptWorkspaceSelection(
   workspaces: WorkspaceInfo[],
 ): Promise<WorkspaceInfo> {
@@ -83,12 +105,13 @@ async function promptWorkspaceSelection(
     process.exit(1);
   }
 
-  const workspace = workspaces[index];
-  if (!workspace) {
+  const selected = workspaces[index];
+  if (!selected) {
     console.error("Invalid selection.");
     process.exit(1);
   }
-  return workspace;
+
+  return selected;
 }
 
 // ---------------------------------------------------------------------------
@@ -155,13 +178,12 @@ async function login(): Promise<void> {
       expiresIn: deviceInfo.expiresIn,
     });
 
-    const apiKey = data.apiKey;
-    if (!apiKey) {
-      throw new Error("Pensar Console did not return an API key");
+    if (!data.apiKey) {
+      throw new Error("Authentication failed: no API key received");
     }
 
     await config.update({
-      pensarAPIKey: apiKey,
+      pensarAPIKey: data.apiKey,
       gatewaySigningKey: data.signingKey ?? null,
     });
 
@@ -190,11 +212,24 @@ async function handleWorkspaces(
 ): Promise<void> {
   const wsResult = await fetchWorkspaces(apiUrl, accessToken);
   let workspaces = wsResult.workspaces;
+  const jsonOutput = hasFlag("--json");
 
   // Use dynamic consoleUrl from server if provided
   const consoleUrl = wsResult.consoleUrl ?? getPensarConsoleUrl();
 
   if (workspaces.length === 0) {
+    if (jsonOutput) {
+      console.log(
+        JSON.stringify({
+          success: false,
+          error: "no_workspaces",
+          message: "No workspaces found. Create one to continue.",
+          consoleUrl: `${consoleUrl}/create-workspace?redirect=/credits`,
+        }),
+      );
+      process.exit(1);
+    }
+
     console.log(
       `\nNo workspaces found. Opening browser to create one...\nIf the browser didn't open, visit: ${consoleUrl}/create-workspace?redirect=/credits\n`,
     );
@@ -203,15 +238,79 @@ async function handleWorkspaces(
     workspaces = await pollForWorkspaceCreation(apiUrl, accessToken);
   }
 
-  let workspace: WorkspaceInfo;
-  if (workspaces.length === 1) {
+  let workspace: WorkspaceInfo | undefined;
+  const workspaceFlag = getArg("--workspace");
+  const workspaceEnv = process.env.PENSAR_WORKSPACE;
+  const workspaceSpec = workspaceFlag ?? workspaceEnv;
+
+  if (workspaceSpec) {
+    const found = findWorkspaceBySlugOrId(workspaces, workspaceSpec);
+    if (!found) {
+      if (jsonOutput) {
+        console.log(
+          JSON.stringify({
+            success: false,
+            error: "workspace_not_found",
+            message: `Workspace '${workspaceSpec}' not found`,
+            availableWorkspaces: workspaces.map((ws) => ({
+              id: ws.id,
+              slug: ws.slug,
+              name: ws.name,
+            })),
+          }),
+        );
+      } else {
+        console.error(`\nError: Workspace '${workspaceSpec}' not found.`);
+        console.error("\nAvailable workspaces:");
+        workspaces.forEach((ws) => {
+          console.error(`  - ${ws.slug} (${ws.name})`);
+        });
+      }
+      process.exit(1);
+    }
+    workspace = found;
+  } else if (workspaces.length === 1) {
     const onlyWorkspace = workspaces[0];
     if (!onlyWorkspace) {
       throw new Error("No workspace available after workspace lookup");
     }
     workspace = onlyWorkspace;
   } else {
+    if (!isTTY()) {
+      if (jsonOutput) {
+        console.log(
+          JSON.stringify({
+            success: false,
+            error: "workspace_selection_required",
+            message:
+              "Multiple workspaces available. Specify one with --workspace or PENSAR_WORKSPACE",
+            availableWorkspaces: workspaces.map((ws) => ({
+              id: ws.id,
+              slug: ws.slug,
+              name: ws.name,
+              balance: ws.balance,
+            })),
+          }),
+        );
+      } else {
+        console.error(
+          "\nError: Multiple workspaces available, but running in non-interactive mode.",
+        );
+        console.error(
+          "Specify a workspace using --workspace <slug> or set PENSAR_WORKSPACE=<slug>\n",
+        );
+        console.error("Available workspaces:");
+        workspaces.forEach((ws) => {
+          console.error(`  - ${ws.slug} (${ws.name})`);
+        });
+      }
+      process.exit(1);
+    }
     workspace = await promptWorkspaceSelection(workspaces);
+  }
+
+  if (!workspace) {
+    throw new Error("No workspace selected");
   }
 
   const result = await selectWorkspace(apiUrl, accessToken, workspace.id);
@@ -222,27 +321,49 @@ async function handleWorkspaces(
     gatewaySigningKey: result.signingKey ?? null,
   });
 
-  console.log(
-    `\n✓ Connected to Pensar Console\n  Workspace: ${workspace.name} (${workspace.slug})\n  Credits: $${result.billing.balance.toFixed(2)}`,
-  );
-
   const needsBillingSetup =
     !result.billing.ready && result.billing.balance <= 0 && !!result.billingUrl;
+  const billingUrl =
+    result.billingUrl ??
+    `${getPensarConsoleUrl()}/${workspace.slug}/settings/billing`;
 
-  if (needsBillingSetup && result.billingUrl) {
+  if (jsonOutput) {
     console.log(
-      `\n⚠ Your workspace billing setup is not ready yet. Finish setup at:\n  ${result.billingUrl}`,
+      JSON.stringify({
+        success: true,
+        workspace: {
+          id: workspace.id,
+          slug: workspace.slug,
+          name: workspace.name,
+        },
+        billing: {
+          balance: result.billing.balance,
+          ready: result.billing.ready,
+          hasPaymentMethod: result.billing.hasPaymentMethod,
+          billingUrl,
+          needsSetup: needsBillingSetup,
+        },
+      }),
     );
-  } else if (result.billing.balance < 1) {
-    const billingUrl = `${getPensarConsoleUrl()}/${workspace.slug}/settings/billing`;
+  } else {
     console.log(
-      `\n⚠ Low credit balance. We recommend at least $30 for uninterrupted pentests.\n  Add credits: ${billingUrl}`,
+      `\n✓ Connected to Pensar Console\n  Workspace: ${workspace.name} (${workspace.slug})\n  Credits: $${result.billing.balance.toFixed(2)}`,
+    );
+
+    if (needsBillingSetup && result.billingUrl) {
+      console.log(
+        `\n⚠ Your workspace billing setup is not ready yet. Finish setup at:\n  ${result.billingUrl}`,
+      );
+    } else if (result.billing.balance < 1) {
+      console.log(
+        `\n⚠ Low credit balance. We recommend at least $30 for uninterrupted pentests.\n  Add credits: ${billingUrl}`,
+      );
+    }
+
+    console.log(
+      "\nPensar models are now available. Run `pensar` to get started.",
     );
   }
-
-  console.log(
-    "\nPensar models are now available. Run `pensar` to get started.",
-  );
 }
 
 async function logout(): Promise<void> {
@@ -259,11 +380,16 @@ async function logout(): Promise<void> {
 
 async function status(): Promise<void> {
   const appConfig = await config.get();
+  const jsonOutput = hasFlag("--json");
 
   if (!isConnected(appConfig)) {
-    console.log(
-      "Not connected to Pensar Console.\n\nRun `pensar login` to connect.",
-    );
+    if (jsonOutput) {
+      console.log(JSON.stringify({ connected: false }));
+    } else {
+      console.log(
+        "Not connected to Pensar Console.\n\nRun `pensar login` to connect.",
+      );
+    }
     return;
   }
 
@@ -297,23 +423,116 @@ async function status(): Promise<void> {
   }
 
   const authMethod = appConfig.accessToken ? "WorkOS" : "API key";
-  console.log(
-    `✓ Connected to Pensar Console\n  Workspace: ${appConfig.workspaceSlug ?? "not set"}\n  Auth: ${authMethod}`,
-  );
+
+  if (jsonOutput) {
+    console.log(
+      JSON.stringify({
+        connected: true,
+        workspace: appConfig.workspaceSlug ?? null,
+        workspaceId: appConfig.workspaceId ?? null,
+        authMethod,
+      }),
+    );
+  } else {
+    console.log(
+      `✓ Connected to Pensar Console\n  Workspace: ${appConfig.workspaceSlug ?? "not set"}\n  Auth: ${authMethod}`,
+    );
+  }
+}
+
+async function listWorkspaces(): Promise<void> {
+  const appConfig = await config.get();
+  const jsonOutput = hasFlag("--json");
+
+  if (!isConnected(appConfig)) {
+    if (jsonOutput) {
+      console.log(
+        JSON.stringify({
+          success: false,
+          error: "not_connected",
+          message: "Not connected to Pensar Console",
+        }),
+      );
+    } else {
+      console.error(
+        "Error: Not connected to Pensar Console.\n\nRun `pensar login` first.",
+      );
+    }
+    process.exit(1);
+  }
+
+  if (!appConfig.accessToken) {
+    if (jsonOutput) {
+      console.log(
+        JSON.stringify({
+          success: false,
+          error: "workos_auth_required",
+          message:
+            "Listing workspaces requires WorkOS authentication. Please re-authenticate.",
+        }),
+      );
+    } else {
+      console.error(
+        "Error: Listing workspaces requires WorkOS authentication.\nPlease run `pensar login` to re-authenticate.",
+      );
+    }
+    process.exit(1);
+  }
+
+  const apiUrl = getPensarApiUrl();
+  const wsResult = await fetchWorkspaces(apiUrl, appConfig.accessToken);
+
+  if (jsonOutput) {
+    console.log(
+      JSON.stringify({
+        success: true,
+        workspaces: wsResult.workspaces.map((ws) => ({
+          id: ws.id,
+          slug: ws.slug,
+          name: ws.name,
+          balance: ws.balance,
+          hasPaymentMethod: ws.hasPaymentMethod,
+        })),
+      }),
+    );
+  } else {
+    if (wsResult.workspaces.length === 0) {
+      console.log("No workspaces available.");
+    } else {
+      console.log("\nAvailable workspaces:\n");
+      wsResult.workspaces.forEach((ws) => {
+        const current =
+          ws.slug === appConfig.workspaceSlug ||
+          ws.id === appConfig.workspaceId
+            ? " (current)"
+            : "";
+        console.log(
+          `  ${ws.slug.padEnd(20)} ${ws.name.padEnd(30)} $${ws.balance.toFixed(2)}${current}`,
+        );
+      });
+      console.log();
+    }
+  }
 }
 
 function showHelp(): void {
   console.log(`Pensar Login — Connect to Pensar Console
 
 Usage:
-  pensar login             Login to Pensar Console (or show status if connected)
-  pensar login status      Show connection status
-  pensar login logout      Disconnect from Pensar Console
+  pensar login                    Login to Pensar Console (or show status if connected)
+  pensar login status             Show connection status
+  pensar login logout             Disconnect from Pensar Console
+  pensar login list-workspaces    List available workspaces
 
 Legacy alias: 'pensar auth' still works for backward compatibility
 
 Options:
-  -h, --help               Show this help message`);
+  --workspace <slug|id>    Select a specific workspace by slug or ID
+  --json                   Output structured JSON instead of human-readable text
+  -h, --help               Show this help message
+
+Environment Variables:
+  PENSAR_WORKSPACE         Default workspace slug or ID (lower precedence than --workspace)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -336,15 +555,39 @@ async function main(): Promise<void> {
       await logout();
     } else if (subcommand === "status") {
       await status();
+    } else if (subcommand === "list-workspaces") {
+      await listWorkspaces();
     } else {
-      console.error(`Unknown auth subcommand: ${subcommand}`);
-      console.error("Run 'pensar login --help' for usage information");
+      const jsonOutput = hasFlag("--json");
+      if (jsonOutput) {
+        console.log(
+          JSON.stringify({
+            success: false,
+            error: "unknown_subcommand",
+            message: `Unknown subcommand: ${subcommand}`,
+          }),
+        );
+      } else {
+        console.error(`Unknown auth subcommand: ${subcommand}`);
+        console.error("Run 'pensar login --help' for usage information");
+      }
       process.exit(1);
     }
   } catch (err) {
-    console.error(
-      `\nError: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    const jsonOutput = hasFlag("--json");
+    if (jsonOutput) {
+      console.log(
+        JSON.stringify({
+          success: false,
+          error: "exception",
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    } else {
+      console.error(
+        `\nError: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     process.exit(1);
   }
 }
