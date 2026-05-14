@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, extname, join, relative } from "node:path";
+import { basename, extname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { DEFAULT_WHITEBOX_EXCLUDED_DIRS } from "./profiles";
 import type {
@@ -103,6 +103,16 @@ function shouldSkipDir(name: string): boolean {
 
 async function walkFiles(rootPath: string): Promise<string[]> {
   const files: string[] = [];
+  const absRoot = resolve(rootPath);
+
+  function isWithinRoot(path: string): boolean {
+    try {
+      const real = realpathSync(path);
+      return real === absRoot || real.startsWith(`${absRoot}/`);
+    } catch {
+      return false;
+    }
+  }
 
   async function walk(current: string): Promise<void> {
     if (files.length >= MAX_PROFILE_FILES) return;
@@ -115,14 +125,15 @@ async function walkFiles(rootPath: string): Promise<string[]> {
 
     for (const entry of entries) {
       if (files.length >= MAX_PROFILE_FILES) return;
+      const fullPath = join(current, entry.name);
       if (entry.isDirectory()) {
-        if (!shouldSkipDir(entry.name)) {
-          await walk(join(current, entry.name));
-        }
+        if (shouldSkipDir(entry.name)) continue;
+        if (entry.isSymbolicLink() && !isWithinRoot(fullPath)) continue;
+        await walk(fullPath);
         continue;
       }
       if (entry.isFile()) {
-        files.push(relative(rootPath, join(current, entry.name)));
+        files.push(relative(rootPath, fullPath));
       }
     }
   }
