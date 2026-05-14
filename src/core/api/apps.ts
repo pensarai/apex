@@ -336,7 +336,10 @@ export async function searchApps(
   if (opts?.type) params.set("type", opts.type);
   if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
   if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
-  return apiRequest<SearchAppsResult>("GET", `/search/apps?${params.toString()}`);
+  return apiRequest<SearchAppsResult>(
+    "GET",
+    `/search/apps?${params.toString()}`,
+  );
 }
 
 export interface SearchEndpointsOptions {
