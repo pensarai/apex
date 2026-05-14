@@ -74,21 +74,26 @@ Returns an array of results with the text output from each agent.`,
         codebasePath: ctx.session.config?.codebasePath,
       });
 
-      const validatedTasks = tasks.map((t) => {
+      const validatedTasks: typeof tasks = [];
+      for (const t of tasks) {
         try {
-          return {
+          validatedTasks.push({
             ...t,
             codebasePath: resolvePathWithinCodebaseRoot(
               codebaseRoot,
               t.codebasePath,
             ),
-          };
+          });
         } catch {
-          throw new Error(
-            `Coding agent codebasePath "${t.codebasePath}" escapes the configured codebase root.`,
-          );
+          return {
+            success: false,
+            message: `Coding agent codebasePath "${t.codebasePath}" escapes the configured codebase root.`,
+            results: [],
+            recovery:
+              "Use paths inside the configured codebase root (session.config.codebasePath or agent cwd).",
+          };
         }
-      });
+      }
 
       const concurrency = DEFAULT_CONCURRENCY;
       const total = validatedTasks.length;
