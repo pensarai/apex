@@ -72,7 +72,7 @@ function killJobProcess(record: {
     /* gone */
   }
 
-  record.escalateTimer = setTimeout(() => {
+  const esc = setTimeout(() => {
     if (record.detached && pid && process.platform !== "win32") {
       try {
         process.kill(-pid, "SIGKILL");
@@ -86,6 +86,8 @@ function killJobProcess(record: {
       /* gone */
     }
   }, KILL_ESCALATE_MS);
+  esc.unref();
+  record.escalateTimer = esc;
 }
 
 function updateStatus(
@@ -106,10 +108,12 @@ function updateStatus(
     status === "stopped"
   ) {
     if (job.pruneTimer) clearTimeout(job.pruneTimer);
-    job.pruneTimer = setTimeout(() => {
+    const prune = setTimeout(() => {
       logBytesWritten.delete(job.logPath);
       jobs.delete(id);
     }, PRUNE_AFTER_MS);
+    prune.unref();
+    job.pruneTimer = prune;
   }
 }
 
@@ -165,13 +169,15 @@ export function startWhiteboxJob(input: {
     detached,
   };
 
-  record.timer = setTimeout(() => {
+  const timeout = setTimeout(() => {
     if (record.status === "running") {
       killJobProcess(record);
       updateStatus(id, "timed_out", null);
       writeLog(logPath, "\n[apex] job timed out\n");
     }
   }, input.timeoutSeconds * 1000);
+  timeout.unref();
+  record.timer = timeout;
 
   child.stdout?.on("data", (data) => writeLog(logPath, data.toString()));
   child.stderr?.on("data", (data) => writeLog(logPath, data.toString()));
