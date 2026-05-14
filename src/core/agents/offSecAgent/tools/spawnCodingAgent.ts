@@ -1,6 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
+import {
+  resolvePathWithinCodebaseRoot,
+  resolveWhiteboxCodebaseRoot,
+} from "../../../whitebox";
 import type { ToolContext } from "./types";
 
 /** Default max concurrent coding agents */
@@ -65,10 +69,30 @@ Returns an array of results with the text output from each agent.`,
         };
       }
 
-      const concurrency = DEFAULT_CONCURRENCY;
-      const total = tasks.length;
+      const codebaseRoot = resolveWhiteboxCodebaseRoot({
+        agentCwd: ctx.agentCwd,
+        codebasePath: ctx.session.config?.codebasePath,
+      });
 
-      // Results accumulator
+      const validatedTasks = tasks.map((t) => {
+        try {
+          return {
+            ...t,
+            codebasePath: resolvePathWithinCodebaseRoot(
+              codebaseRoot,
+              t.codebasePath,
+            ),
+          };
+        } catch {
+          throw new Error(
+            `Coding agent codebasePath "${t.codebasePath}" escapes the configured codebase root.`,
+          );
+        }
+      });
+
+      const concurrency = DEFAULT_CONCURRENCY;
+      const total = validatedTasks.length;
+
       const results: Array<{
         codebasePath: string;
         objective: string;
@@ -76,10 +100,9 @@ Returns an array of results with the text output from each agent.`,
         error?: string;
       }> = [];
 
-      // Bounded-concurrency executor
       let active = 0;
       let idx = 0;
-      const queue = tasks.map((t, i) => ({ ...t, index: i }));
+      const queue = validatedTasks.map((t, i) => ({ ...t, index: i }));
 
       await new Promise<void>((resolve) => {
         function next() {
