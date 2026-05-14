@@ -105,6 +105,15 @@ export class OffensiveSecurityAgent<TResult = void> {
    */
   public readonly browserSession?: PlaywrightMcpSession;
 
+  /**
+   * Whether this agent owns its {@link browserSession} (i.e. constructed it
+   * itself rather than inheriting it from a parent). Owners are responsible
+   * for disconnecting the session — see {@link consume}'s `finally` block.
+   * Inherited sessions are torn down by their owner (e.g.
+   * `spawn_pentest_agent` for worker sessions).
+   */
+  private readonly ownsBrowserSession: boolean;
+
   private readonly abortSignal?: AbortSignal;
 
   /** The user-facing prompt passed to the model. */
@@ -177,6 +186,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     // dir, so they don't need a session object on the host.
     if (!input.sandbox) {
       this.browserSession = input.browserSession ?? new PlaywrightMcpSession();
+      this.ownsBrowserSession = !input.browserSession;
+    } else {
+      this.ownsBrowserSession = false;
     }
 
     // -- Step trace (trace.jsonl) ---------------------------------------------
@@ -488,6 +500,9 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     } finally {
       this.persistentShell?.dispose();
+      if (this.ownsBrowserSession) {
+        await this.browserSession?.disconnect().catch(() => {});
+      }
     }
 
     if (this.abortSignal?.aborted) {
