@@ -162,6 +162,44 @@ describe("transformScriptToFunction", () => {
   });
 });
 
+describe("PlaywrightMcpSession — constructor defaults", () => {
+  // Internal field accessor — we don't want to expose getters publicly,
+  // but the defaults invariant is important enough to assert directly.
+  type InternalShape = {
+    headless: boolean;
+    userAgent: string | undefined;
+    viewportSize: string | undefined;
+  };
+
+  it("defaults to headless + desktop UA + 1920x1080 when constructed with no args (regression: don't fall back to Chromium's tiny default viewport)", () => {
+    const session = new PlaywrightMcpSession() as unknown as InternalShape;
+    expect(session.headless).toBe(true);
+    expect(session.viewportSize).toBe("1920,1080");
+    expect(session.userAgent).toContain("Chrome/");
+  });
+
+  it("uses explicit values when provided", () => {
+    const session = new PlaywrightMcpSession(
+      false,
+      "MyAgent/1.0",
+      "800,600",
+    ) as unknown as InternalShape;
+    expect(session.headless).toBe(false);
+    expect(session.userAgent).toBe("MyAgent/1.0");
+    expect(session.viewportSize).toBe("800,600");
+  });
+
+  it("treats explicit null as 'opt out of the default' (let Chromium pick its built-in)", () => {
+    const session = new PlaywrightMcpSession(
+      true,
+      null,
+      null,
+    ) as unknown as InternalShape;
+    expect(session.userAgent).toBeUndefined();
+    expect(session.viewportSize).toBeUndefined();
+  });
+});
+
 describe("parseStorageStateResult", () => {
   it("returns null for null/undefined input", () => {
     expect(parseStorageStateResult(null)).toBeNull();

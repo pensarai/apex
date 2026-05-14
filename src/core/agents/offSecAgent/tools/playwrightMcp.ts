@@ -347,10 +347,31 @@ export class PlaywrightMcpSession {
   private readonly userAgent: string | undefined;
   private readonly viewportSize: string | undefined;
 
-  constructor(headless = true, userAgent?: string, viewportSize?: string) {
-    this.headless = headless;
-    this.userAgent = userAgent;
-    this.viewportSize = viewportSize;
+  /**
+   * Construct a new isolated browser session.
+   *
+   * Each parameter has three-state semantics:
+   * - `undefined` (omitted) → fall back to the module-level default
+   *   (`defaultHeadless` / `defaultUserAgent` / `defaultViewportSize`,
+   *   configurable via {@link setHeadlessMode}, {@link setUserAgent}, and
+   *   {@link setViewportSize}). For viewport this means **1920x1080** by
+   *   default — sessions constructed with no args will launch Chromium at
+   *   a real desktop resolution, not the tiny built-in default.
+   * - explicit `string` / `boolean` value → use it as-is.
+   * - explicit `null` (for `userAgent` / `viewportSize`) → opt OUT of the
+   *   default and let Chromium use its built-in value (useful when the
+   *   anti-bot UA / 1920x1080 are counter-productive for a target).
+   */
+  constructor(
+    headless?: boolean,
+    userAgent?: string | null,
+    viewportSize?: string | null,
+  ) {
+    this.headless = headless ?? defaultHeadless;
+    this.userAgent =
+      userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
+    this.viewportSize =
+      viewportSize === null ? undefined : (viewportSize ?? defaultViewportSize);
   }
 
   /** Immediately reset all instance state. Synchronous — no I/O. */
@@ -924,16 +945,10 @@ export function createBrowserTools(
     // otherwise an inheriting sub-agent finishing first would tear down
     // the parent's browser mid-flight.
   } else {
-    const resolvedUserAgent =
-      userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
-    const resolvedViewportSize =
-      viewportSize === null ? undefined : (viewportSize ?? defaultViewportSize);
-
-    session = new PlaywrightMcpSession(
-      headless ?? defaultHeadless,
-      resolvedUserAgent,
-      resolvedViewportSize,
-    );
+    // PlaywrightMcpSession's constructor folds in the module-level
+    // defaults (1920x1080 viewport, desktop Chrome UA, headless=true)
+    // when these args are undefined — pass them through verbatim.
+    session = new PlaywrightMcpSession(headless, userAgent, viewportSize);
 
     if (abortSignal) {
       const onAbort = () => session.disconnect().catch(() => {});
