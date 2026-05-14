@@ -9,8 +9,8 @@
 
 export type {
   AppDetail,
-  AppSummary,
   ApplicationType,
+  AppSummary,
   CreateAppInput,
   CreateEndpointInput,
   DeleteResult,
