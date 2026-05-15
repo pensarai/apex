@@ -2,41 +2,16 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { BuiltInSkill } from "../types";
 
-// ---------------------------------------------------------------------------
-// Script path resolution
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve the absolute path to the bundled whitebox script directory.
- *
- * The scripts ship inside the apex repo at `scripts/whitebox/` and are
- * called by the agent via `execute_command`. Because the agent's shell
- * runs in the target codebase (not in the apex install dir), we bake the
- * absolute path into the skill body at module load time — that path
- * remains stable for the life of an apex process.
- *
- * Computed by walking up from the source file:
- *   src/core/skills/builtins/whiteboxAssessment.ts  → ../../../../scripts/whitebox
- *
- * When apex is bundled (e.g. `bun build --compile`), this falls back
- * gracefully: the runtime path may not point at a real directory, but
- * the agent still receives a concrete string it can debug if needed.
- */
-function resolveScriptsRoot(): string {
+// Absolute path to the bundled whitebox scripts, baked in at module load.
+// The agent's shell runs in the target codebase, so it needs the full path.
+const SCRIPTS_ROOT = (() => {
   try {
     const here = dirname(fileURLToPath(import.meta.url));
     return resolve(here, "..", "..", "..", "..", "scripts", "whitebox");
   } catch {
-    // Defensive fallback for unusual bundlers.
     return "scripts/whitebox";
   }
-}
-
-const SCRIPTS_ROOT = resolveScriptsRoot();
-
-// ---------------------------------------------------------------------------
-// Skill body
-// ---------------------------------------------------------------------------
+})();
 
 const INSTRUCTIONS = `You have local source code access. This skill is the playbook for performing a
 source-aware (\\\"whitebox\\\") security assessment using the primitives apex
@@ -60,7 +35,7 @@ Run the bundled profile script and read its JSON output:
 
 \`\`\`
 execute_command(
-  command: "bash ${SCRIPTS_ROOT}/profile.sh <codebasePath>"
+  command: "bun ${SCRIPTS_ROOT}/profile.ts <codebasePath>"
 )
 \`\`\`
 
@@ -155,33 +130,24 @@ spawn_coding_agent({
 
 ## 4. Run installed scanners
 
-Recipe scripts in the bundled scripts dir build the right argv for each
-installed scanner. The profile output tells you which scanners are
-available; invoke only those. All scripts share the same signature:
+The profile output lists which scanners are installed. Invoke any of
+them through the unified runner:
 
 \`\`\`
-bash ${SCRIPTS_ROOT}/run-<tool>.sh <codebase_path> <ruleset_or_config> <output_path>
+bun ${SCRIPTS_ROOT}/scanners.ts --tool <tool> --codebase <path> --output <path> [--config <value>]
 \`\`\`
 
-Available recipes:
-- \`run-semgrep.sh\` — semgrep, ruleset arg (e.g. \`p/security-audit\`)
-- \`run-gitleaks.sh\` — gitleaks, second arg unused (pass \`-\`)
-- \`run-osv-scanner.sh\` — OSV-Scanner for dependency CVEs
-- \`run-trivy-fs.sh\` — Trivy filesystem scan
-- \`run-bandit.sh\` — Bandit (Python)
-- \`run-gosec.sh\` — gosec (Go)
-- \`run-cargo-audit.sh\` — cargo audit (Rust)
-- \`run-pip-audit.sh\` — pip-audit (Python deps)
-- \`run-npm-audit.sh\` — npm audit (JS/TS deps)
-- \`run-trufflehog.sh\` — TruffleHog (secrets)
+Supported tools: \`semgrep\`, \`gitleaks\`, \`osv-scanner\`, \`trivy-fs\`,
+\`bandit\`, \`gosec\`, \`cargo-audit\`, \`pip-audit\`, \`npm-audit\`,
+\`trufflehog\`.
 
-Each script writes its raw JSON output to \`<output_path>\` (never to the
-target repo's cwd) and prints a single-line JSON summary on stdout. If
-the tool isn't installed, the summary is
-\`{"error":"<tool> not installed","tool":"<tool>"}\` and exit code is 0 —
-treat absence as a signal to skip, not as a failure.
+The runner writes the scanner's raw output to \`<output>\` and emits a
+single-line JSON summary on stdout. Missing binaries or missing
+prerequisites (no \`Cargo.lock\`, no \`package.json\`, …) are reported as
+\`{"error": "<reason>", "tool": "<tool>"}\` with exit code 0 — treat
+absence as a signal to skip, not as a failure.
 
-Then normalize the raw scanner output with the parser:
+Normalize the raw output with the parser:
 
 \`\`\`
 execute_command(
@@ -291,12 +257,6 @@ export const whiteboxAssessmentSkill: BuiltInSkill = {
   instructions: INSTRUCTIONS,
 };
 
-/**
- * Internal accessor used by the offsec system prompt to compose the
- * source-assessment hint paragraph. Keeping this in the skill module
- * means the prompt and the skill body stay in sync about where scripts
- * live.
- */
 export function whiteboxScriptsRoot(): string {
   return SCRIPTS_ROOT;
 }

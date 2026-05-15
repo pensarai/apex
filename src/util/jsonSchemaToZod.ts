@@ -1,23 +1,6 @@
 import { z } from "zod";
 
-/**
- * Minimal JSON-Schema (subset of Draft 7) → zod converter.
- *
- * Supports the constructs an agent would realistically build at runtime
- * to shape a subagent's structured response: objects with properties,
- * arrays of items, enums, primitives (string / number / integer / boolean
- * / null), `nullable`, `enum`, `const`, simple `anyOf` / `oneOf`, and
- * `$ref`-free composition.
- *
- * This is intentionally not a full Draft-7 implementation — it exists to
- * keep `spawn_coding_agent`'s `responseSchema` field self-contained
- * without pulling in a heavy dependency. Unsupported keywords are
- * ignored rather than rejected so a parent agent can pass over-specified
- * schemas and still get a usable zod schema.
- *
- * @throws if the input is missing `type` and has none of the supported
- *   composition keywords (`enum`, `const`, `anyOf`, `oneOf`).
- */
+/** Minimal JSON-Schema → zod converter. Unsupported keywords are ignored. */
 export function jsonSchemaToZod(schema: unknown): z.ZodTypeAny {
   if (schema === undefined || schema === null) {
     throw new Error("jsonSchemaToZod: schema is null/undefined");
@@ -27,29 +10,25 @@ export function jsonSchemaToZod(schema: unknown): z.ZodTypeAny {
   }
   const s = schema as Record<string, unknown>;
 
-  // Literal value
   if ("const" in s) {
     return z.literal(s.const as z.Primitive);
   }
 
-  // Enum (heterogeneous values supported)
   if (Array.isArray(s.enum)) {
     const values = s.enum as Array<z.Primitive>;
     if (values.length === 0) {
       throw new Error("jsonSchemaToZod: enum array is empty");
     }
-    if (values.length === 1) {
-      return z.literal(values[0]);
-    }
-    const parts = values.map((v) => z.literal(v)) as unknown as [
-      z.ZodTypeAny,
-      z.ZodTypeAny,
-      ...z.ZodTypeAny[],
-    ];
-    return z.union(parts);
+    if (values.length === 1) return z.literal(values[0]);
+    return z.union(
+      values.map((v) => z.literal(v)) as unknown as [
+        z.ZodTypeAny,
+        z.ZodTypeAny,
+        ...z.ZodTypeAny[],
+      ],
+    );
   }
 
-  // Union via anyOf / oneOf
   const union = (s.anyOf ?? s.oneOf) as unknown[] | undefined;
   if (Array.isArray(union) && union.length > 0) {
     const parts = union.map((sub) => jsonSchemaToZod(sub));
@@ -59,10 +38,10 @@ export function jsonSchemaToZod(schema: unknown): z.ZodTypeAny {
 
   const nullable = s.nullable === true;
 
-  // Multi-type: ["string", "null"] etc.
   if (Array.isArray(s.type)) {
-    const types = s.type as string[];
-    const parts = types.map((t) => jsonSchemaToZod({ ...s, type: t }));
+    const parts = (s.type as string[]).map((t) =>
+      jsonSchemaToZod({ ...s, type: t }),
+    );
     const merged =
       parts.length === 1
         ? parts[0]
@@ -98,8 +77,7 @@ export function jsonSchemaToZod(schema: unknown): z.ZodTypeAny {
       zodSchema = z.null();
       break;
     case "array": {
-      const items = s.items as unknown;
-      const inner = items ? jsonSchemaToZod(items) : z.unknown();
+      const inner = s.items ? jsonSchemaToZod(s.items) : z.unknown();
       let arr = z.array(inner);
       if (typeof s.minItems === "number") arr = arr.min(s.minItems);
       if (typeof s.maxItems === "number") arr = arr.max(s.maxItems);
@@ -108,32 +86,26 @@ export function jsonSchemaToZod(schema: unknown): z.ZodTypeAny {
     }
     case "object": {
       const properties = (s.properties ?? {}) as Record<string, unknown>;
-      const required = Array.isArray(s.required)
-        ? new Set(s.required as string[])
-        : new Set<string>();
-
+      const required = new Set(
+        Array.isArray(s.required) ? (s.required as string[]) : [],
+      );
       const shape: Record<string, z.ZodTypeAny> = {};
       for (const [key, value] of Object.entries(properties)) {
         const child = jsonSchemaToZod(value);
         shape[key] = required.has(key) ? child : child.optional();
       }
-
       const additional = s.additionalProperties;
-      let obj: z.ZodTypeAny;
       if (additional === false) {
-        obj = z.object(shape).strict();
+        zodSchema = z.object(shape).strict();
       } else if (additional && typeof additional === "object") {
-        obj = z.object(shape).catchall(jsonSchemaToZod(additional));
+        zodSchema = z.object(shape).catchall(jsonSchemaToZod(additional));
       } else {
-        // additionalProperties === true | undefined → permissive
-        obj = z.object(shape).passthrough();
+        zodSchema = z.object(shape).passthrough();
       }
-      zodSchema = obj;
       break;
     }
     default:
-      // Untyped schema → accept anything. This keeps the converter robust
-      // against partial schemas the parent agent might emit.
+      // Untyped schema → accept anything; lets parent agents pass partial schemas.
       zodSchema = z.unknown();
   }
 

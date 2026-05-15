@@ -1,17 +1,7 @@
-/**
- * Tests for the whitebox memory seed.
- *
- * Validates:
- *   1. The seed array is well-formed (unique IDs, expected tags).
- *   2. Running the seed against an isolated PENSAR_DATA_DIR populates
- *      memories that are then retrievable via list_memories with the
- *      `whitebox-seed` tag.
- *   3. Re-running is idempotent (no duplicates).
- */
-import { execSync } from "child_process";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { execSync } from "node:child_process";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 describe("whitebox memory seed", () => {
@@ -36,12 +26,11 @@ describe("whitebox memory seed", () => {
     }
   });
 
-  it("populates ~/.pensar/memories and is idempotent", async () => {
+  it("populates the configured data dir and is idempotent", async () => {
     const repoRoot = join(__dirname, "..");
     const script = join(repoRoot, "scripts", "seed-whitebox-memories.ts");
     const env = { ...process.env, PENSAR_DATA_DIR: dataDir };
 
-    // First run: should add all entries.
     const firstOut = execSync(`bun run ${script}`, {
       cwd: repoRoot,
       env,
@@ -50,7 +39,6 @@ describe("whitebox memory seed", () => {
     expect(firstOut).toMatch(/added/);
     expect(firstOut).not.toMatch(/0 added/);
 
-    // Second run: everything should be skipped (no --force flag).
     const secondOut = execSync(`bun run ${script}`, {
       cwd: repoRoot,
       env,
@@ -59,13 +47,12 @@ describe("whitebox memory seed", () => {
     expect(secondOut).toMatch(/0 added/);
     expect(secondOut).toMatch(/0 updated/);
 
-    // Listing memories with the whitebox-seed tag should return the
-    // expected count. We avoid importing the listMemories function
-    // (which would bind to the test runner's PENSAR_DATA_DIR before
-    // we override it); instead, verify the on-disk file count.
-    const { readdirSync } = await import("fs");
-    const frameworkDir = join(dataDir, "memories", "framework");
-    const files = readdirSync(frameworkDir).filter((f) => f.endsWith(".json"));
+    // Verify on-disk file count rather than importing listMemories — the
+    // memory module's data-dir resolver binds at import time, before
+    // beforeEach can override PENSAR_DATA_DIR.
+    const files = readdirSync(join(dataDir, "memories", "framework")).filter(
+      (f) => f.endsWith(".json"),
+    );
     const { SEEDS } = await import("./seed-whitebox-memories");
     expect(files.length).toBe(SEEDS.length);
   }, 60_000);

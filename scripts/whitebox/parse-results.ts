@@ -1,21 +1,8 @@
-/**
- * Normalize scanner outputs to a shared finding schema.
- *
- * Usage: bun parse-results.ts --tool <tool> --input <path>
- *
- * Each scanner emits its own JSON / NDJSON shape. This script converts
- * those into a uniform `ParseResult` so the agent consuming downstream
- * doesn't need to know per-scanner details. Findings that the parser
- * can't fully understand are still included with a placeholder severity
- * — better to surface a noisy finding than to silently drop it.
- */
+// Normalize each scanner's raw output to a uniform ParseResult.
+// Usage: bun parse-results.ts --tool <tool> --input <path>
 
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-
-// ---------------------------------------------------------------------------
-// Schema
-// ---------------------------------------------------------------------------
 
 export const Severity = z.enum(["info", "low", "medium", "high", "critical"]);
 export type Severity = z.infer<typeof Severity>;
@@ -40,10 +27,6 @@ export const ParseResult = z.object({
 });
 export type ParseResult = z.infer<typeof ParseResult>;
 
-// ---------------------------------------------------------------------------
-// Per-tool parsers
-// ---------------------------------------------------------------------------
-
 function asStr(v: unknown, fallback = ""): string {
   return typeof v === "string" ? v : fallback;
 }
@@ -67,10 +50,9 @@ function mapSeverity(raw: unknown): Severity | undefined {
   return undefined;
 }
 
+// Scanners emit CWEs as strings, numbers, arrays, or { id } objects.
+// Normalize all of them to "CWE-<n>".
 function extractCweStrings(value: unknown): string[] | undefined {
-  // CWEs surface in lots of shapes: ["CWE-79", ...], "CWE-79",
-  // [{ id: "CWE-79" }], "79", etc. We normalize to the "CWE-<n>" form
-  // when possible and otherwise just preserve the raw string.
   const acc: string[] = [];
   const visit = (v: unknown): void => {
     if (typeof v === "string") {
@@ -88,8 +70,6 @@ function extractCweStrings(value: unknown): string[] | undefined {
   visit(value);
   return acc.length > 0 ? acc : undefined;
 }
-
-// -- semgrep ----------------------------------------------------------------
 
 function parseSemgrep(raw: unknown): ParseResult {
   const obj = (raw ?? {}) as Record<string, unknown>;
@@ -114,8 +94,6 @@ function parseSemgrep(raw: unknown): ParseResult {
   return ParseResult.parse({ tool: "semgrep", findings });
 }
 
-// -- gitleaks ---------------------------------------------------------------
-
 function parseGitleaks(raw: unknown): ParseResult {
   const arr = asArr(raw);
   const findings: Finding[] = arr.map((r) => {
@@ -132,8 +110,6 @@ function parseGitleaks(raw: unknown): ParseResult {
   });
   return ParseResult.parse({ tool: "gitleaks", findings });
 }
-
-// -- osv-scanner ------------------------------------------------------------
 
 function parseOsvScanner(raw: unknown): ParseResult {
   const obj = (raw ?? {}) as Record<string, unknown>;
@@ -164,8 +140,6 @@ function parseOsvScanner(raw: unknown): ParseResult {
   return ParseResult.parse({ tool: "osv-scanner", findings });
 }
 
-// -- trivy-fs ---------------------------------------------------------------
-
 function parseTrivy(raw: unknown): ParseResult {
   const obj = (raw ?? {}) as Record<string, unknown>;
   const findings: Finding[] = [];
@@ -187,8 +161,6 @@ function parseTrivy(raw: unknown): ParseResult {
   return ParseResult.parse({ tool: "trivy-fs", findings });
 }
 
-// -- bandit -----------------------------------------------------------------
-
 function parseBandit(raw: unknown): ParseResult {
   const obj = (raw ?? {}) as Record<string, unknown>;
   const results = asArr(obj.results);
@@ -207,8 +179,6 @@ function parseBandit(raw: unknown): ParseResult {
   return ParseResult.parse({ tool: "bandit", findings });
 }
 
-// -- gosec ------------------------------------------------------------------
-
 function parseGosec(raw: unknown): ParseResult {
   const obj = (raw ?? {}) as Record<string, unknown>;
   const issues = asArr(obj.Issues);
@@ -226,8 +196,6 @@ function parseGosec(raw: unknown): ParseResult {
   });
   return ParseResult.parse({ tool: "gosec", findings });
 }
-
-// -- cargo-audit ------------------------------------------------------------
 
 function parseCargoAudit(raw: unknown): ParseResult {
   const obj = (raw ?? {}) as Record<string, unknown>;
@@ -251,8 +219,6 @@ function parseCargoAudit(raw: unknown): ParseResult {
   return ParseResult.parse({ tool: "cargo-audit", findings });
 }
 
-// -- pip-audit --------------------------------------------------------------
-
 function parsePipAudit(raw: unknown): ParseResult {
   const obj = (raw ?? {}) as Record<string, unknown>;
   const deps = asArr(obj.dependencies);
@@ -272,8 +238,6 @@ function parsePipAudit(raw: unknown): ParseResult {
   }
   return ParseResult.parse({ tool: "pip-audit", findings });
 }
-
-// -- npm-audit --------------------------------------------------------------
 
 function parseNpmAudit(raw: unknown): ParseResult {
   const obj = (raw ?? {}) as Record<string, unknown>;
@@ -299,8 +263,6 @@ function parseNpmAudit(raw: unknown): ParseResult {
   }
   return ParseResult.parse({ tool: "npm-audit", findings });
 }
-
-// -- trufflehog (NDJSON) ----------------------------------------------------
 
 function parseTrufflehog(rawText: string): ParseResult {
   const lines = rawText
@@ -333,27 +295,31 @@ function parseTrufflehog(rawText: string): ParseResult {
 // Dispatcher
 // ---------------------------------------------------------------------------
 
-export type Tool =
-  | "semgrep"
-  | "gitleaks"
-  | "osv-scanner"
-  | "trivy-fs"
-  | "bandit"
-  | "gosec"
-  | "cargo-audit"
-  | "pip-audit"
-  | "npm-audit"
-  | "trufflehog";
+// TruffleHog emits NDJSON, so it consumes the raw text. All others
+// consume parsed JSON; we route through the same dispatch table.
+const PARSERS: Record<string, (raw: unknown) => ParseResult> = {
+  semgrep: parseSemgrep,
+  gitleaks: parseGitleaks,
+  "osv-scanner": parseOsvScanner,
+  "trivy-fs": parseTrivy,
+  bandit: parseBandit,
+  gosec: parseGosec,
+  "cargo-audit": parseCargoAudit,
+  "pip-audit": parsePipAudit,
+  "npm-audit": parseNpmAudit,
+};
 
-/**
- * Parse a scanner's raw output and return a normalized ParseResult.
- *
- * Most parsers consume parsed JSON. TruffleHog emits NDJSON, so its
- * parser handles the raw string itself.
- */
+export type Tool = keyof typeof PARSERS | "trufflehog";
+
 export function parseScannerOutput(tool: Tool, rawText: string): ParseResult {
-  if (tool === "trufflehog") {
-    return parseTrufflehog(rawText);
+  if (tool === "trufflehog") return parseTrufflehog(rawText);
+  const parser = PARSERS[tool];
+  if (!parser) {
+    return ParseResult.parse({
+      tool,
+      findings: [],
+      notes: [`Unknown tool: ${tool}`],
+    });
   }
   let raw: unknown;
   try {
@@ -365,42 +331,16 @@ export function parseScannerOutput(tool: Tool, rawText: string): ParseResult {
       notes: [`Failed to parse ${tool} output as JSON`],
     });
   }
-  switch (tool) {
-    case "semgrep":
-      return parseSemgrep(raw);
-    case "gitleaks":
-      return parseGitleaks(raw);
-    case "osv-scanner":
-      return parseOsvScanner(raw);
-    case "trivy-fs":
-      return parseTrivy(raw);
-    case "bandit":
-      return parseBandit(raw);
-    case "gosec":
-      return parseGosec(raw);
-    case "cargo-audit":
-      return parseCargoAudit(raw);
-    case "pip-audit":
-      return parsePipAudit(raw);
-    case "npm-audit":
-      return parseNpmAudit(raw);
-  }
+  return parser(raw);
 }
-
-// ---------------------------------------------------------------------------
-// CLI
-// ---------------------------------------------------------------------------
 
 function parseArgs(argv: string[]): { tool: string; input: string } {
   let tool = "";
   let input = "";
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--tool") {
-      tool = argv[++i] ?? "";
-    } else if (a === "--input") {
-      input = argv[++i] ?? "";
-    }
+    if (a === "--tool") tool = argv[++i] ?? "";
+    else if (a === "--input") input = argv[++i] ?? "";
   }
   if (!tool || !input) {
     throw new Error("Usage: bun parse-results.ts --tool <tool> --input <path>");
@@ -408,26 +348,10 @@ function parseArgs(argv: string[]): { tool: string; input: string } {
   return { tool, input };
 }
 
-const SUPPORTED: Tool[] = [
-  "semgrep",
-  "gitleaks",
-  "osv-scanner",
-  "trivy-fs",
-  "bandit",
-  "gosec",
-  "cargo-audit",
-  "pip-audit",
-  "npm-audit",
-  "trufflehog",
-];
+const SUPPORTED = [...Object.keys(PARSERS), "trufflehog"];
 
 function isCli(): boolean {
-  // Bun and Node both set import.meta.url to the executing module.
-  // The "main module" check is environment-specific, so we just look at
-  // process.argv[1] which should be the script path when invoked directly.
-  if (typeof process === "undefined") return false;
-  const entry = process.argv[1] ?? "";
-  return /parse-results\.(ts|js)$/.test(entry);
+  return /parse-results\.(ts|js)$/.test(process.argv[1] ?? "");
 }
 
 if (isCli()) {

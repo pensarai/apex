@@ -1,21 +1,6 @@
-/**
- * Bootstrap script: populate `~/.pensar/memories/` with the
- * whitebox-assessment playbook content (sink patterns, scanner recipes,
- * review-pass guidance, fuzzer pointers).
- *
- * Usage:
- *   bun run scripts/seed-whitebox-memories.ts          # adds missing entries
- *   bun run scripts/seed-whitebox-memories.ts --force  # rewrites existing
- *
- * Idempotency: each seed has a stable slug; `addMemoryWithId` preserves
- * `createdAt` on update so reruns don't churn timestamps. Without
- * `--force`, existing entries are skipped.
- *
- * All entries are tagged `whitebox-seed` so the agent can list/cleanup
- * the catalog via:
- *
- *   list_memories({ tag: "whitebox-seed" })
- */
+// Seed `~/.pensar/memories/` with whitebox playbook entries.
+// Run: `bun run scripts/seed-whitebox-memories.ts [--force]`
+// Skips existing entries by stable slug unless --force is passed.
 
 import {
   addMemoryWithId,
@@ -31,14 +16,7 @@ interface Seed {
   content: string;
 }
 
-// ---------------------------------------------------------------------------
-// Seeds — sink patterns, scanner recipes, review-pass guidance, fuzzers.
-// All categorized as "framework" for retrieval grouping; the
-// "whitebox-seed" tag is the catalog filter.
-// ---------------------------------------------------------------------------
-
 const SEEDS: Seed[] = [
-  // -- Sinks: SQLi -------------------------------------------------------
   {
     id: "wb-sink-sqli-python",
     category: "framework",
@@ -90,7 +68,6 @@ Mitigation: parameterized queries (\\$1, ?, named placeholders), Prisma.sql tagg
 Mitigation: parameterized queries with ? / \\$n placeholders, query builders (squirrel, goqu), gorm Where with map / struct conditions.`,
   },
 
-  // -- Sinks: Command Execution -----------------------------------------
   {
     id: "wb-sink-cmd-exec-node",
     category: "framework",
@@ -122,7 +99,6 @@ Tactics: trace from req.body / req.query / req.params to the sink across middlew
 Mitigation: subprocess.run([cmd, arg1, arg2]) WITHOUT shell=True; shlex.split for safe argv construction; avoid eval/exec.`,
   },
 
-  // -- Sinks: Path Traversal --------------------------------------------
   {
     id: "wb-sink-path-traversal",
     category: "framework",
@@ -138,7 +114,6 @@ Mitigation: subprocess.run([cmd, arg1, arg2]) WITHOUT shell=True; shlex.split fo
 Mitigation: canonicalize via realpath / path.resolve + assert the result starts with the allowed base directory; reject inputs containing "..", "/", or null bytes; use opaque IDs that map to file paths server-side.`,
   },
 
-  // -- Sinks: SSRF -------------------------------------------------------
   {
     id: "wb-sink-ssrf",
     category: "framework",
@@ -156,7 +131,6 @@ Tactics: target metadata endpoints first (169.254.169.254 AWS/GCP, 100.100.100.2
 Mitigation: allowlist of approved hosts; reject private IP ranges (RFC1918, loopback, link-local) AFTER DNS resolution; disallow redirects to disallowed targets; consider egress filtering at the network layer.`,
   },
 
-  // -- Sinks: Deserialization -------------------------------------------
   {
     id: "wb-sink-deserialization",
     category: "framework",
@@ -173,7 +147,6 @@ Mitigation: allowlist of approved hosts; reject private IP ranges (RFC1918, loop
 Verification: the sink alone is the bug; reach is everything. Trace inputs from HTTP body / cookies / file uploads to the sink.`,
   },
 
-  // -- Sinks: SSTI -------------------------------------------------------
   {
     id: "wb-sink-ssti",
     category: "framework",
@@ -189,7 +162,6 @@ Verification: the sink alone is the bug; reach is everything. Trace inputs from 
 Test payloads (start small): \`{{7*7}}\`, \`\${7*7}\`, \`#{7*7}\` — escalate to language-specific RCE primitives only after confirming basic interpolation.`,
   },
 
-  // -- Sinks: XXE / XSS / Crypto / JWT ----------------------------------
   {
     id: "wb-sink-xxe",
     category: "framework",
@@ -248,7 +220,6 @@ Mitigation: bcrypt cost ≥ 12, scrypt N ≥ 2^15, PBKDF2 ≥ 600k iterations (O
 Verification: try \`{ "alg": "none" }\`, try algorithm-switch RS256→HS256 with the published public key as the HMAC secret, check token expiry, check signature reuse across users.`,
   },
 
-  // -- Scanner Recipes --------------------------------------------------
   {
     id: "wb-scanner-semgrep",
     category: "framework",
@@ -256,7 +227,7 @@ Verification: try \`{ "alg": "none" }\`, try algorithm-switch RS256→HS256 with
     tags: ["whitebox-seed", "scanner-recipe", "semgrep"],
     content: `Detect installed: \`which semgrep\`
 Default ruleset: \`p/security-audit\` (broad). Alternatives: \`p/owasp-top-ten\`, \`p/ci\`, \`p/r2c-security-audit\`, language-specific: \`p/python\`, \`p/javascript\`, \`p/go\`.
-Run: \`bash <scripts>/run-semgrep.sh <repo> <ruleset> <output.json>\`
+Run: \`bun <scripts>/scanners.ts --tool semgrep --codebase <repo> --output <output.json> --config <ruleset>\`
 Output: JSON. Normalize via \`bun <scripts>/parse-results.ts --tool semgrep --input <output.json>\`.
 
 Tips: semgrep is fast but noisy on large repos. Filter to a single language ruleset when the codebase is single-language, then run \`p/security-audit\` on the full tree once for breadth.`,
@@ -267,7 +238,7 @@ Tips: semgrep is fast but noisy on large repos. Filter to a single language rule
     title: "Scanner recipe — gitleaks",
     tags: ["whitebox-seed", "scanner-recipe", "gitleaks", "secrets"],
     content: `Detect installed: \`which gitleaks\`
-Run: \`bash <scripts>/run-gitleaks.sh <repo> - <output.json>\`
+Run: \`bun <scripts>/scanners.ts --tool gitleaks --codebase <repo> --output <output.json> --config -\`
 Pass a path to a gitleaks config (custom rules) instead of \`-\` to extend defaults.
 Output: JSON array of findings with RuleID, File, StartLine, Secret.
 Normalize via \`bun <scripts>/parse-results.ts --tool gitleaks --input <output.json>\`.
@@ -281,7 +252,7 @@ Tip: gitleaks scans BOTH worktree and git history. For pure source-snapshot scan
     tags: ["whitebox-seed", "scanner-recipe", "osv-scanner", "deps", "cve"],
     content: `Detect installed: \`which osv-scanner\`
 Covers: npm, pnpm, yarn, pip, poetry, Cargo, Go modules, Maven, Gradle, Bundler, Composer, Pub.
-Run: \`bash <scripts>/run-osv-scanner.sh <repo> - <output.json>\`
+Run: \`bun <scripts>/scanners.ts --tool osv-scanner --codebase <repo> --output <output.json> --config -\`
 Output: JSON. Normalize via \`bun <scripts>/parse-results.ts --tool osv-scanner --input <output.json>\`.
 
 Tip: lockfiles are required for high-precision results. If only a manifest exists (no lockfile), the scan still runs but is less reliable.`,
@@ -293,7 +264,7 @@ Tip: lockfiles are required for high-precision results. If only a manifest exist
     tags: ["whitebox-seed", "scanner-recipe", "trivy", "deps", "cve", "iac"],
     content: `Detect installed: \`which trivy\`
 Covers: dependency CVEs across most ecosystems, plus IaC (Dockerfile, Kubernetes, Terraform) and secrets in one tool.
-Run: \`bash <scripts>/run-trivy-fs.sh <repo> - <output.json>\`
+Run: \`bun <scripts>/scanners.ts --tool trivy-fs --codebase <repo> --output <output.json> --config -\`
 Normalize via \`bun <scripts>/parse-results.ts --tool trivy-fs --input <output.json>\`.
 
 Tip: trivy is broader than osv-scanner (IaC + secrets) but slower; use both when both are installed and reconcile overlap downstream.`,
@@ -305,7 +276,7 @@ Tip: trivy is broader than osv-scanner (IaC + secrets) but slower; use both when
     tags: ["whitebox-seed", "scanner-recipe", "bandit", "python"],
     content: `Detect installed: \`which bandit\`
 Python-focused SAST. Catches: subprocess shell=True, eval, weak crypto, hard-coded passwords, SQL string formatting.
-Run: \`bash <scripts>/run-bandit.sh <repo> - <output.json>\`
+Run: \`bun <scripts>/scanners.ts --tool bandit --codebase <repo> --output <output.json> --config -\`
 Normalize via \`bun <scripts>/parse-results.ts --tool bandit --input <output.json>\`.`,
   },
   {
@@ -315,7 +286,7 @@ Normalize via \`bun <scripts>/parse-results.ts --tool bandit --input <output.jso
     tags: ["whitebox-seed", "scanner-recipe", "gosec", "go"],
     content: `Detect installed: \`which gosec\`
 Go-focused SAST. Catches: SQL string concat, command injection, weak random, hard-coded credentials, path traversal.
-Run: \`bash <scripts>/run-gosec.sh <repo> - <output.json>\`
+Run: \`bun <scripts>/scanners.ts --tool gosec --codebase <repo> --output <output.json> --config -\`
 Normalize via \`bun <scripts>/parse-results.ts --tool gosec --input <output.json>\`.`,
   },
   {
@@ -325,7 +296,7 @@ Normalize via \`bun <scripts>/parse-results.ts --tool gosec --input <output.json
     tags: ["whitebox-seed", "scanner-recipe", "cargo-audit", "rust", "cve"],
     content: `Detect installed: \`which cargo-audit\` (or \`cargo audit\`)
 Requires \`Cargo.lock\`. Cross-references RustSec advisory DB.
-Run: \`bash <scripts>/run-cargo-audit.sh <repo> - <output.json>\`
+Run: \`bun <scripts>/scanners.ts --tool cargo-audit --codebase <repo> --output <output.json> --config -\`
 Normalize via \`bun <scripts>/parse-results.ts --tool cargo-audit --input <output.json>\`.`,
   },
   {
@@ -335,7 +306,7 @@ Normalize via \`bun <scripts>/parse-results.ts --tool cargo-audit --input <outpu
     tags: ["whitebox-seed", "scanner-recipe", "pip-audit", "python", "cve"],
     content: `Detect installed: \`which pip-audit\`
 Auditing of installed Python packages or a requirements.txt against the PyPA Advisory DB.
-Run: \`bash <scripts>/run-pip-audit.sh <repo> - <output.json>\`
+Run: \`bun <scripts>/scanners.ts --tool pip-audit --codebase <repo> --output <output.json> --config -\`
 Normalize via \`bun <scripts>/parse-results.ts --tool pip-audit --input <output.json>\`.`,
   },
   {
@@ -345,7 +316,7 @@ Normalize via \`bun <scripts>/parse-results.ts --tool pip-audit --input <output.
     tags: ["whitebox-seed", "scanner-recipe", "npm-audit", "node", "cve"],
     content: `Detect installed: \`which npm\`
 Built into npm. Cross-references the npm advisory DB.
-Run: \`bash <scripts>/run-npm-audit.sh <repo> - <output.json>\`
+Run: \`bun <scripts>/scanners.ts --tool npm-audit --codebase <repo> --output <output.json> --config -\`
 Normalize via \`bun <scripts>/parse-results.ts --tool npm-audit --input <output.json>\`.
 
 Tip: npm audit returns non-zero on findings — the recipe wraps that so the agent doesn't see it as a tool failure.`,
@@ -357,13 +328,12 @@ Tip: npm audit returns non-zero on findings — the recipe wraps that so the age
     tags: ["whitebox-seed", "scanner-recipe", "trufflehog", "secrets"],
     content: `Detect installed: \`which trufflehog\`
 High-confidence secrets scanner with active verification (validates AWS keys, GitHub tokens, etc. against the actual provider — only for the verified=true subset).
-Run: \`bash <scripts>/run-trufflehog.sh <repo> - <output.ndjson>\`
+Run: \`bun <scripts>/scanners.ts --tool trufflehog --codebase <repo> --output <output.ndjson> --config -\`
 Output: NDJSON. Normalize via \`bun <scripts>/parse-results.ts --tool trufflehog --input <output.ndjson>\`.
 
 Tip: trufflehog's defaults disable active verification when offline; that's the safer choice during a static review.`,
   },
 
-  // -- Review passes ----------------------------------------------------
   {
     id: "wb-review-auth",
     category: "framework",
@@ -459,7 +429,6 @@ For each: does the parser run BEFORE auth/authorization? If yes, every anonymous
 7. GitHub Actions third-party actions pinned by SHA, not tag?`,
   },
 
-  // -- Fuzzer pointers --------------------------------------------------
   {
     id: "wb-fuzzer-atheris",
     category: "framework",
@@ -518,45 +487,31 @@ Use cases: parsers, deserializers, anything that processes external data formats
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Runner
-// ---------------------------------------------------------------------------
-
 async function main(): Promise<void> {
   const force = process.argv.includes("--force");
-  let added = 0;
-  let skipped = 0;
-  let updated = 0;
-
-  for (const seed of SEEDS) {
-    const existing = await getMemory(seed.category, seed.id);
-    if (existing && !force) {
-      skipped++;
-      continue;
-    }
-    await addMemoryWithId({
-      id: seed.id,
-      category: seed.category,
-      title: seed.title,
-      content: seed.content,
-      tags: seed.tags,
-    });
-    if (existing) {
-      updated++;
-    } else {
-      added++;
-    }
-  }
-
+  const results = await Promise.all(
+    SEEDS.map(async (seed) => {
+      const existing = await getMemory(seed.category, seed.id);
+      if (existing && !force) return "skipped" as const;
+      await addMemoryWithId({
+        id: seed.id,
+        category: seed.category,
+        title: seed.title,
+        content: seed.content,
+        tags: seed.tags,
+      });
+      return existing ? ("updated" as const) : ("added" as const);
+    }),
+  );
+  const added = results.filter((r) => r === "added").length;
+  const updated = results.filter((r) => r === "updated").length;
+  const skipped = results.filter((r) => r === "skipped").length;
   console.log(
     `Seeded whitebox memories: ${added} added, ${updated} updated, ${skipped} skipped (use --force to overwrite). Total catalog size: ${SEEDS.length}.`,
   );
 }
 
-// Only run when invoked as a script (so the file can also be imported
-// by tests without side effects).
-const entry = process.argv[1] ?? "";
-if (/seed-whitebox-memories\.(ts|js)$/.test(entry)) {
+if (/seed-whitebox-memories\.(ts|js)$/.test(process.argv[1] ?? "")) {
   main().catch((e) => {
     console.error("Failed to seed whitebox memories:", e);
     process.exit(1);

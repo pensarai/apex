@@ -30,12 +30,9 @@ describe("whitebox-assessment built-in skill", () => {
       "whitebox-assessment",
     );
     expect(name).toBe("Whitebox Assessment");
-    // Body should reference the core moves the playbook documents.
     expect(content).toMatch(/profile the codebase/i);
     expect(content).toMatch(/scanner/i);
     expect(content).toMatch(/whitebox-seed/);
-    // Scripts root path should be baked into the body so the agent can
-    // invoke recipe scripts via execute_command without guessing.
     expect(content).toContain(whiteboxScriptsRoot());
   });
 

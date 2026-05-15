@@ -14,19 +14,7 @@ interface SourceAssessmentContext {
   config?: { codebasePath?: string };
 }
 
-/**
- * Build the one-paragraph source-assessment hint added to the system
- * prompt when the session has a local codebase configured. The hint
- * points the agent at the `whitebox-assessment` skill (loaded lazily
- * via `read_skill`), the seeded memory slice tagged `whitebox-seed`,
- * the absolute path of the bundled scanner scripts (so the agent can
- * call them through `execute_command` without guessing the path), and
- * the output-discipline rule (write to scratchpad/, never the target
- * codebase).
- *
- * Returns an empty string when no codebase is configured so the prompt
- * stays unchanged for HTTP-only engagements.
- */
+/** Adds a paragraph pointing at the whitebox-assessment skill when codebasePath is set. */
 export function buildSourceAssessmentHint(
   ctx: SourceAssessmentContext,
 ): string {
@@ -42,7 +30,8 @@ You have local source code access at \`${codebasePath}\`. For source-aware (\\"w
 
 Quick orientation without loading the full skill:
 - Catalog of sink patterns + scanner recipes: \`list_memories({ tag: "whitebox-seed" })\`, then \`get_memory(category, id)\` for the slices that match the target's languages.
-- Scanner recipe scripts live at \`${scriptsRoot}/\` and accept \`<codebase> <config|-> <output>\` — call via \`execute_command\`.
+- Profile a repo: \`bun ${scriptsRoot}/profile.ts <codebase>\` (emits JSON).
+- Run an installed scanner: \`bun ${scriptsRoot}/scanners.ts --tool <name> --codebase <path> --output <path>\`. Normalize via \`bun ${scriptsRoot}/parse-results.ts --tool <name> --input <output>\`.
 - Write all generated output (profiles, scan results, traces, candidates) to \`scratchpad/whitebox/\` and \`logs/whitebox/\`. **Do not modify the target codebase.**
 - Static findings are NOT promoted to findings/. Track them as \`create_task\` with \`metadata.type = "whitebox_candidate"\`; promote only after verifying with \`document_vulnerability\` (PoC required).`;
 }
