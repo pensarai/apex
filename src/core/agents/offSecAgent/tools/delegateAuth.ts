@@ -1,7 +1,8 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { tool } from "ai";
-import { writeFileSync } from "fs";
-import { join } from "path";
 import { z } from "zod";
+import { beginSpawnedNode } from "../../../../sdk/spawn-helper.ts";
 import { CredentialManager } from "../../../credentials";
 import { AgentEventBus } from "../../../eventBus";
 import type { AuthCredentials } from "../../specialized/authenticationAgent/types";
@@ -188,6 +189,8 @@ When to use delegate_to_auth_subagent vs authenticate_session:
       authHints,
       reason,
     }) => {
+      // Declare here so the outer catch can call spawned.complete on failure.
+      let spawned: ReturnType<typeof beginSpawnedNode> | null = null;
       try {
         if (!ctx.model) {
           return {
@@ -223,6 +226,10 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           subagentId,
           input: { target, reason },
           parentSubagentId: ctx.subagentId,
+        });
+        spawned = beginSpawnedNode(ctx.apexStream, {
+          name: subagentId,
+          payload: { target, reason },
         });
 
         console.log(`\n🔐 Delegating to authentication subagent...`);
@@ -322,6 +329,18 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           status: result.success ? "completed" : "failed",
           parentSubagentId: ctx.subagentId,
         });
+        if (result.success) {
+          spawned?.complete({
+            result: {
+              strategy: result.strategy,
+              authBarrier: result.authBarrier,
+            },
+          });
+        } else {
+          spawned?.complete({
+            errorMessage: result.summary ?? "auth subagent reported failure",
+          });
+        }
 
         if (result.success) {
           const sessionInfoPath = join(
@@ -392,6 +411,7 @@ When to use delegate_to_auth_subagent vs authenticate_session:
 
         const errorMessage =
           error instanceof Error ? error.message : String(error);
+        spawned?.complete({ errorMessage });
         return {
           success: false,
           authenticated: false,

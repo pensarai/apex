@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { beginSpawnedNode } from "../../../../sdk/spawn-helper.ts";
 import { AgentEventBus } from "../../../eventBus";
 import type { ToolContext } from "./types";
 
@@ -164,6 +165,10 @@ async function runSingleCodingAgent(
     input: { codebasePath, objective },
     parentSubagentId: ctx.subagentId,
   });
+  const spawned = beginSpawnedNode(ctx.apexStream, {
+    name: subagentId,
+    payload: { codebasePath, objective, displayName: name },
+  });
 
   const localBus = new AgentEventBus();
   let textOutput = "";
@@ -192,6 +197,7 @@ async function runSingleCodingAgent(
       status: "completed",
       parentSubagentId: ctx.subagentId,
     });
+    spawned.complete({ result: { textOutputLength: textOutput.length } });
 
     return textOutput;
   } catch (error) {
@@ -199,6 +205,9 @@ async function runSingleCodingAgent(
       subagentId,
       status: "failed",
       parentSubagentId: ctx.subagentId,
+    });
+    spawned.complete({
+      errorMessage: error instanceof Error ? error.message : String(error),
     });
     throw error;
   }

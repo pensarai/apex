@@ -1,5 +1,6 @@
 import pLimit from "p-limit";
 import { z } from "zod";
+import { beginSpawnedNode } from "../../../../sdk/spawn-helper.ts";
 import { AgentEventBus } from "../../../eventBus";
 import type { RiskScore } from "../../specialized/whiteboxAttackSurface";
 import type { ToolContext } from "./types";
@@ -312,6 +313,10 @@ export async function generateThreatModelForEndpoint(
       input: { app: input.appName, endpoint: input.routePath },
       parentSubagentId: ctx.subagentId,
     });
+    const spawned = beginSpawnedNode(ctx.apexStream, {
+      name: subagentId,
+      payload: { app: input.appName, endpoint: input.routePath },
+    });
 
     const localBus = new AgentEventBus();
     AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
@@ -338,6 +343,11 @@ export async function generateThreatModelForEndpoint(
         subagentId,
         status: "completed",
         parentSubagentId: ctx.subagentId,
+      });
+      spawned.complete({
+        result: result
+          ? { route: input.routePath, appName: input.appName }
+          : { route: input.routePath, appName: input.appName, empty: true },
       });
 
       if (!result) return null;
@@ -371,8 +381,11 @@ export async function generateThreatModelForEndpoint(
         status: "failed",
         parentSubagentId: ctx.subagentId,
       });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      spawned.complete({ errorMessage });
       console.error(
-        `Threat model generation failed for ${input.routePath}: ${error instanceof Error ? error.message : String(error)}`,
+        `Threat model generation failed for ${input.routePath}: ${errorMessage}`,
       );
       return null;
     }

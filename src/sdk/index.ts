@@ -2,6 +2,7 @@ export * from "./ids.ts";
 export * from "./messages.ts";
 export * from "./sequence.ts";
 export * from "./session.ts";
+export * from "./spawn-helper.ts";
 export * from "./storage.ts";
 export * from "./stream.ts";
 export * from "./subagent.ts";
