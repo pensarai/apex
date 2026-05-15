@@ -180,12 +180,13 @@ COMMON TESTING PATTERNS:
 
       let headers = parseHeaders(rawHeaders);
       let resolvedBody: string | undefined;
-      const library = await getPromptInjectionLibrary({
-        library: ctx.promptInjectionLibrary,
-        source: ctx.promptInjectionLibrarySource,
-      });
+      let library: PromptInjectionLibrary;
 
       try {
+        library = await getPromptInjectionLibrary({
+          library: ctx.promptInjectionLibrary,
+          source: ctx.promptInjectionLibrarySource,
+        });
         headers = resolvePromptInjectionRefs(headers, library);
         resolvedBody =
           body === undefined
