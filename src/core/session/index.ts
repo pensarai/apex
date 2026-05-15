@@ -230,6 +230,8 @@ const SessionConfigObject = z.object({
   taskDriven: z.boolean().optional(),
   /** When true, pentest agents run a plan phase before execution (default: false) */
   requirePlan: z.boolean().optional(),
+  /** Local filesystem path for prompt-injection payload library */
+  promptInjectionLibrarySource: z.string().optional(),
 });
 
 export type SessionConfig = z.infer<typeof SessionConfigObject>;

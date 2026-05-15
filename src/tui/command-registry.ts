@@ -328,6 +328,48 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "prompt-injection",
+    aliases: ["pi"],
+    description: "Test LLM prompt-injection defenses",
+    category: "Pentesting",
+    options: [
+      {
+        name: "--library",
+        valueHint: "<path>",
+        description: "Local prompt-injection payload library path",
+      },
+      {
+        name: "--target",
+        valueHint: "<url>",
+        description: "Target application or endpoint",
+      },
+    ],
+    handler: async (args, ctx) => {
+      const skillArgs: Record<string, string> = {};
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === "--library" && args[i + 1]) {
+          skillArgs.library = args[++i];
+        } else if (args[i] === "--target" && args[i + 1]) {
+          skillArgs.target = args[++i];
+        }
+      }
+
+      ctx.navigate({
+        type: "operator",
+        nonce: Date.now(),
+        initialConfig: {
+          requireApproval: true,
+          target: skillArgs.target,
+          promptInjectionLibrarySource: skillArgs.library,
+        },
+        initialSkill: {
+          slug: "prompt-injection",
+          args: skillArgs,
+        },
+      });
+    },
+  },
+  {
     name: "resume",
     aliases: ["sessions", "s"],
     description: "Resume a previous session",

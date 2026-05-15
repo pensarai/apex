@@ -3,6 +3,12 @@ import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
 import {
+  getPromptInjectionLibrary,
+  redactPromptInjectionPayloads,
+  resolvePromptInjectionRefs,
+  type PromptInjectionRef,
+} from "../../../prompt-injections";
+import {
   resolveEffectiveHeaders,
   shellQuote,
   targetFetch,
@@ -16,7 +22,14 @@ import type { ToolContext } from "./types";
 
 const MAX_INLINE_BODY = 5_000;
 
-const httpRequestInputSchema = z.object({
+const promptInjectionRefSchema = z.object({
+  kind: z.literal("prompt_injection_ref"),
+  id: z
+    .string()
+    .describe("Stable prompt-injection id returned by list_prompt_injections"),
+});
+
+export const httpRequestInputSchema = z.object({
   url: z.string().describe("The URL to request"),
   method: z
     .enum(["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
@@ -27,7 +40,12 @@ const httpRequestInputSchema = z.object({
     .describe(
       'HTTP headers as a JSON-encoded object string, e.g. \'{"Content-Type": "application/json", "Authorization": "Bearer token"}\'',
     ),
-  body: z.string().optional().describe("Request body (for POST, PUT, PATCH)"),
+  body: z
+    .union([z.string(), promptInjectionRefSchema])
+    .optional()
+    .describe(
+      "Request body (for POST, PUT, PATCH). To use a hidden prompt-injection payload, pass a PromptInjectionRef object instead of raw payload text.",
+    ),
   followRedirects: z
     .boolean()
     .default(false)
@@ -55,6 +73,8 @@ export type HttpRequestResult = {
   error?: string;
   method?: string;
 };
+
+type HttpRequestBody = string | PromptInjectionRef | undefined;
 
 /**
  * If `body` exceeds the inline limit, save the full text to a file under
@@ -157,7 +177,32 @@ COMMON TESTING PATTERNS:
         throw e;
       }
 
-      const headers = parseHeaders(rawHeaders);
+      let headers = parseHeaders(rawHeaders);
+      let resolvedBody: string | undefined;
+      const library = await getPromptInjectionLibrary({
+        library: ctx.promptInjectionLibrary,
+        source: ctx.promptInjectionLibrarySource,
+      });
+
+      try {
+        headers = resolvePromptInjectionRefs(headers, library);
+        resolvedBody =
+          body === undefined
+            ? undefined
+            : String(resolvePromptInjectionRefs(body as HttpRequestBody, library));
+      } catch (e) {
+        return {
+          success: false,
+          error: e instanceof Error ? e.message : String(e),
+          url,
+          method,
+          status: 0,
+          statusText: "",
+          headers: {},
+          body: "",
+          redirected: false,
+        };
+      }
 
       // Sandbox mode: build a curl command and run it inside the sandbox
       if (ctx.sandbox) {
@@ -165,7 +210,7 @@ COMMON TESTING PATTERNS:
           url,
           method,
           headers,
-          body,
+          body: resolvedBody,
           followRedirects,
           timeout,
         });
@@ -199,7 +244,7 @@ COMMON TESTING PATTERNS:
         const response = await targetFetch(resolverSessionFromCtx(ctx), url, {
           method,
           headers,
-          body: body || undefined,
+          body: resolvedBody || undefined,
           redirect: followRedirects ? "follow" : "manual",
           signal: combinedSignal,
         });
@@ -218,13 +263,23 @@ COMMON TESTING PATTERNS:
           responseBody = "(unable to read response body)";
         }
 
-        const { text: truncatedBody } = maybeSaveBody(responseBody, ctx);
+        const redactedBody = redactPromptInjectionPayloads(
+          responseBody,
+          library,
+        );
+        const redactedHeaders = Object.fromEntries(
+          Object.entries(responseHeaders).map(([key, value]) => [
+            key,
+            redactPromptInjectionPayloads(value, library),
+          ]),
+        );
+        const { text: truncatedBody } = maybeSaveBody(redactedBody, ctx);
 
         return {
           success: true,
           status: response.status,
           statusText: response.statusText,
-          headers: responseHeaders,
+          headers: redactedHeaders,
           body: truncatedBody,
           url: response.url,
           redirected: response.redirected,
@@ -334,14 +389,25 @@ async function executeSandboxHttpRequest(
     const status = statusMatch ? parseInt(statusMatch[1]) : 0;
     const statusText = statusMatch ? statusMatch[2] : "Unknown";
     const responseBody = lines.slice(bodyStartIndex).join("\n");
+    const library = await getPromptInjectionLibrary({
+      library: ctx.promptInjectionLibrary,
+      source: ctx.promptInjectionLibrarySource,
+    });
 
-    const { text: truncatedBody } = maybeSaveBody(responseBody, ctx);
+    const redactedBody = redactPromptInjectionPayloads(responseBody, library);
+    const redactedHeaders = Object.fromEntries(
+      Object.entries(responseHeaders).map(([key, value]) => [
+        key,
+        redactPromptInjectionPayloads(value, library),
+      ]),
+    );
+    const { text: truncatedBody } = maybeSaveBody(redactedBody, ctx);
 
     return {
       success: status >= 200 && status < 400,
       status,
       statusText,
-      headers: responseHeaders,
+      headers: redactedHeaders,
       body: truncatedBody,
       url,
       redirected: false,

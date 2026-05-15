@@ -42,6 +42,7 @@ export interface WebCommandOptions {
   model?: string;
   prompt?: string;
   threatModel?: string;
+  promptInjectionLibrarySource?: string;
 }
 
 export type Route =
@@ -71,6 +72,7 @@ export type Route =
         taskDriven?: boolean;
         /** Headers from wizard/CLI; replace the snapshotted global defaults. */
         headers?: Record<string, string>;
+        promptInjectionLibrarySource?: string;
       };
       /** Skill to automatically submit on mount */
       initialSkill?: { slug: string; args?: Record<string, string> };

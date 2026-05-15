@@ -151,6 +151,7 @@ export default function OperatorDashboard({
     sandbox?: boolean;
     taskDriven?: boolean;
     headers?: Record<string, string>;
+    promptInjectionLibrarySource?: string;
   };
 }) {
   const { colors } = useTheme();
@@ -1170,6 +1171,11 @@ export default function OperatorDashboard({
           ? openAIReasoningEffort
           : undefined,
         surfaceIntegrationEnabled: config.data?.surfaceIntegrationEnabled,
+        promptInjectionLibrarySource:
+          initialConfig?.promptInjectionLibrarySource ??
+          (route.data.type === "operator"
+            ? route.data.initialSkill?.args?.["library"]
+            : undefined),
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {
           addCacheUsage(
@@ -1298,6 +1304,11 @@ export default function OperatorDashboard({
             ...(initialConfig?.headers !== undefined
               ? { headers: { ...initialConfig.headers } }
               : {}),
+            promptInjectionLibrarySource:
+              initialConfig?.promptInjectionLibrarySource ??
+              (route.data.type === "operator"
+                ? route.data.initialSkill?.args?.["library"]
+                : undefined),
           };
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,

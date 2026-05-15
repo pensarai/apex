@@ -264,6 +264,10 @@ export class OffensiveSecurityAgent<TResult = void> {
       credentialManager,
       persistentShell: this.persistentShell,
       skillsRegistry: input.skillsRegistry,
+      promptInjectionLibrary: input.promptInjectionLibrary,
+      promptInjectionLibrarySource:
+        input.promptInjectionLibrarySource ??
+        input.session.config?.promptInjectionLibrarySource,
       traceWriter,
       tasksDir,
       enableThinking: input.enableThinking,

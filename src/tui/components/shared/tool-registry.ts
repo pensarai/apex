@@ -62,6 +62,10 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   nuclei_scan: (args) =>
     `nuclei ${args.templates || "all"} -> ${args.target || ""}`,
   document_finding: (args) => `finding: ${args.title || args.name || ""}`,
+  list_prompt_injections: (args) =>
+    args.category
+      ? `prompt injections: ${args.category}`
+      : "prompt injections",
   smart_enumerate: (args) => `smart_enumerate ${args.target || args.url || ""}`,
   get_attack_surface: (args) =>
     `get_attack_surface ${args.target || args.url || ""}`,
