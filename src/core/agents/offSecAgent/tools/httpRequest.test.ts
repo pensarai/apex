@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionInfo } from "../../../session";
 import {
-  StaticPromptInjectionLibrary,
   promptInjectionRef,
+  StaticPromptInjectionLibrary,
 } from "../../../prompt-injections";
-import { httpRequest, type HttpRequestResult } from "./httpRequest";
+import type { SessionInfo } from "../../../session";
+import { type HttpRequestResult, httpRequest } from "./httpRequest";
 import type { ToolContext } from "./types";
 
 const TEST_LIBRARY = new StaticPromptInjectionLibrary([
@@ -104,6 +104,8 @@ describe("httpRequest prompt injection refs", () => {
       { toolCallId: "tc_test", messages: [], abortSignal: undefined },
     );
 
-    expect(capturedBody).toBe("payload={{prompt_injection:pi.encoded.override}}");
+    expect(capturedBody).toBe(
+      "payload={{prompt_injection:pi.encoded.override}}",
+    );
   });
 });

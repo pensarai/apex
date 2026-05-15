@@ -5,11 +5,11 @@ import { describe, expect, it } from "vitest";
 import { promptInjectionSkill } from "../skills/builtins";
 import {
   EMPTY_PROMPT_INJECTION_LIBRARY,
-  StaticPromptInjectionLibrary,
   getPromptInjectionLibrary,
   promptInjectionRef,
   redactPromptInjectionPayloads,
   resolvePromptInjectionRefs,
+  StaticPromptInjectionLibrary,
 } from "./index";
 
 const TEST_LIBRARY = new StaticPromptInjectionLibrary([

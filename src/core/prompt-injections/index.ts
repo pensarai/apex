@@ -26,10 +26,7 @@ export type PromptInjectionCatalogEntry = {
   payloadHash: string;
 };
 
-type PromptInjectionEntry = Omit<
-  PromptInjectionCatalogEntry,
-  "payloadHash"
-> & {
+type PromptInjectionEntry = Omit<PromptInjectionCatalogEntry, "payloadHash"> & {
   payload: string;
   payloadFilePath?: string;
 };
@@ -73,7 +70,7 @@ const PromptInjectionLibraryFileSchema = z.union([
   }),
 ]);
 
-export function isPromptInjectionRef(value: unknown): value is PromptInjectionRef {
+function isPromptInjectionRef(value: unknown): value is PromptInjectionRef {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -85,17 +82,23 @@ export function isPromptInjectionRef(value: unknown): value is PromptInjectionRe
 export class StaticPromptInjectionLibrary implements PromptInjectionLibrary {
   private readonly ordered: PromptInjectionEntry[];
   private readonly entries: Map<string, PromptInjectionEntry>;
+  private readonly hashes: Map<string, string>;
 
   constructor(entries: PromptInjectionEntry[]) {
     this.ordered = entries;
     this.entries = new Map(entries.map((entry) => [entry.id, entry]));
+    this.hashes = new Map(
+      entries.map((entry) => [entry.id, sha256(entry.payload)]),
+    );
   }
 
   listCatalog(): PromptInjectionCatalogEntry[] {
-    return this.ordered.map(({ payload, payloadFilePath: _path, ...entry }) => ({
-      ...entry,
-      payloadHash: sha256(payload),
-    }));
+    return this.ordered.map(
+      ({ payload: _payload, payloadFilePath: _path, ...entry }) => ({
+        ...entry,
+        payloadHash: this.hashes.get(entry.id)!,
+      }),
+    );
   }
 
   getPayload(id: string): string | undefined {
@@ -107,8 +110,7 @@ export class StaticPromptInjectionLibrary implements PromptInjectionLibrary {
   }
 
   getPayloadHash(id: string): string | undefined {
-    const payload = this.getPayload(id);
-    return payload ? sha256(payload) : undefined;
+    return this.hashes.get(id);
   }
 
   has(id: string): boolean {
@@ -122,7 +124,7 @@ export const EMPTY_PROMPT_INJECTION_LIBRARY = new StaticPromptInjectionLibrary(
 
 const SOURCE_CACHE = new Map<string, Promise<PromptInjectionLibrary>>();
 
-export function resolvePromptInjectionLibrarySource(
+function resolvePromptInjectionLibrarySource(
   explicit?: string,
 ): string | undefined {
   return (
@@ -159,7 +161,9 @@ function resolvePayloadPath(root: string, payloadPath: string): string {
   const resolved = resolve(root, payloadPath);
   const relativePath = relative(root, resolved);
   if (relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
-    throw new Error("Prompt injection payloadPath must stay within the library.");
+    throw new Error(
+      "Prompt injection payloadPath must stay within the library.",
+    );
   }
 
   return resolved;
@@ -197,12 +201,15 @@ async function readSource(source: string): Promise<PromptInjectionLibrary> {
   return parsePromptInjectionLibrary(readFileSync(catalogPath, "utf-8"), root);
 }
 
-export async function loadPromptInjectionLibrary(
+async function loadPromptInjectionLibrary(
   source: string,
 ): Promise<PromptInjectionLibrary> {
   let cached = SOURCE_CACHE.get(source);
   if (!cached) {
-    cached = readSource(source);
+    cached = readSource(source).catch((err) => {
+      SOURCE_CACHE.delete(source);
+      throw err;
+    });
     SOURCE_CACHE.set(source, cached);
   }
   return cached;
@@ -258,14 +265,4 @@ export function redactPromptInjectionPayloads(
     redacted = redacted.split(payload).join(`[PROMPT_INJECTION:${entry.id}]`);
   }
   return redacted;
-}
-
-export function summarizePromptInjectionRef(
-  ref: PromptInjectionRef,
-  library: PromptInjectionLibrary,
-): { id: string; payloadHash?: string } {
-  return {
-    id: ref.id,
-    payloadHash: library.getPayloadHash(ref.id),
-  };
 }

@@ -17,4 +17,3 @@ or by setting:
 ```sh
 PENSAR_PROMPT_INJECTION_LIBRARY=./exmaples/prompt-injection
 ```
-

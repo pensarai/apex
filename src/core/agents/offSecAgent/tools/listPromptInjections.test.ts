@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { SessionInfo } from "../../../session";
 import { StaticPromptInjectionLibrary } from "../../../prompt-injections";
+import type { SessionInfo } from "../../../session";
 import { listPromptInjections } from "./listPromptInjections";
 import type { ToolContext } from "./types";
 

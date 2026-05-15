@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { SessionInfo } from "../../../session";
 import { StaticPromptInjectionLibrary } from "../../../prompt-injections";
-import type { UnifiedSandbox } from "./sandbox";
-import type { ToolContext } from "./types";
-
+import type { SessionInfo } from "../../../session";
 import {
-  executeCommand,
   type ExecuteCommandResult,
+  executeCommand,
   normalizeExecuteCommandTimeout,
 } from "./executeCommand";
+import type { UnifiedSandbox } from "./sandbox";
+import type { ToolContext } from "./types";
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {

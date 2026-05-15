@@ -4,9 +4,9 @@ import { join } from "path";
 import { z } from "zod";
 import {
   getPromptInjectionLibrary,
+  type PromptInjectionRef,
   redactPromptInjectionPayloads,
   resolvePromptInjectionRefs,
-  type PromptInjectionRef,
 } from "../../../prompt-injections";
 import {
   resolveEffectiveHeaders,
@@ -29,7 +29,7 @@ const promptInjectionRefSchema = z.object({
     .describe("Stable prompt-injection id returned by list_prompt_injections"),
 });
 
-export const httpRequestInputSchema = z.object({
+const httpRequestInputSchema = z.object({
   url: z.string().describe("The URL to request"),
   method: z
     .enum(["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
@@ -189,7 +189,9 @@ COMMON TESTING PATTERNS:
         resolvedBody =
           body === undefined
             ? undefined
-            : String(resolvePromptInjectionRefs(body as HttpRequestBody, library));
+            : String(
+                resolvePromptInjectionRefs(body as HttpRequestBody, library),
+              );
       } catch (e) {
         return {
           success: false,
