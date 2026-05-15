@@ -94,6 +94,14 @@ const FALLBACK_CVSS: CVSSScorerResult = {
   cwes: [],
 };
 
+export function mapCvssSeverityToFindingSeverity(
+  severity: CVSSScorerResult["severity"],
+): Finding["severity"] {
+  return severity === "NONE"
+    ? "INFORMATIONAL"
+    : (severity as Finding["severity"]);
+}
+
 function slugify(str: string, maxLen: number): string {
   return str
     .toLowerCase()
@@ -267,7 +275,7 @@ CRITICAL RULES — READ BEFORE CALLING:
         if (!isVulnerability) {
           cvssResult = {
             score: 0,
-            severity: "LOW",
+            severity: "INFORMATIONAL",
             vectorString: "",
             metrics: FALLBACK_CVSS.metrics,
             scoreType: "N/A",
@@ -338,8 +346,7 @@ CRITICAL RULES — READ BEFORE CALLING:
           }
         }
 
-        const severity =
-          cvssResult.severity === "NONE" ? "LOW" : cvssResult.severity;
+        const severity = mapCvssSeverityToFindingSeverity(cvssResult.severity);
 
         // Phase 4: Build finding and register with dedup
         const finding: Finding = {

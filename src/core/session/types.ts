@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { CweEntrySchema, ValidatedCweEntrySchema } from "../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../lib/evidence/types";
+import {
+  FindingSeveritySchema,
+  normalizeFindingSeverity,
+} from "../findings/severity";
 
 /**
  * Supported vulnerability classes for testing
@@ -92,19 +96,7 @@ interface VulnerabilityTestResult {
  */
 export const DocumentFindingSchema = z.object({
   title: z.string().describe("Clear, concise finding title"),
-  severity: z.preprocess(
-    (val) => {
-      if (typeof val === "string") {
-        const upper = val.toUpperCase();
-        if (upper.includes("CRITICAL")) return "CRITICAL";
-        if (upper.includes("HIGH")) return "HIGH";
-        if (upper.includes("MEDIUM")) return "MEDIUM";
-        if (upper.includes("LOW")) return "LOW";
-      }
-      return val;
-    },
-    z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
-  ),
+  severity: z.preprocess(normalizeFindingSeverity, FindingSeveritySchema),
   description: z.string().describe("Detailed technical description"),
   impact: z.string().describe("Potential impact if exploited"),
   evidence: z

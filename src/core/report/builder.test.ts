@@ -47,6 +47,7 @@ describe("buildPentestReport", () => {
       HIGH: 1,
       MEDIUM: 0,
       LOW: 1,
+      INFORMATIONAL: 0,
     });
     expect(report.findings).toHaveLength(3);
   });
@@ -62,13 +63,29 @@ describe("buildPentestReport", () => {
       HIGH: 0,
       MEDIUM: 0,
       LOW: 0,
+      INFORMATIONAL: 0,
     });
     expect(report.findings).toHaveLength(0);
   });
 
-  it("sorts findings by severity: CRITICAL > HIGH > MEDIUM > LOW", () => {
+  it("parses legacy reports without informational summary counts", () => {
+    const report = buildPentestReport([], defaultContext);
+    delete (
+      report.summary.bySeverity as Partial<typeof report.summary.bySeverity>
+    ).INFORMATIONAL;
+
+    const result = PentestReportSchema.safeParse(report);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.summary.bySeverity.INFORMATIONAL).toBe(0);
+    }
+  });
+
+  it("sorts findings by severity: CRITICAL > HIGH > MEDIUM > LOW > INFORMATIONAL", () => {
     const findings: Finding[] = [
       makeFinding({ title: "Low Issue", severity: "LOW" }),
+      makeFinding({ title: "Info Issue", severity: "INFORMATIONAL" }),
       makeFinding({ title: "Critical Issue", severity: "CRITICAL" }),
       makeFinding({ title: "Medium Issue", severity: "MEDIUM" }),
       makeFinding({ title: "High Issue", severity: "HIGH" }),
@@ -80,6 +97,7 @@ describe("buildPentestReport", () => {
     expect(report.findings[1].title).toBe("High Issue");
     expect(report.findings[2].title).toBe("Medium Issue");
     expect(report.findings[3].title).toBe("Low Issue");
+    expect(report.findings[4].title).toBe("Info Issue");
   });
 
   it("strips toolCallDescription from findings", () => {
@@ -106,16 +124,18 @@ describe("buildPentestReport", () => {
       makeFinding({ title: "Medium 2", severity: "MEDIUM" }),
       makeFinding({ title: "Medium 3", severity: "MEDIUM" }),
       makeFinding({ title: "Low 1", severity: "LOW" }),
+      makeFinding({ title: "Info 1", severity: "INFORMATIONAL" }),
     ];
 
     const report = buildPentestReport(findings, defaultContext);
 
-    expect(report.summary.totalFindings).toBe(7);
+    expect(report.summary.totalFindings).toBe(8);
     expect(report.summary.bySeverity).toEqual({
       CRITICAL: 2,
       HIGH: 1,
       MEDIUM: 3,
       LOW: 1,
+      INFORMATIONAL: 1,
     });
   });
 

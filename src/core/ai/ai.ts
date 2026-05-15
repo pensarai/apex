@@ -865,7 +865,7 @@ export function streamResponse(
                 `Error encountered: ${error}`,
                 "Please fix the inputs to match the schema.",
                 "",
-                "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
+                "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW', 'INFORMATIONAL').",
                 "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
               ].join("\n"),
               abortSignal,

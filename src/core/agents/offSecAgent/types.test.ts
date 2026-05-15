@@ -69,6 +69,18 @@ describe("ApexFindingObject", () => {
     }
   });
 
+  it("accepts informational severity aliases", () => {
+    const result = ApexFindingObject.safeParse({
+      ...baseFinding,
+      severity: "INFO",
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.severity).toBe("INFORMATIONAL");
+    }
+  });
+
   it("rejects finding with invalid evidence file type", () => {
     const result = ApexFindingObject.safeParse({
       ...baseFinding,
@@ -115,6 +127,15 @@ describe("DocumentFindingSchema", () => {
     if (result.success) {
       expect(result.data.evidenceFiles).toEqual(evidenceFiles);
     }
+  });
+
+  it("accepts informational severity", () => {
+    const result = DocumentFindingSchema.safeParse({
+      ...baseFinding,
+      severity: "INFORMATIONAL",
+    });
+
+    expect(result.success).toBe(true);
   });
 
   it("rejects finding with invalid evidence file type", () => {
@@ -165,6 +186,27 @@ describe("PentestReportFindingSchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.evidenceFiles).toEqual(evidenceFiles);
+    }
+  });
+
+  it("accepts informational severity", () => {
+    const result = PentestReportFindingSchema.safeParse({
+      ...baseFinding,
+      severity: "INFORMATIONAL",
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("normalizes CVSS none severity to informational", () => {
+    const result = PentestReportFindingSchema.safeParse({
+      ...baseFinding,
+      severity: "NONE",
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.severity).toBe("INFORMATIONAL");
     }
   });
 

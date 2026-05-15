@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { validatePocPortability } from "./documentFinding";
+import {
+  mapCvssSeverityToFindingSeverity,
+  validatePocPortability,
+} from "./documentFinding";
+
+describe("mapCvssSeverityToFindingSeverity", () => {
+  it("maps zero-impact CVSS severity to informational finding severity", () => {
+    expect(mapCvssSeverityToFindingSeverity("NONE")).toBe("INFORMATIONAL");
+  });
+
+  it("preserves non-zero CVSS severity values", () => {
+    expect(mapCvssSeverityToFindingSeverity("LOW")).toBe("LOW");
+  });
+});
 
 describe("validatePocPortability", () => {
   describe("bash scripts", () => {

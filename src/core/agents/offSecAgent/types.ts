@@ -18,6 +18,10 @@ import type { CredentialManager } from "../../credentials";
 import type { AgentEventBus } from "../../eventBus";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../findings/registry";
+import {
+  FindingSeveritySchema,
+  normalizeFindingSeverity,
+} from "../../findings/severity";
 import type { ApprovalGate } from "../../operator";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
@@ -26,19 +30,7 @@ import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
   title: z.string(),
-  severity: z.preprocess(
-    (val) => {
-      if (typeof val === "string") {
-        const upper = val.toUpperCase();
-        if (upper.includes("CRITICAL")) return "CRITICAL";
-        if (upper.includes("HIGH")) return "HIGH";
-        if (upper.includes("MEDIUM")) return "MEDIUM";
-        if (upper.includes("LOW")) return "LOW";
-      }
-      return val;
-    },
-    z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]),
-  ),
+  severity: z.preprocess(normalizeFindingSeverity, FindingSeveritySchema),
   description: z.string(),
   impact: z.string(),
   evidence: z.string(),

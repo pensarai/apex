@@ -43,7 +43,7 @@ export interface CVSSScorerInput {
 export interface CVSSScorerResult {
   /** Numeric score (0.0-10.0) */
   score: number;
-  /** Qualitative severity (NONE, LOW, MEDIUM, HIGH, CRITICAL) */
+  /** Qualitative CVSS severity (NONE, LOW, MEDIUM, HIGH, CRITICAL) */
   severity: string;
   /** Full vector string (CVSS:4.0/AV:N/...) */
   vectorString: string;
