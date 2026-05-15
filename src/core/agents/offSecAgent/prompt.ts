@@ -1,5 +1,6 @@
-import { existsSync, readdirSync, statSync } from "fs";
-import { join } from "path";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { whiteboxScriptsRoot } from "../../skills/builtins";
 
 interface SessionPaths {
   rootPath: string;
@@ -7,6 +8,43 @@ interface SessionPaths {
   pocsPath: string;
   scratchpadPath: string;
   logsPath: string;
+}
+
+interface SourceAssessmentContext {
+  config?: { codebasePath?: string };
+}
+
+/**
+ * Build the one-paragraph source-assessment hint added to the system
+ * prompt when the session has a local codebase configured. The hint
+ * points the agent at the `whitebox-assessment` skill (loaded lazily
+ * via `read_skill`), the seeded memory slice tagged `whitebox-seed`,
+ * the absolute path of the bundled scanner scripts (so the agent can
+ * call them through `execute_command` without guessing the path), and
+ * the output-discipline rule (write to scratchpad/, never the target
+ * codebase).
+ *
+ * Returns an empty string when no codebase is configured so the prompt
+ * stays unchanged for HTTP-only engagements.
+ */
+export function buildSourceAssessmentHint(
+  ctx: SourceAssessmentContext,
+): string {
+  const codebasePath = ctx.config?.codebasePath;
+  if (!codebasePath) return "";
+
+  const scriptsRoot = whiteboxScriptsRoot();
+  return `
+
+# Source-Aware Assessment
+
+You have local source code access at \`${codebasePath}\`. For source-aware (\\"whitebox\\") security work, the \`whitebox-assessment\` skill contains the full playbook: how to profile the repo, retrieve sink patterns from memory, run installed scanners, trace source→sink paths, and track candidates as tasks until verified with a PoC. Load it with \`read_skill("whitebox-assessment")\` when you're ready to engage source-aware work.
+
+Quick orientation without loading the full skill:
+- Catalog of sink patterns + scanner recipes: \`list_memories({ tag: "whitebox-seed" })\`, then \`get_memory(category, id)\` for the slices that match the target's languages.
+- Scanner recipe scripts live at \`${scriptsRoot}/\` and accept \`<codebase> <config|-> <output>\` — call via \`execute_command\`.
+- Write all generated output (profiles, scan results, traces, candidates) to \`scratchpad/whitebox/\` and \`logs/whitebox/\`. **Do not modify the target codebase.**
+- Static findings are NOT promoted to findings/. Track them as \`create_task\` with \`metadata.type = "whitebox_candidate"\`; promote only after verifying with \`document_vulnerability\` (PoC required).`;
 }
 
 /**

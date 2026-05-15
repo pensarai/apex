@@ -47,6 +47,7 @@ vi.mock("../specialized/utils", () => ({
 vi.mock("./prompt", () => ({
   buildBaseSystemPrompt: () => "system",
   buildSessionWorkspaceSection: () => "",
+  buildSourceAssessmentHint: () => "",
 }));
 vi.mock("./trace", () => ({
   StepTraceWriter: class {

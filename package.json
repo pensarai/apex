@@ -105,6 +105,7 @@
     "local-benchmark": "bun run scripts/local-benchmark.ts",
     "pensar": "node bin/pensar.js",
     "prepublishOnly": "npm run build",
+    "seed:whitebox": "bun run scripts/seed-whitebox-memories.ts",
     "start": "bun run src/tui/index.tsx",
     "test": "vitest run",
     "test:watch": "vitest",

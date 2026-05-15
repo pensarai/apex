@@ -15,7 +15,11 @@ import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
-import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+import {
+  buildBaseSystemPrompt,
+  buildSessionWorkspaceSection,
+  buildSourceAssessmentHint,
+} from "./prompt";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
   createAllTools,
@@ -357,7 +361,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         }),
       );
     const systemPrompt =
-      baseSystemPrompt + buildSessionWorkspaceSection(input.session, agentCwd);
+      baseSystemPrompt +
+      buildSessionWorkspaceSection(input.session, agentCwd) +
+      buildSourceAssessmentHint(input.session);
 
     traceWriter.writeInit({
       model: input.model,
