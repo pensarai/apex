@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { mintNodeID } from "../../../../sdk/ids.ts";
 import { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
 import type { WhiteboxAttackSurfaceResult } from "../../specialized/whiteboxAttackSurface";
@@ -60,6 +61,47 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         parentSubagentId: ctx.subagentId,
       });
 
+      // V2: emit node.created on the ApexMessage stream (additive — coexists
+      // with the legacy bus emit above until Phase 9 deletes it). The
+      // inner agent's lifecycle (text-deltas etc.) is still legacy-only for
+      // now; the V2 node tree captures the spawn/complete boundary so the
+      // persister can attribute downstream tokens + cost.
+      const apex = ctx.apexStream;
+      const apexNodeId = apex ? mintNodeID() : null;
+      if (apex && apexNodeId) {
+        apex.emit({
+          type: "node.created",
+          node: {
+            id: apexNodeId,
+            sessionId: apex.session.id,
+            parentId: apex.parentNodeId,
+            parentToolCallId: null,
+            sequence: apex.session.nextSequence(),
+            kind: "agent",
+            state: "running",
+            name: subagentId,
+            payload: { target, cwd },
+            createdAt: new Date().toISOString(),
+          },
+          sequence: apex.session.nextSequence(),
+          timestamp: new Date().toISOString(),
+        });
+      }
+      const emitApexCompleted = (outcome: {
+        result?: unknown;
+        errorMessage?: string;
+      }) => {
+        if (!apex || !apexNodeId) return;
+        apex.emit({
+          type: "node.completed",
+          nodeId: apexNodeId,
+          result: outcome.result,
+          errorMessage: outcome.errorMessage,
+          sequence: apex.session.nextSequence(),
+          timestamp: new Date().toISOString(),
+        });
+      };
+
       // -----------------------------------------------------------------------
       // Whitebox mode — analyze source code (cwd is the indicator)
       // -----------------------------------------------------------------------
@@ -103,6 +145,13 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             status: "completed",
             parentSubagentId: ctx.subagentId,
           });
+          emitApexCompleted({
+            result: {
+              mode: "whitebox",
+              totalTargets: targets.length,
+              totalApps: result.summary.totalApps,
+            },
+          });
 
           return {
             success: true,
@@ -122,6 +171,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             status: "failed",
             parentSubagentId: ctx.subagentId,
           });
+          emitApexCompleted({ errorMessage: errorMsg });
 
           return {
             success: false,
@@ -166,6 +216,9 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           status: "completed",
           parentSubagentId: ctx.subagentId,
         });
+        emitApexCompleted({
+          result: { mode: "blackbox", totalTargets: targetCount },
+        });
 
         return {
           success: true,
@@ -191,6 +244,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           status: "failed",
           parentSubagentId: ctx.subagentId,
         });
+        emitApexCompleted({ errorMessage: errorMsg });
 
         return {
           success: false,

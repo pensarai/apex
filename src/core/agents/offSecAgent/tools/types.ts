@@ -1,3 +1,8 @@
+import type {
+  ApexMessage,
+  NodeID,
+  SessionID,
+} from "../../../../sdk/messages.ts";
 import type { AIAuthConfig, AIModel } from "../../../ai";
 import type { CredentialManager } from "../../../credentials";
 import type { AgentEventBus } from "../../../eventBus";
@@ -9,6 +14,21 @@ import type { StepTraceWriter } from "../trace";
 import type { PersistentShell } from "./persistentShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
 import type { UnifiedSandbox } from "./sandbox";
+
+/**
+ * V2 ApexMessage emit channel. When set, tools that orchestrate sub-agents
+ * (the 5 `attachChild` sites) use `Subagent.spawn` and emit `ApexMessage`
+ * variants on this stream in addition to (or instead of) the legacy bus.
+ *
+ * See design doc 20260515131633-agent-execution-data-model-v2.md.
+ */
+export type ApexStream = {
+  emit: (msg: ApexMessage) => void;
+  /** Caller-provided session — used to mint child IDs and sequence numbers. */
+  session: { id: SessionID; nextSequence: () => number };
+  /** Parent node id — child nodes spawned by tools attach below this. */
+  parentNodeId: NodeID;
+};
 
 /**
  * Shared context passed to every tool factory.
@@ -136,4 +156,14 @@ export type ToolContext = {
    * its own session and wires `abortSignal` to disconnect.
    */
   browserSession?: PlaywrightMcpSession;
+
+  /**
+   * ApexMessage stream (V2 contract). When provided, sub-agent spawn sites
+   * use `Subagent.spawn` to emit node lifecycle and tool messages onto this
+   * stream so the console persister can project them to the 5 new tables.
+   *
+   * Optional — when unset, tools fall back to legacy `AgentEventBus` only.
+   * Removed entirely in Phase 9 once all spawn sites are migrated.
+   */
+  apexStream?: ApexStream;
 };
