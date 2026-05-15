@@ -7,12 +7,14 @@ const prefixes = {
   permission: "per",
   user: "usr",
   part: "prt",
+  node: "nod",
+  event: "evt",
 } as const;
 
 export type IdentifierPrefix = keyof typeof prefixes;
 
 export function schema(prefix: IdentifierPrefix) {
-  return z.string().startsWith(prefixes[prefix]);
+  return z.string().startsWith(prefixes[prefix] + "_");
 }
 
 const LENGTH = 26;
@@ -20,7 +22,7 @@ const LENGTH = 26;
 let lastTimestamp = 0;
 let counter = 0;
 
-function ascending(prefix: IdentifierPrefix, given?: string) {
+export function ascending(prefix: IdentifierPrefix, given?: string) {
   return generateID(prefix, false, given);
 }
 

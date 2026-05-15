@@ -1,5 +1,6 @@
 import type { TextStreamPart, ToolSet } from "ai";
 import { EventEmitter } from "events";
+import type { AgentExecutionEvent } from "./execution/events";
 
 /**
  * Typed event map for the agent event bus.
@@ -132,11 +133,29 @@ const CHILD_BUS_FORWARDED_EVENTS = (
  * await agent.consume();
  * ```
  */
+const EXECUTION_EVENT_KEY = "__execution_event__";
+
+export type ExecutionEventHandler = (event: AgentExecutionEvent) => void;
+
 export class AgentEventBus {
   private readonly emitter = new EventEmitter();
 
   constructor() {
     this.emitter.setMaxListeners(50);
+  }
+
+  onExecution(handler: ExecutionEventHandler): this {
+    this.emitter.on(EXECUTION_EVENT_KEY, handler);
+    return this;
+  }
+
+  offExecution(handler: ExecutionEventHandler): this {
+    this.emitter.off(EXECUTION_EVENT_KEY, handler);
+    return this;
+  }
+
+  emitExecution(event: AgentExecutionEvent): boolean {
+    return this.emitter.emit(EXECUTION_EVENT_KEY, event);
   }
 
   on<K extends keyof AgentEventMap>(
@@ -225,6 +244,10 @@ export class AgentEventBus {
         }
       });
     }
+
+    child.onExecution((event) => {
+      parent.emitExecution(event);
+    });
   }
 
   /**
