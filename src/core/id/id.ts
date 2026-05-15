@@ -7,6 +7,8 @@ const prefixes = {
   permission: "per",
   user: "usr",
   part: "prt",
+  node: "nod",
+  event: "evt",
 } as const;
 
 export type IdentifierPrefix = keyof typeof prefixes;
@@ -20,7 +22,7 @@ const LENGTH = 26;
 let lastTimestamp = 0;
 let counter = 0;
 
-function ascending(prefix: IdentifierPrefix, given?: string) {
+export function ascending(prefix: IdentifierPrefix, given?: string) {
   return generateID(prefix, false, given);
 }
 
