@@ -4,6 +4,7 @@ import { join } from "path";
 import { z } from "zod";
 import {
   getPromptInjectionLibrary,
+  type PromptInjectionLibrary,
   type PromptInjectionRef,
   redactPromptInjectionPayloads,
   resolvePromptInjectionRefs,
@@ -208,14 +209,18 @@ COMMON TESTING PATTERNS:
 
       // Sandbox mode: build a curl command and run it inside the sandbox
       if (ctx.sandbox) {
-        return executeSandboxHttpRequest(ctx, {
-          url,
-          method,
-          headers,
-          body: resolvedBody,
-          followRedirects,
-          timeout,
-        });
+        return executeSandboxHttpRequest(
+          ctx,
+          {
+            url,
+            method,
+            headers,
+            body: resolvedBody,
+            followRedirects,
+            timeout,
+          },
+          library,
+        );
       }
 
       // Local mode: use native fetch
@@ -328,6 +333,7 @@ async function executeSandboxHttpRequest(
     followRedirects: boolean;
     timeout: number;
   },
+  library: PromptInjectionLibrary,
 ): Promise<HttpRequestResult> {
   const { url, method, headers, body, followRedirects, timeout } = opts;
 
@@ -391,10 +397,6 @@ async function executeSandboxHttpRequest(
     const status = statusMatch ? parseInt(statusMatch[1]) : 0;
     const statusText = statusMatch ? statusMatch[2] : "Unknown";
     const responseBody = lines.slice(bodyStartIndex).join("\n");
-    const library = await getPromptInjectionLibrary({
-      library: ctx.promptInjectionLibrary,
-      source: ctx.promptInjectionLibrarySource,
-    });
 
     const redactedBody = redactPromptInjectionPayloads(responseBody, library);
     const redactedHeaders = Object.fromEntries(
