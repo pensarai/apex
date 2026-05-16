@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
 import {
+  EMPTY_PROMPT_INJECTION_LIBRARY,
   getPromptInjectionLibrary,
   type PromptInjectionLibrary,
   type PromptInjectionRef,
@@ -76,6 +77,31 @@ export type HttpRequestResult = {
 };
 
 type HttpRequestBody = string | PromptInjectionRef | undefined;
+
+/**
+ * Check if a value contains any PromptInjectionRef (recursively).
+ */
+function containsPromptInjectionRef(value: unknown): boolean {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    (value as Record<string, unknown>).kind === "prompt_injection_ref"
+  ) {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((item) => containsPromptInjectionRef(item));
+  }
+
+  if (typeof value === "object" && value !== null) {
+    return Object.values(value).some((nested) =>
+      containsPromptInjectionRef(nested),
+    );
+  }
+
+  return false;
+}
 
 /**
  * If `body` exceeds the inline limit, save the full text to a file under
@@ -180,13 +206,20 @@ COMMON TESTING PATTERNS:
 
       let headers = parseHeaders(rawHeaders);
       let resolvedBody: string | undefined;
-      let library: PromptInjectionLibrary;
+      let library: PromptInjectionLibrary = EMPTY_PROMPT_INJECTION_LIBRARY;
 
       try {
-        library = await getPromptInjectionLibrary({
-          library: ctx.promptInjectionLibrary,
-          source: ctx.promptInjectionLibrarySource,
-        });
+        // Check if we need to load the library (only if there are prompt injection refs)
+        const needsLibrary =
+          containsPromptInjectionRef(body) ||
+          containsPromptInjectionRef(headers);
+        library = needsLibrary
+          ? await getPromptInjectionLibrary({
+              library: ctx.promptInjectionLibrary,
+              source: ctx.promptInjectionLibrarySource,
+            })
+          : EMPTY_PROMPT_INJECTION_LIBRARY;
+
         headers = resolvePromptInjectionRefs(headers, library);
         resolvedBody =
           body === undefined
