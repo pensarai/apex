@@ -20,6 +20,7 @@ const TOOLS_WITH_LOG_WINDOW = new Set([
   "run_attack_surface",
   "spawn_coding_agent",
   "spawn_pentest_swarm",
+  "spawn_pentest_agent",
   "run_pentest_workflow",
   "delegate_to_auth_subagent",
   "create_file",
@@ -216,5 +217,3 @@ export const ToolRenderer = memo(function ToolRenderer({
     </box>
   );
 });
-
-export default ToolRenderer;

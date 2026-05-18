@@ -39,6 +39,16 @@ import { runWithBoundedConcurrency } from "../utils/concurrency";
 
 const DEFAULT_CONCURRENCY = 5;
 
+type DiscoveryTaskType = "pages" | "apiEndpoints" | "cloudResourceEndpoints";
+
+// Sibling cards under an app share the app name from their parent;
+// label children by what they *do* instead.
+const TASK_TYPE_LABELS = {
+  pages: "Pages",
+  apiEndpoints: "API Endpoints",
+  cloudResourceEndpoints: "Cloud Resources",
+} as const satisfies Record<DiscoveryTaskType, string>;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -98,8 +108,7 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   surfaceIntegrationEnabled?: boolean;
 }
 
-export interface IncrementalWhiteboxInput
-  extends WhiteboxAttackSurfaceWorkflowInput {
+interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
   previousCommitSha: string;
   currentCommitSha: string;
   existingResult: WhiteboxAttackSurfaceResult;
@@ -169,8 +178,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onCacheMetrics,
     responseSchema: AppsDiscoveryResultSchema,
     projectThreatModel,
-    // Tool-level guard symmetric to Phase 2's `excludeTools: ["document_app"]`
-    // (in spawnDiscoveryAgent + endpointDocumentationAgent).
+    // Reserved for Phase 2's per-app task agents. Inline documentation
+    // here would flatten the UI hierarchy under Phase 1.
     excludeTools: ["document_endpoint"],
   });
 
@@ -178,18 +187,16 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     `[whitebox-workflow] Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`,
   );
 
+  // Held open until Phase 2 finishes so per-app synthetic nodes can nest under it.
+  const WORKFLOW_UMBRELLA_ID = "whitebox-apps-discovery";
+
   eventBus?.emit("subagent-spawn", {
-    subagentId: "whitebox-apps-discovery",
+    subagentId: WORKFLOW_UMBRELLA_ID,
     name: "Whitebox Apps Discovery",
     input: { codebasePath },
   });
 
   const appsResult = await appsAgent.consume();
-
-  eventBus?.emit("subagent-complete", {
-    subagentId: "whitebox-apps-discovery",
-    status: "completed",
-  });
 
   console.log(
     `[whitebox-workflow] Phase 1 complete: ${appsResult?.apps.length ?? 0} apps discovered` +
@@ -207,6 +214,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   }
 
   if (!appsResult || appsResult.apps.length === 0) {
+    eventBus?.emit("subagent-complete", {
+      subagentId: WORKFLOW_UMBRELLA_ID,
+      status: "completed",
+    });
     return {
       repoType: appsResult?.repoType ?? "unknown",
       packageManager: appsResult?.packageManager ?? "unknown",
@@ -273,21 +284,38 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     completedApps: 0,
   });
 
+  // Synthetic grouping nodes between the umbrella and per-task agents,
+  // so the UI nests pages/api/endpoint-doc agents under their app.
+  const appNodeIdFor = (appName: string) => `app:${sanitizeName(appName)}`;
+  const appAnyTaskFailed = new Map<string, boolean>();
+  for (const app of appsResult.apps) {
+    const appNodeId = appNodeIdFor(app.name);
+    appAnyTaskFailed.set(app.name, false);
+    eventBus?.emit("subagent-spawn", {
+      subagentId: appNodeId,
+      name: app.name,
+      input: { app: app.name, type: app.type, framework: app.framework },
+      parentSubagentId: WORKFLOW_UMBRELLA_ID,
+    });
+  }
+
   const spawnDiscoveryAgent = async (
     app: AppInfo,
-    type: "pages" | "apiEndpoints" | "cloudResourceEndpoints",
+    type: DiscoveryTaskType,
     objective: string,
   ): Promise<void> => {
     const subagentId = `${type}-${app.name}`;
+    const appNodeId = appNodeIdFor(app.name);
 
     console.log(
-      `[whitebox-workflow] Phase 2: spawning agent "${subagentId}" (app="${app.name}", type=${type}, appType=${app.type})`,
+      `[whitebox-workflow] Phase 2: spawning agent id="${subagentId}" parent="${appNodeId}" (app="${app.name}", type=${type}, appType=${app.type})`,
     );
 
     eventBus?.emit("subagent-spawn", {
       subagentId,
-      name: app.name,
+      name: TASK_TYPE_LABELS[type],
       input: { app: app.name, type },
+      parentSubagentId: appNodeId,
     });
 
     const agent = new CodeAgent<DiscoverySummary>({
@@ -318,6 +346,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       eventBus?.emit("subagent-complete", {
         subagentId,
         status: "completed",
+        parentSubagentId: appNodeId,
       });
     } catch (error) {
       console.error(
@@ -325,9 +354,11 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         error instanceof Error ? error.message : String(error),
       );
 
+      appAnyTaskFailed.set(app.name, true);
       eventBus?.emit("subagent-complete", {
         subagentId,
         status: "failed",
+        parentSubagentId: appNodeId,
       });
     }
   };
@@ -357,6 +388,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     appsResult.apps,
     DEFAULT_CONCURRENCY,
     async (app) => {
+      const appNodeId = appNodeIdFor(app.name);
       try {
         if (NON_SERVICE_TYPES.includes(app.type)) {
           // Cloud resources: surface doesn't enumerate these — always fallback.
@@ -373,6 +405,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
           const surfaceResult = mapAppWithSurface(
             join(codebasePath, app.location),
             codebasePath,
+            { isSingleAppRepo: serviceApps.length === 1 },
           );
           if (surfaceResult.mode === "surface") {
             console.log(
@@ -393,6 +426,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
               onStepFinish,
               onCacheMetrics,
               projectThreatModel,
+              parentSubagentId: appNodeId,
             });
           } else {
             console.log(
@@ -404,8 +438,20 @@ export async function runWhiteboxAttackSurfaceWorkflow(
             ]);
           }
         }
+      } catch {
+        appAnyTaskFailed.set(app.name, true);
       } finally {
         completedAppCount++;
+
+        const appStatus = appAnyTaskFailed.get(app.name)
+          ? ("failed" as const)
+          : ("completed" as const);
+        eventBus?.emit("subagent-complete", {
+          subagentId: appNodeId,
+          status: appStatus,
+          parentSubagentId: WORKFLOW_UMBRELLA_ID,
+        });
+
         eventBus?.emit("app-analysis-progress", {
           totalApps,
           completedApps: completedAppCount,
@@ -414,6 +460,11 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       }
     },
   );
+
+  eventBus?.emit("subagent-complete", {
+    subagentId: WORKFLOW_UMBRELLA_ID,
+    status: "completed",
+  });
 
   // =========================================================================
   // Phase 3: Read assets directory to build endpoint data
@@ -665,6 +716,14 @@ function buildAppsDiscoveryObjective(
     : "";
 
   return `# Identify All Applications in the Repository
+
+## Phase scope — read this first
+This objective is **Phase 1: app discovery only**. Your job is to enumerate
+applications and call \`document_app\` for each. **Do NOT call
+\`document_endpoint\` in this phase** — endpoints are documented in a later
+phase by per-app subagents. The \`document_endpoint\` tool is intentionally
+unavailable here. Ignore any general guidance in the system prompt that
+tells you to call it; that guidance applies only to later phases.
 
 ## Codebase
 - **Path:** ${codebasePath}

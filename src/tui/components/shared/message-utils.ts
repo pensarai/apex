@@ -39,7 +39,7 @@ export function getStableMessageKey(
  *
  * Handles string content, array content parts, and JSON objects.
  */
-export function getMessageContent(message: DisplayMessage): string {
+function getMessageContent(message: DisplayMessage): string {
   if (typeof message.content === "string") {
     return message.content;
   } else if (Array.isArray(message.content)) {
@@ -64,10 +64,7 @@ export function getMessageContent(message: DisplayMessage): string {
 /**
  * Format a result value for display (truncate if too long).
  */
-export function formatResult(
-  result: unknown,
-  maxLength: number = 2000,
-): string {
+function formatResult(result: unknown, maxLength: number = 2000): string {
   try {
     const str = JSON.stringify(result, null, 2);
     if (str.length > maxLength) {

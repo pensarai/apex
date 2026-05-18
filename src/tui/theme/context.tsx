@@ -92,7 +92,7 @@ export function ThemeProvider({
   }, []);
 
   return (
-    <ThemeContext
+    <ThemeContext.Provider
       value={{
         theme,
         colors,
@@ -104,7 +104,7 @@ export function ThemeProvider({
       }}
     >
       {children}
-    </ThemeContext>
+    </ThemeContext.Provider>
   );
 }
 

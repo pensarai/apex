@@ -159,5 +159,3 @@ function parseHostFromTarget(target: string): string {
     return target.replace(/:(\d+)$/, "");
   }
 }
-
-export default ChatApp;

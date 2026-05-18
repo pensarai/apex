@@ -49,5 +49,3 @@ export const SubagentDetailView = memo(function SubagentDetailView({
     />
   );
 });
-
-export default SubagentDetailView;

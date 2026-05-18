@@ -132,7 +132,7 @@ export function consolidateBySameRoute(
  * `document_endpoint` records) resolve `file` against the workflow's
  * `codebasePath`, which is `repoRoot`. Idempotent when `scanRoot === repoRoot`.
  */
-export function rebaseFileToRepoRoot(
+function rebaseFileToRepoRoot(
   endpoints: EndpointInfo[],
   scanRoot: string,
   repoRoot: string,
@@ -152,7 +152,7 @@ export function rebaseFileToRepoRoot(
  * a climb-up scan returns the union of every sibling app's routes — see
  * `mapAppWithSurface` below.
  */
-export function scopeEndpointsToApp(
+function scopeEndpointsToApp(
   endpoints: EndpointInfo[],
   scanRoot: string,
   appPath: string,
@@ -171,38 +171,32 @@ export function scopeEndpointsToApp(
  * Run surface scoped to `appPath`, apply the fallback gate, then consolidate.
  *
  * Decision sequence:
- *   1. If `appPath === repoRoot`, force fallback. Phase 1 didn't disambiguate
- *      and a no-op filter would silently re-attribute every endpoint to a
- *      single app.
- *   2. Try a narrow `map(appPath)` first. When `appPath` has its own dep
- *      manifest this is the correct, fastest answer AND avoids surface's
- *      global `(method, path)` dedup eating routes across siblings.
- *   3. Otherwise climb to a parent dep manifest (so surface can detect the
- *      framework), scan there, then filter results back to `appPath`'s
- *      subtree. If nothing survives, fall back to the legacy CodeAgent path.
- *
- * Endpoints pass through with their raw surface fields — `kind` is the
- * authoritative page/api signal. Apex's storage convention (method="PAGE"
- * for pages) is applied at the document_endpoint write boundary, not here.
+ *   1. If `appPath === repoRoot` in a multi-app repo, force fallback to
+ *      prevent cross-app endpoint leakage. Skipped for single-app repos.
+ *   2. Narrow `map(appPath)` — fastest when `appPath` has its own manifest.
+ *   3. Climb to a parent manifest, scan there, filter back to `appPath`.
  */
+export interface MapAppWithSurfaceOptions {
+  isSingleAppRepo?: boolean;
+}
+
 export function mapAppWithSurface(
   appPath: string,
   repoRoot: string,
+  options?: MapAppWithSurfaceOptions,
 ): MapAppResult {
   const absApp = resolve(appPath);
   const absRoot = resolve(repoRoot);
 
   // (1) Force fallback when the app's location is the repo root itself.
-  if (absApp === absRoot) {
+  if (absApp === absRoot && !options?.isSingleAppRepo) {
     return {
       mode: "fallback",
       reason: "app.location is repo root — cannot scope",
     };
   }
 
-  // (2) Narrow scan first. If `appPath` carries its own manifest surface
-  //     finds the framework here and the result is already scoped — no
-  //     filter needed, no cross-sibling dedup hazard.
+  // (2) Narrow scan — already scoped when `appPath` has its own manifest.
   const narrow = map(absApp, { includeInternal: false });
   if (narrow.frameworks.length > 0 && narrow.endpoints.all.length > 0) {
     const rebased = rebaseFileToRepoRoot(narrow.endpoints.all, absApp, absRoot);
@@ -213,12 +207,9 @@ export function mapAppWithSurface(
     };
   }
 
-  // (3) Climb to the nearest parent manifest, scan there, then filter back
-  //     to `appPath`'s subtree.
+  // (3) Climb to a parent manifest, scan there, filter to `appPath`'s subtree.
   const scanRoot = findDependencyRoot(appPath, repoRoot);
   if (resolve(scanRoot) === absApp) {
-    // No manifest at appPath and none above it. Narrow already returned
-    // empty so there's nothing more surface can do.
     return { mode: "fallback", reason: "no frameworks detected" };
   }
 
