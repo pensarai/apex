@@ -178,6 +178,8 @@ CRITICAL RULES — READ BEFORE CALLING:
         const judgeInput: FindingJudgeInput = {
           pocScript: input.pocContent,
           pocType: input.pocType,
+          pocPath,
+          target: ctx.target ?? ctx.session.targets[0],
           pocOutput: {
             stdout: stdout || "",
             stderr: stderr || "",
@@ -193,12 +195,16 @@ CRITICAL RULES — READ BEFORE CALLING:
           },
         };
 
-        const judgeResult = await judgeFinding(
-          judgeInput,
-          ctx.model!,
-          ctx.authConfig,
-          ctx.abortSignal,
-        );
+        const judgeResult = await judgeFinding(judgeInput, {
+          model: ctx.model!,
+          session: ctx.session,
+          authConfig: ctx.authConfig,
+          abortSignal: ctx.abortSignal,
+          eventBus: ctx.eventBus,
+          sandbox: ctx.sandbox,
+          target: ctx.target,
+          enableThinking: ctx.enableThinking,
+        });
 
         if (!judgeResult.valid) {
           cleanupPocFiles(ctx, filename);
@@ -400,6 +406,12 @@ CRITICAL RULES — READ BEFORE CALLING:
             findingType: judgeResult.findingType,
             confidence: judgeResult.confidence,
             reasoning: judgeResult.reasoning,
+            concerns: judgeResult.concerns,
+            verificationSteps: judgeResult.verificationSteps,
+            toolEvidence: judgeResult.toolEvidence,
+            reproducedPoc: judgeResult.reproducedPoc,
+            webResearchUsed: judgeResult.webResearchUsed,
+            limitations: judgeResult.limitations,
             ...(judgeResult.error && { error: judgeResult.error }),
           },
         };

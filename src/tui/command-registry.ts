@@ -41,7 +41,7 @@ export interface AppCommandContext {
 /**
  * Command option definition for help text and autocomplete
  */
-export interface CommandOption {
+interface CommandOption {
   name: string;
   description: string;
   valueHint?: string; // e.g., "<url>" for --target <url>

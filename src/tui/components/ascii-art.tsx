@@ -4,7 +4,7 @@ import sharp from "sharp";
 /**
  * ASCII character sets ordered by density (light to dark)
  */
-export const ASCII_SETS = {
+const ASCII_SETS = {
   simple: " .:-=+*#%@",
   detailed:
     " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
@@ -22,7 +22,7 @@ const ASCII_CHARS = ASCII_SETS.medium; // Using simpler set for clearer output
  * @param invert - Invert brightness (useful for dark backgrounds)
  * @returns Array of ASCII art strings, one per line
  */
-export async function convertImageToAscii(
+async function convertImageToAscii(
   path: string,
   width: number,
   invert: boolean = false,
@@ -180,7 +180,7 @@ export async function convertImageToColoredAscii(
 /**
  * Props for the ColoredAsciiArt component
  */
-export interface ColoredAsciiArtProps {
+interface ColoredAsciiArtProps {
   ascii: { char: string; r: number; g: number; b: number }[][];
   /**
    * Optional title to display above the ASCII art
@@ -192,7 +192,7 @@ export interface ColoredAsciiArtProps {
  * Standalone component for rendering colored ASCII art
  * Handles the mapping and rendering of ASCII characters with colors
  */
-export function ColoredAsciiArt({ ascii, title }: ColoredAsciiArtProps) {
+function ColoredAsciiArt({ ascii, title }: ColoredAsciiArtProps) {
   return (
     <box
       position="absolute"

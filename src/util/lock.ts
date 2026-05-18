@@ -9,15 +9,17 @@ const locks = new Map<
 >();
 
 function getLock(key: string) {
-  if (!locks.has(key)) {
-    locks.set(key, {
+  let lock = locks.get(key);
+  if (!lock) {
+    lock = {
       readers: 0,
       writer: false,
       waitingReaders: [],
       waitingWriters: [],
-    });
+    };
+    locks.set(key, lock);
   }
-  return locks.get(key)!;
+  return lock;
 }
 
 function processQueue(key: string) {

@@ -20,7 +20,7 @@ import {
 /**
  * Default outcome guidance (safe, non-destructive)
  */
-export const DEFAULT_OUTCOME_GUIDANCE =
+const DEFAULT_OUTCOME_GUIDANCE =
   "Prove the exploit can be run but do not exfiltrate data or cause any harm to the system. " +
   "Create proof-of-concept exploits that demonstrate the vulnerability exists without causing damage.";
 
@@ -34,7 +34,7 @@ export const EXFIL_OUTCOME_GUIDANCE =
 /**
  * Default headers for pensar-apex
  */
-export const DEFAULT_OFFENSIVE_HEADERS: Record<string, string> = {
+const DEFAULT_OFFENSIVE_HEADERS: Record<string, string> = {
   "User-Agent": "pensar-apex",
 };
 
@@ -68,7 +68,7 @@ const ScopeConstraintsObject = z.object({
   strictScope: z.boolean().optional(),
 });
 
-export type ScopeConstraints = z.infer<typeof ScopeConstraintsObject>;
+type ScopeConstraints = z.infer<typeof ScopeConstraintsObject>;
 
 const OffensiveHeadersConfigObject = z.object({
   mode: z.enum(["none", "default", "custom"]),
@@ -151,9 +151,7 @@ export type SmtpConfig = z.infer<typeof SmtpConfigObject>;
  * - `SMTP_HOST` + `SMTP_PORT` + `SMTP_USERNAME` + `SMTP_PASSWORD` → generic SMTP
  * - `OUTBOUND_EMAIL` → fromAddress for either path
  */
-export function resolveSmtpConfig(
-  explicit?: SmtpConfig,
-): SmtpConfig | undefined {
+function resolveSmtpConfig(explicit?: SmtpConfig): SmtpConfig | undefined {
   if (explicit) return explicit;
 
   const fromAddress = process.env.OUTBOUND_EMAIL;
@@ -234,7 +232,7 @@ export type SessionConfig = z.infer<typeof SessionConfigObject>;
  *
  * This replaces the old core/agent/sessions module with safe Storage writes.
  */
-export interface ExecutionSession {
+interface ExecutionSession {
   /** Unique session identifier (format: {prefix}-ses_{timestamp}_{random}) */
   id: string;
   /** Root path for all session artifacts (~/.pensar/sessions/{id}) */
@@ -275,14 +273,14 @@ export interface CreateExecutionInput {
 /**
  * Get the base Pensar directory path
  */
-export function getPensarDir(): string {
+function getPensarDir(): string {
   return path.join(os.homedir(), ".pensar");
 }
 
 /**
  * Get the sessions directory path
  */
-export function getSessionsDir(): string {
+function getSessionsDir(): string {
   return path.join(getPensarDir(), "sessions");
 }
 
@@ -306,9 +304,7 @@ export function getSessionRoot(id: string): string {
  * ├── logs/             # Execution logs
  * └── pocs/             # Proof-of-concept scripts
  */
-export async function createSessionDirs(
-  input: CreateExecutionInput,
-): Promise<void> {
+async function createSessionDirs(input: CreateExecutionInput): Promise<void> {
   const { session } = input;
 
   // Create directory structure with locking
@@ -359,7 +355,7 @@ Testing in progress...
 /**
  * Get an execution session by ID
  */
-export async function getExecution(
+async function getExecution(
   sessionId: string,
 ): Promise<ExecutionSession | null> {
   try {
@@ -381,7 +377,7 @@ export async function getExecution(
 /**
  * Resolve offensive headers based on session config
  */
-export function getOffensiveHeaders(
+function getOffensiveHeaders(
   session: SessionInfo,
 ): Record<string, string> | undefined {
   const config = session.config?.offensiveHeaders;
@@ -556,12 +552,9 @@ export const get = async (id: string) => {
   return read;
 };
 
-export const sessionPath = (id: string) => Storage.locate(["sessions", id], "");
+const sessionPath = (id: string) => Storage.locate(["sessions", id], "");
 
-export async function update(
-  id: string,
-  editor: (session: SessionInfo) => void,
-) {
+async function update(id: string, editor: (session: SessionInfo) => void) {
   const result = await Storage.update<SessionInfo>(
     ["sessions", id, "session"],
     (draft) => {
@@ -600,7 +593,7 @@ const RemoveInput = z.object({
   sessionId: Identifier.schema("session"),
 });
 
-export const remove = async (input: z.output<typeof RemoveInput>) => {
+const remove = async (input: z.output<typeof RemoveInput>) => {
   try {
     // Remove the entire session directory (metadata + artifacts)
     const sessionDir = getSessionRoot(input.sessionId);
@@ -611,7 +604,7 @@ export const remove = async (input: z.output<typeof RemoveInput>) => {
   }
 };
 
-export const updateMessage = async (msg: Message) => {
+const updateMessage = async (msg: Message) => {
   await Storage.write(["sessions", msg.sessionId, "messages", msg.id], msg);
   return msg;
 };
@@ -621,7 +614,7 @@ const RemoveMsgInput = z.object({
   messageId: Identifier.schema("message"),
 });
 
-export const removeMessage = async (input: z.output<typeof RemoveMsgInput>) => {
+const removeMessage = async (input: z.output<typeof RemoveMsgInput>) => {
   await Storage.remove([
     "sessions",
     input.sessionId,
@@ -894,7 +887,7 @@ export async function updateOperatorSettings(
 /**
  * Update the toolset state for a session
  */
-export async function updateToolsetState(
+async function updateToolsetState(
   sessionId: string,
   toolsetState: ToolsetState,
 ): Promise<SessionInfo> {
@@ -909,7 +902,7 @@ export async function updateToolsetState(
 /**
  * Toggle a specific tool's enabled state
  */
-export async function toggleTool(
+async function toggleTool(
   sessionId: string,
   toolId: string,
   enabled: boolean,
@@ -933,20 +926,12 @@ export async function toggleTool(
 
 export const sessions = {
   getSessionRoot,
-  getOffensiveHeaders,
-  DEFAULT_OUTCOME_GUIDANCE,
   EXFIL_OUTCOME_GUIDANCE,
   create,
   get,
-  update,
-  list,
   remove,
-  updateMessage,
-  removeMessage,
   loadOperatorState,
   hasOperatorState,
   getResumeMessages,
   updateOperatorSettings,
-  updateToolsetState,
-  toggleTool,
 };

@@ -36,7 +36,7 @@ const MANIFEST_FILE = "agent-manifest.json";
 /**
  * Saved subagent data format
  */
-export interface SavedSubagentData {
+interface SavedSubagentData {
   agentName: string;
   timestamp: string;
   target?: string;
@@ -71,7 +71,7 @@ export interface UIMessage {
 /**
  * Information needed to resume a paused agent
  */
-export interface ResumeInfo {
+interface ResumeInfo {
   target: string;
   objective: string;
   vulnerabilityClass: string;

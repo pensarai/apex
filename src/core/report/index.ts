@@ -7,10 +7,7 @@ export { renderJson } from "./renderers/json";
 
 // Renderers
 export { renderMarkdown } from "./renderers/markdown";
-export {
-  type PentestReport,
-  type PentestReportFinding,
-  PentestReportFindingSchema,
-  PentestReportSchema,
-  REPORT_VERSION,
+export type {
+  PentestReport,
+  PentestReportFinding,
 } from "./schemas";

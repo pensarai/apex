@@ -30,7 +30,7 @@ export interface AuthenticationInfo {
 /**
  * Session information passed to VulnerabilityTestAgent
  */
-export interface SessionInfo {
+interface SessionInfo {
   id: string;
   rootPath: string;
   findingsPath: string;
@@ -41,7 +41,7 @@ export interface SessionInfo {
 /**
  * Input for VulnerabilityTestAgent
  */
-export interface VulnerabilityTestInput {
+interface VulnerabilityTestInput {
   /** Target endpoint URL */
   target: string;
 
@@ -67,7 +67,7 @@ export interface VulnerabilityTestInput {
 /**
  * Result from VulnerabilityTestAgent
  */
-export interface VulnerabilityTestResult {
+interface VulnerabilityTestResult {
   /** Whether any vulnerabilities were found */
   vulnerabilitiesFound: boolean;
 
@@ -122,12 +122,12 @@ export const DocumentFindingSchema = z.object({
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
 });
 
-export type DocumentFindingInput = z.infer<typeof DocumentFindingSchema>;
+type DocumentFindingInput = z.infer<typeof DocumentFindingSchema>;
 
 /**
  * Result from document_vulnerability tool
  */
-export interface DocumentFindingResult {
+interface DocumentFindingResult {
   success: boolean;
   findingPath?: string;
   error?: string;

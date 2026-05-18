@@ -21,7 +21,7 @@ import type { FindingsRegistry } from "../../findings/registry";
 import type { ApprovalGate } from "../../operator";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
-import type { ToolName, UnifiedSandbox } from "./tools";
+import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -275,6 +275,24 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * grounding context.
    */
   projectThreatModel?: string;
+
+  /**
+   * Pre-constructed Playwright MCP browser session to use for this agent
+   * instead of constructing a fresh one. Used by `spawn_pentest_agent` to
+   * hand a worker a freshly-cloned-and-seeded session — fresh Chromium,
+   * own MCP child-process, but pre-loaded with a snapshot of the
+   * orchestrator's cookies + per-origin localStorage so the worker is
+   * already authenticated for the same origins the orchestrator was.
+   *
+   * The agent does NOT share this session with any other agent at runtime
+   * — each agent owns its own isolated Chromium and a sub-agent's
+   * browser-side mutations (navigations, `localStorage.setItem`,
+   * `browser_evaluate` calls, alerts, etc.) never leak back into the
+   * caller's browser. Lifecycle of an externally-supplied session belongs
+   * to whoever supplied it (e.g. `spawn_pentest_agent` disconnects the
+   * worker session on completion).
+   */
+  browserSession?: PlaywrightMcpSession;
 };
 
 /**
@@ -354,6 +372,17 @@ export interface SpecializedAgentInput {
    * so per-endpoint threat-model sub-agents can incorporate it as grounding.
    */
   projectThreatModel?: string;
+
+  /**
+   * Pre-constructed Playwright MCP browser session for this sub-agent —
+   * typically a freshly-cloned-and-seeded session built by
+   * `spawn_pentest_agent` so the worker inherits the orchestrator's
+   * cookies + localStorage but operates against its OWN isolated Chromium
+   * (so its browser mutations don't leak back to the orchestrator or to
+   * sibling workers). Forwarded to the underlying
+   * {@link OffensiveSecurityAgentInput}.
+   */
+  browserSession?: PlaywrightMcpSession;
 }
 
 /**

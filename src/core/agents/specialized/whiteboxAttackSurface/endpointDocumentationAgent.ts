@@ -44,9 +44,11 @@ interface SharedAgentOptions {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   projectThreatModel?: string;
+  /** Parent subagent id for hierarchy tracking on emitted lifecycle events. */
+  parentSubagentId?: string;
 }
 
-export interface EndpointDocumentationInput extends SharedAgentOptions {
+interface EndpointDocumentationInput extends SharedAgentOptions {
   app: AppInfo;
   endpoint: ConsolidatedEndpoint;
   frameworks: FrameworkId[];
@@ -144,9 +146,9 @@ This agent is responsible for **exactly one** endpoint. Do not document other en
 // Per-endpoint agent runner
 // ---------------------------------------------------------------------------
 
-export async function runEndpointDocumentationAgent(
+async function runEndpointDocumentationAgent(
   opts: EndpointDocumentationInput,
-): Promise<void> {
+): Promise<boolean> {
   const {
     codebasePath,
     app,
@@ -161,6 +163,7 @@ export async function runEndpointDocumentationAgent(
     onStepFinish,
     onCacheMetrics,
     projectThreatModel,
+    parentSubagentId,
   } = opts;
 
   const subagentId = `endpoint-doc-${slug(app.name)}-${slug(endpoint.path)}`;
@@ -176,6 +179,7 @@ export async function runEndpointDocumentationAgent(
       method: displayMethod,
       path: endpoint.path,
     },
+    parentSubagentId,
   });
 
   const objective = buildEndpointDocumentationObjective({
@@ -213,7 +217,9 @@ export async function runEndpointDocumentationAgent(
     eventBus?.emit("subagent-complete", {
       subagentId,
       status: "completed",
+      parentSubagentId,
     });
+    return true;
   } catch (error) {
     console.error(
       `[endpoint-documentation-agent] "${subagentId}" FAILED:`,
@@ -222,7 +228,9 @@ export async function runEndpointDocumentationAgent(
     eventBus?.emit("subagent-complete", {
       subagentId,
       status: "failed",
+      parentSubagentId,
     });
+    return false;
   }
 }
 
@@ -236,11 +244,23 @@ export async function runAppEndpointDocumentation(
   const { endpoints, ...shared } = opts;
   if (endpoints.length === 0) return;
 
+  let anyFailed = false;
   await runWithBoundedConcurrency(
     endpoints,
     ENDPOINT_DOCUMENTATION_CONCURRENCY,
     async (endpoint) => {
-      await runEndpointDocumentationAgent({ ...shared, endpoint });
+      const ok = await runEndpointDocumentationAgent({ ...shared, endpoint });
+      if (!ok) anyFailed = true;
     },
   );
+
+  // Surface per-endpoint failure to the workflow so per-app status reflects
+  // it. Each endpoint already emits its own subagent-complete (failed); this
+  // throw lets the workflow's outer catch set appAnyTaskFailed, matching the
+  // legacy spawnDiscoveryAgent path's failure propagation.
+  if (anyFailed) {
+    throw new Error(
+      `One or more endpoint documentation agents failed for app ${opts.app.name}`,
+    );
+  }
 }

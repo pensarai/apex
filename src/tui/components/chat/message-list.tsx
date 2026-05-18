@@ -21,6 +21,7 @@ import { LoadingIndicator, type LoadingState } from "./loading-indicator";
 const SUBAGENT_TOOLS = new Set([
   "run_pentest_workflow",
   "spawn_pentest_swarm",
+  "spawn_pentest_agent",
   "run_attack_surface",
   "spawn_coding_agent",
   "delegate_to_auth_subagent",
@@ -255,5 +256,3 @@ export function MessageList({
     </scrollbox>
   );
 }
-
-export default MessageList;

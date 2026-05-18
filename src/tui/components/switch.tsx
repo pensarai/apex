@@ -1,16 +1,16 @@
 import React, { type ReactElement, type ReactNode } from "react";
 
 // Define types for props
-export interface CaseProps<T extends string> {
+interface CaseProps<T extends string> {
   when: T;
   children: ReactNode;
 }
 
-export interface DefaultProps {
+interface DefaultProps {
   children: ReactNode;
 }
 
-export interface SwitchProps<T extends string> {
+interface SwitchProps<T extends string> {
   condition: T;
   children: ReactNode;
 }
@@ -78,5 +78,4 @@ const Switch = Object.assign(SwitchComponent, {
   Default: DefaultComponent,
 });
 
-export default Switch;
 export { createSwitch };
