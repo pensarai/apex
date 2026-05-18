@@ -11,7 +11,7 @@
 
 import type { ModelMessage } from "ai";
 import { createHash } from "crypto";
-import { appendFileSync, mkdirSync } from "fs";
+import { appendFileSync, mkdirSync, readFileSync } from "fs";
 import { dirname } from "path";
 import type { AgentEventBus } from "../../eventBus";
 
@@ -253,6 +253,128 @@ export type TraceRecord =
   | TaskRecord;
 
 // ---------------------------------------------------------------------------
+// Hash chain envelope (APTS-AR-012: Tamper-Evident Logging)
+// ---------------------------------------------------------------------------
+
+const HASH_ALGORITHM = "sha256";
+
+/** Sentinel used as `prevHash` for the first record in a trace file. */
+export const HASH_CHAIN_GENESIS =
+  "0000000000000000000000000000000000000000000000000000000000000000";
+
+/** Fields appended to every serialized trace record for tamper evidence. */
+export interface HashChainEnvelope {
+  /** Monotonically increasing sequence number across all record types */
+  seq: number;
+  /** SHA-256 hash of the previous record (or HASH_CHAIN_GENESIS for seq 0) */
+  prevHash: string;
+  /** SHA-256 of (JSON-serialized record content + prevHash) */
+  hash: string;
+}
+
+/** The on-disk JSON shape: domain record fields + hash chain envelope. */
+export type SerializedTraceRecord = TraceRecord & HashChainEnvelope;
+
+/**
+ * Compute the chain hash for a record.
+ *
+ * The hash covers the canonical JSON of the domain-level record
+ * (without chain fields) concatenated with the previous record's hash.
+ */
+export function computeRecordHash(
+  recordJson: string,
+  prevHash: string,
+): string {
+  return createHash(HASH_ALGORITHM)
+    .update(recordJson + prevHash)
+    .digest("hex");
+}
+
+// ---------------------------------------------------------------------------
+// Chain verification (APTS-AR-012)
+// ---------------------------------------------------------------------------
+
+export interface ChainVerificationResult {
+  valid: boolean;
+  recordCount: number;
+  /** If invalid, the zero-based index of the first broken record. */
+  brokenAtSeq?: number;
+  error?: string;
+}
+
+/**
+ * Verify the hash chain integrity of a trace.jsonl file.
+ *
+ * Implements the Chain Verification Algorithm from APTS-AR-012:
+ * 1. Read all entries in order of sequence number
+ * 2. For each entry, recompute hash: SHA256(content + previous_hash)
+ * 3. Compare computed hash to stored hash
+ * 4. Verify sequence numbers are continuous (no gaps)
+ * 5. If any mismatch or gap, log has been tampered with
+ */
+export function verifyTraceChain(tracePath: string): ChainVerificationResult {
+  let lines: string[];
+  try {
+    const raw = readFileSync(tracePath, "utf-8").trimEnd();
+    if (raw.length === 0) return { valid: true, recordCount: 0 };
+    lines = raw.split("\n");
+  } catch {
+    return { valid: false, recordCount: 0, error: "Failed to read trace file" };
+  }
+
+  let prevHash = HASH_CHAIN_GENESIS;
+
+  for (let i = 0; i < lines.length; i++) {
+    let parsed: SerializedTraceRecord;
+    try {
+      parsed = JSON.parse(lines[i]) as SerializedTraceRecord;
+    } catch {
+      return {
+        valid: false,
+        recordCount: i,
+        brokenAtSeq: i,
+        error: `Invalid JSON on line ${i}`,
+      };
+    }
+
+    if (parsed.seq !== i) {
+      return {
+        valid: false,
+        recordCount: i,
+        brokenAtSeq: i,
+        error: `Sequence gap: expected ${i}, got ${parsed.seq}`,
+      };
+    }
+
+    if (parsed.prevHash !== prevHash) {
+      return {
+        valid: false,
+        recordCount: i,
+        brokenAtSeq: i,
+        error: `prevHash mismatch at seq ${i}`,
+      };
+    }
+
+    const { seq: _seq, hash: storedHash, prevHash: _ph, ...content } = parsed;
+    const contentJson = JSON.stringify(content);
+    const expectedHash = computeRecordHash(contentJson, prevHash);
+
+    if (storedHash !== expectedHash) {
+      return {
+        valid: false,
+        recordCount: i,
+        brokenAtSeq: i,
+        error: `Hash mismatch at seq ${i}`,
+      };
+    }
+
+    prevHash = storedHash;
+  }
+
+  return { valid: true, recordCount: lines.length };
+}
+
+// ---------------------------------------------------------------------------
 // Extraction helpers
 // ---------------------------------------------------------------------------
 
@@ -355,6 +477,10 @@ export class StepTraceWriter {
   private readonly agentStartTime: number;
   private summarized = false;
   private previousMessageCount = 0;
+
+  /** Hash chain state (APTS-AR-012) */
+  private nextSeq = 0;
+  private lastHash: string = HASH_CHAIN_GENESIS;
 
   constructor(opts: StepTraceWriterOpts) {
     this.tracePath = opts.tracePath;
@@ -578,7 +704,21 @@ export class StepTraceWriter {
   /** Sync append — ~1-3KB per line, sub-ms. Sync ensures crash safety. */
   private appendRecord(record: TraceRecord): void {
     try {
-      appendFileSync(this.tracePath, JSON.stringify(record) + "\n");
+      const contentJson = JSON.stringify(record);
+      const prevHash = this.lastHash;
+      const hash = computeRecordHash(contentJson, prevHash);
+      const seq = this.nextSeq;
+
+      const envelope: SerializedTraceRecord = {
+        seq,
+        prevHash,
+        hash,
+        ...record,
+      };
+      appendFileSync(this.tracePath, JSON.stringify(envelope) + "\n");
+
+      this.lastHash = hash;
+      this.nextSeq++;
     } catch {
       // Trace is non-critical observability — never crash the agent for it.
     }
