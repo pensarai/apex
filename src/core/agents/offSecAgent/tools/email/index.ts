@@ -6,13 +6,10 @@
  * Resend's SMTP relay).
  */
 
-export { emailGetAttachments } from "./getAttachments";
 export { emailGetMessage } from "./getMessage";
 export { emailListInboxes } from "./listInboxes";
 export { emailListMessages } from "./listMessages";
-export { emailMarkRead } from "./markRead";
 export { emailSearchMessages } from "./searchMessages";
-export { sendEmail } from "./sendEmail";
 
 import type { ToolContext } from "../types";
 import { emailGetAttachments } from "./getAttachments";
@@ -53,5 +50,3 @@ export const EMAIL_TOOL_NAMES = [
 ] as const;
 
 export const SEND_EMAIL_TOOL_NAME = "send_email" as const;
-
-export type EmailToolName = (typeof EMAIL_TOOL_NAMES)[number];

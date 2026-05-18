@@ -4,7 +4,7 @@ import { isAbsolute, join, relative, resolve } from "path";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 
-export const listFilesInputSchema = z.object({
+const listFilesInputSchema = z.object({
   directory: z
     .string()
     .optional()
@@ -22,7 +22,7 @@ export const listFilesInputSchema = z.object({
     ),
 });
 
-export type ListFilesInput = z.infer<typeof listFilesInputSchema>;
+type ListFilesInput = z.infer<typeof listFilesInputSchema>;
 
 export type ListFilesResult = {
   success: boolean;

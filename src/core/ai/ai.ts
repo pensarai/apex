@@ -631,9 +631,8 @@ export function streamResponse(
   } = opts;
 
   // Wrap onStepFinish to fire usage callback for every step.
-  // Must be async so that callers returning a Promise (e.g. MessageManager
-  // persisting messages / queuing issues) are fully awaited before the
-  // AI SDK starts the next step.
+  // Must be async so that callers returning a Promise (e.g. persistence /
+  // issue queuing) are fully awaited before the AI SDK starts the next step.
   const onStepFinish: typeof userOnStepFinish = async (step) => {
     await userOnStepFinish?.(step);
     if (_usageCallback) {
@@ -1065,7 +1064,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
   throw lastError;
 }
 
-export class ContextLengthError extends Error {
+class ContextLengthError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ContextLengthError";
@@ -1093,10 +1092,4 @@ const MAX_SCHEMA_CHARS = 6_000;
 const MINIMAL_RESTART_PROMPT =
   "Continue the previous task. Earlier context was discarded due to repeated context-length errors.";
 
-export {
-  createToolExecutionGate,
-  MAX_IDLE_RESUME_RETRIES,
-  STREAM_IDLE_TIMEOUT_MS,
-  StreamIdleTimeoutError,
-  withIdleTimeout,
-};
+export { createToolExecutionGate, StreamIdleTimeoutError, withIdleTimeout };

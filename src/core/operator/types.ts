@@ -6,7 +6,7 @@ import { z } from "zod";
  */
 export type PermissionTier = 1 | 2 | 3 | 4 | 5;
 
-export interface TierDefinition {
+interface TierDefinition {
   tier: PermissionTier;
   name: string;
   shortName: string;
@@ -14,7 +14,7 @@ export interface TierDefinition {
   examples: string[];
 }
 
-export const PERMISSION_TIERS: Record<PermissionTier, TierDefinition> = {
+const PERMISSION_TIERS: Record<PermissionTier, TierDefinition> = {
   1: {
     tier: 1,
     name: "Passive",
@@ -104,7 +104,7 @@ export type OperatorStage =
   | "validate"
   | "report";
 
-export interface StageDefinition {
+interface StageDefinition {
   stage: OperatorStage;
   name: string;
   description: string;
@@ -112,7 +112,7 @@ export interface StageDefinition {
   suggestedActions: string[];
 }
 
-export const OPERATOR_STAGES: Record<OperatorStage, StageDefinition> = {
+const OPERATOR_STAGES: Record<OperatorStage, StageDefinition> = {
   setup: {
     stage: "setup",
     name: "Setup",
@@ -181,11 +181,11 @@ export const OPERATOR_STAGES: Record<OperatorStage, StageDefinition> = {
   },
 };
 
-export function getStagesInOrder(): StageDefinition[] {
+function getStagesInOrder(): StageDefinition[] {
   return Object.values(OPERATOR_STAGES).sort((a, b) => a.order - b.order);
 }
 
-export function getNextStage(current: OperatorStage): OperatorStage | null {
+function getNextStage(current: OperatorStage): OperatorStage | null {
   const stages = getStagesInOrder();
   const idx = stages.findIndex((s) => s.stage === current);
   return idx === -1 || idx === stages.length - 1 ? null : stages[idx + 1].stage;
@@ -217,7 +217,7 @@ export interface ActionHistoryEntry {
 }
 
 /** Stage progress tracking */
-export interface StageProgress {
+interface StageProgress {
   started: boolean;
   startedAt?: number;
   completed: boolean;
@@ -253,12 +253,12 @@ export function createInitialOperatorState(
 }
 
 /** Operator settings for session config */
-export const OperatorSettingsObject = z.object({
+const OperatorSettingsObject = z.object({
   initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
   requireApproval: z.boolean().default(true),
 });
 
-export type OperatorSettings = z.infer<typeof OperatorSettingsObject>;
+type OperatorSettings = z.infer<typeof OperatorSettingsObject>;
 
 /** Endpoint discovered during attack surface mapping */
 export interface DiscoveredEndpoint {

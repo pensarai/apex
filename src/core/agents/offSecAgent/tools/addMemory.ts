@@ -7,7 +7,7 @@ import {
 } from "../../../memory";
 import type { ToolContext } from "./types";
 
-export const addMemoryInputSchema = z.object({
+const addMemoryInputSchema = z.object({
   title: z
     .string()
     .describe("Short, descriptive title for the memory (used to generate id)"),
@@ -31,7 +31,7 @@ export const addMemoryInputSchema = z.object({
     ),
 });
 
-export type AddMemoryInput = z.infer<typeof addMemoryInputSchema>;
+type AddMemoryInput = z.infer<typeof addMemoryInputSchema>;
 
 export type AddMemoryResult = {
   success: boolean;

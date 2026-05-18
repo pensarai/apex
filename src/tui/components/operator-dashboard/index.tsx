@@ -1015,6 +1015,8 @@ export default function OperatorDashboard({
 
       eventBus.on("subagent-spawn", ({ subagentId, name }) => {
         if (gen !== generationRef.current) return;
+        // Hide whitebox per-app synthetic grouping nodes until #744 lands a hierarchical view.
+        if (subagentId.startsWith("app:")) return;
         subagentHelpers.spawnSession(subagentId, name);
         if (!isPentestAgent(subagentId)) return;
         // Pentest swarm agents → workflowData.pentesting.subagents
@@ -1036,6 +1038,9 @@ export default function OperatorDashboard({
 
       eventBus.on("subagent-complete", ({ subagentId, status }) => {
         if (gen !== generationRef.current) return;
+        // Mirror the spawn-handler filter: synthetic per-app grouping nodes
+        // were never registered as sessions, so don't try to complete them.
+        if (subagentId.startsWith("app:")) return;
         subagentHelpers.completeSession(subagentId, status);
         if (!isPentestAgent(subagentId)) return;
         // Update workflowData swarm status
@@ -2342,12 +2347,3 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     </box>
   );
 }
-
-// Re-export types for backward compatibility
-export type {
-  Credential,
-  Endpoint,
-  Evidence,
-  Hypothesis,
-  VerifiedVuln,
-} from "./types";

@@ -5,7 +5,7 @@ import type { ToolContext } from "./types";
 const MAX_CONTENT_LENGTH = 50_000;
 const REQUEST_TIMEOUT = 30_000;
 
-export const getPageInputSchema = z.object({
+const getPageInputSchema = z.object({
   url: z
     .string()
     .url()
@@ -17,7 +17,7 @@ export const getPageInputSchema = z.object({
     ),
 });
 
-export type GetPageInput = z.infer<typeof getPageInputSchema>;
+type GetPageInput = z.infer<typeof getPageInputSchema>;
 
 export interface GetPageResponse {
   success: boolean;

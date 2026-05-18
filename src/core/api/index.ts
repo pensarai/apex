@@ -6,6 +6,7 @@
 //    (await import("./core/api/<feature>")) so `bun build --splitting`
 //    produces per-feature chunks. Routing those through this barrel would
 //    eliminate the split. The lint rule for module barriers exempts this.
+export * from "./apps";
 export * from "./attackSurface";
 export * from "./authentication";
 export * from "./benchmark";

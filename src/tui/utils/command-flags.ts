@@ -68,11 +68,11 @@ export function resolveThreatModelPrompt(value: string): string {
 // General Flag Parsing
 // ============================================================================
 
-export interface ParsedFlags {
+interface ParsedFlags {
   [key: string]: string | boolean | string[] | undefined;
 }
 
-export interface FlagSchema {
+interface FlagSchema {
   [flagName: string]: {
     type: "string" | "boolean" | "array";
     aliases?: string[];
@@ -83,7 +83,7 @@ export interface FlagSchema {
  * Parse CLI-style arguments into a flags object
  * Supports: --flag value, --flag=value, --boolean-flag
  */
-export function parseFlags(args: string[], schema: FlagSchema): ParsedFlags {
+function parseFlags(args: string[], schema: FlagSchema): ParsedFlags {
   const result: ParsedFlags = {};
   let i = 0;
 

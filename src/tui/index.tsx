@@ -9,7 +9,7 @@ import { hasAnyProviderConfigured } from "../core/providers";
 import type { SessionConfig } from "../core/session";
 import { setupAutoCopy } from "./auto-copy";
 import { createClipboardManager } from "./clipboard";
-import ChatApp from "./components/chat";
+import { ChatApp } from "./components/chat";
 import AuthFlow from "./components/commands/auth-flow";
 import CreditsFlow from "./components/commands/credits-flow";
 import HelpDialog from "./components/commands/help-dialog";

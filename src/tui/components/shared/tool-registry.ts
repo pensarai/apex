@@ -95,6 +95,10 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
     const targets = args.targets as unknown[];
     return `pentest swarm ×${targets?.length ?? "?"}`;
   },
+  spawn_pentest_agent: (args) => {
+    const name = (args.name as string) ?? "pentest worker";
+    return `pentest worker — ${name}`;
+  },
   run_pentest_workflow: (args) => {
     const mode = args.cwd ? "whitebox" : "blackbox";
     return `pentest workflow (${mode}) ${args.target || ""}`;
@@ -174,14 +178,14 @@ export function getToolDisplayLabel(
  * @param name - Tool name
  * @param fn - Summary function
  */
-export function registerToolSummary(name: string, fn: ToolSummaryFn): void {
+function registerToolSummary(name: string, fn: ToolSummaryFn): void {
   TOOL_SUMMARY_MAP[name] = fn;
 }
 
 /**
  * Check if a tool has a registered summary function.
  */
-export function hasToolSummary(name: string): boolean {
+function hasToolSummary(name: string): boolean {
   return name in TOOL_SUMMARY_MAP;
 }
 

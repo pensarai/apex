@@ -1,6 +1,191 @@
-import { describe, expect, it } from "vitest";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { judgeFinding } from "../../specialized/findingJudge";
+import {
+  documentVulnerability,
+  validatePocPortability,
+} from "./documentFinding";
 
-import { validatePocPortability } from "./documentFinding";
+vi.mock("../../specialized/findingJudge", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../specialized/findingJudge")>();
+  return {
+    ...actual,
+    judgeFinding: vi.fn(),
+  };
+});
+
+vi.mock("../../specialized/cvssScorer", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../specialized/cvssScorer")>();
+  return {
+    ...actual,
+    scoreFindingWithCVSS: vi.fn().mockResolvedValue({
+      score: 7.1,
+      severity: "HIGH",
+      vectorString:
+        "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+      metrics: {
+        AV: "N",
+        AC: "L",
+        AT: "N",
+        PR: "N",
+        UI: "N",
+        VC: "H",
+        VI: "N",
+        VA: "N",
+        SC: "N",
+        SI: "N",
+        SA: "N",
+        E: "A",
+      },
+      scoreType: "CVSS-BT",
+      reasoning: "Mock CVSS result.",
+      cwes: [],
+    }),
+  };
+});
+
+const mockedJudgeFinding = vi.mocked(judgeFinding);
+
+type DocumentToolResult = {
+  success: boolean;
+  judgeRejected?: boolean;
+  judgeReasoning?: string;
+  finding?: {
+    judge: {
+      confidence: number;
+      concerns: string[];
+      error?: { message: string };
+    };
+  };
+};
+
+function makeDocumentInput() {
+  return {
+    title: "Exposed Admin Data",
+    description: "Admin data is exposed without authorization.",
+    impact: "An attacker can read sensitive admin data.",
+    evidence: "PoC output showed admin data.",
+    endpoint: "https://example.com/admin",
+    remediation: "Require authorization before returning admin data.",
+    vulnerabilityClass: "missing-authentication",
+    toolCallDescription: "Documenting exposed admin data",
+    pocName: "admin_data",
+    pocType: "bash" as const,
+    pocContent: 'echo "admin data leaked"\nexit 0',
+    pocDescription: "Requests the admin endpoint and prints leaked data.",
+  };
+}
+
+function makeToolContext(rootPath: string) {
+  const pocsPath = join(rootPath, "pocs");
+  const findingsPath = join(rootPath, "findings");
+  const logsPath = join(rootPath, "logs");
+  mkdirSync(pocsPath, { recursive: true });
+  mkdirSync(findingsPath, { recursive: true });
+  mkdirSync(logsPath, { recursive: true });
+
+  return {
+    session: {
+      id: "test-session",
+      rootPath,
+      pocsPath,
+      findingsPath,
+      logsPath,
+      targets: ["https://example.com"],
+      config: {},
+    },
+    agentCwd: rootPath,
+    model: "test-model",
+    target: "https://example.com",
+  } as Parameters<typeof documentVulnerability>[0];
+}
+
+describe("documentVulnerability judge handling", () => {
+  let rootPath: string;
+
+  beforeEach(() => {
+    rootPath = mkdtempSync(join(tmpdir(), "apex-document-finding-"));
+    mockedJudgeFinding.mockReset();
+  });
+
+  afterEach(() => {
+    rmSync(rootPath, { recursive: true, force: true });
+  });
+
+  it("cleans up the POC and returns judgeRejected when a completed judge rejects", async () => {
+    mockedJudgeFinding.mockResolvedValue({
+      valid: false,
+      findingType: "vulnerability",
+      confidence: 0.9,
+      reasoning: "The PoC prints static text and does not prove exploitation.",
+      concerns: ["PoC evidence is fabricated."],
+      verificationSteps: ["Inspected PoC output."],
+      toolEvidence: ["stdout contained only static text."],
+      reproducedPoc: false,
+      webResearchUsed: false,
+      limitations: [],
+    });
+
+    const ctx = makeToolContext(rootPath);
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute!(makeDocumentInput(), {
+      toolCallId: "test",
+      messages: [],
+    })) as DocumentToolResult;
+
+    expect(result.success).toBe(false);
+    expect(result.judgeRejected).toBe(true);
+    expect(result.judgeReasoning).toContain("does not prove exploitation");
+    expect(existsSync(join(ctx.session.pocsPath, "poc_admin_data.sh"))).toBe(
+      false,
+    );
+  });
+
+  it("preserves a PoC-backed finding when the judge returns degraded unverified status", async () => {
+    mockedJudgeFinding.mockResolvedValue({
+      valid: true,
+      findingType: "vulnerability",
+      confidence: 0.4,
+      reasoning:
+        "Agentic finding judge could not complete. Preserving the successfully executed PoC-backed finding as unverified.",
+      concerns: [
+        "Agentic judge infrastructure failed before producing a completed verification judgment.",
+      ],
+      verificationSteps: [],
+      toolEvidence: [],
+      reproducedPoc: false,
+      webResearchUsed: false,
+      limitations: ["No independent judge verification was completed."],
+      error: {
+        message: "provider overloaded",
+        type: "Error",
+        model: "test-model",
+      },
+    });
+
+    const ctx = makeToolContext(rootPath);
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute!(makeDocumentInput(), {
+      toolCallId: "test",
+      messages: [],
+    })) as DocumentToolResult;
+
+    expect(result.success).toBe(true);
+    expect(result.judgeRejected).toBeUndefined();
+    expect(result.finding?.judge.confidence).toBe(0.4);
+    expect(result.finding?.judge.error?.message).toBe("provider overloaded");
+    expect(result.finding?.judge.concerns[0]).toContain(
+      "infrastructure failed",
+    );
+    expect(existsSync(join(ctx.session.pocsPath, "poc_admin_data.sh"))).toBe(
+      true,
+    );
+  });
+});
 
 describe("validatePocPortability", () => {
   describe("bash scripts", () => {
