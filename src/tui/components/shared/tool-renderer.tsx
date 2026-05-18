@@ -185,6 +185,9 @@ export const ToolRenderer = memo(function ToolRenderer({
                   {resultDisplay.text}
                 </text>
               )}
+              {resultDisplay.hint && (
+                <text fg={colors.textMuted}>{resultDisplay.hint}</text>
+              )}
             </box>
 
             {/* Syntax-highlighted code preview */}

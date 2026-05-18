@@ -19,6 +19,8 @@ export interface ResultSummary {
   styledText?: StyledText;
   /** Optional label shown above styledText (e.g. "2 replacements") */
   label?: string;
+  /** Optional muted suffix next to the result (e.g. a keybind hint). */
+  hint?: string;
 }
 
 /**
@@ -516,7 +518,17 @@ function getResultSummaryRaw(
         return { text: "Page loaded", isError: false };
       }
       case "browser_screenshot": {
-        return { text: "Screenshot taken", isError: false };
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false && typeof obj.error === "string") {
+            return { text: obj.error.slice(0, 120), isError: true };
+          }
+        }
+        return {
+          text: "Screenshot taken",
+          isError: false,
+          hint: "ctrl+i to view",
+        };
       }
       case "browser_evaluate": {
         return { text: "Evaluated", isError: false };
