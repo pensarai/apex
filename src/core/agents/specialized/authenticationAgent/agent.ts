@@ -2,13 +2,12 @@ import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall } from "ai";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import type { AIModel } from "../../../ai";
-import type { AIAuthConfig } from "../../../ai/utils";
-import { type SessionInfo } from "../../../session";
-import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
-import { detectOSAndEnhancePrompt } from "../utils";
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
+import type { AIAuthConfig, AIModel } from "../../../ai";
 import type { AgentEventBus } from "../../../eventBus";
+import type { SessionInfo } from "../../../session";
+import { OffensiveSecurityAgent } from "../../offSecAgent";
+import { detectOSAndEnhancePrompt } from "../utils";
+import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import type { AuthBarrier } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -175,6 +174,8 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         "email_list_messages",
         "email_search_messages",
         "email_get_message",
+        // Send email (filtered out by base class when no SMTP configured)
+        "send_email",
         // Web search tools — look up auth bypass techniques, default credentials
         "web_search",
         "get_page",

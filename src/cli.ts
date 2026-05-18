@@ -8,20 +8,32 @@
  */
 
 import packageJson from "../package.json";
-import { getCurrentVersion, upgrade } from "./core/installation";
-import { buildAuthConfig } from "./core/ai/utils";
+import { type AIModel, buildAuthConfig } from "./core/ai";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
+import { getCurrentVersion, upgrade } from "./core/installation";
 import type { SessionInfo } from "./core/session";
 import {
+  combinePromptParts,
   resolveFlagValue,
   resolveThreatModelPrompt,
-  combinePromptParts,
 } from "./tui/utils/command-flags";
 
 const args = process.argv.slice(2);
 const command = args[0];
 const version = packageJson.version;
+
+// Detect global --obfuscate flag and propagate to the TUI via env so the
+// flag works regardless of where it appears in argv. The flag is stripped
+// before any per-command parsing so it never collides with subcommand args.
+const OBFUSCATE_FLAGS = new Set(["--obfuscate", "--redact", "-O"]);
+const obfuscateRequested = args.some((a) => OBFUSCATE_FLAGS.has(a));
+if (obfuscateRequested) {
+  process.env.PENSAR_OBFUSCATE = "1";
+  for (let i = args.length - 1; i >= 0; i--) {
+    if (OBFUSCATE_FLAGS.has(args[i]!)) args.splice(i, 1);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -67,13 +79,43 @@ async function createInstrumentedBus(
 ): Promise<{ bus: AgentEventBus; cleanup: () => Promise<void> }> {
   const bus = new AgentEventBus();
   attachCliAgentStreamListeners(bus);
-  const { attachWandbToEventBus } =
-    await import("./core/integrations/wandb/upload");
+  const { attachWandbToEventBus } = await import(
+    "./core/integrations/wandb/upload"
+  );
   const wandbCleanup = await attachWandbToEventBus(session, bus).catch((e) => {
     console.warn("[wandb] Tracing disabled:", (e as Error).message);
     return null;
   });
   return { bus, cleanup: async () => wandbCleanup?.() };
+}
+
+/**
+ * Resolve the AI model from --model flag or configured provider default.
+ * Errors clearly if no provider is configured instead of silently picking
+ * a model that will fail at the API call level.
+ */
+async function resolveCliModel(): Promise<AIModel> {
+  const explicit = getArg("--model");
+  if (explicit) return explicit as AIModel;
+
+  const { config: appConfig } = await import("./core/config");
+  const { getDefaultModelForConfig } = await import("./core/providers/utils");
+  const pensarConfig = await appConfig.get();
+  const defaultModel = getDefaultModelForConfig(pensarConfig);
+
+  if (!defaultModel) {
+    console.error(
+      "Error: No AI provider configured. Set one of:\n" +
+        "  PENSAR_API_KEY     — Pensar Console (recommended)\n" +
+        "  ANTHROPIC_API_KEY  — Anthropic direct\n" +
+        "  OPENAI_API_KEY     — OpenAI\n" +
+        "  OPENROUTER_API_KEY — OpenRouter\n" +
+        "\nOr run 'pensar login' to connect to Pensar Console.",
+    );
+    process.exit(1);
+  }
+
+  return defaultModel.id as AIModel;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,12 +127,14 @@ function showHelp() {
 
 Usage:
   pensar                             Launch the TUI
+  pensar -p <prompt>                 Start an operator session with a prompt
   pensar pentest [options]            Run a full pentest orchestration
   pensar targeted-pentest [options]   Run a targeted pentest on a single target
   pensar threat-model [options]       Generate application-centric threat model
   pensar login                        Connect to Pensar Console
   pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)
   pensar projects                     List workspace projects
+  pensar apps                         Manage the attack surface (apps & endpoints)
   pensar pentests                     List and manage pentests
   pensar issues                       List and manage security issues
   pensar fixes                        View security fixes
@@ -100,11 +144,17 @@ Usage:
   pensar help                         Show this help message
   pensar version                      Show version number
 
+operator options (-p):
+  -p, --prompt <text|@file>  (required) Prompt for the operator agent
+  -s, --system <text|@file>  Override the default system prompt
+  --target <url>             Target URL / domain / IP
+  --model <model>            AI model (default: auto-selected from configured provider)
+
 pentest options:
   --target <url>           (required) Target URL / domain / IP
   --cwd <path>             Source code path — enables whitebox attack surface
   --mode <mode>            Pentest mode: exfil (pivoting & flag extraction)
-  --model <model>          AI model (default: claude-sonnet-4-5)
+  --model <model>          AI model (default: auto-selected from configured provider)
   --extended-thinking       Enable extended thinking for supported models
   --task-driven             Enable task-driven architecture (experimental)
   --prompt <text|@file>    Guidance for the pentest agent (inline text or @filepath)
@@ -113,15 +163,18 @@ pentest options:
 targeted-pentest options:
   --target <url>          (required) Target URL / domain / IP
   --objective <text>      (required, repeatable) Testing objective
-  --model <model>         AI model (default: claude-sonnet-4-5)
+  --model <model>         AI model (default: auto-selected from configured provider)
 
 threat-model options:
   --output, -o <path>  Output file path (default: ./threat-model.md)
-  --model <model>      AI model (default: claude-sonnet-4-5)
+  --model <model>      AI model (default: auto-selected from configured provider)
 
 Global options:
   -h, --help         Show this help message
   -v, --version      Show version number
+  --obfuscate        Run the TUI in obfuscation mode — redacts hostnames,
+                     IPs, UUIDs, emails, paths, tokens, and apparent
+                     company names so screenshots are safe to share.
 `);
 }
 
@@ -136,8 +189,6 @@ async function runPentest() {
   const { runPentestAgent } = await import("./core/api/blackboxPentest");
   const { sessions } = await import("./core/session");
   const { config: appConfig } = await import("./core/config");
-  const { getDefaultModelForConfig } = await import("./core/providers/utils");
-  type AIModel = import("./core/ai").AIModel;
 
   const target = getArgRequired("--target");
   const cwd = getArg("--cwd");
@@ -155,9 +206,7 @@ async function runPentest() {
   const prompt = combinePromptParts(resolvedTm, resolvedPrompt);
 
   const pensarConfig = await appConfig.get();
-  const dynamicDefault =
-    getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
-  const model = (getArg("--model") ?? dynamicDefault) as AIModel;
+  const model = await resolveCliModel();
   const { exfilMode, warning: modeWarning } = resolvePentestMode(mode);
 
   if (modeWarning) {
@@ -194,6 +243,7 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
         session,
         model,
         enableThinking,
+        surfaceIntegrationEnabled: pensarConfig.surfaceIntegrationEnabled,
         authConfig: buildAuthConfig(pensarConfig),
         eventBus: pentestBus,
       });
@@ -214,20 +264,17 @@ async function runTargetedPentest() {
   const { config } = await import("dotenv");
   config();
 
-  const { runTargetedPentestAgent } =
-    await import("./core/api/targetedPentest");
+  const { runTargetedPentestAgent } = await import(
+    "./core/api/targetedPentest"
+  );
   const { sessions } = await import("./core/session");
   const { config: appConfig } = await import("./core/config");
-  const { getDefaultModelForConfig } = await import("./core/providers/utils");
-  type AIModel = import("./core/ai").AIModel;
 
   const target = getArgRequired("--target");
   const objectives = getAllArgs("--objective");
 
   const pensarConfig = await appConfig.get();
-  const dynamicDefault =
-    getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
-  const model = (getArg("--model") ?? dynamicDefault) as AIModel;
+  const model = await resolveCliModel();
 
   if (objectives.length === 0) {
     console.error("Error: at least one --objective is required");
@@ -283,14 +330,10 @@ async function runThreatModel() {
 
   const { runThreatModelWorkflow } = await import("./core/api/threatModel");
   const { config: appConfig } = await import("./core/config");
-  const { getDefaultModelForConfig } = await import("./core/providers/utils");
   const path = await import("path");
-  type AIModel = import("./core/ai").AIModel;
 
   const pensarConfig = await appConfig.get();
-  const dynamicDefault =
-    getDefaultModelForConfig(pensarConfig)?.id ?? "claude-sonnet-4-5";
-  const model = (getArg("--model") ?? dynamicDefault) as AIModel;
+  const model = await resolveCliModel();
 
   const outputArg = getArg("--output") ?? getArg("-o") ?? "threat-model.md";
   const resolvedPath = path.isAbsolute(outputArg)
@@ -325,6 +368,118 @@ Model:    ${model}
   );
 }
 
+async function runOperator() {
+  const { config } = await import("dotenv");
+  config();
+
+  const { runOffensiveSecurityAgent } = await import("./core/api/offesecAgent");
+  const { sessions, normalizeMessages, getResumeMessages } = await import(
+    "./core/session"
+  );
+  const { ALL_TOOL_NAMES, SKILL_TOOL_NAMES } = await import(
+    "./core/agents/offSecAgent"
+  );
+  const { config: appConfig } = await import("./core/config");
+  const { createInterface } = await import("readline");
+  const { readFileSync, existsSync } = await import("fs");
+  const path = await import("path");
+  const { stepCountIs } = await import("ai");
+  type ModelMessage = import("ai").ModelMessage;
+
+  const promptRaw = getArg("-p") ?? getArg("--prompt");
+  if (!promptRaw) {
+    console.error("Error: -p <prompt> is required");
+    process.exit(1);
+  }
+
+  const prompt = resolveFlagValue(promptRaw);
+  const systemRaw = getArg("-s") ?? getArg("--system");
+  const systemPrompt = systemRaw ? resolveFlagValue(systemRaw) : undefined;
+  const target = getArg("--target");
+  const pensarConfig = await appConfig.get();
+  const model = await resolveCliModel();
+
+  const sep = "─".repeat(60);
+  console.log(`${sep}
+OPERATOR SESSION
+${sep}
+Model:   ${model}${target ? `\nTarget:  ${target}` : ""}
+${sep}\n`);
+
+  const session = await sessions.create({
+    name: "Operator Session",
+    targets: target ? [target] : [],
+    config: {
+      mode: "operator",
+      agentCwd: process.cwd(),
+      operatorSettings: {
+        initialMode: "auto",
+        requireApproval: false,
+        enableSuggestions: false,
+      },
+    },
+  });
+
+  const { bus, cleanup: wandbCleanup } = await createInstrumentedBus(session);
+
+  let currentPrompt = prompt;
+  let messages: ModelMessage[] | undefined;
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const askFollowUp = (): Promise<string | null> =>
+    new Promise((resolve) => {
+      process.stdout.write(`\n${sep}\n`);
+      rl.question("follow-up (empty to exit): ", (answer) => {
+        const trimmed = answer.trim();
+        resolve(trimmed || null);
+      });
+    });
+
+  try {
+    for (;;) {
+      await runOffensiveSecurityAgent({
+        prompt: currentPrompt,
+        ...(systemPrompt ? { system: systemPrompt } : {}),
+        model,
+        target,
+        activeTools: [...ALL_TOOL_NAMES, ...SKILL_TOOL_NAMES] as string[],
+        stopWhen: stepCountIs(10000),
+        authConfig: buildAuthConfig(pensarConfig),
+        eventBus: bus,
+        session,
+        messages,
+      });
+
+      // Read back persisted messages for the next turn
+      const messagesPath = path.join(session.rootPath, "messages.json");
+      if (existsSync(messagesPath)) {
+        const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
+        const allMessages: ModelMessage[] = Array.isArray(raw) ? raw : [];
+        messages = normalizeMessages(getResumeMessages(allMessages));
+      }
+
+      const followUp = await askFollowUp();
+      if (!followUp) break;
+      currentPrompt = followUp;
+      // Append the follow-up as a user message so the conversation
+      // ends with a user turn (required by Anthropic models).
+      messages = normalizeMessages([
+        ...(messages ?? []),
+        { role: "user" as const, content: followUp },
+      ]);
+    }
+  } finally {
+    rl.close();
+    await wandbCleanup();
+  }
+
+  console.log(`\nSession: ${session.rootPath}`);
+}
+
 async function runUpgrade() {
   const currentVersion = getCurrentVersion();
   console.log(`Current version: v${currentVersion}\nChecking for updates...`);
@@ -339,7 +494,13 @@ async function runUpgrade() {
 // Router
 // ---------------------------------------------------------------------------
 
-if (command === "version" || command === "--version" || command === "-v") {
+if (hasFlag("-p") || command === "--prompt") {
+  await runOperator();
+} else if (
+  command === "version" ||
+  command === "--version" ||
+  command === "-v"
+) {
   console.log(`v${version}`);
 } else if (command === "help" || command === "--help" || command === "-h") {
   showHelp();
@@ -358,6 +519,9 @@ if (command === "version" || command === "--version" || command === "-v") {
 } else if (command === "projects") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/projects");
+} else if (command === "apps") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("./cli/apps");
 } else if (command === "pentests") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/pentests");

@@ -1,15 +1,15 @@
+import type { Renderable } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
-import { useDimensions } from "./dimensions";
 import {
   createContext,
-  useContext,
-  useState,
-  useCallback,
-  useRef,
   type ReactNode,
+  useCallback,
+  useContext,
+  useRef,
+  useState,
 } from "react";
-import { type Renderable } from "@opentui/core";
 import { useTheme } from "../theme";
+import { useDimensions } from "./dimensions";
 
 interface DialogProps {
   size?: "medium" | "large" | "xlarge";

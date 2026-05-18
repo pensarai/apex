@@ -1,8 +1,8 @@
 import { useRenderer } from "@opentui/react";
-import { useRoute } from "../context/route";
+import { useDialog } from "../context/dialog";
 import { useFocus } from "../context/focus";
 import { useInput } from "../context/input";
-import { useDialog } from "../context/dialog";
+import { useRoute } from "../context/route";
 import { cleanupTerminalFocusMode } from "../terminal-focus";
 
 export interface KeybindingEntry {

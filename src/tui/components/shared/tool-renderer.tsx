@@ -6,19 +6,21 @@
  */
 
 import { memo, useState } from "react";
+import { useObfuscation } from "../../context/obfuscation";
 import { useTheme } from "../../theme";
-import { AsciiSpinner } from "./ascii-spinner";
-import { getToolDisplayLabel } from "./tool-registry";
-import { getResultSummary, type ResultSummary } from "./result-registry";
-import { isToolMessage } from "./type-guards";
 import type { DisplayMessage } from "../agent-display";
+import { ShiningText } from "../loaders";
 import { PentestWorkflowDisplay } from "./pentest-workflow-display";
+import { getResultSummary, type ResultSummary } from "./result-registry";
+import { getToolDisplayLabel } from "./tool-registry";
+import { isToolMessage } from "./type-guards";
 
 const TOOLS_WITH_LOG_WINDOW = new Set([
   "execute_command",
   "run_attack_surface",
   "spawn_coding_agent",
   "spawn_pentest_swarm",
+  "spawn_pentest_agent",
   "run_pentest_workflow",
   "delegate_to_auth_subagent",
   "create_file",
@@ -40,7 +42,12 @@ export const ToolRenderer = memo(function ToolRenderer({
   verbose = false,
   expandedLogs = false,
 }: ToolRendererProps) {
-  const { colors, mode } = useTheme();
+  const { colors } = useTheme();
+  // Subscribe so the result summary's `content`-prop StyledText
+  // (precomputed in `result-registry.ts`) re-runs when `/obfuscate`
+  // toggles. Plain string children are handled centrally by the
+  // TextNodeRenderable patch and don't require this subscription.
+  useObfuscation();
   const [showOutput, setShowOutput] = useState(false);
 
   // Type guard ensures we have a tool message
@@ -71,10 +78,30 @@ export const ToolRenderer = memo(function ToolRenderer({
     preferDescription: isPending,
   });
 
+  // For execute_command, extract both description and command so we can show
+  // both. Strings flow into `<text>` children, so the centralised
+  // `TextNodeRenderable` patch (src/tui/obfuscation/patch.ts) handles
+  // redaction transparently.
+  const execDescription =
+    toolName === "execute_command" &&
+    typeof args.toolCallDescription === "string" &&
+    args.toolCallDescription.trim().length > 0
+      ? args.toolCallDescription.trim()
+      : null;
+  const execCommand =
+    toolName === "execute_command" && typeof args.command === "string"
+      ? args.command.split("\n")[0]
+      : null;
+  const execCommandDisplay = execCommand
+    ? execCommand.length > 80
+      ? `$ ${execCommand.slice(0, 80)}…`
+      : `$ ${execCommand}`
+    : null;
+
   // Get result summary for completed tools
   const resultDisplay: ResultSummary | null =
     isCompleted || isError
-      ? getResultSummary(result, toolName, args, mode)
+      ? getResultSummary(result, toolName, args, colors)
       : null;
 
   // Determine border color based on status
@@ -93,16 +120,22 @@ export const ToolRenderer = memo(function ToolRenderer({
         {/* Tool header line */}
         <box flexDirection="row" gap={1}>
           {isPending ? (
-            <AsciiSpinner label={summary} fg={colors.warning} />
+            <ShiningText text={summary} fg={colors.warning} />
           ) : (
             <>
               <text fg={isError ? colors.error : colors.success}>
                 {isError ? "✗" : "✓"}
               </text>
-              <text fg={colors.info}>{summary}</text>
+              <text fg={colors.info}>{execDescription || summary}</text>
             </>
           )}
         </box>
+        {/* Show command underneath description for execute_command */}
+        {execDescription && execCommandDisplay && (
+          <box marginLeft={2}>
+            <text fg={colors.textMuted}>{execCommandDisplay}</text>
+          </box>
+        )}
 
         {/* Log window for tools with streaming output */}
         {isPending &&
@@ -184,5 +217,3 @@ export const ToolRenderer = memo(function ToolRenderer({
     </box>
   );
 });
-
-export default ToolRenderer;

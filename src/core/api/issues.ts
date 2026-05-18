@@ -6,9 +6,7 @@
  * X-Workspace-Id header for JWT auth.
  */
 
-import { getPensarApiUrl } from "./constants";
-import { config } from "../config";
-import { ensureValidToken } from "../auth/token";
+import { apiRequest } from "./apiClient";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -115,66 +113,6 @@ export interface SearchAgentLogsResult {
     matchIndex: number;
     entries: Array<AgentLogEntry & { isMatch: boolean }>;
   }>;
-}
-
-// ── HTTP helpers ─────────────────────────────────────────────────────
-
-async function getAuthHeaders(): Promise<Record<string, string>> {
-  const cfg = await config.get();
-
-  const validToken = await ensureValidToken({
-    accessToken: cfg.accessToken,
-    refreshToken: cfg.refreshToken,
-    pensarAPIKey: cfg.pensarAPIKey,
-  });
-
-  if (!validToken) {
-    throw new Error(
-      "Not authenticated. Run `pensar login` to connect to Pensar Console.",
-    );
-  }
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${validToken.token}`,
-  };
-
-  if (cfg.workspaceId) {
-    headers["X-Workspace-Id"] = cfg.workspaceId;
-  }
-
-  return headers;
-}
-
-async function apiRequest<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  const baseUrl = getPensarApiUrl();
-  const headers = await getAuthHeaders();
-  const url = `${baseUrl}${path}`;
-
-  const init: RequestInit = { method, headers };
-  if (body !== undefined) {
-    init.body = JSON.stringify(body);
-  }
-
-  const response = await fetch(url, init);
-
-  if (!response.ok) {
-    const text = await response.text();
-    let message: string;
-    try {
-      const err = JSON.parse(text) as { error?: string };
-      message = err.error ?? text;
-    } catch {
-      message = text;
-    }
-    throw new Error(`API error (${response.status}): ${message}`);
-  }
-
-  return (await response.json()) as T;
 }
 
 // ── API functions ────────────────────────────────────────────────────

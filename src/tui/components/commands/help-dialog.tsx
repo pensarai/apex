@@ -5,19 +5,19 @@
  * Shows commands in a scrollable list with detail view for options/flags.
  */
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { ScrollBoxRenderable } from "@opentui/core";
-import { scrollToIndex } from "../../utils/scroll";
-import { useCommand } from "../../context/command";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type CommandCategory,
   type CommandConfig,
   categories,
 } from "../../command-registry";
+import { useCommand } from "../../context/command";
 import { Dialog } from "../../context/dialog";
-import DialogLayout from "../dialog-layout";
 import { useTheme } from "../../theme";
+import { scrollToIndex } from "../../utils/scroll";
+import DialogLayout from "../dialog-layout";
 
 interface HelpDialogProps {
   onClose: () => void;
@@ -174,6 +174,7 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
     <Dialog size="large" onClose={onClose}>
       <DialogLayout
         title="Commands"
+        flushRight
         footerActions={[{ key: "Enter", label: "details", variant: "primary" }]}
       >
         {/* Commands list grouped by category */}
@@ -182,6 +183,12 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
           style={{
             rootOptions: { flexGrow: 1, width: "100%" },
             contentOptions: { flexDirection: "column" },
+            scrollbarOptions: {
+              trackOptions: {
+                foregroundColor: colors.textMuted,
+                backgroundColor: colors.backgroundElement,
+              },
+            },
           }}
           stickyScroll={false}
           focused={true}

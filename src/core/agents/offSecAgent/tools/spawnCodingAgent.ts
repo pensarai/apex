@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { ToolContext } from "./types";
 import { AgentEventBus } from "../../../eventBus";
+import type { ToolContext } from "./types";
 
 /** Default max concurrent coding agents */
 const DEFAULT_CONCURRENCY = 5;
@@ -162,6 +162,7 @@ async function runSingleCodingAgent(
     subagentId,
     name,
     input: { codebasePath, objective },
+    parentSubagentId: ctx.subagentId,
   });
 
   const localBus = new AgentEventBus();
@@ -189,6 +190,7 @@ async function runSingleCodingAgent(
     ctx.eventBus?.emit("subagent-complete", {
       subagentId,
       status: "completed",
+      parentSubagentId: ctx.subagentId,
     });
 
     return textOutput;
@@ -196,6 +198,7 @@ async function runSingleCodingAgent(
     ctx.eventBus?.emit("subagent-complete", {
       subagentId,
       status: "failed",
+      parentSubagentId: ctx.subagentId,
     });
     throw error;
   }

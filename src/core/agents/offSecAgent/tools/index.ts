@@ -1,154 +1,182 @@
-export { type ToolContext } from "./types";
+// Memory tools
+export { addMemory } from "./addMemory";
+// askUserQuestions schema/types — used by TUI for the question-prompt UX.
 export {
-  type UnifiedSandbox,
-  type SandboxType,
-  type SandboxExecuteOptions,
-  type SandboxExecutionResult,
-} from "./sandbox";
-
-// Scope guard utilities
-export {
-  ScopeViolationError,
-  getAllowedHosts,
-  isHostAllowed,
-  extractHostname,
-  assertUrlInScope,
-  assertCommandInScope,
-  extractHostsFromCommand,
-} from "./scopeGuard";
-
+  type AskUserQuestion,
+  type AskUserQuestionAnswer,
+  AskUserQuestionSchema,
+  type AskUserQuestionsResult,
+} from "./askUserQuestions";
+export { authenticateSession } from "./authenticateSession";
 // Browser automation tools
-export { createBrowserToolset, BROWSER_TOOL_NAMES } from "./browserTools";
-export type { BrowserToolName } from "./browserTools";
-
-// Sandbox Playwright helpers (check / install Playwright in a sandbox)
-export {
-  checkSandboxPlaywright,
-  installSandboxPlaywright,
-  ensureSandboxPlaywright,
-  ensureSandboxBrowser,
-} from "./sandboxPlaywright";
-
-// Core pentest tools
-export { executeCommand } from "./executeCommand";
-export { httpRequest } from "./httpRequest";
-export { documentVulnerability } from "./documentFinding";
-
-// Filesystem / search tools
-export { readFile } from "./readFile";
-export { listFiles } from "./listFiles";
-export { grep } from "./grep";
+export { BROWSER_TOOL_NAMES, createBrowserToolset } from "./browserTools";
+// Observability tools
+export { checkpointState } from "./checkpointState";
+// Authentication tools
+export { completeAuthentication } from "./completeAuthentication";
+export { crawlAuthenticated } from "./crawlAuthenticated";
+export { createAttackSurfaceReport } from "./createAttackSurfaceReport";
 export { createFile } from "./createFile";
-export { updateFile } from "./updateFile";
-
+// Task decomposition tools
+export { createTask } from "./createTask";
+export { delegateAuth } from "./delegateAuth";
+export { detectAuthScheme } from "./detectAuthScheme";
 // Attack surface / recon tools
 export { documentApp } from "./documentApp";
 export { documentEndpoint } from "./documentEndpoint";
-export { authenticateSession } from "./authenticateSession";
-export { delegateAuth } from "./delegateAuth";
+export { documentVulnerability } from "./documentFinding";
+// Email tools
+export {
+  createEmailToolset,
+  EMAIL_TOOL_NAMES,
+  SEND_EMAIL_TOOL_NAME,
+} from "./email";
+// Core pentest tools
+export { executeCommand } from "./executeCommand";
 export { extractJsEndpoints } from "./extractJsEndpoints";
-export { crawlAuthenticated } from "./crawlAuthenticated";
-export { testEndpointVariations } from "./testEndpointVariations";
-export { validateDiscovery } from "./validateDiscovery";
-export { createAttackSurfaceReport } from "./createAttackSurfaceReport";
-
-// Authentication tools
-export { completeAuthentication } from "./completeAuthentication";
-export { detectAuthScheme } from "./detectAuthScheme";
+export { getMemory } from "./getMemory";
+export { getPage } from "./getPage";
+export { grep } from "./grep";
+export { httpRequest } from "./httpRequest";
+export { listFiles } from "./listFiles";
+export { listMemories } from "./listMemories";
+export { listTasksTool } from "./listTasks";
+// Persistent shell — long-lived shell session shared across tool calls.
+export {
+  extractFallbackStdout,
+  getApexTmpRoot,
+  PersistentShell,
+  readTempfileCapped,
+  type ShellExecuteResult,
+} from "./persistentShell";
+// Playwright MCP browser session helpers.
+export {
+  type BrowserClickResult,
+  type BrowserConsoleResult,
+  type BrowserEvaluateResult,
+  type BrowserFillResult,
+  type BrowserNavigateResult,
+  type BrowserScreenshotResult,
+  type BrowserStorageState,
+  type BrowserToolMode,
+  createBrowserTools,
+  PlaywrightMcpSession,
+  parseStorageStateResult,
+  setHeadlessMode,
+  setUserAgent,
+  setViewportSize,
+  transformScriptToFunction,
+} from "./playwrightMcp";
 export { probeAuthEndpoints } from "./probeAuthEndpoints";
-
-// Orchestration tools
-export { runAttackSurface } from "./runAttackSurface";
-export { spawnPentestSwarm } from "./spawnPentestSwarm";
-export { spawnCodingAgent } from "./spawnCodingAgent";
-export { runPentestWorkflow } from "./runPentestWorkflow";
 
 // Reporting / benchmark tools
 // export { generateReport } from "./generateReport";
 export { provideComparisonResults } from "./provideComparisonResults";
-
-// Memory tools
-export { addMemory } from "./addMemory";
-export { listMemories } from "./listMemories";
-export { getMemory } from "./getMemory";
-
-// Email tools
-export { createEmailToolset, EMAIL_TOOL_NAMES } from "./email";
-export type { EmailToolName } from "./email";
-
-// Web search tools (requires Pensar account)
-export { webSearch } from "./webSearch";
-export { getPage } from "./getPage";
-
+// Filesystem / search tools
+export { readFile } from "./readFile";
 // Skill tools
 export { readSkill } from "./readSkill";
-
-// Observability tools
-export { checkpointState } from "./checkpointState";
-
-// Task decomposition tools
-export { createTask } from "./createTask";
+// Response (structured final-output) tool — used by sub-agents that emit
+// validated result objects.
+export { createResponseTool, RESPONSE_TOOL_NAME } from "./response";
+// Orchestration tools
+export { runAttackSurface } from "./runAttackSurface";
+export { runPentestWorkflow } from "./runPentestWorkflow";
+export type {
+  SandboxExecuteOptions,
+  SandboxExecutionResult,
+  SandboxType,
+  UnifiedSandbox,
+} from "./sandbox";
+// Sandbox Playwright helpers (check / install Playwright in a sandbox)
+export {
+  checkSandboxPlaywright,
+  createSandboxBrowserTools,
+  ensureSandboxBrowser,
+  ensureSandboxPlaywright,
+  installSandboxPlaywright,
+} from "./sandboxPlaywright";
+// Scope guard utilities
+export {
+  assertCommandInScope,
+  assertUrlInScope,
+  extractHostname,
+  extractHostsFromCommand,
+  getAllowedHosts,
+  isHostAllowed,
+  ScopeViolationError,
+} from "./scopeGuard";
+export { spawnCodingAgent } from "./spawnCodingAgent";
+export { spawnPentestAgent } from "./spawnPentestAgent";
+export { spawnPentestSwarm } from "./spawnPentestSwarm";
+export { submitPlan } from "./submitPlan";
+export { testEndpointVariations } from "./testEndpointVariations";
+export type { ToolContext } from "./types";
+export { updateFile } from "./updateFile";
 export { updateTask } from "./updateTask";
-export { listTasksTool } from "./listTasks";
-
+export { validateDiscovery } from "./validateDiscovery";
+// Web search tools (requires Pensar account)
+export { webSearch } from "./webSearch";
 // Plan mode tools
 export { writePlan } from "./writePlan";
-export { submitPlan } from "./submitPlan";
 
 // ---------------------------------------------------------------------------
 // Tool registry
 // ---------------------------------------------------------------------------
 
-import type { ToolContext } from "./types";
+import { addMemory } from "./addMemory";
+import {
+  ASK_USER_QUESTIONS_TOOL_NAME,
+  askUserQuestions,
+} from "./askUserQuestions";
+import { authenticateSession } from "./authenticateSession";
 import { createBrowserToolset } from "./browserTools";
-import { executeCommand } from "./executeCommand";
-import { httpRequest } from "./httpRequest";
-import { documentVulnerability } from "./documentFinding";
-
-import { readFile } from "./readFile";
-import { listFiles } from "./listFiles";
-import { grep } from "./grep";
+import { checkpointState } from "./checkpointState";
+import { completeAuthentication } from "./completeAuthentication";
+import { crawlAuthenticated } from "./crawlAuthenticated";
+import { createAttackSurfaceReport } from "./createAttackSurfaceReport";
 import { createFile } from "./createFile";
-import { updateFile } from "./updateFile";
+import { createTask } from "./createTask";
+import { delegateAuth } from "./delegateAuth";
+import { detectAuthScheme } from "./detectAuthScheme";
 import { documentApp } from "./documentApp";
 import { documentEndpoint } from "./documentEndpoint";
-import { authenticateSession } from "./authenticateSession";
-import { delegateAuth } from "./delegateAuth";
+import { documentVulnerability } from "./documentFinding";
+import {
+  createEmailToolset,
+  emailGetMessage,
+  emailListInboxes,
+  emailListMessages,
+  emailSearchMessages,
+} from "./email";
+import { executeCommand } from "./executeCommand";
 import { extractJsEndpoints } from "./extractJsEndpoints";
-import { crawlAuthenticated } from "./crawlAuthenticated";
-import { testEndpointVariations } from "./testEndpointVariations";
-import { validateDiscovery } from "./validateDiscovery";
-import { createAttackSurfaceReport } from "./createAttackSurfaceReport";
-import { completeAuthentication } from "./completeAuthentication";
-import { detectAuthScheme } from "./detectAuthScheme";
+import { getMemory } from "./getMemory";
+import { getPage } from "./getPage";
+import { grep } from "./grep";
+import { httpRequest } from "./httpRequest";
+import { listFiles } from "./listFiles";
+import { listMemories } from "./listMemories";
+import { listTasksTool } from "./listTasks";
 import { probeAuthEndpoints } from "./probeAuthEndpoints";
-import { runAttackSurface } from "./runAttackSurface";
-import { spawnPentestSwarm } from "./spawnPentestSwarm";
-import { spawnCodingAgent } from "./spawnCodingAgent";
-import { runPentestWorkflow } from "./runPentestWorkflow";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
-import { addMemory } from "./addMemory";
-import { listMemories } from "./listMemories";
-import { getMemory } from "./getMemory";
-import { createEmailToolset } from "./email";
-import { emailListInboxes } from "./email/listInboxes";
-import { emailListMessages } from "./email/listMessages";
-import { emailSearchMessages } from "./email/searchMessages";
-import { emailGetMessage } from "./email/getMessage";
-import { webSearch } from "./webSearch";
-import { getPage } from "./getPage";
+import { readFile } from "./readFile";
 import { readSkill } from "./readSkill";
-import { checkpointState } from "./checkpointState";
-import { createTask } from "./createTask";
-import { updateTask } from "./updateTask";
-import { listTasksTool } from "./listTasks";
-import { writePlan } from "./writePlan";
+import { runAttackSurface } from "./runAttackSurface";
+import { runPentestWorkflow } from "./runPentestWorkflow";
+import { spawnCodingAgent } from "./spawnCodingAgent";
+import { spawnPentestAgent } from "./spawnPentestAgent";
+import { spawnPentestSwarm } from "./spawnPentestSwarm";
 import { submitPlan } from "./submitPlan";
-import {
-  askUserQuestions,
-  ASK_USER_QUESTIONS_TOOL_NAME,
-} from "./askUserQuestions";
+import { testEndpointVariations } from "./testEndpointVariations";
+import type { ToolContext } from "./types";
+import { updateFile } from "./updateFile";
+import { updateTask } from "./updateTask";
+import { validateDiscovery } from "./validateDiscovery";
+import { webSearch } from "./webSearch";
+import { writePlan } from "./writePlan";
+
 export { ASK_USER_QUESTIONS_TOOL_NAME } from "./askUserQuestions";
 
 /**
@@ -158,7 +186,7 @@ export { ASK_USER_QUESTIONS_TOOL_NAME } from "./askUserQuestions";
  * pick which ones to activate via the `activeTools` string array — the
  * AI SDK handles the filtering at the model level.
  */
-export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
+export function createAllTools(ctx: ToolContext) {
   return {
     // Browser automation tools (8 tools from Playwright MCP)
     ...createBrowserToolset(ctx),
@@ -194,6 +222,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     // Orchestration tools
     run_attack_surface: runAttackSurface(ctx),
     spawn_pentest_swarm: spawnPentestSwarm(ctx),
+    spawn_pentest_agent: spawnPentestAgent(ctx),
     spawn_coding_agent: spawnCodingAgent(ctx),
     run_pentest_workflow: runPentestWorkflow(ctx),
 
@@ -206,7 +235,7 @@ export function createAllTools(ctx: ToolContext & { subagentId?: string }) {
     list_memories: listMemories(ctx),
     get_memory: getMemory(ctx),
 
-    // Email tools (read-only inbox access)
+    // Email tools (inbox + outbound — gated at activeTools level by base class)
     ...createEmailToolset(ctx),
     email_list_inboxes: emailListInboxes(ctx),
     email_list_messages: emailListMessages(ctx),
@@ -272,6 +301,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "complete_authentication",
   "run_attack_surface",
   "spawn_pentest_swarm",
+  "spawn_pentest_agent",
   "spawn_coding_agent",
   "run_pentest_workflow",
   // "generate_report",
@@ -287,6 +317,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "email_search_messages",
   "email_get_attachments",
   "email_mark_read",
+  "send_email",
   // Web search (requires Pensar account)
   "web_search",
   "get_page",
@@ -359,5 +390,5 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
 /** Skill tool names — conditionally included when a skills registry is provided. */
 export const SKILL_TOOL_NAMES = ["read_skill"] as const;
 
-/** Email tool names — auto-appended to activeTools by the base class when inboxes are configured. */
+/** Email inbox tool names — filtered out by the base class when no inboxes are configured. */
 export { EMAIL_TOOL_NAMES as EMAIL_TOOL_NAMES_ACTIVE } from "./email";

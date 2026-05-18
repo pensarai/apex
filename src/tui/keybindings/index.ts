@@ -1,47 +1,9 @@
-/**
- * Keybindings Module
- *
- * Exports all keybinding-related functionality including:
- * - Leader key system
- * - Input buffer for text operations
- * - Editing actions
- */
-
 import type { ParsedKey } from "@opentui/core";
 
 export {
-  LeaderKeyProvider,
-  useLeaderKey,
-  type LeaderKeyState,
-  type LeaderKeyContextValue,
-} from "./keybind";
-
-export {
-  InputBuffer,
-  type InputState,
-  type Selection,
-  type UndoEntry,
-} from "./input-buffer";
-
-export {
-  allActions,
-  getAction,
-  getActionsByCategory,
-  actionsByKey,
-  actionsById,
-  movementActions,
-  selectionActions,
-  editingActions,
-  clipboardActions,
-  historyActions,
-  type Action,
-  type ActionCategory,
-} from "./actions";
-
-export {
   createKeybindings,
-  type KeybindingEntry,
   type KeybindingDependencies,
+  type KeybindingEntry,
 } from "./registry";
 
 export type KeybindInfo = Pick<
@@ -62,7 +24,7 @@ export function fromParsedKey(key: ParsedKey, _leader = false): KeybindInfo {
   };
 }
 
-export function keybindToString(info: KeybindInfo | undefined): string {
+function keybindToString(info: KeybindInfo | undefined): string {
   if (!info) return "";
   const parts: string[] = [];
 

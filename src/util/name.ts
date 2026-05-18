@@ -1,6 +1,9 @@
 import { z } from "zod";
-import { generateObjectResponse, type AIModel } from "../core/ai/ai";
-import type { AIAuthConfig } from "../core/ai/utils";
+import {
+  type AIAuthConfig,
+  type AIModel,
+  generateObjectResponse,
+} from "../core/ai";
 
 // Random name generator (GitHub-style)
 const adjectives = [

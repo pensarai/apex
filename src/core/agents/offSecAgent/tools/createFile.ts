@@ -1,11 +1,11 @@
 import { tool } from "ai";
-import { z } from "zod";
-import { writeFile, mkdir } from "fs/promises";
-import { dirname, resolve, isAbsolute } from "path";
 import { existsSync } from "fs";
+import { mkdir, writeFile } from "fs/promises";
+import { dirname, isAbsolute, resolve } from "path";
+import { z } from "zod";
 import type { ToolContext } from "./types";
 
-export const createFileInputSchema = z.object({
+const createFileInputSchema = z.object({
   path: z.string().describe("Absolute or relative path for the new file"),
   content: z.string().describe("Content to write to the file"),
   overwrite: z
@@ -21,7 +21,7 @@ export const createFileInputSchema = z.object({
     ),
 });
 
-export type CreateFileInput = z.infer<typeof createFileInputSchema>;
+type CreateFileInput = z.infer<typeof createFileInputSchema>;
 
 export type CreateFileResult = {
   success: boolean;

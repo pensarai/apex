@@ -1,5 +1,7 @@
-import { config } from "../config";
+// Importing through the api barrel would cycle. Use the leaf constants
+// module directly.
 import { getPensarApiUrl } from "../api/constants";
+import { config } from "../config";
 import type { ValidToken } from "./types";
 
 export type ApexAuthReason =
@@ -68,7 +70,7 @@ export function isTokenExpired(
  */
 let cachedClientId: string | null = null;
 
-export async function fetchWorkOSClientId(): Promise<string | null> {
+async function fetchWorkOSClientId(): Promise<string | null> {
   if (cachedClientId) return cachedClientId;
 
   try {
@@ -89,6 +91,13 @@ export async function fetchWorkOSClientId(): Promise<string | null> {
 let inFlightRefresh: Promise<string> | null = null;
 
 async function doRefresh(
+/**
+ * Refresh a WorkOS access token using the refresh token.
+ * Updates the stored config with new tokens on success.
+ *
+ * @returns The new access token, or null if refresh fails
+ */
+async function refreshAccessToken(
   clientId: string,
   refreshToken: string,
 ): Promise<string> {

@@ -1,6 +1,6 @@
 import { useKeyboard } from "@opentui/react";
-import { useFocus } from "../../context/focus";
 import { Dialog } from "../../context/dialog";
+import { useFocus } from "../../context/focus";
 import { keybindings } from "../../keybindings-registry";
 import { useTheme } from "../../theme";
 import DialogLayout from "../dialog-layout";

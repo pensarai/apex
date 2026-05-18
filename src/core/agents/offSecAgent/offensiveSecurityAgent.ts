@@ -1,30 +1,34 @@
-import { streamResponse } from "../../ai";
 import type {
   ModelMessage,
-  StreamTextResult,
   StopCondition,
+  StreamTextResult,
   TextStreamPart,
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import type { OffensiveSecurityAgentInput, CreateAgentInput } from "./types";
-import {
-  createAllTools,
-  EMAIL_TOOL_NAMES_ACTIVE,
-  PLAN_MODE_TOOL_NAMES,
-} from "./tools";
-import { createResponseTool, RESPONSE_TOOL_NAME } from "./tools/response";
-import { ASK_USER_QUESTIONS_TOOL_NAME } from "./tools/askUserQuestions";
-import { PersistentShell } from "./tools/persistentShell";
-import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+import { existsSync, mkdirSync } from "fs";
+import { writeFile } from "fs/promises";
+import { join } from "path";
+import { streamResponse } from "../../ai";
+import { AgentEventBus } from "../../eventBus";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
-import { AgentEventBus } from "../../eventBus";
-import { join } from "path";
-import { mkdirSync, existsSync } from "fs";
-import { writeFile } from "fs/promises";
+import { detectOSAndEnhancePrompt } from "../specialized/utils";
+import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+import {
+  ASK_USER_QUESTIONS_TOOL_NAME,
+  createAllTools,
+  createResponseTool,
+  EMAIL_TOOL_NAMES_ACTIVE,
+  PersistentShell,
+  PLAN_MODE_TOOL_NAMES,
+  PlaywrightMcpSession,
+  RESPONSE_TOOL_NAME,
+  SEND_EMAIL_TOOL_NAME,
+} from "./tools";
 import { StepTraceWriter } from "./trace";
+import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
 
 /**
  * General-purpose offensive security agent harness.
@@ -77,6 +81,29 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
+
+  /**
+   * This agent's Playwright MCP browser session. Either constructed fresh
+   * by this agent (when no `browserSession` was passed in) or supplied by
+   * the caller (e.g. `spawn_pentest_agent` constructs a fresh, isolated
+   * session for each worker, seeds it with a snapshot of the orchestrator's
+   * cookies + localStorage, and hands the seeded session in here so this
+   * agent's browser tools operate against an authenticated-but-isolated
+   * Chromium).
+   *
+   * Exposed publicly so spawn tools can read this agent's session (e.g.
+   * the pentest orchestrator's `browserSession` is what `spawn_pentest_agent`
+   * snapshots when it builds the worker's seeded clone). The session
+   * object is NOT shared between agents at runtime — each agent gets its
+   * own isolated Chromium so a sub-agent can't clobber its parent's DOM,
+   * cookies, or navigation state.
+   *
+   * Only populated for non-sandbox (local MCP) mode. In sandbox mode,
+   * browser state is already shared via the sandbox's per-sandbox
+   * Playwright user-data directory, so no host-side session object is
+   * needed.
+   */
+  public readonly browserSession?: PlaywrightMcpSession;
 
   private readonly abortSignal?: AbortSignal;
 
@@ -140,6 +167,18 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
+    // -- Browser session (local MCP mode only) -------------------------------
+    // Either inherit from the parent agent (e.g. pentest orchestrator handing
+    // its authenticated context down via spawn_pentest_agent) or construct a
+    // fresh one. The session itself does not spawn the MCP child / Chromium
+    // until the first browser tool call, so eager construction is cheap even
+    // for agents that never use browser tools. Sandbox-mode agents already
+    // share browser state via the sandbox's per-sandbox Playwright user-data
+    // dir, so they don't need a session object on the host.
+    if (!input.sandbox) {
+      this.browserSession = input.browserSession ?? new PlaywrightMcpSession();
+    }
+
     // -- Step trace (trace.jsonl) ---------------------------------------------
     // Created before tools so the checkpoint_state tool can reference it.
     const messagesDir =
@@ -195,9 +234,11 @@ export class OffensiveSecurityAgent<TResult = void> {
       traceWriter,
       tasksDir,
       enableThinking: input.enableThinking,
+      surfaceIntegrationEnabled: input.surfaceIntegrationEnabled,
       projectThreatModel: input.projectThreatModel,
       planSubagentId: input.planSubagentId,
       subagentId: input.subagentId,
+      browserSession: this.browserSession,
     });
 
     let tools: ToolSet = input.extraTools
@@ -251,14 +292,17 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
-    // -- Filter email tools when no inboxes are configured -------------------
+    // -- Filter email tools when no inboxes / SMTP are configured -----------
     const hasEmail =
       (input.session.config?.emailIntegration?.inboxes?.length ?? 0) > 0;
+    const hasSmtp = !!input.session.config?.smtpConfig;
 
     const emailToolSet = new Set<string>(EMAIL_TOOL_NAMES_ACTIVE);
-    let activeTools = hasEmail
-      ? (input.activeTools as string[])
-      : (input.activeTools as string[]).filter((t) => !emailToolSet.has(t));
+    let activeTools = (input.activeTools as string[]).filter((t) => {
+      if (!emailToolSet.has(t)) return true;
+      if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
+      return hasEmail;
+    });
 
     // -- Plan mode: restrict to read-only tools -----------------------------
     if (input.mode === "plan") {
@@ -307,9 +351,11 @@ export class OffensiveSecurityAgent<TResult = void> {
     // so the hash is stable across runs with identical prompt versions.
     const baseSystemPrompt =
       input.system ??
-      buildBaseSystemPrompt({
-        sandboxMode: agentCwd === input.session.rootPath,
-      });
+      detectOSAndEnhancePrompt(
+        buildBaseSystemPrompt({
+          sandboxMode: agentCwd === input.session.rootPath,
+        }),
+      );
     const systemPrompt =
       baseSystemPrompt + buildSessionWorkspaceSection(input.session, agentCwd);
 
@@ -436,11 +482,13 @@ export class OffensiveSecurityAgent<TResult = void> {
     const sid = this.subagentId;
     const bus = this.eventBus;
 
-    for await (const chunk of this.streamResult.fullStream) {
-      bus.emitStreamPart(chunk, sid);
+    try {
+      for await (const chunk of this.streamResult.fullStream) {
+        bus.emitStreamPart(chunk, sid);
+      }
+    } finally {
+      this.persistentShell?.dispose();
     }
-
-    this.persistentShell?.dispose();
 
     if (this.abortSignal?.aborted) {
       throw new DOMException("Agent aborted by user", "AbortError");
@@ -478,7 +526,7 @@ function wrapToolsWithApprovalGate(
       continue;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: ai-sdk CoreTool is a discriminated union that requires runtime narrowing for the approval gate wrapper.
     const t = coreTool as any;
 
     if (!t.execute) {
@@ -490,7 +538,7 @@ function wrapToolsWithApprovalGate(
 
     wrapped[name] = {
       ...t,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: ai-sdk tool execute receives an opaque ExecuteContext we don't need to narrow.
       execute: async (args: Record<string, unknown>, options: any) => {
         const toolCallId =
           args.toolCallId ??

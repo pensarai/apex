@@ -1,15 +1,15 @@
 import { useKeyboard } from "@opentui/react";
 import { useState } from "react";
-import { useRoute } from "../../context/route";
-import { useConfig } from "../../context/config";
 import {
   AVAILABLE_PROVIDERS,
   getConfiguredProviders,
-  type ProviderType,
   type Provider,
+  type ProviderType,
 } from "../../../core/providers";
-import { useTheme } from "../../theme";
+import { useConfig } from "../../context/config";
 import { Dialog } from "../../context/dialog";
+import { useRoute } from "../../context/route";
+import { useTheme } from "../../theme";
 import DialogLayout from "../dialog-layout";
 
 interface ProviderSelectionProps {
@@ -66,6 +66,7 @@ export default function ProviderSelection({
     <Dialog size="large" onClose={onClose}>
       <DialogLayout
         title="Select provider"
+        flushRight
         footerActions={[{ key: "Enter", label: "select", variant: "primary" }]}
       >
         {/* Provider List */}
@@ -79,6 +80,12 @@ export default function ProviderSelection({
             contentOptions: {
               flexDirection: "column",
               gap: 1,
+            },
+            scrollbarOptions: {
+              trackOptions: {
+                foregroundColor: colors.textMuted,
+                backgroundColor: colors.backgroundElement,
+              },
             },
           }}
           stickyScroll={false}

@@ -1,5 +1,6 @@
 # Reusable lint & format workflow
-# Runs ESLint, then checks Prettier formatting.
+# Runs Biome lint, then checks formatting (Biome for JS/TS/JSON/CSS,
+# Prettier for Markdown/YAML).
 
 name: Lint
 
@@ -22,8 +23,8 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Lint
+      - name: Lint (Biome)
         run: bun run lint
 
-      - name: Check formatting
+      - name: Check formatting (Biome + Prettier)
         run: bun run format:check

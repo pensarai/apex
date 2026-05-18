@@ -12,10 +12,10 @@
  *   pensar uninstall --force      Uninstall without confirmation prompt
  */
 
+import { spawnSync } from "child_process";
+import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import fs from "fs/promises";
-import { spawnSync } from "child_process";
 import * as readline from "readline";
 import {
   detectInstallMethod,

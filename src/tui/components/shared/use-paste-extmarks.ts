@@ -1,5 +1,5 @@
-import { useRef } from "react";
 import type { PasteEvent, TextareaRenderable } from "@opentui/core";
+import { useRef } from "react";
 import { getPasteText } from "../../utils/paste";
 
 interface PasteEntry {

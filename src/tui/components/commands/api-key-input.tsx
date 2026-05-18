@@ -1,11 +1,11 @@
 import { useKeyboard } from "@opentui/react";
 import { useState } from "react";
-import Input from "../input";
 import { type ProviderType, verifyApiKey } from "../../../core/providers";
-import { useTheme } from "../../theme";
 import { Dialog } from "../../context/dialog";
-import DialogLayout from "../dialog-layout";
+import { useTheme } from "../../theme";
 import { getPasteText } from "../../utils/paste";
+import DialogLayout from "../dialog-layout";
+import Input from "../input";
 
 type VerifyState = "idle" | "verifying" | "error";
 

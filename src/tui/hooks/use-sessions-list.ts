@@ -3,14 +3,15 @@
  * Used by SessionsDisplay.
  */
 
-import { useState, useEffect, useCallback } from "react";
 import { existsSync, readdirSync } from "fs";
 import { join } from "path";
-import {
-  sessions as sessionModule,
-  type SessionInfo,
-} from "../../core/session";
+import { useCallback, useEffect, useState } from "react";
 import { REPORT_FILENAME_MD } from "../../core/report";
+import {
+  list as listSessions,
+  type SessionInfo,
+  sessions as sessionModule,
+} from "../../core/session";
 
 export interface EnrichedSession extends SessionInfo {
   findingsCount: number;
@@ -37,7 +38,7 @@ function checkHasReport(rootPath: string): boolean {
   return existsSync(join(rootPath, REPORT_FILENAME_MD));
 }
 
-export function formatRelativeTime(timestamp: number): string {
+function formatRelativeTime(timestamp: number): string {
   const now = Date.now();
   const diff = now - timestamp;
   const minutes = Math.floor(diff / 60000);
@@ -58,10 +59,9 @@ export function useSessionsList() {
   const [searchTerm, setSearchTerm] = useState("");
 
   const loadSessions = useCallback(async () => {
-    setLoading(true);
     try {
       const enriched: EnrichedSession[] = [];
-      for await (const session of sessionModule.list()) {
+      for await (const session of listSessions()) {
         const hasOperatorState = existsSync(
           join(session.rootPath, "messages.json"),
         );
@@ -74,7 +74,6 @@ export function useSessionsList() {
           hasReport,
         });
       }
-      // Sort by updated time (newest first)
       enriched.sort((a, b) => b.time.updated - a.time.updated);
       setAllSessions(enriched);
     } catch (error) {
@@ -90,6 +89,7 @@ export function useSessionsList() {
 
   const deleteSession = useCallback(
     async (id: string) => {
+      setAllSessions((prev) => prev.filter((s) => s.id !== id));
       await sessionModule.remove({ sessionId: id });
       await loadSessions();
     },

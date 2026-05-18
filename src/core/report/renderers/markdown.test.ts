@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { renderMarkdown } from "./markdown";
 import type { PentestReport } from "../schemas";
+import { renderMarkdown } from "./markdown";
 
 function makeSampleReport(
   overrides: Partial<PentestReport> = {},

@@ -1,13 +1,13 @@
-import { useState, useEffect, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useRoute } from "../../context/route";
-import { useConfig } from "../../context/config";
-import { useAgent } from "../../context/agent";
-import { SpinnerDots } from "../sprites";
+import { useEffect, useMemo, useState } from "react";
 import type { ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
+import { useAgent } from "../../context/agent";
+import { useConfig } from "../../context/config";
+import { useRoute } from "../../context/route";
 import { useTheme } from "../../theme";
-import { DialogControls } from "../shared/dialog-controls";
+import { SpinningDots } from "../loaders";
+import { DialogControls } from "../shared";
 
 type WizardStep = "config" | "creating";
 
@@ -231,7 +231,10 @@ export default function HITLWizard(props: HITLWizardProps) {
         flexGrow={1}
         gap={2}
       >
-        <SpinnerDots label="Creating operator session..." fg={colors.primary} />
+        <SpinningDots
+          label="Creating operator session..."
+          fg={colors.primary}
+        />
       </box>
     );
   }

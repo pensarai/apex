@@ -1,11 +1,12 @@
-import { tool } from "ai";
-import { hasToolCall } from "ai";
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import type { SpecializedAgentInput } from "../../offSecAgent/types";
+import { hasToolCall, tool } from "ai";
+import {
+  OffensiveSecurityAgent,
+  type SpecializedAgentInput,
+} from "../../offSecAgent";
 import { WHITEBOX_ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
 import {
-  WhiteboxAttackSurfaceResultSchema,
   type WhiteboxAttackSurfaceResult,
+  WhiteboxAttackSurfaceResultSchema,
 } from "./types";
 
 // ---------------------------------------------------------------------------

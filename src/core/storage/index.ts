@@ -1,7 +1,6 @@
+import fs, { readdir } from "fs/promises";
 import os from "os";
 import path from "path";
-import fs from "fs/promises";
-import { readdir } from "fs/promises";
 
 import z from "zod";
 import { NamedError } from "../../util/errors";
@@ -68,7 +67,7 @@ export async function writeRaw(key: string[], content: string) {
 /**
  * Append raw content to a file within the .pensar directory
  */
-export async function appendRaw(key: string[], content: string) {
+async function appendRaw(key: string[], content: string) {
   const dir = getBaseDir();
   const target = path.join(dir, ...key);
   return withErrorHandling(async () => {

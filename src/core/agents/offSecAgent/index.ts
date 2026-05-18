@@ -1,42 +1,46 @@
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
-export { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
-export type {
-  OffensiveSecurityAgentInput,
-  CreateAgentInput,
-  SpecializedAgentInput,
-  AgentMode,
-} from "./types";
 
+export type { AgentEventMap } from "../../eventBus";
 // ---------------------------------------------------------------------------
 // Event Bus
 // ---------------------------------------------------------------------------
 export { AgentEventBus } from "../../eventBus";
-export type { AgentEventMap } from "../../eventBus";
-
+export { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
+// ---------------------------------------------------------------------------
+// System prompts
+// ---------------------------------------------------------------------------
+export {
+  BASE_SYSTEM_PROMPT,
+  type BaseSystemPromptOptions,
+  buildBaseSystemPrompt,
+  buildProvidedFilesSection,
+  buildSessionWorkspaceSection,
+} from "./prompt";
+// ---------------------------------------------------------------------------
+// Tools — re-exported via the tools barrel.
+// ---------------------------------------------------------------------------
+export * from "./tools";
+export type {
+  CheckpointInput,
+  InitRecord,
+  StateCheckpoint,
+  StepRecord,
+  StepTraceWriterOpts,
+  ToolOutputType,
+  TraceRecord,
+} from "./trace";
 // ---------------------------------------------------------------------------
 // Trace
 // ---------------------------------------------------------------------------
 export { StepTraceWriter } from "./trace";
-export type {
-  StepRecord,
-  StateCheckpoint,
-  InitRecord,
-  CheckpointInput,
-  TraceRecord,
-  ToolOutputType,
-  StepTraceWriterOpts,
-} from "./trace";
-
-// ---------------------------------------------------------------------------
-// Tools
-// ---------------------------------------------------------------------------
 export {
-  createAllTools,
-  ALL_TOOL_NAMES,
-  PLAN_MODE_TOOL_NAMES,
-  SKILL_TOOL_NAMES,
-  ASK_USER_QUESTIONS_TOOL_NAME,
-  type ToolName,
-} from "./tools";
+  type AgentMode,
+  ApexFindingObject,
+  type CommandCancelHandle,
+  type CreateAgentInput,
+  type Finding,
+  type OffensiveSecurityAgentInput,
+  type SpecializedAgentInput,
+} from "./types";

@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { planFilePath, readPlan } from "../../../plan";
 import type { ToolContext } from "./types";
-import { readPlan, planFilePath } from "../../../plan";
 
 const submitPlanInputSchema = z.object({
   toolCallDescription: z

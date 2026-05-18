@@ -5,15 +5,14 @@
  * keyboard-navigable list. Uses the standard Dialog + DialogLayout pattern.
  */
 
-import React, { useState, useEffect, useRef, memo } from "react";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { ScrollBoxRenderable } from "@opentui/core";
-
-import { useTheme } from "../../theme";
+import type React from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useDimensions } from "../../context/dimensions";
-import { AsciiSpinner } from "../shared/ascii-spinner";
+import { useTheme } from "../../theme";
 import { scrollToIndex } from "../../utils/scroll";
-import { getToolDisplayLabel } from "../shared/tool-registry";
+import { AsciiSpinner, getToolDisplayLabel } from "../shared";
 import { SUBAGENT_STATUS_ORDER, type SubagentSession } from "./subagent-state";
 
 // ---------------------------------------------------------------------------
@@ -137,7 +136,7 @@ const SubagentHubCard = memo(function SubagentHubCard({
     <box flexDirection="column">
       {/* Line 1: prefix + status icon + name */}
       <box flexDirection="row">
-        <text content={prefix} />
+        <text fg={focused ? colors.primary : colors.text} content={prefix} />
         {statusIcon}
         <text fg={nameColor} content={session.name} />
       </box>
@@ -175,6 +174,8 @@ export const SubagentHub = memo(function SubagentHub({
 
   const [focusedIndex, setFocusedIndex] = useState(0);
   const scrollboxRef = useRef<ScrollBoxRenderable | null>(null);
+  const sortedRef = useRef(sorted);
+  sortedRef.current = sorted;
 
   useEffect(() => {
     if (sorted.length === 0) {
@@ -184,9 +185,17 @@ export const SubagentHub = memo(function SubagentHub({
     }
   }, [sorted.length, focusedIndex]);
 
+  // Scroll only when the user navigates (focusedIndex changes), not on every
+  // data update. Using a ref for sorted avoids re-triggering when only the
+  // session data changes (e.g. new logs arrive).
   useEffect(() => {
-    scrollToIndex(scrollboxRef.current, focusedIndex, sorted, (s) => s.id);
-  }, [focusedIndex, sorted]);
+    scrollToIndex(
+      scrollboxRef.current,
+      focusedIndex,
+      sortedRef.current,
+      (s) => s.id,
+    );
+  }, [focusedIndex]);
 
   // Keyboard navigation (Escape is handled by DialogProvider / SubagentDialog)
   useKeyboard((key) => {
@@ -231,6 +240,12 @@ export const SubagentHub = memo(function SubagentHub({
               gap: 1,
               paddingTop: 1,
               paddingBottom: 1,
+            },
+            scrollbarOptions: {
+              trackOptions: {
+                foregroundColor: colors.textMuted,
+                backgroundColor: colors.backgroundElement,
+              },
             },
           }}
           stickyScroll={false}

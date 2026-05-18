@@ -1,13 +1,13 @@
 import { tool } from "ai";
-import { z } from "zod";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
-import type { ToolContext } from "./types";
+import { z } from "zod";
 import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
+import type { ToolContext } from "./types";
 
 const MAX_INLINE_BODY = 5_000;
 
-export const httpRequestInputSchema = z.object({
+const httpRequestInputSchema = z.object({
   url: z.string().describe("The URL to request"),
   method: z
     .enum(["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
@@ -33,7 +33,7 @@ export const httpRequestInputSchema = z.object({
     ),
 });
 
-export type HttpRequestInput = z.infer<typeof httpRequestInputSchema>;
+type HttpRequestInput = z.infer<typeof httpRequestInputSchema>;
 
 export type HttpRequestResult = {
   success: boolean;

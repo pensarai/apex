@@ -95,6 +95,10 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
     const targets = args.targets as unknown[];
     return `pentest swarm ×${targets?.length ?? "?"}`;
   },
+  spawn_pentest_agent: (args) => {
+    const name = (args.name as string) ?? "pentest worker";
+    return `pentest worker — ${name}`;
+  },
   run_pentest_workflow: (args) => {
     const mode = args.cwd ? "whitebox" : "blackbox";
     return `pentest workflow (${mode}) ${args.target || ""}`;
@@ -129,17 +133,21 @@ export function getToolSummary(
 ): string {
   // Check registry first
   const summaryFn = TOOL_SUMMARY_MAP[toolName];
+  let summary: string;
   if (summaryFn) {
-    return summaryFn(args);
+    summary = summaryFn(args);
+  } else {
+    // Fallback: use first non-description arg value
+    const firstArg = Object.entries(args)
+      .filter(([k]) => k !== "toolCallDescription")
+      .map(([, v]) => (typeof v === "string" ? v : JSON.stringify(v)))
+      .find((v) => v && v.length > 0);
+
+    summary = firstArg
+      ? `${toolName} ${String(firstArg).slice(0, 50)}`
+      : toolName;
   }
-
-  // Fallback: use first non-description arg value
-  const firstArg = Object.entries(args)
-    .filter(([k]) => k !== "toolCallDescription")
-    .map(([, v]) => (typeof v === "string" ? v : JSON.stringify(v)))
-    .find((v) => v && v.length > 0);
-
-  return firstArg ? `${toolName} ${String(firstArg).slice(0, 50)}` : toolName;
+  return summary;
 }
 
 /**
@@ -170,14 +178,14 @@ export function getToolDisplayLabel(
  * @param name - Tool name
  * @param fn - Summary function
  */
-export function registerToolSummary(name: string, fn: ToolSummaryFn): void {
+function registerToolSummary(name: string, fn: ToolSummaryFn): void {
   TOOL_SUMMARY_MAP[name] = fn;
 }
 
 /**
  * Check if a tool has a registered summary function.
  */
-export function hasToolSummary(name: string): boolean {
+function hasToolSummary(name: string): boolean {
   return name in TOOL_SUMMARY_MAP;
 }
 
@@ -206,7 +214,9 @@ export function getArgsPreview(
   if (filteredArgs.length === 1) {
     const [, value] = filteredArgs[0];
     const str = typeof value === "string" ? value : JSON.stringify(value);
-    return str.length > maxLength ? str.slice(0, maxLength) + "…" : str;
+    const truncated =
+      str.length > maxLength ? str.slice(0, maxLength) + "…" : str;
+    return truncated;
   }
 
   // For multi-arg tools, show key:value pairs
@@ -231,7 +241,7 @@ export function getArgsPreview(
   });
 
   const preview = parts.join(" ");
-  return preview.length > maxLength
-    ? preview.slice(0, maxLength) + "…"
-    : preview;
+  const truncated =
+    preview.length > maxLength ? preview.slice(0, maxLength) + "…" : preview;
+  return truncated;
 }

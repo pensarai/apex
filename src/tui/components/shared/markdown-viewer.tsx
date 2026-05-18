@@ -5,14 +5,14 @@
  * Callers wrap it in <Dialog>, a custom overlay, or any other container.
  */
 
-import { useRef, useMemo, useCallback, type ReactNode } from "react";
 import {
-  Renderable,
-  ScrollBoxRenderable,
-  SyntaxStyle,
   type CodeRenderable,
+  type Renderable,
+  type ScrollBoxRenderable,
+  SyntaxStyle,
 } from "@opentui/core";
 import type { Token } from "marked";
+import { type ReactNode, useCallback, useMemo, useRef } from "react";
 import { useTheme } from "../../theme";
 
 interface MarkdownViewerProps {
@@ -85,7 +85,7 @@ export function useMarkdownRenderNode() {
   );
 }
 
-export function MarkdownViewer({
+function MarkdownViewer({
   content,
   loading = false,
   width,
@@ -148,7 +148,7 @@ export function MarkdownViewer({
           },
           scrollbarOptions: {
             trackOptions: {
-              foregroundColor: colors.primary,
+              foregroundColor: colors.textMuted,
               backgroundColor: colors.backgroundElement,
             },
           },

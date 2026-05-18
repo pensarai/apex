@@ -1,10 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+import type { CweEntry, ValidatedCweEntry } from "./types";
 import {
   CweEntrySchema,
-  ValidatedCweEntrySchema,
   hasCanonicalName,
+  ValidatedCweEntrySchema,
 } from "./types";
-import type { CweEntry, ValidatedCweEntry } from "./types";
 
 describe("CweEntrySchema", () => {
   it("accepts valid CWE entry", () => {

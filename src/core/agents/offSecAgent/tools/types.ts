@@ -1,15 +1,14 @@
-import type { AIModel } from "../../../ai";
-import type { AIAuthConfig } from "../../../ai/utils";
+import type { AIAuthConfig, AIModel } from "../../../ai";
 import type { CredentialManager } from "../../../credentials";
+import type { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../../findings/registry";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
-
-import type { AgentEventBus } from "../../../eventBus";
-import type { PersistentShell } from "./persistentShell";
-import type { UnifiedSandbox } from "./sandbox";
 import type { StepTraceWriter } from "../trace";
+import type { PersistentShell } from "./persistentShell";
+import type { PlaywrightMcpSession } from "./playwrightMcp";
+import type { UnifiedSandbox } from "./sandbox";
 
 /**
  * Shared context passed to every tool factory.
@@ -95,6 +94,13 @@ export type ToolContext = {
   enableThinking?: boolean;
 
   /**
+   * Whitebox attack surface flag. Forwarded into `runPentestWorkflow` so the
+   * orchestrator-driven pentest path honors the user's config / env override.
+   * Defaults to `true` when undefined.
+   */
+  surfaceIntegrationEnabled?: boolean;
+
+  /**
    * Project-level threat model content (e.g. from `.pensar/threat_model.md`).
    * Passed to spawned per-endpoint threat-model sub-agents as additional
    * context so they can incorporate deployment details, compliance
@@ -108,4 +114,26 @@ export type ToolContext = {
    * plan agents to write plans scoped to their corresponding execution agent.
    */
   planSubagentId?: string;
+
+  /** Owner subagent id — emitted as `parentSubagentId` on lifecycle events. */
+  subagentId?: string;
+
+  /**
+   * Playwright MCP browser session for this agent's browser tools.
+   *
+   * When set, `createBrowserToolset` wires its browser tools through this
+   * pre-constructed session instead of spinning up its own MCP
+   * child-process / Chromium. This is how `spawn_pentest_agent` hands a
+   * worker a session that was cloned from the orchestrator's session and
+   * pre-seeded with the orchestrator's cookies + localStorage — the
+   * worker is authenticated for the same origins as the orchestrator but
+   * operates against an isolated Chromium so its actions do not leak back
+   * to the orchestrator or to sibling workers.
+   *
+   * Lifecycle: when this field is set externally, the supplier owns
+   * disconnect (e.g. `spawn_pentest_agent` tears down the worker's
+   * session on completion). When unset, `createBrowserToolset` constructs
+   * its own session and wires `abortSignal` to disconnect.
+   */
+  browserSession?: PlaywrightMcpSession;
 };

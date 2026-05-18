@@ -1,13 +1,14 @@
-import { SpinnerDots } from "./sprites";
-import { useState, memo } from "react";
+import { memo, useState } from "react";
 import type { Message } from "../../core/messages/types";
-import {
-  markdownToStyledText,
-  getStableMessageKey,
-  getArgsPreview,
-} from "./shared";
-import { useTheme } from "../theme";
 import { useDimensions } from "../context/dimensions";
+import { useObfuscation } from "../context/obfuscation";
+import { useTheme } from "../theme";
+import { ShiningText, SpinningDots } from "./loaders";
+import {
+  getArgsPreview,
+  getStableMessageKey,
+  markdownToStyledText,
+} from "./shared";
 
 export type Subagent = {
   id: string;
@@ -124,7 +125,7 @@ interface AgentDisplayProps {
   focused?: boolean; // Controls whether this scrollbox responds to scroll events
 }
 
-export default function AgentDisplay({
+function AgentDisplay({
   messages,
   isStreaming = false,
   children,
@@ -158,7 +159,7 @@ export default function AgentDisplay({
         },
         scrollbarOptions: {
           trackOptions: {
-            foregroundColor: colors.primary,
+            foregroundColor: colors.textMuted,
             backgroundColor: colors.backgroundElement,
           },
         },
@@ -196,7 +197,7 @@ export default function AgentDisplay({
 
       {isStreaming && (
         <box flexDirection="row" alignItems="center">
-          <SpinnerDots label="Thinking..." fg={colors.primary} />
+          <SpinningDots label="Thinking..." fg={colors.primary} />
         </box>
       )}
 
@@ -211,6 +212,8 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
   subagent: Subagent;
 }) {
   const { colors } = useTheme();
+  // Subscribe so memoised render bypasses cached output on /obfuscate toggle.
+  useObfuscation();
   const [open, setOpen] = useState(false);
 
   return (
@@ -224,7 +227,7 @@ const SubAgentDisplay = memo(function SubAgentDisplay({
     >
       <box flexDirection="row" alignItems="center" gap={1}>
         {subagent.status === "pending" && (
-          <SpinnerDots label={subagent.name} fg={colors.primary} />
+          <SpinningDots label={subagent.name} fg={colors.primary} />
         )}
         {subagent.status === "completed" && (
           <text fg={colors.primary}> ✓ {subagent.name}</text>
@@ -257,6 +260,8 @@ const AgentMessage = memo(function AgentMessage({
 }) {
   const { colors } = useTheme();
   const dimensions = useDimensions();
+  // Subscribe so memoised render bypasses cached output on /obfuscate toggle.
+  useObfuscation();
   let content = "";
 
   if (typeof message.content === "string") {
@@ -280,7 +285,9 @@ const AgentMessage = memo(function AgentMessage({
     content = JSON.stringify(message.content, null, 2);
   }
 
-  // Render markdown for assistant messages
+  // Render markdown for assistant messages (markdown pipeline obfuscates
+  // internally). Plain-text branches flow into `<text>` children, where
+  // the central TextNodeRenderable patch handles redaction.
   const displayContent =
     message.role === "assistant"
       ? markdownToStyledText(content, colors)
@@ -328,12 +335,7 @@ const AgentMessage = memo(function AgentMessage({
         >
           {isPendingTool ? (
             <>
-              <SpinnerDots
-                label={
-                  typeof displayContent === "string" ? displayContent : content
-                }
-                fg={colors.primary}
-              />
+              <ShiningText text={content} fg={colors.warning} />
               {/* Args preview for pending tools */}
               {argsPreview && (
                 <text fg={colors.textMuted} content={`  ${argsPreview}`} />
@@ -341,13 +343,15 @@ const AgentMessage = memo(function AgentMessage({
               {/* Streaming logs for pending tools */}
               {streamingLogs.length > 0 && (
                 <box flexDirection="column" marginTop={0} paddingLeft={2}>
-                  {streamingLogs.slice(-3).map((log, idx) => (
-                    <text
-                      key={idx}
-                      fg={colors.textMuted}
-                      content={log.length > 100 ? log.slice(0, 100) + "…" : log}
-                    />
-                  ))}
+                  {streamingLogs.slice(-3).map((log, idx) => {
+                    const trimmed =
+                      log.length > 100 ? log.slice(0, 100) + "…" : log;
+                    return (
+                      <text key={idx} fg={colors.textMuted}>
+                        {trimmed}
+                      </text>
+                    );
+                  })}
                 </box>
               )}
             </>
@@ -402,18 +406,19 @@ function ToolDetails({ message }: { message: DisplayMessage }) {
     return null;
   }
 
-  // Format result for display (truncate if too long)
+  // Format result for display (truncate if too long). Redaction is
+  // handled by the central TextNodeRenderable patch when this string
+  // hits a `<text>` child.
   const formatResult = (result: unknown): string => {
+    let str: string;
     try {
-      const str = JSON.stringify(result, null, 2);
-      // Truncate very long results
-      if (str.length > 2000) {
-        return str.substring(0, 2000) + "\n... (truncated)";
-      }
-      return str;
+      str = JSON.stringify(result, null, 2);
     } catch {
-      return String(result);
+      str = String(result);
     }
+    const truncated =
+      str.length > 2000 ? str.substring(0, 2000) + "\n... (truncated)" : str;
+    return truncated;
   };
 
   return (

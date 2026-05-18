@@ -1,6 +1,5 @@
 import { z } from "zod";
-import type { SpecializedAgentInput } from "../../offSecAgent/types";
-import type { UnifiedSandbox } from "../../offSecAgent/tools/sandbox";
+import type { SpecializedAgentInput, UnifiedSandbox } from "../../offSecAgent";
 
 /**
  * Structured result returned by the environment agent via the `response` tool.

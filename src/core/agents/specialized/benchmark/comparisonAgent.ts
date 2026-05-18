@@ -1,8 +1,8 @@
 import { stepCountIs, tool } from "ai";
-import { z } from "zod";
-import { streamResponse, type AIModel } from "../../../ai";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import { z } from "zod";
+import { type AIModel, streamResponse } from "../../../ai";
 import type { ComparisonResult } from "./types";
 
 const COMPARISON_SYSTEM_PROMPT = `

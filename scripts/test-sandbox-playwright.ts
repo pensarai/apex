@@ -12,21 +12,18 @@
  *   DAYTONA_API_KEY=<key> bun run scripts/test-sandbox-playwright.ts
  */
 
-import type {
-  UnifiedSandbox,
-  SandboxExecuteOptions,
-  SandboxExecutionResult,
-} from "../src/core/agents/offSecAgent/tools/sandbox";
-import {
-  checkSandboxPlaywright,
-  installSandboxPlaywright,
-  ensureSandboxPlaywright,
-  ensureSandboxBrowser,
-  createSandboxBrowserTools,
-} from "../src/core/agents/offSecAgent/tools/sandboxPlaywright";
-import type { ToolContext } from "../src/core/agents/offSecAgent/tools/types";
 import { mkdirSync } from "fs";
 import { join } from "path";
+import {
+  checkSandboxPlaywright,
+  createSandboxBrowserTools,
+  ensureSandboxBrowser,
+  installSandboxPlaywright,
+  type SandboxExecuteOptions,
+  type SandboxExecutionResult,
+  type ToolContext,
+  type UnifiedSandbox,
+} from "../src/core/agents/offSecAgent";
 
 // ---------------------------------------------------------------------------
 // Daytona REST API helpers

@@ -1,7 +1,0 @@
-node_modules
-build
-dist
-bin
-*.tgz
-sst-env.d.ts
-*.mdx

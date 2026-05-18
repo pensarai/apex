@@ -9,16 +9,18 @@
 import {
   existsSync,
   mkdirSync,
-  writeFileSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   statSync,
+  writeFileSync,
 } from "fs";
 import { join } from "path";
 import type { SessionInfo } from "./index";
+
 export type { SessionInfo };
-import type { AuthenticationInfo } from "./types";
+
 import type { ModelMessage } from "ai";
+import type { AuthenticationInfo } from "./types";
 
 // ---------------------------------------------------------------------------
 // Shared path constants — used by both writer and reader
@@ -34,7 +36,7 @@ const MANIFEST_FILE = "agent-manifest.json";
 /**
  * Saved subagent data format
  */
-export interface SavedSubagentData {
+interface SavedSubagentData {
   agentName: string;
   timestamp: string;
   target?: string;
@@ -69,7 +71,7 @@ export interface UIMessage {
 /**
  * Information needed to resume a paused agent
  */
-export interface ResumeInfo {
+interface ResumeInfo {
   target: string;
   objective: string;
   vulnerabilityClass: string;

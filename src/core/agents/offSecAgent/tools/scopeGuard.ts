@@ -26,8 +26,8 @@
  */
 
 import { getDomain } from "tldts";
-import type { ToolContext } from "./types";
 import { parseTargetUrl } from "../../../../util/url";
+import type { ToolContext } from "./types";
 
 /**
  * Compute the registrable domain (eTLD+1) for a hostname using the

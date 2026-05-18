@@ -1,28 +1,30 @@
 /**
- * Email tool suite for agent inbox interaction.
+ * Email tool suite for agent inbox interaction and outbound email.
  *
- * Provides six tools that let agents comprehensively interact with
- * Gmail, Outlook, and IMAP inboxes configured at the workspace level.
+ * Provides six read-only inbox tools (Gmail, Outlook, IMAP) plus a
+ * send_email tool that uses SMTP (works with any SMTP server including
+ * Resend's SMTP relay).
  */
 
+export { emailGetMessage } from "./getMessage";
 export { emailListInboxes } from "./listInboxes";
 export { emailListMessages } from "./listMessages";
-export { emailGetMessage } from "./getMessage";
 export { emailSearchMessages } from "./searchMessages";
-export { emailGetAttachments } from "./getAttachments";
-export { emailMarkRead } from "./markRead";
 
 import type { ToolContext } from "../types";
+import { emailGetAttachments } from "./getAttachments";
+import { emailGetMessage } from "./getMessage";
 import { emailListInboxes } from "./listInboxes";
 import { emailListMessages } from "./listMessages";
-import { emailGetMessage } from "./getMessage";
-import { emailSearchMessages } from "./searchMessages";
-import { emailGetAttachments } from "./getAttachments";
 import { emailMarkRead } from "./markRead";
+import { emailSearchMessages } from "./searchMessages";
+import { sendEmail } from "./sendEmail";
 
 /**
- * Create the full email toolset. All six tools share the same ToolContext
- * and pull inbox config from `ctx.session.config.emailIntegration`.
+ * Create the full email toolset. Inbox tools pull config from
+ * `ctx.session.config.emailIntegration`; send_email pulls from
+ * `ctx.session.config.smtpConfig`. Gating for each subset is
+ * handled by the base agent class at the activeTools level.
  */
 export function createEmailToolset(ctx: ToolContext) {
   return {
@@ -32,10 +34,11 @@ export function createEmailToolset(ctx: ToolContext) {
     email_search_messages: emailSearchMessages(ctx),
     email_get_attachments: emailGetAttachments(ctx),
     email_mark_read: emailMarkRead(ctx),
+    send_email: sendEmail(ctx),
   } as const;
 }
 
-/** All email tool names as a typed array. */
+/** All email tool names. Inbox tools gated on emailIntegration.inboxes; send_email gated on smtpConfig. */
 export const EMAIL_TOOL_NAMES = [
   "email_list_inboxes",
   "email_list_messages",
@@ -43,6 +46,7 @@ export const EMAIL_TOOL_NAMES = [
   "email_search_messages",
   "email_get_attachments",
   "email_mark_read",
+  "send_email",
 ] as const;
 
-export type EmailToolName = (typeof EMAIL_TOOL_NAMES)[number];
+export const SEND_EMAIL_TOOL_NAME = "send_email" as const;

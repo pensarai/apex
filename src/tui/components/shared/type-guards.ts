@@ -7,8 +7,8 @@
 
 import type {
   DisplayMessage,
-  ToolStatus,
   SubagentLogEntry,
+  ToolStatus,
   WorkflowData,
 } from "../agent-display";
 
@@ -46,7 +46,7 @@ export function isToolMessage(msg: DisplayMessage): msg is ToolDisplayMessage {
 /**
  * Check if a message is a pending tool call (executing or streaming args).
  */
-export function isPendingTool(msg: DisplayMessage): boolean {
+function isPendingTool(msg: DisplayMessage): boolean {
   return (
     isToolMessage(msg) &&
     (msg.status === "pending" || msg.status === "streaming")
@@ -56,13 +56,13 @@ export function isPendingTool(msg: DisplayMessage): boolean {
 /**
  * Check if a message is a completed tool call.
  */
-export function isCompletedTool(msg: DisplayMessage): boolean {
+function isCompletedTool(msg: DisplayMessage): boolean {
   return isToolMessage(msg) && msg.status === "completed";
 }
 
 /**
  * Check if a message is an errored tool call.
  */
-export function isErroredTool(msg: DisplayMessage): boolean {
+function isErroredTool(msg: DisplayMessage): boolean {
   return isToolMessage(msg) && msg.status === "error";
 }

@@ -7,22 +7,21 @@
  * DialogProvider close the dialog.
  */
 
+import { useKeyboard } from "@opentui/react";
+import type { ReactNode } from "react";
 import {
-  useState,
   useEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
-import type { ReactNode } from "react";
-import { useKeyboard } from "@opentui/react";
-
-import { useTheme } from "../../theme";
 import { useDialog } from "../../context/dialog";
+import { useTheme } from "../../theme";
 import DialogLayout from "../dialog-layout";
-import { AsciiSpinner } from "../shared/ascii-spinner";
-import { SubagentHub, sortSessions } from "./subagent-hub";
+import { AsciiSpinner } from "../shared";
 import { SubagentDetailView } from "./subagent-detail-view";
+import { SubagentHub, sortSessions } from "./subagent-hub";
 import type { SubagentSession, SubagentStore } from "./subagent-state";
 
 type View = { type: "hub" } | { type: "detail"; id: string };
@@ -104,6 +103,7 @@ export default function SubagentDialog({ store }: SubagentDialogProps) {
       <DialogLayout
         title={title}
         escLabel="back"
+        flushRight
         footerActions={[
           { key: "\u2190\u2192", label: "prev/next" },
           { key: "\u2191\u2193", label: "scroll" },
@@ -127,6 +127,7 @@ export default function SubagentDialog({ store }: SubagentDialogProps) {
   return (
     <DialogLayout
       title={`Agents (${sessions.size})`}
+      flushRight
       footerActions={[
         { key: "Enter", label: "view", variant: "primary" },
         { key: "\u2191\u2193", label: "navigate" },

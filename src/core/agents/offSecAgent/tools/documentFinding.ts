@@ -1,28 +1,28 @@
 import { tool } from "ai";
-import { z } from "zod";
-import { join } from "path";
 import { spawn } from "child_process";
 import {
-  existsSync,
-  writeFileSync,
   appendFileSync,
   chmodSync,
-  unlinkSync,
+  existsSync,
   mkdirSync,
+  unlinkSync,
+  writeFileSync,
 } from "fs";
-import type { ToolContext } from "./types";
-import {
-  scoreFindingWithCVSS,
-  type CVSSScorerInput,
-  type CVSSScorerResult,
-} from "../../specialized/cvssScorer";
-import {
-  judgeFinding,
-  type FindingJudgeInput,
-} from "../../specialized/findingJudge";
-import type { Finding } from "../types";
+import { join } from "path";
+import { z } from "zod";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
+import {
+  type CVSSScorerInput,
+  type CVSSScorerResult,
+  scoreFindingWithCVSS,
+} from "../../specialized/cvssScorer";
+import {
+  type FindingJudgeInput,
+  judgeFinding,
+} from "../../specialized/findingJudge";
+import type { Finding } from "../types";
+import type { ToolContext } from "./types";
 
 export const documentVulnerabilityInputSchema = z.object({
   title: z.string().describe("Finding title"),
@@ -178,6 +178,8 @@ CRITICAL RULES — READ BEFORE CALLING:
         const judgeInput: FindingJudgeInput = {
           pocScript: input.pocContent,
           pocType: input.pocType,
+          pocPath,
+          target: ctx.target ?? ctx.session.targets[0],
           pocOutput: {
             stdout: stdout || "",
             stderr: stderr || "",
@@ -193,12 +195,16 @@ CRITICAL RULES — READ BEFORE CALLING:
           },
         };
 
-        const judgeResult = await judgeFinding(
-          judgeInput,
-          ctx.model!,
-          ctx.authConfig,
-          ctx.abortSignal,
-        );
+        const judgeResult = await judgeFinding(judgeInput, {
+          model: ctx.model!,
+          session: ctx.session,
+          authConfig: ctx.authConfig,
+          abortSignal: ctx.abortSignal,
+          eventBus: ctx.eventBus,
+          sandbox: ctx.sandbox,
+          target: ctx.target,
+          enableThinking: ctx.enableThinking,
+        });
 
         if (!judgeResult.valid) {
           cleanupPocFiles(ctx, filename);
@@ -400,6 +406,12 @@ CRITICAL RULES — READ BEFORE CALLING:
             findingType: judgeResult.findingType,
             confidence: judgeResult.confidence,
             reasoning: judgeResult.reasoning,
+            concerns: judgeResult.concerns,
+            verificationSteps: judgeResult.verificationSteps,
+            toolEvidence: judgeResult.toolEvidence,
+            reproducedPoc: judgeResult.reproducedPoc,
+            webResearchUsed: judgeResult.webResearchUsed,
+            limitations: judgeResult.limitations,
             ...(judgeResult.error && { error: judgeResult.error }),
           },
         };

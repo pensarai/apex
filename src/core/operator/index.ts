@@ -5,66 +5,26 @@
  * for interactive pentesting sessions.
  */
 
-// Types
-export type {
-  PermissionTier,
-  TierDefinition,
-  OperatorMode,
-  OperatorStage,
-  StageDefinition,
-  PendingApproval,
-  ApprovalDecision,
-  ActionHistoryEntry,
-  StageProgress,
-  OperatorSessionState,
-  OperatorSettings,
-  OperatorEvent,
-} from "./types";
-
-export {
-  PERMISSION_TIERS,
-  OPERATOR_MODES,
-  OPERATOR_MODE_CYCLE,
-  OPERATOR_STAGES,
-  getStagesInOrder,
-  getNextStage,
-  createInitialOperatorState,
-  OperatorSettingsObject,
-} from "./types";
-
-// Tool Classifier
-export {
-  classifyToolCall,
-  getClassificationReason,
-  type ToolClassificationContext,
-} from "./toolClassifier";
-
-// Permission Policy
-export {
-  checkPermission,
-  shouldAutoApprove,
-  getApprovalRequirement,
-  getPolicySummary,
-  type PermissionPolicyConfig,
-  type PermissionCheckResult,
-} from "./permissionPolicy";
-
 // Approval Gate
 export {
-  ApprovalGate,
-  ApprovalBlockedError,
   ApprovalDeniedError,
-  ApprovalTimeoutError,
-  DEFAULT_DECISION_TIMEOUT_MS,
-  wrapToolWithApproval,
+  ApprovalGate,
   type ApprovalGateConfig,
+  INTERNAL_ID_PATTERN,
 } from "./approvalGate";
-
-// Stage Manager
-export { StageManager } from "./stageManager";
-
-// Stage Inference
+// Types
+export type {
+  ActionHistoryEntry,
+  ApprovalDecision,
+  OperatorEvent,
+  OperatorMode,
+  OperatorSessionState,
+  OperatorStage,
+  PendingApproval,
+  PermissionTier,
+} from "./types";
 export {
-  inferStageFromDirective,
-  type StageInferenceResult,
-} from "./stageInference";
+  createInitialOperatorState,
+  OPERATOR_MODE_CYCLE,
+  OPERATOR_MODES,
+} from "./types";

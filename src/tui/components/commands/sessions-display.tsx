@@ -1,18 +1,19 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { useRoute } from "../../context/route";
-import { useFocus } from "../../context/focus";
-import { sessions } from "../../../core/session";
-import { openSessionReport, readSessionReport } from "../../utils/open-report";
-import ReportViewerDialog from "../report-viewer-dialog";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { REPORT_FILENAME_MD } from "../../../core/report";
+import { sessions } from "../../../core/session";
 import { Dialog } from "../../context/dialog";
-import { ScrollBoxRenderable } from "@opentui/core";
-import { scrollToIndex } from "../../utils/scroll";
-import { useTheme } from "../../theme";
-import { useSessionsList } from "../../hooks/use-sessions-list";
+import { useDimensions } from "../../context/dimensions";
+import { useFocus } from "../../context/focus";
+import { useRoute } from "../../context/route";
 import { useToast } from "../../context/toast";
+import { useSessionsList } from "../../hooks/use-sessions-list";
+import { useTheme } from "../../theme";
+import { openSessionReport, readSessionReport } from "../../utils/open-report";
+import { scrollToIndex } from "../../utils/scroll";
 import DialogLayout from "../dialog-layout";
+import ReportViewerDialog from "../report-viewer-dialog";
 
 interface SessionsDisplayProps {
   onClose: () => void;
@@ -30,6 +31,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
   );
 
   const route = useRoute();
+  const dimensions = useDimensions();
 
   const scroll = useRef<ScrollBoxRenderable>(null);
 
@@ -40,6 +42,28 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     setSearchTerm,
     deleteSession: hookDeleteSession,
   } = useSessionsList();
+
+  // Dialog inner box maxHeight is dimensions.height - 4.
+  // DialogLayout chrome (padding, header, body marginTop, footer) uses ~8 rows.
+  const availableListHeight = dimensions.height - 4 - 8;
+
+  // Track whether the initial load had enough sessions to fill the dialog
+  // (i.e., a scrollbar was needed). When true, pin the list height so
+  // deleting sessions doesn't shrink the dialog.
+  const initialOverflowRef = useRef<boolean | null>(null);
+  if (!loading && initialOverflowRef.current === null) {
+    // Each session row = 1 line, each date group header = 1 line,
+    // gap between groups = 2, gap between sessions in group = 1.
+    const groupCount = groupedSessions.length;
+    const estimatedRows =
+      visualOrderSessions.length + groupCount * 3 - (groupCount > 0 ? 2 : 0);
+    initialOverflowRef.current = estimatedRows > availableListHeight;
+  }
+
+  // Only pin the height when the initial set overflowed the dialog
+  const listHeight = initialOverflowRef.current
+    ? availableListHeight
+    : undefined;
 
   const viewReport = useCallback(async (sessionId: string) => {
     const session = await sessions.get(sessionId);
@@ -183,8 +207,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     onClose();
   };
 
-  if (loading) return null;
-
   if (showReportViewer && reportContent && reportSessionPath) {
     return (
       <ReportViewerDialog
@@ -208,7 +230,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
 
   return (
     <Dialog size="large" onClose={handleClose}>
-      <DialogLayout title="Sessions" footerActions={footerActions}>
+      <DialogLayout title="Sessions" flushRight footerActions={footerActions}>
         {/* Search Input */}
         <box
           width="100%"
@@ -229,7 +251,9 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
         </box>
 
         {/* Sessions List */}
-        {visualOrderSessions.length === 0 ? (
+        {loading ? (
+          <text fg={colors.textMuted}>Loading sessions...</text>
+        ) : visualOrderSessions.length === 0 ? (
           <text fg={colors.textMuted}>No sessions found</text>
         ) : (
           <box
@@ -239,10 +263,10 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
             flexShrink={1}
             overflow="hidden"
             marginTop={1}
+            height={listHeight}
           >
             <scrollbox
               ref={scroll}
-              scrollbarOptions={{ visible: true }}
               style={{
                 rootOptions: {
                   width: "100%",
@@ -256,6 +280,13 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                 contentOptions: {
                   gap: 2,
                   flexDirection: "column",
+                  paddingRight: 1,
+                },
+                scrollbarOptions: {
+                  trackOptions: {
+                    foregroundColor: colors.textMuted,
+                    backgroundColor: colors.backgroundElement,
+                  },
                 },
               }}
             >
@@ -273,9 +304,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                       minute: "2-digit",
                       hour12: true,
                     });
-                    const mode = session.config?.mode || "auto";
-                    const modeBadge =
-                      mode === "operator" ? "[operator]" : "[auto]";
                     const statusBadge = session.hasReport ? "✓" : "…";
                     const findingsText =
                       session.findingsCount > 0
@@ -304,7 +332,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                           <text
                             fg={isSelected ? colors.text : colors.textMuted}
                           >
-                            {session.name}
+                            {session.name ?? ""}
                           </text>
                           <text
                             fg={
@@ -314,15 +342,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                             }
                           >
                             {statusBadge}
-                          </text>
-                          <text
-                            fg={
-                              mode === "operator"
-                                ? colors.primary
-                                : colors.textMuted
-                            }
-                          >
-                            {modeBadge}
                           </text>
                           {findingsText ? (
                             <text fg={colors.textMuted}>{findingsText}</text>

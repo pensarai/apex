@@ -1,11 +1,11 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import { buildSystemPrompt, buildPatchingPrompt } from "./prompts";
+import { OffensiveSecurityAgent } from "../../offSecAgent";
+import { buildPatchingPrompt, buildSystemPrompt } from "./prompts";
 import {
-  PatchResultSchema,
-  type PatchResult,
   type PatchingAgentInput,
+  type PatchResult,
+  PatchResultSchema,
 } from "./types";
 
 const AGENTS_MD_FILENAMES = [

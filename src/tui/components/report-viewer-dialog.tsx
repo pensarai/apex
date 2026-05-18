@@ -1,13 +1,10 @@
-import { useRef, useMemo } from "react";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { ScrollBoxRenderable } from "@opentui/core";
-import { useTheme } from "../theme";
+import { useMemo, useRef } from "react";
 import { Dialog } from "../context/dialog";
+import { useTheme } from "../theme";
 import DialogLayout from "./dialog-layout";
-import {
-  useMarkdownSyntaxStyle,
-  useMarkdownRenderNode,
-} from "./shared/markdown-viewer";
+import { useMarkdownRenderNode, useMarkdownSyntaxStyle } from "./shared";
 
 interface ReportViewerDialogProps {
   content: string;
@@ -61,7 +58,7 @@ export default function ReportViewerDialog({
 
   return (
     <Dialog size="xlarge" onClose={onClose}>
-      <DialogLayout title={title} footerActions={footerActions}>
+      <DialogLayout title={title} flushRight footerActions={footerActions}>
         {/* Report Content */}
         <scrollbox
           ref={scrollRef}
@@ -80,7 +77,7 @@ export default function ReportViewerDialog({
             },
             scrollbarOptions: {
               trackOptions: {
-                foregroundColor: colors.primary,
+                foregroundColor: colors.textMuted,
                 backgroundColor: colors.backgroundElement,
               },
             },

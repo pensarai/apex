@@ -1,9 +1,9 @@
 import {
-  useState,
   createContext,
-  useContext,
   type ReactNode,
+  useContext,
   useMemo,
+  useState,
 } from "react";
 import type { SessionConfig } from "../../core/session";
 
@@ -115,7 +115,7 @@ export const useRoute = () => {
   return route;
 };
 
-export const useRouteData = <T extends Route["type"]>(type: T) => {
+const useRouteData = <T extends Route["type"]>(type: T) => {
   const route = useRoute();
   return route.data as Extract<Route, { type: typeof type }>;
 };

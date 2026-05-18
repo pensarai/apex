@@ -11,11 +11,33 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { tool } from "ai";
-import { z } from "zod";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { createRequire } from "module";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
-import { join, dirname } from "path";
+import { dirname, join } from "path";
+import { z } from "zod";
 import type { Logger } from "../../../logger";
+
+/**
+ * Playwright `BrowserContext.storageState()` shape — the JSON-serialisable
+ * snapshot of cookies + per-origin storage that Playwright uses to round-trip
+ * authentication state between contexts.
+ */
+export interface BrowserStorageState {
+  cookies: Array<{
+    name: string;
+    value: string;
+    domain: string;
+    path: string;
+    expires?: number;
+    httpOnly?: boolean;
+    secure?: boolean;
+    sameSite?: "Strict" | "Lax" | "None";
+  }>;
+  origins: Array<{
+    origin: string;
+    localStorage: Array<{ name: string; value: string }>;
+  }>;
+}
 
 // Types for tool results
 export interface BrowserNavigateResult {
@@ -184,6 +206,60 @@ export function transformScriptToFunction(script: string): string {
 }
 
 /**
+ * Parse the response payload from `browser_run_code` returning a
+ * `BrowserContext.storageState()` JSON object. Playwright MCP wraps results
+ * as `### Result\n<value>\n\n### Ran Playwright code\n...` strings, so we
+ * strip the prefix/suffix and JSON-parse the middle. Falls back to a JSON
+ * object regex extract for older MCP variants. Returns `null` for any
+ * shape we can't decode rather than throwing.
+ *
+ * @internal Exported for testing.
+ */
+export function parseStorageStateResult(
+  result: unknown,
+): BrowserStorageState | null {
+  if (!result) return null;
+
+  if (typeof result === "string") {
+    const stripped = result
+      .replace(/^###\s*Result\s*\n?/, "")
+      .replace(/\n\n###[\s\S]*$/, "")
+      .trim();
+    try {
+      const parsed = JSON.parse(stripped);
+      if (parsed && typeof parsed === "object" && "cookies" in parsed) {
+        return parsed as BrowserStorageState;
+      }
+      if (typeof parsed === "string") {
+        const inner = JSON.parse(parsed);
+        if (inner && typeof inner === "object" && "cookies" in inner) {
+          return inner as BrowserStorageState;
+        }
+      }
+    } catch {
+      const jsonMatch = stripped.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const inner = JSON.parse(jsonMatch[0]);
+          if (inner && typeof inner === "object" && "cookies" in inner) {
+            return inner as BrowserStorageState;
+          }
+        } catch {
+          /* fall through */
+        }
+      }
+    }
+    return null;
+  }
+
+  if (typeof result === "object" && "cookies" in (result as object)) {
+    return result as BrowserStorageState;
+  }
+
+  return null;
+}
+
+/**
  * Race a promise against a timeout. Rejects with a descriptive error
  * if the timeout fires first.
  */
@@ -218,11 +294,22 @@ let defaultUserAgent: string | undefined =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 /**
+ * Hard floor for viewport size — used when both the explicit constructor
+ * arg and the module-level default are `undefined`. Guarantees that
+ * `new PlaywrightMcpSession()` always launches Chromium at a real desktop
+ * resolution and never silently falls back to Chromium's tiny built-in
+ * default just because someone called `setViewportSize(undefined)`.
+ *
+ * The only way to opt out is to pass `null` explicitly to the constructor.
+ */
+const HARDCODED_VIEWPORT_FALLBACK = "1920,1080";
+
+/**
  * Default viewport size (format: `WIDTH,HEIGHT`) for new browser sessions.
  * 1920x1080 matches a standard desktop resolution and avoids the small
  * default viewport that some SPAs use as a mobile/bot signal.
  */
-let defaultViewportSize: string | undefined = "1920,1080";
+let defaultViewportSize: string | undefined = HARDCODED_VIEWPORT_FALLBACK;
 
 /**
  * Configure the default headless mode for new browser sessions.
@@ -271,10 +358,40 @@ export class PlaywrightMcpSession {
   private readonly userAgent: string | undefined;
   private readonly viewportSize: string | undefined;
 
-  constructor(headless = true, userAgent?: string, viewportSize?: string) {
-    this.headless = headless;
-    this.userAgent = userAgent;
-    this.viewportSize = viewportSize;
+  /**
+   * Construct a new isolated browser session.
+   *
+   * Each parameter has three-state semantics:
+   * - `undefined` (omitted) → fall back to the module-level default
+   *   (`defaultHeadless` / `defaultUserAgent` / `defaultViewportSize`,
+   *   configurable via {@link setHeadlessMode}, {@link setUserAgent}, and
+   *   {@link setViewportSize}). For viewport this means **1920x1080** by
+   *   default — sessions constructed with no args will launch Chromium at
+   *   a real desktop resolution, not the tiny built-in default.
+   * - explicit `string` / `boolean` value → use it as-is.
+   * - explicit `null` (for `userAgent` / `viewportSize`) → opt OUT of the
+   *   default and let Chromium use its built-in value (useful when the
+   *   anti-bot UA / 1920x1080 are counter-productive for a target).
+   *
+   * Viewport has an additional hard floor: if neither the arg nor the
+   * module default is set (e.g. someone called
+   * `setViewportSize(undefined)`), the constructor still falls back to
+   * {@link HARDCODED_VIEWPORT_FALLBACK} (`"1920,1080"`) so we never
+   * silently launch Chromium at its tiny built-in viewport. The only way
+   * to opt out is to pass `null` explicitly.
+   */
+  constructor(
+    headless?: boolean,
+    userAgent?: string | null,
+    viewportSize?: string | null,
+  ) {
+    this.headless = headless ?? defaultHeadless;
+    this.userAgent =
+      userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
+    this.viewportSize =
+      viewportSize === null
+        ? undefined
+        : (viewportSize ?? defaultViewportSize ?? HARDCODED_VIEWPORT_FALLBACK);
   }
 
   /** Immediately reset all instance state. Synchronous — no I/O. */
@@ -442,6 +559,83 @@ export class PlaywrightMcpSession {
   /** Check if this session's client is currently connected. */
   isConnected(): boolean {
     return this.mcpClient !== null;
+  }
+
+  /**
+   * Snapshot this session's full Playwright storage state (cookies + per-origin
+   * localStorage) by invoking `BrowserContext.storageState()` through the
+   * MCP `browser_run_code` tool.
+   *
+   * Returns `null` when the session has never been initialised (no Chromium
+   * to ask), when no page is open, or when the call / response parse fails.
+   * Callers should treat a `null` result as "no auth state to clone" and
+   * proceed with an unseeded session.
+   *
+   * Cheap to call repeatedly — the underlying MCP call is a few KB of JSON.
+   */
+  async captureStorageState(): Promise<BrowserStorageState | null> {
+    if (!this.isConnected()) return null;
+
+    try {
+      const result = await this.callTool("browser_run_code", {
+        code: `async (page) => { return await page.context().storageState(); }`,
+      });
+
+      return parseStorageStateResult(result);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Seed this session's browser context with a previously-captured
+   * {@link BrowserStorageState}. Initialises the session if it hasn't been
+   * connected yet, then injects:
+   *
+   * - cookies, immediately, via `BrowserContext.addCookies()`
+   * - per-origin localStorage, lazily, via `BrowserContext.addInitScript()`
+   *   so the values are written into `localStorage` whenever a page from
+   *   that origin loads
+   *
+   * The init-script approach means localStorage is restored on the next
+   * `browser_navigate` call — calling `browser_evaluate` on `about:blank`
+   * before navigating won't see the seeded values (those live on the
+   * target origin). Cookies are visible immediately and will be sent on
+   * the first navigation.
+   *
+   * Best-effort: errors are swallowed so a seeding failure never blocks
+   * the worker from running with an unauthenticated session.
+   */
+  async seedStorageState(state: BrowserStorageState): Promise<void> {
+    await this.initialize();
+
+    const code = `async (page) => {
+      const ctx = page.context();
+      const state = ${JSON.stringify(state)};
+      if (state.cookies && state.cookies.length > 0) {
+        try { await ctx.addCookies(state.cookies); } catch (e) {}
+      }
+      if (state.origins && state.origins.length > 0) {
+        const parts = [];
+        for (const o of state.origins) {
+          if (!o.localStorage || o.localStorage.length === 0) continue;
+          const setters = o.localStorage.map(function(it) {
+            return 'try{localStorage.setItem(' + JSON.stringify(it.name) + ',' + JSON.stringify(it.value) + ');}catch(e){}';
+          }).join('');
+          parts.push('if (location.origin === ' + JSON.stringify(o.origin) + ') {' + setters + '}');
+        }
+        if (parts.length > 0) {
+          try { await ctx.addInitScript({ content: parts.join('\\n') }); } catch (e) {}
+        }
+      }
+      return { ok: true, cookies: (state.cookies||[]).length, origins: (state.origins||[]).length };
+    }`;
+
+    try {
+      await this.callTool("browser_run_code", { code });
+    } catch {
+      // Best-effort — proceed even if seeding partially or fully failed.
+    }
   }
 
   /**
@@ -742,6 +936,15 @@ Use this to check for:
  * @param viewportSize - Override viewport size (format `"WIDTH,HEIGHT"`) for
  *   this session (defaults to the value set by {@link setViewportSize}).
  *   Passing `null` forces Chromium's default viewport.
+ * @param existingSession - When provided, browser tools reuse this
+ *   already-constructed session instead of creating a new MCP child-process
+ *   / Chromium instance. Used by sub-agents (e.g. workers spawned via
+ *   `spawn_pentest_agent`) to inherit a parent's authenticated browser
+ *   context. Headless / userAgent / viewportSize are ignored when an
+ *   existing session is passed — those are baked into the session at
+ *   construction time. Lifecycle: the caller that originally constructed
+ *   the session owns disconnect, so `abortSignal` is NOT wired to disconnect
+ *   when reusing a session.
  */
 export function createBrowserTools(
   targetUrl: string,
@@ -752,21 +955,25 @@ export function createBrowserTools(
   headless?: boolean,
   userAgent?: string | null,
   viewportSize?: string | null,
+  existingSession?: PlaywrightMcpSession,
 ) {
-  const resolvedUserAgent =
-    userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
-  const resolvedViewportSize =
-    viewportSize === null ? undefined : (viewportSize ?? defaultViewportSize);
+  let session: PlaywrightMcpSession;
 
-  const session = new PlaywrightMcpSession(
-    headless ?? defaultHeadless,
-    resolvedUserAgent,
-    resolvedViewportSize,
-  );
+  if (existingSession) {
+    session = existingSession;
+    // Owner manages disconnect — do NOT register an abort handler here,
+    // otherwise an inheriting sub-agent finishing first would tear down
+    // the parent's browser mid-flight.
+  } else {
+    // PlaywrightMcpSession's constructor folds in the module-level
+    // defaults (1920x1080 viewport, desktop Chrome UA, headless=true)
+    // when these args are undefined — pass them through verbatim.
+    session = new PlaywrightMcpSession(headless, userAgent, viewportSize);
 
-  if (abortSignal) {
-    const onAbort = () => session.disconnect().catch(() => {});
-    abortSignal.addEventListener("abort", onAbort, { once: true });
+    if (abortSignal) {
+      const onAbort = () => session.disconnect().catch(() => {});
+      abortSignal.addEventListener("abort", onAbort, { once: true });
+    }
   }
 
   // Ensure evidence directory exists

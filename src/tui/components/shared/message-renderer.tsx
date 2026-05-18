@@ -6,12 +6,13 @@
  */
 
 import { memo, useMemo } from "react";
+import { useObfuscation } from "../../context/obfuscation";
 import { useTheme } from "../../theme";
+import type { DisplayMessage } from "../agent-display";
+import { PlanReviewMessage } from "../chat/plan-review-message";
 import { markdownToStyledText } from "./markdown";
 import { ToolRenderer } from "./tool-renderer";
 import { isToolMessage } from "./type-guards";
-import type { DisplayMessage } from "../agent-display";
-import { PlanReviewMessage } from "../chat/plan-review-message";
 
 interface MessageRendererProps {
   message: DisplayMessage;
@@ -49,19 +50,27 @@ export const MessageRenderer = memo(function MessageRenderer({
   username = "user",
 }: MessageRendererProps) {
   const { colors } = useTheme();
-  // Get string content
-  const content =
+  // Subscribe to obfuscation toggles so the assistant-message branch
+  // re-runs `markdownToStyledText()` with the new engine state. The
+  // `<text>` children paths (user/system/tool labels) are handled by
+  // the central TextNodeRenderable patch and don't need this hook —
+  // we keep it for the markdown branch only.
+  const { enabled: obfuscateEnabled } = useObfuscation();
+  const rawContent =
     typeof message.content === "string"
       ? message.content
       : JSON.stringify(message.content);
+  const content = rawContent;
 
-  // Memoize markdown conversion for assistant messages
+  // Memoize markdown conversion for assistant messages.
+  // `obfuscateEnabled` is included in deps so toggling /obfuscate busts
+  // the cache: the same rawContent must re-render with the new state.
   const displayContent = useMemo(
     () =>
       message.role === "assistant"
         ? markdownToStyledText(content, colors)
         : content,
-    [content, message.role, colors],
+    [content, message.role, colors, obfuscateEnabled],
   );
 
   // Tool messages
@@ -75,9 +84,11 @@ export const MessageRenderer = memo(function MessageRenderer({
     );
   }
 
-  // User messages — detect <skill name="..." target="..."> wrapper and display as /command
+  // User messages — detect <skill name="..." target="..."> wrapper and display as /command.
+  // Parse from the raw content because obfuscation turns the target into [URL_1]
+  // which still satisfies the regex but we want to redact the target after the fact.
   if (message.role === "user") {
-    const skill = parseSkillTag(content);
+    const skill = parseSkillTag(rawContent);
 
     if (variant === "chat") {
       return (
@@ -163,5 +174,3 @@ export const MessageRenderer = memo(function MessageRenderer({
     </box>
   );
 });
-
-export default MessageRenderer;

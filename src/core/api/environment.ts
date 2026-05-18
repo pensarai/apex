@@ -1,8 +1,10 @@
 import { EnvironmentAgent } from "../agents/specialized/environment/agent";
-import type { EnvironmentAgentInput } from "../agents/specialized/environment/types";
-import type { EnvironmentResult } from "../agents/specialized/environment/types";
+import type {
+  EnvironmentAgentInput,
+  EnvironmentResult,
+} from "../agents/specialized/environment/types";
 
-export type { EnvironmentResult, EnvironmentAgentInput };
+export type { EnvironmentAgentInput, EnvironmentResult };
 
 function attachDefaultEnvironmentStreamListeners(
   agent: EnvironmentAgent,

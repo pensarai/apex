@@ -1,14 +1,14 @@
 import { tool } from "ai";
-import { z } from "zod";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
-import type { ToolContext } from "./types";
+import { z } from "zod";
 import { assertCommandInScope, ScopeViolationError } from "./scopeGuard";
+import type { ToolContext } from "./types";
 
 const MAX_INLINE = 50_000;
 const MS_TIMEOUT_THRESHOLD = 10_000;
 
-export const executeCommandInputSchema = z.object({
+const executeCommandInputSchema = z.object({
   // not actually sure if placing this above the other keys/zod values ensures that the model generates it first...
   toolCallDescription: z
     .string()
@@ -24,7 +24,7 @@ export const executeCommandInputSchema = z.object({
     ),
 });
 
-export type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
+type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
 
 export type ExecuteCommandResult = {
   success: boolean;
@@ -126,6 +126,32 @@ OUTPUT HANDLING:
 - The tool's timeout parameter is in SECONDS, not milliseconds
 - Good timeout examples: 30, 60, 120
 - Do NOT pass millisecond values like 30000 or 120000
+- If the tool's timeout is hit, the partial stdout the command had already
+  produced is still returned (with exit code 124). It is safe to set a
+  conservative timeout: you will not lose the bytes a fuzzer printed
+  before the kill.
+
+LONG-RUNNING FUZZERS AND SCANNERS:
+
+Wordlist fuzzers (ffuf, gobuster, dirb, wfuzz, dirsearch) and large nmap
+scans against slow targets routinely take longer than a single tool call
+should. ALWAYS bound them with their OWN internal time budget, set BELOW
+the tool's timeout, so the tool exits cleanly with full output and you
+don't have to rely on signal-based truncation.
+
+General rule: set the inner tool's runtime cap at least 5s below the
+execute_command timeout, so the tool exits gracefully and flushes its
+results to disk before any signal arrives.
+
+- ffuf: pair with -maxtime <seconds> and a sane -rate.
+  Example: ffuf -u <url>/FUZZ -w <wordlist> -maxtime 55 -rate 50
+  with the tool's timeout=60.
+- gobuster: has no -maxtime flag. Wrap with the \`timeout\` coreutils
+  command and tune --timeout / --threads.
+  Example: timeout 55 gobuster dir -u <url> -w <wordlist> --timeout 5s --threads 20
+  with the tool's timeout=60.
+- nmap: prefer --host-timeout, --max-rtt-timeout, and -T4 / --min-rate
+  to bound total runtime against slow networks.
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,

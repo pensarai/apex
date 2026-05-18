@@ -7,11 +7,12 @@ import type {
   LanguageModelV3Usage,
   SharedV3Warning,
 } from "@ai-sdk/provider";
+import { buildStreamingFetchSignal } from "../utils";
 import { convertToBedrockFormat } from "./pensarFormatters";
-import { parseSSE } from "./pensarSSE";
 import { signGatewayRequest } from "./pensarSigning";
 import { buildStreamingFetchSignal } from "../utils";
 import { ApexAuthError } from "../../auth";
+import { parseSSE } from "./pensarSSE";
 
 const DEBUG =
   process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
@@ -21,7 +22,7 @@ function log(...args: unknown[]) {
 }
 
 function logInfo(...args: unknown[]) {
-  console.error("[pensar]", ...args);
+  if (DEBUG) console.error("[pensar]", ...args);
 }
 
 function logError(...args: unknown[]) {

@@ -1,16 +1,16 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { resolveConfig } from "./client";
-import { createWandbUploader } from "./upload";
+import type { ModelMessage } from "ai";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   StepTraceWriter,
   type TraceRecord,
 } from "../../agents/offSecAgent/trace";
 import { AgentEventBus } from "../../eventBus";
-import { mkdtempSync, readFileSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
 import type { SessionInfo } from "../../session";
-import type { ModelMessage } from "ai";
+import { resolveConfig } from "./client";
+import { createWandbUploader } from "./upload";
 
 // ---------------------------------------------------------------------------
 // Helpers

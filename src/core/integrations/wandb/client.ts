@@ -5,7 +5,7 @@
  * Records appear in Weave with trace data in the inputs field.
  */
 
-import type { TraceRecord } from "../../agents/offSecAgent/trace";
+import type { TraceRecord } from "../../agents/offSecAgent";
 
 // ---------------------------------------------------------------------------
 // Config

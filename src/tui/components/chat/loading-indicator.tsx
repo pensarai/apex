@@ -4,7 +4,8 @@
  * Animated spinner with contextual messages for agent states.
  */
 
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import { INTERNAL_ID_PATTERN } from "../../../core/operator";
 import { useTheme } from "../../theme";
 
 // Braille spinner frames for smooth animation
@@ -37,6 +38,7 @@ export function LoadingIndicator({
   const { colors } = useTheme();
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [dotsFrame, setDotsFrame] = useState(0);
+  const warnedIdsRef = useRef<Set<string>>(new Set());
 
   // Spinner animation
   useEffect(() => {
@@ -67,8 +69,18 @@ export function LoadingIndicator({
       case "waiting":
         return `Waiting for agents${dots}`;
       case "executing":
-        if (action) {
+        if (action && !INTERNAL_ID_PATTERN.test(action)) {
           return action;
+        }
+        if (
+          action &&
+          process.env.NODE_ENV !== "production" &&
+          !warnedIdsRef.current.has(action)
+        ) {
+          warnedIdsRef.current.add(action);
+          console.warn(
+            `[LoadingIndicator] internal correlation ID leaked into action prop: ${action}`,
+          );
         }
         if (toolName) {
           return `Running ${toolName}${dots}`;
@@ -101,5 +113,3 @@ export function LoadingIndicator({
     </box>
   );
 }
-
-export default LoadingIndicator;

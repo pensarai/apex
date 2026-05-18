@@ -1,7 +1,7 @@
 import {
-  BlackboxAttackSurfaceAgent,
   type AttackSurfaceAgentInput,
   type AttackSurfaceResult,
+  BlackboxAttackSurfaceAgent,
 } from "../agents/specialized/attackSurface/blackboxAgent";
 import type { WhiteboxAttackSurfaceResult } from "../agents/specialized/whiteboxAttackSurface";
 import { runWhiteboxAttackSurfaceWorkflow } from "../workflows/whiteboxAttackSurface";
@@ -73,6 +73,7 @@ async function runWhiteboxAttackSurface(
     abortSignal: input.abortSignal,
     attackSurfaceRegistry: input.attackSurfaceRegistry,
     eventBus: input.eventBus,
+    surfaceIntegrationEnabled: input.surfaceIntegrationEnabled,
   });
 
   console.log(

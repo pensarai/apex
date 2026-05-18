@@ -5,10 +5,15 @@
  * Unified for both chat and operator modes.
  */
 
-import { useTheme } from "../../theme";
-import { MessageRenderer, getStableMessageKey, isToolMessage } from "../shared";
-import type { DisplayMessage } from "../agent-display";
 import type { PendingApproval } from "../../../core/operator";
+import { useTheme } from "../../theme";
+import type { DisplayMessage } from "../agent-display";
+import {
+  deriveActionLabel,
+  getStableMessageKey,
+  isToolMessage,
+  MessageRenderer,
+} from "../shared";
 import { InlineApprovalPrompt } from "./approval-inline";
 import { LoadingIndicator, type LoadingState } from "./loading-indicator";
 
@@ -16,6 +21,7 @@ import { LoadingIndicator, type LoadingState } from "./loading-indicator";
 const SUBAGENT_TOOLS = new Set([
   "run_pentest_workflow",
   "spawn_pentest_swarm",
+  "spawn_pentest_agent",
   "run_attack_surface",
   "spawn_coding_agent",
   "delegate_to_auth_subagent",
@@ -42,17 +48,23 @@ function getLoadingState(
   return "thinking";
 }
 
-/**
- * Get the name of any pending tool from recent messages
- */
-function getPendingToolName(messages: DisplayMessage[]): string | null {
+interface PendingToolInfo {
+  toolName: string;
+  args: Record<string, unknown>;
+}
+
+/** Most recent pending or streaming tool message in the last 5, or null. */
+function getPendingToolInfo(
+  messages: DisplayMessage[],
+): PendingToolInfo | null {
   const recentMessages = messages.slice(-5);
   for (const msg of recentMessages.reverse()) {
     if (
       isToolMessage(msg) &&
-      (msg.status === "pending" || msg.status === "streaming")
+      (msg.status === "pending" || msg.status === "streaming") &&
+      msg.toolName
     ) {
-      return msg.toolName || null;
+      return { toolName: msg.toolName, args: msg.args ?? {} };
     }
   }
   return null;
@@ -122,6 +134,12 @@ export function MessageList({
           paddingRight: 2,
           paddingBottom: 2,
           flexDirection: "column",
+        },
+        scrollbarOptions: {
+          trackOptions: {
+            foregroundColor: colors.textMuted,
+            backgroundColor: colors.backgroundElement,
+          },
         },
       }}
       stickyScroll={true}
@@ -212,19 +230,21 @@ export function MessageList({
         !hasPendingApproval &&
         hasMessages &&
         (() => {
-          const pendingTool = getPendingToolName(messages);
-          const effectiveHasPendingTool =
-            hasPendingTool || pendingTool !== null;
+          const pendingToolInfo = getPendingToolInfo(messages);
+          const pendingToolName = pendingToolInfo?.toolName ?? null;
+          const liveLabel = pendingToolInfo
+            ? deriveActionLabel(pendingToolInfo.toolName, pendingToolInfo.args)
+            : null;
           return (
             <LoadingIndicator
               state={getLoadingState(
                 messages,
-                effectiveHasPendingTool,
+                hasPendingTool || pendingToolName !== null,
                 isLastAssistant,
-                pendingTool,
+                pendingToolName,
               )}
-              action={lastApprovedAction}
-              toolName={pendingTool}
+              action={liveLabel ?? lastApprovedAction}
+              toolName={pendingToolName}
             />
           );
         })()}
@@ -236,5 +256,3 @@ export function MessageList({
     </scrollbox>
   );
 }
-
-export default MessageList;

@@ -1,4 +1,4 @@
-import { Renderable, ScrollBoxRenderable } from "@opentui/core";
+import type { Renderable, ScrollBoxRenderable } from "@opentui/core";
 
 /**
  * Scrolls a ScrollBox to keep the item at `index` visible.

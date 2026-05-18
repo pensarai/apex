@@ -8,19 +8,19 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { useDimensions } from "../../context/dimensions";
-import { PetriAnimation } from "./petri-animation";
-import { useCommand } from "../../context/command";
-import { useInput } from "../../context/input";
-import { useFocus } from "../../context/focus";
-import { useConfig } from "../../context/config";
-import { useRoute } from "../../context/route";
-import { useDialog } from "../../context/dialog";
-import { PromptInput } from "../shared/prompt-input";
-import { OperatorModeBar, providerDisplayName } from "./input-area";
-import { useTheme } from "../../theme";
-import { useAgent } from "../../context/agent";
 import * as History from "../../../core/history";
+import { useAgent } from "../../context/agent";
+import { useCommand } from "../../context/command";
+import { useConfig } from "../../context/config";
+import { useDialog } from "../../context/dialog";
+import { useDimensions } from "../../context/dimensions";
+import { useFocus } from "../../context/focus";
+import { useInput } from "../../context/input";
+import { useRoute } from "../../context/route";
+import { useTheme } from "../../theme";
+import { PromptInput } from "../shared";
+import { OperatorModeBar, providerDisplayName } from "./input-area";
+import { PetriAnimation } from "./petri-animation";
 
 type ViewType = "home" | "config" | "chat";
 
@@ -167,107 +167,122 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       alignItems="center"
       overflow="hidden"
     >
-      {/* Petri Animation */}
+      {/* Petri Animation - absolutely positioned so it doesn't push the
+          centered content block off-center. Sits behind/above the column flow
+          starting at the top of the home view. */}
       {animationHeight > 0 && (
-        <box height={animationHeight} width="100%">
+        <box
+          position="absolute"
+          top={0}
+          left={0}
+          height={animationHeight}
+          width="100%"
+        >
           <PetriAnimation height={animationHeight} />
         </box>
       )}
 
-      {/* Title - centered */}
       <box
         flexDirection="column"
         alignItems="center"
-        marginTop={titleMarginTop}
-        flexShrink={0}
+        justifyContent="center"
+        height="100%"
       >
-        <text fg={colors.text}>
-          Apex{" "}
-          <span fg={colors.textMuted}>({config.data.version || "local"})</span>
-        </text>
-        <text fg={colors.textMuted}>Automated offensive security</text>
-      </box>
-
-      {/* Command Quick Reference */}
-      {showCommands && (
-        <box flexDirection="column" marginTop={menuMarginTop} flexShrink={0}>
-          {[
-            { cmd: "/pentest", desc: "autonomous pentest" },
-            { cmd: "/operator", desc: "interactive operator" },
-            { cmd: "/login", desc: "login to Pensar" },
-            { cmd: "/models", desc: "select AI model" },
-            { cmd: "/providers", desc: "manage API keys" },
-          ].map(({ cmd, desc }) => (
-            <box key={cmd} flexDirection="row">
-              <box width={24} justifyContent="flex-end">
-                <text fg={colors.primary}>{cmd}</text>
-              </box>
-              <box width={4} />
-              <box>
-                <text fg={colors.textMuted}>{desc}</text>
-              </box>
-            </box>
-          ))}
+        {/* Title - centered */}
+        <box
+          flexDirection="column"
+          alignItems="center"
+          marginTop={titleMarginTop}
+          flexShrink={0}
+        >
+          <text fg={colors.text}>
+            Apex{" "}
+            <span fg={colors.textMuted}>
+              ({config.data.version || "local"})
+            </span>
+          </text>
+          <text fg={colors.textMuted}>Automated offensive security</text>
         </box>
-      )}
 
-      {/* Centered Input Area */}
-      <box
-        flexDirection="column"
-        width={inputWidth}
-        marginTop={inputMarginTop}
-        padding={inputPadding}
-        border={["left", "right"]}
-        borderColor={colors.primary}
-        flexShrink={0}
-      >
-        {/* Input with built-in autocomplete */}
-        <PromptInput
-          ref={promptRef}
-          focused={!externalDialogOpen && stack.length === 0}
-          width={inputWidth - 2 - inputPadding * 2}
-          minHeight={1}
-          maxHeight={4}
-          onSubmit={handleSubmit}
-          placeholder="Type a message to start operator, or / for commands..."
-          textColor={colors.text}
-          focusedTextColor={colors.text}
-          backgroundColor="transparent"
-          focusedBackgroundColor="transparent"
-          enableAutocomplete={true}
-          autocompleteOptions={autocompleteOptions}
-          commandOptionMap={commandOptionMap}
-          commandNames={commandNames}
-          maxVisibleSuggestions={maxSuggestions}
-          enableCommands={true}
-          onCommandExecute={handleCommandExecute}
-          commandHistory={commandHistory}
-          showPromptIndicator={true}
-        />
-
-        {/* Hint message */}
-        {hintMessage && (
-          <box marginTop={1}>
-            <text fg={colors.text}>{hintMessage}</text>
+        {/* Command Quick Reference */}
+        {showCommands && (
+          <box flexDirection="column" marginTop={menuMarginTop} flexShrink={0}>
+            {[
+              { cmd: "/pentest", desc: "autonomous pentest" },
+              { cmd: "/operator", desc: "interactive operator" },
+              { cmd: "/login", desc: "login to Pensar" },
+              { cmd: "/models", desc: "select AI model" },
+              { cmd: "/providers", desc: "manage API keys" },
+            ].map(({ cmd, desc }) => (
+              <box key={cmd} flexDirection="row">
+                <box width={24} justifyContent="flex-end">
+                  <text fg={colors.primary}>{cmd}</text>
+                </box>
+                <box width={4} />
+                <box>
+                  <text fg={colors.textMuted}>{desc}</text>
+                </box>
+              </box>
+            ))}
           </box>
         )}
 
-        <OperatorModeBar
-          operatorMode="manual"
-          modelName={model.name}
-          providerName={providerDisplayName(model.provider)}
-          showMode={false}
-          maxWidth={inputWidth - 2 - inputPadding * 2}
-          rightContent={
-            <text fg={colors.textMuted}>
-              <span fg={colors.text}>[/]</span> commands
-            </text>
-          }
-          rightContentWidth={"[/] commands".length}
-        />
+        {/* Centered Input Area */}
+        <box
+          flexDirection="column"
+          width={inputWidth}
+          marginTop={inputMarginTop}
+          padding={inputPadding}
+          border={["left", "right"]}
+          borderColor={colors.primary}
+          flexShrink={0}
+        >
+          {/* Input with built-in autocomplete */}
+          <PromptInput
+            ref={promptRef}
+            focused={!externalDialogOpen && stack.length === 0}
+            width={inputWidth - 2 - inputPadding * 2}
+            minHeight={1}
+            maxHeight={4}
+            onSubmit={handleSubmit}
+            placeholder="Type a message to start operator, or / for commands..."
+            textColor={colors.text}
+            focusedTextColor={colors.text}
+            backgroundColor="transparent"
+            focusedBackgroundColor="transparent"
+            enableAutocomplete={true}
+            autocompleteOptions={autocompleteOptions}
+            commandOptionMap={commandOptionMap}
+            commandNames={commandNames}
+            maxVisibleSuggestions={maxSuggestions}
+            enableCommands={true}
+            onCommandExecute={handleCommandExecute}
+            commandHistory={commandHistory}
+            showPromptIndicator={true}
+          />
+
+          {/* Hint message */}
+          {hintMessage && (
+            <box marginTop={1}>
+              <text fg={colors.text}>{hintMessage}</text>
+            </box>
+          )}
+
+          <OperatorModeBar
+            operatorMode="manual"
+            modelName={model.name}
+            providerName={providerDisplayName(model.provider)}
+            showMode={false}
+            maxWidth={inputWidth - 2 - inputPadding * 2}
+            rightContent={
+              <text fg={colors.textMuted}>
+                <span fg={colors.text}>[/]</span> commands
+              </text>
+            }
+            rightContentWidth={"[/] commands".length}
+          />
+        </box>
       </box>
     </box>
   );
 }
-
-export default HomeView;

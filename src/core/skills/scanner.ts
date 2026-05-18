@@ -1,11 +1,11 @@
-import path from "path";
-import fs from "fs/promises";
 import type { Dirent } from "fs";
-import type { SkillEntry, SkillScript, SkillSource } from "./types";
+import fs from "fs/promises";
+import path from "path";
 import { parseSkillMd } from "./parser";
+import type { SkillEntry, SkillScript, SkillSource } from "./types";
 import {
-  SKILLS_DIR as GLOBAL_SKILLS_DIR,
   AGENTS_SKILLS_DIR,
+  SKILLS_DIR as GLOBAL_SKILLS_DIR,
   slugify,
 } from "./utils";
 

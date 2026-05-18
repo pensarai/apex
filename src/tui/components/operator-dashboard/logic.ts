@@ -1,6 +1,7 @@
-import type { AutocompleteOption } from "../shared/prompt-input";
+import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent";
+import { detectOSAndEnhancePrompt } from "../../../core/agents/specialized/utils";
 import type { OperatorSessionState } from "../../../core/operator";
-import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent/prompt";
+import type { AutocompleteOption } from "../shared";
 
 // ---------------------------------------------------------------------------
 // Autocomplete option filtering for operator mode
@@ -15,6 +16,7 @@ const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/pentest",
   "/skills",
   "/plan",
+  "/obfuscate",
   "/help",
 ]);
 
@@ -231,7 +233,7 @@ ${opts.approvedPlanContent}
 </plan>`;
   }
 
-  let prompt = `${buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode })}
+  let prompt = `${detectOSAndEnhancePrompt(buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode }))}
 
 # Operator Mode
 

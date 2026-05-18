@@ -1,7 +1,7 @@
 import { tool } from "ai";
-import { z } from "zod";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { z } from "zod";
 import type { ToolContext } from "./types";
 
 function sanitizeName(name: string): string {
@@ -65,8 +65,8 @@ function validateDomainUrl(value: string): {
  * Documents a discovered application during attack surface analysis —
  * writes a JSON file to the session's apps directory. This tool is
  * specifically for application-level entities (web apps, APIs, admin panels,
- * services) and is designed for incremental creation via the MessageManager
- * in Console.
+ * services) and is designed for incremental creation via the agent log
+ * persister in Console.
  */
 export function documentApp(ctx: ToolContext) {
   const baseAppsPath = join(ctx.session.rootPath, "apps");

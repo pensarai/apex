@@ -5,6 +5,7 @@ import type {
   LanguageModelV3TextPart,
   LanguageModelV3ToolResultPart,
 } from "@ai-sdk/provider";
+import { getMaxOutputTokens } from "../models";
 
 export function convertToBedrockFormat(
   modelId: string,
@@ -16,38 +17,6 @@ export function convertToBedrockFormat(
 
   // Fallback: attempt Anthropic format for unknown models
   return convertToAnthropicFormat(modelId, options);
-}
-
-function getDefaultMaxOutputTokens(modelId: string): number {
-  if (
-    modelId.includes("claude-opus-4-6") ||
-    modelId.includes("claude-sonnet-4-6")
-  ) {
-    return 128_000;
-  }
-  if (
-    modelId.includes("claude-sonnet-4-5") ||
-    modelId.includes("claude-opus-4-5") ||
-    modelId.includes("claude-haiku-4-5")
-  ) {
-    return 64_000;
-  }
-  if (modelId.includes("claude-opus-4-1")) {
-    return 32_000;
-  }
-  if (
-    modelId.includes("claude-sonnet-4-") ||
-    modelId.includes("claude-3-7-sonnet")
-  ) {
-    return 64_000;
-  }
-  if (modelId.includes("claude-opus-4-")) {
-    return 32_000;
-  }
-  if (modelId.includes("claude-3-5-haiku")) {
-    return 8_192;
-  }
-  return 4_096;
 }
 
 const EPHEMERAL_CACHE_CONTROL = { type: "ephemeral" as const };
@@ -185,7 +154,7 @@ function convertToAnthropicFormat(
   const body: Record<string, unknown> = {
     anthropic_version: "bedrock-2023-05-31",
     messages,
-    max_tokens: options.maxOutputTokens ?? getDefaultMaxOutputTokens(modelId),
+    max_tokens: options.maxOutputTokens ?? getMaxOutputTokens(modelId),
   };
 
   if (systemPrompt) {
@@ -267,7 +236,7 @@ function convertToAnthropicFormat(
   return body;
 }
 
-export function parseBedrockResponse(
+function parseBedrockResponse(
   modelId: string,
   response: Record<string, unknown>,
   usage: { inputTokens: number; outputTokens: number },

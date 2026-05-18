@@ -8,19 +8,11 @@
  * This file orchestrates the higher-level session state assembly.
  */
 
-import { join } from "path";
 import { existsSync, readFileSync } from "fs";
-import type { SessionInfo } from "./index";
-import { loadSubagents, type UISubagent, type UIMessage } from "./persistence";
+import { join } from "path";
 import { REPORT_FILENAME_MD } from "../report";
-
-// Re-export types that consumers import from this module
-export type {
-  SavedSubagentData,
-  UIMessage,
-  ResumeInfo,
-  UISubagent,
-} from "./persistence";
+import type { SessionInfo } from "./index";
+import { loadSubagents, type UIMessage, type UISubagent } from "./persistence";
 
 /**
  * Attack surface results format
@@ -43,7 +35,7 @@ export interface AttackSurfaceResults {
 /**
  * Loaded session state
  */
-export interface LoadedSessionState {
+interface LoadedSessionState {
   session: SessionInfo;
   subagents: UISubagent[];
   attackSurfaceResults: AttackSurfaceResults | null;
@@ -151,7 +143,7 @@ function createDiscoveryFromLogs(
 /**
  * Load complete session state from execution directory
  */
-export async function loadSessionState(
+async function loadSessionState(
   session: SessionInfo,
 ): Promise<LoadedSessionState> {
   const rootPath = session.rootPath;
