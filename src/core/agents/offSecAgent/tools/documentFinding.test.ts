@@ -123,6 +123,7 @@ describe("documentVulnerability judge handling", () => {
       confidence: 0.9,
       reasoning: "The PoC prints static text and does not prove exploitation.",
       concerns: ["PoC evidence is fabricated."],
+      titleAccurate: true,
       verificationSteps: ["Inspected PoC output."],
       toolEvidence: ["stdout contained only static text."],
       reproducedPoc: false,
@@ -152,6 +153,7 @@ describe("documentVulnerability judge handling", () => {
       confidence: 0.4,
       reasoning:
         "Agentic finding judge could not complete. Preserving the successfully executed PoC-backed finding as unverified.",
+      titleAccurate: true,
       concerns: [
         "Agentic judge infrastructure failed before producing a completed verification judgment.",
       ],

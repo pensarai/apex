@@ -58,6 +58,10 @@ export interface FindingJudgeResult extends FindingJudgeVerificationDetails {
   reasoning: string;
   /** Specific concerns identified (empty if valid) */
   concerns: string[];
+  /** Whether the title accurately reflects what the POC demonstrated (not theoretical impact) */
+  titleAccurate: boolean;
+  /** A corrected title if the original overclaims. Only set when titleAccurate is false. */
+  suggestedTitle?: string;
   /** Present when the judge fell back due to an error — contains diagnostics */
   error?: {
     message: string;
@@ -94,6 +98,17 @@ export const FindingJudgeOutputSchema = z.object({
     .array(z.string())
     .describe(
       "Specific concerns identified. Empty array only when the finding is valid and high-confidence.",
+    ),
+  titleAccurate: z
+    .boolean()
+    .describe(
+      "Whether the title accurately reflects what the POC demonstrated (not theoretical impact)",
+    ),
+  suggestedTitle: z
+    .string()
+    .optional()
+    .describe(
+      "A corrected title if the original overclaims. Only set when titleAccurate is false.",
     ),
   verificationSteps: z
     .array(z.string())

@@ -7,7 +7,7 @@ const MAX_DESCRIPTION_CHARS = 4_000;
 
 function truncate(value: string, limit: number): string {
   if (value.length <= limit) return value;
-  return value.substring(0, limit) + "\n... [truncated]";
+  return `${value.substring(0, limit)}\n... [truncated]`;
 }
 
 export const FINDING_JUDGE_SYSTEM_PROMPT = `You are a security finding validation specialist running as an agentic verifier inside an automated penetration testing pipeline.
@@ -52,6 +52,18 @@ Reject or lower confidence when:
 - Accept as expected-behavior when the behavior is clearly by design.
 - Reject when the PoC fabricates evidence, does not demonstrate the claim, or the demonstrated impact fundamentally mismatches the finding.
 
+### Title Accuracy
+Validate whether the title describes what was **DEMONSTRATED** vs. theoretical downstream impact:
+
+**Title inflation red flags:**
+- Title claims a multi-step attack (e.g., "Account Takeover", "RCE") but the POC only demonstrates an enabling condition (e.g., missing rate limiting, information disclosure)
+- Title says "Enables X" but the POC does not demonstrate X actually succeeding
+- A POC that only shows missing rate limiting should be titled "Missing Rate Limiting on [endpoint]", NOT "Account Takeover via [endpoint]" or "Missing Rate Limiting Enables Account Takeover"
+- A POC that only shows user enumeration should NOT be titled "Authentication Bypass"
+- A POC that sends requests without rate limiting should NOT claim "Brute-Force Attack" unless brute-forcing actually succeeded
+
+**The title should describe what was DEMONSTRATED, not theoretical downstream impact.** Theoretical impact belongs in the impact/description fields. If the title overclaims, set titleAccurate to false and provide a corrected suggestedTitle.
+
 ## Response Requirements
 
 Call the response tool exactly once. Include:
@@ -60,6 +72,8 @@ Call the response tool exactly once. Include:
 - confidence: calibrated 0.0 to 1.0. Below 0.7 requires concerns.
 - reasoning: concise explanation grounded in concrete observations.
 - concerns: actionable concerns; empty only for valid high-confidence results.
+- titleAccurate: true if the title describes what was actually demonstrated; false if it overclaims or includes theoretical impact.
+- suggestedTitle: if titleAccurate is false, provide a corrected title that describes only what the POC demonstrated. Otherwise, omit this field.
 - verificationSteps: actions you performed.
 - toolEvidence: concrete observations from provided artifacts or tool outputs.
 - reproducedPoc: whether you reran or independently reproduced the PoC.
