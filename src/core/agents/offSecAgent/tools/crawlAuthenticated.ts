@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { targetFetch } from "../../../http/targetHeaders";
 import {
   type EndpointInfo,
   extractJavascriptEndpoints,
@@ -67,7 +68,7 @@ export function crawlAuthenticated(ctx: ToolContext) {
           visited.add(url);
 
           try {
-            const pageResult = await fetch(url, {
+            const pageResult = await targetFetch(ctx.session, url, {
               method: "GET",
               headers: { cookie: sessionCookie },
             });

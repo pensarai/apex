@@ -45,6 +45,7 @@ async function braveSearch(
   url.searchParams.set("q", query);
   url.searchParams.set("count", "10");
 
+  // biome-ignore lint/style/noRestrictedGlobals: Brave Search API is infrastructure (not the pentest target); must not pass through targetFetch.
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: {
@@ -135,6 +136,7 @@ COMMON SEARCH PATTERNS:
 
         // API key mode: authenticate directly without token exchange or signing
         if (cfg.pensarAPIKey && !cfg.accessToken) {
+          // biome-ignore lint/style/noRestrictedGlobals: Pensar Console (not the pentest target); must not pass through targetFetch.
           const response = await fetch(`${apiUrl}/agents/web_search`, {
             method: "POST",
             headers: {
@@ -186,6 +188,7 @@ COMMON SEARCH PATTERNS:
           body,
         );
 
+        // biome-ignore lint/style/noRestrictedGlobals: Pensar Console (not the pentest target); must not pass through targetFetch.
         const response = await fetch(`${apiUrl}/agents/web_search`, {
           method: "POST",
           headers: {

@@ -309,15 +309,15 @@ export default function WebWizard({
         sessionConfig.codebasePath = state.cwd.trim();
       }
 
-      // Headers config
-      if (state.headers.mode !== "default") {
-        sessionConfig.offensiveHeaders = {
-          mode: state.headers.mode,
-          headers:
-            state.headers.mode === "custom"
-              ? state.headers.customHeaders
-              : undefined,
-        };
+      // Headers config — translate the legacy mode-based wizard state to
+      // the flat `headers` map. "default" means "let sessions.create
+      // snapshot the global defaultHeaders" (we don't set anything).
+      // "none" means "explicitly clear all headers". "custom" means
+      // "replace with this exact map".
+      if (state.headers.mode === "none") {
+        sessionConfig.headers = {};
+      } else if (state.headers.mode === "custom") {
+        sessionConfig.headers = { ...state.headers.customHeaders };
       }
 
       // Operator guidance — combine threat model and prompt.

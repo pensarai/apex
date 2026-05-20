@@ -2,7 +2,15 @@ import { tool } from "ai";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
-import { assertCommandInScope, ScopeViolationError } from "./scopeGuard";
+import {
+  applyHeadersToShellCommand,
+  resolveEffectiveHeaders,
+} from "../../../http/targetHeaders";
+import {
+  assertCommandInScope,
+  extractHostsFromCommand,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 const MAX_INLINE = 50_000;
@@ -21,6 +29,12 @@ const executeCommandInputSchema = z.object({
     .optional()
     .describe(
       "Timeout in seconds. If omitted, the command runs until completion or abort.",
+    ),
+  allow_unprotected: z
+    .boolean()
+    .optional()
+    .describe(
+      "Acknowledge that this command will run WITHOUT the session's configured custom HTTP headers because the tool is unrecognized or the command is pipelined. Defaults to false (fail-closed). Use only when you understand the headers will not be applied.",
     ),
 });
 
@@ -155,7 +169,11 @@ results to disk before any signal arrives.
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
-    execute: async ({ command, timeout }): Promise<ExecuteCommandResult> => {
+    execute: async ({
+      command,
+      timeout,
+      allow_unprotected,
+    }): Promise<ExecuteCommandResult> => {
       if (ctx.abortSignal?.aborted) {
         return {
           success: false,
@@ -181,6 +199,41 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         throw e;
       }
 
+      // INV-shell-injection: every shell command that targets an
+      // in-scope host MUST receive the session's configured custom HTTP
+      // headers. The injector handles recognized tools (curl, nuclei,
+      // ffuf, etc.). When the tool is unknown or the command is
+      // pipelined we fail closed unless the agent explicitly opts out
+      // via `allow_unprotected`.
+      const cmdHosts = extractHostsFromCommand(command);
+      const inject = applyHeadersToShellCommand(command, ctx.session, cmdHosts);
+      if (inject.status === "unknown-tool" && !allow_unprotected) {
+        // Only block when there are actually headers to apply for the
+        // hosts on this command line. `applyHeadersToShellCommand`
+        // returns `unknown-tool` even when no headers are configured.
+        const sampleHost = cmdHosts.find((h) => h.length > 0);
+        const probeUrl = sampleHost ? `https://${sampleHost}` : "";
+        const resolved = probeUrl
+          ? resolveEffectiveHeaders(ctx.session, probeUrl)
+          : null;
+        const hasHeaders = resolved ? resolved.entries.length > 0 : false;
+        if (hasHeaders) {
+          const msg =
+            "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined. " +
+            "Supported HTTP tools: curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto. " +
+            "Either (a) rewrite the command using one of those tools, (b) use the http_request tool, or (c) pass allow_unprotected: true to acknowledge headers will NOT be sent.";
+          return {
+            success: false,
+            error: msg,
+            stdout: "",
+            stderr: msg,
+            command,
+          };
+        }
+      }
+      const effectiveCommand =
+        inject.status === "injected" ? inject.command : command;
+
       // Sandbox mode: route execution through the sandbox
       if (ctx.sandbox) {
         try {
@@ -189,7 +242,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           if (normalizedTimeout != null) {
             ssmOpts.timeout = normalizedTimeout;
           }
-          const result = await ctx.sandbox.execute(command, ssmOpts);
+          const result = await ctx.sandbox.execute(effectiveCommand, ssmOpts);
           const { text: stdout, file: outputFile } = maybeSaveFullOutput(
             result.stdout,
             ctx,
@@ -199,7 +252,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             error: !result.success ? result.stderr || "Command failed" : "",
             stdout,
             stderr: result.stderr || "",
-            command,
+            command: effectiveCommand,
             outputFile,
           };
         } catch (error: unknown) {
@@ -209,7 +262,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             error: msg,
             stdout: "",
             stderr: msg,
-            command,
+            command: effectiveCommand,
           };
         }
       }
@@ -222,7 +275,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             ? (data: string) => ctx.eventBus!.emit("command-output", { data })
             : undefined;
           const result = await ctx.persistentShell.execute(
-            command,
+            effectiveCommand,
             normalizedTimeout,
             onData,
             ctx.abortSignal,
@@ -241,7 +294,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
                   : "",
             stdout,
             stderr: result.stderr,
-            command,
+            command: effectiveCommand,
             outputFile,
           };
         } catch (error: unknown) {
@@ -251,7 +304,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             error: msg,
             stdout: "",
             stderr: msg,
-            command,
+            command: effectiveCommand,
           };
         }
       }

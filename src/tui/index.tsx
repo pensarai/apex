@@ -459,6 +459,7 @@ function AppContent({
         requireApproval: false,
         target,
         sandbox: isBlackbox,
+        headers: sessionConfig.headers,
       },
       initialSkill: { slug: "pentest", args: skillArgs },
     });
