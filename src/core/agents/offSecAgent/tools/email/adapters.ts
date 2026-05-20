@@ -481,6 +481,7 @@ class OutlookAdapter implements EmailAdapter {
         }
         const body = new URLSearchParams(params);
 
+        // biome-ignore lint/style/noRestrictedGlobals: Microsoft OAuth (not the pentest target); must not pass through targetFetch.
         const res = await fetch(
           "https://login.microsoftonline.com/common/oauth2/v2.0/token",
           { method: "POST", body },

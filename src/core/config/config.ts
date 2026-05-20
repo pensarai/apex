@@ -5,6 +5,7 @@ import { getCurrentVersion } from "../installation";
 
 const DEFAULT_CONFIG: Config = {
   responsibleUseAccepted: false,
+  defaultHeaders: { "User-Agent": "pensar-apex" },
 };
 
 export interface Config {
@@ -47,6 +48,16 @@ export interface Config {
   gatewaySigningKey?: string | null;
   // Gateway URL for inference (server-issued, bypasses CloudFront timeout)
   gatewayUrl?: string | null;
+  /**
+   * Default custom HTTP headers seeded into every new session at create
+   * time (snapshot semantics — see INV-snapshot-stability in the
+   * headers plan). Mutated via `pensar config headers` or the TUI
+   * settings dialog. Empty record means "send no custom headers";
+   * absent means "fall back to the User-Agent default".
+   */
+  defaultHeaders?: Record<string, string>;
+  /** ISO timestamp of the last `defaultHeaders` mutation. */
+  defaultHeadersUpdatedAt?: string;
 }
 
 export async function init() {
@@ -92,6 +103,8 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
   return {
     ...parsedConfig,
     responsibleUseAccepted: parsedConfig.responsibleUseAccepted ?? false,
+    defaultHeaders:
+      parsedConfig.defaultHeaders ?? DEFAULT_CONFIG.defaultHeaders,
     surfaceIntegrationEnabled:
       parsedConfig.surfaceIntegrationEnabled ??
       parseBoolEnv(process.env.PENSAR_SURFACE_INTEGRATION),

@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { targetFetch } from "../../../http/targetHeaders";
 import type { ToolContext } from "./types";
 
 const MAX_CONTENT_LENGTH = 50_000;
@@ -93,11 +94,14 @@ BEST PRACTICES:
           ? AbortSignal.any([ctx.abortSignal, controller.signal])
           : controller.signal;
 
-        const response = await fetch(url, {
+        // Identification headers are deliberately omitted here — the
+        // resolver supplies the session/global User-Agent for in-scope
+        // target URLs (INV-single-source). For external/research URLs
+        // (CVE writeups, vendor docs) the resolver returns empty and
+        // the runtime's default UA is used.
+        const response = await targetFetch(ctx.session, url, {
           method: "GET",
           headers: {
-            "User-Agent":
-              "Mozilla/5.0 (compatible; PensarBot/1.0; +https://pensar.dev)",
             Accept:
               "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",

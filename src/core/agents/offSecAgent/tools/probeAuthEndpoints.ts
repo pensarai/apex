@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { targetFetch } from "../../../http/targetHeaders";
 import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
@@ -142,7 +143,7 @@ Returns discovered endpoints and recommended login approach.`,
 
         // Try GET
         try {
-          const getResult = await fetch(url, {
+          const getResult = await targetFetch(ctx.session, url, {
             method: "GET",
             signal: ctx.abortSignal,
           });
@@ -169,7 +170,7 @@ Returns discovered endpoints and recommended login approach.`,
 
         // Try POST with empty JSON
         try {
-          const postResult = await fetch(url, {
+          const postResult = await targetFetch(ctx.session, url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: "{}",

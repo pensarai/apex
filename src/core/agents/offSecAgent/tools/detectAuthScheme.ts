@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { targetFetch } from "../../../http/targetHeaders";
 import type { ToolContext } from "./types";
 
 /**
@@ -32,7 +33,7 @@ Returns detected scheme and required fields for authentication.`,
     }),
     execute: async ({ endpoint }) => {
       try {
-        const response = await fetch(endpoint, {
+        const response = await targetFetch(ctx.session, endpoint, {
           method: "GET",
           redirect: "manual",
           signal: ctx.abortSignal,

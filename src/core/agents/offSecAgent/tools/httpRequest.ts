@@ -2,6 +2,10 @@ import { tool } from "ai";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
+import {
+  resolveEffectiveHeaders,
+  targetFetch,
+} from "../../../http/targetHeaders";
 import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
@@ -187,7 +191,7 @@ COMMON TESTING PATTERNS:
           ? AbortSignal.any([ctx.abortSignal, timeoutController.signal])
           : timeoutController.signal;
 
-        const response = await fetch(url, {
+        const response = await targetFetch(ctx.session, url, {
           method,
           headers,
           body: body || undefined,
@@ -268,10 +272,13 @@ async function executeSandboxHttpRequest(
   try {
     let curlCommand = `curl -i -X ${method}`;
 
-    if (headers) {
-      for (const [key, value] of Object.entries(headers)) {
-        curlCommand += ` -H "${key}: ${value}"`;
-      }
+    // Apply session/global/credential layered headers via the resolver so
+    // the sandbox curl path enforces the same INV-single-source contract
+    // as the local fetch path. Agent-supplied `headers` arg is treated
+    // as the `request` layer (wins over global/session/credential).
+    const mergedHeaders = resolveEffectiveHeaders(ctx.session, url, headers);
+    for (const [key, value] of Object.entries(mergedHeaders)) {
+      curlCommand += ` -H "${key}: ${value}"`;
     }
 
     if (body && ["POST", "PUT", "PATCH"].includes(method)) {

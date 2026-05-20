@@ -175,6 +175,28 @@ export class CredentialManager {
   }
 
   /**
+   * Return stored credentials that have customHeaders set, with the
+   * header values intact. Consumed ONLY by the target-HTTP header
+   * resolver (`src/core/http/targetHeaders.ts`) to merge per-credential
+   * headers into outbound requests at the credential layer
+   * (INV-precedence-deterministic). Other consumers should use
+   * `listReferences()` which returns only key names.
+   */
+  listCredentialsWithHeaders(): Array<{
+    tokens: { customHeaders: Record<string, string> };
+  }> {
+    const out: Array<{ tokens: { customHeaders: Record<string, string> } }> =
+      [];
+    for (const stored of this.store.values()) {
+      const headers = stored.tokens?.customHeaders;
+      if (headers && Object.keys(headers).length > 0) {
+        out.push({ tokens: { customHeaders: { ...headers } } });
+      }
+    }
+    return out;
+  }
+
+  /**
    * Remove a credential from the store.
    * Returns `true` if the credential existed and was removed.
    */

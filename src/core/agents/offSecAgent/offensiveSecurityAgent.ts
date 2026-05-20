@@ -176,7 +176,19 @@ export class OffensiveSecurityAgent<TResult = void> {
     // share browser state via the sandbox's per-sandbox Playwright user-data
     // dir, so they don't need a session object on the host.
     if (!input.sandbox) {
-      this.browserSession = input.browserSession ?? new PlaywrightMcpSession();
+      // Pass the session's resolved headers into the browser session so
+      // every Chromium request carries them (INV-browser-snapshot).
+      // Mutations to session.config.headers after this point do NOT
+      // propagate to the live browser — the user must restart it.
+      const sessionHeaders = input.session.config?.headers;
+      this.browserSession =
+        input.browserSession ??
+        new PlaywrightMcpSession(
+          undefined,
+          undefined,
+          undefined,
+          sessionHeaders,
+        );
     }
 
     // -- Step trace (trace.jsonl) ---------------------------------------------

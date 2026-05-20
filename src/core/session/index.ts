@@ -32,9 +32,11 @@ export const EXFIL_OUTCOME_GUIDANCE =
   "Create proof-of-concept exploits that successfully extract the flag from the target system.";
 
 /**
- * Default headers for pensar-apex
+ * Default seed headers used when neither the caller nor the global
+ * config supplies any. Matches the long-standing default User-Agent so
+ * existing sessions still identify themselves the same way.
  */
-const DEFAULT_OFFENSIVE_HEADERS: Record<string, string> = {
+const DEFAULT_HEADER_RECORD: Record<string, string> = {
   "User-Agent": "pensar-apex",
 };
 
@@ -70,14 +72,18 @@ const ScopeConstraintsObject = z.object({
 
 type ScopeConstraints = z.infer<typeof ScopeConstraintsObject>;
 
-const OffensiveHeadersConfigObject = z.object({
-  mode: z.enum(["none", "default", "custom"]),
-  headers: z.record(z.string(), z.string()).optional(),
-});
-
-export type OffensiveHeadersConfig = z.infer<
-  typeof OffensiveHeadersConfigObject
->;
+/**
+ * Schema for the session's effective custom HTTP headers.
+ *
+ * Replaces the old `OffensiveHeadersConfig { mode, headers? }` shape
+ * (boolean soup with hidden magic for `mode: "default"`). The header
+ * map IS the state — empty record means "send no custom headers", a
+ * populated record means "send these on every in-scope target call".
+ *
+ * Migration of legacy `offensiveHeaders` is performed in
+ * `migrateLegacySessionData` when reading session.json.
+ */
+const SessionHeadersRecord = z.record(z.string(), z.string());
 
 const OperatorSettingsObject = z.object({
   initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
@@ -187,7 +193,16 @@ function resolveSmtpConfig(explicit?: SmtpConfig): SmtpConfig | undefined {
 }
 
 const SessionConfigObject = z.object({
-  offensiveHeaders: OffensiveHeadersConfigObject.optional(),
+  /**
+   * Effective custom HTTP headers for outbound target requests. Merged
+   * from global `config.defaultHeaders` at session create time
+   * (snapshot semantics — INV-snapshot-stability) and mutated
+   * thereafter by CLI flags, `/headers` slash, dialog, or wizard.
+   *
+   * Read exclusively via the resolver in `src/core/http/targetHeaders.ts`
+   * — never directly by tools (INV-single-source).
+   */
+  headers: SessionHeadersRecord.optional(),
   sessionType: z.enum(["web-app"]).optional(),
   mode: z.enum(["auto", "driver", "operator"]).optional(),
   outcomeGuidance: z.string().optional(),
@@ -375,26 +390,48 @@ async function getExecution(
 }
 
 /**
- * Resolve offensive headers based on session config
+ * Migrate a legacy `session.json` (with `offensiveHeaders: { mode, headers? }`)
+ * into the new flat shape (`headers: Record<string, string>`).
+ *
+ * Rules:
+ *  - mode "none"   → headers: {}
+ *  - mode "default" → headers: { "User-Agent": "pensar-apex", ...explicit }
+ *  - mode "custom"  → headers: { ...explicit }
+ *
+ * If both `offensiveHeaders` and `headers` are present (transitional
+ * file), `headers` wins. If neither is present, the field is left
+ * absent — callers default appropriately.
+ *
+ * Non-destructive: returns a new object; the on-disk file is only
+ * rewritten the next time the session is saved.
  */
-function getOffensiveHeaders(
-  session: SessionInfo,
-): Record<string, string> | undefined {
-  const config = session.config?.offensiveHeaders;
+export function migrateLegacySessionData(input: unknown): unknown {
+  if (!input || typeof input !== "object") return input;
+  const root = input as Record<string, unknown>;
+  const config = root.config;
+  if (!config || typeof config !== "object") return input;
 
-  if (!config || config.mode === "none") {
-    return undefined;
+  const cfg = config as Record<string, unknown>;
+  if ("headers" in cfg) return input;
+  if (!("offensiveHeaders" in cfg)) return input;
+
+  const oh = cfg.offensiveHeaders as
+    | { mode?: string; headers?: Record<string, string> }
+    | undefined;
+  let headers: Record<string, string> = {};
+  if (oh) {
+    if (oh.mode === "default") headers = { ...DEFAULT_HEADER_RECORD };
+    if (oh.headers) headers = { ...headers, ...oh.headers };
   }
 
-  if (config.mode === "default") {
-    return DEFAULT_OFFENSIVE_HEADERS;
-  }
-
-  if (config.mode === "custom" && config.headers) {
-    return config.headers;
-  }
-
-  return undefined;
+  const { offensiveHeaders: _drop, ...restConfig } = cfg;
+  return {
+    ...root,
+    config: {
+      ...restConfig,
+      headers,
+    },
+  };
 }
 
 // ============================================================================
@@ -475,6 +512,22 @@ export async function create(input: CreateInputProps) {
 
   const smtpConfig = resolveSmtpConfig(input.config?.smtpConfig);
 
+  // Resolve effective headers for the new session. Caller-supplied
+  // `config.headers` wins verbatim (CLI flag / wizard already merged
+  // global if they wanted to). Otherwise we snapshot the current global
+  // defaultHeaders so the session is "locked" at create time
+  // (INV-snapshot-stability).
+  let snapshotHeaders: Record<string, string>;
+  if (input.config?.headers !== undefined) {
+    snapshotHeaders = { ...input.config.headers };
+  } else {
+    const { config: appConfig } = await import("../config");
+    const cfg = await appConfig.get();
+    snapshotHeaders = cfg.defaultHeaders
+      ? { ...cfg.defaultHeaders }
+      : { ...DEFAULT_HEADER_RECORD };
+  }
+
   const result: SessionInfo = {
     id: id,
     version: getCurrentVersion(),
@@ -487,12 +540,7 @@ export async function create(input: CreateInputProps) {
     config: {
       ...input.config,
       mode: input.config?.mode || "auto",
-      offensiveHeaders: input.config?.offensiveHeaders || {
-        mode: "default",
-        headers: {
-          "User-Agent": "pensar-apex",
-        },
-      },
+      headers: snapshotHeaders,
       outcomeGuidance:
         input.config?.outcomeGuidance ||
         (input.config?.exfilMode
@@ -536,7 +584,8 @@ export async function create(input: CreateInputProps) {
 }
 
 export const get = async (id: string) => {
-  const read = await Storage.read<SessionInfo>(["sessions", id, "session"]);
+  const raw = await Storage.read<unknown>(["sessions", id, "session"]);
+  const read = migrateLegacySessionData(raw) as SessionInfo;
 
   // Reconstruct RateLimiter instance (it gets serialized as plain object)
   // This ensures the session has a proper RateLimiter with methods
@@ -881,6 +930,30 @@ export async function updateOperatorSettings(
 }
 
 // ============================================================================
+// Custom HTTP Headers Update
+// ============================================================================
+
+/**
+ * Replace the session's effective custom HTTP headers in one atomic
+ * write. Pass an empty record to clear all headers.
+ *
+ * Subsequent mutations to the global default headers do NOT propagate
+ * into already-running sessions — the session keeps the snapshot it
+ * was created with.
+ */
+export async function updateSessionHeaders(
+  sessionId: string,
+  headers: Record<string, string>,
+): Promise<SessionInfo> {
+  return await update(sessionId, (session) => {
+    if (!session.config) {
+      session.config = {};
+    }
+    session.config.headers = { ...headers };
+  });
+}
+
+// ============================================================================
 // Toolset State Management
 // ============================================================================
 
@@ -934,4 +1007,5 @@ export const sessions = {
   hasOperatorState,
   getResumeMessages,
   updateOperatorSettings,
+  updateSessionHeaders,
 };

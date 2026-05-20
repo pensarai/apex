@@ -21,12 +21,6 @@ interface HITLWizardProps {
   initialTarget?: string;
   initialName?: string;
   initialRequireApproval?: boolean;
-  initialAuthUrl?: string;
-  initialAuthUser?: string;
-  initialAuthPass?: string;
-  initialAuthInstructions?: string;
-  initialHeadersMode?: "none" | "default" | "custom";
-  initialCustomHeaders?: Record<string, string>;
   initialModel?: string;
 }
 

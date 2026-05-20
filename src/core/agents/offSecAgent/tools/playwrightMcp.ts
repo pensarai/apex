@@ -357,6 +357,9 @@ export class PlaywrightMcpSession {
   private readonly headless: boolean;
   private readonly userAgent: string | undefined;
   private readonly viewportSize: string | undefined;
+  private readonly extraHttpHeaders: Record<string, string> | undefined;
+  /** Temp config file written for MCP launch — deleted on disconnect. */
+  private mcpConfigPath: string | null = null;
 
   /**
    * Construct a new isolated browser session.
@@ -384,6 +387,7 @@ export class PlaywrightMcpSession {
     headless?: boolean,
     userAgent?: string | null,
     viewportSize?: string | null,
+    extraHttpHeaders?: Record<string, string> | null,
   ) {
     this.headless = headless ?? defaultHeadless;
     this.userAgent =
@@ -392,6 +396,17 @@ export class PlaywrightMcpSession {
       viewportSize === null
         ? undefined
         : (viewportSize ?? defaultViewportSize ?? HARDCODED_VIEWPORT_FALLBACK);
+
+    // Snapshot the headers at construction so subsequent mutations to
+    // the caller's record don't leak into this already-launched session
+    // (INV-browser-snapshot). The caller is responsible for resolving
+    // effective headers (session/global/credential) before passing.
+    const headerSource =
+      extraHttpHeaders === null ? undefined : extraHttpHeaders;
+    this.extraHttpHeaders =
+      headerSource && Object.keys(headerSource).length > 0
+        ? { ...headerSource }
+        : undefined;
   }
 
   /** Immediately reset all instance state. Synchronous — no I/O. */
@@ -463,6 +478,25 @@ export class PlaywrightMcpSession {
 
         if (this.viewportSize) {
           args.push(`--viewport-size=${this.viewportSize}`);
+        }
+
+        // INV-browser-snapshot: write a temporary @playwright/mcp config
+        // file with `browser.contextOptions.extraHTTPHeaders` so every
+        // Chromium request includes the session's custom headers.
+        if (this.extraHttpHeaders) {
+          const os = await import("os");
+          const fsp = await import("fs/promises");
+          const cfg = {
+            browser: {
+              contextOptions: { extraHTTPHeaders: this.extraHttpHeaders },
+            },
+          };
+          this.mcpConfigPath = join(
+            os.tmpdir(),
+            `pensar-mcp-${process.pid}-${Date.now()}.json`,
+          );
+          await fsp.writeFile(this.mcpConfigPath, JSON.stringify(cfg), "utf-8");
+          args.push("--config", this.mcpConfigPath);
         }
 
         // Disable Chromium sandbox when running as root (e.g., in Docker/ECS containers).
@@ -553,6 +587,21 @@ export class PlaywrightMcpSession {
     }
 
     this.forceKillProcess();
+
+    // Clean up the temp MCP config file (if any).
+    if (this.mcpConfigPath) {
+      const configPath = this.mcpConfigPath;
+      this.mcpConfigPath = null;
+      void (async () => {
+        try {
+          const fsp = await import("fs/promises");
+          await fsp.unlink(configPath);
+        } catch {
+          // Best-effort cleanup — already-deleted is fine.
+        }
+      })();
+    }
+
     this.disconnecting = false;
   }
 
@@ -956,6 +1005,7 @@ export function createBrowserTools(
   userAgent?: string | null,
   viewportSize?: string | null,
   existingSession?: PlaywrightMcpSession,
+  extraHttpHeaders?: Record<string, string> | null,
 ) {
   let session: PlaywrightMcpSession;
 
@@ -968,7 +1018,12 @@ export function createBrowserTools(
     // PlaywrightMcpSession's constructor folds in the module-level
     // defaults (1920x1080 viewport, desktop Chrome UA, headless=true)
     // when these args are undefined — pass them through verbatim.
-    session = new PlaywrightMcpSession(headless, userAgent, viewportSize);
+    session = new PlaywrightMcpSession(
+      headless,
+      userAgent,
+      viewportSize,
+      extraHttpHeaders,
+    );
 
     if (abortSignal) {
       const onAbort = () => session.disconnect().catch(() => {});
