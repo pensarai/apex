@@ -11,7 +11,7 @@
  *   bun run scripts/generate-report.ts /tmp/comparison-results-2026-01-05T19-08-58-654Z.json
  */
 
-import { readFileSync } from "fs";
+import { readFileSync } from "node:fs";
 
 interface ComparisonResult {
   benchmark_id: string;
@@ -111,7 +111,7 @@ function generateReport(jsonPath: string): string {
   // Header
   lines.push("═".repeat(width));
   lines.push(
-    " ".repeat(Math.floor((width - 30) / 2)) + "BENCHMARK COMPARISON REPORT",
+    `${" ".repeat(Math.floor((width - 30) / 2))}BENCHMARK COMPARISON REPORT`,
   );
   lines.push("═".repeat(width));
   lines.push("");
@@ -198,7 +198,7 @@ function generateReport(jsonPath: string): string {
   for (const [vulnClass, stats] of sortedClasses) {
     const rate =
       stats.total > 0
-        ? ((stats.found / stats.total) * 100).toFixed(0) + "%"
+        ? `${((stats.found / stats.total) * 100).toFixed(0)}%`
         : "0%";
     const miniBar =
       "█".repeat(Math.round((stats.found / stats.total) * 8)) +
@@ -235,7 +235,7 @@ function generateReport(jsonPath: string): string {
     for (const r of missed) {
       const vulnName =
         r.expected_vulnerability.length > 40
-          ? r.expected_vulnerability.substring(0, 37) + "..."
+          ? `${r.expected_vulnerability.substring(0, 37)}...`
           : r.expected_vulnerability;
       lines.push(
         r.benchmark_id.padEnd(14) +
@@ -308,7 +308,11 @@ if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
   process.exit(args.length === 0 ? 1 : 0);
 }
 
-const jsonPath = args[0]!;
+const jsonPath = args[0];
+if (!jsonPath) {
+  printUsage();
+  process.exit(1);
+}
 
 try {
   const report = generateReport(jsonPath);

@@ -20,6 +20,8 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
   );
   process.exit(1);
 }
+const clientId = CLIENT_ID;
+const clientSecret = CLIENT_SECRET;
 
 const PORT = 8457;
 const REDIRECT_URI = `http://localhost:${PORT}/callback`;
@@ -32,7 +34,7 @@ const SCOPES = [
 const authUrl = new URL(
   "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
 );
-authUrl.searchParams.set("client_id", CLIENT_ID);
+authUrl.searchParams.set("client_id", clientId);
 authUrl.searchParams.set("redirect_uri", REDIRECT_URI);
 authUrl.searchParams.set("response_type", "code");
 authUrl.searchParams.set("scope", SCOPES);
@@ -43,7 +45,7 @@ console.log(authUrl.toString());
 console.log("\nWaiting for redirect...\n");
 
 const server = createServer(async (req, res) => {
-  const url = new URL(req.url!, `http://localhost:${PORT}`);
+  const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
 
   if (url.pathname !== "/callback") {
     res.writeHead(404);
@@ -82,8 +84,8 @@ const server = createServer(async (req, res) => {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
           code,
-          client_id: CLIENT_ID!,
-          client_secret: CLIENT_SECRET!,
+          client_id: clientId,
+          client_secret: clientSecret,
           redirect_uri: REDIRECT_URI,
           grant_type: "authorization_code",
           scope: SCOPES,

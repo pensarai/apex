@@ -1,6 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
+import {
+  resolvePathWithinCodebaseRoot,
+  resolveWhiteboxCodebaseRoot,
+} from "../../../whitebox";
 import type { ToolContext } from "./types";
 
 /** Default max concurrent coding agents */
@@ -18,7 +22,10 @@ export function spawnCodingAgent(ctx: ToolContext) {
   return tool({
     description: `Spawn one or more coding sub-agents to perform tasks on the codebase in parallel.
 
-Each task gets its own autonomous agent with filesystem access (read_file, list_files, grep, execute_command). The agents work independently and return their text output when done.
+Each task gets its own autonomous CodeAgent with filesystem tools plus whitebox helpers
+(profile_codebase, query_whitebox_catalog, run_code_query, run_whitebox_scan, candidates, bounded jobs,
+read_whitebox_artifact), plus execute_command, http_request, web_search, and document_app/document_endpoint.
+The agents work independently and return their text output when done.
 
 Use this to fan out analysis work — e.g. analyze multiple apps, modules, or concerns in parallel for higher fidelity.
 
@@ -62,10 +69,35 @@ Returns an array of results with the text output from each agent.`,
         };
       }
 
-      const concurrency = DEFAULT_CONCURRENCY;
-      const total = tasks.length;
+      const codebaseRoot = resolveWhiteboxCodebaseRoot({
+        agentCwd: ctx.agentCwd,
+        codebasePath: ctx.session.config?.codebasePath,
+      });
 
-      // Results accumulator
+      const validatedTasks: typeof tasks = [];
+      for (const t of tasks) {
+        try {
+          validatedTasks.push({
+            ...t,
+            codebasePath: resolvePathWithinCodebaseRoot(
+              codebaseRoot,
+              t.codebasePath,
+            ),
+          });
+        } catch {
+          return {
+            success: false,
+            message: `Coding agent codebasePath "${t.codebasePath}" escapes the configured codebase root.`,
+            results: [],
+            recovery:
+              "Use paths inside the configured codebase root (session.config.codebasePath or agent cwd).",
+          };
+        }
+      }
+
+      const concurrency = DEFAULT_CONCURRENCY;
+      const total = validatedTasks.length;
+
       const results: Array<{
         codebasePath: string;
         objective: string;
@@ -73,10 +105,9 @@ Returns an array of results with the text output from each agent.`,
         error?: string;
       }> = [];
 
-      // Bounded-concurrency executor
       let active = 0;
       let idx = 0;
-      const queue = tasks.map((t, i) => ({ ...t, index: i }));
+      const queue = validatedTasks.map((t, i) => ({ ...t, index: i }));
 
       await new Promise<void>((resolve) => {
         function next() {
