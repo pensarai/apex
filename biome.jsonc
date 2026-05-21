@@ -50,8 +50,7 @@
         "noUselessEscapeInString": "off",
         // Existing pattern across many TUI list components; revisit in a follow-up triage PR.
         "noArrayIndexKey": "off",
-        // Existing pattern in tightly-scoped imperative blocks; revisit in a follow-up triage PR.
-        "noImplicitAnyLet": "off",
+        "noImplicitAnyLet": "error",
         // Existing pattern in defensive/initialization code; revisit in a follow-up triage PR.
         "noAssignInExpressions": "off",
         // Existing pattern with intentional void callbacks; revisit in a follow-up triage PR.

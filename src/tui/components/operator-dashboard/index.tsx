@@ -37,7 +37,10 @@ import {
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,
 } from "../../../core/ai";
-import { runOffensiveSecurityAgent } from "../../../core/api";
+import {
+  type RunAgentResult,
+  runOffensiveSecurityAgent,
+} from "../../../core/api";
 import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
@@ -1223,7 +1226,7 @@ export default function OperatorDashboard({
       }
 
       try {
-        let agentResult;
+        let agentResult: RunAgentResult;
 
         const systemPrompt = buildOperatorSystemPrompt(
           initialConfig?.target,

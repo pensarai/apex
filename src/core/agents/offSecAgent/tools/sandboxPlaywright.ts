@@ -30,7 +30,7 @@ import type {
   BrowserNavigateResult,
   BrowserScreenshotResult,
 } from "./playwrightMcp";
-import type { UnifiedSandbox } from "./sandbox";
+import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
 import type { ToolContext } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -136,7 +136,7 @@ export async function installSandboxPlaywright(
       { timeout: 10 },
     );
 
-    let browserResult;
+    let browserResult: SandboxExecutionResult | undefined;
     for (let attempt = 1; attempt <= 3; attempt++) {
       browserResult = await sandbox.execute(
         `cd ${SANDBOX_PW_DIR} && npx playwright install chromium --with-deps 2>&1`,
