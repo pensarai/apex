@@ -85,7 +85,8 @@ export default function SkillsDialog({
     const grouped: Record<string, SkillEntry[]> = {};
     for (const skill of allSkills) {
       const key = skill.source;
-      (grouped[key] ??= []).push(skill);
+      grouped[key] ??= [];
+      grouped[key].push(skill);
     }
 
     const groups: Array<{ label: string; skills: SkillEntry[] }> = [];

@@ -31,8 +31,11 @@ function extractUnionMembers(dtsPath: string, typeName: string): string[] {
   const unionBody = match[1]!;
   const members: string[] = [];
   const literalRegex = /'([^']+)'/g;
-  let m: RegExpExecArray | null;
-  while ((m = literalRegex.exec(unionBody)) !== null) {
+  for (
+    let m = literalRegex.exec(unionBody);
+    m !== null;
+    m = literalRegex.exec(unionBody)
+  ) {
     members.push(m[1]!);
   }
   return members;
