@@ -65,6 +65,7 @@ export const MessageRenderer = memo(function MessageRenderer({
   // Memoize markdown conversion for assistant messages.
   // `obfuscateEnabled` is included in deps so toggling /obfuscate busts
   // the cache: the same rawContent must re-render with the new state.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `obfuscateEnabled` is an intentional cache-buster — forces re-render when obfuscation mode toggles.
   const displayContent = useMemo(
     () =>
       message.role === "assistant"

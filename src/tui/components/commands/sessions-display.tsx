@@ -75,7 +75,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     setReportContent(content);
     setReportSessionPath(session.rootPath);
     setShowReportViewer(true);
-  }, []);
+  }, [toast]);
 
   const openReportExternal = useCallback(async () => {
     if (!reportSessionPath) return;
@@ -83,7 +83,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     if (err) {
       toast(err, "error");
     }
-  }, [reportSessionPath]);
+  }, [reportSessionPath, toast]);
 
   // Clamp selectedIndex when list changes
   useEffect(() => {
