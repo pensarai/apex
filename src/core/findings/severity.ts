@@ -10,8 +10,6 @@ export const FINDING_SEVERITIES = [
 
 export const FindingSeveritySchema = z.enum(FINDING_SEVERITIES);
 
-export type FindingSeverity = z.infer<typeof FindingSeveritySchema>;
-
 export function normalizeFindingSeverity(value: unknown): unknown {
   if (typeof value !== "string") return value;
 
