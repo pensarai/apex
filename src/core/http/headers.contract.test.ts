@@ -241,6 +241,30 @@ describe("targetFetch", () => {
 
     spy.mockRestore();
   });
+
+  it("preserves caller overrides on out-of-scope URLs", async () => {
+    // INV-scope-bound applies only to the resolver-injected layers
+    // (session/global/credential). Caller-explicit overrides like
+    // `Accept` for research URLs must pass through.
+    const session = makeSession({
+      config: { headers: { Authorization: "Bearer secret" } },
+    });
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("ok"));
+
+    await targetFetch(session, "https://cve.example.org/writeup", {
+      headers: { Accept: "text/html", "Accept-Language": "en-US" },
+    });
+
+    const init = spy.mock.calls[0][1] as RequestInit;
+    expect(init.headers).toEqual({
+      Accept: "text/html",
+      "Accept-Language": "en-US",
+    });
+
+    spy.mockRestore();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -300,6 +324,25 @@ describe("applyHeadersToShellCommand", () => {
     expect(r.command).not.toContain(`X-API-Key: from-session`);
     expect(r.command).toContain(`X-Other: 1`);
   });
+
+  it("shell-escapes values containing quotes, dollar, and backticks", () => {
+    const session = makeSession({
+      config: {
+        headers: { "X-Risky": 'val with "quotes" and $VAR and `cmd`' },
+      },
+    });
+    const r = applyHeadersToShellCommand(
+      "curl https://example.com/",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("injected");
+    // Every shell-special character must be backslash-escaped inside
+    // the double-quoted -H argument.
+    expect(r.command).toContain(`\\"quotes\\"`);
+    expect(r.command).toContain(`\\$VAR`);
+    expect(r.command).toContain("\\`cmd\\`");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -325,6 +368,16 @@ describe("redactSecretsInHistoryEntry", () => {
     );
     expect(r).not.toContain("xyz");
     expect(r).toContain("Authorization: <redacted>");
+  });
+
+  it("masks multi-word quoted --header values (Bearer <token>)", () => {
+    // Regression: a previous regex stopped at the first whitespace in
+    // the value, leaving the token after "Bearer " on disk.
+    const r = redactSecretsInHistoryEntry(
+      `pensar pentest --header "Authorization: Bearer super-secret-token"`,
+    );
+    expect(r).not.toContain("super-secret-token");
+    expect(r).toContain(`"Authorization: <redacted>"`);
   });
 
   it("leaves unrelated commands untouched", () => {
