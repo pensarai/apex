@@ -4,10 +4,14 @@ export type {
   CacheMetrics,
   GenerateObjectOpts,
   ModelInfo,
+  OpenAIReasoningEffort,
   StreamResponseOpts,
 } from "./ai";
 export {
+  DEFAULT_OPENAI_REASONING_EFFORT,
   generateObjectResponse,
+  getOpenAIReasoningEfforts,
+  modelSupportsOpenAIReasoning,
   modelSupportsThinking,
   streamResponse,
 } from "./ai";
