@@ -1,7 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { targetFetch } from "../../../http/targetHeaders";
-import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
+import {
+  assertUrlInScope,
+  resolverSessionFromCtx,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 /**
@@ -62,7 +66,11 @@ Use this to:
               request.headers = { Cookie: sessionCookie };
             }
 
-            const result = await targetFetch(ctx.session, endpoint, request);
+            const result = await targetFetch(
+              resolverSessionFromCtx(ctx),
+              endpoint,
+              request,
+            );
             const body = await result.text();
 
             results.push({

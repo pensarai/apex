@@ -5,7 +5,11 @@ import {
   type EndpointInfo,
   extractJavascriptEndpoints,
 } from "../../specialized/attackSurface/jsExtraction";
-import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
+import {
+  assertUrlInScope,
+  resolverSessionFromCtx,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 /**
@@ -68,10 +72,14 @@ export function crawlAuthenticated(ctx: ToolContext) {
           visited.add(url);
 
           try {
-            const pageResult = await targetFetch(ctx.session, url, {
-              method: "GET",
-              headers: { cookie: sessionCookie },
-            });
+            const pageResult = await targetFetch(
+              resolverSessionFromCtx(ctx),
+              url,
+              {
+                method: "GET",
+                headers: { cookie: sessionCookie },
+              },
+            );
 
             if (pageResult.status >= 200 && pageResult.status < 400) {
               const html = await pageResult.text();

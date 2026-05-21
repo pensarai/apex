@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { targetFetch } from "../../../http/targetHeaders";
+import { resolverSessionFromCtx } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 const MAX_CONTENT_LENGTH = 50_000;
@@ -99,7 +100,7 @@ BEST PRACTICES:
         // target URLs (INV-single-source). For external/research URLs
         // (CVE writeups, vendor docs) the resolver returns empty and
         // the runtime's default UA is used.
-        const response = await targetFetch(ctx.session, url, {
+        const response = await targetFetch(resolverSessionFromCtx(ctx), url, {
           method: "GET",
           headers: {
             Accept:

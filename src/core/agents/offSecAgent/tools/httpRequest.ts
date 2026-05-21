@@ -7,7 +7,11 @@ import {
   shellQuote,
   targetFetch,
 } from "../../../http/targetHeaders";
-import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
+import {
+  assertUrlInScope,
+  resolverSessionFromCtx,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 const MAX_INLINE_BODY = 5_000;
@@ -192,7 +196,7 @@ COMMON TESTING PATTERNS:
           ? AbortSignal.any([ctx.abortSignal, timeoutController.signal])
           : timeoutController.signal;
 
-        const response = await targetFetch(ctx.session, url, {
+        const response = await targetFetch(resolverSessionFromCtx(ctx), url, {
           method,
           headers,
           body: body || undefined,
@@ -277,7 +281,11 @@ async function executeSandboxHttpRequest(
     // the sandbox curl path enforces the same INV-single-source contract
     // as the local fetch path. Agent-supplied `headers` arg is treated
     // as the `request` layer (wins over global/session/credential).
-    const mergedHeaders = resolveEffectiveHeaders(ctx.session, url, headers);
+    const mergedHeaders = resolveEffectiveHeaders(
+      resolverSessionFromCtx(ctx),
+      url,
+      headers,
+    );
     for (const [key, value] of Object.entries(mergedHeaders)) {
       curlCommand += ` -H "${shellQuote(`${key}: ${value}`)}"`;
     }

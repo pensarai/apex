@@ -27,6 +27,7 @@
 
 import { getDomain } from "tldts";
 import { parseTargetUrl } from "../../../../util/url";
+import type { ResolverSession } from "../../../http/targetHeaders";
 import type { ToolContext } from "./types";
 
 /**
@@ -51,6 +52,31 @@ export class ScopeViolationError extends Error {
     );
     this.name = "ScopeViolationError";
   }
+}
+
+/**
+ * Build a `ResolverSession` that the `src/core/http/` resolver can use
+ * without diverging from scopeGuard's scope view.
+ *
+ * The resolver only reads `session.targets` and
+ * `session.config.scopeConstraints.allowedHosts`; it has no awareness of
+ * `ctx.target`. When a tool ctx carries a `target` that isn't already in
+ * `session.targets` (e.g. sub-agents like findingJudge / documentFinding
+ * that pass `ctx.target` through to a spawned agent), the resolver would
+ * silently classify that host as out-of-scope and drop configured
+ * headers — even though scopeGuard had just approved the command.
+ *
+ * Folding `ctx.target` into the resolver's `targets` view here makes the
+ * two scope checks come from a single source of truth.
+ */
+export function resolverSessionFromCtx(ctx: ToolContext): ResolverSession {
+  if (!ctx.target) return ctx.session;
+  const existing = ctx.session.targets ?? [];
+  if (existing.includes(ctx.target)) return ctx.session;
+  return {
+    ...ctx.session,
+    targets: [...existing, ctx.target],
+  };
 }
 
 /**

@@ -6,6 +6,7 @@ import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
 import {
   assertCommandInScope,
   extractHostsFromCommand,
+  resolverSessionFromCtx,
   ScopeViolationError,
 } from "./scopeGuard";
 import type { ToolContext } from "./types";
@@ -203,7 +204,11 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       // pipelined we fail closed unless the agent explicitly opts out
       // via `allow_unprotected`.
       const cmdHosts = extractHostsFromCommand(command);
-      const inject = applyHeadersToShellCommand(command, ctx.session, cmdHosts);
+      const inject = applyHeadersToShellCommand(
+        command,
+        resolverSessionFromCtx(ctx),
+        cmdHosts,
+      );
       if (inject.status === "unknown-tool" && !allow_unprotected) {
         // `applyHeadersToShellCommand` only returns `unknown-tool` when
         // there ARE headers configured for an in-scope host on the

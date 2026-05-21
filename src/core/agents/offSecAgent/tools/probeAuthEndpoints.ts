@@ -1,7 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { targetFetch } from "../../../http/targetHeaders";
-import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
+import {
+  assertUrlInScope,
+  resolverSessionFromCtx,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 const AUTH_ENDPOINT_PATTERNS = {
@@ -143,10 +147,14 @@ Returns discovered endpoints and recommended login approach.`,
 
         // Try GET
         try {
-          const getResult = await targetFetch(ctx.session, url, {
-            method: "GET",
-            signal: ctx.abortSignal,
-          });
+          const getResult = await targetFetch(
+            resolverSessionFromCtx(ctx),
+            url,
+            {
+              method: "GET",
+              signal: ctx.abortSignal,
+            },
+          );
           if (getResult.status !== 404 && getResult.status !== 0) {
             methods.push("GET");
             if (getResult.status === 401)
@@ -170,12 +178,16 @@ Returns discovered endpoints and recommended login approach.`,
 
         // Try POST with empty JSON
         try {
-          const postResult = await targetFetch(ctx.session, url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: "{}",
-            signal: ctx.abortSignal,
-          });
+          const postResult = await targetFetch(
+            resolverSessionFromCtx(ctx),
+            url,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: "{}",
+              signal: ctx.abortSignal,
+            },
+          );
           if (postResult.status !== 404 && postResult.status !== 0) {
             methods.push("POST");
             const body = await postResult.text();
