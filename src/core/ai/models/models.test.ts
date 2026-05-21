@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { AVAILABLE_MODELS, getMaxOutputTokens, getModelInfo } from "./index";
+import {
+  DEFAULT_OPENAI_REASONING_EFFORT,
+  modelSupportsOpenAIReasoning,
+  normalizeOpenAIReasoningEffort,
+} from "../ai";
+import {
+  AVAILABLE_MODELS,
+  getMaxOutputTokens,
+  getModelInfo,
+} from "./index";
 
 describe("getMaxOutputTokens", () => {
   it("returns a positive value for every model in AVAILABLE_MODELS", () => {
@@ -129,5 +138,27 @@ describe("getMaxOutputTokens", () => {
 
   it("falls back to a small default for genuinely unknown providers", () => {
     expect(getMaxOutputTokens("totally-unknown-model")).toBe(4_096);
+  });
+});
+
+describe("OpenAI reasoning effort support", () => {
+  it("supports GPT-5.5 and o-series reasoning models", () => {
+    expect(modelSupportsOpenAIReasoning("gpt-5.5")).toBe(true);
+    expect(modelSupportsOpenAIReasoning("gpt-5.5-2026-04-23")).toBe(true);
+    expect(modelSupportsOpenAIReasoning("o3-mini")).toBe(true);
+  });
+
+  it("does not apply reasoning effort to unsupported GPT-5 variants", () => {
+    expect(modelSupportsOpenAIReasoning("gpt-5-nano")).toBe(false);
+    expect(modelSupportsOpenAIReasoning("gpt-5.1-codex-mini")).toBe(false);
+    expect(modelSupportsOpenAIReasoning("gpt-5.1-codex-max")).toBe(false);
+    expect(modelSupportsOpenAIReasoning("gpt-5.3-codex")).toBe(false);
+    expect(normalizeOpenAIReasoningEffort("gpt-5-nano")).toBeUndefined();
+  });
+
+  it("defaults only supported reasoning models to medium", () => {
+    expect(normalizeOpenAIReasoningEffort("gpt-5.5")).toBe(
+      DEFAULT_OPENAI_REASONING_EFFORT,
+    );
   });
 });

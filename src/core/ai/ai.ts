@@ -38,6 +38,23 @@ export type OpenAIReasoningEffort =
 
 export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 
+const OPENAI_REASONING_MODEL_IDS = new Set([
+  "gpt-5",
+  "gpt-5-2025-08-07",
+  "gpt-5.1",
+  "gpt-5.1-2025-11-13",
+  "gpt-5.2",
+  "gpt-5.2-2025-12-11",
+  "gpt-5.2-pro",
+  "gpt-5.2-pro-2025-12-11",
+  "gpt-5.4",
+  "gpt-5.4-2026-03-05",
+  "gpt-5.4-pro",
+  "gpt-5.4-pro-2026-03-05",
+  "gpt-5.5",
+  "gpt-5.5-2026-04-23",
+]);
+
 /** Callback for reporting token usage from AI operations */
 type UsageCallback = (
   model: string,
@@ -571,7 +588,9 @@ export function modelSupportsThinking(modelId: string): boolean {
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
   const { provider } = getModelInfo(modelId);
   if (provider !== "openai") return false;
-  return /^gpt-5(?:\.|\b|-)/.test(modelId) || /^o[134](?:\b|-)/.test(modelId);
+  return (
+    OPENAI_REASONING_MODEL_IDS.has(modelId) || /^o[134](?:\b|-)/.test(modelId)
+  );
 }
 
 export function getOpenAIReasoningEfforts(
