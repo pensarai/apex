@@ -65,17 +65,20 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
     ? availableListHeight
     : undefined;
 
-  const viewReport = useCallback(async (sessionId: string) => {
-    const session = await sessions.get(sessionId);
-    const content = readSessionReport(session.rootPath);
-    if (!content) {
-      toast("Report not found", "error");
-      return;
-    }
-    setReportContent(content);
-    setReportSessionPath(session.rootPath);
-    setShowReportViewer(true);
-  }, [toast]);
+  const viewReport = useCallback(
+    async (sessionId: string) => {
+      const session = await sessions.get(sessionId);
+      const content = readSessionReport(session.rootPath);
+      if (!content) {
+        toast("Report not found", "error");
+        return;
+      }
+      setReportContent(content);
+      setReportSessionPath(session.rootPath);
+      setShowReportViewer(true);
+    },
+    [toast],
+  );
 
   const openReportExternal = useCallback(async () => {
     if (!reportSessionPath) return;

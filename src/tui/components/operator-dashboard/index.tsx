@@ -483,7 +483,12 @@ export default function OperatorDashboard({
       }
     }
     loadSession();
-  }, [sessionId, subagentStore.setState, initialConfig?.operatorMode, setSessionCwd]);
+  }, [
+    sessionId,
+    subagentStore.setState,
+    initialConfig?.operatorMode,
+    setSessionCwd,
+  ]);
 
   useEffect(() => {
     return () => setSessionCwd(null);
