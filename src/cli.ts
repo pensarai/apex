@@ -69,8 +69,12 @@ function getAllArgs(flag: string, argv = args): string[] {
 
 function attachCliAgentStreamListeners(bus: AgentEventBus): void {
   bus.on("text-delta", (d) => process.stdout.write(d.text));
-  bus.on("tool-call-complete", (d) => process.stdout.write(`\n→ ${d.toolName}\n`));
-  bus.on("tool-result", (d) => process.stdout.write(`✓ ${d.toolName} completed\n`));
+  bus.on("tool-call-complete", (d) =>
+    process.stdout.write(`\n→ ${d.toolName}\n`),
+  );
+  bus.on("tool-result", (d) =>
+    process.stdout.write(`✓ ${d.toolName} completed\n`),
+  );
   bus.on("error", (d) => process.stderr.write(`Error: ${d.error}\n`));
 }
 
@@ -351,8 +355,12 @@ Model:    ${model}
 
   const threatBus = new AgentEventBus();
   threatBus.on("text-delta", (d) => process.stdout.write(d.text));
-  threatBus.on("tool-call-complete", (d) => process.stdout.write(`\n  → ${d.toolName}\n`));
-  threatBus.on("tool-result", (d) => process.stdout.write(`  ✓ ${d.toolName}\n`));
+  threatBus.on("tool-call-complete", (d) =>
+    process.stdout.write(`\n  → ${d.toolName}\n`),
+  );
+  threatBus.on("tool-result", (d) =>
+    process.stdout.write(`  ✓ ${d.toolName}\n`),
+  );
   threatBus.on("error", (d) => process.stderr.write(`Error: ${d.error}\n`));
 
   await runThreatModelWorkflow({
@@ -482,7 +490,9 @@ ${sep}\n`);
 
 async function runUpgrade() {
   const currentVersion = getCurrentVersion();
-  process.stdout.write(`Current version: v${currentVersion}\nChecking for updates...\n`);
+  process.stdout.write(
+    `Current version: v${currentVersion}\nChecking for updates...\n`,
+  );
 
   const result = await upgrade({ interactive: true });
   process.stdout.write(`\n${result.message}\n`);
@@ -544,7 +554,9 @@ if (hasFlag("-p") || command === "--prompt") {
     process.stderr.write(
       "TUI mode requires Bun. Install Bun (https://bun.sh) or use a standalone binary release for interactive mode.\n",
     );
-    process.stderr.write("All other commands work with Node — run 'pensar --help'.\n");
+    process.stderr.write(
+      "All other commands work with Node — run 'pensar --help'.\n",
+    );
     process.exit(1);
   }
   await import("./tui/index.tsx");

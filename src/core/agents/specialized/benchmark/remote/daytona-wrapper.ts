@@ -187,7 +187,9 @@ async function runSingleBranchBenchmark(
     await cloneRepo(sandbox, repoUrl, branch);
 
     // Clone Apex source repo (contains the benchmark runner script)
-    process.stderr.write(`[${branch}] 📦 Cloning Apex source for benchmark runner...\n`);
+    process.stderr.write(
+      `[${branch}] 📦 Cloning Apex source for benchmark runner...\n`,
+    );
     await retryWithBackoff(
       () =>
         sbx.git.clone(
@@ -436,7 +438,9 @@ async function installBun(sandbox: Sandbox, branch?: string): Promise<void> {
     throw new Error("Bun installation verification failed");
   }
 
-  process.stderr.write(`${prefix}✅ Bun installed: v${verifyResult.result.trim()}\n`);
+  process.stderr.write(
+    `${prefix}✅ Bun installed: v${verifyResult.result.trim()}\n`,
+  );
 }
 
 /**
@@ -530,10 +534,16 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
     const checkLocations = await sandbox.process.executeCommand(
       'ls -la /usr/bin/docker /usr/local/bin/docker 2>&1 || echo "Docker not in standard locations"',
     );
-    writeErrorLog(`Docker binary check: ${checkLocations.result}`, "DaytonaWrapper:installDocker");
+    writeErrorLog(
+      `Docker binary check: ${checkLocations.result}`,
+      "DaytonaWrapper:installDocker",
+    );
 
     const pathCheck = await sandbox.process.executeCommand("echo $PATH");
-    writeErrorLog(`Current PATH: ${pathCheck.result}`, "DaytonaWrapper:installDocker");
+    writeErrorLog(
+      `Current PATH: ${pathCheck.result}`,
+      "DaytonaWrapper:installDocker",
+    );
 
     throw new Error("Docker binary not found after installation");
   }
@@ -573,7 +583,9 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
   );
 
   // Wait for Docker daemon to be ready (up to 60 seconds with retries)
-  process.stderr.write(`${prefix}⏳ Waiting for Docker daemon to be ready...\n`);
+  process.stderr.write(
+    `${prefix}⏳ Waiting for Docker daemon to be ready...\n`,
+  );
 
   let attempts = 0;
   const maxAttempts = 60;
@@ -585,7 +597,9 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
     );
 
     if (checkResult.exitCode === 0) {
-      process.stderr.write(`${prefix}✅ Docker daemon ready after ${attempts} seconds\n`);
+      process.stderr.write(
+        `${prefix}✅ Docker daemon ready after ${attempts} seconds\n`,
+      );
       break;
     }
 
@@ -594,7 +608,9 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
 
     // Show progress every 10 seconds
     if (attempts % 10 === 0) {
-      process.stderr.write(`${prefix}Still waiting... (${attempts}s elapsed)\n`);
+      process.stderr.write(
+        `${prefix}Still waiting... (${attempts}s elapsed)\n`,
+      );
     }
 
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -605,8 +621,14 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
     const logResult = await sandbox.process.executeCommand(
       "cat /tmp/dockerd.log 2>&1 || echo 'No log file'",
     );
-    writeErrorLog(`Docker daemon logs:\n${logResult.result}`, "DaytonaWrapper:installDocker");
-    writeErrorLog(`Last docker info error:\n${lastError}`, "DaytonaWrapper:installDocker");
+    writeErrorLog(
+      `Docker daemon logs:\n${logResult.result}`,
+      "DaytonaWrapper:installDocker",
+    );
+    writeErrorLog(
+      `Last docker info error:\n${lastError}`,
+      "DaytonaWrapper:installDocker",
+    );
     throw new Error(
       `Docker daemon failed to start within ${maxAttempts} seconds`,
     );
@@ -635,7 +657,9 @@ async function cloneRepo(
   branch: string,
 ): Promise<void> {
   const prefix = `[${branch}] `;
-  process.stderr.write(`${prefix}📦 Cloning repository: ${repoUrl} (${branch})...\n`);
+  process.stderr.write(
+    `${prefix}📦 Cloning repository: ${repoUrl} (${branch})...\n`,
+  );
 
   // Use Daytona's git.clone() - automatically clones and checks out branch
   await retryWithBackoff(() => sandbox.git.clone(repoUrl, "repo", branch), {
@@ -745,7 +769,9 @@ async function downloadResults(
       expectedFlag = benchmarkData.win_condition?.flag_pattern ?? null;
 
       if (expectedFlag) {
-        process.stderr.write(`${prefix}🔎 Searching for flag: ${expectedFlag}\n`);
+        process.stderr.write(
+          `${prefix}🔎 Searching for flag: ${expectedFlag}\n`,
+        );
         const { detectFlagInArtifacts } = await import("../flag-detector.js");
         const flagResult = await detectFlagInArtifacts(
           localSessionPath,
@@ -768,7 +794,9 @@ async function downloadResults(
     writeErrorLog(error, `DaytonaWrapper:detectFlag:${branch}`);
   }
 
-  process.stderr.write(`${prefix}✅ Results downloaded to ${localSessionPath}\n`);
+  process.stderr.write(
+    `${prefix}✅ Results downloaded to ${localSessionPath}\n`,
+  );
   process.stderr.write(
     `${prefix}📊 Tokens: ${totalTokens.toLocaleString()} (in: ${tokensIn.toLocaleString()}, out: ${tokensOut.toLocaleString()})\n`,
   );
@@ -822,7 +850,9 @@ async function downloadDirectoryRecursive(
     try {
       if (file.isDirectory) {
         // Recursively download subdirectory
-        process.stderr.write(`${prefix}  📁 Downloading directory: ${file.name}\n`);
+        process.stderr.write(
+          `${prefix}  📁 Downloading directory: ${file.name}\n`,
+        );
         await downloadDirectoryRecursive(
           sandbox,
           remoteFilePath,
@@ -845,7 +875,9 @@ async function downloadDirectoryRecursive(
         errorMessage?.includes("file not found") ||
         errorMessage?.includes("invalid")
       ) {
-        process.stderr.write(`${prefix}  📁 Retrying ${file.name} as directory...\n`);
+        process.stderr.write(
+          `${prefix}  📁 Retrying ${file.name} as directory...\n`,
+        );
         try {
           await downloadDirectoryRecursive(
             sandbox,

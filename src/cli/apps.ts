@@ -354,7 +354,9 @@ async function main(): Promise<void> {
       const appId = args[1];
       if (!appId) {
         process.stderr.write("Error: app ID is required\n");
-        process.stderr.write("Usage: pensar apps endpoints <appId> [filters]\n");
+        process.stderr.write(
+          "Usage: pensar apps endpoints <appId> [filters]\n",
+        );
         process.exit(1);
       }
       const type = parseEndpointType(getFlag("--type", args));
@@ -409,7 +411,9 @@ async function main(): Promise<void> {
       const endpointId = args[1];
       if (!endpointId) {
         process.stderr.write("Error: endpoint ID is required\n");
-        process.stderr.write("Usage: pensar apps endpoint-delete <endpointId>\n");
+        process.stderr.write(
+          "Usage: pensar apps endpoint-delete <endpointId>\n",
+        );
         process.exit(1);
       }
       const result = await deleteEndpoint(endpointId);
@@ -436,7 +440,9 @@ async function main(): Promise<void> {
       const query = args[1];
       if (!query || query.startsWith("--")) {
         process.stderr.write("Error: search query is required\n");
-        process.stderr.write("Usage: pensar apps search-endpoints <query> [options]\n");
+        process.stderr.write(
+          "Usage: pensar apps search-endpoints <query> [options]\n",
+        );
         process.exit(1);
       }
       const applicationId = getFlag("--app", args);

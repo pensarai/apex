@@ -191,11 +191,15 @@ export async function runSingleBenchmark(
         await exec(`git checkout ${branch}`, { cwd: benchmarkPath });
       } catch {
         // May already be on the branch or using worktrees
-        process.stderr.write(`[${branch}] Note: git checkout failed, continuing...\n`);
+        process.stderr.write(
+          `[${branch}] Note: git checkout failed, continuing...\n`,
+        );
       }
     } else {
       clonedDir = path.join("/tmp", `apex-bench-${branch}-${Date.now()}`);
-      process.stderr.write(`[${branch}] Cloning ${config.repoUrl} branch ${branch}...\n`);
+      process.stderr.write(
+        `[${branch}] Cloning ${config.repoUrl} branch ${branch}...\n`,
+      );
       await exec(
         `git clone --branch ${branch} --depth 1 ${config.repoUrl} ${clonedDir}`,
         { timeout: 120000 },
@@ -260,7 +264,9 @@ export async function runSingleBenchmark(
           // Build each service sequentially
           for (const service of services) {
             if (service.trim()) {
-              process.stderr.write(`[${branch}] Building service: ${service}\n`);
+              process.stderr.write(
+                `[${branch}] Building service: ${service}\n`,
+              );
               await exec(`docker compose build ${service}`, {
                 cwd: composeDir,
                 timeout: 600000, // 10 minutes per service
@@ -286,7 +292,10 @@ export async function runSingleBenchmark(
         stderr?: string;
         stdout?: string;
       };
-      writeErrorLog(`Docker compose failed for ${branch}`, "BenchmarkRunner:docker");
+      writeErrorLog(
+        `Docker compose failed for ${branch}`,
+        "BenchmarkRunner:docker",
+      );
 
       try {
         const logs = await exec("docker compose logs --tail=50 2>&1", {
@@ -304,10 +313,16 @@ export async function runSingleBenchmark(
       }
 
       if (error.stdout) {
-        writeErrorLog(`stdout: ${error.stdout.substring(0, 2000)}`, `BenchmarkRunner:docker:${branch}`);
+        writeErrorLog(
+          `stdout: ${error.stdout.substring(0, 2000)}`,
+          `BenchmarkRunner:docker:${branch}`,
+        );
       }
       if (error.stderr) {
-        writeErrorLog(`stderr: ${error.stderr.substring(0, 2000)}`, `BenchmarkRunner:docker:${branch}`);
+        writeErrorLog(
+          `stderr: ${error.stderr.substring(0, 2000)}`,
+          `BenchmarkRunner:docker:${branch}`,
+        );
       }
       throw new Error(
         `Docker compose failed: ${error.stderr || error.message || "Unknown error"}`,
@@ -344,7 +359,9 @@ export async function runSingleBenchmark(
     // -----------------------------------------------------------------------
     // Step 5: Run pentest workflow
     // -----------------------------------------------------------------------
-    process.stderr.write(`[${branch}] Running pentest workflow against ${targetUrl}...\n`);
+    process.stderr.write(
+      `[${branch}] Running pentest workflow against ${targetUrl}...\n`,
+    );
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
@@ -374,7 +391,10 @@ export async function runSingleBenchmark(
       process.stderr.write(`${p} <- ${d.toolName} done\n`);
     });
     benchBus.on("error", (d) => {
-      writeErrorLog(d.error, `BenchmarkRunner:${branch}:${d.subagentId ?? "main"}`);
+      writeErrorLog(
+        d.error,
+        `BenchmarkRunner:${branch}:${d.subagentId ?? "main"}`,
+      );
     });
     benchBus.on("subagent-spawn", ({ subagentId }) =>
       process.stderr.write(`[${branch}] [${subagentId}] spawned\n`),
@@ -532,7 +552,9 @@ function readBenchmarkMetadata(
 ): BenchmarkMetadata | null {
   const jsonPath = path.join(benchmarkPath, "src", "benchmark.json");
   if (!existsSync(jsonPath)) {
-    process.stderr.write(`[${branch}] No benchmark.json found at ${jsonPath}\n`);
+    process.stderr.write(
+      `[${branch}] No benchmark.json found at ${jsonPath}\n`,
+    );
     return null;
   }
 

@@ -34,8 +34,8 @@ import type {
   OpenAIReasoningEffort,
 } from "../ai";
 import type { AgentEventBus } from "../eventBus";
-import { writeErrorLog } from "../logger";
 import { mapAppWithSurface } from "../integrations/surface";
+import { writeErrorLog } from "../logger";
 import type { SessionInfo } from "../session";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
 
@@ -360,10 +360,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         parentSubagentId: appNodeId,
       });
     } catch (error) {
-      writeErrorLog(
-        error instanceof Error ? error : String(error),
-        "WHITEBOX",
-      );
+      writeErrorLog(error instanceof Error ? error : String(error), "WHITEBOX");
 
       appAnyTaskFailed.set(app.name, true);
       eventBus?.emit("subagent-complete", {
@@ -576,9 +573,7 @@ function readAppsFromAssetsDirectory(
   for (const entry of entries) {
     const entryPath = join(assetsPath, entry);
     if (!statSync(entryPath).isDirectory()) {
-      process.stderr.write(
-        `[readAssets] Skipping non-directory: ${entry}\n`,
-      );
+      process.stderr.write(`[readAssets] Skipping non-directory: ${entry}\n`);
       continue;
     }
 

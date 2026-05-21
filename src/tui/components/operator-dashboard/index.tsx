@@ -38,8 +38,8 @@ import {
   modelSupportsThinking,
 } from "../../../core/ai";
 import { runOffensiveSecurityAgent } from "../../../core/api";
-import { writeErrorLog } from "../../../core/logger";
 import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
+import { writeErrorLog } from "../../../core/logger";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
   ApprovalGate,
@@ -1360,9 +1360,7 @@ export default function OperatorDashboard({
 
         if (wandbCleanup) {
           const fn = wandbCleanup as () => Promise<void>;
-          await fn().catch((e: unknown) =>
-            writeErrorLog(e, "WANDB_FLUSH"),
-          );
+          await fn().catch((e: unknown) => writeErrorLog(e, "WANDB_FLUSH"));
         }
         if (gen === generationRef.current) {
           setStatus(pendingToolCallIdRef.current ? "waiting" : "idle");

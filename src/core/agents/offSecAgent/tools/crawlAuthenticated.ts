@@ -120,7 +120,10 @@ export function crawlAuthenticated(ctx: ToolContext) {
               });
             }
           } catch (error) {
-            writeErrorLog(`Error crawling ${url}: ${error instanceof Error ? error.message : String(error)}`, "CRAWL");
+            writeErrorLog(
+              `Error crawling ${url}: ${error instanceof Error ? error.message : String(error)}`,
+              "CRAWL",
+            );
           }
         }
 

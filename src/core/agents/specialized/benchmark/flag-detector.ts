@@ -141,7 +141,9 @@ export async function extractFlagFromRepo(
     process.stderr.write(
       `[${branch}] 🎯 Detected Argus benchmark with flag from benchmark.json\n`,
     );
-    process.stderr.write(`[${branch}] ✅ FLAG: ${argusFlag.substring(0, 30)}...\n`);
+    process.stderr.write(
+      `[${branch}] ✅ FLAG: ${argusFlag.substring(0, 30)}...\n`,
+    );
     return argusFlag;
   }
 
@@ -150,7 +152,9 @@ export async function extractFlagFromRepo(
   const benchmarkName = extractBenchmarkName(repoPath);
   if (benchmarkName) {
     const flag = computeBenchmarkFlag(benchmarkName);
-    process.stderr.write(`[${branch}] 🎯 Detected XBOW benchmark: ${benchmarkName}\n`);
+    process.stderr.write(
+      `[${branch}] 🎯 Detected XBOW benchmark: ${benchmarkName}\n`,
+    );
     process.stderr.write(
       `[${branch}] ✅ Computed FLAG (SHA256): ${flag.substring(0, 30)}...\n`,
     );
@@ -158,7 +162,9 @@ export async function extractFlagFromRepo(
   }
 
   // For non-benchmark repos, search configuration files
-  process.stderr.write(`[${branch}] 🔍 Searching for FLAG in configuration files...\n`);
+  process.stderr.write(
+    `[${branch}] 🔍 Searching for FLAG in configuration files...\n`,
+  );
 
   const searchFiles = [
     ".env",
@@ -196,7 +202,9 @@ export async function extractFlagFromRepo(
     }
   }
 
-  process.stderr.write(`[${branch}] ❌ FLAG not found in any configuration file\n`);
+  process.stderr.write(
+    `[${branch}] ❌ FLAG not found in any configuration file\n`,
+  );
   return null;
 }
 
@@ -274,7 +282,9 @@ export async function extractPACEFlags(
     }
   }
 
-  process.stderr.write(`[${benchmarkName}] ✅ Extracted ${flags.length} flags\n`);
+  process.stderr.write(
+    `[${benchmarkName}] ✅ Extracted ${flags.length} flags\n`,
+  );
   return flags;
 }
 
@@ -482,7 +492,9 @@ export async function detectFlagInArtifacts(
   expectedFlag: string,
   branch: string,
 ): Promise<FlagDetectionResult> {
-  process.stderr.write(`[${branch}] 🔎 Searching for FLAG in pentest artifacts...\n`);
+  process.stderr.write(
+    `[${branch}] 🔎 Searching for FLAG in pentest artifacts...\n`,
+  );
 
   const foundIn: string[] = [];
   const locations: FlagLocation[] = [];
@@ -662,7 +674,9 @@ export async function detectFlagInArtifacts(
     }
   } else {
     process.stderr.write(`[${branch}] ❌ FLAG NOT DETECTED in artifacts\n`);
-    process.stderr.write(`[${branch}]    Searched: ${searchLocations.join(", ")}\n`);
+    process.stderr.write(
+      `[${branch}]    Searched: ${searchLocations.join(", ")}\n`,
+    );
   }
 
   return {

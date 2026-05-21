@@ -124,7 +124,9 @@ export async function runDoctor(): Promise<void> {
         if (result.status === 0) {
           process.stdout.write("✓ nmap installed successfully!\n");
         } else {
-          process.stdout.write("✗ Installation failed. You can install manually:\n");
+          process.stdout.write(
+            "✗ Installation failed. You can install manually:\n",
+          );
           process.stdout.write(`    ${pm.installCmd}\n`);
         }
       } else {

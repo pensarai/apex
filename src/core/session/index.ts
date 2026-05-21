@@ -4,11 +4,11 @@ import os from "os";
 import path from "path";
 import z from "zod";
 import { generateRandomName, generateSessionName } from "../../util/name";
-import { writeErrorLog } from "../logger";
 import type { AIAuthConfig, AIModel } from "../ai";
 import { CredentialManager } from "../credentials";
 import * as Identifier from "../id/id";
 import { getCurrentVersion } from "../installation";
+import { writeErrorLog } from "../logger";
 import type { Message } from "../messages/types";
 import { RateLimiter } from "../services/rateLimiter";
 import * as Storage from "../storage";
@@ -320,7 +320,6 @@ async function createSessionDirs(input: CreateExecutionInput): Promise<void> {
   // Write README.md
   const readme = generateSessionReadme(session);
   await Storage.writeRaw(["sessions", session.id, "README.md"], readme);
-
 }
 
 /**

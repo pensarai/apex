@@ -137,7 +137,9 @@ async function login(): Promise<void> {
       refreshToken: tokens.refreshToken,
     });
 
-    process.stdout.write("\nAuthenticated successfully. Fetching workspaces...\n");
+    process.stdout.write(
+      "\nAuthenticated successfully. Fetching workspaces...\n",
+    );
     await handleWorkspaces(apiUrl, tokens.accessToken);
   } else {
     const { deviceInfo } = flowInfo;

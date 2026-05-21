@@ -76,7 +76,9 @@ export function parseDockerComposePort(
         for (const [serviceName, service] of Object.entries(parsed.services)) {
           // Skip infrastructure services
           if (isInfrastructureService(serviceName)) {
-            process.stderr.write(`  ⏭️  Skipping infrastructure service: ${serviceName}\n`);
+            process.stderr.write(
+              `  ⏭️  Skipping infrastructure service: ${serviceName}\n`,
+            );
             continue;
           }
 
@@ -197,7 +199,9 @@ export function parseDockerComposePort(
   }
 
   // Default to port 80 if not found
-  process.stderr.write(`  ⚠️  Could not find docker-compose file, defaulting to port 80\n`);
+  process.stderr.write(
+    `  ⚠️  Could not find docker-compose file, defaulting to port 80\n`,
+  );
   return {
     hostPort: 80,
     containerPort: 80,

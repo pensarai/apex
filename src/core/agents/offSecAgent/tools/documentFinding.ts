@@ -11,8 +11,8 @@ import {
 import { join } from "path";
 import { z } from "zod";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
-import { writeErrorLog } from "../../../logger";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
+import { writeErrorLog } from "../../../logger";
 import {
   type CVSSScorerInput,
   type CVSSScorerResult,

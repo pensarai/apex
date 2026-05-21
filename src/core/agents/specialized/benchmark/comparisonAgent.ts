@@ -333,9 +333,7 @@ Be thorough in your analysis and provide clear explanations for your matches. St
   process.stderr.write(
     `  - Missed: ${comparisonResultFromFile.missed.length}\n`,
   );
-  process.stderr.write(
-    `  - Extra: ${comparisonResultFromFile.extra.length}\n`,
-  );
+  process.stderr.write(`  - Extra: ${comparisonResultFromFile.extra.length}\n`);
   process.stderr.write(
     `  - Accuracy: ${Math.round(comparisonResultFromFile.accuracy * 100)}%\n`,
   );

@@ -116,7 +116,10 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         } catch (error: unknown) {
           const errorMsg =
             error instanceof Error ? error.message : String(error);
-          writeErrorLog(`Whitebox attack surface agent failed: ${errorMsg}`, "ATTACK_SURFACE");
+          writeErrorLog(
+            `Whitebox attack surface agent failed: ${errorMsg}`,
+            "ATTACK_SURFACE",
+          );
 
           ctx.eventBus?.emit("subagent-complete", {
             subagentId,
@@ -185,7 +188,10 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         };
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        writeErrorLog(`Blackbox attack surface agent failed: ${errorMsg}`, "ATTACK_SURFACE");
+        writeErrorLog(
+          `Blackbox attack surface agent failed: ${errorMsg}`,
+          "ATTACK_SURFACE",
+        );
 
         ctx.eventBus?.emit("subagent-complete", {
           subagentId,

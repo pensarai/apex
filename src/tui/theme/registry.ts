@@ -19,7 +19,10 @@ export function registerTheme(theme: ThemeDefinition): void {
 export function getTheme(name: string): ThemeDefinition {
   const theme = themes.get(name);
   if (!theme) {
-    writeErrorLog(`Theme "${name}" not found, falling back to default`, "THEME");
+    writeErrorLog(
+      `Theme "${name}" not found, falling back to default`,
+      "THEME",
+    );
     return themes.get(DEFAULT_THEME_NAME)!;
   }
   return theme;

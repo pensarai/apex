@@ -68,7 +68,9 @@ export class CircuitBreaker {
 
     if (this.state === "HALF_OPEN") {
       if (this.successes >= this.options.successThreshold) {
-        process.stderr.write("🟢 Circuit breaker: Entering CLOSED state (recovered)\n");
+        process.stderr.write(
+          "🟢 Circuit breaker: Entering CLOSED state (recovered)\n",
+        );
         this.state = "CLOSED";
         this.successes = 0;
       }
