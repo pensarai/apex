@@ -74,7 +74,7 @@ function getAllowedHosts(session: ResolverSession): string[] {
 }
 
 function isHostInScope(hostname: string, allowedHosts: string[]): boolean {
-  if (allowedHosts.length === 0) return true;
+  if (allowedHosts.length === 0) return false;
   const lower = hostname.toLowerCase();
   for (const allowed of allowedHosts) {
     if (lower === allowed) return true;
