@@ -2,10 +2,7 @@ import { tool } from "ai";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
-import {
-  applyHeadersToShellCommand,
-  resolveEffectiveHeaders,
-} from "../../../http/targetHeaders";
+import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
 import {
   assertCommandInScope,
   extractHostsFromCommand,
@@ -208,27 +205,22 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       const cmdHosts = extractHostsFromCommand(command);
       const inject = applyHeadersToShellCommand(command, ctx.session, cmdHosts);
       if (inject.status === "unknown-tool" && !allow_unprotected) {
-        // Only block when there are actually headers to apply for the
-        // hosts on this command line. `applyHeadersToShellCommand`
-        // returns `unknown-tool` even when no headers are configured.
-        const hasHeaders = cmdHosts.some((h) => {
-          if (!h) return false;
-          const resolved = resolveEffectiveHeaders(ctx.session, `https://${h}`);
-          return Object.keys(resolved).length > 0;
-        });
-        if (hasHeaders) {
-          const msg =
-            "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined. " +
-            "Supported HTTP tools: curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto. " +
-            "Either (a) rewrite the command using one of those tools, (b) use the http_request tool, or (c) pass allow_unprotected: true to acknowledge headers will NOT be sent.";
-          return {
-            success: false,
-            error: msg,
-            stdout: "",
-            stderr: msg,
-            command,
-          };
-        }
+        // `applyHeadersToShellCommand` only returns `unknown-tool` when
+        // there ARE headers configured for an in-scope host on the
+        // command (the `no-headers` status covers both "no in-scope
+        // host" and "in-scope but no headers"). Reaching this branch
+        // means we must fail closed.
+        const msg =
+          "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined. " +
+          "Supported HTTP tools: curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto. " +
+          "Either (a) rewrite the command using one of those tools, (b) use the http_request tool, or (c) pass allow_unprotected: true to acknowledge headers will NOT be sent.";
+        return {
+          success: false,
+          error: msg,
+          stdout: "",
+          stderr: msg,
+          command,
+        };
       }
       const effectiveCommand =
         inject.status === "injected" ? inject.command : command;

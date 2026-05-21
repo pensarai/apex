@@ -457,6 +457,13 @@ function normalizeDeprecatedHeaders<T extends { offensiveHeaders?: unknown }>(
     mode?: string;
     headers?: Record<string, string>;
   };
+  // INV-mode-none: `mode: "none"` means "send no custom headers" and
+  // must override any populated `oh.headers`. Without this short
+  // circuit, `{ mode: "none", headers: { "X-A": "1" } }` would
+  // incorrectly resolve to `{ "X-A": "1" }` instead of `{}`.
+  if (oh.mode === "none") {
+    return { ...restWithHeaders, headers: {} };
+  }
   let headers: Record<string, string> = {};
   if (oh.mode === "default") headers = { ...DEFAULT_HEADER_RECORD };
   if (oh.headers) headers = { ...headers, ...oh.headers };

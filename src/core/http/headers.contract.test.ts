@@ -331,11 +331,9 @@ describe("applyHeadersToShellCommand", () => {
         headers: { "X-Risky": 'val with "quotes" and $VAR and `cmd`' },
       },
     });
-    const r = applyHeadersToShellCommand(
-      "curl https://example.com/",
-      session,
-      ["example.com"],
-    );
+    const r = applyHeadersToShellCommand("curl https://example.com/", session, [
+      "example.com",
+    ]);
     expect(r.status).toBe("injected");
     // Every shell-special character must be backslash-escaped inside
     // the double-quoted -H argument.

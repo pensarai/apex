@@ -70,6 +70,20 @@ describe("migrateLegacySessionData — offensiveHeaders shim", () => {
     expect("offensiveHeaders" in cfg).toBe(false);
   });
 
+  it("mode 'none' overrides a populated headers field (INV-mode-none)", () => {
+    // Regression: previously the `oh.headers` merge ran unconditionally,
+    // so `{ mode: "none", headers: { ... } }` produced the headers
+    // rather than the documented empty result.
+    const result = migrateLegacySessionData(
+      wrap({
+        offensiveHeaders: { mode: "none", headers: { "X-A": "1" } },
+      }),
+    );
+    const cfg = configOf(result);
+    expect(cfg.headers).toEqual({});
+    expect("offensiveHeaders" in cfg).toBe(false);
+  });
+
   it("flat headers win when both fields are present", () => {
     const result = migrateLegacySessionData(
       wrap({
