@@ -16,7 +16,10 @@ import {
 import type { CacheMetrics } from "../ai";
 import { AgentEventBus } from "../eventBus";
 import * as sessions from "../session";
-import { runPentestWorkflow } from "../workflows/pentest";
+import {
+  type PentestWorkflowResult,
+  runPentestWorkflow,
+} from "../workflows/pentest";
 import type {
   BenchmarkMetadata,
   BenchmarkRunResult,
@@ -383,7 +386,7 @@ export async function runSingleBenchmark(
       console.log(`[${branch}] [${subagentId}] ${status}`),
     );
 
-    let pentestResult;
+    let pentestResult: PentestWorkflowResult | undefined;
     try {
       pentestResult = await runPentestWorkflow({
         target: targetUrl,

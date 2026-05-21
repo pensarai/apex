@@ -116,7 +116,7 @@ async function walkFiles(rootPath: string): Promise<string[]> {
 
   async function walk(current: string): Promise<void> {
     if (files.length >= MAX_PROFILE_FILES) return;
-    let entries;
+    let entries: import("node:fs").Dirent[];
     try {
       entries = await readdir(current, { withFileTypes: true });
     } catch {

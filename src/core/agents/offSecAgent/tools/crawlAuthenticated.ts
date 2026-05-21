@@ -78,7 +78,7 @@ export function crawlAuthenticated(ctx: ToolContext) {
               // Extract links
               const linkRegex = /<a[^>]+href=['"]([^'"]+)['"]/gi;
               const links: string[] = [];
-              let linkMatch;
+              let linkMatch: RegExpExecArray | null;
               while ((linkMatch = linkRegex.exec(html)) !== null) {
                 const link = linkMatch[1];
                 if (link.startsWith("/") && !link.startsWith("//")) {
@@ -92,7 +92,7 @@ export function crawlAuthenticated(ctx: ToolContext) {
               // Extract forms
               const formRegex = /<form[^>]+action=['"]([^'"]+)['"]/gi;
               const forms: string[] = [];
-              let formMatch;
+              let formMatch: RegExpExecArray | null;
               while ((formMatch = formRegex.exec(html)) !== null) {
                 forms.push(formMatch[1]);
               }

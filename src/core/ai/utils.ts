@@ -139,7 +139,7 @@ export function getProviderModel(
     process.env.LOCAL_MODEL_URL ||
     "http://127.0.0.1:1234/v1";
 
-  let providerModel;
+  let providerModel: LanguageModel;
 
   switch (provider) {
     case "openai": {
