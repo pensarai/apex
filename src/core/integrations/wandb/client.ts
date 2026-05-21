@@ -6,6 +6,7 @@
  */
 
 import type { TraceRecord } from "../../agents/offSecAgent";
+import { writeErrorLog } from "../../logger";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -47,8 +48,9 @@ async function initWeave(
 
   if (weaveReady) {
     if (cachedConfigKey && cachedConfigKey !== configKey) {
-      console.warn(
-        `[wandb] initWeave called with ${configKey} but already initialized with ${cachedConfigKey}. Weave supports one project per process.`,
+      writeErrorLog(
+        `initWeave called with ${configKey} but already initialized with ${cachedConfigKey}. Weave supports one project per process.`,
+        "WANDB",
       );
     }
     return weaveReady;
@@ -74,7 +76,7 @@ async function initWeave(
       await weave.init(configKey);
       return weave;
     } catch (e) {
-      console.error("[wandb] Weave init failed:", e);
+      writeErrorLog(e, "WANDB");
       weaveReady = null;
       cachedConfigKey = null;
       return null;
@@ -129,10 +131,7 @@ export async function createWeaveTracer(config: WandbConfig): Promise<{
     logRecord: (record: TraceRecord, sessionId: string) => {
       logTraceRecord({ record, sessionId }).catch((e) => {
         if (!logErrorLogged) {
-          console.error(
-            "[wandb] Record upload failed (suppressing future warnings):",
-            e,
-          );
+          writeErrorLog(e, "WANDB_UPLOAD");
           logErrorLogged = true;
         }
       });
@@ -145,8 +144,9 @@ export async function createWeaveTracer(config: WandbConfig): Promise<{
           }
         ).getGlobalClient;
         if (!getClient) {
-          console.warn(
-            "[wandb] getGlobalClient not found — flush skipped. Check weave SDK version.",
+          writeErrorLog(
+            "getGlobalClient not found — flush skipped. Check weave SDK version.",
+            "WANDB",
           );
           return;
         }
@@ -155,7 +155,7 @@ export async function createWeaveTracer(config: WandbConfig): Promise<{
           await (client.waitForBatchProcessing as () => Promise<void>)();
         }
       } catch (e) {
-        console.error("[wandb] Flush failed:", e);
+        writeErrorLog(e, "WANDB_FLUSH");
       }
     },
   };

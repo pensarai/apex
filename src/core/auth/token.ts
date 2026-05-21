@@ -2,6 +2,7 @@
 // module directly.
 import { getPensarApiUrl } from "../api/constants";
 import { config } from "../config";
+import { writeErrorLog } from "../logger";
 import type { ValidToken } from "./types";
 
 /**
@@ -82,8 +83,9 @@ async function refreshAccessToken(
     );
 
     if (!response.ok) {
-      console.error(
-        `[pensar] Token refresh failed: ${response.status} ${response.statusText}`,
+      writeErrorLog(
+        `Token refresh failed: ${response.status} ${response.statusText}`,
+        "AUTH",
       );
       return null;
     }
@@ -100,7 +102,7 @@ async function refreshAccessToken(
 
     return data.access_token;
   } catch (err) {
-    console.error("[pensar] Token refresh error:", err);
+    writeErrorLog(err, "AUTH");
     return null;
   }
 }

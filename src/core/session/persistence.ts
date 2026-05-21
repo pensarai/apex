@@ -15,6 +15,7 @@ import {
   writeFileSync,
 } from "fs";
 import { join } from "path";
+import { writeErrorLog } from "../logger";
 import type { SessionInfo } from "./index";
 
 export type { SessionInfo };
@@ -614,7 +615,7 @@ export function loadSubagents(rootPath: string): UISubagent[] {
           status,
         });
       } catch (e) {
-        console.error(`Failed to load subagent file ${file}:`, e);
+        writeErrorLog(e, "PERSISTENCE");
       }
     }
 
@@ -696,7 +697,7 @@ export function loadSubagents(rootPath: string): UISubagent[] {
         }
       }
     } catch (e) {
-      console.error("Failed to load agent manifest:", e);
+      writeErrorLog(e, "PERSISTENCE");
     }
   }
 

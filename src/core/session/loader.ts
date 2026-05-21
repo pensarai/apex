@@ -10,6 +10,7 @@
 
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { writeErrorLog } from "../logger";
 import { REPORT_FILENAME_MD } from "../report";
 import type { SessionInfo } from "./index";
 import { loadSubagents, type UIMessage, type UISubagent } from "./persistence";
@@ -58,7 +59,7 @@ export function loadAttackSurfaceResults(
   try {
     return JSON.parse(readFileSync(resultsPath, "utf-8"));
   } catch (e) {
-    console.error("Failed to load attack surface results:", e);
+    writeErrorLog(e, "SESSION_LOADER");
     return null;
   }
 }
@@ -135,7 +136,7 @@ function createDiscoveryFromLogs(
       status: "completed",
     };
   } catch (e) {
-    console.error("Failed to parse logs:", e);
+    writeErrorLog(e, "SESSION_LOADER");
     return null;
   }
 }

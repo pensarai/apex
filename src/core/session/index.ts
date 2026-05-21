@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import z from "zod";
 import { generateRandomName, generateSessionName } from "../../util/name";
+import { writeErrorLog } from "../logger";
 import type { AIAuthConfig, AIModel } from "../ai";
 import { CredentialManager } from "../credentials";
 import * as Identifier from "../id/id";
@@ -320,7 +321,6 @@ async function createSessionDirs(input: CreateExecutionInput): Promise<void> {
   const readme = generateSessionReadme(session);
   await Storage.writeRaw(["sessions", session.id, "README.md"], readme);
 
-  console.info("created session", session.id);
 }
 
 /**
@@ -600,7 +600,7 @@ const remove = async (input: z.output<typeof RemoveInput>) => {
     const fsp = await import("fs/promises");
     await fsp.rm(sessionDir, { recursive: true, force: true });
   } catch (e) {
-    console.error(e);
+    writeErrorLog(e, "SESSION_REMOVE");
   }
 };
 
@@ -704,7 +704,7 @@ export async function loadOperatorState(
 
     return parsed as PersistedOperatorState;
   } catch (error) {
-    console.error("Error loading operator state:", error);
+    writeErrorLog(error, "OPERATOR_STATE");
     return null;
   }
 }
