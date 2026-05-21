@@ -14,10 +14,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-  migrateLegacySessionData,
-  type OffensiveHeadersConfig,
-} from "./index";
+import { migrateLegacySessionData, type OffensiveHeadersConfig } from "./index";
 
 // Compile-time: the deprecated type is still exported. If this line
 // fails to compile, console's `import { OffensiveHeadersConfig }`
