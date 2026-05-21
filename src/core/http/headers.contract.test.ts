@@ -323,7 +323,7 @@ describe("redactSecretsInHistoryEntry", () => {
     const r = redactSecretsInHistoryEntry(
       `pensar pentest --target https://example.com --header "Authorization: Bearer xyz"`,
     );
-    expect(r).not.toContain("Bearer xyz");
+    expect(r).not.toContain("xyz");
     expect(r).toContain("Authorization: <redacted>");
   });
 

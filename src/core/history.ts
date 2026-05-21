@@ -76,7 +76,7 @@ export function redactSecretsInHistoryEntry(entry: string): string {
     return `${entry.slice(0, entry.length - payload.length)}${payload.slice(0, colon)}: <redacted>`;
   }
   return entry.replace(
-    /(--header(?:s-from)?[=\s]+)("?)([^"\s]+:)\s*[^"\s]+("?)/gi,
+    /(--header(?:s-from)?[=\s]+)("?)([^"\s]+:)\s*(?:[^"]*(?=")|[^"\s]+)("?)/gi,
     (_, prefix, openQuote, namePart, closeQuote) =>
       `${prefix}${openQuote}${namePart} <redacted>${closeQuote}`,
   );
