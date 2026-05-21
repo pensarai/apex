@@ -72,10 +72,14 @@ async function runAttackSurface(options: AttackSurfaceOptions): Promise<void> {
   try {
     // Build session config
     const sessionConfig = {
-      offensiveHeaders: {
-        mode: headerMode,
-        headers: headerMode === "custom" ? customHeaders : undefined,
-      },
+      // "default" omits `headers` so `sessions.create` seeds the global
+      // default (pensar-apex User-Agent). "none" passes an explicit empty
+      // record to disable that. "custom" supplies the caller's headers.
+      ...(headerMode === "custom"
+        ? { headers: customHeaders ?? {} }
+        : headerMode === "none"
+          ? { headers: {} }
+          : {}),
       ...(strictScope && {
         scopeConstraints: {
           strictScope: true,

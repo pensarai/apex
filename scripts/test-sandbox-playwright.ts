@@ -268,7 +268,6 @@ async function main() {
         time: { created: Date.now(), updated: Date.now() },
         config: {
           mode: "auto" as const,
-          offensiveHeaders: { mode: "default" as const, headers: {} },
           outcomeGuidance: "test",
         },
         rootPath: testDir,
