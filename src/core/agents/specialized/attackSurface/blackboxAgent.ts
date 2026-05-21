@@ -90,6 +90,7 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       eventBus,
       subagentId,
       enableThinking,
+      openAIReasoningEffort,
     } = opts;
     const target = opts.target ?? opts.cwd!;
 
@@ -129,6 +130,7 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
       eventBus,
       subagentId,
       enableThinking,
+      openAIReasoningEffort,
       messages: opts.messages,
       activeTools: [
         // Core recon tools

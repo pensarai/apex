@@ -5,7 +5,10 @@
  * Used from both home page and operator mode.
  */
 
-import { modelSupportsThinking } from "../../../core/ai";
+import {
+  modelSupportsOpenAIReasoning,
+  modelSupportsThinking,
+} from "../../../core/ai";
 import { useAgent } from "../../context/agent";
 import { useConfig } from "../../context/config";
 import { Dialog } from "../../context/dialog";
@@ -27,15 +30,21 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
     isModelUserSelected,
     reasoningEnabled,
     setReasoningEnabled,
+    openAIReasoningEffort,
+    setOpenAIReasoningEffort,
   } = useAgent();
 
   const thinkingSupported = modelSupportsThinking(model.id);
+  const openAIReasoningSupported = modelSupportsOpenAIReasoning(model.id);
 
   const footerActions: FooterAction[] = [
     { key: "Enter", label: "confirm", variant: "primary" },
   ];
   if (thinkingSupported) {
     footerActions.push({ key: "Space", label: "Extended Thinking" });
+  }
+  if (openAIReasoningSupported) {
+    footerActions.push({ key: "Space", label: "Reasoning Effort" });
   }
 
   const title = (
@@ -69,6 +78,8 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
             isModelUserSelected={isModelUserSelected}
             reasoningEnabled={reasoningEnabled}
             onReasoningToggle={setReasoningEnabled}
+            openAIReasoningEffort={openAIReasoningEffort}
+            onOpenAIReasoningEffortChange={setOpenAIReasoningEffort}
           />
         </box>
       </DialogLayout>

@@ -53,6 +53,7 @@ const CONTEXT_LENGTHS: Record<string, number> = {
   "claude-instant": 100000,
 
   // OpenAI
+  "gpt-5.5": 1050000,
   "gpt-5": 200000,
   "gpt-4.5": 128000,
   "gpt-4.1": 128000,
@@ -594,12 +595,13 @@ function main() {
     ROOT,
     "node_modules/@ai-sdk/openai/dist/internal/index.d.ts",
   );
-  const openaiIds = extractUnionMembers(openaiDts, "OpenAIChatModelId").filter(
-    isRelevantChatModel,
-  );
+  const openaiIds = extractUnionMembers(
+    openaiDts,
+    "OpenAIResponsesModelId",
+  ).filter(isRelevantChatModel);
 
   // Models available on the OpenAI API but not yet in the AI SDK type definitions
-  appendMissing(openaiIds, ["gpt-5.5"]);
+  appendMissing(openaiIds, ["gpt-5.5", "gpt-5.5-2026-04-23"]);
 
   // OpenAI's SDK lists generations oldest-first; flip so the picker shows the
   // newest family first. Stable sort preserves intra-family declaration order.

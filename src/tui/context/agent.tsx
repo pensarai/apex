@@ -10,8 +10,11 @@ import {
 } from "react";
 import {
   AVAILABLE_MODELS,
+  DEFAULT_OPENAI_REASONING_EFFORT,
+  getOpenAIReasoningEfforts,
   type ModelInfo,
   modelSupportsThinking,
+  type OpenAIReasoningEffort,
 } from "../../core/ai";
 import { update as updateConfig } from "../../core/config/config";
 import { writeErrorLog } from "../../core/logger";
@@ -48,6 +51,8 @@ interface AgentContextValue {
   /** Whether extended thinking is enabled for supported models (persisted to config). */
   reasoningEnabled: boolean;
   setReasoningEnabled: (enabled: boolean) => void;
+  openAIReasoningEffort: OpenAIReasoningEffort;
+  setOpenAIReasoningEffort: (effort: OpenAIReasoningEffort) => void;
   isExecuting: boolean;
   setIsExecuting: (isExecuting: boolean) => void;
   /** The agent's working directory (session rootPath), shown in footer. */
@@ -89,11 +94,19 @@ export function AgentProvider({ children }: AgentProviderProps) {
   const [reasoningEnabled, setReasoningEnabledInternal] = useState<boolean>(
     () => appConfig.data?.reasoningEnabled ?? false,
   );
+  const [openAIReasoningEffort, setOpenAIReasoningEffortInternal] =
+    useState<OpenAIReasoningEffort>(
+      () =>
+        appConfig.data?.openAIReasoningEffort ??
+        DEFAULT_OPENAI_REASONING_EFFORT,
+    );
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [sessionCwd, setSessionCwd] = useState<string | null>(null);
 
   const reasoningEnabledRef = useRef(reasoningEnabled);
   reasoningEnabledRef.current = reasoningEnabled;
+  const openAIReasoningEffortRef = useRef(openAIReasoningEffort);
+  openAIReasoningEffortRef.current = openAIReasoningEffort;
 
   // Wrapper that marks model as user-selected and persists to config.
   // Pass `persist = false` for programmatic/initialization calls so the
@@ -105,12 +118,21 @@ export function AgentProvider({ children }: AgentProviderProps) {
       const configUpdate: {
         selectedModelId: string;
         reasoningEnabled?: boolean;
+        openAIReasoningEffort?: OpenAIReasoningEffort;
       } = {
         selectedModelId: newModel.id,
       };
       if (reasoningEnabledRef.current && !modelSupportsThinking(newModel.id)) {
         configUpdate.reasoningEnabled = false;
         setReasoningEnabledInternal(false);
+      }
+      const supportedOpenAIEfforts = getOpenAIReasoningEfforts(newModel.id);
+      if (
+        supportedOpenAIEfforts.length > 0 &&
+        !supportedOpenAIEfforts.includes(openAIReasoningEffortRef.current)
+      ) {
+        configUpdate.openAIReasoningEffort = DEFAULT_OPENAI_REASONING_EFFORT;
+        setOpenAIReasoningEffortInternal(DEFAULT_OPENAI_REASONING_EFFORT);
       }
       updateConfig(configUpdate).catch((err) => {
         writeErrorLog(err, "AGENT_CONTEXT");
@@ -125,12 +147,28 @@ export function AgentProvider({ children }: AgentProviderProps) {
     });
   }, []);
 
+  const setOpenAIReasoningEffort = useCallback(
+    (effort: OpenAIReasoningEffort) => {
+      setOpenAIReasoningEffortInternal(effort);
+      updateConfig({ openAIReasoningEffort: effort }).catch((err) => {
+        writeErrorLog(err, "AGENT_CONTEXT");
+      });
+    },
+    [],
+  );
+
   // Sync reasoningEnabled when config loads asynchronously
   useEffect(() => {
     if (appConfig.data?.reasoningEnabled != null) {
       setReasoningEnabledInternal(appConfig.data.reasoningEnabled);
     }
   }, [appConfig.data?.reasoningEnabled]);
+
+  useEffect(() => {
+    if (appConfig.data?.openAIReasoningEffort != null) {
+      setOpenAIReasoningEffortInternal(appConfig.data.openAIReasoningEffort);
+    }
+  }, [appConfig.data?.openAIReasoningEffort]);
 
   // Re-evaluate the default model whenever config changes (e.g. after
   // provider setup) unless the user has explicitly picked a model.
@@ -201,6 +239,8 @@ export function AgentProvider({ children }: AgentProviderProps) {
       setThinking,
       reasoningEnabled,
       setReasoningEnabled,
+      openAIReasoningEffort,
+      setOpenAIReasoningEffort,
       isExecuting,
       setIsExecuting,
       sessionCwd,
@@ -214,11 +254,13 @@ export function AgentProvider({ children }: AgentProviderProps) {
       hasExecuted,
       thinking,
       reasoningEnabled,
+      openAIReasoningEffort,
       isExecuting,
       sessionCwd,
       addTokenUsage,
       addCacheUsage,
       resetTokenUsage,
+      setOpenAIReasoningEffort,
     ],
   );
 

@@ -2,7 +2,7 @@ import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall, stepCountIs } from "ai";
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
-import type { AIAuthConfig, AIModel } from "../../ai";
+import type { AIAuthConfig, AIModel, OpenAIReasoningEffort } from "../../ai";
 import type { SessionInfo } from "../../session";
 import { OffensiveSecurityAgent } from "../offSecAgent";
 import type { ComparisonResult } from "./benchmark";
@@ -32,6 +32,9 @@ export interface BenchmarkComparisonAgentInput {
 
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
+
+  /** OpenAI reasoning effort for GPT/o-series reasoning models. */
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
 }
 
 /** The typed result returned by `BenchmarkComparisonAgent.consume()`. */
@@ -65,6 +68,7 @@ export class BenchmarkComparisonAgent extends OffensiveSecurityAgent<BenchmarkCo
       onStepFinish,
       abortSignal,
       enableThinking,
+      openAIReasoningEffort,
     } = opts;
 
     const expectedResults = loadExpectedResults(repoPath);
@@ -80,6 +84,7 @@ export class BenchmarkComparisonAgent extends OffensiveSecurityAgent<BenchmarkCo
       onStepFinish,
       abortSignal,
       enableThinking,
+      openAIReasoningEffort,
 
       activeTools: ["provide_comparison_results"],
 

@@ -213,6 +213,7 @@ async function runSingleCodingAgent(
     eventBus: localBus,
     subagentId,
     enableThinking: ctx.enableThinking,
+    openAIReasoningEffort: ctx.openAIReasoningEffort,
   });
 
   try {
