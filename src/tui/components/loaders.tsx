@@ -165,8 +165,12 @@ export function BouncingBox({
     <box flexDirection="column">
       <box flexDirection="row">
         {cells.map((cell, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: positional animation cells, never reorder
-          <text key={i} fg={cell.color ?? colors.background} content={cell.ch} />
+          <text
+            // biome-ignore lint/suspicious/noArrayIndexKey: positional animation cells, never reorder
+            key={i}
+            fg={cell.color ?? colors.background}
+            content={cell.ch}
+          />
         ))}
       </box>
       {label && <text fg={colors.textMuted}>{label}</text>}
