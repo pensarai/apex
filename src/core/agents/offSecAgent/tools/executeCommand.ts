@@ -208,15 +208,15 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       const cmdHosts = extractHostsFromCommand(command);
       const inject = applyHeadersToShellCommand(command, ctx.session, cmdHosts);
       if (inject.status === "unknown-tool" && !allow_unprotected) {
-        // Only block when there are actually headers to apply for the
-        // hosts on this command line. `applyHeadersToShellCommand`
-        // returns `unknown-tool` even when no headers are configured.
-        const sampleHost = cmdHosts.find((h) => h.length > 0);
-        const probeUrl = sampleHost ? `https://${sampleHost}` : "";
-        const resolved = probeUrl
-          ? resolveEffectiveHeaders(ctx.session, probeUrl)
-          : null;
-        const hasHeaders = resolved ? Object.keys(resolved).length > 0 : false;
+        // Only block when there are actually headers to apply for at
+        // least one in-scope host on this command line. Check every host
+        // — not just the first — so an out-of-scope host appearing
+        // before an in-scope one doesn't bypass the guard.
+        const hasHeaders = cmdHosts.some((h) => {
+          if (!h) return false;
+          const r = resolveEffectiveHeaders(ctx.session, `https://${h}`);
+          return Object.keys(r).length > 0;
+        });
         if (hasHeaders) {
           const msg =
             "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined. " +

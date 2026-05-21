@@ -75,11 +75,19 @@ export function redactSecretsInHistoryEntry(entry: string): string {
     if (colon === -1) return entry;
     return `${entry.slice(0, entry.length - payload.length)}${payload.slice(0, colon)}: <redacted>`;
   }
-  return entry.replace(
-    /(--header(?:s-from)?[=\s]+)("?)([^"\s]+:)\s*[^"\s]+("?)/gi,
-    (_, prefix, openQuote, namePart, closeQuote) =>
-      `${prefix}${openQuote}${namePart} <redacted>${closeQuote}`,
-  );
+  return entry
+    .replace(
+      /(--header(?:s-from)?[=\s]+)"([^":]+:)\s*[^"]*"/gi,
+      (_, prefix, namePart) => `${prefix}"${namePart} <redacted>"`,
+    )
+    .replace(
+      /(--header(?:s-from)?[=\s]+)'([^':]+:)\s*[^']*'/gi,
+      (_, prefix, namePart) => `${prefix}'${namePart} <redacted>'`,
+    )
+    .replace(
+      /(--header(?:s-from)?[=\s]+)([^"'\s]+:)\s*\S*/gi,
+      (_, prefix, namePart) => `${prefix}${namePart} <redacted>`,
+    );
 }
 
 /**

@@ -241,6 +241,33 @@ describe("targetFetch", () => {
 
     spy.mockRestore();
   });
+
+  it("preserves caller-provided headers for out-of-scope URLs", async () => {
+    const session = makeSession({
+      config: { headers: { Authorization: "Bearer secret" } },
+    });
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("ok"));
+
+    await targetFetch(session, "https://attacker.example.net/page", {
+      headers: {
+        Accept: "text/html",
+        "Accept-Language": "en-US",
+      },
+    });
+
+    const init = spy.mock.calls[0][1] as RequestInit;
+    expect(init.headers).toEqual({
+      Accept: "text/html",
+      "Accept-Language": "en-US",
+    });
+    expect(
+      (init.headers as Record<string, string>)["Authorization"],
+    ).toBeUndefined();
+
+    spy.mockRestore();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -323,7 +350,7 @@ describe("redactSecretsInHistoryEntry", () => {
     const r = redactSecretsInHistoryEntry(
       `pensar pentest --target https://example.com --header "Authorization: Bearer xyz"`,
     );
-    expect(r).not.toContain("Bearer xyz");
+    expect(r).not.toContain("xyz");
     expect(r).toContain("Authorization: <redacted>");
   });
 
