@@ -11,14 +11,14 @@
 import { getFix, listFixes } from "../core/api";
 
 function showHelp(): void {
-  console.log(`pensar fixes — View security fixes via the Pensar API
+  process.stdout.write(`pensar fixes — View security fixes via the Pensar API
 
 Usage:
   pensar fixes <issueId>         List fixes for an issue
   pensar fixes get <fixId>       Get fix details (includes diff)
 
 Options:
-  -h, --help                     Show this help message`);
+  -h, --help                     Show this help message\n`);
 }
 
 async function main(): Promise<void> {
@@ -34,19 +34,19 @@ async function main(): Promise<void> {
     if (sub === "get") {
       const fixId = args[1];
       if (!fixId) {
-        console.error("Error: fix ID is required");
-        console.error("Usage: pensar fixes get <fixId>");
+        process.stderr.write("Error: fix ID is required\n");
+        process.stderr.write("Usage: pensar fixes get <fixId>\n");
         process.exit(1);
       }
       const fix = await getFix(fixId);
-      console.log(JSON.stringify(fix, null, 2));
+      process.stdout.write(`${JSON.stringify(fix, null, 2)}\n`);
     } else {
       const fixes = await listFixes(sub);
-      console.log(JSON.stringify(fixes, null, 2));
+      process.stdout.write(`${JSON.stringify(fixes, null, 2)}\n`);
     }
   } catch (err) {
-    console.error(
-      `\nError: ${err instanceof Error ? err.message : String(err)}`,
+    process.stderr.write(
+      `\nError: ${err instanceof Error ? err.message : String(err)}\n`,
     );
     process.exit(1);
   }

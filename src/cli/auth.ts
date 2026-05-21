@@ -68,10 +68,10 @@ function prompt(question: string): Promise<string> {
 async function promptWorkspaceSelection(
   workspaces: WorkspaceInfo[],
 ): Promise<WorkspaceInfo> {
-  console.log("\nSelect a workspace:\n");
+  process.stdout.write("\nSelect a workspace:\n\n");
   workspaces.forEach((ws, i) => {
-    console.log(
-      `  ${i + 1}. ${ws.name} (${ws.slug}) — $${ws.balance.toFixed(2)}`,
+    process.stdout.write(
+      `  ${i + 1}. ${ws.name} (${ws.slug}) — $${ws.balance.toFixed(2)}\n`,
     );
   });
 
@@ -79,13 +79,13 @@ async function promptWorkspaceSelection(
   const index = parseInt(answer, 10) - 1;
 
   if (Number.isNaN(index) || index < 0 || index >= workspaces.length) {
-    console.error("Invalid selection.");
+    process.stderr.write("Invalid selection.\n");
     process.exit(1);
   }
 
   const workspace = workspaces[index];
   if (!workspace) {
-    console.error("Invalid selection.");
+    process.stderr.write("Invalid selection.\n");
     process.exit(1);
   }
   return workspace;
@@ -99,9 +99,9 @@ async function login(): Promise<void> {
   const appConfig = await config.get();
 
   if (isConnected(appConfig)) {
-    console.log("Already connected to Pensar Console.");
+    process.stdout.write("Already connected to Pensar Console.\n");
     if (appConfig.workspaceSlug) {
-      console.log(`  Workspace: ${appConfig.workspaceSlug}`);
+      process.stdout.write(`  Workspace: ${appConfig.workspaceSlug}\n`);
     }
     const answer = await prompt("\nReconnect? (y/N): ");
     if (answer.toLowerCase() !== "y") {
@@ -109,7 +109,7 @@ async function login(): Promise<void> {
     }
   }
 
-  console.log(
+  process.stdout.write(
     "\nPensar Console — Managed Inference\nConnect for usage-based AI inference. No API keys needed.\n",
   );
 
@@ -121,8 +121,8 @@ async function login(): Promise<void> {
 
     openUrl(deviceInfo.verification_uri_complete);
 
-    console.log(
-      `A browser window should have opened.\nIf not, open this URL:\n  ${deviceInfo.verification_uri_complete}\n\nYour code: ${deviceInfo.user_code}\n\nWaiting for browser authorization...`,
+    process.stdout.write(
+      `A browser window should have opened.\nIf not, open this URL:\n  ${deviceInfo.verification_uri_complete}\n\nYour code: ${deviceInfo.user_code}\n\nWaiting for browser authorization...\n`,
     );
 
     const tokens = await pollWorkOSToken({
@@ -137,15 +137,15 @@ async function login(): Promise<void> {
       refreshToken: tokens.refreshToken,
     });
 
-    console.log("\nAuthenticated successfully. Fetching workspaces...");
+    process.stdout.write("\nAuthenticated successfully. Fetching workspaces...\n");
     await handleWorkspaces(apiUrl, tokens.accessToken);
   } else {
     const { deviceInfo } = flowInfo;
 
     openUrl(deviceInfo.verificationUriComplete);
 
-    console.log(
-      `A browser window should have opened.\nIf not, open this URL:\n  ${deviceInfo.verificationUriComplete}\n\nYour code: ${deviceInfo.userCode}\n\nWaiting for browser authorization...`,
+    process.stdout.write(
+      `A browser window should have opened.\nIf not, open this URL:\n  ${deviceInfo.verificationUriComplete}\n\nYour code: ${deviceInfo.userCode}\n\nWaiting for browser authorization...\n`,
     );
 
     const data = await pollLegacyToken({
@@ -172,14 +172,14 @@ async function login(): Promise<void> {
       });
     }
 
-    console.log("\n✓ Connected to Pensar Console");
+    process.stdout.write("\n✓ Connected to Pensar Console\n");
     if (data.workspace) {
-      console.log(
-        `  Workspace: ${data.workspace.name} (${data.workspace.slug})`,
+      process.stdout.write(
+        `  Workspace: ${data.workspace.name} (${data.workspace.slug})\n`,
       );
     }
     if (data.credits) {
-      console.log(`  Credits: $${data.credits.balance.toFixed(2)}`);
+      process.stdout.write(`  Credits: $${data.credits.balance.toFixed(2)}\n`);
     }
   }
 }
@@ -195,11 +195,11 @@ async function handleWorkspaces(
   const consoleUrl = wsResult.consoleUrl ?? getPensarConsoleUrl();
 
   if (workspaces.length === 0) {
-    console.log(
+    process.stdout.write(
       `\nNo workspaces found. Opening browser to create one...\nIf the browser didn't open, visit: ${consoleUrl}/create-workspace?redirect=/credits\n`,
     );
     openUrl(`${consoleUrl}/create-workspace?redirect=/credits`);
-    console.log("Waiting for workspace creation...");
+    process.stdout.write("Waiting for workspace creation...\n");
     workspaces = await pollForWorkspaceCreation(apiUrl, accessToken);
   }
 
@@ -222,26 +222,26 @@ async function handleWorkspaces(
     gatewaySigningKey: result.signingKey ?? null,
   });
 
-  console.log(
-    `\n✓ Connected to Pensar Console\n  Workspace: ${workspace.name} (${workspace.slug})\n  Credits: $${result.billing.balance.toFixed(2)}`,
+  process.stdout.write(
+    `\n✓ Connected to Pensar Console\n  Workspace: ${workspace.name} (${workspace.slug})\n  Credits: $${result.billing.balance.toFixed(2)}\n`,
   );
 
   const needsBillingSetup =
     !result.billing.ready && result.billing.balance <= 0 && !!result.billingUrl;
 
   if (needsBillingSetup && result.billingUrl) {
-    console.log(
-      `\n⚠ Your workspace billing setup is not ready yet. Finish setup at:\n  ${result.billingUrl}`,
+    process.stdout.write(
+      `\n⚠ Your workspace billing setup is not ready yet. Finish setup at:\n  ${result.billingUrl}\n`,
     );
   } else if (result.billing.balance < 1) {
     const billingUrl = `${getPensarConsoleUrl()}/${workspace.slug}/settings/billing`;
-    console.log(
-      `\n⚠ Low credit balance. We recommend at least $30 for uninterrupted pentests.\n  Add credits: ${billingUrl}`,
+    process.stdout.write(
+      `\n⚠ Low credit balance. We recommend at least $30 for uninterrupted pentests.\n  Add credits: ${billingUrl}\n`,
     );
   }
 
-  console.log(
-    "\nPensar models are now available. Run `pensar` to get started.",
+  process.stdout.write(
+    "\nPensar models are now available. Run `pensar` to get started.\n",
   );
 }
 
@@ -249,20 +249,20 @@ async function logout(): Promise<void> {
   const appConfig = await config.get();
 
   if (!isConnected(appConfig)) {
-    console.log("Not currently connected to Pensar Console.");
+    process.stdout.write("Not currently connected to Pensar Console.\n");
     return;
   }
 
   await disconnect();
-  console.log("✓ Disconnected from Pensar Console.");
+  process.stdout.write("✓ Disconnected from Pensar Console.\n");
 }
 
 async function status(): Promise<void> {
   const appConfig = await config.get();
 
   if (!isConnected(appConfig)) {
-    console.log(
-      "Not connected to Pensar Console.\n\nRun `pensar login` to connect.",
+    process.stdout.write(
+      "Not connected to Pensar Console.\n\nRun `pensar login` to connect.\n",
     );
     return;
   }
@@ -297,13 +297,13 @@ async function status(): Promise<void> {
   }
 
   const authMethod = appConfig.accessToken ? "WorkOS" : "API key";
-  console.log(
-    `✓ Connected to Pensar Console\n  Workspace: ${appConfig.workspaceSlug ?? "not set"}\n  Auth: ${authMethod}`,
+  process.stdout.write(
+    `✓ Connected to Pensar Console\n  Workspace: ${appConfig.workspaceSlug ?? "not set"}\n  Auth: ${authMethod}\n`,
   );
 }
 
 function showHelp(): void {
-  console.log(`Pensar Login — Connect to Pensar Console
+  process.stdout.write(`Pensar Login — Connect to Pensar Console
 
 Usage:
   pensar login             Login to Pensar Console (or show status if connected)
@@ -313,7 +313,7 @@ Usage:
 Legacy alias: 'pensar auth' still works for backward compatibility
 
 Options:
-  -h, --help               Show this help message`);
+  -h, --help               Show this help message\n`);
 }
 
 // ---------------------------------------------------------------------------
@@ -337,13 +337,13 @@ async function main(): Promise<void> {
     } else if (subcommand === "status") {
       await status();
     } else {
-      console.error(`Unknown auth subcommand: ${subcommand}`);
-      console.error("Run 'pensar login --help' for usage information");
+      process.stderr.write(`Unknown auth subcommand: ${subcommand}\n`);
+      process.stderr.write("Run 'pensar login --help' for usage information\n");
       process.exit(1);
     }
   } catch (err) {
-    console.error(
-      `\nError: ${err instanceof Error ? err.message : String(err)}`,
+    process.stderr.write(
+      `\nError: ${err instanceof Error ? err.message : String(err)}\n`,
     );
     process.exit(1);
   }

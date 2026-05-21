@@ -196,7 +196,7 @@ async function uninstall(force: boolean): Promise<void> {
   const method = detectInstallMethod();
   const pensarDir = getPensarDir();
 
-  console.log(`Pensar Uninstall
+  process.stdout.write(`Pensar Uninstall
 
   Install method:  ${method}
   Binary removal:  ${getUninstallDescription(method)}
@@ -208,65 +208,65 @@ async function uninstall(force: boolean): Promise<void> {
   if (!force) {
     const answer = await prompt("Proceed with uninstall? (y/N): ");
     if (answer.toLowerCase() !== "y") {
-      console.log("Aborted.");
+      process.stdout.write("Aborted.\n");
       return;
     }
-    console.log();
+    process.stdout.write("\n");
   }
 
   // 1. Clean data directory
-  console.log("Cleaning data directory...");
+  process.stdout.write("Cleaning data directory...\n");
   const { removed, preserved, errors } = await cleanDataDir();
 
   for (const name of removed) {
-    console.log(`  Removed ${name}`);
+    process.stdout.write(`  Removed ${name}\n`);
   }
   for (const name of preserved) {
-    console.log(`  Preserved ${name}/`);
+    process.stdout.write(`  Preserved ${name}/\n`);
   }
   for (const msg of errors) {
-    console.error(`  ${msg}`);
+    process.stderr.write(`  ${msg}\n`);
   }
 
   if (removed.length === 0 && errors.length === 0) {
-    console.log("  Nothing to clean.");
+    process.stdout.write("  Nothing to clean.\n");
   }
 
   // 2. Remove binary/package
-  console.log();
-  console.log("Removing pensar...");
+  process.stdout.write("\n");
+  process.stdout.write("Removing pensar...\n");
   const result = removeBinary(method);
 
   if (result.success) {
-    console.log(`  ${result.message}`);
+    process.stdout.write(`  ${result.message}\n`);
   } else {
-    console.error(`  ${result.message}`);
+    process.stderr.write(`  ${result.message}\n`);
   }
 
   // 3. Summary
-  console.log();
+  process.stdout.write("\n");
   if (result.success && errors.length === 0) {
-    console.log("✓ Pensar has been uninstalled.");
+    process.stdout.write("✓ Pensar has been uninstalled.\n");
   } else {
-    console.log("⚠ Uninstall completed with warnings (see above).");
+    process.stdout.write("⚠ Uninstall completed with warnings (see above).\n");
   }
 
   if (preserved.length > 0) {
-    console.log(
-      `  Preserved data remains at ${pensarDir}/ (${preserved.join(", ")})`,
+    process.stdout.write(
+      `  Preserved data remains at ${pensarDir}/ (${preserved.join(", ")})\n`,
     );
-    console.log("  To remove all data: rm -rf ~/.pensar");
+    process.stdout.write("  To remove all data: rm -rf ~/.pensar\n");
   }
 
   if (method === "binary") {
-    console.log(
-      "\n  Note: You may want to remove the PATH export from your shell config\n  (~/.bashrc, ~/.zshrc, etc.) if it was added during install.",
+    process.stdout.write(
+      "\n  Note: You may want to remove the PATH export from your shell config\n  (~/.bashrc, ~/.zshrc, etc.) if it was added during install.\n",
     );
   }
 }
 
 function showHelp(): void {
-  console.log(`Pensar Uninstall — Remove Pensar from your system
+  process.stdout.write(`Pensar Uninstall — Remove Pensar from your system
 
 Usage:
   pensar uninstall             Uninstall Pensar (keeps sessions, memories, skills)
@@ -274,7 +274,7 @@ Usage:
 
 Options:
   --force, -f          Skip confirmation prompt
-  -h, --help           Show this help message`);
+  -h, --help           Show this help message\n`);
 }
 
 async function main(): Promise<void> {
@@ -291,8 +291,8 @@ async function main(): Promise<void> {
   try {
     await uninstall(force);
   } catch (err) {
-    console.error(
-      `\nError: ${err instanceof Error ? err.message : String(err)}`,
+    process.stderr.write(
+      `\nError: ${err instanceof Error ? err.message : String(err)}\n`,
     );
     process.exit(1);
   }

@@ -11,13 +11,13 @@
 import { listProjects } from "../core/api";
 
 function showHelp(): void {
-  console.log(`pensar projects — List workspace projects
+  process.stdout.write(`pensar projects — List workspace projects
 
 Usage:
   pensar projects              List all projects
 
 Options:
-  -h, --help                   Show this help message`);
+  -h, --help                   Show this help message\n`);
 }
 
 async function main(): Promise<void> {
@@ -30,10 +30,10 @@ async function main(): Promise<void> {
 
   try {
     const projects = await listProjects();
-    console.log(JSON.stringify(projects, null, 2));
+    process.stdout.write(`${JSON.stringify(projects, null, 2)}\n`);
   } catch (err) {
-    console.error(
-      `\nError: ${err instanceof Error ? err.message : String(err)}`,
+    process.stderr.write(
+      `\nError: ${err instanceof Error ? err.message : String(err)}\n`,
     );
     process.exit(1);
   }

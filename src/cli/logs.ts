@@ -16,7 +16,7 @@ function getFlag(flag: string, argv: string[]): string | undefined {
 }
 
 function showHelp(): void {
-  console.log(`pensar logs — View agent execution logs via the Pensar API
+  process.stdout.write(`pensar logs — View agent execution logs via the Pensar API
 
 Usage:
   pensar logs <issueId> [filters]                 List agent logs
@@ -33,7 +33,7 @@ Search options:
   --context <n>         Context lines around matches (default: 3)
 
 Options:
-  -h, --help            Show this help message`);
+  -h, --help            Show this help message\n`);
 }
 
 async function main(): Promise<void> {
@@ -50,9 +50,9 @@ async function main(): Promise<void> {
       const issueId = args[1];
       const query = args[2];
       if (!issueId || !query) {
-        console.error("Error: issue ID and query are required");
-        console.error(
-          "Usage: pensar logs search <issueId> <query> [--level <level>] [--role <role>] [--context <n>]",
+        process.stderr.write("Error: issue ID and query are required\n");
+        process.stderr.write(
+          "Usage: pensar logs search <issueId> <query> [--level <level>] [--role <role>] [--context <n>]\n",
         );
         process.exit(1);
       }
@@ -77,7 +77,7 @@ async function main(): Promise<void> {
         role,
         contextLines,
       });
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else {
       const issueId = sub;
       const level = getFlag("--level", args) as
@@ -97,11 +97,11 @@ async function main(): Promise<void> {
       const limit = limitStr ? parseInt(limitStr, 10) : undefined;
 
       const result = await listAgentLogs(issueId, { level, role, limit });
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     }
   } catch (err) {
-    console.error(
-      `\nError: ${err instanceof Error ? err.message : String(err)}`,
+    process.stderr.write(
+      `\nError: ${err instanceof Error ? err.message : String(err)}\n`,
     );
     process.exit(1);
   }

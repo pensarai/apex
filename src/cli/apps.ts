@@ -125,7 +125,7 @@ function parseNumber(
 }
 
 function showHelp(): void {
-  console.log(`pensar apps — Manage the project attack surface (apps & endpoints)
+  process.stdout.write(`pensar apps — Manage the project attack surface (apps & endpoints)
 
 Usage:
   pensar apps <projectId>                                  List apps for a project
@@ -184,7 +184,7 @@ Endpoint fields (create requires --endpoint and --description):
   --threat-model <text>        Per-endpoint threat model notes
 
 Options:
-  -h, --help                   Show this help message`);
+  -h, --help                   Show this help message\n`);
 }
 
 function parseAppCreateOptions(argv: string[]): CreateAppInput {
@@ -313,48 +313,48 @@ async function main(): Promise<void> {
     if (sub === "get") {
       const appId = args[1];
       if (!appId) {
-        console.error("Error: app ID is required");
-        console.error("Usage: pensar apps get <appId>");
+        process.stderr.write("Error: app ID is required\n");
+        process.stderr.write("Usage: pensar apps get <appId>\n");
         process.exit(1);
       }
       const app = await getApp(appId);
-      console.log(JSON.stringify(app, null, 2));
+      process.stdout.write(`${JSON.stringify(app, null, 2)}\n`);
     } else if (sub === "create") {
       const projectId = args[1];
       if (!projectId) {
-        console.error("Error: project ID is required");
-        console.error(
-          "Usage: pensar apps create <projectId> --name N --description D",
+        process.stderr.write("Error: project ID is required\n");
+        process.stderr.write(
+          "Usage: pensar apps create <projectId> --name N --description D\n",
         );
         process.exit(1);
       }
       const opts = parseAppCreateOptions(args);
       const result = await createApp(projectId, opts);
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else if (sub === "update") {
       const appId = args[1];
       if (!appId) {
-        console.error("Error: app ID is required");
-        console.error("Usage: pensar apps update <appId> [options]");
+        process.stderr.write("Error: app ID is required\n");
+        process.stderr.write("Usage: pensar apps update <appId> [options]\n");
         process.exit(1);
       }
       const opts = parseAppUpdateOptions(args);
       const result = await updateApp(appId, opts);
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else if (sub === "delete") {
       const appId = args[1];
       if (!appId) {
-        console.error("Error: app ID is required");
-        console.error("Usage: pensar apps delete <appId>");
+        process.stderr.write("Error: app ID is required\n");
+        process.stderr.write("Usage: pensar apps delete <appId>\n");
         process.exit(1);
       }
       const result = await deleteApp(appId);
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else if (sub === "endpoints") {
       const appId = args[1];
       if (!appId) {
-        console.error("Error: app ID is required");
-        console.error("Usage: pensar apps endpoints <appId> [filters]");
+        process.stderr.write("Error: app ID is required\n");
+        process.stderr.write("Usage: pensar apps endpoints <appId> [filters]\n");
         process.exit(1);
       }
       const type = parseEndpointType(getFlag("--type", args));
@@ -371,54 +371,54 @@ async function main(): Promise<void> {
         ...(offset !== undefined ? { offset } : {}),
       };
       const result = await listEndpoints(appId, filters);
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else if (sub === "endpoint") {
       const endpointId = args[1];
       if (!endpointId) {
-        console.error("Error: endpoint ID is required");
-        console.error("Usage: pensar apps endpoint <endpointId>");
+        process.stderr.write("Error: endpoint ID is required\n");
+        process.stderr.write("Usage: pensar apps endpoint <endpointId>\n");
         process.exit(1);
       }
       const result = await getEndpoint(endpointId);
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else if (sub === "endpoint-create") {
       const appId = args[1];
       if (!appId) {
-        console.error("Error: app ID is required");
-        console.error(
-          "Usage: pensar apps endpoint-create <appId> --endpoint E --description D",
+        process.stderr.write("Error: app ID is required\n");
+        process.stderr.write(
+          "Usage: pensar apps endpoint-create <appId> --endpoint E --description D\n",
         );
         process.exit(1);
       }
       const opts = parseEndpointCreateOptions(args);
       const result = await createEndpoint(appId, opts);
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else if (sub === "endpoint-update") {
       const endpointId = args[1];
       if (!endpointId) {
-        console.error("Error: endpoint ID is required");
-        console.error(
-          "Usage: pensar apps endpoint-update <endpointId> [options]",
+        process.stderr.write("Error: endpoint ID is required\n");
+        process.stderr.write(
+          "Usage: pensar apps endpoint-update <endpointId> [options]\n",
         );
         process.exit(1);
       }
       const opts = parseEndpointUpdateOptions(args);
       const result = await updateEndpoint(endpointId, opts);
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else if (sub === "endpoint-delete") {
       const endpointId = args[1];
       if (!endpointId) {
-        console.error("Error: endpoint ID is required");
-        console.error("Usage: pensar apps endpoint-delete <endpointId>");
+        process.stderr.write("Error: endpoint ID is required\n");
+        process.stderr.write("Usage: pensar apps endpoint-delete <endpointId>\n");
         process.exit(1);
       }
       const result = await deleteEndpoint(endpointId);
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else if (sub === "search") {
       const query = args[1];
       if (!query || query.startsWith("--")) {
-        console.error("Error: search query is required");
-        console.error("Usage: pensar apps search <query> [options]");
+        process.stderr.write("Error: search query is required\n");
+        process.stderr.write("Usage: pensar apps search <query> [options]\n");
         process.exit(1);
       }
       const projectId = getFlag("--project", args);
@@ -431,12 +431,12 @@ async function main(): Promise<void> {
         ...(limit !== undefined ? { limit } : {}),
         ...(offset !== undefined ? { offset } : {}),
       });
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else if (sub === "search-endpoints") {
       const query = args[1];
       if (!query || query.startsWith("--")) {
-        console.error("Error: search query is required");
-        console.error("Usage: pensar apps search-endpoints <query> [options]");
+        process.stderr.write("Error: search query is required\n");
+        process.stderr.write("Usage: pensar apps search-endpoints <query> [options]\n");
         process.exit(1);
       }
       const applicationId = getFlag("--app", args);
@@ -462,7 +462,7 @@ async function main(): Promise<void> {
         ...(limit !== undefined ? { limit } : {}),
         ...(offset !== undefined ? { offset } : {}),
       });
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else if (!sub.startsWith("-")) {
       // Default: treat first arg as a project ID and list apps.
       const projectId = sub;
@@ -472,15 +472,15 @@ async function main(): Promise<void> {
         ...(limit !== undefined ? { limit } : {}),
         ...(offset !== undefined ? { offset } : {}),
       });
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else {
-      console.error(`Error: Unknown subcommand "${sub}"`);
+      process.stderr.write(`Error: Unknown subcommand "${sub}"\n`);
       showHelp();
       process.exit(1);
     }
   } catch (err) {
-    console.error(
-      `\nError: ${err instanceof Error ? err.message : String(err)}`,
+    process.stderr.write(
+      `\nError: ${err instanceof Error ? err.message : String(err)}\n`,
     );
     process.exit(1);
   }

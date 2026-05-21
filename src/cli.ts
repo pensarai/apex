@@ -47,7 +47,7 @@ function getArg(flag: string, argv = args): string | undefined {
 function getArgRequired(flag: string, argv = args): string {
   const val = getArg(flag, argv);
   if (!val) {
-    console.error(`Error: ${flag} is required`);
+    process.stderr.write(`Error: ${flag} is required\n`);
     process.exit(1);
   }
   return val;
@@ -69,9 +69,9 @@ function getAllArgs(flag: string, argv = args): string[] {
 
 function attachCliAgentStreamListeners(bus: AgentEventBus): void {
   bus.on("text-delta", (d) => process.stdout.write(d.text));
-  bus.on("tool-call-complete", (d) => console.log(`\n→ ${d.toolName}`));
-  bus.on("tool-result", (d) => console.log(`✓ ${d.toolName} completed`));
-  bus.on("error", (d) => console.error("Error:", d.error));
+  bus.on("tool-call-complete", (d) => process.stdout.write(`\n→ ${d.toolName}\n`));
+  bus.on("tool-result", (d) => process.stdout.write(`✓ ${d.toolName} completed\n`));
+  bus.on("error", (d) => process.stderr.write(`Error: ${d.error}\n`));
 }
 
 async function createInstrumentedBus(
@@ -83,7 +83,7 @@ async function createInstrumentedBus(
     "./core/integrations/wandb/upload"
   );
   const wandbCleanup = await attachWandbToEventBus(session, bus).catch((e) => {
-    console.warn("[wandb] Tracing disabled:", (e as Error).message);
+    process.stderr.write(`[wandb] Tracing disabled: ${(e as Error).message}\n`);
     return null;
   });
   return { bus, cleanup: async () => wandbCleanup?.() };
@@ -104,13 +104,13 @@ async function resolveCliModel(): Promise<AIModel> {
   const defaultModel = getDefaultModelForConfig(pensarConfig);
 
   if (!defaultModel) {
-    console.error(
+    process.stderr.write(
       "Error: No AI provider configured. Set one of:\n" +
         "  PENSAR_API_KEY     — Pensar Console (recommended)\n" +
         "  ANTHROPIC_API_KEY  — Anthropic direct\n" +
         "  OPENAI_API_KEY     — OpenAI\n" +
         "  OPENROUTER_API_KEY — OpenRouter\n" +
-        "\nOr run 'pensar login' to connect to Pensar Console.",
+        "\nOr run 'pensar login' to connect to Pensar Console.\n",
     );
     process.exit(1);
   }
@@ -123,7 +123,7 @@ async function resolveCliModel(): Promise<AIModel> {
 // ---------------------------------------------------------------------------
 
 function showHelp() {
-  console.log(`Pensar - AI-Powered Penetration Testing CLI
+  process.stdout.write(`Pensar - AI-Powered Penetration Testing CLI
 
 Usage:
   pensar                             Launch the TUI
@@ -210,11 +210,11 @@ async function runPentest() {
   const { exfilMode, warning: modeWarning } = resolvePentestMode(mode);
 
   if (modeWarning) {
-    console.warn(modeWarning);
+    process.stderr.write(`${modeWarning}\n`);
   }
 
   const sep = "=".repeat(60);
-  console.log(`${sep}
+  process.stdout.write(`${sep}
 PENTEST ORCHESTRATION
 ${sep}
 Target:  ${target}${cwd ? `\nCwd:     ${cwd} (whitebox)` : ""}${exfilMode ? "\nMode:    exfil" : ""}
@@ -248,13 +248,13 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
         eventBus: pentestBus,
       });
 
-    console.log(`
+    process.stdout.write(`
 ${sep}
 RESULTS
 ${sep}
 Findings:  ${findings.length}
 Path:      ${findingsPath}
-POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}`);
+POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}\n`);
   } finally {
     await wandbCleanup();
   }
@@ -277,7 +277,7 @@ async function runTargetedPentest() {
   const model = await resolveCliModel();
 
   if (objectives.length === 0) {
-    console.error("Error: at least one --objective is required");
+    process.stderr.write("Error: at least one --objective is required\n");
     process.exit(1);
   }
 
@@ -285,7 +285,7 @@ async function runTargetedPentest() {
   const objectivesList = objectives
     .map((o, i) => `  ${i + 1}. ${o}`)
     .join("\n");
-  console.log(`${sep}
+  process.stdout.write(`${sep}
 TARGETED PENTEST
 ${sep}
 Target:  ${target}
@@ -312,13 +312,13 @@ ${objectivesList}
       eventBus: targetedBus,
     });
 
-    console.log(`
+    process.stdout.write(`
 ${sep}
 RESULTS
 ${sep}
 Findings:  ${findings.length}
 Path:      ${findingsPath}
-POCs:      ${pocsPath}`);
+POCs:      ${pocsPath}\n`);
   } finally {
     await wandbCleanup();
   }
@@ -341,7 +341,7 @@ async function runThreatModel() {
     : path.resolve(process.cwd(), outputArg);
 
   const sep = "=".repeat(60);
-  console.log(`${sep}
+  process.stdout.write(`${sep}
 THREAT MODEL GENERATION
 ${sep}
 Codebase: ${process.cwd()}
@@ -351,9 +351,9 @@ Model:    ${model}
 
   const threatBus = new AgentEventBus();
   threatBus.on("text-delta", (d) => process.stdout.write(d.text));
-  threatBus.on("tool-call-complete", (d) => console.log(`\n  → ${d.toolName}`));
-  threatBus.on("tool-result", (d) => console.log(`  ✓ ${d.toolName}`));
-  threatBus.on("error", (d) => console.error("Error:", d.error));
+  threatBus.on("tool-call-complete", (d) => process.stdout.write(`\n  → ${d.toolName}\n`));
+  threatBus.on("tool-result", (d) => process.stdout.write(`  ✓ ${d.toolName}\n`));
+  threatBus.on("error", (d) => process.stderr.write(`Error: ${d.error}\n`));
 
   await runThreatModelWorkflow({
     codebasePath: process.cwd(),
@@ -363,8 +363,8 @@ Model:    ${model}
     eventBus: threatBus,
   });
 
-  console.log(
-    `\n${sep}\nCOMPLETE\n${sep}\nThreat model written to: ${resolvedPath}`,
+  process.stdout.write(
+    `\n${sep}\nCOMPLETE\n${sep}\nThreat model written to: ${resolvedPath}\n`,
   );
 }
 
@@ -388,7 +388,7 @@ async function runOperator() {
 
   const promptRaw = getArg("-p") ?? getArg("--prompt");
   if (!promptRaw) {
-    console.error("Error: -p <prompt> is required");
+    process.stderr.write("Error: -p <prompt> is required\n");
     process.exit(1);
   }
 
@@ -400,7 +400,7 @@ async function runOperator() {
   const model = await resolveCliModel();
 
   const sep = "─".repeat(60);
-  console.log(`${sep}
+  process.stdout.write(`${sep}
 OPERATOR SESSION
 ${sep}
 Model:   ${model}${target ? `\nTarget:  ${target}` : ""}
@@ -477,15 +477,15 @@ ${sep}\n`);
     await wandbCleanup();
   }
 
-  console.log(`\nSession: ${session.rootPath}`);
+  process.stdout.write(`\nSession: ${session.rootPath}\n`);
 }
 
 async function runUpgrade() {
   const currentVersion = getCurrentVersion();
-  console.log(`Current version: v${currentVersion}\nChecking for updates...`);
+  process.stdout.write(`Current version: v${currentVersion}\nChecking for updates...\n`);
 
   const result = await upgrade({ interactive: true });
-  console.log(`\n${result.message}`);
+  process.stdout.write(`\n${result.message}\n`);
 
   process.exit(result.success ? 0 : 1);
 }
@@ -501,7 +501,7 @@ if (hasFlag("-p") || command === "--prompt") {
   command === "--version" ||
   command === "-v"
 ) {
-  console.log(`v${version}`);
+  process.stdout.write(`v${version}\n`);
 } else if (command === "help" || command === "--help" || command === "-h") {
   showHelp();
 } else if (command === "upgrade" || command === "update") {
@@ -541,16 +541,16 @@ if (hasFlag("-p") || command === "--prompt") {
   await runDoctor();
 } else if (args.length === 0) {
   if (process.env.PENSAR_NO_TUI === "1") {
-    console.error(
-      "TUI mode requires Bun. Install Bun (https://bun.sh) or use a standalone binary release for interactive mode.",
+    process.stderr.write(
+      "TUI mode requires Bun. Install Bun (https://bun.sh) or use a standalone binary release for interactive mode.\n",
     );
-    console.error("All other commands work with Node — run 'pensar --help'.");
+    process.stderr.write("All other commands work with Node — run 'pensar --help'.\n");
     process.exit(1);
   }
   await import("./tui/index.tsx");
 } else {
-  console.error(`Error: Unknown command '${command}'`);
-  console.error();
-  console.error("Run 'pensar --help' for usage information");
+  process.stderr.write(`Error: Unknown command '${command}'\n`);
+  process.stderr.write("\n");
+  process.stderr.write("Run 'pensar --help' for usage information\n");
   process.exit(1);
 }

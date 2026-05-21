@@ -17,7 +17,7 @@ function getFlag(flag: string, argv: string[]): string | undefined {
 }
 
 function showHelp(): void {
-  console.log(`pensar issues — Manage security issues via the Pensar API
+  process.stdout.write(`pensar issues — Manage security issues via the Pensar API
 
 Usage:
   pensar issues <projectId> [filters]            List issues for a project
@@ -38,7 +38,7 @@ Update options:
   --fp-reason <reason>      Reason for false positive flag
 
 Options:
-  -h, --help                Show this help message`);
+  -h, --help                Show this help message\n`);
 }
 
 async function main(): Promise<void> {
@@ -54,18 +54,18 @@ async function main(): Promise<void> {
     if (sub === "get") {
       const issueId = args[1];
       if (!issueId) {
-        console.error("Error: issue ID is required");
-        console.error("Usage: pensar issues get <issueId>");
+        process.stderr.write("Error: issue ID is required\n");
+        process.stderr.write("Usage: pensar issues get <issueId>\n");
         process.exit(1);
       }
       const issue = await getIssue(issueId);
-      console.log(JSON.stringify(issue, null, 2));
+      process.stdout.write(`${JSON.stringify(issue, null, 2)}\n`);
     } else if (sub === "update") {
       const issueId = args[1];
       if (!issueId) {
-        console.error("Error: issue ID is required");
-        console.error(
-          "Usage: pensar issues update <issueId> [--status <status>] ...",
+        process.stderr.write("Error: issue ID is required\n");
+        process.stderr.write(
+          "Usage: pensar issues update <issueId> [--status <status>] ...\n",
         );
         process.exit(1);
       }
@@ -89,7 +89,7 @@ async function main(): Promise<void> {
         userFlaggedFalsePositive,
         userFlaggedFalsePositiveReason,
       });
-      console.log(JSON.stringify(result, null, 2));
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } else {
       const projectId = sub;
       const issues = await listIssues(projectId, {
@@ -98,11 +98,11 @@ async function main(): Promise<void> {
         severity: getFlag("--severity", args),
         branch: getFlag("--branch", args),
       });
-      console.log(JSON.stringify(issues, null, 2));
+      process.stdout.write(`${JSON.stringify(issues, null, 2)}\n`);
     }
   } catch (err) {
-    console.error(
-      `\nError: ${err instanceof Error ? err.message : String(err)}`,
+    process.stderr.write(
+      `\nError: ${err instanceof Error ? err.message : String(err)}\n`,
     );
     process.exit(1);
   }
