@@ -45,6 +45,7 @@
         "recommended": false
       },
       "suspicious": {
+        "noConsole": "error",
         "noExplicitAny": "error",
         // Carryover from previous ESLint config (no-useless-escape: off).
         "noUselessEscapeInString": "off",
@@ -182,10 +183,13 @@
       }
     },
     {
-      // Test files are allowed to poke at internals.
+      // Test files are allowed to poke at internals and use console.*.
       "includes": ["**/*.test.ts", "**/*.test.tsx", "**/*.test-*.ts"],
       "linter": {
         "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          },
           "style": {
             "noRestrictedImports": { "level": "off" }
           }
@@ -193,12 +197,14 @@
       }
     },
     {
-      // Barrel enforcement scopes to src/ only, matching the previous
-      // `eslint src/` lint scope. Demo files at the repo root and
-      // helper scripts are not subject to module-boundary rules.
+      // Barrel enforcement and noConsole scope to src/ only. Demo files
+      // at the repo root and helper scripts are not subject to these rules.
       "includes": ["**", "!src/**"],
       "linter": {
         "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          },
           "style": {
             "noRestrictedImports": { "level": "off" }
           }
