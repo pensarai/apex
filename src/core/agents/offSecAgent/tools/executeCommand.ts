@@ -216,7 +216,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         const resolved = probeUrl
           ? resolveEffectiveHeaders(ctx.session, probeUrl)
           : null;
-        const hasHeaders = resolved ? resolved.entries.length > 0 : false;
+        const hasHeaders = resolved ? Object.keys(resolved).length > 0 : false;
         if (hasHeaders) {
           const msg =
             "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined. " +
