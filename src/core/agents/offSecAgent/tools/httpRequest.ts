@@ -4,6 +4,7 @@ import { join } from "path";
 import { z } from "zod";
 import {
   resolveEffectiveHeaders,
+  shellQuote,
   targetFetch,
 } from "../../../http/targetHeaders";
 import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
@@ -278,7 +279,7 @@ async function executeSandboxHttpRequest(
     // as the `request` layer (wins over global/session/credential).
     const mergedHeaders = resolveEffectiveHeaders(ctx.session, url, headers);
     for (const [key, value] of Object.entries(mergedHeaders)) {
-      curlCommand += ` -H "${key}: ${value}"`;
+      curlCommand += ` -H "${shellQuote(`${key}: ${value}`)}"`;
     }
 
     if (body && ["POST", "PUT", "PATCH"].includes(method)) {

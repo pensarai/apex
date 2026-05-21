@@ -134,7 +134,7 @@ export function resolveEffectiveHeaders(
   requestOverrides?: HeaderRecord,
 ): HeaderRecord {
   if (!isUrlInSessionScope(url, session)) {
-    return {};
+    return requestOverrides ?? {};
   }
 
   // Session layer is the only persisted set today; global defaults are
@@ -247,7 +247,7 @@ type ShellInjector = (command: string, headers: HeaderRecord) => string;
  * Escapes `"`, `\`, `$`, and `` ` ``. The caller wraps the result in
  * double quotes itself.
  */
-function shellQuote(value: string): string {
+export function shellQuote(value: string): string {
   return value
     .replace(/\\/g, "\\\\")
     .replace(/"/g, '\\"')

@@ -211,12 +211,11 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         // Only block when there are actually headers to apply for the
         // hosts on this command line. `applyHeadersToShellCommand`
         // returns `unknown-tool` even when no headers are configured.
-        const sampleHost = cmdHosts.find((h) => h.length > 0);
-        const probeUrl = sampleHost ? `https://${sampleHost}` : "";
-        const resolved = probeUrl
-          ? resolveEffectiveHeaders(ctx.session, probeUrl)
-          : null;
-        const hasHeaders = resolved ? Object.keys(resolved).length > 0 : false;
+        const hasHeaders = cmdHosts.some((h) => {
+          if (!h) return false;
+          const resolved = resolveEffectiveHeaders(ctx.session, `https://${h}`);
+          return Object.keys(resolved).length > 0;
+        });
         if (hasHeaders) {
           const msg =
             "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined. " +
