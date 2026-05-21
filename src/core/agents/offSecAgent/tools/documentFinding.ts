@@ -275,7 +275,7 @@ CRITICAL RULES — READ BEFORE CALLING:
         if (!isVulnerability) {
           cvssResult = {
             score: 0,
-            severity: "INFORMATIONAL",
+            severity: "NONE",
             vectorString: "",
             metrics: FALLBACK_CVSS.metrics,
             scoreType: "N/A",
