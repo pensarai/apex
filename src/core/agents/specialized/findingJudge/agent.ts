@@ -1,5 +1,5 @@
 import { stepCountIs } from "ai";
-import type { AIModel } from "../../../ai";
+import type { AIModel, OpenAIReasoningEffort } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { AgentEventBus } from "../../../eventBus";
 import type { SessionInfo } from "../../../session";
@@ -26,6 +26,7 @@ export interface FindingJudgeAgentInput {
   sandbox?: UnifiedSandbox;
   target?: string;
   enableThinking?: boolean;
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
 }
 
 const FINDING_JUDGE_ACTIVE_TOOLS = [

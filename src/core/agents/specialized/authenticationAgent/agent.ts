@@ -2,7 +2,7 @@ import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall } from "ai";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import type { AIAuthConfig, AIModel } from "../../../ai";
+import type { AIAuthConfig, AIModel, OpenAIReasoningEffort } from "../../../ai";
 import type { AgentEventBus } from "../../../eventBus";
 import type { SessionInfo } from "../../../session";
 import { OffensiveSecurityAgent } from "../../offSecAgent";
@@ -66,6 +66,9 @@ export interface AuthenticationAgentInput {
 
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
+
+  /** OpenAI reasoning effort for GPT/o-series reasoning models. */
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */

@@ -163,6 +163,7 @@ async function runEndpointDocumentationAgent(
     attackSurfaceRegistry,
     onStepFinish,
     onCacheMetrics,
+    openAIReasoningEffort,
     projectThreatModel,
     parentSubagentId,
   } = opts;
