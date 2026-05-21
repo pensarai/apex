@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { promisify } from "util";
 import yaml from "yaml";
+import { writeErrorLog } from "../../../logger";
 
 const exec = promisify(nodeExec);
 
@@ -75,7 +76,7 @@ export function parseDockerComposePort(
         for (const [serviceName, service] of Object.entries(parsed.services)) {
           // Skip infrastructure services
           if (isInfrastructureService(serviceName)) {
-            console.log(`  ⏭️  Skipping infrastructure service: ${serviceName}`);
+            process.stderr.write(`  ⏭️  Skipping infrastructure service: ${serviceName}\n`);
             continue;
           }
 
@@ -90,8 +91,8 @@ export function parseDockerComposePort(
               if (typeof firstPort === "string") {
                 const match = firstPort.match(/^(\d+):(\d+)$/);
                 if (match && match[1] && match[2]) {
-                  console.log(
-                    `  ✅ Found web service: ${serviceName} on port ${match[1]}`,
+                  process.stderr.write(
+                    `  ✅ Found web service: ${serviceName} on port ${match[1]}\n`,
                   );
                   return {
                     hostPort: parseInt(match[1], 10),
@@ -102,8 +103,8 @@ export function parseDockerComposePort(
                   };
                 }
               } else if (typeof firstPort === "number") {
-                console.log(
-                  `  ✅ Found web service: ${serviceName} on port ${firstPort}`,
+                process.stderr.write(
+                  `  ✅ Found web service: ${serviceName} on port ${firstPort}\n`,
                 );
                 return {
                   hostPort: firstPort,
@@ -127,8 +128,8 @@ export function parseDockerComposePort(
                   ? parseInt(exposePort, 10)
                   : exposePort;
 
-              console.log(
-                `  ⚠️  Service ${serviceName} has expose but no ports - will add port mapping`,
+              process.stderr.write(
+                `  ⚠️  Service ${serviceName} has expose but no ports - will add port mapping\n`,
               );
 
               // Add port mapping to the service
@@ -139,8 +140,8 @@ export function parseDockerComposePort(
 
               // Write back the modified compose file
               writeFileSync(composePath, yaml.stringify(parsed));
-              console.log(
-                `  ✅ Added port mapping ${port}:${port} to ${serviceName}`,
+              process.stderr.write(
+                `  ✅ Added port mapping ${port}:${port} to ${serviceName}\n`,
               );
 
               return {
@@ -156,8 +157,8 @@ export function parseDockerComposePort(
       }
 
       // If we get here, no ports were found - find first non-infrastructure service
-      console.log(
-        `  ⚠️  No ports found in ${composePath}, adding default port to first web service...`,
+      process.stderr.write(
+        `  ⚠️  No ports found in ${composePath}, adding default port to first web service...\n`,
       );
 
       if (parsed?.services) {
@@ -177,8 +178,8 @@ export function parseDockerComposePort(
           (serviceObj.ports as string[]).push(`${defaultPort}:${defaultPort}`);
 
           writeFileSync(composePath, yaml.stringify(parsed));
-          console.log(
-            `  ✅ Added default port mapping ${defaultPort}:${defaultPort} to ${serviceName}`,
+          process.stderr.write(
+            `  ✅ Added default port mapping ${defaultPort}:${defaultPort} to ${serviceName}\n`,
           );
 
           return {
@@ -191,13 +192,12 @@ export function parseDockerComposePort(
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`Warning: Failed to parse ${composePath}: ${message}`);
+      writeErrorLog(error, `DockerUtils:parseCompose:${composePath}`);
     }
   }
 
   // Default to port 80 if not found
-  console.log(`  ⚠️  Could not find docker-compose file, defaulting to port 80`);
+  process.stderr.write(`  ⚠️  Could not find docker-compose file, defaulting to port 80\n`);
   return {
     hostPort: 80,
     containerPort: 80,
@@ -224,8 +224,8 @@ export async function getActualDockerPort(
 
     const containerId = stdout.trim();
     if (!containerId) {
-      console.log(
-        `  ⚠️  Could not find running container for service: ${serviceName}`,
+      process.stderr.write(
+        `  ⚠️  Could not find running container for service: ${serviceName}\n`,
       );
       return containerPort;
     }
@@ -239,19 +239,18 @@ export async function getActualDockerPort(
     const match = portOutput.match(/0\.0\.0\.0:(\d+)/);
     if (match && match[1]) {
       const hostPort = parseInt(match[1], 10);
-      console.log(
-        `  ✅ Container ${serviceName}:${containerPort} is mapped to localhost:${hostPort}`,
+      process.stderr.write(
+        `  ✅ Container ${serviceName}:${containerPort} is mapped to localhost:${hostPort}\n`,
       );
       return hostPort;
     }
 
-    console.log(
-      `  ⚠️  Could not parse port mapping, using container port: ${containerPort}`,
+    process.stderr.write(
+      `  ⚠️  Could not parse port mapping, using container port: ${containerPort}\n`,
     );
     return containerPort;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`  ⚠️  Error getting Docker port mapping: ${message}`);
+    writeErrorLog(error, "DockerUtils:getActualDockerPort");
     return containerPort;
   }
 }

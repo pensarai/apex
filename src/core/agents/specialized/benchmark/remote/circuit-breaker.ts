@@ -1,3 +1,5 @@
+import { writeErrorLog } from "../../../../logger";
+
 /**
  * Circuit Breaker Pattern Implementation
  *
@@ -33,8 +35,8 @@ export class CircuitBreaker {
       const timeSinceLastFailure = now - this.lastFailureTime;
 
       if (timeSinceLastFailure >= this.options.resetTimeout) {
-        console.log(
-          "🟡 Circuit breaker: Entering HALF_OPEN state (attempting recovery)",
+        process.stderr.write(
+          "🟡 Circuit breaker: Entering HALF_OPEN state (attempting recovery)\n",
         );
         this.state = "HALF_OPEN";
       } else {
@@ -66,7 +68,7 @@ export class CircuitBreaker {
 
     if (this.state === "HALF_OPEN") {
       if (this.successes >= this.options.successThreshold) {
-        console.log("🟢 Circuit breaker: Entering CLOSED state (recovered)");
+        process.stderr.write("🟢 Circuit breaker: Entering CLOSED state (recovered)\n");
         this.state = "CLOSED";
         this.successes = 0;
       }
@@ -82,8 +84,9 @@ export class CircuitBreaker {
       this.failures >= this.options.failureThreshold &&
       this.state !== "OPEN"
     ) {
-      console.error(
-        `🔴 Circuit breaker: OPENING circuit after ${this.failures} consecutive failures`,
+      writeErrorLog(
+        `Circuit breaker: OPENING circuit after ${this.failures} consecutive failures`,
+        "CircuitBreaker",
       );
       this.state = "OPEN";
     }

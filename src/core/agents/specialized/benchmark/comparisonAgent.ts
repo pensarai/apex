@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
 import { type AIModel, streamResponse } from "../../../ai";
+import { writeErrorLog } from "../../../logger";
 import type { ComparisonResult } from "./types";
 
 const COMPARISON_SYSTEM_PROMPT = `
@@ -80,8 +81,8 @@ export async function runComparisonAgent(
 
   const expectedResultsFile = jsonFiles[0]!;
   const expectedResultsPath = join(expectedResultsDir, expectedResultsFile);
-  console.log(
-    `[ComparisonAgent] Loading expected results from: ${expectedResultsPath}`,
+  process.stderr.write(
+    `[ComparisonAgent] Loading expected results from: ${expectedResultsPath}\n`,
   );
 
   const expectedData = readFileSync(expectedResultsPath, "utf-8");
@@ -127,8 +128,7 @@ ${finding.references ? `## References\n${finding.references}` : ""}`;
 
       actualFindingsMarkdown += `\n\n---\n**File: ${file}**\n\n${formattedFinding}`;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`Failed to read finding file ${file}:`, message);
+      writeErrorLog(error, `ComparisonAgent:readFinding:${file}`);
     }
   }
 
@@ -220,8 +220,8 @@ Results will be saved to: comparison-results.json in the session directory.`,
       };
 
       // Save comparison results to file
-      console.log(
-        `[ComparisonAgent] Saving results to: ${comparisonResultsPath}`,
+      process.stderr.write(
+        `[ComparisonAgent] Saving results to: ${comparisonResultsPath}\n`,
       );
       writeFileSync(comparisonResultsPath, JSON.stringify(result, null, 2));
 
@@ -271,23 +271,23 @@ Be thorough in your analysis and provide clear explanations for your matches. St
   });
 
   // Consume the stream and log progress
-  console.log(`\n${"=".repeat(80)}`);
-  console.log(`COMPARISON AGENT`);
-  console.log(`${"=".repeat(80)}\n`);
+  process.stderr.write(`\n${"=".repeat(80)}\n`);
+  process.stderr.write(`COMPARISON AGENT\n`);
+  process.stderr.write(`${"=".repeat(80)}\n\n`);
 
   for await (const delta of streamResult.fullStream) {
     if (delta.type === "text-delta") {
       process.stdout.write(delta.text);
     } else if (delta.type === "tool-call") {
-      console.log(
+      process.stderr.write(
         `\n\n[Tool] ${delta.toolName}${
           delta.input?.toolCallDescription
             ? `: ${delta.input.toolCallDescription}`
             : ""
-        }`,
+        }\n`,
       );
     } else if (delta.type === "tool-result") {
-      console.log(`[Tool Complete]\n`);
+      process.stderr.write(`[Tool Complete]\n\n`);
     }
   }
 
@@ -309,9 +309,9 @@ Be thorough in your analysis and provide clear explanations for your matches. St
   //   },
   // });
 
-  console.log(`\n${"=".repeat(80)}`);
-  console.log(`COMPARISON COMPLETE`);
-  console.log(`${"=".repeat(80)}\n`);
+  process.stderr.write(`\n${"=".repeat(80)}\n`);
+  process.stderr.write(`COMPARISON COMPLETE\n`);
+  process.stderr.write(`${"=".repeat(80)}\n\n`);
 
   // Read comparison results from file
   if (!existsSync(comparisonResultsPath)) {
@@ -320,24 +320,30 @@ Be thorough in your analysis and provide clear explanations for your matches. St
     );
   }
 
-  console.log(
-    `[ComparisonAgent] Reading results from: ${comparisonResultsPath}`,
+  process.stderr.write(
+    `[ComparisonAgent] Reading results from: ${comparisonResultsPath}\n`,
   );
   const savedResults = readFileSync(comparisonResultsPath, "utf-8");
   const comparisonResultFromFile = JSON.parse(savedResults) as ComparisonResult;
 
-  console.log(`[ComparisonAgent] Results loaded successfully`);
-  console.log(`  - Matched: ${comparisonResultFromFile.matched.length}`);
-  console.log(`  - Missed: ${comparisonResultFromFile.missed.length}`);
-  console.log(`  - Extra: ${comparisonResultFromFile.extra.length}`);
-  console.log(
-    `  - Accuracy: ${Math.round(comparisonResultFromFile.accuracy * 100)}%`,
+  process.stderr.write(`[ComparisonAgent] Results loaded successfully\n`);
+  process.stderr.write(
+    `  - Matched: ${comparisonResultFromFile.matched.length}\n`,
   );
-  console.log(
-    `  - Precision: ${Math.round(comparisonResultFromFile.precision * 100)}%`,
+  process.stderr.write(
+    `  - Missed: ${comparisonResultFromFile.missed.length}\n`,
   );
-  console.log(
-    `  - Recall: ${Math.round(comparisonResultFromFile.recall * 100)}%`,
+  process.stderr.write(
+    `  - Extra: ${comparisonResultFromFile.extra.length}\n`,
+  );
+  process.stderr.write(
+    `  - Accuracy: ${Math.round(comparisonResultFromFile.accuracy * 100)}%\n`,
+  );
+  process.stderr.write(
+    `  - Precision: ${Math.round(comparisonResultFromFile.precision * 100)}%\n`,
+  );
+  process.stderr.write(
+    `  - Recall: ${Math.round(comparisonResultFromFile.recall * 100)}%\n`,
   );
 
   return comparisonResultFromFile;

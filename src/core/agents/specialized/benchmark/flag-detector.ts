@@ -4,6 +4,7 @@ import fs from "fs/promises";
 import { glob } from "glob";
 import path from "path";
 import yaml from "yaml";
+import { writeErrorLog } from "../../../logger";
 import type { FlagDetectionResult, FlagLocation } from "./types";
 
 /**
@@ -137,10 +138,10 @@ export async function extractFlagFromRepo(
   // First, check for Argus benchmark.json (APEX-XXX-XX pattern)
   const argusFlag = await extractFlagFromBenchmarkJson(repoPath);
   if (argusFlag) {
-    console.log(
-      `[${branch}] 🎯 Detected Argus benchmark with flag from benchmark.json`,
+    process.stderr.write(
+      `[${branch}] 🎯 Detected Argus benchmark with flag from benchmark.json\n`,
     );
-    console.log(`[${branch}] ✅ FLAG: ${argusFlag.substring(0, 30)}...`);
+    process.stderr.write(`[${branch}] ✅ FLAG: ${argusFlag.substring(0, 30)}...\n`);
     return argusFlag;
   }
 
@@ -149,15 +150,15 @@ export async function extractFlagFromRepo(
   const benchmarkName = extractBenchmarkName(repoPath);
   if (benchmarkName) {
     const flag = computeBenchmarkFlag(benchmarkName);
-    console.log(`[${branch}] 🎯 Detected XBOW benchmark: ${benchmarkName}`);
-    console.log(
-      `[${branch}] ✅ Computed FLAG (SHA256): ${flag.substring(0, 30)}...`,
+    process.stderr.write(`[${branch}] 🎯 Detected XBOW benchmark: ${benchmarkName}\n`);
+    process.stderr.write(
+      `[${branch}] ✅ Computed FLAG (SHA256): ${flag.substring(0, 30)}...\n`,
     );
     return flag;
   }
 
   // For non-benchmark repos, search configuration files
-  console.log(`[${branch}] 🔍 Searching for FLAG in configuration files...`);
+  process.stderr.write(`[${branch}] 🔍 Searching for FLAG in configuration files...\n`);
 
   const searchFiles = [
     ".env",
@@ -185,20 +186,17 @@ export async function extractFlagFromRepo(
       const flag = extractFlagFromContent(content, file);
 
       if (flag) {
-        console.log(
-          `[${branch}] ✅ FLAG found in ${file}: ${flag.substring(0, 20)}...`,
+        process.stderr.write(
+          `[${branch}] ✅ FLAG found in ${file}: ${flag.substring(0, 20)}...\n`,
         );
         return flag;
       }
     } catch (error) {
-      console.log(
-        `[${branch}] ⚠️  Error reading ${file}:`,
-        error instanceof Error ? error.message : String(error),
-      );
+      writeErrorLog(error, `FlagDetector:readConfig:${file}`);
     }
   }
 
-  console.log(`[${branch}] ❌ FLAG not found in any configuration file`);
+  process.stderr.write(`[${branch}] ❌ FLAG not found in any configuration file\n`);
   return null;
 }
 
@@ -224,8 +222,8 @@ export async function extractPACEFlags(
 ): Promise<Array<{ name: string; value: string }>> {
   const flags: Array<{ name: string; value: string }> = [];
 
-  console.log(
-    `[${benchmarkName}] 🔍 Extracting PACEbench flags from ${benchmarkPath}...`,
+  process.stderr.write(
+    `[${benchmarkName}] 🔍 Extracting PACEbench flags from ${benchmarkPath}...\n`,
   );
 
   // Check flags/ directory
@@ -241,16 +239,14 @@ export async function extractPACEFlags(
           if (flagValue.startsWith("flag{")) {
             const flagName = file.replace(".txt", "");
             flags.push({ name: flagName, value: flagValue });
-            console.log(
-              `[${benchmarkName}]    Found flag: ${flagName} = ${flagValue.substring(0, 20)}...`,
+            process.stderr.write(
+              `[${benchmarkName}]    Found flag: ${flagName} = ${flagValue.substring(0, 20)}...\n`,
             );
           }
         }
       }
     } catch (error) {
-      console.log(
-        `[${benchmarkName}] ⚠️  Error reading flags/ directory: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      writeErrorLog(error, `FlagDetector:readFlagsDir:${benchmarkName}`);
     }
   }
 
@@ -267,20 +263,18 @@ export async function extractPACEFlags(
           if (flagValue.startsWith("flag{")) {
             const flagName = file.replace(".txt", "");
             flags.push({ name: flagName, value: flagValue });
-            console.log(
-              `[${benchmarkName}]    Found flag: ${flagName} = ${flagValue.substring(0, 20)}...`,
+            process.stderr.write(
+              `[${benchmarkName}]    Found flag: ${flagName} = ${flagValue.substring(0, 20)}...\n`,
             );
           }
         }
       }
     } catch (error) {
-      console.log(
-        `[${benchmarkName}] ⚠️  Error reading flag_without_ignore/ directory: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      writeErrorLog(error, `FlagDetector:readAltFlagsDir:${benchmarkName}`);
     }
   }
 
-  console.log(`[${benchmarkName}] ✅ Extracted ${flags.length} flags`);
+  process.stderr.write(`[${benchmarkName}] ✅ Extracted ${flags.length} flags\n`);
   return flags;
 }
 
@@ -293,8 +287,8 @@ export async function detectMultipleFlagsInArtifacts(
   expectedFlags: Array<{ name: string; value: string }>,
   benchmarkName: string,
 ): Promise<FlagDetectionResult> {
-  console.log(
-    `[${benchmarkName}] 🔎 Searching for ${expectedFlags.length} flags in pentest artifacts...`,
+  process.stderr.write(
+    `[${benchmarkName}] 🔎 Searching for ${expectedFlags.length} flags in pentest artifacts...\n`,
   );
 
   const multiFlag = {
@@ -314,7 +308,7 @@ export async function detectMultipleFlagsInArtifacts(
 
   // For each expected flag, search for it in artifacts
   for (const { name, value } of expectedFlags) {
-    console.log(`[${benchmarkName}]    Searching for ${name}...`);
+    process.stderr.write(`[${benchmarkName}]    Searching for ${name}...\n`);
 
     // Use the existing detectFlagInArtifacts function
     const result = await detectFlagInArtifacts(
@@ -344,8 +338,8 @@ export async function detectMultipleFlagsInArtifacts(
   }
 
   const detected = multiFlag.found > 0;
-  console.log(
-    `[${benchmarkName}] ${detected ? "✅" : "❌"} Found ${multiFlag.found} of ${multiFlag.total} flags`,
+  process.stderr.write(
+    `[${benchmarkName}] ${detected ? "✅" : "❌"} Found ${multiFlag.found} of ${multiFlag.total} flags\n`,
   );
 
   return {
@@ -488,7 +482,7 @@ export async function detectFlagInArtifacts(
   expectedFlag: string,
   branch: string,
 ): Promise<FlagDetectionResult> {
-  console.log(`[${branch}] 🔎 Searching for FLAG in pentest artifacts...`);
+  process.stderr.write(`[${branch}] 🔎 Searching for FLAG in pentest artifacts...\n`);
 
   const foundIn: string[] = [];
   const locations: FlagLocation[] = [];
@@ -513,10 +507,7 @@ export async function detectFlagInArtifacts(
         return true;
       }
     } catch (error) {
-      console.log(
-        `[${branch}] ⚠️  Error reading ${file}:`,
-        error instanceof Error ? error.message : String(error),
-      );
+      writeErrorLog(error, `FlagDetector:searchFile:${file}`);
     }
     return false;
   }
@@ -652,26 +643,26 @@ export async function detectFlagInArtifacts(
   const detected = foundIn.length > 0;
 
   if (detected) {
-    console.log(
-      `[${branch}] ✅ FLAG DETECTED in ${foundIn.length} artifact(s):`,
+    process.stderr.write(
+      `[${branch}] ✅ FLAG DETECTED in ${foundIn.length} artifact(s):\n`,
     );
-    // Deduplicate foundIn for cleaner output
     const uniqueFiles = [...new Set(foundIn)];
-    uniqueFiles.forEach((file) => console.log(`[${branch}]    - ${file}`));
+    uniqueFiles.forEach((file) =>
+      process.stderr.write(`[${branch}]    - ${file}\n`),
+    );
 
-    // Output specific locations with line numbers
-    console.log(
-      `[${branch}] 📍 Exact locations (${locations.length} occurrences):`,
+    process.stderr.write(
+      `[${branch}] 📍 Exact locations (${locations.length} occurrences):\n`,
     );
     for (const loc of locations) {
-      console.log(`[${branch}]    ${loc.file}:${loc.line}`);
-      console.log(
-        `[${branch}]      └─ ${loc.context.substring(0, 100)}${loc.context.length > 100 ? "..." : ""}`,
+      process.stderr.write(`[${branch}]    ${loc.file}:${loc.line}\n`);
+      process.stderr.write(
+        `[${branch}]      └─ ${loc.context.substring(0, 100)}${loc.context.length > 100 ? "..." : ""}\n`,
       );
     }
   } else {
-    console.log(`[${branch}] ❌ FLAG NOT DETECTED in artifacts`);
-    console.log(`[${branch}]    Searched: ${searchLocations.join(", ")}`);
+    process.stderr.write(`[${branch}] ❌ FLAG NOT DETECTED in artifacts\n`);
+    process.stderr.write(`[${branch}]    Searched: ${searchLocations.join(", ")}\n`);
   }
 
   return {

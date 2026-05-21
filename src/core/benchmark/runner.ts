@@ -15,6 +15,7 @@ import {
 } from "../agents/specialized/benchmarkComparisonAgent";
 import type { CacheMetrics } from "../ai";
 import { AgentEventBus } from "../eventBus";
+import { writeErrorLog } from "../logger";
 import * as sessions from "../session";
 import { runPentestWorkflow } from "../workflows/pentest";
 import type {
@@ -112,15 +113,15 @@ async function runLocalMode(
 
   for (let i = 0; i < config.branches.length; i++) {
     const branch = config.branches[i]!;
-    console.log(
-      `\n${"=".repeat(60)}\n[${i + 1}/${config.branches.length}] Running benchmark: ${branch}\n${"=".repeat(60)}`,
+    process.stderr.write(
+      `\n${"=".repeat(60)}\n[${i + 1}/${config.branches.length}] Running benchmark: ${branch}\n${"=".repeat(60)}\n`,
     );
 
     const result = await runSingleBenchmark(branch, config);
     results.push(result);
 
-    console.log(
-      `[${branch}] ${result.status.toUpperCase()} | Flag: ${result.flagDetected ? "Y" : "N"} | Findings: ${result.findingsCount} | ${(result.duration / 60000).toFixed(1)}m`,
+    process.stderr.write(
+      `[${branch}] ${result.status.toUpperCase()} | Flag: ${result.flagDetected ? "Y" : "N"} | Findings: ${result.findingsCount} | ${(result.duration / 60000).toFixed(1)}m\n`,
     );
   }
 
@@ -134,8 +135,8 @@ async function runLocalMode(
 async function runDaytonaMode(
   config: BenchmarkSuiteConfig,
 ): Promise<BenchmarkRunResult[]> {
-  console.log(
-    `Running ${config.branches.length} benchmarks in Daytona (batch size: ${config.daytonaBatchSize})`,
+  process.stderr.write(
+    `Running ${config.branches.length} benchmarks in Daytona (batch size: ${config.daytonaBatchSize})\n`,
   );
 
   const daytonaResults = await runBenchmarkInDaytona({
@@ -185,16 +186,16 @@ export async function runSingleBenchmark(
     if (config.repoDir) {
       benchmarkPath = config.repoDir;
       // If a shared repo dir is provided, checkout the branch
-      console.log(`[${branch}] Using repo dir: ${benchmarkPath}`);
+      process.stderr.write(`[${branch}] Using repo dir: ${benchmarkPath}\n`);
       try {
         await exec(`git checkout ${branch}`, { cwd: benchmarkPath });
       } catch {
         // May already be on the branch or using worktrees
-        console.log(`[${branch}] Note: git checkout failed, continuing...`);
+        process.stderr.write(`[${branch}] Note: git checkout failed, continuing...\n`);
       }
     } else {
       clonedDir = path.join("/tmp", `apex-bench-${branch}-${Date.now()}`);
-      console.log(`[${branch}] Cloning ${config.repoUrl} branch ${branch}...`);
+      process.stderr.write(`[${branch}] Cloning ${config.repoUrl} branch ${branch}...\n`);
       await exec(
         `git clone --branch ${branch} --depth 1 ${config.repoUrl} ${clonedDir}`,
         { timeout: 120000 },
@@ -226,7 +227,7 @@ export async function runSingleBenchmark(
     // -----------------------------------------------------------------------
     // Step 3: Start Docker environment
     // -----------------------------------------------------------------------
-    console.log(`[${branch}] Starting Docker environment...`);
+    process.stderr.write(`[${branch}] Starting Docker environment...\n`);
     try {
       // In resource-constrained environments (e.g., Daytona), building all services
       // in parallel can cause OOM. Try standard build first, fall back to sequential.
@@ -242,8 +243,8 @@ export async function runSingleBenchmark(
           err.message?.includes("137") ||
           err.message?.toLowerCase().includes("killed")
         ) {
-          console.log(
-            `[${branch}] Build failed (likely OOM), retrying with sequential build...`,
+          process.stderr.write(
+            `[${branch}] Build failed (likely OOM), retrying with sequential build...\n`,
           );
 
           // Get list of services
@@ -259,7 +260,7 @@ export async function runSingleBenchmark(
           // Build each service sequentially
           for (const service of services) {
             if (service.trim()) {
-              console.log(`[${branch}] Building service: ${service}`);
+              process.stderr.write(`[${branch}] Building service: ${service}\n`);
               await exec(`docker compose build ${service}`, {
                 cwd: composeDir,
                 timeout: 600000, // 10 minutes per service
@@ -268,7 +269,7 @@ export async function runSingleBenchmark(
           }
 
           // Start all services
-          console.log(`[${branch}] Starting services...`);
+          process.stderr.write(`[${branch}] Starting services...\n`);
           await exec("docker compose up -d", {
             cwd: composeDir,
             timeout: 120000,
@@ -285,17 +286,17 @@ export async function runSingleBenchmark(
         stderr?: string;
         stdout?: string;
       };
-      console.error(`[${branch}] Docker compose failed!`);
+      writeErrorLog(`Docker compose failed for ${branch}`, "BenchmarkRunner:docker");
 
-      // Try to get docker logs for more context
       try {
         const logs = await exec("docker compose logs --tail=50 2>&1", {
           cwd: composeDir,
           timeout: 10000,
         });
         if (logs.stdout) {
-          console.error(
-            `[${branch}] Container logs: ${logs.stdout.substring(0, 1000)}`,
+          writeErrorLog(
+            `Container logs: ${logs.stdout.substring(0, 1000)}`,
+            `BenchmarkRunner:docker:${branch}`,
           );
         }
       } catch {
@@ -303,10 +304,10 @@ export async function runSingleBenchmark(
       }
 
       if (error.stdout) {
-        console.error(`[${branch}] stdout: ${error.stdout.substring(0, 2000)}`);
+        writeErrorLog(`stdout: ${error.stdout.substring(0, 2000)}`, `BenchmarkRunner:docker:${branch}`);
       }
       if (error.stderr) {
-        console.error(`[${branch}] stderr: ${error.stderr.substring(0, 2000)}`);
+        writeErrorLog(`stderr: ${error.stderr.substring(0, 2000)}`, `BenchmarkRunner:docker:${branch}`);
       }
       throw new Error(
         `Docker compose failed: ${error.stderr || error.message || "Unknown error"}`,
@@ -328,7 +329,7 @@ export async function runSingleBenchmark(
     // -----------------------------------------------------------------------
     // Step 4: Create session
     // -----------------------------------------------------------------------
-    console.log(`[${branch}] Creating pentest session...`);
+    process.stderr.write(`[${branch}] Creating pentest session...\n`);
     const session = await sessions.create({
       name: `Benchmark ${branch}`,
       targets: [targetUrl],
@@ -343,7 +344,7 @@ export async function runSingleBenchmark(
     // -----------------------------------------------------------------------
     // Step 5: Run pentest workflow
     // -----------------------------------------------------------------------
-    console.log(`[${branch}] Running pentest workflow against ${targetUrl}...`);
+    process.stderr.write(`[${branch}] Running pentest workflow against ${targetUrl}...\n`);
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
@@ -358,29 +359,28 @@ export async function runSingleBenchmark(
     benchBus.on("text-delta", (d) => process.stdout.write(d.text));
     benchBus.on("tool-call-start", (d) => {
       const p = d.subagentId ? `[${branch}] [${d.subagentId}]` : `[${branch}]`;
-      console.log(`${p} -> ${d.toolName} (streaming)`);
+      process.stderr.write(`${p} -> ${d.toolName} (streaming)\n`);
     });
     benchBus.on("tool-call-delta", (d) => {
       const p = d.subagentId ? `[${branch}] [${d.subagentId}]` : `[${branch}]`;
-      console.log(`${p} -> ${d.toolCallId} delta`);
+      process.stderr.write(`${p} -> ${d.toolCallId} delta\n`);
     });
     benchBus.on("tool-call-complete", (d) => {
       const p = d.subagentId ? `[${branch}] [${d.subagentId}]` : `[${branch}]`;
-      console.log(`${p} -> ${d.toolName}`);
+      process.stderr.write(`${p} -> ${d.toolName}\n`);
     });
     benchBus.on("tool-result", (d) => {
       const p = d.subagentId ? `[${branch}] [${d.subagentId}]` : `[${branch}]`;
-      console.log(`${p} <- ${d.toolName} done`);
+      process.stderr.write(`${p} <- ${d.toolName} done\n`);
     });
     benchBus.on("error", (d) => {
-      const p = d.subagentId ? `[${branch}] [subagent]` : `[${branch}]`;
-      console.error(`${p} Error:`, d.error);
+      writeErrorLog(d.error, `BenchmarkRunner:${branch}:${d.subagentId ?? "main"}`);
     });
     benchBus.on("subagent-spawn", ({ subagentId }) =>
-      console.log(`[${branch}] [${subagentId}] spawned`),
+      process.stderr.write(`[${branch}] [${subagentId}] spawned\n`),
     );
     benchBus.on("subagent-complete", ({ subagentId, status }) =>
-      console.log(`[${branch}] [${subagentId}] ${status}`),
+      process.stderr.write(`[${branch}] [${subagentId}] ${status}\n`),
     );
 
     let pentestResult;
@@ -416,7 +416,7 @@ export async function runSingleBenchmark(
     let flagValue: string | null = null;
 
     if (expectedFlag) {
-      console.log(`[${branch}] Searching for flag in artifacts...`);
+      process.stderr.write(`[${branch}] Searching for flag in artifacts...\n`);
       const flagResult = await detectFlagInArtifacts(
         session.rootPath,
         expectedFlag,
@@ -433,22 +433,19 @@ export async function runSingleBenchmark(
     const comparisonModel = config.comparisonModel || "claude-haiku-4-5";
 
     try {
-      console.log(`[${branch}] Running benchmark comparison...`);
+      process.stderr.write(`[${branch}] Running benchmark comparison...\n`);
       const compAgent = new BenchmarkComparisonAgent({
         repoPath: benchmarkPath,
         model: comparisonModel,
         session,
       });
       compAgent.eventBus.on("error", (d) =>
-        console.error(`[${branch}] Comparison error:`, d.error),
+        writeErrorLog(d.error, `BenchmarkRunner:comparison:${branch}`),
       );
       const compResult = await compAgent.consume();
       comparisonResult = compResult.comparison;
     } catch (e) {
-      console.error(
-        `[${branch}] Comparison failed:`,
-        e instanceof Error ? e.message : String(e),
-      );
+      writeErrorLog(e, `BenchmarkRunner:comparison:${branch}`);
     }
 
     // -----------------------------------------------------------------------
@@ -496,8 +493,9 @@ export async function runSingleBenchmark(
     const message = error instanceof Error ? error.message : String(error);
     const isTimeout = message.includes("aborted") || message.includes("abort");
 
-    console.error(
-      `[${branch}] ${isTimeout ? "TIMEOUT" : "FAILED"}: ${message}`,
+    writeErrorLog(
+      `${isTimeout ? "TIMEOUT" : "FAILED"}: ${message}`,
+      `BenchmarkRunner:${branch}`,
     );
 
     // Cleanup docker on failure
@@ -534,7 +532,7 @@ function readBenchmarkMetadata(
 ): BenchmarkMetadata | null {
   const jsonPath = path.join(benchmarkPath, "src", "benchmark.json");
   if (!existsSync(jsonPath)) {
-    console.log(`[${branch}] No benchmark.json found at ${jsonPath}`);
+    process.stderr.write(`[${branch}] No benchmark.json found at ${jsonPath}\n`);
     return null;
   }
 
@@ -554,10 +552,7 @@ function readBenchmarkMetadata(
       services: raw.services || {},
     };
   } catch (e) {
-    console.error(
-      `[${branch}] Failed to parse benchmark.json:`,
-      e instanceof Error ? e.message : String(e),
-    );
+    writeErrorLog(e, `BenchmarkRunner:readMetadata:${branch}`);
     return null;
   }
 }
@@ -570,7 +565,7 @@ async function waitForTarget(
   const start = Date.now();
   const pollInterval = 3000;
 
-  console.log(`[${branch}] Waiting for ${url} to be ready...`);
+  process.stderr.write(`[${branch}] Waiting for ${url} to be ready...\n`);
 
   while (Date.now() - start < maxWaitMs) {
     try {
@@ -578,8 +573,8 @@ async function waitForTarget(
         signal: AbortSignal.timeout(5000),
       });
       if (response.ok || response.status < 500) {
-        console.log(
-          `[${branch}] Target ready (${response.status}) after ${((Date.now() - start) / 1000).toFixed(1)}s`,
+        process.stderr.write(
+          `[${branch}] Target ready (${response.status}) after ${((Date.now() - start) / 1000).toFixed(1)}s\n`,
         );
         return;
       }
@@ -589,8 +584,8 @@ async function waitForTarget(
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }
 
-  console.warn(
-    `[${branch}] ⚠️  Target ${url} not ready after ${(maxWaitMs / 1000).toFixed(0)}s — continuing anyway`,
+  process.stderr.write(
+    `[${branch}] ⚠️  Target ${url} not ready after ${(maxWaitMs / 1000).toFixed(0)}s — continuing anyway\n`,
   );
 }
 
@@ -599,16 +594,13 @@ async function cleanupDocker(
   branch: string,
 ): Promise<void> {
   try {
-    console.log(`[${branch}] Stopping Docker containers...`);
+    process.stderr.write(`[${branch}] Stopping Docker containers...\n`);
     await exec("docker compose down --volumes --remove-orphans", {
       cwd: composeDir,
       timeout: 60000,
     });
   } catch (e) {
-    console.error(
-      `[${branch}] Docker cleanup failed:`,
-      e instanceof Error ? e.message : String(e),
-    );
+    writeErrorLog(e, `BenchmarkRunner:dockerCleanup:${branch}`);
   }
 }
 

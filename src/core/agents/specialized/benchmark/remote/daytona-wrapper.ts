@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import pLimit from "p-limit";
 import path from "path";
 import type { AIModel } from "../../../../ai";
+import { writeErrorLog } from "../../../../logger";
 import { CircuitBreaker } from "./circuit-breaker";
 
 /**
@@ -61,8 +62,8 @@ async function retryWithBackoff<T>(
         throw error;
       }
 
-      console.log(
-        `${prefix}⚠️  Retry ${attempt + 1}/${maxRetries} after ${delay}ms (Error: ${errorMessage ?? String(error)})`,
+      process.stderr.write(
+        `${prefix}⚠️  Retry ${attempt + 1}/${maxRetries} after ${delay}ms (Error: ${errorMessage ?? String(error)})\n`,
       );
 
       // Wait with exponential backoff
@@ -135,7 +136,7 @@ async function runSingleBranchBenchmark(
   const startTime = Date.now();
 
   try {
-    console.log(`[${branch}] 🚀 Creating Daytona sandbox...`);
+    process.stderr.write(`[${branch}] 🚀 Creating Daytona sandbox...\n`);
     sandbox = await daytonaCircuitBreaker.execute(() =>
       retryWithBackoff(
         () =>
@@ -168,14 +169,14 @@ async function runSingleBranchBenchmark(
       ),
     );
 
-    console.log(`[${branch}] ✅ Sandbox created: ${sandbox.id}`);
+    process.stderr.write(`[${branch}] ✅ Sandbox created: ${sandbox.id}\n`);
 
     // Capture definite reference for use in closures
     const sbx = sandbox;
 
     // Disable auto-stop for long-running benchmarks
     await retryWithBackoff(() => sbx.setAutostopInterval(0), { branch });
-    console.log(`[${branch}] ✅ Auto-stop disabled`);
+    process.stderr.write(`[${branch}] ✅ Auto-stop disabled\n`);
 
     // Install dependencies
     await installBun(sandbox, branch);
@@ -186,7 +187,7 @@ async function runSingleBranchBenchmark(
     await cloneRepo(sandbox, repoUrl, branch);
 
     // Clone Apex source repo (contains the benchmark runner script)
-    console.log(`[${branch}] 📦 Cloning Apex source for benchmark runner...`);
+    process.stderr.write(`[${branch}] 📦 Cloning Apex source for benchmark runner...\n`);
     await retryWithBackoff(
       () =>
         sbx.git.clone(
@@ -198,7 +199,7 @@ async function runSingleBranchBenchmark(
     );
 
     // Install Apex dependencies
-    console.log(`[${branch}] 📦 Installing Apex dependencies...`);
+    process.stderr.write(`[${branch}] 📦 Installing Apex dependencies...\n`);
     await retryWithBackoff(
       () =>
         sbx.process.executeCommand(
@@ -208,12 +209,12 @@ async function runSingleBranchBenchmark(
     );
 
     // Create session and run benchmark via scripts/run-benchmarks.ts
-    console.log(`[${branch}] 🔬 Creating benchmark session...`);
+    process.stderr.write(`[${branch}] 🔬 Creating benchmark session...\n`);
     await retryWithBackoff(() => sbx.process.createSession("benchmark"), {
       branch,
     });
 
-    console.log(`[${branch}] 📊 Running benchmark...\n`);
+    process.stderr.write(`[${branch}] 📊 Running benchmark...\n`);
     const { cmdId } = await sandbox.process.executeSessionCommand("benchmark", {
       command: [
         `export BUN_INSTALL="$HOME/.bun"`,
@@ -250,8 +251,8 @@ async function runSingleBranchBenchmark(
     const command = await sandbox.process.getSessionCommand("benchmark", cmdId);
     const exitCode = command?.exitCode;
 
-    console.log(
-      `[${branch}] ✅ Benchmark completed with exit code: ${exitCode}`,
+    process.stderr.write(
+      `[${branch}] ✅ Benchmark completed with exit code: ${exitCode}\n`,
     );
 
     if (exitCode !== 0) {
@@ -262,7 +263,7 @@ async function runSingleBranchBenchmark(
     const results = await downloadResults(sandbox, branch);
 
     const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
-    console.log(`[${branch}] ✅ Completed in ${duration}m`);
+    process.stderr.write(`[${branch}] ✅ Completed in ${duration}m\n`);
 
     return results;
   } catch (error) {
@@ -273,16 +274,11 @@ async function runSingleBranchBenchmark(
         ? message.substring(0, 500) + "... (truncated)"
         : message;
     const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
-    console.error(
-      `[${branch}] ❌ Failed after ${duration}m: ${truncatedMessage}`,
+    process.stderr.write(
+      `[${branch}] ❌ Failed after ${duration}m: ${truncatedMessage}\n`,
     );
 
-    // Log full error for debugging
-    if (error instanceof Error && error.stack) {
-      console.error(
-        `[${branch}] Error stack: ${error.stack.substring(0, 1000)}`,
-      );
-    }
+    writeErrorLog(error, `DaytonaWrapper:runBranch:${branch}`);
     return {
       repoPath: repoUrl,
       branch,
@@ -303,7 +299,7 @@ async function runSingleBranchBenchmark(
   } finally {
     if (sandbox) {
       try {
-        console.log(`[${branch}] 🧹 Cleaning up sandbox...`);
+        process.stderr.write(`[${branch}] 🧹 Cleaning up sandbox...\n`);
 
         let attempts = 0;
         while (attempts < 10) {
@@ -316,11 +312,9 @@ async function runSingleBranchBenchmark(
         }
 
         await sandbox.delete();
-        console.log(`[${branch}] ✅ Cleanup complete`);
+        process.stderr.write(`[${branch}] ✅ Cleanup complete\n`);
       } catch (cleanupError) {
-        console.error(
-          `[${branch}] ⚠️  Cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
-        );
+        writeErrorLog(cleanupError, `DaytonaWrapper:cleanup:${branch}`);
       }
     }
   }
@@ -353,12 +347,12 @@ export async function runBenchmarkInDaytona(
   const maxParallel = options.maxParallel || 4;
   const startTime = Date.now();
 
-  console.log("🚀 Starting parallel benchmark execution");
-  console.log(`   Repository: ${options.repoUrl}`);
-  console.log(`   Branches: ${branches.join(", ")}`);
-  console.log(`   Model: ${options.model}`);
-  console.log(`   Max Parallel: ${maxParallel}`);
-  console.log();
+  process.stderr.write("🚀 Starting parallel benchmark execution\n");
+  process.stderr.write(`   Repository: ${options.repoUrl}\n`);
+  process.stderr.write(`   Branches: ${branches.join(", ")}\n`);
+  process.stderr.write(`   Model: ${options.model}\n`);
+  process.stderr.write(`   Max Parallel: ${maxParallel}\n`);
+  process.stderr.write("\n");
 
   // Initialize SDK
   const daytona = new Daytona({
@@ -393,18 +387,18 @@ export async function runBenchmarkInDaytona(
   );
   const totalTokens = results.reduce((sum, r) => sum + (r.totalTokens ?? 0), 0);
 
-  console.log("\n" + "=".repeat(80));
-  console.log("📊 PARALLEL BENCHMARK SUMMARY");
-  console.log("=".repeat(80));
-  console.log(`Total Duration: ${totalDuration}m`);
-  console.log(`Successful: ${successful}/${branches.length}`);
-  console.log(`Failed: ${failed}/${branches.length}`);
-  console.log(
-    `Flags Captured: ${flagsCaptured}/${branches.length} (${((flagsCaptured / branches.length) * 100).toFixed(1)}%)`,
+  process.stderr.write("\n" + "=".repeat(80) + "\n");
+  process.stderr.write("📊 PARALLEL BENCHMARK SUMMARY\n");
+  process.stderr.write("=".repeat(80) + "\n");
+  process.stderr.write(`Total Duration: ${totalDuration}m\n`);
+  process.stderr.write(`Successful: ${successful}/${branches.length}\n`);
+  process.stderr.write(`Failed: ${failed}/${branches.length}\n`);
+  process.stderr.write(
+    `Flags Captured: ${flagsCaptured}/${branches.length} (${((flagsCaptured / branches.length) * 100).toFixed(1)}%)\n`,
   );
-  console.log(`Total Findings: ${totalFindings}`);
-  console.log(`Total Tokens: ${totalTokens.toLocaleString()}`);
-  console.log();
+  process.stderr.write(`Total Findings: ${totalFindings}\n`);
+  process.stderr.write(`Total Tokens: ${totalTokens.toLocaleString()}\n`);
+  process.stderr.write("\n");
 
   // Generate summary report
   await generateSummaryReport(
@@ -422,7 +416,7 @@ export async function runBenchmarkInDaytona(
  */
 async function installBun(sandbox: Sandbox, branch?: string): Promise<void> {
   const prefix = branch ? `[${branch}] ` : "";
-  console.log(`${prefix}📦 Installing Bun...`);
+  process.stderr.write(`${prefix}📦 Installing Bun...\n`);
 
   await sandbox.process.executeCommand(
     "curl -fsSL https://bun.sh/install | bash",
@@ -442,7 +436,7 @@ async function installBun(sandbox: Sandbox, branch?: string): Promise<void> {
     throw new Error("Bun installation verification failed");
   }
 
-  console.log(`${prefix}✅ Bun installed: v${verifyResult.result.trim()}`);
+  process.stderr.write(`${prefix}✅ Bun installed: v${verifyResult.result.trim()}\n`);
 }
 
 /**
@@ -450,7 +444,7 @@ async function installBun(sandbox: Sandbox, branch?: string): Promise<void> {
  */
 async function installApex(sandbox: Sandbox, branch?: string): Promise<void> {
   const prefix = branch ? `[${branch}] ` : "";
-  console.log(`${prefix}📦 Installing Apex globally via bun...`);
+  process.stderr.write(`${prefix}📦 Installing Apex globally via bun...\n`);
 
   try {
     // Install using bun (ensures bun PATH is working)
@@ -476,7 +470,7 @@ async function installApex(sandbox: Sandbox, branch?: string): Promise<void> {
       );
     }
 
-    console.log(`${prefix}✅ Apex installed at: ${installedPath}`);
+    process.stderr.write(`${prefix}✅ Apex installed at: ${installedPath}\n`);
   } catch (error) {
     throw new Error(
       `Failed to install Apex: ${error instanceof Error ? error.message : String(error)}`,
@@ -491,11 +485,11 @@ async function installApex(sandbox: Sandbox, branch?: string): Promise<void> {
  */
 async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
   const prefix = branch ? `[${branch}] ` : "";
-  console.log(`${prefix}🐳 Installing Docker...`);
+  process.stderr.write(`${prefix}🐳 Installing Docker...\n`);
 
   // Fix broken yarn repository that blocks apt-get update
   // The Docker install script runs apt-get update which fails on the yarn repo
-  console.log(`${prefix}Fixing apt repositories...`);
+  process.stderr.write(`${prefix}Fixing apt repositories...\n`);
   await sandbox.process.executeCommand(
     "(sudo rm -f /etc/apt/sources.list.d/yarn.list || rm -f /etc/apt/sources.list.d/yarn.list) 2>/dev/null || true",
   );
@@ -512,13 +506,14 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
     const output = installResult.result.trim();
     const preview =
       output.length > 500 ? output.substring(0, 500) + "..." : output;
-    console.log(`${prefix}Docker install output: ${preview}`);
+    process.stderr.write(`${prefix}Docker install output: ${preview}\n`);
   }
 
   // Check installation exit code
   if (installResult.exitCode !== 0) {
-    console.error(
-      `${prefix}Docker installation failed with exit code ${installResult.exitCode}`,
+    writeErrorLog(
+      `Docker installation failed with exit code ${installResult.exitCode}`,
+      "DaytonaWrapper:installDocker",
     );
     throw new Error(
       `Docker installation script failed with exit code ${installResult.exitCode}`,
@@ -535,20 +530,18 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
     const checkLocations = await sandbox.process.executeCommand(
       'ls -la /usr/bin/docker /usr/local/bin/docker 2>&1 || echo "Docker not in standard locations"',
     );
-    console.error(`${prefix}Docker binary check: ${checkLocations.result}`);
+    writeErrorLog(`Docker binary check: ${checkLocations.result}`, "DaytonaWrapper:installDocker");
 
-    // Check if it's in PATH without explicit export
     const pathCheck = await sandbox.process.executeCommand("echo $PATH");
-    console.error(`${prefix}Current PATH: ${pathCheck.result}`);
+    writeErrorLog(`Current PATH: ${pathCheck.result}`, "DaytonaWrapper:installDocker");
 
     throw new Error("Docker binary not found after installation");
   }
 
   const dockerPath = whichResult.result.trim();
-  console.log(`${prefix}✅ Docker installed at: ${dockerPath}`);
+  process.stderr.write(`${prefix}✅ Docker installed at: ${dockerPath}\n`);
 
-  // Start Docker daemon in background
-  console.log(`${prefix}Starting Docker daemon...`);
+  process.stderr.write(`${prefix}Starting Docker daemon...\n`);
 
   // Use nohup to properly detach the daemon - try with sudo first, fall back to direct
   const daemonStart = await sandbox.process.executeCommand(
@@ -557,18 +550,19 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
 
   // Check if the command itself failed (not the daemon startup)
   if (daemonStart.exitCode !== 0 && daemonStart.result) {
-    console.error(
-      `${prefix}Failed to start daemon command: ${daemonStart.result.substring(0, 200)}`,
+    writeErrorLog(
+      `Failed to start daemon command: ${daemonStart.result.substring(0, 200)}`,
+      "DaytonaWrapper:installDocker",
     );
     throw new Error("Failed to execute dockerd command");
   }
 
   // Give daemon a moment to start before checking
-  console.log(`${prefix}Waiting for daemon to initialize...`);
+  process.stderr.write(`${prefix}Waiting for daemon to initialize...\n`);
   await new Promise((resolve) => setTimeout(resolve, 5000));
 
   // Add current user to docker group for socket access
-  console.log(`${prefix}Configuring Docker permissions...`);
+  process.stderr.write(`${prefix}Configuring Docker permissions...\n`);
   await sandbox.process.executeCommand(
     "(sudo usermod -aG docker $(whoami) || usermod -aG docker $(whoami)) 2>/dev/null || true",
   );
@@ -579,7 +573,7 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
   );
 
   // Wait for Docker daemon to be ready (up to 60 seconds with retries)
-  console.log(`${prefix}⏳ Waiting for Docker daemon to be ready...`);
+  process.stderr.write(`${prefix}⏳ Waiting for Docker daemon to be ready...\n`);
 
   let attempts = 0;
   const maxAttempts = 60;
@@ -591,7 +585,7 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
     );
 
     if (checkResult.exitCode === 0) {
-      console.log(`${prefix}✅ Docker daemon ready after ${attempts} seconds`);
+      process.stderr.write(`${prefix}✅ Docker daemon ready after ${attempts} seconds\n`);
       break;
     }
 
@@ -600,7 +594,7 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
 
     // Show progress every 10 seconds
     if (attempts % 10 === 0) {
-      console.log(`${prefix}Still waiting... (${attempts}s elapsed)`);
+      process.stderr.write(`${prefix}Still waiting... (${attempts}s elapsed)\n`);
     }
 
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -611,8 +605,8 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
     const logResult = await sandbox.process.executeCommand(
       "cat /tmp/dockerd.log 2>&1 || echo 'No log file'",
     );
-    console.error(`${prefix}Docker daemon logs:\n${logResult.result}`);
-    console.error(`${prefix}Last docker info error:\n${lastError}`);
+    writeErrorLog(`Docker daemon logs:\n${logResult.result}`, "DaytonaWrapper:installDocker");
+    writeErrorLog(`Last docker info error:\n${lastError}`, "DaytonaWrapper:installDocker");
     throw new Error(
       `Docker daemon failed to start within ${maxAttempts} seconds`,
     );
@@ -629,7 +623,7 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
     );
   }
 
-  console.log(`${prefix}✅ Docker daemon running, compose ready`);
+  process.stderr.write(`${prefix}✅ Docker daemon running, compose ready\n`);
 }
 
 /**
@@ -641,14 +635,14 @@ async function cloneRepo(
   branch: string,
 ): Promise<void> {
   const prefix = `[${branch}] `;
-  console.log(`${prefix}📦 Cloning repository: ${repoUrl} (${branch})...`);
+  process.stderr.write(`${prefix}📦 Cloning repository: ${repoUrl} (${branch})...\n`);
 
   // Use Daytona's git.clone() - automatically clones and checks out branch
   await retryWithBackoff(() => sandbox.git.clone(repoUrl, "repo", branch), {
     branch,
   });
 
-  console.log(`${prefix}✅ Repository cloned to ~/repo`);
+  process.stderr.write(`${prefix}✅ Repository cloned to ~/repo\n`);
 }
 
 /**
@@ -661,7 +655,7 @@ async function downloadResults(
   branch: string,
 ): Promise<BenchmarkResults> {
   const prefix = `[${branch}] `;
-  console.log(`${prefix}⬇️  Downloading results...`);
+  process.stderr.write(`${prefix}⬇️  Downloading results...\n`);
 
   // Get user home directory
   const userHome = await sandbox.getUserHomeDir();
@@ -678,7 +672,7 @@ async function downloadResults(
       branch,
     },
   )) as unknown as Array<{ name: string; isDirectory: boolean }>;
-  console.log(`${prefix}Found ${files.length} session directories`);
+  process.stderr.write(`${prefix}Found ${files.length} session directories\n`);
 
   if (files.length === 0) {
     throw new Error(`No sessions found for branch ${branch}`);
@@ -687,7 +681,7 @@ async function downloadResults(
   // Get the most recent session (last in array)
   const sessionDir = files[files.length - 1]!.name;
 
-  console.log(`${prefix}Downloading session: ${sessionDir}`);
+  process.stderr.write(`${prefix}Downloading session: ${sessionDir}\n`);
 
   // Download all files in the session directory recursively
   const sessionPath = path.join(sessionsPath, sessionDir);
@@ -751,7 +745,7 @@ async function downloadResults(
       expectedFlag = benchmarkData.win_condition?.flag_pattern ?? null;
 
       if (expectedFlag) {
-        console.log(`${prefix}🔎 Searching for flag: ${expectedFlag}`);
+        process.stderr.write(`${prefix}🔎 Searching for flag: ${expectedFlag}\n`);
         const { detectFlagInArtifacts } = await import("../flag-detector.js");
         const flagResult = await detectFlagInArtifacts(
           localSessionPath,
@@ -762,26 +756,24 @@ async function downloadResults(
         flagValue = flagResult.flagValue;
 
         if (flagDetected) {
-          console.log(
-            `${prefix}✅ Flag captured! Found in: ${flagResult.foundIn.join(", ")}`,
+          process.stderr.write(
+            `${prefix}✅ Flag captured! Found in: ${flagResult.foundIn.join(", ")}\n`,
           );
         } else {
-          console.log(`${prefix}❌ Flag not found`);
+          process.stderr.write(`${prefix}❌ Flag not found\n`);
         }
       }
     }
   } catch (error) {
-    console.log(
-      `${prefix}⚠️  Could not detect flag: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    writeErrorLog(error, `DaytonaWrapper:detectFlag:${branch}`);
   }
 
-  console.log(`${prefix}✅ Results downloaded to ${localSessionPath}`);
-  console.log(
-    `${prefix}📊 Tokens: ${totalTokens.toLocaleString()} (in: ${tokensIn.toLocaleString()}, out: ${tokensOut.toLocaleString()})`,
+  process.stderr.write(`${prefix}✅ Results downloaded to ${localSessionPath}\n`);
+  process.stderr.write(
+    `${prefix}📊 Tokens: ${totalTokens.toLocaleString()} (in: ${tokensIn.toLocaleString()}, out: ${tokensOut.toLocaleString()})\n`,
   );
-  console.log(`${prefix}📝 Findings: ${findingsCount}`);
-  console.log(`${prefix}🚩 Flag: ${flagDetected ? "✓" : "✗"}`);
+  process.stderr.write(`${prefix}📝 Findings: ${findingsCount}\n`);
+  process.stderr.write(`${prefix}🚩 Flag: ${flagDetected ? "✓" : "✗"}\n`);
 
   return {
     repoPath: "",
@@ -830,7 +822,7 @@ async function downloadDirectoryRecursive(
     try {
       if (file.isDirectory) {
         // Recursively download subdirectory
-        console.log(`${prefix}  📁 Downloading directory: ${file.name}`);
+        process.stderr.write(`${prefix}  📁 Downloading directory: ${file.name}\n`);
         await downloadDirectoryRecursive(
           sandbox,
           remoteFilePath,
@@ -838,7 +830,7 @@ async function downloadDirectoryRecursive(
           branch,
         );
       } else {
-        console.log(`${prefix}  📄 Downloading file: ${file.name}`);
+        process.stderr.write(`${prefix}  📄 Downloading file: ${file.name}\n`);
         await retryWithBackoff(
           () => sandbox.fs.downloadFile(remoteFilePath, localFilePath),
           {
@@ -853,7 +845,7 @@ async function downloadDirectoryRecursive(
         errorMessage?.includes("file not found") ||
         errorMessage?.includes("invalid")
       ) {
-        console.log(`${prefix}  📁 Retrying ${file.name} as directory...`);
+        process.stderr.write(`${prefix}  📁 Retrying ${file.name} as directory...\n`);
         try {
           await downloadDirectoryRecursive(
             sandbox,
@@ -862,12 +854,10 @@ async function downloadDirectoryRecursive(
             branch,
           );
         } catch (retryError) {
-          console.error(
-            `${prefix}  ⚠️  Skipping ${file.name}: ${retryError instanceof Error ? retryError.message : String(retryError)}`,
-          );
+          writeErrorLog(retryError, `DaytonaWrapper:downloadDir:${file.name}`);
         }
       } else {
-        console.error(`${prefix}  ⚠️  Skipping ${file.name}: ${errorMessage}`);
+        writeErrorLog(errorMessage, `DaytonaWrapper:downloadFile:${file.name}`);
       }
     }
   }
@@ -1001,5 +991,5 @@ async function generateSummaryReport(
   const mdPath = path.join(summaryDir, "summary.md");
   writeFileSync(mdPath, markdown.join("\n"));
 
-  console.log(`📄 Summary reports saved to: ${summaryDir}`);
+  process.stderr.write(`📄 Summary reports saved to: ${summaryDir}\n`);
 }
