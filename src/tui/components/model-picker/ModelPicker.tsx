@@ -11,9 +11,9 @@ import {
 import {
   getOpenAIReasoningEfforts,
   type ModelInfo,
-  type OpenAIReasoningEffort,
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,
+  type OpenAIReasoningEffort,
 } from "../../../core/ai";
 import type { Config } from "../../../core/config/config";
 import { getAvailableModels } from "../../../core/providers/utils";
@@ -307,10 +307,7 @@ export function ModelPicker({
   const isOpenAIReasoningFocused =
     navigationItems[focusedIndex]?.type === "openai-reasoning";
   const cycleOpenAIReasoningEffort = useCallback(() => {
-    if (
-      !onOpenAIReasoningEffortChange ||
-      openAIReasoningEfforts.length === 0
-    ) {
+    if (!onOpenAIReasoningEffortChange || openAIReasoningEfforts.length === 0) {
       return;
     }
     const currentIndex = openAIReasoningEfforts.indexOf(openAIReasoningEffort);

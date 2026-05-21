@@ -13,8 +13,8 @@ import {
   DEFAULT_OPENAI_REASONING_EFFORT,
   getOpenAIReasoningEfforts,
   type ModelInfo,
-  type OpenAIReasoningEffort,
   modelSupportsThinking,
+  type OpenAIReasoningEffort,
 } from "../../core/ai";
 import { update as updateConfig } from "../../core/config/config";
 import { writeErrorLog } from "../../core/logger";

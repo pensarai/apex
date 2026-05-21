@@ -5,11 +5,7 @@ import {
   modelSupportsOpenAIReasoning,
   normalizeOpenAIReasoningEffort,
 } from "../ai";
-import {
-  AVAILABLE_MODELS,
-  getMaxOutputTokens,
-  getModelInfo,
-} from "./index";
+import { AVAILABLE_MODELS, getMaxOutputTokens, getModelInfo } from "./index";
 
 describe("getMaxOutputTokens", () => {
   it("returns a positive value for every model in AVAILABLE_MODELS", () => {
