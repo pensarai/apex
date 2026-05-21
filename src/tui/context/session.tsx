@@ -5,6 +5,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { writeErrorLog } from "../../core/logger";
 import { type SessionInfo, sessions } from "../../core/session";
 
 type SessionContext = {
@@ -34,8 +35,7 @@ export function SessionProvider({ children, session }: SessionProviderProps) {
           setActiveSession(_session);
           return _session;
         } catch (e) {
-          // TODO: display error to user
-          console.error("Error loading session", e);
+          writeErrorLog(e, "SESSION_CONTEXT");
           return null;
         }
       },

@@ -6,6 +6,7 @@
 import { existsSync, readdirSync } from "fs";
 import { join } from "path";
 import { useCallback, useEffect, useState } from "react";
+import { writeErrorLog } from "../../core/logger";
 import { REPORT_FILENAME_MD } from "../../core/report";
 import {
   list as listSessions,
@@ -77,7 +78,7 @@ export function useSessionsList() {
       enriched.sort((a, b) => b.time.updated - a.time.updated);
       setAllSessions(enriched);
     } catch (error) {
-      console.error("Error loading sessions:", error);
+      writeErrorLog(error, "SESSION_LIST");
     } finally {
       setLoading(false);
     }

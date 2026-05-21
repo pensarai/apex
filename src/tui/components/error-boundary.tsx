@@ -31,7 +31,6 @@ class ErrorBoundaryInner extends React.Component<
   }
 
   override componentDidCatch(error: Error) {
-    console.error("[ErrorBoundary]", error);
     writeErrorLog(error, "TUI");
     this.props.onError(error.message);
 

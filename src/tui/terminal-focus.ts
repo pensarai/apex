@@ -11,6 +11,7 @@
  */
 
 import type { CliRenderer } from "@opentui/core";
+import { writeErrorLog } from "../core/logger";
 
 export interface TerminalFocusOptions {
   /** Callback to re-focus the prompt input when terminal regains focus */
@@ -36,7 +37,7 @@ export function setupTerminalFocusHandling(
   const { onTerminalFocus, debug = false } = options;
 
   const log = (...args: unknown[]) => {
-    if (debug) console.error("[TerminalFocus]", ...args);
+    if (debug) writeErrorLog(args.map(String).join(" "), "TERMINAL_FOCUS");
   };
 
   // Enable bracketed focus mode

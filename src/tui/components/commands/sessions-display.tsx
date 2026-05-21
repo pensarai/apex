@@ -1,6 +1,7 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { writeErrorLog } from "../../../core/logger";
 import { REPORT_FILENAME_MD } from "../../../core/report";
 import { sessions } from "../../../core/session";
 import { Dialog } from "../../context/dialog";
@@ -103,7 +104,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
       toast("Session deleted");
       // selectedIndex clamping handled by the useEffect above after re-render
     } catch (error) {
-      console.error("Error deleting session:", error);
+      writeErrorLog(error, "SESSION_DISPLAY");
       toast("Error deleting session", "error");
     }
   }

@@ -97,7 +97,6 @@ export function RouteProvider({ children }: RouteProviderProps) {
     () => ({
       data: route,
       navigate: (newRoute: Route) => {
-        console.log("navigating to:", newRoute);
         setRoute(newRoute);
       },
     }),

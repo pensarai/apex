@@ -702,7 +702,7 @@ async function main() {
   process.on("uncaughtException", (err) => {
     cleanupTerminalFocusMode();
     renderer.destroy();
-    console.error("Uncaught exception:", err);
+    process.stderr.write(`Uncaught exception: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`);
     writeErrorLog(err, "UNCAUGHT");
     process.exit(1);
   });
@@ -710,7 +710,7 @@ async function main() {
   process.on("unhandledRejection", (reason) => {
     cleanupTerminalFocusMode();
     renderer.destroy();
-    console.error("Unhandled rejection:", reason);
+    process.stderr.write(`Unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}\n`);
     writeErrorLog(reason, "UNHANDLED_REJECTION");
     process.exit(1);
   });

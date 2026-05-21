@@ -38,6 +38,7 @@ import {
   modelSupportsThinking,
 } from "../../../core/ai";
 import { runOffensiveSecurityAgent } from "../../../core/api";
+import { writeErrorLog } from "../../../core/logger";
 import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
@@ -1004,7 +1005,7 @@ export default function OperatorDashboard({
           subagentHelpers.appendText(d.subagentId, `\nError: ${errMsg}\n`);
           return;
         }
-        console.error("Agent error:", d.error);
+        writeErrorLog(d.error, "OPERATOR");
         // Clear pending-questions state so an error after the tool-call event
         // doesn't leave the questions form stuck over a failed conversation.
         pendingToolCallIdRef.current = null;
@@ -1196,7 +1197,7 @@ export default function OperatorDashboard({
         if (wandbCleanup) return;
         const cleanup = await attachWandbToEventBus(s, eventBus).catch(
           (e: unknown) => {
-            console.error("[wandb] Attach failed:", e);
+            writeErrorLog(e, "WANDB_ATTACH");
             return null;
           },
         );
@@ -1360,7 +1361,7 @@ export default function OperatorDashboard({
         if (wandbCleanup) {
           const fn = wandbCleanup as () => Promise<void>;
           await fn().catch((e: unknown) =>
-            console.error("[wandb] Flush failed:", e),
+            writeErrorLog(e, "WANDB_FLUSH"),
           );
         }
         if (gen === generationRef.current) {
@@ -1909,7 +1910,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     if (sid) {
       sessions
         .updateOperatorSettings(sid, { initialMode: next })
-        .catch((e) => console.error("[operator] Failed to persist mode:", e));
+        .catch((e) => writeErrorLog(e, "OPERATOR_PERSIST"));
     }
   }, []);
 

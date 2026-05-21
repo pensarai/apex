@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { writeErrorLog } from "../../../core/logger";
 import { INTERNAL_ID_PATTERN } from "../../../core/operator";
 import { useTheme } from "../../theme";
 
@@ -78,8 +79,9 @@ export function LoadingIndicator({
           !warnedIdsRef.current.has(action)
         ) {
           warnedIdsRef.current.add(action);
-          console.warn(
-            `[LoadingIndicator] internal correlation ID leaked into action prop: ${action}`,
+          writeErrorLog(
+            `internal correlation ID leaked into action prop: ${action}`,
+            "LOADING_INDICATOR",
           );
         }
         if (toolName) {

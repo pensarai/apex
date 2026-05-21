@@ -5,6 +5,7 @@
  * Both built-in and custom themes are registered here.
  */
 
+import { writeErrorLog } from "../../core/logger";
 import type { ThemeDefinition } from "./types";
 
 const themes = new Map<string, ThemeDefinition>();
@@ -18,7 +19,7 @@ export function registerTheme(theme: ThemeDefinition): void {
 export function getTheme(name: string): ThemeDefinition {
   const theme = themes.get(name);
   if (!theme) {
-    console.warn(`Theme "${name}" not found, falling back to default`);
+    writeErrorLog(`Theme "${name}" not found, falling back to default`, "THEME");
     return themes.get(DEFAULT_THEME_NAME)!;
   }
   return theme;
