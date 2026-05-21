@@ -48,8 +48,7 @@
         "noExplicitAny": "error",
         // Carryover from previous ESLint config (no-useless-escape: off).
         "noUselessEscapeInString": "off",
-        // Existing pattern across many TUI list components; revisit in a follow-up triage PR.
-        "noArrayIndexKey": "off",
+        "noArrayIndexKey": "error",
         "noImplicitAnyLet": "error",
         "noAssignInExpressions": "error",
         "useIterableCallbackReturn": "error"

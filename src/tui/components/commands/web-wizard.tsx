@@ -815,8 +815,8 @@ export default function WebWizard({
               </box>
               {state.scope.allowedHosts.length > 0 && (
                 <box flexDirection="column" paddingLeft={2}>
-                  {state.scope.allowedHosts.map((h, i) => (
-                    <text key={i} fg={colors.textMuted}>
+                  {state.scope.allowedHosts.map((h) => (
+                    <text key={h} fg={colors.textMuted}>
                       • {h}
                     </text>
                   ))}
@@ -835,8 +835,8 @@ export default function WebWizard({
               </box>
               {state.scope.allowedPorts.length > 0 && (
                 <box flexDirection="column" paddingLeft={2}>
-                  {state.scope.allowedPorts.map((p, i) => (
-                    <text key={i} fg={colors.textMuted}>
+                  {state.scope.allowedPorts.map((p) => (
+                    <text key={p} fg={colors.textMuted}>
                       • {p}
                     </text>
                   ))}

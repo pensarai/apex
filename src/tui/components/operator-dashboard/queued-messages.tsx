@@ -28,6 +28,7 @@ export function QueuedMessages({
         const isSelected = index === selectedIndex;
         const displayText = msg.length > 80 ? msg.slice(0, 77) + "…" : msg;
         return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: plain string queue, position is the identity
           <box key={`q-${index}`} flexDirection="row" gap={1}>
             <text fg={isSelected ? colors.primary : colors.textMuted}>
               {isSelected ? "▸" : " "}

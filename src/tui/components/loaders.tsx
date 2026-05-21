@@ -165,11 +165,8 @@ export function BouncingBox({
     <box flexDirection="column">
       <box flexDirection="row">
         {cells.map((cell, i) => (
-          <text
-            key={i}
-            fg={cell.color ?? colors.background}
-            content={cell.ch}
-          />
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional animation cells, never reorder
+          <text key={i} fg={cell.color ?? colors.background} content={cell.ch} />
         ))}
       </box>
       {label && <text fg={colors.textMuted}>{label}</text>}
@@ -220,6 +217,7 @@ export function BracketBounce({
         <box flexDirection="row">
           <text fg={bracketColor} content="[" />
           {Array.from({ length: inner }, (_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: positional track cells, never reorder
             <text key={i} fg={dashColor} content={DASH} />
           ))}
           <text fg={bracketColor} content="]" />
@@ -305,6 +303,7 @@ function BracketBounceActive({
     <box flexDirection="column">
       <box flexDirection="row">
         {cells.map((cell, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional animation cells, never reorder
           <text key={i} fg={cell.color} content={cell.ch} />
         ))}
       </box>
@@ -398,6 +397,7 @@ export function WaveBar({
     <box flexDirection="column">
       <box flexDirection="row">
         {cells.map((cell, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional animation cells, never reorder
           <text key={i} fg={cell.color} content="▬" />
         ))}
       </box>
@@ -447,6 +447,7 @@ export function BarPulse({
     <box flexDirection="column">
       <box flexDirection="row">
         {display.map((b, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional animation cells, never reorder
           <text key={i} fg={b.color} content={b.ch} />
         ))}
       </box>
@@ -495,6 +496,7 @@ export function OrbitDots({
     <box flexDirection="row" gap={1}>
       <box flexDirection="row">
         {display.map((d, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional animation cells, never reorder
           <text key={i} fg={d.color} content={d.ch} />
         ))}
       </box>
@@ -555,6 +557,7 @@ export function ScanLine({
     <box flexDirection="column">
       <box flexDirection="row">
         {cells.map((cell, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional animation cells, never reorder
           <text key={i} fg={cell.color} content={cell.ch} />
         ))}
       </box>
@@ -672,6 +675,7 @@ export function LaserBar({
     <box flexDirection="column">
       <box flexDirection="row">
         {cells.map((cell, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional animation cells, never reorder
           <text key={i} fg={cell.color} content={cell.ch} />
         ))}
       </box>
@@ -768,6 +772,7 @@ export function ShiningText({
   return (
     <box flexDirection="row">
       {chars.map((c, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: positional per-char shimmer cells, never reorder
         <text key={i} fg={c.color} content={c.ch} />
       ))}
     </box>

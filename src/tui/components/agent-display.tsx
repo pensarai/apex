@@ -359,6 +359,7 @@ const AgentMessage = memo(function AgentMessage({
                     const trimmed =
                       log.length > 100 ? log.slice(0, 100) + "…" : log;
                     return (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: ephemeral last-3 display slice, no reorder
                       <text key={idx} fg={colors.textMuted}>
                         {trimmed}
                       </text>
