@@ -7,6 +7,7 @@ import type {
   ConsolidatedEndpoint,
   FrameworkId,
 } from "../../../integrations/surface/types";
+import { writeErrorLog } from "../../../logger";
 import type { SessionInfo } from "../../../session";
 import { runWithBoundedConcurrency } from "../../../utils/concurrency";
 import { CodeAgent } from "../codeAgent/agent";
@@ -224,9 +225,9 @@ async function runEndpointDocumentationAgent(
     });
     return true;
   } catch (error) {
-    console.error(
-      `[endpoint-documentation-agent] "${subagentId}" FAILED:`,
-      error instanceof Error ? error.message : String(error),
+    writeErrorLog(
+      `"${subagentId}" FAILED: ${error instanceof Error ? error.message : String(error)}`,
+      "ENDPOINT_DOC_AGENT",
     );
     eventBus?.emit("subagent-complete", {
       subagentId,

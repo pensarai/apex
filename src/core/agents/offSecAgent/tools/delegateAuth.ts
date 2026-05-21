@@ -225,57 +225,12 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           parentSubagentId: ctx.subagentId,
         });
 
-        console.log(`\n🔐 Delegating to authentication subagent...`);
-        console.log(`   Target: ${target}`);
-        console.log(`   Reason: ${reason}`);
-
-        if (username) console.log(`   Username: ${username}`);
-        if (apiKey) console.log(`   API Key: [PROVIDED]`);
-        if (tokens?.bearerToken) console.log(`   Bearer Token: [PROVIDED]`);
-        if (tokens?.cookies) console.log(`   Cookies: [PROVIDED]`);
-        if (tokens?.customHeaders)
-          console.log(
-            `   Custom Headers: ${Object.keys(tokens.customHeaders).join(", ")}`,
-          );
-
         const rawSessionCreds = ctx.session.config?.authCredentials;
         const sessionCreds: AuthCredentials | undefined = rawSessionCreds
           ? Array.isArray(rawSessionCreds)
             ? rawSessionCreds[0]
             : rawSessionCreds
           : undefined;
-        if (sessionCreds && !username && !apiKey && !tokens) {
-          console.log(`   [Inheriting session credentials]`);
-          if (sessionCreds.username)
-            console.log(`   Session Username: ${sessionCreds.username}`);
-          if (sessionCreds.apiKey)
-            console.log(`   Session API Key: [PROVIDED]`);
-          if (sessionCreds.tokens?.bearerToken)
-            console.log(`   Session Bearer Token: [PROVIDED]`);
-          if (sessionCreds.tokens?.cookies)
-            console.log(`   Session Cookies: [PROVIDED]`);
-          if (sessionCreds.tokens?.customHeaders)
-            console.log(
-              `   Session Custom Headers: ${Object.keys(
-                sessionCreds.tokens.customHeaders,
-              ).join(", ")}`,
-            );
-        }
-
-        if (authHints) {
-          console.log(`   Auth Scheme: ${authHints.authScheme || "unknown"}`);
-          console.log(`   CSRF Required: ${authHints.csrfRequired || false}`);
-          console.log(
-            `   Browser Required: ${authHints.browserRequired || false}`,
-          );
-          if (authHints.protectedEndpoints?.length) {
-            console.log(
-              `   Protected Endpoints: ${authHints.protectedEndpoints.join(
-                ", ",
-              )}`,
-            );
-          }
-        }
 
         const credentials = mergeAuthCredentials(sessionCreds, {
           username,

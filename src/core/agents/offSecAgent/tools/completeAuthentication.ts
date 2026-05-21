@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
+import { writeErrorLog } from "../../../logger";
 import type { ToolContext } from "./types";
 
 const AUTH_DIR = "auth";
@@ -79,8 +80,8 @@ This tool marks the end of the authentication flow.`,
         .describe("A concise description of what this tool call is doing"),
     }),
     execute: async (result) => {
-      console.log(
-        `Authentication complete: ${result.success ? "SUCCESS" : "FAILED"}`,
+      process.stderr.write(
+        `Authentication complete: ${result.success ? "SUCCESS" : "FAILED"}\n`,
       );
 
       let authDataPath: string | undefined;
@@ -105,9 +106,9 @@ This tool marks the end of the authentication flow.`,
         };
 
         writeFileSync(authDataPath, JSON.stringify(authData, null, 2));
-        console.log(`Auth data persisted to ${authDataPath}`);
+        process.stderr.write(`Auth data persisted to ${authDataPath}\n`);
       } catch (err) {
-        console.error(`Failed to persist auth data: ${err}`);
+        writeErrorLog(`Failed to persist auth data: ${err}`, "AUTH");
       }
 
       return {

@@ -3,6 +3,7 @@ import { mkdirSync } from "fs";
 import { writeFile } from "fs/promises";
 import { dirname } from "path";
 import { z } from "zod";
+import { writeErrorLog } from "../../../logger";
 import { planFilePath } from "../../../plan";
 import type { ToolContext } from "./types";
 
@@ -41,15 +42,11 @@ Required plan sections:
       const scopeId = ctx.planSubagentId ?? ctx.subagentId;
       const planPath = planFilePath(ctx.session.rootPath, scopeId);
       mkdirSync(dirname(planPath), { recursive: true });
-      console.error(
-        `[write_plan] enter: contentLen=${content.length}, path=${planPath}`,
-      );
       try {
         await writeFile(planPath, content, "utf-8");
-        console.error(`[write_plan] done`);
         return { success: true, error: "", path: planPath };
       } catch (err: unknown) {
-        console.error(`[write_plan] error: ${err}`);
+        writeErrorLog(err, "WRITE_PLAN");
         return {
           success: false,
           error: err instanceof Error ? err.message : String(err),

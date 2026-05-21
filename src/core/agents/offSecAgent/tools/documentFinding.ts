@@ -11,6 +11,7 @@ import {
 import { join } from "path";
 import { z } from "zod";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
+import { writeErrorLog } from "../../../logger";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
 import {
   type CVSSScorerInput,
@@ -771,8 +772,9 @@ function preparePoc(input: {
   // Validate portability before preparing the script
   const portabilityWarnings = validatePocPortability(pocContent, input.pocType);
   if (portabilityWarnings.length > 0) {
-    console.warn(
-      `[PoC Portability] Warnings for ${filename}:\n  ${portabilityWarnings.join("\n  ")}`,
+    writeErrorLog(
+      `Warnings for ${filename}:\n  ${portabilityWarnings.join("\n  ")}`,
+      "POC_PORTABILITY",
     );
   }
 

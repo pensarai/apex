@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
+import { writeErrorLog } from "../../../logger";
 import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
 import type { WhiteboxAttackSurfaceResult } from "../../specialized/whiteboxAttackSurface";
 import type { ToolContext } from "./types";
@@ -94,8 +95,8 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             })),
           );
 
-          console.log(
-            `\n✓ Whitebox attack surface complete: ${targets.length} targets from ${result.apps.length} apps`,
+          process.stderr.write(
+            `\n✓ Whitebox attack surface complete: ${targets.length} targets from ${result.apps.length} apps\n`,
           );
 
           ctx.eventBus?.emit("subagent-complete", {
@@ -115,7 +116,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         } catch (error: unknown) {
           const errorMsg =
             error instanceof Error ? error.message : String(error);
-          console.error(`✗ Whitebox attack surface agent failed: ${errorMsg}`);
+          writeErrorLog(`Whitebox attack surface agent failed: ${errorMsg}`, "ATTACK_SURFACE");
 
           ctx.eventBus?.emit("subagent-complete", {
             subagentId,
@@ -157,8 +158,8 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         const result: AttackSurfaceResult = await agent.consume();
 
         const targetCount = result.targets.length;
-        console.log(
-          `\n✓ Blackbox attack surface complete: ${targetCount} targets identified`,
+        process.stderr.write(
+          `\n✓ Blackbox attack surface complete: ${targetCount} targets identified\n`,
         );
 
         ctx.eventBus?.emit("subagent-complete", {
@@ -184,7 +185,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         };
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        console.error(`✗ Blackbox attack surface agent failed: ${errorMsg}`);
+        writeErrorLog(`Blackbox attack surface agent failed: ${errorMsg}`, "ATTACK_SURFACE");
 
         ctx.eventBus?.emit("subagent-complete", {
           subagentId,

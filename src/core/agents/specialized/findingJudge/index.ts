@@ -7,6 +7,7 @@
  */
 
 import type { AIModel } from "../../../ai";
+import { writeErrorLog } from "../../../logger";
 import type { ToolContext } from "../../offSecAgent/tools";
 import type {
   FindingJudgeAgentOutput,
@@ -70,8 +71,9 @@ export async function judgeFinding(
     return normalizeJudgeResult(result);
   } catch (err: unknown) {
     const fallback = createJudgeFailureResult(err, ctx.model);
-    console.error(
-      `[FindingJudge] Agentic validation failed: model=${fallback.error?.model} type=${fallback.error?.type} message=${fallback.error?.message}`,
+    writeErrorLog(
+      `Agentic validation failed: model=${fallback.error?.model} type=${fallback.error?.type} message=${fallback.error?.message}`,
+      "FINDING_JUDGE",
     );
     return fallback;
   }

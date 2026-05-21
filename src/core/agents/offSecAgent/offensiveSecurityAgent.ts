@@ -11,6 +11,7 @@ import { writeFile } from "fs/promises";
 import { join } from "path";
 import { streamResponse } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
+import { writeErrorLog } from "../../logger";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
@@ -546,23 +547,25 @@ function wrapToolsWithApprovalGate(
           args.toolCallId ??
           `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-        console.error(`[approval-gate] ${name} (${toolCallId}): checking`);
+        writeErrorLog(`${name} (${toolCallId}): checking`, "APPROVAL_GATE");
         try {
           await gate.check(name, String(toolCallId), args);
         } catch (err) {
           if (err instanceof ApprovalDeniedError) {
-            console.error(`[approval-gate] ${name} (${toolCallId}): denied`);
+            writeErrorLog(`${name} (${toolCallId}): denied`, "APPROVAL_GATE");
             return { blocked: true, reason: "Denied by operator" };
           }
           throw err;
         }
-        console.error(
-          `[approval-gate] ${name} (${toolCallId}): approved, executing`,
+        writeErrorLog(
+          `${name} (${toolCallId}): approved, executing`,
+          "APPROVAL_GATE",
         );
 
         const result = await originalExecute(args, options);
-        console.error(
-          `[approval-gate] ${name} (${toolCallId}): execute finished`,
+        writeErrorLog(
+          `${name} (${toolCallId}): execute finished`,
+          "APPROVAL_GATE",
         );
         return result;
       },

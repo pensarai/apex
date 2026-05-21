@@ -43,21 +43,13 @@ Parent directories are created automatically if they don't exist.`,
       content,
       overwrite = false,
     }): Promise<CreateFileResult> => {
-      console.error(
-        `[create_file] enter: path=${filePath}, contentLen=${content.length}, overwrite=${overwrite}, sandbox=${!!ctx.sandbox}`,
-      );
       const resolved = isAbsolute(filePath)
         ? filePath
         : resolve(ctx.agentCwd, filePath);
-      console.error(`[create_file] resolved: ${resolved}`);
       if (ctx.sandbox) {
         return executeSandboxCreate(ctx, resolved, content, overwrite);
       }
-      const result = await executeLocalCreate(resolved, content, overwrite);
-      console.error(
-        `[create_file] done: success=${result.success}, error=${result.error || "(none)"}`,
-      );
-      return result;
+      return executeLocalCreate(resolved, content, overwrite);
     },
   });
 }
@@ -69,7 +61,6 @@ async function executeLocalCreate(
 ): Promise<CreateFileResult> {
   try {
     if (!overwrite && existsSync(filePath)) {
-      console.error(`[create_file:local] file already exists: ${filePath}`);
       return {
         success: false,
         error: `File already exists: ${filePath}. Set overwrite=true to replace it.`,
@@ -78,13 +69,8 @@ async function executeLocalCreate(
     }
 
     const dir = dirname(filePath);
-    console.error(`[create_file:local] mkdir ${dir}`);
     await mkdir(dir, { recursive: true });
-    console.error(
-      `[create_file:local] mkdir done, writing ${content.length} bytes`,
-    );
     await writeFile(filePath, content, "utf-8");
-    console.error(`[create_file:local] writeFile done`);
 
     return {
       success: true,
@@ -92,7 +78,6 @@ async function executeLocalCreate(
       path: filePath,
     };
   } catch (err: unknown) {
-    console.error(`[create_file:local] error: ${err}`);
     return {
       success: false,
       error: err instanceof Error ? err.message : String(err),

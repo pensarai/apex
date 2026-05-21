@@ -1,6 +1,7 @@
 import { execSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { getBundledWordlists } from "../../assets/wordlists";
+import { writeErrorLog } from "../../logger";
 
 type DetectedEnvironment = {
   isDocker: boolean;
@@ -149,7 +150,7 @@ export function detectOSAndEnhancePrompt(prompt: string): string {
 
     return `${lines.join("\n")}\n${prompt}`;
   } catch (error) {
-    console.error("Error detecting environment:", error);
+    writeErrorLog(error, "ENV_DETECT");
     return prompt;
   }
 }

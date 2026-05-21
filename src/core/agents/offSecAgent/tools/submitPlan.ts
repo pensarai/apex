@@ -30,7 +30,6 @@ Only call this when the plan is complete and ready for review.`,
     execute: async (): Promise<SubmitPlanResult> => {
       const scopeId = ctx.planSubagentId ?? ctx.subagentId;
       const planPath = planFilePath(ctx.session.rootPath, scopeId);
-      console.error(`[submit_plan] enter: path=${planPath}`);
       const plan = readPlan(ctx.session.rootPath, scopeId);
       if (!plan || !plan.trim()) {
         return {
@@ -40,7 +39,6 @@ Only call this when the plan is complete and ready for review.`,
           path: planPath,
         };
       }
-      console.error(`[submit_plan] done: planLen=${plan.length}`);
       return { success: true, error: "", path: planPath };
     },
   });

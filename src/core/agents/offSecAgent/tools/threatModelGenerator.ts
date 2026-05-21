@@ -1,6 +1,7 @@
 import pLimit from "p-limit";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
+import { writeErrorLog } from "../../../logger";
 import type { RiskScore } from "../../specialized/whiteboxAttackSurface";
 import type { ToolContext } from "./types";
 
@@ -371,8 +372,9 @@ export async function generateThreatModelForEndpoint(
         status: "failed",
         parentSubagentId: ctx.subagentId,
       });
-      console.error(
+      writeErrorLog(
         `Threat model generation failed for ${input.routePath}: ${error instanceof Error ? error.message : String(error)}`,
+        "THREAT_MODEL",
       );
       return null;
     }

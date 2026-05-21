@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { writeErrorLog } from "../../../logger";
 import {
   type EndpointInfo,
   extractJavascriptEndpoints,
@@ -119,7 +120,7 @@ export function crawlAuthenticated(ctx: ToolContext) {
               });
             }
           } catch (error) {
-            console.error(`Error crawling ${url}:`, error);
+            writeErrorLog(`Error crawling ${url}: ${error instanceof Error ? error.message : String(error)}`, "CRAWL");
           }
         }
 

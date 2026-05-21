@@ -310,8 +310,8 @@ export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
 
   const result = await agent.consume();
 
-  console.log(
-    `\nAuthentication ${result.success ? "succeeded" : "failed"}: ${result.summary}`,
+  process.stderr.write(
+    `\nAuthentication ${result.success ? "succeeded" : "failed"}: ${result.summary}\n`,
   );
   return result;
 }
