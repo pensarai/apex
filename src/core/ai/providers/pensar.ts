@@ -7,6 +7,7 @@ import type {
   LanguageModelV3Usage,
   SharedV3Warning,
 } from "@ai-sdk/provider";
+import { writeErrorLog } from "../../logger";
 import { buildStreamingFetchSignal } from "../utils";
 import { convertToBedrockFormat } from "./pensarFormatters";
 import { signGatewayRequest } from "./pensarSigning";
@@ -16,15 +17,15 @@ const DEBUG =
   process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
 
 function log(...args: unknown[]) {
-  if (DEBUG) console.error("[pensar:debug]", ...args);
+  if (DEBUG) writeErrorLog(args.map(String).join(" "), "PENSAR_DEBUG");
 }
 
 function logInfo(...args: unknown[]) {
-  if (DEBUG) console.error("[pensar]", ...args);
+  if (DEBUG) writeErrorLog(args.map(String).join(" "), "PENSAR_DEBUG");
 }
 
 function logError(...args: unknown[]) {
-  console.error("[pensar:error]", ...args);
+  writeErrorLog(args.map(String).join(" "), "PENSAR");
 }
 
 export interface PensarModelConfig {

@@ -11,13 +11,13 @@ function attachDefaultPatchingStreamListeners(agent: PatchingAgent): void {
     process.stdout.write(e.text);
   });
   agent.eventBus.on("tool-call-complete", (e) => {
-    console.log(`→ calling ${e.toolName}`);
+    process.stdout.write(`→ calling ${e.toolName}\n`);
   });
   agent.eventBus.on("tool-result", (e) => {
-    console.log(`✓ ${e.toolName} completed`);
+    process.stdout.write(`✓ ${e.toolName} completed\n`);
   });
   agent.eventBus.on("error", (e) => {
-    console.error("Patching agent error:", e.error);
+    process.stderr.write(`Patching agent error: ${e.error}\n`);
   });
 }
 

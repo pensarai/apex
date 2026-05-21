@@ -54,14 +54,14 @@ function checkApiKeys(): { provider: string; configured: boolean }[] {
 }
 
 export async function runDoctor(): Promise<void> {
-  console.log();
-  console.log("Pensar Doctor");
-  console.log("=============");
-  console.log();
+  process.stdout.write("\n");
+  process.stdout.write("Pensar Doctor\n");
+  process.stdout.write("=============\n");
+  process.stdout.write("\n");
 
   // --- nmap check ---
-  console.log("System Tools");
-  console.log("------------");
+  process.stdout.write("System Tools\n");
+  process.stdout.write("------------\n");
 
   const nmapInstalled = toolExists("nmap");
   if (nmapInstalled) {
@@ -74,34 +74,38 @@ export async function runDoctor(): Promise<void> {
     } catch {
       // ignore
     }
-    console.log(`  ✓ nmap ${version ? `(${version})` : "installed"}`);
+    process.stdout.write(
+      `  ✓ nmap ${version ? `(${version})` : "installed"}\n`,
+    );
   } else {
-    console.log("  ✗ nmap — not found (recommended for network scanning)");
+    process.stdout.write(
+      "  ✗ nmap — not found (recommended for network scanning)\n",
+    );
   }
 
-  console.log();
+  process.stdout.write("\n");
 
   // --- API key check ---
-  console.log("AI Providers");
-  console.log("------------");
+  process.stdout.write("AI Providers\n");
+  process.stdout.write("------------\n");
 
   const apiKeys = checkApiKeys();
   const anyConfigured = apiKeys.some((k) => k.configured);
 
   for (const key of apiKeys) {
     const icon = key.configured ? "✓" : "·";
-    console.log(`  ${icon} ${key.provider}`);
+    process.stdout.write(`  ${icon} ${key.provider}\n`);
   }
 
   if (!anyConfigured) {
-    console.log();
-    console.log(
-      "  No AI provider configured. Set at least one API key to get started:",
+    process.stdout.write("\n");
+    process.stdout.write(
+      "  No AI provider configured. Set at least one API key to get started:\n",
     );
-    console.log("    export ANTHROPIC_API_KEY=your-key-here");
+    process.stdout.write("    export ANTHROPIC_API_KEY=your-key-here\n");
   }
 
-  console.log();
+  process.stdout.write("\n");
 
   // --- Offer to install nmap ---
   if (!nmapInstalled) {
@@ -111,27 +115,27 @@ export async function runDoctor(): Promise<void> {
         `Install nmap via ${pm.name}? (${pm.installCmd}) [y/N] `,
       );
       if (/^y(es)?$/i.test(answer)) {
-        console.log();
+        process.stdout.write("\n");
         const result = spawnSync(pm.installCmd, {
           stdio: "inherit",
           shell: true,
         });
-        console.log();
+        process.stdout.write("\n");
         if (result.status === 0) {
-          console.log("✓ nmap installed successfully!");
+          process.stdout.write("✓ nmap installed successfully!\n");
         } else {
-          console.log("✗ Installation failed. You can install manually:");
-          console.log(`    ${pm.installCmd}`);
+          process.stdout.write("✗ Installation failed. You can install manually:\n");
+          process.stdout.write(`    ${pm.installCmd}\n`);
         }
       } else {
-        console.log("  Skipped nmap installation.");
+        process.stdout.write("  Skipped nmap installation.\n");
       }
     } else {
-      console.log(
-        "  No supported package manager found. Install nmap manually:",
+      process.stdout.write(
+        "  No supported package manager found. Install nmap manually:\n",
       );
-      console.log("    https://nmap.org/download.html");
+      process.stdout.write("    https://nmap.org/download.html\n");
     }
-    console.log();
+    process.stdout.write("\n");
   }
 }

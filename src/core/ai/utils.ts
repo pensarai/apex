@@ -17,6 +17,7 @@ import {
 import { getPensarGatewayUrl } from "../api/constants";
 import { ensureValidToken } from "../auth";
 import { config } from "../config";
+import { writeErrorLog } from "../logger";
 import { type AIModel, type StreamResponseOpts, streamResponse } from "./ai";
 import {
   extractTaskSummaryFromMessages,
@@ -223,8 +224,9 @@ export function getProviderModel(
         process.env.PENSAR_DEBUG === "1" ||
         process.env.PENSAR_DEBUG === "true"
       ) {
-        console.log(
+        writeErrorLog(
           `[pensar] getProviderModel: ${model} → bedrock:${bedrockModelId} via ${gatewayUrl}`,
+          "PENSAR_PROVIDER",
         );
       }
 

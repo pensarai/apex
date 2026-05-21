@@ -51,9 +51,11 @@ async function runBlackboxAttackSurface(
 
   const { results, targets, resultsPath, assetsPath } = await agent.consume();
 
-  console.log(`\nIdentified ${targets.length} targets for deep testing`);
-  console.log(`Results: ${resultsPath}`);
-  console.log(`Assets: ${assetsPath}`);
+  process.stdout.write(
+    `\nIdentified ${targets.length} targets for deep testing\n`,
+  );
+  process.stdout.write(`Results: ${resultsPath}\n`);
+  process.stdout.write(`Assets: ${assetsPath}\n`);
 
   return { results, targets, resultsPath, assetsPath };
 }
@@ -76,10 +78,10 @@ async function runWhiteboxAttackSurface(
     surfaceIntegrationEnabled: input.surfaceIntegrationEnabled,
   });
 
-  console.log(
+  process.stdout.write(
     `\nWhitebox analysis complete: ${result.summary.totalApps} apps, ` +
       `${result.summary.totalApiEndpoints} API endpoints, ` +
-      `${result.summary.totalPages} pages`,
+      `${result.summary.totalPages} pages\n`,
   );
 
   return result;

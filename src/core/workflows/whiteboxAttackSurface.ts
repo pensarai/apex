@@ -34,6 +34,7 @@ import type {
   OpenAIReasoningEffort,
 } from "../ai";
 import type { AgentEventBus } from "../eventBus";
+import { writeErrorLog } from "../logger";
 import { mapAppWithSurface } from "../integrations/surface";
 import type { SessionInfo } from "../session";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
@@ -191,8 +192,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     excludeTools: ["document_endpoint"],
   });
 
-  console.log(
-    `[whitebox-workflow] Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`,
+  process.stderr.write(
+    `[whitebox-workflow] Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}\n`,
   );
 
   // Held open until Phase 2 finishes so per-app synthetic nodes can nest under it.
@@ -206,17 +207,18 @@ export async function runWhiteboxAttackSurfaceWorkflow(
 
   const appsResult = await appsAgent.consume();
 
-  console.log(
+  process.stderr.write(
     `[whitebox-workflow] Phase 1 complete: ${appsResult?.apps.length ?? 0} apps discovered` +
       (appsResult
         ? ` (repoType=${appsResult.repoType}, packageManager=${appsResult.packageManager})`
-        : " (no result returned)"),
+        : " (no result returned)") +
+      "\n",
   );
 
   if (appsResult?.apps.length) {
     for (const app of appsResult.apps) {
-      console.log(
-        `[whitebox-workflow]   app: "${app.name}" type=${app.type} framework="${app.framework}" location="${app.location}"`,
+      process.stderr.write(
+        `[whitebox-workflow]   app: "${app.name}" type=${app.type} framework="${app.framework}" location="${app.location}"\n`,
       );
     }
   }
@@ -268,8 +270,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   //          is HTTP-route-focused and doesn't enumerate cloud assets.
   // =========================================================================
 
-  console.log(
-    `[whitebox-workflow] Phase 2: surfaceIntegrationEnabled=${surfaceIntegrationEnabled}`,
+  process.stderr.write(
+    `[whitebox-workflow] Phase 2: surfaceIntegrationEnabled=${surfaceIntegrationEnabled}\n`,
   );
 
   const NON_SERVICE_TYPES = ["cloud_resource", "storage", "database"];
@@ -280,8 +282,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     NON_SERVICE_TYPES.includes(app.type),
   );
 
-  console.log(
-    `[whitebox-workflow] Phase 2: ${serviceApps.length} service apps (surface or fallback per app), ${cloudApps.length} cloud resources → ${appsResult.apps.length} total apps`,
+  process.stderr.write(
+    `[whitebox-workflow] Phase 2: ${serviceApps.length} service apps (surface or fallback per app), ${cloudApps.length} cloud resources → ${appsResult.apps.length} total apps\n`,
   );
 
   const totalApps = appsResult.apps.length;
@@ -315,8 +317,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     const subagentId = `${type}-${app.name}`;
     const appNodeId = appNodeIdFor(app.name);
 
-    console.log(
-      `[whitebox-workflow] Phase 2: spawning agent id="${subagentId}" parent="${appNodeId}" (app="${app.name}", type=${type}, appType=${app.type})`,
+    process.stderr.write(
+      `[whitebox-workflow] Phase 2: spawning agent id="${subagentId}" parent="${appNodeId}" (app="${app.name}", type=${type}, appType=${app.type})\n`,
     );
 
     eventBus?.emit("subagent-spawn", {
@@ -348,8 +350,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     try {
       await agent.consume();
 
-      console.log(
-        `[whitebox-workflow] Phase 2: agent "${subagentId}" completed`,
+      process.stderr.write(
+        `[whitebox-workflow] Phase 2: agent "${subagentId}" completed\n`,
       );
 
       eventBus?.emit("subagent-complete", {
@@ -358,9 +360,9 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         parentSubagentId: appNodeId,
       });
     } catch (error) {
-      console.error(
-        `[whitebox-workflow] Phase 2: agent "${subagentId}" FAILED:`,
-        error instanceof Error ? error.message : String(error),
+      writeErrorLog(
+        error instanceof Error ? error : String(error),
+        "WHITEBOX",
       );
 
       appAnyTaskFailed.set(app.name, true);
@@ -403,8 +405,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
           // Cloud resources: surface doesn't enumerate these — always fallback.
           await spawnCloudResourceAgent(app);
         } else if (!surfaceIntegrationEnabled) {
-          console.log(
-            `[whitebox] ${app.name}: legacy (surfaceIntegrationEnabled=false)`,
+          process.stderr.write(
+            `[whitebox] ${app.name}: legacy (surfaceIntegrationEnabled=false)\n`,
           );
           await Promise.all([
             spawnPagesAgent(app),
@@ -417,8 +419,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
             { isSingleAppRepo: serviceApps.length === 1 },
           );
           if (surfaceResult.mode === "surface") {
-            console.log(
-              `[whitebox] ${app.name}: surface-driven (${surfaceResult.endpoints.length} endpoints, frameworks=${surfaceResult.frameworks.join(",")})`,
+            process.stderr.write(
+              `[whitebox] ${app.name}: surface-driven (${surfaceResult.endpoints.length} endpoints, frameworks=${surfaceResult.frameworks.join(",")})\n`,
             );
 
             await runAppEndpointDocumentation({
@@ -439,8 +441,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
               parentSubagentId: appNodeId,
             });
           } else {
-            console.log(
-              `[whitebox] ${app.name}: fallback (${surfaceResult.reason})`,
+            process.stderr.write(
+              `[whitebox] ${app.name}: fallback (${surfaceResult.reason})\n`,
             );
             await Promise.all([
               spawnPagesAgent(app),
@@ -480,7 +482,9 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   // Phase 3: Read assets directory to build endpoint data
   // =========================================================================
 
-  console.log(`[whitebox-workflow] Phase 3: reading assets from ${assetsPath}`);
+  process.stderr.write(
+    `[whitebox-workflow] Phase 3: reading assets from ${assetsPath}\n`,
+  );
 
   const {
     apps: parsedApps,
@@ -489,8 +493,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   } = readAppsFromAssetsDirectory(assetsPath, appsResult);
 
   for (const app of parsedApps) {
-    console.log(
-      `[whitebox-workflow] Phase 3: "${app.name}" → ${app.pages.length} pages, ${app.apiEndpoints.length} API endpoints`,
+    process.stderr.write(
+      `[whitebox-workflow] Phase 3: "${app.name}" → ${app.pages.length} pages, ${app.apiEndpoints.length} API endpoints\n`,
     );
   }
 
@@ -557,20 +561,24 @@ function readAppsFromAssetsDirectory(
   const packageManager = appsDiscovery?.packageManager ?? "unknown";
 
   if (!existsSync(assetsPath)) {
-    console.log(`[readAssets] Assets directory does not exist: ${assetsPath}`);
+    process.stderr.write(
+      `[readAssets] Assets directory does not exist: ${assetsPath}\n`,
+    );
     return { apps: [], repoType, packageManager };
   }
 
   const entries = readdirSync(assetsPath);
-  console.log(
-    `[readAssets] Found ${entries.length} entries in ${assetsPath}: [${entries.join(", ")}]`,
+  process.stderr.write(
+    `[readAssets] Found ${entries.length} entries in ${assetsPath}: [${entries.join(", ")}]\n`,
   );
   const apps: App[] = [];
 
   for (const entry of entries) {
     const entryPath = join(assetsPath, entry);
     if (!statSync(entryPath).isDirectory()) {
-      console.log(`[readAssets] Skipping non-directory: ${entry}`);
+      process.stderr.write(
+        `[readAssets] Skipping non-directory: ${entry}\n`,
+      );
       continue;
     }
 
@@ -583,13 +591,16 @@ function readAppsFromAssetsDirectory(
           readFileSync(appJsonPath, "utf-8"),
         ) as AppMetadata;
       } catch {
-        console.warn(
+        writeErrorLog(
           `[readAssets] Skipping app folder with unreadable app.json: ${entry}`,
+          "WHITEBOX",
         );
         continue;
       }
     } else {
-      console.log(`[readAssets] Skipping folder without app.json: ${entry}`);
+      process.stderr.write(
+        `[readAssets] Skipping folder without app.json: ${entry}\n`,
+      );
       continue;
     }
 
@@ -600,8 +611,8 @@ function readAppsFromAssetsDirectory(
       (f) => f.endsWith(".json") && f !== "app.json",
     );
 
-    console.log(
-      `[readAssets] App "${metadata.name}" (${entry}): ${assetFiles.length} asset files`,
+    process.stderr.write(
+      `[readAssets] App "${metadata.name}" (${entry}): ${assetFiles.length} asset files\n`,
     );
 
     let parseFailed = 0;
@@ -612,8 +623,8 @@ function readAppsFromAssetsDirectory(
 
         const endpoint = assetRecordToEndpoint(data);
         if (!endpoint) {
-          console.log(
-            `[readAssets]   ${file}: failed schema validation (assetRecordToEndpoint returned null)`,
+          process.stderr.write(
+            `[readAssets]   ${file}: failed schema validation (assetRecordToEndpoint returned null)\n`,
           );
           parseFailed++;
           continue;
@@ -625,15 +636,16 @@ function readAppsFromAssetsDirectory(
           apiEndpoints.push(endpoint);
         }
       } catch {
-        console.warn(
+        writeErrorLog(
           `[readAssets] Skipping unreadable asset file: ${entry}/${file}`,
+          "WHITEBOX",
         );
         parseFailed++;
       }
     }
 
-    console.log(
-      `[readAssets] App "${metadata.name}": ${pages.length} pages, ${apiEndpoints.length} API endpoints, ${parseFailed} failed`,
+    process.stderr.write(
+      `[readAssets] App "${metadata.name}": ${pages.length} pages, ${apiEndpoints.length} API endpoints, ${parseFailed} failed\n`,
     );
 
     apps.push({
@@ -1041,10 +1053,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     );
     writeFileSync(diffPath, diff, "utf-8");
   } catch (error) {
-    console.error(
-      "Failed to generate git diff, falling back to full recon:",
-      error,
-    );
+    writeErrorLog(error, "WHITEBOX");
     return runWhiteboxAttackSurfaceWorkflow(input);
   }
 
@@ -1109,8 +1118,8 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     }
   }
 
-  console.log(
-    `Incremental recon: wrote ${preloadedCount} existing endpoint assets to ${assetsPath}`,
+  process.stderr.write(
+    `Incremental recon: wrote ${preloadedCount} existing endpoint assets to ${assetsPath}\n`,
   );
 
   // =========================================================================
@@ -1161,8 +1170,8 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
 
   const agentResult = await agent.consume();
 
-  console.log(
-    `Incremental agent finished: ${agentResult?.summary ?? "no summary"}`,
+  process.stderr.write(
+    `Incremental agent finished: ${agentResult?.summary ?? "no summary"}\n`,
   );
 
   // =========================================================================

@@ -6,6 +6,8 @@
  * whenever a complete SSE message boundary (blank line) is encountered.
  */
 
+import { writeErrorLog } from "../../logger";
+
 const DEBUG =
   process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
 
@@ -61,12 +63,14 @@ export async function* parseSSE(
       }
       if (result.done) {
         if (DEBUG) {
-          console.error(
+          writeErrorLog(
             `[parseSSE] stream done: ${chunkCount} chunks, ${totalBytes} bytes, ${eventCount} events yielded, remaining buffer=${buffer.length} chars`,
+            "PENSAR_SSE",
           );
           if (buffer.length > 0) {
-            console.error(
+            writeErrorLog(
               `[parseSSE] remaining buffer: ${buffer.slice(0, 500)}`,
+              "PENSAR_SSE",
             );
           }
         }
@@ -79,8 +83,9 @@ export async function* parseSSE(
       const decoded = decoder.decode(value, { stream: true });
 
       if (DEBUG && chunkCount <= 3) {
-        console.error(
+        writeErrorLog(
           `[parseSSE] chunk #${chunkCount}: ${value.byteLength} bytes, preview: ${decoded.slice(0, 200)}`,
+          "PENSAR_SSE",
         );
       }
 
@@ -110,13 +115,17 @@ export async function* parseSSE(
     if (currentData.length > 0) {
       eventCount++;
       if (DEBUG)
-        console.error(`[parseSSE] flushing final event: ${currentEvent}`);
+        writeErrorLog(
+          `[parseSSE] flushing final event: ${currentEvent}`,
+          "PENSAR_SSE",
+        );
       yield { event: currentEvent, data: currentData.join("\n") };
     }
 
     if (eventCount === 0) {
-      console.error(
+      writeErrorLog(
         `[parseSSE] WARNING: stream ended with 0 events! totalBytes=${totalBytes}, chunks=${chunkCount}`,
+        "PENSAR_SSE",
       );
     }
   } finally {

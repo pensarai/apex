@@ -16,6 +16,7 @@ import {
   type ToolSet,
 } from "ai";
 import type { z } from "zod";
+import { writeErrorLog } from "../logger";
 import { withCachedLastMessage, withCachedSystemPrompt } from "./caching";
 import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
 import { getMaxOutputTokens, getModelInfo } from "./models";
@@ -312,8 +313,9 @@ function wrapStreamWithErrorHandler(
               ) {
                 const nextIdleCount = idleResumeCount + 1;
                 if (!silent) {
-                  console.warn(
+                  writeErrorLog(
                     `Stream stalled (attempt ${nextIdleCount}/${MAX_IDLE_RESUME_RETRIES}), resuming with ${messagesContainer.current.length} messages: ${errorMessage}`,
+                    "AI_STREAM",
                   );
                 }
 
@@ -348,8 +350,9 @@ function wrapStreamWithErrorHandler(
                 const delayMs = Math.min(1000 * nextRetryCount, 30000);
 
                 if (!silent) {
-                  console.warn(
+                  writeErrorLog(
                     `Rate limit error (attempt ${nextRetryCount}/${MAX_RATE_LIMIT_RETRIES}), waiting ${delayMs}ms: ${errorMessage}`,
+                    "AI_STREAM",
                   );
                 }
 
@@ -411,8 +414,9 @@ function wrapStreamWithErrorHandler(
 
                 if (fitted.fitsBudget && fitted.modified) {
                   if (!silent) {
-                    console.warn(
+                    writeErrorLog(
                       `Context length error — Layer 1+2 reduced to ~${fitted.estimatedInputTokens} tokens, retrying`,
+                      "AI_STREAM",
                     );
                   }
                   try {
@@ -475,8 +479,9 @@ function wrapStreamWithErrorHandler(
                 // can throw — fall back to a minimal-context restart.
                 const messagesForSummary = messagesContainer.current;
                 if (!silent) {
-                  console.warn(
+                  writeErrorLog(
                     `Context length error — summarizing ${messagesForSummary.length} messages`,
+                    "AI_STREAM",
                   );
                 }
 
@@ -512,8 +517,9 @@ function wrapStreamWithErrorHandler(
                       summarizeError instanceof Error
                         ? summarizeError.message
                         : String(summarizeError);
-                    console.error(
+                    writeErrorLog(
                       `Layer 3 summarization failed (${sumMsg}). Falling back to minimal-context restart.`,
+                      "AI_STREAM",
                     );
                   }
                   opts.onSummarized?.("");
@@ -533,9 +539,9 @@ function wrapStreamWithErrorHandler(
                 }
               } else {
                 if (!silent) {
-                  console.error(
-                    "Non-recoverable stream error, re-throwing:",
-                    errorMessage,
+                  writeErrorLog(
+                    `Non-recoverable stream error, re-throwing: ${errorMessage}`,
+                    "AI_STREAM",
                   );
                 }
                 throw error;
@@ -717,8 +723,9 @@ export function streamResponse(
     fittedMessages = fitted.messages;
     proactiveFitFailed = !fitted.fitsBudget;
     if (fitted.modified && !silent) {
-      console.warn(
+      writeErrorLog(
         `Proactive context fit: compacted messages to ~${fitted.estimatedInputTokens} tokens (fits=${fitted.fitsBudget})`,
+        "AI_STREAM",
       );
     }
   }
@@ -733,8 +740,9 @@ export function streamResponse(
   // the equivalent post-streamText path (line ~880) recovers.
   if (proactiveFitFailed && fittedMessages) {
     if (!silent) {
-      console.warn(
+      writeErrorLog(
         `Proactive context fit returned fitsBudget=false on ${fittedMessages.length} messages — escalating to summarization before send`,
+        "AI_STREAM",
       );
     }
     // Pass `opts` through unchanged. The slot for this escalation is
@@ -890,28 +898,13 @@ export function streamResponse(
         error,
       }) => {
         try {
-          if (!silent) {
-            console.log(`🔧 Repairing tool call: ${toolCall.toolName}`);
-            console.log(`   Error: ${error.message || error}`);
-
-            // Log specific details for common enum errors
-            if (
-              error.message &&
-              (error.message.includes("severity") ||
-                error.message.includes("riskLevel"))
-            ) {
-              console.log(
-                `   Note: This appears to be an enum validation error. Tool call repair will normalize the value.`,
-              );
-            }
-          }
-
           // Get the actual tool definition which contains the Zod schema
           const tool = tools[toolCall.toolName];
           if (!tool || !tool.inputSchema) {
             if (!silent) {
-              console.error(
+              writeErrorLog(
                 `Cannot repair tool call: ${toolCall.toolName} not found or has no schema`,
+                "AI_STREAM",
               );
             }
             return null;
@@ -988,8 +981,9 @@ export function streamResponse(
 
           if (repairedArgs === undefined || repairedArgs === null) {
             if (!silent) {
-              console.error(
+              writeErrorLog(
                 `Tool call repair for "${toolCall.toolName}" produced no valid output`,
+                "AI_STREAM",
               );
             }
             return null;
@@ -997,11 +991,9 @@ export function streamResponse(
           return { ...toolCall, input: JSON.stringify(repairedArgs) };
         } catch (repairError) {
           if (!silent) {
-            console.error(
-              "Error repairing tool call:",
-              repairError instanceof Error
-                ? repairError.message
-                : String(repairError),
+            writeErrorLog(
+              `Error repairing tool call: ${repairError instanceof Error ? repairError.message : String(repairError)}`,
+              "AI_STREAM",
             );
           }
           return null;
@@ -1026,9 +1018,9 @@ export function streamResponse(
 
     if (isContextLengthError) {
       if (!silent) {
-        console.warn(
-          `Context length error, summarizing ${messagesContainer.current.length} messages: `,
-          outerErrorMessage,
+        writeErrorLog(
+          `Context length error, summarizing ${messagesContainer.current.length} messages: ${outerErrorMessage}`,
+          "AI_STREAM",
         );
       }
       // Wrap so a context error inside the summarization stream itself
@@ -1054,7 +1046,10 @@ export function streamResponse(
       );
     }
     if (!silent) {
-      console.error("Non-context length error, re-throwing", outerErrorMessage);
+      writeErrorLog(
+        `Non-context length error, re-throwing: ${outerErrorMessage}`,
+        "AI_STREAM",
+      );
     }
 
     // Re-throw if it's not a context length error

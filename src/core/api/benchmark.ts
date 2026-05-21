@@ -13,23 +13,25 @@ export async function runBenchmarkComparisonAgent(
 
   agent.eventBus.on("text-delta", (d) => process.stdout.write(d.text));
   agent.eventBus.on("tool-call-complete", (d) =>
-    console.log(`→ calling ${d.toolName}`),
+    process.stdout.write(`→ calling ${d.toolName}\n`),
   );
   agent.eventBus.on("tool-result", (d) =>
-    console.log(`✓ ${d.toolName} completed`),
+    process.stdout.write(`✓ ${d.toolName} completed\n`),
   );
-  agent.eventBus.on("error", (d) => console.error("Agent error:", d.error));
+  agent.eventBus.on("error", (d) =>
+    process.stderr.write(`Agent error: ${d.error}\n`),
+  );
 
   const { comparison, resultsPath } = await agent.consume();
 
   if (comparison) {
-    console.log(
+    process.stdout.write(
       `\nComparison: ${comparison.matched.length}/${comparison.totalExpected} matched, ` +
         `Precision: ${Math.round(comparison.precision * 100)}%, ` +
-        `Recall: ${Math.round(comparison.recall * 100)}%`,
+        `Recall: ${Math.round(comparison.recall * 100)}%\n`,
     );
   }
-  console.log(`Results: ${resultsPath}`);
+  process.stdout.write(`Results: ${resultsPath}\n`);
 
   return { comparison, resultsPath };
 }
