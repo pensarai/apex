@@ -81,9 +81,33 @@ type ScopeConstraints = z.infer<typeof ScopeConstraintsObject>;
  * populated record means "send these on every in-scope target call".
  *
  * Migration of legacy `offensiveHeaders` is performed in
- * `migrateLegacySessionData` when reading session.json.
+ * `migrateLegacySessionData` when reading session.json AND in
+ * `normalizeDeprecatedHeaders` when callers (e.g. console agents)
+ * pass it through `sessions.create`.
  */
 const SessionHeadersRecord = z.record(z.string(), z.string());
+
+/**
+ * Deprecated nested-mode shape for legacy callers (downstream
+ * `pensarai/console` agents still write to this field). New code
+ * should pass flat `SessionConfig.headers` instead.
+ *
+ * Kept on the schema so console can migrate at its own pace; the
+ * field is normalized to `headers` at every input boundary and is
+ * never persisted in session.json. Remove this shim once console
+ * `packages/agents/{blackbox,whitebox}-pentest/*` no longer
+ * references `offensiveHeaders` / `OffensiveHeadersConfig` — see
+ * follow-up issue in the apex tracker.
+ */
+const OffensiveHeadersConfigObject = z.object({
+  mode: z.enum(["none", "default", "custom"]).optional(),
+  headers: SessionHeadersRecord.optional(),
+});
+
+/** @deprecated Pass flat `SessionConfig.headers: Record<string, string>` directly. */
+export type OffensiveHeadersConfig = z.infer<
+  typeof OffensiveHeadersConfigObject
+>;
 
 const OperatorSettingsObject = z.object({
   initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
@@ -203,6 +227,16 @@ const SessionConfigObject = z.object({
    * — never directly by tools (INV-single-source).
    */
   headers: SessionHeadersRecord.optional(),
+  /**
+   * @deprecated Pass `headers` instead. Translated by
+   * `normalizeDeprecatedHeaders` at every input boundary (sessions.create,
+   * agent createSession) and stripped before persistence — stored
+   * session.json never contains both fields.
+   *
+   * Kept only so downstream `pensarai/console` agents continue to
+   * typecheck during their migration window.
+   */
+  offensiveHeaders: OffensiveHeadersConfigObject.optional(),
   sessionType: z.enum(["web-app"]).optional(),
   mode: z.enum(["auto", "driver", "operator"]).optional(),
   outcomeGuidance: z.string().optional(),
@@ -390,48 +424,58 @@ async function getExecution(
 }
 
 /**
+ * Translate a deprecated `offensiveHeaders: { mode, headers? }` into
+ * flat `headers: Record<string, string>` on a bare config and strip
+ * the deprecated field. Pure / non-mutating.
+ *
+ * Rules (single source of truth, shared with `migrateLegacySessionData`):
+ *  - flat `headers` always wins if both are present
+ *  - mode "default" → seeds DEFAULT_HEADER_RECORD then layers explicit
+ *  - mode "none" / "custom" → uses explicit headers only (or `{}`)
+ *
+ * Called at every input boundary where a SessionConfig enters apex
+ * from outside: `sessions.create`, and (via cast) when loading legacy
+ * session.json files. Tools never see `offensiveHeaders` because it
+ * is stripped before persistence.
+ */
+function normalizeDeprecatedHeaders<T extends { offensiveHeaders?: unknown }>(
+  config: T | undefined,
+): Omit<T, "offensiveHeaders"> | undefined {
+  if (!config) return config;
+  if (config.offensiveHeaders === undefined) {
+    const { offensiveHeaders: _drop, ...rest } = config;
+    return rest;
+  }
+  const { offensiveHeaders, ...rest } = config;
+  const restWithHeaders = rest as Omit<T, "offensiveHeaders"> & {
+    headers?: Record<string, string>;
+  };
+  if (restWithHeaders.headers !== undefined) {
+    return restWithHeaders;
+  }
+  const oh = offensiveHeaders as {
+    mode?: string;
+    headers?: Record<string, string>;
+  };
+  let headers: Record<string, string> = {};
+  if (oh.mode === "default") headers = { ...DEFAULT_HEADER_RECORD };
+  if (oh.headers) headers = { ...headers, ...oh.headers };
+  return { ...restWithHeaders, headers };
+}
+
+/**
  * Migrate a legacy `session.json` (with `offensiveHeaders: { mode, headers? }`)
- * into the new flat shape (`headers: Record<string, string>`).
- *
- * Rules:
- *  - mode "none"   → headers: {}
- *  - mode "default" → headers: { "User-Agent": "pensar-apex", ...explicit }
- *  - mode "custom"  → headers: { ...explicit }
- *
- * If both `offensiveHeaders` and `headers` are present (transitional
- * file), `headers` wins. If neither is present, the field is left
- * absent — callers default appropriately.
- *
- * Non-destructive: returns a new object; the on-disk file is only
- * rewritten the next time the session is saved.
+ * into the new flat shape. Non-destructive: returns a new object; the
+ * on-disk file is only rewritten the next time the session is saved.
  */
 export function migrateLegacySessionData(input: unknown): unknown {
   if (!input || typeof input !== "object") return input;
   const root = input as Record<string, unknown>;
   const config = root.config;
   if (!config || typeof config !== "object") return input;
-
   const cfg = config as Record<string, unknown>;
-  if ("headers" in cfg) return input;
   if (!("offensiveHeaders" in cfg)) return input;
-
-  const oh = cfg.offensiveHeaders as
-    | { mode?: string; headers?: Record<string, string> }
-    | undefined;
-  let headers: Record<string, string> = {};
-  if (oh) {
-    if (oh.mode === "default") headers = { ...DEFAULT_HEADER_RECORD };
-    if (oh.headers) headers = { ...headers, ...oh.headers };
-  }
-
-  const { offensiveHeaders: _drop, ...restConfig } = cfg;
-  return {
-    ...root,
-    config: {
-      ...restConfig,
-      headers,
-    },
-  };
+  return { ...root, config: normalizeDeprecatedHeaders(cfg) };
 }
 
 // ============================================================================
@@ -483,6 +527,14 @@ export interface CreateInputProps {
 export async function create(input: CreateInputProps) {
   const name = input.name ?? generateRandomName();
 
+  // Normalize any deprecated `offensiveHeaders` from external callers
+  // (downstream `pensarai/console` agents) into the flat `headers` shape
+  // before anything else touches the config. From here on, internal code
+  // only ever sees `headers` — see normalizeDeprecatedHeaders.
+  const normalizedConfig = normalizeDeprecatedHeaders(input.config) as
+    | SessionConfig
+    | undefined;
+
   const id =
     `${input.prefix ? input.prefix : ""}` +
     Identifier.descending("session", input.id);
@@ -494,23 +546,23 @@ export async function create(input: CreateInputProps) {
   const pocsPath = path.join(rootPath, "pocs");
 
   const rateLimiter = new RateLimiter({
-    requestsPerSecond: input.config?.requestsPerSecond,
+    requestsPerSecond: normalizedConfig?.requestsPerSecond,
   });
 
   // Auto-create CredentialManager when authCredentials are provided.
   // Secrets live only in memory — they are never serialized to disk.
   let credentialManager: CredentialManager | undefined;
-  if (input.config?.authCredentials) {
+  if (normalizedConfig?.authCredentials) {
     credentialManager = new CredentialManager();
-    const creds = Array.isArray(input.config.authCredentials)
-      ? input.config.authCredentials
-      : [input.config.authCredentials];
+    const creds = Array.isArray(normalizedConfig.authCredentials)
+      ? normalizedConfig.authCredentials
+      : [normalizedConfig.authCredentials];
     for (const cred of creds) {
       credentialManager.addFromAuthCredentials(cred);
     }
   }
 
-  const smtpConfig = resolveSmtpConfig(input.config?.smtpConfig);
+  const smtpConfig = resolveSmtpConfig(normalizedConfig?.smtpConfig);
 
   // Resolve effective headers for the new session. Caller-supplied
   // `config.headers` wins verbatim (CLI flag / wizard already merged
@@ -518,8 +570,8 @@ export async function create(input: CreateInputProps) {
   // defaultHeaders so the session is "locked" at create time
   // (INV-snapshot-stability).
   let snapshotHeaders: Record<string, string>;
-  if (input.config?.headers !== undefined) {
-    snapshotHeaders = { ...input.config.headers };
+  if (normalizedConfig?.headers !== undefined) {
+    snapshotHeaders = { ...normalizedConfig.headers };
   } else {
     const { config: appConfig } = await import("../config");
     const cfg = await appConfig.get();
@@ -538,12 +590,12 @@ export async function create(input: CreateInputProps) {
       updated: Date.now(),
     },
     config: {
-      ...input.config,
-      mode: input.config?.mode || "auto",
+      ...normalizedConfig,
+      mode: normalizedConfig?.mode || "auto",
       headers: snapshotHeaders,
       outcomeGuidance:
-        input.config?.outcomeGuidance ||
-        (input.config?.exfilMode
+        normalizedConfig?.outcomeGuidance ||
+        (normalizedConfig?.exfilMode
           ? EXFIL_OUTCOME_GUIDANCE
           : DEFAULT_OUTCOME_GUIDANCE),
       smtpConfig,
