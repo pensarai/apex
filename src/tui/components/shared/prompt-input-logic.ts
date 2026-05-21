@@ -319,8 +319,11 @@ export function filterInlineOptionSuggestions(
   // Find all --flags already used in the input
   const usedFlags = new Set<string>();
   const flagPattern = /--[a-zA-Z][-a-zA-Z0-9]*/g;
-  let match: RegExpExecArray | null;
-  while ((match = flagPattern.exec(fullText)) !== null) {
+  for (
+    let match = flagPattern.exec(fullText);
+    match !== null;
+    match = flagPattern.exec(fullText)
+  ) {
     usedFlags.add(match[0].toLowerCase());
   }
 

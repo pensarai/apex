@@ -396,8 +396,11 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       ta.removeHighlightsByRef(SLASH_HL_REF);
       if (knownSlugs.size === 0) return;
       SLASH_PATTERN.lastIndex = 0;
-      let match: RegExpExecArray | null;
-      while ((match = SLASH_PATTERN.exec(text)) !== null) {
+      for (
+        let match = SLASH_PATTERN.exec(text);
+        match !== null;
+        match = SLASH_PATTERN.exec(text)
+      ) {
         if (knownSlugs.has(match[0].toLowerCase())) {
           ta.addHighlightByCharRange({
             start: match.index,
