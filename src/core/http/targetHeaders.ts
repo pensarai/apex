@@ -380,22 +380,52 @@ const COMMAND_PREFIX_STRIP =
   /^\s*(?:sudo\s+(?:-[^\s]*\s+)*|timeout\s+\S+\s+|env\s+(?:\S+=\S+\s+)+|nohup\s+)+/;
 
 /**
- * Identify the first HTTP tool name on a command line, stripping common
- * wrappers (`sudo`, `timeout N`, `env K=V`, `nohup`). Returns `null` if
+ * Extract the leading tool name from a command line, stripping common
+ * wrappers (`sudo`, `timeout N`, `env K=V`, `nohup`). Returns `null`
+ * for pipelined / chained commands or empty input.
+ */
+function extractLeadingTool(command: string): string | null {
+  if (COMMAND_SPLIT.test(` ${command}`)) return null;
+  const stripped = command.replace(COMMAND_PREFIX_STRIP, "");
+  const firstWord = stripped.trim().split(/\s+/)[0];
+  return firstWord || null;
+}
+
+/**
+ * Networking tools that operate below the HTTP layer and never send
+ * HTTP headers. These must not be blocked by the fail-closed header
+ * injection logic — headers are simply irrelevant for them.
+ */
+const NON_HTTP_TOOLS: ReadonlySet<string> = new Set([
+  "nmap",
+  "masscan",
+  "dig",
+  "host",
+  "whois",
+  "ping",
+  "traceroute",
+  "ssh",
+  "telnet",
+  "nc",
+  "ncat",
+  "netcat",
+  "openssl",
+  "sslscan",
+  "testssl",
+  "hydra",
+  "subfinder",
+  "amass",
+]);
+
+/**
+ * Identify the first HTTP tool name on a command line. Returns `null` if
  * the leading word is not in `shellInjectorRegistry` or if the command
  * is pipelined / chained (the safe answer in that case is "don't
  * inject" so the caller can fail closed).
  */
 function detectHttpToolOnCommand(command: string): string | null {
-  // Reject pipelined / chained commands — we cannot safely inject into
-  // a pipeline. Caller fails closed.
-  if (COMMAND_SPLIT.test(` ${command}`)) return null;
-
-  const stripped = command.replace(COMMAND_PREFIX_STRIP, "");
-  const firstWord = stripped.trim().split(/\s+/)[0];
-  if (!firstWord) return null;
-
-  if (shellInjectorRegistry.has(firstWord)) return firstWord;
+  const tool = extractLeadingTool(command);
+  if (tool && shellInjectorRegistry.has(tool)) return tool;
   return null;
 }
 
@@ -447,6 +477,10 @@ export function applyHeadersToShellCommand(
 
   const tool = detectHttpToolOnCommand(command);
   if (!tool) {
+    const leading = extractLeadingTool(command);
+    if (leading && NON_HTTP_TOOLS.has(leading)) {
+      return { command, status: "no-headers", tool: null };
+    }
     return { command, status: "unknown-tool", tool: null };
   }
 

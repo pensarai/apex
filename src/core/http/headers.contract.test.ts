@@ -298,6 +298,31 @@ describe("applyHeadersToShellCommand", () => {
     expect(r.status).toBe("unknown-tool");
   });
 
+  it("returns no-headers for known non-HTTP tools like nmap", () => {
+    const session = makeSession({
+      config: { headers: { "User-Agent": "pensar-apex" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "nmap -sV example.com",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("no-headers");
+    expect(r.command).toBe("nmap -sV example.com");
+  });
+
+  it("returns no-headers for non-HTTP tools behind sudo/timeout wrappers", () => {
+    const session = makeSession({
+      config: { headers: { "User-Agent": "pensar-apex" } },
+    });
+    const r = applyHeadersToShellCommand(
+      "sudo timeout 60 nmap -p- example.com",
+      session,
+      ["example.com"],
+    );
+    expect(r.status).toBe("no-headers");
+  });
+
   it("returns no-headers when no in-scope host is present on the command", () => {
     const session = makeSession({
       config: { headers: { "X-API-Key": "abc" } },
