@@ -302,11 +302,9 @@ describe("applyHeadersToShellCommand", () => {
     const session = makeSession({
       config: { headers: { "User-Agent": "pensar-apex" } },
     });
-    const r = applyHeadersToShellCommand(
-      "nmap -sV example.com",
-      session,
-      ["example.com"],
-    );
+    const r = applyHeadersToShellCommand("nmap -sV example.com", session, [
+      "example.com",
+    ]);
     expect(r.status).toBe("no-headers");
     expect(r.command).toBe("nmap -sV example.com");
   });
