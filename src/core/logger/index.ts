@@ -10,11 +10,10 @@ import path from "path";
 import { type SessionInfo, sessions } from "../session";
 
 export enum LogLevel {
-  INFO = "INFO",
-  ERROR = "ERROR",
   DEBUG = "DEBUG",
+  INFO = "INFO",
   WARN = "WARN",
-  LOG = "LOG",
+  ERROR = "ERROR",
 }
 
 const ERROR_LOG_PATH = path.join(os.homedir(), ".pensar", "error.log");
@@ -111,55 +110,34 @@ export class Logger {
     try {
       appendFileSync(this.logFilePath, logEntry, "utf8");
     } catch (error) {
-      console.error(`Failed to write to log file: ${error}`);
+      writeErrorLog(error, "LOGGER");
     }
   }
 
-  /**
-   * Log a general message
-   */
   public log(message: string): void {
-    this.writeLog(LogLevel.LOG, message);
+    this.writeLog(LogLevel.INFO, message);
   }
 
-  /**
-   * Log an info message
-   */
   public info(message: string): void {
     this.writeLog(LogLevel.INFO, message);
   }
 
-  /**
-   * Log an error message
-   */
   public error(message: string): void {
     this.writeLog(LogLevel.ERROR, message);
   }
 
-  /**
-   * Log a debug message
-   */
   public debug(message: string): void {
     this.writeLog(LogLevel.DEBUG, message);
   }
 
-  /**
-   * Log a warning message
-   */
   public warn(message: string): void {
     this.writeLog(LogLevel.WARN, message);
   }
 
-  /**
-   * Get the current log file path
-   */
   public getLogFilePath(): string {
     return this.logFilePath;
   }
 
-  /**
-   * Get the session associated with this logger
-   */
   public getSession(): SessionInfo {
     return this.session;
   }
