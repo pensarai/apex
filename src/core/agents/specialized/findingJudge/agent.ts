@@ -55,6 +55,7 @@ export class FindingJudgeAgent extends OffensiveSecurityAgent<FindingJudgeAgentO
       eventBus: opts.eventBus,
       sandbox: opts.sandbox,
       enableThinking: opts.enableThinking,
+      openAIReasoningEffort: opts.openAIReasoningEffort,
       subagentId: "finding-judge",
       activeTools: [...FINDING_JUDGE_ACTIVE_TOOLS],
       responseSchema: FindingJudgeOutputSchema,

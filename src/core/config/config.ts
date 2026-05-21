@@ -33,6 +33,7 @@ export interface Config {
   selectedModelId?: string | null;
   // Extended thinking / reasoning
   reasoningEnabled?: boolean;
+  openAIReasoningEffort?: "none" | "low" | "medium" | "high" | "xhigh" | null;
   // Whitebox attack surface: when false, skip the @pensar/surface deterministic
   // enumeration path and use the legacy pages+apiEndpoints discovery agents.
   // Defaults to true when unset.

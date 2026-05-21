@@ -80,6 +80,7 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       attackSurfaceRegistry,
       excludeTools,
       enableThinking,
+      openAIReasoningEffort,
       projectThreatModel,
     } = opts;
 
@@ -129,6 +130,7 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       subagentId,
       attackSurfaceRegistry,
       enableThinking,
+      openAIReasoningEffort,
       projectThreatModel,
       stopWhen: stopWhen ?? stepCountIs(10000),
       activeTools,

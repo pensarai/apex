@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { AVAILABLE_MODELS, getMaxOutputTokens } from "./index";
+import { AVAILABLE_MODELS, getMaxOutputTokens, getModelInfo } from "./index";
 
 describe("getMaxOutputTokens", () => {
   it("returns a positive value for every model in AVAILABLE_MODELS", () => {
@@ -93,6 +93,8 @@ describe("getMaxOutputTokens", () => {
     // input. Pin the per-family values so future families (gpt-6, etc.)
     // can't silently inherit the small fallback again.
     expect(getMaxOutputTokens("gpt-5")).toBe(128_000);
+    expect(getMaxOutputTokens("gpt-5.5")).toBe(128_000);
+    expect(getMaxOutputTokens("gpt-5.5-2026-04-23")).toBe(128_000);
     expect(getMaxOutputTokens("gpt-5-mini")).toBe(128_000);
     expect(getMaxOutputTokens("gpt-4.1")).toBe(32_000);
     expect(getMaxOutputTokens("gpt-4o")).toBe(16_000);
@@ -104,6 +106,11 @@ describe("getMaxOutputTokens", () => {
     // `o3-mini` has only 128K context — `getMaxOutputTokens` clamps the
     // 100K pattern down to 50% of the window so input keeps headroom.
     expect(getMaxOutputTokens("o3-mini")).toBe(64_000);
+  });
+
+  it("pins GPT-5.5 context metadata", () => {
+    expect(getModelInfo("gpt-5.5").contextLength).toBe(1_050_000);
+    expect(getModelInfo("gpt-5.5-2026-04-23").contextLength).toBe(1_050_000);
   });
 
   it("recognizes Google Gemini family budgets", () => {

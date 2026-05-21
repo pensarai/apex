@@ -1,4 +1,5 @@
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
+import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
 import {
   generateText,
@@ -27,6 +28,15 @@ import {
 } from "./utils";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
+
+export type OpenAIReasoningEffort =
+  | "none"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
+
+export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 
 /** Callback for reporting token usage from AI operations */
 type UsageCallback = (
@@ -558,6 +568,32 @@ export function modelSupportsThinking(modelId: string): boolean {
   );
 }
 
+export function modelSupportsOpenAIReasoning(modelId: string): boolean {
+  const { provider } = getModelInfo(modelId);
+  if (provider !== "openai") return false;
+  return /^gpt-5(?:\.|\b|-)/.test(modelId) || /^o[134](?:\b|-)/.test(modelId);
+}
+
+export function getOpenAIReasoningEfforts(
+  modelId: string,
+): OpenAIReasoningEffort[] {
+  if (!modelSupportsOpenAIReasoning(modelId)) return [];
+  if (/^gpt-5\.5(?:\b|-)/.test(modelId)) {
+    return ["none", "low", "medium", "high", "xhigh"];
+  }
+  return ["low", "medium", "high"];
+}
+
+export function normalizeOpenAIReasoningEffort(
+  modelId: string,
+  effort?: OpenAIReasoningEffort | null,
+): OpenAIReasoningEffort | undefined {
+  const efforts = getOpenAIReasoningEfforts(modelId);
+  if (efforts.length === 0) return undefined;
+  if (effort && efforts.includes(effort)) return effort;
+  return DEFAULT_OPENAI_REASONING_EFFORT;
+}
+
 /** Cache token metrics extracted from Anthropic providerMetadata */
 export interface CacheMetrics {
   cacheReadInputTokens: number;
@@ -591,6 +627,8 @@ export interface StreamResponseOpts {
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+) */
   enableThinking?: boolean;
+  /** OpenAI reasoning effort for GPT/o-series reasoning models. */
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
   /** Session root path — used by context management layers to persist truncated tool results */
   sessionPath?: string;
   /**
@@ -628,6 +666,7 @@ export function streamResponse(
     onFinish,
     onCacheMetrics,
     enableThinking,
+    openAIReasoningEffort,
   } = opts;
 
   // Wrap onStepFinish to fire usage callback for every step.
@@ -717,15 +756,40 @@ export function streamResponse(
     enableThinking &&
     isAnthropicProvider(model) &&
     modelSupportsThinking(model);
-  const providerOptions = useThinking
-    ? {
-        anthropic: {
+  const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
+    model,
+    openAIReasoningEffort,
+  );
+  const providerOptions:
+    | {
+        anthropic?: {
           thinking: {
-            type: "adaptive" as const,
-          },
-        },
+            type: "adaptive";
+          };
+        };
+        openai?: OpenAIResponsesProviderOptions;
       }
-    : undefined;
+    | undefined =
+    useThinking || normalizedOpenAIEffort
+      ? {
+          ...(useThinking
+            ? {
+                anthropic: {
+                  thinking: {
+                    type: "adaptive" as const,
+                  },
+                },
+              }
+            : {}),
+          ...(normalizedOpenAIEffort
+            ? {
+                openai: {
+                  reasoningEffort: normalizedOpenAIEffort,
+                },
+              }
+            : {}),
+        }
+      : undefined;
 
   let rateLimitRetryCount = 0;
 
@@ -986,6 +1050,7 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   system?: string;
   maxTokens?: number;
   temperature?: number;
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
@@ -1003,12 +1068,17 @@ export async function generateObjectResponse<T extends z.ZodType>(
     system,
     maxTokens,
     temperature,
+    openAIReasoningEffort,
     authConfig,
     abortSignal,
     onTokenUsage,
   } = opts;
 
   const providerModel = getProviderModel(model, authConfig);
+  const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
+    model,
+    openAIReasoningEffort,
+  );
 
   let lastError: unknown;
 
@@ -1023,6 +1093,13 @@ export async function generateObjectResponse<T extends z.ZodType>(
         system,
         maxOutputTokens: maxTokens,
         temperature,
+        providerOptions: normalizedOpenAIEffort
+          ? {
+              openai: {
+                reasoningEffort: normalizedOpenAIEffort,
+              },
+            }
+          : undefined,
         maxRetries: 0,
         abortSignal,
       });

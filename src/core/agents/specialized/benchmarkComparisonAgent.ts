@@ -65,6 +65,7 @@ export class BenchmarkComparisonAgent extends OffensiveSecurityAgent<BenchmarkCo
       onStepFinish,
       abortSignal,
       enableThinking,
+      openAIReasoningEffort,
     } = opts;
 
     const expectedResults = loadExpectedResults(repoPath);
@@ -80,6 +81,7 @@ export class BenchmarkComparisonAgent extends OffensiveSecurityAgent<BenchmarkCo
       onStepFinish,
       abortSignal,
       enableThinking,
+      openAIReasoningEffort,
 
       activeTools: ["provide_comparison_results"],
 

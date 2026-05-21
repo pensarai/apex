@@ -34,6 +34,7 @@ import {
 import {
   buildAuthConfig,
   type CacheMetrics,
+  modelSupportsOpenAIReasoning,
   modelSupportsThinking,
 } from "../../../core/ai";
 import { runOffensiveSecurityAgent } from "../../../core/api";
@@ -152,6 +153,7 @@ export default function OperatorDashboard({
     resetTokenUsage,
     setSessionCwd,
     reasoningEnabled,
+    openAIReasoningEffort,
   } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
@@ -1154,6 +1156,9 @@ export default function OperatorDashboard({
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
         enableThinking: reasoningEnabled && modelSupportsThinking(model.id),
+        openAIReasoningEffort: modelSupportsOpenAIReasoning(model.id)
+          ? openAIReasoningEffort
+          : undefined,
         surfaceIntegrationEnabled: config.data?.surfaceIntegrationEnabled,
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {

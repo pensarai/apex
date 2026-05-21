@@ -1,5 +1,5 @@
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
-import type { AIModel, CacheMetrics } from "../../../ai";
+import type { AIModel, CacheMetrics, OpenAIReasoningEffort } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
@@ -43,6 +43,7 @@ interface SharedAgentOptions {
   attackSurfaceRegistry?: AttackSurfaceRegistry;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
   projectThreatModel?: string;
   /** Parent subagent id for hierarchy tracking on emitted lifecycle events. */
   parentSubagentId?: string;
@@ -202,6 +203,7 @@ async function runEndpointDocumentationAgent(
     subagentId,
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
+    openAIReasoningEffort,
     responseSchema: DiscoverySummarySchema,
     // Hard-exclude tools an endpoint documentation agent must never use:
     // - document_app: Phase 1 owns app discovery.

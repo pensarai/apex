@@ -27,7 +27,12 @@ import {
   type WhiteboxAttackSurfaceResult,
 } from "../agents/specialized/whiteboxAttackSurface";
 import { runAppEndpointDocumentation } from "../agents/specialized/whiteboxAttackSurface/endpointDocumentationAgent";
-import type { AIAuthConfig, AIModel, CacheMetrics } from "../ai";
+import type {
+  AIAuthConfig,
+  AIModel,
+  CacheMetrics,
+  OpenAIReasoningEffort,
+} from "../ai";
 import type { AgentEventBus } from "../eventBus";
 import { mapAppWithSurface } from "../integrations/surface";
 import type { SessionInfo } from "../session";
@@ -94,6 +99,7 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   attackSurfaceRegistry?: import("../findings/attackSurfaceRegistry").AttackSurfaceRegistry;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
   /** Known domains associated with the project — agents can map discovered apps to these. */
   domains?: string[];
   /** Project-level threat model content (e.g. from .pensar/threat_model.md), if found */
@@ -147,6 +153,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     attackSurfaceRegistry,
     onStepFinish,
     onCacheMetrics,
+    openAIReasoningEffort,
     domains,
     projectThreatModel,
     environments,
@@ -176,6 +183,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     subagentId: "whitebox-apps-discovery",
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
+    openAIReasoningEffort,
     responseSchema: AppsDiscoveryResultSchema,
     projectThreatModel,
     // Reserved for Phase 2's per-app task agents. Inline documentation
@@ -331,6 +339,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       subagentId,
       onStepFinish: (event) => onStepFinish?.(event),
       onCacheMetrics,
+      openAIReasoningEffort,
       responseSchema: DiscoverySummarySchema,
       excludeTools: ["document_app"],
       projectThreatModel,
@@ -425,6 +434,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
               attackSurfaceRegistry,
               onStepFinish,
               onCacheMetrics,
+              openAIReasoningEffort,
               projectThreatModel,
               parentSubagentId: appNodeId,
             });
@@ -1144,6 +1154,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     eventBus,
     subagentId: "whitebox-incremental",
     onStepFinish: (event) => onStepFinish?.(event),
+    openAIReasoningEffort: input.openAIReasoningEffort,
     responseSchema: IncrementalResultSchema,
     projectThreatModel,
   });

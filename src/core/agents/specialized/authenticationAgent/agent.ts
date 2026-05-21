@@ -137,6 +137,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       context,
       environmentVariables,
       enableThinking,
+      openAIReasoningEffort,
     } = opts;
 
     const cm = session.credentialManager;
@@ -154,6 +155,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       subagentId,
       environmentVariables,
       enableThinking,
+      openAIReasoningEffort,
       toolChoice: "auto",
       activeTools: [
         // Auth flow tools

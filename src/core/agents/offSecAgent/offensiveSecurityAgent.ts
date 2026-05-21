@@ -234,6 +234,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       traceWriter,
       tasksDir,
       enableThinking: input.enableThinking,
+      openAIReasoningEffort: input.openAIReasoningEffort,
       surfaceIntegrationEnabled: input.surfaceIntegrationEnabled,
       projectThreatModel: input.projectThreatModel,
       planSubagentId: input.planSubagentId,
@@ -434,6 +435,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         input.onCacheMetrics?.(metrics);
       },
       enableThinking: input.enableThinking,
+      openAIReasoningEffort: input.openAIReasoningEffort,
       silent: true,
     });
   }
