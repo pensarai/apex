@@ -248,7 +248,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             error: !result.success ? result.stderr || "Command failed" : "",
             stdout,
             stderr: result.stderr || "",
-            command: effectiveCommand,
+            command,
             outputFile,
           };
         } catch (error: unknown) {
@@ -258,7 +258,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             error: msg,
             stdout: "",
             stderr: msg,
-            command: effectiveCommand,
+            command,
           };
         }
       }
@@ -290,7 +290,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
                   : "",
             stdout,
             stderr: result.stderr,
-            command: effectiveCommand,
+            command,
             outputFile,
           };
         } catch (error: unknown) {
@@ -300,7 +300,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             error: msg,
             stdout: "",
             stderr: msg,
-            command: effectiveCommand,
+            command,
           };
         }
       }
