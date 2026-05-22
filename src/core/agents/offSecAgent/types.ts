@@ -182,6 +182,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** The subagent ID if this agent is a subagent */
   subagentId?: string;
 
+  /** Optional `ses_xxx` session id for a subagent run; auto-minted if omitted. */
+  subagentSessionId?: import("../../id/id").SessionId;
+
   /**
    * Override the auto-computed task directory. When set, takes precedence
    * over the directory derived from `subagentId`. Use this when a plan

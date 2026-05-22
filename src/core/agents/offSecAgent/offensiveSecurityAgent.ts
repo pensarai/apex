@@ -11,6 +11,7 @@ import { writeFile } from "fs/promises";
 import { join } from "path";
 import { streamResponse } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
+import { newSessionId, type SessionId } from "../../id/id";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
@@ -79,6 +80,9 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Identifier for this agent when it is running as a subagent. */
   private readonly subagentId?: string;
 
+  /** `ses_xxx` session id for a subagent run; auto-minted if not supplied. */
+  public readonly subagentSessionId?: SessionId;
+
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
 
@@ -146,6 +150,9 @@ export class OffensiveSecurityAgent<TResult = void> {
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
     this._session = input.session;
     this.subagentId = input.subagentId;
+    this.subagentSessionId = input.subagentId
+      ? (input.subagentSessionId ?? newSessionId())
+      : undefined;
     this.abortSignal = input.abortSignal;
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
@@ -375,6 +382,9 @@ export class OffensiveSecurityAgent<TResult = void> {
       cacheWriteTokens: number;
     } | null = null;
 
+    // Monotonic step counter; emitted on `step-finish`.
+    let agentStepSeq = 0;
+
     this.streamResult = streamResponse({
       prompt: input.prompt,
       system: systemPrompt,
@@ -400,6 +410,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         this.eventBus.emit("step-finish", {
           messages: event.response.messages,
           subagentId: this.subagentId,
+          subagentSessionId: this.subagentSessionId,
+          sessionId: this._session.id as SessionId,
+          stepSeq: agentStepSeq++,
         });
         await input.onStepFinish?.(event);
       },
@@ -481,10 +494,15 @@ export class OffensiveSecurityAgent<TResult = void> {
   async consume(): Promise<TResult> {
     const sid = this.subagentId;
     const bus = this.eventBus;
+    // `_session` is undefined in Object.create unit-test stubs; guard it.
+    const ids = {
+      sessionId: this._session?.id as SessionId | undefined,
+      subagentSessionId: this.subagentSessionId,
+    };
 
     try {
       for await (const chunk of this.streamResult.fullStream) {
-        bus.emitStreamPart(chunk, sid);
+        bus.emitStreamPart(chunk, sid, ids);
       }
     } finally {
       this.persistentShell?.dispose();

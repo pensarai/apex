@@ -28,11 +28,18 @@ import {
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
+/** Optional context attached to a usage callback fire. */
+export type UsageCtx = {
+  sessionId?: import("../id/id").SessionId;
+  stepSeq?: number;
+};
+
 /** Callback for reporting token usage from AI operations */
 type UsageCallback = (
   model: string,
   inputTokens: number,
   outputTokens: number,
+  ctx?: UsageCtx,
 ) => void;
 let _usageCallback: UsageCallback | null = null;
 
@@ -630,15 +637,17 @@ export function streamResponse(
     enableThinking,
   } = opts;
 
-  // Wrap onStepFinish to fire usage callback for every step.
-  // Must be async so that callers returning a Promise (e.g. persistence /
-  // issue queuing) are fully awaited before the AI SDK starts the next step.
+  let stepSeq = 0;
+  // Async so caller-returned promises (persistence, queueing) finish before next step.
   const onStepFinish: typeof userOnStepFinish = async (step) => {
     await userOnStepFinish?.(step);
+    const currentStep = stepSeq++;
     if (_usageCallback) {
       const inp = step.usage?.inputTokens ?? 0;
       const out = step.usage?.outputTokens ?? 0;
-      if (inp > 0 || out > 0) _usageCallback(model, inp, out);
+      if (inp > 0 || out > 0) {
+        _usageCallback(model, inp, out, { stepSeq: currentStep });
+      }
     }
   };
   const providerModel = getProviderModel(model, authConfig);

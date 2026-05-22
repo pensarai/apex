@@ -11,8 +11,15 @@ const prefixes = {
 
 export type IdentifierPrefix = keyof typeof prefixes;
 
+declare const __brand: unique symbol;
+type Brand<K extends IdentifierPrefix> = { readonly [__brand]: K };
+
+export type SessionId = string & Brand<"session">;
+export type MessageId = string & Brand<"message">;
+export type PartId = string & Brand<"part">;
+
 export function schema(prefix: IdentifierPrefix) {
-  return z.string().startsWith(prefixes[prefix]);
+  return z.string().startsWith(prefixes[prefix] + "_");
 }
 
 const LENGTH = 26;
@@ -20,12 +27,41 @@ const LENGTH = 26;
 let lastTimestamp = 0;
 let counter = 0;
 
-function ascending(prefix: IdentifierPrefix, given?: string) {
+export function ascending(prefix: IdentifierPrefix, given?: string) {
   return generateID(prefix, false, given);
 }
 
 export function descending(prefix: IdentifierPrefix, given?: string) {
   return generateID(prefix, true, given);
+}
+
+export function newSessionId(): SessionId {
+  return descending("session") as SessionId;
+}
+
+export function newMessageId(): MessageId {
+  return descending("message") as MessageId;
+}
+
+export function newPartId(): PartId {
+  return descending("part") as PartId;
+}
+
+export function isSessionId(v: unknown): v is SessionId {
+  return typeof v === "string" && hasPrefix(v, "session");
+}
+
+export function isMessageId(v: unknown): v is MessageId {
+  return typeof v === "string" && hasPrefix(v, "message");
+}
+
+export function isPartId(v: unknown): v is PartId {
+  return typeof v === "string" && hasPrefix(v, "part");
+}
+
+function hasPrefix(v: string, prefix: IdentifierPrefix): boolean {
+  const expected = prefixes[prefix] + "_";
+  return v.startsWith(expected) && v.length === expected.length + LENGTH;
 }
 
 function generateID(
