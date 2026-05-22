@@ -338,6 +338,20 @@ export function setViewportSize(viewportSize: string | undefined): void {
 }
 
 /**
+ * Construction-time options for {@link PlaywrightMcpSession}. Using an
+ * options object instead of positional args keeps call sites readable
+ * when only one field (e.g. `extraHttpHeaders`) is being overridden and
+ * makes the constructor safe to extend without silently breaking
+ * existing callers.
+ */
+export interface PlaywrightMcpSessionOptions {
+  readonly headless?: boolean;
+  readonly userAgent?: string | null;
+  readonly viewportSize?: string | null;
+  readonly extraHttpHeaders?: Record<string, string> | null;
+}
+
+/**
  * Isolated MCP browser session.
  *
  * Each instance owns its own Playwright MCP child-process and browser.
@@ -364,31 +378,29 @@ export class PlaywrightMcpSession {
   /**
    * Construct a new isolated browser session.
    *
-   * Each parameter has three-state semantics:
-   * - `undefined` (omitted) → fall back to the module-level default
+   * Each option has three-state semantics:
+   * - omitted / `undefined` → fall back to the module-level default
    *   (`defaultHeadless` / `defaultUserAgent` / `defaultViewportSize`,
    *   configurable via {@link setHeadlessMode}, {@link setUserAgent}, and
    *   {@link setViewportSize}). For viewport this means **1920x1080** by
-   *   default — sessions constructed with no args will launch Chromium at
+   *   default — sessions constructed with no opts will launch Chromium at
    *   a real desktop resolution, not the tiny built-in default.
    * - explicit `string` / `boolean` value → use it as-is.
-   * - explicit `null` (for `userAgent` / `viewportSize`) → opt OUT of the
-   *   default and let Chromium use its built-in value (useful when the
-   *   anti-bot UA / 1920x1080 are counter-productive for a target).
+   * - explicit `null` (for `userAgent` / `viewportSize` /
+   *   `extraHttpHeaders`) → opt OUT of the default and let Chromium use
+   *   its built-in value (useful when the anti-bot UA / 1920x1080 are
+   *   counter-productive for a target).
    *
-   * Viewport has an additional hard floor: if neither the arg nor the
+   * Viewport has an additional hard floor: if neither the option nor the
    * module default is set (e.g. someone called
    * `setViewportSize(undefined)`), the constructor still falls back to
    * {@link HARDCODED_VIEWPORT_FALLBACK} (`"1920,1080"`) so we never
    * silently launch Chromium at its tiny built-in viewport. The only way
    * to opt out is to pass `null` explicitly.
    */
-  constructor(
-    headless?: boolean,
-    userAgent?: string | null,
-    viewportSize?: string | null,
-    extraHttpHeaders?: Record<string, string> | null,
-  ) {
+  constructor(options: PlaywrightMcpSessionOptions = {}) {
+    const { headless, userAgent, viewportSize, extraHttpHeaders } = options;
+
     this.headless = headless ?? defaultHeadless;
     this.userAgent =
       userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
@@ -1017,13 +1029,13 @@ export function createBrowserTools(
   } else {
     // PlaywrightMcpSession's constructor folds in the module-level
     // defaults (1920x1080 viewport, desktop Chrome UA, headless=true)
-    // when these args are undefined — pass them through verbatim.
-    session = new PlaywrightMcpSession(
+    // when these options are undefined — pass them through verbatim.
+    session = new PlaywrightMcpSession({
       headless,
       userAgent,
       viewportSize,
       extraHttpHeaders,
-    );
+    });
 
     if (abortSignal) {
       const onAbort = () => session.disconnect().catch(() => {});

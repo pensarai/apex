@@ -183,12 +183,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       const sessionHeaders = input.session.config?.headers;
       this.browserSession =
         input.browserSession ??
-        new PlaywrightMcpSession(
-          undefined,
-          undefined,
-          undefined,
-          sessionHeaders,
-        );
+        new PlaywrightMcpSession({ extraHttpHeaders: sessionHeaders });
     }
 
     // -- Step trace (trace.jsonl) ---------------------------------------------

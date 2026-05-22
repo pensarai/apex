@@ -28,7 +28,7 @@ describe.skip("Browser Cookie Extraction", () => {
         return;
       }
 
-      session = new PlaywrightMcpSession(true);
+      session = new PlaywrightMcpSession({ headless: true });
       await session.initialize();
 
       // Navigate to login — wait for AuthKit redirect

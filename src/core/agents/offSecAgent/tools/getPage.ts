@@ -1,8 +1,38 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { targetFetch } from "../../../http/targetHeaders";
+import {
+  resolveEffectiveHeaders,
+  targetFetch,
+} from "../../../http/targetHeaders";
+import type { HeaderRecord } from "../../../http/types";
 import { resolverSessionFromCtx } from "./scopeGuard";
 import type { ToolContext } from "./types";
+
+// Tool-specific baseline headers applied only when the resolver did not
+// already produce them. For in-scope target URLs this respects
+// session/global/credential headers (INV-single-source). For
+// out-of-scope research URLs (CVE writeups, vendor docs, security
+// blogs — the dominant use case for this tool) it ensures we still
+// send a recognisable User-Agent rather than relying on the runtime's
+// default (e.g. `Bun/x.y`), which Cloudflare/Akamai-fronted sources
+// frequently challenge.
+const BASELINE_REQUEST_HEADERS: HeaderRecord = {
+  "User-Agent": "Mozilla/5.0 (compatible; PensarBot/1.0; +https://pensar.dev)",
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.5",
+};
+
+function mergeBaselineHeaders(
+  resolved: HeaderRecord,
+  baseline: HeaderRecord,
+): HeaderRecord {
+  const present = new Set(Object.keys(resolved).map((k) => k.toLowerCase()));
+  const out: HeaderRecord = { ...resolved };
+  for (const [name, value] of Object.entries(baseline)) {
+    if (!present.has(name.toLowerCase())) out[name] = value;
+  }
+  return out;
+}
 
 const MAX_CONTENT_LENGTH = 50_000;
 const REQUEST_TIMEOUT = 30_000;
@@ -95,18 +125,21 @@ BEST PRACTICES:
           ? AbortSignal.any([ctx.abortSignal, controller.signal])
           : controller.signal;
 
-        // Identification headers are deliberately omitted here — the
-        // resolver supplies the session/global User-Agent for in-scope
-        // target URLs (INV-single-source). For external/research URLs
-        // (CVE writeups, vendor docs) the resolver returns empty and
-        // the runtime's default UA is used.
-        const response = await targetFetch(resolverSessionFromCtx(ctx), url, {
+        // Resolve session/global/credential headers first, then layer in
+        // tool baselines only for keys the resolver didn't produce. The
+        // assembled set is then handed to targetFetch, which re-resolves
+        // idempotently (caller-layer values already equal the resolved
+        // ones for in-scope URLs).
+        const resolverSession = resolverSessionFromCtx(ctx);
+        const resolved = resolveEffectiveHeaders(resolverSession, url);
+        const headers = mergeBaselineHeaders(
+          resolved,
+          BASELINE_REQUEST_HEADERS,
+        );
+
+        const response = await targetFetch(resolverSession, url, {
           method: "GET",
-          headers: {
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-          },
+          headers,
           signal: combinedSignal,
           redirect: "follow",
         });
