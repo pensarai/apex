@@ -285,6 +285,18 @@ const AgentMessage = memo(function AgentMessage({
     content = JSON.stringify(message.content, null, 2);
   }
 
+  // For completed tool messages, extract the message field from the result if present
+  if (
+    message.role === "tool" &&
+    message.status === "completed" &&
+    message.result &&
+    typeof message.result === "object" &&
+    "message" in message.result &&
+    typeof (message.result as Record<string, unknown>).message === "string"
+  ) {
+    content = (message.result as Record<string, unknown>).message as string;
+  }
+
   // Render markdown for assistant messages (markdown pipeline obfuscates
   // internally). Plain-text branches flow into `<text>` children, where
   // the central TextNodeRenderable patch handles redaction.
