@@ -122,6 +122,18 @@ async function login(): Promise<void> {
   const appConfig = await config.get();
 
   if (isConnected(appConfig)) {
+    const jsonOutput = hasFlag("--json");
+    const workspaceFlag = getArg("--workspace");
+    const nonInteractive = !isTTY() || jsonOutput || workspaceFlag;
+
+    if (nonInteractive) {
+      if (appConfig.accessToken) {
+        const apiUrl = getPensarApiUrl();
+        await handleWorkspaces(apiUrl, appConfig.accessToken);
+        return;
+      }
+    }
+
     console.log("Already connected to Pensar Console.");
     if (appConfig.workspaceSlug) {
       console.log(`  Workspace: ${appConfig.workspaceSlug}`);
@@ -502,8 +514,7 @@ async function listWorkspaces(): Promise<void> {
       console.log("\nAvailable workspaces:\n");
       wsResult.workspaces.forEach((ws) => {
         const current =
-          ws.slug === appConfig.workspaceSlug ||
-          ws.id === appConfig.workspaceId
+          ws.slug === appConfig.workspaceSlug || ws.id === appConfig.workspaceId
             ? " (current)"
             : "";
         console.log(
