@@ -132,6 +132,22 @@ async function login(): Promise<void> {
         await handleWorkspaces(apiUrl, appConfig.accessToken);
         return;
       }
+      const jsonOutput = hasFlag("--json");
+      if (jsonOutput) {
+        console.log(
+          JSON.stringify({
+            success: false,
+            error: "workos_auth_required",
+            message:
+              "WorkOS authentication required for non-interactive login. Please run 'pensar login' interactively to re-authenticate.",
+          }),
+        );
+      } else {
+        console.error(
+          "Error: WorkOS authentication required for non-interactive login.\nPlease run 'pensar login' interactively to re-authenticate.",
+        );
+      }
+      process.exit(1);
     }
 
     console.log("Already connected to Pensar Console.");
