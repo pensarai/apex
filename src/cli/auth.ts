@@ -549,7 +549,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    if (!subcommand || subcommand === "login") {
+    if (!subcommand || subcommand === "login" || subcommand?.startsWith("-")) {
       await login();
     } else if (subcommand === "logout") {
       await logout();
