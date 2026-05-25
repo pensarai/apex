@@ -3,6 +3,7 @@ import type { CredentialManager } from "../../../credentials";
 import type { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../../findings/registry";
+import type { RateLimiter } from "../../../services/rateLimiter";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
 import type { StepTraceWriter } from "../trace";
@@ -120,6 +121,14 @@ export type ToolContext = {
 
   /** Owner subagent id — emitted as `parentSubagentId` on lifecycle events. */
   subagentId?: string;
+
+  /**
+   * Rate limiter for outbound offensive requests.
+   * When present, tools that send traffic to targets (e.g. http_request)
+   * call `acquireSlot()` before each request to enforce the configured
+   * requests-per-second cap.
+   */
+  rateLimiter?: RateLimiter;
 
   /**
    * Playwright MCP browser session for this agent's browser tools.

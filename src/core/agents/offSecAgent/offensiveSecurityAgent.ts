@@ -240,6 +240,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       planSubagentId: input.planSubagentId,
       subagentId: input.subagentId,
       browserSession: this.browserSession,
+      rateLimiter: input.session._rateLimiter,
     });
 
     let tools: ToolSet = input.extraTools

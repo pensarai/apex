@@ -148,6 +148,10 @@ COMMON TESTING PATTERNS:
         throw e;
       }
 
+      if (ctx.rateLimiter) {
+        await ctx.rateLimiter.acquireSlot();
+      }
+
       const headers = parseHeaders(rawHeaders);
 
       // Sandbox mode: build a curl command and run it inside the sandbox
