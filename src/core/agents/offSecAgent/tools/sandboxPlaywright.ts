@@ -30,7 +30,10 @@ import type {
   BrowserNavigateResult,
   BrowserScreenshotResult,
 } from "./playwrightMcp";
-import { resolveEffectiveHeaders } from "../../../http/targetHeaders";
+import {
+  resolveEffectiveHeaders,
+  stripBrowserManagedHeaders,
+} from "../../../http/targetHeaders";
 import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
 import { resolverSessionFromCtx } from "./scopeGuard";
 import type { ToolContext } from "./types";
@@ -455,7 +458,12 @@ export function createSandboxBrowserTools(ctx: ToolContext) {
     const resolved = targetUrl
       ? resolveEffectiveHeaders(resolverSessionFromCtx(ctx), targetUrl)
       : ctx.session.config?.headers;
-    return runPlaywrightScript(sandbox, body, timeout, resolved);
+    return runPlaywrightScript(
+      sandbox,
+      body,
+      timeout,
+      stripBrowserManagedHeaders(resolved),
+    );
   }
 
   // ------- browser_navigate -------------------------------------------------

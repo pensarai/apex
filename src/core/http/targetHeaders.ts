@@ -171,6 +171,38 @@ export function resolveEffectiveHeaders(
 }
 
 // ---------------------------------------------------------------------------
+// Browser-safe header filtering
+// ---------------------------------------------------------------------------
+
+/**
+ * Headers managed by the browser engine that must NOT be passed via
+ * Playwright's `extraHTTPHeaders` (which unconditionally overrides the
+ * browser's own values). Notably, `User-Agent` is set via Chromium's
+ * `--user-agent` flag with a realistic desktop string — leaking the
+ * session's `User-Agent: pensar-apex` default here would defeat WAF/CDN
+ * bypass and bot detection avoidance.
+ */
+const BROWSER_MANAGED_HEADERS: ReadonlySet<string> = new Set(["user-agent"]);
+
+/**
+ * Strip headers that the browser manages internally before passing to
+ * Playwright's `extraHTTPHeaders`. Use this at every boundary where
+ * resolved session headers flow into a browser context.
+ */
+export function stripBrowserManagedHeaders(
+  headers: HeaderRecord | undefined,
+): HeaderRecord | undefined {
+  if (!headers) return headers;
+  let filtered: HeaderRecord | undefined;
+  for (const [key, value] of Object.entries(headers)) {
+    if (BROWSER_MANAGED_HEADERS.has(key.toLowerCase())) continue;
+    filtered ??= {};
+    filtered[key] = value;
+  }
+  return filtered;
+}
+
+// ---------------------------------------------------------------------------
 // Fetch + RequestInit
 // ---------------------------------------------------------------------------
 

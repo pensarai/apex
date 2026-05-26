@@ -13,7 +13,10 @@ import { streamResponse } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
-import { resolveEffectiveHeaders } from "../../http/targetHeaders";
+import {
+  resolveEffectiveHeaders,
+  stripBrowserManagedHeaders,
+} from "../../http/targetHeaders";
 import { create as createSession, type SessionInfo } from "../../session";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
@@ -186,7 +189,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         : input.session.config?.headers;
       this.browserSession =
         input.browserSession ??
-        new PlaywrightMcpSession({ extraHttpHeaders: sessionHeaders });
+        new PlaywrightMcpSession({
+          extraHttpHeaders: stripBrowserManagedHeaders(sessionHeaders),
+        });
     }
 
     // -- Step trace (trace.jsonl) ---------------------------------------------
