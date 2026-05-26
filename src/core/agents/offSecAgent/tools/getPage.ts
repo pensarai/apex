@@ -1,9 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import {
-  resolveEffectiveHeaders,
-  targetFetch,
-} from "../../../http/targetHeaders";
+import { resolveEffectiveHeaders } from "../../../http/targetHeaders";
 import type { HeaderRecord } from "../../../http/types";
 import { resolverSessionFromCtx } from "./scopeGuard";
 import type { ToolContext } from "./types";
@@ -125,15 +122,15 @@ BEST PRACTICES:
           ? AbortSignal.any([ctx.abortSignal, controller.signal])
           : controller.signal;
 
-        // Two-phase merge: resolve session/credential headers first,
-        // then fill in tool baselines only for keys the resolver didn't
-        // produce. This is intentionally two calls — baselines must
-        // LOSE to session headers, but the request layer in
-        // resolveEffectiveHeaders WINS. Merging outside gives the
-        // correct precedence: session > baseline > nothing.
-        // The second resolve inside targetFetch is a no-op (idempotent)
-        // since the merged set already equals what the resolver would
-        // produce with these as the request layer.
+        // Resolve session/credential headers, then fill in tool baselines
+        // only for keys the resolver didn't produce. Baselines (User-Agent,
+        // Accept, Accept-Language) must LOSE to session/credential headers
+        // to avoid overriding operator-configured values.
+        //
+        // We call fetch directly rather than targetFetch because resolution
+        // is already complete — routing through targetFetch would re-resolve,
+        // promoting baselines into the request layer where they'd override
+        // credential-layer headers of the same name.
         const resolverSession = resolverSessionFromCtx(ctx);
         const resolved = resolveEffectiveHeaders(resolverSession, url);
         const headers = mergeBaselineHeaders(
@@ -141,7 +138,8 @@ BEST PRACTICES:
           BASELINE_REQUEST_HEADERS,
         );
 
-        const response = await targetFetch(resolverSession, url, {
+        // biome-ignore lint/style/noRestrictedGlobals: headers already fully resolved above; targetFetch would re-resolve and misorder baseline vs credential precedence
+        const response = await fetch(url, {
           method: "GET",
           headers,
           signal: combinedSignal,
