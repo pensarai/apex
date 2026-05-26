@@ -13,6 +13,7 @@ import { streamResponse } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
+import { resolveEffectiveHeaders } from "../../http/targetHeaders";
 import { create as createSession, type SessionInfo } from "../../session";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
@@ -176,11 +177,13 @@ export class OffensiveSecurityAgent<TResult = void> {
     // share browser state via the sandbox's per-sandbox Playwright user-data
     // dir, so they don't need a session object on the host.
     if (!input.sandbox) {
-      // Pass the session's resolved headers into the browser session so
-      // every Chromium request carries them (INV-browser-snapshot).
-      // Mutations to session.config.headers after this point do NOT
-      // propagate to the live browser — the user must restart it.
-      const sessionHeaders = input.session.config?.headers;
+      // Resolve session + credential layer headers into the browser
+      // session so every Chromium request carries them
+      // (INV-browser-snapshot, INV-single-source). Mutations after
+      // this point do NOT propagate — the user must restart the browser.
+      const sessionHeaders = input.target
+        ? resolveEffectiveHeaders(input.session, input.target)
+        : input.session.config?.headers;
       this.browserSession =
         input.browserSession ??
         new PlaywrightMcpSession({ extraHttpHeaders: sessionHeaders });

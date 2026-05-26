@@ -30,7 +30,9 @@ import type {
   BrowserNavigateResult,
   BrowserScreenshotResult,
 } from "./playwrightMcp";
+import { resolveEffectiveHeaders } from "../../../http/targetHeaders";
 import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
+import { resolverSessionFromCtx } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -446,17 +448,14 @@ export function createSandboxBrowserTools(ctx: ToolContext) {
     return setupPromise;
   }
 
-  // Resolve session headers fresh on every browser tool call so /headers
-  // mutations take effect on the next invocation (INV-browser-snapshot
-  // for the sandbox path — a fresh persistent context launches per
-  // script call, so we don't have the MCP-style snapshot lock-in).
+  // Resolve session + credential headers fresh on every browser tool
+  // call so /headers mutations take effect on the next invocation
+  // (INV-browser-snapshot, INV-single-source for the sandbox path).
   function runScript(body: string, timeout = 60): Promise<unknown> {
-    return runPlaywrightScript(
-      sandbox,
-      body,
-      timeout,
-      ctx.session.config?.headers,
-    );
+    const resolved = targetUrl
+      ? resolveEffectiveHeaders(resolverSessionFromCtx(ctx), targetUrl)
+      : ctx.session.config?.headers;
+    return runPlaywrightScript(sandbox, body, timeout, resolved);
   }
 
   // ------- browser_navigate -------------------------------------------------
