@@ -252,7 +252,9 @@ export function shellQuote(value: string): string {
     .replace(/\\/g, "\\\\")
     .replace(/"/g, '\\"')
     .replace(/\$/g, "\\$")
-    .replace(/`/g, "\\`");
+    .replace(/`/g, "\\`")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r");
 }
 
 /**
@@ -300,7 +302,7 @@ const injectCurl: ShellInjector = (command, headers) => {
   const existing = existingHeaderNames(command);
   const flags = buildHFlags(headers, existing, "-H");
   if (!flags) return command;
-  return command.replace(/(\bcurl\b)/, (m) => `${m} ${flags}`);
+  return command.replace(/(?<!\/)(\bcurl\b)/, (m) => `${m} ${flags}`);
 };
 
 const injectWget: ShellInjector = (command, headers) => {
@@ -312,7 +314,7 @@ const injectWget: ShellInjector = (command, headers) => {
   }
   if (parts.length === 0) return command;
   const joined = parts.join(" ");
-  return command.replace(/(\bwget\b)/, (m) => `${m} ${joined}`);
+  return command.replace(/(?<!\/)(\bwget\b)/, (m) => `${m} ${joined}`);
 };
 
 const injectGenericH: (tool: string) => ShellInjector =
@@ -320,7 +322,7 @@ const injectGenericH: (tool: string) => ShellInjector =
     const existing = existingHeaderNames(command);
     const flags = buildHFlags(headers, existing, "-H");
     if (!flags) return command;
-    const re = new RegExp(`(\\b${tool}\\b)`);
+    const re = new RegExp(`(?<!/)(\\b${tool}\\b)`);
     return command.replace(re, (m) => `${m} ${flags}`);
   };
 
@@ -333,7 +335,7 @@ const injectSqlmap: ShellInjector = (command, headers) => {
   }
   if (lines.length === 0) return command;
   const headerArg = `--headers="${shellQuote(lines.join("\\n"))}"`;
-  return command.replace(/(\bsqlmap\b)/, (m) => `${m} ${headerArg}`);
+  return command.replace(/(?<!\/)(\bsqlmap\b)/, (m) => `${m} ${headerArg}`);
 };
 
 const injectNikto: ShellInjector = (command, headers) => {
@@ -349,7 +351,7 @@ const injectNikto: ShellInjector = (command, headers) => {
   // in the shell command would split it across lines in persistent /
   // line-based shells. Mirrors the sqlmap injector above.
   const arg = `-headers "${shellQuote(lines.join("\\n"))}"`;
-  return command.replace(/(\bnikto\b)/, (m) => `${m} ${arg}`);
+  return command.replace(/(?<!\/)(\bnikto\b)/, (m) => `${m} ${arg}`);
 };
 
 /**
