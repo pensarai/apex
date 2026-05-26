@@ -231,14 +231,10 @@ async function runPlaywrightScript(
   timeout = 60,
   extraHttpHeaders?: Record<string, string>,
 ): Promise<unknown> {
-  const headersJsonRaw =
+  const headersJson =
     extraHttpHeaders && Object.keys(extraHttpHeaders).length > 0
       ? JSON.stringify(extraHttpHeaders)
       : "null";
-  const headersJson = headersJsonRaw
-    .replace(/\\/g, "\\\\")
-    .replace(/`/g, "\\`")
-    .replace(/\$\{/g, "\\${");
   const script = `
 const { chromium } = require('playwright');
 const fs = require('fs');
