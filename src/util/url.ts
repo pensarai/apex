@@ -22,7 +22,7 @@ export interface ParsedTarget {
  * @returns Parsed hostname and optional port, or null if invalid
  */
 export function parseTargetUrl(target: string): ParsedTarget | null {
-  if (!target || !target.trim()) {
+  if (!target?.trim()) {
     return null;
   }
 
@@ -92,7 +92,7 @@ export function getAutoPopulatedPorts(
   initialPorts: number[] = [],
 ): number[] {
   const parsed = parseTargetUrl(target);
-  if (!parsed || !parsed.port) {
+  if (!parsed?.port) {
     return initialPorts;
   }
 

@@ -1,5 +1,5 @@
-import { createCliRenderer } from "@opentui/core";
-import { createRoot } from "@opentui/react";
+import { createCliRenderer, FrameBufferRenderable } from "@opentui/core";
+import { createRoot, extend } from "@opentui/react";
 import { useEffect, useState } from "react";
 import { config } from "../core/config";
 import type { Config } from "../core/config/config";
@@ -64,6 +64,20 @@ import {
 } from "./theme";
 
 installObfuscationTextPatch();
+
+extend({ frameBuffer: FrameBufferRenderable });
+declare module "@opentui/react" {
+  interface OpenTUIComponents {
+    frameBuffer: typeof FrameBufferRenderable;
+  }
+}
+
+extend({ frameBuffer: FrameBufferRenderable });
+declare module "@opentui/react" {
+  interface OpenTUIComponents {
+    frameBuffer: typeof FrameBufferRenderable;
+  }
+}
 
 interface AppProps {
   appConfig: Config;

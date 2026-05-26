@@ -204,6 +204,7 @@ CRITICAL RULES — READ BEFORE CALLING:
           sandbox: ctx.sandbox,
           target: ctx.target,
           enableThinking: ctx.enableThinking,
+          openAIReasoningEffort: ctx.openAIReasoningEffort,
         });
 
         if (!judgeResult.valid) {

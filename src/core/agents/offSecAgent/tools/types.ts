@@ -1,4 +1,4 @@
-import type { AIAuthConfig, AIModel } from "../../../ai";
+import type { AIAuthConfig, AIModel, OpenAIReasoningEffort } from "../../../ai";
 import type { CredentialManager } from "../../../credentials";
 import type { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
@@ -92,6 +92,9 @@ export type ToolContext = {
 
   /** Enable extended thinking for sub-agents spawned by orchestration tools. */
   enableThinking?: boolean;
+
+  /** OpenAI reasoning effort for GPT/o-series sub-agents. */
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
 
   /**
    * Whitebox attack surface flag. Forwarded into `runPentestWorkflow` so the

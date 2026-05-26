@@ -13,7 +13,12 @@ import {
   ValidatedCweEntrySchema,
 } from "../../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
-import type { AIAuthConfig, AIModel, CacheMetrics } from "../../ai";
+import type {
+  AIAuthConfig,
+  AIModel,
+  CacheMetrics,
+  OpenAIReasoningEffort,
+} from "../../ai";
 import type { CredentialManager } from "../../credentials";
 import type { AgentEventBus } from "../../eventBus";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
@@ -262,6 +267,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
 
+  /** OpenAI reasoning effort for GPT/o-series reasoning models. */
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
+
   /**
    * Whitebox attack surface flag forwarded into the {@link ToolContext} for
    * orchestrator-driven pentests. Defaults to `true` when undefined.
@@ -360,6 +368,9 @@ export interface SpecializedAgentInput {
 
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
+
+  /** OpenAI reasoning effort for GPT/o-series reasoning models. */
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
 
   /**
    * Whitebox attack surface flag forwarded into the {@link ToolContext} for

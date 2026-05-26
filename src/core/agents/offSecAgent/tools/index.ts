@@ -68,11 +68,13 @@ export {
   transformScriptToFunction,
 } from "./playwrightMcp";
 export { probeAuthEndpoints } from "./probeAuthEndpoints";
+export { profileCodebase } from "./profileCodebase";
 
 // Reporting / benchmark tools
 // export { generateReport } from "./generateReport";
 export { provideComparisonResults } from "./provideComparisonResults";
 // Filesystem / search tools
+export { queryWhiteboxCatalog } from "./queryWhiteboxCatalog";
 export { readFile } from "./readFile";
 // Skill tools
 export { readSkill } from "./readSkill";
@@ -81,7 +83,9 @@ export { readSkill } from "./readSkill";
 export { createResponseTool, RESPONSE_TOOL_NAME } from "./response";
 // Orchestration tools
 export { runAttackSurface } from "./runAttackSurface";
+export { runCodeQuery } from "./runCodeQuery";
 export { runPentestWorkflow } from "./runPentestWorkflow";
+export { runWhiteboxScan } from "./runWhiteboxScan";
 export type {
   SandboxExecuteOptions,
   SandboxExecutionResult,
@@ -117,6 +121,17 @@ export { updateTask } from "./updateTask";
 export { validateDiscovery } from "./validateDiscovery";
 // Web search tools (requires Pensar account)
 export { webSearch } from "./webSearch";
+export {
+  createWhiteboxCandidate,
+  listWhiteboxCandidates,
+  updateWhiteboxCandidate,
+} from "./whiteboxCandidates";
+export {
+  pollWhiteboxJob,
+  readWhiteboxArtifact,
+  startWhiteboxJob,
+  stopWhiteboxJob,
+} from "./whiteboxJobs";
 // Plan mode tools
 export { writePlan } from "./writePlan";
 
@@ -159,12 +174,16 @@ import { listFiles } from "./listFiles";
 import { listMemories } from "./listMemories";
 import { listTasksTool } from "./listTasks";
 import { probeAuthEndpoints } from "./probeAuthEndpoints";
+import { profileCodebase } from "./profileCodebase";
 // import { generateReport } from "./generateReport";
 import { provideComparisonResults } from "./provideComparisonResults";
+import { queryWhiteboxCatalog } from "./queryWhiteboxCatalog";
 import { readFile } from "./readFile";
 import { readSkill } from "./readSkill";
 import { runAttackSurface } from "./runAttackSurface";
+import { runCodeQuery } from "./runCodeQuery";
 import { runPentestWorkflow } from "./runPentestWorkflow";
+import { runWhiteboxScan } from "./runWhiteboxScan";
 import { spawnCodingAgent } from "./spawnCodingAgent";
 import { spawnPentestAgent } from "./spawnPentestAgent";
 import { spawnPentestSwarm } from "./spawnPentestSwarm";
@@ -175,6 +194,17 @@ import { updateFile } from "./updateFile";
 import { updateTask } from "./updateTask";
 import { validateDiscovery } from "./validateDiscovery";
 import { webSearch } from "./webSearch";
+import {
+  createWhiteboxCandidate,
+  listWhiteboxCandidates,
+  updateWhiteboxCandidate,
+} from "./whiteboxCandidates";
+import {
+  pollWhiteboxJob,
+  readWhiteboxArtifact,
+  startWhiteboxJob,
+  stopWhiteboxJob,
+} from "./whiteboxJobs";
 import { writePlan } from "./writePlan";
 
 export { ASK_USER_QUESTIONS_TOOL_NAME } from "./askUserQuestions";
@@ -200,6 +230,9 @@ export function createAllTools(ctx: ToolContext) {
     read_file: readFile(ctx),
     list_files: listFiles(ctx),
     grep: grep(ctx),
+    profile_codebase: profileCodebase(ctx),
+    query_whitebox_catalog: queryWhiteboxCatalog(ctx),
+    run_code_query: runCodeQuery(ctx),
     create_file: createFile(ctx),
     update_file: updateFile(ctx),
 
@@ -225,6 +258,14 @@ export function createAllTools(ctx: ToolContext) {
     spawn_pentest_agent: spawnPentestAgent(ctx),
     spawn_coding_agent: spawnCodingAgent(ctx),
     run_pentest_workflow: runPentestWorkflow(ctx),
+    run_whitebox_scan: runWhiteboxScan(ctx),
+    create_whitebox_candidate: createWhiteboxCandidate(ctx),
+    update_whitebox_candidate: updateWhiteboxCandidate(ctx),
+    list_whitebox_candidates: listWhiteboxCandidates(ctx),
+    start_whitebox_job: startWhiteboxJob(ctx),
+    poll_whitebox_job: pollWhiteboxJob(ctx),
+    stop_whitebox_job: stopWhiteboxJob(ctx),
+    read_whitebox_artifact: readWhiteboxArtifact(ctx),
 
     // Reporting / benchmark tools
     // generate_report: generateReport(ctx),
@@ -291,6 +332,9 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "read_file",
   "list_files",
   "grep",
+  "profile_codebase",
+  "query_whitebox_catalog",
+  "run_code_query",
   "create_file",
   "update_file",
   "document_app",
@@ -304,6 +348,14 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "spawn_pentest_agent",
   "spawn_coding_agent",
   "run_pentest_workflow",
+  "run_whitebox_scan",
+  "create_whitebox_candidate",
+  "update_whitebox_candidate",
+  "list_whitebox_candidates",
+  "start_whitebox_job",
+  "poll_whitebox_job",
+  "stop_whitebox_job",
+  "read_whitebox_artifact",
   // "generate_report",
   "provide_comparison_results",
   // Memory
@@ -337,7 +389,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
  * Tool names available in plan mode (read-only / non-mutating).
  *
  * Excludes: create_file, update_file, document_vulnerability,
- * document_app, document_endpoint. These are the mutation tools that should not be available
+ * document_app, document_endpoint, profile_codebase, run_code_query,
+ * run_whitebox_scan (they persist session artifacts). These should not be available
  * when the operator is in plan (read-only) mode.
  */
 export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
@@ -357,6 +410,7 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "read_file",
   "list_files",
   "grep",
+  "query_whitebox_catalog",
   // Recon (read-only probing and discovery)
   "authenticate_session",
   "delegate_to_auth_subagent",
@@ -366,6 +420,9 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "detect_auth_scheme",
   "probe_auth_endpoints",
   "provide_comparison_results",
+  "list_whitebox_candidates",
+  "poll_whitebox_job",
+  "read_whitebox_artifact",
   // Memory
   "add_memory",
   "list_memories",

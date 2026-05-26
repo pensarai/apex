@@ -1,8 +1,8 @@
 #!/usr/bin/env tsx
 
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { config } from "dotenv";
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
 import type { AIModel } from "../src/core/ai";
 import { runAttackSurfaceAgent } from "../src/core/api";
 import { AgentEventBus } from "../src/core/eventBus";
@@ -396,7 +396,7 @@ async function main() {
         process.exit(1);
       }
       const portNum = parseInt(port, 10);
-      if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+      if (Number.isNaN(portNum) || portNum < 1 || portNum > 65535) {
         console.error(
           "Error: --allowed-port must be a valid port number (1-65535)",
         );

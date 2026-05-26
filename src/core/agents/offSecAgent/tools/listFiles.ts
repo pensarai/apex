@@ -44,7 +44,7 @@ async function listRecursive(
   let total = 0;
 
   async function walk(current: string) {
-    let entries;
+    let entries: import("fs").Dirent[];
     try {
       entries = await readdir(current, { withFileTypes: true });
     } catch {

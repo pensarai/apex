@@ -12,8 +12,8 @@
  *   DAYTONA_API_KEY=<key> bun run scripts/test-sandbox-playwright.ts
  */
 
-import { mkdirSync } from "fs";
-import { join } from "path";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import {
   checkSandboxPlaywright,
   createSandboxBrowserTools,
@@ -30,7 +30,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const API_BASE = "https://app.daytona.io/api";
-const API_KEY = process.env.DAYTONA_API_KEY!;
+const API_KEY = process.env.DAYTONA_API_KEY ?? "";
 
 const headers = {
   Authorization: `Bearer ${API_KEY}`,
@@ -291,7 +291,9 @@ async function main() {
 
     // 5a: browser_navigate
     log("tool", "browser_navigate → https://example.com");
-    const nav = (await tools.browser_navigate.execute!(
+    const browserNavigate = tools.browser_navigate.execute;
+    if (!browserNavigate) throw new Error("browser_navigate missing execute");
+    const nav = (await browserNavigate(
       { url: "https://example.com", toolCallDescription: "test" },
       callOpts,
     )) as { success: boolean; url?: string; title?: string; error?: string };
@@ -303,7 +305,9 @@ async function main() {
 
     // 5b: browser_evaluate
     log("tool", "browser_evaluate → document.title");
-    const evalR = (await tools.browser_evaluate.execute!(
+    const browserEvaluate = tools.browser_evaluate.execute;
+    if (!browserEvaluate) throw new Error("browser_evaluate missing execute");
+    const evalR = (await browserEvaluate(
       { script: "document.title", toolCallDescription: "test" },
       callOpts,
     )) as { success: boolean; result?: unknown; error?: string };
@@ -315,13 +319,15 @@ async function main() {
 
     // 5c: browser_snapshot
     log("tool", "browser_snapshot");
-    const snap = (await tools.browser_snapshot.execute!(
+    const browserSnapshot = tools.browser_snapshot.execute;
+    if (!browserSnapshot) throw new Error("browser_snapshot missing execute");
+    const snap = (await browserSnapshot(
       { toolCallDescription: "test" },
       callOpts,
     )) as { success: boolean; snapshot?: string; error?: string };
     if (snap.success && snap.snapshot) {
       console.log(
-        "  snapshot (first 400 chars):\n" + snap.snapshot.substring(0, 400),
+        `  snapshot (first 400 chars):\n${snap.snapshot.substring(0, 400)}`,
       );
       pass(`snapshot: ${snap.snapshot.length} chars`);
     } else {
@@ -330,7 +336,10 @@ async function main() {
 
     // 5d: browser_get_cookies
     log("tool", "browser_get_cookies");
-    const cookies = (await tools.browser_get_cookies.execute!(
+    const browserGetCookies = tools.browser_get_cookies.execute;
+    if (!browserGetCookies)
+      throw new Error("browser_get_cookies missing execute");
+    const cookies = (await browserGetCookies(
       { toolCallDescription: "test" },
       callOpts,
     )) as { success: boolean; cookies?: unknown[]; error?: string };
@@ -342,7 +351,10 @@ async function main() {
 
     // 5e: browser_screenshot
     log("tool", "browser_screenshot");
-    const ss = (await tools.browser_screenshot.execute!(
+    const browserScreenshot = tools.browser_screenshot.execute;
+    if (!browserScreenshot)
+      throw new Error("browser_screenshot missing execute");
+    const ss = (await browserScreenshot(
       { filename: "test_example_com", toolCallDescription: "test" },
       callOpts,
     )) as { success: boolean; path?: string; error?: string };
@@ -354,7 +366,9 @@ async function main() {
 
     // 5f: browser_console
     log("tool", "browser_console");
-    const cons = (await tools.browser_console.execute!(
+    const browserConsole = tools.browser_console.execute;
+    if (!browserConsole) throw new Error("browser_console missing execute");
+    const cons = (await browserConsole(
       { toolCallDescription: "test" },
       callOpts,
     )) as { success: boolean; messages?: unknown[]; error?: string };
@@ -365,7 +379,7 @@ async function main() {
     }
 
     // ---- Summary -----------------------------------------------------------
-    console.log("\n" + "=".repeat(60));
+    console.log(`\n${"=".repeat(60)}`);
     console.log(`Results: ${passCount} passed, ${failCount} failed`);
     if (failCount === 0) {
       console.log("🎉 All tests passed!");

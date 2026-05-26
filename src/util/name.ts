@@ -74,8 +74,9 @@ const nouns = [
 ];
 
 export function generateRandomName(): string {
-  const adj = adjectives[Math.floor(Math.random() * adjectives.length)]!;
-  const noun = nouns[Math.floor(Math.random() * nouns.length)]!;
+  const adj =
+    adjectives[Math.floor(Math.random() * adjectives.length)] ?? "swift";
+  const noun = nouns[Math.floor(Math.random() * nouns.length)] ?? "falcon";
   return `${adj}-${noun}`;
 }
 

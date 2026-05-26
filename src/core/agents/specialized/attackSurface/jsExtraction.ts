@@ -75,15 +75,21 @@ export async function extractJavascriptEndpoints(
 
     // Extract inline script content
     const scriptTagRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
-    let scriptMatch;
-    while ((scriptMatch = scriptTagRegex.exec(html)) !== null) {
+    for (
+      let scriptMatch = scriptTagRegex.exec(html);
+      scriptMatch !== null;
+      scriptMatch = scriptTagRegex.exec(html)
+    ) {
       const scriptContent = scriptMatch[1];
 
       // Apply all patterns to script content
       for (const pattern of endpointPatterns) {
-        let match;
         const patternCopy = new RegExp(pattern.source, pattern.flags);
-        while ((match = patternCopy.exec(scriptContent)) !== null) {
+        for (
+          let match = patternCopy.exec(scriptContent);
+          match !== null;
+          match = patternCopy.exec(scriptContent)
+        ) {
           const endpoint = match[1] || match[2];
           if (endpoint && endpoint.startsWith("/")) {
             endpoints.push({
@@ -99,8 +105,11 @@ export async function extractJavascriptEndpoints(
     // Extract external JS file URLs
     if (includeExternalJS) {
       const scriptSrcRegex = /<script[^>]+src=['"]([^'"]+)['"]/gi;
-      let srcMatch;
-      while ((srcMatch = scriptSrcRegex.exec(html)) !== null) {
+      for (
+        let srcMatch = scriptSrcRegex.exec(html);
+        srcMatch !== null;
+        srcMatch = scriptSrcRegex.exec(html)
+      ) {
         jsFiles.push(srcMatch[1]);
       }
     }

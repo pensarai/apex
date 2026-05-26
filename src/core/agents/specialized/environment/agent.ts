@@ -55,6 +55,7 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
       subagentId,
       sandbox,
       enableThinking,
+      openAIReasoningEffort,
     } = opts;
 
     super({
@@ -69,6 +70,7 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
       subagentId,
       sandbox,
       enableThinking,
+      openAIReasoningEffort,
 
       activeTools: [
         "read_file",

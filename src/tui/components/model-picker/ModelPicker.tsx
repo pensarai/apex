@@ -8,7 +8,13 @@ import {
   useRef,
   useState,
 } from "react";
-import { type ModelInfo, modelSupportsThinking } from "../../../core/ai";
+import {
+  getOpenAIReasoningEfforts,
+  type ModelInfo,
+  modelSupportsOpenAIReasoning,
+  modelSupportsThinking,
+  type OpenAIReasoningEffort,
+} from "../../../core/ai";
 import type { Config } from "../../../core/config/config";
 import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
@@ -76,7 +82,8 @@ type NavigationItem =
   | { type: "provider"; provider: string }
   | { type: "model"; model: ModelInfo }
   | { type: "local-input"; field: LocalInputField }
-  | { type: "reasoning" };
+  | { type: "reasoning" }
+  | { type: "openai-reasoning" };
 
 type LocalInputField = "url" | "model";
 
@@ -84,6 +91,7 @@ function getNavItemId(item: NavigationItem): string {
   if (item.type === "provider") return `provider-${item.provider}`;
   if (item.type === "model") return `model-${item.model.id}`;
   if (item.type === "reasoning") return "reasoning-toggle";
+  if (item.type === "openai-reasoning") return "openai-reasoning-effort";
   return `local-input-${item.field}`;
 }
 
@@ -98,6 +106,8 @@ export interface ModelPickerProps {
   isModelUserSelected?: boolean;
   reasoningEnabled?: boolean;
   onReasoningToggle?: (enabled: boolean) => void;
+  openAIReasoningEffort?: OpenAIReasoningEffort;
+  onOpenAIReasoningEffortChange?: (effort: OpenAIReasoningEffort) => void;
 }
 
 export function ModelPicker({
@@ -111,6 +121,8 @@ export function ModelPicker({
   isModelUserSelected = false,
   reasoningEnabled = false,
   onReasoningToggle,
+  openAIReasoningEffort = "medium",
+  onOpenAIReasoningEffortChange,
 }: ModelPickerProps) {
   const { colors } = useTheme();
   const scrollBoxRef = useRef<ScrollBoxRenderable | null>(null);
@@ -229,8 +241,20 @@ export function ModelPicker({
     if (onReasoningToggle && modelSupportsThinking(selectedModel.id)) {
       items.push({ type: "reasoning" });
     }
+    if (
+      onOpenAIReasoningEffortChange &&
+      modelSupportsOpenAIReasoning(selectedModel.id)
+    ) {
+      items.push({ type: "openai-reasoning" });
+    }
     return items;
-  }, [groupedModels, expandedProviders, onReasoningToggle, selectedModel.id]);
+  }, [
+    groupedModels,
+    expandedProviders,
+    onReasoningToggle,
+    onOpenAIReasoningEffortChange,
+    selectedModel.id,
+  ]);
 
   // Sync focusedIndex when selected model changes (e.g. on initial load)
   useEffect(() => {
@@ -274,8 +298,29 @@ export function ModelPicker({
   }, [localUrl, localModelName, commitLocalConfig]);
 
   const thinkingSupported = modelSupportsThinking(selectedModel.id);
+  const openAIReasoningSupported = modelSupportsOpenAIReasoning(
+    selectedModel.id,
+  );
+  const openAIReasoningEfforts = getOpenAIReasoningEfforts(selectedModel.id);
   const isReasoningFocused =
     navigationItems[focusedIndex]?.type === "reasoning";
+  const isOpenAIReasoningFocused =
+    navigationItems[focusedIndex]?.type === "openai-reasoning";
+  const cycleOpenAIReasoningEffort = useCallback(() => {
+    if (!onOpenAIReasoningEffortChange || openAIReasoningEfforts.length === 0) {
+      return;
+    }
+    const currentIndex = openAIReasoningEfforts.indexOf(openAIReasoningEffort);
+    const nextEffort =
+      openAIReasoningEfforts[
+        (Math.max(currentIndex, 0) + 1) % openAIReasoningEfforts.length
+      ]!;
+    onOpenAIReasoningEffortChange(nextEffort);
+  }, [
+    onOpenAIReasoningEffortChange,
+    openAIReasoningEffort,
+    openAIReasoningEfforts,
+  ]);
 
   // Handle keyboard navigation (most keys disabled while editing local input)
   const handleKeyboard = useCallback(
@@ -336,6 +381,14 @@ export function ModelPicker({
         onReasoningToggle(!reasoningEnabled);
         return true;
       }
+      if (
+        key.name === "space" &&
+        onOpenAIReasoningEffortChange &&
+        openAIReasoningSupported
+      ) {
+        cycleOpenAIReasoningEffort();
+        return true;
+      }
 
       // Enter - confirm model selection, toggle provider, or start editing local input
       if (key.name === "return") {
@@ -349,6 +402,8 @@ export function ModelPicker({
 
         if (currentItem.type === "reasoning") {
           onReasoningToggle?.(!reasoningEnabled);
+        } else if (currentItem.type === "openai-reasoning") {
+          cycleOpenAIReasoningEffort();
         } else if (currentItem.type === "provider") {
           const targetProvider = currentItem.provider;
           setExpandedProviders((prev) => {
@@ -369,7 +424,13 @@ export function ModelPicker({
       // Left/Right - collapse/expand provider
       if (key.name === "left" || key.name === "right") {
         const currentItem = navigationItems[focusedIndex];
-        if (!currentItem || currentItem.type === "reasoning") return false;
+        if (
+          !currentItem ||
+          currentItem.type === "reasoning" ||
+          currentItem.type === "openai-reasoning"
+        ) {
+          return false;
+        }
 
         const targetProvider =
           currentItem.type === "provider"
@@ -425,6 +486,9 @@ export function ModelPicker({
       reasoningEnabled,
       onReasoningToggle,
       thinkingSupported,
+      onOpenAIReasoningEffortChange,
+      openAIReasoningSupported,
+      cycleOpenAIReasoningEffort,
     ],
   );
 
@@ -694,6 +758,16 @@ export function ModelPicker({
             <text fg={isReasoningFocused ? colors.primary : colors.text}>
               {reasoningEnabled ? "[x]" : "[ ]"} Extended Thinking
               (Experimental)
+            </text>
+          </PickerRow>
+        </box>
+      )}
+
+      {onOpenAIReasoningEffortChange && openAIReasoningSupported && (
+        <box flexShrink={0} paddingTop={1}>
+          <PickerRow id="openai-reasoning-effort">
+            <text fg={isOpenAIReasoningFocused ? colors.primary : colors.text}>
+              Reasoning Effort: {openAIReasoningEffort}
             </text>
           </PickerRow>
         </box>

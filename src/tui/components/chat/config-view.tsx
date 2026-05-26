@@ -33,7 +33,12 @@ export interface SessionConfig {
 
 export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
   const { colors } = useTheme();
-  const { reasoningEnabled, setReasoningEnabled } = useAgent();
+  const {
+    reasoningEnabled,
+    setReasoningEnabled,
+    openAIReasoningEffort,
+    setOpenAIReasoningEffort,
+  } = useAgent();
   // Form state
   const [targetUrl, setTargetUrl] = useState("https://");
   const [strictScope, setStrictScope] = useState(true);
@@ -218,6 +223,8 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
             isModelUserSelected={isModelUserSelected}
             reasoningEnabled={reasoningEnabled}
             onReasoningToggle={setReasoningEnabled}
+            openAIReasoningEffort={openAIReasoningEffort}
+            onOpenAIReasoningEffortChange={setOpenAIReasoningEffort}
           />
         </box>
       </box>

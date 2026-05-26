@@ -70,9 +70,12 @@ When you open `/models`, you'll see:
   </Accordion>
 
   <Accordion title="OpenAI" icon="openai" iconType="brands">
-    Support for GPT and o-series models from OpenAI.
+    Support for GPT and o-series models from OpenAI, including GPT 5.5.
 
     Available models include:
+    - GPT 5.5
+    - GPT 5.4 / GPT 5.4 Pro
+    - GPT 5.2 / GPT 5.2 Pro
     - GPT-4.1 / GPT-4.1 mini
     - GPT-4o / GPT-4o mini
     - o3 / o3-mini / o4-mini
@@ -138,7 +141,7 @@ When you haven't explicitly selected a model, Apex automatically uses the flagsh
 | ----------- | ---------------------------- |
 | Pensar      | Claude Opus 4.6 (Pensar)    |
 | Anthropic   | Claude Opus 4.6              |
-| OpenAI      | GPT-5.2 Pro                  |
+| OpenAI      | GPT 5.5                      |
 | Google      | Gemini 3.1 Pro Preview       |
 | OpenRouter  | Claude Opus 4.6 (OpenRouter) |
 
@@ -168,6 +171,10 @@ Click "Connect provider" or press `Ctrl+P` to open the provider management inter
   </Step>
 </Steps>
 
+## OpenAI Reasoning Effort
+
+When GPT 5.5 or another supported OpenAI reasoning model is selected, the model picker shows a **Reasoning Effort** control. Press `[Space]` on that row to cycle the effort level. GPT 5.5 supports `none`, `low`, `medium`, `high`, and `xhigh`; Apex defaults to `medium`.
+
 ## Model Comparison
 
 <CardGroup cols={2}>
@@ -179,9 +186,9 @@ Click "Connect provider" or press `Ctrl+P` to open the provider management inter
     **Maximum Capability** - Best for: Complex, thorough tests - Speed: Moderate
     - Capability: Maximum - Cost: Higher
   </Card>
-  <Card title="GPT-4.1" icon="bolt">
+  <Card title="GPT 5.5" icon="bolt">
     **Alternative Option** - Best for: OpenAI users - Speed: Fast - Capability:
-    Very Good - Cost: Moderate
+    Excellent - Cost: Higher
   </Card>
   <Card title="Claude Haiku 4.5" icon="feather">
     **Budget Option** - Best for: Quick tests, development - Speed: Very Fast -

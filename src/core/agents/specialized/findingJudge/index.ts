@@ -30,6 +30,7 @@ export type FindingJudgeRuntimeContext = Pick<
   | "sandbox"
   | "target"
   | "enableThinking"
+  | "openAIReasoningEffort"
 > & {
   model: AIModel;
 };
@@ -58,6 +59,7 @@ export async function judgeFinding(
       sandbox: ctx.sandbox,
       target: input.target ?? ctx.target ?? ctx.session.targets[0],
       enableThinking: ctx.enableThinking,
+      openAIReasoningEffort: ctx.openAIReasoningEffort,
     });
 
     const result = await agent.consume();

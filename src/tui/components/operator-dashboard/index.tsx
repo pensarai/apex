@@ -34,9 +34,13 @@ import {
 import {
   buildAuthConfig,
   type CacheMetrics,
+  modelSupportsOpenAIReasoning,
   modelSupportsThinking,
 } from "../../../core/ai";
-import { runOffensiveSecurityAgent } from "../../../core/api";
+import {
+  type RunAgentResult,
+  runOffensiveSecurityAgent,
+} from "../../../core/api";
 import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
@@ -80,6 +84,7 @@ import type { DisplayMessage, WorkflowData } from "../agent-display";
 import { InputArea } from "../chat/input-area";
 import { MessageList } from "../chat/message-list";
 import { QuestionsForm } from "../chat/questions-form";
+import { collectScreenshotPaths, ScreenshotModal } from "../screenshot-modal";
 import {
   deriveApprovedActionLabel,
   extractStreamableContent,
@@ -151,6 +156,7 @@ export default function OperatorDashboard({
     resetTokenUsage,
     setSessionCwd,
     reasoningEnabled,
+    openAIReasoningEffort,
   } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
@@ -161,7 +167,12 @@ export default function OperatorDashboard({
     skillsRegistry,
     skillsVersion,
   } = useCommand();
-  const { stack, externalDialogOpen, replace: replaceDialog } = useDialog();
+  const {
+    stack,
+    externalDialogOpen,
+    replace: replaceDialog,
+    clear: clearDialog,
+  } = useDialog();
   const { refocusPrompt } = useFocus();
 
   const autocompleteOptions = useMemo(() => {
@@ -1148,6 +1159,9 @@ export default function OperatorDashboard({
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
         enableThinking: reasoningEnabled && modelSupportsThinking(model.id),
+        openAIReasoningEffort: modelSupportsOpenAIReasoning(model.id)
+          ? openAIReasoningEffort
+          : undefined,
         surfaceIntegrationEnabled: config.data?.surfaceIntegrationEnabled,
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {
@@ -1212,7 +1226,7 @@ export default function OperatorDashboard({
       }
 
       try {
-        let agentResult;
+        let agentResult: RunAgentResult;
 
         const systemPrompt = buildOperatorSystemPrompt(
           initialConfig?.target,
@@ -1255,6 +1269,7 @@ export default function OperatorDashboard({
               enableSuggestions: true,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
+            codebasePath: initialConfig?.sandbox ? undefined : process.cwd(),
             taskDriven: initialConfig?.taskDriven,
           };
           agentResult = await runOffensiveSecurityAgent({
@@ -2099,6 +2114,18 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     ) {
       key.preventDefault?.();
       openSubagentDialog();
+      return;
+    }
+
+    // Ctrl+I to open the screenshot stack (no-op if no screenshots yet)
+    if (key.ctrl && key.name === "i" && !dialogOpen) {
+      const screenshots = collectScreenshotPaths(displayMessagesRef.current);
+      if (screenshots.length === 0) return;
+      key.preventDefault?.();
+      replaceDialog(
+        <ScreenshotModal screenshots={screenshots} onClose={clearDialog} />,
+        { bare: true, selfHandlesEscape: true },
+      );
       return;
     }
     const action = resolveKeyboardShortcut(
