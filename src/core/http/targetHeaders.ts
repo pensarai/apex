@@ -300,8 +300,7 @@ const injectCurl: ShellInjector = (command, headers) => {
   const existing = existingHeaderNames(command);
   const flags = buildHFlags(headers, existing, "-H");
   if (!flags) return command;
-  // Insert flags after `curl` (handles `curl`, `curl ...args`).
-  return command.replace(/(\bcurl\b)/, `$1 ${flags}`);
+  return command.replace(/(\bcurl\b)/, (m) => `${m} ${flags}`);
 };
 
 const injectWget: ShellInjector = (command, headers) => {
@@ -312,7 +311,8 @@ const injectWget: ShellInjector = (command, headers) => {
     parts.push(`--header="${shellQuote(`${name}: ${value}`)}"`);
   }
   if (parts.length === 0) return command;
-  return command.replace(/(\bwget\b)/, `$1 ${parts.join(" ")}`);
+  const joined = parts.join(" ");
+  return command.replace(/(\bwget\b)/, (m) => `${m} ${joined}`);
 };
 
 const injectGenericH: (tool: string) => ShellInjector =
@@ -321,7 +321,7 @@ const injectGenericH: (tool: string) => ShellInjector =
     const flags = buildHFlags(headers, existing, "-H");
     if (!flags) return command;
     const re = new RegExp(`(\\b${tool}\\b)`);
-    return command.replace(re, `$1 ${flags}`);
+    return command.replace(re, (m) => `${m} ${flags}`);
   };
 
 const injectSqlmap: ShellInjector = (command, headers) => {
@@ -333,7 +333,7 @@ const injectSqlmap: ShellInjector = (command, headers) => {
   }
   if (lines.length === 0) return command;
   const headerArg = `--headers="${shellQuote(lines.join("\\n"))}"`;
-  return command.replace(/(\bsqlmap\b)/, `$1 ${headerArg}`);
+  return command.replace(/(\bsqlmap\b)/, (m) => `${m} ${headerArg}`);
 };
 
 const injectNikto: ShellInjector = (command, headers) => {
@@ -349,7 +349,7 @@ const injectNikto: ShellInjector = (command, headers) => {
   // in the shell command would split it across lines in persistent /
   // line-based shells. Mirrors the sqlmap injector above.
   const arg = `-headers "${shellQuote(lines.join("\\n"))}"`;
-  return command.replace(/(\bnikto\b)/, `$1 ${arg}`);
+  return command.replace(/(\bnikto\b)/, (m) => `${m} ${arg}`);
 };
 
 /**
