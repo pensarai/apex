@@ -5,7 +5,7 @@ import {
 import type { ToolContext } from "../agents/offSecAgent/tools/types";
 import type { HarEntry } from "./types";
 
-export function filterHarEntriesByAllowedHosts(
+function filterHarEntriesByAllowedHosts(
   entries: HarEntry[],
   allowedHosts: string[],
 ): HarEntry[] {

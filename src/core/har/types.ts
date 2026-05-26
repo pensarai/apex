@@ -7,14 +7,14 @@ export const HarHeaderSchema = z
   })
   .passthrough();
 
-export const HarPostDataSchema = z
+const HarPostDataSchema = z
   .object({
     mimeType: z.string().optional(),
     text: z.string().optional(),
   })
   .passthrough();
 
-export const HarRequestSchema = z
+const HarRequestSchema = z
   .object({
     method: z.string(),
     url: z.string(),
@@ -27,7 +27,7 @@ export const HarRequestSchema = z
   })
   .passthrough();
 
-export const HarContentSchema = z
+const HarContentSchema = z
   .object({
     size: z.number(),
     mimeType: z.string().optional(),
@@ -38,7 +38,7 @@ export const HarContentSchema = z
   })
   .passthrough();
 
-export const HarResponseSchema = z
+const HarResponseSchema = z
   .object({
     status: z.number(),
     statusText: z.string().optional(),
@@ -82,8 +82,6 @@ export const HarFileSchema = z
   .passthrough();
 
 export type HarHeader = z.infer<typeof HarHeaderSchema>;
-export type HarRequest = z.infer<typeof HarRequestSchema>;
-export type HarResponse = z.infer<typeof HarResponseSchema>;
 export type HarEntry = z.infer<typeof HarEntrySchema>;
 export type HarFile = z.infer<typeof HarFileSchema>;
 

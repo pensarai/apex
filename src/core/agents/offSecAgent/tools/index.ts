@@ -38,8 +38,8 @@ export { getMemory } from "./getMemory";
 export { getPage } from "./getPage";
 export { grep } from "./grep";
 export {
-  harDiff,
   getHarSummary,
+  harDiff,
   harReplay,
   startHarCapture,
   stopHarCapture,
@@ -178,8 +178,8 @@ import { getMemory } from "./getMemory";
 import { getPage } from "./getPage";
 import { grep } from "./grep";
 import {
-  harDiff,
   getHarSummary,
+  harDiff,
   harReplay,
   startHarCapture,
   stopHarCapture,

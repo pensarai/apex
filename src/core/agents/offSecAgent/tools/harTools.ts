@@ -1,7 +1,7 @@
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { tool } from "ai";
-import { randomBytes } from "crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join, resolve } from "path";
 import { z } from "zod";
 import { diffHarEntries } from "../../../har/diff";
 import { filterHarByScope } from "../../../har/scope";
@@ -222,7 +222,8 @@ export function harDiff(ctx: ToolContext) {
         const accountBEntries = loadScopedEntries(ctx, accountBHarPath);
         const report = diffHarEntries(accountAEntries, accountBEntries);
         const path =
-          outputPath ?? join(harEvidenceDir(ctx), `idor-diff-${Date.now()}.json`);
+          outputPath ??
+          join(harEvidenceDir(ctx), `idor-diff-${Date.now()}.json`);
         const resolvedOutput = assertSessionOutputPath(ctx, path);
         mkdirSync(dirname(resolvedOutput), { recursive: true });
         writeFileSync(resolvedOutput, JSON.stringify(report, null, 2));

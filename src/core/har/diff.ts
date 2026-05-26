@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import type { HarEntry, HarHeader } from "./types";
 
 export type HarDiffBucket =
@@ -8,7 +8,7 @@ export type HarDiffBucket =
   | "unique-to-a"
   | "unique-to-b";
 
-export interface HarDiffCandidate {
+interface HarDiffCandidate {
   bucket: HarDiffBucket;
   score: number;
   key: string;
@@ -16,7 +16,7 @@ export interface HarDiffCandidate {
   accountB?: CompactHarEntry;
 }
 
-export interface CompactHarEntry {
+interface CompactHarEntry {
   id?: string;
   method: string;
   url: string;

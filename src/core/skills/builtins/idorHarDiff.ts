@@ -20,7 +20,8 @@ export const idorHarDiffSkill: BuiltInSkill = {
       },
       {
         name: "seedUrls",
-        description: "Optional URLs or browser flow to capture under both accounts",
+        description:
+          "Optional URLs or browser flow to capture under both accounts",
         required: false,
       },
     ],
