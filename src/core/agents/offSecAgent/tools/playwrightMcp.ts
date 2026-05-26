@@ -507,7 +507,10 @@ export class PlaywrightMcpSession {
             os.tmpdir(),
             `pensar-mcp-${process.pid}-${Date.now()}.json`,
           );
-          await fsp.writeFile(this.mcpConfigPath, JSON.stringify(cfg), "utf-8");
+          await fsp.writeFile(this.mcpConfigPath, JSON.stringify(cfg), {
+            encoding: "utf-8",
+            mode: 0o600,
+          });
           args.push("--config", this.mcpConfigPath);
         }
 
