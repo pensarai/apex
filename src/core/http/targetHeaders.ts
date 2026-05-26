@@ -499,10 +499,8 @@ export function applyHeadersToShellCommand(
   // Find the highest-scope URL-like target on the command line and use
   // it to drive the resolver. If no host is present, there's nothing
   // to inject for.
-  const inScopeHost = commandHosts.find((h) => {
-    const allowed = getAllowedHosts(session);
-    return isHostInScope(h, allowed);
-  });
+  const allowed = getAllowedHosts(session);
+  const inScopeHost = commandHosts.find((h) => isHostInScope(h, allowed));
   if (!inScopeHost) {
     return { command, status: "no-headers", tool: null };
   }

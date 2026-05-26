@@ -125,11 +125,15 @@ BEST PRACTICES:
           ? AbortSignal.any([ctx.abortSignal, controller.signal])
           : controller.signal;
 
-        // Resolve session/global/credential headers first, then layer in
-        // tool baselines only for keys the resolver didn't produce. The
-        // assembled set is then handed to targetFetch, which re-resolves
-        // idempotently (caller-layer values already equal the resolved
-        // ones for in-scope URLs).
+        // Two-phase merge: resolve session/credential headers first,
+        // then fill in tool baselines only for keys the resolver didn't
+        // produce. This is intentionally two calls — baselines must
+        // LOSE to session headers, but the request layer in
+        // resolveEffectiveHeaders WINS. Merging outside gives the
+        // correct precedence: session > baseline > nothing.
+        // The second resolve inside targetFetch is a no-op (idempotent)
+        // since the merged set already equals what the resolver would
+        // produce with these as the request layer.
         const resolverSession = resolverSessionFromCtx(ctx);
         const resolved = resolveEffectiveHeaders(resolverSession, url);
         const headers = mergeBaselineHeaders(

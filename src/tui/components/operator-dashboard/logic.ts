@@ -76,8 +76,8 @@ export type CommandAction =
  */
 function parseHeadersSlashCommand(rest: string): HeadersOp {
   const trimmed = rest.trim();
-  if (!trimmed || trimmed === "show") {
-    return { kind: "list", showSecrets: trimmed === "show" };
+  if (!trimmed) {
+    return { kind: "list", showSecrets: false };
   }
 
   const [verb, ...tailParts] = trimmed.split(/\s+/);

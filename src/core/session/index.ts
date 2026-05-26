@@ -442,7 +442,7 @@ function normalizeDeprecatedHeaders<T extends { offensiveHeaders?: unknown }>(
   config: T | undefined,
 ): Omit<T, "offensiveHeaders"> | undefined {
   if (!config) return config;
-  if (config.offensiveHeaders === undefined) {
+  if (config.offensiveHeaders == null) {
     const { offensiveHeaders: _drop, ...rest } = config;
     return rest;
   }
