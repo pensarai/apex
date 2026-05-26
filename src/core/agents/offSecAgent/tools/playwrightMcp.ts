@@ -11,11 +11,17 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { tool } from "ai";
+import { createHash, randomUUID } from "crypto";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { createRequire } from "module";
 import { dirname, join } from "path";
 import { z } from "zod";
+import { type HarEntry, HarFileSchema } from "../../../har/types";
 import type { Logger } from "../../../logger";
+import {
+  buildBeginHarCaptureScript,
+  buildEndHarCaptureScript,
+} from "./harRecorderScript";
 
 /**
  * Playwright `BrowserContext.storageState()` shape — the JSON-serialisable
@@ -37,6 +43,29 @@ export interface BrowserStorageState {
     origin: string;
     localStorage: Array<{ name: string; value: string }>;
   }>;
+}
+
+export interface HarCaptureResult {
+  captureId: string;
+  name: string;
+  path: string;
+  entryCount: number;
+  sizeBytes: number;
+}
+
+interface ActiveHarCapture {
+  id: string;
+  name: string;
+  startedAt: string;
+}
+
+interface BrowserHarCaptureResponse {
+  ok: boolean;
+  captureId?: string;
+  name?: string;
+  startedAt?: string;
+  entries?: HarEntry[];
+  error?: string;
 }
 
 // Types for tool results
@@ -365,6 +394,7 @@ export class PlaywrightMcpSession {
   private readonly userAgent: string | undefined;
   private readonly viewportSize: string | undefined;
   private readonly extraHttpHeaders: Record<string, string> | undefined;
+  private readonly activeHarCaptures = new Map<string, ActiveHarCapture>();
   /** Temp config file written for MCP launch — deleted on disconnect. */
   private mcpConfigPath: string | null = null;
 
@@ -595,6 +625,78 @@ export class PlaywrightMcpSession {
     return this.mcpClient !== null;
   }
 
+  async beginHarCapture(name: string): Promise<{ captureId: string }> {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      throw new Error("HAR capture name is required");
+    }
+    for (const capture of this.activeHarCaptures.values()) {
+      if (capture.name === trimmedName) {
+        throw new Error(`HAR capture "${trimmedName}" is already active`);
+      }
+    }
+
+    const captureId = randomUUID();
+    const result = (await this.callTool("browser_run_code", {
+      code: buildBeginHarCaptureScript({ captureId, name: trimmedName }),
+    })) as BrowserHarCaptureResponse;
+
+    if (!result?.ok || result.captureId !== captureId) {
+      throw new Error(result?.error ?? "Failed to start HAR capture");
+    }
+
+    this.activeHarCaptures.set(captureId, {
+      id: captureId,
+      name: trimmedName,
+      startedAt: new Date().toISOString(),
+    });
+    return { captureId };
+  }
+
+  async endHarCapture(
+    captureId: string,
+    outputDir: string,
+  ): Promise<HarCaptureResult> {
+    const active = this.activeHarCaptures.get(captureId);
+    if (!active) {
+      throw new Error(`Unknown HAR capture: ${captureId}`);
+    }
+
+    let result: BrowserHarCaptureResponse | undefined;
+    try {
+      result = (await this.callTool("browser_run_code", {
+        code: buildEndHarCaptureScript(captureId),
+      })) as BrowserHarCaptureResponse;
+    } finally {
+      this.activeHarCaptures.delete(captureId);
+    }
+
+    if (!result?.ok || !result.entries) {
+      throw new Error(result?.error ?? "Failed to stop HAR capture");
+    }
+
+    return writeHarCapture({
+      outputDir,
+      captureId,
+      name: active.name,
+      entries: result.entries,
+    });
+  }
+
+  async flushActiveHarCaptures(outputDir: string): Promise<HarCaptureResult[]> {
+    const captureIds = Array.from(this.activeHarCaptures.keys());
+    const results: HarCaptureResult[] = [];
+    for (const captureId of captureIds) {
+      try {
+        results.push(await this.endHarCapture(captureId, outputDir));
+      } catch {
+        // Best-effort teardown: listener removal is attempted by endHarCapture,
+        // but teardown must not mask the original agent completion/abort.
+      }
+    }
+    return results;
+  }
+
   /**
    * Snapshot this session's full Playwright storage state (cookies + per-origin
    * localStorage) by invoking `BrowserContext.storageState()` through the
@@ -773,6 +875,76 @@ export class PlaywrightMcpSession {
       abortCleanup?.();
     }
   }
+}
+
+const HAR_INLINE_BODY_BYTES = 16 * 1024;
+
+function sanitizeCaptureName(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "capture"
+  );
+}
+
+function writeHarCapture(opts: {
+  outputDir: string;
+  captureId: string;
+  name: string;
+  entries: HarEntry[];
+}): HarCaptureResult {
+  mkdirSync(opts.outputDir, { recursive: true });
+  const bodiesDir = join(opts.outputDir, "_bodies");
+  mkdirSync(bodiesDir, { recursive: true });
+
+  const entries = opts.entries.map((entry) => {
+    const text = entry.response.content.text;
+    if (entry.response.content.encoding === "base64" && text) {
+      const body = Buffer.from(text, "base64");
+      if (body.length > HAR_INLINE_BODY_BYTES) {
+        const sha = createHash("sha256").update(body).digest("hex");
+        const bodyPath = join(bodiesDir, sha);
+        writeFileSync(bodyPath, body);
+        return {
+          ...entry,
+          response: {
+            ...entry.response,
+            content: {
+              ...entry.response.content,
+              text: undefined,
+              encoding: undefined,
+              _attachedSha: sha,
+              _attachedPath: bodyPath,
+            },
+          },
+        };
+      }
+    }
+    return entry;
+  });
+
+  const har = HarFileSchema.parse({
+    log: {
+      version: "1.2",
+      creator: { name: "Pensar Apex", version: "1.0" },
+      entries,
+    },
+  });
+
+  const filename = `${sanitizeCaptureName(opts.name)}-${opts.captureId}.har`;
+  const path = join(opts.outputDir, filename);
+  const serialized = JSON.stringify(har, null, 2);
+  writeFileSync(path, serialized);
+
+  return {
+    captureId: opts.captureId,
+    name: opts.name,
+    path,
+    entryCount: entries.length,
+    sizeBytes: Buffer.byteLength(serialized),
+  };
 }
 
 // Mode-specific descriptions

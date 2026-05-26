@@ -238,6 +238,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       model: input.model,
       authConfig: input.authConfig,
       eventBus: this.eventBus,
+      approvalGate: input.approvalGate,
       sandbox: input.sandbox,
       findingsRegistry: input.findingsRegistry,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
@@ -502,6 +503,11 @@ export class OffensiveSecurityAgent<TResult = void> {
         bus.emitStreamPart(chunk, sid);
       }
     } finally {
+      await this.browserSession
+        ?.flushActiveHarCaptures(
+          join(this._session.rootPath, "evidence", "har"),
+        )
+        .catch(() => {});
       this.persistentShell?.dispose();
     }
 

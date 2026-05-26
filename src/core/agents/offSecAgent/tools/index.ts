@@ -37,6 +37,13 @@ export { extractJsEndpoints } from "./extractJsEndpoints";
 export { getMemory } from "./getMemory";
 export { getPage } from "./getPage";
 export { grep } from "./grep";
+export {
+  harDiff,
+  getHarSummary,
+  harReplay,
+  startHarCapture,
+  stopHarCapture,
+} from "./harTools";
 export { httpRequest } from "./httpRequest";
 export { listFiles } from "./listFiles";
 export { listMemories } from "./listMemories";
@@ -170,6 +177,13 @@ import { extractJsEndpoints } from "./extractJsEndpoints";
 import { getMemory } from "./getMemory";
 import { getPage } from "./getPage";
 import { grep } from "./grep";
+import {
+  harDiff,
+  getHarSummary,
+  harReplay,
+  startHarCapture,
+  stopHarCapture,
+} from "./harTools";
 import { httpRequest } from "./httpRequest";
 import { listFiles } from "./listFiles";
 import { listMemories } from "./listMemories";
@@ -225,6 +239,11 @@ export function createAllTools(ctx: ToolContext) {
     // Core pentest tools
     execute_command: executeCommand(ctx),
     http_request: httpRequest(ctx),
+    start_har_capture: startHarCapture(ctx),
+    stop_har_capture: stopHarCapture(ctx),
+    get_har_summary: getHarSummary(ctx),
+    har_diff: harDiff(ctx),
+    har_replay: harReplay(ctx),
     document_vulnerability: documentVulnerability(ctx),
 
     // Filesystem / search tools
@@ -328,6 +347,11 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   // Core pentest
   "execute_command",
   "http_request",
+  "start_har_capture",
+  "stop_har_capture",
+  "get_har_summary",
+  "har_diff",
+  "har_replay",
   "document_vulnerability",
   // Filesystem / search
   "read_file",

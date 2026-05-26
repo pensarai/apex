@@ -3,6 +3,7 @@ import type { CredentialManager } from "../../../credentials";
 import type { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../../findings/registry";
+import type { ApprovalGate } from "../../../operator";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
 import type { StepTraceWriter } from "../trace";
@@ -38,6 +39,9 @@ export type ToolContext = {
 
   /** Event bus for streaming agent output and subagent lifecycle events */
   eventBus?: AgentEventBus;
+
+  /** Operator approval gate for tools that require approval internally. */
+  approvalGate?: ApprovalGate;
 
   /**
    * When set, tools like execute_command / http_request / document_vulnerability
