@@ -136,6 +136,7 @@ export function CommandProvider({
     });
   }, [registry.load, route.data]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `ctx` is intentionally omitted — registerWithContext only extracts static metadata (name, aliases, description) at registration time; handlers are re-bound with live ctx on every execute() call (see command-router.ts).
   const router = useMemo(() => {
     const router = new CommandRouter<AppCommandContext>();
 
@@ -144,7 +145,7 @@ export function CommandProvider({
     }
 
     return router;
-  }, [ctx]);
+  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `registryVersion` is an intentional cache-buster — forces recomputation when skills are refreshed even though `registry` (stable ref) hasn't changed.
   const resolveSkillContent = useCallback(
