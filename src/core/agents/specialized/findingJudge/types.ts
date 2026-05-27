@@ -48,7 +48,7 @@ interface FindingJudgeVerificationDetails {
 }
 
 export interface FindingJudgeResult extends FindingJudgeVerificationDetails {
-  /** Whether the finding is legitimate and well-demonstrated */
+  /** Whether the finding should be persisted as an exploitable vulnerability */
   valid: boolean;
   /** Classification of the finding */
   findingType: FindingType;
@@ -71,7 +71,7 @@ export const FindingJudgeOutputSchema = z.object({
   valid: z
     .boolean()
     .describe(
-      "Whether the POC legitimately demonstrates the claimed vulnerability",
+      "Whether the POC demonstrates a currently exploitable vulnerability that should be persisted",
     ),
   findingType: z
     .enum(FINDING_TYPES)
@@ -93,7 +93,7 @@ export const FindingJudgeOutputSchema = z.object({
   concerns: z
     .array(z.string())
     .describe(
-      "Specific concerns identified. Empty array only when the finding is valid and high-confidence.",
+      "Specific concerns identified. Empty array only when the finding is a valid high-confidence vulnerability.",
     ),
   verificationSteps: z
     .array(z.string())

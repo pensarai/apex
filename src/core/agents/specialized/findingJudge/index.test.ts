@@ -98,15 +98,15 @@ describe("judgeFinding", () => {
     );
   });
 
-  it("preserves the finding with low confidence when the judge agent fails", async () => {
+  it("rejects the finding as unverified when the judge agent fails", async () => {
     mocks.consume.mockRejectedValue(new Error("provider overloaded"));
 
     const result = await judgeFinding(makeInput(), makeContext());
 
-    expect(result.valid).toBe(true);
-    expect(result.findingType).toBe("vulnerability");
+    expect(result.valid).toBe(false);
+    expect(result.findingType).toBe("informational");
     expect(result.confidence).toBe(0.4);
-    expect(result.reasoning).toContain("Preserving");
+    expect(result.reasoning).toContain("Rejecting");
     expect(result.concerns).toEqual(
       expect.arrayContaining([
         expect.stringContaining("infrastructure failed"),
@@ -115,13 +115,13 @@ describe("judgeFinding", () => {
     expect(result.error?.message).toBe("provider overloaded");
   });
 
-  it("creates explicit degraded preservation diagnostics", () => {
+  it("creates explicit unverified rejection diagnostics", () => {
     const result = createJudgeFailureResult(
       Object.assign(new Error("rate limited"), { status: 429 }),
       "test-model",
     );
 
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
     expect(result.confidence).toBeLessThan(0.5);
     expect(result.error?.message).toContain("[status=429]");
     expect(result.limitations?.[0]).toContain("No independent judge");
