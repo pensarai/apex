@@ -51,6 +51,21 @@ jobs:
           git fetch "$GITHUB_WORKSPACE/apex" "$GITHUB_SHA"
           git checkout "$GITHUB_SHA"
 
+      - name: Remove unrelated missing workspaces
+        working-directory: console
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const pkgPath = "package.json";
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+          const workspaces = Array.isArray(pkg.workspaces) ? pkg.workspaces : [];
+          pkg.workspaces = workspaces.filter((workspace) => {
+            if (!workspace.includes("design-system")) return true;
+            return fs.existsSync(workspace);
+          });
+          fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+          NODE
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
