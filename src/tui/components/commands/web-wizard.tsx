@@ -374,14 +374,18 @@ export default function WebWizard({
         hostInput.trim() &&
         advancedExpanded
       ) {
+        const trimmedHost = hostInput.trim();
         setScopeManuallyEdited(true);
-        setState((prev) => ({
-          ...prev,
-          scope: {
-            ...prev.scope,
-            allowedHosts: [...prev.scope.allowedHosts, hostInput.trim()],
-          },
-        }));
+        setState((prev) => {
+          if (prev.scope.allowedHosts.includes(trimmedHost)) return prev;
+          return {
+            ...prev,
+            scope: {
+              ...prev.scope,
+              allowedHosts: [...prev.scope.allowedHosts, trimmedHost],
+            },
+          };
+        });
         setHostInput("");
         return;
       }
@@ -391,14 +395,18 @@ export default function WebWizard({
         portInput.trim() &&
         advancedExpanded
       ) {
+        const trimmedPort = portInput.trim();
         setScopeManuallyEdited(true);
-        setState((prev) => ({
-          ...prev,
-          scope: {
-            ...prev.scope,
-            allowedPorts: [...prev.scope.allowedPorts, portInput.trim()],
-          },
-        }));
+        setState((prev) => {
+          if (prev.scope.allowedPorts.includes(trimmedPort)) return prev;
+          return {
+            ...prev,
+            scope: {
+              ...prev.scope,
+              allowedPorts: [...prev.scope.allowedPorts, trimmedPort],
+            },
+          };
+        });
         setPortInput("");
         return;
       }
