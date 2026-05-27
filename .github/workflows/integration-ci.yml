@@ -25,6 +25,7 @@ jobs:
         with:
           repository: pensarai/console
           token: ${{ secrets.CONSOLE_REPO_TOKEN }}
+          submodules: recursive
           path: console
 
       - name: Update apex submodule to current ref
@@ -41,10 +42,6 @@ jobs:
           fi
 
           echo "Found apex submodule at: $SUBMODULE_PATH"
-
-          # Only initialize the Apex submodule. Console may have other private
-          # submodules that are unrelated to this downstream compatibility check.
-          git submodule update --init --depth=1 "$SUBMODULE_PATH"
 
           # Point the submodule at the local apex checkout and update
           cd "$SUBMODULE_PATH"
