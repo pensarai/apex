@@ -10,6 +10,7 @@
 import packageJson from "../package.json";
 import { type AIModel, buildAuthConfig } from "./core/ai";
 import { resolvePentestMode } from "./core/cli/pentestMode";
+import { formatSessionHandoffSummary } from "./core/cli/sessionHandoff";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
 import type { SessionInfo } from "./core/session";
@@ -317,8 +318,13 @@ ${sep}
 RESULTS
 ${sep}
 Findings:  ${findings.length}
-Path:      ${findingsPath}
-POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}`);
+${formatSessionHandoffSummary({
+  sessionId: session.id,
+  sessionPath: session.rootPath,
+  findingsPath,
+  pocsPath,
+  reportPath,
+})}`);
   } finally {
     await wandbCleanup();
   }
@@ -383,8 +389,12 @@ ${sep}
 RESULTS
 ${sep}
 Findings:  ${findings.length}
-Path:      ${findingsPath}
-POCs:      ${pocsPath}`);
+${formatSessionHandoffSummary({
+  sessionId: session.id,
+  sessionPath: session.rootPath,
+  findingsPath,
+  pocsPath,
+})}`);
   } finally {
     await wandbCleanup();
   }

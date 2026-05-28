@@ -106,6 +106,10 @@ navigation:
             path: ./docs/cli/uninstall.mdx
           - page: pensar version
             path: ./docs/cli/version.mdx
+      - section: Integrations
+        contents:
+          - page: Coding Agents
+            path: ./docs/integrations/coding-agents.mdx
   - tab: console
     layout:
 
