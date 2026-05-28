@@ -1,6 +1,5 @@
+import { AVAILABLE_MODELS, type ModelInfo } from "../ai";
 import type { Config } from "../config/config";
-import { AVAILABLE_MODELS } from "../ai/models";
-import { type ModelInfo } from "../ai";
 import {
   AVAILABLE_PROVIDERS,
   type ConfiguredProvider,
@@ -19,7 +18,7 @@ const PROVIDER_PREFERENCE_ORDER: ProviderType[] = [
 const PREFERRED_MODEL_BY_PROVIDER: Record<string, string> = {
   pensar: "pensar:anthropic.claude-opus-4-6-v1",
   anthropic: "claude-opus-4-6",
-  openai: "gpt-5.2-pro",
+  openai: "gpt-5.5",
   google: "gemini-3.1-pro-preview",
   openrouter: "anthropic/claude-opus-4.6",
   bedrock: "anthropic.claude-opus-4-6-v1",
@@ -36,7 +35,7 @@ export function getConfiguredProviders(config: Config): ConfiguredProvider[] {
   });
 }
 
-export function isProviderConfigured(
+function isProviderConfigured(
   providerId: ProviderType,
   config: Config,
 ): boolean {
@@ -82,7 +81,7 @@ export function hasAnyProviderConfigured(config: Config): boolean {
   );
 }
 
-export function getModelsByProvider(providerId: ProviderType): ModelInfo[] {
+function getModelsByProvider(providerId: ProviderType): ModelInfo[] {
   return AVAILABLE_MODELS.filter((model) => model.provider === providerId);
 }
 

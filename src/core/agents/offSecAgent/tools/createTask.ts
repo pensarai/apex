@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { ToolContext } from "./types";
 import { createTask as coreCreateTask } from "../../../tasks";
+import type { ToolContext } from "./types";
 
 const createTaskInputSchema = z.object({
   subject: z

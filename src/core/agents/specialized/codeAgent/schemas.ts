@@ -1,11 +1,14 @@
+// Stable external import path. External consumers depend on this module
+// (and on its zod-v3 schema specifically — must stay defined here to avoid
+// v3/v4 schema incompatibility at runtime). Tracked for migration into the
+// public API in #726 — do not delete or restructure until those consumers
+// are moved off the deep import.
+
 import { z } from "zod";
 
 /**
  * Structured result returned by a CodeAgent that analyzes git diffs
  * to determine which endpoints need re-testing.
- *
- * Exported for use by Console — must be defined here with apex's Zod v3
- * to avoid v3/v4 schema incompatibility at runtime.
  */
 export const EndpointSelectionResultSchema = z.object({
   runAll: z

@@ -336,7 +336,7 @@ export const MAX_SEVERITY: Record<
  * Maximum severity metric combinations for each equivalence class
  * Used to construct the highest-severity vector for interpolation
  */
-export const MAX_COMPOSED: Record<
+const MAX_COMPOSED: Record<
   string,
   Record<number, string[] | Record<string, string[]>>
 > = {
@@ -383,7 +383,7 @@ export const MAX_COMPOSED: Record<
 /**
  * Impact metrics that determine if score is 0
  */
-export const NO_IMPACT_METRICS = ["VC", "VI", "VA", "SC", "SI", "SA"] as const;
+const NO_IMPACT_METRICS = ["VC", "VI", "VA", "SC", "SI", "SA"] as const;
 
 /**
  * Step value for severity distance calculation
@@ -393,4 +393,4 @@ export const STEP = 0.1;
 /**
  * Epsilon for floating point comparisons
  */
-export const EPSILON = Math.pow(10, -6);
+const EPSILON = 10 ** -6;

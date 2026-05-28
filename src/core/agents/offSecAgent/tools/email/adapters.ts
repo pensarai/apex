@@ -9,6 +9,8 @@
  * - IMAP   → imapflow
  */
 
+import type { Attachment as ParsedAttachment } from "mailparser";
+import { simpleParser } from "mailparser";
 import type { EmailInboxConfig } from "../../../../session";
 import type {
   EmailAttachment,
@@ -17,8 +19,6 @@ import type {
   EmailMessageSummary,
   EmailSearchResult,
 } from "./types";
-import { simpleParser } from "mailparser";
-import type { Attachment as ParsedAttachment } from "mailparser";
 
 // ---------------------------------------------------------------------------
 // Unified adapter interface
@@ -88,7 +88,7 @@ export function createEmailAdapter(inbox: EmailInboxConfig): EmailAdapter {
 // Gmail adapter  (@googleapis/gmail)
 // ---------------------------------------------------------------------------
 
-import { gmail_v1, auth as gauth } from "@googleapis/gmail";
+import { auth as gauth, gmail_v1 } from "@googleapis/gmail";
 
 /**
  * Extract a useful message from a Google API / GaxiosError.  The raw
@@ -481,6 +481,7 @@ class OutlookAdapter implements EmailAdapter {
         }
         const body = new URLSearchParams(params);
 
+        // biome-ignore lint/style/noRestrictedGlobals: Microsoft OAuth (not the pentest target); must not pass through targetFetch.
         const res = await fetch(
           "https://login.microsoftonline.com/common/oauth2/v2.0/token",
           { method: "POST", body },

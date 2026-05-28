@@ -13,7 +13,7 @@
  * - High water mark for ID generation (prevents reuse after deletion)
  */
 
-import { mkdirSync, readFileSync, writeFileSync, readdirSync } from "fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
 // ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ export function createTask(tasksDir: string, input: CreateTaskInput): Task {
 /**
  * Read a single task by ID. Returns null if not found.
  */
-export function getTask(tasksDir: string, id: number): Task | null {
+function getTask(tasksDir: string, id: number): Task | null {
   try {
     const raw = readFileSync(taskPath(tasksDir, id), "utf-8");
     return JSON.parse(raw) as Task;
@@ -210,10 +210,7 @@ export function listTasks(
       const task = JSON.parse(raw) as Task;
       if (filter?.status && task.status !== filter.status) continue;
       tasks.push(task);
-    } catch {
-      // Skip malformed files
-      continue;
-    }
+    } catch {}
   }
 
   // Sort by ID ascending

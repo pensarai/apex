@@ -6,58 +6,47 @@
  * Reuses MessageList and InputArea from the shared/chat components.
  */
 
+import { useKeyboard } from "@opentui/react";
+import { hasToolCall, type ModelMessage, stepCountIs } from "ai";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import { isAbsolute, join, resolve } from "path";
 import {
-  useState,
-  useEffect,
-  useRef,
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
-import { useKeyboard } from "@opentui/react";
-
-import {
-  sessions,
-  type SessionInfo,
-  type SessionConfig,
-  normalizeMessages,
-} from "../../../core/session";
-import { runOffensiveSecurityAgent } from "../../../core/api/offesecAgent";
-import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
-import { buildAuthConfig } from "../../../core/ai/utils";
-import { modelSupportsThinking, type CacheMetrics } from "../../../core/ai";
-import {
-  ALL_TOOL_NAMES,
-  PLAN_MODE_TOOL_NAMES,
-  SKILL_TOOL_NAMES,
-  ASK_USER_QUESTIONS_TOOL_NAME,
-  AgentEventBus,
-  type AgentMode,
+import type {
+  AskUserQuestion,
+  AskUserQuestionAnswer,
+  AskUserQuestionsResult,
 } from "../../../core/agents/offSecAgent";
 import {
-  readPlan,
-  hasPlan,
-  planFilePath as getPlanFilePath,
-} from "../../../core/plan";
+  AgentEventBus,
+  type AgentMode,
+  ALL_TOOL_NAMES,
+  ASK_USER_QUESTIONS_TOOL_NAME,
+  PLAN_MODE_TOOL_NAMES,
+  SKILL_TOOL_NAMES,
+} from "../../../core/agents/offSecAgent";
 import {
-  convertModelMessagesToUI,
-  type UIMessage,
-} from "../../../core/session/persistence";
-import { useAgent } from "../../context/agent";
-import { useRoute } from "../../context/route";
-import { useConfig } from "../../context/config";
-import { useCommand } from "../../context/command";
-import { useDialog } from "../../context/dialog";
-import { useFocus } from "../../context/focus";
-import { MessageList } from "../chat/message-list";
-import { InputArea } from "../chat/input-area";
-import { useTheme } from "../../theme";
-import type { DisplayMessage, WorkflowData } from "../agent-display";
-import { isToolMessage } from "../shared/type-guards";
+  buildAuthConfig,
+  type CacheMetrics,
+  modelSupportsOpenAIReasoning,
+  modelSupportsThinking,
+} from "../../../core/ai";
 import {
-  tryParsePartialJson,
-  extractStreamableContent,
-} from "../shared/message-utils";
+  type RunAgentResult,
+  runOffensiveSecurityAgent,
+} from "../../../core/api";
+import { formatParseError, parseHeaderLine } from "../../../core/http/parse";
+import {
+  isSensitiveHeaderName,
+  renderHeaderValue,
+} from "../../../core/http/types";
+import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
   ApprovalGate,
@@ -66,42 +55,67 @@ import {
   type OperatorSessionState,
 } from "../../../core/operator";
 import {
+  planFilePath as getPlanFilePath,
+  hasPlan,
+  readPlan,
+} from "../../../core/plan";
+import {
+  normalizeMessages,
+  type SessionConfig,
+  type SessionInfo,
+  sessions,
+} from "../../../core/session";
+import {
   readExecutionMetrics,
   writeExecutionMetrics,
 } from "../../../core/session/execution-metrics";
-import { hasToolCall, stepCountIs, type ModelMessage } from "ai";
-import type {
-  AskUserQuestion,
-  AskUserQuestionAnswer,
-  AskUserQuestionsResult,
-} from "../../../core/agents/offSecAgent/tools/askUserQuestions";
-import { QuestionsForm } from "../chat/questions-form";
 import {
+  convertModelMessagesToUI,
+  type UIMessage,
+} from "../../../core/session/persistence";
+import {
+  buildPentestPrompt,
+  buildThreatModelPrompt,
+} from "../../../core/skills/builtins";
+import { useAgent } from "../../context/agent";
+import { useCommand } from "../../context/command";
+import { useConfig } from "../../context/config";
+import { useDialog } from "../../context/dialog";
+import { useFocus } from "../../context/focus";
+import { useRoute } from "../../context/route";
+import { useTheme } from "../../theme";
+import { openFileInDefaultApp } from "../../utils/open-file.js";
+import type { DisplayMessage, WorkflowData } from "../agent-display";
+import { InputArea } from "../chat/input-area";
+import { MessageList } from "../chat/message-list";
+import { QuestionsForm } from "../chat/questions-form";
+import { collectScreenshotPaths, ScreenshotModal } from "../screenshot-modal";
+import {
+  deriveApprovedActionLabel,
+  extractStreamableContent,
+  isToolMessage,
+  tryParsePartialJson,
+} from "../shared";
+import {
+  accumulateTokenUsage,
+  buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
+  resolveAbortAction,
+  resolveInputFocused,
+  resolveKeyboardShortcut,
   resolveSubmit,
   routeCommand,
-  resolveKeyboardShortcut,
-  resolveAbortAction,
-  buildOperatorSystemPrompt,
-  resolveInputFocused,
-  accumulateTokenUsage,
 } from "./logic";
+import { navigateDown, navigateUp, selectionAfterRemove } from "./queue";
+import { QueuedMessages } from "./queued-messages";
+import SubagentDialog from "./subagent-dialog";
 import {
   createSubagentSessionHelpers,
   createSubagentStore,
   loadSubagentSessionsFromDisk,
 } from "./subagent-state";
-import { QueuedMessages } from "./queued-messages";
 import { SubagentStatusBar } from "./subagent-status-bar";
-import SubagentDialog from "./subagent-dialog";
-import { navigateUp, navigateDown, selectionAfterRemove } from "./queue";
-import { openFileInDefaultApp } from "../../utils/open-file.js";
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import { isAbsolute, join, resolve } from "path";
-
-import { buildThreatModelPrompt } from "../../../core/skills/builtins/threatModel";
-import { buildPentestPrompt } from "../../../core/skills/builtins/pentest";
 
 function markInFlightToolsErrored(
   messages: DisplayMessage[],
@@ -130,6 +144,7 @@ export default function OperatorDashboard({
     operatorMode?: OperatorMode;
     sandbox?: boolean;
     taskDriven?: boolean;
+    headers?: Record<string, string>;
   };
 }) {
   const { colors } = useTheme();
@@ -147,6 +162,7 @@ export default function OperatorDashboard({
     resetTokenUsage,
     setSessionCwd,
     reasoningEnabled,
+    openAIReasoningEffort,
   } = useAgent();
   const {
     autocompleteOptions: allAutocompleteOptions,
@@ -157,7 +173,12 @@ export default function OperatorDashboard({
     skillsRegistry,
     skillsVersion,
   } = useCommand();
-  const { stack, externalDialogOpen, replace: replaceDialog } = useDialog();
+  const {
+    stack,
+    externalDialogOpen,
+    replace: replaceDialog,
+    clear: clearDialog,
+  } = useDialog();
   const { refocusPrompt } = useFocus();
 
   const autocompleteOptions = useMemo(() => {
@@ -303,6 +324,7 @@ export default function OperatorDashboard({
   const planSubmittedRef = useRef(false);
   const planRejectedRef = useRef(false);
   const planApprovedPendingRunRef = useRef(false);
+  const planGateBypassedOnResumeRef = useRef(false);
 
   const [pendingQuestions, setPendingQuestions] = useState<
     AskUserQuestion[] | null
@@ -331,12 +353,17 @@ export default function OperatorDashboard({
       setStatus("waiting");
     };
 
-    const onApprovalResolved = (event: { id: string; decision: string }) => {
-      setPendingApprovals(gate.getPendingApprovals());
+    const onApprovalResolved = (event: {
+      id: string;
+      decision: string;
+      approval: PendingApproval;
+    }) => {
+      const pending = gate.getPendingApprovals();
+      setPendingApprovals(pending);
       if (event.decision === "approved") {
-        setLastApprovedAction(event.id);
+        setLastApprovedAction(deriveApprovedActionLabel(event.approval));
       }
-      if (gate.getPendingApprovals().length === 0) {
+      if (pending.length === 0) {
         setStatus("running");
       }
     };
@@ -416,14 +443,12 @@ export default function OperatorDashboard({
                 // Best-effort — subagent files may not exist
               }
 
-              // Restore plan content from a prior session so the cycleMode
-              // gate doesn't force a redundant re-approval on Shift+Tab.
-              // Only mark the plan as approved if the user previously left
-              // plan mode (restoredMode !== "plan"), which signals prior approval.
-              if (restoredMode !== "plan") {
-                const planContent = readPlan(s.rootPath);
-                if (planContent) {
+              const planContent = readPlan(s.rootPath);
+              if (planContent) {
+                if (restoredMode !== "plan") {
                   setApprovedPlanContent(planContent);
+                } else {
+                  planGateBypassedOnResumeRef.current = true;
                 }
               }
             }
@@ -970,6 +995,7 @@ export default function OperatorDashboard({
           (d.result as Record<string, unknown> | null)?.success === true
         ) {
           planSubmittedRef.current = true;
+          planGateBypassedOnResumeRef.current = false;
         }
       });
 
@@ -1000,6 +1026,8 @@ export default function OperatorDashboard({
 
       eventBus.on("subagent-spawn", ({ subagentId, name }) => {
         if (gen !== generationRef.current) return;
+        // Hide whitebox per-app synthetic grouping nodes until #744 lands a hierarchical view.
+        if (subagentId.startsWith("app:")) return;
         subagentHelpers.spawnSession(subagentId, name);
         if (!isPentestAgent(subagentId)) return;
         // Pentest swarm agents → workflowData.pentesting.subagents
@@ -1021,6 +1049,9 @@ export default function OperatorDashboard({
 
       eventBus.on("subagent-complete", ({ subagentId, status }) => {
         if (gen !== generationRef.current) return;
+        // Mirror the spawn-handler filter: synthetic per-app grouping nodes
+        // were never registered as sessions, so don't try to complete them.
+        if (subagentId.startsWith("app:")) return;
         subagentHelpers.completeSession(subagentId, status);
         if (!isPentestAgent(subagentId)) return;
         // Update workflowData swarm status
@@ -1134,6 +1165,10 @@ export default function OperatorDashboard({
         commandCancelHandle: cancelHandleRef.current,
         skillsRegistry,
         enableThinking: reasoningEnabled && modelSupportsThinking(model.id),
+        openAIReasoningEffort: modelSupportsOpenAIReasoning(model.id)
+          ? openAIReasoningEffort
+          : undefined,
+        surfaceIntegrationEnabled: config.data?.surfaceIntegrationEnabled,
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {
           addCacheUsage(
@@ -1155,7 +1190,7 @@ export default function OperatorDashboard({
       // For new sessions, onSessionReady fires mid-construction; we replay
       // any buffered records once the handler attaches.
       type TraceEvent = {
-        record: import("../../../core/agents/offSecAgent/trace").TraceRecord;
+        record: import("../../../core/agents/offSecAgent").TraceRecord;
         subagentId?: string;
       };
       let wandbCleanup: (() => Promise<void>) | null = null;
@@ -1197,7 +1232,7 @@ export default function OperatorDashboard({
       }
 
       try {
-        let agentResult;
+        let agentResult: RunAgentResult;
 
         const systemPrompt = buildOperatorSystemPrompt(
           initialConfig?.target,
@@ -1240,7 +1275,11 @@ export default function OperatorDashboard({
               enableSuggestions: true,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
+            codebasePath: initialConfig?.sandbox ? undefined : process.cwd(),
             taskDriven: initialConfig?.taskDriven,
+            ...(initialConfig?.headers !== undefined
+              ? { headers: { ...initialConfig.headers } }
+              : {}),
           };
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
@@ -1542,6 +1581,98 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     executeCommand("/models");
   }, [executeCommand]);
 
+  const handleHeadersSlash = useCallback(
+    async (op: import("./logic").HeadersOp) => {
+      const active = sessionRef.current;
+      if (!active) {
+        addSystemMessage("No active session — cannot manage headers yet.");
+        return;
+      }
+      const current: Record<string, string> = {
+        ...(active.config?.headers ?? {}),
+      };
+
+      const persist = async (next: Record<string, string>, message: string) => {
+        const updated = await sessions.updateSessionHeaders(active.id, next);
+        // Touch both ref and state — runAgent captures `session` in its
+        // dep array, so a stale closure would skip the new headers.
+        sessionRef.current = updated;
+        setSession(updated);
+        addSystemMessage(message);
+      };
+
+      switch (op.kind) {
+        case "invalid": {
+          addSystemMessage(`/headers: ${op.reason}`);
+          return;
+        }
+        case "list": {
+          const entries = Object.entries(current);
+          if (entries.length === 0) {
+            addSystemMessage("No session headers set.");
+            return;
+          }
+          const lines = entries.map(
+            ([name, value]) =>
+              `${isSensitiveHeaderName(name) ? "* " : "  "}${name}: ${renderHeaderValue(name, value, op.showSecrets)}`,
+          );
+          addSystemMessage(
+            `Session headers (${entries.length}):\n${lines.join("\n")}${op.showSecrets ? "" : "\nPass `/headers list --show` to reveal values."}`,
+          );
+          return;
+        }
+        case "add": {
+          const parsed = parseHeaderLine(op.line);
+          if (!parsed.ok) {
+            addSystemMessage(
+              `/headers add rejected:\n${formatParseError(parsed.error)}`,
+            );
+            return;
+          }
+          const canonical = Object.keys(current).find(
+            (k) => k.toLowerCase() === parsed.value.name.toLowerCase(),
+          );
+          if (canonical && !op.allowOverwrite) {
+            addSystemMessage(
+              `Header "${canonical}" already set. Use \`/headers set\` to overwrite.`,
+            );
+            return;
+          }
+          if (canonical && canonical !== parsed.value.name) {
+            delete current[canonical];
+          }
+          current[parsed.value.name] = parsed.value.value;
+          await persist(
+            current,
+            `Header ${parsed.value.name} updated (value redacted).`,
+          );
+          return;
+        }
+        case "remove": {
+          const canonical = Object.keys(current).find(
+            (k) => k.toLowerCase() === op.name.toLowerCase(),
+          );
+          if (!canonical) {
+            addSystemMessage(`No header named "${op.name}".`);
+            return;
+          }
+          delete current[canonical];
+          await persist(current, `Header ${canonical} removed.`);
+          return;
+        }
+        case "clear": {
+          if (Object.keys(current).length === 0) {
+            addSystemMessage("Headers already empty.");
+            return;
+          }
+          await persist({}, "All session headers cleared.");
+          return;
+        }
+      }
+    },
+    [addSystemMessage],
+  );
+
   const handleCommandExecute = useCallback(
     async (command: string) => {
       const action = routeCommand(command, resolveSkillContent);
@@ -1603,6 +1734,10 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           );
           return;
         }
+        case "headers": {
+          await handleHeadersSlash(action.op);
+          return;
+        }
         case "execute-command":
           await executeCommand(action.command);
           return;
@@ -1615,6 +1750,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       executeCommand,
       showModelPicker,
       addSystemMessage,
+      handleHeadersSlash,
     ],
   );
 
@@ -1893,21 +2029,21 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     const idx = OPERATOR_MODE_CYCLE.indexOf(current);
     const next = OPERATOR_MODE_CYCLE[(idx + 1) % OPERATOR_MODE_CYCLE.length];
 
-    // Gate: if leaving plan mode and a plan exists but isn't approved, show review
     if (
       current === "plan" &&
       sessionRef.current &&
       hasPlan(sessionRef.current.rootPath) &&
-      !approvedPlanRef.current
+      !approvedPlanRef.current &&
+      !planGateBypassedOnResumeRef.current
     ) {
       setShowPlanReview(true);
       return;
     }
 
-    // Entering plan mode — reset plan state for fresh cycle
     if (next === "plan") {
       setApprovedPlanContent(null);
       planRejectedRef.current = false;
+      planGateBypassedOnResumeRef.current = false;
     }
 
     transitionToMode(next);
@@ -2084,6 +2220,18 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     ) {
       key.preventDefault?.();
       openSubagentDialog();
+      return;
+    }
+
+    // Ctrl+I to open the screenshot stack (no-op if no screenshots yet)
+    if (key.ctrl && key.name === "i" && !dialogOpen) {
+      const screenshots = collectScreenshotPaths(displayMessagesRef.current);
+      if (screenshots.length === 0) return;
+      key.preventDefault?.();
+      replaceDialog(
+        <ScreenshotModal screenshots={screenshots} onClose={clearDialog} />,
+        { bare: true, selfHandlesEscape: true },
+      );
       return;
     }
     const action = resolveKeyboardShortcut(
@@ -2314,12 +2462,3 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     </box>
   );
 }
-
-// Re-export types for backward compatibility
-export type {
-  Endpoint,
-  VerifiedVuln,
-  Credential,
-  Hypothesis,
-  Evidence,
-} from "./types";

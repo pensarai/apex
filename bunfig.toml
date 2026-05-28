@@ -1,0 +1,4 @@
+[install]
+# Refuse to install packages published less than 3 days ago (supply chain mitigation).
+minimumReleaseAge = 259200
+minimumReleaseAgeExcludes = []

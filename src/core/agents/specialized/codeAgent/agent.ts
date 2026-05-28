@@ -1,7 +1,9 @@
 import { stepCountIs } from "ai";
 import type { z } from "zod";
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
-import type { SpecializedAgentInput } from "../../offSecAgent/types";
+import {
+  OffensiveSecurityAgent,
+  type SpecializedAgentInput,
+} from "../../offSecAgent";
 import { CODE_AGENT_SYSTEM_PROMPT } from "./prompts";
 
 // ---------------------------------------------------------------------------
@@ -78,6 +80,7 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       attackSurfaceRegistry,
       excludeTools,
       enableThinking,
+      openAIReasoningEffort,
       projectThreatModel,
     } = opts;
 
@@ -86,6 +89,17 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       "list_files",
       "grep",
       "execute_command",
+      "profile_codebase",
+      "query_whitebox_catalog",
+      "run_code_query",
+      "run_whitebox_scan",
+      "create_whitebox_candidate",
+      "update_whitebox_candidate",
+      "list_whitebox_candidates",
+      "start_whitebox_job",
+      "poll_whitebox_job",
+      "stop_whitebox_job",
+      "read_whitebox_artifact",
       "http_request",
       "document_app",
       "document_endpoint",
@@ -116,6 +130,7 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       subagentId,
       attackSurfaceRegistry,
       enableThinking,
+      openAIReasoningEffort,
       projectThreatModel,
       stopWhen: stopWhen ?? stepCountIs(10000),
       activeTools,

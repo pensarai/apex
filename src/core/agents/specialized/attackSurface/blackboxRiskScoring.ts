@@ -1,4 +1,4 @@
-import type { RiskScore } from "../whiteboxAttackSurface/types";
+import type { RiskScore } from "../whiteboxAttackSurface";
 import type { RiskLevel } from "./schemas";
 
 interface EndpointDetails {

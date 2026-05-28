@@ -1,25 +1,22 @@
-import { useState, useRef, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
+import { useEffect, useRef, useState } from "react";
+import { getPensarApiUrl, getPensarConsoleUrl } from "../../../core/api";
+import type { DeviceFlowInfo, WorkspaceInfo } from "../../../core/auth";
+import {
+  disconnect,
+  fetchWorkspaces,
+  isConnected,
+  pollForWorkspaceCreation,
+  pollLegacyToken,
+  pollWorkOSToken,
+  selectWorkspace as selectWorkspaceApi,
+  startDeviceFlow,
+} from "../../../core/auth";
 import { config } from "../../../core/config";
 import { useConfig } from "../../context/config";
-import {
-  getPensarApiUrl,
-  getPensarConsoleUrl,
-} from "../../../core/api/constants";
-import {
-  isConnected,
-  disconnect,
-  startDeviceFlow,
-  pollWorkOSToken,
-  pollLegacyToken,
-  fetchWorkspaces,
-  pollForWorkspaceCreation,
-  selectWorkspace as selectWorkspaceApi,
-} from "../../../core/auth";
-import type { DeviceFlowInfo, WorkspaceInfo } from "../../../core/auth";
 import { Dialog } from "../../context/dialog";
-import DialogLayout, { type FooterAction } from "../dialog-layout";
 import { useTheme } from "../../theme";
+import DialogLayout, { type FooterAction } from "../dialog-layout";
 
 interface AuthFlowProps {
   onClose: () => void;

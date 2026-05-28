@@ -1,9 +1,9 @@
 import {
-  useState,
   createContext,
-  useContext,
   type ReactNode,
+  useContext,
   useMemo,
+  useState,
 } from "react";
 import type { SessionConfig } from "../../core/session";
 
@@ -69,6 +69,8 @@ export type Route =
         operatorMode?: import("../../core/operator").OperatorMode;
         sandbox?: boolean;
         taskDriven?: boolean;
+        /** Headers from wizard/CLI; replace the snapshotted global defaults. */
+        headers?: Record<string, string>;
       };
       /** Skill to automatically submit on mount */
       initialSkill?: { slug: string; args?: Record<string, string> };
@@ -115,7 +117,7 @@ export const useRoute = () => {
   return route;
 };
 
-export const useRouteData = <T extends Route["type"]>(type: T) => {
+const useRouteData = <T extends Route["type"]>(type: T) => {
   const route = useRoute();
   return route.data as Extract<Route, { type: typeof type }>;
 };

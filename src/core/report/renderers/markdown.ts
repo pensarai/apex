@@ -1,5 +1,5 @@
-import type { PentestReport, PentestReportFinding } from "../schemas";
 import { hasCanonicalName } from "../../../lib/cwe/types";
+import type { PentestReport, PentestReportFinding } from "../schemas";
 
 export function renderMarkdown(report: PentestReport): string {
   const { metadata, findings, summary } = report;

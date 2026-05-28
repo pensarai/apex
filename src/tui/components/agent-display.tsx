@@ -1,14 +1,14 @@
-import { SpinningDots, ShiningText } from "./loaders";
-import { useState, memo } from "react";
+import { memo, useState } from "react";
 import type { Message } from "../../core/messages/types";
-import {
-  markdownToStyledText,
-  getStableMessageKey,
-  getArgsPreview,
-} from "./shared";
-import { useTheme } from "../theme";
 import { useDimensions } from "../context/dimensions";
 import { useObfuscation } from "../context/obfuscation";
+import { useTheme } from "../theme";
+import { ShiningText, SpinningDots } from "./loaders";
+import {
+  getArgsPreview,
+  getStableMessageKey,
+  markdownToStyledText,
+} from "./shared";
 
 export type Subagent = {
   id: string;
@@ -125,7 +125,7 @@ interface AgentDisplayProps {
   focused?: boolean; // Controls whether this scrollbox responds to scroll events
 }
 
-export default function AgentDisplay({
+function AgentDisplay({
   messages,
   isStreaming = false,
   children,
@@ -283,6 +283,18 @@ const AgentMessage = memo(function AgentMessage({
       .join("");
   } else {
     content = JSON.stringify(message.content, null, 2);
+  }
+
+  // For completed tool messages, extract the message field from the result if present
+  if (
+    message.role === "tool" &&
+    message.status === "completed" &&
+    message.result &&
+    typeof message.result === "object" &&
+    "message" in message.result &&
+    typeof (message.result as Record<string, unknown>).message === "string"
+  ) {
+    content = (message.result as Record<string, unknown>).message as string;
   }
 
   // Render markdown for assistant messages (markdown pipeline obfuscates

@@ -1,11 +1,14 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { config } from "../../../config";
-import { ensureValidToken, signGatewayRequest } from "../../../auth";
+// Importing through the api barrel would create a circular module load:
+// api → offesecAgent → offSecAgent/tools → webSearch → api. Use the leaf
+// constants module directly.
 import { getPensarApiUrl } from "../../../api/constants";
+import { ensureValidToken, signGatewayRequest } from "../../../auth";
+import { config } from "../../../config";
 import type { ToolContext } from "./types";
 
-export const webSearchInputSchema = z.object({
+const webSearchInputSchema = z.object({
   query: z
     .string()
     .describe(
@@ -18,9 +21,9 @@ export const webSearchInputSchema = z.object({
     ),
 });
 
-export type WebSearchInput = z.infer<typeof webSearchInputSchema>;
+type WebSearchInput = z.infer<typeof webSearchInputSchema>;
 
-export interface WebSearchResult {
+interface WebSearchResult {
   title: string;
   url: string;
   snippet: string;
@@ -42,6 +45,7 @@ async function braveSearch(
   url.searchParams.set("q", query);
   url.searchParams.set("count", "10");
 
+  // biome-ignore lint/style/noRestrictedGlobals: Brave Search API is infrastructure (not the pentest target); must not pass through targetFetch.
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: {
@@ -132,6 +136,7 @@ COMMON SEARCH PATTERNS:
 
         // API key mode: authenticate directly without token exchange or signing
         if (cfg.pensarAPIKey && !cfg.accessToken) {
+          // biome-ignore lint/style/noRestrictedGlobals: Pensar Console (not the pentest target); must not pass through targetFetch.
           const response = await fetch(`${apiUrl}/agents/web_search`, {
             method: "POST",
             headers: {
@@ -183,6 +188,7 @@ COMMON SEARCH PATTERNS:
           body,
         );
 
+        // biome-ignore lint/style/noRestrictedGlobals: Pensar Console (not the pentest target); must not pass through targetFetch.
         const response = await fetch(`${apiUrl}/agents/web_search`, {
           method: "POST",
           headers: {

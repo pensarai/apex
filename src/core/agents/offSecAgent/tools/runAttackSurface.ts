@@ -1,9 +1,9 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { ToolContext } from "./types";
-import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
-import type { WhiteboxAttackSurfaceResult } from "../../specialized/whiteboxAttackSurface/types";
 import { AgentEventBus } from "../../../eventBus";
+import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
+import type { WhiteboxAttackSurfaceResult } from "../../specialized/whiteboxAttackSurface";
+import type { ToolContext } from "./types";
 
 /**
  * Factory for the `run_attack_surface` tool.
@@ -57,6 +57,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       ctx.eventBus?.emit("subagent-spawn", {
         subagentId,
         input: { target, cwd },
+        parentSubagentId: ctx.subagentId,
       });
 
       // -----------------------------------------------------------------------
@@ -64,8 +65,9 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       // -----------------------------------------------------------------------
       if (cwd) {
         try {
-          const { WhiteboxAttackSurfaceAgent } =
-            await import("../../specialized/whiteboxAttackSurface/agent");
+          const { WhiteboxAttackSurfaceAgent } = await import(
+            "../../specialized/whiteboxAttackSurface"
+          );
 
           const localBus = new AgentEventBus();
           AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
@@ -99,6 +101,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           ctx.eventBus?.emit("subagent-complete", {
             subagentId,
             status: "completed",
+            parentSubagentId: ctx.subagentId,
           });
 
           return {
@@ -117,6 +120,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           ctx.eventBus?.emit("subagent-complete", {
             subagentId,
             status: "failed",
+            parentSubagentId: ctx.subagentId,
           });
 
           return {
@@ -132,8 +136,9 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       // Blackbox mode — probe live target
       // -----------------------------------------------------------------------
       try {
-        const { BlackboxAttackSurfaceAgent } =
-          await import("../../specialized/attackSurface/blackboxAgent");
+        const { BlackboxAttackSurfaceAgent } = await import(
+          "../../specialized/attackSurface/blackboxAgent"
+        );
 
         const localBus = new AgentEventBus();
         AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
@@ -159,6 +164,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         ctx.eventBus?.emit("subagent-complete", {
           subagentId,
           status: "completed",
+          parentSubagentId: ctx.subagentId,
         });
 
         return {
@@ -183,6 +189,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         ctx.eventBus?.emit("subagent-complete", {
           subagentId,
           status: "failed",
+          parentSubagentId: ctx.subagentId,
         });
 
         return {

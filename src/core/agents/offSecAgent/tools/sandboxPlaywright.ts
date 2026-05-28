@@ -19,19 +19,24 @@
  */
 
 import { tool } from "ai";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
 import { z } from "zod";
-import { join, dirname } from "path";
-import { mkdirSync, existsSync, writeFileSync } from "fs";
-import type { UnifiedSandbox } from "./sandbox";
-import type { ToolContext } from "./types";
+import {
+  resolveEffectiveHeaders,
+  stripBrowserManagedHeaders,
+} from "../../../http/targetHeaders";
 import type {
+  BrowserClickResult,
+  BrowserConsoleResult,
+  BrowserEvaluateResult,
+  BrowserFillResult,
   BrowserNavigateResult,
   BrowserScreenshotResult,
-  BrowserClickResult,
-  BrowserFillResult,
-  BrowserEvaluateResult,
-  BrowserConsoleResult,
 } from "./playwrightMcp";
+import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
+import { resolverSessionFromCtx } from "./scopeGuard";
+import type { ToolContext } from "./types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -136,7 +141,7 @@ export async function installSandboxPlaywright(
       { timeout: 10 },
     );
 
-    let browserResult;
+    let browserResult: SandboxExecutionResult | undefined;
     for (let attempt = 1; attempt <= 3; attempt++) {
       browserResult = await sandbox.execute(
         `cd ${SANDBOX_PW_DIR} && npx playwright install chromium --with-deps 2>&1`,
@@ -229,7 +234,12 @@ async function runPlaywrightScript(
   sandbox: UnifiedSandbox,
   body: string,
   timeout = 60,
+  extraHttpHeaders?: Record<string, string>,
 ): Promise<unknown> {
+  const headersJson =
+    extraHttpHeaders && Object.keys(extraHttpHeaders).length > 0
+      ? JSON.stringify(extraHttpHeaders)
+      : "null";
   const script = `
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -245,6 +255,10 @@ const fs = require('fs');
     try { fs.accessSync(p, fs.constants.X_OK); executablePath = p; break; } catch {}
   }
 
+  // Resolved per script invocation so /headers mutations take effect
+  // on the next browser tool call.
+  const __extraHeaders = ${headersJson};
+
   let context;
   const __consoleMessages = [];
   try {
@@ -252,6 +266,7 @@ const fs = require('fs');
       headless: true,
       ...(executablePath ? { executablePath } : {}),
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+      ...(__extraHeaders ? { extraHTTPHeaders: __extraHeaders } : {}),
     });
     const pages = context.pages();
     const page = pages.length > 0 ? pages[pages.length - 1] : await context.newPage();
@@ -434,6 +449,19 @@ export function createSandboxBrowserTools(ctx: ToolContext) {
     return setupPromise;
   }
 
+  // Resolve fresh on every tool call so /headers mutations apply next call.
+  function runScript(body: string, timeout = 60): Promise<unknown> {
+    const resolved = targetUrl
+      ? resolveEffectiveHeaders(resolverSessionFromCtx(ctx), targetUrl)
+      : ctx.session.config?.headers;
+    return runPlaywrightScript(
+      sandbox,
+      body,
+      timeout,
+      stripBrowserManagedHeaders(resolved),
+    );
+  }
+
   // ------- browser_navigate -------------------------------------------------
 
   const browser_navigate = tool({
@@ -447,8 +475,7 @@ Target base URL: ${targetUrl}`,
     execute: async ({ url }): Promise<BrowserNavigateResult> => {
       try {
         await setup();
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     await page.goto(${JSON.stringify(url)}, { waitUntil: 'domcontentloaded', timeout: 30000 });
     // Persist current URL so subsequent tool calls can restore the page
@@ -485,8 +512,7 @@ Use this to document:
         const screenshotFilename = `${filename}_${timestamp}.png`;
         const sandboxPath = `${SANDBOX_EVIDENCE_DIR}/${screenshotFilename}`;
 
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     const buf = await page.screenshot({ fullPage: false });
     const b64 = buf.toString('base64');
@@ -545,8 +571,7 @@ Example workflow:
     }> => {
       try {
         await setup();
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     // Build accessibility snapshot via page.evaluate — works on all
     // Playwright versions and doesn't depend on the deprecated
@@ -661,8 +686,7 @@ IMPORTANT: For reliable clicking, first call browser_snapshot to get element ref
     execute: async ({ element, ref }): Promise<BrowserClickResult> => {
       try {
         await setup();
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     const ref = ${JSON.stringify(ref || "")};
     const element = ${JSON.stringify(element)};
@@ -739,8 +763,7 @@ IMPORTANT: For reliable form filling, first call browser_snapshot to get element
     execute: async ({ element, ref, value }): Promise<BrowserFillResult> => {
       try {
         await setup();
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     const ref = ${JSON.stringify(ref || "")};
     const element = ${JSON.stringify(element)};
@@ -828,8 +851,7 @@ The JavaScript is executed in the page context and the result is returned.`,
           /^\s*(async\s+)?function\s*\(/.test(script);
         const fnScript = isFunction ? script : `() => (${script})`;
 
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     const fnStr = ${JSON.stringify(fnScript)};
     const fn = new Function('return (' + fnStr + ')')();
@@ -862,8 +884,7 @@ Use this to check for:
     execute: async (): Promise<BrowserConsoleResult> => {
       try {
         await setup();
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     const fs = require('fs');
     let persisted = [];
@@ -915,8 +936,7 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
     }> => {
       try {
         await setup();
-        const result = (await runPlaywrightScript(
-          sandbox,
+        const result = (await runScript(
           `
     const urls = ${JSON.stringify(urls || [])};
     const cookies = urls.length > 0

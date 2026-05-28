@@ -1,10 +1,10 @@
 import { tool } from "ai";
-import { z } from "zod";
 import { readdir, stat } from "fs/promises";
-import { join, relative, resolve, isAbsolute } from "path";
+import { isAbsolute, join, relative, resolve } from "path";
+import { z } from "zod";
 import type { ToolContext } from "./types";
 
-export const listFilesInputSchema = z.object({
+const listFilesInputSchema = z.object({
   directory: z
     .string()
     .optional()
@@ -22,7 +22,7 @@ export const listFilesInputSchema = z.object({
     ),
 });
 
-export type ListFilesInput = z.infer<typeof listFilesInputSchema>;
+type ListFilesInput = z.infer<typeof listFilesInputSchema>;
 
 export type ListFilesResult = {
   success: boolean;
@@ -44,7 +44,7 @@ async function listRecursive(
   let total = 0;
 
   async function walk(current: string) {
-    let entries;
+    let entries: import("fs").Dirent[];
     try {
       entries = await readdir(current, { withFileTypes: true });
     } catch {

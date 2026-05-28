@@ -8,10 +8,10 @@
  * with dark/light variants via ThemeColors tokens.
  */
 
-import { RGBA, StyledText, type TextChunk } from "@opentui/core";
+import { type RGBA, StyledText, type TextChunk } from "@opentui/core";
 import hljs from "highlight.js";
 import { extname } from "path";
-import type { ThemeColors } from "../../theme/types";
+import type { ThemeColors } from "../../theme";
 
 // ---------------------------------------------------------------------------
 // Build hljs class → RGBA map from resolved theme colors
@@ -164,9 +164,8 @@ function parseHljsHtml(
   const colorStack: RGBA[] = [defaultColor];
 
   const TAG_RE = /<span\s+class="([^"]*)"[^>]*>|<\/span>|([^<]+)|(<[^>]*>)/g;
-  let m: RegExpExecArray | null;
 
-  while ((m = TAG_RE.exec(html)) !== null) {
+  for (let m = TAG_RE.exec(html); m !== null; m = TAG_RE.exec(html)) {
     if (m[1] !== undefined) {
       // Opening <span class="...">
       const classes = m[1].split(/\s+/);

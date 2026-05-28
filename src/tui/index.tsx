@@ -1,70 +1,83 @@
-import { createRoot } from "@opentui/react";
-import { useState, useEffect } from "react";
-import Footer from "./components/footer";
-import { CommandProvider } from "./context/command";
-import { AgentProvider } from "./context/agent";
-import SessionsDisplay from "./components/commands/sessions-display";
-import ChatApp from "./components/chat";
-import HITLWizard from "./components/commands/operator-wizard";
-import WebWizard from "./components/commands/web-wizard";
-import ProviderManager from "./components/commands/provider-manager";
-import type { Config } from "../core/config/config";
-import type { SessionConfig } from "../core/session";
+import { createCliRenderer, FrameBufferRenderable } from "@opentui/core";
+import { createRoot, extend } from "@opentui/react";
+import { useEffect, useState } from "react";
 import { config } from "../core/config";
-import { createCliRenderer } from "@opentui/core";
-import { ConfigProvider, useConfig } from "./context/config";
-import { createSwitch } from "./components/switch";
-import {
-  type RoutePath,
-  type WebCommandOptions,
-  RouteProvider,
-  useRoute,
-} from "./context/route";
-import { ResponsibleUseDisclosure } from "./components/responsible-use-disclosure";
-import { hasAnyProviderConfigured } from "../core/providers";
-import { SessionProvider } from "./context/session";
-import { InputProvider } from "./context/input";
-import { FocusProvider, useFocus } from "./context/focus";
-import { DialogProvider, useDialog } from "./context/dialog";
-import { ToastProvider } from "./context/toast";
-import { ToastContainer } from "./components/toast";
-import { ErrorBoundary } from "./components/error-boundary";
-import { useToast } from "./context/toast";
-import { writeErrorLog } from "../core/logger";
+import type { Config } from "../core/config/config";
 import { checkForUpdate } from "../core/installation";
-import ShortcutsDialog from "./components/commands/shortcuts-dialog";
-import HelpDialog from "./components/commands/help-dialog";
-import ModelsDisplay from "./components/commands/models-display";
-import { ModelPickerDialog } from "./components/model-picker";
+import { writeErrorLog } from "../core/logger";
+import { hasAnyProviderConfigured } from "../core/providers";
+import type { SessionConfig } from "../core/session";
+import { setupAutoCopy } from "./auto-copy";
+import { createClipboardManager } from "./clipboard";
+import { ChatApp } from "./components/chat";
 import AuthFlow from "./components/commands/auth-flow";
 import CreditsFlow from "./components/commands/credits-flow";
-import { KeybindingProvider } from "./context/keybinding";
-import OperatorDashboard from "./components/operator-dashboard";
-import ThemePicker from "./components/commands/theme-picker";
+import HelpDialog from "./components/commands/help-dialog";
+import ModelsDisplay from "./components/commands/models-display";
+import HITLWizard from "./components/commands/operator-wizard";
+import ProviderManager from "./components/commands/provider-manager";
+import SessionsDisplay from "./components/commands/sessions-display";
+import ShortcutsDialog from "./components/commands/shortcuts-dialog";
 import SkillsDialog from "./components/commands/skills-dialog";
+import ThemePicker from "./components/commands/theme-picker";
+import WebWizard from "./components/commands/web-wizard";
+import { ErrorBoundary } from "./components/error-boundary";
+import Footer from "./components/footer";
+import { ModelPickerDialog } from "./components/model-picker";
+import OperatorDashboard from "./components/operator-dashboard";
+import { ResponsibleUseDisclosure } from "./components/responsible-use-disclosure";
+import { createSwitch } from "./components/switch";
+import { TerminalFocusHandler } from "./components/terminal-focus-handler";
+import { ToastContainer } from "./components/toast";
 import {
-  ThemeProvider,
-  useTheme,
-  resolveThemeColors,
-  getTheme,
-  type ColorMode,
-} from "./theme";
-import { registerBuiltinThemes } from "./theme/themes";
-import { detectTerminalMode } from "./theme/detect-mode";
-import {
-  overlayThemeRef,
   buildConsoleOptions,
   ConsoleThemeSync,
+  overlayThemeRef,
 } from "./console-theme";
-import { createClipboardManager } from "./clipboard";
-import { setupAutoCopy } from "./auto-copy";
+import { AgentProvider } from "./context/agent";
+import { CommandProvider } from "./context/command";
+import { ConfigProvider, useConfig } from "./context/config";
+import { DialogProvider, useDialog } from "./context/dialog";
 import { TerminalDimensionsProvider } from "./context/dimensions";
-import { TerminalFocusHandler } from "./components/terminal-focus-handler";
-import { cleanupTerminalFocusMode } from "./terminal-focus";
+import { FocusProvider, useFocus } from "./context/focus";
+import { InputProvider } from "./context/input";
+import { KeybindingProvider } from "./context/keybinding";
 import { ObfuscationProvider } from "./context/obfuscation";
+import {
+  type RoutePath,
+  RouteProvider,
+  useRoute,
+  type WebCommandOptions,
+} from "./context/route";
+import { SessionProvider } from "./context/session";
+import { ToastProvider, useToast } from "./context/toast";
 import { installObfuscationTextPatch } from "./obfuscation/patch";
+import { cleanupTerminalFocusMode } from "./terminal-focus";
+import {
+  type ColorMode,
+  detectTerminalMode,
+  getTheme,
+  registerBuiltinThemes,
+  resolveThemeColors,
+  ThemeProvider,
+  useTheme,
+} from "./theme";
 
 installObfuscationTextPatch();
+
+extend({ frameBuffer: FrameBufferRenderable });
+declare module "@opentui/react" {
+  interface OpenTUIComponents {
+    frameBuffer: typeof FrameBufferRenderable;
+  }
+}
+
+extend({ frameBuffer: FrameBufferRenderable });
+declare module "@opentui/react" {
+  interface OpenTUIComponents {
+    frameBuffer: typeof FrameBufferRenderable;
+  }
+}
 
 interface AppProps {
   appConfig: Config;
@@ -446,6 +459,7 @@ function AppContent({
         requireApproval: false,
         target,
         sandbox: isBlackbox,
+        headers: sessionConfig.headers,
       },
       initialSkill: { slug: "pentest", args: skillArgs },
     });

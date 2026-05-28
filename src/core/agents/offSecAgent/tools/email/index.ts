@@ -6,21 +6,18 @@
  * Resend's SMTP relay).
  */
 
+export { emailGetMessage } from "./getMessage";
 export { emailListInboxes } from "./listInboxes";
 export { emailListMessages } from "./listMessages";
-export { emailGetMessage } from "./getMessage";
 export { emailSearchMessages } from "./searchMessages";
-export { emailGetAttachments } from "./getAttachments";
-export { emailMarkRead } from "./markRead";
-export { sendEmail } from "./sendEmail";
 
 import type { ToolContext } from "../types";
+import { emailGetAttachments } from "./getAttachments";
+import { emailGetMessage } from "./getMessage";
 import { emailListInboxes } from "./listInboxes";
 import { emailListMessages } from "./listMessages";
-import { emailGetMessage } from "./getMessage";
-import { emailSearchMessages } from "./searchMessages";
-import { emailGetAttachments } from "./getAttachments";
 import { emailMarkRead } from "./markRead";
+import { emailSearchMessages } from "./searchMessages";
 import { sendEmail } from "./sendEmail";
 
 /**
@@ -53,5 +50,3 @@ export const EMAIL_TOOL_NAMES = [
 ] as const;
 
 export const SEND_EMAIL_TOOL_NAME = "send_email" as const;
-
-export type EmailToolName = (typeof EMAIL_TOOL_NAMES)[number];

@@ -6,8 +6,8 @@
  * streaming, tool calls, and scrolling support.
  */
 
-import { memo } from "react";
 import { useKeyboard } from "@opentui/react";
+import { memo } from "react";
 
 import { MessageList } from "../chat/message-list";
 import type { SubagentSession } from "./subagent-state";
@@ -49,5 +49,3 @@ export const SubagentDetailView = memo(function SubagentDetailView({
     />
   );
 });
-
-export default SubagentDetailView;

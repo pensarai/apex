@@ -1,13 +1,13 @@
-import { useState, useEffect, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useRoute } from "../../context/route";
-import { useConfig } from "../../context/config";
-import { useAgent } from "../../context/agent";
-import { SpinningDots } from "../loaders";
+import { useEffect, useMemo, useState } from "react";
 import type { ModelInfo } from "../../../core/ai";
 import { getAvailableModels } from "../../../core/providers/utils";
+import { useAgent } from "../../context/agent";
+import { useConfig } from "../../context/config";
+import { useRoute } from "../../context/route";
 import { useTheme } from "../../theme";
-import { DialogControls } from "../shared/dialog-controls";
+import { SpinningDots } from "../loaders";
+import { DialogControls } from "../shared";
 
 type WizardStep = "config" | "creating";
 
@@ -21,12 +21,6 @@ interface HITLWizardProps {
   initialTarget?: string;
   initialName?: string;
   initialRequireApproval?: boolean;
-  initialAuthUrl?: string;
-  initialAuthUser?: string;
-  initialAuthPass?: string;
-  initialAuthInstructions?: string;
-  initialHeadersMode?: "none" | "default" | "custom";
-  initialCustomHeaders?: Record<string, string>;
   initialModel?: string;
 }
 

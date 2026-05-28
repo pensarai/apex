@@ -1,5 +1,7 @@
-import { config } from "../config";
+// Importing through the api barrel would cycle. Use the leaf constants
+// module directly.
 import { getPensarApiUrl } from "../api/constants";
+import { config } from "../config";
 import type { ValidToken } from "./types";
 
 /**
@@ -38,7 +40,7 @@ export function isTokenExpired(
  */
 let cachedClientId: string | null = null;
 
-export async function fetchWorkOSClientId(): Promise<string | null> {
+async function fetchWorkOSClientId(): Promise<string | null> {
   if (cachedClientId) return cachedClientId;
 
   try {
@@ -61,7 +63,7 @@ export async function fetchWorkOSClientId(): Promise<string | null> {
  *
  * @returns The new access token, or null if refresh fails
  */
-export async function refreshAccessToken(
+async function refreshAccessToken(
   clientId: string,
   refreshToken: string,
 ): Promise<string | null> {

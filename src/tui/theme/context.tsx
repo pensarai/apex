@@ -5,22 +5,22 @@
  * mode, resolving per-token { dark, light } values to flat RGBA colors.
  */
 
+import type { RGBA } from "@opentui/core";
 import {
   createContext,
-  useContext,
-  useState,
-  useCallback,
-  useMemo,
   type ReactNode,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
 } from "react";
-import type { RGBA } from "@opentui/core";
+import { DEFAULT_THEME_NAME, getAllThemeNames, getTheme } from "./registry";
 import type {
-  ThemeDefinition,
+  ColorMode,
   ThemeColors,
   ThemeColorValue,
-  ColorMode,
+  ThemeDefinition,
 } from "./types";
-import { getTheme, getAllThemeNames, DEFAULT_THEME_NAME } from "./registry";
 
 interface ThemeContextValue {
   /** Current active theme definition */
@@ -92,7 +92,7 @@ export function ThemeProvider({
   }, []);
 
   return (
-    <ThemeContext
+    <ThemeContext.Provider
       value={{
         theme,
         colors,
@@ -104,7 +104,7 @@ export function ThemeProvider({
       }}
     >
       {children}
-    </ThemeContext>
+    </ThemeContext.Provider>
   );
 }
 

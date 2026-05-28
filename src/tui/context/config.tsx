@@ -1,12 +1,12 @@
 import {
-  useState,
   createContext,
-  useContext,
   type ReactNode,
+  useContext,
   useMemo,
+  useState,
 } from "react";
-import type { Config } from "../../core/config/config";
 import { config as _config } from "../../core/config";
+import type { Config } from "../../core/config/config";
 
 type ConfigContext = {
   data: Config;

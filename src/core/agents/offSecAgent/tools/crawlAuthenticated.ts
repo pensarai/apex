@@ -1,11 +1,16 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { targetFetch } from "../../../http/targetHeaders";
 import {
-  extractJavascriptEndpoints,
   type EndpointInfo,
+  extractJavascriptEndpoints,
 } from "../../specialized/attackSurface/jsExtraction";
+import {
+  assertUrlInScope,
+  resolverSessionFromCtx,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
-import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 
 /**
  * Factory for the `crawl_authenticated_area` tool.
@@ -67,10 +72,14 @@ export function crawlAuthenticated(ctx: ToolContext) {
           visited.add(url);
 
           try {
-            const pageResult = await fetch(url, {
-              method: "GET",
-              headers: { cookie: sessionCookie },
-            });
+            const pageResult = await targetFetch(
+              resolverSessionFromCtx(ctx),
+              url,
+              {
+                method: "GET",
+                headers: { cookie: sessionCookie },
+              },
+            );
 
             if (pageResult.status >= 200 && pageResult.status < 400) {
               const html = await pageResult.text();
@@ -78,8 +87,11 @@ export function crawlAuthenticated(ctx: ToolContext) {
               // Extract links
               const linkRegex = /<a[^>]+href=['"]([^'"]+)['"]/gi;
               const links: string[] = [];
-              let linkMatch;
-              while ((linkMatch = linkRegex.exec(html)) !== null) {
+              for (
+                let linkMatch = linkRegex.exec(html);
+                linkMatch !== null;
+                linkMatch = linkRegex.exec(html)
+              ) {
                 const link = linkMatch[1];
                 if (link.startsWith("/") && !link.startsWith("//")) {
                   links.push(link);
@@ -92,8 +104,11 @@ export function crawlAuthenticated(ctx: ToolContext) {
               // Extract forms
               const formRegex = /<form[^>]+action=['"]([^'"]+)['"]/gi;
               const forms: string[] = [];
-              let formMatch;
-              while ((formMatch = formRegex.exec(html)) !== null) {
+              for (
+                let formMatch = formRegex.exec(html);
+                formMatch !== null;
+                formMatch = formRegex.exec(html)
+              ) {
                 forms.push(formMatch[1]);
               }
 

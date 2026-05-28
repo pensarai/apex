@@ -95,10 +95,34 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
     const targets = args.targets as unknown[];
     return `pentest swarm ×${targets?.length ?? "?"}`;
   },
+  spawn_pentest_agent: (args) => {
+    const name = (args.name as string) ?? "pentest worker";
+    return `pentest worker — ${name}`;
+  },
   run_pentest_workflow: (args) => {
     const mode = args.cwd ? "whitebox" : "blackbox";
     return `pentest workflow (${mode}) ${args.target || ""}`;
   },
+  profile_codebase: (args) =>
+    `profile codebase${args.path ? ` ${args.path}` : ""}`,
+  query_whitebox_catalog: (args) =>
+    `whitebox catalog ${args.query || args.kind || ""}`,
+  run_code_query: (args) => {
+    const engine = (args.engine as string) || "rg";
+    const queries = args.queries as unknown[];
+    return `${engine} query ×${queries?.length ?? "?"}`;
+  },
+  run_whitebox_scan: (args) => `whitebox scan ${args.kind || ""}`,
+  create_whitebox_candidate: (args) =>
+    `candidate: ${args.title || args.vulnerabilityClass || ""}`,
+  update_whitebox_candidate: (args) => `candidate ${args.id || ""}`,
+  list_whitebox_candidates: (args) =>
+    `candidates ${args.state ? `(${args.state})` : ""}`,
+  start_whitebox_job: (args) => `whitebox job ${args.name || ""}`,
+  poll_whitebox_job: (args) => `poll job ${args.jobId || ""}`,
+  stop_whitebox_job: (args) => `stop job ${args.jobId || ""}`,
+  read_whitebox_artifact: (args) =>
+    args.path ? `artifact ${args.path}` : `job log ${args.jobId || ""}`,
   delegate_to_auth_subagent: (args) =>
     `auth ${args.target || ""} — ${args.reason || ""}`,
 
@@ -174,14 +198,14 @@ export function getToolDisplayLabel(
  * @param name - Tool name
  * @param fn - Summary function
  */
-export function registerToolSummary(name: string, fn: ToolSummaryFn): void {
+function registerToolSummary(name: string, fn: ToolSummaryFn): void {
   TOOL_SUMMARY_MAP[name] = fn;
 }
 
 /**
  * Check if a tool has a registered summary function.
  */
-export function hasToolSummary(name: string): boolean {
+function hasToolSummary(name: string): boolean {
   return name in TOOL_SUMMARY_MAP;
 }
 

@@ -15,13 +15,13 @@
  *   bun run scripts/run-benchmarks.ts --all --mode daytona --model claude-sonnet-4-5
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import path from "path";
-import { runBenchmarkSuite } from "../src/core/benchmark/runner";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import {
-  generateTextReport,
   generateJsonReport,
+  generateTextReport,
 } from "../src/core/benchmark/report";
+import { runBenchmarkSuite } from "../src/core/benchmark/runner";
 import type { BenchmarkSuiteConfig } from "../src/core/benchmark/types";
 
 // ---------------------------------------------------------------------------
@@ -106,32 +106,43 @@ async function main(): Promise<void> {
   // Parse arguments
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    const value = args[i + 1];
 
     if (arg === "--help" || arg === "-h") {
       printUsage();
       process.exit(0);
-    } else if (arg === "--branches" && args[i + 1]) {
-      branches = args[++i]!.split(",").map((b) => b.trim());
+    } else if (arg === "--branches" && value) {
+      i++;
+      branches = value.split(",").map((b) => b.trim());
     } else if (arg === "--all") {
       all = true;
-    } else if (arg === "--repo-url" && args[i + 1]) {
-      repoUrl = args[++i]!;
-    } else if (arg === "--repo-dir" && args[i + 1]) {
-      repoDir = path.resolve(args[++i]!);
-    } else if (arg === "--model" && args[i + 1]) {
-      model = args[++i]!;
-    } else if (arg === "--output" && args[i + 1]) {
-      outputDir = path.resolve(args[++i]!);
-    } else if (arg === "--mode" && args[i + 1]) {
-      mode = args[++i]! as "local" | "daytona";
-    } else if (arg === "--timeout" && args[i + 1]) {
-      timeoutMinutes = parseInt(args[++i]!, 10);
-    } else if (arg === "--skip" && args[i + 1]) {
-      skip = parseInt(args[++i]!, 10);
-    } else if (arg === "--limit" && args[i + 1]) {
-      limit = parseInt(args[++i]!, 10);
-    } else if (arg === "--daytona-batch-size" && args[i + 1]) {
-      daytonaBatchSize = parseInt(args[++i]!, 10);
+    } else if (arg === "--repo-url" && value) {
+      i++;
+      repoUrl = value;
+    } else if (arg === "--repo-dir" && value) {
+      i++;
+      repoDir = path.resolve(value);
+    } else if (arg === "--model" && value) {
+      i++;
+      model = value;
+    } else if (arg === "--output" && value) {
+      i++;
+      outputDir = path.resolve(value);
+    } else if (arg === "--mode" && value) {
+      i++;
+      mode = value as "local" | "daytona";
+    } else if (arg === "--timeout" && value) {
+      i++;
+      timeoutMinutes = parseInt(value, 10);
+    } else if (arg === "--skip" && value) {
+      i++;
+      skip = parseInt(value, 10);
+    } else if (arg === "--limit" && value) {
+      i++;
+      limit = parseInt(value, 10);
+    } else if (arg === "--daytona-batch-size" && value) {
+      i++;
+      daytonaBatchSize = parseInt(value, 10);
     } else if (arg === "--no-cleanup") {
       cleanupTempDirs = false;
     }
@@ -167,7 +178,7 @@ async function main(): Promise<void> {
   if (mode === "local") {
     // Verify docker is available
     try {
-      const { execSync } = await import("child_process");
+      const { execSync } = await import("node:child_process");
       execSync("docker compose version", { stdio: "pipe" });
     } catch {
       console.error(
@@ -222,7 +233,7 @@ async function main(): Promise<void> {
 
   // Print text report
   const textReport = generateTextReport(suiteResult);
-  console.log("\n" + textReport);
+  console.log(`\n${textReport}`);
 
   // Write JSON results
   mkdirSync(outputDir, { recursive: true });

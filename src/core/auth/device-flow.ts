@@ -1,3 +1,5 @@
+// Importing through the api barrel would cycle. Use the leaf constants
+// module directly.
 import { getPensarApiUrl } from "../api/constants";
 import type {
   DeviceFlowInfo,

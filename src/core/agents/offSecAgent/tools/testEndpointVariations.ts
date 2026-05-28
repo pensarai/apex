@@ -1,7 +1,12 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { targetFetch } from "../../../http/targetHeaders";
+import {
+  assertUrlInScope,
+  resolverSessionFromCtx,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
-import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 
 /**
  * Factory for the `test_endpoint_variations` tool.
@@ -61,7 +66,11 @@ Use this to:
               request.headers = { Cookie: sessionCookie };
             }
 
-            const result = await fetch(endpoint, request);
+            const result = await targetFetch(
+              resolverSessionFromCtx(ctx),
+              endpoint,
+              request,
+            );
             const body = await result.text();
 
             results.push({

@@ -7,16 +7,18 @@
  * - Mode and status awareness
  */
 
-import React, { useState, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useTheme } from "../../theme";
-import { PromptInput, type PromptInputRef } from "../shared/prompt-input";
-import { InputProvider, useInput } from "../../context/input";
+import type React from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PendingApproval } from "../../../core/operator";
-import { type OperatorMode, OPERATOR_MODES } from "../../../core/operator";
+import { OPERATOR_MODES, type OperatorMode } from "../../../core/operator";
 import { useAgent } from "../../context/agent";
+import { useDialog } from "../../context/dialog";
 import { useDimensions } from "../../context/dimensions";
+import { InputProvider, useInput } from "../../context/input";
+import { useTheme } from "../../theme";
 import { getPasteText } from "../../utils/paste";
+import { PromptInput, type PromptInputRef } from "../shared";
 
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   anthropic: "Anthropic",
@@ -59,7 +61,7 @@ export interface InputAreaProps {
   /** Enable autocomplete suggestions (e.g. slash commands, skills) */
   enableAutocomplete?: boolean;
   /** Autocomplete options to show */
-  autocompleteOptions?: import("../shared/prompt-input").AutocompleteOption[];
+  autocompleteOptions?: import("../shared").AutocompleteOption[];
   /** Enable slash-command handling */
   enableCommands?: boolean;
   /** Handler for slash-command execution */
@@ -73,10 +75,7 @@ export interface InputAreaProps {
   /** Highlight /slash-command patterns in the input text */
   highlightSlashCommands?: boolean;
   /** Map from command name/alias → autocomplete options for --flags */
-  commandOptionMap?: Map<
-    string,
-    import("../shared/prompt-input").AutocompleteOption[]
-  >;
+  commandOptionMap?: Map<string, import("../shared").AutocompleteOption[]>;
   /** Set of known command names for option detection */
   commandNames?: Set<string>;
 }
@@ -390,7 +389,14 @@ function ApprovalInputArea({
   lastDeclineNote,
 }: ApprovalInputAreaProps) {
   const { colors } = useTheme();
+  const { setExternalDialogOpen } = useDialog();
   const [focusedElement, setFocusedElement] = useState(0); // 0=Yes, 1=Auto, 2=Input
+
+  // Signal to dashboard that redirect input is focused so it skips Y/A shortcuts
+  useEffect(() => {
+    setExternalDialogOpen(focusedElement === 2);
+    return () => setExternalDialogOpen(false);
+  }, [focusedElement, setExternalDialogOpen]);
 
   useKeyboard((key) => {
     // Navigation
@@ -417,6 +423,19 @@ function ApprovalInputArea({
         onRedirect(redirectInput);
       }
       return;
+    }
+
+    // When redirect input is focused, Y/A keys go to the input (no preventDefault).
+    // Dashboard handler is blocked via externalDialogOpen state.
+    if (focusedElement === 2) {
+      if (
+        key.name === "y" ||
+        key.raw === "Y" ||
+        key.name === "a" ||
+        key.raw === "A"
+      ) {
+        return;
+      }
     }
   });
 
@@ -496,5 +515,3 @@ function ApprovalInputArea({
     </box>
   );
 }
-
-export default InputArea;

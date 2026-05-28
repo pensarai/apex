@@ -14,20 +14,20 @@
  * Legacy alias: `pensar auth` still works for backward compatibility
  */
 
-import { config } from "../core/config";
-import { getPensarApiUrl, getPensarConsoleUrl } from "../core/api/constants";
-import {
-  isConnected,
-  disconnect,
-  startDeviceFlow,
-  pollWorkOSToken,
-  pollLegacyToken,
-  fetchWorkspaces,
-  pollForWorkspaceCreation,
-  selectWorkspace,
-} from "../core/auth";
+import * as readline from "node:readline";
+import { getPensarApiUrl, getPensarConsoleUrl } from "../core/api";
 import type { WorkspaceInfo } from "../core/auth";
-import * as readline from "readline";
+import {
+  disconnect,
+  fetchWorkspaces,
+  isConnected,
+  pollForWorkspaceCreation,
+  pollLegacyToken,
+  pollWorkOSToken,
+  selectWorkspace,
+  startDeviceFlow,
+} from "../core/auth";
+import { config } from "../core/config";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -36,7 +36,7 @@ import * as readline from "readline";
 function openUrl(url: string): void {
   try {
     const { spawn } =
-      require("child_process") as typeof import("child_process");
+      require("node:child_process") as typeof import("node:child_process");
     const platform = process.platform;
     let cmd: ReturnType<typeof spawn>;
     if (platform === "darwin") {
@@ -78,12 +78,17 @@ async function promptWorkspaceSelection(
   const answer = await prompt(`\nEnter number (1-${workspaces.length}): `);
   const index = parseInt(answer, 10) - 1;
 
-  if (isNaN(index) || index < 0 || index >= workspaces.length) {
+  if (Number.isNaN(index) || index < 0 || index >= workspaces.length) {
     console.error("Invalid selection.");
     process.exit(1);
   }
 
-  return workspaces[index]!;
+  const workspace = workspaces[index];
+  if (!workspace) {
+    console.error("Invalid selection.");
+    process.exit(1);
+  }
+  return workspace;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,8 +155,13 @@ async function login(): Promise<void> {
       expiresIn: deviceInfo.expiresIn,
     });
 
+    const apiKey = data.apiKey;
+    if (!apiKey) {
+      throw new Error("Pensar Console did not return an API key");
+    }
+
     await config.update({
-      pensarAPIKey: data.apiKey!,
+      pensarAPIKey: apiKey,
       gatewaySigningKey: data.signingKey ?? null,
     });
 
@@ -195,7 +205,11 @@ async function handleWorkspaces(
 
   let workspace: WorkspaceInfo;
   if (workspaces.length === 1) {
-    workspace = workspaces[0]!;
+    const onlyWorkspace = workspaces[0];
+    if (!onlyWorkspace) {
+      throw new Error("No workspace available after workspace lookup");
+    }
+    workspace = onlyWorkspace;
   } else {
     workspace = await promptWorkspaceSelection(workspaces);
   }

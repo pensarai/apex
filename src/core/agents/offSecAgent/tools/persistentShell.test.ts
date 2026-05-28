@@ -1,23 +1,22 @@
 import { spawnSync } from "child_process";
+import { existsSync, readdirSync } from "fs";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { extractFallbackStdout, PersistentShell } from "./persistentShell";
+import {
+  extractFallbackStdout,
+  getApexTmpRoot,
+  PersistentShell,
+} from "./persistentShell";
+
+function tempfileCount(): number {
+  const root = getApexTmpRoot();
+  return existsSync(root) ? readdirSync(root).length : 0;
+}
 
 const HAS_STDBUF =
   process.platform !== "win32" &&
   spawnSync("stdbuf", ["--version"], { stdio: "ignore" }).status === 0;
 
-/**
- * These tests document and reproduce the "shell eventually stops responding"
- * class of bugs in PersistentShell. They are written as hang-repros: each test
- * exercises a scenario a long-running pentest agent realistically hits, and
- * asserts the contract the tool advertises.
- *
- * Several of these are EXPECTED TO FAIL against the current implementation.
- * They are intentionally left failing so the bugs cannot be silently
- * re-introduced once fixed. They use `it.fails(...)` so the suite stays green
- * while clearly flagging the known-broken behavior.
- */
 describe("PersistentShell — long-running stability", () => {
   const shells: PersistentShell[] = [];
   const make = () => {
@@ -47,16 +46,6 @@ describe("PersistentShell — long-running stability", () => {
     expect(r2.stdout).toContain("two");
   });
 
-  /**
-   * Regression: on macOS without GNU `stdbuf`, the old wrapper relied on
-   * plain `tail -f` for streaming. Because `tail`'s stdout was a pipe it
-   * block-buffered, so short outputs were killed with tail before ever
-   * flushing — every `ls -la`-style command came back with empty stdout
-   * and the agent saw `(no output)`. The current wrapper always runs an
-   * authoritative post-kill `cat` of the per-command tempfile through
-   * bash's real stdout pipe, so `tail` buffering can no longer cause
-   * stdout loss.
-   */
   it("captures short stdout (no-stdbuf safe)", async () => {
     const shell = make();
     const r = await shell.execute("printf 'hello\\nworld\\n'", 5);
@@ -65,21 +54,6 @@ describe("PersistentShell — long-running stability", () => {
     expect(r.stdout).toContain("world");
   });
 
-  /**
-   * Regression: on macOS with SIP, `stdbuf -oL` is a silent no-op on
-   * /usr/bin/tail (DYLD_INSERT_LIBRARIES is stripped from protected
-   * binaries). If the wrapper relies on tail alone to stream stdout,
-   * tail block-buffers (~8 KiB default) and the buffer is discarded
-   * when we kill tail 100 ms after the command finishes — every short
-   * command returns empty stdout. Executed by APEX TUI in operator mode,
-   * by the CLI pentest entrypoint, and by Evalgate-driven runs (e.g.
-   * NOCTURNE), producing `(no output)` for trivial commands and
-   * dominating eval signal with shell brokenness rather than agent
-   * capability.
-   *
-   * These assertions fail on macOS against the pre-patch wrapper and
-   * pass once the authoritative post-kill `cat` phase is in place.
-   */
   it("captures trivial stdout even when tail block-buffers", async () => {
     const shell = make();
     const echo = await shell.execute("echo hello", 5);
@@ -95,20 +69,9 @@ describe("PersistentShell — long-running stability", () => {
     expect(seq.stdout.trim()).toBe("1\n2\n3\n4\n5");
   });
 
-  /**
-   * Regression: tail's default block-buffer is ~8 KiB. A command whose
-   * stdout is just under, at, and just over that boundary must come back
-   * fully intact, with no silent truncation regardless of whether tail
-   * ever flushed its buffer. Exercises the authoritative `cat` phase on
-   * a realistic recon-output size.
-   */
   it("captures output across the 8 KiB block-buffer boundary", async () => {
     const shell = make();
-    // Emit exactly 9000 'x' bytes followed by a newline. Uses /dev/zero
-    // to avoid bash/yes-pipeline byte-counting footguns (e.g.
-    // `yes x | head -c 9000` includes the newlines that `yes` emits, so
-    // stripping them halves the payload). 9000 > 8192 to ensure we
-    // exceed tail's default ~8 KiB block-buffer size.
+    // 9000 > 8192 to exceed tail's default block-buffer.
     const r = await shell.execute(
       "head -c 9000 /dev/zero | tr '\\0' 'x'; echo",
       5,
@@ -117,58 +80,26 @@ describe("PersistentShell — long-running stability", () => {
     expect(r.stdout.replace(/\n$/, "").length).toBe(9000);
   });
 
-  /**
-   * Repro #1 — Stdin hijack by a child process.
-   *
-   * The shell's stdin pipe is shared with every child bash spawns. A command
-   * that reads from stdin (cat/ssh/sudo/python/mysql/read/...) used to
-   * consume bytes meant for bash's own command parsing, wedging the shell
-   * for every subsequent call.
-   *
-   * The fix redirects each user command's stdin from /dev/null, so stdin
-   * readers see EOF immediately and cannot hijack our command pipe. We
-   * verify:
-   *   1. `cat` does NOT hang — it EOFs cleanly (exit 0) in well under the
-   *      timeout, proving stdin isolation works.
-   *   2. The next command still runs immediately afterward.
-   *
-   * Agents hit this constantly in practice because models run things like
-   * `sudo ...` or `ssh ...` mid-pentest.
-   */
   it("stays responsive after a command that normally reads stdin", async () => {
     const shell = make();
 
     const warm = await shell.execute("echo warm", 5);
     expect(warm.exitCode).toBe(0);
 
-    // `cat` with no args normally blocks on stdin. With /dev/null
-    // redirection it EOFs instantly.
+    // `cat` with no args normally blocks on stdin. With /dev/null it EOFs.
     const start = Date.now();
     const hung = await shell.execute("cat", 2);
     const elapsed = Date.now() - start;
     expect(hung.exitCode).toBe(0);
     expect(elapsed).toBeLessThan(1_500);
 
-    // Subsequent command should return within a normal timeout.
     const after = await shell.execute("echo after-cat", 5);
     expect(after.exitCode).toBe(0);
     expect(after.stdout).toContain("after-cat");
   }, 20_000);
 
-  /**
-   * Repro #2 — Process-group leak after timeout.
-   *
-   * `pkill -TERM -P <bashpid>` only reaps direct children of bash. For a
-   * pipeline (`a | b | c`) the workers are grandchildren of bash (children
-   * of the subshell), so they survive the timeout, become orphans, and keep
-   * their inherited fd 1 — feeding Repro #3 below.
-   *
-   * After the timeout, we should see no descendant processes still holding
-   * the shell's stdout pipe.
-   */
   it("cleans up pipeline grandchildren when a command times out", async () => {
     const shell = make();
-    // Prime the shell so we have a stable pid to probe.
     await shell.execute("echo prime", 5);
     const bashPid = (shell as unknown as { proc: { pid: number } }).proc.pid;
     expect(bashPid).toBeGreaterThan(0);
@@ -177,7 +108,6 @@ describe("PersistentShell — long-running stability", () => {
     const timed = await shell.execute("sleep 30 | cat", 2);
     expect(timed.exitCode).toBe(124);
 
-    // Give pkill + the 1s drain window a moment.
     await new Promise((r) => setTimeout(r, 1_500));
 
     const { spawnSync } = await import("child_process");
@@ -190,63 +120,32 @@ describe("PersistentShell — long-running stability", () => {
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean);
-    // No direct bash children should remain; none of them should be sleep.
     expect(remaining.find((l) => l.includes("sleep"))).toBeUndefined();
   }, 20_000);
 
-  /**
-   * Repro #3 — Output from a backgrounded command bleeds into the next
-   * command's captured stdout.
-   *
-   * Background producers whose fd 1 wasn't redirected keep writing to bash's
-   * stdout pipe. Between `execute()` calls the `data` listener is removed,
-   * so buffered bytes land on the *next* command's `stdout` accumulator.
-   * The caller sees output they never asked for, and sufficiently chatty
-   * producers eventually push past the 5MB MAX_BUFFER and trip the
-   * "stdout = stdout.substring(stdout.length - MAX_BUFFER)" truncation —
-   * which, if a marker ever lands near the start, silently drops it and
-   * we wait for a marker that will never appear.
-   */
   it("does not leak background-process output into the next command's stdout", async () => {
     const shell = make();
 
-    // Background a generator whose fd 1 is NOT redirected. This is the
-    // realistic footgun (`nmap -v &` without `>out.log 2>&1 &`).
+    // Background a generator whose fd 1 is NOT redirected (`nmap -v &`).
     const bg = await shell.execute(
       "( while :; do echo spam-$RANDOM; done ) &",
       3,
     );
     expect(bg.exitCode).toBe(0);
 
-    // Give the spammer a moment to write into the pipe.
     await new Promise((r) => setTimeout(r, 500));
 
     const quick = await shell.execute("echo fast", 3);
 
-    // Clean up the spammer before asserting so the shell is reusable.
     await shell.execute(
       "kill $(jobs -p) 2>/dev/null; wait 2>/dev/null; true",
       3,
     );
 
     expect(quick.exitCode).toBe(0);
-    // The next command should see ONLY its own output, not a mountain of
-    // spam from the orphaned background loop.
     expect(quick.stdout.includes("spam-")).toBe(false);
   }, 20_000);
 
-  /**
-   * Repro #4 — `cd` persists across commands.
-   *
-   * Previously the wrapper ran every command inside `( ... )`, a subshell,
-   * which hid `cd`, `export`, shell functions, and option changes from the
-   * outer shell. The tool's own description told the model these would
-   * persist, so agents ran workflows that silently broke.
-   *
-   * The fix uses a brace group `{ ...; }` instead, which runs the command
-   * in the current shell. Same scoping rules as a normal bash script, so
-   * `cd`/`export`/etc. persist as advertised.
-   */
   it("persists cd and export across commands (documented contract)", async () => {
     const shell = make();
     const mk = await shell.execute(
@@ -272,29 +171,16 @@ describe("PersistentShell — long-running stability", () => {
     expect(echo.stdout).toContain("hello");
   });
 
-  /**
-   * Timeout still reports the documented sentinel (124) and kills the
-   * command's descendants, even though the shell's wrapper completes
-   * cleanly after the kill.
-   */
   it("reports exit code 124 on timeout and kills descendants", async () => {
     const shell = make();
     const r = await shell.execute("sleep 30", 1);
     expect(r.exitCode).toBe(124);
 
-    // Shell must still be responsive.
     const after = await shell.execute("echo ok", 5);
     expect(after.exitCode).toBe(0);
     expect(after.stdout).toContain("ok");
   }, 10_000);
 
-  /**
-   * Smoke test: shell's happy-path timeout doesn't leak markers either.
-   * Useful as a second line of defense against marker leaks even though
-   * the real-world trigger (busy event loop, setTimeout fires before
-   * onStdoutData processes the exit-marker chunk) is covered by the
-   * dedicated `extractFallbackStdout` unit tests below.
-   */
   it("does not leak nonce markers on timeout", async () => {
     const shell = make();
     const r = await shell.execute(`printf 'hello\\n'; sleep 10`, 1);
@@ -317,23 +203,143 @@ describe("PersistentShell — long-running stability", () => {
   }, 10_000);
 
   /**
-   * Streaming callback fires as output arrives, where the platform's
-   * `tail -f` actually flushes line-by-line. Requires effective
-   * `stdbuf -oL` on `/usr/bin/tail` (or equivalent), which means:
+   * Issue #644 — Partial output preservation on timeout.
    *
-   *   - Linux glibc + GNU coreutils: works.
-   *   - macOS under SIP: `DYLD_INSERT_LIBRARIES` is stripped from
-   *     `/usr/bin/tail`, so `stdbuf` is a silent no-op; `tail`
-   *     block-buffers its pipe and nothing flushes until we kill it.
-   *     Final stdout is still correct (guaranteed by the authoritative
-   *     post-kill `cat` phase), but live streaming is a known lossy UX
-   *     on darwin and agents do not rely on it. Skip there.
-   *   - Alpine / musl: BusyBox `tail` ignores `libstdbuf`; same result.
-   *
-   * The patch does not fix live streaming on these platforms — it only
-   * fixes final-stdout correctness. This test guards the live-streaming
-   * property on platforms that can deliver it.
+   * Long fuzzers (gobuster, ffuf) routinely outrun the per-command timeout
+   * but the bytes they printed before the kill are already on disk in the
+   * per-command tempfile. The 200ms grace + disk-read salvage surfaces
+   * those bytes; before this fix, the SIGKILL escalation re-enumerated
+   * bash's children and killed `cat` mid-flush, dropping partial output
+   * to `(no output)`.
    */
+  it("preserves partial stdout when a command is killed by timeout", async () => {
+    const shell = make();
+    const r = await shell.execute(
+      `printf 'hit-1\\n'; printf 'hit-2\\n'; sleep 30`,
+      1,
+    );
+    expect(r.exitCode).toBe(124);
+    expect(r.stdout).toContain("hit-1");
+    expect(r.stdout).toContain("hit-2");
+    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+
+    // Shell stays responsive after a salvaged timeout.
+    const after = await shell.execute("echo ok", 5);
+    expect(after.exitCode).toBe(0);
+    expect(after.stdout).toContain("ok");
+  }, 15_000);
+
+  it("preserves partial stdout when a command is aborted", async () => {
+    const shell = make();
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 200);
+    const r = await shell.execute(
+      `printf 'hit-a\\n'; printf 'hit-b\\n'; sleep 30`,
+      30,
+      undefined,
+      ac.signal,
+    );
+    expect(r.exitCode).toBe(130);
+    expect(r.stdout).toContain("hit-a");
+    expect(r.stdout).toContain("hit-b");
+    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+  }, 15_000);
+
+  /**
+   * Salvage works even when the user command ignores SIGTERM. We read
+   * the tempfile after a 200ms grace and BEFORE escalating to SIGKILL,
+   * so anything the tool had already written reaches the agent — and
+   * SIGKILL reliably ends it afterward.
+   */
+  it("salvages stdout from a SIGTERM-resistant command", async () => {
+    const shell = make();
+    const r = await shell.execute(
+      `bash -c "trap '' TERM; printf hit-trapped; sleep 30"`,
+      1,
+    );
+    expect(r.exitCode).toBe(124);
+    expect(r.stdout).toContain("hit-trapped");
+    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+__/);
+  }, 10_000);
+
+  /**
+   * Salvage works for output that exceeds the kernel pipe buffer (~64 KB).
+   * The pre-fix in-pipe approach would block `cat` once the pipe filled and
+   * SIGKILL would truncate. Disk reads are unaffected by pipe state.
+   */
+  it("salvages large partial output (>64 KB) on timeout", async () => {
+    const shell = make();
+    const r = await shell.execute(
+      `for i in $(seq 1 4000); do printf 'line-%05d\\n' $i; done; sleep 30`,
+      1,
+    );
+    expect(r.exitCode).toBe(124);
+    expect(r.stdout).toContain("line-00001");
+    expect(r.stdout).toContain("line-04000");
+    expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+__/);
+  }, 15_000);
+
+  it("returns (no output) when an empty-output command times out", async () => {
+    const shell = make();
+    const r = await shell.execute("sleep 30", 1);
+    expect(r.exitCode).toBe(124);
+    expect(r.stdout).toBe("(no output)");
+  }, 10_000);
+
+  /**
+   * Issue #644 — Tempfile lifecycle. Node owns the per-command tempfiles
+   * (the wrapper no longer `rm`s them). Every code path — happy completion,
+   * timeout, abort, cancel, shell-died, dispose — must unlink the pair.
+   */
+  it("cleans up tempfiles after happy-path completion", async () => {
+    const shell = make();
+    const before = tempfileCount();
+    await shell.execute("echo done", 5);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(tempfileCount()).toBe(before);
+  });
+
+  it("cleans up tempfiles after a timeout", async () => {
+    const shell = make();
+    const before = tempfileCount();
+    const r = await shell.execute("printf 'partial\\n'; sleep 30", 1);
+    expect(r.exitCode).toBe(124);
+    expect(r.stdout).toContain("partial");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(tempfileCount()).toBe(before);
+  }, 10_000);
+
+  it("cleans up tempfiles after an abort", async () => {
+    const shell = make();
+    const before = tempfileCount();
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 100);
+    const r = await shell.execute(
+      "printf 'partial\\n'; sleep 30",
+      30,
+      undefined,
+      ac.signal,
+    );
+    expect(r.exitCode).toBe(130);
+    expect(r.stdout).toContain("partial");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(tempfileCount()).toBe(before);
+  }, 10_000);
+
+  it("does not leak tempfiles across many sequential commands", async () => {
+    const shell = make();
+    const before = tempfileCount();
+    for (let i = 0; i < 20; i++) {
+      await shell.execute(`echo iter-${i}`, 5);
+    }
+    await new Promise((r) => setTimeout(r, 50));
+    expect(tempfileCount()).toBe(before);
+  }, 30_000);
+
+  // Live-streaming UX requires effective `stdbuf -oL` on tail. macOS/SIP
+  // strips DYLD_INSERT_LIBRARIES from /usr/bin/tail, and BusyBox tail ignores
+  // libstdbuf — final stdout is still correct (authoritative cat) but live
+  // streaming is lossy on those platforms, so skip there.
   it.skipIf(!HAS_STDBUF || process.platform === "darwin")(
     "streams stdout to onData as output arrives",
     async () => {
@@ -350,8 +356,6 @@ describe("PersistentShell — long-running stability", () => {
       expect(joined).toContain("line-a");
       expect(joined).toContain("line-b");
       expect(joined).toContain("line-c");
-      // The first chunk must arrive well before the last. If everything
-      // came in one block at the end, streaming is broken.
       const firstA = events.find((e) => e.text.includes("line-a"));
       const firstC = events.find((e) => e.text.includes("line-c"));
       expect(firstA).toBeDefined();
@@ -360,15 +364,93 @@ describe("PersistentShell — long-running stability", () => {
     },
   );
 
-  /**
-   * Repro #5 — The cumulative "agent ran for a while" simulation.
-   *
-   * After many commands — some of which read stdin, some of which
-   * background processes without redirecting fd 1, some of which use
-   * pipelines that time out — a trivial `echo` should still come back
-   * within its timeout. This is the end-state the user described:
-   * "after some time commands will just hang and timeout".
-   */
+  it("does not cross-contaminate stdout across parallel execute() calls", async () => {
+    const shell = make();
+    const [a, b] = await Promise.all([
+      shell.execute("echo apex-call-a-output", 5),
+      shell.execute("echo apex-call-b-output", 5),
+    ]);
+
+    expect(a.exitCode).toBe(0);
+    expect(b.exitCode).toBe(0);
+    expect(a.stdout).toContain("apex-call-a-output");
+    expect(a.stdout).not.toContain("apex-call-b-output");
+    expect(b.stdout).toContain("apex-call-b-output");
+    expect(b.stdout).not.toContain("apex-call-a-output");
+    expect(a.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+    expect(b.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+  }, 15_000);
+
+  it("does not cross-contaminate stderr across parallel execute() calls", async () => {
+    const shell = make();
+    const [a, b] = await Promise.all([
+      shell.execute(">&2 echo apex-call-a-stderr", 5),
+      shell.execute("echo apex-call-b-stdout", 5),
+    ]);
+
+    expect(a.exitCode).toBe(0);
+    expect(b.exitCode).toBe(0);
+    expect(a.stderr).toContain("apex-call-a-stderr");
+    expect(b.stderr).not.toContain("apex-call-a-stderr");
+    expect(b.stdout).toContain("apex-call-b-stdout");
+  }, 15_000);
+
+  it("isolates parallel-call timeouts (no marker or kill-message leakage)", async () => {
+    const shell = make();
+    const [timedOut, ok] = await Promise.all([
+      shell.execute("sleep 30", 1),
+      shell.execute("echo apex-after-timeout", 5),
+    ]);
+
+    expect(timedOut.exitCode).toBe(124);
+    expect(timedOut.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+
+    expect(ok.exitCode).toBe(0);
+    expect(ok.stdout).toContain("apex-after-timeout");
+    expect(ok.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+    expect(ok.stderr).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
+    // Bash's job-control kill messages from the timed-out sibling must not
+    // appear on the surviving call's stderr.
+    expect(ok.stderr).not.toMatch(/Terminated|Killed/);
+  }, 15_000);
+
+  it("preserves FIFO ordering for parallel execute() calls", async () => {
+    const shell = make();
+    const results = await Promise.all([
+      shell.execute("echo 1", 5),
+      shell.execute("echo 2", 5),
+      shell.execute("echo 3", 5),
+    ]);
+
+    expect(results[0].stdout.trim()).toBe("1");
+    expect(results[1].stdout.trim()).toBe("2");
+    expect(results[2].stdout.trim()).toBe("3");
+    for (const r of results) expect(r.exitCode).toBe(0);
+  }, 15_000);
+
+  it("aborts a queued execute() without running its bash command", async () => {
+    const shell = make();
+    const ac = new AbortController();
+
+    const first = shell.execute("sleep 1", 10);
+    // Fire the second call synchronously so it queues, then abort before
+    // its turn arrives.
+    const queued = shell.execute("sleep 5", 10, undefined, ac.signal);
+    ac.abort();
+
+    const start = Date.now();
+    const queuedResult = await queued;
+    const elapsed = Date.now() - start;
+
+    expect(queuedResult.exitCode).toBe(130);
+    expect(queuedResult.stderr).toContain("aborted");
+    // Must not have run its own 5s sleep — aborted calls bail on turn arrival.
+    expect(elapsed).toBeLessThan(3_000);
+
+    const firstResult = await first;
+    expect(firstResult.exitCode).toBe(0);
+  }, 15_000);
+
   it("stays responsive after a mixed workload of 30 commands", async () => {
     const shell = make();
 
@@ -377,18 +459,14 @@ describe("PersistentShell — long-running stability", () => {
       expect(r.exitCode).toBe(0);
     }
 
-    // A couple of stdin-reading commands (get killed by timeout).
     for (let i = 0; i < 2; i++) {
       await shell.execute("cat", 2);
     }
 
-    // A background spammer.
     await shell.execute("while :; do echo s-$RANDOM; done &", 3);
 
-    // A timing-out pipeline.
     await shell.execute("sleep 10 | cat", 2);
 
-    // Final probe: trivial echo must succeed quickly.
     const start = Date.now();
     const final = await shell.execute("echo final", 5);
     const elapsed = Date.now() - start;
@@ -399,19 +477,6 @@ describe("PersistentShell — long-running stability", () => {
   }, 60_000);
 });
 
-/**
- * Direct unit tests for the fallback stdout extractor.
- *
- * The real-world failure (timeout or abort timer firing while Node is
- * too busy to have processed the shell's exit-marker chunk) is too
- * non-deterministic to force in an integration test — the shell's
- * post-kill wrapper finishes emitting markers in a couple hundred
- * milliseconds and almost always loses the race to the 2-second
- * fallback timer on an idle test runner. These tests exercise the
- * stripping logic directly on synthetic `PendingCommand` buffers that
- * match what Node would accumulate in the pathological cases actually
- * observed in NOCTURNE traces.
- */
 describe("extractFallbackStdout", () => {
   const cut = "__APEX_deadbeef00112233__CUTOVER";
   const exitPrefix = "__APEX_deadbeef00112233__EXIT_";
@@ -441,9 +506,6 @@ describe("extractFallbackStdout", () => {
   });
 
   it("strips both cutover prefix and exit-marker suffix from streamed buffer", () => {
-    // Shape observed in NOCTURNE trace step 2: command in fact completed
-    // successfully, shell emitted everything, but the fallback resolver
-    // fired before onStdoutData processed the chunk.
     const leaked =
       cut +
       "\n" +
@@ -463,8 +525,6 @@ describe("extractFallbackStdout", () => {
   });
 
   it("strips exit marker when cutover was never emitted (tail never flushed)", () => {
-    // Shape from NOCTURNE step 7: only the two markers came through,
-    // no actual stdout in between.
     const leaked = exitPrefix + "143\n";
     expect(extractFallbackStdout(mk(leaked))).toBe("(no output)");
   });
@@ -474,15 +534,12 @@ describe("extractFallbackStdout", () => {
   });
 
   it("returns raw buffer when neither marker present but bytes did stream", () => {
-    // Tail flushed some live bytes, then the shell/pipe died before
-    // either marker reached us. Caller still sees what tail managed.
     expect(extractFallbackStdout(mk("partial probe output\n"))).toBe(
       "partial probe output\n",
     );
   });
 
   it("handles cutover immediately followed by exit marker (empty command output)", () => {
-    // `cat $OUT` emitted zero bytes because $OUT was empty.
     const leaked = cut + "\n" + exitPrefix + "0\n";
     expect(extractFallbackStdout(mk(leaked))).toBe("(no output)");
   });

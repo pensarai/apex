@@ -1,13 +1,22 @@
 import { tool } from "ai";
-import { z } from "zod";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { z } from "zod";
+import {
+  resolveEffectiveHeaders,
+  shellQuote,
+  targetFetch,
+} from "../../../http/targetHeaders";
+import {
+  assertUrlInScope,
+  resolverSessionFromCtx,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
-import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 
 const MAX_INLINE_BODY = 5_000;
 
-export const httpRequestInputSchema = z.object({
+const httpRequestInputSchema = z.object({
   url: z.string().describe("The URL to request"),
   method: z
     .enum(["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
@@ -33,7 +42,7 @@ export const httpRequestInputSchema = z.object({
     ),
 });
 
-export type HttpRequestInput = z.infer<typeof httpRequestInputSchema>;
+type HttpRequestInput = z.infer<typeof httpRequestInputSchema>;
 
 export type HttpRequestResult = {
   success: boolean;
@@ -187,7 +196,7 @@ COMMON TESTING PATTERNS:
           ? AbortSignal.any([ctx.abortSignal, timeoutController.signal])
           : timeoutController.signal;
 
-        const response = await fetch(url, {
+        const response = await targetFetch(resolverSessionFromCtx(ctx), url, {
           method,
           headers,
           body: body || undefined,
@@ -268,10 +277,15 @@ async function executeSandboxHttpRequest(
   try {
     let curlCommand = `curl -i -X ${method}`;
 
-    if (headers) {
-      for (const [key, value] of Object.entries(headers)) {
-        curlCommand += ` -H "${key}: ${value}"`;
-      }
+    // Resolve session/credential headers so the sandbox curl path matches
+    // the local fetch path. Caller `headers` win as the request layer.
+    const mergedHeaders = resolveEffectiveHeaders(
+      resolverSessionFromCtx(ctx),
+      url,
+      headers,
+    );
+    for (const [key, value] of Object.entries(mergedHeaders)) {
+      curlCommand += ` -H "${shellQuote(`${key}: ${value}`)}"`;
     }
 
     if (body && ["POST", "PUT", "PATCH"].includes(method)) {

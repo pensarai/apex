@@ -1,5 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { targetFetch } from "../../../http/targetHeaders";
+import { resolverSessionFromCtx } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 /**
@@ -32,11 +34,15 @@ Returns detected scheme and required fields for authentication.`,
     }),
     execute: async ({ endpoint }) => {
       try {
-        const response = await fetch(endpoint, {
-          method: "GET",
-          redirect: "manual",
-          signal: ctx.abortSignal,
-        });
+        const response = await targetFetch(
+          resolverSessionFromCtx(ctx),
+          endpoint,
+          {
+            method: "GET",
+            redirect: "manual",
+            signal: ctx.abortSignal,
+          },
+        );
 
         const body = await response.text();
         const bodyLower = body.toLowerCase();

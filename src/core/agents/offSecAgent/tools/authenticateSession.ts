@@ -1,7 +1,9 @@
 import { tool } from "ai";
-import { z } from "zod";
-import { join } from "path";
 import { writeFileSync } from "fs";
+import { join } from "path";
+import { z } from "zod";
+import { targetFetch } from "../../../http/targetHeaders";
+import { resolverSessionFromCtx } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 /**
@@ -145,7 +147,11 @@ or provide username/password directly.`,
           authRequest.headers = { Authorization: `Basic ${authHeader}` };
         }
 
-        const result = await fetch(loginUrl, authRequest);
+        const result = await targetFetch(
+          resolverSessionFromCtx(ctx),
+          loginUrl,
+          authRequest,
+        );
 
         const setCookieHeader = result.headers?.getSetCookie() || [];
         const sessionCookies = Array.isArray(setCookieHeader)

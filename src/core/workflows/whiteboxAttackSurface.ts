@@ -1,35 +1,58 @@
-import { z } from "zod";
+import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
+import { execFileSync } from "child_process";
+import { createHash } from "crypto";
 import {
-  writeFileSync,
+  existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
-  existsSync,
   statSync,
+  writeFileSync,
 } from "fs";
 import { join } from "path";
+import { z } from "zod";
+import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
-  EndpointSchema,
-  type WhiteboxAttackSurfaceResult,
-  type Endpoint,
   type App,
-} from "../agents/specialized/whiteboxAttackSurface/types";
-import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
-import type { AIModel, CacheMetrics } from "../ai";
-import type { AIAuthConfig } from "../ai/utils";
-import type { SessionInfo } from "../session";
+  type AppInfo,
+  type AppsDiscoveryResult,
+  AppsDiscoveryResultSchema,
+  type DiscoverySummary,
+  DiscoverySummarySchema,
+  type Endpoint,
+  EndpointSchema,
+  WHITEBOX_APPS_DISCOVERY_SYSTEM_PROMPT,
+  WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
+  type WhiteboxAttackSurfaceResult,
+} from "../agents/specialized/whiteboxAttackSurface";
+import { runAppEndpointDocumentation } from "../agents/specialized/whiteboxAttackSurface/endpointDocumentationAgent";
+import type {
+  AIAuthConfig,
+  AIModel,
+  CacheMetrics,
+  OpenAIReasoningEffort,
+} from "../ai";
 import type { AgentEventBus } from "../eventBus";
+import { mapAppWithSurface } from "../integrations/surface";
+import type { SessionInfo } from "../session";
 import { runWithBoundedConcurrency } from "../utils/concurrency";
-import { execFileSync } from "child_process";
-import { createHash } from "crypto";
-import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const DEFAULT_CONCURRENCY = 5;
+
+type DiscoveryTaskType = "pages" | "apiEndpoints" | "cloudResourceEndpoints";
+
+// Sibling cards under an app share the app name from their parent;
+// label children by what they *do* instead.
+const TASK_TYPE_LABELS = {
+  pages: "Pages",
+  apiEndpoints: "API Endpoints",
+  cloudResourceEndpoints: "Cloud Resources",
+} as const satisfies Record<DiscoveryTaskType, string>;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -39,137 +62,31 @@ function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
 }
 
-// ---------------------------------------------------------------------------
-// System prompt for whitebox workflow coding agents
-// ---------------------------------------------------------------------------
+// Shape persisted to <app>/app.json. Equivalent to AppInfo — kept as a Pick
+// so the field list can't drift out of sync with the schema.
+type AppMetadata = Pick<
+  AppInfo,
+  "name" | "type" | "framework" | "description" | "location"
+>;
 
-const WHITEBOX_CODE_AGENT_SYSTEM_PROMPT = `You are an expert source-code analyst with direct filesystem access. You will be given a specific objective — focus exclusively on completing it.
+function toAppMetadata(
+  app: Pick<App, "name" | "type" | "framework" | "description" | "location">,
+): AppMetadata {
+  return {
+    name: app.name,
+    type: app.type,
+    framework: app.framework,
+    description: app.description,
+    location: app.location,
+  };
+}
 
-Your focus is on **deployed applications and services** — APIs, web apps, microservices — that listen on a port and serve traffic, as well as **owned cloud resources** (S3 buckets, cloud storage, CDN origins, etc.) that are part of the attack surface. Ignore libraries, shared packages, SDKs, CLI tools, build scripts, and test suites unless they are part of a deployable service.
-
-# Tool Usage Guide
-
-## read_file
-Read the contents of any file. You can read the whole file or a specific line range.
-- When a file is large, read it in chunks using startLine / endLine to stay focused.
-- Follow imports and references — when you see an interesting function call, read its source.
-
-## list_files
-List files and directories. Use this to orient yourself in the codebase.
-- Start by listing the project root or relevant subdirectory to understand the structure.
-- Use recursive=true sparingly on targeted subdirectories to avoid flooding context.
-
-## grep
-Search file contents by pattern. This is your most powerful navigation tool.
-- Use it to find route definitions, middleware, controllers, endpoint registrations, etc.
-- Use -i for case-insensitive searches.
-- Use --include="*.ext" to narrow to relevant file types.
-- Use -C 3 or -C 5 to get context around matches.
-- Use -rn (default for directories) for recursive search with line numbers.
-- Use -l to get just file paths when you need a broad overview of where something appears.
-
-## execute_command
-Run shell commands when needed.
-- Use for build tools, git operations, package managers, linters, etc.
-
-## document_app
-Use this to document each application/service you identify. Persists a JSON record to the session's apps directory.
-
-## document_endpoint
-**This is your primary output tool for endpoints.** Use it to document every endpoint you discover. Each call persists a JSON record to the session's endpoints directory, organized by app.
-
-**HARD RULE — call this tool DIRECTLY, one route at a time.** The moment you have enough information about a route to document it, your very next tool call must be \`document_endpoint\` for that route. Do not defer. Do not batch. Do not collect routes into a list to "process later."
-
-**You MUST NOT, under any circumstances:**
-- Build a manifest, JSON file, list, or array of routes to document later (e.g. \`cat > /tmp/pages.json << EOF [...] EOF\`).
-- Write a shell, Python, or any other script whose purpose is to generate \`document_endpoint\` tool calls.
-- Use a single message to "summarize all the routes I'll document" before documenting them.
-- Stop documentation early because you "have enough" or it's "getting repetitive." If you discovered N routes, you must produce N \`document_endpoint\` calls.
-
-These patterns silently truncate at output-token limits and routes get dropped. The only correct workflow is: discover a route → call \`document_endpoint\` for it → discover the next route → call \`document_endpoint\` for it → ... until every route is documented. Repetition is expected and required.
-
-**CRITICAL — endpoint documentation rules:**
-- **One entry per unique route path.** Do NOT create separate entries for different HTTP methods on the same path. If \`/api/users\` supports GET, POST, and DELETE, that is ONE entry with \`method: ["GET", "POST", "DELETE"]\`.
-- **Use \`method: "PAGE"\`** for web pages and views (non-API routes).
-- **Always set \`appName\`** to the application name provided in your objective.
-- **Always set \`routePath\`** to the HTTP route this endpoint serves (e.g., \`/api/users/:id\`, \`/dashboard\`). This is the URL path a client requests — NOT a source-file path.
-- **Always set \`file\`** to the source-code file where the route is defined (e.g., \`src/routes/users.ts\`). This is NOT the HTTP route.
-- **Set \`line\`** to the line number when determinable.
-- **Set \`handler\`** to the handler function or component name.
-- **Set \`authRequired\`** to true/false based on middleware, guards, or decorators.
-
-
-## response
-When your objective includes structured output, call \`response\` with your final results once you are done. This ends your run.
-
-# Working Approach
-1. **Orient first** — list files and read key entry points to understand the structure.
-2. **Ignore submodules** — check for a \`.gitmodules\` file or run \`git submodule status\`. Any directories that are git submodules are external dependencies and must be **completely excluded** from your analysis.
-3. **Search, then read** — use grep to locate what you need, then read the relevant files.
-4. **Document each item the instant you discover it** — every \`document_app\` / \`document_endpoint\` call must be made directly, one item per call, immediately after you identify it. Never collect items into a manifest, JSON file, or batch script. If you find yourself thinking "let me list all of these and then document them," stop — that pattern silently drops items when output tokens run out.
-5. **Follow the trail** — trace through imports, function calls, and references to build full understanding.
-6. **Be thorough** — don't stop at the first match. Cover everything relevant to the objective. Repetitive \`document_endpoint\` calls are expected; do not summarize, deduplicate, or shortcut them.
-`;
+// System prompts and intermediate schemas live in
+// `src/core/agents/specialized/whiteboxAttackSurface/{prompts,types}.ts`.
+// This file is the orchestration layer that consumes them.
 
 // ---------------------------------------------------------------------------
-// Intermediate schemas (structured output for each workflow step)
-// ---------------------------------------------------------------------------
-
-const AppInfoSchema = z.object({
-  name: z.string().describe("Application or service name"),
-  framework: z
-    .string()
-    .describe(
-      "Framework or cloud service (e.g. Express, Next.js, Django, FastAPI, Rails, AWS S3, CloudFront)",
-    ),
-  description: z.string().describe("Brief description of what this app does"),
-  location: z
-    .string()
-    .describe(
-      "Path to the app root relative to the repository root, or resource identifier for cloud resources",
-    ),
-  type: z
-    .enum([
-      "web_application",
-      "api",
-      "full_stack",
-      "domain",
-      "subdomain",
-      "database",
-      "cloud_resource",
-      "storage",
-    ])
-    .default("web_application")
-    .describe(
-      "Application type — web_application for frontend apps, api for backend services, " +
-        "full_stack for frameworks like Next.js/Remix that serve both, " +
-        "database for databases, cloud_resource for owned cloud infra, storage for S3/GCS/blob storage",
-    ),
-});
-
-const AppsDiscoveryResultSchema = z.object({
-  repoType: z.string().describe("e.g. monorepo, single-app, multi-package"),
-  packageManager: z
-    .string()
-    .describe("e.g. npm, yarn, pnpm, pip, cargo, go modules"),
-  apps: z
-    .array(AppInfoSchema)
-    .describe("All applications/services discovered in the repository"),
-});
-
-type AppsDiscoveryResult = z.infer<typeof AppsDiscoveryResultSchema>;
-
-const DiscoverySummarySchema = z.object({
-  endpointsDocumented: z
-    .number()
-    .describe("Number of endpoints documented via document_endpoint"),
-  summary: z.string().describe("Brief summary of what was found"),
-});
-
-type DiscoverySummary = z.infer<typeof DiscoverySummarySchema>;
-
-// ---------------------------------------------------------------------------
-// Input type
+// Input types
 // ---------------------------------------------------------------------------
 
 export interface WhiteboxAttackSurfaceWorkflowInput {
@@ -182,34 +99,25 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   attackSurfaceRegistry?: import("../findings/attackSurfaceRegistry").AttackSurfaceRegistry;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
   /** Known domains associated with the project — agents can map discovered apps to these. */
   domains?: string[];
   /** Project-level threat model content (e.g. from .pensar/threat_model.md), if found */
   projectThreatModel?: string;
   /** Deployment environment names (e.g. ["production", "staging"]) from project settings. */
   environments?: string[];
+  /**
+   * When false, Phase 2 skips the deterministic `@pensar/surface` path and
+   * always runs the legacy pages + apiEndpoints discovery agent pair for
+   * service apps. Defaults to `true`.
+   */
+  surfaceIntegrationEnabled?: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Incremental input type
-// ---------------------------------------------------------------------------
-
-export interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
+interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
   previousCommitSha: string;
   currentCommitSha: string;
   existingResult: WhiteboxAttackSurfaceResult;
-}
-
-// ---------------------------------------------------------------------------
-// App metadata schema (written to app.json in each app folder)
-// ---------------------------------------------------------------------------
-
-interface AppMetadata {
-  name: string;
-  type: string;
-  framework: string;
-  description: string;
-  location: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -221,10 +129,14 @@ interface AppMetadata {
  *
  * Phase 1: Spawn a single CodeAgent to identify all apps in the repo.
  * Phase 1.5: Create app folders with app.json metadata.
- * Phase 2: For each app, spawn two CodeAgents in parallel — one for
- *           pages, one for API endpoints — using document_endpoint.
- *           Threat models and risk scores are generated inline during
- *           this phase (inside document_endpoint).
+ * Phase 2: Per-app dispatch. When `surfaceIntegrationEnabled` (default), service
+ *           apps run `mapAppWithSurface`; on `surface` mode a per-endpoint
+ *           endpoint-documentation CodeAgent documents the deterministic list,
+ *           on `fallback` the legacy pages+apiEndpoints agent pair runs. When
+ *           `surfaceIntegrationEnabled` is false, every service app uses the
+ *           legacy pair directly. Cloud resources always use the specialized
+ *           cloud-resource agent. Threat models and risk scores are generated
+ *           inline by document_endpoint.
  * Phase 3: Read the assets directory to build endpoint data.
  * Phase 4: Final assembly.
  */
@@ -241,9 +153,11 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     attackSurfaceRegistry,
     onStepFinish,
     onCacheMetrics,
+    openAIReasoningEffort,
     domains,
     projectThreatModel,
     environments,
+    surfaceIntegrationEnabled = true,
   } = input;
 
   // =========================================================================
@@ -253,7 +167,13 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   const appsAgent = new CodeAgent<AppsDiscoveryResult>({
     codebasePath,
     objective: buildAppsDiscoveryObjective(codebasePath, domains, environments),
-    system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
+    // Phase 1 uses an apps-only system prompt (no document_endpoint guidance)
+    // paired with `excludeTools: ["document_endpoint"]`. The shared
+    // WHITEBOX_DISCOVERY_SYSTEM_PROMPT instructs every agent to call
+    // document_endpoint per route — strong enough that Phase 1 would
+    // improvise by abusing document_app for individual routes if the prompt
+    // mentioned the tool at all. The variant below removes those mentions.
+    system: WHITEBOX_APPS_DISCOVERY_SYSTEM_PROMPT,
     model,
     session,
     authConfig,
@@ -263,26 +183,28 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     subagentId: "whitebox-apps-discovery",
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
+    openAIReasoningEffort,
     responseSchema: AppsDiscoveryResultSchema,
     projectThreatModel,
+    // Reserved for Phase 2's per-app task agents. Inline documentation
+    // here would flatten the UI hierarchy under Phase 1.
+    excludeTools: ["document_endpoint"],
   });
 
   console.log(
     `[whitebox-workflow] Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`,
   );
 
+  // Held open until Phase 2 finishes so per-app synthetic nodes can nest under it.
+  const WORKFLOW_UMBRELLA_ID = "whitebox-apps-discovery";
+
   eventBus?.emit("subagent-spawn", {
-    subagentId: "whitebox-apps-discovery",
+    subagentId: WORKFLOW_UMBRELLA_ID,
     name: "Whitebox Apps Discovery",
     input: { codebasePath },
   });
 
   const appsResult = await appsAgent.consume();
-
-  eventBus?.emit("subagent-complete", {
-    subagentId: "whitebox-apps-discovery",
-    status: "completed",
-  });
 
   console.log(
     `[whitebox-workflow] Phase 1 complete: ${appsResult?.apps.length ?? 0} apps discovered` +
@@ -300,6 +222,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   }
 
   if (!appsResult || appsResult.apps.length === 0) {
+    eventBus?.emit("subagent-complete", {
+      subagentId: WORKFLOW_UMBRELLA_ID,
+      status: "completed",
+    });
     return {
       repoType: appsResult?.repoType ?? "unknown",
       packageManager: appsResult?.packageManager ?? "unknown",
@@ -323,29 +249,28 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   for (const app of appsResult.apps) {
     const appDir = join(assetsPath, sanitizeName(app.name));
     mkdirSync(appDir, { recursive: true });
-    const metadata: AppMetadata = {
-      name: app.name,
-      type: app.type,
-      framework: app.framework,
-      description: app.description,
-      location: app.location,
-    };
     writeFileSync(
       join(appDir, "app.json"),
-      JSON.stringify(metadata, null, 2),
+      JSON.stringify(toAppMetadata(app), null, 2),
       "utf-8",
     );
   }
 
   // =========================================================================
-  // Phase 2: For each app, discover pages + API endpoints via document_endpoint
-  //          Cloud resources get a specialized objective instead of pages/API.
+  // Phase 2: Per-app dispatch — surface-driven documentation vs. fallback.
+  //          When `surfaceIntegrationEnabled` is true, service apps try
+  //          `mapAppWithSurface`; on `surface` mode run a per-endpoint
+  //          endpoint-documentation CodeAgent against the deterministic list,
+  //          on `fallback` run the legacy pages+apiEndpoints CodeAgent pair.
+  //          When `surfaceIntegrationEnabled` is false, every service app
+  //          uses the legacy pair directly — pre-PR behavior.
+  //          Cloud resources always take the specialized objective — surface
+  //          is HTTP-route-focused and doesn't enumerate cloud assets.
   // =========================================================================
 
-  type AppTask = {
-    appInfo: z.infer<typeof AppInfoSchema>;
-    type: "pages" | "apiEndpoints" | "cloudResourceEndpoints";
-  };
+  console.log(
+    `[whitebox-workflow] Phase 2: surfaceIntegrationEnabled=${surfaceIntegrationEnabled}`,
+  );
 
   const NON_SERVICE_TYPES = ["cloud_resource", "storage", "database"];
   const serviceApps = appsResult.apps.filter(
@@ -356,7 +281,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   );
 
   console.log(
-    `[whitebox-workflow] Phase 2: ${serviceApps.length} service apps (pages+api each), ${cloudApps.length} cloud resources → ${serviceApps.length * 2 + cloudApps.length} total tasks`,
+    `[whitebox-workflow] Phase 2: ${serviceApps.length} service apps (surface or fallback per app), ${cloudApps.length} cloud resources → ${appsResult.apps.length} total apps`,
   );
 
   const totalApps = appsResult.apps.length;
@@ -367,107 +292,189 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     completedApps: 0,
   });
 
-  const tasks: AppTask[] = [
-    ...serviceApps.flatMap((app) => [
-      { appInfo: app, type: "pages" as const },
-      { appInfo: app, type: "apiEndpoints" as const },
-    ]),
-    ...cloudApps.map((app) => ({
-      appInfo: app,
-      type: "cloudResourceEndpoints" as const,
-    })),
-  ];
-
-  const appTaskDoneCount = new Map<string, { done: number; total: number }>();
-  for (const app of serviceApps) {
-    appTaskDoneCount.set(app.name, { done: 0, total: 2 });
-  }
-  for (const app of cloudApps) {
-    appTaskDoneCount.set(app.name, { done: 0, total: 1 });
+  // Synthetic grouping nodes between the umbrella and per-task agents,
+  // so the UI nests pages/api/endpoint-doc agents under their app.
+  const appNodeIdFor = (appName: string) => `app:${sanitizeName(appName)}`;
+  const appAnyTaskFailed = new Map<string, boolean>();
+  for (const app of appsResult.apps) {
+    const appNodeId = appNodeIdFor(app.name);
+    appAnyTaskFailed.set(app.name, false);
+    eventBus?.emit("subagent-spawn", {
+      subagentId: appNodeId,
+      name: app.name,
+      input: { app: app.name, type: app.type, framework: app.framework },
+      parentSubagentId: WORKFLOW_UMBRELLA_ID,
+    });
   }
 
-  await runWithBoundedConcurrency(
-    tasks,
-    DEFAULT_CONCURRENCY,
-    async (task, _index) => {
-      const subagentId = `${task.type}-${task.appInfo.name}`;
+  const spawnDiscoveryAgent = async (
+    app: AppInfo,
+    type: DiscoveryTaskType,
+    objective: string,
+  ): Promise<void> => {
+    const subagentId = `${type}-${app.name}`;
+    const appNodeId = appNodeIdFor(app.name);
+
+    console.log(
+      `[whitebox-workflow] Phase 2: spawning agent id="${subagentId}" parent="${appNodeId}" (app="${app.name}", type=${type}, appType=${app.type})`,
+    );
+
+    eventBus?.emit("subagent-spawn", {
+      subagentId,
+      name: TASK_TYPE_LABELS[type],
+      input: { app: app.name, type },
+      parentSubagentId: appNodeId,
+    });
+
+    const agent = new CodeAgent<DiscoverySummary>({
+      codebasePath,
+      objective,
+      system: WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
+      model,
+      session,
+      authConfig,
+      abortSignal,
+      attackSurfaceRegistry,
+      eventBus,
+      subagentId,
+      onStepFinish: (event) => onStepFinish?.(event),
+      onCacheMetrics,
+      openAIReasoningEffort,
+      responseSchema: DiscoverySummarySchema,
+      excludeTools: ["document_app"],
+      projectThreatModel,
+    });
+
+    try {
+      await agent.consume();
 
       console.log(
-        `[whitebox-workflow] Phase 2: spawning agent "${subagentId}" (app="${task.appInfo.name}", type=${task.type}, appType=${task.appInfo.type})`,
+        `[whitebox-workflow] Phase 2: agent "${subagentId}" completed`,
       );
 
-      eventBus?.emit("subagent-spawn", {
+      eventBus?.emit("subagent-complete", {
         subagentId,
-        name: task.appInfo.name,
-        input: { app: task.appInfo.name, type: task.type },
+        status: "completed",
+        parentSubagentId: appNodeId,
       });
+    } catch (error) {
+      console.error(
+        `[whitebox-workflow] Phase 2: agent "${subagentId}" FAILED:`,
+        error instanceof Error ? error.message : String(error),
+      );
 
-      const objective =
-        task.type === "pages"
-          ? buildPagesDiscoveryObjective(codebasePath, task.appInfo)
-          : task.type === "cloudResourceEndpoints"
-            ? buildCloudResourceEndpointsObjective(
-                codebasePath,
-                task.appInfo,
-                environments,
-              )
-            : buildApiEndpointsDiscoveryObjective(codebasePath, task.appInfo);
-
-      const agent = new CodeAgent<DiscoverySummary>({
-        codebasePath,
-        objective,
-        system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
-        model,
-        session,
-        authConfig,
-        abortSignal,
-        attackSurfaceRegistry,
-        eventBus,
+      appAnyTaskFailed.set(app.name, true);
+      eventBus?.emit("subagent-complete", {
         subagentId,
-        onStepFinish: (event) => onStepFinish?.(event),
-        onCacheMetrics,
-        responseSchema: DiscoverySummarySchema,
-        excludeTools: ["document_app"],
-        projectThreatModel,
+        status: "failed",
+        parentSubagentId: appNodeId,
       });
+    }
+  };
 
+  const spawnPagesAgent = (app: AppInfo): Promise<void> =>
+    spawnDiscoveryAgent(
+      app,
+      "pages",
+      buildPagesDiscoveryObjective(codebasePath, app),
+    );
+
+  const spawnApiEndpointsAgent = (app: AppInfo): Promise<void> =>
+    spawnDiscoveryAgent(
+      app,
+      "apiEndpoints",
+      buildApiEndpointsDiscoveryObjective(codebasePath, app),
+    );
+
+  const spawnCloudResourceAgent = (app: AppInfo): Promise<void> =>
+    spawnDiscoveryAgent(
+      app,
+      "cloudResourceEndpoints",
+      buildCloudResourceEndpointsObjective(codebasePath, app, environments),
+    );
+
+  await runWithBoundedConcurrency(
+    appsResult.apps,
+    DEFAULT_CONCURRENCY,
+    async (app) => {
+      const appNodeId = appNodeIdFor(app.name);
       try {
-        await agent.consume();
+        if (NON_SERVICE_TYPES.includes(app.type)) {
+          // Cloud resources: surface doesn't enumerate these — always fallback.
+          await spawnCloudResourceAgent(app);
+        } else if (!surfaceIntegrationEnabled) {
+          console.log(
+            `[whitebox] ${app.name}: legacy (surfaceIntegrationEnabled=false)`,
+          );
+          await Promise.all([
+            spawnPagesAgent(app),
+            spawnApiEndpointsAgent(app),
+          ]);
+        } else {
+          const surfaceResult = mapAppWithSurface(
+            join(codebasePath, app.location),
+            codebasePath,
+            { isSingleAppRepo: serviceApps.length === 1 },
+          );
+          if (surfaceResult.mode === "surface") {
+            console.log(
+              `[whitebox] ${app.name}: surface-driven (${surfaceResult.endpoints.length} endpoints, frameworks=${surfaceResult.frameworks.join(",")})`,
+            );
 
-        console.log(
-          `[whitebox-workflow] Phase 2: agent "${subagentId}" completed`,
-        );
-
-        eventBus?.emit("subagent-complete", {
-          subagentId,
-          status: "completed",
-        });
-      } catch (error) {
-        console.error(
-          `[whitebox-workflow] Phase 2: agent "${subagentId}" FAILED:`,
-          error instanceof Error ? error.message : String(error),
-        );
-
-        eventBus?.emit("subagent-complete", {
-          subagentId,
-          status: "failed",
-        });
-      }
-
-      const counter = appTaskDoneCount.get(task.appInfo.name);
-      if (counter) {
-        counter.done++;
-        if (counter.done >= counter.total) {
-          completedAppCount++;
-          eventBus?.emit("app-analysis-progress", {
-            totalApps,
-            completedApps: completedAppCount,
-            appName: task.appInfo.name,
-          });
+            await runAppEndpointDocumentation({
+              codebasePath,
+              app,
+              endpoints: surfaceResult.endpoints,
+              frameworks: surfaceResult.frameworks,
+              model,
+              session,
+              authConfig,
+              abortSignal,
+              eventBus,
+              attackSurfaceRegistry,
+              onStepFinish,
+              onCacheMetrics,
+              openAIReasoningEffort,
+              projectThreatModel,
+              parentSubagentId: appNodeId,
+            });
+          } else {
+            console.log(
+              `[whitebox] ${app.name}: fallback (${surfaceResult.reason})`,
+            );
+            await Promise.all([
+              spawnPagesAgent(app),
+              spawnApiEndpointsAgent(app),
+            ]);
+          }
         }
+      } catch {
+        appAnyTaskFailed.set(app.name, true);
+      } finally {
+        completedAppCount++;
+
+        const appStatus = appAnyTaskFailed.get(app.name)
+          ? ("failed" as const)
+          : ("completed" as const);
+        eventBus?.emit("subagent-complete", {
+          subagentId: appNodeId,
+          status: appStatus,
+          parentSubagentId: WORKFLOW_UMBRELLA_ID,
+        });
+
+        eventBus?.emit("app-analysis-progress", {
+          totalApps,
+          completedApps: completedAppCount,
+          appName: app.name,
+        });
       }
     },
   );
+
+  eventBus?.emit("subagent-complete", {
+    subagentId: WORKFLOW_UMBRELLA_ID,
+    status: "completed",
+  });
 
   // =========================================================================
   // Phase 3: Read assets directory to build endpoint data
@@ -720,6 +727,14 @@ function buildAppsDiscoveryObjective(
 
   return `# Identify All Applications in the Repository
 
+## Phase scope — read this first
+This objective is **Phase 1: app discovery only**. Your job is to enumerate
+applications and call \`document_app\` for each. **Do NOT call
+\`document_endpoint\` in this phase** — endpoints are documented in a later
+phase by per-app subagents. The \`document_endpoint\` tool is intentionally
+unavailable here. Ignore any general guidance in the system prompt that
+tells you to call it; that guidance applies only to later phases.
+
 ## Codebase
 - **Path:** ${codebasePath}
 ${domainSection}${environmentsSection}
@@ -733,6 +748,7 @@ Analyze the repository structure and identify every **deployed application or se
 - Test suites, fixtures, and test helpers
 - Documentation packages
 - Third-party SaaS services not owned by the target (e.g. Stripe, auth providers)
+- **Individual API routes, web pages, or HTTP endpoints.** Endpoint enumeration is handled by a separate phase that runs after this one. Even if you discover route files (\`page.tsx\`, \`route.ts\`, controller methods) while navigating the codebase, do NOT call \`document_app\` for them. Each \`document_app\` call must represent a deployable application or cloud resource, never a single endpoint. The \`document_endpoint\` tool is intentionally not available to you.
 
 An app/service qualifies if it **listens on a port, serves HTTP traffic, or runs as a deployed process** (e.g. an Express server, a Next.js app, a Django project, a FastAPI service, a background worker with an API).
 
@@ -784,12 +800,12 @@ When you CAN determine the domain, each resource must have its OWN unique, resou
 
 **For WebSocket APIs:** Use the WebSocket endpoint URL if determinable, otherwise omit.
 
-When finished, call the \`response\` tool with your structured findings.`;
+When finished, call the \`response\` tool with your structured findings. Do not call \`document_app\` for individual routes, pages, or endpoints — that is a separate phase's responsibility.`;
 }
 
 function buildPagesDiscoveryObjective(
   codebasePath: string,
-  appInfo: z.infer<typeof AppInfoSchema>,
+  appInfo: AppInfo,
 ): string {
   return `# Find All Web Pages in ${appInfo.name}
 
@@ -849,7 +865,7 @@ When finished, call \`response\` with a summary of how many pages you documented
 
 function buildApiEndpointsDiscoveryObjective(
   codebasePath: string,
-  appInfo: z.infer<typeof AppInfoSchema>,
+  appInfo: AppInfo,
 ): string {
   return `# Find All API Endpoints in ${appInfo.name}
 
@@ -914,7 +930,7 @@ When finished, call \`response\` with a summary of how many endpoints you docume
 
 function buildCloudResourceEndpointsObjective(
   codebasePath: string,
-  appInfo: z.infer<typeof AppInfoSchema>,
+  appInfo: AppInfo,
   environments?: string[],
 ): string {
   const envNote = environments?.length
@@ -1046,17 +1062,9 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     const appDir = join(assetsPath, sanitizeName(app.name));
     mkdirSync(appDir, { recursive: true });
 
-    // Write app.json
-    const metadata: AppMetadata = {
-      name: app.name,
-      type: app.type ?? "web_application",
-      framework: app.framework,
-      description: app.description,
-      location: app.location,
-    };
     writeFileSync(
       join(appDir, "app.json"),
-      JSON.stringify(metadata, null, 2),
+      JSON.stringify(toAppMetadata(app), null, 2),
       "utf-8",
     );
 
@@ -1137,7 +1145,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
   const agent = new CodeAgent<IncrementalResult>({
     codebasePath,
     objective,
-    system: WHITEBOX_CODE_AGENT_SYSTEM_PROMPT,
+    system: WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
     model,
     session,
     authConfig,
@@ -1146,6 +1154,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     eventBus,
     subagentId: "whitebox-incremental",
     onStepFinish: (event) => onStepFinish?.(event),
+    openAIReasoningEffort: input.openAIReasoningEffort,
     responseSchema: IncrementalResultSchema,
     projectThreatModel,
   });

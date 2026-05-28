@@ -1,14 +1,20 @@
 import { tool } from "ai";
-import { z } from "zod";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { z } from "zod";
+import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
+import {
+  assertCommandInScope,
+  extractHostsFromCommand,
+  resolverSessionFromCtx,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
-import { assertCommandInScope, ScopeViolationError } from "./scopeGuard";
 
 const MAX_INLINE = 50_000;
 const MS_TIMEOUT_THRESHOLD = 10_000;
 
-export const executeCommandInputSchema = z.object({
+const executeCommandInputSchema = z.object({
   // not actually sure if placing this above the other keys/zod values ensures that the model generates it first...
   toolCallDescription: z
     .string()
@@ -22,9 +28,15 @@ export const executeCommandInputSchema = z.object({
     .describe(
       "Timeout in seconds. If omitted, the command runs until completion or abort.",
     ),
+  allow_unprotected: z
+    .boolean()
+    .optional()
+    .describe(
+      "Acknowledge that this command will run WITHOUT the session's configured custom HTTP headers because the tool is unrecognized or the command is pipelined. Defaults to false (fail-closed). Use only when you understand the headers will not be applied.",
+    ),
 });
 
-export type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
+type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
 
 export type ExecuteCommandResult = {
   success: boolean;
@@ -126,10 +138,40 @@ OUTPUT HANDLING:
 - The tool's timeout parameter is in SECONDS, not milliseconds
 - Good timeout examples: 30, 60, 120
 - Do NOT pass millisecond values like 30000 or 120000
+- If the tool's timeout is hit, the partial stdout the command had already
+  produced is still returned (with exit code 124). It is safe to set a
+  conservative timeout: you will not lose the bytes a fuzzer printed
+  before the kill.
+
+LONG-RUNNING FUZZERS AND SCANNERS:
+
+Wordlist fuzzers (ffuf, gobuster, dirb, wfuzz, dirsearch) and large nmap
+scans against slow targets routinely take longer than a single tool call
+should. ALWAYS bound them with their OWN internal time budget, set BELOW
+the tool's timeout, so the tool exits cleanly with full output and you
+don't have to rely on signal-based truncation.
+
+General rule: set the inner tool's runtime cap at least 5s below the
+execute_command timeout, so the tool exits gracefully and flushes its
+results to disk before any signal arrives.
+
+- ffuf: pair with -maxtime <seconds> and a sane -rate.
+  Example: ffuf -u <url>/FUZZ -w <wordlist> -maxtime 55 -rate 50
+  with the tool's timeout=60.
+- gobuster: has no -maxtime flag. Wrap with the \`timeout\` coreutils
+  command and tune --timeout / --threads.
+  Example: timeout 55 gobuster dir -u <url> -w <wordlist> --timeout 5s --threads 20
+  with the tool's timeout=60.
+- nmap: prefer --host-timeout, --max-rtt-timeout, and -T4 / --min-rate
+  to bound total runtime against slow networks.
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
-    execute: async ({ command, timeout }): Promise<ExecuteCommandResult> => {
+    execute: async ({
+      command,
+      timeout,
+      allow_unprotected,
+    }): Promise<ExecuteCommandResult> => {
       if (ctx.abortSignal?.aborted) {
         return {
           success: false,
@@ -155,6 +197,31 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         throw e;
       }
 
+      // Inject session headers into the shell command. Fail closed for
+      // unknown tools / pipelines so configured headers aren't silently
+      // dropped — agent can opt out with `allow_unprotected`.
+      const cmdHosts = extractHostsFromCommand(command);
+      const inject = applyHeadersToShellCommand(
+        command,
+        resolverSessionFromCtx(ctx),
+        cmdHosts,
+      );
+      if (inject.status === "unknown-tool" && !allow_unprotected) {
+        const msg =
+          "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined. " +
+          "Supported HTTP tools: curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto. " +
+          "Either (a) rewrite the command using one of those tools, (b) use the http_request tool, or (c) pass allow_unprotected: true to acknowledge headers will NOT be sent.";
+        return {
+          success: false,
+          error: msg,
+          stdout: "",
+          stderr: msg,
+          command,
+        };
+      }
+      const effectiveCommand =
+        inject.status === "injected" ? inject.command : command;
+
       // Sandbox mode: route execution through the sandbox
       if (ctx.sandbox) {
         try {
@@ -163,7 +230,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           if (normalizedTimeout != null) {
             ssmOpts.timeout = normalizedTimeout;
           }
-          const result = await ctx.sandbox.execute(command, ssmOpts);
+          const result = await ctx.sandbox.execute(effectiveCommand, ssmOpts);
           const { text: stdout, file: outputFile } = maybeSaveFullOutput(
             result.stdout,
             ctx,
@@ -196,7 +263,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             ? (data: string) => ctx.eventBus!.emit("command-output", { data })
             : undefined;
           const result = await ctx.persistentShell.execute(
-            command,
+            effectiveCommand,
             normalizedTimeout,
             onData,
             ctx.abortSignal,

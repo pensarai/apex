@@ -5,17 +5,17 @@
  * Fields: Target URL, Strict scope toggle, Model picker, Start button.
  */
 
-import { useState, useCallback, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
-import { ModelPicker } from "../model-picker/ModelPicker";
+import { useCallback, useEffect, useState } from "react";
 import type { ModelInfo } from "../../../core/ai";
+import type { Config } from "../../../core/config/config";
 import {
   getAvailableModels,
   getDefaultModelForConfig,
 } from "../../../core/providers/utils";
-import type { Config } from "../../../core/config/config";
-import { useTheme } from "../../theme";
 import { useAgent } from "../../context/agent";
+import { useTheme } from "../../theme";
+import { ModelPicker } from "../model-picker/ModelPicker";
 
 type FocusedField = "url" | "scope" | "model" | "start";
 
@@ -33,7 +33,12 @@ export interface SessionConfig {
 
 export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
   const { colors } = useTheme();
-  const { reasoningEnabled, setReasoningEnabled } = useAgent();
+  const {
+    reasoningEnabled,
+    setReasoningEnabled,
+    openAIReasoningEffort,
+    setOpenAIReasoningEffort,
+  } = useAgent();
   // Form state
   const [targetUrl, setTargetUrl] = useState("https://");
   const [strictScope, setStrictScope] = useState(true);
@@ -218,6 +223,8 @@ export function ConfigView({ config, onBack, onStart }: ConfigViewProps) {
             isModelUserSelected={isModelUserSelected}
             reasoningEnabled={reasoningEnabled}
             onReasoningToggle={setReasoningEnabled}
+            openAIReasoningEffort={openAIReasoningEffort}
+            onOpenAIReasoningEffortChange={setOpenAIReasoningEffort}
           />
         </box>
       </box>
@@ -270,5 +277,3 @@ function isValidUrl(url: string): boolean {
     return false;
   }
 }
-
-export default ConfigView;

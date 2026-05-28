@@ -9,7 +9,7 @@ import { join } from "path";
  * Normalise a URL for comparison: lowercase, strip trailing slash,
  * strip query string, fragment, and protocol.
  */
-export function normalizeAssetUrl(url: string): string {
+function normalizeAssetUrl(url: string): string {
   let u = url.trim().toLowerCase();
 
   const hashIdx = u.indexOf("#");
@@ -32,7 +32,7 @@ export function normalizeAssetUrl(url: string): string {
  * Normalise an asset name for comparison: lowercase, collapse
  * non-alphanumeric runs into a single dash, trim leading/trailing dashes.
  */
-export function normalizeAssetName(name: string): string {
+function normalizeAssetName(name: string): string {
   return name
     .trim()
     .toLowerCase()
@@ -52,7 +52,7 @@ export function normalizeAssetName(name: string): string {
  * `/api/users` in App A and `/api/users` in App B are treated as
  * distinct assets.
  */
-export function generateAssetFingerprint(asset: AssetRecord): {
+function generateAssetFingerprint(asset: AssetRecord): {
   urlKey: string | null;
   nameKey: string;
 } {

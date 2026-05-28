@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  deobfuscate,
+  isObfuscationEnabled,
   obfuscate,
   obfuscateValue,
-  deobfuscate,
   resetObfuscation,
   setObfuscationEnabled,
-  isObfuscationEnabled,
 } from "./engine";
 
 describe("obfuscation engine", () => {

@@ -1,10 +1,11 @@
+import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import fs from "fs/promises";
 import { getCurrentVersion } from "../installation";
 
 const DEFAULT_CONFIG: Config = {
   responsibleUseAccepted: false,
+  defaultHeaders: { "User-Agent": "pensar-apex" },
 };
 
 export interface Config {
@@ -33,6 +34,11 @@ export interface Config {
   selectedModelId?: string | null;
   // Extended thinking / reasoning
   reasoningEnabled?: boolean;
+  openAIReasoningEffort?: "none" | "low" | "medium" | "high" | "xhigh" | null;
+  // Whitebox attack surface: when false, skip the @pensar/surface deterministic
+  // enumeration path and use the legacy pages+apiEndpoints discovery agents.
+  // Defaults to true when unset.
+  surfaceIntegrationEnabled?: boolean;
   // WorkOS CLI auth (replaces pensarAPIKey for new auth flow)
   accessToken?: string | null;
   refreshToken?: string | null;
@@ -42,6 +48,9 @@ export interface Config {
   gatewaySigningKey?: string | null;
   // Gateway URL for inference (server-issued, bypasses CloudFront timeout)
   gatewayUrl?: string | null;
+  /** Snapshotted into every new session at create time. */
+  defaultHeaders?: Record<string, string>;
+  defaultHeadersUpdatedAt?: string;
 }
 
 export async function init() {
@@ -67,6 +76,18 @@ export async function init() {
 }
 
 /**
+ * Parse a truthy/falsy env value. Returns undefined when unset so callers can
+ * fall through to their own default. "0", "false", "no", "off" → false;
+ * anything else non-empty → true.
+ */
+function parseBoolEnv(value: string | undefined): boolean | undefined {
+  if (value === undefined || value === "") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return true;
+}
+
+/**
  * Apply environment variable fallbacks for API keys.
  * Used by both `get()` and `init()` so fresh installs pick up env vars.
  */
@@ -75,6 +96,11 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
   return {
     ...parsedConfig,
     responsibleUseAccepted: parsedConfig.responsibleUseAccepted ?? false,
+    defaultHeaders:
+      parsedConfig.defaultHeaders ?? DEFAULT_CONFIG.defaultHeaders,
+    surfaceIntegrationEnabled:
+      parsedConfig.surfaceIntegrationEnabled ??
+      parseBoolEnv(process.env.PENSAR_SURFACE_INTEGRATION),
     version,
     openAiAPIKey: parsedConfig.openAiAPIKey ?? process.env.OPENAI_API_KEY,
     anthropicAPIKey:

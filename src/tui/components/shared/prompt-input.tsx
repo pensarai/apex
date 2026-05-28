@@ -1,42 +1,43 @@
 import {
-  useState,
-  useEffect,
-  useImperativeHandle,
-  forwardRef,
-  useRef,
-  useMemo,
-} from "react";
+  type RGBA,
+  SyntaxStyle,
+  type KeyBinding as TextareaKeyBinding,
+  type TextareaRenderable,
+} from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import {
-  SyntaxStyle,
-  type TextareaRenderable,
-  type RGBA,
-  type KeyBinding as TextareaKeyBinding,
-} from "@opentui/core";
-import { useTheme } from "../../theme";
-import { useInput } from "../../context/input";
-import { useFocus } from "../../context/focus";
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
-  filterInlineSuggestions,
-  filterInlineOptionSuggestions,
-  detectInlineSlash,
-  detectInlineOption,
-  computeInlineCompletion,
-  computeUpArrow,
-  computeDownArrow,
-  computeTab,
-  shouldResetHistory,
-  computeVisibleWindow,
-  type InlineSlashContext,
-  type InlineOptionContext,
-} from "./prompt-input-logic";
-import { usePasteExtmarks } from "./use-paste-extmarks";
-import {
-  obfuscate as engineObfuscate,
   deobfuscate as engineDeobfuscate,
+  obfuscate as engineObfuscate,
   isObfuscationEnabled,
 } from "../../../core/obfuscation";
+import { useFocus } from "../../context/focus";
+import { useInput } from "../../context/input";
 import { useObfuscation } from "../../context/obfuscation";
+import { useTheme } from "../../theme";
+import {
+  computeDownArrow,
+  computeInlineCompletion,
+  computeTab,
+  computeUpArrow,
+  computeVisibleWindow,
+  detectInlineOption,
+  detectInlineSlash,
+  filterInlineOptionSuggestions,
+  filterInlineSuggestions,
+  type InlineOptionContext,
+  type InlineSlashContext,
+  shouldResetHistory,
+} from "./prompt-input-logic";
+import { usePasteExtmarks } from "./use-paste-extmarks";
+
 /** Word-wrap text and return at most `maxLines` lines, adding ellipsis if truncated. */
 function truncateToLines(
   text: string,
@@ -395,8 +396,11 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       ta.removeHighlightsByRef(SLASH_HL_REF);
       if (knownSlugs.size === 0) return;
       SLASH_PATTERN.lastIndex = 0;
-      let match: RegExpExecArray | null;
-      while ((match = SLASH_PATTERN.exec(text)) !== null) {
+      for (
+        let match = SLASH_PATTERN.exec(text);
+        match !== null;
+        match = SLASH_PATTERN.exec(text)
+      ) {
         if (knownSlugs.has(match[0].toLowerCase())) {
           ta.addHighlightByCharRange({
             start: match.index,
@@ -772,5 +776,3 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     );
   },
 );
-
-export default PromptInput;

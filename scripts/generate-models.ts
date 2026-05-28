@@ -9,7 +9,7 @@
  */
 
 import { readFileSync, writeFileSync } from "fs";
-import { resolve, dirname } from "path";
+import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -31,8 +31,11 @@ function extractUnionMembers(dtsPath: string, typeName: string): string[] {
   const unionBody = match[1]!;
   const members: string[] = [];
   const literalRegex = /'([^']+)'/g;
-  let m: RegExpExecArray | null;
-  while ((m = literalRegex.exec(unionBody)) !== null) {
+  for (
+    let m = literalRegex.exec(unionBody);
+    m !== null;
+    m = literalRegex.exec(unionBody)
+  ) {
     members.push(m[1]!);
   }
   return members;
@@ -53,6 +56,7 @@ const CONTEXT_LENGTHS: Record<string, number> = {
   "claude-instant": 100000,
 
   // OpenAI
+  "gpt-5.5": 1050000,
   "gpt-5": 200000,
   "gpt-4.5": 128000,
   "gpt-4.1": 128000,
@@ -137,6 +141,34 @@ function getContextLength(modelId: string): number | undefined {
   }
 
   return undefined;
+}
+
+// Append IDs from `extras` that aren't already present in `target`.
+function appendMissing<T>(target: T[], extras: readonly T[]): void {
+  const seen = new Set(target);
+  for (const id of extras) {
+    if (!seen.has(id)) target.push(id);
+  }
+}
+
+// Higher score = newer. Score reflects model family generation, not release
+// date — base, dated, and variant IDs in the same family share a score so a
+// stable sort keeps the SDK's intra-family ordering intact.
+function openaiVersionScore(id: string): number {
+  const gpt = id.match(/^gpt-(\d+)(?:\.(\d+))?/);
+  if (gpt) {
+    const major = parseInt(gpt[1]!, 10);
+    const minor = gpt[2] ? parseInt(gpt[2], 10) : 0;
+    // major*1000 leaves room for minor versions ≥10 (gpt-5.10 won't collide
+    // with gpt-6.0). Pro variants edge out non-pro siblings within a generation.
+    const pro = /-pro(?:-|$)/.test(id) ? 5 : 0;
+    return 5000 + major * 1000 + minor * 10 + pro;
+  }
+  const o = id.match(/^o(\d+)(?:-|$)/);
+  if (o) {
+    return 4000 + parseInt(o[1]!, 10) * 100;
+  }
+  return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -552,13 +584,7 @@ function main() {
   );
 
   // Models available on the Anthropic API but not yet in the AI SDK type definitions
-  const EXTRA_ANTHROPIC_IDS = ["claude-opus-4-7"];
-  const existingAnthropicIds = new Set(anthropicIds);
-  for (const id of EXTRA_ANTHROPIC_IDS) {
-    if (!existingAnthropicIds.has(id)) {
-      anthropicIds.push(id);
-    }
-  }
+  appendMissing(anthropicIds, ["claude-opus-4-7"]);
 
   const anthropicModels: ModelEntry[] = anthropicIds.map((id) => ({
     id,
@@ -572,9 +598,18 @@ function main() {
     ROOT,
     "node_modules/@ai-sdk/openai/dist/internal/index.d.ts",
   );
-  const openaiIds = extractUnionMembers(openaiDts, "OpenAIChatModelId").filter(
-    isRelevantChatModel,
-  );
+  const openaiIds = extractUnionMembers(
+    openaiDts,
+    "OpenAIResponsesModelId",
+  ).filter(isRelevantChatModel);
+
+  // Models available on the OpenAI API but not yet in the AI SDK type definitions
+  appendMissing(openaiIds, ["gpt-5.5", "gpt-5.5-2026-04-23"]);
+
+  // OpenAI's SDK lists generations oldest-first; flip so the picker shows the
+  // newest family first. Stable sort preserves intra-family declaration order.
+  openaiIds.sort((a, b) => openaiVersionScore(b) - openaiVersionScore(a));
+
   const openaiModels: ModelEntry[] = openaiIds.map((id) => ({
     id,
     name: formatModelName(id, "openai"),
@@ -608,17 +643,10 @@ function main() {
   const bedrockBaseIds = [...new Set(bedrockRawIds)];
 
   // Models available on Bedrock but not yet in the AI SDK type definitions
-  const EXTRA_BEDROCK_IDS = [
+  appendMissing(bedrockBaseIds, [
     "moonshotai.kimi-k2.5",
     "anthropic.claude-opus-4-7",
-  ];
-
-  const existingIds = new Set(bedrockBaseIds);
-  for (const id of EXTRA_BEDROCK_IDS) {
-    if (!existingIds.has(id)) {
-      bedrockBaseIds.push(id);
-    }
-  }
+  ]);
 
   const bedrockRegionalIds = generateBedrockRegionalVariants(bedrockBaseIds);
   const allBedrockIds = [...bedrockBaseIds, ...bedrockRegionalIds];

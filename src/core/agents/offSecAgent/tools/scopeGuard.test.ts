@@ -1,16 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
+import type { SessionInfo } from "../../../session";
 import {
+  assertCommandInScope,
+  assertUrlInScope,
+  extractHostname,
+  extractHostsFromCommand,
   getAllowedHosts,
   getRegistrableDomain,
   isHostAllowed,
-  extractHostname,
-  assertUrlInScope,
-  assertCommandInScope,
-  extractHostsFromCommand,
+  resolverSessionFromCtx,
   ScopeViolationError,
 } from "./scopeGuard";
 import type { ToolContext } from "./types";
-import type { SessionInfo } from "../../../session";
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -112,6 +114,65 @@ describe("getAllowedHosts", () => {
     };
     const hosts = getAllowedHosts(ctx);
     expect(hosts).toEqual(["api.example.com"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolverSessionFromCtx
+// ---------------------------------------------------------------------------
+
+describe("resolverSessionFromCtx", () => {
+  it("returns the bare session when ctx.target is absent", () => {
+    const ctx = makeCtx();
+    expect(resolverSessionFromCtx(ctx)).toBe(ctx.session);
+  });
+
+  it("returns the bare session when ctx.target is already in session.targets", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    ctx.session = {
+      ...ctx.session,
+      targets: ["https://example.com"],
+    } as typeof ctx.session;
+    expect(resolverSessionFromCtx(ctx)).toBe(ctx.session);
+  });
+
+  it("appends ctx.target to targets when it is not in session.targets", () => {
+    const ctx = makeCtx({ target: "https://other.example" });
+    ctx.session = {
+      ...ctx.session,
+      targets: ["https://example.com"],
+    } as typeof ctx.session;
+    const out = resolverSessionFromCtx(ctx);
+    expect(out.targets).toEqual([
+      "https://example.com",
+      "https://other.example",
+    ]);
+  });
+
+  it("makes applyHeadersToShellCommand respect ctx.target when session.targets does not include it", () => {
+    // Regression: resolver saw only session.targets and dropped headers
+    // for hosts approved via ctx.target.
+    const ctx = makeCtx({ target: "https://other.example" });
+    ctx.session = {
+      ...ctx.session,
+      targets: ["https://example.com"],
+      config: { headers: { "X-API-Key": "abc" } },
+    } as typeof ctx.session;
+
+    const direct = applyHeadersToShellCommand(
+      "curl https://other.example/",
+      ctx.session,
+      ["other.example"],
+    );
+    expect(direct.status).toBe("no-headers");
+
+    const bridged = applyHeadersToShellCommand(
+      "curl https://other.example/",
+      resolverSessionFromCtx(ctx),
+      ["other.example"],
+    );
+    expect(bridged.status).toBe("injected");
+    expect(bridged.command).toContain(`-H "X-API-Key: abc"`);
   });
 });
 

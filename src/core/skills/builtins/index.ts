@@ -2,6 +2,9 @@ import type { BuiltInSkill } from "../types";
 import { pentestSkill } from "./pentest";
 import { threatModelSkill } from "./threatModel";
 
+export { buildPentestPrompt } from "./pentest";
+export { buildThreatModelPrompt } from "./threatModel";
+
 /**
  * Code-defined skills bundled with the application.
  *

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
-import { watch } from "fs";
-import { spawn, type Subprocess } from "bun";
-import { resolve } from "path";
+import { watch } from "node:fs";
+import { resolve } from "node:path";
+import { type Subprocess, spawn } from "bun";
 
 const TARGET_FILE = "src/tui/index.tsx";
 const WATCH_DIRS = ["src"];
@@ -59,7 +59,7 @@ for (const dir of WATCH_DIRS) {
   const watcher = watch(
     watchPath,
     { recursive: true },
-    (eventType, filename) => {
+    (_eventType, filename) => {
       if (!filename) return;
 
       // Ignore non-source files

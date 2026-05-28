@@ -1,17 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+import type { OperatorSessionState } from "../../../core/operator";
+import type { AutocompleteOption } from "../shared";
 import {
+  accumulateTokenUsage,
+  buildOperatorSystemPrompt,
+  type DashboardStatus,
   filterOperatorAutocomplete,
+  resolveAbortAction,
+  resolveInputFocused,
+  resolveKeyboardShortcut,
   resolveSubmit,
   routeCommand,
-  resolveKeyboardShortcut,
-  resolveAbortAction,
-  buildOperatorSystemPrompt,
-  resolveInputFocused,
-  accumulateTokenUsage,
-  type DashboardStatus,
 } from "./logic";
-import type { AutocompleteOption } from "../shared/prompt-input";
-import type { OperatorSessionState } from "../../../core/operator";
 
 // ---------------------------------------------------------------------------
 // Shared fixtures

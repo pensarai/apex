@@ -1,10 +1,10 @@
 import { tool } from "ai";
-import { z } from "zod";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
-import type { ToolContext } from "./types";
+import { z } from "zod";
 import { computeBlackboxRiskScore } from "../../specialized/attackSurface/blackboxRiskScoring";
 import { generateThreatModelForEndpoint } from "./threatModelGenerator";
+import type { ToolContext } from "./types";
 
 function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
@@ -103,7 +103,7 @@ type DocumentEndpointInput = z.infer<typeof documentEndpointInputSchema>;
  * Documents a discovered endpoint during attack surface analysis —
  * writes a JSON file to the session's assets directory (scoped by
  * app name). This tool is specifically for individual endpoints and
- * is designed for incremental creation via the MessageManager in Console.
+ * is designed for incremental creation via the agent log persister in Console.
  */
 export function documentEndpoint(ctx: ToolContext) {
   const baseAssetsPath = join(ctx.session.rootPath, "assets");

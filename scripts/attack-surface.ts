@@ -1,12 +1,12 @@
 #!/usr/bin/env tsx
 
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { config } from "dotenv";
 import type { AIModel } from "../src/core/ai";
-import { readFileSync, existsSync } from "fs";
-import { join } from "path";
-import { sessions } from "../src/core/session";
 import { runAttackSurfaceAgent } from "../src/core/api";
 import { AgentEventBus } from "../src/core/eventBus";
-import { config } from "dotenv";
+import { sessions } from "../src/core/session";
 
 config();
 
@@ -70,12 +70,13 @@ async function runAttackSurface(options: AttackSurfaceOptions): Promise<void> {
   console.log();
 
   try {
-    // Build session config
+    // "default" omits headers so sessions.create snapshots the global default.
     const sessionConfig = {
-      offensiveHeaders: {
-        mode: headerMode,
-        headers: headerMode === "custom" ? customHeaders : undefined,
-      },
+      ...(headerMode === "custom"
+        ? { headers: customHeaders ?? {} }
+        : headerMode === "none"
+          ? { headers: {} }
+          : {}),
       ...(strictScope && {
         scopeConstraints: {
           strictScope: true,
@@ -396,7 +397,7 @@ async function main() {
         process.exit(1);
       }
       const portNum = parseInt(port, 10);
-      if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+      if (Number.isNaN(portNum) || portNum < 1 || portNum > 65535) {
         console.error(
           "Error: --allowed-port must be a valid port number (1-65535)",
         );

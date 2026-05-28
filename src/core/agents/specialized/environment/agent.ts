@@ -1,12 +1,12 @@
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
+import { OffensiveSecurityAgent } from "../../offSecAgent";
 import {
-  buildEnvironmentSystemPrompt,
   buildEnvironmentPrompt,
+  buildEnvironmentSystemPrompt,
 } from "./prompts";
 import {
-  EnvironmentResultSchema,
-  type EnvironmentResult,
   type EnvironmentAgentInput,
+  type EnvironmentResult,
+  EnvironmentResultSchema,
 } from "./types";
 
 /**
@@ -55,6 +55,7 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
       subagentId,
       sandbox,
       enableThinking,
+      openAIReasoningEffort,
     } = opts;
 
     super({
@@ -69,6 +70,7 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
       subagentId,
       sandbox,
       enableThinking,
+      openAIReasoningEffort,
 
       activeTools: [
         "read_file",

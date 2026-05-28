@@ -9,7 +9,7 @@
  *   pensar issues update <issueId> [opts]         Update an issue
  */
 
-import { listIssues, getIssue, updateIssue } from "../core/api/issues";
+import { getIssue, listIssues, updateIssue } from "../core/api";
 
 function getFlag(flag: string, argv: string[]): string | undefined {
   const idx = argv.indexOf(flag);

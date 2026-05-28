@@ -1,9 +1,9 @@
 import { tool } from "ai";
-import { z } from "zod";
-import { createTransport } from "nodemailer";
 import { readFile } from "fs/promises";
-import { basename } from "path";
 import { lookup } from "mime-types";
+import { createTransport } from "nodemailer";
+import { basename } from "path";
+import { z } from "zod";
 import type { ToolContext } from "../types";
 
 const attachmentSchema = z.object({
@@ -62,7 +62,7 @@ const sendEmailInputSchema = z.object({
     ),
 });
 
-export type SendEmailInput = z.infer<typeof sendEmailInputSchema>;
+type SendEmailInput = z.infer<typeof sendEmailInputSchema>;
 
 export interface SendEmailResult {
   success: boolean;

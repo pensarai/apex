@@ -21,8 +21,8 @@ import {
   statSync,
   writeFileSync,
 } from "fs";
-import path from "path";
 import pLimit from "p-limit";
+import path from "path";
 import { z } from "zod";
 
 // Schema for the AI comparison response

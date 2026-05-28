@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Config } from "../config/config";
-import { getDefaultModelForConfig, getAvailableModels } from "./utils";
+import { getAvailableModels, getDefaultModelForConfig } from "./utils";
 
 function makeConfig(overrides: Partial<Config> = {}): Config {
   return { responsibleUseAccepted: true, ...overrides };
@@ -49,7 +49,7 @@ describe("getDefaultModelForConfig", () => {
     const model = getDefaultModelForConfig(config);
     expect(model).not.toBeNull();
     expect(model!.provider).toBe("openai");
-    expect(model!.id).toBe("gpt-5.2-pro");
+    expect(model!.id).toBe("gpt-5.5");
   });
 
   it("returns Google best model when only Google is configured", () => {

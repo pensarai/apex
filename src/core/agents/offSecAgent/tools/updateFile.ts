@@ -1,10 +1,10 @@
 import { tool } from "ai";
-import { z } from "zod";
 import { readFile, writeFile } from "fs/promises";
-import { resolve, isAbsolute } from "path";
+import { isAbsolute, resolve } from "path";
+import { z } from "zod";
 import type { ToolContext } from "./types";
 
-export const updateFileInputSchema = z.object({
+const updateFileInputSchema = z.object({
   path: z.string().describe("Absolute or relative path to the file to update"),
   oldContent: z
     .string()
@@ -27,7 +27,7 @@ export const updateFileInputSchema = z.object({
     ),
 });
 
-export type UpdateFileInput = z.infer<typeof updateFileInputSchema>;
+type UpdateFileInput = z.infer<typeof updateFileInputSchema>;
 
 export type UpdateFileResult = {
   success: boolean;

@@ -7,12 +7,12 @@
  */
 
 import { randomBytes } from "crypto";
+import type { AuthCredentials } from "../session";
 import type {
   CredentialReference,
   CredentialType,
   StoredCredential,
 } from "./types";
-import type { AuthCredentials } from "../session";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -172,6 +172,25 @@ export class CredentialManager {
    */
   listReferences(): CredentialReference[] {
     return Array.from(this.store.values()).map(toReference);
+  }
+
+  /**
+   * Stored credentials with their `customHeaders` intact. Consumed ONLY
+   * by the target-HTTP resolver — agent-facing code must use
+   * `listReferences()` which omits values.
+   */
+  listCredentialsWithHeaders(): Array<{
+    tokens: { customHeaders: Record<string, string> };
+  }> {
+    const out: Array<{ tokens: { customHeaders: Record<string, string> } }> =
+      [];
+    for (const stored of this.store.values()) {
+      const headers = stored.tokens?.customHeaders;
+      if (headers && Object.keys(headers).length > 0) {
+        out.push({ tokens: { customHeaders: { ...headers } } });
+      }
+    }
+    return out;
   }
 
   /**

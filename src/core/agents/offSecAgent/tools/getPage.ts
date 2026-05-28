@@ -1,11 +1,35 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveEffectiveHeaders } from "../../../http/targetHeaders";
+import type { HeaderRecord } from "../../../http/types";
+import { resolverSessionFromCtx } from "./scopeGuard";
 import type { ToolContext } from "./types";
+
+// Tool baselines used for out-of-scope research URLs (CVE writeups, vendor
+// docs) — a recognisable UA avoids Cloudflare/Akamai bot challenges on
+// `Bun/x.y` defaults. For in-scope URLs the resolver's values win.
+const GETPAGE_USER_AGENT =
+  "Mozilla/5.0 (compatible; PensarBot/1.0; +https://pensar.dev)";
+
+const BASELINE_FALLBACK_HEADERS: HeaderRecord = {
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.5",
+};
+
+function mergeBaselineHeaders(resolved: HeaderRecord): HeaderRecord {
+  const present = new Set(Object.keys(resolved).map((k) => k.toLowerCase()));
+  const out: HeaderRecord = { ...resolved };
+  out["User-Agent"] = GETPAGE_USER_AGENT;
+  for (const [name, value] of Object.entries(BASELINE_FALLBACK_HEADERS)) {
+    if (!present.has(name.toLowerCase())) out[name] = value;
+  }
+  return out;
+}
 
 const MAX_CONTENT_LENGTH = 50_000;
 const REQUEST_TIMEOUT = 30_000;
 
-export const getPageInputSchema = z.object({
+const getPageInputSchema = z.object({
   url: z
     .string()
     .url()
@@ -17,7 +41,7 @@ export const getPageInputSchema = z.object({
     ),
 });
 
-export type GetPageInput = z.infer<typeof getPageInputSchema>;
+type GetPageInput = z.infer<typeof getPageInputSchema>;
 
 export interface GetPageResponse {
   success: boolean;
@@ -93,15 +117,17 @@ BEST PRACTICES:
           ? AbortSignal.any([ctx.abortSignal, controller.signal])
           : controller.signal;
 
+        // Resolve once, then layer baselines so resolver values still win.
+        // Calling bare fetch (not targetFetch) avoids a second resolution
+        // pass that would promote baselines above credential headers.
+        const resolverSession = resolverSessionFromCtx(ctx);
+        const resolved = resolveEffectiveHeaders(resolverSession, url);
+        const headers = mergeBaselineHeaders(resolved);
+
+        // biome-ignore lint/style/noRestrictedGlobals: headers fully resolved above; targetFetch would re-resolve
         const response = await fetch(url, {
           method: "GET",
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (compatible; PensarBot/1.0; +https://pensar.dev)",
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-          },
+          headers,
           signal: combinedSignal,
           redirect: "follow",
         });

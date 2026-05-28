@@ -1,19 +1,19 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
-import { useRoute } from "../../context/route";
-import { useFocus } from "../../context/focus";
-import { sessions } from "../../../core/session";
-import { openSessionReport, readSessionReport } from "../../utils/open-report";
-import ReportViewerDialog from "../report-viewer-dialog";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { REPORT_FILENAME_MD } from "../../../core/report";
+import { sessions } from "../../../core/session";
 import { Dialog } from "../../context/dialog";
-import { ScrollBoxRenderable } from "@opentui/core";
-import { scrollToIndex } from "../../utils/scroll";
-import { useTheme } from "../../theme";
-import { useSessionsList } from "../../hooks/use-sessions-list";
-import { useToast } from "../../context/toast";
-import DialogLayout from "../dialog-layout";
 import { useDimensions } from "../../context/dimensions";
+import { useFocus } from "../../context/focus";
+import { useRoute } from "../../context/route";
+import { useToast } from "../../context/toast";
+import { useSessionsList } from "../../hooks/use-sessions-list";
+import { useTheme } from "../../theme";
+import { openSessionReport, readSessionReport } from "../../utils/open-report";
+import { scrollToIndex } from "../../utils/scroll";
+import DialogLayout from "../dialog-layout";
+import ReportViewerDialog from "../report-viewer-dialog";
 
 interface SessionsDisplayProps {
   onClose: () => void;
@@ -280,6 +280,7 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                 contentOptions: {
                   gap: 2,
                   flexDirection: "column",
+                  paddingRight: 1,
                 },
                 scrollbarOptions: {
                   trackOptions: {
@@ -303,9 +304,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                       minute: "2-digit",
                       hour12: true,
                     });
-                    const mode = session.config?.mode || "auto";
-                    const modeBadge =
-                      mode === "operator" ? "[operator]" : "[auto]";
                     const statusBadge = session.hasReport ? "✓" : "…";
                     const findingsText =
                       session.findingsCount > 0
@@ -344,15 +342,6 @@ export default function SessionsDisplay({ onClose }: SessionsDisplayProps) {
                             }
                           >
                             {statusBadge}
-                          </text>
-                          <text
-                            fg={
-                              mode === "operator"
-                                ? colors.primary
-                                : colors.textMuted
-                            }
-                          >
-                            {modeBadge}
                           </text>
                           {findingsText ? (
                             <text fg={colors.textMuted}>{findingsText}</text>

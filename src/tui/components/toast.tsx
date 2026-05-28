@@ -1,7 +1,7 @@
 import type { RGBA } from "@opentui/core";
 import { useDimensions } from "../context/dimensions";
-import { useTheme } from "../theme";
 import { type ToastVariant, useToast } from "../context/toast";
+import { useTheme } from "../theme";
 
 const VARIANT_ICONS: Record<ToastVariant, string> = {
   default: "●",

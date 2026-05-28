@@ -1,10 +1,13 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { DisplayMessage } from "../agent-display";
-import {
-  tryParsePartialJson,
-  extractStreamableContent,
-} from "../shared/message-utils";
 import { loadSubagents } from "../../../core/session/persistence";
+import type { DisplayMessage } from "../agent-display";
+// Importing through the shared barrel pulls in opentui/ink-using components
+// which reference bun:* in their dep chain — vitest under Node can't resolve
+// that. Use the leaf module directly.
+import {
+  extractStreamableContent,
+  tryParsePartialJson,
+} from "../shared/message-utils";
 
 export type SubagentStatus = "running" | "completed" | "failed" | "cancelled";
 

@@ -1,11 +1,11 @@
-import type { ReactNode } from "react";
 import { useKeyboard } from "@opentui/react";
+import type { ReactNode } from "react";
 import { useAgent } from "../../context/agent";
-import { useRoute } from "../../context/route";
 import { useConfig } from "../../context/config";
-import { ModelPicker } from "../model-picker";
+import { useRoute } from "../../context/route";
 import { useTheme } from "../../theme";
-import { DialogControls } from "../shared/dialog-controls";
+import { ModelPicker } from "../model-picker";
+import { DialogControls } from "../shared";
 
 function ClippedLine({
   children,

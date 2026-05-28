@@ -2,13 +2,12 @@ import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall } from "ai";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import type { AIModel } from "../../../ai";
-import type { AIAuthConfig } from "../../../ai/utils";
-import { type SessionInfo } from "../../../session";
-import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
-import { detectOSAndEnhancePrompt } from "../utils";
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
+import type { AIAuthConfig, AIModel, OpenAIReasoningEffort } from "../../../ai";
 import type { AgentEventBus } from "../../../eventBus";
+import type { SessionInfo } from "../../../session";
+import { OffensiveSecurityAgent } from "../../offSecAgent";
+import { detectOSAndEnhancePrompt } from "../utils";
+import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import type { AuthBarrier } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -67,6 +66,9 @@ export interface AuthenticationAgentInput {
 
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
+
+  /** OpenAI reasoning effort for GPT/o-series reasoning models. */
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */
@@ -138,6 +140,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       context,
       environmentVariables,
       enableThinking,
+      openAIReasoningEffort,
     } = opts;
 
     const cm = session.credentialManager;
@@ -155,6 +158,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       subagentId,
       environmentVariables,
       enableThinking,
+      openAIReasoningEffort,
       toolChoice: "auto",
       activeTools: [
         // Auth flow tools

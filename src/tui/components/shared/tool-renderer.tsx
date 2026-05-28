@@ -6,20 +6,21 @@
  */
 
 import { memo, useState } from "react";
-import { useTheme } from "../../theme";
-import { ShiningText } from "../loaders";
-import { getToolDisplayLabel } from "./tool-registry";
-import { getResultSummary, type ResultSummary } from "./result-registry";
-import { isToolMessage } from "./type-guards";
-import type { DisplayMessage } from "../agent-display";
-import { PentestWorkflowDisplay } from "./pentest-workflow-display";
 import { useObfuscation } from "../../context/obfuscation";
+import { useTheme } from "../../theme";
+import type { DisplayMessage } from "../agent-display";
+import { ShiningText } from "../loaders";
+import { PentestWorkflowDisplay } from "./pentest-workflow-display";
+import { getResultSummary, type ResultSummary } from "./result-registry";
+import { getToolDisplayLabel } from "./tool-registry";
+import { isToolMessage } from "./type-guards";
 
 const TOOLS_WITH_LOG_WINDOW = new Set([
   "execute_command",
   "run_attack_surface",
   "spawn_coding_agent",
   "spawn_pentest_swarm",
+  "spawn_pentest_agent",
   "run_pentest_workflow",
   "delegate_to_auth_subagent",
   "create_file",
@@ -184,6 +185,9 @@ export const ToolRenderer = memo(function ToolRenderer({
                   {resultDisplay.text}
                 </text>
               )}
+              {resultDisplay.hint && (
+                <text fg={colors.textMuted}>{resultDisplay.hint}</text>
+              )}
             </box>
 
             {/* Syntax-highlighted code preview */}
@@ -216,5 +220,3 @@ export const ToolRenderer = memo(function ToolRenderer({
     </box>
   );
 });
-
-export default ToolRenderer;

@@ -8,19 +8,19 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { useDimensions } from "../../context/dimensions";
-import { useCommand } from "../../context/command";
-import { useInput } from "../../context/input";
-import { useFocus } from "../../context/focus";
-import { useConfig } from "../../context/config";
-import { useRoute } from "../../context/route";
-import { useDialog } from "../../context/dialog";
-import { PromptInput } from "../shared/prompt-input";
-import { OperatorModeBar, providerDisplayName } from "./input-area";
-import { useTheme } from "../../theme";
-import { useAgent } from "../../context/agent";
 import * as History from "../../../core/history";
-import PetriAnimation from "./petri-animation";
+import { useAgent } from "../../context/agent";
+import { useCommand } from "../../context/command";
+import { useConfig } from "../../context/config";
+import { useDialog } from "../../context/dialog";
+import { useDimensions } from "../../context/dimensions";
+import { useFocus } from "../../context/focus";
+import { useInput } from "../../context/input";
+import { useRoute } from "../../context/route";
+import { useTheme } from "../../theme";
+import { PromptInput } from "../shared";
+import { OperatorModeBar, providerDisplayName } from "./input-area";
+import { PetriAnimation } from "./petri-animation";
 
 type ViewType = "home" | "config" | "chat";
 
@@ -286,5 +286,3 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     </box>
   );
 }
-
-export default HomeView;

@@ -1,5 +1,5 @@
-import { EventEmitter } from "events";
 import type { TextStreamPart, ToolSet } from "ai";
+import { EventEmitter } from "events";
 
 /**
  * Typed event map for the agent event bus.
@@ -37,10 +37,14 @@ export type AgentEventMap = {
     subagentId: string;
     name?: string;
     input: unknown;
+    /** Omitted means top-level. Auto-populated by {@link AgentEventBus.attachChild}. */
+    parentSubagentId?: string;
   };
   "subagent-complete": {
     subagentId: string;
     status: "completed" | "failed";
+    /** Omitted means top-level. Auto-populated by {@link AgentEventBus.attachChild}. */
+    parentSubagentId?: string;
   };
   "workflow-phase-start": {
     phase: "discovery" | "pentesting" | "reporting";
@@ -69,21 +73,49 @@ export type AgentEventMap = {
 };
 
 /**
- * Events forwarded from a child event bus to its parent via
- * {@link AgentEventBus.attachChild}.
+ * Per-event decision used by {@link AgentEventBus.attachChild}.
+ *
+ * - `"forward"` — the event may originate inside a subagent; bubble it to the
+ *   parent bus so parent-side consumers (W&B uploader, dashboard buffers,
+ *   future persistence/metrics layers) receive it.
+ * - `"parent-only"` — the event is emitted only by orchestrator-level workflow
+ *   code on the parent bus; if it ever appears on a child bus, drop it on the
+ *   floor rather than re-emit on the parent (which would either be dead code
+ *   or, worse, a double-fire).
+ *
+ * The map type below is `{ readonly [K in keyof AgentEventMap]: ... }`, so
+ * adding a new event to {@link AgentEventMap} without an explicit policy
+ * entry is a TypeScript compile error. This invariant is the long-term
+ * safety net: hand-curated allowlists silently omit events; an exhaustive
+ * mapped type cannot.
  */
-const CHILD_BUS_FORWARDED_EVENTS = [
-  "text-delta",
-  "tool-call-start",
-  "tool-call-delta",
-  "tool-call-complete",
-  "tool-result",
-  "subagent-spawn",
-  "subagent-complete",
-  "command-output",
-  "error",
-  "step-finish",
-] as const satisfies readonly (keyof AgentEventMap)[];
+type ChildForwardPolicy = "forward" | "parent-only";
+
+const CHILD_BUS_FORWARD_POLICY: {
+  readonly [K in keyof AgentEventMap]: ChildForwardPolicy;
+} = {
+  "text-delta": "forward",
+  "tool-call-start": "forward",
+  "tool-call-delta": "forward",
+  "tool-call-complete": "forward",
+  "tool-result": "forward",
+  "subagent-spawn": "forward",
+  "subagent-complete": "forward",
+  "step-finish": "forward",
+  "command-output": "forward",
+  error: "forward",
+  "trace-record": "forward",
+  // Emitted only by orchestrator workflow code (pentest.ts,
+  // whiteboxAttackSurface.ts) on the parent bus directly. If a future change
+  // makes any of these subagent-emitted, flip the value here deliberately.
+  "workflow-phase-start": "parent-only",
+  "workflow-phase-complete": "parent-only",
+  "app-analysis-progress": "parent-only",
+};
+
+const CHILD_BUS_FORWARDED_EVENTS = (
+  Object.keys(CHILD_BUS_FORWARD_POLICY) as (keyof AgentEventMap)[]
+).filter((key) => CHILD_BUS_FORWARD_POLICY[key] === "forward");
 
 /**
  * Centralized, typed event bus for agent streaming output.
@@ -154,21 +186,42 @@ export class AgentEventBus {
    * Tools running inside a subagent emit side-channel events (e.g.
    * `command-output`) without `subagentId`. This method injects the
    * ID so the parent's routing logic (subagent store vs main view)
-   * works correctly.
+   * works correctly. For `subagent-spawn` / `subagent-complete` it
+   * additionally injects `parentSubagentId` to preserve hierarchy
+   * across nested subagents.
    */
   static attachChild(
     child: AgentEventBus,
     parent: AgentEventBus | undefined,
     subagentId: string,
   ): void {
+    if (!parent) return;
     for (const key of CHILD_BUS_FORWARDED_EVENTS) {
-      child.on(key, (payload: AgentEventMap[typeof key]) => {
-        if (!parent) return;
+      // Re-bind so the handler's payload type tracks `key` as a single K —
+      // without this, the union of payload shapes is too wide for `emit`.
+      const forwardKey = key as keyof AgentEventMap;
+      child.on(forwardKey, (payload: AgentEventMap[typeof forwardKey]) => {
         const p = payload as Record<string, unknown>;
+
+        const isLifecycle =
+          forwardKey === "subagent-spawn" || forwardKey === "subagent-complete";
+
+        if (isLifecycle) {
+          if (p.parentSubagentId) {
+            parent.emit(forwardKey, payload as never);
+          } else {
+            parent.emit(forwardKey, {
+              ...p,
+              parentSubagentId: subagentId,
+            } as never);
+          }
+          return;
+        }
+
         if (!p.subagentId) {
-          parent.emit(key, { ...p, subagentId } as AgentEventMap[typeof key]);
+          parent.emit(forwardKey, { ...p, subagentId } as never);
         } else {
-          parent.emit(key, payload);
+          parent.emit(forwardKey, payload as never);
         }
       });
     }

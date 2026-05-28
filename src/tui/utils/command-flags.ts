@@ -6,12 +6,13 @@
  */
 
 import { readFileSync } from "fs";
-import { resolve, isAbsolute } from "path";
-import type { SessionConfig } from "../../core/session";
+import { isAbsolute, resolve } from "path";
+import { formatParseError, parseHeaderLine } from "../../core/http/parse";
 import type { OperatorMode } from "../../core/operator";
+import type { SessionConfig } from "../../core/session";
 import { createToolsetState } from "../../core/toolset";
-import { parseTargetUrl } from "../../util/url";
 import { createThreatModelPrompt } from "../../core/utils/prompt";
+import { parseTargetUrl } from "../../util/url";
 
 /**
  * Combine resolved threat model and prompt into a single prompt string.
@@ -68,11 +69,11 @@ export function resolveThreatModelPrompt(value: string): string {
 // General Flag Parsing
 // ============================================================================
 
-export interface ParsedFlags {
+interface ParsedFlags {
   [key: string]: string | boolean | string[] | undefined;
 }
 
-export interface FlagSchema {
+interface FlagSchema {
   [flagName: string]: {
     type: "string" | "boolean" | "array";
     aliases?: string[];
@@ -83,7 +84,7 @@ export interface FlagSchema {
  * Parse CLI-style arguments into a flags object
  * Supports: --flag value, --flag=value, --boolean-flag
  */
-export function parseFlags(args: string[], schema: FlagSchema): ParsedFlags {
+function parseFlags(args: string[], schema: FlagSchema): ParsedFlags {
   const result: ParsedFlags = {};
   let i = 0;
 
@@ -313,12 +314,14 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
   if (raw.header && Array.isArray(raw.header)) {
     flags.customHeaders = {};
     for (const h of raw.header) {
-      const colonIdx = h.indexOf(":");
-      if (colonIdx > 0) {
-        const name = h.slice(0, colonIdx).trim();
-        const value = h.slice(colonIdx + 1).trim();
-        flags.customHeaders[name] = value;
+      const parsed = parseHeaderLine(h);
+      if (!parsed.ok) {
+        console.error(
+          `--header "${h}" rejected:\n${formatParseError(parsed.error)}`,
+        );
+        process.exit(1);
       }
+      flags.customHeaders[parsed.value.name] = parsed.value.value;
     }
     // If we have custom headers, set mode to custom
     if (Object.keys(flags.customHeaders).length > 0 && !flags.headersMode) {
@@ -415,11 +418,10 @@ export function buildOperatorSessionConfig(
     };
   }
 
-  if (flags.headersMode && flags.headersMode !== "default") {
-    sessionConfig.offensiveHeaders = {
-      mode: flags.headersMode,
-      headers: flags.headersMode === "custom" ? flags.customHeaders : undefined,
-    };
+  if (flags.headersMode === "none") {
+    sessionConfig.headers = {};
+  } else if (flags.headersMode === "custom") {
+    sessionConfig.headers = { ...(flags.customHeaders ?? {}) };
   }
 
   sessionConfig.agentCwd = flags.sandbox ? undefined : process.cwd();
@@ -469,11 +471,10 @@ export function buildSwarmSessionConfig(
     };
   }
 
-  if (flags.headersMode && flags.headersMode !== "default") {
-    sessionConfig.offensiveHeaders = {
-      mode: flags.headersMode,
-      headers: flags.headersMode === "custom" ? flags.customHeaders : undefined,
-    };
+  if (flags.headersMode === "none") {
+    sessionConfig.headers = {};
+  } else if (flags.headersMode === "custom") {
+    sessionConfig.headers = { ...(flags.customHeaders ?? {}) };
   }
 
   // Combine threat model and prompt into a single prompt field

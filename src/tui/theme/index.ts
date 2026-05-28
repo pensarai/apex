@@ -5,30 +5,26 @@
  * Re-exports the theme system API and legacy colors for backwards compatibility.
  */
 
+export { resolveThemeColors, ThemeProvider, useTheme } from "./context";
+export { detectTerminalMode } from "./detect-mode";
+export { getAllThemeNames, getTheme } from "./registry";
+
+// ── Built-in themes + terminal mode detection ───────────────
+export { registerBuiltinThemes } from "./themes";
 // ── New theme system API ────────────────────────────────────
 export type {
-  ThemeColors,
-  ThemeColorValue,
-  ThemeColorsInput,
-  ThemeDefinition,
   ColorMode,
+  ThemeColors,
+  ThemeColorsInput,
+  ThemeColorValue,
+  ThemeDefinition,
 } from "./types";
-export {
-  registerTheme,
-  getTheme,
-  getAllThemeNames,
-  DEFAULT_THEME_NAME,
-} from "./registry";
-export { ThemeProvider, useTheme, resolveThemeColors } from "./context";
 
-// ── Legacy exports (kept during migration) ──────────────────
-export { colors, type ColorName } from "./colors";
-
+import type { RGBA } from "@opentui/core";
+import type { PermissionTier } from "../../core/operator";
+import { colors as legacyColors } from "./colors";
 // ── Helpers ─────────────────────────────────────────────────
 import type { ThemeColors } from "./types";
-import { colors as legacyColors } from "./colors";
-import type { PermissionTier } from "../../core/operator";
-import type { RGBA } from "@opentui/core";
 
 /**
  * Get the appropriate color for a permission tier.
@@ -37,9 +33,9 @@ import type { RGBA } from "@opentui/core";
  *   getTierColor(tier)          — legacy, uses hardcoded colors
  *   getTierColor(colors, tier)  — theme-aware, uses resolved ThemeColors
  */
-export function getTierColor(tier: PermissionTier): RGBA;
-export function getTierColor(colors: ThemeColors, tier: PermissionTier): RGBA;
-export function getTierColor(
+function getTierColor(tier: PermissionTier): RGBA;
+function getTierColor(colors: ThemeColors, tier: PermissionTier): RGBA;
+function getTierColor(
   colorsOrTier: ThemeColors | PermissionTier,
   maybeTier?: PermissionTier,
 ): RGBA {
@@ -66,7 +62,7 @@ export function getTierColor(
  * render without a trailing `.0` (e.g. `200K`, `1M`); fractional
  * values keep one decimal (`1.2K`, `1.5M`).
  */
-export function formatTokenCount(count: number): string {
+function formatTokenCount(count: number): string {
   if (count >= 1_000_000) {
     const v = count / 1_000_000;
     return `${Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1)}M`;

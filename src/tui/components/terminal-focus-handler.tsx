@@ -5,9 +5,9 @@
  * and input focus are maintained when alt-tabbing or switching applications.
  */
 
+import { useRenderer } from "@opentui/react";
 import { useEffect } from "react";
 import { useFocus } from "../context/focus";
-import { useRenderer } from "@opentui/react";
 import { setupTerminalFocusHandling } from "../terminal-focus";
 
 /**

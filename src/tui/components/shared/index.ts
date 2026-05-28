@@ -4,55 +4,38 @@
  * Re-exports for commonly used utilities across TUI components.
  */
 
-// Markdown utilities
-export { markdownToStyledText } from "./markdown";
-export { MarkdownViewer } from "./markdown-viewer";
-
-// Message utilities
-export {
-  getStableMessageKey,
-  getMessageContent,
-  formatResult,
-  tryParsePartialJson,
-  extractStreamableContent,
-} from "./message-utils";
-
-// Type guards
-export {
-  isToolMessage,
-  isPendingTool,
-  isCompletedTool,
-  isErroredTool,
-  type ToolDisplayMessage,
-} from "./type-guards";
-
-// Registries
-export {
-  getToolSummary,
-  registerToolSummary,
-  hasToolSummary,
-  getArgsPreview,
-} from "./tool-registry";
-export {
-  getResultSummary,
-  formatResultDetail,
-  type ResultSummary,
-} from "./result-registry";
-
+// Action labels
+export { deriveActionLabel, deriveApprovedActionLabel } from "./action-label";
+export { AsciiSpinner } from "./ascii-spinner";
 // Components
 export {
-  DialogControls,
   type ControlItem,
-  type DialogControlsProps,
+  DialogControls,
 } from "./dialog-controls";
-export { AsciiSpinner } from "./ascii-spinner";
-export { ToolRenderer } from "./tool-renderer";
+// Markdown utilities
+export { markdownToStyledText } from "./markdown";
+export {
+  useMarkdownRenderNode,
+  useMarkdownSyntaxStyle,
+} from "./markdown-viewer";
 export { MessageRenderer } from "./message-renderer";
-export { InlineApprovalPrompt, ApprovalInputArea } from "./approval-prompt";
-
-// State management
-export { useMessageState } from "./message-reducer";
-
+// Message utilities
+export {
+  extractStreamableContent,
+  getStableMessageKey,
+  tryParsePartialJson,
+} from "./message-utils";
 // Input components
-export { PromptInput, type PromptInputRef } from "./prompt-input";
-export { type AutocompleteOption } from "./prompt-input";
+export {
+  type AutocompleteOption,
+  PromptInput,
+  type PromptInputRef,
+} from "./prompt-input";
+// Registries
+export {
+  getArgsPreview,
+  getToolDisplayLabel,
+  getToolSummary,
+} from "./tool-registry";
+// Type guards
+export { isToolMessage } from "./type-guards";

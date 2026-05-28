@@ -15,6 +15,9 @@ jobs:
   lint:
     uses: ./.github/workflows/lint.yml
 
+  dead-code:
+    uses: ./.github/workflows/knip.yml
+
   typecheck:
     uses: ./.github/workflows/typecheck.yml
 

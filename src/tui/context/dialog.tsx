@@ -1,15 +1,15 @@
+import type { Renderable } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
-import { useDimensions } from "./dimensions";
 import {
   createContext,
-  useContext,
-  useState,
-  useCallback,
-  useRef,
   type ReactNode,
+  useCallback,
+  useContext,
+  useRef,
+  useState,
 } from "react";
-import { type Renderable } from "@opentui/core";
 import { useTheme } from "../theme";
+import { useDimensions } from "./dimensions";
 
 interface DialogProps {
   size?: "medium" | "large" | "xlarge";
@@ -76,6 +76,8 @@ interface DialogStackItem {
   onClose?: () => void;
   /** When true, the dialog content handles Escape itself; the provider skips its handler. */
   selfHandlesEscape?: boolean;
+  /** When true, the provider renders the element directly without the styled Dialog wrapper. */
+  bare?: boolean;
 }
 
 interface ReplaceOptions {
@@ -84,6 +86,8 @@ interface ReplaceOptions {
   selfHandlesEscape?: boolean;
   /** Override the dialog size for this replacement (defaults to "medium"). */
   size?: "medium" | "large" | "xlarge";
+  /** When true, skip the styled Dialog wrapper — element is rendered directly inside the provider's overlay. */
+  bare?: boolean;
 }
 
 interface DialogContextValue {
@@ -148,6 +152,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
           element,
           onClose: options?.onClose,
           selfHandlesEscape: options?.selfHandlesEscape,
+          bare: options?.bare,
         },
       ]);
     },
@@ -179,11 +184,14 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     <DialogContext.Provider value={value}>
       {children}
       <box position="absolute">
-        {stack.length > 0 && (
-          <Dialog onClose={clear} size={size}>
-            {stack[stack.length - 1]!.element}
-          </Dialog>
-        )}
+        {stack.length > 0 &&
+          (stack[stack.length - 1]!.bare ? (
+            stack[stack.length - 1]!.element
+          ) : (
+            <Dialog onClose={clear} size={size}>
+              {stack[stack.length - 1]!.element}
+            </Dialog>
+          ))}
       </box>
     </DialogContext.Provider>
   );

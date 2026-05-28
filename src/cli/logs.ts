@@ -8,7 +8,7 @@
  *   pensar logs search <issueId> <query> [opts]    Search agent logs
  */
 
-import { listAgentLogs, searchAgentLogs } from "../core/api/issues";
+import { listAgentLogs, searchAgentLogs } from "../core/api";
 
 function getFlag(flag: string, argv: string[]): string | undefined {
   const idx = argv.indexOf(flag);
