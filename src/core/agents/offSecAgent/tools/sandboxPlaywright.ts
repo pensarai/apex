@@ -22,6 +22,10 @@ import { tool } from "ai";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { z } from "zod";
+import {
+  resolveEffectiveHeaders,
+  stripBrowserManagedHeaders,
+} from "../../../http/targetHeaders";
 import type {
   BrowserClickResult,
   BrowserConsoleResult,
@@ -30,10 +34,6 @@ import type {
   BrowserNavigateResult,
   BrowserScreenshotResult,
 } from "./playwrightMcp";
-import {
-  resolveEffectiveHeaders,
-  stripBrowserManagedHeaders,
-} from "../../../http/targetHeaders";
 import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
 import { resolverSessionFromCtx } from "./scopeGuard";
 import type { ToolContext } from "./types";

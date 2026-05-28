@@ -11,12 +11,12 @@ import { writeFile } from "fs/promises";
 import { join } from "path";
 import { streamResponse } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
-import type { ApprovalGate } from "../../operator";
-import { ApprovalDeniedError } from "../../operator";
 import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../http/targetHeaders";
+import type { ApprovalGate } from "../../operator";
+import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
