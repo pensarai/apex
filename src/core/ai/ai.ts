@@ -19,6 +19,7 @@ import type { z } from "zod";
 import { withCachedLastMessage, withCachedSystemPrompt } from "./caching";
 import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
 import { getMaxOutputTokens, getModelInfo } from "./models";
+import { shouldRecordAiPayloads } from "../observability";
 import {
   type AIAuthConfig,
   checkIfContextLengthError,
@@ -814,6 +815,10 @@ export function streamResponse(
 
   try {
     // Create the appropriate provider instance
+    // Opt every LLM call into AI-SDK OTel emission. The spans no-op unless
+    // the host process registered an OTel SDK (see core/observability.ts).
+    // Payload capture (prompts, tool I/O) is gated by AI_TRACE_RECORD_PAYLOADS.
+    const recordPayloads = shouldRecordAiPayloads();
     const response = streamText({
       model: providerModel,
       system: effectiveSystem,
@@ -823,6 +828,12 @@ export function streamResponse(
       tools,
       maxRetries: 3,
       providerOptions,
+      experimental_telemetry: {
+        isEnabled: true,
+        recordInputs: recordPayloads,
+        recordOutputs: recordPayloads,
+        functionId: `apex.stream.${model}`,
+      },
       // Pin actual emission to the same value `fitMessagesToContext`
       // reserved for output. Without this, the SDK applies provider
       // defaults that can exceed our budget — e.g. GPT-4o defaults to
@@ -952,6 +963,12 @@ export function streamResponse(
                 "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
               ].join("\n"),
               abortSignal,
+              experimental_telemetry: {
+                isEnabled: true,
+                recordInputs: recordPayloads,
+                recordOutputs: recordPayloads,
+                functionId: "apex.tool_repair",
+              },
             });
 
           // Report tool repair token usage if onStepFinish callback is provided
@@ -1103,6 +1120,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
 
   for (let attempt = 0; attempt <= MAX_OBJECT_RATE_LIMIT_RETRIES; attempt++) {
     try {
+      const recordPayloads = shouldRecordAiPayloads();
       const { output, usage } = await generateText({
         model: providerModel,
         output: Output.object({
@@ -1121,6 +1139,12 @@ export async function generateObjectResponse<T extends z.ZodType>(
           : undefined,
         maxRetries: 0,
         abortSignal,
+        experimental_telemetry: {
+          isEnabled: true,
+          recordInputs: recordPayloads,
+          recordOutputs: recordPayloads,
+          functionId: "apex.generate_object",
+        },
       });
 
       if (onTokenUsage && usage) {
