@@ -498,11 +498,6 @@ export class OffensiveSecurityAgent<TResult = void> {
     const sid = this.subagentId;
     const bus = this.eventBus;
 
-    // When running as a subagent (sid is set), emit a vendor-neutral OTel
-    // `gen_ai.invoke_agent` span so the host's tracing backend (Sentry,
-    // Honeycomb, Datadog, etc.) can nest the subagent's LLM calls and tool
-    // executions under it. No-op when the host hasn't registered an OTel
-    // SDK. See core/observability.ts and the design doc Appendix G.
     const runConsume = async (): Promise<TResult> => {
       try {
         for await (const chunk of this.streamResult.fullStream) {
@@ -519,22 +514,18 @@ export class OffensiveSecurityAgent<TResult = void> {
       if (this.resolveResult) {
         return this.resolveResult(this.streamResult);
       }
-      return undefined as TResult; // TResult is void when resolveResult is absent
+      return undefined as TResult;
     };
 
-    if (!sid) {
-      // Top-level agent run — host wraps its own invoke_agent span (e.g. the
-      // Pensar Console gen-purpose worker wraps runApexAgent), so we don't
-      // double-wrap here.
-      return runConsume();
-    }
+    // Top-level runs are wrapped by the host's own invoke_agent span; only
+    // emit one here for subagents so the trace tree mirrors the agent tree.
+    if (!sid) return runConsume();
 
     const tracer = getApexTracer();
     return tracer.startActiveSpan(
       `invoke_agent ${sid}`,
       {
         attributes: {
-          // OTel GenAI semantic conventions; no vendor-specific keys.
           "gen_ai.operation.name": "invoke_agent",
           "gen_ai.agent.name": sid,
         },

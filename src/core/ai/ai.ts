@@ -815,9 +815,6 @@ export function streamResponse(
 
   try {
     // Create the appropriate provider instance
-    // Opt every LLM call into AI-SDK OTel emission. The spans no-op unless
-    // the host process registered an OTel SDK (see core/observability.ts).
-    // Payload capture (prompts, tool I/O) is gated by AI_TRACE_RECORD_PAYLOADS.
     const recordPayloads = shouldRecordAiPayloads();
     const response = streamText({
       model: providerModel,
