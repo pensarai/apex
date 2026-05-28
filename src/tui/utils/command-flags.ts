@@ -319,7 +319,7 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
         console.error(
           `--header "${h}" rejected:\n${formatParseError(parsed.error)}`,
         );
-        continue;
+        process.exit(1);
       }
       flags.customHeaders[parsed.value.name] = parsed.value.value;
     }
