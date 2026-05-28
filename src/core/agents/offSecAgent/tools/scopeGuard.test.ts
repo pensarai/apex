@@ -118,8 +118,7 @@ describe("getAllowedHosts", () => {
 });
 
 // ---------------------------------------------------------------------------
-// resolverSessionFromCtx — bridges ctx.target into the header resolver's
-// scope view so scopeGuard and applyHeadersToShellCommand never diverge.
+// resolverSessionFromCtx
 // ---------------------------------------------------------------------------
 
 describe("resolverSessionFromCtx", () => {
@@ -151,10 +150,8 @@ describe("resolverSessionFromCtx", () => {
   });
 
   it("makes applyHeadersToShellCommand respect ctx.target when session.targets does not include it", () => {
-    // Regression: scopeGuard accepts a host via ctx.target, but the
-    // header resolver only saw session.targets — so it silently
-    // classified the host as out-of-scope and dropped configured
-    // headers (cursor bugbot finding, INV-single-source).
+    // Regression: resolver saw only session.targets and dropped headers
+    // for hosts approved via ctx.target.
     const ctx = makeCtx({ target: "https://other.example" });
     ctx.session = {
       ...ctx.session,

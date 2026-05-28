@@ -1,24 +1,12 @@
-/**
- * Contract tests for the deprecated `offensiveHeaders` shim.
- *
- * The shim only exists so downstream `pensarai/console` agents
- * (which still write to `SessionConfig.offensiveHeaders` and import
- * `OffensiveHeadersConfig`) keep typechecking while they migrate
- * to the flat `headers` shape.
- *
- * These tests pin the boundary contract: regardless of which
- * deprecated mode a caller passes, the persisted/returned config
- * has `headers: Record<string, string>` only and never both fields.
- *
- * Delete this file when the shim is removed.
- */
+// Contract tests for the deprecated `offensiveHeaders` shim. Pin the
+// boundary: regardless of which deprecated mode a caller passes, the
+// persisted config has `headers` only and never both fields. Delete
+// this file when the shim is removed.
 
 import { describe, expect, it } from "vitest";
 import { migrateLegacySessionData, type OffensiveHeadersConfig } from "./index";
 
-// Compile-time: the deprecated type is still exported. If this line
-// fails to compile, console's `import { OffensiveHeadersConfig }`
-// breaks again.
+// Compile-time guard that `OffensiveHeadersConfig` is still exported.
 const _typeExportCheck: OffensiveHeadersConfig = {
   mode: "custom",
   headers: { "X-A": "1" },
@@ -70,10 +58,8 @@ describe("migrateLegacySessionData — offensiveHeaders shim", () => {
     expect("offensiveHeaders" in cfg).toBe(false);
   });
 
-  it("mode 'none' overrides a populated headers field (INV-mode-none)", () => {
-    // Regression: previously the `oh.headers` merge ran unconditionally,
-    // so `{ mode: "none", headers: { ... } }` produced the headers
-    // rather than the documented empty result.
+  it("mode 'none' overrides a populated headers field", () => {
+    // Regression: `oh.headers` merge previously ran unconditionally.
     const result = migrateLegacySessionData(
       wrap({
         offensiveHeaders: { mode: "none", headers: { "X-A": "1" } },

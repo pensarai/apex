@@ -39,13 +39,8 @@ export async function load(): Promise<string[]> {
 }
 
 /**
- * Append an entry. Skips consecutive duplicates.
- * Persists to disk in the background.
- *
- * Sanitizes secrets from `/headers add|set|import` and the CLI
- * `--header "Name: Value"` flag before persisting. We never want a
- * recalled history entry to leak an Authorization token onto disk or
- * into the live recall buffer.
+ * Append an entry. Skips consecutive duplicates and redacts header
+ * secrets before persisting. Writes are fire-and-forget.
  */
 export async function push(entry: string): Promise<void> {
   const sanitized = redactSecretsInHistoryEntry(entry);
@@ -58,12 +53,8 @@ export async function push(entry: string): Promise<void> {
   Storage.write(STORAGE_KEY, history).catch(() => {});
 }
 
-/**
- * Replace any `Name: Value` payload that follows a known header
- * subcommand with `Name: <redacted>`. Conservative on purpose:
- * a false positive only hides a benign value, but a false negative
- * persists a secret. The Name itself stays so recall is still useful.
- */
+// Replace the value following a header subcommand with `<redacted>`.
+// Conservative: a false positive only hides a benign value.
 export function redactSecretsInHistoryEntry(entry: string): string {
   const trimmed = entry.trimStart();
   const slashMatch = trimmed.match(

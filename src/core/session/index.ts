@@ -31,11 +31,7 @@ export const EXFIL_OUTCOME_GUIDANCE =
   "Exfiltrate data to extract the flag value. " +
   "Create proof-of-concept exploits that successfully extract the flag from the target system.";
 
-/**
- * Default seed headers used when neither the caller nor the global
- * config supplies any. Matches the long-standing default User-Agent so
- * existing sessions still identify themselves the same way.
- */
+// Fallback when neither the caller nor global config supplies headers.
 const DEFAULT_HEADER_RECORD: Record<string, string> = {
   "User-Agent": "pensar-apex",
 };
@@ -72,33 +68,12 @@ const ScopeConstraintsObject = z.object({
 
 type ScopeConstraints = z.infer<typeof ScopeConstraintsObject>;
 
-/**
- * Schema for the session's effective custom HTTP headers.
- *
- * Replaces the old `OffensiveHeadersConfig { mode, headers? }` shape
- * (boolean soup with hidden magic for `mode: "default"`). The header
- * map IS the state — empty record means "send no custom headers", a
- * populated record means "send these on every in-scope target call".
- *
- * Migration of legacy `offensiveHeaders` is performed in
- * `migrateLegacySessionData` when reading session.json AND in
- * `normalizeDeprecatedHeaders` when callers (e.g. console agents)
- * pass it through `sessions.create`.
- */
+// The header map IS the state — empty record means "send no custom headers".
 const SessionHeadersRecord = z.record(z.string(), z.string());
 
-/**
- * Deprecated nested-mode shape for legacy callers (downstream
- * `pensarai/console` agents still write to this field). New code
- * should pass flat `SessionConfig.headers` instead.
- *
- * Kept on the schema so console can migrate at its own pace; the
- * field is normalized to `headers` at every input boundary and is
- * never persisted in session.json. Remove this shim once console
- * `packages/agents/{blackbox,whitebox}-pentest/*` no longer
- * references `offensiveHeaders` / `OffensiveHeadersConfig` — see
- * follow-up issue in the apex tracker.
- */
+// Legacy shape kept only so downstream `pensarai/console` agents keep
+// typechecking. Normalized into `headers` at every input boundary and
+// stripped before persistence.
 const OffensiveHeadersConfigObject = z.object({
   mode: z.enum(["none", "default", "custom"]).optional(),
   headers: SessionHeadersRecord.optional(),
@@ -218,24 +193,12 @@ function resolveSmtpConfig(explicit?: SmtpConfig): SmtpConfig | undefined {
 
 const SessionConfigObject = z.object({
   /**
-   * Effective custom HTTP headers for outbound target requests. Merged
-   * from global `config.defaultHeaders` at session create time
-   * (snapshot semantics — INV-snapshot-stability) and mutated
-   * thereafter by CLI flags, `/headers` slash, dialog, or wizard.
-   *
-   * Read exclusively via the resolver in `src/core/http/targetHeaders.ts`
-   * — never directly by tools (INV-single-source).
+   * Custom HTTP headers for outbound target requests. Snapshotted from
+   * `config.defaultHeaders` at create time; read via the resolver in
+   * `src/core/http/targetHeaders.ts`, not directly by tools.
    */
   headers: SessionHeadersRecord.optional(),
-  /**
-   * @deprecated Pass `headers` instead. Translated by
-   * `normalizeDeprecatedHeaders` at every input boundary (sessions.create,
-   * agent createSession) and stripped before persistence — stored
-   * session.json never contains both fields.
-   *
-   * Kept only so downstream `pensarai/console` agents continue to
-   * typecheck during their migration window.
-   */
+  /** @deprecated Pass flat `headers` instead. Normalized at input boundaries. */
   offensiveHeaders: OffensiveHeadersConfigObject.optional(),
   sessionType: z.enum(["web-app"]).optional(),
   mode: z.enum(["auto", "driver", "operator"]).optional(),
@@ -423,21 +386,11 @@ async function getExecution(
   }
 }
 
-/**
- * Translate a deprecated `offensiveHeaders: { mode, headers? }` into
- * flat `headers: Record<string, string>` on a bare config and strip
- * the deprecated field. Pure / non-mutating.
- *
- * Rules (single source of truth, shared with `migrateLegacySessionData`):
- *  - flat `headers` always wins if both are present
- *  - mode "default" → seeds DEFAULT_HEADER_RECORD then layers explicit
- *  - mode "none" / "custom" → uses explicit headers only (or `{}`)
- *
- * Called at every input boundary where a SessionConfig enters apex
- * from outside: `sessions.create`, and (via cast) when loading legacy
- * session.json files. Tools never see `offensiveHeaders` because it
- * is stripped before persistence.
- */
+// Translate the deprecated `offensiveHeaders: { mode, headers? }` into
+// flat `headers` and strip the legacy field. Pure / non-mutating.
+//
+// Precedence: flat `headers` wins if present; mode "default" seeds the
+// default record; mode "none" yields `{}` (must override `oh.headers`).
 function normalizeDeprecatedHeaders<T extends { offensiveHeaders?: unknown }>(
   config: T | undefined,
 ): Omit<T, "offensiveHeaders"> | undefined {
@@ -457,10 +410,6 @@ function normalizeDeprecatedHeaders<T extends { offensiveHeaders?: unknown }>(
     mode?: string;
     headers?: Record<string, string>;
   };
-  // INV-mode-none: `mode: "none"` means "send no custom headers" and
-  // must override any populated `oh.headers`. Without this short
-  // circuit, `{ mode: "none", headers: { "X-A": "1" } }` would
-  // incorrectly resolve to `{ "X-A": "1" }` instead of `{}`.
   if (oh.mode === "none") {
     return { ...restWithHeaders, headers: {} };
   }
@@ -470,11 +419,8 @@ function normalizeDeprecatedHeaders<T extends { offensiveHeaders?: unknown }>(
   return { ...restWithHeaders, headers };
 }
 
-/**
- * Migrate a legacy `session.json` (with `offensiveHeaders: { mode, headers? }`)
- * into the new flat shape. Non-destructive: returns a new object; the
- * on-disk file is only rewritten the next time the session is saved.
- */
+// Migrate a legacy session.json into the flat-headers shape. The on-disk
+// file is only rewritten on the next save.
 export function migrateLegacySessionData(input: unknown): unknown {
   if (!input || typeof input !== "object") return input;
   const root = input as Record<string, unknown>;
@@ -534,10 +480,7 @@ export interface CreateInputProps {
 export async function create(input: CreateInputProps) {
   const name = input.name ?? generateRandomName();
 
-  // Normalize any deprecated `offensiveHeaders` from external callers
-  // (downstream `pensarai/console` agents) into the flat `headers` shape
-  // before anything else touches the config. From here on, internal code
-  // only ever sees `headers` — see normalizeDeprecatedHeaders.
+  // Internal code only sees flat `headers` from here on.
   const normalizedConfig = normalizeDeprecatedHeaders(input.config) as
     | SessionConfig
     | undefined;
@@ -571,11 +514,8 @@ export async function create(input: CreateInputProps) {
 
   const smtpConfig = resolveSmtpConfig(normalizedConfig?.smtpConfig);
 
-  // Resolve effective headers for the new session. Caller-supplied
-  // `config.headers` wins verbatim (CLI flag / wizard already merged
-  // global if they wanted to). Otherwise we snapshot the current global
-  // defaultHeaders so the session is "locked" at create time
-  // (INV-snapshot-stability).
+  // Caller `headers` wins verbatim; otherwise snapshot the current global
+  // defaultHeaders so the session is locked at create time.
   let snapshotHeaders: Record<string, string>;
   if (normalizedConfig?.headers !== undefined) {
     snapshotHeaders = { ...normalizedConfig.headers };
@@ -992,14 +932,7 @@ export async function updateOperatorSettings(
 // Custom HTTP Headers Update
 // ============================================================================
 
-/**
- * Replace the session's effective custom HTTP headers in one atomic
- * write. Pass an empty record to clear all headers.
- *
- * Subsequent mutations to the global default headers do NOT propagate
- * into already-running sessions — the session keeps the snapshot it
- * was created with.
- */
+/** Replace the session's custom HTTP headers. Pass `{}` to clear. */
 export async function updateSessionHeaders(
   sessionId: string,
   headers: Record<string, string>,

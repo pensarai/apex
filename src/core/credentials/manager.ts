@@ -175,12 +175,9 @@ export class CredentialManager {
   }
 
   /**
-   * Return stored credentials that have customHeaders set, with the
-   * header values intact. Consumed ONLY by the target-HTTP header
-   * resolver (`src/core/http/targetHeaders.ts`) to merge per-credential
-   * headers into outbound requests at the credential layer
-   * (INV-precedence-deterministic). Other consumers should use
-   * `listReferences()` which returns only key names.
+   * Stored credentials with their `customHeaders` intact. Consumed ONLY
+   * by the target-HTTP resolver — agent-facing code must use
+   * `listReferences()` which omits values.
    */
   listCredentialsWithHeaders(): Array<{
     tokens: { customHeaders: Record<string, string> };

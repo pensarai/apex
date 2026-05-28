@@ -180,10 +180,8 @@ export class OffensiveSecurityAgent<TResult = void> {
     // share browser state via the sandbox's per-sandbox Playwright user-data
     // dir, so they don't need a session object on the host.
     if (!input.sandbox) {
-      // Resolve session + credential layer headers into the browser
-      // session so every Chromium request carries them
-      // (INV-browser-snapshot, INV-single-source). Mutations after
-      // this point do NOT propagate — the user must restart the browser.
+      // Snapshot resolved headers into the browser session. Later mutations
+      // require a browser restart to take effect.
       const sessionHeaders = input.target
         ? resolveEffectiveHeaders(input.session, input.target)
         : input.session.config?.headers;

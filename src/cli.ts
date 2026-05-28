@@ -89,14 +89,8 @@ async function createInstrumentedBus(
   return { bus, cleanup: async () => wandbCleanup?.() };
 }
 
-/**
- * Resolve `--header K:V` (repeatable), `--headers-from <file>`, and
- * `--no-global-headers` into the session-shape `headers` map.
- *
- * Precedence: global defaults (unless `--no-global-headers`) < file < CLI flags.
- * Returns `undefined` to mean "use sessions.create defaults (snapshot
- * global)" so the caller can pass it straight into `sessions.create`.
- */
+// Returns the merged headers (global defaults < file < CLI flags), or
+// `undefined` to let `sessions.create` snapshot the global defaults.
 async function resolveCliHeaders(): Promise<
   Record<string, string> | undefined
 > {

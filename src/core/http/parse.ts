@@ -1,12 +1,5 @@
-/**
- * Parser for header inputs across every surface (CLI flags, config file
- * imports, slash commands, dialog forms).
- *
- * Contract: `parseHeaderLine` is total — every input string returns
- * either a valid `HeaderEntry` or a typed `ParseError`. No throws, no
- * silent acceptance. This is INV-parser-total and INV-validated-at-
- * boundary in the headers plan.
- */
+// Total parser for header inputs. Every input returns either a
+// `HeaderEntry` or a typed `ParseError` — no throws, no silent accepts.
 
 import type { HeaderRecord } from "./types";
 
@@ -33,19 +26,12 @@ export type ParseError =
 
 export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 
-/**
- * RFC 7230 token chars allowed in header names. Excludes whitespace,
- * delimiters, and control chars. Case is preserved for display but
- * compared lowercase elsewhere.
- */
+// RFC 7230 token chars allowed in header names.
 const NAME_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const NAME_CHAR = /[!#$%&'*+\-.^_`|~0-9A-Za-z]/;
 
-/**
- * Strip a leading `-H`, `-H=`, or `--header` prefix so curl-paste
- * inputs `parseHeaderLine("-H 'X-API-Key: abc'")` work without the
- * user pre-trimming.
- */
+// Strip a leading `-H`/`--header` (with or without `=`) so curl-paste
+// input like `-H 'X-API-Key: abc'` parses without pre-trimming.
 function stripCurlPrefix(input: string): string {
   let s = input.trim();
   if (s.startsWith("-H=")) s = s.slice(3);
@@ -62,14 +48,8 @@ function stripCurlPrefix(input: string): string {
   return s;
 }
 
-/**
- * Parse a single header line. Accepts every documented format —
- * `K:V`, `K: V`, curl `-H "K: V"`, with surrounding quotes — and
- * returns either a branded `HeaderEntry` or a typed `ParseError`.
- *
- * Empty values are RFC-legal and accepted. CRLF in the value is
- * rejected (header injection). Whitespace in the name is rejected.
- */
+// Empty values are RFC-legal and accepted. CRLF in the value is rejected
+// (header injection). Whitespace in the name is rejected.
 export function parseHeaderLine(
   input: string,
 ): Result<HeaderEntry, ParseError> {
@@ -106,9 +86,7 @@ export function parseHeaderLine(
     }
   }
 
-  // Trim leading whitespace from value per RFC 7230 — preserve trailing
-  // whitespace? RFC says optional whitespace is trimmable from both ends.
-  // Tolerate but normalize.
+  // RFC 7230 allows trimming OWS from both ends of the value.
   const value = rawValue.replace(/^\s+/, "").replace(/\s+$/, "");
 
   for (let i = 0; i < value.length; i++) {
@@ -119,8 +97,7 @@ export function parseHeaderLine(
         error: { kind: "crlf-in-value", input, position: i },
       };
     }
-    // RFC 7230 allows printable ASCII + HTAB; reject everything else
-    // below 0x20 except tab.
+    // RFC 7230 allows printable ASCII + HTAB.
     if (code < 0x20 && code !== 0x09) {
       return {
         ok: false,
@@ -135,11 +112,8 @@ export function parseHeaderLine(
   };
 }
 
-/**
- * Parse newline-separated or single-string bulk input (e.g. a multi-
- * line paste, or the contents of a non-JSON `--headers-from` file).
- * Returns all errors with line numbers — no partial application.
- */
+// Bulk parse newline-separated input. Returns ALL errors (with line
+// numbers) — never partial success.
 function parseHeaderList(input: string): Result<HeaderEntry[], ParseError[]> {
   const lines = input.split(/\r?\n/);
   const entries: HeaderEntry[] = [];
@@ -178,11 +152,6 @@ function parseHeaderList(input: string): Result<HeaderEntry[], ParseError[]> {
   return { ok: true, value: entries };
 }
 
-/**
- * Parse a `Record<string, string>` (e.g. JSON object) into branded
- * entries. Used by `parseHeadersFromFile` (JSON branch) and by the
- * global-config loader.
- */
 function parseHeaderRecord(
   record: HeaderRecord,
 ): Result<HeaderEntry[], ParseError[]> {
@@ -190,12 +159,8 @@ function parseHeaderRecord(
   return parseHeaderList(lines.join("\n"));
 }
 
-/**
- * Parse the contents of a `--headers-from <file>` argument.
- *
- * Format auto-detection: first non-whitespace `{` → JSON object;
- * otherwise newline-separated `Name: Value` with `#` comments.
- */
+// Format auto-detection: leading `{` → JSON object; otherwise
+// newline-separated `Name: Value` with `#` comments.
 export async function parseHeadersFromFile(
   filePath: string,
 ): Promise<Result<HeaderEntry[], ParseError[]>> {
@@ -245,10 +210,6 @@ export async function parseHeadersFromFile(
   return parseHeaderList(raw);
 }
 
-/**
- * Produce a one-line, actionable hint for a `ParseError`. Best-effort —
- * an empty string is returned when no useful suggestion is available.
- */
 function hintFor(error: ParseError): string {
   switch (error.kind) {
     case "missing-colon":
@@ -272,12 +233,8 @@ function hintFor(error: ParseError): string {
   }
 }
 
-/**
- * Format a `ParseError` for display in stderr / timeline / dialog form
- * helpers. Always emits a short reason on the first line and a hint on
- * the second; never includes the raw header value (which may be
- * sensitive).
- */
+// Format a `ParseError` for display. Never echoes the raw value
+// (which may carry a secret).
 export function formatParseError(error: ParseError): string {
   const hint = hintFor(error);
   switch (error.kind) {

@@ -5,14 +5,9 @@ import type { HeaderRecord } from "../../../http/types";
 import { resolverSessionFromCtx } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
-// Tool-specific baseline headers applied only when the resolver did not
-// already produce them. For in-scope target URLs this respects
-// session/global/credential headers (INV-single-source). For
-// out-of-scope research URLs (CVE writeups, vendor docs, security
-// blogs — the dominant use case for this tool) it ensures we still
-// send a recognisable User-Agent rather than relying on the runtime's
-// default (e.g. `Bun/x.y`), which Cloudflare/Akamai-fronted sources
-// frequently challenge.
+// Tool baselines used for out-of-scope research URLs (CVE writeups, vendor
+// docs) — a recognisable UA avoids Cloudflare/Akamai bot challenges on
+// `Bun/x.y` defaults. For in-scope URLs the resolver's values win.
 const GETPAGE_USER_AGENT =
   "Mozilla/5.0 (compatible; PensarBot/1.0; +https://pensar.dev)";
 
@@ -122,20 +117,14 @@ BEST PRACTICES:
           ? AbortSignal.any([ctx.abortSignal, controller.signal])
           : controller.signal;
 
-        // Resolve session/credential headers, then fill in tool baselines
-        // only for keys the resolver didn't produce. Baselines (User-Agent,
-        // Accept, Accept-Language) must LOSE to session/credential headers
-        // to avoid overriding operator-configured values.
-        //
-        // We call fetch directly rather than targetFetch because resolution
-        // is already complete — routing through targetFetch would re-resolve,
-        // promoting baselines into the request layer where they'd override
-        // credential-layer headers of the same name.
+        // Resolve once, then layer baselines so resolver values still win.
+        // Calling bare fetch (not targetFetch) avoids a second resolution
+        // pass that would promote baselines above credential headers.
         const resolverSession = resolverSessionFromCtx(ctx);
         const resolved = resolveEffectiveHeaders(resolverSession, url);
         const headers = mergeBaselineHeaders(resolved);
 
-        // biome-ignore lint/style/noRestrictedGlobals: headers already fully resolved above; targetFetch would re-resolve and misorder baseline vs credential precedence
+        // biome-ignore lint/style/noRestrictedGlobals: headers fully resolved above; targetFetch would re-resolve
         const response = await fetch(url, {
           method: "GET",
           headers,

@@ -1594,12 +1594,8 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
       const persist = async (next: Record<string, string>, message: string) => {
         const updated = await sessions.updateSessionHeaders(active.id, next);
-        // INV-header-application: every later tool call must observe the
-        // mutation. The agent's runAgent callback captures `session` in its
-        // dep array, so we MUST update the React state — not just the ref —
-        // or the next turn will run with a stale closure and skip the new
-        // headers entirely. Touching both keeps the ref/state convention
-        // (see sessions.create wiring at the top of this component).
+        // Touch both ref and state — runAgent captures `session` in its
+        // dep array, so a stale closure would skip the new headers.
         sessionRef.current = updated;
         setSession(updated);
         addSystemMessage(message);

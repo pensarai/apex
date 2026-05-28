@@ -10,14 +10,7 @@ import {
   type WebCommandFlags,
 } from "./utils/command-flags";
 
-/**
- * Translate the wizard/CLI header flags into a SessionConfig.headers value.
- *
- * - `--headers none`             → `{}` (explicitly suppresses defaults)
- * - `--headers custom` + `--header`s → that record
- * - bare `--header`s             → that record (mode auto-promotes to custom)
- * - `--headers default` / unset  → `undefined` (snapshot global defaults)
- */
+// `undefined` means "let sessions.create snapshot the global defaults".
 function resolveHeadersFromFlags(
   flags: WebCommandFlags,
 ): Record<string, string> | undefined {

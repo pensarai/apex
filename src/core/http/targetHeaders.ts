@@ -1,33 +1,16 @@
-/**
- * Target-HTTP headers resolver and the only blessed primitives for
- * sending target HTTP from inside agent tools.
- *
- * INV-single-source: every category-A HTTP path obtains headers via
- * `resolveEffectiveHeaders`. Tools call `targetFetch` (for fetch-based
- * paths), `mergeHeadersInto` (for cases where `RequestInit` is built
- * elsewhere), or `applyHeadersToShellCommand` (for shell tools).
- *
- * INV-blessed-fetch: tools under `src/core/agents/offSecAgent/tools/`
- * must NOT call `fetch`, `Bun.fetch`, `node:http`, or `node:https`
- * directly. The Biome rule enforces this — `targetFetch` is the only
- * way out.
- *
- * INV-scope-bound: returns empty for out-of-scope URLs to prevent
- * leakage of authentication credentials to third parties.
- *
- * INV-precedence-deterministic: layering is global → session →
- * credential → request, with later layers winning on key collision.
- */
+// Target-HTTP header resolver and the blessed primitives for outbound
+// target HTTP from agent tools (`targetFetch`, `applyHeadersToShellCommand`).
+// Returns empty for out-of-scope URLs to prevent credential leakage.
+// Precedence: session < credential < request (later wins).
+// The Biome `noRestrictedGlobals` rule forbids raw `fetch` under
+// `src/core/agents/offSecAgent/tools/**` so callers must route here.
 
 import { getDomain } from "tldts";
 import { parseTargetUrl } from "../../util/url";
 import type { EffectiveHeader, HeaderRecord, Layer } from "./types";
 
-/**
- * Structural interface for the subset of session shape this resolver
- * reads. Keeps `src/core/http/` decoupled from `src/core/session/` so
- * the resolver remains a leaf module with no upward dependency.
- */
+// Structural subset of session shape the resolver reads. Kept loose so
+// `src/core/http/` stays a leaf module with no upward dependency on session.
 export interface ResolverSession {
   readonly targets?: ReadonlyArray<string>;
   readonly config?: {
@@ -119,15 +102,8 @@ function collectCredentialHeaders(session: ResolverSession): EffectiveHeader[] {
   return out;
 }
 
-/**
- * Resolve the effective headers for an outbound request and return a
- * plain `HeaderRecord` ready to hand to `fetch` /
- * `setExtraHTTPHeaders` / curl.
- *
- * `requestOverrides` (e.g. the agent-supplied `headers` param on
- * `http_request`) wins over every other layer per
- * INV-precedence-explicit-request.
- */
+// `requestOverrides` (e.g. the agent-supplied `headers` arg on `http_request`)
+// wins over every other layer. Out-of-scope URLs only see the overrides.
 export function resolveEffectiveHeaders(
   session: ResolverSession,
   url: string,
@@ -137,15 +113,11 @@ export function resolveEffectiveHeaders(
     return requestOverrides ?? {};
   }
 
-  // Session layer is the only persisted set today; global defaults are
-  // merged into a new session at create time (snapshot semantics).
   const sessionEntries = recordToEntries(session.config?.headers, "session");
   const credentialEntries = collectCredentialHeaders(session);
   const requestEntries = recordToEntries(requestOverrides, "request");
 
-  // Later layers win on key collision (case-insensitive). The map keeps
-  // the FIRST entry's canonical casing for display, but the LAST entry's
-  // value.
+  // Later layers win on case-insensitive collision; preserve first-seen casing.
   const byCanonical = new Map<string, EffectiveHeader>();
   for (const layer of [sessionEntries, credentialEntries, requestEntries]) {
     for (const entry of layer) {
@@ -153,7 +125,7 @@ export function resolveEffectiveHeaders(
       const prior = byCanonical.get(key);
       if (prior) {
         byCanonical.set(key, {
-          name: prior.name, // preserve first-seen casing
+          name: prior.name,
           value: entry.value,
           source: entry.source,
         });
@@ -174,21 +146,11 @@ export function resolveEffectiveHeaders(
 // Browser-safe header filtering
 // ---------------------------------------------------------------------------
 
-/**
- * Headers managed by the browser engine that must NOT be passed via
- * Playwright's `extraHTTPHeaders` (which unconditionally overrides the
- * browser's own values). Notably, `User-Agent` is set via Chromium's
- * `--user-agent` flag with a realistic desktop string — leaking the
- * session's `User-Agent: pensar-apex` default here would defeat WAF/CDN
- * bypass and bot detection avoidance.
- */
+// Playwright's `extraHTTPHeaders` unconditionally overrides browser-managed
+// values. Stripping User-Agent keeps Chromium's realistic UA so WAF/CDN bot
+// detection isn't tripped by the session's `pensar-apex` default.
 const BROWSER_MANAGED_HEADERS: ReadonlySet<string> = new Set(["user-agent"]);
 
-/**
- * Strip headers that the browser manages internally before passing to
- * Playwright's `extraHTTPHeaders`. Use this at every boundary where
- * resolved session headers flow into a browser context.
- */
 export function stripBrowserManagedHeaders(
   headers: HeaderRecord | undefined,
 ): HeaderRecord | undefined {
@@ -227,13 +189,6 @@ function normalizeHeadersInit(
   return { ...(init as Record<string, string>) };
 }
 
-/**
- * Merge resolved session/global/credential headers into a `RequestInit`.
- * Any `init.headers` the caller provides is treated as the `request`
- * layer (highest precedence) per INV-precedence-explicit-request.
- *
- * No-op when the URL is out of scope or no headers are configured.
- */
 function mergeHeadersInto(
   init: RequestInit | undefined,
   session: ResolverSession,
@@ -241,24 +196,14 @@ function mergeHeadersInto(
 ): RequestInit {
   const callerHeaders = normalizeHeadersInit(init?.headers);
   const merged = resolveEffectiveHeaders(session, url, callerHeaders);
-
-  // Preserve everything else from init (method, body, signal, etc.).
   return {
     ...(init ?? {}),
     headers: merged,
   };
 }
 
-/**
- * THE blessed fetch primitive for target HTTP. Every category-A path
- * routes through this. The Biome rule forbids raw `fetch` in
- * `src/core/agents/offSecAgent/tools/**`.
- *
- * Behavior is identical to `fetch(url, init)` except that resolver
- * headers are merged in via `mergeHeadersInto`. When `url` is out of
- * scope or no headers are configured, the call behaves exactly like
- * a bare `fetch`.
- */
+// Blessed fetch for target HTTP — behaves like `fetch(url, init)` plus
+// resolver-merged headers. Out-of-scope URLs pass through unchanged.
 export function targetFetch(
   session: ResolverSession,
   url: string,
@@ -274,11 +219,8 @@ export function targetFetch(
 
 type ShellInjector = (command: string, headers: HeaderRecord) => string;
 
-/**
- * Quote a header value for use inside a double-quoted shell argument.
- * Escapes `"`, `\`, `$`, and `` ` ``. The caller wraps the result in
- * double quotes itself.
- */
+// Escape a value for use inside a double-quoted shell argument. The
+// caller is responsible for wrapping the result in `"…"`.
 export function shellQuote(value: string): string {
   return value
     .replace(/\\/g, "\\\\")
@@ -289,11 +231,8 @@ export function shellQuote(value: string): string {
     .replace(/\r/g, "\\r");
 }
 
-/**
- * Extract header names already present on the command line (so we don't
- * duplicate a header the user/agent explicitly set). Handles `-H "K:V"`
- * and `--header "K:V"` forms across most tools.
- */
+// Header names already on the command — skip these to avoid clobbering
+// user/agent-supplied values.
 function existingHeaderNames(command: string): Set<string> {
   const out = new Set<string>();
   const patterns = [
@@ -310,7 +249,6 @@ function existingHeaderNames(command: string): Set<string> {
       }
     }
   }
-  // curl `-A` / `--user-agent` overrides User-Agent
   if (/(?:^|\s)(?:-A|--user-agent)[\s=]/.test(command)) {
     out.add("user-agent");
   }
@@ -378,19 +316,12 @@ const injectNikto: ShellInjector = (command, headers) => {
     lines.push(`${name}: ${value}`);
   }
   if (lines.length === 0) return command;
-  // Use the literal two-character escape `\n`, not a 0x0A byte. Nikto
-  // interprets `\n` as the header separator, and embedding a raw newline
-  // in the shell command would split it across lines in persistent /
-  // line-based shells. Mirrors the sqlmap injector above.
+  // Literal `\n`, not 0x0A — nikto wants the two-char escape and a real
+  // newline would break line-based persistent shells.
   const arg = `-headers "${shellQuote(lines.join("\\n"))}"`;
   return command.replace(/(?<!\/)(\bnikto\b)/, (m) => `${m} ${arg}`);
 };
 
-/**
- * Registry of recognized HTTP CLI tools and how to inject headers into
- * each. Data, not code: adding a new tool is one entry, not a new
- * branch in a switch.
- */
 const shellInjectorRegistry: ReadonlyMap<string, ShellInjector> = new Map<
   string,
   ShellInjector
@@ -416,25 +347,17 @@ const shellInjectorRegistry: ReadonlyMap<string, ShellInjector> = new Map<
 const COMMAND_PREFIX_STRIP =
   /^\s*(?:sudo\s+(?:-[^\s]*\s+)*|timeout\s+\S+\s+|env\s+(?:\S+=\S+\s+)+|nohup\s+)+/;
 
-/**
- * True iff the command contains a shell control operator (`;`, `&`, `|`,
- * or any doubled form) outside single/double quotes. A regex on its own
- * cannot do this safely — either it requires whitespace before the
- * operator (and misses `curl url|nc atk 9999`) or it matches operators
- * inside quoted argument values (`curl -H "X: a|b" url`). So we walk
- * the string and respect quote state.
- *
- * Backslash escapes a single following character outside single quotes
- * (POSIX rule). Inside single quotes nothing is escaped — the only way
- * out is a closing `'`.
- */
+// Detect `;`, `&`, `|` outside quotes — a regex alone either matches
+// operators inside quoted args or misses no-whitespace pipelines like
+// `curl url|nc atk 9999`, so we walk the string with POSIX quote/escape
+// rules instead.
 function hasShellOperatorOutsideQuotes(command: string): boolean {
   let inSingle = false;
   let inDouble = false;
   for (let i = 0; i < command.length; i++) {
     const ch = command[i];
     if (!inSingle && ch === "\\" && i + 1 < command.length) {
-      i++; // skip the escaped character
+      i++;
       continue;
     }
     if (!inDouble && ch === "'") {
@@ -452,11 +375,7 @@ function hasShellOperatorOutsideQuotes(command: string): boolean {
   return false;
 }
 
-/**
- * Extract the leading tool name from a command line, stripping common
- * wrappers (`sudo`, `timeout N`, `env K=V`, `nohup`). Returns `null`
- * for pipelined / chained commands or empty input.
- */
+// Returns null for pipelined / chained commands so callers can fail closed.
 function extractLeadingTool(command: string): string | null {
   if (hasShellOperatorOutsideQuotes(command)) return null;
   const stripped = command.replace(COMMAND_PREFIX_STRIP, "");
@@ -464,11 +383,8 @@ function extractLeadingTool(command: string): string | null {
   return firstWord || null;
 }
 
-/**
- * Networking tools that operate below the HTTP layer and never send
- * HTTP headers. These must not be blocked by the fail-closed header
- * injection logic — headers are simply irrelevant for them.
- */
+// Tools that operate below the HTTP layer — headers don't apply, so
+// they must not be blocked by the fail-closed branch in `applyHeadersToShellCommand`.
 const NON_HTTP_TOOLS: ReadonlySet<string> = new Set([
   "nmap",
   "masscan",
@@ -490,12 +406,6 @@ const NON_HTTP_TOOLS: ReadonlySet<string> = new Set([
   "amass",
 ]);
 
-/**
- * Identify the first HTTP tool name on a command line. Returns `null` if
- * the leading word is not in `shellInjectorRegistry` or if the command
- * is pipelined / chained (the safe answer in that case is "don't
- * inject" so the caller can fail closed).
- */
 function detectHttpToolOnCommand(command: string): string | null {
   const tool = extractLeadingTool(command);
   if (tool && shellInjectorRegistry.has(tool)) return tool;
@@ -510,36 +420,25 @@ export type ApplyShellResult = {
   readonly tool: string | null;
 };
 
-/**
- * Inject session/global/credential headers into a shell command line.
- *
- * Behavior matrix:
- *  - no in-scope hosts on the command → `no-headers` (return as-is)
- *  - in-scope but no headers configured → `no-headers` (return as-is)
- *  - in-scope + headers + known tool → `injected` (return augmented)
- *  - in-scope + headers + unknown tool / pipelined → `unknown-tool`
- *    (caller MUST fail closed; INV-shell-injection)
- *
- * `commandHosts` is the list of hosts on the command line (extracted by
- * the caller via scopeGuard). This module deliberately does not parse
- * the command for hosts — that logic already lives in scopeGuard and
- * duplicating it would diverge.
- */
+// Inject session/credential headers into a shell command line.
+// `commandHosts` comes from scopeGuard so the two callers share one scope view.
+//
+// Result statuses:
+//   - `no-headers`   nothing to inject (return command unchanged)
+//   - `injected`     command was rewritten with -H flags
+//   - `unknown-tool` headers exist but the tool/pipeline is unrecognized;
+//                    the caller MUST fail closed
 export function applyHeadersToShellCommand(
   command: string,
   session: ResolverSession,
   commandHosts: ReadonlyArray<string>,
 ): ApplyShellResult {
-  // Find the highest-scope URL-like target on the command line and use
-  // it to drive the resolver. If no host is present, there's nothing
-  // to inject for.
   const allowed = getAllowedHosts(session);
   const inScopeHost = commandHosts.find((h) => isHostInScope(h, allowed));
   if (!inScopeHost) {
     return { command, status: "no-headers", tool: null };
   }
 
-  // Build a synthetic URL so the resolver's scope check sees the host.
   const url = `https://${inScopeHost}`;
   const headers = resolveEffectiveHeaders(session, url);
   if (Object.keys(headers).length === 0) {

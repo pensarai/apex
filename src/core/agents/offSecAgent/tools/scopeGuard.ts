@@ -54,21 +54,9 @@ export class ScopeViolationError extends Error {
   }
 }
 
-/**
- * Build a `ResolverSession` that the `src/core/http/` resolver can use
- * without diverging from scopeGuard's scope view.
- *
- * The resolver only reads `session.targets` and
- * `session.config.scopeConstraints.allowedHosts`; it has no awareness of
- * `ctx.target`. When a tool ctx carries a `target` that isn't already in
- * `session.targets` (e.g. sub-agents like findingJudge / documentFinding
- * that pass `ctx.target` through to a spawned agent), the resolver would
- * silently classify that host as out-of-scope and drop configured
- * headers — even though scopeGuard had just approved the command.
- *
- * Folding `ctx.target` into the resolver's `targets` view here makes the
- * two scope checks come from a single source of truth.
- */
+// Fold `ctx.target` into the resolver's `targets` view so sub-agent
+// commands (where `ctx.target` isn't in `session.targets`) don't get
+// classified as out-of-scope and silently dropped from header resolution.
 export function resolverSessionFromCtx(ctx: ToolContext): ResolverSession {
   if (!ctx.target) return ctx.session;
   const existing = ctx.session.targets ?? [];

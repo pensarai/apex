@@ -69,13 +69,7 @@ export type Route =
         operatorMode?: import("../../core/operator").OperatorMode;
         sandbox?: boolean;
         taskDriven?: boolean;
-        /**
-         * Session headers carried from the wizard / CLI flags.
-         * When the dashboard creates the session, these are passed to
-         * `sessions.create` (which snapshots them in place of the
-         * global defaults). Subsequent mutations stay scoped to the
-         * session — see updateSessionHeaders.
-         */
+        /** Headers from wizard/CLI; replace the snapshotted global defaults. */
         headers?: Record<string, string>;
       };
       /** Skill to automatically submit on mount */

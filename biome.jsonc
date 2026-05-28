@@ -204,15 +204,9 @@
       }
     },
     {
-      // INV-blessed-fetch: every agent tool that makes target HTTP
-      // requests MUST route through `targetFetch` from
-      // `src/core/http/targetHeaders.ts` so the resolver gets to merge
-      // session/global/credential headers. Raw `fetch` from inside an
-      // agent tool silently bypasses the header system, which is
-      // exactly the regression this rule prevents.
-      //
-      // To add a legitimate exception, factor the call out into
-      // src/core/http/* (this rule does not apply there).
+      // Agent tools must route target HTTP through `targetFetch` so the
+      // resolver applies session/credential headers. Raw fetch silently
+      // bypasses it. Factor exceptions into src/core/http/*.
       "includes": ["**/src/core/agents/offSecAgent/tools/**"],
       "linter": {
         "rules": {
@@ -221,7 +215,7 @@
               "level": "error",
               "options": {
                 "deniedGlobals": {
-                  "fetch": "Use targetFetch from src/core/http/targetHeaders.ts so session/global/credential headers are applied (INV-blessed-fetch)."
+                  "fetch": "Use targetFetch from src/core/http/targetHeaders.ts so session/global/credential headers are applied."
                 }
               }
             }

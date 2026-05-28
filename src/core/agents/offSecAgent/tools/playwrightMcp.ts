@@ -337,13 +337,6 @@ export function setViewportSize(viewportSize: string | undefined): void {
   defaultViewportSize = viewportSize;
 }
 
-/**
- * Construction-time options for {@link PlaywrightMcpSession}. Using an
- * options object instead of positional args keeps call sites readable
- * when only one field (e.g. `extraHttpHeaders`) is being overridden and
- * makes the constructor safe to extend without silently breaking
- * existing callers.
- */
 export interface PlaywrightMcpSessionOptions {
   readonly headless?: boolean;
   readonly userAgent?: string | null;
@@ -376,27 +369,9 @@ export class PlaywrightMcpSession {
   private mcpConfigPath: string | null = null;
 
   /**
-   * Construct a new isolated browser session.
-   *
-   * Each option has three-state semantics:
-   * - omitted / `undefined` → fall back to the module-level default
-   *   (`defaultHeadless` / `defaultUserAgent` / `defaultViewportSize`,
-   *   configurable via {@link setHeadlessMode}, {@link setUserAgent}, and
-   *   {@link setViewportSize}). For viewport this means **1920x1080** by
-   *   default — sessions constructed with no opts will launch Chromium at
-   *   a real desktop resolution, not the tiny built-in default.
-   * - explicit `string` / `boolean` value → use it as-is.
-   * - explicit `null` (for `userAgent` / `viewportSize` /
-   *   `extraHttpHeaders`) → opt OUT of the default and let Chromium use
-   *   its built-in value (useful when the anti-bot UA / 1920x1080 are
-   *   counter-productive for a target).
-   *
-   * Viewport has an additional hard floor: if neither the option nor the
-   * module default is set (e.g. someone called
-   * `setViewportSize(undefined)`), the constructor still falls back to
-   * {@link HARDCODED_VIEWPORT_FALLBACK} (`"1920,1080"`) so we never
-   * silently launch Chromium at its tiny built-in viewport. The only way
-   * to opt out is to pass `null` explicitly.
+   * Each option is three-state: `undefined` → module default, value → use it,
+   * `null` → opt out of the default and let Chromium pick. Viewport has a
+   * hard floor of `HARDCODED_VIEWPORT_FALLBACK` to avoid Chromium's tiny built-in.
    */
   constructor(options: PlaywrightMcpSessionOptions = {}) {
     const { headless, userAgent, viewportSize, extraHttpHeaders } = options;
@@ -409,10 +384,7 @@ export class PlaywrightMcpSession {
         ? undefined
         : (viewportSize ?? defaultViewportSize ?? HARDCODED_VIEWPORT_FALLBACK);
 
-    // Snapshot the headers at construction so subsequent mutations to
-    // the caller's record don't leak into this already-launched session
-    // (INV-browser-snapshot). The caller is responsible for resolving
-    // effective headers (session/global/credential) before passing.
+    // Snapshot headers so post-construction mutations don't leak in.
     const headerSource =
       extraHttpHeaders === null ? undefined : extraHttpHeaders;
     this.extraHttpHeaders =
@@ -492,9 +464,8 @@ export class PlaywrightMcpSession {
           args.push(`--viewport-size=${this.viewportSize}`);
         }
 
-        // INV-browser-snapshot: write a temporary @playwright/mcp config
-        // file with `browser.contextOptions.extraHTTPHeaders` so every
-        // Chromium request includes the session's custom headers.
+        // Pass extraHTTPHeaders via a temp @playwright/mcp config file
+        // so every Chromium request includes them.
         if (this.extraHttpHeaders) {
           const os = await import("os");
           const fsp = await import("fs/promises");
@@ -603,7 +574,6 @@ export class PlaywrightMcpSession {
 
     this.forceKillProcess();
 
-    // Clean up the temp MCP config file (if any).
     if (this.mcpConfigPath) {
       const configPath = this.mcpConfigPath;
       this.mcpConfigPath = null;
@@ -612,7 +582,7 @@ export class PlaywrightMcpSession {
           const fsp = await import("fs/promises");
           await fsp.unlink(configPath);
         } catch {
-          // Best-effort cleanup — already-deleted is fine.
+          // best-effort; already-deleted is fine
         }
       })();
     }

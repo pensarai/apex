@@ -1,20 +1,8 @@
 #!/usr/bin/env bun
 
-/**
- * `pensar config headers` — Manage the global default HTTP headers
- * stored in `~/.pensar/config.json`. Changes here are snapshotted into
- * every NEW session at create time (INV-snapshot-stability) but do NOT
- * retroactively affect already-running sessions.
- *
- * Subcommands:
- *   list                            Show current defaults (values masked)
- *   list --show                     Show current defaults (values revealed)
- *   add "Name: Value"               Add a header (errors on duplicate)
- *   set "Name: Value"               Add or overwrite a header
- *   remove <Name>                   Remove a single header
- *   clear                           Remove every header (asks for confirmation)
- *   import <file>                   Replace defaults from a JSON/Name:Value file
- */
+// `pensar config headers` — manage global default HTTP headers in
+// ~/.pensar/config.json. Snapshotted into new sessions at create time;
+// existing sessions are not retroactively updated.
 
 import { config } from "../core/config";
 import {

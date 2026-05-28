@@ -255,10 +255,8 @@ const fs = require('fs');
     try { fs.accessSync(p, fs.constants.X_OK); executablePath = p; break; } catch {}
   }
 
-  // INV-browser-snapshot (sandbox): every Chromium request carries the
-  // session's configured custom HTTP headers. Resolved fresh on each
-  // script invocation so mutations via /headers take effect on the
-  // next browser tool call.
+  // Resolved per script invocation so /headers mutations take effect
+  // on the next browser tool call.
   const __extraHeaders = ${headersJson};
 
   let context;
@@ -451,9 +449,7 @@ export function createSandboxBrowserTools(ctx: ToolContext) {
     return setupPromise;
   }
 
-  // Resolve session + credential headers fresh on every browser tool
-  // call so /headers mutations take effect on the next invocation
-  // (INV-browser-snapshot, INV-single-source for the sandbox path).
+  // Resolve fresh on every tool call so /headers mutations apply next call.
   function runScript(body: string, timeout = 60): Promise<unknown> {
     const resolved = targetUrl
       ? resolveEffectiveHeaders(resolverSessionFromCtx(ctx), targetUrl)

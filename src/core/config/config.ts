@@ -48,15 +48,8 @@ export interface Config {
   gatewaySigningKey?: string | null;
   // Gateway URL for inference (server-issued, bypasses CloudFront timeout)
   gatewayUrl?: string | null;
-  /**
-   * Default custom HTTP headers seeded into every new session at create
-   * time (snapshot semantics — see INV-snapshot-stability in the
-   * headers plan). Mutated via `pensar config headers` or the TUI
-   * settings dialog. Empty record means "send no custom headers";
-   * absent means "fall back to the User-Agent default".
-   */
+  /** Snapshotted into every new session at create time. */
   defaultHeaders?: Record<string, string>;
-  /** ISO timestamp of the last `defaultHeaders` mutation. */
   defaultHeadersUpdatedAt?: string;
 }
 

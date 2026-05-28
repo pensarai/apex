@@ -197,12 +197,9 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         throw e;
       }
 
-      // INV-shell-injection: every shell command that targets an
-      // in-scope host MUST receive the session's configured custom HTTP
-      // headers. The injector handles recognized tools (curl, nuclei,
-      // ffuf, etc.). When the tool is unknown or the command is
-      // pipelined we fail closed unless the agent explicitly opts out
-      // via `allow_unprotected`.
+      // Inject session headers into the shell command. Fail closed for
+      // unknown tools / pipelines so configured headers aren't silently
+      // dropped — agent can opt out with `allow_unprotected`.
       const cmdHosts = extractHostsFromCommand(command);
       const inject = applyHeadersToShellCommand(
         command,
@@ -210,11 +207,6 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         cmdHosts,
       );
       if (inject.status === "unknown-tool" && !allow_unprotected) {
-        // `applyHeadersToShellCommand` only returns `unknown-tool` when
-        // there ARE headers configured for an in-scope host on the
-        // command (the `no-headers` status covers both "no in-scope
-        // host" and "in-scope but no headers"). Reaching this branch
-        // means we must fail closed.
         const msg =
           "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined. " +
           "Supported HTTP tools: curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto. " +

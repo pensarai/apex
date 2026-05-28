@@ -70,10 +70,6 @@ export type CommandAction =
   | { type: "headers"; op: HeadersOp }
   | { type: "execute-command"; command: string };
 
-/**
- * Parse the tail of `/headers <subcommand> ...` into a structured op.
- * The leading `/headers` token is stripped by the caller.
- */
 function parseHeadersSlashCommand(rest: string): HeadersOp {
   const trimmed = rest.trim();
   if (!trimmed) {

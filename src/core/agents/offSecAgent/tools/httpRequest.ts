@@ -277,10 +277,8 @@ async function executeSandboxHttpRequest(
   try {
     let curlCommand = `curl -i -X ${method}`;
 
-    // Apply session/global/credential layered headers via the resolver so
-    // the sandbox curl path enforces the same INV-single-source contract
-    // as the local fetch path. Agent-supplied `headers` arg is treated
-    // as the `request` layer (wins over global/session/credential).
+    // Resolve session/credential headers so the sandbox curl path matches
+    // the local fetch path. Caller `headers` win as the request layer.
     const mergedHeaders = resolveEffectiveHeaders(
       resolverSessionFromCtx(ctx),
       url,

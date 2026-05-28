@@ -309,11 +309,7 @@ export default function WebWizard({
         sessionConfig.codebasePath = state.cwd.trim();
       }
 
-      // Headers config — translate the legacy mode-based wizard state to
-      // the flat `headers` map. "default" means "let sessions.create
-      // snapshot the global defaultHeaders" (we don't set anything).
-      // "none" means "explicitly clear all headers". "custom" means
-      // "replace with this exact map".
+      // "default" leaves headers unset so sessions.create snapshots the global default.
       if (state.headers.mode === "none") {
         sessionConfig.headers = {};
       } else if (state.headers.mode === "custom") {
