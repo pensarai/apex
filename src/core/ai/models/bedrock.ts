@@ -443,6 +443,18 @@ export const BEDROCK_MODELS: ModelInfo[] = [
     contextLength: 262000,
   },
   {
+    id: "anthropic.claude-opus-4-8",
+    name: "Claude Opus 4.8 (Bedrock)",
+    provider: "bedrock",
+    contextLength: 1000000,
+  },
+  {
+    id: "us.anthropic.claude-opus-4-8",
+    name: "Claude Opus 4.8 (US)",
+    provider: "bedrock",
+    contextLength: 1000000,
+  },
+  {
     id: "global.anthropic.claude-v2",
     name: "Claude v2 (Global)",
     provider: "bedrock",
@@ -555,5 +567,11 @@ export const BEDROCK_MODELS: ModelInfo[] = [
     name: "Claude 3 Opus (2024-02-29) (Global)",
     provider: "bedrock",
     contextLength: 200000,
+  },
+  {
+    id: "global.anthropic.claude-opus-4-8",
+    name: "Claude Opus 4.8 (Global)",
+    provider: "bedrock",
+    contextLength: 1000000,
   },
 ];
