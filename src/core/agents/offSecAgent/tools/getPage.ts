@@ -13,19 +13,19 @@ import type { ToolContext } from "./types";
 // send a recognisable User-Agent rather than relying on the runtime's
 // default (e.g. `Bun/x.y`), which Cloudflare/Akamai-fronted sources
 // frequently challenge.
-const BASELINE_REQUEST_HEADERS: HeaderRecord = {
-  "User-Agent": "Mozilla/5.0 (compatible; PensarBot/1.0; +https://pensar.dev)",
+const GETPAGE_USER_AGENT =
+  "Mozilla/5.0 (compatible; PensarBot/1.0; +https://pensar.dev)";
+
+const BASELINE_FALLBACK_HEADERS: HeaderRecord = {
   Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.5",
 };
 
-function mergeBaselineHeaders(
-  resolved: HeaderRecord,
-  baseline: HeaderRecord,
-): HeaderRecord {
+function mergeBaselineHeaders(resolved: HeaderRecord): HeaderRecord {
   const present = new Set(Object.keys(resolved).map((k) => k.toLowerCase()));
   const out: HeaderRecord = { ...resolved };
-  for (const [name, value] of Object.entries(baseline)) {
+  out["User-Agent"] = GETPAGE_USER_AGENT;
+  for (const [name, value] of Object.entries(BASELINE_FALLBACK_HEADERS)) {
     if (!present.has(name.toLowerCase())) out[name] = value;
   }
   return out;
@@ -133,10 +133,7 @@ BEST PRACTICES:
         // credential-layer headers of the same name.
         const resolverSession = resolverSessionFromCtx(ctx);
         const resolved = resolveEffectiveHeaders(resolverSession, url);
-        const headers = mergeBaselineHeaders(
-          resolved,
-          BASELINE_REQUEST_HEADERS,
-        );
+        const headers = mergeBaselineHeaders(resolved);
 
         // biome-ignore lint/style/noRestrictedGlobals: headers already fully resolved above; targetFetch would re-resolve and misorder baseline vs credential precedence
         const response = await fetch(url, {
