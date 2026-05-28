@@ -180,22 +180,22 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
   });
 
   it("uses explicit values when provided", () => {
-    const session = new PlaywrightMcpSession(
-      false,
-      "MyAgent/1.0",
-      "800,600",
-    ) as unknown as InternalShape;
+    const session = new PlaywrightMcpSession({
+      headless: false,
+      userAgent: "MyAgent/1.0",
+      viewportSize: "800,600",
+    }) as unknown as InternalShape;
     expect(session.headless).toBe(false);
     expect(session.userAgent).toBe("MyAgent/1.0");
     expect(session.viewportSize).toBe("800,600");
   });
 
   it("treats explicit null as 'opt out of the default' (let Chromium pick its built-in)", () => {
-    const session = new PlaywrightMcpSession(
-      true,
-      null,
-      null,
-    ) as unknown as InternalShape;
+    const session = new PlaywrightMcpSession({
+      headless: true,
+      userAgent: null,
+      viewportSize: null,
+    }) as unknown as InternalShape;
     expect(session.userAgent).toBeUndefined();
     expect(session.viewportSize).toBeUndefined();
   });

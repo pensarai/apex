@@ -27,6 +27,7 @@
 
 import { getDomain } from "tldts";
 import { parseTargetUrl } from "../../../../util/url";
+import type { ResolverSession } from "../../../http/targetHeaders";
 import type { ToolContext } from "./types";
 
 /**
@@ -51,6 +52,19 @@ export class ScopeViolationError extends Error {
     );
     this.name = "ScopeViolationError";
   }
+}
+
+// Fold `ctx.target` into the resolver's `targets` view so sub-agent
+// commands (where `ctx.target` isn't in `session.targets`) don't get
+// classified as out-of-scope and silently dropped from header resolution.
+export function resolverSessionFromCtx(ctx: ToolContext): ResolverSession {
+  if (!ctx.target) return ctx.session;
+  const existing = ctx.session.targets ?? [];
+  if (existing.includes(ctx.target)) return ctx.session;
+  return {
+    ...ctx.session,
+    targets: [...existing, ctx.target],
+  };
 }
 
 /**

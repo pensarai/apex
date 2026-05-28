@@ -202,6 +202,26 @@
           }
         }
       }
+    },
+    {
+      // Agent tools must route target HTTP through `targetFetch` so the
+      // resolver applies session/credential headers. Raw fetch silently
+      // bypasses it. Factor exceptions into src/core/http/*.
+      "includes": ["**/src/core/agents/offSecAgent/tools/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "fetch": "Use targetFetch from src/core/http/targetHeaders.ts so session/global/credential headers are applied."
+                }
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }

@@ -89,6 +89,58 @@ async function createInstrumentedBus(
   return { bus, cleanup: async () => wandbCleanup?.() };
 }
 
+// Returns the merged headers (global defaults < file < CLI flags), or
+// `undefined` to let `sessions.create` snapshot the global defaults.
+async function resolveCliHeaders(): Promise<
+  Record<string, string> | undefined
+> {
+  const headerArgs = getAllArgs("--header");
+  const headersFromArg = getArg("--headers-from");
+  const noGlobal = hasFlag("--no-global-headers");
+
+  if (headerArgs.length === 0 && !headersFromArg && !noGlobal) {
+    return undefined;
+  }
+
+  const { parseHeaderLine, parseHeadersFromFile, formatParseError } =
+    await import("./core/http/parse");
+  const merged: Record<string, string> = {};
+
+  if (!noGlobal) {
+    const { config: appConfig } = await import("./core/config");
+    const cfg = await appConfig.get();
+    if (cfg.defaultHeaders) {
+      Object.assign(merged, cfg.defaultHeaders);
+    }
+  }
+
+  if (headersFromArg) {
+    const parsed = await parseHeadersFromFile(headersFromArg);
+    if (!parsed.ok) {
+      for (const err of parsed.error) {
+        console.error(`--headers-from error:\n${formatParseError(err)}`);
+      }
+      process.exit(1);
+    }
+    for (const entry of parsed.value) {
+      merged[entry.name] = entry.value;
+    }
+  }
+
+  for (const arg of headerArgs) {
+    const parsed = parseHeaderLine(arg);
+    if (!parsed.ok) {
+      console.error(
+        `--header "${arg}" rejected:\n${formatParseError(parsed.error)}`,
+      );
+      process.exit(1);
+    }
+    merged[parsed.value.name] = parsed.value.value;
+  }
+
+  return merged;
+}
+
 /**
  * Resolve the AI model from --model flag or configured provider default.
  * Errors clearly if no provider is configured instead of silently picking
@@ -139,6 +191,7 @@ Usage:
   pensar issues                       List and manage security issues
   pensar fixes                        View security fixes
   pensar logs                         View agent execution logs
+  pensar config headers               Manage global default HTTP headers
   pensar upgrade                      Update pensar to the latest version
   pensar doctor                       Check dependencies and install missing tools
   pensar help                         Show this help message
@@ -149,6 +202,9 @@ operator options (-p):
   -s, --system <text|@file>  Override the default system prompt
   --target <url>             Target URL / domain / IP
   --model <model>            AI model (default: auto-selected from configured provider)
+  --header "Name: Value"     Custom HTTP header (repeatable)
+  --headers-from <file>      Load headers from a JSON object or Name:Value file
+  --no-global-headers        Skip the global defaultHeaders snapshot
 
 pentest options:
   --target <url>           (required) Target URL / domain / IP
@@ -159,11 +215,17 @@ pentest options:
   --task-driven             Enable task-driven architecture (experimental)
   --prompt <text|@file>    Guidance for the pentest agent (inline text or @filepath)
   --threat-model <text|@file>  Threat model to guide the pentest (inline or @filepath)
+  --header "Name: Value"   Custom HTTP header (repeatable)
+  --headers-from <file>    Load headers from a JSON object or Name:Value file
+  --no-global-headers      Skip the global defaultHeaders snapshot
 
 targeted-pentest options:
   --target <url>          (required) Target URL / domain / IP
   --objective <text>      (required, repeatable) Testing objective
   --model <model>         AI model (default: auto-selected from configured provider)
+  --header "Name: Value"  Custom HTTP header (repeatable)
+  --headers-from <file>   Load headers from a JSON object or Name:Value file
+  --no-global-headers     Skip the global defaultHeaders snapshot
 
 threat-model options:
   --output, -o <path>  Output file path (default: ./threat-model.md)
@@ -207,6 +269,7 @@ async function runPentest() {
 
   const pensarConfig = await appConfig.get();
   const model = await resolveCliModel();
+  const headers = await resolveCliHeaders();
   const { exfilMode, warning: modeWarning } = resolvePentestMode(mode);
 
   if (modeWarning) {
@@ -218,7 +281,7 @@ async function runPentest() {
 PENTEST ORCHESTRATION
 ${sep}
 Target:  ${target}${cwd ? `\nCwd:     ${cwd} (whitebox)` : ""}${exfilMode ? "\nMode:    exfil" : ""}
-Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\nTask-driven: enabled" : ""}
+Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\nTask-driven: enabled" : ""}${headers ? `\nHeaders: ${Object.keys(headers).length} configured` : ""}
 `);
 
   const session = await sessions.create({
@@ -229,6 +292,7 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
       ...(exfilMode ? { exfilMode: true } : {}),
       ...(prompt ? { prompt } : {}),
       ...(taskDriven ? { taskDriven: true } : {}),
+      ...(headers !== undefined ? { headers } : {}),
     },
   });
 
@@ -294,9 +358,11 @@ Objectives:
 ${objectivesList}
 `);
 
+  const headers = await resolveCliHeaders();
   const session = await sessions.create({
     name: "Targeted Pentest",
     targets: [target],
+    ...(headers !== undefined ? { config: { headers } } : {}),
   });
 
   const { bus: targetedBus, cleanup: wandbCleanup } =
@@ -406,6 +472,7 @@ ${sep}
 Model:   ${model}${target ? `\nTarget:  ${target}` : ""}
 ${sep}\n`);
 
+  const headers = await resolveCliHeaders();
   const session = await sessions.create({
     name: "Operator Session",
     targets: target ? [target] : [],
@@ -417,6 +484,7 @@ ${sep}\n`);
         requireApproval: false,
         enableSuggestions: false,
       },
+      ...(headers !== undefined ? { headers } : {}),
     },
   });
 
@@ -534,6 +602,9 @@ if (hasFlag("-p") || command === "--prompt") {
 } else if (command === "logs") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/logs");
+} else if (command === "config") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("./cli/config");
 } else if (command === "threat-model") {
   await runThreatModel();
 } else if (command === "doctor") {

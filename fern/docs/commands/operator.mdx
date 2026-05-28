@@ -81,7 +81,9 @@ Toggle approval with `Option+Shift+Tab` (or `Alt+Shift+Tab` on Linux/Windows).
 | `--ports <p1,p2,...>` | Allowed ports (comma-separated)                   |
 | `--strict`            | Enable strict scope mode                          |
 | `--headers <mode>`    | Headers mode: none, default, or custom            |
-| `--header <Name:Val>` | Custom header (repeatable)                        |
+| `--header "Name: Value"` | Custom HTTP header sent on every in-scope request (repeatable) |
+| `--headers-from <file>` | Load headers from a JSON object or `Name: Value` file |
+| `--no-global-headers` | Skip the snapshot of `pensar config headers` defaults |
 | `--sandbox`           | Use isolated session directory as working directory instead of current directory |
 
 ## Keyboard Shortcuts
@@ -143,6 +145,24 @@ pensar
   alt="Operator session — agent action approval"
   style={{ borderRadius: "8px", marginTop: "16px" }}
 />
+
+## Session Headers
+
+Inside an operator session you can manage the session's custom HTTP headers
+without restarting. These headers are applied to every in-scope `http_request`,
+shell tool (curl/nuclei/etc.), and Playwright navigation.
+
+| Slash command                | Description                                  |
+| ---------------------------- | -------------------------------------------- |
+| `/headers list`              | Show headers (sensitive values masked)       |
+| `/headers list --show`       | Show headers with values revealed            |
+| `/headers add Name: Value`   | Add a header (errors if `Name` already set)  |
+| `/headers set Name: Value`   | Add or overwrite a header                    |
+| `/headers remove Name`       | Remove a single header                       |
+| `/headers clear`             | Remove every header                          |
+
+Mutations take effect on the next tool call. Per-request `headers` passed to
+`http_request` still win over session-level headers for one-off overrides.
 
 ## Operator Skills
 

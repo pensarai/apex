@@ -2,7 +2,13 @@ import { tool } from "ai";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
-import { assertCommandInScope, ScopeViolationError } from "./scopeGuard";
+import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
+import {
+  assertCommandInScope,
+  extractHostsFromCommand,
+  resolverSessionFromCtx,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 const MAX_INLINE = 50_000;
@@ -21,6 +27,12 @@ const executeCommandInputSchema = z.object({
     .optional()
     .describe(
       "Timeout in seconds. If omitted, the command runs until completion or abort.",
+    ),
+  allow_unprotected: z
+    .boolean()
+    .optional()
+    .describe(
+      "Acknowledge that this command will run WITHOUT the session's configured custom HTTP headers because the tool is unrecognized or the command is pipelined. Defaults to false (fail-closed). Use only when you understand the headers will not be applied.",
     ),
 });
 
@@ -155,7 +167,11 @@ results to disk before any signal arrives.
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
-    execute: async ({ command, timeout }): Promise<ExecuteCommandResult> => {
+    execute: async ({
+      command,
+      timeout,
+      allow_unprotected,
+    }): Promise<ExecuteCommandResult> => {
       if (ctx.abortSignal?.aborted) {
         return {
           success: false,
@@ -181,6 +197,31 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         throw e;
       }
 
+      // Inject session headers into the shell command. Fail closed for
+      // unknown tools / pipelines so configured headers aren't silently
+      // dropped — agent can opt out with `allow_unprotected`.
+      const cmdHosts = extractHostsFromCommand(command);
+      const inject = applyHeadersToShellCommand(
+        command,
+        resolverSessionFromCtx(ctx),
+        cmdHosts,
+      );
+      if (inject.status === "unknown-tool" && !allow_unprotected) {
+        const msg =
+          "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined. " +
+          "Supported HTTP tools: curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto. " +
+          "Either (a) rewrite the command using one of those tools, (b) use the http_request tool, or (c) pass allow_unprotected: true to acknowledge headers will NOT be sent.";
+        return {
+          success: false,
+          error: msg,
+          stdout: "",
+          stderr: msg,
+          command,
+        };
+      }
+      const effectiveCommand =
+        inject.status === "injected" ? inject.command : command;
+
       // Sandbox mode: route execution through the sandbox
       if (ctx.sandbox) {
         try {
@@ -189,7 +230,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           if (normalizedTimeout != null) {
             ssmOpts.timeout = normalizedTimeout;
           }
-          const result = await ctx.sandbox.execute(command, ssmOpts);
+          const result = await ctx.sandbox.execute(effectiveCommand, ssmOpts);
           const { text: stdout, file: outputFile } = maybeSaveFullOutput(
             result.stdout,
             ctx,
@@ -222,7 +263,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
             ? (data: string) => ctx.eventBus!.emit("command-output", { data })
             : undefined;
           const result = await ctx.persistentShell.execute(
-            command,
+            effectiveCommand,
             normalizedTimeout,
             onData,
             ctx.abortSignal,

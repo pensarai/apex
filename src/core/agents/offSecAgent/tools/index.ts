@@ -108,6 +108,7 @@ export {
   extractHostsFromCommand,
   getAllowedHosts,
   isHostAllowed,
+  resolverSessionFromCtx,
   ScopeViolationError,
 } from "./scopeGuard";
 export { spawnCodingAgent } from "./spawnCodingAgent";

@@ -175,6 +175,25 @@ export class CredentialManager {
   }
 
   /**
+   * Stored credentials with their `customHeaders` intact. Consumed ONLY
+   * by the target-HTTP resolver — agent-facing code must use
+   * `listReferences()` which omits values.
+   */
+  listCredentialsWithHeaders(): Array<{
+    tokens: { customHeaders: Record<string, string> };
+  }> {
+    const out: Array<{ tokens: { customHeaders: Record<string, string> } }> =
+      [];
+    for (const stored of this.store.values()) {
+      const headers = stored.tokens?.customHeaders;
+      if (headers && Object.keys(headers).length > 0) {
+        out.push({ tokens: { customHeaders: { ...headers } } });
+      }
+    }
+    return out;
+  }
+
+  /**
    * Remove a credential from the store.
    * Returns `true` if the credential existed and was removed.
    */

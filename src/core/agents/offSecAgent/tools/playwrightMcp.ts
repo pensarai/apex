@@ -337,6 +337,13 @@ export function setViewportSize(viewportSize: string | undefined): void {
   defaultViewportSize = viewportSize;
 }
 
+export interface PlaywrightMcpSessionOptions {
+  readonly headless?: boolean;
+  readonly userAgent?: string | null;
+  readonly viewportSize?: string | null;
+  readonly extraHttpHeaders?: Record<string, string> | null;
+}
+
 /**
  * Isolated MCP browser session.
  *
@@ -357,34 +364,18 @@ export class PlaywrightMcpSession {
   private readonly headless: boolean;
   private readonly userAgent: string | undefined;
   private readonly viewportSize: string | undefined;
+  private readonly extraHttpHeaders: Record<string, string> | undefined;
+  /** Temp config file written for MCP launch — deleted on disconnect. */
+  private mcpConfigPath: string | null = null;
 
   /**
-   * Construct a new isolated browser session.
-   *
-   * Each parameter has three-state semantics:
-   * - `undefined` (omitted) → fall back to the module-level default
-   *   (`defaultHeadless` / `defaultUserAgent` / `defaultViewportSize`,
-   *   configurable via {@link setHeadlessMode}, {@link setUserAgent}, and
-   *   {@link setViewportSize}). For viewport this means **1920x1080** by
-   *   default — sessions constructed with no args will launch Chromium at
-   *   a real desktop resolution, not the tiny built-in default.
-   * - explicit `string` / `boolean` value → use it as-is.
-   * - explicit `null` (for `userAgent` / `viewportSize`) → opt OUT of the
-   *   default and let Chromium use its built-in value (useful when the
-   *   anti-bot UA / 1920x1080 are counter-productive for a target).
-   *
-   * Viewport has an additional hard floor: if neither the arg nor the
-   * module default is set (e.g. someone called
-   * `setViewportSize(undefined)`), the constructor still falls back to
-   * {@link HARDCODED_VIEWPORT_FALLBACK} (`"1920,1080"`) so we never
-   * silently launch Chromium at its tiny built-in viewport. The only way
-   * to opt out is to pass `null` explicitly.
+   * Each option is three-state: `undefined` → module default, value → use it,
+   * `null` → opt out of the default and let Chromium pick. Viewport has a
+   * hard floor of `HARDCODED_VIEWPORT_FALLBACK` to avoid Chromium's tiny built-in.
    */
-  constructor(
-    headless?: boolean,
-    userAgent?: string | null,
-    viewportSize?: string | null,
-  ) {
+  constructor(options: PlaywrightMcpSessionOptions = {}) {
+    const { headless, userAgent, viewportSize, extraHttpHeaders } = options;
+
     this.headless = headless ?? defaultHeadless;
     this.userAgent =
       userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
@@ -392,6 +383,14 @@ export class PlaywrightMcpSession {
       viewportSize === null
         ? undefined
         : (viewportSize ?? defaultViewportSize ?? HARDCODED_VIEWPORT_FALLBACK);
+
+    // Snapshot headers so post-construction mutations don't leak in.
+    const headerSource =
+      extraHttpHeaders === null ? undefined : extraHttpHeaders;
+    this.extraHttpHeaders =
+      headerSource && Object.keys(headerSource).length > 0
+        ? { ...headerSource }
+        : undefined;
   }
 
   /** Immediately reset all instance state. Synchronous — no I/O. */
@@ -463,6 +462,27 @@ export class PlaywrightMcpSession {
 
         if (this.viewportSize) {
           args.push(`--viewport-size=${this.viewportSize}`);
+        }
+
+        // Pass extraHTTPHeaders via a temp @playwright/mcp config file
+        // so every Chromium request includes them.
+        if (this.extraHttpHeaders) {
+          const os = await import("os");
+          const fsp = await import("fs/promises");
+          const cfg = {
+            browser: {
+              contextOptions: { extraHTTPHeaders: this.extraHttpHeaders },
+            },
+          };
+          this.mcpConfigPath = join(
+            os.tmpdir(),
+            `pensar-mcp-${process.pid}-${Date.now()}.json`,
+          );
+          await fsp.writeFile(this.mcpConfigPath, JSON.stringify(cfg), {
+            encoding: "utf-8",
+            mode: 0o600,
+          });
+          args.push("--config", this.mcpConfigPath);
         }
 
         // Disable Chromium sandbox when running as root (e.g., in Docker/ECS containers).
@@ -553,6 +573,20 @@ export class PlaywrightMcpSession {
     }
 
     this.forceKillProcess();
+
+    if (this.mcpConfigPath) {
+      const configPath = this.mcpConfigPath;
+      this.mcpConfigPath = null;
+      void (async () => {
+        try {
+          const fsp = await import("fs/promises");
+          await fsp.unlink(configPath);
+        } catch {
+          // best-effort; already-deleted is fine
+        }
+      })();
+    }
+
     this.disconnecting = false;
   }
 
@@ -956,6 +990,7 @@ export function createBrowserTools(
   userAgent?: string | null,
   viewportSize?: string | null,
   existingSession?: PlaywrightMcpSession,
+  extraHttpHeaders?: Record<string, string> | null,
 ) {
   let session: PlaywrightMcpSession;
 
@@ -967,8 +1002,13 @@ export function createBrowserTools(
   } else {
     // PlaywrightMcpSession's constructor folds in the module-level
     // defaults (1920x1080 viewport, desktop Chrome UA, headless=true)
-    // when these args are undefined — pass them through verbatim.
-    session = new PlaywrightMcpSession(headless, userAgent, viewportSize);
+    // when these options are undefined — pass them through verbatim.
+    session = new PlaywrightMcpSession({
+      headless,
+      userAgent,
+      viewportSize,
+      extraHttpHeaders,
+    });
 
     if (abortSignal) {
       const onAbort = () => session.disconnect().catch(() => {});

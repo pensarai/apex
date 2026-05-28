@@ -70,12 +70,13 @@ async function runAttackSurface(options: AttackSurfaceOptions): Promise<void> {
   console.log();
 
   try {
-    // Build session config
+    // "default" omits headers so sessions.create snapshots the global default.
     const sessionConfig = {
-      offensiveHeaders: {
-        mode: headerMode,
-        headers: headerMode === "custom" ? customHeaders : undefined,
-      },
+      ...(headerMode === "custom"
+        ? { headers: customHeaders ?? {} }
+        : headerMode === "none"
+          ? { headers: {} }
+          : {}),
       ...(strictScope && {
         scopeConstraints: {
           strictScope: true,

@@ -5,6 +5,7 @@ import { getCurrentVersion } from "../installation";
 
 const DEFAULT_CONFIG: Config = {
   responsibleUseAccepted: false,
+  defaultHeaders: { "User-Agent": "pensar-apex" },
 };
 
 export interface Config {
@@ -47,6 +48,9 @@ export interface Config {
   gatewaySigningKey?: string | null;
   // Gateway URL for inference (server-issued, bypasses CloudFront timeout)
   gatewayUrl?: string | null;
+  /** Snapshotted into every new session at create time. */
+  defaultHeaders?: Record<string, string>;
+  defaultHeadersUpdatedAt?: string;
 }
 
 export async function init() {
@@ -92,6 +96,8 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
   return {
     ...parsedConfig,
     responsibleUseAccepted: parsedConfig.responsibleUseAccepted ?? false,
+    defaultHeaders:
+      parsedConfig.defaultHeaders ?? DEFAULT_CONFIG.defaultHeaders,
     surfaceIntegrationEnabled:
       parsedConfig.surfaceIntegrationEnabled ??
       parseBoolEnv(process.env.PENSAR_SURFACE_INTEGRATION),
