@@ -297,6 +297,17 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
     },
   });
 
+  console.log(`
+${sep}
+SESSION HANDOFF
+${sep}
+${formatSessionHandoffSummary({
+  sessionId: session.id,
+  sessionPath: session.rootPath,
+  findingsPath: session.findingsPath,
+  pocsPath: session.pocsPath,
+})}`);
+
   const { bus: pentestBus, cleanup: wandbCleanup } =
     await createInstrumentedBus(session);
 
@@ -370,6 +381,17 @@ ${objectivesList}
     targets: [target],
     ...(headers !== undefined ? { config: { headers } } : {}),
   });
+
+  console.log(`
+${sep}
+SESSION HANDOFF
+${sep}
+${formatSessionHandoffSummary({
+  sessionId: session.id,
+  sessionPath: session.rootPath,
+  findingsPath: session.findingsPath,
+  pocsPath: session.pocsPath,
+})}`);
 
   const { bus: targetedBus, cleanup: wandbCleanup } =
     await createInstrumentedBus(session);

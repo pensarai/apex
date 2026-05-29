@@ -74,7 +74,8 @@ pensar targeted-pentest --target https://example.com --objective "Test authentic
 
 Headless runs print a `Session` and `Session path` at completion. Automation
 and coding agents can read findings, POCs, and reports from
-`~/.pensar/sessions/<session-id>/`.
+`~/.pensar/sessions/<session-id>/`. For coding-agent PR workflows, prefer
+`targeted-pentest` scoped to changed, security-sensitive endpoints.
 
 | Flag                           | Command                   | Description                                    |
 | ------------------------------ | ------------------------- | ---------------------------------------------- |

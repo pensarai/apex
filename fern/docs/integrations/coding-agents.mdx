@@ -26,8 +26,28 @@ and passed normal validation such as lint, typecheck, and unit tests. This
 timing gives Apex a live target to test and gives the coding agent enough
 context to fix relevant findings before it opens or finalizes a PR.
 
-Use targeted verification after fixes instead of re-running a broad pentest
-for every patch.
+The coding agent should run Apex only when the user or workflow explicitly
+requests Apex security validation, or when repository policy enables Apex as a
+required gate. When Apex is enabled, still run it only for PRs that change
+security-sensitive behavior. Do not invoke Apex for clearly benign changes such
+as documentation, copy, styling, layout, or tests that do not alter runtime
+behavior.
+
+Run Apex when the PR touches:
+
+- Authentication, sessions, cookies, tokens, OAuth, SSO, or password flows
+- Authorization, RBAC, object ownership, admin checks, or tenant isolation
+- Billing, payments, plans, credits, quotas, or other entitlement logic
+- File upload, imports, exports, attachments, or user-controlled paths
+- Webhooks, callbacks, outbound integrations, proxying, or SSRF-prone fetches
+- Public API routes, admin routes, data access layers, or validation of
+  untrusted input
+- Redirects, CORS, CSP, security headers, secrets, or credential handling
+
+For coding-agent workflows, prefer `pensar targeted-pentest` scoped to
+endpoints affected by the PR. Use broad `pensar pentest` only when the agent
+cannot confidently map the changed files to specific endpoints or when the PR
+intentionally changes application-wide security behavior.
 
 ## Basic Workflow
 
@@ -37,15 +57,16 @@ for every patch.
     local target URL responds.
   </Step>
   <Step title="Write optional guidance">
-    If the coding agent has context from changed files, threat models, or user
-    instructions, write it to a local prompt file.
+    If the coding agent has context from changed files, route mappings, threat
+    models, or user instructions, write it to a local prompt file.
   </Step>
   <Step title="Run Apex">
-    Run `pensar pentest` or `pensar targeted-pentest` with the target URL and
-    any relevant guidance.
+    Prefer `pensar targeted-pentest` against the affected endpoint(s). Use
+    `pensar pentest` only when the affected surface cannot be narrowed safely.
   </Step>
   <Step title="Capture the session ID">
-    Apex prints the session ID and session path in the final command summary.
+    Apex prints the session ID and session path immediately after session
+    creation, then prints the handoff block again in the final command summary.
   </Step>
   <Step title="Read artifacts">
     The coding agent reads the report, findings, POCs, and logs from the session
@@ -57,24 +78,22 @@ for every patch.
   </Step>
 </Steps>
 
-## Example
+## Scoped Targeted Example
+
+Map changed files to the smallest set of affected endpoints, then run targeted
+objectives against those endpoints:
 
 ```bash
-PROMPT_FILE="$HOME/.pensar/agent-runs/current/prompt.md"
-mkdir -p "$(dirname "$PROMPT_FILE")"
-cat > "$PROMPT_FILE" <<'EOF'
-Focus on changed authentication, authorization, tenant isolation, and public
-API routes. Report findings with impact, POC evidence, and concrete files that
-likely need changes.
-EOF
+git diff --name-only origin/main...HEAD
+git diff origin/main...HEAD
 
-pensar pentest \
-  --target http://localhost:3000 \
-  --cwd . \
-  --prompt "@${PROMPT_FILE}"
+pensar targeted-pentest \
+  --target http://localhost:3000/api/projects/123/members \
+  --objective "Test authorization and tenant isolation for the changed project member management path"
 ```
 
-At the end of the run, Apex prints a handoff block like:
+Apex prints a handoff block immediately after creating the session, then prints
+it again when the run completes:
 
 ```text
 Session:       session_...
@@ -86,6 +105,28 @@ Report:        /home/agent/.pensar/sessions/session_.../pentest-report.md
 
 The calling agent should use `Session path` as the root for all follow-up
 reads.
+
+## Broad Fallback Example
+
+If the coding agent cannot confidently map the PR to endpoints, or if the PR
+changes application-wide security behavior, use `pensar pentest` with a prompt
+that explicitly limits attention to PR-affected behavior:
+
+```bash
+PROMPT_FILE="$HOME/.pensar/agent-runs/current/prompt.md"
+mkdir -p "$(dirname "$PROMPT_FILE")"
+cat > "$PROMPT_FILE" <<'EOF'
+Only test behavior affected by this PR. Prioritize changed authentication,
+authorization, tenant isolation, public API routes, validation, and outbound
+integration paths. Do not spend time on unrelated routes unless they are needed
+to prove impact for the changed paths.
+EOF
+
+pensar pentest \
+  --target http://localhost:3000 \
+  --cwd . \
+  --prompt "@${PROMPT_FILE}"
+```
 
 ## Session Artifacts
 
@@ -108,7 +149,7 @@ Targeted pentest runs may not produce `pentest-report.md`; in that case, read
 
 ## Targeted Verification
 
-After fixing a finding, prefer a focused verification run:
+After fixing a finding, run a focused verification objective:
 
 ```bash
 pensar targeted-pentest \
