@@ -48,15 +48,20 @@ describe("getMaxOutputTokens", () => {
     expect(getMaxOutputTokens("claude-3-5-haiku-20241022")).toBe(8_192);
   });
 
-  it("pins latest-tier Claude (4.6 + 4.7) to 128K output", () => {
-    // These four ship the 128K window; they MUST not fall through to the
+  it("pins latest-tier Claude (4.6 + 4.7 + 4.8) to 128K output", () => {
+    // These ship the 128K window; they MUST not fall through to the
     // generic `claude-opus-4-` / `claude-sonnet-4-` catch-alls (32K/64K)
     // and silently get clamped to a 4× smaller budget. Pensar-prefixed
     // IDs go through the same lookup, so cover them too.
     expect(getMaxOutputTokens("claude-opus-4-6-v1")).toBe(128_000);
     expect(getMaxOutputTokens("claude-opus-4-7")).toBe(128_000);
+    expect(getMaxOutputTokens("claude-opus-4-8")).toBe(128_000);
     expect(getMaxOutputTokens("claude-sonnet-4-6-v1")).toBe(128_000);
     expect(getMaxOutputTokens("claude-sonnet-4-7")).toBe(128_000);
+    expect(getMaxOutputTokens("claude-sonnet-4-8")).toBe(128_000);
+    expect(getMaxOutputTokens("pensar:anthropic.claude-opus-4-8")).toBe(
+      128_000,
+    );
     expect(getMaxOutputTokens("pensar:anthropic.claude-opus-4-7")).toBe(
       128_000,
     );

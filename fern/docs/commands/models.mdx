@@ -55,12 +55,13 @@ When you open `/models`, you'll see:
     **Best performance** for penetration testing tasks.
     
     Available models include:
-    - Claude Sonnet 4.5 (Recommended)
-    - Claude Opus 4.5
-    - Claude Sonnet 4.0
+    - Claude Opus 4.8 (Maximum capability)
+    - Claude Opus 4.7
+    - Claude Opus 4.6
+    - Claude Sonnet 4.6
+    - Claude Sonnet 4.5
     - Claude Haiku 4.5
     - Claude 3.7 Sonnet
-    - Claude 3.5 Haiku
     - And more...
 
     <Callout intent="success">
@@ -122,9 +123,10 @@ When you open `/models`, you'll see:
     Managed inference through Pensar Console — no API key required.
 
     Available models:
+    - Claude Opus 4.8
+    - Claude Opus 4.7
     - Claude Opus 4.6 (default for Pensar)
-    - Claude Sonnet 4.5 / Opus 4.5
-    - Claude Sonnet 4.0 / Opus 4.0
+    - Claude Sonnet 4.5
     - Claude Haiku 4.5
     - And more...
 
@@ -178,13 +180,13 @@ When GPT 5.5 or another supported OpenAI reasoning model is selected, the model 
 ## Model Comparison
 
 <CardGroup cols={2}>
-  <Card title="Claude Sonnet 4.5" icon="trophy">
+  <Card title="Claude Opus 4.8" icon="star">
+    **Maximum Capability** - Best for: Complex, long-horizon agentic pentests -
+    Speed: Moderate - Capability: Maximum - Cost: Higher
+  </Card>
+  <Card title="Claude Sonnet 4.6" icon="trophy">
     **Recommended** - Best for: All penetration testing - Speed: Fast -
     Capability: Excellent - Cost: Moderate
-  </Card>
-  <Card title="Claude Opus 4.5" icon="star">
-    **Maximum Capability** - Best for: Complex, thorough tests - Speed: Moderate
-    - Capability: Maximum - Cost: Higher
   </Card>
   <Card title="GPT 5.5" icon="bolt">
     **Alternative Option** - Best for: OpenAI users - Speed: Fast - Capability:
@@ -209,7 +211,7 @@ When GPT 5.5 or another supported OpenAI reasoning model is selected, the model 
 
 | Use Case                   | Recommended Model             |
 | -------------------------- | ----------------------------- |
-| Production security audits | Claude Sonnet 4.5 or Opus 4.5 |
+| Production security audits | Claude Opus 4.8 or Sonnet 4.6 |
 | Quick development testing  | Claude Haiku 4.5              |
 | Enterprise with AWS        | Claude via Bedrock            |
 | Budget-conscious testing   | Haiku or GPT-4o mini          |
