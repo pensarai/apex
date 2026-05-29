@@ -16,7 +16,7 @@ describe("formatSessionHandoffSummary", () => {
       [
         "Session:       ses_123",
         "Session path:  /home/user/.pensar/sessions/ses_123",
-        "Findings:      /home/user/.pensar/sessions/ses_123/findings",
+        "Findings path: /home/user/.pensar/sessions/ses_123/findings",
         "POCs:          /home/user/.pensar/sessions/ses_123/pocs",
         "Report:        /home/user/.pensar/sessions/ses_123/pentest-report.md",
       ].join("\n"),
