@@ -4,6 +4,13 @@
  * Single source of truth for writing AND reading subagent data.
  * Both saveSubagentData (write) and loadSubagents (read) share the
  * same path constants and filename conventions so they can never drift.
+ *
+ * Directory key — every subagent is stored under
+ * `{rootPath}/subagents/{key}/` where `key` is the subagent's identity. For
+ * subagents spawned via `spawn_pentest_agent` the key IS the child's session
+ * id (`ses_…`), minted before spawn. The swarm path (`spawn_pentest_swarm`)
+ * still uses stable slot ids (`pentest-agent-N`) so its index-based manifest
+ * resume logic keeps working; this layer is agnostic to the key's shape.
  */
 
 import {
@@ -112,17 +119,19 @@ export interface SubagentSaveInput {
   userPrompt?: string;
 }
 
+/**
+ * Read a subagent's persisted messages by directory key.
+ *
+ * `key` is the subagent's identity directory under `subagents/` — a session
+ * id (`ses_…`) for `spawn_pentest_agent` workers, or a slot id
+ * (`pentest-agent-N`) for the swarm.
+ */
 export function loadSubagentMessages(
   session: SessionInfo,
-  agentName: string,
+  key: string,
 ): ModelMessage[] {
   // Primary: base class step persistence (written incrementally, survives aborts)
-  const stepPath = join(
-    session.rootPath,
-    SUBAGENTS_DIR,
-    agentName,
-    "messages.json",
-  );
+  const stepPath = join(session.rootPath, SUBAGENTS_DIR, key, "messages.json");
   if (existsSync(stepPath)) {
     try {
       return JSON.parse(readFileSync(stepPath, "utf-8")) as ModelMessage[];
@@ -131,11 +140,7 @@ export function loadSubagentMessages(
     }
   }
   // Fallback: old snapshot format (pre-split sessions)
-  const snapshotPath = join(
-    session.rootPath,
-    SUBAGENTS_DIR,
-    `${agentName}.json`,
-  );
+  const snapshotPath = join(session.rootPath, SUBAGENTS_DIR, `${key}.json`);
   if (!existsSync(snapshotPath)) return [];
   try {
     const data = JSON.parse(
@@ -196,7 +201,18 @@ export function saveSubagentData(
 // ---------------------------------------------------------------------------
 
 export interface AgentManifestEntry {
+  /**
+   * Directory key / identity for this subagent. Equal to {@link sessionId}
+   * when the subagent's identity is a minted session id (`ses_…`); for the
+   * swarm path this is a stable slot id (`pentest-agent-N`).
+   */
   id: string;
+  /**
+   * The subagent's session id (`ses_…`) when it has one. Mirrors {@link id}
+   * for session-keyed subagents; carried explicitly so downstream consumers
+   * can route by session without re-parsing the directory key.
+   */
+  sessionId?: string;
   name: string;
   target: string;
   vulnerabilityClass: string;
@@ -405,6 +421,14 @@ function parseSubagentFilename(filename: string): {
 
   if (filename.startsWith("orchestrator-")) {
     return { agentType: "pentest", name: "Orchestrator Summary" };
+  }
+
+  // Session-id-keyed subagent (spawn_pentest_agent worker). The
+  // human-readable label lives on the `subagent-spawn` bus event / manifest;
+  // when loading from disk alone we don't have it, so fall back to a generic
+  // pentest worker label rather than surfacing the raw `ses_…` id.
+  if (filename.startsWith("ses_")) {
+    return { agentType: "pentest", name: "Pentest Worker" };
   }
 
   return { agentType: "pentest", name: filename.split("-")[0] || "Unknown" };
