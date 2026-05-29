@@ -1,5 +1,6 @@
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
   generateText,
   type LanguageModel,
@@ -28,17 +29,92 @@ import {
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
+/**
+ * Per-step billing context attached to a usage report.
+ *
+ * Carries the identity of the step that produced the usage so the billing
+ * sink can attribute cost to a specific `(sessionId, stepSeq)` rather than a
+ * whole run. Both fields are optional for backward compatibility — callers
+ * that registered a 3-arg callback continue to work unchanged.
+ */
+export interface UsageStepContext {
+  /** Session id (`ses_…`) that emitted the step, when known. */
+  sessionId?: string;
+  /** Monotonic per-run AI-SDK step index (see {@link runWithStepContext}). */
+  stepSeq?: number;
+}
+
 /** Callback for reporting token usage from AI operations */
 type UsageCallback = (
   model: string,
   inputTokens: number,
   outputTokens: number,
+  ctx?: UsageStepContext,
 ) => void;
 let _usageCallback: UsageCallback | null = null;
 
 /** Register a callback to receive token usage reports from all AI operations */
 export function onUsage(cb: UsageCallback | null): void {
   _usageCallback = cb;
+}
+
+// ---------------------------------------------------------------------------
+// Per-run step counter (for per-step billing attribution)
+// ---------------------------------------------------------------------------
+//
+// Each AI-SDK `streamText` step that reports usage is tagged with a monotonic
+// `stepSeq` scoped to the emitting session. The counter lives in
+// AsyncLocalStorage so concurrent runs (e.g. parallel subagents) never share
+// or race a step index — each `runWithStepContext` call gets its own store.
+//
+// Monotonicity across a resumed run: the caller seeds `nextStepSeq` from the
+// count of rehydrated assistant messages (the best available proxy for "how
+// many steps already happened"). This guarantees monotonic-within-a-run and
+// approximates cross-run monotonicity. It is NOT a strict global sequence —
+// the authoritative per-session step ordering is the DB `stepSeq` on
+// `agent_messages`; this counter only labels live usage reports for billing.
+
+interface StepContext {
+  sessionId?: string;
+  /** Next step index to hand out; mutated in place as steps finish. */
+  next: number;
+}
+
+const stepContextStore = new AsyncLocalStorage<StepContext>();
+
+/**
+ * Run `fn` within a per-run step-counting context. All `streamResponse` steps
+ * executed inside `fn`'s async tree report usage tagged with `sessionId` and a
+ * monotonically increasing `stepSeq` starting at `seedStepSeq` (default 0).
+ *
+ * Pass `seedStepSeq` = number of prior assistant messages on resume so the
+ * counter continues past the rehydrated history.
+ */
+export function runWithStepContext<T>(
+  opts: { sessionId?: string; seedStepSeq?: number },
+  fn: () => T,
+): T {
+  return stepContextStore.run(
+    { sessionId: opts.sessionId, next: opts.seedStepSeq ?? 0 },
+    fn,
+  );
+}
+
+/**
+ * Take (and advance) the next `stepSeq` for the current run, returning the
+ * accompanying billing context. Returns `undefined` when no step context is
+ * active (e.g. one-off `generateText` calls outside a run) so callers stay
+ * backward compatible.
+ *
+ * Exported for testing the per-step counter in isolation; production callers
+ * should not need to call this directly.
+ */
+export function takeStepContext(): UsageStepContext | undefined {
+  const store = stepContextStore.getStore();
+  if (!store) return undefined;
+  const stepSeq = store.next;
+  store.next += 1;
+  return { sessionId: store.sessionId, stepSeq };
 }
 
 export type AIModelProvider =
@@ -638,7 +714,10 @@ export function streamResponse(
     if (_usageCallback) {
       const inp = step.usage?.inputTokens ?? 0;
       const out = step.usage?.outputTokens ?? 0;
-      if (inp > 0 || out > 0) _usageCallback(model, inp, out);
+      // Always advance the step counter once per finished step (even with zero
+      // usage) so `stepSeq` stays aligned with the AI-SDK step index.
+      const stepCtx = takeStepContext();
+      if (inp > 0 || out > 0) _usageCallback(model, inp, out, stepCtx);
     }
   };
   const providerModel = getProviderModel(model, authConfig);
@@ -1034,7 +1113,8 @@ export async function generateObjectResponse<T extends z.ZodType>(
       if (_usageCallback && usage) {
         const inp = usage.inputTokens ?? 0;
         const out = usage.outputTokens ?? 0;
-        if (inp > 0 || out > 0) _usageCallback(model, inp, out);
+        const stepCtx = takeStepContext();
+        if (inp > 0 || out > 0) _usageCallback(model, inp, out, stepCtx);
       }
 
       return output;
