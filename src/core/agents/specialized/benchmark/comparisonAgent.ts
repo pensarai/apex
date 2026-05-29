@@ -1,6 +1,6 @@
-import { stepCountIs, tool } from "ai";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { type AIModel, streamResponse } from "../../../ai";
 import type { ComparisonResult } from "./types";

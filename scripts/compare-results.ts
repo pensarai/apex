@@ -12,17 +12,17 @@
  *   bun run scripts/compare-results.ts --benchmark-ids XBEN-001-24 XBEN-002-24
  */
 
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateText, Output } from "ai";
 import {
   existsSync,
   readdirSync,
   readFileSync,
   statSync,
   writeFileSync,
-} from "fs";
+} from "node:fs";
+import path from "node:path";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { generateText, Output } from "ai";
 import pLimit from "p-limit";
-import path from "path";
 import { z } from "zod";
 
 // Schema for the AI comparison response
@@ -150,8 +150,8 @@ function extractBenchmarkId(dirName: string, isPace?: boolean): string | null {
 
     for (const pattern of pacePatterns) {
       const match = dirName.match(pattern);
-      if (match) {
-        return match[1]!;
+      if (match?.[1]) {
+        return match[1];
       }
     }
   } else {
@@ -164,8 +164,8 @@ function extractBenchmarkId(dirName: string, isPace?: boolean): string | null {
 
     for (const pattern of xbenPatterns) {
       const match = dirName.match(pattern);
-      if (match) {
-        return match[1]!;
+      if (match?.[1]) {
+        return match[1];
       }
     }
   }
@@ -287,8 +287,7 @@ async function compareWithClaude(
 
   // Prepare findings summary
   let findingsText = "";
-  for (let i = 0; i < findings.length; i++) {
-    const f = findings[i]!;
+  for (const [i, f] of findings.entries()) {
     findingsText += `
 Finding ${i + 1}:
 - Title: ${f.title}
@@ -348,7 +347,10 @@ Determine whether the agent identified the correct vulnerability TYPE in the cor
       temperature: 0,
     });
 
-    return output!;
+    if (!output) {
+      throw new Error("Claude returned an empty comparison response");
+    }
+    return output;
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error calling Claude API:`, errorMessage);
@@ -485,8 +487,12 @@ async function compareBenchmark(
   }
 
   // Use the first expected result as the primary one for backward compatibility
-  const primaryExpected = expectedResults[0]!;
-  const comparison = bestComparison!;
+  const primaryExpected = expectedResults[0];
+  const comparison = bestComparison;
+  if (!primaryExpected || !comparison) {
+    console.error(`Warning: No comparison result produced for ${benchmarkId}`);
+    return null;
+  }
 
   // For multi-vuln benchmarks, vulnerability_found is true if ANY expected vuln was found
   const anyVulnFound = multiVulnDetails.some((d) => d.found);
@@ -568,12 +574,18 @@ function generateTextReport(results: ComparisonResult[]): string {
   lines.push("");
 
   // Show multi-vuln details for PACEbench benchmarks
-  const multiVulnResults = results.filter((r) => r.multi_vuln);
+  const multiVulnResults = results.filter(
+    (
+      r,
+    ): r is ComparisonResult & {
+      multi_vuln: NonNullable<ComparisonResult["multi_vuln"]>;
+    } => Boolean(r.multi_vuln),
+  );
   if (multiVulnResults.length > 0) {
     lines.push("MULTI-VULNERABILITY DETAILS (PACEbench)");
     lines.push("─".repeat(width));
     for (const r of multiVulnResults) {
-      const mv = r.multi_vuln!;
+      const mv = r.multi_vuln;
       lines.push(
         `  ${r.benchmark_id}: ${mv.found}/${mv.total_expected} vulnerabilities found`,
       );
@@ -588,12 +600,18 @@ function generateTextReport(results: ComparisonResult[]): string {
   }
 
   // Show multi-flag details for PACEbench benchmarks
-  const multiFlagResults = results.filter((r) => r.multi_flag);
+  const multiFlagResults = results.filter(
+    (
+      r,
+    ): r is ComparisonResult & {
+      multi_flag: NonNullable<ComparisonResult["multi_flag"]>;
+    } => Boolean(r.multi_flag),
+  );
   if (multiFlagResults.length > 0) {
     lines.push("MULTI-FLAG DETAILS (PACEbench)");
     lines.push("─".repeat(width));
     for (const r of multiFlagResults) {
-      const mf = r.multi_flag!;
+      const mf = r.multi_flag;
       lines.push(`  ${r.benchmark_id}: ${mf.found}/${mf.total} flags captured`);
       for (const detail of mf.details) {
         const status = detail.detected ? "✓" : "✗";
@@ -650,7 +668,7 @@ function generateTextReport(results: ComparisonResult[]): string {
   for (const [vulnClass, stats] of sortedClasses) {
     const rate =
       stats.total > 0
-        ? ((stats.flagged / stats.total) * 100).toFixed(0) + "%"
+        ? `${((stats.flagged / stats.total) * 100).toFixed(0)}%`
         : "0%";
     const miniBar =
       "█".repeat(Math.round((stats.flagged / stats.total) * 8)) +
@@ -798,26 +816,34 @@ async function main(): Promise<void> {
       printUsage();
       process.exit(0);
     } else if (arg === "--executions-dir" && args[i + 1]) {
-      executionsDir = args[++i]!;
+      i++;
+      executionsDir = args[i] ?? executionsDir;
     } else if (arg === "--benchmarks-dir" && args[i + 1]) {
-      benchmarksDir = args[++i]!;
+      i++;
+      benchmarksDir = args[i] ?? benchmarksDir;
     } else if (arg === "--execution-path" && args[i + 1]) {
-      executionPath = args[++i]!;
+      i++;
+      executionPath = args[i] ?? executionPath;
     } else if (arg === "--benchmark-ids") {
       benchmarkIds = [];
-      while (args[i + 1] && !args[i + 1]!.startsWith("-")) {
-        benchmarkIds.push(args[++i]!);
+      while (args[i + 1] && !args[i + 1]?.startsWith("-")) {
+        i++;
+        const benchmarkId = args[i];
+        if (benchmarkId) benchmarkIds.push(benchmarkId);
       }
     } else if (arg === "--prefix" && args[i + 1]) {
-      prefix = args[++i]!;
+      i++;
+      prefix = args[i] ?? prefix;
     } else if (arg === "--pace") {
       isPace = true;
     } else if (arg === "--latest-only") {
       latestOnly = true;
     } else if (arg === "--format" && args[i + 1]) {
-      outputFormat = args[++i]!;
+      i++;
+      outputFormat = args[i] ?? outputFormat;
     } else if (arg === "--output" && args[i + 1]) {
-      outputPath = args[++i]!;
+      i++;
+      outputPath = args[i] ?? outputPath;
     } else if (arg === "--show-missed") {
       printMissed = true;
     } else if (arg === "--dry") {
