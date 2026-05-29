@@ -10,7 +10,8 @@ import { existsSync, mkdirSync } from "fs";
 import { writeFile } from "fs/promises";
 import { join } from "path";
 import { streamResponse } from "../../ai";
-import { AgentEventBus } from "../../eventBus";
+import { AgentEventBus, type StreamIdContext } from "../../eventBus";
+import { newMessageId, newPartId } from "../../id/id";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
@@ -79,6 +80,14 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Identifier for this agent when it is running as a subagent. */
   private readonly subagentId?: string;
 
+  /**
+   * The current open assistant message id (`msg_…`) for the in-flight step.
+   * Minted on the `start-step` chunk in {@link consume} and read by
+   * `onStepFinish` so the closing `step-finish` event carries the same id.
+   * `null` between steps.
+   */
+  private currentMessageId: string | null = null;
+
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
 
@@ -141,6 +150,18 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** The session this agent is operating within. */
   get session(): SessionInfo {
     return this._session;
+  }
+
+  /**
+   * This agent's identity on the event bus, as a session id (`ses_…`).
+   *
+   * For a subagent, `subagentId` is the child's own session id (minted by
+   * the spawning tool). For the root agent, it is the root session's id.
+   * Used to stamp `sessionId` (and the legacy `subagentId` alias) onto
+   * every event this agent emits.
+   */
+  private get busSessionId(): string {
+    return this.subagentId ?? this._session.id;
   }
 
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
@@ -400,7 +421,12 @@ export class OffensiveSecurityAgent<TResult = void> {
         this.eventBus.emit("step-finish", {
           messages: event.response.messages,
           subagentId: this.subagentId,
+          sessionId: this.busSessionId,
+          messageId: this.currentMessageId ?? undefined,
         });
+        // The step's message is now closed; the next `start-step` chunk in
+        // consume() mints a fresh one.
+        this.currentMessageId = null;
         await input.onStepFinish?.(event);
       },
       onSummarized: () => {
@@ -479,12 +505,54 @@ export class OffensiveSecurityAgent<TResult = void> {
    * @returns The value produced by `resolveResult`, or `void` if none was provided.
    */
   async consume(): Promise<TResult> {
-    const sid = this.subagentId;
     const bus = this.eventBus;
+
+    // Per-tool-call part ids: minted on first reference (tool-input-start)
+    // and reused for that call's complete / result. Cleared each step.
+    let toolParts = new Map<string, string>();
+    const ids: StreamIdContext = {
+      subagentId: this.busSessionId,
+      sessionId: this.busSessionId,
+      messageId: undefined,
+      textPartId: undefined,
+      toolPartId: (toolCallId: string) => {
+        let p = toolParts.get(toolCallId);
+        if (!p) {
+          p = newPartId();
+          toolParts.set(toolCallId, p);
+        }
+        return p;
+      },
+    };
 
     try {
       for await (const chunk of this.streamResult.fullStream) {
-        bus.emitStreamPart(chunk, sid);
+        switch (chunk.type) {
+          case "start-step":
+            // New step → new assistant message; reset part tracking. Mirror
+            // the id onto the instance so onStepFinish can close it.
+            ids.messageId = newMessageId();
+            this.currentMessageId = ids.messageId;
+            ids.textPartId = undefined;
+            toolParts = new Map();
+            ids.toolPartId = (toolCallId: string) => {
+              let p = toolParts.get(toolCallId);
+              if (!p) {
+                p = newPartId();
+                toolParts.set(toolCallId, p);
+              }
+              return p;
+            };
+            break;
+          case "text-start":
+            // Each text run within a step gets its own part id.
+            ids.textPartId = newPartId();
+            break;
+          case "text-end":
+            ids.textPartId = undefined;
+            break;
+        }
+        bus.emitStreamPart(chunk, ids);
       }
     } finally {
       this.persistentShell?.dispose();

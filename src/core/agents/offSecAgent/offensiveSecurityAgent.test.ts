@@ -89,6 +89,15 @@ function buildStubAgent(overrides: {
     value: { fullStream: overrides.fullStream },
   });
   Object.defineProperty(agent, "subagentId", { value: undefined });
+  // A real agent always has a session; the stub bypasses the constructor,
+  // so provide a minimal one for busSessionId (used to stamp event ids).
+  Object.defineProperty(agent, "_session", {
+    value: { id: "ses_stub" },
+  });
+  Object.defineProperty(agent, "currentMessageId", {
+    value: null,
+    writable: true,
+  });
   Object.defineProperty(agent, "persistentShell", {
     value: overrides.persistentShell,
   });
