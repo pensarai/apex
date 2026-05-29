@@ -690,8 +690,7 @@ export class PlaywrightMcpSession {
       try {
         results.push(await this.endHarCapture(captureId, outputDir));
       } catch {
-        // Best-effort teardown: listener removal is attempted by endHarCapture,
-        // but teardown must not mask the original agent completion/abort.
+        // Best-effort teardown.
       }
     }
     return results;

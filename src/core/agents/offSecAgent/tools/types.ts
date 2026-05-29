@@ -40,7 +40,6 @@ export type ToolContext = {
   /** Event bus for streaming agent output and subagent lifecycle events */
   eventBus?: AgentEventBus;
 
-  /** Operator approval gate for tools that require approval internally. */
   approvalGate?: ApprovalGate;
 
   /**

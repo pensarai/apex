@@ -90,11 +90,7 @@ export class ApprovalGate extends EventEmitter {
     return this.requestApproval(toolName, toolCallId, args);
   }
 
-  /**
-   * Require an explicit operator decision regardless of the current
-   * auto/manual mode. Used by tools for high-impact actions where the
-   * approval requirement is part of the tool's own safety contract.
-   */
+  /** Always prompt the operator, ignoring auto-approve mode. */
   async requireApproval(
     toolName: string,
     toolCallId: string,

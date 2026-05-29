@@ -35,8 +35,7 @@ const ReplayMutationsSchema = z
 
 export function startHarCapture(ctx: ToolContext) {
   return tool({
-    description:
-      "Start a named HAR capture for the current browser session. Call this before the flow you want to record.",
+    description: "Start a named HAR capture for the current browser session.",
     inputSchema: z.object({
       name: z
         .string()
@@ -96,8 +95,7 @@ export function stopHarCapture(ctx: ToolContext) {
 
 export function getHarSummary(ctx: ToolContext) {
   return tool({
-    description:
-      "Summarize a captured HAR file. Returns scoped in-scope entries with auth/cookie headers preserved for pentesting.",
+    description: "Summarize scoped entries from a captured HAR file.",
     inputSchema: z.object({
       harPath: z
         .string()
@@ -205,7 +203,7 @@ export function harReplay(ctx: ToolContext) {
 export function harDiff(ctx: ToolContext) {
   return tool({
     description:
-      "Compare two captured HAR files for IDOR and broken authorization candidates. Preserves auth/cookie values for in-scope hosts.",
+      "Diff two session HARs and write a JSON report of authorization candidates.",
     inputSchema: z.object({
       accountAHarPath: z
         .string()
