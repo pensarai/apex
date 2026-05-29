@@ -1,5 +1,5 @@
 import type { RGBA } from "@opentui/core";
-import os from "os";
+import os from "node:os";
 import { useAgent } from "../context/agent";
 import { useDimensions } from "../context/dimensions";
 import { useInput } from "../context/input";

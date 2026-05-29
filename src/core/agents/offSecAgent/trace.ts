@@ -10,9 +10,9 @@
  */
 
 import type { ModelMessage } from "ai";
-import { createHash } from "crypto";
-import { appendFileSync, mkdirSync } from "fs";
-import { dirname } from "path";
+import { createHash } from "node:crypto";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import type { AgentEventBus } from "../../eventBus";
 
 // ---------------------------------------------------------------------------

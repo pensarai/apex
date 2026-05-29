@@ -1,7 +1,7 @@
 import type { ModelMessage } from "ai";
-import { existsSync, readFileSync } from "fs";
-import os from "os";
-import path from "path";
+import { existsSync, readFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import z from "zod";
 import { generateRandomName, generateSessionName } from "../../util/name";
 import type { AIAuthConfig, AIModel } from "../ai";
@@ -615,9 +615,9 @@ async function update(id: string, editor: (session: SessionInfo) => void) {
 
 export async function* list() {
   const sessionsDir = getSessionsDir();
-  let entries: import("fs").Dirent[];
+  let entries: import("node:fs").Dirent[];
   try {
-    entries = await import("fs/promises").then((fsp) =>
+    entries = await import("node:fs/promises").then((fsp) =>
       fsp.readdir(sessionsDir, { withFileTypes: true }),
     );
   } catch {
@@ -645,7 +645,7 @@ const remove = async (input: z.output<typeof RemoveInput>) => {
   try {
     // Remove the entire session directory (metadata + artifacts)
     const sessionDir = getSessionRoot(input.sessionId);
-    const fsp = await import("fs/promises");
+    const fsp = await import("node:fs/promises");
     await fsp.rm(sessionDir, { recursive: true, force: true });
   } catch (e) {
     console.error(e);

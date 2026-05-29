@@ -13,8 +13,8 @@ import {
   readFileSync,
   statSync,
   writeFileSync,
-} from "fs";
-import { join } from "path";
+} from "node:fs";
+import { join } from "node:path";
 import type { SessionInfo } from "./index";
 
 export type { SessionInfo };

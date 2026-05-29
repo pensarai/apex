@@ -1,7 +1,7 @@
 import type { ModelMessage, ToolSet } from "ai";
-import { mkdtempSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -231,9 +231,11 @@ describe("applyToolResultBudget", () => {
       }
     ).value;
     expect(pass1Value).toMatch(/truncated 48000 chars/);
-    const pass1FilePath = pass1Value.match(
+    const pass1FileMatch = pass1Value.match(
       /full output saved to (.+?)\]$/,
-    )![1]!;
+    );
+    expect(pass1FileMatch?.[1]).toBeDefined();
+    const pass1FilePath = pass1FileMatch?.[1] ?? "";
 
     const afterPass2 = applyToolResultBudget(afterPass1, {
       sessionPath,

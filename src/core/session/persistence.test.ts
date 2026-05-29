@@ -6,9 +6,9 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
-} from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getResumeMessages, normalizeMessages } from "./index";
 import {
@@ -220,7 +220,7 @@ describe("saveSubagentData + loadSubagents roundtrip", () => {
     });
 
     // Verify the raw JSON has the correct findingsCount
-    const files = require("fs").readdirSync(join(tmpDir, "subagents"));
+    const files = require("node:fs").readdirSync(join(tmpDir, "subagents"));
     const data = JSON.parse(
       readFileSync(join(tmpDir, "subagents", files[0]), "utf-8"),
     );

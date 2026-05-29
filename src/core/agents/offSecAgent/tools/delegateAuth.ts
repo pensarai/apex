@@ -1,6 +1,6 @@
 import { tool } from "ai";
-import { writeFileSync } from "fs";
-import { join } from "path";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import { CredentialManager } from "../../../credentials";
 import { AgentEventBus } from "../../../eventBus";

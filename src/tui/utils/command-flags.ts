@@ -5,8 +5,8 @@
  * Supports: --flag value, --flag=value, --boolean-flag
  */
 
-import { readFileSync } from "fs";
-import { isAbsolute, resolve } from "path";
+import { readFileSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import { formatParseError, parseHeaderLine } from "../../core/http/parse";
 import type { OperatorMode } from "../../core/operator";
 import type { SessionConfig } from "../../core/session";

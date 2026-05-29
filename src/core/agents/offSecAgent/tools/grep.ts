@@ -1,5 +1,5 @@
 import { tool } from "ai";
-import { spawn } from "child_process";
+import { spawn } from "node:child_process";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 

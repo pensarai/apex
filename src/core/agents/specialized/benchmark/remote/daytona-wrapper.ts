@@ -1,7 +1,7 @@
 import { Daytona, type Sandbox } from "@daytonaio/sdk";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import pLimit from "p-limit";
-import path from "path";
+import path from "node:path";
 import type { AIModel } from "../../../../ai";
 import { CircuitBreaker } from "./circuit-breaker";
 
@@ -723,7 +723,7 @@ async function downloadResults(
   let findingsCount = 0;
   if (existsSync(findingsDir)) {
     try {
-      const findingFiles = await import("fs/promises").then((fs) =>
+      const findingFiles = await import("node:fs/promises").then((fs) =>
         fs.readdir(findingsDir),
       );
       findingsCount = findingFiles.filter((f) => f.endsWith(".json")).length;

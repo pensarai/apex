@@ -1,5 +1,5 @@
-import { type ChildProcess, spawn, spawnSync } from "child_process";
-import { randomBytes } from "crypto";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
   closeSync,
   mkdirSync,
@@ -8,9 +8,9 @@ import {
   readSync,
   statSync,
   unlinkSync,
-} from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const MAX_BUFFER = 5_000_000;
 

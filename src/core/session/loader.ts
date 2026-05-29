@@ -8,8 +8,8 @@
  * This file orchestrates the higher-level session state assembly.
  */
 
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { REPORT_FILENAME_MD } from "../report";
 import type { SessionInfo } from "./index";
 import { loadSubagents, type UIMessage, type UISubagent } from "./persistence";

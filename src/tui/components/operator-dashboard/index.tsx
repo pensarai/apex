@@ -8,8 +8,8 @@
 
 import { useKeyboard } from "@opentui/react";
 import { hasToolCall, type ModelMessage, stepCountIs } from "ai";
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import { isAbsolute, join, resolve } from "path";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import {
   useCallback,
   useEffect,

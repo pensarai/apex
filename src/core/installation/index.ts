@@ -1,4 +1,4 @@
-import { spawnSync } from "child_process";
+import { spawnSync } from "node:child_process";
 import packageJson from "../../../package.json";
 
 export type InstallMethod = "npm" | "homebrew" | "binary";

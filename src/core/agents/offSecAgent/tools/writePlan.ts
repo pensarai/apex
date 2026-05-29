@@ -1,7 +1,7 @@
 import { tool } from "ai";
-import { mkdirSync } from "fs";
-import { writeFile } from "fs/promises";
-import { dirname } from "path";
+import { mkdirSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { z } from "zod";
 import { planFilePath } from "../../../plan";
 import type { ToolContext } from "./types";

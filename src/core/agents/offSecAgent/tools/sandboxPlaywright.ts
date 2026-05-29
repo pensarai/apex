@@ -19,8 +19,8 @@
  */
 
 import { tool } from "ai";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import {
   resolveEffectiveHeaders,
@@ -242,7 +242,7 @@ async function runPlaywrightScript(
       : "null";
   const script = `
 const { chromium } = require('playwright');
-const fs = require('fs');
+const fs = require('node:fs');
 
 (async () => {
   function resolve(value) {
@@ -290,7 +290,7 @@ const fs = require('fs');
   } finally {
     if (__consoleMessages.length > 0) {
       try {
-        const fs = require('fs');
+        const fs = require('node:fs');
         let existing = [];
         try { existing = JSON.parse(fs.readFileSync('${SANDBOX_CONSOLE_FILE}', 'utf-8')); } catch {}
         existing.push(...__consoleMessages);
@@ -479,7 +479,7 @@ Target base URL: ${targetUrl}`,
           `
     await page.goto(${JSON.stringify(url)}, { waitUntil: 'domcontentloaded', timeout: 30000 });
     // Persist current URL so subsequent tool calls can restore the page
-    require('fs').writeFileSync('${SANDBOX_URL_FILE}', page.url());
+    require('node:fs').writeFileSync('${SANDBOX_URL_FILE}', page.url());
     const title = await page.title();
 
     resolve({ success: true, url: page.url(), title });
@@ -516,8 +516,8 @@ Use this to document:
           `
     const buf = await page.screenshot({ fullPage: false });
     const b64 = buf.toString('base64');
-    require('fs').mkdirSync(${JSON.stringify(SANDBOX_EVIDENCE_DIR)}, { recursive: true });
-    require('fs').writeFileSync(${JSON.stringify(sandboxPath)}, buf);
+    require('node:fs').mkdirSync(${JSON.stringify(SANDBOX_EVIDENCE_DIR)}, { recursive: true });
+    require('node:fs').writeFileSync(${JSON.stringify(sandboxPath)}, buf);
     resolve({ success: true, data: b64, sandboxPath: ${JSON.stringify(sandboxPath)} });
           `,
           30,
@@ -656,7 +656,7 @@ Example workflow:
     }
 
     const text = formatNode(treeData, 0);
-    require('fs').writeFileSync(${JSON.stringify(SANDBOX_REFS_FILE)}, JSON.stringify(refMap));
+    require('node:fs').writeFileSync(${JSON.stringify(SANDBOX_REFS_FILE)}, JSON.stringify(refMap));
     resolve({ success: true, snapshot: text });
           `,
           30,
@@ -703,7 +703,7 @@ IMPORTANT: For reliable clicking, first call browser_snapshot to get element ref
 
     if (ref) {
       try {
-        const refData = JSON.parse(require('fs').readFileSync(${JSON.stringify(SANDBOX_REFS_FILE)}, 'utf-8'));
+        const refData = JSON.parse(require('node:fs').readFileSync(${JSON.stringify(SANDBOX_REFS_FILE)}, 'utf-8'));
         const info = refData[ref];
         if (info && info.role && info.name) {
           const role = TAG_TO_ROLE[info.role] || info.role;
@@ -781,7 +781,7 @@ IMPORTANT: For reliable form filling, first call browser_snapshot to get element
 
     if (ref) {
       try {
-        const refData = JSON.parse(require('fs').readFileSync(${JSON.stringify(SANDBOX_REFS_FILE)}, 'utf-8'));
+        const refData = JSON.parse(require('node:fs').readFileSync(${JSON.stringify(SANDBOX_REFS_FILE)}, 'utf-8'));
         const info = refData[ref];
         if (info && info.role && info.name) {
           const role = TAG_TO_ROLE[info.role] || info.role;
@@ -886,7 +886,7 @@ Use this to check for:
         await setup();
         const result = (await runScript(
           `
-    const fs = require('fs');
+    const fs = require('node:fs');
     let persisted = [];
     try { persisted = JSON.parse(fs.readFileSync('${SANDBOX_CONSOLE_FILE}', 'utf-8')); } catch {}
     const allMessages = [...persisted, ...__consoleMessages];

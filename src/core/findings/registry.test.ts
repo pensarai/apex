@@ -788,10 +788,10 @@ describe("FindingsRegistry", () => {
   // -------------------------------------------------------------------------
 
   describe("fromDirectory", () => {
-    let mockedFs: typeof import("fs");
+    let mockedFs: typeof import("node:fs");
 
     beforeEach(async () => {
-      mockedFs = await import("fs");
+      mockedFs = await import("node:fs");
     });
 
     afterEach(() => {

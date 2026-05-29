@@ -1,8 +1,8 @@
-import crypto from "crypto";
-import { existsSync } from "fs";
-import fs from "fs/promises";
+import crypto from "node:crypto";
+import { existsSync } from "node:fs";
+import fs from "node:fs/promises";
 import { glob } from "glob";
-import path from "path";
+import path from "node:path";
 import yaml from "yaml";
 import type { FlagDetectionResult, FlagLocation } from "./types";
 

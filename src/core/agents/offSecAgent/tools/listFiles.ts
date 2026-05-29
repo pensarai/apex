@@ -1,6 +1,6 @@
 import { tool } from "ai";
-import { readdir, stat } from "fs/promises";
-import { isAbsolute, join, relative, resolve } from "path";
+import { readdir, stat } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 
@@ -44,7 +44,7 @@ async function listRecursive(
   let total = 0;
 
   async function walk(current: string) {
-    let entries: import("fs").Dirent[];
+    let entries: import("node:fs").Dirent[];
     try {
       entries = await readdir(current, { withFileTypes: true });
     } catch {

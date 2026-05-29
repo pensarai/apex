@@ -7,8 +7,8 @@
  */
 
 import type { ModelMessage, ToolSet } from "ai";
-import { mkdirSync, writeFileSync } from "fs";
-import { join } from "path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * Truncate `text` so the returned string fits in **at most** `max` chars,

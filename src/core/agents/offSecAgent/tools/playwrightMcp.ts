@@ -11,10 +11,10 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { tool } from "ai";
-import { createHash, randomUUID } from "crypto";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { createRequire } from "module";
-import { dirname, join } from "path";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import { type HarEntry, HarFileSchema } from "../../../har/types";
 import type { Logger } from "../../../logger";
@@ -387,7 +387,7 @@ export interface PlaywrightMcpSessionOptions {
 export class PlaywrightMcpSession {
   private mcpClient: Client | null = null;
   private mcpTransport: StdioClientTransport | null = null;
-  private mcpProcess: import("child_process").ChildProcess | null = null;
+  private mcpProcess: import("node:child_process").ChildProcess | null = null;
   private connectionPromise: Promise<Client> | null = null;
   private disconnecting = false;
   private readonly headless: boolean;
@@ -497,8 +497,8 @@ export class PlaywrightMcpSession {
         // Pass extraHTTPHeaders via a temp @playwright/mcp config file
         // so every Chromium request includes them.
         if (this.extraHttpHeaders) {
-          const os = await import("os");
-          const fsp = await import("fs/promises");
+          const os = await import("node:os");
+          const fsp = await import("node:fs/promises");
           const cfg = {
             browser: {
               contextOptions: { extraHTTPHeaders: this.extraHttpHeaders },
@@ -538,7 +538,7 @@ export class PlaywrightMcpSession {
           this.mcpProcess =
             (
               transport as unknown as {
-                _process?: import("child_process").ChildProcess;
+                _process?: import("node:child_process").ChildProcess;
               }
             )._process ?? null;
         };
@@ -609,7 +609,7 @@ export class PlaywrightMcpSession {
       this.mcpConfigPath = null;
       void (async () => {
         try {
-          const fsp = await import("fs/promises");
+          const fsp = await import("node:fs/promises");
           await fsp.unlink(configPath);
         } catch {
           // best-effort; already-deleted is fine

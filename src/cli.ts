@@ -396,7 +396,7 @@ async function runThreatModel() {
 
   const { runThreatModelWorkflow } = await import("./core/api/threatModel");
   const { config: appConfig } = await import("./core/config");
-  const path = await import("path");
+  const path = await import("node:path");
 
   const pensarConfig = await appConfig.get();
   const model = await resolveCliModel();
@@ -446,9 +446,9 @@ async function runOperator() {
     "./core/agents/offSecAgent"
   );
   const { config: appConfig } = await import("./core/config");
-  const { createInterface } = await import("readline");
-  const { readFileSync, existsSync } = await import("fs");
-  const path = await import("path");
+  const { createInterface } = await import("node:readline");
+  const { readFileSync, existsSync } = await import("node:fs");
+  const path = await import("node:path");
   const { stepCountIs } = await import("ai");
   type ModelMessage = import("ai").ModelMessage;
 

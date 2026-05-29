@@ -1,5 +1,5 @@
-import { spawnSync } from "child_process";
-import { existsSync, readdirSync } from "fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -110,7 +110,7 @@ describe("PersistentShell — long-running stability", () => {
 
     await new Promise((r) => setTimeout(r, 1_500));
 
-    const { spawnSync } = await import("child_process");
+    const { spawnSync } = await import("node:child_process");
     const out = spawnSync(
       "ps",
       ["--ppid", String(bashPid), "-o", "pid=,comm="],

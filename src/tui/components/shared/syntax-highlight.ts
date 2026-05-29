@@ -10,7 +10,7 @@
 
 import { type RGBA, StyledText, type TextChunk } from "@opentui/core";
 import hljs from "highlight.js";
-import { extname } from "path";
+import { extname } from "node:path";
 import type { ThemeColors } from "../../theme";
 
 // ---------------------------------------------------------------------------

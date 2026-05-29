@@ -1,5 +1,5 @@
-import { execSync } from "child_process";
-import { existsSync, readFileSync } from "fs";
+import { execSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { getBundledWordlists } from "../../assets/wordlists";
 
 type DetectedEnvironment = {

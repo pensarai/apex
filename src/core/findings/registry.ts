@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import type { Finding } from "../agents/offSecAgent";
 import { type AIAuthConfig, type AIModel, generateObjectResponse } from "../ai";

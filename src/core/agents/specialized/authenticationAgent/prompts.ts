@@ -189,13 +189,14 @@ function buildAuthUserPrompt(input: {
     captchaDetected?: boolean;
   };
 }): string {
+  const credentialTokens = input.credentials?.tokens;
   const hasTokens =
-    input.credentials?.tokens &&
-    (input.credentials.tokens.bearerToken ||
-      input.credentials.tokens.cookies ||
-      input.credentials.tokens.sessionToken ||
-      (input.credentials.tokens.customHeaders &&
-        Object.keys(input.credentials.tokens.customHeaders).length > 0));
+    credentialTokens &&
+    (credentialTokens.bearerToken ||
+      credentialTokens.cookies ||
+      credentialTokens.sessionToken ||
+      (credentialTokens.customHeaders &&
+        Object.keys(credentialTokens.customHeaders).length > 0));
 
   let prompt = `# Authentication Task
 
@@ -244,7 +245,7 @@ The following credentials are configured for this domain:
   }
 
   // If pre-existing tokens are provided, prioritize them
-  if (hasTokens) {
+  if (hasTokens && credentialTokens) {
     prompt += `## Pre-existing Tokens (VERIFY THESE FIRST)
 **Mode: Token Verification** - Your goal is to verify these tokens grant access.
 
@@ -257,7 +258,7 @@ The following credentials are configured for this domain:
       prompt += `- Context: ${input.credentials!.context}
 `;
     }
-    const tokens = input.credentials!.tokens!;
+    const tokens = credentialTokens;
     if (tokens.bearerToken) {
       prompt += `- Bearer Token: ${tokens.bearerToken}
   Use as: Authorization: Bearer <token>

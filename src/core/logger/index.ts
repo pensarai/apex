@@ -4,9 +4,9 @@ import {
   mkdirSync,
   readFileSync,
   writeFileSync,
-} from "fs";
-import os from "os";
-import path from "path";
+} from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { type SessionInfo, sessions } from "../session";
 
 export enum LogLevel {

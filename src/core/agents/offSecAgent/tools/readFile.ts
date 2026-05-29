@@ -1,6 +1,6 @@
 import { tool } from "ai";
-import { readFile as fsReadFile } from "fs/promises";
-import { isAbsolute, resolve } from "path";
+import { readFile as fsReadFile } from "node:fs/promises";
+import { isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 

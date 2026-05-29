@@ -6,7 +6,12 @@ import { z } from "zod";
 import { diffHarEntries } from "../../../har/diff";
 import { filterHarByScope } from "../../../har/scope";
 import { type HarEntry, type HarHeader, parseHar } from "../../../har/types";
-import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
+import { targetFetch } from "../../../http/targetHeaders";
+import {
+  assertUrlInScope,
+  resolverSessionFromCtx,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 const BODY_PREVIEW_BYTES = 5_000;
@@ -171,7 +176,7 @@ export function harReplay(ctx: ToolContext) {
           );
         }
 
-        const response = await fetchWithTimeout(replay, timeout);
+        const response = await fetchWithTimeout(ctx, replay, timeout);
         const body = await response.text();
         const bodyInfo = saveReplayBody(ctx, body);
         return {
@@ -422,6 +427,7 @@ function requiresReplayApproval(
 }
 
 async function fetchWithTimeout(
+  ctx: ToolContext,
   replay: {
     url: string;
     method: string;
@@ -433,7 +439,7 @@ async function fetchWithTimeout(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
-    return await fetch(replay.url, {
+    return await targetFetch(resolverSessionFromCtx(ctx), replay.url, {
       method: replay.method,
       headers: replay.headers,
       body: replay.body,
