@@ -20,7 +20,9 @@ function startGlobalTick() {
   if (!globalInterval) {
     globalInterval = setInterval(() => {
       globalTick = (globalTick + 1) % 1000;
-      globalListeners.forEach((listener) => listener());
+      globalListeners.forEach((listener) => {
+        listener();
+      });
     }, 50); // ~20fps
   }
 }

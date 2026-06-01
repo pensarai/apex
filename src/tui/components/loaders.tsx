@@ -21,7 +21,9 @@ function ensureTick() {
   if (!interval) {
     interval = setInterval(() => {
       tick = (tick + 1) % 100_000;
-      listeners.forEach((fn) => fn());
+      listeners.forEach((fn) => {
+        fn();
+      });
     }, 50); // 20 fps
   }
 }
