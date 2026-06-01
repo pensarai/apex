@@ -245,12 +245,35 @@ export type TaskRecordInput = Omit<
   "type" | "timestamp" | "agentId" | "stepIndex"
 >;
 
-/** Discriminated union of all trace record types. */
-export type TraceRecord =
+/** Discriminated union of all trace record types (before hash-chain fields). */
+export type TraceRecordCore =
   | InitRecord
   | StepRecord
   | StateCheckpoint
   | TaskRecord;
+
+/**
+ * Hash-chain envelope added to every record written to trace.jsonl.
+ *
+ * - `seq` is a monotonically increasing counter across ALL record types
+ *   (init, step, checkpoint, task). Gaps indicate deletion / tampering.
+ * - `previousHash` is the SHA-256 hex of the preceding line's JSON bytes
+ *   (empty string for the first record).
+ * - `hash` is SHA-256( JSON.stringify(record-without-hash) + previousHash ).
+ *
+ * Together these form a hash chain per APTS-AR-012.
+ */
+export interface HashChainEnvelope {
+  /** Monotonically increasing across all record types, starting at 0 */
+  seq: number;
+  /** SHA-256 hex of the previous line's serialized JSON (empty string for seq 0) */
+  previousHash: string;
+  /** SHA-256 hex of this record's content concatenated with previousHash */
+  hash: string;
+}
+
+/** A trace record as persisted — core fields plus hash-chain envelope. */
+export type TraceRecord = TraceRecordCore & HashChainEnvelope;
 
 // ---------------------------------------------------------------------------
 // Extraction helpers
@@ -355,6 +378,10 @@ export class StepTraceWriter {
   private readonly agentStartTime: number;
   private summarized = false;
   private previousMessageCount = 0;
+
+  /** Hash-chain state — seq is monotonic across ALL record types. */
+  private seq = 0;
+  private previousHash = "";
 
   constructor(opts: StepTraceWriterOpts) {
     this.tracePath = opts.tracePath;
@@ -575,20 +602,127 @@ export class StepTraceWriter {
     this.appendRecord(record);
   }
 
-  /** Sync append — ~1-3KB per line, sub-ms. Sync ensures crash safety. */
-  private appendRecord(record: TraceRecord): void {
+  /**
+   * Sync append with hash-chain envelope (APTS-AR-012).
+   *
+   * Each line is SHA-256-chained to the previous line:
+   *   hash = SHA-256( JSON(coreRecord + seq + previousHash) + previousHash )
+   */
+  private appendRecord(coreRecord: TraceRecordCore): void {
     try {
+      const seq = this.seq++;
+      const previousHash = this.previousHash;
+
+      const withSeq = { ...coreRecord, seq, previousHash } as Omit<
+        TraceRecord,
+        "hash"
+      >;
+      const contentToHash = JSON.stringify(withSeq);
+      const hash = createHash("sha256")
+        .update(contentToHash + previousHash)
+        .digest("hex");
+
+      const record: TraceRecord = { ...withSeq, hash } as TraceRecord;
+      this.previousHash = hash;
+
       appendFileSync(this.tracePath, JSON.stringify(record) + "\n");
     } catch {
       // Trace is non-critical observability — never crash the agent for it.
     }
     try {
       this.eventBus?.emit("trace-record", {
-        record,
+        record: { ...coreRecord } as unknown as TraceRecord,
         subagentId: this.agentId ?? undefined,
       });
     } catch {
       // Event emission failures are non-critical — never crash the agent.
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Hash-chain verification (APTS-AR-012)
+// ---------------------------------------------------------------------------
+
+export interface HashChainVerificationResult {
+  valid: boolean;
+  recordCount: number;
+  /** If invalid, the seq of the first record where the chain broke. */
+  brokenAtSeq?: number;
+  /** Human-readable reason for the failure. */
+  reason?: string;
+}
+
+/**
+ * Verify the hash chain of a trace.jsonl file.
+ *
+ * Implements the APTS-AR-012 Chain Verification Algorithm:
+ * 1. Read all entries in order of sequence number
+ * 2. For each entry, recompute hash: SHA-256(content + previousHash)
+ * 3. Compare computed hash to stored hash
+ * 4. Verify sequence numbers are continuous (no gaps)
+ * 5. If any mismatch or gap, log has been tampered with
+ */
+export function verifyTraceHashChain(
+  lines: string[],
+): HashChainVerificationResult {
+  if (lines.length === 0) {
+    return { valid: true, recordCount: 0 };
+  }
+
+  let previousHash = "";
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+
+    let record: TraceRecord;
+    try {
+      record = JSON.parse(line) as TraceRecord;
+    } catch {
+      return {
+        valid: false,
+        recordCount: i,
+        brokenAtSeq: i,
+        reason: `Line ${i}: invalid JSON`,
+      };
+    }
+
+    if (record.seq !== i) {
+      return {
+        valid: false,
+        recordCount: i,
+        brokenAtSeq: record.seq,
+        reason: `Line ${i}: expected seq ${i}, got ${record.seq} — gap indicates deletion`,
+      };
+    }
+
+    if (record.previousHash !== previousHash) {
+      return {
+        valid: false,
+        recordCount: i,
+        brokenAtSeq: record.seq,
+        reason: `Line ${i}: previousHash mismatch — chain is broken`,
+      };
+    }
+
+    const { hash: storedHash, ...withoutHash } = record;
+    const contentToHash = JSON.stringify(withoutHash);
+    const computedHash = createHash("sha256")
+      .update(contentToHash + previousHash)
+      .digest("hex");
+
+    if (computedHash !== storedHash) {
+      return {
+        valid: false,
+        recordCount: i,
+        brokenAtSeq: record.seq,
+        reason: `Line ${i}: hash mismatch — record has been modified`,
+      };
+    }
+
+    previousHash = storedHash;
+  }
+
+  return { valid: true, recordCount: lines.length };
 }

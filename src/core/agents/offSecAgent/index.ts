@@ -24,17 +24,20 @@ export {
 export * from "./tools";
 export type {
   CheckpointInput,
+  HashChainEnvelope,
+  HashChainVerificationResult,
   InitRecord,
   StateCheckpoint,
   StepRecord,
   StepTraceWriterOpts,
   ToolOutputType,
   TraceRecord,
+  TraceRecordCore,
 } from "./trace";
 // ---------------------------------------------------------------------------
 // Trace
 // ---------------------------------------------------------------------------
-export { StepTraceWriter } from "./trace";
+export { StepTraceWriter, verifyTraceHashChain } from "./trace";
 export {
   type AgentMode,
   ApexFindingObject,
