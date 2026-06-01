@@ -293,10 +293,9 @@ Before calling the tool, verify:
 - [ ] All discovered target-owned subdomains are documented
 - [ ] All discovered target-owned endpoints are documented
 - [ ] All discovered target-owned services and ports are documented
-- [ ] Every target that truly needs deep testing has a specific pentest objective
+- [ ] Every target has a specific pentest objective
 - [ ] Authentication info is included with authenticated targets
 - [ ] External/third-party services are NOT documented as assets (mentioned in keyFindings only)
-- [ ] If operator guidance is narrow, the selected targets directly resolve that guidance
 
 Call \`create_attack_surface_report\` with:
 
@@ -308,7 +307,7 @@ Call \`create_attack_surface_report\` with:
   - \`rationale\`: Why this target warrants testing
 - **keyFindings**: Array of strings. Format: \`"[SEVERITY] Description"\`
 
-Include every target-owned asset in discoveredAssets or keyFindings so the orchestrator has context, but do NOT turn every asset into a deep-testing target. For broad full-pentest asks, include all relevant target-owned targets. For scoped or false-positive/materiality asks, include deep-testing targets only when they are directly needed to resolve the supplied objective. It is valid to submit an empty \`targets\` array when the objective is conclusively non-material; explain that in keyFindings. Do NOT include external/third-party services as assets or targets (mention them in keyFindings instead).
+Include every target-owned asset and target. Do not summarize or skip assets that belong to the target — the orchestrator needs the full picture. Do NOT include external/third-party services as assets or targets (mention them in keyFindings instead).
 
 This tool call MUST be the final action you take.
 

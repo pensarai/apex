@@ -256,10 +256,6 @@ Note any login pages you find as assets and flag them for pentest agents.`;
     ? `\n## Operator Guidance\n${operatorPrompt}\n`
     : "";
 
-  const objectiveDisciplineBlock = operatorPrompt
-    ? `\n## Objective Discipline\nThe operator guidance above is the controlling objective for this run. Preserve it when deciding what belongs in the attack-surface report:\n- Identify assets relevant to that objective first.\n- Distinguish supporting context from targets that truly require deep pentest testing.\n- If the objective is a narrow false-positive or materiality check, do not turn it into a comprehensive vulnerability hunt. It is valid for the final report to include zero deep-testing targets when the objective is conclusively non-material.\n`
-    : "";
-
   return `TARGET: ${target}
 
 Session: ${session.id}
@@ -272,6 +268,5 @@ ${scopeRules}
 
 ${subdomainBlock}
 ${operatorGuidanceBlock}
-${objectiveDisciplineBlock}
 ${startDirective}`;
 }
