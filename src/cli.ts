@@ -305,6 +305,7 @@ ${objectivesList}
     name: "Targeted Pentest",
     targets: [target],
   });
+  console.log(`PENSAR_SESSION_PATH:${session.rootPath}`);
 
   const { bus: targetedBus, cleanup: wandbCleanup } =
     await createInstrumentedBus(session);
@@ -329,6 +330,8 @@ POCs:      ${pocsPath}`);
   } finally {
     await wandbCleanup();
   }
+
+  process.exit(0);
 }
 
 async function runThreatModel() {
