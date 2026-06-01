@@ -137,6 +137,7 @@ export function PetriAnimation({
   }, [actualWidth, actualHeight]);
 
   // Step simulation on each tick
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` is an intentional trigger — drives the animation frame even though it isn't read inside the effect.
   useEffect(() => {
     if (simulationRef.current) {
       simulationRef.current.step();

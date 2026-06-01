@@ -62,8 +62,7 @@
         "noUnusedImports": "error",
         // Carryover from previous ESLint config (no-unused-vars: off).
         "noUnusedVariables": "off",
-        // Carryover from previous ESLint config (react-hooks/exhaustive-deps: off).
-        "useExhaustiveDependencies": "off",
+        "useExhaustiveDependencies": "error",
         // False positives in src/tui/keybindings/registry.ts where hooks compose
         // outside the body of a hook/component named with the use* convention.
         "useHookAtTopLevel": "off"

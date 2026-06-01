@@ -1,5 +1,5 @@
 import { useKeyboard } from "@opentui/react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getPensarConsoleUrl } from "../../../core/api";
 import { validateGateway } from "../../../core/auth";
 import { Dialog } from "../../context/dialog";
@@ -56,7 +56,7 @@ export default function CreditsFlow({
     setStep("browser-opened");
   };
 
-  const fetchBalance = async () => {
+  const fetchBalance = useCallback(async () => {
     setStep("loading");
     setError(null);
 
@@ -77,11 +77,11 @@ export default function CreditsFlow({
       setError(err instanceof Error ? err.message : "Failed to fetch balance");
       setStep("display");
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchBalance();
-  }, []);
+  }, [fetchBalance]);
 
   useKeyboard((key) => {
     key.preventDefault();

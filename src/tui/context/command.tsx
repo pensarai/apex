@@ -129,18 +129,17 @@ export function CommandProvider({
     setRegistryVersion((v) => v + 1);
   }, [registry]);
 
-  // Load skills + registry on mount and whenever we return to home
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `route.data` is an intentional trigger — reloads skills whenever the user navigates back to home.
   useEffect(() => {
     registry.load({ projectRoot: process.cwd() }).then(() => {
       setRegistryVersion((v) => v + 1);
     });
-  }, [route.data]);
+  }, [registry.load, route.data]);
 
-  // Create router with context - initialized once
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `ctx` is intentionally omitted — registerWithContext only extracts static metadata (name, aliases, description) at registration time; handlers are re-bound with live ctx on every execute() call (see command-router.ts).
   const router = useMemo(() => {
     const router = new CommandRouter<AppCommandContext>();
 
-    // Register all commands from the registry
     for (const commandDef of commandRegistry) {
       router.registerWithContext(commandDef, ctx);
     }
@@ -148,6 +147,7 @@ export function CommandProvider({
     return router;
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `registryVersion` is an intentional cache-buster — forces recomputation when skills are refreshed even though `registry` (stable ref) hasn't changed.
   const resolveSkillContent = useCallback(
     (input: string): string | null => {
       const trimmed = input.trim().replace(/^\/+/, "").toLowerCase();
@@ -160,8 +160,7 @@ export function CommandProvider({
     [registry, registryVersion],
   );
 
-  // Generate autocomplete options from router commands + skills.
-  // Order is determined by the commands array in command-registry.ts.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `registryVersion` is an intentional cache-buster — forces recomputation when skills are refreshed even though `registry` (stable ref) hasn't changed.
   const autocompleteOptions = useMemo((): AutocompleteOption[] => {
     const routerCommands = router.getAllCommands();
     const options: AutocompleteOption[] = [];

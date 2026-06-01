@@ -181,6 +181,7 @@ export default function OperatorDashboard({
   } = useDialog();
   const { refocusPrompt } = useFocus();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `skillsVersion` is an intentional cache-buster — forces recomputation when skills are refreshed even though `skillsRegistry` (stable ref) hasn't changed.
   const autocompleteOptions = useMemo(() => {
     const commandOptions = filterOperatorAutocomplete(allAutocompleteOptions);
     const skillOptions = skillsRegistry.list().map((s) => {
@@ -482,7 +483,12 @@ export default function OperatorDashboard({
       }
     }
     loadSession();
-  }, [sessionId]);
+  }, [
+    sessionId,
+    subagentStore.setState,
+    initialConfig?.operatorMode,
+    setSessionCwd,
+  ]);
 
   useEffect(() => {
     return () => setSessionCwd(null);
@@ -728,30 +734,6 @@ export default function OperatorDashboard({
         cmdFlushTimerRef.current = null;
       }
     };
-  }, []);
-
-  // ---------------------------------------------------------------------------
-  // Subagent activity — append log lines to the active (pending) tool message
-  // ---------------------------------------------------------------------------
-
-  const appendLogToActiveTool = useCallback((line: string) => {
-    setMessages((prev) => {
-      const idx = prev.findLastIndex(
-        (m) =>
-          isToolMessage(m) &&
-          (m.status === "pending" || m.status === "streaming"),
-      );
-      if (idx === -1) return prev;
-
-      const msg = prev[idx];
-      let logs = [...(msg.logs ?? []), line];
-      if (logs.length > MAX_LOG_LINES) {
-        logs = logs.slice(-MAX_LOG_LINES);
-      }
-      const updated = [...prev];
-      updated[idx] = { ...msg, logs };
-      return updated;
-    });
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -1404,11 +1386,21 @@ export default function OperatorDashboard({
       updateToolResult,
       flushCommandOutput,
       onCommandOutput,
-      appendLogToActiveTool,
       subagentHelpers,
       setThinking,
       setIsExecuting,
       addCacheUsage,
+      initialConfig?.sandbox,
+      initialConfig?.taskDriven,
+      initialConfig?.target,
+      initialConfig?.headers,
+      setSessionCwd,
+      subagentStore.setState,
+      skillsRegistry.buildCatalog,
+      requireApproval,
+      skillsRegistry,
+      reasoningEnabled,
+      openAIReasoningEffort,
     ],
   );
 
@@ -1930,7 +1922,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         },
       ];
     });
-  }, [setThinking, setIsExecuting]);
+  }, [setThinking, setIsExecuting, subagentStore.setState]);
 
   const resumeWithQuestionResult = useCallback(
     (result: AskUserQuestionsResult) => {

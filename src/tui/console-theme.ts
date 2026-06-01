@@ -54,6 +54,6 @@ export function ConsoleThemeSync() {
     c._rgbaCursor = colors.primary;
     c._rgbaCopyButton = colors.primary;
     c.markNeedsRerender();
-  }, [colors]);
+  }, [colors, renderer]);
   return null;
 }

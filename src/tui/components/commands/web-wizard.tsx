@@ -124,7 +124,7 @@ export default function WebWizard({
         setModel(targetModel, false);
       }
     }
-  }, [config.data, initialModel]);
+  }, [config.data, initialModel, setModel]);
 
   // Model picker overlay state
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -253,7 +253,7 @@ export default function WebWizard({
         allowedPorts: autoPorts.map(String),
       },
     }));
-  }, [state.target]);
+  }, [state.target, scopeManuallyEdited]);
 
   // Create session and navigate to session route
   async function createSessionAndNavigate() {
