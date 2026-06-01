@@ -120,9 +120,9 @@ export function crawlAuthenticated(ctx: ToolContext) {
               });
 
               if (jsEndpoints.endpoints) {
-                jsEndpoints.endpoints.forEach((ep: EndpointInfo) =>
-                  allEndpoints.add(ep.endpoint),
-                );
+                jsEndpoints.endpoints.forEach((ep: EndpointInfo) => {
+                  allEndpoints.add(ep.endpoint);
+                });
               }
 
               pages.push({

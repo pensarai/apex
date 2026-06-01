@@ -52,8 +52,7 @@
         "noArrayIndexKey": "off",
         "noImplicitAnyLet": "error",
         "noAssignInExpressions": "error",
-        // Existing pattern with intentional void callbacks; revisit in a follow-up triage PR.
-        "useIterableCallbackReturn": "off"
+        "useIterableCallbackReturn": "error"
       },
       "complexity": {
         // Carryover from previous ESLint config (no-useless-escape: off).
