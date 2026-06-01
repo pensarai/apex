@@ -39,7 +39,7 @@ export function updateTask(ctx: ToolContext) {
 
 Status transitions:
 - "in_progress" — Set when you START testing a task. Pick one pending task at a time.
-- "completed" — Set when testing is done: vulnerability found and documented via document_vulnerability, OR conclusively determined the endpoint is not vulnerable to this technique.
+- "completed" — Set when testing is done: vulnerability found and documented via document_vulnerability, OR conclusively determined the endpoint is not vulnerable / materiality is not met for this technique. Documentation is NOT required to complete a non-vulnerable task.
 - "failed" — Set when the technique didn't work: rate limited, blocked by WAF, dead end, or approach not applicable. Then create a NEW task with an alternative technique.
 
 Always include a result or observation explaining the outcome.`,

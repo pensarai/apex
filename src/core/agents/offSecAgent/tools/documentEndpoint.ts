@@ -10,6 +10,21 @@ function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
 }
 
+function isScopedNonMaterialObjective(prompt?: string): boolean {
+  if (!prompt) return false;
+  const lower = prompt.toLowerCase();
+  return (
+    lower.includes("false-positive") ||
+    lower.includes("non-material") ||
+    lower.includes("not a material finding") ||
+    lower.includes("do not document a vulnerability") ||
+    lower.includes("mere absence of https") ||
+    lower.includes("public read-only") ||
+    lower.includes("public catalog") ||
+    lower.includes("generic verbose")
+  );
+}
+
 const documentEndpointInputSchema = z.object({
   appName: z
     .string()
@@ -196,12 +211,14 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         handler: input.handler,
         authRequired: input.authRequired,
         description: input.description,
+        originalObjective: ctx.session.config?.prompt,
       };
 
-      const threatModelOutput = await generateThreatModelForEndpoint(
-        ctx,
-        subagentInput,
-      );
+      const threatModelOutput = isScopedNonMaterialObjective(
+        ctx.session.config?.prompt,
+      )
+        ? null
+        : await generateThreatModelForEndpoint(ctx, subagentInput);
 
       const riskScore = threatModelOutput?.riskScore ?? heuristicRiskScore;
       const pentestObjectives = threatModelOutput?.pentestObjectives ?? [];

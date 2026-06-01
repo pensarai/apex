@@ -11,14 +11,23 @@ import type { ToolContext } from "./types";
  * and fires persistence callbacks.
  */
 export function createAttackSurfaceReport(ctx: ToolContext) {
+  const objectiveGuidance = ctx.session.config?.prompt
+    ? `
+
+Operator objective for this run:
+${ctx.session.config.prompt}
+
+If this objective is narrow, include deep-testing targets only when they are directly relevant to resolving that objective. Supporting assets can be listed in discoveredAssets or keyFindings without becoming pentest targets. It is valid to return zero targets when the objective is conclusively non-material.`
+    : "";
+
   return tool({
     description: `Provide attack surface analysis results to the orchestrator agent.
 
 Call this at the END of your analysis with:
 - Summary statistics
 - Discovered assets (simple list)
-- ALL targets for deep testing with objectives. Do not prioritize any targets, optimize for breadth of testing.
-- Key findings`,
+- Targets for deep testing with objectives. For broad full-pentest asks, include all relevant target-owned assets. For scoped asks, preserve the operator objective and avoid unrelated target fan-out.
+- Key findings${objectiveGuidance}`,
     inputSchema: z.object({
       summary: z
         .object({
@@ -42,7 +51,9 @@ Call this at the END of your analysis with:
               .describe("Why this target needs deep testing"),
           }),
         )
-        .describe("ALL targets for deep penetration testing"),
+        .describe(
+          "Targets that require deep penetration testing. May be empty for scoped non-material objectives when discovered assets only provide supporting context.",
+        ),
       keyFindings: z.preprocess(
         (val) => (Array.isArray(val) ? val : [val]),
         z
@@ -68,7 +79,7 @@ Call this at the END of your analysis with:
         success: true,
         resultsPath,
         summary: results.summary,
-        message: `Attack surface analysis complete. ${results.summary.totalAssets} assets identified for penetration testing.`,
+        message: `Attack surface analysis complete. ${results.summary.totalAssets} assets identified; ${results.targets.length} target(s) selected for deep testing.`,
       };
     },
   });

@@ -229,12 +229,13 @@ const ThreatModelResultSchema = z.object({
   pentestObjectives: z
     .array(PentestObjectiveSchema)
     .describe(
-      "Adversarial test plan: 10-12 falsifiable hypotheses the pentest agent can execute " +
+      "Adversarial test plan: 0-12 falsifiable hypotheses the pentest agent can execute " +
         "deterministically. Every objective must trace back to an attack vector named in the threat " +
-        "model. Include every p0 objective; fill remaining slots with p1 (breadth over payload " +
-        "variants); include p2 only if slots remain. Do not emit placeholder one-liners like " +
-        "'Test for SQL injection'. If you have fewer than 10 meaningful tests, revisit the threat " +
-        "model — you probably under-enumerated vectors.",
+        "model and align with the operator's supplied objective when one is present. Include every p0 " +
+        "objective; fill remaining slots with p1 (breadth over payload variants); include p2 only if " +
+        "slots remain. For scoped false-positive or materiality checks, emit zero objectives when no " +
+        "material endpoint-specific test is warranted. Do not emit placeholder one-liners like " +
+        "'Test for SQL injection'.",
     ),
 });
 
@@ -273,6 +274,7 @@ export interface GenerateThreatModelInput {
   handler?: string;
   authRequired?: boolean;
   description: string;
+  originalObjective?: string;
 }
 
 export interface ThreatModelOutput {
@@ -394,6 +396,15 @@ function buildThreatModelPrompt(
   const methodStr = Array.isArray(input.method)
     ? input.method.join(", ")
     : (input.method ?? "unknown");
+  const objectiveBlock = input.originalObjective
+    ? `
+
+## Original Operator Objective
+
+${input.originalObjective}
+
+Preserve this objective when producing Part 4. If the objective is narrow (for example a CORS, rate-limit, generic-error, local-HTTP, or other false-positive/materiality check), do not expand this endpoint into unrelated pentest objectives. It is valid to emit an empty \`pentestObjectives\` array when this endpoint only provides supporting context or no material test is warranted.`
+    : "";
 
   let prompt = `# Endpoint Analysis
 
@@ -405,6 +416,7 @@ function buildThreatModelPrompt(
 - **Handler**: ${input.handler ?? "unknown"}
 - **Auth**: ${authInfo}
 - **Description**: ${input.description}
+${objectiveBlock}
 
 ## Reading the code
 
@@ -538,15 +550,16 @@ In \`riskScoreJustification\`, explain how the four sub-scores combine for this 
 
 ## Part 4: Adversarial Test Plan (field: \`pentestObjectives\`)
 
-Emit 10-12 test objectives. Each is a falsifiable hypothesis a pentest agent can execute deterministically. Coverage is bounded — not every vector from Part 2 will get a test, and that's fine. Choose the 10-12 tests that give the best coverage of the highest-leverage vectors.
+Emit 0-12 test objectives. Each is a falsifiable hypothesis a pentest agent can execute deterministically. Coverage is bounded — not every vector from Part 2 will get a test, and that's fine. Choose only the tests that give the best coverage of the highest-leverage vectors while preserving the original operator objective when present.
 
 ### Selection rules
 - Every \`p0\` objective (from high-likelihood × high/critical-impact vectors) must be included.
 - Fill remaining slots with \`p1\` objectives covering distinct vectors — prefer breadth across vectors over multiple payload variants of the same vector.
 - Only include \`p2\` objectives if slots remain after p0 and p1 coverage.
 - If a high-priority vector has multiple meaningful payload variants (e.g. time-based vs. error-based SQLi), pick the variant most likely to succeed given what you read in the code, and leave the others for future runs.
+- For scoped false-positive or materiality checks, emit zero objectives when the endpoint has no material abuse path relevant to that objective.
 
-Prune aggressively toward this budget, but do not drop below 10 — if you have fewer than 10 meaningful tests, you probably under-enumerated Part 2's attack vectors; go back and expand them.
+Prune aggressively toward this budget. Do not invent objectives just to fill slots; an empty or short objective list is correct when the original objective is already resolved or no endpoint-specific material test is warranted.
 
 ### Required fields per objective
 
