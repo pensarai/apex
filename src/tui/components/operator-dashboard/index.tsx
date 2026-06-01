@@ -737,30 +737,6 @@ export default function OperatorDashboard({
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Subagent activity — append log lines to the active (pending) tool message
-  // ---------------------------------------------------------------------------
-
-  const appendLogToActiveTool = useCallback((line: string) => {
-    setMessages((prev) => {
-      const idx = prev.findLastIndex(
-        (m) =>
-          isToolMessage(m) &&
-          (m.status === "pending" || m.status === "streaming"),
-      );
-      if (idx === -1) return prev;
-
-      const msg = prev[idx];
-      let logs = [...(msg.logs ?? []), line];
-      if (logs.length > MAX_LOG_LINES) {
-        logs = logs.slice(-MAX_LOG_LINES);
-      }
-      const updated = [...prev];
-      updated[idx] = { ...msg, logs };
-      return updated;
-    });
-  }, []);
-
-  // ---------------------------------------------------------------------------
   // Approval handlers
   // ---------------------------------------------------------------------------
 
@@ -1417,6 +1393,7 @@ export default function OperatorDashboard({
       initialConfig?.sandbox,
       initialConfig?.taskDriven,
       initialConfig?.target,
+      initialConfig?.headers,
       setSessionCwd,
       subagentStore.setState,
       skillsRegistry.buildCatalog,
