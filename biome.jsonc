@@ -58,6 +58,9 @@
         // Carryover from previous ESLint config (no-useless-escape: off).
         "noUselessEscapeInRegex": "off"
       },
+      "performance": {
+        "noReExportAll": "error"
+      },
       "correctness": {
         "noUnusedImports": "error",
         // Carryover from previous ESLint config (no-unused-vars: off).
