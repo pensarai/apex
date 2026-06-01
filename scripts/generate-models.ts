@@ -52,6 +52,7 @@ const CONTEXT_LENGTHS: Record<string, number> = {
   "claude-sonnet-4": 200000,
   "claude-opus-4": 200000,
   "claude-opus-4-7": 1000000,
+  "claude-opus-4-8": 1000000,
   "claude-2": 100000,
   "claude-instant": 100000,
 
@@ -113,6 +114,7 @@ const CONTEXT_LENGTHS: Record<string, number> = {
   "anthropic.claude-sonnet": 200000,
   "anthropic.claude-opus": 200000,
   "anthropic.claude-opus-4-7": 1000000,
+  "anthropic.claude-opus-4-8": 1000000,
 };
 
 function getContextLength(modelId: string): number | undefined {
@@ -584,7 +586,7 @@ function main() {
   );
 
   // Models available on the Anthropic API but not yet in the AI SDK type definitions
-  appendMissing(anthropicIds, ["claude-opus-4-7"]);
+  appendMissing(anthropicIds, ["claude-opus-4-7", "claude-opus-4-8"]);
 
   const anthropicModels: ModelEntry[] = anthropicIds.map((id) => ({
     id,
@@ -646,6 +648,8 @@ function main() {
   appendMissing(bedrockBaseIds, [
     "moonshotai.kimi-k2.5",
     "anthropic.claude-opus-4-7",
+    "anthropic.claude-opus-4-8",
+    "us.anthropic.claude-opus-4-8",
   ]);
 
   const bedrockRegionalIds = generateBedrockRegionalVariants(bedrockBaseIds);

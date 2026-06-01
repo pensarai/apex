@@ -38,8 +38,8 @@ export type FindingJudgeRuntimeContext = Pick<
 /**
  * Validate a vulnerability finding by running a bounded verifier agent.
  *
- * Infrastructure failures intentionally preserve the already-successful
- * POC-backed finding with low confidence and explicit unverified metadata.
+ * Infrastructure failures reject the finding as unverified rather than
+ * preserving it as a vulnerability.
  */
 export async function judgeFinding(
   input: FindingJudgeInput,
@@ -114,13 +114,13 @@ export function createJudgeFailureResult(
   const diagnostic = `${type}${statusStr}: ${message.substring(0, 200)}`;
 
   return {
-    valid: true,
-    findingType: "vulnerability",
+    valid: false,
+    findingType: "informational",
     confidence,
-    reasoning: `Agentic finding judge could not complete (${diagnostic}). Preserving the successfully executed PoC-backed finding as unverified with low confidence so it is not lost.`,
+    reasoning: `Agentic finding judge could not complete (${diagnostic}). Rejecting the finding as unverified so unavailable judge infrastructure does not preserve false positives as vulnerabilities.`,
     concerns: [
       "Agentic judge infrastructure failed before producing a completed verification judgment.",
-      "Finding is preserved because the submitted PoC already executed successfully, but the judge did not independently verify the claim.",
+      "The submitted PoC may have executed successfully, but the judge did not independently verify that it proves a material vulnerability.",
     ],
     verificationSteps: [],
     toolEvidence: [],

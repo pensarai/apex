@@ -11,6 +11,10 @@ import { writeFile } from "fs/promises";
 import { join } from "path";
 import { streamResponse } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
+import {
+  resolveEffectiveHeaders,
+  stripBrowserManagedHeaders,
+} from "../../http/targetHeaders";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
@@ -176,7 +180,16 @@ export class OffensiveSecurityAgent<TResult = void> {
     // share browser state via the sandbox's per-sandbox Playwright user-data
     // dir, so they don't need a session object on the host.
     if (!input.sandbox) {
-      this.browserSession = input.browserSession ?? new PlaywrightMcpSession();
+      // Snapshot resolved headers into the browser session. Later mutations
+      // require a browser restart to take effect.
+      const sessionHeaders = input.target
+        ? resolveEffectiveHeaders(input.session, input.target)
+        : input.session.config?.headers;
+      this.browserSession =
+        input.browserSession ??
+        new PlaywrightMcpSession({
+          extraHttpHeaders: stripBrowserManagedHeaders(sessionHeaders),
+        });
     }
 
     // -- Step trace (trace.jsonl) ---------------------------------------------

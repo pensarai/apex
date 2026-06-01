@@ -17,6 +17,7 @@ const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/skills",
   "/plan",
   "/obfuscate",
+  "/headers",
   "/help",
 ]);
 
@@ -54,18 +55,60 @@ export function resolveSubmit(
 // Command routing
 // ---------------------------------------------------------------------------
 
+export type HeadersOp =
+  | { kind: "list"; showSecrets: boolean }
+  | { kind: "add"; line: string; allowOverwrite: boolean }
+  | { kind: "remove"; name: string }
+  | { kind: "clear" }
+  | { kind: "invalid"; reason: string };
+
 export type CommandAction =
   | { type: "show-models" }
   | { type: "show-plan" }
   | { type: "open-session" }
   | { type: "run-skill"; slug: string; autopilot: boolean }
+  | { type: "headers"; op: HeadersOp }
   | { type: "execute-command"; command: string };
+
+function parseHeadersSlashCommand(rest: string): HeadersOp {
+  const trimmed = rest.trim();
+  if (!trimmed) {
+    return { kind: "list", showSecrets: false };
+  }
+
+  const [verb, ...tailParts] = trimmed.split(/\s+/);
+  const tail = trimmed.slice(verb.length).trim();
+
+  switch (verb.toLowerCase()) {
+    case "list":
+      return { kind: "list", showSecrets: tailParts.includes("--show") };
+    case "add":
+      if (!tail) return { kind: "invalid", reason: 'expected "Name: Value"' };
+      return { kind: "add", line: tail, allowOverwrite: false };
+    case "set":
+      if (!tail) return { kind: "invalid", reason: 'expected "Name: Value"' };
+      return { kind: "add", line: tail, allowOverwrite: true };
+    case "remove":
+    case "rm":
+    case "delete":
+      if (!tail) return { kind: "invalid", reason: "expected header name" };
+      return { kind: "remove", name: tail };
+    case "clear":
+      return { kind: "clear" };
+    default:
+      return {
+        kind: "invalid",
+        reason: `unknown subcommand "${verb}". Use list, add, set, remove, or clear.`,
+      };
+  }
+}
 
 export function routeCommand(
   command: string,
   resolveSkill: (cmd: string) => string | null,
 ): CommandAction {
-  const commandLower = command.trim().replace(/^\/+/, "").toLowerCase();
+  const stripped = command.trim().replace(/^\/+/, "");
+  const commandLower = stripped.toLowerCase();
 
   if (commandLower === "models" || commandLower === "model") {
     return { type: "show-models" };
@@ -81,6 +124,11 @@ export function routeCommand(
 
   if (commandLower === "skills") {
     return { type: "execute-command", command };
+  }
+
+  if (commandLower === "headers" || commandLower.startsWith("headers ")) {
+    const rest = stripped.slice("headers".length);
+    return { type: "headers", op: parseHeadersSlashCommand(rest) };
   }
 
   const autopilot = command.includes("--autopilot");
@@ -241,7 +289,30 @@ You are operating in interactive operator mode. The human operator will guide yo
 
 Target: ${target || "unknown"}
 Stage: ${operatorState.currentStage}
-Command approval: ${approvalEnabled ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}${modeSection}`;
+Command approval: ${approvalEnabled ? "enabled — the operator will approve each tool call" : "disabled — tool calls execute automatically"}
+
+## Session-wide Custom HTTP Headers
+
+The operator can attach custom HTTP headers (Authorization tokens, X-API-Key,
+tenant IDs, etc.) that are automatically applied to every in-scope
+\`http_request\`, \`execute_command\` (curl/nuclei/etc.), and Playwright
+navigation. You do NOT have a tool to mutate these — they are operator-owned.
+
+If the operator asks you to "set/add/remove/list a header," do NOT refuse
+and do NOT try to inject it per-call. Tell them to type one of these
+commands directly into the chat input (the slash-command bar, not as a
+message to you):
+
+  /headers add Name: Value     # error if Name already set
+  /headers set Name: Value     # overwrite
+  /headers remove Name
+  /headers list                # masked
+  /headers list --show         # reveal values
+  /headers clear
+
+Once set, the header is applied automatically — you don't need to do
+anything to use it. Per-request \`headers\` you pass to \`http_request\`
+still win over session headers if you need a one-off override.${modeSection}`;
 
   if (skillsCatalog) {
     prompt += `\n\n# Skills\n\n${skillsCatalog}`;

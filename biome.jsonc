@@ -52,19 +52,20 @@
         "noArrayIndexKey": "off",
         "noImplicitAnyLet": "error",
         "noAssignInExpressions": "error",
-        // Existing pattern with intentional void callbacks; revisit in a follow-up triage PR.
-        "useIterableCallbackReturn": "off"
+        "useIterableCallbackReturn": "error"
       },
       "complexity": {
         // Carryover from previous ESLint config (no-useless-escape: off).
         "noUselessEscapeInRegex": "off"
       },
+      "performance": {
+        "noReExportAll": "error"
+      },
       "correctness": {
         "noUnusedImports": "error",
         // Carryover from previous ESLint config (no-unused-vars: off).
         "noUnusedVariables": "off",
-        // Carryover from previous ESLint config (react-hooks/exhaustive-deps: off).
-        "useExhaustiveDependencies": "off",
+        "useExhaustiveDependencies": "error",
         // False positives in src/tui/keybindings/registry.ts where hooks compose
         // outside the body of a hook/component named with the use* convention.
         "useHookAtTopLevel": "off"
@@ -199,6 +200,26 @@
         "rules": {
           "style": {
             "noRestrictedImports": { "level": "off" }
+          }
+        }
+      }
+    },
+    {
+      // Agent tools must route target HTTP through `targetFetch` so the
+      // resolver applies session/credential headers. Raw fetch silently
+      // bypasses it. Factor exceptions into src/core/http/*.
+      "includes": ["**/src/core/agents/offSecAgent/tools/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "fetch": "Use targetFetch from src/core/http/targetHeaders.ts so session/global/credential headers are applied."
+                }
+              }
+            }
           }
         }
       }

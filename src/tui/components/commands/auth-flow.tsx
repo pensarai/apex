@@ -1,5 +1,5 @@
 import { useKeyboard } from "@opentui/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getPensarApiUrl, getPensarConsoleUrl } from "../../../core/api";
 import type { DeviceFlowInfo, WorkspaceInfo } from "../../../core/auth";
 import {
@@ -72,14 +72,14 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
     onClose();
   };
 
-  const cleanup = () => {
+  const cleanup = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
-  };
+  }, []);
 
   useEffect(() => {
     return cleanup;
-  }, []);
+  }, [cleanup]);
 
   const openUrl = (url: string) => {
     try {
@@ -352,6 +352,7 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
     }
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional mount-only effect — fires once to kick off the workspace-fetch flow when the component mounts in the "needs workspace" state.
   useEffect(() => {
     if (!needsWorkspace) return;
     const ac = new AbortController();

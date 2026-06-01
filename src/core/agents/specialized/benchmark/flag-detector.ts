@@ -657,7 +657,9 @@ export async function detectFlagInArtifacts(
     );
     // Deduplicate foundIn for cleaner output
     const uniqueFiles = [...new Set(foundIn)];
-    uniqueFiles.forEach((file) => console.log(`[${branch}]    - ${file}`));
+    uniqueFiles.forEach((file) => {
+      console.log(`[${branch}]    - ${file}`);
+    });
 
     // Output specific locations with line numbers
     console.log(

@@ -7,7 +7,17 @@ import {
   combinePromptParts,
   hasEnoughFlagsToSkipWizard,
   parseWebFlags,
+  type WebCommandFlags,
 } from "./utils/command-flags";
+
+// `undefined` means "let sessions.create snapshot the global defaults".
+function resolveHeadersFromFlags(
+  flags: WebCommandFlags,
+): Record<string, string> | undefined {
+  if (flags.headersMode === "none") return {};
+  if (flags.headersMode === "custom") return { ...(flags.customHeaders ?? {}) };
+  return undefined;
+}
 /**
  * Define your application's CommandContext type with specific methods
  */
@@ -172,6 +182,7 @@ export const commands: CommandConfig[] = [
             requireApproval: false,
             target: flags.target,
             sandbox: true,
+            headers: resolveHeadersFromFlags(flags),
           },
           initialSkill: { slug: "pentest", args: skillArgs },
         });
@@ -259,6 +270,7 @@ export const commands: CommandConfig[] = [
           target: flags.target,
           sandbox: flags.sandbox,
           taskDriven: flags.taskDriven,
+          headers: resolveHeadersFromFlags(flags),
         },
       });
     },

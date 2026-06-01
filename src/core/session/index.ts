@@ -31,10 +31,8 @@ export const EXFIL_OUTCOME_GUIDANCE =
   "Exfiltrate data to extract the flag value. " +
   "Create proof-of-concept exploits that successfully extract the flag from the target system.";
 
-/**
- * Default headers for pensar-apex
- */
-const DEFAULT_OFFENSIVE_HEADERS: Record<string, string> = {
+// Fallback when neither the caller nor global config supplies headers.
+const DEFAULT_HEADER_RECORD: Record<string, string> = {
   "User-Agent": "pensar-apex",
 };
 
@@ -70,11 +68,18 @@ const ScopeConstraintsObject = z.object({
 
 type ScopeConstraints = z.infer<typeof ScopeConstraintsObject>;
 
+// The header map IS the state — empty record means "send no custom headers".
+const SessionHeadersRecord = z.record(z.string(), z.string());
+
+// Legacy shape kept only so downstream `pensarai/console` agents keep
+// typechecking. Normalized into `headers` at every input boundary and
+// stripped before persistence.
 const OffensiveHeadersConfigObject = z.object({
-  mode: z.enum(["none", "default", "custom"]),
-  headers: z.record(z.string(), z.string()).optional(),
+  mode: z.enum(["none", "default", "custom"]).optional(),
+  headers: SessionHeadersRecord.optional(),
 });
 
+/** @deprecated Pass flat `SessionConfig.headers: Record<string, string>` directly. */
 export type OffensiveHeadersConfig = z.infer<
   typeof OffensiveHeadersConfigObject
 >;
@@ -187,6 +192,13 @@ function resolveSmtpConfig(explicit?: SmtpConfig): SmtpConfig | undefined {
 }
 
 const SessionConfigObject = z.object({
+  /**
+   * Custom HTTP headers for outbound target requests. Snapshotted from
+   * `config.defaultHeaders` at create time; read via the resolver in
+   * `src/core/http/targetHeaders.ts`, not directly by tools.
+   */
+  headers: SessionHeadersRecord.optional(),
+  /** @deprecated Pass flat `headers` instead. Normalized at input boundaries. */
   offensiveHeaders: OffensiveHeadersConfigObject.optional(),
   sessionType: z.enum(["web-app"]).optional(),
   mode: z.enum(["auto", "driver", "operator"]).optional(),
@@ -374,27 +386,49 @@ async function getExecution(
   }
 }
 
-/**
- * Resolve offensive headers based on session config
- */
-function getOffensiveHeaders(
-  session: SessionInfo,
-): Record<string, string> | undefined {
-  const config = session.config?.offensiveHeaders;
-
-  if (!config || config.mode === "none") {
-    return undefined;
+// Translate the deprecated `offensiveHeaders: { mode, headers? }` into
+// flat `headers` and strip the legacy field. Pure / non-mutating.
+//
+// Precedence: flat `headers` wins if present; mode "default" seeds the
+// default record; mode "none" yields `{}` (must override `oh.headers`).
+function normalizeDeprecatedHeaders<T extends { offensiveHeaders?: unknown }>(
+  config: T | undefined,
+): Omit<T, "offensiveHeaders"> | undefined {
+  if (!config) return config;
+  if (config.offensiveHeaders == null) {
+    const { offensiveHeaders: _drop, ...rest } = config;
+    return rest;
   }
-
-  if (config.mode === "default") {
-    return DEFAULT_OFFENSIVE_HEADERS;
+  const { offensiveHeaders, ...rest } = config;
+  const restWithHeaders = rest as Omit<T, "offensiveHeaders"> & {
+    headers?: Record<string, string>;
+  };
+  if (restWithHeaders.headers !== undefined) {
+    return restWithHeaders;
   }
-
-  if (config.mode === "custom" && config.headers) {
-    return config.headers;
+  const oh = offensiveHeaders as {
+    mode?: string;
+    headers?: Record<string, string>;
+  };
+  if (oh.mode === "none") {
+    return { ...restWithHeaders, headers: {} };
   }
+  let headers: Record<string, string> = {};
+  if (oh.mode === "default") headers = { ...DEFAULT_HEADER_RECORD };
+  if (oh.headers) headers = { ...headers, ...oh.headers };
+  return { ...restWithHeaders, headers };
+}
 
-  return undefined;
+// Migrate a legacy session.json into the flat-headers shape. The on-disk
+// file is only rewritten on the next save.
+export function migrateLegacySessionData(input: unknown): unknown {
+  if (!input || typeof input !== "object") return input;
+  const root = input as Record<string, unknown>;
+  const config = root.config;
+  if (!config || typeof config !== "object") return input;
+  const cfg = config as Record<string, unknown>;
+  if (!("offensiveHeaders" in cfg)) return input;
+  return { ...root, config: normalizeDeprecatedHeaders(cfg) };
 }
 
 // ============================================================================
@@ -446,6 +480,11 @@ export interface CreateInputProps {
 export async function create(input: CreateInputProps) {
   const name = input.name ?? generateRandomName();
 
+  // Internal code only sees flat `headers` from here on.
+  const normalizedConfig = normalizeDeprecatedHeaders(input.config) as
+    | SessionConfig
+    | undefined;
+
   const id =
     `${input.prefix ? input.prefix : ""}` +
     Identifier.descending("session", input.id);
@@ -457,23 +496,36 @@ export async function create(input: CreateInputProps) {
   const pocsPath = path.join(rootPath, "pocs");
 
   const rateLimiter = new RateLimiter({
-    requestsPerSecond: input.config?.requestsPerSecond,
+    requestsPerSecond: normalizedConfig?.requestsPerSecond,
   });
 
   // Auto-create CredentialManager when authCredentials are provided.
   // Secrets live only in memory — they are never serialized to disk.
   let credentialManager: CredentialManager | undefined;
-  if (input.config?.authCredentials) {
+  if (normalizedConfig?.authCredentials) {
     credentialManager = new CredentialManager();
-    const creds = Array.isArray(input.config.authCredentials)
-      ? input.config.authCredentials
-      : [input.config.authCredentials];
+    const creds = Array.isArray(normalizedConfig.authCredentials)
+      ? normalizedConfig.authCredentials
+      : [normalizedConfig.authCredentials];
     for (const cred of creds) {
       credentialManager.addFromAuthCredentials(cred);
     }
   }
 
-  const smtpConfig = resolveSmtpConfig(input.config?.smtpConfig);
+  const smtpConfig = resolveSmtpConfig(normalizedConfig?.smtpConfig);
+
+  // Caller `headers` wins verbatim; otherwise snapshot the current global
+  // defaultHeaders so the session is locked at create time.
+  let snapshotHeaders: Record<string, string>;
+  if (normalizedConfig?.headers !== undefined) {
+    snapshotHeaders = { ...normalizedConfig.headers };
+  } else {
+    const { config: appConfig } = await import("../config");
+    const cfg = await appConfig.get();
+    snapshotHeaders = cfg.defaultHeaders
+      ? { ...cfg.defaultHeaders }
+      : { ...DEFAULT_HEADER_RECORD };
+  }
 
   const result: SessionInfo = {
     id: id,
@@ -485,17 +537,12 @@ export async function create(input: CreateInputProps) {
       updated: Date.now(),
     },
     config: {
-      ...input.config,
-      mode: input.config?.mode || "auto",
-      offensiveHeaders: input.config?.offensiveHeaders || {
-        mode: "default",
-        headers: {
-          "User-Agent": "pensar-apex",
-        },
-      },
+      ...normalizedConfig,
+      mode: normalizedConfig?.mode || "auto",
+      headers: snapshotHeaders,
       outcomeGuidance:
-        input.config?.outcomeGuidance ||
-        (input.config?.exfilMode
+        normalizedConfig?.outcomeGuidance ||
+        (normalizedConfig?.exfilMode
           ? EXFIL_OUTCOME_GUIDANCE
           : DEFAULT_OUTCOME_GUIDANCE),
       smtpConfig,
@@ -536,7 +583,8 @@ export async function create(input: CreateInputProps) {
 }
 
 export const get = async (id: string) => {
-  const read = await Storage.read<SessionInfo>(["sessions", id, "session"]);
+  const raw = await Storage.read<unknown>(["sessions", id, "session"]);
+  const read = migrateLegacySessionData(raw) as SessionInfo;
 
   // Reconstruct RateLimiter instance (it gets serialized as plain object)
   // This ensures the session has a proper RateLimiter with methods
@@ -881,6 +929,23 @@ export async function updateOperatorSettings(
 }
 
 // ============================================================================
+// Custom HTTP Headers Update
+// ============================================================================
+
+/** Replace the session's custom HTTP headers. Pass `{}` to clear. */
+export async function updateSessionHeaders(
+  sessionId: string,
+  headers: Record<string, string>,
+): Promise<SessionInfo> {
+  return await update(sessionId, (session) => {
+    if (!session.config) {
+      session.config = {};
+    }
+    session.config.headers = { ...headers };
+  });
+}
+
+// ============================================================================
 // Toolset State Management
 // ============================================================================
 
@@ -934,4 +999,5 @@ export const sessions = {
   hasOperatorState,
   getResumeMessages,
   updateOperatorSettings,
+  updateSessionHeaders,
 };

@@ -21,12 +21,6 @@ interface HITLWizardProps {
   initialTarget?: string;
   initialName?: string;
   initialRequireApproval?: boolean;
-  initialAuthUrl?: string;
-  initialAuthUser?: string;
-  initialAuthPass?: string;
-  initialAuthInstructions?: string;
-  initialHeadersMode?: "none" | "default" | "custom";
-  initialCustomHeaders?: Record<string, string>;
   initialModel?: string;
 }
 
@@ -82,7 +76,7 @@ export default function HITLWizard(props: HITLWizardProps) {
         }
       }
     }
-  }, [config.data, model.id, initialModel]);
+  }, [config.data, model.id, initialModel, setModel]);
 
   const groupedModels = useMemo(() => {
     const groups: Record<string, ModelInfo[]> = {};

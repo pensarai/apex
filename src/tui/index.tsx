@@ -265,6 +265,7 @@ function AppContent({
   const { setExternalDialogOpen } = useDialog();
   const [returnToCredits, setReturnToCredits] = useState(false);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional mount-only effect — runs once on startup to check for updates and warn about expired auth tokens. Re-running on every config change would duplicate toasts.
   useEffect(() => {
     checkForUpdate().then(
       ({ updateAvailable, currentVersion, latestVersion }) => {
@@ -317,7 +318,7 @@ function AppContent({
     ) {
       route.navigate({ type: "base", path: "auth" });
     }
-  }, [config.data.responsibleUseAccepted, route.data]);
+  }, [config.data, route.data, route.navigate]);
 
   // Track external dialog state so operator input unfocuses while a dialog overlay is open
   const anyExternalDialog =
@@ -337,7 +338,7 @@ function AppContent({
       const timer = setTimeout(() => setExternalDialogOpen(false), 0);
       return () => clearTimeout(timer);
     }
-  }, [anyExternalDialog]);
+  }, [anyExternalDialog, setExternalDialogOpen]);
 
   // Auto-clear the exit warning after 1 second
   useEffect(() => {
@@ -348,7 +349,7 @@ function AppContent({
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [showExitWarning]);
+  }, [showExitWarning, setShowExitWarning, setCtrlCPressTime]);
 
   const handleCloseSessionsDialog = () => {
     setShowSessionsDialog(false);
@@ -459,6 +460,7 @@ function AppContent({
         requireApproval: false,
         target,
         sandbox: isBlackbox,
+        headers: sessionConfig.headers,
       },
       initialSkill: { slug: "pentest", args: skillArgs },
     });

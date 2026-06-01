@@ -1,3 +1,11 @@
-export * from "./report";
-export * from "./runner";
-export * from "./types";
+export { generateJsonReport, generateTextReport } from "./report";
+export { runBenchmarkSuite, runSingleBenchmark } from "./runner";
+export type {
+  BenchmarkMetadata,
+  BenchmarkRunResult,
+  BenchmarkSuiteConfig,
+  BenchmarkSuiteResult,
+  BenchmarkSuiteSummary,
+  ComparisonResult,
+  TokenMetrics,
+} from "./types";

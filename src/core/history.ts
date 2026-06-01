@@ -39,17 +39,38 @@ export async function load(): Promise<string[]> {
 }
 
 /**
- * Append an entry. Skips consecutive duplicates.
- * Persists to disk in the background.
+ * Append an entry. Skips consecutive duplicates and redacts header
+ * secrets before persisting. Writes are fire-and-forget.
  */
 export async function push(entry: string): Promise<void> {
+  const sanitized = redactSecretsInHistoryEntry(entry);
   const history = await ensureLoaded();
-  if (history[history.length - 1] === entry) return;
-  history.push(entry);
+  if (history[history.length - 1] === sanitized) return;
+  history.push(sanitized);
   if (history.length > MAX_ENTRIES) {
     history.splice(0, history.length - MAX_ENTRIES);
   }
   Storage.write(STORAGE_KEY, history).catch(() => {});
+}
+
+// Replace the value following a header subcommand with `<redacted>`.
+// Conservative: a false positive only hides a benign value.
+export function redactSecretsInHistoryEntry(entry: string): string {
+  const trimmed = entry.trimStart();
+  const slashMatch = trimmed.match(
+    /^(\/headers\s+(?:add|set|import)\s+)(.+)$/i,
+  );
+  if (slashMatch) {
+    const [, prefix, payload] = slashMatch;
+    const colon = payload.indexOf(":");
+    if (colon === -1) return entry;
+    return `${entry.slice(0, entry.length - payload.length)}${payload.slice(0, colon)}: <redacted>`;
+  }
+  return entry.replace(
+    /(--header[=\s]+)("?)([^"\s]+:)\s*(?:[^"]*(?=")|[^"\s]+)("?)/gi,
+    (_, prefix, openQuote, namePart, closeQuote) =>
+      `${prefix}${openQuote}${namePart} <redacted>${closeQuote}`,
+  );
 }
 
 /**

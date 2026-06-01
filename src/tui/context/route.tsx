@@ -69,6 +69,8 @@ export type Route =
         operatorMode?: import("../../core/operator").OperatorMode;
         sandbox?: boolean;
         taskDriven?: boolean;
+        /** Headers from wizard/CLI; replace the snapshotted global defaults. */
+        headers?: Record<string, string>;
       };
       /** Skill to automatically submit on mount */
       initialSkill?: { slug: string; args?: Record<string, string> };

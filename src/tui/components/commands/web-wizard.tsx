@@ -124,7 +124,7 @@ export default function WebWizard({
         setModel(targetModel, false);
       }
     }
-  }, [config.data, initialModel]);
+  }, [config.data, initialModel, setModel]);
 
   // Model picker overlay state
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -253,7 +253,7 @@ export default function WebWizard({
         allowedPorts: autoPorts.map(String),
       },
     }));
-  }, [state.target]);
+  }, [state.target, scopeManuallyEdited]);
 
   // Create session and navigate to session route
   async function createSessionAndNavigate() {
@@ -309,15 +309,11 @@ export default function WebWizard({
         sessionConfig.codebasePath = state.cwd.trim();
       }
 
-      // Headers config
-      if (state.headers.mode !== "default") {
-        sessionConfig.offensiveHeaders = {
-          mode: state.headers.mode,
-          headers:
-            state.headers.mode === "custom"
-              ? state.headers.customHeaders
-              : undefined,
-        };
+      // "default" leaves headers unset so sessions.create snapshots the global default.
+      if (state.headers.mode === "none") {
+        sessionConfig.headers = {};
+      } else if (state.headers.mode === "custom") {
+        sessionConfig.headers = { ...state.headers.customHeaders };
       }
 
       // Operator guidance — combine threat model and prompt.

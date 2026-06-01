@@ -41,6 +41,11 @@ import {
   type RunAgentResult,
   runOffensiveSecurityAgent,
 } from "../../../core/api";
+import { formatParseError, parseHeaderLine } from "../../../core/http/parse";
+import {
+  isSensitiveHeaderName,
+  renderHeaderValue,
+} from "../../../core/http/types";
 import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
@@ -139,6 +144,7 @@ export default function OperatorDashboard({
     operatorMode?: OperatorMode;
     sandbox?: boolean;
     taskDriven?: boolean;
+    headers?: Record<string, string>;
   };
 }) {
   const { colors } = useTheme();
@@ -175,6 +181,7 @@ export default function OperatorDashboard({
   } = useDialog();
   const { refocusPrompt } = useFocus();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `skillsVersion` is an intentional cache-buster — forces recomputation when skills are refreshed even though `skillsRegistry` (stable ref) hasn't changed.
   const autocompleteOptions = useMemo(() => {
     const commandOptions = filterOperatorAutocomplete(allAutocompleteOptions);
     const skillOptions = skillsRegistry.list().map((s) => {
@@ -476,7 +483,12 @@ export default function OperatorDashboard({
       }
     }
     loadSession();
-  }, [sessionId]);
+  }, [
+    sessionId,
+    subagentStore.setState,
+    initialConfig?.operatorMode,
+    setSessionCwd,
+  ]);
 
   useEffect(() => {
     return () => setSessionCwd(null);
@@ -722,30 +734,6 @@ export default function OperatorDashboard({
         cmdFlushTimerRef.current = null;
       }
     };
-  }, []);
-
-  // ---------------------------------------------------------------------------
-  // Subagent activity — append log lines to the active (pending) tool message
-  // ---------------------------------------------------------------------------
-
-  const appendLogToActiveTool = useCallback((line: string) => {
-    setMessages((prev) => {
-      const idx = prev.findLastIndex(
-        (m) =>
-          isToolMessage(m) &&
-          (m.status === "pending" || m.status === "streaming"),
-      );
-      if (idx === -1) return prev;
-
-      const msg = prev[idx];
-      let logs = [...(msg.logs ?? []), line];
-      if (logs.length > MAX_LOG_LINES) {
-        logs = logs.slice(-MAX_LOG_LINES);
-      }
-      const updated = [...prev];
-      updated[idx] = { ...msg, logs };
-      return updated;
-    });
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -1271,6 +1259,9 @@ export default function OperatorDashboard({
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
             codebasePath: initialConfig?.sandbox ? undefined : process.cwd(),
             taskDriven: initialConfig?.taskDriven,
+            ...(initialConfig?.headers !== undefined
+              ? { headers: { ...initialConfig.headers } }
+              : {}),
           };
           agentResult = await runOffensiveSecurityAgent({
             ...commonInput,
@@ -1395,11 +1386,21 @@ export default function OperatorDashboard({
       updateToolResult,
       flushCommandOutput,
       onCommandOutput,
-      appendLogToActiveTool,
       subagentHelpers,
       setThinking,
       setIsExecuting,
       addCacheUsage,
+      initialConfig?.sandbox,
+      initialConfig?.taskDriven,
+      initialConfig?.target,
+      initialConfig?.headers,
+      setSessionCwd,
+      subagentStore.setState,
+      skillsRegistry.buildCatalog,
+      requireApproval,
+      skillsRegistry,
+      reasoningEnabled,
+      openAIReasoningEffort,
     ],
   );
 
@@ -1572,6 +1573,98 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     executeCommand("/models");
   }, [executeCommand]);
 
+  const handleHeadersSlash = useCallback(
+    async (op: import("./logic").HeadersOp) => {
+      const active = sessionRef.current;
+      if (!active) {
+        addSystemMessage("No active session — cannot manage headers yet.");
+        return;
+      }
+      const current: Record<string, string> = {
+        ...(active.config?.headers ?? {}),
+      };
+
+      const persist = async (next: Record<string, string>, message: string) => {
+        const updated = await sessions.updateSessionHeaders(active.id, next);
+        // Touch both ref and state — runAgent captures `session` in its
+        // dep array, so a stale closure would skip the new headers.
+        sessionRef.current = updated;
+        setSession(updated);
+        addSystemMessage(message);
+      };
+
+      switch (op.kind) {
+        case "invalid": {
+          addSystemMessage(`/headers: ${op.reason}`);
+          return;
+        }
+        case "list": {
+          const entries = Object.entries(current);
+          if (entries.length === 0) {
+            addSystemMessage("No session headers set.");
+            return;
+          }
+          const lines = entries.map(
+            ([name, value]) =>
+              `${isSensitiveHeaderName(name) ? "* " : "  "}${name}: ${renderHeaderValue(name, value, op.showSecrets)}`,
+          );
+          addSystemMessage(
+            `Session headers (${entries.length}):\n${lines.join("\n")}${op.showSecrets ? "" : "\nPass `/headers list --show` to reveal values."}`,
+          );
+          return;
+        }
+        case "add": {
+          const parsed = parseHeaderLine(op.line);
+          if (!parsed.ok) {
+            addSystemMessage(
+              `/headers add rejected:\n${formatParseError(parsed.error)}`,
+            );
+            return;
+          }
+          const canonical = Object.keys(current).find(
+            (k) => k.toLowerCase() === parsed.value.name.toLowerCase(),
+          );
+          if (canonical && !op.allowOverwrite) {
+            addSystemMessage(
+              `Header "${canonical}" already set. Use \`/headers set\` to overwrite.`,
+            );
+            return;
+          }
+          if (canonical && canonical !== parsed.value.name) {
+            delete current[canonical];
+          }
+          current[parsed.value.name] = parsed.value.value;
+          await persist(
+            current,
+            `Header ${parsed.value.name} updated (value redacted).`,
+          );
+          return;
+        }
+        case "remove": {
+          const canonical = Object.keys(current).find(
+            (k) => k.toLowerCase() === op.name.toLowerCase(),
+          );
+          if (!canonical) {
+            addSystemMessage(`No header named "${op.name}".`);
+            return;
+          }
+          delete current[canonical];
+          await persist(current, `Header ${canonical} removed.`);
+          return;
+        }
+        case "clear": {
+          if (Object.keys(current).length === 0) {
+            addSystemMessage("Headers already empty.");
+            return;
+          }
+          await persist({}, "All session headers cleared.");
+          return;
+        }
+      }
+    },
+    [addSystemMessage],
+  );
+
   const handleCommandExecute = useCallback(
     async (command: string) => {
       const action = routeCommand(command, resolveSkillContent);
@@ -1633,6 +1726,10 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           );
           return;
         }
+        case "headers": {
+          await handleHeadersSlash(action.op);
+          return;
+        }
         case "execute-command":
           await executeCommand(action.command);
           return;
@@ -1645,6 +1742,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       executeCommand,
       showModelPicker,
       addSystemMessage,
+      handleHeadersSlash,
     ],
   );
 
@@ -1824,7 +1922,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         },
       ];
     });
-  }, [setThinking, setIsExecuting]);
+  }, [setThinking, setIsExecuting, subagentStore.setState]);
 
   const resumeWithQuestionResult = useCallback(
     (result: AskUserQuestionsResult) => {
