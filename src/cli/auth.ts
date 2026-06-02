@@ -105,13 +105,13 @@ async function promptWorkspaceSelection(
     process.exit(1);
   }
 
-  const selected = workspaces[index];
-  if (!selected) {
+  const workspace = workspaces[index];
+  if (!workspace) {
     console.error("Invalid selection.");
     process.exit(1);
   }
 
-  return selected;
+  return workspace;
 }
 
 // ---------------------------------------------------------------------------
@@ -304,7 +304,7 @@ async function handleWorkspaces(
     }
     workspace = onlyWorkspace;
   } else {
-    if (!isTTY()) {
+    if (!isTTY() || jsonOutput) {
       if (jsonOutput) {
         console.log(
           JSON.stringify({
@@ -568,15 +568,15 @@ Environment Variables:
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const subcommand = args[0];
+  const subcommand = args.find((arg) => !arg.startsWith("-"));
 
-  if (subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
+  if (subcommand === "help" || hasFlag("--help") || hasFlag("-h")) {
     showHelp();
     return;
   }
 
   try {
-    if (!subcommand || subcommand === "login" || subcommand?.startsWith("-")) {
+    if (!subcommand || subcommand === "login") {
       await login();
     } else if (subcommand === "logout") {
       await logout();
