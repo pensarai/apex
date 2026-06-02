@@ -15,6 +15,7 @@ import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../http/targetHeaders";
+import { getApexTracer } from "../../observability";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
@@ -497,22 +498,48 @@ export class OffensiveSecurityAgent<TResult = void> {
     const sid = this.subagentId;
     const bus = this.eventBus;
 
-    try {
-      for await (const chunk of this.streamResult.fullStream) {
-        bus.emitStreamPart(chunk, sid);
+    const runConsume = async (): Promise<TResult> => {
+      try {
+        for await (const chunk of this.streamResult.fullStream) {
+          bus.emitStreamPart(chunk, sid);
+        }
+      } finally {
+        this.persistentShell?.dispose();
       }
-    } finally {
-      this.persistentShell?.dispose();
-    }
 
-    if (this.abortSignal?.aborted) {
-      throw new DOMException("Agent aborted by user", "AbortError");
-    }
+      if (this.abortSignal?.aborted) {
+        throw new DOMException("Agent aborted by user", "AbortError");
+      }
 
-    if (this.resolveResult) {
-      return this.resolveResult(this.streamResult);
-    }
-    return undefined as TResult; // TResult is void when resolveResult is absent
+      if (this.resolveResult) {
+        return this.resolveResult(this.streamResult);
+      }
+      return undefined as TResult;
+    };
+
+    // Only subagents get a span here; top-level runs are wrapped by the host.
+    if (!sid) return runConsume();
+
+    const tracer = getApexTracer();
+    return tracer.startActiveSpan(
+      `invoke_agent ${sid}`,
+      {
+        attributes: {
+          "gen_ai.operation.name": "invoke_agent",
+          "gen_ai.agent.name": sid,
+        },
+      },
+      async (span) => {
+        try {
+          return await runConsume();
+        } catch (err) {
+          span.recordException(err as Error);
+          throw err;
+        } finally {
+          span.end();
+        }
+      },
+    );
   }
 
   /**
