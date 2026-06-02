@@ -29,6 +29,28 @@ export const documentVulnerabilityInputSchema = z.object({
   description: z.string().describe("Detailed description of the finding"),
   impact: z.string().describe("Potential impact if exploited"),
   evidence: z.string().describe("Evidence/proof of the vulnerability"),
+  materiality: z
+    .object({
+      exploitPath: z
+        .string()
+        .describe("Concrete exploit path confirmed by the POC"),
+      securityImpact: z
+        .string()
+        .describe("Material security impact if the exploit succeeds"),
+      affectedAssetOrAbusePath: z
+        .string()
+        .describe(
+          "The non-public asset, privileged action, state change, denial of service, account takeover, or other abuse path affected",
+        ),
+      falsePositiveRationale: z
+        .string()
+        .describe(
+          "Why common false-positive traps do not apply (public endpoint, local/demo context, generic errors, best-practice-only gaps, public identifiers, missing non-sensitive controls)",
+        ),
+    })
+    .describe(
+      "Materiality checklist proving this is more than a low-signal observation",
+    ),
   endpoint: z.string().describe("The affected endpoint or URL"),
   remediation: z.string().describe("Steps to fix the issue"),
   references: z.string().optional().describe("CVE, CWE, or related references"),
@@ -52,6 +74,18 @@ export const documentVulnerabilityInputSchema = z.object({
 export type DocumentVulnerabilityInput = z.infer<
   typeof documentVulnerabilityInputSchema
 >;
+
+function formatMateriality(input: DocumentVulnerabilityInput): string {
+  return [
+    input.evidence,
+    "",
+    "Materiality:",
+    `- Exploit path: ${input.materiality.exploitPath}`,
+    `- Security impact: ${input.materiality.securityImpact}`,
+    `- Affected asset or abuse path: ${input.materiality.affectedAssetOrAbusePath}`,
+    `- False-positive rationale: ${input.materiality.falsePositiveRationale}`,
+  ].join("\n");
+}
 
 type PocType = "bash" | "python" | "javascript";
 
@@ -121,6 +155,7 @@ CRITICAL RULES — READ BEFORE CALLING:
 - Provide your POC script inline via pocContent — do NOT create it separately
 - POC must exit 0 on success (vulnerability confirmed), non-zero on failure
 - POC must print clear evidence of exploitation to stdout
+- Fill the materiality checklist with the concrete exploit path, material security impact, affected non-public asset or abuse path, and why common false-positive traps do not apply
 - If the tool returns a POC failure or judge rejection, revise your approach and call again
 - Do NOT use this for: positive observations, informational notes, testing limitations, or anything that is not an exploitable security vulnerability
 - If you could not exploit a vulnerability, do NOT call this tool — mention it in your final response summary instead`,
@@ -128,6 +163,8 @@ CRITICAL RULES — READ BEFORE CALLING:
     execute: async (input) => {
       try {
         // Early dedup check — avoid POC execution + LLM calls for known vulns
+        const materializedEvidence = formatMateriality(input);
+
         if (ctx.findingsRegistry) {
           const quickCheck = ctx.findingsRegistry.isDuplicate({
             title: input.title,
@@ -135,7 +172,7 @@ CRITICAL RULES — READ BEFORE CALLING:
             endpoint: input.endpoint,
             severity: "MEDIUM",
             impact: input.impact,
-            evidence: input.evidence,
+            evidence: materializedEvidence,
             pocPath: "",
             remediation: input.remediation,
             ...(input.references && { references: input.references }),
@@ -189,7 +226,7 @@ CRITICAL RULES — READ BEFORE CALLING:
             title: input.title,
             description: input.description,
             impact: input.impact,
-            evidence: input.evidence,
+            evidence: materializedEvidence,
             endpoint: input.endpoint,
             vulnerabilityClass: input.vulnerabilityClass,
           },
@@ -251,20 +288,20 @@ CRITICAL RULES — READ BEFORE CALLING:
           mkdirSync(outputDir, { recursive: true });
         }
 
-        let evidenceForPrompt = input.evidence;
+        let evidenceForPrompt = materializedEvidence;
 
-        if (input.evidence.length > EVIDENCE_FILE_THRESHOLD) {
+        if (materializedEvidence.length > EVIDENCE_FILE_THRESHOLD) {
           const evidenceFilename = `${timestamp.split("T")[0]}-${slugify(input.title, 40)}-evidence.txt`;
           const evidenceFilePath = join(outputDir, evidenceFilename);
-          writeFileSync(evidenceFilePath, input.evidence);
+          writeFileSync(evidenceFilePath, materializedEvidence);
           evidenceForPrompt =
-            input.evidence.substring(0, EVIDENCE_FILE_THRESHOLD) +
+            materializedEvidence.substring(0, EVIDENCE_FILE_THRESHOLD) +
             `\n... [truncated — full output saved to ${evidenceFilename}]`;
           const pathPrefix = isVulnerability ? "findings" : "informational";
           evidenceFiles.push({
             path: `${pathPrefix}/${evidenceFilename}`,
             type: "raw-evidence",
-            description: `Full evidence output (${input.evidence.length} bytes)`,
+            description: `Full evidence output (${materializedEvidence.length} bytes)`,
           });
         }
 
@@ -353,7 +390,7 @@ CRITICAL RULES — READ BEFORE CALLING:
           title: input.title,
           description: input.description,
           impact: input.impact,
-          evidence: input.evidence,
+          evidence: materializedEvidence,
           endpoint: input.endpoint,
           pocPath,
           remediation: input.remediation,
@@ -454,7 +491,7 @@ ${cvssResult.cwes.map((cwe) => `- **${cwe.id}**${hasCanonicalName(cwe) ? `: ${cw
             ? `## Evidence
 
 \`\`\`
-${input.evidence.substring(0, 5_000)}
+${finding.evidence.substring(0, 5_000)}
 \`\`\`
 
 > Full evidence output: see evidence files below`

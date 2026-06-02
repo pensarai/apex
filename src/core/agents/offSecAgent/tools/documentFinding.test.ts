@@ -69,6 +69,13 @@ function makeDocumentInput() {
     description: "Admin data is exposed without authorization.",
     impact: "An attacker can read sensitive admin data.",
     evidence: "PoC output showed admin data.",
+    materiality: {
+      exploitPath: "Unauthenticated request to /admin returns sensitive data.",
+      securityImpact: "An attacker can read non-public admin data.",
+      affectedAssetOrAbusePath: "Non-public admin data exposure.",
+      falsePositiveRationale:
+        "The endpoint is not intentionally public and the PoC reads real non-public data.",
+    },
     endpoint: "https://example.com/admin",
     remediation: "Require authorization before returning admin data.",
     vulnerabilityClass: "missing-authentication",
