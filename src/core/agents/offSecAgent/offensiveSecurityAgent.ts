@@ -517,8 +517,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       return undefined as TResult;
     };
 
-    // Top-level runs are wrapped by the host's own invoke_agent span; only
-    // emit one here for subagents so the trace tree mirrors the agent tree.
+    // Only subagents get a span here; top-level runs are wrapped by the host.
     if (!sid) return runConsume();
 
     const tracer = getApexTracer();

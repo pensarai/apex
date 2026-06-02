@@ -1,9 +1,7 @@
 /**
- * Vendor-neutral OpenTelemetry helpers for Apex.
- *
- * Apex depends only on `@opentelemetry/api`. The tracer is a no-op unless
- * the host process registers an OTel SDK. Payload capture (prompts, tool
- * I/O) is off by default; set `AI_TRACE_RECORD_PAYLOADS=true` to enable.
+ * OpenTelemetry helpers. The tracer is a no-op unless the host process
+ * registers an OTel SDK; payload capture is off unless
+ * `AI_TRACE_RECORD_PAYLOADS=true`.
  */
 
 import { type Tracer, trace } from "@opentelemetry/api";

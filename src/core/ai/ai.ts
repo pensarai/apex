@@ -16,10 +16,10 @@ import {
   type ToolSet,
 } from "ai";
 import type { z } from "zod";
+import { shouldRecordAiPayloads } from "../observability";
 import { withCachedLastMessage, withCachedSystemPrompt } from "./caching";
 import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
 import { getMaxOutputTokens, getModelInfo } from "./models";
-import { shouldRecordAiPayloads } from "../observability";
 import {
   type AIAuthConfig,
   checkIfContextLengthError,

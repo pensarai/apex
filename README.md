@@ -99,16 +99,14 @@ Traces include reasoning steps, tool calls, token usage, and state checkpoints. 
 
 ### OpenTelemetry (Observability)
 
-Apex emits OpenTelemetry spans for agent runs, LLM calls, and tool executions through `@opentelemetry/api`. The spans are **no-ops unless your process registers an OpenTelemetry SDK** as the global tracer provider — Apex itself depends only on the small, vendor-neutral OTel API surface and ships no SDK.
+Apex emits OpenTelemetry spans for agent runs, LLM calls, and tool executions through `@opentelemetry/api`. Spans are no-ops unless your process registers an OpenTelemetry SDK as the global tracer provider; Apex ships no SDK.
 
-To capture Apex spans in your observability backend, register an SDK before importing Apex code:
+Register an SDK before importing Apex code:
 
-- **Sentry**: install `@sentry/node` ≥ 9.27 and add `Sentry.vercelAIIntegration()` to your `Sentry.init` integrations. Sentry's AI Agents Monitoring dashboard classifies the spans automatically.
-- **Any OTel-compatible backend** (Honeycomb, Tempo, Datadog, etc.): register `@opentelemetry/sdk-node` with the appropriate OTLP exporter.
+- **Sentry**: install `@sentry/node` ≥ 9.27 and add `Sentry.vercelAIIntegration()` to your `Sentry.init` integrations.
+- **Any OTel backend** (Honeycomb, Tempo, Datadog, etc.): register `@opentelemetry/sdk-node` with an OTLP exporter.
 
-Span attributes follow [OTel GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) — no vendor-specific keys leak from Apex.
-
-By default, telemetry captures only span shape (model, token counts, latency, finish reason, tool names). Set `AI_TRACE_RECORD_PAYLOADS=true` to also capture prompts, tool inputs, model outputs, and tool results. Disabled by default so sensitive content stays out of any backend Apex is wired up to.
+Spans follow [OTel GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/). Only span shape (model, token counts, latency, tool names) is captured by default; set `AI_TRACE_RECORD_PAYLOADS=true` to also record prompts, tool I/O, and outputs.
 
 ## Kali Linux Container (Optional)
 
