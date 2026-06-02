@@ -1,11 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
+import { newSessionId } from "../../../id/id";
 import {
   resolvePathWithinCodebaseRoot,
   resolveWhiteboxCodebaseRoot,
 } from "../../../whitebox";
-import { newSessionId } from "../../../id/id";
 import type { ToolContext } from "./types";
 
 /** Default max concurrent coding agents */
