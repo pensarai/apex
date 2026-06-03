@@ -1,6 +1,6 @@
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { tool } from "ai";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { join } from "path";
 import { z } from "zod";
 import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
 import {
@@ -390,7 +390,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
           const onData = ctx.eventBus
             ? (data: string) =>
-                ctx.eventBus!.emit("command-output", { data: redact(data) })
+                ctx.eventBus?.emit("command-output", { data: redact(data) })
             : undefined;
           const result = await ctx.persistentShell.execute(
             wrapCommandWithEnv(commandWithHeaders, promptInjectionEnvVars),

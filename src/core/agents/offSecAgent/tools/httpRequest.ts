@@ -1,7 +1,12 @@
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { tool } from "ai";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { join } from "path";
 import { z } from "zod";
+import {
+  resolveEffectiveHeaders,
+  shellQuote,
+  targetFetch,
+} from "../../../http/targetHeaders";
 import {
   EMPTY_PROMPT_INJECTION_LIBRARY,
   getPromptInjectionLibrary,
@@ -10,11 +15,6 @@ import {
   redactPromptInjectionPayloads,
   resolvePromptInjectionRefs,
 } from "../../../prompt-injections";
-import {
-  resolveEffectiveHeaders,
-  shellQuote,
-  targetFetch,
-} from "../../../http/targetHeaders";
 import {
   assertUrlInScope,
   resolverSessionFromCtx,
@@ -399,7 +399,7 @@ async function executeSandboxHttpRequest(
     curlCommand += ` "${url}" 2>&1`;
 
     const ssmTimeout = Math.max(timeoutSeconds, 30);
-    const result = await ctx.sandbox!.execute(curlCommand, {
+    const result = await ctx.sandbox?.execute(curlCommand, {
       timeout: ssmTimeout,
     });
 
@@ -428,7 +428,7 @@ async function executeSandboxHttpRequest(
     }
 
     const statusMatch = statusLine.match(/HTTP\/[\d.]+\s+(\d+)\s+(.+)/);
-    const status = statusMatch ? parseInt(statusMatch[1]) : 0;
+    const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
     const statusText = statusMatch ? statusMatch[2] : "Unknown";
     const responseBody = lines.slice(bodyStartIndex).join("\n");
 
