@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_OPENAI_REASONING_EFFORT,
   modelSupportsOpenAIReasoning,
+  modelSupportsSamplingParams,
   normalizeOpenAIReasoningEffort,
 } from "../ai";
 import { AVAILABLE_MODELS, getMaxOutputTokens, getModelInfo } from "./index";
@@ -161,5 +162,33 @@ describe("OpenAI reasoning effort support", () => {
     expect(normalizeOpenAIReasoningEffort("gpt-5.5")).toBe(
       DEFAULT_OPENAI_REASONING_EFFORT,
     );
+  });
+});
+
+describe("modelSupportsSamplingParams", () => {
+  it("rejects sampling params for Opus 4.7 and 4.8 across id forms", () => {
+    // Native Anthropic ids
+    expect(modelSupportsSamplingParams("claude-opus-4-7")).toBe(false);
+    expect(modelSupportsSamplingParams("claude-opus-4-8")).toBe(false);
+    // Bedrock-prefixed ids
+    expect(modelSupportsSamplingParams("us.anthropic.claude-opus-4-8")).toBe(
+      false,
+    );
+    // OpenRouter dotted ids
+    expect(modelSupportsSamplingParams("anthropic/claude-opus-4.8")).toBe(
+      false,
+    );
+    expect(modelSupportsSamplingParams("anthropic/claude-opus-4.7")).toBe(
+      false,
+    );
+  });
+
+  it("allows sampling params for older Opus and all other Claude tiers", () => {
+    expect(modelSupportsSamplingParams("claude-opus-4-6")).toBe(true);
+    expect(modelSupportsSamplingParams("claude-opus-4-5")).toBe(true);
+    expect(modelSupportsSamplingParams("claude-opus-4-1")).toBe(true);
+    expect(modelSupportsSamplingParams("claude-sonnet-4-8")).toBe(true);
+    expect(modelSupportsSamplingParams("claude-haiku-4-5")).toBe(true);
+    expect(modelSupportsSamplingParams("gpt-5.5")).toBe(true);
   });
 });

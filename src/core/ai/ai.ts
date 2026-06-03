@@ -586,6 +586,27 @@ export function modelSupportsThinking(modelId: string): boolean {
   );
 }
 
+/**
+ * Whether a model accepts sampling parameters (`temperature`, `top_p`,
+ * `top_k`).
+ *
+ * Claude Opus 4.7 and 4.8 reject any non-default sampling value with a 400 —
+ * they expose only adaptive thinking and the `effort` control, so behavior
+ * must be steered via prompting rather than sampling. Returns `false` for
+ * those models and `true` for everything else. Matches native
+ * (`claude-opus-4-8`), Bedrock (`…anthropic.claude-opus-4-8…`), and OpenRouter
+ * (`anthropic/claude-opus-4.8`) id forms.
+ */
+export function modelSupportsSamplingParams(modelId: string): boolean {
+  // Normalize OpenRouter's dotted version numbers (4.8 → 4-8) so all id
+  // forms hit the same dashed patterns.
+  const normalized = modelId.replace(/(\d)\.(\d)/g, "$1-$2");
+  return !(
+    normalized.includes("claude-opus-4-7") ||
+    normalized.includes("claude-opus-4-8")
+  );
+}
+
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
   const { provider } = getModelInfo(modelId);
   if (provider !== "openai") return false;
@@ -1112,6 +1133,11 @@ export async function generateObjectResponse<T extends z.ZodType>(
     model,
     openAIReasoningEffort,
   );
+  // Opus 4.7/4.8 reject sampling params with a 400 — omit temperature for
+  // them and let prompting steer behavior. Other models keep it.
+  const effectiveTemperature = modelSupportsSamplingParams(model)
+    ? temperature
+    : undefined;
 
   let lastError: unknown;
 
@@ -1126,7 +1152,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
         prompt,
         system,
         maxOutputTokens: maxTokens,
-        temperature,
+        temperature: effectiveTemperature,
         providerOptions: normalizedOpenAIEffort
           ? {
               openai: {
