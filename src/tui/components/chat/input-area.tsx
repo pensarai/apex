@@ -7,6 +7,7 @@
  * - Mode and status awareness
  */
 
+import type { TextareaRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -17,8 +18,11 @@ import { useDialog } from "../../context/dialog";
 import { useDimensions } from "../../context/dimensions";
 import { InputProvider, useInput } from "../../context/input";
 import { useTheme } from "../../theme";
-import { getPasteText } from "../../utils/paste";
-import { PromptInput, type PromptInputRef } from "../shared";
+import {
+  PromptInput,
+  type PromptInputRef,
+  redirectKeyBindings,
+} from "../shared";
 
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   anthropic: "Anthropic",
@@ -391,6 +395,18 @@ function ApprovalInputArea({
   const { colors } = useTheme();
   const { setExternalDialogOpen } = useDialog();
   const [focusedElement, setFocusedElement] = useState(0); // 0=Yes, 1=Auto, 2=Input
+  const textareaRef = useRef<TextareaRenderable | null>(null);
+  const redirectInputRef = useRef(redirectInput);
+  const onRedirectRef = useRef(onRedirect);
+
+  redirectInputRef.current = redirectInput;
+  onRedirectRef.current = onRedirect;
+
+  useEffect(() => {
+    if (textareaRef.current?.plainText !== redirectInput) {
+      textareaRef.current?.setText(redirectInput);
+    }
+  }, [redirectInput]);
 
   // Signal to dashboard that redirect input is focused so it skips Y/A shortcuts
   useEffect(() => {
@@ -414,13 +430,13 @@ function ApprovalInputArea({
     }
 
     // Enter to select
-    if (key.name === "return") {
+    if ((key.name === "return" || key.name === "enter") && !key.shift) {
       if (focusedElement === 0) {
         onApprove();
       } else if (focusedElement === 1) {
         onAutoApprove();
-      } else if (focusedElement === 2 && redirectInput.trim()) {
-        onRedirect(redirectInput);
+      } else if (focusedElement === 2 && redirectInputRef.current.trim()) {
+        onRedirectRef.current(redirectInputRef.current);
       }
       return;
     }
@@ -479,13 +495,20 @@ function ApprovalInputArea({
           content={focusedElement === 2 ? ">" : " "}
         />
         <text fg={colors.primary} content=">" />
-        <input
+        <textarea
+          ref={textareaRef}
           width="100%"
-          value={redirectInput}
-          onInput={setRedirectInput}
-          onPaste={(event) => {
-            const cleaned = getPasteText(event).replace(/\r?\n/g, " ");
-            setRedirectInput(cleaned);
+          minHeight={1}
+          maxHeight={3}
+          initialValue={redirectInput}
+          keyBindings={redirectKeyBindings}
+          onContentChange={() => {
+            setRedirectInput(textareaRef.current?.plainText ?? "");
+          }}
+          onSubmit={() => {
+            if (redirectInputRef.current.trim()) {
+              onRedirectRef.current(redirectInputRef.current);
+            }
           }}
           focused={focusedElement === 2}
           placeholder="Or type to redirect agent..."
