@@ -295,6 +295,7 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
       ...(headers !== undefined ? { headers } : {}),
     },
   });
+  console.log(`PENSAR_SESSION_PATH:${session.rootPath}`);
 
   const { bus: pentestBus, cleanup: wandbCleanup } =
     await createInstrumentedBus(session);
@@ -322,6 +323,12 @@ POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}`);
   } finally {
     await wandbCleanup();
   }
+
+  // Some tool subsystems (browser/MCP/session watchers) can leave handles open
+  // after the pentest workflow has printed its final results. For CLI use the
+  // command is complete here, so exit explicitly instead of letting harnesses
+  // misclassify a completed run as a timeout.
+  process.exit(0);
 }
 
 async function runTargetedPentest() {
@@ -364,6 +371,7 @@ ${objectivesList}
     targets: [target],
     ...(headers !== undefined ? { config: { headers } } : {}),
   });
+  console.log(`PENSAR_SESSION_PATH:${session.rootPath}`);
 
   const { bus: targetedBus, cleanup: wandbCleanup } =
     await createInstrumentedBus(session);
@@ -388,6 +396,8 @@ POCs:      ${pocsPath}`);
   } finally {
     await wandbCleanup();
   }
+
+  process.exit(0);
 }
 
 async function runThreatModel() {
