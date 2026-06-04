@@ -1,12 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
   clampQueueSelection,
+  createQueuedMessage,
   navigateDown,
   navigateUp,
+  type QueuedMessage,
   queueAdd,
   queueRemove,
   selectionAfterRemove,
 } from "./queue";
+
+function q(...texts: string[]): QueuedMessage[] {
+  return texts.map((t) => createQueuedMessage(t));
+}
+
+function texts(queue: QueuedMessage[]): string[] {
+  return queue.map((m) => m.text);
+}
 
 describe("queued message helpers", () => {
   // -------------------------------------------------------
@@ -14,18 +24,18 @@ describe("queued message helpers", () => {
   // -------------------------------------------------------
   describe("queueAdd", () => {
     it("appends to an empty queue", () => {
-      expect(queueAdd([], "hello")).toEqual(["hello"]);
+      expect(texts(queueAdd([], "hello"))).toEqual(["hello"]);
     });
 
     it("appends to a non-empty queue", () => {
-      expect(queueAdd(["a", "b"], "c")).toEqual(["a", "b", "c"]);
+      expect(texts(queueAdd(q("a", "b"), "c"))).toEqual(["a", "b", "c"]);
     });
 
     it("does not mutate the original array", () => {
-      const orig = ["a"];
+      const orig = q("a");
       const result = queueAdd(orig, "b");
-      expect(orig).toEqual(["a"]);
-      expect(result).toEqual(["a", "b"]);
+      expect(texts(orig)).toEqual(["a"]);
+      expect(texts(result)).toEqual(["a", "b"]);
     });
   });
 
@@ -34,25 +44,25 @@ describe("queued message helpers", () => {
   // -------------------------------------------------------
   describe("queueRemove", () => {
     it("removes the only item", () => {
-      expect(queueRemove(["a"], 0)).toEqual([]);
+      expect(queueRemove(q("a"), 0)).toEqual([]);
     });
 
     it("removes first item from multi-item queue", () => {
-      expect(queueRemove(["a", "b", "c"], 0)).toEqual(["b", "c"]);
+      expect(texts(queueRemove(q("a", "b", "c"), 0))).toEqual(["b", "c"]);
     });
 
     it("removes middle item", () => {
-      expect(queueRemove(["a", "b", "c"], 1)).toEqual(["a", "c"]);
+      expect(texts(queueRemove(q("a", "b", "c"), 1))).toEqual(["a", "c"]);
     });
 
     it("removes last item", () => {
-      expect(queueRemove(["a", "b", "c"], 2)).toEqual(["a", "b"]);
+      expect(texts(queueRemove(q("a", "b", "c"), 2))).toEqual(["a", "b"]);
     });
 
     it("does not mutate the original array", () => {
-      const orig = ["a", "b"];
+      const orig = q("a", "b");
       queueRemove(orig, 0);
-      expect(orig).toEqual(["a", "b"]);
+      expect(texts(orig)).toEqual(["a", "b"]);
     });
   });
 
@@ -147,19 +157,19 @@ describe("queued message helpers", () => {
   // -------------------------------------------------------
   describe("round-trip scenarios", () => {
     it("queue → add → add → navigate up → delete → navigate down to input", () => {
-      let queue: string[] = [];
+      let queue: QueuedMessage[] = [];
       let sel = -1;
 
       queue = queueAdd(queue, "first");
       queue = queueAdd(queue, "second");
-      expect(queue).toEqual(["first", "second"]);
+      expect(texts(queue)).toEqual(["first", "second"]);
 
       sel = navigateUp(sel, queue.length);
       expect(sel).toBe(1);
 
       queue = queueRemove(queue, sel);
       sel = selectionAfterRemove(2, sel);
-      expect(queue).toEqual(["first"]);
+      expect(texts(queue)).toEqual(["first"]);
       expect(sel).toBe(0);
 
       sel = navigateDown(sel, queue.length);
@@ -167,7 +177,7 @@ describe("queued message helpers", () => {
     });
 
     it("add 3 → navigate up twice → edit (remove) → clamp", () => {
-      let queue = ["a", "b", "c"];
+      let queue = q("a", "b", "c");
       let sel = -1;
 
       sel = navigateUp(sel, queue.length);
@@ -177,22 +187,22 @@ describe("queued message helpers", () => {
       const edited = queue[sel];
       queue = queueRemove(queue, sel);
       sel = -1;
-      expect(edited).toBe("b");
-      expect(queue).toEqual(["a", "c"]);
+      expect(edited.text).toBe("b");
+      expect(texts(queue)).toEqual(["a", "c"]);
 
       queue = queueAdd(queue, "b-edited");
-      expect(queue).toEqual(["a", "c", "b-edited"]);
+      expect(texts(queue)).toEqual(["a", "c", "b-edited"]);
     });
 
     it("send now removes from queue and resets selection", () => {
-      let queue = ["a", "b", "c"];
+      let queue = q("a", "b", "c");
       let sel = 1;
 
       const msgToSend = queue[sel];
       queue = queueRemove(queue, sel);
       sel = -1;
-      expect(msgToSend).toBe("b");
-      expect(queue).toEqual(["a", "c"]);
+      expect(msgToSend.text).toBe("b");
+      expect(texts(queue)).toEqual(["a", "c"]);
       expect(sel).toBe(-1);
     });
   });

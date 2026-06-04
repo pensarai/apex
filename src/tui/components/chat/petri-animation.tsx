@@ -153,6 +153,7 @@ export function PetriAnimation({
     <box flexDirection="column" width={actualWidth} height={actualHeight}>
       {frame.map((row, idx) => (
         <text
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional animation rows, never reorder
           key={idx}
           fg={getRowColor(idx, actualHeight, gradientColors)}
           content={row}

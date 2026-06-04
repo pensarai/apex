@@ -1,7 +1,8 @@
 import { useTheme } from "../../theme";
+import type { QueuedMessage } from "./queue";
 
 interface QueuedMessagesProps {
-  messages: string[];
+  messages: QueuedMessage[];
   selectedIndex: number;
 }
 
@@ -26,9 +27,10 @@ export function QueuedMessages({
       </box>
       {messages.map((msg, index) => {
         const isSelected = index === selectedIndex;
-        const displayText = msg.length > 80 ? msg.slice(0, 77) + "…" : msg;
+        const displayText =
+          msg.text.length > 80 ? msg.text.slice(0, 77) + "…" : msg.text;
         return (
-          <box key={`q-${index}`} flexDirection="row" gap={1}>
+          <box key={msg.id} flexDirection="row" gap={1}>
             <text fg={isSelected ? colors.primary : colors.textMuted}>
               {isSelected ? "▸" : " "}
             </text>

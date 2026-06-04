@@ -65,7 +65,7 @@ export function DialogControls({ controls }: DialogControlsProps) {
   return (
     <text fg={colors.textMuted}>
       {controls.map((control, i) => (
-        <span key={i}>
+        <span key={control.key}>
           {i > 0 && " · "}
           <span fg={keyColor(control.variant)}>[{control.key}]</span>
           {" " + control.label}

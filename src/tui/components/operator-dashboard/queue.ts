@@ -3,13 +3,30 @@
  * Extracted for testability — consumed by the OperatorDashboard keyboard handler.
  */
 
+export interface QueuedMessage {
+  id: number;
+  text: string;
+}
+
+let nextId = 0;
+
+export function createQueuedMessage(text: string): QueuedMessage {
+  return { id: nextId++, text };
+}
+
 /** Add a message to the end of the queue. */
-export function queueAdd(queue: string[], message: string): string[] {
-  return [...queue, message];
+export function queueAdd(
+  queue: QueuedMessage[],
+  message: string,
+): QueuedMessage[] {
+  return [...queue, createQueuedMessage(message)];
 }
 
 /** Remove the item at `index` and return the new queue. */
-export function queueRemove(queue: string[], index: number): string[] {
+export function queueRemove(
+  queue: QueuedMessage[],
+  index: number,
+): QueuedMessage[] {
   return queue.filter((_, i) => i !== index);
 }
 

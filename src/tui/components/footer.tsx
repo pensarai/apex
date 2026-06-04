@@ -76,8 +76,8 @@ export default function Footer({
         </box>
       ) : (
         <box flexDirection="row" gap={2} flexShrink={0}>
-          {hotkeys.map((hotkey, index) => (
-            <box key={index} flexDirection="row" gap={1}>
+          {hotkeys.map((hotkey) => (
+            <box key={hotkey.key} flexDirection="row" gap={1}>
               <text fg={colors.primary}>[{hotkey.key}]</text>
               <text fg={colors.textMuted}>{hotkey.label}</text>
             </box>
@@ -180,6 +180,7 @@ function ContextProgress({
   return (
     <box flexDirection="row">
       {cells.map((cell, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: positional progress-bar cells, never reorder
         <text key={i} fg={cell.fg} content={cell.ch} />
       ))}
     </box>

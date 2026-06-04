@@ -153,8 +153,8 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
           {hasOptions && (
             <box flexDirection="column" gap={0} marginTop={1}>
               <text fg={colors.textMuted}>Options:</text>
-              {selectedCommand.options?.map((opt, idx) => (
-                <box key={idx} flexDirection="row" paddingLeft={2} gap={1}>
+              {selectedCommand.options?.map((opt) => (
+                <box key={opt.name} flexDirection="row" paddingLeft={2} gap={1}>
                   <text fg={colors.primary}>{opt.name}</text>
                   {opt.valueHint && (
                     <text fg={colors.textMuted}>{opt.valueHint}</text>
