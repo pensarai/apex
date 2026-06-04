@@ -9,12 +9,8 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runWithBoundedConcurrency } from "./concurrency";
 
-/**
- * Minimal AsyncLocalStorage-backed OTel context manager for tests. Apex depends
- * only on `@opentelemetry/api` (no SDK), so without registering a manager
- * `context.active()` is always ROOT and propagation can't be observed. This
- * mirrors what the host's Sentry/OTel SDK installs in production.
- */
+// Minimal AsyncLocalStorage context manager — apex ships only @opentelemetry/api,
+// so a manager must be registered for context propagation to be observable here.
 class TestContextManager implements ContextManager {
   private readonly als = new AsyncLocalStorage<Context>();
   active(): Context {
@@ -192,9 +188,8 @@ describe("runWithBoundedConcurrency", () => {
       const KEY = createContextKey("test-trace-id");
       const seen: (unknown | undefined)[] = [];
 
-      // concurrency=1 forces tasks 1..3 to launch from the `.finally()`
-      // continuation — the exact boundary that previously dropped the active
-      // context and orphaned agent spans.
+      // concurrency=1 makes tasks 1..3 launch from the `.finally()` continuation,
+      // the boundary that drops context without the explicit binding.
       await context.with(ROOT_CONTEXT.setValue(KEY, "parent"), async () => {
         await runWithBoundedConcurrency([0, 1, 2, 3], 1, async (i) => {
           await new Promise((r) => setTimeout(r, 1));

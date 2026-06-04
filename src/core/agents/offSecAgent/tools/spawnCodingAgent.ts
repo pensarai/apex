@@ -98,10 +98,8 @@ Returns an array of results with the text output from each agent.`,
 
       const total = validatedTasks.length;
 
-      // Fan out through the shared bounded-concurrency primitive so each coding
-      // sub-agent inherits this tool call's OTel context (keeping its spans
-      // parented). Errors are caught per task and returned inline, so the
-      // helper never yields a null.
+      // Shared primitive so each sub-agent inherits the OTel context. Errors
+      // are caught per task and returned inline, so results never contain null.
       const settled = await runWithBoundedConcurrency(
         validatedTasks,
         DEFAULT_CONCURRENCY,
@@ -128,7 +126,6 @@ Returns an array of results with the text output from each agent.`,
             };
           }
         },
-        ctx.abortSignal,
       );
 
       const results = settled.filter(

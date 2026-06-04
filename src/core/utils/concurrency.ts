@@ -10,15 +10,10 @@ import { context } from "@opentelemetry/api";
  * orphaned promises where agents finish their work but persistence
  * (saveSubagentData, manifest updates) never executes.
  *
- * Trace context: this is the seam where a code workflow fans out into agent
- * work, so it must carry the caller's OTel context into every task. Tasks are
- * launched from a `new Promise` executor and re-scheduled from `.finally()`
- * continuations, neither of which inherits the active context on its own — so
- * each `fn` invocation is explicitly run under the context that was active when
- * this helper was called. Without this, spans created inside `fn` (agent
- * `invoke_agent` spans and their gen_ai children) detach from the parent span
- * and never join the trace. Route all agent fan-out through this helper so the
- * routing can't be forgotten.
+ * Each task runs under the OTel context active when this helper was called —
+ * the `new Promise` executor and `.finally()` continuations don't carry it on
+ * their own, so spans created inside `fn` would otherwise detach from the
+ * caller's trace. Route agent fan-out through here so context propagates.
  */
 export async function runWithBoundedConcurrency<T, R>(
   items: T[],

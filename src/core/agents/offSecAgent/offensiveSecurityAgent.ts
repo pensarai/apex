@@ -393,11 +393,8 @@ export class OffensiveSecurityAgent<TResult = void> {
       cacheWriteTokens: number;
     } | null = null;
 
-    // Stream creation is deferred (see the `streamResult` getter) so the AI
-    // SDK telemetry spans are emitted under this agent's `invoke_agent` span
-    // (entered in `consume()`), not under whatever context was active at
-    // construction. That is what keeps a subagent's gen_ai spans nested under
-    // its own agent span rather than orphaned in the trace.
+    // Deferred so the AI SDK telemetry binds to this agent's span (entered in
+    // consume()) rather than the construction-time context. See `streamResult`.
     this.createStream = () =>
       streamResponse({
         prompt: input.prompt,
@@ -469,11 +466,8 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /**
    * The underlying Vercel AI SDK stream result — escape hatch for advanced use.
-   *
-   * Created lazily and cached on first access so the AI SDK telemetry spans are
-   * emitted under whatever OTel span is active at first consumption — this
-   * agent's `invoke_agent` span in {@link consume} — rather than the
-   * construction-time context.
+   * Created lazily so its telemetry binds to the span active at first
+   * consumption (this agent's `invoke_agent` span), not the construction context.
    */
   get streamResult(): StreamTextResult<ToolSet, never> {
     if (this._streamResult === null) {
