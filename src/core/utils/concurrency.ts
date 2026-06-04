@@ -1,3 +1,5 @@
+import { context } from "@opentelemetry/api";
+
 /**
  * Run tasks with bounded concurrency.
  * Returns an array of results in the same order as items.
@@ -7,6 +9,11 @@
  * currently-running tasks are awaited to completion. This prevents
  * orphaned promises where agents finish their work but persistence
  * (saveSubagentData, manifest updates) never executes.
+ *
+ * Each task runs under the OTel context active when this helper was called —
+ * the `new Promise` executor and `.finally()` continuations don't carry it on
+ * their own, so spans created inside `fn` would otherwise detach from the
+ * caller's trace. Route agent fan-out through here so context propagates.
  */
 export async function runWithBoundedConcurrency<T, R>(
   items: T[],
@@ -15,6 +22,7 @@ export async function runWithBoundedConcurrency<T, R>(
   abortSignal?: AbortSignal,
 ): Promise<(R | null)[]> {
   const results: (R | null)[] = new Array(items.length).fill(null);
+  const parentContext = context.active();
   let nextIdx = 0;
   let completed = 0;
 
@@ -44,7 +52,8 @@ export async function runWithBoundedConcurrency<T, R>(
         const idx = nextIdx++;
         active++;
 
-        fn(items[idx]!, idx)
+        context
+          .with(parentContext, () => fn(items[idx]!, idx))
           .then((r) => {
             results[idx] = r;
           })
