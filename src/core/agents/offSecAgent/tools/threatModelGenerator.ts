@@ -9,6 +9,37 @@ import type { ToolContext } from "./types";
 const THREAT_MODEL_CONCURRENCY = 10;
 const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 
+// ── Liveness watchdog for the spawned threat-model child ────────────────────
+//
+// The `document_endpoint` tool blocks on `await agent.consume()` below. A child
+// can wedge in a way its own 5-min model-idle timeout never catches — a hung
+// post-stream step, a stuck provider call, or a `consume()` that never settles
+// even after the child's session has already ended. When that happens the
+// `await` would block forever, freezing the parent tool-call, the parent agent
+// session, and the whole recon at "N-1/N apps" (exactly the observed hang).
+//
+// We bound the await on *liveness* rather than a wall-clock deadline: as long
+// as the child keeps emitting stream activity we keep waiting (a slow but
+// healthy threat model is never killed). Only if the child goes completely
+// silent for longer than this window do we abandon it and fall back to the
+// heuristic-only result (`document_endpoint` already tolerates a null return).
+//
+// Sized comfortably above the child's own 5-min model-idle timeout + auto-
+// resume, so a *recoverable* model stall produces fresh activity and resets the
+// timer before this fires; only a genuine wedge trips it.
+const THREAT_MODEL_LIVENESS_TIMEOUT_MS = 8 * 60 * 1000;
+const THREAT_MODEL_LIVENESS_POLL_MS = 15 * 1000;
+
+// Child stream events that count as "still making progress". `text-delta` fires
+// on essentially every token, so a healthy run resets the timer constantly.
+const THREAT_MODEL_LIVENESS_EVENTS = [
+  "text-delta",
+  "tool-call-start",
+  "tool-call-delta",
+  "tool-call-complete",
+  "tool-result",
+] as const;
+
 // ---------------------------------------------------------------------------
 // Response schema
 // ---------------------------------------------------------------------------
@@ -318,6 +349,18 @@ export async function generateThreatModelForEndpoint(
 
     const prompt = buildThreatModelPrompt(input, ctx.projectThreatModel);
 
+    // Child-scoped abort controller. The liveness watchdog cancels *this*
+    // threat model without touching the shared parent `ctx.abortSignal`; a
+    // parent abort still propagates down via the listener below.
+    const childAbort = new AbortController();
+    if (ctx.abortSignal) {
+      if (ctx.abortSignal.aborted) childAbort.abort();
+      else
+        ctx.abortSignal.addEventListener("abort", () => childAbort.abort(), {
+          once: true,
+        });
+    }
+
     const agent = new CodeAgent<ThreatModelResult>({
       codebasePath: ctx.agentCwd,
       objective: prompt,
@@ -325,15 +368,59 @@ export async function generateThreatModelForEndpoint(
       model,
       session: ctx.session,
       authConfig: ctx.authConfig,
-      abortSignal: ctx.abortSignal,
+      abortSignal: childAbort.signal,
       eventBus: localBus,
       subagentId,
       responseSchema: ThreatModelResultSchema,
       excludeTools: ["document_endpoint", "document_app"],
     });
 
+    // Liveness watchdog: reset `lastActivity` on every child stream event;
+    // resolve to STUCK if the child goes silent past the timeout window.
+    let lastActivity = Date.now();
+    const bumpActivity = () => {
+      lastActivity = Date.now();
+    };
+    for (const ev of THREAT_MODEL_LIVENESS_EVENTS) localBus.on(ev, bumpActivity);
+
+    let livenessTimer: ReturnType<typeof setInterval> | undefined;
+    const STUCK = Symbol("threat-model-stuck");
+    const watchdog = new Promise<typeof STUCK>((resolve) => {
+      livenessTimer = setInterval(() => {
+        if (Date.now() - lastActivity > THREAT_MODEL_LIVENESS_TIMEOUT_MS) {
+          resolve(STUCK);
+        }
+      }, THREAT_MODEL_LIVENESS_POLL_MS);
+    });
+    const cleanupWatchdog = () => {
+      if (livenessTimer) clearInterval(livenessTimer);
+      for (const ev of THREAT_MODEL_LIVENESS_EVENTS)
+        localBus.off(ev, bumpActivity);
+    };
+
     try {
-      const result = await agent.consume();
+      const outcome = await Promise.race([agent.consume(), watchdog]);
+
+      if (outcome === STUCK) {
+        // Genuine wedge: abort the child (frees the pLimit slot + provider
+        // connection) and degrade. `document_endpoint` falls back to the
+        // heuristic risk score when this returns null — so the tool-call
+        // completes and the recon advances instead of hanging forever.
+        childAbort.abort();
+        ctx.eventBus?.emit("subagent-complete", {
+          subagentId,
+          status: "failed",
+          parentSubagentId: ctx.subagentId,
+        });
+        console.error(
+          `Threat model for ${input.routePath} stuck (no activity for ` +
+            `${Math.round(THREAT_MODEL_LIVENESS_TIMEOUT_MS / 1000)}s); ` +
+            `abandoning and falling back to heuristic-only.`,
+        );
+        return null;
+      }
+
+      const result = outcome;
       ctx.eventBus?.emit("subagent-complete", {
         subagentId,
         status: "completed",
@@ -366,6 +453,7 @@ export async function generateThreatModelForEndpoint(
         ),
       };
     } catch (error) {
+      childAbort.abort();
       ctx.eventBus?.emit("subagent-complete", {
         subagentId,
         status: "failed",
@@ -375,6 +463,8 @@ export async function generateThreatModelForEndpoint(
         `Threat model generation failed for ${input.routePath}: ${error instanceof Error ? error.message : String(error)}`,
       );
       return null;
+    } finally {
+      cleanupWatchdog();
     }
   });
 }
