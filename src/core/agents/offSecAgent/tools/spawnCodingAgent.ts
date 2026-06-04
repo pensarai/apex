@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
+import { runWithBoundedConcurrency } from "../../../utils/concurrency";
 import {
   resolvePathWithinCodebaseRoot,
   resolveWhiteboxCodebaseRoot,
@@ -95,62 +96,51 @@ Returns an array of results with the text output from each agent.`,
         }
       }
 
-      const concurrency = DEFAULT_CONCURRENCY;
       const total = validatedTasks.length;
 
-      const results: Array<{
-        codebasePath: string;
-        objective: string;
-        output: string;
-        error?: string;
-      }> = [];
-
-      let active = 0;
-      let idx = 0;
-      const queue = validatedTasks.map((t, i) => ({ ...t, index: i }));
-
-      await new Promise<void>((resolve) => {
-        function next() {
-          if (results.length === total) {
-            resolve();
-            return;
-          }
-
-          while (active < concurrency && idx < queue.length) {
-            const item = queue[idx++];
-            active++;
-
-            runSingleCodingAgent(
+      // Fan out through the shared bounded-concurrency primitive so each coding
+      // sub-agent inherits this tool call's OTel context (keeping its spans
+      // parented). Errors are caught per task and returned inline, so the
+      // helper never yields a null.
+      const settled = await runWithBoundedConcurrency(
+        validatedTasks,
+        DEFAULT_CONCURRENCY,
+        async (item, i) => {
+          try {
+            const output = await runSingleCodingAgent(
               ctx,
               item.codebasePath,
               item.objective,
-              item.index + 1,
+              i + 1,
               item.name,
-            )
-              .then((output) => {
-                results.push({
-                  codebasePath: item.codebasePath,
-                  objective: item.objective,
-                  output,
-                });
-              })
-              .catch((err) => {
-                results.push({
-                  codebasePath: item.codebasePath,
-                  objective: item.objective,
-                  output: "",
-                  error: err.message,
-                });
-              })
-              .finally(() => {
-                active--;
-                next();
-              });
+            );
+            return {
+              codebasePath: item.codebasePath,
+              objective: item.objective,
+              output,
+            };
+          } catch (err) {
+            return {
+              codebasePath: item.codebasePath,
+              objective: item.objective,
+              output: "",
+              error: err instanceof Error ? err.message : String(err),
+            };
           }
-        }
+        },
+        ctx.abortSignal,
+      );
 
-        next();
-      });
+      const results = settled.filter(
+        (
+          r,
+        ): r is {
+          codebasePath: string;
+          objective: string;
+          output: string;
+          error?: string;
+        } => r !== null,
+      );
 
       const failedTasks = results.filter((r) => r.error);
 

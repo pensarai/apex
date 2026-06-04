@@ -1,5 +1,54 @@
-import { describe, expect, it } from "vitest";
+import { AsyncLocalStorage } from "node:async_hooks";
+import {
+  type Context,
+  type ContextManager,
+  context,
+  createContextKey,
+  ROOT_CONTEXT,
+} from "@opentelemetry/api";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runWithBoundedConcurrency } from "./concurrency";
+
+/**
+ * Minimal AsyncLocalStorage-backed OTel context manager for tests. Apex depends
+ * only on `@opentelemetry/api` (no SDK), so without registering a manager
+ * `context.active()` is always ROOT and propagation can't be observed. This
+ * mirrors what the host's Sentry/OTel SDK installs in production.
+ */
+class TestContextManager implements ContextManager {
+  private readonly als = new AsyncLocalStorage<Context>();
+  active(): Context {
+    return this.als.getStore() ?? ROOT_CONTEXT;
+  }
+  with<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
+    ctx: Context,
+    fn: F,
+    thisArg?: ThisParameterType<F>,
+    ...args: A
+  ): ReturnType<F> {
+    return this.als.run(ctx, () =>
+      fn.apply(thisArg as ThisParameterType<F>, args),
+    );
+  }
+  bind<T>(ctx: Context, target: T): T {
+    if (typeof target === "function") {
+      const self = this;
+      return function (this: unknown, ...args: unknown[]) {
+        return self.with(ctx, () =>
+          (target as (...a: unknown[]) => unknown).apply(this, args),
+        );
+      } as T;
+    }
+    return target;
+  }
+  enable(): this {
+    return this;
+  }
+  disable(): this {
+    this.als.disable();
+    return this;
+  }
+}
 
 describe("runWithBoundedConcurrency", () => {
   it("respects concurrency limit", async () => {
@@ -128,6 +177,33 @@ describe("runWithBoundedConcurrency", () => {
 
       // Task 1 completes, launches task 2, task 2 aborts — task 3 should never start
       expect(launchCount).toBe(2);
+    });
+  });
+
+  describe("trace context propagation", () => {
+    beforeAll(() => {
+      context.setGlobalContextManager(new TestContextManager());
+    });
+    afterAll(() => {
+      context.disable();
+    });
+
+    it("runs every task under the context active at call time, including continuation-launched tasks", async () => {
+      const KEY = createContextKey("test-trace-id");
+      const seen: (unknown | undefined)[] = [];
+
+      // concurrency=1 forces tasks 1..3 to launch from the `.finally()`
+      // continuation — the exact boundary that previously dropped the active
+      // context and orphaned agent spans.
+      await context.with(ROOT_CONTEXT.setValue(KEY, "parent"), async () => {
+        await runWithBoundedConcurrency([0, 1, 2, 3], 1, async (i) => {
+          await new Promise((r) => setTimeout(r, 1));
+          seen[i] = context.active().getValue(KEY);
+          return i;
+        });
+      });
+
+      expect(seen).toEqual(["parent", "parent", "parent", "parent"]);
     });
   });
 });
