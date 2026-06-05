@@ -15,45 +15,63 @@ const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 // The `document_endpoint` tool blocks on `await agent.consume()` below. In
 // production a single threat-model await was observed hanging forever (5+ hrs),
 // freezing the parent tool-call, the parent agent session, and the whole recon
-// at "N-1/N apps". Two distinct failure modes produced this:
+// at "N-1/N apps". THREE distinct failure modes produce this — none caught by
+// any one mechanism, so `consume()` is raced against all three (no wall-clock
+// timeout on the work itself):
 //
-//   (A) the child loops without ever calling its `response` tool, so its model
-//       stream never terminates and `consume()` never returns; and
-//   (B) the child's stream finishes (the child session shows completed) but
-//       `consume()`'s `for await (…fullStream)` never closes, so `consume()`
-//       hangs even though the run is done.
+//   (A) Loop — the child never calls its `response` tool, so its model stream
+//       runs forever. → STEP BUDGET (`stepCountIs`) forces the stream to end;
+//       `consume()` then returns (no `response` captured → degrade).
+//   (B) Iterator hang — the stream finishes but `consume()`'s `for await
+//       (…fullStream)` never closes. → TERMINAL-SIGNAL race on
+//       `streamResult.finishReason` (resolves the instant streamText finishes).
+//   (C) Silent freeze — the child wedges MID-step on a hung sub-tool (its own
+//       model-idle-timeout is gated off while a tool is in flight), emitting
+//       NOTHING. No step completes (so the step budget never fires) and the
+//       stream never finishes (so finishReason never resolves) — but the child
+//       goes completely SILENT. → LIVENESS WATCHDOG: no bus activity for
+//       THREAT_MODEL_SILENCE_MS ⇒ abandon. This was the dominant mode observed.
 //
-// We close both holes with first-principles bounds — no wall-clock timeout:
-//
-//   1. A step budget (`stepCountIs(THREAT_MODEL_MAX_STEPS)`) on the child agent
-//      guarantees its stream ALWAYS terminates. A threat model that can't emit
-//      its structured `response` within this many iterations is malfunctioning;
-//      this is an iteration-count bound, not a clock, so a slow-but-healthy run
-//      is never killed. Fixes (A).
-//   2. We race `consume()` against the agent's authoritative terminal signal,
-//      `streamResult.finishReason` (a Promise that resolves when streamText
-//      finishes for ANY reason — response tool, step budget, or error). If the
-//      stream is done but `consume()` is still pending we abort the child and
-//      degrade instead of waiting forever. Fixes (B).
-//
-// `document_endpoint` already falls back to the heuristic risk score when this
-// returns null, so a degraded path lets the recon advance instead of wedging.
+// On any abandonment we use the structured `response` if the child managed to
+// capture it (only the plumbing hung — the result is good), else return null;
+// `document_endpoint` falls back to the heuristic risk score on null so the
+// recon advances instead of wedging.
 
-// Iteration-count ceiling for the child. Sized comfortably above a normal
-// threat model's step count (the default CodeAgent ceiling is 10000); a run
-// that exceeds this is looping rather than progressing toward `response`.
+// Iteration-count ceiling (mode A). Sized comfortably above a normal threat
+// model's step count (the default CodeAgent ceiling is 10000); a run that
+// exceeds this is looping rather than progressing toward `response`.
 const THREAT_MODEL_MAX_STEPS = 40;
 
-// Settle window after the terminal signal. `finishReason` fires the instant
-// streamText finishes, which in a healthy run is a tick BEFORE `consume()`'s
-// `for await` does its final `next()` and returns. Without a grace, the race
-// would pick STREAM_DONE on every healthy run and degrade every threat model.
-// This is NOT a bound on the threat model's work (finishReason already
-// confirmed it's done) — only on how long we wait for a finished stream's
-// iterator to close before treating it as wedged. A normal close happens in
-// milliseconds; this margin absorbs event-loop congestion from the up-to-10
-// concurrent threat models without masking a real hang.
+// Settle window after the terminal signal (mode B). `finishReason` fires the
+// instant streamText finishes — a tick BEFORE `consume()`'s `for await` does
+// its final `next()` and returns in a healthy run. Without a grace the race
+// would pick the terminal signal on every healthy run and degrade every threat
+// model. This is NOT a bound on the work (finishReason already confirmed it's
+// done) — only how long we wait for a finished stream's iterator to close. A
+// normal close is milliseconds; the margin absorbs event-loop congestion from
+// the up-to-10 concurrent threat models without masking a real hang.
 const THREAT_MODEL_STREAM_SETTLE_MS = 10 * 1000;
+
+// Liveness threshold (mode C). A child that emits NO bus activity for this long
+// has frozen on a hung sub-tool (or finished and gone silent). Sized above the
+// child's own 5-min model-idle-timeout + auto-resume, so a recoverable model
+// stall — which produces fresh activity every ~5 min — never trips it; only a
+// genuine freeze with no recovery does. This is a liveness bound (lack of
+// progress), not a deadline on a working run.
+const THREAT_MODEL_SILENCE_MS = 8 * 60 * 1000;
+const THREAT_MODEL_SILENCE_POLL_MS = 15 * 1000;
+
+// Child bus events that count as "still making progress". A frozen child emits
+// none of these; a healthy or recovering one emits them continuously.
+const THREAT_MODEL_LIVENESS_EVENTS = [
+  "text-delta",
+  "tool-call-start",
+  "tool-call-delta",
+  "tool-call-complete",
+  "tool-result",
+  "command-output",
+  "step-finish",
+] as const;
 
 // ---------------------------------------------------------------------------
 // Response schema
@@ -395,27 +413,53 @@ export async function generateThreatModelForEndpoint(
       excludeTools: ["document_endpoint", "document_app"],
     });
 
-    // Terminal signal: `finishReason` resolves when the underlying streamText
-    // finishes for ANY reason — response tool, step budget, or error. Racing
-    // `consume()` against it guarantees we don't block forever on a stream that
-    // has finished but whose `for await` iterator never closes (failure mode B).
-    const STREAM_DONE = Symbol("threat-model-stream-done");
-    // `finishReason` is a thenable (`PromiseLike`), not a full `Promise`, so it
-    // has no `.catch`. When it settles (either way) we arm a short settle timer;
-    // STREAM_DONE only wins if `consume()` still hasn't returned by the end of
-    // the grace — i.e. the stream is genuinely done but its iterator is wedged
-    // (failure mode B). In a healthy run `consume()` returns within the grace
-    // and wins the race, so the threat model is used normally.
+    // `consume()` is raced against two abandonment signals so a wedged child
+    // can never block the tool indefinitely. Either resolves to ABANDON.
+    const ABANDON = Symbol("threat-model-abandon");
+    let abandonReason = "";
+
+    // Liveness watchdog (mode C — silent freeze): the dominant observed mode.
+    // A child wedged mid-step on a hung sub-tool (its model-idle-timeout gated
+    // off) completes no step and never finishes its stream, so neither the step
+    // budget nor the terminal signal fires — but it goes completely SILENT.
+    let lastActivity = Date.now();
+    const bumpActivity = () => {
+      lastActivity = Date.now();
+    };
+    for (const ev of THREAT_MODEL_LIVENESS_EVENTS) localBus.on(ev, bumpActivity);
+    let livenessTimer: ReturnType<typeof setInterval> | undefined;
+    const silenceWatchdog = new Promise<typeof ABANDON>((resolve) => {
+      livenessTimer = setInterval(() => {
+        if (Date.now() - lastActivity > THREAT_MODEL_SILENCE_MS) {
+          abandonReason = `no activity for ${Math.round(
+            THREAT_MODEL_SILENCE_MS / 1000,
+          )}s (frozen mid-step)`;
+          resolve(ABANDON);
+        }
+      }, THREAT_MODEL_SILENCE_POLL_MS);
+    });
+
+    // Terminal signal (mode B — finished but iterator wedged). `finishReason`
+    // is a thenable, not a full `Promise`, so use the two-arg `.then`. The
+    // settle window lets `consume()` win in the healthy case where it returns a
+    // tick after the stream finishes (otherwise we'd degrade every healthy run).
     let settleTimer: ReturnType<typeof setTimeout> | undefined;
-    const terminalSignal = new Promise<typeof STREAM_DONE>((resolve) => {
+    const terminalSignal = new Promise<typeof ABANDON>((resolve) => {
       const arm = () => {
-        settleTimer = setTimeout(
-          () => resolve(STREAM_DONE),
-          THREAT_MODEL_STREAM_SETTLE_MS,
-        );
+        settleTimer = setTimeout(() => {
+          abandonReason = "stream finished but iterator did not close";
+          resolve(ABANDON);
+        }, THREAT_MODEL_STREAM_SETTLE_MS);
       };
       Promise.resolve(agent.streamResult.finishReason).then(arm, arm);
     });
+
+    const cleanup = () => {
+      if (livenessTimer) clearInterval(livenessTimer);
+      if (settleTimer) clearTimeout(settleTimer);
+      for (const ev of THREAT_MODEL_LIVENESS_EVENTS)
+        localBus.off(ev, bumpActivity);
+    };
 
     const buildOutput = (result: ThreatModelResult): ThreatModelOutput => {
       const totalScore =
@@ -443,17 +487,21 @@ export async function generateThreatModelForEndpoint(
     };
 
     try {
-      const outcome = await Promise.race([agent.consume(), terminalSignal]);
+      const outcome = await Promise.race([
+        agent.consume(),
+        silenceWatchdog,
+        terminalSignal,
+      ]);
 
-      if (outcome === STREAM_DONE) {
-        // Stream terminated (response tool, step budget, or error) but
-        // `consume()` is still pending past the settle window — the iterator is
-        // wedged (failure mode B). Abort the child (frees the pLimit slot +
-        // provider connection). If the child captured its structured response
-        // before the stream ended, USE it — only the iterator hung, the result
-        // is good. Otherwise degrade to null; `document_endpoint` falls back to
-        // the heuristic risk score, so the tool-call completes and the recon
-        // advances instead of hanging forever.
+      if (outcome === ABANDON) {
+        // A child wedged in one of the non-progress modes (B: stream finished
+        // but iterator never closed; C: frozen mid-step, silent past the
+        // liveness threshold). Abort the child (frees the pLimit slot + provider
+        // connection). If it captured its structured `response` before wedging,
+        // USE it — only the plumbing hung, the result is good. Otherwise degrade
+        // to null; `document_endpoint` falls back to the heuristic risk score,
+        // so the tool-call completes and the recon advances instead of hanging
+        // forever.
         const captured = agent.capturedResponse;
         childAbort.abort();
         ctx.eventBus?.emit("subagent-complete", {
@@ -463,12 +511,15 @@ export async function generateThreatModelForEndpoint(
         });
         if (captured === null) {
           console.error(
-            `Threat model for ${input.routePath}: stream finished but ` +
-              `consume() did not settle and no response was captured; ` +
-              `falling back to heuristic-only.`,
+            `Threat model for ${input.routePath} abandoned (${abandonReason}); ` +
+              `no response captured — falling back to heuristic-only.`,
           );
           return null;
         }
+        console.error(
+          `Threat model for ${input.routePath} abandoned (${abandonReason}) ` +
+            `but response was captured before wedge — using it.`,
+        );
         return buildOutput(captured);
       }
 
@@ -493,7 +544,7 @@ export async function generateThreatModelForEndpoint(
       );
       return null;
     } finally {
-      if (settleTimer) clearTimeout(settleTimer);
+      cleanup();
     }
   });
 }
