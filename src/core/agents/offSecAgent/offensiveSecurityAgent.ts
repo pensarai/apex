@@ -95,6 +95,24 @@ export class OffensiveSecurityAgent<TResult = void> {
     return this._capturedResponse;
   }
 
+  /**
+   * Resolves the instant the `response` tool captures the structured result —
+   * the moment the agent is *semantically done*. This is independent of whether
+   * the underlying `fullStream` tears down cleanly: that iterator (and
+   * {@link streamResult}'s `finishReason` with it) can wedge before emitting its
+   * final `finish` chunk, so {@link consume} never returns even though the result
+   * already exists. Callers awaiting {@link consume} can race this to settle as
+   * soon as the result is captured, escaping the wedge. Never rejects; simply
+   * never resolves if `response` is never called (the caller's other backstops
+   * — silence watchdog, step budget — cover that case).
+   */
+  private _resolveResponseCaptured!: (result: TResult) => void;
+  public readonly responseCaptured: Promise<TResult> = new Promise(
+    (resolve) => {
+      this._resolveResponseCaptured = resolve;
+    },
+  );
+
   /** Identifier for this agent when it is running as a subagent. */
   private readonly subagentId?: string;
 
@@ -321,6 +339,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           input.responseSchema,
           (result) => {
             this._capturedResponse = result as TResult;
+            this._resolveResponseCaptured(result as TResult);
           },
         ),
       };

@@ -15,25 +15,30 @@ const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 // The `document_endpoint` tool blocks on `await agent.consume()` below. In
 // production a single threat-model await was observed hanging forever (5+ hrs),
 // freezing the parent tool-call, the parent agent session, and the whole recon
-// at "N-1/N apps". THREE distinct failure modes produce this — none caught by
-// any one mechanism, so `consume()` is raced against all three (no wall-clock
-// timeout on the work itself):
+// at "N-1/N apps". The root cause: `consume()` drains the child's `fullStream`
+// async iterator, and that iterator can WEDGE before emitting its final `finish`
+// chunk — typically after the child has already called its `response` tool and
+// produced a complete result. When it wedges, BOTH `consume()` and
+// `streamResult.finishReason` hang (they wait on the same `finish` chunk), even
+// though the work is done. So `consume()` is raced against signals that do NOT
+// depend on a clean stream teardown (no wall-clock timeout on the work itself):
 //
-//   (A) Loop — the child never calls its `response` tool, so its model stream
-//       runs forever. → STEP BUDGET (`stepCountIs`) forces the stream to end;
-//       `consume()` then returns (no `response` captured → degrade).
-//   (B) Iterator hang — the stream finishes but `consume()`'s `for await
-//       (…fullStream)` never closes. → TERMINAL-SIGNAL race on
-//       `streamResult.finishReason` (resolves the instant streamText finishes).
-//   (C) Silent freeze — the child wedges MID-step on a hung sub-tool (its own
-//       model-idle-timeout is gated off while a tool is in flight), emitting
-//       NOTHING. No step completes (so the step budget never fires) and the
-//       stream never finishes (so finishReason never resolves) — but the child
-//       goes completely SILENT. → LIVENESS WATCHDOG: no bus activity for
-//       THREAT_MODEL_SILENCE_MS ⇒ abandon. This was the dominant mode observed.
+//   (1) RESPONSE-CAPTURED (dominant mode) — a threat-model child is *semantically
+//       done* the instant it calls `response` and captures the structured
+//       result. Everything after is stream teardown, which can wedge. So we
+//       settle as soon as `agent.responseCaptured` fires (after a short grace so
+//       a healthy `consume()`, which returns a tick later, wins cleanly), using
+//       the captured result. This escapes the wedge in seconds — confirmed in
+//       production where children completed but the tool-call never settled.
+//   (2) SILENCE WATCHDOG — a child that freezes BEFORE ever calling `response`
+//       (wedged mid-step on a hung sub-tool, its model-idle-timeout gated off)
+//       emits nothing and captures no result, so (1) never fires. No bus
+//       activity for THREAT_MODEL_SILENCE_MS ⇒ abandon (no result → degrade).
+//   (3) STEP BUDGET (`stepCountIs`) — a child that LOOPS without calling
+//       `response` is bounded so its stream cannot run forever.
 //
-// On any abandonment we use the structured `response` if the child managed to
-// capture it (only the plumbing hung — the result is good), else return null;
+// On any abandonment we use the structured `response` if the child captured it
+// (only the plumbing hung — the result is good), else return null;
 // `document_endpoint` falls back to the heuristic risk score on null so the
 // recon advances instead of wedging.
 
@@ -42,15 +47,17 @@ const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 // exceeds this is looping rather than progressing toward `response`.
 const THREAT_MODEL_MAX_STEPS = 40;
 
-// Settle window after the terminal signal (mode B). `finishReason` fires the
-// instant streamText finishes — a tick BEFORE `consume()`'s `for await` does
-// its final `next()` and returns in a healthy run. Without a grace the race
-// would pick the terminal signal on every healthy run and degrade every threat
-// model. This is NOT a bound on the work (finishReason already confirmed it's
-// done) — only how long we wait for a finished stream's iterator to close. A
-// normal close is milliseconds; the margin absorbs event-loop congestion from
-// the up-to-10 concurrent threat models without masking a real hang.
-const THREAT_MODEL_STREAM_SETTLE_MS = 10 * 1000;
+// Grace after the response-captured signal (mechanism 1). `responseCaptured`
+// fires synchronously from the `response` tool callback — a tick BEFORE a
+// healthy `consume()` does its final `next()` and returns. Without a grace the
+// race would pick the response signal on every healthy run and log a spurious
+// "abandoned" (the OUTPUT is identical either way — both resolve to the same
+// captured result — but the healthy path emits a clean "completed"). This is
+// NOT a bound on the work (the result is already captured) — only how long we
+// let a captured-but-not-yet-torn-down stream close on its own. A normal close
+// is milliseconds; the margin absorbs event-loop congestion from the up-to-10
+// concurrent threat models.
+const THREAT_MODEL_RESPONSE_SETTLE_MS = 5 * 1000;
 
 // Liveness threshold (mode C). A child that emits NO bus activity for this long
 // has frozen on a hung sub-tool (or finished and gone silent). Sized above the
@@ -439,19 +446,19 @@ export async function generateThreatModelForEndpoint(
       }, THREAT_MODEL_SILENCE_POLL_MS);
     });
 
-    // Terminal signal (mode B — finished but iterator wedged). `finishReason`
-    // is a thenable, not a full `Promise`, so use the two-arg `.then`. The
-    // settle window lets `consume()` win in the healthy case where it returns a
-    // tick after the stream finishes (otherwise we'd degrade every healthy run).
+    // Response-captured signal (mechanism 1 — the dominant mode). Fires once the
+    // child calls `response` and captures its structured result; the grace lets
+    // a healthy `consume()` (which returns a tick later) win cleanly. When the
+    // stream then wedges before tearing down, `consume()` never returns but the
+    // result already exists — this settles with it instead of hanging.
     let settleTimer: ReturnType<typeof setTimeout> | undefined;
-    const terminalSignal = new Promise<typeof ABANDON>((resolve) => {
-      const arm = () => {
+    const responseSignal = new Promise<typeof ABANDON>((resolve) => {
+      agent.responseCaptured.then(() => {
         settleTimer = setTimeout(() => {
-          abandonReason = "stream finished but iterator did not close";
+          abandonReason = "response captured but stream did not tear down";
           resolve(ABANDON);
-        }, THREAT_MODEL_STREAM_SETTLE_MS);
-      };
-      Promise.resolve(agent.streamResult.finishReason).then(arm, arm);
+        }, THREAT_MODEL_RESPONSE_SETTLE_MS);
+      });
     });
 
     const cleanup = () => {
@@ -489,19 +496,19 @@ export async function generateThreatModelForEndpoint(
     try {
       const outcome = await Promise.race([
         agent.consume(),
+        responseSignal,
         silenceWatchdog,
-        terminalSignal,
       ]);
 
       if (outcome === ABANDON) {
-        // A child wedged in one of the non-progress modes (B: stream finished
-        // but iterator never closed; C: frozen mid-step, silent past the
-        // liveness threshold). Abort the child (frees the pLimit slot + provider
-        // connection). If it captured its structured `response` before wedging,
-        // USE it — only the plumbing hung, the result is good. Otherwise degrade
-        // to null; `document_endpoint` falls back to the heuristic risk score,
-        // so the tool-call completes and the recon advances instead of hanging
-        // forever.
+        // `consume()` did not return — either the child captured its result and
+        // the stream then wedged before tearing down (response-captured signal),
+        // or it froze before ever producing a result (silence watchdog). Abort
+        // the child (frees the pLimit slot + provider connection). If it captured
+        // its structured `response`, USE it — only the plumbing hung, the result
+        // is good. Otherwise degrade to null; `document_endpoint` falls back to
+        // the heuristic risk score, so the tool-call completes and the recon
+        // advances instead of hanging forever.
         const captured = agent.capturedResponse;
         childAbort.abort();
         ctx.eventBus?.emit("subagent-complete", {
