@@ -294,10 +294,22 @@ function isStreamIdleTimeoutError(error: unknown): boolean {
  * chunks for the same id (defensive — should never happen in practice) are
  * deduplicated. `tool-result` chunks without a matching open call are
  * ignored so the counter can never go negative.
+ *
+ * EXCEPTION — the structured `response` tool is NEVER counted as in-flight. Its
+ * `execute` only captures the result and returns synchronously (it does no real
+ * work), so it can't be a slow tool the gate needs to wait out. But the model
+ * streams that tool's arguments — frequently a multi-thousand-token structured
+ * payload — and a provider (Bedrock) stream that WEDGES mid-payload would, if
+ * `response` were gated, suppress the idle timeout forever (a confirmed hang:
+ * threat-model children frozen on `response` for 10+ min, never recovered).
+ * Leaving `response` ungated keeps the idle timer live across its generation,
+ * so a stalled response stream trips the normal idle-timeout → auto-resume path.
  */
+const NON_GATED_TOOLS = new Set<string>(["response"]);
+
 function createToolExecutionGate(): {
   shouldEnforceIdleTimeout: () => boolean;
-  observe: (chunk: { type: string; toolCallId?: string }) => void;
+  observe: (chunk: { type: string; toolCallId?: string; toolName?: string }) => void;
 } {
   let inFlight = 0;
   const open = new Set<string>();
@@ -306,6 +318,7 @@ function createToolExecutionGate(): {
     shouldEnforceIdleTimeout: () => inFlight === 0,
     observe: (chunk) => {
       if (chunk.type === "tool-call") {
+        if (chunk.toolName && NON_GATED_TOOLS.has(chunk.toolName)) return;
         const id = chunk.toolCallId;
         if (id) {
           if (!open.has(id)) {
@@ -321,7 +334,7 @@ function createToolExecutionGate(): {
           if (open.delete(id)) {
             inFlight = Math.max(0, inFlight - 1);
           }
-        } else {
+        } else if (!(chunk.toolName && NON_GATED_TOOLS.has(chunk.toolName))) {
           inFlight = Math.max(0, inFlight - 1);
         }
       }
