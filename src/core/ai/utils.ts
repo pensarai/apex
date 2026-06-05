@@ -36,8 +36,19 @@ export function isAnthropicProvider(model: AIModel): boolean {
   );
 }
 
-// Last-resort backstop above Bun's 300s fetch default; SSE idle timeout is the primary stall guard.
-const STREAMING_FETCH_TIMEOUT_MS = 15 * 60 * 1000;
+// Last-resort backstop ONLY — it must never be the thing that ends a healthy
+// stream. The PRIMARY liveness guard is the connection read-idle: the SSE reader
+// (pensarSSE.ts) aborts if no bytes arrive for 90s, and the AI-SDK path's
+// withIdleTimeout does the same per chunk — i.e. we judge the *connection*, not
+// the wall-clock. A live stream that legitimately takes 1-30 min (slow model,
+// long structured response) keeps delivering bytes and is never cut; a dead /
+// half-open socket stops delivering bytes and trips the 90s read-idle → error →
+// propagated and retried/degraded. This wall-clock value exists only to bound a
+// pathological "alive but never completes" stream, so it sits comfortably above
+// the longest legitimate generation (well past 30 min) rather than near it.
+// (Must also stay below dispatchAgent's autoStopInterval so we, not Daytona,
+// end such a stream — see that file.)
+const STREAMING_FETCH_TIMEOUT_MS = 35 * 60 * 1000;
 
 export function buildStreamingFetchSignal(
   callerSignal?: AbortSignal | null,
