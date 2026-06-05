@@ -84,6 +84,17 @@ export class OffensiveSecurityAgent<TResult = void> {
     streamResult: StreamTextResult<ToolSet, never>,
   ) => TResult | Promise<TResult>;
 
+  /**
+   * The structured result captured by the `response` tool, or `null` if the
+   * agent has not (yet) called `response`. Exposed so callers that bypass
+   * {@link consume} (e.g. racing the stream's terminal signal to escape a
+   * non-closing iterator) can still tell whether the run produced a result.
+   */
+  private _capturedResponse: TResult | null = null;
+  public get capturedResponse(): TResult | null {
+    return this._capturedResponse;
+  }
+
   /** Identifier for this agent when it is running as a subagent. */
   private readonly subagentId?: string;
 
@@ -303,15 +314,13 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
 
     // -- Response schema → auto capture / stop / resolve ----------------------
-    let capturedResponse: TResult | null = null;
-
     if (input.responseSchema) {
       tools = {
         ...tools,
         [RESPONSE_TOOL_NAME]: createResponseTool(
           input.responseSchema,
           (result) => {
-            capturedResponse = result as TResult;
+            this._capturedResponse = result as TResult;
           },
         ),
       };
@@ -321,7 +330,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       this.resolveResult = input.resolveResult;
     } else if (input.responseSchema) {
       this.resolveResult = () => {
-        if (capturedResponse !== null) return capturedResponse;
+        if (this._capturedResponse !== null) return this._capturedResponse;
         return undefined as TResult;
       };
     }
