@@ -30,12 +30,18 @@ const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 //       a healthy `consume()`, which returns a tick later, wins cleanly), using
 //       the captured result. This escapes the wedge in seconds — confirmed in
 //       production where children completed but the tool-call never settled.
-//   (2) SILENCE WATCHDOG — a child that freezes BEFORE ever calling `response`
-//       (wedged mid-step on a hung sub-tool, its model-idle-timeout gated off)
-//       emits nothing and captures no result, so (1) never fires. No bus
-//       activity for THREAT_MODEL_SILENCE_MS ⇒ abandon (no result → degrade).
-//   (3) STEP BUDGET (`stepCountIs`) — a child that LOOPS without calling
-//       `response` is bounded so its stream cannot run forever.
+//   (2) NO-PROGRESS WATCHDOG — a child that wedges BEFORE its `response` tool's
+//       `execute` runs, so (1) never fires. The dominant case: the model emits
+//       the `response` tool-call and then stalls while STREAMING its large
+//       arguments (the multi-thousand-token threat model), and the AI SDK keeps
+//       RETRYING — re-streaming tokens forever. Raw token chatter looks like
+//       activity, so a naive "any bus event" watchdog never fires (this is why
+//       an earlier silence watchdog failed in production and stalled a recon).
+//       The fix: only `step-finish` / `tool-result` count as progress — a retry
+//       that never finishes completes no step and returns no tool result. No
+//       progress for THREAT_MODEL_SILENCE_MS ⇒ abandon (no result → degrade).
+//   (3) STEP BUDGET (`stepCountIs`) — a child that LOOPS through COMPLETED steps
+//       without calling `response` is bounded so its stream cannot run forever.
 //
 // On any abandonment we use the structured `response` if the child captured it
 // (only the plumbing hung — the result is good), else return null;
@@ -59,26 +65,30 @@ const THREAT_MODEL_MAX_STEPS = 40;
 // concurrent threat models.
 const THREAT_MODEL_RESPONSE_SETTLE_MS = 5 * 1000;
 
-// Liveness threshold (mode C). A child that emits NO bus activity for this long
-// has frozen on a hung sub-tool (or finished and gone silent). Sized above the
-// child's own 5-min model-idle-timeout + auto-resume, so a recoverable model
-// stall — which produces fresh activity every ~5 min — never trips it; only a
-// genuine freeze with no recovery does. This is a liveness bound (lack of
-// progress), not a deadline on a working run.
+// No-progress threshold. A child that completes NO step and returns NO tool
+// result for this long has stalled — it is wedged mid-step on a hung sub-tool,
+// OR (the dominant observed mode) wedged while STREAMING the large `response`
+// payload: the model emits the `response` tool-call and then stalls streaming
+// its multi-thousand-token arguments, so the tool's `execute` (where
+// `responseCaptured` fires) never runs AND the AI-SDK RETRIES re-stream the
+// args, producing continuous token chatter with no completed step. We treat
+// `step-finish` / `tool-result` as the only real progress signals precisely
+// because retries CAN'T fake them (a retry that never finishes the args
+// completes no step and returns no tool result) — counting raw token deltas
+// would let that chatter keep a wedged child "alive" forever (the original
+// silence watchdog's fatal flaw). Sized well above a normal step (reads finish
+// in seconds; a full `response` generates in ~1-3 min), so a working run always
+// produces a `step-finish`/`tool-result` inside the window. This is a liveness
+// bound (lack of progress), not a deadline on a working run.
 const THREAT_MODEL_SILENCE_MS = 8 * 60 * 1000;
 const THREAT_MODEL_SILENCE_POLL_MS = 15 * 1000;
 
-// Child bus events that count as "still making progress". A frozen child emits
-// none of these; a healthy or recovering one emits them continuously.
-const THREAT_MODEL_LIVENESS_EVENTS = [
-  "text-delta",
-  "tool-call-start",
-  "tool-call-delta",
-  "tool-call-complete",
-  "tool-result",
-  "command-output",
-  "step-finish",
-] as const;
+// Child bus events that count as REAL forward progress. Deliberately excludes
+// the streaming/in-progress events (`text-delta`, `tool-call-start/delta`,
+// `command-output`) — those are emitted continuously by an AI-SDK retry loop
+// that never actually finishes, so counting them defeats the watchdog. Only a
+// completed step or a returned tool result proves the child advanced.
+const THREAT_MODEL_LIVENESS_EVENTS = ["tool-result", "step-finish"] as const;
 
 // ---------------------------------------------------------------------------
 // Response schema
@@ -425,10 +435,13 @@ export async function generateThreatModelForEndpoint(
     const ABANDON = Symbol("threat-model-abandon");
     let abandonReason = "";
 
-    // Liveness watchdog (mode C — silent freeze): the dominant observed mode.
-    // A child wedged mid-step on a hung sub-tool (its model-idle-timeout gated
-    // off) completes no step and never finishes its stream, so neither the step
-    // budget nor the terminal signal fires — but it goes completely SILENT.
+    // No-progress watchdog. Catches a child that wedges WITHOUT capturing a
+    // response — either frozen mid-step on a hung sub-tool, or (the dominant
+    // observed mode) wedged streaming the large `response` payload while the
+    // AI-SDK retries re-stream tokens forever. `lastProgress` advances ONLY on a
+    // completed step or returned tool result (see THREAT_MODEL_LIVENESS_EVENTS),
+    // so retry chatter cannot keep it alive; no real progress for the window ⇒
+    // abandon (no captured response → document_endpoint degrades to heuristic).
     let lastActivity = Date.now();
     const bumpActivity = () => {
       lastActivity = Date.now();
@@ -438,9 +451,9 @@ export async function generateThreatModelForEndpoint(
     const silenceWatchdog = new Promise<typeof ABANDON>((resolve) => {
       livenessTimer = setInterval(() => {
         if (Date.now() - lastActivity > THREAT_MODEL_SILENCE_MS) {
-          abandonReason = `no activity for ${Math.round(
+          abandonReason = `no completed step or tool result for ${Math.round(
             THREAT_MODEL_SILENCE_MS / 1000,
-          )}s (frozen mid-step)`;
+          )}s (wedged before capturing a response)`;
           resolve(ABANDON);
         }
       }, THREAT_MODEL_SILENCE_POLL_MS);
