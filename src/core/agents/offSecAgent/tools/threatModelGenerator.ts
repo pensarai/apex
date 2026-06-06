@@ -7,7 +7,19 @@ import type { ToolContext } from "./types";
 
 // Process-wide cap — parents emit `document_endpoint` tool calls in parallel,
 // so without this gate each parent fans out unboundedly.
-const THREAT_MODEL_CONCURRENCY = 10;
+//
+// Kept deliberately MODEST (not 10). Each concurrent threat model streams a
+// large structured response and parses it; running ~10 at once saturates the
+// single Node/Bun event loop, which starves the JS timers that everything else
+// relies on — the SSE connection read-idle, the stream idle-timeout/auto-resume,
+// the fetch backstop. Under that starvation a stalled/half-open Bedrock stream
+// is never detected, the child never degrades, and a WAVE of simultaneous
+// wedges fills every slot and stalls the whole recon (observed: 10 children
+// frozen 8-15 min, root idle 11 min, zero progress). A smaller pool keeps the
+// loop responsive so those liveness timers actually fire and a dead connection
+// propagates its error / degrades promptly — trading a little parallelism for
+// the reliability that makes the connection-liveness guards work at all.
+const THREAT_MODEL_CONCURRENCY = 4;
 const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 
 // ── Bounded termination for the spawned threat-model child ──────────────────
