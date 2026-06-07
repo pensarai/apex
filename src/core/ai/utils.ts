@@ -24,6 +24,8 @@ import {
 } from "./contextManagement";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
+import { idleGuardedResponse } from "./streamIdleGuard";
+import { StreamTelemetry, wallNow } from "./streamTelemetry";
 
 /**
  * Check if a model uses an Anthropic-compatible provider that supports prompt caching.
@@ -180,11 +182,29 @@ export function getProviderModel(
     }
 
     case "bedrock": {
-      const bedrockFetch = (input: RequestInfo | URL, init?: RequestInit) =>
-        globalThis.fetch(input, {
+      // Byte-level liveness for the Bedrock stream (the path the sandbox uses).
+      // A half-open mid-stream socket otherwise blocks until the 35-min fetch
+      // cap; idleGuardedResponse errors it after byte-silence so it propagates.
+      // Window: PENSAR_STREAM_IDLE_TIMEOUT_MS, default 90s.
+      const rawStreamIdle = Number(process.env.PENSAR_STREAM_IDLE_TIMEOUT_MS);
+      const streamIdleMs =
+        Number.isFinite(rawStreamIdle) && rawStreamIdle > 0
+          ? rawStreamIdle
+          : 90_000;
+      const bedrockFetch = async (
+        input: RequestInfo | URL,
+        init?: RequestInit,
+      ) => {
+        const response = await globalThis.fetch(input, {
           ...init,
           signal: buildStreamingFetchSignal(init?.signal),
         });
+        const telemetry = new StreamTelemetry(`bedrock:${model}`, wallNow());
+        return idleGuardedResponse(response, {
+          idleTimeoutMs: streamIdleMs,
+          telemetry,
+        });
+      };
       const bedrock = createAmazonBedrock({
         apiKey: bedrockApiKey,
         region: bedrockRegion,

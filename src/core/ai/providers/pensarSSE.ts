@@ -6,6 +6,8 @@
  * whenever a complete SSE message boundary (blank line) is encountered.
  */
 
+import { type StreamTelemetry, wallNow } from "../streamTelemetry";
+
 const DEBUG =
   process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
 
@@ -21,6 +23,12 @@ export interface ParseSSEOptions {
    * Default: 90_000.
    */
   idleTimeoutMs?: number;
+  /**
+   * Optional per-stream telemetry. Records raw bytes (transport liveness) and
+   * parsed events (application progress) on separate clocks so a dribbling-but-
+   * alive stream can be told apart from a dead/half-open one.
+   */
+  telemetry?: StreamTelemetry;
 }
 
 export async function* parseSSE(
@@ -54,6 +62,13 @@ export async function* parseSSE(
       try {
         result = await Promise.race([reader.read(), idlePromise]);
       } catch (err) {
+        // The idle timer fired (no bytes for idleTimeoutMs) — the transport is
+        // dead/half-open. Snapshot it loudly before propagating so a failed fix
+        // is debuggable.
+        options.telemetry?.wedge(
+          `no bytes for ${idleTimeoutMs}ms`,
+          wallNow(),
+        );
         await reader.cancel(err).catch(() => {});
         throw err;
       } finally {
@@ -76,6 +91,7 @@ export async function* parseSSE(
       const value = result.value;
       chunkCount++;
       totalBytes += value.byteLength;
+      options.telemetry?.recordByte(value.byteLength, wallNow());
       const decoded = decoder.decode(value, { stream: true });
 
       if (DEBUG && chunkCount <= 3) {
@@ -95,6 +111,7 @@ export async function* parseSSE(
         if (line === "") {
           if (currentData.length > 0) {
             eventCount++;
+            options.telemetry?.recordEvent(wallNow());
             yield { event: currentEvent, data: currentData.join("\n") };
           }
           currentEvent = "message";

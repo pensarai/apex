@@ -21,6 +21,7 @@ import { shouldRecordAiPayloads } from "../observability";
 import { withCachedLastMessage, withCachedSystemPrompt } from "./caching";
 import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
 import { getMaxOutputTokens, getModelInfo } from "./models";
+import { STREAM_DEBUG } from "./streamTelemetry";
 import {
   type AIAuthConfig,
   checkIfContextLengthError,
@@ -277,7 +278,21 @@ async function* withIdleTimeout<T>(
 }
 
 function isStreamIdleTimeoutError(error: unknown): boolean {
-  return error instanceof StreamIdleTimeoutError;
+  // Chunk-level idle (withIdleTimeout) OR transport-level byte-silence
+  // (ProviderStreamIdleError from the bedrock fetch guard). The latter is
+  // surfaced from below the AI SDK, which may wrap it in an APICallError, so
+  // walk the cause chain and accept the stable marker too.
+  for (let e: unknown = error, depth = 0; e != null && depth < 6; depth++) {
+    if (e instanceof StreamIdleTimeoutError) return true;
+    if (
+      typeof e === "object" &&
+      (e as { isProviderStreamIdle?: unknown }).isProviderStreamIdle === true
+    ) {
+      return true;
+    }
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 /**
@@ -401,7 +416,10 @@ function wrapStreamWithErrorHandler(
                 messagesContainer.current.length > 0
               ) {
                 const nextIdleCount = idleResumeCount + 1;
-                if (!silent) {
+                // Surface idle-resume even on silent sub-agent paths when
+                // stream debugging — a transport wedge + auto-recovery is a
+                // noteworthy event, not routine chatter.
+                if (!silent || STREAM_DEBUG) {
                   console.warn(
                     `Stream stalled (attempt ${nextIdleCount}/${MAX_IDLE_RESUME_RETRIES}), resuming with ${messagesContainer.current.length} messages: ${errorMessage}`,
                   );

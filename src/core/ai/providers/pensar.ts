@@ -8,6 +8,7 @@ import type {
   SharedV3Warning,
 } from "@ai-sdk/provider";
 import { buildStreamingFetchSignal } from "../utils";
+import { StreamTelemetry, wallNow } from "../streamTelemetry";
 import { convertToBedrockFormat } from "./pensarFormatters";
 import { signGatewayRequest } from "./pensarSigning";
 import { parseSSE } from "./pensarSSE";
@@ -355,8 +356,12 @@ export function createPensarModel(
             Number.isFinite(rawIdleTimeout) && rawIdleTimeout > 0
               ? rawIdleTimeout
               : 90_000;
+          const telemetry = new StreamTelemetry(bedrockModelId, wallNow());
           try {
-            for await (const sse of parseSSE(sseStream, { idleTimeoutMs })) {
+            for await (const sse of parseSSE(sseStream, {
+              idleTimeoutMs,
+              telemetry,
+            })) {
               const now = Date.now();
               const gap = now - lastEventTime;
               if (gap > 5000) {
@@ -437,6 +442,7 @@ export function createPensarModel(
                       id: activeReasoningId,
                     });
                   } else if (cbType === "text") {
+                    telemetry.setPhase("streaming-text", wallNow());
                     activeTextId = `text-${Date.now()}-${parsed.index}`;
                     controller.enqueue({
                       type: "text-start",
@@ -445,6 +451,10 @@ export function createPensarModel(
                   } else if (cbType === "tool_use") {
                     activeToolId = (cb?.id as string) ?? `tool-${Date.now()}`;
                     activeToolName = (cb?.name as string) ?? "unknown";
+                    telemetry.setPhase(
+                      `streaming-tool-args:${activeToolName}`,
+                      wallNow(),
+                    );
                     activeToolInput = "";
                     controller.enqueue({
                       type: "tool-input-start",
@@ -548,6 +558,7 @@ export function createPensarModel(
 
                 case "message_stop": {
                   // Stream complete
+                  telemetry.setPhase("finish", wallNow());
                   break;
                 }
               }
@@ -580,8 +591,14 @@ export function createPensarModel(
                 },
               },
             });
+            telemetry.finish(wallNow());
             controller.close();
           } catch (err) {
+            telemetry.wedge(
+              err instanceof Error ? err.message : String(err),
+              wallNow(),
+            );
+            telemetry.finish(wallNow());
             logError(
               `  stream error: events=${eventCount}, activeToolId=${activeToolId}, activeToolName=${activeToolName}, toolInputLen=${activeToolInput.length}, timeSinceLastEvent=${Date.now() - lastEventTime}ms`,
             );
