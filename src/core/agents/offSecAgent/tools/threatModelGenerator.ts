@@ -1,3 +1,4 @@
+import { stepCountIs } from "ai";
 import pLimit from "p-limit";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
@@ -16,6 +17,13 @@ const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 // transport idle guard + resume (ai/streamIdleGuard.ts), so it always settles —
 // resolving on success, rejecting once resumes are exhausted. On any failure the
 // catch returns null and `document_endpoint` degrades to the heuristic score.
+
+// Hard ceiling on the child's agent loop. Under the Bedrock wedge rate the model
+// can truncate its structured `response`, fail schema validation, and re-call
+// `response` in a loop (observed: 7-10 calls, 100+ parts, no completion). This
+// caps that loop so the child always terminates → degrades to heuristic → the
+// recon advances. A healthy threat model finishes in well under this.
+const THREAT_MODEL_MAX_STEPS = 40;
 
 // ---------------------------------------------------------------------------
 // Response schema
@@ -349,6 +357,7 @@ export async function generateThreatModelForEndpoint(
       eventBus: localBus,
       subagentId,
       responseSchema: ThreatModelResultSchema,
+      stopWhen: stepCountIs(THREAT_MODEL_MAX_STEPS),
       excludeTools: ["document_endpoint", "document_app"],
     });
 
