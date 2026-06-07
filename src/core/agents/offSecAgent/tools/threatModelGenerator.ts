@@ -5,8 +5,10 @@ import type { RiskScore } from "../../specialized/whiteboxAttackSurface";
 import type { ToolContext } from "./types";
 
 // Process-wide cap — parents emit `document_endpoint` calls in parallel, so
-// without this gate each parent fans out unboundedly.
-const THREAT_MODEL_CONCURRENCY = 10;
+// without this gate each parent fans out unboundedly. Kept at 4 (not 10): each
+// concurrent child streams a large structured response and, under the Bedrock
+// wedge rate, may resume-regenerate it; 10 at once OOM-kills the sandbox.
+const THREAT_MODEL_CONCURRENCY = 4;
 const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 
 // `document_endpoint` blocks on `await agent.consume()`. consume() returns the
@@ -376,9 +378,13 @@ export async function generateThreatModelForEndpoint(
     };
 
     try {
-      // consume() returns the captured result and drains the rest in the
-      // background; the transport idle guard bounds it, so no watchdog here.
+      // consume() returns the captured result as soon as it's available and
+      // drains the rest in the background. Abort once we have the result so that
+      // background drain stops immediately — otherwise, under the Bedrock wedge
+      // rate, it keeps resume-regenerating a response we've already discarded,
+      // and those detached drains pile up and OOM the sandbox.
       const result = await agent.consume();
+      childAbort.abort();
       ctx.eventBus?.emit("subagent-complete", {
         subagentId,
         status: "completed",
