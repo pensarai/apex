@@ -68,7 +68,6 @@ describe("idleGuardedStream", () => {
   });
 
   it("stays alive across gaps shorter than the idle window", async () => {
-    // 60ms gaps under a 150ms window must NOT trip the guard.
     const source = timedStream([
       { at: 0, text: "a" },
       { at: 60, text: "b" },
@@ -83,14 +82,11 @@ describe("idleGuardedStream", () => {
     const guarded = idleGuardedStream(stream, { idleTimeoutMs: 60 });
 
     const reader = guarded.getReader();
-    // First chunk arrives fine.
     const first = await reader.read();
     expect(new TextDecoder().decode(first.value)).toBe("partial response");
 
-    // The next read blocks on a dead socket and must reject within the window.
     await expect(reader.read()).rejects.toThrow(ProviderStreamIdleError);
-    // The guard must cancel the upstream so the socket is released.
-    expect(cancelled()).toBe(true);
+    expect(cancelled()).toBe(true); // upstream released
   });
 
   it("throws a marked ProviderStreamIdleError findable through a cause chain", async () => {
@@ -122,7 +118,6 @@ describe("idleGuardedStream", () => {
     const { stream } = wedgingStream("x");
     const guarded = idleGuardedStream(stream, {
       idleTimeoutMs: 40,
-      // Only the three methods the guard calls are exercised here.
       telemetry: fakeTelemetry as never,
     });
 

@@ -278,10 +278,8 @@ async function* withIdleTimeout<T>(
 }
 
 function isStreamIdleTimeoutError(error: unknown): boolean {
-  // Chunk-level idle (withIdleTimeout) OR transport-level byte-silence
-  // (ProviderStreamIdleError from the bedrock fetch guard). The latter is
-  // surfaced from below the AI SDK, which may wrap it in an APICallError, so
-  // walk the cause chain and accept the stable marker too.
+  // Accept the chunk-level StreamIdleTimeoutError and the transport-level
+  // ProviderStreamIdleError, which the AI SDK may rewrap — so walk `cause`.
   for (let e: unknown = error, depth = 0; e != null && depth < 6; depth++) {
     if (e instanceof StreamIdleTimeoutError) return true;
     if (
@@ -416,9 +414,7 @@ function wrapStreamWithErrorHandler(
                 messagesContainer.current.length > 0
               ) {
                 const nextIdleCount = idleResumeCount + 1;
-                // Surface idle-resume even on silent sub-agent paths when
-                // stream debugging — a transport wedge + auto-recovery is a
-                // noteworthy event, not routine chatter.
+                // Surfaced on silent sub-agents too when stream-debugging.
                 if (!silent || STREAM_DEBUG) {
                   console.warn(
                     `Stream stalled (attempt ${nextIdleCount}/${MAX_IDLE_RESUME_RETRIES}), resuming with ${messagesContainer.current.length} messages: ${errorMessage}`,

@@ -1,35 +1,26 @@
-/**
- * Connection-liveness guard for a raw byte stream. Errors after `idleTimeoutMs`
- * of byte-silence (a half-open socket that stops sending without FIN/RST) while
- * waiting indefinitely as long as bytes flow. Provider-agnostic — watches raw
- * chunks only, so it works on the Bedrock EventStream body. This is the fix for
- * the document_endpoint hang; no runtime keepalive detects a silent peer.
- */
+// Errors a byte stream after `idleTimeoutMs` of total silence (a half-open
+// socket that stalls without FIN/RST), while letting a stream that keeps
+// dribbling bytes run as long as it needs. Used to bound the Bedrock response
+// stream, which no runtime keepalive can rescue once the peer goes silent.
 
 import { type StreamTelemetry, wallNow } from "./streamTelemetry";
 
-/**
- * Thrown when the transport goes byte-silent. Carries a stable marker so the
- * stream-resume logic in ai.ts recognizes it even after the AI SDK wraps it in
- * an APICallError (provider layers preserve `cause`, not `instanceof`).
- */
+// Marker (not just `instanceof`) so the resume logic in ai.ts can still
+// recognize this after the AI SDK rewraps it as an APICallError with `cause`.
 export class ProviderStreamIdleError extends Error {
   readonly isProviderStreamIdle = true as const;
   constructor(idleTimeoutMs: number) {
-    super(
-      `Provider stream idle for ${idleTimeoutMs}ms — transport appears dead/half-open`,
-    );
+    super(`Provider stream idle for ${idleTimeoutMs}ms`);
     this.name = "ProviderStreamIdleError";
   }
 }
 
 export interface IdleGuardOptions {
-  /** Abort if no bytes arrive for this many ms. Every byte resets it. Default 90_000. */
+  /** Silence before aborting, ms. Every byte resets it. Default 90_000. */
   idleTimeoutMs?: number;
   telemetry?: StreamTelemetry;
 }
 
-/** Idle timer is armed only during an active pull, so backpressure never trips it. */
 export function idleGuardedStream(
   source: ReadableStream<Uint8Array>,
   options: IdleGuardOptions = {},
@@ -38,16 +29,19 @@ export function idleGuardedStream(
   const reader = source.getReader();
 
   return new ReadableStream<Uint8Array>({
+    // `pull` runs only when the consumer wants more, so backpressure (not a
+    // dead socket) never trips the timer.
     async pull(controller) {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
-      const idlePromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          reject(new ProviderStreamIdleError(idleTimeoutMs));
-        }, idleTimeoutMs);
+      const idle = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new ProviderStreamIdleError(idleTimeoutMs)),
+          idleTimeoutMs,
+        );
       });
 
       try {
-        const result = await Promise.race([reader.read(), idlePromise]);
+        const result = await Promise.race([reader.read(), idle]);
         if (result.done) {
           options.telemetry?.finish(wallNow());
           controller.close();
@@ -56,7 +50,6 @@ export function idleGuardedStream(
         options.telemetry?.recordByte(result.value.byteLength, wallNow());
         controller.enqueue(result.value);
       } catch (err) {
-        // Idle fired or read rejected: snapshot, release the socket, propagate.
         options.telemetry?.wedge(
           err instanceof Error ? err.message : String(err),
           wallNow(),
@@ -75,7 +68,6 @@ export function idleGuardedStream(
   });
 }
 
-/** Wrap a Response so its body is idle-guarded, preserving status/headers. */
 export function idleGuardedResponse(
   response: Response,
   options: IdleGuardOptions = {},

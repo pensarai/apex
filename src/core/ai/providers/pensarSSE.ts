@@ -23,11 +23,7 @@ export interface ParseSSEOptions {
    * Default: 90_000.
    */
   idleTimeoutMs?: number;
-  /**
-   * Optional per-stream telemetry. Records raw bytes (transport liveness) and
-   * parsed events (application progress) on separate clocks so a dribbling-but-
-   * alive stream can be told apart from a dead/half-open one.
-   */
+  /** Optional per-stream connection telemetry (see streamTelemetry.ts). */
   telemetry?: StreamTelemetry;
 }
 
@@ -62,13 +58,7 @@ export async function* parseSSE(
       try {
         result = await Promise.race([reader.read(), idlePromise]);
       } catch (err) {
-        // The idle timer fired (no bytes for idleTimeoutMs) — the transport is
-        // dead/half-open. Snapshot it loudly before propagating so a failed fix
-        // is debuggable.
-        options.telemetry?.wedge(
-          `no bytes for ${idleTimeoutMs}ms`,
-          wallNow(),
-        );
+        options.telemetry?.wedge(`no bytes for ${idleTimeoutMs}ms`, wallNow());
         await reader.cancel(err).catch(() => {});
         throw err;
       } finally {

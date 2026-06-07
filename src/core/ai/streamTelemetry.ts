@@ -1,10 +1,7 @@
-/**
- * Per-stream connection telemetry for diagnosing provider-stream wedges. OFF
- * unless `PENSAR_STREAM_DEBUG=1`. Tracks two clocks — `msSinceLastByte`
- * (transport liveness) and `msSinceLastEvent` (parsed progress) — to tell a
- * dead/half-open socket from a slow-but-alive one. Heartbeat every
- * {@link HEARTBEAT_MS}; single-line `[stream-telem] key=val` output for grep.
- */
+// Per-stream connection telemetry for diagnosing provider-stream wedges. OFF
+// unless PENSAR_STREAM_DEBUG=1. Tracks bytes off the socket separately from
+// parsed events so a dead/half-open stream (no bytes) is distinguishable from a
+// slow-but-alive one (bytes still trickling). Single-line grep-friendly output.
 
 export const STREAM_DEBUG =
   process.env.PENSAR_STREAM_DEBUG === "1" ||
@@ -33,10 +30,6 @@ export class StreamTelemetry {
   private chunks = 0;
   private events = 0;
   private phase: StreamPhase = "connecting";
-  private idleArmed = false;
-  private idleGatedBy: string | null = null;
-  private resumeCount = 0;
-  private retryCount = 0;
   private heartbeat: ReturnType<typeof setInterval> | undefined;
 
   constructor(label: string, nowMs: number) {
@@ -48,14 +41,7 @@ export class StreamTelemetry {
     if (STREAM_DEBUG) {
       this.log("open");
       this.heartbeat = setInterval(() => this.log("heartbeat"), HEARTBEAT_MS);
-      // Don't keep the process alive for telemetry.
-      if (
-        this.heartbeat &&
-        typeof this.heartbeat === "object" &&
-        "unref" in this.heartbeat
-      ) {
-        this.heartbeat.unref();
-      }
+      this.heartbeat.unref?.();
     }
   }
 
@@ -77,22 +63,6 @@ export class StreamTelemetry {
     if (STREAM_DEBUG) this.log("phase", nowMs);
   }
 
-  setIdle(armed: boolean, gatedBy: string | null): void {
-    this.idleArmed = armed;
-    this.idleGatedBy = gatedBy;
-  }
-
-  recordResume(nowMs: number): void {
-    this.resumeCount++;
-    if (STREAM_DEBUG) this.log("resume", nowMs);
-  }
-
-  recordRetry(nowMs: number): void {
-    this.retryCount++;
-    if (STREAM_DEBUG) this.log("retry", nowMs);
-  }
-
-  /** Loud snapshot the moment a stall is declared (idle timeout / no progress). */
   wedge(reason: string, nowMs: number): void {
     this.phase = "wedged";
     if (STREAM_DEBUG) this.log(`WEDGE reason=${JSON.stringify(reason)}`, nowMs);
@@ -110,18 +80,13 @@ export class StreamTelemetry {
       `[stream-telem] ${this.id} ${tag} label=${JSON.stringify(this.label)} ` +
         `phase=${this.phase} elapsed=${t - this.startAt}ms ` +
         `bytes=${this.bytes} chunks=${this.chunks} events=${this.events} ` +
-        `msSinceLastByte=${t - this.lastByteAt} msSinceLastEvent=${t - this.lastEventAt} ` +
-        `idleArmed=${this.idleArmed} idleGatedBy=${this.idleGatedBy ?? "-"} ` +
-        `resumes=${this.resumeCount} retries=${this.retryCount}`,
+        `msSinceLastByte=${t - this.lastByteAt} msSinceLastEvent=${t - this.lastEventAt}`,
     );
   }
 }
 
-/**
- * Wall clock for telemetry only. Apex forbids `Date.now()` in some contexts
- * (workflow determinism), but provider streaming is plain runtime code — this
- * is fine here and is the real elapsed clock we need for stall detection.
- */
+// Real wall clock — fine here (provider streaming isn't workflow-deterministic
+// code) and it's the elapsed measure stall detection needs.
 export function wallNow(): number {
   return Date.now();
 }

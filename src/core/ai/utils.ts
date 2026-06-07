@@ -182,10 +182,7 @@ export function getProviderModel(
     }
 
     case "bedrock": {
-      // Byte-level liveness for the Bedrock stream (the path the sandbox uses).
-      // A half-open mid-stream socket otherwise blocks until the 35-min fetch
-      // cap; idleGuardedResponse errors it after byte-silence so it propagates.
-      // Window: PENSAR_STREAM_IDLE_TIMEOUT_MS, default 90s.
+      // Guard against a half-open Bedrock socket hanging the stream forever.
       const rawStreamIdle = Number(process.env.PENSAR_STREAM_IDLE_TIMEOUT_MS);
       const streamIdleMs =
         Number.isFinite(rawStreamIdle) && rawStreamIdle > 0
