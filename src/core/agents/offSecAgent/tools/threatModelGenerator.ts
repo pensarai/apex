@@ -1,4 +1,3 @@
-import { stepCountIs } from "ai";
 import pLimit from "p-limit";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
@@ -17,9 +16,6 @@ const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 // always settle — resolve on success, reject after resumes are exhausted. So
 // this only needs the response-captured fast-path below; on any failure the
 // catch returns null and `document_endpoint` degrades to the heuristic score.
-
-// Iteration ceiling: a run past this is looping, not progressing to `response`.
-const THREAT_MODEL_MAX_STEPS = 40;
 
 // Grace after `responseCaptured` so a healthy `consume()` (which returns a tick
 // later with the same result) wins the race cleanly. Not a bound on the work —
@@ -358,11 +354,6 @@ export async function generateThreatModelForEndpoint(
       eventBus: localBus,
       subagentId,
       responseSchema: ThreatModelResultSchema,
-      // Bound the child's iterations so its stream ALWAYS terminates. This
-      // merges with the responseSchema's own `hasToolCall(response)` stop
-      // condition inside OffensiveSecurityAgent (either condition ends the
-      // run), so a healthy run still stops the moment it calls `response`.
-      stopWhen: stepCountIs(THREAT_MODEL_MAX_STEPS),
       excludeTools: ["document_endpoint", "document_app"],
     });
 
