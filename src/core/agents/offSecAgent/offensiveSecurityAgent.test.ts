@@ -80,6 +80,7 @@ function buildStubAgent(overrides: {
   resolveResult?: (sr: unknown) => unknown;
   messagesPath?: string | null;
   latestMessages?: unknown[] | null;
+  responseCaptured?: Promise<unknown>;
 }): OffensiveSecurityAgent<unknown> {
   const agent = Object.create(
     OffensiveSecurityAgent.prototype,
@@ -93,6 +94,11 @@ function buildStubAgent(overrides: {
     value: { fullStream: overrides.fullStream },
   });
   Object.defineProperty(agent, "subagentId", { value: undefined });
+  // consume() races the drain against this; default never resolves so the
+  // drain (the full-stream path these tests exercise) always wins.
+  Object.defineProperty(agent, "responseCaptured", {
+    value: overrides.responseCaptured ?? new Promise(() => {}),
+  });
   // A real agent always has a session; the stub bypasses the constructor,
   // so provide a minimal one for busSessionId (used to stamp event ids).
   Object.defineProperty(agent, "_session", {
@@ -387,6 +393,23 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       const result = await agent.consume();
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe("result/drain decoupling", () => {
+    it("returns the captured result without waiting for the stream to drain", async () => {
+      // A teardown that never completes (a wedged stream). consume() must still
+      // settle from responseCaptured rather than hang on the drain.
+      const neverDrains = (async function* () {
+        await new Promise(() => {});
+      })();
+      const agent = buildStubAgent({
+        fullStream: neverDrains,
+        responseCaptured: Promise.resolve("captured"),
+        resolveResult: () => "from-drain",
+      });
+
+      await expect(agent.consume()).resolves.toBe("captured");
     });
   });
 

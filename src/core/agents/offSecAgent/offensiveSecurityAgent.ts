@@ -86,25 +86,17 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /**
    * The structured result captured by the `response` tool, or `null` if the
-   * agent has not (yet) called `response`. Exposed so callers that bypass
-   * {@link consume} (e.g. racing the stream's terminal signal to escape a
-   * non-closing iterator) can still tell whether the run produced a result.
+   * agent has not (yet) called `response`.
    */
   private _capturedResponse: TResult | null = null;
-  public get capturedResponse(): TResult | null {
-    return this._capturedResponse;
-  }
 
   /**
    * Resolves the instant the `response` tool captures the structured result —
-   * the moment the agent is *semantically done*. This is independent of whether
-   * the underlying `fullStream` tears down cleanly: that iterator (and
-   * {@link streamResult}'s `finishReason` with it) can wedge before emitting its
-   * final `finish` chunk, so {@link consume} never returns even though the result
-   * already exists. Callers awaiting {@link consume} can race this to settle as
-   * soon as the result is captured, escaping the wedge. Never rejects; simply
-   * never resolves if `response` is never called (the caller's other backstops
-   * — silence watchdog, step budget — cover that case).
+   * the moment the agent is semantically done, independent of stream teardown
+   * (which can wedge before the final `finish` chunk). {@link consume} races
+   * this so it returns the result then and drains the rest in the background.
+   * Never rejects; never resolves if `response` is never called — there the
+   * idle-guard-bounded drain settles `consume` instead.
    */
   private _resolveResponseCaptured!: (result: TResult) => void;
   public readonly responseCaptured: Promise<TResult> = new Promise(
@@ -696,28 +688,39 @@ export class OffensiveSecurityAgent<TResult = void> {
     };
 
     // Only subagents get a span here; top-level runs are wrapped by the host.
-    if (!sid) return runConsume();
+    const drain = !sid
+      ? runConsume()
+      : getApexTracer().startActiveSpan(
+          `invoke_agent ${sid}`,
+          {
+            attributes: {
+              "gen_ai.operation.name": "invoke_agent",
+              "gen_ai.agent.name": sid,
+            },
+          },
+          async (span) => {
+            try {
+              return await runConsume();
+            } catch (err) {
+              span.recordException(err as Error);
+              throw err;
+            } finally {
+              span.end();
+            }
+          },
+        );
 
-    const tracer = getApexTracer();
-    return tracer.startActiveSpan(
-      `invoke_agent ${sid}`,
-      {
-        attributes: {
-          "gen_ai.operation.name": "invoke_agent",
-          "gen_ai.agent.name": sid,
-        },
-      },
-      async (span) => {
-        try {
-          return await runConsume();
-        } catch (err) {
-          span.recordException(err as Error);
-          throw err;
-        } finally {
-          span.end();
-        }
-      },
-    );
+    // Decouple the result from stream teardown. With a `response` schema the
+    // structured result is captured mid-stream (in the response tool), so return
+    // it the instant it's available rather than waiting for the stream to close
+    // — teardown can wedge (Bedrock goes byte-silent before the final chunk).
+    // The drain keeps running in the background for persistence/cleanup, bounded
+    // by the transport idle guard so it can't block the caller or leak. Without
+    // a response schema `responseCaptured` never fires and this is the same
+    // full-drain await as before.
+    const result = await Promise.race([drain, this.responseCaptured]);
+    drain.catch(() => {});
+    return result;
   }
 
   /**

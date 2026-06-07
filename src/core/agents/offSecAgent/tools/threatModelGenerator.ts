@@ -9,18 +9,11 @@ import type { ToolContext } from "./types";
 const THREAT_MODEL_CONCURRENCY = 10;
 const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 
-// `document_endpoint` blocks on `await agent.consume()`. The child's stream can
-// wedge before its final `finish` chunk (Bedrock goes byte-silent mid-stream),
-// which once hung the await forever. That's now bounded at the transport: the
-// byte-idle guard + stream resume (ai/streamIdleGuard.ts) make `consume()`
-// always settle — resolve on success, reject after resumes are exhausted. So
-// this only needs the response-captured fast-path below; on any failure the
+// `document_endpoint` blocks on `await agent.consume()`. consume() returns the
+// structured result as soon as the child captures it and is bounded by the
+// transport idle guard + resume (ai/streamIdleGuard.ts), so it always settles —
+// resolving on success, rejecting once resumes are exhausted. On any failure the
 // catch returns null and `document_endpoint` degrades to the heuristic score.
-
-// Grace after `responseCaptured` so a healthy `consume()` (which returns a tick
-// later with the same result) wins the race cleanly. Not a bound on the work —
-// the result is already captured; this only waits out a stream teardown.
-const THREAT_MODEL_RESPONSE_SETTLE_MS = 5 * 1000;
 
 // ---------------------------------------------------------------------------
 // Response schema
@@ -331,9 +324,9 @@ export async function generateThreatModelForEndpoint(
 
     const prompt = buildThreatModelPrompt(input, ctx.projectThreatModel);
 
-    // Child-scoped abort controller. The terminal-signal race cancels *this*
-    // threat model without touching the shared parent `ctx.abortSignal`; a
-    // parent abort still propagates down via the listener below.
+    // Child-scoped abort so a failure cancels *this* threat model without
+    // touching the shared parent `ctx.abortSignal`; a parent abort still
+    // propagates down via the listener below.
     const childAbort = new AbortController();
     if (ctx.abortSignal) {
       if (ctx.abortSignal.aborted) childAbort.abort();
@@ -356,25 +349,6 @@ export async function generateThreatModelForEndpoint(
       responseSchema: ThreatModelResultSchema,
       excludeTools: ["document_endpoint", "document_app"],
     });
-
-    // Fast-path: a threat model is semantically done the instant it calls
-    // `response` and captures the result. If the stream then wedges during
-    // teardown, settle with the captured result (after a grace so a healthy
-    // `consume()` wins cleanly) rather than waiting it out. Resolves to ABANDON.
-    const ABANDON = Symbol("threat-model-abandon");
-    let settleTimer: ReturnType<typeof setTimeout> | undefined;
-    const responseSignal = new Promise<typeof ABANDON>((resolve) => {
-      agent.responseCaptured.then(() => {
-        settleTimer = setTimeout(
-          () => resolve(ABANDON),
-          THREAT_MODEL_RESPONSE_SETTLE_MS,
-        );
-      });
-    });
-
-    const cleanup = () => {
-      if (settleTimer) clearTimeout(settleTimer);
-    };
 
     const buildOutput = (result: ThreatModelResult): ThreatModelOutput => {
       const totalScore =
@@ -402,30 +376,15 @@ export async function generateThreatModelForEndpoint(
     };
 
     try {
-      const outcome = await Promise.race([agent.consume(), responseSignal]);
-
-      if (outcome === ABANDON) {
-        // Stream wedged during teardown after the result was captured. Use it;
-        // abort the child to free the pLimit slot + connection.
-        const captured = agent.capturedResponse;
-        childAbort.abort();
-        ctx.eventBus?.emit("subagent-complete", {
-          subagentId,
-          status: captured !== null ? "completed" : "failed",
-          parentSubagentId: ctx.subagentId,
-        });
-        return captured === null ? null : buildOutput(captured);
-      }
-
-      const result = outcome;
+      // consume() returns the captured result and drains the rest in the
+      // background; the transport idle guard bounds it, so no watchdog here.
+      const result = await agent.consume();
       ctx.eventBus?.emit("subagent-complete", {
         subagentId,
         status: "completed",
         parentSubagentId: ctx.subagentId,
       });
-
-      if (!result) return null;
-      return buildOutput(result);
+      return result ? buildOutput(result) : null;
     } catch (error) {
       childAbort.abort();
       ctx.eventBus?.emit("subagent-complete", {
@@ -437,8 +396,6 @@ export async function generateThreatModelForEndpoint(
         `Threat model generation failed for ${input.routePath}: ${error instanceof Error ? error.message : String(error)}`,
       );
       return null;
-    } finally {
-      cleanup();
     }
   });
 }
