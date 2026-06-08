@@ -46,6 +46,11 @@
       },
       "suspicious": {
         "noExplicitAny": "error",
+        // Diagnostic/operational logging must go through the structured logger
+        // (src/core/logger). 'warn' not 'error': this is a CLI/TUI, so a lot of
+        // console output is intentional user-facing stdout (help, results, the
+        // TUI render path, benchmark progress) and stays.
+        "noConsole": "warn",
         // Carryover from previous ESLint config (no-useless-escape: off).
         "noUselessEscapeInString": "off",
         "noArrayIndexKey": "error",
