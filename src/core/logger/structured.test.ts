@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  createLogger,
-  type LogLevel,
-  resolveInitialLevel,
-} from "./structured";
+import { createLogger, type LogLevel, resolveInitialLevel } from "./structured";
 
 // Capture process.stderr.write into `sink`; returns a restore fn.
 function captureStderr(sink: string[]): () => void {

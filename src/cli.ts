@@ -12,7 +12,7 @@ import { type AIModel, buildAuthConfig } from "./core/ai";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
-import { type StructuredLogLevel, logger } from "./core/logger";
+import { logger, type StructuredLogLevel } from "./core/logger";
 import type { SessionInfo } from "./core/session";
 import {
   combinePromptParts,

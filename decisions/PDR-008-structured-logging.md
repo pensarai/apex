@@ -12,12 +12,14 @@ it writes to `{session}/logs/agent.log` and is unusable before a session exists
 but there is no leveled, structured diagnostic stream.
 
 Apex runs in two contexts:
+
 1. **CLI** on a developer/operator terminal (a TTY).
 2. **Sandbox** launched by Console (Daytona), where stderr/stdout is captured by
    the cluster worker and forwarded to CloudWatch (and Sentry warn/error via the
    worker's console bridge).
 
 Two distinct streams must not be conflated:
+
 - **Agent reasoning / tool output** → the **event bus** (`src/core/eventBus.ts`),
   streamed to the Console UI and persisted to `agent_logs`. **Not** this PDR.
 - **Operational / diagnostic logging** (the `console.*` debugging stream) → the
@@ -52,15 +54,18 @@ logger.setLevel(level)
   stdout the CLI emits.
 
 ### Preserved
+
 - `writeErrorLog()` (→ `~/.pensar/error.log`) and the session `agent.log` stay for
   back-compat; the new logger may additionally call `writeErrorLog` on `error`.
 - The event bus is untouched.
 
 ### CLI wiring (`src/cli.ts`)
+
 Parse `--log-level/--verbose/--quiet` early, call `logger.setLevel(...)`, and set
 `process.env.PENSAR_LOG_LEVEL` so child processes inherit it.
 
 ## Rationale
+
 - Mirrors the existing `PENSAR_*` env + CLI-flag conventions, so it is the env var
   Console already plans to inject (`PENSAR_LOG_LEVEL`).
 - JSON-to-stderr makes sandbox logs queryable in CloudWatch with zero extra infra,
@@ -68,12 +73,14 @@ Parse `--log-level/--verbose/--quiet` early, call `logger.setLevel(...)`, and se
 - Keeping diagnostic logging off the event bus preserves the clean UI stream.
 
 ## Alternatives considered
+
 - **Adopt pino/winston:** heavier; the JSON-to-stderr need is small and we want a
   thin, dependency-light core that runs identically in CLI and sandbox.
 - **Extend the file-only logger:** it is session-bound and can't serve CLI/init.
 - **Only extend `PENSAR_DEBUG`:** no granular levels; the brief asks for them.
 
 ## Consequences
+
 - All ~642 `console.*` calls migrate to `logger.*` (a Biome `noConsole` rule
   enforces it; `bin/`, tests, and intentional user-facing CLI prints are exempted).
 - Levels: routine milestones → `debug`/`info`; recoverable issues → `warn`;
