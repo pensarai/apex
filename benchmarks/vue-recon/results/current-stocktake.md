@@ -10,7 +10,7 @@ bun run benchmark:vue-recon
 
 | Metric               | Current baseline |
 | -------------------- | ---------------: |
-| Fixtures             |                3 |
+| Fixtures             |                4 |
 | Page route recall    |             0.0% |
 | API endpoint recall  |             0.0% |
 | Dynamic route recall |             0.0% |
@@ -45,3 +45,10 @@ bun run benchmark:vue-recon
    extractor.
 4. Feed this endpoint-oracle format into evalgate/full attack-surface runs so
    LLM-driven browser exploration can be scored against the same manifests.
+
+## Full pentest contrast
+
+The full Apex CLI pentest run against `vue-enterprise-mock` discovered 100% of
+the known endpoints through persisted `document_endpoint` assets. This confirms
+the agentic browser/shell workflow can cover Vue when it thoroughly executes,
+even though deterministic helpers still miss Vue/Vite/Nuxt endpoints.

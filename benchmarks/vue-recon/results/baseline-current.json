@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-06-08T21:34:36.093Z",
+  "generatedAt": "2026-06-08T22:33:55.265Z",
   "metricSources": [
     "extractJavascriptEndpoints",
     "mapAppWithSurface"
   ],
   "summary": {
-    "fixtures": 3,
+    "fixtures": 4,
     "pageRouteRecall": 0,
     "apiEndpointRecall": 0,
     "dynamicRouteRecall": 0,
@@ -81,6 +81,89 @@
           "missed": [
             "/api/blog/posts/:slug",
             "/blog/:slug"
+          ],
+          "falsePositives": [],
+          "recall": 0
+        }
+      }
+    },
+    {
+      "id": "vue-enterprise-mock",
+      "name": "Vue Enterprise Mock",
+      "framework": "vue-vite",
+      "blackbox": {
+        "jsEndpoints": [],
+        "externalJSFiles": [
+          "/assets/vue-enterprise-app.js"
+        ],
+        "filesAnalyzed": 2,
+        "message": "Found 0 unique endpoints in JavaScript (0 total calls)."
+      },
+      "whitebox": {
+        "mode": "fallback",
+        "reason": "no frameworks detected",
+        "frameworks": [],
+        "endpoints": []
+      },
+      "coverage": {
+        "pages": {
+          "expected": [
+            "/",
+            "/login",
+            "/dashboard",
+            "/projects",
+            "/projects/:projectId",
+            "/admin/users",
+            "/settings/profile"
+          ],
+          "discovered": [],
+          "matched": [],
+          "missed": [
+            "/",
+            "/admin/users",
+            "/dashboard",
+            "/login",
+            "/projects",
+            "/projects/:projectId",
+            "/settings/profile"
+          ],
+          "falsePositives": [],
+          "recall": 0
+        },
+        "apiEndpoints": {
+          "expected": [
+            "/api/session",
+            "/api/login",
+            "/api/dashboard/summary",
+            "/api/projects",
+            "/api/projects/:projectId",
+            "/api/admin/users",
+            "/api/settings/profile"
+          ],
+          "discovered": [],
+          "matched": [],
+          "missed": [
+            "/api/admin/users",
+            "/api/dashboard/summary",
+            "/api/login",
+            "/api/projects",
+            "/api/projects/:projectId",
+            "/api/session",
+            "/api/settings/profile"
+          ],
+          "falsePositives": [],
+          "recall": 0
+        },
+        "dynamicRoutes": {
+          "expected": [
+            "/projects/:projectId",
+            "/api/projects/:projectId"
+          ],
+          "discovered": [],
+          "matched": [],
+          "missed": [
+            "/api/projects/:projectId",
+            "/projects/:projectId"
           ],
           "falsePositives": [],
           "recall": 0
