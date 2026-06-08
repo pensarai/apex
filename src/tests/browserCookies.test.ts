@@ -106,9 +106,9 @@ describe.skip("Browser Cookie Extraction", () => {
       }> = typeof parsed === "string" ? JSON.parse(parsed) : parsed;
 
       console.log(`Extracted ${cookies.length} cookies:`);
-      cookies.forEach((c) =>
-        console.log(`  ${c.name} (${c.domain}, httpOnly=${c.httpOnly})`),
-      );
+      cookies.forEach((c) => {
+        console.log(`  ${c.name} (${c.domain}, httpOnly=${c.httpOnly})`);
+      });
 
       expect(cookies.length).toBeGreaterThan(0);
 

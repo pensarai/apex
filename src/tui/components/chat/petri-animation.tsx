@@ -20,7 +20,9 @@ function startGlobalTick() {
   if (!globalInterval) {
     globalInterval = setInterval(() => {
       globalTick = (globalTick + 1) % 1000;
-      globalListeners.forEach((listener) => listener());
+      globalListeners.forEach((listener) => {
+        listener();
+      });
     }, 50); // ~20fps
   }
 }
@@ -135,6 +137,7 @@ export function PetriAnimation({
   }, [actualWidth, actualHeight]);
 
   // Step simulation on each tick
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` is an intentional trigger — drives the animation frame even though it isn't read inside the effect.
   useEffect(() => {
     if (simulationRef.current) {
       simulationRef.current.step();
@@ -150,6 +153,7 @@ export function PetriAnimation({
     <box flexDirection="column" width={actualWidth} height={actualHeight}>
       {frame.map((row, idx) => (
         <text
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional animation rows, never reorder
           key={idx}
           fg={getRowColor(idx, actualHeight, gradientColors)}
           content={row}

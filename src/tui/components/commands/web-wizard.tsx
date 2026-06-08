@@ -124,7 +124,7 @@ export default function WebWizard({
         setModel(targetModel, false);
       }
     }
-  }, [config.data, initialModel]);
+  }, [config.data, initialModel, setModel]);
 
   // Model picker overlay state
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -253,7 +253,7 @@ export default function WebWizard({
         allowedPorts: autoPorts.map(String),
       },
     }));
-  }, [state.target]);
+  }, [state.target, scopeManuallyEdited]);
 
   // Create session and navigate to session route
   async function createSessionAndNavigate() {
@@ -374,14 +374,18 @@ export default function WebWizard({
         hostInput.trim() &&
         advancedExpanded
       ) {
+        const trimmedHost = hostInput.trim();
         setScopeManuallyEdited(true);
-        setState((prev) => ({
-          ...prev,
-          scope: {
-            ...prev.scope,
-            allowedHosts: [...prev.scope.allowedHosts, hostInput.trim()],
-          },
-        }));
+        setState((prev) => {
+          if (prev.scope.allowedHosts.includes(trimmedHost)) return prev;
+          return {
+            ...prev,
+            scope: {
+              ...prev.scope,
+              allowedHosts: [...prev.scope.allowedHosts, trimmedHost],
+            },
+          };
+        });
         setHostInput("");
         return;
       }
@@ -391,14 +395,18 @@ export default function WebWizard({
         portInput.trim() &&
         advancedExpanded
       ) {
+        const trimmedPort = portInput.trim();
         setScopeManuallyEdited(true);
-        setState((prev) => ({
-          ...prev,
-          scope: {
-            ...prev.scope,
-            allowedPorts: [...prev.scope.allowedPorts, portInput.trim()],
-          },
-        }));
+        setState((prev) => {
+          if (prev.scope.allowedPorts.includes(trimmedPort)) return prev;
+          return {
+            ...prev,
+            scope: {
+              ...prev.scope,
+              allowedPorts: [...prev.scope.allowedPorts, trimmedPort],
+            },
+          };
+        });
         setPortInput("");
         return;
       }
@@ -815,8 +823,8 @@ export default function WebWizard({
               </box>
               {state.scope.allowedHosts.length > 0 && (
                 <box flexDirection="column" paddingLeft={2}>
-                  {state.scope.allowedHosts.map((h, i) => (
-                    <text key={i} fg={colors.textMuted}>
+                  {state.scope.allowedHosts.map((h) => (
+                    <text key={h} fg={colors.textMuted}>
                       • {h}
                     </text>
                   ))}
@@ -835,8 +843,8 @@ export default function WebWizard({
               </box>
               {state.scope.allowedPorts.length > 0 && (
                 <box flexDirection="column" paddingLeft={2}>
-                  {state.scope.allowedPorts.map((p, i) => (
-                    <text key={i} fg={colors.textMuted}>
+                  {state.scope.allowedPorts.map((p) => (
+                    <text key={p} fg={colors.textMuted}>
                       • {p}
                     </text>
                   ))}

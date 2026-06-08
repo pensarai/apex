@@ -107,7 +107,13 @@ import {
   resolveSubmit,
   routeCommand,
 } from "./logic";
-import { navigateDown, navigateUp, selectionAfterRemove } from "./queue";
+import {
+  createQueuedMessage,
+  navigateDown,
+  navigateUp,
+  type QueuedMessage,
+  selectionAfterRemove,
+} from "./queue";
 import { QueuedMessages } from "./queued-messages";
 import SubagentDialog from "./subagent-dialog";
 import {
@@ -181,6 +187,7 @@ export default function OperatorDashboard({
   } = useDialog();
   const { refocusPrompt } = useFocus();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `skillsVersion` is an intentional cache-buster — forces recomputation when skills are refreshed even though `skillsRegistry` (stable ref) hasn't changed.
   const autocompleteOptions = useMemo(() => {
     const commandOptions = filterOperatorAutocomplete(allAutocompleteOptions);
     const skillOptions = skillsRegistry.list().map((s) => {
@@ -275,9 +282,9 @@ export default function OperatorDashboard({
   const [inputValue, setInputValue] = useState("");
 
   // Queued follow-up messages
-  const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const [selectedQueueIndex, setSelectedQueueIndex] = useState(-1);
-  const queuedMessagesRef = useRef<string[]>([]);
+  const queuedMessagesRef = useRef<QueuedMessage[]>([]);
 
   // Keep queue ref in sync and clamp selection
   useEffect(() => {
@@ -482,7 +489,12 @@ export default function OperatorDashboard({
       }
     }
     loadSession();
-  }, [sessionId]);
+  }, [
+    sessionId,
+    subagentStore.setState,
+    initialConfig?.operatorMode,
+    setSessionCwd,
+  ]);
 
   useEffect(() => {
     return () => setSessionCwd(null);
@@ -728,30 +740,6 @@ export default function OperatorDashboard({
         cmdFlushTimerRef.current = null;
       }
     };
-  }, []);
-
-  // ---------------------------------------------------------------------------
-  // Subagent activity — append log lines to the active (pending) tool message
-  // ---------------------------------------------------------------------------
-
-  const appendLogToActiveTool = useCallback((line: string) => {
-    setMessages((prev) => {
-      const idx = prev.findLastIndex(
-        (m) =>
-          isToolMessage(m) &&
-          (m.status === "pending" || m.status === "streaming"),
-      );
-      if (idx === -1) return prev;
-
-      const msg = prev[idx];
-      let logs = [...(msg.logs ?? []), line];
-      if (logs.length > MAX_LOG_LINES) {
-        logs = logs.slice(-MAX_LOG_LINES);
-      }
-      const updated = [...prev];
-      updated[idx] = { ...msg, logs };
-      return updated;
-    });
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -1404,11 +1392,21 @@ export default function OperatorDashboard({
       updateToolResult,
       flushCommandOutput,
       onCommandOutput,
-      appendLogToActiveTool,
       subagentHelpers,
       setThinking,
       setIsExecuting,
       addCacheUsage,
+      initialConfig?.sandbox,
+      initialConfig?.taskDriven,
+      initialConfig?.target,
+      initialConfig?.headers,
+      setSessionCwd,
+      subagentStore.setState,
+      skillsRegistry.buildCatalog,
+      requireApproval,
+      skillsRegistry,
+      reasoningEnabled,
+      openAIReasoningEffort,
     ],
   );
 
@@ -1425,7 +1423,10 @@ export default function OperatorDashboard({
 
       // When agent is running, queue the message for later
       if (result.action === "blocked" && value.trim()) {
-        setQueuedMessages((prev) => [...prev, value.trim()]);
+        setQueuedMessages((prev) => [
+          ...prev,
+          createQueuedMessage(value.trim()),
+        ]);
         setInputValue("");
         return;
       }
@@ -1556,7 +1557,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     const queue = queuedMessagesRef.current;
     if (queue.length === 0) return;
 
-    const next = queue[0];
+    const next = queue[0].text;
     setQueuedMessages((prev) => prev.slice(1));
     setSelectedQueueIndex(-1);
     runAgentRef.current(next);
@@ -1930,7 +1931,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         },
       ];
     });
-  }, [setThinking, setIsExecuting]);
+  }, [setThinking, setIsExecuting, subagentStore.setState]);
 
   const resumeWithQuestionResult = useCallback(
     (result: AskUserQuestionsResult) => {
@@ -2084,7 +2085,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         }
         if (key.name === "return") {
           key.preventDefault?.();
-          const msg = queuedMessages[selectedQueueIndex];
+          const msg = queuedMessages[selectedQueueIndex].text;
           const removeIdx = selectedQueueIndex;
           setQueuedMessages((prev) => prev.filter((_, i) => i !== removeIdx));
           setSelectedQueueIndex(-1);
@@ -2107,7 +2108,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         }
         if (key.raw === "e" || key.raw === "E") {
           key.preventDefault?.();
-          const msg = queuedMessages[selectedQueueIndex];
+          const msg = queuedMessages[selectedQueueIndex].text;
           const removeIdx = selectedQueueIndex;
           setQueuedMessages((prev) => prev.filter((_, i) => i !== removeIdx));
           setInputValue(msg);

@@ -207,10 +207,12 @@ function ColoredAsciiArt({ ascii, title }: ColoredAsciiArtProps) {
     >
       {title && <text>{title}</text>}
       {ascii.map((row, y) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: positional pixel grid, rows never reorder
         <text key={y}>
           {row.map((pixel, x) => {
             const color = RGBA.fromInts(pixel.r, pixel.g, pixel.b, 30);
             return (
+              // biome-ignore lint/suspicious/noArrayIndexKey: positional pixel grid, columns never reorder
               <span key={x} fg={color}>
                 {pixel.char}
               </span>

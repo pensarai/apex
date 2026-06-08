@@ -358,8 +358,12 @@ const AgentMessage = memo(function AgentMessage({
                   {streamingLogs.slice(-3).map((log, idx) => {
                     const trimmed =
                       log.length > 100 ? log.slice(0, 100) + "…" : log;
+                    const offset = Math.max(0, streamingLogs.length - 3) + idx;
                     return (
-                      <text key={idx} fg={colors.textMuted}>
+                      <text
+                        key={`${message.toolCallId}-log-${offset}`}
+                        fg={colors.textMuted}
+                      >
                         {trimmed}
                       </text>
                     );

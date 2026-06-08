@@ -76,7 +76,7 @@ export default function HITLWizard(props: HITLWizardProps) {
         }
       }
     }
-  }, [config.data, model.id, initialModel]);
+  }, [config.data, model.id, initialModel, setModel]);
 
   const groupedModels = useMemo(() => {
     const groups: Record<string, ModelInfo[]> = {};

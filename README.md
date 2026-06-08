@@ -102,6 +102,17 @@ pensar pentest --target https://example.com
 
 Traces include reasoning steps, tool calls, token usage, and state checkpoints. When credentials are not set, tracing is silently disabled.
 
+### OpenTelemetry (Observability)
+
+Apex emits OpenTelemetry spans for agent runs, LLM calls, and tool executions through `@opentelemetry/api`. Spans are no-ops unless your process registers an OpenTelemetry SDK as the global tracer provider; Apex ships no SDK.
+
+Register an SDK before importing Apex code:
+
+- **Sentry**: install `@sentry/node` ≥ 9.27 and add `Sentry.vercelAIIntegration()` to your `Sentry.init` integrations.
+- **Any OTel backend** (Honeycomb, Tempo, Datadog, etc.): register `@opentelemetry/sdk-node` with an OTLP exporter.
+
+Spans follow [OTel GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/). Only span shape (model, token counts, latency, tool names) is captured by default; set `AI_TRACE_RECORD_PAYLOADS=true` to also record prompts, tool I/O, and outputs.
+
 ## Kali Linux Container (Optional)
 
 For **best performance**, run Apex in the included Kali Linux container with preconfigured pentest tools:
