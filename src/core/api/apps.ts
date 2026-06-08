@@ -184,9 +184,7 @@ export interface ListAppsOptions {
  * 6 MB Lambda / 10 MB API Gateway response cap on large tenants. Default
  * page size is 100 (max 200); use {@link listAppsAll} to auto-paginate.
  */
-export async function listApps(
-  opts?: ListAppsOptions,
-): Promise<ListAppsPage> {
+export async function listApps(opts?: ListAppsOptions): Promise<ListAppsPage> {
   const params = new URLSearchParams();
   if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
   if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
