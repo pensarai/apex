@@ -114,7 +114,10 @@ class Logger {
     this.emit("error", msg, merged);
 
     // Back-compat: mirror errors to ~/.pensar/error.log.
-    writeErrorLog(err ?? msg, this.scope);
+    // Respect `silent` — if the user explicitly silenced all output, don't persist either.
+    if (this.level !== "silent") {
+      writeErrorLog(err ?? msg, this.scope);
+    }
   }
 
   private emit(level: LogLevel, msg: string, fields?: Fields): void {

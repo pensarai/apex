@@ -48,19 +48,20 @@ const VALID_LOG_LEVELS = new Set<StructuredLogLevel>([
   "silent",
 ]);
 {
-  let resolvedLevel: StructuredLogLevel | undefined;
+  let logLevelValue: StructuredLogLevel | undefined;
+  let shorthandLevel: StructuredLogLevel | undefined;
   for (let i = args.length - 1; i >= 0; i--) {
     const a = args[i]!;
     if (a === "--verbose") {
-      resolvedLevel ??= "debug";
+      shorthandLevel ??= "debug";
       args.splice(i, 1);
     } else if (a === "--quiet") {
-      resolvedLevel ??= "warn";
+      shorthandLevel ??= "warn";
       args.splice(i, 1);
     } else if (a === "--log-level") {
       const value = args[i + 1]?.toLowerCase();
       if (value && VALID_LOG_LEVELS.has(value as StructuredLogLevel)) {
-        resolvedLevel ??= value as StructuredLogLevel;
+        logLevelValue ??= value as StructuredLogLevel;
         args.splice(i, 2);
       } else {
         console.error(
@@ -70,6 +71,7 @@ const VALID_LOG_LEVELS = new Set<StructuredLogLevel>([
       }
     }
   }
+  const resolvedLevel = logLevelValue ?? shorthandLevel;
   if (resolvedLevel) {
     logger.setLevel(resolvedLevel);
     process.env.PENSAR_LOG_LEVEL = resolvedLevel;
