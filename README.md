@@ -84,6 +84,26 @@ pensar targeted-pentest --target https://example.com --objective "Test authentic
 | `--threat-model <text\|@file>` | pentest                   | Threat model to guide testing                  |
 | `--objective <text>`           | targeted-pentest          | Testing objective (repeatable)                 |
 
+### Logging
+
+Apex routes diagnostic/operational logging through a centralized structured logger
+(`src/core/logger`). It writes one-line JSON to **stderr** when output is not a TTY — keeping
+it separate from the program's stdout and easy to ship to a log pipeline (e.g. CloudWatch) —
+and pretty, colorized output in an interactive terminal. User-facing CLI/TUI output stays on
+stdout.
+
+Set the level (most → least verbose: `debug` < `info` < `warn` < `error`, default `info`):
+
+```bash
+pensar pentest --target https://example.com --log-level debug   # or --verbose / --quiet
+PENSAR_LOG_LEVEL=debug pensar ...                                # via environment
+PENSAR_DEBUG=1 pensar ...                                        # back-compat alias for debug
+```
+
+Resolution order: CLI flag → `PENSAR_LOG_LEVEL` → `PENSAR_DEBUG` → default `info`.
+`PENSAR_LOG_FORMAT=json|pretty` forces the output format. When Apex runs as a managed agent,
+`PENSAR_LOG_LEVEL` is supplied by the host environment.
+
 ### W&B Weave Tracing
 
 Stream step-level agent traces to Weights & Biases Weave for analysis and fine-tuning:
