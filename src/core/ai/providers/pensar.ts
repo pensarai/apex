@@ -27,7 +27,7 @@ function log(...args: unknown[]) {
 }
 
 function logInfo(...args: unknown[]) {
-  structuredLog.info(fmtArgs(args));
+  structuredLog.debug(fmtArgs(args));
 }
 
 function logError(...args: unknown[]) {
