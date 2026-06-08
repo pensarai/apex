@@ -3,8 +3,10 @@
 /**
  * pensar issues — Manage security issues via the Pensar API
  *
+ * All commands operate on the selected workspace (set via `pensar login`).
+ *
  * Usage:
- *   pensar issues <projectId> [filters]          List issues for a project
+ *   pensar issues [filters]                       List issues in the workspace
  *   pensar issues get <issueId>                   Get issue details
  *   pensar issues update <issueId> [opts]         Update an issue
  */
@@ -19,8 +21,10 @@ function getFlag(flag: string, argv: string[]): string | undefined {
 function showHelp(): void {
   console.log(`pensar issues — Manage security issues via the Pensar API
 
+All commands operate on the selected workspace (set via \`pensar login\`).
+
 Usage:
-  pensar issues <projectId> [filters]            List issues for a project
+  pensar issues [filters]                        List issues in the workspace
   pensar issues get <issueId>                    Get issue details
   pensar issues update <issueId> [options]       Update an issue
 
@@ -45,7 +49,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const sub = args[0];
 
-  if (!sub || sub === "--help" || sub === "-h" || sub === "help") {
+  if (sub === "--help" || sub === "-h" || sub === "help") {
     showHelp();
     return;
   }
@@ -90,15 +94,18 @@ async function main(): Promise<void> {
         userFlaggedFalsePositiveReason,
       });
       console.log(JSON.stringify(result, null, 2));
-    } else {
-      const projectId = sub;
-      const issues = await listIssues(projectId, {
+    } else if (!sub || sub === "list" || sub.startsWith("--")) {
+      const issues = await listIssues({
         scanId: getFlag("--scan", args),
         status: getFlag("--status", args),
         severity: getFlag("--severity", args),
         branch: getFlag("--branch", args),
       });
       console.log(JSON.stringify(issues, null, 2));
+    } else {
+      console.error(`Error: Unknown subcommand "${sub}"`);
+      showHelp();
+      process.exit(1);
     }
   } catch (err) {
     console.error(

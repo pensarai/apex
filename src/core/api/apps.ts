@@ -4,9 +4,12 @@
  * Wraps the apps/endpoints routes on the console's issues-api Lambda
  * (`/{proxy+}` API Gateway).
  *
+ * All routes are scoped to the selected workspace via the X-Workspace-Id
+ * header (see apiClient).
+ *
  * Endpoint surface:
- *   GET    /projects/:projectId/apps
- *   POST   /projects/:projectId/apps
+ *   GET    /apps
+ *   POST   /apps
  *   GET    /apps/:appId
  *   PATCH  /apps/:appId
  *   DELETE /apps/:appId
@@ -47,7 +50,7 @@ export interface AppSummary {
   name: string;
   type: string | null;
   framework: string | null;
-  projectId: string;
+  workspaceId: string;
   domainId: string | null;
   createdAt: string;
 }
@@ -177,30 +180,26 @@ export interface ListAppsOptions {
 }
 
 /**
- * List apps in a project. Always paginated to avoid the 6 MB Lambda /
- * 10 MB API Gateway response cap on large tenants. Default page size
- * is 100 (max 200); use {@link listAppsAll} to auto-paginate.
+ * List apps in the selected workspace. Always paginated to avoid the
+ * 6 MB Lambda / 10 MB API Gateway response cap on large tenants. Default
+ * page size is 100 (max 200); use {@link listAppsAll} to auto-paginate.
  */
 export async function listApps(
-  projectId: string,
   opts?: ListAppsOptions,
 ): Promise<ListAppsPage> {
   const params = new URLSearchParams();
   if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
   if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
   const qs = params.toString();
-  return apiRequest<ListAppsPage>(
-    "GET",
-    `/projects/${projectId}/apps${qs ? `?${qs}` : ""}`,
-  );
+  return apiRequest<ListAppsPage>("GET", `/apps${qs ? `?${qs}` : ""}`);
 }
 
 /** Auto-paginate {@link listApps} until exhaustion. */
-export async function listAppsAll(projectId: string): Promise<AppSummary[]> {
+export async function listAppsAll(): Promise<AppSummary[]> {
   const all: AppSummary[] = [];
   let offset = 0;
   for (;;) {
-    const page = await listApps(projectId, { limit: 200, offset });
+    const page = await listApps({ limit: 200, offset });
     all.push(...page.apps);
     if (!page.hasMore) break;
     offset += page.limit;
@@ -212,11 +211,8 @@ export async function getApp(appId: string): Promise<AppDetail> {
   return apiRequest<AppDetail>("GET", `/apps/${appId}`);
 }
 
-export async function createApp(
-  projectId: string,
-  data: CreateAppInput,
-): Promise<AppDetail> {
-  return apiRequest<AppDetail>("POST", `/projects/${projectId}/apps`, data);
+export async function createApp(data: CreateAppInput): Promise<AppDetail> {
+  return apiRequest<AppDetail>("POST", "/apps", data);
 }
 
 export async function updateApp(
@@ -312,8 +308,6 @@ export async function deleteEndpoint(
 // ── Search (Tier 1: substring ILIKE) ─────────────────────────────────
 
 export interface SearchAppsOptions {
-  /** Optional: scope to a single project. Default: search across the workspace. */
-  projectId?: string;
   type?: ApplicationType;
   limit?: number;
   offset?: number;
@@ -332,7 +326,6 @@ export async function searchApps(
   opts?: SearchAppsOptions,
 ): Promise<SearchAppsResult> {
   const params = new URLSearchParams({ q: query });
-  if (opts?.projectId) params.set("projectId", opts.projectId);
   if (opts?.type) params.set("type", opts.type);
   if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
   if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
@@ -343,10 +336,8 @@ export async function searchApps(
 }
 
 export interface SearchEndpointsOptions {
-  /** Scope to a single application. Most specific. */
+  /** Scope to a single application. Default: search across the workspace. */
   applicationId?: string;
-  /** Scope to all apps in a project. */
-  projectId?: string;
   type?: EndpointType;
   minRiskScore?: number;
   authRequired?: boolean;
@@ -368,7 +359,6 @@ export async function searchEndpoints(
 ): Promise<SearchEndpointsResult> {
   const params = new URLSearchParams({ q: query });
   if (opts?.applicationId) params.set("applicationId", opts.applicationId);
-  if (opts?.projectId) params.set("projectId", opts.projectId);
   if (opts?.type) params.set("type", opts.type);
   if (opts?.minRiskScore !== undefined) {
     params.set("minRiskScore", String(opts.minRiskScore));

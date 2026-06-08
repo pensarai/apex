@@ -1,12 +1,14 @@
 #!/usr/bin/env bun
 
 /**
- * pensar apps — Manage the project attack surface (apps & endpoints).
+ * pensar apps — Manage the workspace attack surface (apps & endpoints).
+ *
+ * All commands operate on the selected workspace (set via `pensar login`).
  *
  * Usage:
- *   pensar apps <projectId>                                 List apps
+ *   pensar apps                                             List apps
  *   pensar apps get <appId>                                 Show app details
- *   pensar apps create <projectId> --name N --description D [opts]
+ *   pensar apps create --name N --description D [opts]      Create an app
  *   pensar apps update <appId> [opts]                       Update app fields
  *   pensar apps delete <appId>                              Delete an app
  *   pensar apps endpoints <appId> [filters]                 List endpoints
@@ -125,12 +127,14 @@ function parseNumber(
 }
 
 function showHelp(): void {
-  console.log(`pensar apps — Manage the project attack surface (apps & endpoints)
+  console.log(`pensar apps — Manage the workspace attack surface (apps & endpoints)
+
+All commands operate on the selected workspace (set via \`pensar login\`).
 
 Usage:
-  pensar apps <projectId>                                  List apps for a project
+  pensar apps                                              List apps in the workspace
   pensar apps get <appId>                                  Show app details
-  pensar apps create <projectId> [options]                 Create an app
+  pensar apps create [options]                             Create an app
   pensar apps update <appId> [options]                     Update an app
   pensar apps delete <appId>                               Delete an app
   pensar apps endpoints <appId> [filters]                  List endpoints
@@ -149,7 +153,7 @@ App fields (create requires --name and --description):
   --domain <id>                Linked domain UUID
   --disallowed-actions <text>  Free-form disallowed actions notes
 
-List pagination (for "<projectId>" and "endpoints <appId>"):
+List pagination (for "apps" and "endpoints <appId>"):
   --limit <n>                  Page size (default 100, max 200)
   --offset <n>                 Page offset (default 0)
   Responses include { ..., hasMore, limit, offset }; iterate by
@@ -159,9 +163,8 @@ Endpoint filters (for "endpoints"):
   --type <type>                One of: ${ENDPOINT_TYPES.join(", ")}
   --min-risk <score>           Minimum risk score (0–10)
 
-Search options:
-  --project <id>               Scope search to a project (search-endpoints also
-                               supports --app <id> to scope to a single app)
+Search options (scoped to the workspace):
+  --app <id>                   search-endpoints only: scope to a single app
   --type <type>                Filter by application or endpoint type
   --min-risk <score>           Endpoint search only: minimum risk score
   --auth-required              Endpoint search only: only auth-required endpoints
@@ -304,7 +307,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const sub = args[0];
 
-  if (!sub || sub === "--help" || sub === "-h" || sub === "help") {
+  if (sub === "--help" || sub === "-h" || sub === "help") {
     showHelp();
     return;
   }
@@ -320,16 +323,8 @@ async function main(): Promise<void> {
       const app = await getApp(appId);
       console.log(JSON.stringify(app, null, 2));
     } else if (sub === "create") {
-      const projectId = args[1];
-      if (!projectId) {
-        console.error("Error: project ID is required");
-        console.error(
-          "Usage: pensar apps create <projectId> --name N --description D",
-        );
-        process.exit(1);
-      }
       const opts = parseAppCreateOptions(args);
-      const result = await createApp(projectId, opts);
+      const result = await createApp(opts);
       console.log(JSON.stringify(result, null, 2));
     } else if (sub === "update") {
       const appId = args[1];
@@ -421,12 +416,10 @@ async function main(): Promise<void> {
         console.error("Usage: pensar apps search <query> [options]");
         process.exit(1);
       }
-      const projectId = getFlag("--project", args);
       const type = parseAppType(getFlag("--type", args));
       const limit = parseInteger("--limit", getFlag("--limit", args));
       const offset = parseInteger("--offset", getFlag("--offset", args));
       const result = await searchApps(query, {
-        ...(projectId !== undefined ? { projectId } : {}),
         ...(type !== undefined ? { type } : {}),
         ...(limit !== undefined ? { limit } : {}),
         ...(offset !== undefined ? { offset } : {}),
@@ -440,7 +433,6 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       const applicationId = getFlag("--app", args);
-      const projectId = getFlag("--project", args);
       const type = parseEndpointType(getFlag("--type", args));
       const minRiskScore = parseNumber(
         "--min-risk",
@@ -455,7 +447,6 @@ async function main(): Promise<void> {
       const offset = parseInteger("--offset", getFlag("--offset", args));
       const result = await searchEndpoints(query, {
         ...(applicationId !== undefined ? { applicationId } : {}),
-        ...(projectId !== undefined ? { projectId } : {}),
         ...(type !== undefined ? { type } : {}),
         ...(minRiskScore !== undefined ? { minRiskScore } : {}),
         ...(authRequired !== undefined ? { authRequired } : {}),
@@ -463,12 +454,11 @@ async function main(): Promise<void> {
         ...(offset !== undefined ? { offset } : {}),
       });
       console.log(JSON.stringify(result, null, 2));
-    } else if (!sub.startsWith("-")) {
-      // Default: treat first arg as a project ID and list apps.
-      const projectId = sub;
+    } else if (!sub || sub === "list" || sub.startsWith("--")) {
+      // Default: list apps in the selected workspace.
       const limit = parseInteger("--limit", getFlag("--limit", args));
       const offset = parseInteger("--offset", getFlag("--offset", args));
-      const result = await listApps(projectId, {
+      const result = await listApps({
         ...(limit !== undefined ? { limit } : {}),
         ...(offset !== undefined ? { offset } : {}),
       });

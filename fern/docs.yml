@@ -88,8 +88,6 @@ navigation:
             path: ./docs/cli/threat-model.mdx
           - page: pensar login
             path: ./docs/cli/auth.mdx
-          - page: pensar projects
-            path: ./docs/cli/projects.mdx
           - page: pensar pentests
             path: ./docs/cli/pentests.mdx
           - page: pensar issues
