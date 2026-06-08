@@ -12,6 +12,7 @@ import { type AIModel, buildAuthConfig } from "./core/ai";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
+import { type StructuredLogLevel, logger } from "./core/logger";
 import type { SessionInfo } from "./core/session";
 import {
   combinePromptParts,
@@ -32,6 +33,46 @@ if (obfuscateRequested) {
   process.env.PENSAR_OBFUSCATE = "1";
   for (let i = args.length - 1; i >= 0; i--) {
     if (OBFUSCATE_FLAGS.has(args[i]!)) args.splice(i, 1);
+  }
+}
+
+// Resolve diagnostic log level from CLI flags early, before any subsystem logs.
+// --log-level <level> wins; --verbose ⇒ debug; --quiet ⇒ warn. Strip the flags
+// (and the --log-level value) so they don't collide with per-command parsing,
+// then export PENSAR_LOG_LEVEL so child processes inherit the resolved level.
+const VALID_LOG_LEVELS = new Set<StructuredLogLevel>([
+  "debug",
+  "info",
+  "warn",
+  "error",
+  "silent",
+]);
+{
+  let resolvedLevel: StructuredLogLevel | undefined;
+  for (let i = args.length - 1; i >= 0; i--) {
+    const a = args[i]!;
+    if (a === "--verbose") {
+      resolvedLevel ??= "debug";
+      args.splice(i, 1);
+    } else if (a === "--quiet") {
+      resolvedLevel ??= "warn";
+      args.splice(i, 1);
+    } else if (a === "--log-level") {
+      const value = args[i + 1]?.toLowerCase();
+      if (value && VALID_LOG_LEVELS.has(value as StructuredLogLevel)) {
+        resolvedLevel ??= value as StructuredLogLevel;
+        args.splice(i, 2);
+      } else {
+        console.error(
+          `Error: --log-level expects one of debug|info|warn|error|silent`,
+        );
+        process.exit(1);
+      }
+    }
+  }
+  if (resolvedLevel) {
+    logger.setLevel(resolvedLevel);
+    process.env.PENSAR_LOG_LEVEL = resolvedLevel;
   }
 }
 
@@ -233,6 +274,9 @@ threat-model options:
 Global options:
   -h, --help         Show this help message
   -v, --version      Show version number
+  --log-level <lvl>  Diagnostic log level: debug|info|warn|error|silent
+  --verbose          Shorthand for --log-level debug
+  --quiet            Shorthand for --log-level warn
   --obfuscate        Run the TUI in obfuscation mode — redacts hostnames,
                      IPs, UUIDs, emails, paths, tokens, and apparent
                      company names so screenshots are safe to share.

@@ -9,6 +9,13 @@ import os from "os";
 import path from "path";
 import { type SessionInfo, sessions } from "../session";
 
+export {
+  createLogger,
+  type LogLevel as StructuredLogLevel,
+  logger,
+  resolveInitialLevel,
+} from "./structured";
+
 export enum LogLevel {
   INFO = "INFO",
   ERROR = "ERROR",
