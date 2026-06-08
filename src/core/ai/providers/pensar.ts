@@ -7,24 +7,31 @@ import type {
   LanguageModelV3Usage,
   SharedV3Warning,
 } from "@ai-sdk/provider";
+import { createLogger } from "../../logger/structured";
+import { scopedLogger } from "../../util/lazyLogger";
 import { buildStreamingFetchSignal } from "../utils";
 import { convertToBedrockFormat } from "./pensarFormatters";
 import { signGatewayRequest } from "./pensarSigning";
 import { parseSSE } from "./pensarSSE";
 
-const DEBUG =
-  process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
+const structuredLog = scopedLogger(() => createLogger("pensar"));
+
+function fmtArgs(args: unknown[]): string {
+  return args
+    .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+    .join(" ");
+}
 
 function log(...args: unknown[]) {
-  if (DEBUG) console.error("[pensar:debug]", ...args);
+  structuredLog.debug(fmtArgs(args));
 }
 
 function logInfo(...args: unknown[]) {
-  if (DEBUG) console.error("[pensar]", ...args);
+  structuredLog.info(fmtArgs(args));
 }
 
 function logError(...args: unknown[]) {
-  console.error("[pensar:error]", ...args);
+  structuredLog.error(fmtArgs(args));
 }
 
 export interface PensarModelConfig {

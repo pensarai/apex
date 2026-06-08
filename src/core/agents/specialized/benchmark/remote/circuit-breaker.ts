@@ -8,6 +8,11 @@
  * - OPEN: Too many failures, fail fast without trying
  * - HALF_OPEN: Testing recovery, limited requests allowed
  */
+import { createLogger } from "../../../../logger/structured";
+import { scopedLogger } from "../../../../util/lazyLogger";
+
+const log = scopedLogger(() => createLogger("circuit-breaker"));
+
 export class CircuitBreaker {
   private failures = 0;
   private successes = 0;
@@ -33,9 +38,7 @@ export class CircuitBreaker {
       const timeSinceLastFailure = now - this.lastFailureTime;
 
       if (timeSinceLastFailure >= this.options.resetTimeout) {
-        console.log(
-          "🟡 Circuit breaker: Entering HALF_OPEN state (attempting recovery)",
-        );
+        log.info("Entering HALF_OPEN state (attempting recovery)");
         this.state = "HALF_OPEN";
       } else {
         const waitTimeSeconds = Math.ceil(
@@ -66,7 +69,7 @@ export class CircuitBreaker {
 
     if (this.state === "HALF_OPEN") {
       if (this.successes >= this.options.successThreshold) {
-        console.log("🟢 Circuit breaker: Entering CLOSED state (recovered)");
+        log.info("Entering CLOSED state (recovered)");
         this.state = "CLOSED";
         this.successes = 0;
       }
@@ -82,9 +85,7 @@ export class CircuitBreaker {
       this.failures >= this.options.failureThreshold &&
       this.state !== "OPEN"
     ) {
-      console.error(
-        `🔴 Circuit breaker: OPENING circuit after ${this.failures} consecutive failures`,
-      );
+      log.error(`OPENING circuit after ${this.failures} consecutive failures`);
       this.state = "OPEN";
     }
   }

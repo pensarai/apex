@@ -13,6 +13,8 @@ import { z } from "zod";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
 import { AgentEventBus } from "../../../eventBus";
+import { createLogger } from "../../../logger/structured";
+import { scopedLogger } from "../../../util/lazyLogger";
 import {
   type CVSSScorerInput,
   type CVSSScorerResult,
@@ -25,6 +27,8 @@ import {
 } from "../../specialized/findingJudge";
 import type { Finding } from "../types";
 import type { ToolContext } from "./types";
+
+const log = scopedLogger(() => createLogger("document-finding"));
 
 export const documentVulnerabilityInputSchema = z.object({
   title: z.string().describe("Finding title"),
@@ -863,8 +867,8 @@ function preparePoc(input: {
   // Validate portability before preparing the script
   const portabilityWarnings = validatePocPortability(pocContent, input.pocType);
   if (portabilityWarnings.length > 0) {
-    console.warn(
-      `[PoC Portability] Warnings for ${filename}:\n  ${portabilityWarnings.join("\n  ")}`,
+    log.warn(
+      `PoC portability warnings for ${filename}: ${portabilityWarnings.join("; ")}`,
     );
   }
 

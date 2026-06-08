@@ -15,10 +15,12 @@ import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../http/targetHeaders";
+import { createLogger } from "../../logger/structured";
 import { getApexTracer } from "../../observability";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
+import { scopedLogger } from "../../util/lazyLogger";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import {
@@ -34,6 +36,8 @@ import {
 } from "./tools";
 import { StepTraceWriter } from "./trace";
 import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
+
+const log = scopedLogger(() => createLogger("approval-gate"));
 
 /**
  * General-purpose offensive security agent harness.
@@ -604,24 +608,20 @@ function wrapToolsWithApprovalGate(
           args.toolCallId ??
           `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-        console.error(`[approval-gate] ${name} (${toolCallId}): checking`);
+        log.debug(`${name} (${toolCallId}): checking`);
         try {
           await gate.check(name, String(toolCallId), args);
         } catch (err) {
           if (err instanceof ApprovalDeniedError) {
-            console.error(`[approval-gate] ${name} (${toolCallId}): denied`);
+            log.debug(`${name} (${toolCallId}): denied`);
             return { blocked: true, reason: "Denied by operator" };
           }
           throw err;
         }
-        console.error(
-          `[approval-gate] ${name} (${toolCallId}): approved, executing`,
-        );
+        log.debug(`${name} (${toolCallId}): approved, executing`);
 
         const result = await originalExecute(args, options);
-        console.error(
-          `[approval-gate] ${name} (${toolCallId}): execute finished`,
-        );
+        log.debug(`${name} (${toolCallId}): execute finished`);
         return result;
       },
     };

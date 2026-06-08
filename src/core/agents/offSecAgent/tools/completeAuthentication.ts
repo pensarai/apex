@@ -2,7 +2,11 @@ import { tool } from "ai";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { z } from "zod";
+import { createLogger } from "../../../logger/structured";
+import { scopedLogger } from "../../../util/lazyLogger";
 import type { ToolContext } from "./types";
+
+const log = scopedLogger(() => createLogger("complete_authentication"));
 
 const AUTH_DIR = "auth";
 const AUTH_DATA_FILENAME = "auth-data.json";
@@ -79,7 +83,7 @@ This tool marks the end of the authentication flow.`,
         .describe("A concise description of what this tool call is doing"),
     }),
     execute: async (result) => {
-      console.log(
+      log.info(
         `Authentication complete: ${result.success ? "SUCCESS" : "FAILED"}`,
       );
 
@@ -105,9 +109,13 @@ This tool marks the end of the authentication flow.`,
         };
 
         writeFileSync(authDataPath, JSON.stringify(authData, null, 2));
-        console.log(`Auth data persisted to ${authDataPath}`);
+        log.debug(`Auth data persisted to ${authDataPath}`);
       } catch (err) {
-        console.error(`Failed to persist auth data: ${err}`);
+        log.error(
+          "Failed to persist auth data",
+          err instanceof Error ? err : undefined,
+          { error: String(err) },
+        );
       }
 
       return {
