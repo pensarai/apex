@@ -182,6 +182,7 @@ Usage:
   pensar -p <prompt>                 Start an operator session with a prompt
   pensar pentest [options]            Run a full pentest orchestration
   pensar targeted-pentest [options]   Run a targeted pentest on a single target
+  pensar agentic-pentest [options]    Red-team an AI agent / LLM app endpoint
   pensar threat-model [options]       Generate application-centric threat model
   pensar login                        Connect to Pensar Console
   pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)
@@ -226,6 +227,20 @@ targeted-pentest options:
   --header "Name: Value"  Custom HTTP header (repeatable)
   --headers-from <file>   Load headers from a JSON object or Name:Value file
   --no-global-headers     Skip the global defaultHeaders snapshot
+
+agentic-pentest options:
+  --endpoint <url>        (required) Agent / LLM app HTTP endpoint
+  --adapter <kind>        openai-compatible (default) | http-json | mock
+  --target-model <id>     Model id sent to openai-compatible endpoints
+  --auth-header <name>    Auth header name (default: Authorization)
+  --auth-env <var>        Env var holding the credential (read at runtime)
+  --message-path <path>   http-json: dot-path to inject the message into the body
+  --response-path <path>  Dot-path to the assistant text in the JSON response
+  --canary-url <url>      Public canary collector URL (tunnel) for callbacks
+  --canary-port <port>    Local canary collector port (default: 8731)
+  --category <list>       Restrict to case categories (comma-separated)
+  --deterministic         Run the fixed corpus (no LLM) instead of the agent-driven flow
+  --dry-run               Use the mock adapter (no network calls)
 
 threat-model options:
   --output, -o <path>  Output file path (default: ./threat-model.md)
@@ -328,6 +343,118 @@ POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}`);
   // after the pentest workflow has printed its final results. For CLI use the
   // command is complete here, so exit explicitly instead of letting harnesses
   // misclassify a completed run as a timeout.
+  process.exit(0);
+}
+
+async function runAgenticPentest() {
+  const { config } = await import("dotenv");
+  config();
+
+  const { runAgenticPentestAgent } = await import("./core/api/agenticPentest");
+  const { sessions } = await import("./core/session");
+  const { config: appConfig } = await import("./core/config");
+
+  const endpoint = getArgRequired("--endpoint");
+  const adapterKind = (getArg("--adapter") ?? "openai-compatible") as
+    | "openai-compatible"
+    | "http-json"
+    | "mock";
+  const targetModel = getArg("--target-model");
+  const authHeader = getArg("--auth-header");
+  const authEnv = getArg("--auth-env");
+  const canaryUrl = getArg("--canary-url");
+  const canaryPortRaw = getArg("--canary-port");
+  const messagePath = getArg("--message-path");
+  const responsePath = getArg("--response-path");
+  const categoryRaw = getArg("--category");
+  const dryRun = hasFlag("--dry-run");
+  const deterministic = hasFlag("--deterministic");
+
+  const pensarConfig = await appConfig.get();
+  const model = await resolveCliModel();
+
+  const adapter = {
+    kind: adapterKind,
+    endpoint,
+    ...(targetModel ? { model: targetModel } : {}),
+    ...(authHeader || authEnv
+      ? {
+          auth: {
+            ...(authHeader ? { header: authHeader } : {}),
+            ...(authEnv ? { valueEnv: authEnv } : {}),
+          },
+        }
+      : {}),
+    ...(messagePath ? { request: { messagePath } } : {}),
+    ...(responsePath ? { response: { textPath: responsePath } } : {}),
+  };
+
+  const canary =
+    canaryUrl || canaryPortRaw
+      ? {
+          ...(canaryUrl ? { publicUrl: canaryUrl } : {}),
+          ...(canaryPortRaw ? { port: Number(canaryPortRaw) } : {}),
+        }
+      : undefined;
+
+  const categories = categoryRaw
+    ? categoryRaw.split(",").map((c) => c.trim())
+    : undefined;
+
+  const sep = "=".repeat(60);
+  console.log(`${sep}
+AGENTIC PENTEST
+${sep}
+Target:   ${endpoint}
+Adapter:  ${adapterKind}${dryRun ? "\nMode:     dry-run" : ""}
+Model:    ${model}
+`);
+
+  const session = await sessions.create({
+    name: "Agentic Pentest",
+    targets: [endpoint],
+    config: {
+      sessionType: "agentic",
+      agentic: {
+        endpoint,
+        adapter,
+        ...(canary ? { canary } : {}),
+        ...(categories ? { categories } : {}),
+      },
+    },
+  });
+  console.log(`PENSAR_SESSION_PATH:${session.rootPath}`);
+
+  const { bus, cleanup } = await createInstrumentedBus(session);
+
+  try {
+    const { findings, findingsPath, reportPath, caseResults } =
+      await runAgenticPentestAgent({
+        session,
+        model,
+        authConfig: buildAuthConfig(pensarConfig),
+        eventBus: bus,
+        ...(dryRun ? { dryRun: true } : {}),
+        ...(deterministic ? { deterministic: true } : {}),
+        ...(categories ? { categories } : {}),
+      });
+
+    const countBy = (status: string) =>
+      caseResults.filter((r) => r.status === status).length;
+    const caseBreakdown =
+      caseResults.length > 0
+        ? `\nCases run:    ${caseResults.length}\nExploited:    ${countBy("exploited")}\nDefended:     ${countBy("defended")}\nInconclusive: ${countBy("inconclusive")}\nSkipped:      ${countBy("skipped")}\nError:        ${countBy("error")}`
+        : "";
+    console.log(`
+${sep}
+RESULTS
+${sep}Mode:         ${deterministic ? "deterministic corpus" : "agent-driven"}${caseBreakdown}
+Findings:     ${findings.length}
+Path:         ${findingsPath}${reportPath ? `\nReport:       ${reportPath}` : ""}`);
+  } finally {
+    await cleanup();
+  }
+
   process.exit(0);
 }
 
@@ -586,6 +713,8 @@ if (hasFlag("-p") || command === "--prompt") {
   await runUpgrade();
 } else if (command === "pentest") {
   await runPentest();
+} else if (command === "agentic-pentest") {
+  await runAgenticPentest();
 } else if (command === "targeted-pentest") {
   await runTargetedPentest();
 } else if (command === "login" || command === "auth") {

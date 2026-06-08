@@ -51,6 +51,8 @@ export const ApexFindingObject = z.object({
   pocPath: z.string(),
   remediation: z.string(),
   references: z.string().optional(),
+  /** Canonical vulnerability class (e.g. prompt-injection, tool-abuse). */
+  vulnerabilityClass: z.string().optional(),
   toolCallDescription: z.string().optional(), // Optional for backward compatibility
   cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
   rootCauseGroup: z.string().optional(),

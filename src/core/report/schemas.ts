@@ -25,7 +25,7 @@ export const PentestReportSchema = z.object({
     model: z.string(),
     timestamp: z.string(),
     sessionId: z.string(),
-    mode: z.enum(["blackbox", "whitebox", "targeted"]),
+    mode: z.enum(["blackbox", "whitebox", "targeted", "agentic"]),
   }),
   summary: z.object({
     totalFindings: z.number(),

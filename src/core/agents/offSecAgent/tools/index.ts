@@ -21,6 +21,7 @@ export { createFile } from "./createFile";
 export { createTask } from "./createTask";
 export { delegateAuth } from "./delegateAuth";
 export { detectAuthScheme } from "./detectAuthScheme";
+export { documentAgenticFinding } from "./documentAgenticFinding";
 // Attack surface / recon tools
 export { documentApp } from "./documentApp";
 export { documentEndpoint } from "./documentEndpoint";
@@ -81,6 +82,7 @@ export { readSkill } from "./readSkill";
 // Response (structured final-output) tool — used by sub-agents that emit
 // validated result objects.
 export { createResponseTool, RESPONSE_TOOL_NAME } from "./response";
+export { runAgenticPentestWorkflow } from "./runAgenticPentestWorkflow";
 // Orchestration tools
 export { runAttackSurface } from "./runAttackSurface";
 export { runCodeQuery } from "./runCodeQuery";
@@ -155,6 +157,7 @@ import { createFile } from "./createFile";
 import { createTask } from "./createTask";
 import { delegateAuth } from "./delegateAuth";
 import { detectAuthScheme } from "./detectAuthScheme";
+import { documentAgenticFinding } from "./documentAgenticFinding";
 import { documentApp } from "./documentApp";
 import { documentEndpoint } from "./documentEndpoint";
 import { documentVulnerability } from "./documentFinding";
@@ -181,6 +184,7 @@ import { provideComparisonResults } from "./provideComparisonResults";
 import { queryWhiteboxCatalog } from "./queryWhiteboxCatalog";
 import { readFile } from "./readFile";
 import { readSkill } from "./readSkill";
+import { runAgenticPentestWorkflow } from "./runAgenticPentestWorkflow";
 import { runAttackSurface } from "./runAttackSurface";
 import { runCodeQuery } from "./runCodeQuery";
 import { runPentestWorkflow } from "./runPentestWorkflow";
@@ -226,6 +230,7 @@ export function createAllTools(ctx: ToolContext) {
     execute_command: executeCommand(ctx),
     http_request: httpRequest(ctx),
     document_vulnerability: documentVulnerability(ctx),
+    document_agentic_finding: documentAgenticFinding(ctx),
 
     // Filesystem / search tools
     read_file: readFile(ctx),
@@ -259,6 +264,7 @@ export function createAllTools(ctx: ToolContext) {
     spawn_pentest_agent: spawnPentestAgent(ctx),
     spawn_coding_agent: spawnCodingAgent(ctx),
     run_pentest_workflow: runPentestWorkflow(ctx),
+    run_agentic_pentest_workflow: runAgenticPentestWorkflow(ctx),
     run_whitebox_scan: runWhiteboxScan(ctx),
     create_whitebox_candidate: createWhiteboxCandidate(ctx),
     update_whitebox_candidate: updateWhiteboxCandidate(ctx),
@@ -329,6 +335,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "execute_command",
   "http_request",
   "document_vulnerability",
+  "document_agentic_finding",
   // Filesystem / search
   "read_file",
   "list_files",
@@ -349,6 +356,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "spawn_pentest_agent",
   "spawn_coding_agent",
   "run_pentest_workflow",
+  "run_agentic_pentest_workflow",
   "run_whitebox_scan",
   "create_whitebox_candidate",
   "update_whitebox_candidate",

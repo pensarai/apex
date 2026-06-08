@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import z from "zod";
 import { generateRandomName, generateSessionName } from "../../util/name";
+import { AgenticConfigObject } from "../agentic/config";
 import type { AIAuthConfig, AIModel } from "../ai";
 import { CredentialManager } from "../credentials";
 import * as Identifier from "../id/id";
@@ -200,7 +201,9 @@ const SessionConfigObject = z.object({
   headers: SessionHeadersRecord.optional(),
   /** @deprecated Pass flat `headers` instead. Normalized at input boundaries. */
   offensiveHeaders: OffensiveHeadersConfigObject.optional(),
-  sessionType: z.enum(["web-app"]).optional(),
+  sessionType: z.enum(["web-app", "agentic"]).optional(),
+  /** Config for an agentic (AI agent / LLM app) target — set when sessionType is "agentic". */
+  agentic: AgenticConfigObject.optional(),
   mode: z.enum(["auto", "driver", "operator"]).optional(),
   outcomeGuidance: z.string().optional(),
   scopeConstraints: ScopeConstraintsObject.optional(),

@@ -5,7 +5,7 @@ export interface ReportContext {
   target: string;
   model: string;
   sessionId: string;
-  mode: "blackbox" | "whitebox" | "targeted";
+  mode: "blackbox" | "whitebox" | "targeted" | "agentic";
 }
 
 const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;

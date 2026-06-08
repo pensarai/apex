@@ -8,8 +8,8 @@
 
 import { useKeyboard } from "@opentui/react";
 import { hasToolCall, type ModelMessage, stepCountIs } from "ai";
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import { isAbsolute, join, resolve } from "path";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import {
   useCallback,
   useEffect,
@@ -74,6 +74,7 @@ import {
   type UIMessage,
 } from "../../../core/session/persistence";
 import {
+  buildAgenticPrompt,
   buildPentestPrompt,
   buildThreatModelPrompt,
 } from "../../../core/skills/builtins";
@@ -151,6 +152,7 @@ export default function OperatorDashboard({
     sandbox?: boolean;
     taskDriven?: boolean;
     headers?: Record<string, string>;
+    agentic?: NonNullable<SessionConfig["agentic"]>;
   };
 }) {
   const { colors } = useTheme();
@@ -1255,7 +1257,10 @@ export default function OperatorDashboard({
         } else {
           // First call — let the agent factory create the session
           const sessionConfig: SessionConfig = {
-            sessionType: "web-app",
+            sessionType: initialConfig?.agentic ? "agentic" : "web-app",
+            ...(initialConfig?.agentic
+              ? { agentic: initialConfig.agentic }
+              : {}),
             mode: "operator",
             operatorSettings: {
               initialMode: operatorMode,
@@ -1523,6 +1528,12 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
             ports: args?.ports?.split(",").filter(Boolean),
             strict: args?.strict === "true",
             prompt: args?.prompt,
+            skillContent: content,
+          });
+        } else if (slug === "agentic") {
+          fullContent = buildAgenticPrompt({
+            endpoint: args?.endpoint || "",
+            adapter: args?.adapter || "openai-compatible",
             skillContent: content,
           });
         } else {

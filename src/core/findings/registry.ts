@@ -9,6 +9,19 @@ import { type AIAuthConfig, type AIModel, generateObjectResponse } from "../ai";
 // ---------------------------------------------------------------------------
 
 const VULN_CLASS_PATTERNS: [RegExp, string][] = [
+  // Agentic (AI agent / LLM app) classes — kept first so the specific
+  // "indirect prompt injection" wins over the generic "prompt injection".
+  [/indirect[\s-]*prompt[\s-]*injection/i, "indirect-prompt-injection"],
+  [/prompt[\s-]*injection/i, "prompt-injection"],
+  [/tool[\s-]*abuse|connected[\s-]*action[\s-]*abuse/i, "tool-abuse"],
+  [
+    /agent[\s-]*handoff|sub[\s-]*agent[\s-]*injection|handoff[\s-]*injection/i,
+    "agent-handoff",
+  ],
+  [
+    /data[\s-]*exfiltration|data[\s-]*exfil|\bexfiltration\b/i,
+    "data-exfiltration",
+  ],
   [/sql\s*injection/i, "sql-injection"],
   [/command\s*injection/i, "command-injection"],
   [/remote\s*code\s*execution|(\b)rce(\b)/i, "rce"],

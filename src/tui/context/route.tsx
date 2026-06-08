@@ -71,6 +71,8 @@ export type Route =
         taskDriven?: boolean;
         /** Headers from wizard/CLI; replace the snapshotted global defaults. */
         headers?: Record<string, string>;
+        /** Agentic target config — set for "agentic" sessions. */
+        agentic?: NonNullable<SessionConfig["agentic"]>;
       };
       /** Skill to automatically submit on mount */
       initialSkill?: { slug: string; args?: Record<string, string> };

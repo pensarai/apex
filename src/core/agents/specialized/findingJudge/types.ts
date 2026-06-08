@@ -9,19 +9,30 @@ export const FINDING_TYPES = [
 export type FindingType = (typeof FINDING_TYPES)[number];
 
 export interface FindingJudgeInput {
-  /** The full POC script content */
-  pocScript: string;
-  /** Script language */
-  pocType: "bash" | "python" | "javascript";
+  /**
+   * How the finding is proven. "poc" (default) = re-runnable POC script; "canary"
+   * = an AI-agent exploit proven by an out-of-band canary callback / transcript
+   * signal (no re-runnable script). POC fields are optional in canary mode.
+   */
+  proofType?: "poc" | "canary";
+  /** The full POC script content (poc mode) */
+  pocScript?: string;
+  /** Script language (poc mode) */
+  pocType?: "bash" | "python" | "javascript";
   /** Relative path to the persisted POC file, when available */
   pocPath?: string;
   /** Target URL/host being assessed */
   target?: string;
-  /** POC execution output */
-  pocOutput: {
+  /** POC execution output (poc mode) */
+  pocOutput?: {
     stdout: string;
     stderr: string;
     exitCode: number;
+  };
+  /** Agentic exploit evidence (canary mode): the conversation + observed signals. */
+  agentEvidence?: {
+    transcript: string;
+    signals: string[];
   };
   /** The vulnerability claim to validate against */
   claim: {

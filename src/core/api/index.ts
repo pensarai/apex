@@ -8,6 +8,11 @@
 //    eliminate the split. The lint rule for module barriers exempts this.
 
 export type {
+  AgenticPentestWorkflowInput,
+  AgenticPentestWorkflowResult,
+} from "./agenticPentest";
+export { runAgenticPentestAgent } from "./agenticPentest";
+export type {
   AppDetail,
   ApplicationType,
   AppSummary,

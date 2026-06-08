@@ -27,6 +27,7 @@ Apex serves three audiences:
 | [PDR-005](./PDR-005-findings-registry.md)   | Shared findings registry                                                     |
 | [PDR-006](./PDR-006-public-api.md)          | Public API layer separate from the TUI                                       |
 | [PDR-007](./PDR-007-multi-provider.md)      | Multi-provider AI model support                                              |
+| [PDR-008](./PDR-008-agentic-targets.md)     | Agentic (AI agent / LLM app) targets as a first-class scan type              |
 
 ---
 

@@ -193,6 +193,119 @@ export const commands: CommandConfig[] = [
     },
   },
   {
+    name: "agentic",
+    description: "Red-team an AI agent / LLM app endpoint",
+    category: "Pentesting",
+    options: [
+      {
+        name: "--endpoint",
+        valueHint: "<url>",
+        description: "Agent / LLM app endpoint (required)",
+      },
+      {
+        name: "--adapter",
+        valueHint: "<kind>",
+        description: "openai-compatible | http-json | mock",
+      },
+      {
+        name: "--target-model",
+        valueHint: "<id>",
+        description: "Model id for openai-compatible endpoints",
+      },
+      {
+        name: "--auth-header",
+        valueHint: "<name>",
+        description: "Auth header name (default: Authorization)",
+      },
+      {
+        name: "--auth-env",
+        valueHint: "<var>",
+        description: "Env var holding the credential",
+      },
+      {
+        name: "--message-path",
+        valueHint: "<path>",
+        description: "http-json: dot-path to inject the message",
+      },
+      {
+        name: "--response-path",
+        valueHint: "<path>",
+        description: "Dot-path to assistant text in the response",
+      },
+      {
+        name: "--canary-url",
+        valueHint: "<url>",
+        description: "Public canary collector URL (tunnel)",
+      },
+      {
+        name: "--category",
+        valueHint: "<list>",
+        description: "Restrict to case categories (comma-separated)",
+      },
+    ],
+    handler: (args, ctx) => {
+      const get = (name: string): string | undefined => {
+        const i = args.indexOf(name);
+        return i >= 0 ? args[i + 1] : undefined;
+      };
+      const endpoint = get("--endpoint");
+      if (!endpoint) {
+        ctx.toast?.(
+          "Usage: /agentic --endpoint <url> [--adapter openai-compatible|http-json]",
+          "error",
+        );
+        return;
+      }
+      const adapterKind = (get("--adapter") ?? "openai-compatible") as
+        | "openai-compatible"
+        | "http-json"
+        | "mock";
+      const targetModel = get("--target-model");
+      const authHeader = get("--auth-header");
+      const authEnv = get("--auth-env");
+      const messagePath = get("--message-path");
+      const responsePath = get("--response-path");
+      const canaryUrl = get("--canary-url");
+      const categoryRaw = get("--category");
+
+      ctx.navigate({
+        type: "operator",
+        nonce: Date.now(),
+        initialConfig: {
+          requireApproval: false,
+          target: endpoint,
+          sandbox: true,
+          agentic: {
+            endpoint,
+            adapter: {
+              kind: adapterKind,
+              endpoint,
+              ...(targetModel ? { model: targetModel } : {}),
+              ...(authHeader || authEnv
+                ? {
+                    auth: {
+                      ...(authHeader ? { header: authHeader } : {}),
+                      ...(authEnv ? { valueEnv: authEnv } : {}),
+                    },
+                  }
+                : {}),
+              ...(messagePath ? { request: { messagePath } } : {}),
+              ...(responsePath ? { response: { textPath: responsePath } } : {}),
+            },
+            ...(canaryUrl ? { canary: { publicUrl: canaryUrl } } : {}),
+            ...(categoryRaw
+              ? { categories: categoryRaw.split(",").map((c) => c.trim()) }
+              : {}),
+          },
+        },
+        initialSkill: {
+          slug: "agentic",
+          args: { endpoint, adapter: adapterKind },
+        },
+      });
+    },
+  },
+  {
     name: "operator",
     aliases: ["o"],
     description: "Start interactive operator session",
