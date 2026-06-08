@@ -1,0 +1,14 @@
+{
+  "name": "nuxt-routes-api-recon-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev --host 0.0.0.0"
+  },
+  "dependencies": {
+    "nuxt": "^4.2.2",
+    "vue": "^3.5.25"
+  },
+  "devDependencies": {}
+}

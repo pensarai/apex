@@ -1,0 +1,26 @@
+{
+  "id": "vue-vite-router",
+  "name": "Vue Vite Router",
+  "framework": "vue-vite",
+  "appPath": "benchmarks/vue-recon/apps/vue-vite-router",
+  "staticBuildPath": "benchmarks/vue-recon/apps/vue-vite-router/static-build",
+  "expected": {
+    "pages": [
+      "/",
+      "/dashboard",
+      "/dashboard/reports",
+      "/projects",
+      "/projects/:projectId",
+      "/settings/profile"
+    ],
+    "apiEndpoints": [
+      "/api/session",
+      "/api/projects",
+      "/api/projects/:projectId",
+      "/api/reports/monthly"
+    ],
+    "ignoredExternal": [
+      "https://cdn.example.invalid/vue-devtools.js"
+    ]
+  }
+}

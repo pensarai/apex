@@ -1,0 +1,26 @@
+{
+  "id": "nuxt-routes-api",
+  "name": "Nuxt Routes API",
+  "framework": "nuxt",
+  "appPath": "benchmarks/vue-recon/apps/nuxt-routes-api",
+  "staticBuildPath": "benchmarks/vue-recon/apps/nuxt-routes-api/static-build",
+  "expected": {
+    "pages": [
+      "/",
+      "/admin",
+      "/blog",
+      "/blog/:slug",
+      "/profile/settings"
+    ],
+    "apiEndpoints": [
+      "/api/admin/audit-log",
+      "/api/blog/posts",
+      "/api/blog/posts/:slug",
+      "/api/me",
+      "/api/profile/settings"
+    ],
+    "ignoredExternal": [
+      "https://images.example.invalid/avatar.png"
+    ]
+  }
+}

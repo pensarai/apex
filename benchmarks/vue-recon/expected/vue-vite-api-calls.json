@@ -1,0 +1,24 @@
+{
+  "id": "vue-vite-api-calls",
+  "name": "Vue Vite API Calls",
+  "framework": "vue-vite",
+  "appPath": "benchmarks/vue-recon/apps/vue-vite-api-calls",
+  "staticBuildPath": "benchmarks/vue-recon/apps/vue-vite-api-calls/static-build",
+  "expected": {
+    "pages": [
+      "/",
+      "/account",
+      "/billing"
+    ],
+    "apiEndpoints": [
+      "/api/account",
+      "/api/billing/invoices",
+      "/api/billing/invoices/:invoiceId",
+      "/api/feature-flags",
+      "/api/search"
+    ],
+    "ignoredExternal": [
+      "https://analytics.example.invalid/collect"
+    ]
+  }
+}

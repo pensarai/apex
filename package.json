@@ -91,6 +91,7 @@
     "build:binary:linux-x64": "bun build src/cli.ts --compile --target=bun-linux-x64 --outfile dist/pensar-linux-x64",
     "build:binary:macos-arm64": "bun build src/cli.ts --compile --target=bun-darwin-arm64 --outfile dist/pensar-darwin-arm64",
     "build:binary:macos-x64": "bun build src/cli.ts --compile --target=bun-darwin-x64 --outfile dist/pensar-darwin-x64",
+    "benchmark:vue-recon": "bun run scripts/benchmark-vue-recon.ts",
     "check": "biome check --write",
     "check:ci": "biome check",
     "daytona-benchmark": "bun run scripts/daytona-benchmark.ts",
