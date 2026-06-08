@@ -1,0 +1,235 @@
+{
+  "generatedAt": "2026-06-08T21:34:36.093Z",
+  "metricSources": [
+    "extractJavascriptEndpoints",
+    "mapAppWithSurface"
+  ],
+  "summary": {
+    "fixtures": 3,
+    "pageRouteRecall": 0,
+    "apiEndpointRecall": 0,
+    "dynamicRouteRecall": 0,
+    "totalFalsePositives": 0
+  },
+  "results": [
+    {
+      "id": "nuxt-routes-api",
+      "name": "Nuxt Routes API",
+      "framework": "nuxt",
+      "blackbox": {
+        "jsEndpoints": [],
+        "externalJSFiles": [
+          "/_nuxt/app-nuxt-r4t5y6.js"
+        ],
+        "filesAnalyzed": 2,
+        "message": "Found 0 unique endpoints in JavaScript (0 total calls)."
+      },
+      "whitebox": {
+        "mode": "fallback",
+        "reason": "no frameworks detected",
+        "frameworks": [],
+        "endpoints": []
+      },
+      "coverage": {
+        "pages": {
+          "expected": [
+            "/",
+            "/admin",
+            "/blog",
+            "/blog/:slug",
+            "/profile/settings"
+          ],
+          "discovered": [],
+          "matched": [],
+          "missed": [
+            "/",
+            "/admin",
+            "/blog",
+            "/blog/:slug",
+            "/profile/settings"
+          ],
+          "falsePositives": [],
+          "recall": 0
+        },
+        "apiEndpoints": {
+          "expected": [
+            "/api/admin/audit-log",
+            "/api/blog/posts",
+            "/api/blog/posts/:slug",
+            "/api/me",
+            "/api/profile/settings"
+          ],
+          "discovered": [],
+          "matched": [],
+          "missed": [
+            "/api/admin/audit-log",
+            "/api/blog/posts",
+            "/api/blog/posts/:slug",
+            "/api/me",
+            "/api/profile/settings"
+          ],
+          "falsePositives": [],
+          "recall": 0
+        },
+        "dynamicRoutes": {
+          "expected": [
+            "/blog/:slug",
+            "/api/blog/posts/:slug"
+          ],
+          "discovered": [],
+          "matched": [],
+          "missed": [
+            "/api/blog/posts/:slug",
+            "/blog/:slug"
+          ],
+          "falsePositives": [],
+          "recall": 0
+        }
+      }
+    },
+    {
+      "id": "vue-vite-api-calls",
+      "name": "Vue Vite API Calls",
+      "framework": "vue-vite",
+      "blackbox": {
+        "jsEndpoints": [],
+        "externalJSFiles": [
+          "/assets/app-api-q1w2e3.js"
+        ],
+        "filesAnalyzed": 2,
+        "message": "Found 0 unique endpoints in JavaScript (0 total calls)."
+      },
+      "whitebox": {
+        "mode": "fallback",
+        "reason": "no frameworks detected",
+        "frameworks": [],
+        "endpoints": []
+      },
+      "coverage": {
+        "pages": {
+          "expected": [
+            "/",
+            "/account",
+            "/billing"
+          ],
+          "discovered": [],
+          "matched": [],
+          "missed": [
+            "/",
+            "/account",
+            "/billing"
+          ],
+          "falsePositives": [],
+          "recall": 0
+        },
+        "apiEndpoints": {
+          "expected": [
+            "/api/account",
+            "/api/billing/invoices",
+            "/api/billing/invoices/:invoiceId",
+            "/api/feature-flags",
+            "/api/search"
+          ],
+          "discovered": [],
+          "matched": [],
+          "missed": [
+            "/api/account",
+            "/api/billing/invoices",
+            "/api/billing/invoices/:invoiceId",
+            "/api/feature-flags",
+            "/api/search"
+          ],
+          "falsePositives": [],
+          "recall": 0
+        },
+        "dynamicRoutes": {
+          "expected": [
+            "/api/billing/invoices/:invoiceId"
+          ],
+          "discovered": [],
+          "matched": [],
+          "missed": [
+            "/api/billing/invoices/:invoiceId"
+          ],
+          "falsePositives": [],
+          "recall": 0
+        }
+      }
+    },
+    {
+      "id": "vue-vite-router",
+      "name": "Vue Vite Router",
+      "framework": "vue-vite",
+      "blackbox": {
+        "jsEndpoints": [],
+        "externalJSFiles": [
+          "/assets/app-router-a1b2c3.js"
+        ],
+        "filesAnalyzed": 2,
+        "message": "Found 0 unique endpoints in JavaScript (0 total calls)."
+      },
+      "whitebox": {
+        "mode": "fallback",
+        "reason": "no frameworks detected",
+        "frameworks": [],
+        "endpoints": []
+      },
+      "coverage": {
+        "pages": {
+          "expected": [
+            "/",
+            "/dashboard",
+            "/dashboard/reports",
+            "/projects",
+            "/projects/:projectId",
+            "/settings/profile"
+          ],
+          "discovered": [],
+          "matched": [],
+          "missed": [
+            "/",
+            "/dashboard",
+            "/dashboard/reports",
+            "/projects",
+            "/projects/:projectId",
+            "/settings/profile"
+          ],
+          "falsePositives": [],
+          "recall": 0
+        },
+        "apiEndpoints": {
+          "expected": [
+            "/api/session",
+            "/api/projects",
+            "/api/projects/:projectId",
+            "/api/reports/monthly"
+          ],
+          "discovered": [],
+          "matched": [],
+          "missed": [
+            "/api/projects",
+            "/api/projects/:projectId",
+            "/api/reports/monthly",
+            "/api/session"
+          ],
+          "falsePositives": [],
+          "recall": 0
+        },
+        "dynamicRoutes": {
+          "expected": [
+            "/projects/:projectId",
+            "/api/projects/:projectId"
+          ],
+          "discovered": [],
+          "matched": [],
+          "missed": [
+            "/api/projects/:projectId",
+            "/projects/:projectId"
+          ],
+          "falsePositives": [],
+          "recall": 0
+        }
+      }
+    }
+  ]
+}

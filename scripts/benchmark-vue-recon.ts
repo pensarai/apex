@@ -1,7 +1,13 @@
 #!/usr/bin/env bun
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "fs";
-import { extname, join, resolve } from "path";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+} from "node:fs";
+import { extname, join, resolve } from "node:path";
 import { extractJavascriptEndpoints } from "../src/core/agents/specialized/attackSurface/jsExtraction";
 import { mapAppWithSurface } from "../src/core/integrations/surface";
 
@@ -51,7 +57,9 @@ interface FixtureResult {
 }
 
 const MANIFEST_DIR = resolve("benchmarks/vue-recon/expected");
-const OUTPUT_PATH = resolve("benchmarks/vue-recon/results/baseline-current.json");
+const OUTPUT_PATH = resolve(
+  "benchmarks/vue-recon/results/baseline-current.json",
+);
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -130,8 +138,13 @@ function matchesExpected(actual: string, expected: string): boolean {
   return false;
 }
 
-function compareCoverage(expected: string[], discoveredRaw: string[]): CoverageResult {
-  const discovered = Array.from(new Set(discoveredRaw.map(normalizePath))).sort();
+function compareCoverage(
+  expected: string[],
+  discoveredRaw: string[],
+): CoverageResult {
+  const discovered = Array.from(
+    new Set(discoveredRaw.map(normalizePath)),
+  ).sort();
   const matched = expected
     .filter((expectedPath) =>
       discovered.some((actual) => matchesExpected(actual, expectedPath)),
@@ -172,7 +185,8 @@ async function runFixture(manifest: EndpointManifest): Promise<FixtureResult> {
       includeExternalJS: true,
     });
 
-    const jsEndpoints = jsResult.endpoints?.map((endpoint) => endpoint.endpoint) ?? [];
+    const jsEndpoints =
+      jsResult.endpoints?.map((endpoint) => endpoint.endpoint) ?? [];
     const surfaceResult = mapAppWithSurface(appPath, appPath, {
       isSingleAppRepo: true,
     });
@@ -255,10 +269,7 @@ async function main(): Promise<void> {
 
   const report = {
     generatedAt: new Date().toISOString(),
-    metricSources: [
-      "extractJavascriptEndpoints",
-      "mapAppWithSurface",
-    ],
+    metricSources: ["extractJavascriptEndpoints", "mapAppWithSurface"],
     summary: {
       fixtures: results.length,
       pageRouteRecall: average(results.map((r) => r.coverage.pages.recall)),
