@@ -19,6 +19,8 @@ bun run benchmark:vue-recon
   clients, environment-derived API bases, and relative paths.
 - `nuxt-routes-api` — Nuxt-style pages, dynamic pages, `server/api` routes, and
   `$fetch` / `useFetch` calls.
+- `vue-enterprise-mock` — Runnable local Vue-style SPA plus Bun API server used
+  for full Apex pentest comparison.
 
 Each app has:
 
@@ -37,3 +39,12 @@ the deterministic pieces Apex already has locally:
 This keeps the benchmark repeatable without API keys and gives evalgate an
 endpoint oracle to compare against when running full `pensar pentest` or
 attack-surface sessions.
+
+## Full Apex pentest result
+
+`vue-enterprise-mock` was also exercised through the full Apex CLI pentest
+workflow. That run discovered all known first-party endpoints through persisted
+`document_endpoint` assets. See:
+
+- `results/vue-enterprise-mock-pentest.md`
+- `results/vue-enterprise-mock-pentest.json`

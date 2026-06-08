@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vue Enterprise Recon Mock</title>
+    <link rel="stylesheet" href="/assets/app.css" />
+    <script type="module" src="/assets/vue-enterprise-app.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>Vue Enterprise Portal</h1>
+        <nav aria-label="Primary navigation">
+          <a href="/">Home</a>
+          <a href="/login">Login</a>
+          <a href="/dashboard">Dashboard</a>
+          <a href="/projects">Projects</a>
+          <a href="/projects/alpha">Alpha project</a>
+          <a href="/admin/users">Admin users</a>
+          <a href="/settings/profile">Profile</a>
+        </nav>
+      </header>
+      <main>
+        <section data-route="/">
+          <h2>Home</h2>
+          <p>Mock Vue app for attack-surface endpoint discovery.</p>
+        </section>
+        <form id="login-form" action="/api/login" method="post">
+          <label>
+            Email
+            <input name="email" value="analyst@example.test" />
+          </label>
+          <label>
+            Password
+            <input name="password" type="password" value="password123" />
+          </label>
+          <button type="submit">Sign in</button>
+        </form>
+      </main>
+    </div>
+  </body>
+</html>

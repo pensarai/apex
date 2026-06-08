@@ -1,0 +1,30 @@
+{
+  "id": "vue-enterprise-mock",
+  "name": "Vue Enterprise Mock",
+  "framework": "vue-vite",
+  "appPath": "benchmarks/vue-recon/apps/vue-enterprise-mock",
+  "staticBuildPath": "benchmarks/vue-recon/apps/vue-enterprise-mock/public",
+  "expected": {
+    "pages": [
+      "/",
+      "/login",
+      "/dashboard",
+      "/projects",
+      "/projects/:projectId",
+      "/admin/users",
+      "/settings/profile"
+    ],
+    "apiEndpoints": [
+      "/api/session",
+      "/api/login",
+      "/api/dashboard/summary",
+      "/api/projects",
+      "/api/projects/:projectId",
+      "/api/admin/users",
+      "/api/settings/profile"
+    ],
+    "ignoredExternal": [
+      "https://telemetry.example.invalid/vue-enterprise"
+    ]
+  }
+}

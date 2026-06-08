@@ -1,0 +1,15 @@
+{
+  "name": "vue-enterprise-recon-mock",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "bun run server.ts"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "^6.0.3",
+    "vite": "^7.2.7",
+    "vue": "^3.5.25",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {}
+}

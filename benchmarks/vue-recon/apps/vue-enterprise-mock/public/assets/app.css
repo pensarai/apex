@@ -1,0 +1,29 @@
+body {
+  background: #101827;
+  color: #f8fafc;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  margin: 0;
+}
+
+header,
+main {
+  margin: 0 auto;
+  max-width: 920px;
+  padding: 24px;
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+a {
+  color: #93c5fd;
+}
+
+form {
+  display: grid;
+  gap: 12px;
+  max-width: 360px;
+}
