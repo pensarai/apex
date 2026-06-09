@@ -26,6 +26,12 @@ export interface Memory {
 
 const MEMORIES_PREFIX = "memories";
 
+/** Disabled via the `PENSAR_MEMORY_ENABLED` env var; enabled when unset. */
+export function isMemoryEnabled(): boolean {
+  const v = process.env.PENSAR_MEMORY_ENABLED?.trim().toLowerCase();
+  return !(v === "false" || v === "0" || v === "off" || v === "no");
+}
+
 function storageKey(category: MemoryCategory, id: string): string[] {
   return [MEMORIES_PREFIX, category, id];
 }
@@ -79,6 +85,9 @@ export async function addMemory(input: {
     updatedAt: now,
   };
 
+  // Disabled: no-op write.
+  if (!isMemoryEnabled()) return memory;
+
   await Storage.write(storageKey(category, id), memory);
   return memory;
 }
@@ -97,6 +106,19 @@ export async function addMemoryWithId(input: {
   validateId(input.id);
   const category: MemoryCategory = input.category ?? "general";
   const now = new Date().toISOString();
+
+  // Disabled: no-op write.
+  if (!isMemoryEnabled()) {
+    return {
+      id: input.id,
+      category,
+      title: input.title,
+      content: input.content,
+      tags: input.tags ?? [],
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
 
   // Preserve createdAt if this is an update
   let createdAt = now;
@@ -129,6 +151,7 @@ export async function deleteMemory(
   category: MemoryCategory,
   id: string,
 ): Promise<boolean> {
+  if (!isMemoryEnabled()) return false;
   validateId(id);
   // Check existence first — Storage.remove silently succeeds on missing files
   const existing = await getMemory(category, id);
@@ -145,6 +168,7 @@ export async function getMemory(
   category: MemoryCategory,
   id: string,
 ): Promise<Memory | null> {
+  if (!isMemoryEnabled()) return null;
   validateId(id);
   try {
     return await Storage.read<Memory>(storageKey(category, id));
@@ -172,6 +196,7 @@ export async function listMemories(opts?: {
   category?: MemoryCategory;
   tag?: string;
 }): Promise<MemorySummary[]> {
+  if (!isMemoryEnabled()) return [];
   const prefix = opts?.category
     ? [MEMORIES_PREFIX, opts.category]
     : [MEMORIES_PREFIX];
