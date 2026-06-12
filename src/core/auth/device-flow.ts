@@ -22,6 +22,7 @@ export async function startDeviceFlow(
   apiUrl?: string,
 ): Promise<DeviceFlowInfo> {
   const url = apiUrl ?? getPensarApiUrl();
+  let workosClientId: string | undefined;
 
   // Try WorkOS first
   try {
@@ -30,6 +31,7 @@ export async function startDeviceFlow(
       const cliConfig = (await configResponse.json()) as {
         workosClientId: string;
       };
+      workosClientId = cliConfig.workosClientId;
 
       const response = await fetch(
         "https://api.workos.com/user_management/authorize/device",
@@ -53,10 +55,14 @@ export async function startDeviceFlow(
     // Fall through to legacy
   }
 
-  // Legacy flow
+  // Legacy flow. Newer backends require client identification (RFC 8628
+  // §3.1); older backends ignore the extra field.
   const response = await fetch(`${url}/auth/device/code`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(
+      workosClientId ? { client_id: workosClientId } : {},
+    ),
   });
 
   if (!response.ok) {
@@ -64,7 +70,7 @@ export async function startDeviceFlow(
   }
 
   const deviceInfo = (await response.json()) as LegacyDeviceCodeResponse;
-  return { mode: "legacy", deviceInfo };
+  return { mode: "legacy", clientId: workosClientId, deviceInfo };
 }
 
 /**
@@ -147,9 +153,10 @@ export async function pollLegacyToken(params: {
   deviceCode: string;
   interval: number;
   expiresIn: number;
+  clientId?: string;
   signal?: AbortSignal;
 }): Promise<LegacyTokenResponse> {
-  const { apiUrl, deviceCode, interval, expiresIn, signal } = params;
+  const { apiUrl, deviceCode, interval, expiresIn, clientId, signal } = params;
   const deadline = Date.now() + expiresIn * 1000;
 
   while (Date.now() < deadline) {
@@ -163,7 +170,9 @@ export async function pollLegacyToken(params: {
       const response = await fetch(`${apiUrl}/auth/device/token`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceCode }),
+        body: JSON.stringify(
+          clientId ? { deviceCode, client_id: clientId } : { deviceCode },
+        ),
       });
 
       if (!response.ok) continue;

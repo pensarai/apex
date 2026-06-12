@@ -200,6 +200,7 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
         deviceCode: info.deviceInfo.deviceCode,
         interval: info.deviceInfo.interval,
         expiresIn: info.deviceInfo.expiresIn,
+        clientId: info.clientId,
         signal: ac.signal,
       });
 
