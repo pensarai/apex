@@ -23,6 +23,8 @@ export interface FindingJudgeAgentInput {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   eventBus?: AgentEventBus;
+  /** Id used to tag the judge's stream events. Defaults to "finding-judge". */
+  subagentId?: string;
   sandbox?: UnifiedSandbox;
   target?: string;
   enableThinking?: boolean;
@@ -57,7 +59,7 @@ export class FindingJudgeAgent extends OffensiveSecurityAgent<FindingJudgeAgentO
       sandbox: opts.sandbox,
       enableThinking: opts.enableThinking,
       openAIReasoningEffort: opts.openAIReasoningEffort,
-      subagentId: "finding-judge",
+      subagentId: opts.subagentId ?? "finding-judge",
       activeTools: [...FINDING_JUDGE_ACTIVE_TOOLS],
       responseSchema: FindingJudgeOutputSchema,
       stopWhen: stepCountIs(60),
