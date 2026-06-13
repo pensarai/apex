@@ -33,6 +33,13 @@ export type FindingJudgeRuntimeContext = Pick<
   | "openAIReasoningEffort"
 > & {
   model: AIModel;
+  /**
+   * Subagent id used to tag the judge's own stream events. Callers that
+   * spawn the judge as a nested subagent must pass the same id they
+   * emitted in the `subagent-spawn` lifecycle event so the live UI and
+   * persisted logs line up. Defaults to `"finding-judge"`.
+   */
+  subagentId?: string;
 };
 
 /**
@@ -56,6 +63,7 @@ export async function judgeFinding(
       authConfig: ctx.authConfig,
       abortSignal: ctx.abortSignal,
       eventBus: ctx.eventBus,
+      subagentId: ctx.subagentId,
       sandbox: ctx.sandbox,
       target: input.target ?? ctx.target ?? ctx.session.targets[0],
       enableThinking: ctx.enableThinking,

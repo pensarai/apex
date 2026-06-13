@@ -12,6 +12,7 @@ import { join } from "path";
 import { z } from "zod";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
+import { AgentEventBus } from "../../../eventBus";
 import {
   type CVSSScorerInput,
   type CVSSScorerResult,
@@ -19,6 +20,7 @@ import {
 } from "../../specialized/cvssScorer";
 import {
   type FindingJudgeInput,
+  type FindingJudgeResult,
   judgeFinding,
 } from "../../specialized/findingJudge";
 import type { Finding } from "../types";
@@ -232,16 +234,52 @@ CRITICAL RULES — READ BEFORE CALLING:
           },
         };
 
-        const judgeResult = await judgeFinding(judgeInput, {
-          model: ctx.model!,
-          session: ctx.session,
-          authConfig: ctx.authConfig,
-          abortSignal: ctx.abortSignal,
-          eventBus: ctx.eventBus,
-          sandbox: ctx.sandbox,
-          target: ctx.target,
-          enableThinking: ctx.enableThinking,
-          openAIReasoningEffort: ctx.openAIReasoningEffort,
+        // Run the judge as a proper nested subagent: explicit lifecycle
+        // events (with parentSubagentId) plus a child bus, mirroring
+        // spawn_pentest_agent / spawn_coding_agent. Without this the judge's
+        // stream renders as a top-level sibling instead of nested under the
+        // worker that invoked document_vulnerability.
+        const judgeSubagentId = nextJudgeSubagentId(ctx.subagentId);
+
+        ctx.eventBus?.emit("subagent-spawn", {
+          subagentId: judgeSubagentId,
+          name: "Finding Judge",
+          input: { title: input.title, endpoint: input.endpoint },
+          parentSubagentId: ctx.subagentId,
+        });
+
+        const judgeBus = new AgentEventBus();
+        AgentEventBus.attachChild(judgeBus, ctx.eventBus, judgeSubagentId);
+
+        let judgeResult: FindingJudgeResult;
+        try {
+          judgeResult = await judgeFinding(judgeInput, {
+            model: ctx.model!,
+            session: ctx.session,
+            authConfig: ctx.authConfig,
+            abortSignal: ctx.abortSignal,
+            eventBus: judgeBus,
+            subagentId: judgeSubagentId,
+            sandbox: ctx.sandbox,
+            target: ctx.target,
+            enableThinking: ctx.enableThinking,
+            openAIReasoningEffort: ctx.openAIReasoningEffort,
+          });
+        } catch (error) {
+          ctx.eventBus?.emit("subagent-complete", {
+            subagentId: judgeSubagentId,
+            status: "failed",
+            parentSubagentId: ctx.subagentId,
+          });
+          throw error;
+        }
+
+        ctx.eventBus?.emit("subagent-complete", {
+          subagentId: judgeSubagentId,
+          // `error` is only set by the infrastructure-failure fallback —
+          // a judge that completed and rejected the finding still "completed".
+          status: judgeResult.error ? "failed" : "completed",
+          parentSubagentId: ctx.subagentId,
         });
 
         if (!judgeResult.valid) {
@@ -599,6 +637,23 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
       }
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Finding Judge subagent ids
+// ---------------------------------------------------------------------------
+
+// Per-parent counter so repeated/concurrent judge runs within the same
+// parent stream get unique subagent ids (mirrors spawn_pentest_agent's
+// child-id allocation). Keyed by parent subagentId ("" for top-level).
+const judgeCounters = new Map<string, number>();
+
+function nextJudgeSubagentId(parentSubagentId: string | undefined): string {
+  const key = parentSubagentId ?? "";
+  const next = (judgeCounters.get(key) ?? 0) + 1;
+  judgeCounters.set(key, next);
+  const prefix = parentSubagentId ? `${parentSubagentId}-` : "";
+  return `${prefix}finding-judge-${next}`;
 }
 
 // ---------------------------------------------------------------------------
