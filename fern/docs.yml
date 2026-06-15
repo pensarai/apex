@@ -98,6 +98,8 @@ navigation:
             path: ./docs/cli/fixes.mdx
           - page: pensar logs
             path: ./docs/cli/logs.mdx
+          - page: pensar config
+            path: ./docs/cli/config.mdx
           - page: pensar upgrade
             path: ./docs/cli/upgrade.mdx
           - page: pensar doctor

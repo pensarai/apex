@@ -1,0 +1,89 @@
+---
+title: "pensar config"
+description: "Manage global default HTTP headers that Apex snapshots into new pentest sessions"
+---
+
+## Overview
+
+The `pensar config` command manages Apex's global configuration. Today it has a
+single area — `headers` — which stores **default HTTP headers** that are sent on
+in-scope requests during pentests.
+
+These defaults live in `~/.pensar/config.json` under `defaultHeaders`. They are
+**snapshotted into each new session at create time** — existing sessions are not
+retroactively updated. Use them for headers you want on most runs (for example a
+shared `User-Agent` or a non-secret correlation header) instead of passing
+`--header` every time.
+
+<Callout intent="info">
+  Per-run flags layer on top of these defaults. Precedence (lowest to highest):
+  global defaults < a `--headers-from` file < individual `--header` flags. Pass
+  `--no-global-headers` to a pentest command to skip the default snapshot
+  entirely. See [`pensar pentest`](/apex/cli-commands/pensar-pentest).
+</Callout>
+
+## Usage
+
+```bash
+pensar config headers list [--show]        # List configured default headers
+pensar config headers add  "Name: Value"   # Add a header (errors if it exists)
+pensar config headers set  "Name: Value"   # Add or overwrite a header
+pensar config headers remove <Name>        # Remove a header (aliases: rm, delete)
+pensar config headers clear [--yes]        # Remove all headers (requires confirmation)
+pensar config headers import <file>        # Replace all headers from a file
+```
+
+## Subcommands
+
+### list
+
+Prints the configured default headers. Sensitive values are **masked by
+default** — header names containing `authorization`, `cookie`, `token`, `key`,
+`secret`, or `password` are shown masked and marked with a `*`.
+
+| Flag      | Description                                  |
+| --------- | -------------------------------------------- |
+| `--show`  | Reveal masked sensitive values in the output |
+
+### add / set
+
+Add a header in `Name: Value` form. `add` fails if a header with that name
+already exists (case-insensitive); `set` adds or overwrites.
+
+```bash
+pensar config headers add "X-Env: staging"
+pensar config headers set "Authorization: Bearer $TOKEN"
+```
+
+### remove
+
+Remove a single header by name (case-insensitive). Aliases: `rm`, `delete`.
+
+```bash
+pensar config headers remove X-Env
+```
+
+### clear
+
+Remove all default headers. This is destructive, so it requires confirmation.
+
+| Flag         | Description                   |
+| ------------ | ----------------------------- |
+| `--yes`, `-y`| Confirm and clear all headers |
+
+### import
+
+Replace all default headers with the contents of a file. The file may be either
+a JSON object (`{"X-API-Key": "abc"}`) or a list of `Name: Value` lines. This
+**replaces** the existing set rather than merging.
+
+```bash
+pensar config headers import ./headers.json
+```
+
+## Storage
+
+Headers are stored in `~/.pensar/config.json` under `defaultHeaders`. New
+sessions snapshot these at create time; existing sessions are not updated
+retroactively — adjust per-session headers with the operator `/headers` command
+or by editing the session config directly.
