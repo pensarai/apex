@@ -557,43 +557,39 @@ export class PersistentShell {
     }
 
     if (this.proc) {
-      try {
-        this.proc.stdin?.write("exit\n");
-      } catch {
-        // ignore
-      }
-
       const p = this.proc;
       const pid = p.pid;
+
+      // Kill the process group synchronously so backgrounded subshells
+      // die even if the runner process is killed before timers fire.
+      if (pid && process.platform !== "win32") {
+        try {
+          process.kill(-pid, "SIGTERM");
+        } catch {
+          // already gone
+        }
+      }
+      try {
+        p.kill("SIGTERM");
+      } catch {
+        // already dead
+      }
+
+      // SIGKILL escalation on a timer — only needed if SIGTERM is ignored.
       setTimeout(() => {
-        // Kill the whole process group so detached children die too.
         if (pid && process.platform !== "win32") {
           try {
-            process.kill(-pid, "SIGTERM");
+            process.kill(-pid, "SIGKILL");
           } catch {
             // already gone
           }
         }
         try {
-          p.kill("SIGTERM");
+          p.kill("SIGKILL");
         } catch {
           // already dead
         }
-        setTimeout(() => {
-          if (pid && process.platform !== "win32") {
-            try {
-              process.kill(-pid, "SIGKILL");
-            } catch {
-              // already gone
-            }
-          }
-          try {
-            p.kill("SIGKILL");
-          } catch {
-            // already dead
-          }
-        }, 2_000);
-      }, 1_000);
+      }, 2_000);
     }
 
     this.alive = false;
