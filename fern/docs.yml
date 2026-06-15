@@ -92,6 +92,8 @@ navigation:
             path: ./docs/cli/pentests.mdx
           - page: pensar issues
             path: ./docs/cli/issues.mdx
+          - page: pensar apps
+            path: ./docs/cli/apps.mdx
           - page: pensar fixes
             path: ./docs/cli/fixes.mdx
           - page: pensar logs
