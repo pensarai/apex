@@ -46,6 +46,7 @@
     "dotenv": "^17.2.3",
     "knip": "^6.12.0",
     "prettier": "^3.8.1",
+    "slop-scan": "^0.3.0",
     "vitest": "^2.1.8"
   },
   "engines": {
@@ -106,6 +107,7 @@
     "local-benchmark": "bun run scripts/local-benchmark.ts",
     "pensar": "node bin/pensar.js",
     "prepublishOnly": "npm run build",
+    "slop-scan": "slop-scan",
     "start": "bun run src/tui/index.tsx",
     "test": "vitest run",
     "test:watch": "vitest",

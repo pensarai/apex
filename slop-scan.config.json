@@ -1,0 +1,27 @@
+{
+  "$schema": "https://unpkg.com/slop-scan@0/schema.json",
+  "ignores": [
+    "**/node_modules/**",
+    "**/.git/**",
+    "build/**",
+    "dist/**",
+    "bin/**",
+    "container/**",
+    "fern/**",
+    "benchmarks/**",
+    "assets/**",
+    "**/coverage/**",
+    "**/*.generated.*",
+    "loader-demo.tsx",
+    ".slop-base/**"
+  ],
+  "_comment": "overrides: empty catches in test teardown/cleanup are benign and high-frequency; suppress so advisory comments stay signal-rich.",
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "defensive.empty-catch": { "enabled": false }
+      }
+    }
+  ]
+}

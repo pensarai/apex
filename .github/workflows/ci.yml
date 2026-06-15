@@ -18,6 +18,9 @@ jobs:
   dead-code:
     uses: ./.github/workflows/knip.yml
 
+  slop-scan:
+    uses: ./.github/workflows/slop-scan.yml
+
   typecheck:
     uses: ./.github/workflows/typecheck.yml
 

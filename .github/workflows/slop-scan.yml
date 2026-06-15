@@ -1,0 +1,113 @@
+# Advisory AI-slop workflow (powered by slop-scan).
+# Diffs a PR against its base and reports new/worsened slop as a neutral check
+# plus a sticky comment — never blocks. Promote to a gate later via --fail-on.
+
+name: Slop Scan
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  slop-scan:
+    runs-on: ubuntu-latest
+    # A delta needs a base to compare against, which only exists on PRs.
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout head
+        uses: actions/checkout@v4
+
+      - name: Checkout base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .slop-base
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Scan both sides with the same config so config edits don't read as deltas.
+      - name: Align base config
+        run: cp slop-scan.config.json .slop-base/slop-scan.config.json
+
+      # No --fail-on + continue-on-error: a scan crash must never red the PR.
+      - name: Slop Scan (delta)
+        continue-on-error: true
+        run: bun run slop-scan delta --base .slop-base --head . --json > slop-delta.json
+
+      - name: Build report
+        continue-on-error: true
+        run: bun run scripts/slop-report.ts slop-delta.json > slop-comment.md
+
+      # always(): post the neutral check even if an earlier step failed.
+      - name: Publish neutral check + sticky comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- slop-scan-report -->';
+
+            let summary = {};
+            try {
+              summary = JSON.parse(fs.readFileSync('slop-delta.json', 'utf8')).summary ?? {};
+            } catch (err) {
+              core.warning(`slop-scan delta unavailable: ${err}`);
+            }
+            const added = summary.addedCount ?? 0;
+            const worsened = summary.worsenedCount ?? 0;
+            const resolved = summary.resolvedCount ?? 0;
+
+            const body = fs.existsSync('slop-comment.md')
+              ? fs.readFileSync('slop-comment.md', 'utf8')
+              : `${marker}\n## 🩹 Slop Scan\n\n⚠️ slop-scan could not produce a report for this PR.`;
+
+            // Neutral check — visible in the checks list, never blocks merge.
+            const { owner, repo } = context.repo;
+            const head_sha = context.payload.pull_request.head.sha;
+            const conclusionText = added + worsened > 0
+              ? `${added} new, ${worsened} worsened, ${resolved} resolved`
+              : `No new slop (${resolved} resolved)`;
+            const checkOutput = {
+              status: 'completed',
+              conclusion: 'neutral',
+              output: { title: conclusionText, summary: body },
+            };
+            // Update an existing check on this SHA rather than stacking a new
+            // one on every re-run.
+            const existingChecks = await github.rest.checks.listForRef({
+              owner, repo, ref: head_sha, check_name: 'Slop Scan', per_page: 1,
+            });
+            const priorCheck = existingChecks.data.check_runs[0];
+            if (priorCheck) {
+              await github.rest.checks.update({ owner, repo, check_run_id: priorCheck.id, ...checkOutput });
+            } else {
+              await github.rest.checks.create({ owner, repo, name: 'Slop Scan', head_sha, ...checkOutput });
+            }
+
+            // Sticky comment — create once, then update in place on each push.
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body?.includes(marker));
+
+            // Don't spam clean PRs that never had a comment; otherwise keep the
+            // existing comment in sync (so it flips to "clean" once fixed).
+            if (!existing && added + worsened === 0) return;
+
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
