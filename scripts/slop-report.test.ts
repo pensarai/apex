@@ -135,6 +135,38 @@ describe("renderReport", () => {
     expect(body).not.toContain("baseline=1.00");
   });
 
+  it("omits the 'new' segment for a worsened-only delta (no '0 new')", () => {
+    const body = renderReport({
+      summary: { addedCount: 0, worsenedCount: 1, resolvedCount: 0 },
+      paths: [
+        {
+          path: "src/a.ts",
+          changes: [
+            change(
+              "worsened",
+              "defensive.empty-catch",
+              "strong",
+              "Found 2 empty catch blocks",
+              5,
+            ),
+          ],
+        },
+      ],
+    });
+    expect(body).toContain("**1** worsened finding");
+    expect(body).not.toContain("new");
+  });
+
+  it("counts added/worsened from the rendered rows, not summary (no header-only table)", () => {
+    // summary claims a finding, but no matching path change exists → treat as clean, no empty table.
+    const body = renderReport({
+      summary: { addedCount: 1, worsenedCount: 0, resolvedCount: 0 },
+      paths: [],
+    });
+    expect(body).toContain("No new slop introduced");
+    expect(body).not.toContain("| Location |");
+  });
+
   it("ignores resolved/unchanged occurrences in the table", () => {
     const body = renderReport({
       summary: { addedCount: 0, worsenedCount: 0, resolvedCount: 1 },

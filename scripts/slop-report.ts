@@ -3,7 +3,11 @@
 // Usage: `bun run scripts/slop-report.ts <delta.json>`
 import { readFileSync } from "node:fs";
 
-/** Stable marker so the workflow can find-and-update its own comment. */
+/**
+ * Stable marker so the workflow can find-and-update its own comment.
+ * Keep in sync with the `marker` literal in .github/workflows/slop-scan.yml —
+ * if they drift, the workflow stops matching its comment and posts a new one per push.
+ */
 export const COMMENT_MARKER = "<!-- slop-scan-report -->";
 
 interface OccurrenceSide {
@@ -75,18 +79,36 @@ function describe(side?: OccurrenceSide | null): string {
   const message = side?.message?.trim();
   const boundary = side?.evidence?.join(" ").match(/boundary=\S+/)?.[0];
   if (message && boundary) return `${message} (${boundary})`;
-  return message || side?.evidence?.[0] || "issue";
+  return (
+    message || side?.evidence?.[0]?.replace(/^line\s+\d+:\s*/i, "") || "issue"
+  );
 }
 
 export function renderReport(delta: Delta): string {
-  const s = delta.summary ?? {};
-  const added = s.addedCount ?? 0;
-  const worsened = s.worsenedCount ?? 0;
-  const resolved = s.resolvedCount ?? 0;
-
+  // Build the rows first; added/worsened are counted from the rows we actually
+  // render, so the gate, the summary line, and the table can't disagree.
+  const rows: string[] = [];
+  let added = 0;
+  let worsened = 0;
+  for (const p of delta.paths ?? []) {
+    for (const c of p.changes ?? []) {
+      if (c.status !== "added" && c.status !== "worsened") continue;
+      if (c.status === "added") added++;
+      else worsened++;
+      const severity = c.head?.severity ?? c.base?.severity ?? c.severity ?? "";
+      const icon = SEVERITY_ICON[severity] ?? "•";
+      const line = c.head?.primaryLocation?.line;
+      const loc = line ? `\`${p.path}:${line}\`` : `\`${p.path}\``;
+      const tag = c.status === "worsened" ? " _(worsened)_" : "";
+      const issue = `${cell(describe(c.head))} (\`${c.ruleId}\`)`;
+      const fix = cell(FIX_HINTS[c.ruleId] ?? DEFAULT_FIX);
+      rows.push(`| ${icon} | ${loc}${tag} | ${issue} | ${fix} |`);
+    }
+  }
+  const resolved = delta.summary?.resolvedCount ?? 0;
   const lines: string[] = [COMMENT_MARKER, "## Slop Scan", ""];
 
-  if (added === 0 && worsened === 0) {
+  if (rows.length === 0) {
     lines.push(
       resolved > 0
         ? `No new slop introduced — and this PR resolves ${resolved} existing finding${resolved === 1 ? "" : "s"}.`
@@ -95,29 +117,17 @@ export function renderReport(delta: Delta): string {
     return lines.join("\n");
   }
 
-  const summaryBits = [`**${added}** new`];
+  const summaryBits: string[] = [];
+  if (added > 0) summaryBits.push(`**${added}** new`);
   if (worsened > 0) summaryBits.push(`**${worsened}** worsened`);
   if (resolved > 0) summaryBits.push(`${resolved} resolved`);
   lines.push(
     `${summaryBits.join(" · ")} finding${added + worsened === 1 ? "" : "s"} vs. the base branch.`,
     "",
+    "| | Location | Issue | Suggested fix |",
+    "| - | - | - | - |",
+    ...rows,
   );
-  lines.push("| | Location | Issue | Suggested fix |", "| - | - | - | - |");
-
-  for (const p of delta.paths ?? []) {
-    for (const c of p.changes ?? []) {
-      if (c.status !== "added" && c.status !== "worsened") continue;
-      const severity = c.head?.severity ?? c.base?.severity ?? c.severity ?? "";
-      const icon = SEVERITY_ICON[severity] ?? "•";
-      const line = c.head?.primaryLocation?.line;
-      const loc = line ? `\`${p.path}:${line}\`` : `\`${p.path}\``;
-      const tag = c.status === "worsened" ? " _(worsened)_" : "";
-      const issue = `${cell(describe(c.head))} (\`${c.ruleId}\`)`;
-      const fix = cell(FIX_HINTS[c.ruleId] ?? DEFAULT_FIX);
-      lines.push(`| ${icon} | ${loc}${tag} | ${issue} | ${fix} |`);
-    }
-  }
-
   return lines.join("\n");
 }
 
