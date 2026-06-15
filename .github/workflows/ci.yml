@@ -19,6 +19,13 @@ jobs:
     uses: ./.github/workflows/knip.yml
 
   slop-scan:
+    # Granted here on the caller; the reusable workflow inherits these. A
+    # called workflow cannot request more than the caller holds, so the
+    # neutral check + comment need write scopes set at this level.
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     uses: ./.github/workflows/slop-scan.yml
 
   typecheck:
