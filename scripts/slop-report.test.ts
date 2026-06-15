@@ -29,8 +29,8 @@ describe("renderReport", () => {
     });
     expect(body).toContain(COMMENT_MARKER);
     expect(body).toContain("No new slop introduced");
-    expect(body).toContain("never blocks merge");
     expect(body).not.toContain("| Location |");
+    expect(body).not.toContain("🩹");
   });
 
   it("calls out resolved findings on an otherwise-clean PR", () => {
@@ -40,7 +40,7 @@ describe("renderReport", () => {
     expect(body).toContain("resolves 3");
   });
 
-  it("renders a table of added/worsened findings with severity icons and locations", () => {
+  it("renders a table of added/worsened findings with severity, location, and an actionable fix", () => {
     const body = renderReport({
       summary: { addedCount: 1, worsenedCount: 1, resolvedCount: 0 },
       paths: [
@@ -76,7 +76,36 @@ describe("renderReport", () => {
     expect(body).toContain("🟡"); // medium
     expect(body).toContain("`src/a.ts:42`");
     expect(body).toContain("`src/b.ts:7` _(worsened)_");
-    expect(body).toContain("`defensive.empty-catch`");
+    expect(body).toContain("Suggested fix");
+    // Actionable: each row carries a concrete remediation, not just the rule id.
+    expect(body).toContain("Handle or log the error");
+    expect(body).toContain("Preserve the original error");
+  });
+
+  it("surfaces specific evidence over the generic message and falls back to a default fix", () => {
+    const body = renderReport({
+      summary: { addedCount: 1, worsenedCount: 0, resolvedCount: 0 },
+      paths: [
+        {
+          path: "src/a.ts",
+          changes: [
+            {
+              status: "added",
+              ruleId: "some.unknown-rule",
+              head: {
+                severity: "strong",
+                message: "Generic message",
+                evidence: ["line 42: empty catch, boundary=config"],
+                primaryLocation: { line: 42 },
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(body).toContain("empty catch, boundary=config"); // evidence, line-prefix stripped
+    expect(body).not.toContain("line 42: empty catch"); // prefix removed
+    expect(body).toContain("tune the rule in `slop-scan.config.json`"); // default fix
   });
 
   it("ignores resolved/unchanged occurrences in the table", () => {

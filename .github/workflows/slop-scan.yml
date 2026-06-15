@@ -7,9 +7,7 @@ name: Slop Scan
 on:
   workflow_call:
 
-# Permissions (contents:read, checks:write, pull-requests:write) are granted by
-# the caller's job in ci.yml — a reusable workflow inherits the caller's token
-# scopes, and declaring more here than the caller holds fails the run at startup.
+# Permissions are granted by the caller job in ci.yml (reusable workflows inherit them).
 
 jobs:
   slop-scan:
@@ -69,7 +67,7 @@ jobs:
 
             const body = fs.existsSync('slop-comment.md')
               ? fs.readFileSync('slop-comment.md', 'utf8')
-              : `${marker}\n## 🩹 Slop Scan\n\n⚠️ slop-scan could not produce a report for this PR.`;
+              : `${marker}\n## Slop Scan\n\n⚠️ slop-scan could not produce a report for this PR.`;
 
             // Neutral check — visible in the checks list, never blocks merge.
             const { owner, repo } = context.repo;
