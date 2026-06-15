@@ -46,9 +46,11 @@ jobs:
         continue-on-error: true
         run: bun run scripts/slop-report.ts slop-delta.json > slop-comment.md
 
-      # always(): post the neutral check even if an earlier step failed.
+      # always() so it posts even after an earlier failure; continue-on-error so
+      # a GitHub API failure (e.g. read-only token on fork PRs) can't red the job.
       - name: Publish neutral check + sticky comment
         if: always()
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
@@ -56,8 +58,10 @@ jobs:
             const marker = '<!-- slop-scan-report -->';
 
             let summary = {};
+            let deltaOk = false;
             try {
               summary = JSON.parse(fs.readFileSync('slop-delta.json', 'utf8')).summary ?? {};
+              deltaOk = true;
             } catch (err) {
               core.warning(`slop-scan delta unavailable: ${err}`);
             }
@@ -72,9 +76,12 @@ jobs:
             // Neutral check — visible in the checks list, never blocks merge.
             const { owner, repo } = context.repo;
             const head_sha = context.payload.pull_request.head.sha;
-            const conclusionText = added + worsened > 0
-              ? `${added} new, ${worsened} worsened, ${resolved} resolved`
-              : `No new slop (${resolved} resolved)`;
+            // Don't claim "No new slop" when the scan never produced a delta.
+            const conclusionText = !deltaOk
+              ? '⚠️ Could not produce slop report'
+              : added + worsened > 0
+                ? `${added} new, ${worsened} worsened, ${resolved} resolved`
+                : `No new slop (${resolved} resolved)`;
             const checkOutput = {
               status: 'completed',
               conclusion: 'neutral',
