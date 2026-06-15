@@ -56,6 +56,8 @@ jobs:
           script: |
             const fs = require('fs');
             const marker = '<!-- slop-scan-report -->';
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
 
             let summary = {};
             let deltaOk = false;
@@ -68,50 +70,46 @@ jobs:
             const added = summary.addedCount ?? 0;
             const worsened = summary.worsenedCount ?? 0;
             const resolved = summary.resolvedCount ?? 0;
-
             const body = fs.existsSync('slop-comment.md')
               ? fs.readFileSync('slop-comment.md', 'utf8')
               : `${marker}\n## Slop Scan\n\n⚠️ slop-scan could not produce a report for this PR.`;
+            core.info(`slop-scan: deltaOk=${deltaOk} added=${added} worsened=${worsened} resolved=${resolved}`);
 
             // Neutral check — visible in the checks list, never blocks merge.
-            const { owner, repo } = context.repo;
-            const head_sha = context.payload.pull_request.head.sha;
             // Don't claim "No new slop" when the scan never produced a delta.
-            const conclusionText = !deltaOk
+            const title = !deltaOk
               ? '⚠️ Could not produce slop report'
               : added + worsened > 0
                 ? `${added} new, ${worsened} worsened, ${resolved} resolved`
                 : `No new slop (${resolved} resolved)`;
-            const checkOutput = {
-              status: 'completed',
-              conclusion: 'neutral',
-              output: { title: conclusionText, summary: body },
-            };
-            // Update an existing check on this SHA rather than stacking a new
-            // one on every re-run.
-            const existingChecks = await github.rest.checks.listForRef({
-              owner, repo, ref: head_sha, check_name: 'Slop Scan', per_page: 1,
-            });
-            const priorCheck = existingChecks.data.check_runs[0];
-            if (priorCheck) {
-              await github.rest.checks.update({ owner, repo, check_run_id: priorCheck.id, ...checkOutput });
-            } else {
-              await github.rest.checks.create({ owner, repo, name: 'Slop Scan', head_sha, ...checkOutput });
+            try {
+              const out = { status: 'completed', conclusion: 'neutral', output: { title, summary: body } };
+              // Update an existing check on this SHA rather than stacking a new one per re-run.
+              const prior = (await github.rest.checks.listForRef({
+                owner, repo, ref: pr.head.sha, check_name: 'Slop Scan', per_page: 1,
+              })).data.check_runs[0];
+              if (prior) await github.rest.checks.update({ owner, repo, check_run_id: prior.id, ...out });
+              else await github.rest.checks.create({ owner, repo, name: 'Slop Scan', head_sha: pr.head.sha, ...out });
+              core.info('slop-scan: neutral check posted');
+            } catch (err) {
+              core.warning(`slop-scan: could not post neutral check: ${err}`);
             }
 
-            // Sticky comment — create once, then update in place on each push.
-            const issue_number = context.payload.pull_request.number;
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number, per_page: 100,
-            });
-            const existing = comments.find((c) => c.body?.includes(marker));
-
-            // Don't spam clean PRs that never had a comment; otherwise keep the
-            // existing comment in sync (so it flips to "clean" once fixed).
-            if (!existing && added + worsened === 0) return;
-
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            // Sticky comment — created once, then updated in place on each push.
+            try {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: pr.number, per_page: 100,
+              });
+              const existing = comments.find((c) => c.body?.includes(marker));
+              if (!existing && added + worsened === 0) {
+                core.info('slop-scan: clean PR with no prior comment — nothing to post');
+              } else if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+                core.info('slop-scan: sticky comment updated');
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+                core.info('slop-scan: sticky comment created');
+              }
+            } catch (err) {
+              core.warning(`slop-scan: could not post comment: ${err}`);
             }
