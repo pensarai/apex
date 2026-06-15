@@ -98,6 +98,32 @@ describe("judgeFinding", () => {
     );
   });
 
+  it("forwards the caller-provided subagentId to the judge agent", async () => {
+    mocks.consume.mockResolvedValue({
+      valid: true,
+      findingType: "vulnerability",
+      confidence: 0.9,
+      reasoning: "ok",
+      concerns: [],
+      verificationSteps: [],
+      toolEvidence: [],
+      reproducedPoc: true,
+      webResearchUsed: false,
+      limitations: [],
+    });
+
+    await judgeFinding(makeInput(), {
+      ...makeContext(),
+      subagentId: "pentest-agent-worker-1-finding-judge-1",
+    });
+
+    expect(mocks.constructorArgs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subagentId: "pentest-agent-worker-1-finding-judge-1",
+      }),
+    );
+  });
+
   it("rejects the finding as unverified when the judge agent fails", async () => {
     mocks.consume.mockRejectedValue(new Error("provider overloaded"));
 
