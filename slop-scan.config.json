@@ -15,7 +15,11 @@
     "loader-demo.tsx",
     ".slop-base/**"
   ],
-  "_comment": "overrides: empty catches in test teardown/cleanup are benign and high-frequency; suppress so advisory comments stay signal-rich.",
+  "_comment": "directory-fanout/barrel rules are convention noise (non-actionable, fire on file-per-thing layouts); test-teardown empty catches are benign and high-frequency.",
+  "rules": {
+    "structure.directory-fanout-hotspot": { "enabled": false },
+    "structure.barrel-density": { "enabled": false }
+  },
   "overrides": [
     {
       "files": ["**/*.test.ts", "**/*.test.tsx"],

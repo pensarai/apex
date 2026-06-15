@@ -82,7 +82,7 @@ describe("renderReport", () => {
     expect(body).toContain("Preserve the original error");
   });
 
-  it("surfaces specific evidence over the generic message and falls back to a default fix", () => {
+  it("uses the descriptive message and appends the boundary tag, with a default fix for unknown rules", () => {
     const body = renderReport({
       summary: { addedCount: 1, worsenedCount: 0, resolvedCount: 0 },
       paths: [
@@ -94,8 +94,8 @@ describe("renderReport", () => {
               ruleId: "some.unknown-rule",
               head: {
                 severity: "strong",
-                message: "Generic message",
-                evidence: ["line 42: empty catch, boundary=config"],
+                message: "Found 1 empty catch block",
+                evidence: ["line 42: empty catch, boundary=network"],
                 primaryLocation: { line: 42 },
               },
             },
@@ -103,9 +103,36 @@ describe("renderReport", () => {
         },
       ],
     });
-    expect(body).toContain("empty catch, boundary=config"); // evidence, line-prefix stripped
-    expect(body).not.toContain("line 42: empty catch"); // prefix removed
+    expect(body).toContain("Found 1 empty catch block (boundary=network)"); // message + boundary
+    expect(body).not.toContain("baseline="); // never surface the raw numeric evidence
     expect(body).toContain("tune the rule in `slop-scan.config.json`"); // default fix
+  });
+
+  it("renders only the message when evidence has no boundary tag (e.g. structural rules)", () => {
+    const body = renderReport({
+      summary: { addedCount: 1, worsenedCount: 0, resolvedCount: 0 },
+      paths: [
+        {
+          path: "scripts",
+          changes: [
+            {
+              status: "added",
+              ruleId: "structure.directory-fanout-hotspot",
+              head: {
+                severity: "medium",
+                message:
+                  "Directory fan-out is a repo hotspot (16 files vs baseline 1.0)",
+                evidence: ["baseline=1.00", "threshold=6", "fileCount=16"],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(body).toContain(
+      "Directory fan-out is a repo hotspot (16 files vs baseline 1.0)",
+    );
+    expect(body).not.toContain("baseline=1.00");
   });
 
   it("ignores resolved/unchanged occurrences in the table", () => {

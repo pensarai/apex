@@ -70,10 +70,12 @@ const DEFAULT_FIX =
 /** Newlines break table rows and pipes break columns — neutralize both. */
 const cell = (s: string) => s.replace(/\s*\n\s*/g, " ").replace(/\|/g, "\\|");
 
-/** Prefer the specific evidence ("empty catch, boundary=config") over the generic message. */
+/** The message is the human-readable summary; append the boundary tag from evidence when present (it tells you what kind of catch/edge a defensive finding guards). */
 function describe(side?: OccurrenceSide | null): string {
-  const evidence = side?.evidence?.[0]?.replace(/^line\s+\d+:\s*/i, "");
-  return evidence || side?.message || "issue";
+  const message = side?.message?.trim();
+  const boundary = side?.evidence?.join(" ").match(/boundary=\S+/)?.[0];
+  if (message && boundary) return `${message} (${boundary})`;
+  return message || side?.evidence?.[0] || "issue";
 }
 
 export function renderReport(delta: Delta): string {
