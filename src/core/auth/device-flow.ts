@@ -60,9 +60,7 @@ export async function startDeviceFlow(
   const response = await fetch(`${url}/auth/device/code`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(
-      workosClientId ? { client_id: workosClientId } : {},
-    ),
+    body: JSON.stringify(workosClientId ? { client_id: workosClientId } : {}),
   });
 
   if (!response.ok) {
