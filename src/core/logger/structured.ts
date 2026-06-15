@@ -1,21 +1,23 @@
 import { writeErrorLog } from "./index";
 
-export type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
+// SCREAMING_SNAKE to match the Console logLevel flag value (PENSAR_LOG_LEVEL),
+// passed verbatim. Method names stay lowercase (logger.debug()).
+export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR" | "SILENT";
 
 const SEVERITY: Record<LogLevel, number> = {
-  debug: 10,
-  info: 20,
-  warn: 30,
-  error: 40,
-  silent: 50,
+  DEBUG: 10,
+  INFO: 20,
+  WARN: 30,
+  ERROR: 40,
+  SILENT: 50,
 };
 
 const VALID_LEVELS = new Set<LogLevel>([
-  "debug",
-  "info",
-  "warn",
-  "error",
-  "silent",
+  "DEBUG",
+  "INFO",
+  "WARN",
+  "ERROR",
+  "SILENT",
 ]);
 
 function isLevel(v: unknown): v is LogLevel {
@@ -31,13 +33,15 @@ type Env = Record<string, string | undefined>;
  * PENSAR_DEBUG in {1,true} ⇒ debug > default info.
  */
 export function resolveInitialLevel(env: Env): LogLevel {
-  const explicit = env.PENSAR_LOG_LEVEL?.toLowerCase();
+  // `PENSAR_LOG_LEVEL` carries the flag value verbatim (e.g. `DEBUG`). Parse
+  // case-insensitively at this boundary, normalizing to the canonical token.
+  const explicit = env.PENSAR_LOG_LEVEL?.trim().toUpperCase();
   if (isLevel(explicit)) return explicit;
 
   const debug = env.PENSAR_DEBUG?.toLowerCase();
-  if (debug === "1" || debug === "true") return "debug";
+  if (debug === "1" || debug === "true") return "DEBUG";
 
-  return "info";
+  return "INFO";
 }
 
 function resolveFormat(env: Env): "json" | "pretty" {
@@ -47,11 +51,11 @@ function resolveFormat(env: Env): "json" | "pretty" {
 }
 
 const COLORS: Record<LogLevel, string> = {
-  debug: "\x1b[90m", // gray
-  info: "\x1b[36m", // cyan
-  warn: "\x1b[33m", // yellow
-  error: "\x1b[31m", // red
-  silent: "",
+  DEBUG: "\x1b[90m", // gray
+  INFO: "\x1b[36m", // cyan
+  WARN: "\x1b[33m", // yellow
+  ERROR: "\x1b[31m", // red
+  SILENT: "",
 };
 const RESET = "\x1b[0m";
 const DIM = "\x1b[2m";
@@ -83,15 +87,15 @@ class Logger {
   }
 
   debug(msg: string, fields?: Fields): void {
-    this.emit("debug", msg, fields);
+    this.emit("DEBUG", msg, fields);
   }
 
   info(msg: string, fields?: Fields): void {
-    this.emit("info", msg, fields);
+    this.emit("INFO", msg, fields);
   }
 
   warn(msg: string, fields?: Fields): void {
-    this.emit("warn", msg, fields);
+    this.emit("WARN", msg, fields);
   }
 
   error(msg: string, errOrFields?: unknown, fields?: Fields): void {
@@ -111,11 +115,11 @@ class Logger {
       if (err.stack) merged.stack = err.stack;
     }
 
-    this.emit("error", msg, merged);
+    this.emit("ERROR", msg, merged);
 
     // Back-compat: mirror errors to ~/.pensar/error.log.
-    // Respect `silent` — if the user explicitly silenced all output, don't persist either.
-    if (this.level !== "silent") {
+    // Respect `SILENT` — if the user explicitly silenced all output, don't persist either.
+    if (this.level !== "SILENT") {
       writeErrorLog(err ?? msg, this.scope);
     }
   }
@@ -158,7 +162,7 @@ class Logger {
     fields?: Fields,
   ): string {
     const color = COLORS[level];
-    const tag = `${color}${level.toUpperCase().padEnd(5)}${RESET}`;
+    const tag = `${color}${level.padEnd(5)}${RESET}`;
     const scope = this.scope ? ` ${DIM}[${this.scope}]${RESET}` : "";
     let rest = "";
     if (fields && Object.keys(fields).length > 0) {

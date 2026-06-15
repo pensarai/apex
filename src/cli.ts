@@ -41,11 +41,11 @@ if (obfuscateRequested) {
 // (and the --log-level value) so they don't collide with per-command parsing,
 // then export PENSAR_LOG_LEVEL so child processes inherit the resolved level.
 const VALID_LOG_LEVELS = new Set<StructuredLogLevel>([
-  "debug",
-  "info",
-  "warn",
-  "error",
-  "silent",
+  "DEBUG",
+  "INFO",
+  "WARN",
+  "ERROR",
+  "SILENT",
 ]);
 {
   let logLevelValue: StructuredLogLevel | undefined;
@@ -53,19 +53,20 @@ const VALID_LOG_LEVELS = new Set<StructuredLogLevel>([
   for (let i = args.length - 1; i >= 0; i--) {
     const a = args[i]!;
     if (a === "--verbose") {
-      shorthandLevel ??= "debug";
+      shorthandLevel ??= "DEBUG";
       args.splice(i, 1);
     } else if (a === "--quiet") {
-      shorthandLevel ??= "warn";
+      shorthandLevel ??= "WARN";
       args.splice(i, 1);
     } else if (a === "--log-level") {
-      const value = args[i + 1]?.toLowerCase();
+      // Parse case-insensitively; canonical token is SCREAMING_SNAKE.
+      const value = args[i + 1]?.toUpperCase();
       if (value && VALID_LOG_LEVELS.has(value as StructuredLogLevel)) {
         logLevelValue ??= value as StructuredLogLevel;
         args.splice(i, 2);
       } else {
         console.error(
-          `Error: --log-level expects one of debug|info|warn|error|silent`,
+          `Error: --log-level expects one of DEBUG|INFO|WARN|ERROR|SILENT`,
         );
         process.exit(1);
       }

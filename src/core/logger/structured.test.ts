@@ -22,35 +22,35 @@ function firstRecord(writes: string[]): Record<string, unknown> {
 describe("resolveInitialLevel — precedence", () => {
   it("uses PENSAR_LOG_LEVEL over PENSAR_DEBUG and default", () => {
     expect(
-      resolveInitialLevel({ PENSAR_LOG_LEVEL: "warn", PENSAR_DEBUG: "1" }),
-    ).toBe("warn");
+      resolveInitialLevel({ PENSAR_LOG_LEVEL: "WARN", PENSAR_DEBUG: "1" }),
+    ).toBe("WARN");
   });
 
   it("is case-insensitive for PENSAR_LOG_LEVEL", () => {
-    expect(resolveInitialLevel({ PENSAR_LOG_LEVEL: "ERROR" })).toBe("error");
+    expect(resolveInitialLevel({ PENSAR_LOG_LEVEL: "error" })).toBe("ERROR");
   });
 
   it("ignores an invalid PENSAR_LOG_LEVEL and falls through", () => {
     expect(
       resolveInitialLevel({ PENSAR_LOG_LEVEL: "bogus", PENSAR_DEBUG: "true" }),
-    ).toBe("debug");
+    ).toBe("DEBUG");
   });
 
   it("maps PENSAR_DEBUG=1 to debug", () => {
-    expect(resolveInitialLevel({ PENSAR_DEBUG: "1" })).toBe("debug");
+    expect(resolveInitialLevel({ PENSAR_DEBUG: "1" })).toBe("DEBUG");
   });
 
   it("maps PENSAR_DEBUG=true to debug", () => {
-    expect(resolveInitialLevel({ PENSAR_DEBUG: "TRUE" })).toBe("debug");
+    expect(resolveInitialLevel({ PENSAR_DEBUG: "TRUE" })).toBe("DEBUG");
   });
 
   it("ignores PENSAR_DEBUG=0 / false", () => {
-    expect(resolveInitialLevel({ PENSAR_DEBUG: "0" })).toBe("info");
-    expect(resolveInitialLevel({ PENSAR_DEBUG: "false" })).toBe("info");
+    expect(resolveInitialLevel({ PENSAR_DEBUG: "0" })).toBe("INFO");
+    expect(resolveInitialLevel({ PENSAR_DEBUG: "false" })).toBe("INFO");
   });
 
   it("defaults to info on empty env", () => {
-    expect(resolveInitialLevel({})).toBe("info");
+    expect(resolveInitialLevel({})).toBe("INFO");
   });
 });
 
@@ -82,28 +82,28 @@ describe("level gating", () => {
   }
 
   it("emits debug+ at debug threshold", () => {
-    expect(methodsThatEmit("debug")).toEqual([
-      "debug",
-      "info",
-      "warn",
-      "error",
+    expect(methodsThatEmit("DEBUG")).toEqual([
+      "DEBUG",
+      "INFO",
+      "WARN",
+      "ERROR",
     ]);
   });
 
   it("emits info+ at info threshold", () => {
-    expect(methodsThatEmit("info")).toEqual(["info", "warn", "error"]);
+    expect(methodsThatEmit("INFO")).toEqual(["INFO", "WARN", "ERROR"]);
   });
 
   it("emits warn+ at warn threshold", () => {
-    expect(methodsThatEmit("warn")).toEqual(["warn", "error"]);
+    expect(methodsThatEmit("WARN")).toEqual(["WARN", "ERROR"]);
   });
 
   it("emits only error at error threshold", () => {
-    expect(methodsThatEmit("error")).toEqual(["error"]);
+    expect(methodsThatEmit("ERROR")).toEqual(["ERROR"]);
   });
 
   it("emits nothing at silent threshold", () => {
-    expect(methodsThatEmit("silent")).toEqual([]);
+    expect(methodsThatEmit("SILENT")).toEqual([]);
   });
 });
 
@@ -124,7 +124,7 @@ describe("JSON record shape", () => {
 
   it("writes one-line JSON ending in newline with ts/level/msg", () => {
     const log = createLogger();
-    log.setLevel("info");
+    log.setLevel("INFO");
     log.info("hello");
 
     expect(writes).toHaveLength(1);
@@ -133,7 +133,7 @@ describe("JSON record shape", () => {
     expect(raw.trimEnd().includes("\n")).toBe(false);
 
     const rec = firstRecord(writes);
-    expect(rec.level).toBe("info");
+    expect(rec.level).toBe("INFO");
     expect(rec.msg).toBe("hello");
     expect(typeof rec.ts).toBe("string");
     expect(rec.scope).toBeUndefined();
@@ -141,7 +141,7 @@ describe("JSON record shape", () => {
 
   it("includes scope and merged fields", () => {
     const log = createLogger("net").child("http");
-    log.setLevel("debug");
+    log.setLevel("DEBUG");
     log.debug("req", { status: 200, path: "/x" });
 
     const rec = firstRecord(writes);
@@ -152,11 +152,11 @@ describe("JSON record shape", () => {
 
   it("flattens an Error on error() into error/stack fields", () => {
     const log = createLogger("boom");
-    log.setLevel("debug");
+    log.setLevel("DEBUG");
     log.error("failed", new Error("kaboom"), { attempt: 2 });
 
     const rec = firstRecord(writes);
-    expect(rec.level).toBe("error");
+    expect(rec.level).toBe("ERROR");
     expect(rec.msg).toBe("failed");
     expect(rec.error).toBe("kaboom");
     expect(typeof rec.stack).toBe("string");
@@ -165,7 +165,7 @@ describe("JSON record shape", () => {
 
   it("treats a plain object second arg to error() as fields", () => {
     const log = createLogger();
-    log.setLevel("debug");
+    log.setLevel("DEBUG");
     log.error("nope", { code: "E_X" });
 
     const rec = firstRecord(writes);
