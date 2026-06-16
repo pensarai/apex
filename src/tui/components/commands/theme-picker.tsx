@@ -28,6 +28,8 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
     setTheme,
     toggleMode,
     setMode,
+    transparent,
+    toggleTransparent,
   } = useTheme();
 
   const [selectedIndex, setSelectedIndex] = useState(() =>
@@ -92,6 +94,12 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
       config.update({ themeMode: newMode });
       return;
     }
+
+    if (evt.name === "b") {
+      toggleTransparent();
+      config.update({ transparentBackground: !transparent });
+      return;
+    }
   });
 
   const panelWidth = Math.min(50, dimensions.width - 4);
@@ -122,11 +130,14 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
         footerActions={[
           { key: "Enter", label: "select", variant: "primary" },
           { key: "M", label: "toggle mode" },
+          { key: "B", label: "transparency" },
         ]}
       >
         {/* Mode indicator */}
         <box marginBottom={1}>
-          <text fg={colors.textMuted}>mode: {mode}</text>
+          <text fg={colors.textMuted}>
+            mode: {mode} · transparent: {transparent ? "on" : "off"}
+          </text>
         </box>
 
         {/* Separator */}
