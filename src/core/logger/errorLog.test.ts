@@ -38,6 +38,20 @@ describe("error() → ~/.pensar/error.log", () => {
     expect(content).toContain("kaboom");
   });
 
+  it("persists structured fields so the file is diagnosable alone", async () => {
+    const { createLogger } = await import("./structured");
+    const errLog = path.join(tmpHome, ".pensar", "error.log");
+
+    createLogger("CORE").error("request failed", new Error("boom"), {
+      workspaceId: "ws_1",
+      status: 502,
+    });
+
+    const content = readFileSync(errLog, "utf8");
+    expect(content).toContain("ws_1");
+    expect(content).toContain("502");
+  });
+
   it("SILENT suppresses the error.log write", async () => {
     const { createLogger } = await import("./structured");
     const errLog = path.join(tmpHome, ".pensar", "error.log");

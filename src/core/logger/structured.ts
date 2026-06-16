@@ -120,7 +120,7 @@ class Logger {
     // Back-compat: mirror errors to ~/.pensar/error.log.
     // Respect `SILENT` — if the user explicitly silenced all output, don't persist either.
     if (this.level !== "SILENT") {
-      writeErrorLog(err ?? msg, this.scope);
+      writeErrorLog(err ?? msg, this.scope, extra);
     }
   }
 
