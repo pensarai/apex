@@ -517,7 +517,7 @@ function wrapStreamWithErrorHandler(
                       summarizeError instanceof Error
                         ? summarizeError.message
                         : String(summarizeError);
-                    log.error(
+                    log.warn(
                       `Layer 3 summarization failed (${sumMsg}). Falling back to minimal-context restart.`,
                     );
                   }
@@ -922,7 +922,7 @@ export function streamResponse(
           const tool = tools[toolCall.toolName];
           if (!tool || !tool.inputSchema) {
             if (!silent) {
-              log.error(
+              log.warn(
                 `Cannot repair tool call: ${toolCall.toolName} not found or has no schema`,
               );
             }
@@ -1006,7 +1006,7 @@ export function streamResponse(
 
           if (repairedArgs === undefined || repairedArgs === null) {
             if (!silent) {
-              log.error(
+              log.warn(
                 `Tool call repair for "${toolCall.toolName}" produced no valid output`,
               );
             }
@@ -1015,11 +1015,9 @@ export function streamResponse(
           return { ...toolCall, input: JSON.stringify(repairedArgs) };
         } catch (repairError) {
           if (!silent) {
-            log.error(
-              "Error repairing tool call",
-              repairError instanceof Error ? repairError : undefined,
-              { error: String(repairError) },
-            );
+            log.warn("Error repairing tool call", {
+              error: String(repairError),
+            });
           }
           return null;
         }

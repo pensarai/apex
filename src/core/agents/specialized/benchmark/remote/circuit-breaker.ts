@@ -85,7 +85,7 @@ export class CircuitBreaker {
       this.failures >= this.options.failureThreshold &&
       this.state !== "OPEN"
     ) {
-      log.error(`OPENING circuit after ${this.failures} consecutive failures`);
+      log.warn(`OPENING circuit after ${this.failures} consecutive failures`);
       this.state = "OPEN";
     }
   }

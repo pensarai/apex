@@ -78,9 +78,7 @@ async function initWeave(
       await weave.init(configKey);
       return weave;
     } catch (e) {
-      log.error("Weave init failed", e instanceof Error ? e : undefined, {
-        error: String(e),
-      });
+      log.warn("Weave init failed", { error: String(e) });
       weaveReady = null;
       cachedConfigKey = null;
       return null;
@@ -162,9 +160,7 @@ export async function createWeaveTracer(config: WandbConfig): Promise<{
           await (client.waitForBatchProcessing as () => Promise<void>)();
         }
       } catch (e) {
-        log.error("Flush failed", e instanceof Error ? e : undefined, {
-          error: String(e),
-        });
+        log.warn("Flush failed", { error: String(e) });
       }
     },
   };
