@@ -9,6 +9,7 @@
 
 import packageJson from "../package.json";
 import { type AIModel, buildAuthConfig } from "./core/ai";
+import { resolveCliLogLevel } from "./core/cli/logLevelArgs";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
@@ -37,42 +38,16 @@ if (obfuscateRequested) {
 }
 
 // Resolve diagnostic log level from CLI flags early, before any subsystem logs.
-// --log-level <level> wins; --verbose ⇒ debug; --quiet ⇒ warn. Strip the flags
-// (and the --log-level value) so they don't collide with per-command parsing,
-// then export PENSAR_LOG_LEVEL so child processes inherit the resolved level.
-const VALID_LOG_LEVELS = new Set<StructuredLogLevel>([
-  "DEBUG",
-  "INFO",
-  "WARN",
-  "ERROR",
-  "SILENT",
-]);
+// (resolveCliLogLevel strips the flags from `args` in place.) Export
+// PENSAR_LOG_LEVEL so child processes inherit the resolved level.
 {
-  let logLevelValue: StructuredLogLevel | undefined;
-  let shorthandLevel: StructuredLogLevel | undefined;
-  for (let i = args.length - 1; i >= 0; i--) {
-    const a = args[i]!;
-    if (a === "--verbose") {
-      shorthandLevel ??= "DEBUG";
-      args.splice(i, 1);
-    } else if (a === "--quiet") {
-      shorthandLevel ??= "WARN";
-      args.splice(i, 1);
-    } else if (a === "--log-level") {
-      // Parse case-insensitively; canonical token is SCREAMING_SNAKE.
-      const value = args[i + 1]?.toUpperCase();
-      if (value && VALID_LOG_LEVELS.has(value as StructuredLogLevel)) {
-        logLevelValue ??= value as StructuredLogLevel;
-        args.splice(i, 2);
-      } else {
-        console.error(
-          `Error: --log-level expects one of DEBUG|INFO|WARN|ERROR|SILENT`,
-        );
-        process.exit(1);
-      }
-    }
+  let resolvedLevel: StructuredLogLevel | undefined;
+  try {
+    resolvedLevel = resolveCliLogLevel(args);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
   }
-  const resolvedLevel = logLevelValue ?? shorthandLevel;
   if (resolvedLevel) {
     logger.setLevel(resolvedLevel);
     process.env.PENSAR_LOG_LEVEL = resolvedLevel;
