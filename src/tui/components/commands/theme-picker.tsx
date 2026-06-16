@@ -37,22 +37,24 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
   );
   const originalThemeRef = useRef(theme.name);
   const originalModeRef = useRef(mode);
+  const originalTransparentRef = useRef(transparent);
 
   const handleClose = useCallback(() => {
-    // Revert to original theme
+    // Revert previews to their state when the dialog opened
     setTheme(originalThemeRef.current);
     setMode(originalModeRef.current);
+    if (transparent !== originalTransparentRef.current) toggleTransparent();
     onClose();
-  }, [setTheme, setMode, onClose]);
+  }, [setTheme, setMode, transparent, toggleTransparent, onClose]);
 
   const handleConfirm = useCallback(async () => {
-    // Persist the current theme and mode
     const currentThemeName = availableThemes[selectedIndex];
     if (currentThemeName) {
       await config.update({ theme: currentThemeName });
     }
+    await config.update({ transparentBackground: transparent });
     onClose();
-  }, [availableThemes, selectedIndex, onClose]);
+  }, [availableThemes, selectedIndex, transparent, onClose]);
 
   useKeyboard((evt) => {
     // Modal dialog — consume all keystrokes to prevent leaking to components underneath
@@ -97,7 +99,6 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
 
     if (evt.name === "b") {
       toggleTransparent();
-      config.update({ transparentBackground: !transparent });
       return;
     }
   });
