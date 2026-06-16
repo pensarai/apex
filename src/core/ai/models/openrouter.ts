@@ -124,6 +124,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 262144,
   },
   {
+    id: "moonshotai/kimi-k2.7-code",
+    name: "Kimi K2.7 Code",
+    provider: "openrouter",
+    contextLength: 262144,
+  },
+  {
     id: "moonshot/kimi-k2-turbo",
     name: "Kimi K2 Turbo",
     provider: "openrouter",
@@ -140,6 +146,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     name: "MiniMax M2",
     provider: "openrouter",
     contextLength: 204800,
+  },
+  {
+    id: "minimax/minimax-m3",
+    name: "MiniMax M3",
+    provider: "openrouter",
+    contextLength: 524288,
   },
   {
     id: "qwen/qwen3-8b",
@@ -206,5 +218,11 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     name: "GLM 4.7 Flash",
     provider: "openrouter",
     contextLength: 200000,
+  },
+  {
+    id: "z-ai/glm-5.2",
+    name: "GLM 5.2",
+    provider: "openrouter",
+    contextLength: 1000000,
   },
 ];
