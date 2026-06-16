@@ -1,4 +1,4 @@
-import { createCliRenderer, FrameBufferRenderable } from "@opentui/core";
+import { createCliRenderer, FrameBufferRenderable, RGBA } from "@opentui/core";
 import { createRoot, extend } from "@opentui/react";
 import { useEffect, useState } from "react";
 import { config } from "../core/config";
@@ -682,12 +682,19 @@ async function main() {
     mode = await detectTerminalMode();
   }
 
-  const themeColors = resolveThemeColors(getTheme(themeName), mode);
+  const transparent = appConfig.transparentBackground ?? false;
+  const themeColors = resolveThemeColors(
+    getTheme(themeName),
+    mode,
+    transparent,
+  );
   overlayThemeRef.current = themeColors;
 
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
     consoleOptions: buildConsoleOptions(themeColors),
+    // Opaque themes paint over this; transparent mode leaves it showing through.
+    backgroundColor: RGBA.defaultBackground(),
   });
 
   const { copyToClipboard } = createClipboardManager(renderer);
@@ -721,7 +728,11 @@ async function main() {
 
   createRoot(renderer).render(
     <ObfuscationProvider initialEnabled={obfuscateEnabled}>
-      <ThemeProvider initialTheme={themeName} initialMode={mode}>
+      <ThemeProvider
+        initialTheme={themeName}
+        initialMode={mode}
+        initialTransparent={transparent}
+      >
         <ConsoleThemeSync />
         <TerminalDimensionsProvider>
           <ToastProvider>

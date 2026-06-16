@@ -28,6 +28,8 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
     setTheme,
     toggleMode,
     setMode,
+    transparent,
+    toggleTransparent,
   } = useTheme();
 
   const [selectedIndex, setSelectedIndex] = useState(() =>
@@ -35,22 +37,24 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
   );
   const originalThemeRef = useRef(theme.name);
   const originalModeRef = useRef(mode);
+  const originalTransparentRef = useRef(transparent);
 
   const handleClose = useCallback(() => {
-    // Revert to original theme
+    // Revert previews to their state when the dialog opened
     setTheme(originalThemeRef.current);
     setMode(originalModeRef.current);
+    if (transparent !== originalTransparentRef.current) toggleTransparent();
     onClose();
-  }, [setTheme, setMode, onClose]);
+  }, [setTheme, setMode, transparent, toggleTransparent, onClose]);
 
   const handleConfirm = useCallback(async () => {
-    // Persist the current theme and mode
     const currentThemeName = availableThemes[selectedIndex];
     if (currentThemeName) {
       await config.update({ theme: currentThemeName });
     }
+    await config.update({ transparentBackground: transparent });
     onClose();
-  }, [availableThemes, selectedIndex, onClose]);
+  }, [availableThemes, selectedIndex, transparent, onClose]);
 
   useKeyboard((evt) => {
     // Modal dialog — consume all keystrokes to prevent leaking to components underneath
@@ -92,6 +96,11 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
       config.update({ themeMode: newMode });
       return;
     }
+
+    if (evt.name === "b") {
+      toggleTransparent();
+      return;
+    }
   });
 
   const panelWidth = Math.min(50, dimensions.width - 4);
@@ -122,11 +131,14 @@ export default function ThemePicker({ onClose }: ThemePickerProps) {
         footerActions={[
           { key: "Enter", label: "select", variant: "primary" },
           { key: "M", label: "toggle mode" },
+          { key: "B", label: "transparency" },
         ]}
       >
         {/* Mode indicator */}
         <box marginBottom={1}>
-          <text fg={colors.textMuted}>mode: {mode}</text>
+          <text fg={colors.textMuted}>
+            mode: {mode} · transparent: {transparent ? "on" : "off"}
+          </text>
         </box>
 
         {/* Separator */}
