@@ -683,7 +683,11 @@ async function main() {
   }
 
   const transparent = appConfig.transparentBackground ?? false;
-  const themeColors = resolveThemeColors(getTheme(themeName), mode, transparent);
+  const themeColors = resolveThemeColors(
+    getTheme(themeName),
+    mode,
+    transparent,
+  );
   overlayThemeRef.current = themeColors;
 
   const renderer = await createCliRenderer({
