@@ -467,6 +467,11 @@ describe("PersistentShell — long-running stability", () => {
 
     await shell.execute("sleep 10 | cat", 2);
 
+    await shell.execute(
+      "kill $(jobs -p) 2>/dev/null; wait 2>/dev/null; true",
+      3,
+    );
+
     const start = Date.now();
     const final = await shell.execute("echo final", 5);
     const elapsed = Date.now() - start;

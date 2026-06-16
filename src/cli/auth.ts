@@ -153,6 +153,7 @@ async function login(): Promise<void> {
       deviceCode: deviceInfo.deviceCode,
       interval: deviceInfo.interval,
       expiresIn: deviceInfo.expiresIn,
+      clientId: flowInfo.clientId,
     });
 
     const apiKey = data.apiKey;

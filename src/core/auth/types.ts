@@ -78,6 +78,7 @@ export type DeviceFlowInfo =
     }
   | {
       mode: "legacy";
+      clientId?: string;
       deviceInfo: LegacyDeviceCodeResponse;
     };
 

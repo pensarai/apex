@@ -2,7 +2,11 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { judgeFinding } from "../../specialized/findingJudge";
+import { AgentEventBus, type AgentEventMap } from "../../../eventBus";
+import {
+  type FindingJudgeResult,
+  judgeFinding,
+} from "../../specialized/findingJudge";
 import {
   documentVulnerability,
   validatePocPortability,
@@ -191,6 +195,169 @@ describe("documentVulnerability judge handling", () => {
     expect(existsSync(join(ctx.session.pocsPath, "poc_admin_data.sh"))).toBe(
       true,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finding Judge subagent lifecycle (regression for the judge rendering as a
+// top-level sibling instead of nested under the invoking worker).
+// ---------------------------------------------------------------------------
+
+function makeAcceptedJudgeResult(): FindingJudgeResult {
+  return {
+    valid: true,
+    findingType: "vulnerability",
+    confidence: 0.95,
+    reasoning: "Reproduced the PoC and confirmed the data exposure.",
+    concerns: [],
+    verificationSteps: ["Reran the PoC."],
+    toolEvidence: ["stdout contained the leaked admin data."],
+    reproducedPoc: true,
+    webResearchUsed: false,
+    limitations: [],
+  };
+}
+
+describe("documentVulnerability finding-judge subagent lifecycle", () => {
+  let rootPath: string;
+
+  beforeEach(() => {
+    rootPath = mkdtempSync(join(tmpdir(), "apex-document-finding-"));
+    mockedJudgeFinding.mockReset();
+  });
+
+  afterEach(() => {
+    rmSync(rootPath, { recursive: true, force: true });
+  });
+
+  it("nests the judge under the invoking worker via lifecycle events and a child bus", async () => {
+    const parentBus = new AgentEventBus();
+    const spawns: AgentEventMap["subagent-spawn"][] = [];
+    const completes: AgentEventMap["subagent-complete"][] = [];
+    const textDeltas: AgentEventMap["text-delta"][] = [];
+    parentBus.on("subagent-spawn", (e) => spawns.push(e));
+    parentBus.on("subagent-complete", (e) => completes.push(e));
+    parentBus.on("text-delta", (e) => textDeltas.push(e));
+
+    let judgeCtx: Parameters<typeof judgeFinding>[1] | undefined;
+    mockedJudgeFinding.mockImplementation(async (_input, ctx) => {
+      judgeCtx = ctx;
+      // Simulate the judge agent streaming on the bus it was handed.
+      ctx.eventBus?.emit("text-delta", { text: "verifying finding" });
+      return makeAcceptedJudgeResult();
+    });
+
+    const ctx = {
+      ...makeToolContext(rootPath),
+      eventBus: parentBus,
+      subagentId: "pentest-agent-worker-1",
+    };
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute!(makeDocumentInput(), {
+      toolCallId: "test",
+      messages: [],
+    })) as DocumentToolResult;
+
+    expect(result.success).toBe(true);
+
+    // Lifecycle: one spawn + one complete, anchored to the worker.
+    expect(spawns).toHaveLength(1);
+    expect(spawns[0].name).toBe("Finding Judge");
+    expect(spawns[0].subagentId).toMatch(
+      /^pentest-agent-worker-1-finding-judge-\d+$/,
+    );
+    expect(spawns[0].parentSubagentId).toBe("pentest-agent-worker-1");
+
+    expect(completes).toHaveLength(1);
+    expect(completes[0].subagentId).toBe(spawns[0].subagentId);
+    expect(completes[0].status).toBe("completed");
+    expect(completes[0].parentSubagentId).toBe("pentest-agent-worker-1");
+
+    // The judge ran on a child bus with the same id the spawn announced,
+    // and its untagged events reach the parent tagged with that id.
+    expect(judgeCtx?.subagentId).toBe(spawns[0].subagentId);
+    expect(judgeCtx?.eventBus).toBeDefined();
+    expect(judgeCtx?.eventBus).not.toBe(parentBus);
+    expect(textDeltas).toHaveLength(1);
+    expect(textDeltas[0].subagentId).toBe(spawns[0].subagentId);
+  });
+
+  it("allocates a fresh judge subagent id per invocation", async () => {
+    const parentBus = new AgentEventBus();
+    const spawns: AgentEventMap["subagent-spawn"][] = [];
+    parentBus.on("subagent-spawn", (e) => spawns.push(e));
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+
+    const ctx = {
+      ...makeToolContext(rootPath),
+      eventBus: parentBus,
+      subagentId: "pentest-agent-worker-2",
+    };
+    const tool = documentVulnerability(ctx);
+    await tool.execute!(makeDocumentInput(), {
+      toolCallId: "t1",
+      messages: [],
+    });
+    await tool.execute!(
+      { ...makeDocumentInput(), title: "Second Finding" },
+      { toolCallId: "t2", messages: [] },
+    );
+
+    expect(spawns).toHaveLength(2);
+    expect(spawns[0].subagentId).not.toBe(spawns[1].subagentId);
+  });
+
+  it("spawns the judge top-level (no parentSubagentId) when the documenting agent has none", async () => {
+    const parentBus = new AgentEventBus();
+    const spawns: AgentEventMap["subagent-spawn"][] = [];
+    parentBus.on("subagent-spawn", (e) => spawns.push(e));
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+
+    const ctx = { ...makeToolContext(rootPath), eventBus: parentBus };
+    const tool = documentVulnerability(ctx);
+    await tool.execute!(makeDocumentInput(), {
+      toolCallId: "test",
+      messages: [],
+    });
+
+    expect(spawns).toHaveLength(1);
+    expect(spawns[0].subagentId).toMatch(/^finding-judge-\d+$/);
+    expect(spawns[0].parentSubagentId).toBeUndefined();
+  });
+
+  it("marks the judge subagent failed when the judge falls back on infrastructure failure", async () => {
+    const parentBus = new AgentEventBus();
+    const completes: AgentEventMap["subagent-complete"][] = [];
+    parentBus.on("subagent-complete", (e) => completes.push(e));
+
+    mockedJudgeFinding.mockResolvedValue({
+      valid: false,
+      findingType: "informational",
+      confidence: 0.4,
+      reasoning: "Agentic finding judge could not complete.",
+      concerns: ["Judge infrastructure failed."],
+      verificationSteps: [],
+      toolEvidence: [],
+      reproducedPoc: false,
+      webResearchUsed: false,
+      limitations: [],
+      error: { message: "provider overloaded", type: "Error", model: "m" },
+    });
+
+    const ctx = {
+      ...makeToolContext(rootPath),
+      eventBus: parentBus,
+      subagentId: "pentest-agent-worker-3",
+    };
+    const tool = documentVulnerability(ctx);
+    await tool.execute!(makeDocumentInput(), {
+      toolCallId: "test",
+      messages: [],
+    });
+
+    expect(completes).toHaveLength(1);
+    expect(completes[0].status).toBe("failed");
+    expect(completes[0].parentSubagentId).toBe("pentest-agent-worker-3");
   });
 });
 

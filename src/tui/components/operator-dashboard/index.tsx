@@ -820,31 +820,44 @@ export default function OperatorDashboard({
         nextMessages = conversationRef.current;
       }
 
+      // Shared sink for orchestrator + subagent token usage.
+      const recordTokenUsage = (
+        inputTokens: number,
+        outputTokens: number,
+        cacheReadTokens = 0,
+        cacheWriteTokens = 0,
+      ) => {
+        const nextUsage = accumulateTokenUsage(
+          tokenUsageRef.current,
+          inputTokens,
+          outputTokens,
+        );
+        if (nextUsage) {
+          tokenUsageRef.current = nextUsage;
+          addTokenUsage(inputTokens, outputTokens);
+          if (session) {
+            try {
+              writeExecutionMetrics({
+                sessionRootPath: session.rootPath,
+                tokenUsage: nextUsage,
+              });
+            } catch {
+              // Best effort: token metrics should not interrupt operator runs.
+            }
+          }
+        }
+        if (cacheReadTokens > 0 || cacheWriteTokens > 0) {
+          addCacheUsage(cacheReadTokens, cacheWriteTokens);
+        }
+      };
+
       const onStepFinish = (event: {
         usage?: { inputTokens?: number; outputTokens?: number };
       }) => {
-        const nextUsage = accumulateTokenUsage(
-          tokenUsageRef.current,
+        recordTokenUsage(
           event.usage?.inputTokens ?? 0,
           event.usage?.outputTokens ?? 0,
         );
-        if (!nextUsage) return;
-        tokenUsageRef.current = nextUsage;
-
-        addTokenUsage(
-          event.usage?.inputTokens ?? 0,
-          event.usage?.outputTokens ?? 0,
-        );
-        if (session) {
-          try {
-            writeExecutionMetrics({
-              sessionRootPath: session.rootPath,
-              tokenUsage: nextUsage,
-            });
-          } catch {
-            // Best effort: token metrics should not interrupt operator runs.
-          }
-        }
       };
 
       const eventBus = new AgentEventBus();
@@ -1188,6 +1201,23 @@ export default function OperatorDashboard({
         earlyBuffer?.push(e);
       };
       eventBus.on("trace-record", earlyBufferHandler);
+
+      // Subagent steps (orchestrator ones lack subagentId, counted above).
+      // Key dedupes the W&B early-buffer replay.
+      const countedSubagentSteps = new Set<string>();
+      eventBus.on("trace-record", ({ record, subagentId }) => {
+        if (gen !== generationRef.current) return;
+        if (!subagentId || record.type !== "step") return;
+        const key = `${subagentId}:${record.stepIndex}:${record.timestamp}`;
+        if (countedSubagentSteps.has(key)) return;
+        countedSubagentSteps.add(key);
+        recordTokenUsage(
+          record.usage.inputTokens,
+          record.usage.outputTokens,
+          record.usage.cacheReadTokens ?? 0,
+          record.usage.cacheWriteTokens ?? 0,
+        );
+      });
 
       const tryAttachWandb = async (s: SessionInfo) => {
         if (wandbCleanup) return;
