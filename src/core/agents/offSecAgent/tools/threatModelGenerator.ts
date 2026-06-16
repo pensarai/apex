@@ -375,7 +375,7 @@ export async function generateThreatModelForEndpoint(
         status: "failed",
         parentSubagentId: ctx.subagentId,
       });
-      log.error(
+      log.warn(
         `Threat model generation failed for ${input.routePath}: ${error instanceof Error ? error.message : String(error)}`,
       );
       return null;

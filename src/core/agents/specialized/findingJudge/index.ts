@@ -82,7 +82,7 @@ export async function judgeFinding(
     return normalizeJudgeResult(result);
   } catch (err: unknown) {
     const fallback = createJudgeFailureResult(err, ctx.model);
-    log.error("Agentic validation failed", {
+    log.warn("Agentic validation failed", {
       model: fallback.error?.model,
       type: fallback.error?.type,
       message: fallback.error?.message,

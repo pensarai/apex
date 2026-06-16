@@ -229,7 +229,7 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           parentSubagentId: ctx.subagentId,
         });
 
-        log.debug("Delegating to authentication subagent", {
+        log.info("Delegating to authentication subagent", {
           target,
           reason,
           username: username || undefined,

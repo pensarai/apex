@@ -31,7 +31,11 @@ function logInfo(...args: unknown[]) {
 }
 
 function logError(...args: unknown[]) {
-  structuredLog.error(fmtArgs(args));
+  // Preserve a real Error (message/stack) for the logger + error.log; fmtArgs
+  // would JSON.stringify it to "{}".
+  const err = args.find((a) => a instanceof Error) as Error | undefined;
+  const msg = fmtArgs(args.filter((a) => !(a instanceof Error)));
+  structuredLog.error(msg, err);
 }
 
 export interface PensarModelConfig {
