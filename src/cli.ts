@@ -22,7 +22,6 @@ import {
 } from "./tui/utils/command-flags";
 
 const args = process.argv.slice(2);
-const command = args[0];
 const version = packageJson.version;
 
 // Detect global --obfuscate flag and propagate to the TUI via env so the
@@ -54,6 +53,10 @@ if (obfuscateRequested) {
     process.env.PENSAR_LOG_LEVEL = level;
   }
 }
+
+// Resolve the subcommand AFTER global flags (--obfuscate, --log-level, etc.)
+// are stripped, so `pensar --verbose pentest` still routes to `pentest`.
+const command = args[0];
 
 // ---------------------------------------------------------------------------
 // Helpers
