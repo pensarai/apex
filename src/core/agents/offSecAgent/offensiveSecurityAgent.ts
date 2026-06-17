@@ -589,7 +589,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       } finally {
         this.persistentShell?.dispose();
 
-        if (inFlightTools.size > 0) {
+        if (inFlightTools.size > 0 || completedResults.length > 0) {
           const reason = this.abortSignal?.aborted
             ? "Agent aborted by user"
             : streamError instanceof Error && streamError.message
