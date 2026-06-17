@@ -15,6 +15,7 @@ import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../http/targetHeaders";
+import { getApexTracer } from "../../observability";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
@@ -41,8 +42,8 @@ import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
  * the session context, and specific agents select which ones to activate
  * via the `activeTools` array (passed through to the AI SDK).
  *
- * The stream starts **immediately on construction** — no need to call a
- * separate `.run()` method.
+ * The stream is created lazily on first consumption (see {@link streamResult}),
+ * so the AI SDK telemetry nests under this agent's span — no separate `.run()`.
  *
  * @typeParam TResult - The type returned by {@link consume}. When the input
  *   includes a `resolveResult` function, `consume()` awaits it after the
@@ -70,8 +71,11 @@ import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
  * ```
  */
 export class OffensiveSecurityAgent<TResult = void> {
-  /** The underlying Vercel AI SDK stream result — escape hatch for advanced use. */
-  public readonly streamResult: StreamTextResult<ToolSet, never>;
+  /** Cached stream result, populated on first {@link streamResult} access. */
+  private _streamResult: StreamTextResult<ToolSet, never> | null = null;
+
+  /** Builds the underlying stream; invoked lazily by {@link streamResult}. */
+  private readonly createStream: () => StreamTextResult<ToolSet, never>;
 
   /** The event bus for this agent's streaming output. */
   public readonly eventBus: AgentEventBus;
@@ -389,73 +393,88 @@ export class OffensiveSecurityAgent<TResult = void> {
       cacheWriteTokens: number;
     } | null = null;
 
-    this.streamResult = streamResponse({
-      prompt: input.prompt,
-      system: systemPrompt,
-      model: input.model,
-      messages: input.messages,
-      tools,
-      activeTools,
-      stopWhen,
-      toolChoice: "auto",
-      sessionPath: input.session.rootPath,
-      onStepFinish: async (event) => {
-        latestMessages = [
-          ...initialMessagesRef.current,
-          ...event.response.messages,
-        ];
-        schedulePersist();
-        traceWriter.recordStep(event.response.messages as ModelMessage[], {
-          inputTokens: event.usage.inputTokens ?? 0,
-          outputTokens: event.usage.outputTokens ?? 0,
-          ...lastCacheMetrics,
-        });
-        lastCacheMetrics = null;
-        this.eventBus.emit("step-finish", {
-          messages: event.response.messages,
-          subagentId: this.subagentId,
-        });
-        await input.onStepFinish?.(event);
-      },
-      onSummarized: () => {
-        // Context was reset by summarization — discard the old history so
-        // subsequent onStepFinish writes only persist post-summary messages.
-        initialMessagesRef.current = [];
-        traceWriter.markSummarized();
-      },
-      onFinish: async (event) => {
-        // Flush any pending persistence before finishing
-        if (persistTimer) {
-          clearTimeout(persistTimer);
-          persistTimer = null;
-        }
-        const finalMessages = latestMessages ?? [
-          ...initialMessagesRef.current,
-          ...event.response.messages,
-        ];
-        await writeFile(messagesPath, JSON.stringify(finalMessages)).catch(
-          () => {},
-        );
-        await input.onFinish?.(event);
-      },
-      abortSignal: input.abortSignal,
-      authConfig: input.authConfig,
-      onCacheMetrics: (metrics) => {
-        lastCacheMetrics = {
-          cacheReadTokens: metrics.cacheReadInputTokens,
-          cacheWriteTokens: metrics.cacheCreationInputTokens,
-        };
-        input.onCacheMetrics?.(metrics);
-      },
-      enableThinking: input.enableThinking,
-      openAIReasoningEffort: input.openAIReasoningEffort,
-      silent: true,
-    });
+    // Deferred so the AI SDK telemetry binds to this agent's span (entered in
+    // consume()) rather than the construction-time context. See `streamResult`.
+    this.createStream = () =>
+      streamResponse({
+        prompt: input.prompt,
+        system: systemPrompt,
+        model: input.model,
+        messages: input.messages,
+        tools,
+        activeTools,
+        stopWhen,
+        toolChoice: "auto",
+        sessionPath: input.session.rootPath,
+        onStepFinish: async (event) => {
+          latestMessages = [
+            ...initialMessagesRef.current,
+            ...event.response.messages,
+          ];
+          schedulePersist();
+          traceWriter.recordStep(event.response.messages as ModelMessage[], {
+            inputTokens: event.usage.inputTokens ?? 0,
+            outputTokens: event.usage.outputTokens ?? 0,
+            ...lastCacheMetrics,
+          });
+          lastCacheMetrics = null;
+          this.eventBus.emit("step-finish", {
+            messages: event.response.messages,
+            subagentId: this.subagentId,
+          });
+          await input.onStepFinish?.(event);
+        },
+        onSummarized: () => {
+          // Context was reset by summarization — discard the old history so
+          // subsequent onStepFinish writes only persist post-summary messages.
+          initialMessagesRef.current = [];
+          traceWriter.markSummarized();
+        },
+        onFinish: async (event) => {
+          // Flush any pending persistence before finishing
+          if (persistTimer) {
+            clearTimeout(persistTimer);
+            persistTimer = null;
+          }
+          const finalMessages = latestMessages ?? [
+            ...initialMessagesRef.current,
+            ...event.response.messages,
+          ];
+          await writeFile(messagesPath, JSON.stringify(finalMessages)).catch(
+            () => {},
+          );
+          await input.onFinish?.(event);
+        },
+        abortSignal: input.abortSignal,
+        authConfig: input.authConfig,
+        onCacheMetrics: (metrics) => {
+          lastCacheMetrics = {
+            cacheReadTokens: metrics.cacheReadInputTokens,
+            cacheWriteTokens: metrics.cacheCreationInputTokens,
+          };
+          input.onCacheMetrics?.(metrics);
+        },
+        enableThinking: input.enableThinking,
+        openAIReasoningEffort: input.openAIReasoningEffort,
+        silent: true,
+      });
   }
 
   // ---------------------------------------------------------------------------
   // Stream access
   // ---------------------------------------------------------------------------
+
+  /**
+   * The underlying Vercel AI SDK stream result — escape hatch for advanced use.
+   * Created lazily so its telemetry binds to the span active at first
+   * consumption (this agent's `invoke_agent` span), not the construction context.
+   */
+  get streamResult(): StreamTextResult<ToolSet, never> {
+    if (this._streamResult === null) {
+      this._streamResult = this.createStream();
+    }
+    return this._streamResult;
+  }
 
   /**
    * The raw async-iterable stream of chunks.
@@ -497,22 +516,48 @@ export class OffensiveSecurityAgent<TResult = void> {
     const sid = this.subagentId;
     const bus = this.eventBus;
 
-    try {
-      for await (const chunk of this.streamResult.fullStream) {
-        bus.emitStreamPart(chunk, sid);
+    const runConsume = async (): Promise<TResult> => {
+      try {
+        for await (const chunk of this.streamResult.fullStream) {
+          bus.emitStreamPart(chunk, sid);
+        }
+      } finally {
+        this.persistentShell?.dispose();
       }
-    } finally {
-      this.persistentShell?.dispose();
-    }
 
-    if (this.abortSignal?.aborted) {
-      throw new DOMException("Agent aborted by user", "AbortError");
-    }
+      if (this.abortSignal?.aborted) {
+        throw new DOMException("Agent aborted by user", "AbortError");
+      }
 
-    if (this.resolveResult) {
-      return this.resolveResult(this.streamResult);
-    }
-    return undefined as TResult; // TResult is void when resolveResult is absent
+      if (this.resolveResult) {
+        return this.resolveResult(this.streamResult);
+      }
+      return undefined as TResult;
+    };
+
+    // Only subagents get a span here; top-level runs are wrapped by the host.
+    if (!sid) return runConsume();
+
+    const tracer = getApexTracer();
+    return tracer.startActiveSpan(
+      `invoke_agent ${sid}`,
+      {
+        attributes: {
+          "gen_ai.operation.name": "invoke_agent",
+          "gen_ai.agent.name": sid,
+        },
+      },
+      async (span) => {
+        try {
+          return await runConsume();
+        } catch (err) {
+          span.recordException(err as Error);
+          throw err;
+        } finally {
+          span.end();
+        }
+      },
+    );
   }
 
   /**

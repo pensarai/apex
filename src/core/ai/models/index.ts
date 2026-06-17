@@ -55,15 +55,17 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   // digit.digit sequences to dashes so all Claude patterns match both forms.
   const n = modelId.replace(/(\d)\.(\d)/g, "$1-$2");
 
-  // Latest-tier Claude (4.6, 4.7) ship 128K output. Match these BEFORE the
-  // generic `claude-opus-4-` / `claude-sonnet-4-` catch-alls below — those
-  // exist only as a 32K/64K floor for older 4.x revisions and would
+  // Latest-tier Claude (4.6, 4.7, 4.8) ship 128K output. Match these BEFORE
+  // the generic `claude-opus-4-` / `claude-sonnet-4-` catch-alls below —
+  // those exist only as a 32K/64K floor for older 4.x revisions and would
   // otherwise clamp a top-tier model to a 4× smaller budget.
   if (
     n.includes("claude-opus-4-6") ||
     n.includes("claude-opus-4-7") ||
+    n.includes("claude-opus-4-8") ||
     n.includes("claude-sonnet-4-6") ||
-    n.includes("claude-sonnet-4-7")
+    n.includes("claude-sonnet-4-7") ||
+    n.includes("claude-sonnet-4-8")
   ) {
     return 128_000;
   }

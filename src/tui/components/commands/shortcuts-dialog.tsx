@@ -37,8 +37,8 @@ export default function ShortcutsDialog({
       <DialogLayout title="Keyboard Shortcuts">
         {/* Shortcuts List */}
         <box flexDirection="column" gap={1}>
-          {keybindings.map((keybinding, index) => (
-            <box key={index} flexDirection="row" gap={2}>
+          {keybindings.map((keybinding) => (
+            <box key={keybinding.key} flexDirection="row" gap={2}>
               <text fg={colors.primary} width={15}>
                 [{keybinding.key}]
               </text>

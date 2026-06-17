@@ -1,6 +1,6 @@
+import { open } from "node:fs/promises";
 import { useKeyboard } from "@opentui/react";
 import { useEffect, useState } from "react";
-import sharp from "sharp";
 import { useDimensions } from "../context/dimensions";
 import { useTheme } from "../theme";
 import {
@@ -18,6 +18,28 @@ import { isToolMessage } from "./shared/type-guards";
 // structure (header bar ~3-4 rows; input area + status bar ~6 rows).
 const HEADER_ROWS = 4;
 const FOOTER_ROWS = 6;
+
+// Browser screenshots are PNG. Read width/height from the IHDR chunk
+// (BE uint32 at byte offsets 16 and 20) instead of pulling in `sharp`,
+// whose native addon can't be embedded by `bun build --compile`.
+async function readPngDimensions(
+  path: string,
+): Promise<{ width: number; height: number }> {
+  const fh = await open(path, "r");
+  try {
+    const buf = Buffer.alloc(24);
+    await fh.read(buf, 0, 24, 0);
+    if (
+      buf.readUInt32BE(0) !== 0x89504e47 ||
+      buf.readUInt32BE(4) !== 0x0d0a1a0a
+    ) {
+      throw new Error("not a PNG");
+    }
+    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+  } finally {
+    await fh.close();
+  }
+}
 
 interface Props {
   /** Chronological list (oldest -> newest). */
@@ -89,9 +111,7 @@ export function ScreenshotModal({ screenshots, initialIndex, onClose }: Props) {
     const id = nextImageId();
     (async () => {
       try {
-        const meta = await sharp(path).metadata();
-        const w = meta.width ?? 1;
-        const h = meta.height ?? 1;
+        const { width: w, height: h } = await readPngDimensions(path);
         // Available cell box inside the chat region (reserve header /
         // footer so they stay visible). Cells are ~1:2 on screen, so
         // image cell-aspect = (h/w) / 2.

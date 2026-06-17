@@ -5,7 +5,7 @@
  * mode, resolving per-token { dark, light } values to flat RGBA colors.
  */
 
-import type { RGBA } from "@opentui/core";
+import { RGBA } from "@opentui/core";
 import {
   createContext,
   type ReactNode,
@@ -37,6 +37,10 @@ interface ThemeContextValue {
   toggleMode: () => void;
   /** Set a specific mode */
   setMode: (mode: ColorMode) => void;
+  /** Whether the terminal's default (transparent) background is used */
+  transparent: boolean;
+  /** Toggle terminal-transparent background on/off */
+  toggleTransparent: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -51,32 +55,40 @@ function resolveColor(value: ThemeColorValue, mode: ColorMode): RGBA {
 export function resolveThemeColors(
   theme: ThemeDefinition,
   mode: ColorMode,
+  transparent = false,
 ): ThemeColors {
   const entries = Object.entries(theme.colors) as [string, ThemeColorValue][];
   const resolved: Record<string, RGBA> = {};
   for (const [key, value] of entries) {
     resolved[key] = resolveColor(value, mode);
   }
+  if (transparent) resolved.background = RGBA.defaultBackground();
   return resolved as unknown as ThemeColors;
 }
 
 interface ThemeProviderProps {
   initialTheme?: string;
   initialMode?: ColorMode;
+  initialTransparent?: boolean;
   children: ReactNode;
 }
 
 export function ThemeProvider({
   initialTheme,
   initialMode = "dark",
+  initialTransparent = false,
   children,
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<ThemeDefinition>(() =>
     getTheme(initialTheme ?? DEFAULT_THEME_NAME),
   );
   const [mode, setModeState] = useState<ColorMode>(initialMode);
+  const [transparent, setTransparent] = useState(initialTransparent);
 
-  const colors = useMemo(() => resolveThemeColors(theme, mode), [theme, mode]);
+  const colors = useMemo(
+    () => resolveThemeColors(theme, mode, transparent),
+    [theme, mode, transparent],
+  );
 
   const setTheme = useCallback((name: string) => {
     const newTheme = getTheme(name);
@@ -91,6 +103,8 @@ export function ThemeProvider({
     setModeState(m);
   }, []);
 
+  const toggleTransparent = useCallback(() => setTransparent((p) => !p), []);
+
   return (
     <ThemeContext.Provider
       value={{
@@ -101,6 +115,8 @@ export function ThemeProvider({
         setTheme,
         toggleMode,
         setMode,
+        transparent,
+        toggleTransparent,
       }}
     >
       {children}

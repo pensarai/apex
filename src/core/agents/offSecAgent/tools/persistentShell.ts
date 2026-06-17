@@ -78,6 +78,12 @@ interface PendingCommand {
   cutoverSeen: boolean;
   cutoverMarker: string;
   stderr: string;
+  // Mirror of the stdout cutover fence for stderr. A command's real stderr is
+  // `cat`'d to bash's stderr only after this marker is emitted on fd2; anything
+  // before it is bash's own job-control noise (e.g. "Terminated"/"Killed" from
+  // a prior killed sibling) and must not leak into this command's stderr.
+  stderrCutoverSeen: boolean;
+  stderrPreCutover: string;
   stdoutTruncated: boolean;
   exitMarkerPrefix: string;
   onData?: (chunk: string) => void;
@@ -335,7 +341,37 @@ export class PersistentShell {
     const cmd = this.current;
     if (!cmd) return;
 
-    cmd.stderr += data.toString();
+    let chunk = data.toString();
+
+    if (!cmd.stderrCutoverSeen) {
+      // Discard everything up to and including this command's stderr cutover
+      // marker. The command's own stderr is `cat`'d only after the marker, so
+      // pre-marker bytes are bash diagnostics (job-control kill messages) that
+      // would otherwise be misattributed to this command.
+      cmd.stderrPreCutover += chunk;
+      const cutIdx = cmd.stderrPreCutover.indexOf(cmd.cutoverMarker);
+      if (cutIdx === -1) {
+        // Keep only a marker-length tail so a marker straddling chunks is still
+        // found; bounded so unexpected pre-cutover output can't grow unbounded.
+        if (cmd.stderrPreCutover.length > cmd.cutoverMarker.length) {
+          cmd.stderrPreCutover = cmd.stderrPreCutover.substring(
+            cmd.stderrPreCutover.length - cmd.cutoverMarker.length,
+          );
+        }
+        return;
+      }
+      const postMarker = cmd.stderrPreCutover.substring(
+        cutIdx + cmd.cutoverMarker.length,
+      );
+      cmd.stderrCutoverSeen = true;
+      cmd.stderrPreCutover = "";
+      chunk = postMarker.startsWith("\n")
+        ? postMarker.substring(1)
+        : postMarker;
+      if (chunk.length === 0) return;
+    }
+
+    cmd.stderr += chunk;
     if (cmd.stderr.length > MAX_BUFFER) {
       cmd.stderr =
         cmd.stderr.substring(0, MAX_BUFFER) + "...\n(stderr truncated)";
@@ -391,6 +427,8 @@ export class PersistentShell {
           cutoverSeen: false,
           cutoverMarker,
           stderr: "",
+          stderrCutoverSeen: false,
+          stderrPreCutover: "",
           stdoutTruncated: false,
           exitMarkerPrefix,
           onData,
@@ -475,6 +513,10 @@ export class PersistentShell {
           `wait "$__APEX_TAIL" 2>/dev/null`,
           `printf '%s\\n' "${cutoverMarker}"`,
           `cat "$__APEX_OUT"`,
+          // Stderr cutover fence: marks the boundary between bash's own
+          // diagnostics (job-control kill messages from a killed sibling) and
+          // this command's real stderr, so the former can't leak into it.
+          `printf '%s\\n' "${cutoverMarker}" >&2`,
           `cat "$__APEX_ERR" >&2`,
           // Node owns tempfile cleanup so kill paths can read before unlink.
           `echo "${exitMarkerPrefix}$__APEX_EC"`,
@@ -557,43 +599,39 @@ export class PersistentShell {
     }
 
     if (this.proc) {
-      try {
-        this.proc.stdin?.write("exit\n");
-      } catch {
-        // ignore
-      }
-
       const p = this.proc;
       const pid = p.pid;
+
+      // Kill the process group synchronously so backgrounded subshells
+      // die even if the runner process is killed before timers fire.
+      if (pid && process.platform !== "win32") {
+        try {
+          process.kill(-pid, "SIGTERM");
+        } catch {
+          // already gone
+        }
+      }
+      try {
+        p.kill("SIGTERM");
+      } catch {
+        // already dead
+      }
+
+      // SIGKILL escalation on a timer — only needed if SIGTERM is ignored.
       setTimeout(() => {
-        // Kill the whole process group so detached children die too.
         if (pid && process.platform !== "win32") {
           try {
-            process.kill(-pid, "SIGTERM");
+            process.kill(-pid, "SIGKILL");
           } catch {
             // already gone
           }
         }
         try {
-          p.kill("SIGTERM");
+          p.kill("SIGKILL");
         } catch {
           // already dead
         }
-        setTimeout(() => {
-          if (pid && process.platform !== "win32") {
-            try {
-              process.kill(-pid, "SIGKILL");
-            } catch {
-              // already gone
-            }
-          }
-          try {
-            p.kill("SIGKILL");
-          } catch {
-            // already dead
-          }
-        }, 2_000);
-      }, 1_000);
+      }, 2_000);
     }
 
     this.alive = false;

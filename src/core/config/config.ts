@@ -30,6 +30,8 @@ export interface Config {
   // Theme preferences
   theme?: string;
   themeMode?: "dark" | "light" | "auto";
+  // Use the terminal's default background so a transparent terminal shows through.
+  transparentBackground?: boolean;
   // Model preference
   selectedModelId?: string | null;
   // Extended thinking / reasoning

@@ -48,23 +48,23 @@
         "noExplicitAny": "error",
         // Carryover from previous ESLint config (no-useless-escape: off).
         "noUselessEscapeInString": "off",
-        // Existing pattern across many TUI list components; revisit in a follow-up triage PR.
-        "noArrayIndexKey": "off",
+        "noArrayIndexKey": "error",
         "noImplicitAnyLet": "error",
         "noAssignInExpressions": "error",
-        // Existing pattern with intentional void callbacks; revisit in a follow-up triage PR.
-        "useIterableCallbackReturn": "off"
+        "useIterableCallbackReturn": "error"
       },
       "complexity": {
         // Carryover from previous ESLint config (no-useless-escape: off).
         "noUselessEscapeInRegex": "off"
       },
+      "performance": {
+        "noReExportAll": "error"
+      },
       "correctness": {
         "noUnusedImports": "error",
         // Carryover from previous ESLint config (no-unused-vars: off).
         "noUnusedVariables": "off",
-        // Carryover from previous ESLint config (react-hooks/exhaustive-deps: off).
-        "useExhaustiveDependencies": "off",
+        "useExhaustiveDependencies": "error",
         // False positives in src/tui/keybindings/registry.ts where hooks compose
         // outside the body of a hook/component named with the use* convention.
         "useHookAtTopLevel": "off"

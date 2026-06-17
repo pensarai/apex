@@ -254,6 +254,7 @@ export function AgentProvider({ children }: AgentProviderProps) {
       hasExecuted,
       thinking,
       reasoningEnabled,
+      setReasoningEnabled,
       openAIReasoningEffort,
       isExecuting,
       sessionCwd,
