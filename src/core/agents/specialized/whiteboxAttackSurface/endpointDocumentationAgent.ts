@@ -7,7 +7,9 @@ import type {
   ConsolidatedEndpoint,
   FrameworkId,
 } from "../../../integrations/surface/types";
+import { createLogger } from "../../../logger/structured";
 import type { SessionInfo } from "../../../session";
+import { scopedLogger } from "../../../util/lazyLogger";
 import { runWithBoundedConcurrency } from "../../../utils/concurrency";
 import { CodeAgent } from "../codeAgent/agent";
 import { WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT } from "./prompts";
@@ -16,6 +18,8 @@ import {
   type DiscoverySummary,
   DiscoverySummarySchema,
 } from "./types";
+
+const log = scopedLogger(() => createLogger("endpoint-documentation-agent"));
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -224,9 +228,10 @@ async function runEndpointDocumentationAgent(
     });
     return true;
   } catch (error) {
-    console.error(
-      `[endpoint-documentation-agent] "${subagentId}" FAILED:`,
-      error instanceof Error ? error.message : String(error),
+    log.error(
+      `"${subagentId}" FAILED`,
+      error instanceof Error ? error : undefined,
+      { error: String(error) },
     );
     eventBus?.emit("subagent-complete", {
       subagentId,

@@ -9,6 +9,8 @@ import os from "os";
 import path from "path";
 import { type SessionInfo, sessions } from "../session";
 
+export { type LogLevel as StructuredLogLevel, logger } from "./structured";
+
 export enum LogLevel {
   INFO = "INFO",
   ERROR = "ERROR",
@@ -61,8 +63,14 @@ function pruneErrorLog(): void {
  *
  * @param error  The error value (Error instance or anything stringifiable)
  * @param source Optional tag identifying the subsystem, e.g. "TUI", "CORE"
+ * @param fields Optional structured context, persisted so the file is
+ *               diagnosable on its own (matches the stderr JSON record)
  */
-export function writeErrorLog(error: unknown, source?: string): void {
+export function writeErrorLog(
+  error: unknown,
+  source?: string,
+  fields?: Record<string, unknown>,
+): void {
   try {
     pruneErrorLog();
 
@@ -77,7 +85,15 @@ export function writeErrorLog(error: unknown, source?: string): void {
       error instanceof Error
         ? `${error.message}\n${error.stack ?? ""}`
         : String(error);
-    const entry = `${timestamp} - [ERROR] ${tag}${message}\n`;
+    let fieldsStr = "";
+    if (fields && Object.keys(fields).length > 0) {
+      try {
+        fieldsStr = ` ${JSON.stringify(fields)}`;
+      } catch {
+        // Drop unserializable fields rather than fail the write.
+      }
+    }
+    const entry = `${timestamp} - [ERROR] ${tag}${message}${fieldsStr}\n`;
 
     appendFileSync(ERROR_LOG_PATH, entry, "utf8");
   } catch {

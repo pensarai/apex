@@ -4,11 +4,15 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import type { AIAuthConfig, AIModel, OpenAIReasoningEffort } from "../../../ai";
 import type { AgentEventBus } from "../../../eventBus";
+import { createLogger } from "../../../logger/structured";
 import type { SessionInfo } from "../../../session";
+import { scopedLogger } from "../../../util/lazyLogger";
 import { OffensiveSecurityAgent } from "../../offSecAgent";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import type { AuthBarrier } from "./types";
+
+const log = scopedLogger(() => createLogger("authentication-agent"));
 
 // ---------------------------------------------------------------------------
 // Types
@@ -310,8 +314,8 @@ export async function runAuthenticationAgent(input: AuthenticationAgentInput) {
 
   const result = await agent.consume();
 
-  console.log(
-    `\nAuthentication ${result.success ? "succeeded" : "failed"}: ${result.summary}`,
+  log.info(
+    `Authentication ${result.success ? "succeeded" : "failed"}: ${result.summary}`,
   );
   return result;
 }

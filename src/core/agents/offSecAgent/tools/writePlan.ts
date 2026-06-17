@@ -3,8 +3,12 @@ import { mkdirSync } from "fs";
 import { writeFile } from "fs/promises";
 import { dirname } from "path";
 import { z } from "zod";
+import { createLogger } from "../../../logger/structured";
 import { planFilePath } from "../../../plan";
+import { scopedLogger } from "../../../util/lazyLogger";
 import type { ToolContext } from "./types";
+
+const log = scopedLogger(() => createLogger("write_plan"));
 
 const writePlanInputSchema = z.object({
   content: z.string().describe("The full markdown content of the pentest plan"),
@@ -41,15 +45,15 @@ Required plan sections:
       const scopeId = ctx.planSubagentId ?? ctx.subagentId;
       const planPath = planFilePath(ctx.session.rootPath, scopeId);
       mkdirSync(dirname(planPath), { recursive: true });
-      console.error(
-        `[write_plan] enter: contentLen=${content.length}, path=${planPath}`,
-      );
+      log.debug(`enter: contentLen=${content.length}, path=${planPath}`);
       try {
         await writeFile(planPath, content, "utf-8");
-        console.error(`[write_plan] done`);
+        log.debug("done");
         return { success: true, error: "", path: planPath };
       } catch (err: unknown) {
-        console.error(`[write_plan] error: ${err}`);
+        log.error("write failed", err instanceof Error ? err : undefined, {
+          error: String(err),
+        });
         return {
           success: false,
           error: err instanceof Error ? err.message : String(err),

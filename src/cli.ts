@@ -9,9 +9,11 @@
 
 import packageJson from "../package.json";
 import { type AIModel, buildAuthConfig } from "./core/ai";
+import { resolveCliLogLevel } from "./core/cli/logLevelArgs";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
+import { logger } from "./core/logger";
 import type { SessionInfo } from "./core/session";
 import {
   combinePromptParts,
@@ -20,7 +22,6 @@ import {
 } from "./tui/utils/command-flags";
 
 const args = process.argv.slice(2);
-const command = args[0];
 const version = packageJson.version;
 
 // Detect global --obfuscate flag and propagate to the TUI via env so the
@@ -34,6 +35,28 @@ if (obfuscateRequested) {
     if (OBFUSCATE_FLAGS.has(args[i]!)) args.splice(i, 1);
   }
 }
+
+// Resolve diagnostic log level from CLI flags early, before any subsystem logs.
+// (resolveCliLogLevel strips the flags from `args` in place.) Export
+// PENSAR_LOG_LEVEL so child processes inherit the resolved level.
+{
+  const { level, invalid } = resolveCliLogLevel(args);
+  if (invalid !== undefined) {
+    // Always-visible (not gated by the log threshold): the flag was rejected.
+    // We continue at the shorthand/default level rather than abort.
+    console.error(
+      `Ignoring invalid --log-level "${invalid}" (expected DEBUG|INFO|WARN|ERROR|SILENT)`,
+    );
+  }
+  if (level) {
+    logger.setLevel(level);
+    process.env.PENSAR_LOG_LEVEL = level;
+  }
+}
+
+// Resolve the subcommand AFTER global flags (--obfuscate, --log-level, etc.)
+// are stripped, so `pensar --verbose pentest` still routes to `pentest`.
+const command = args[0];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -233,6 +256,9 @@ threat-model options:
 Global options:
   -h, --help         Show this help message
   -v, --version      Show version number
+  --log-level <lvl>  Diagnostic log level: debug|info|warn|error|silent
+  --verbose          Shorthand for --log-level debug
+  --quiet            Shorthand for --log-level warn
   --obfuscate        Run the TUI in obfuscation mode — redacts hostnames,
                      IPs, UUIDs, emails, paths, tokens, and apparent
                      company names so screenshots are safe to share.

@@ -15,12 +15,16 @@ import {
   writeFileSync,
 } from "fs";
 import { join } from "path";
+import { createLogger } from "../logger/structured";
+import { scopedLogger } from "../util/lazyLogger";
 import type { SessionInfo } from "./index";
 
 export type { SessionInfo };
 
 import type { ModelMessage } from "ai";
 import type { AuthenticationInfo } from "./types";
+
+const log = scopedLogger(() => createLogger("session:persistence"));
 
 // ---------------------------------------------------------------------------
 // Shared path constants — used by both writer and reader
@@ -614,7 +618,11 @@ export function loadSubagents(rootPath: string): UISubagent[] {
           status,
         });
       } catch (e) {
-        console.error(`Failed to load subagent file ${file}:`, e);
+        log.error(
+          `Failed to load subagent file ${file}`,
+          e instanceof Error ? e : undefined,
+          { error: String(e) },
+        );
       }
     }
 
@@ -696,7 +704,11 @@ export function loadSubagents(rootPath: string): UISubagent[] {
         }
       }
     } catch (e) {
-      console.error("Failed to load agent manifest:", e);
+      log.error(
+        "Failed to load agent manifest",
+        e instanceof Error ? e : undefined,
+        { error: String(e) },
+      );
     }
   }
 

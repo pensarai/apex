@@ -1,8 +1,12 @@
 import pLimit from "p-limit";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
+import { createLogger } from "../../../logger/structured";
+import { scopedLogger } from "../../../util/lazyLogger";
 import type { RiskScore } from "../../specialized/whiteboxAttackSurface";
 import type { ToolContext } from "./types";
+
+const log = scopedLogger(() => createLogger("threat-model-generator"));
 
 // Process-wide cap — parents emit `document_endpoint` tool calls in parallel,
 // so without this gate each parent fans out unboundedly.
@@ -371,7 +375,7 @@ export async function generateThreatModelForEndpoint(
         status: "failed",
         parentSubagentId: ctx.subagentId,
       });
-      console.error(
+      log.warn(
         `Threat model generation failed for ${input.routePath}: ${error instanceof Error ? error.message : String(error)}`,
       );
       return null;

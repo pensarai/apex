@@ -4,8 +4,12 @@ import { join } from "path";
 import { z } from "zod";
 import { CredentialManager } from "../../../credentials";
 import { AgentEventBus } from "../../../eventBus";
+import { createLogger } from "../../../logger/structured";
+import { scopedLogger } from "../../../util/lazyLogger";
 import type { AuthCredentials } from "../../specialized/authenticationAgent/types";
 import type { ToolContext } from "./types";
+
+const log = scopedLogger(() => createLogger("delegate_auth"));
 
 // runAuthenticationAgent is dynamically imported inside execute() to break
 // the circular dependency: authAgent → offensiveSecurityAgent → tools → delegateAuth → authAgent
@@ -225,18 +229,17 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           parentSubagentId: ctx.subagentId,
         });
 
-        console.log(`\n🔐 Delegating to authentication subagent...`);
-        console.log(`   Target: ${target}`);
-        console.log(`   Reason: ${reason}`);
-
-        if (username) console.log(`   Username: ${username}`);
-        if (apiKey) console.log(`   API Key: [PROVIDED]`);
-        if (tokens?.bearerToken) console.log(`   Bearer Token: [PROVIDED]`);
-        if (tokens?.cookies) console.log(`   Cookies: [PROVIDED]`);
-        if (tokens?.customHeaders)
-          console.log(
-            `   Custom Headers: ${Object.keys(tokens.customHeaders).join(", ")}`,
-          );
+        log.info("Delegating to authentication subagent", {
+          target,
+          reason,
+          username: username || undefined,
+          apiKey: apiKey ? "[PROVIDED]" : undefined,
+          bearerToken: tokens?.bearerToken ? "[PROVIDED]" : undefined,
+          cookies: tokens?.cookies ? "[PROVIDED]" : undefined,
+          customHeaders: tokens?.customHeaders
+            ? Object.keys(tokens.customHeaders)
+            : undefined,
+        });
 
         const rawSessionCreds = ctx.session.config?.authCredentials;
         const sessionCreds: AuthCredentials | undefined = rawSessionCreds
@@ -245,36 +248,30 @@ When to use delegate_to_auth_subagent vs authenticate_session:
             : rawSessionCreds
           : undefined;
         if (sessionCreds && !username && !apiKey && !tokens) {
-          console.log(`   [Inheriting session credentials]`);
-          if (sessionCreds.username)
-            console.log(`   Session Username: ${sessionCreds.username}`);
-          if (sessionCreds.apiKey)
-            console.log(`   Session API Key: [PROVIDED]`);
-          if (sessionCreds.tokens?.bearerToken)
-            console.log(`   Session Bearer Token: [PROVIDED]`);
-          if (sessionCreds.tokens?.cookies)
-            console.log(`   Session Cookies: [PROVIDED]`);
-          if (sessionCreds.tokens?.customHeaders)
-            console.log(
-              `   Session Custom Headers: ${Object.keys(
-                sessionCreds.tokens.customHeaders,
-              ).join(", ")}`,
-            );
+          log.debug("Inheriting session credentials", {
+            sessionUsername: sessionCreds.username || undefined,
+            sessionApiKey: sessionCreds.apiKey ? "[PROVIDED]" : undefined,
+            sessionBearerToken: sessionCreds.tokens?.bearerToken
+              ? "[PROVIDED]"
+              : undefined,
+            sessionCookies: sessionCreds.tokens?.cookies
+              ? "[PROVIDED]"
+              : undefined,
+            sessionCustomHeaders: sessionCreds.tokens?.customHeaders
+              ? Object.keys(sessionCreds.tokens.customHeaders)
+              : undefined,
+          });
         }
 
         if (authHints) {
-          console.log(`   Auth Scheme: ${authHints.authScheme || "unknown"}`);
-          console.log(`   CSRF Required: ${authHints.csrfRequired || false}`);
-          console.log(
-            `   Browser Required: ${authHints.browserRequired || false}`,
-          );
-          if (authHints.protectedEndpoints?.length) {
-            console.log(
-              `   Protected Endpoints: ${authHints.protectedEndpoints.join(
-                ", ",
-              )}`,
-            );
-          }
+          log.debug("Auth hints", {
+            authScheme: authHints.authScheme || "unknown",
+            csrfRequired: authHints.csrfRequired || false,
+            browserRequired: authHints.browserRequired || false,
+            protectedEndpoints: authHints.protectedEndpoints?.length
+              ? authHints.protectedEndpoints
+              : undefined,
+          });
         }
 
         const credentials = mergeAuthCredentials(sessionCreds, {

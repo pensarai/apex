@@ -3,6 +3,10 @@ import { join } from "path";
 import { z } from "zod";
 import type { Finding } from "../agents/offSecAgent";
 import { type AIAuthConfig, type AIModel, generateObjectResponse } from "../ai";
+import { createLogger } from "../logger/structured";
+import { scopedLogger } from "../util/lazyLogger";
+
+const log = scopedLogger(() => createLogger("findings:registry"));
 
 // ---------------------------------------------------------------------------
 // Vuln class keyword mappings (order matters — first match wins)
@@ -368,9 +372,7 @@ export class FindingsRegistry {
 
     const files = readdirSync(findingsPath).filter((f) => f.endsWith(".json"));
 
-    console.log(
-      `[FindingsRegistry.fromDirectory] path=${findingsPath}, jsonFiles=${files.length}`,
-    );
+    log.debug(`fromDirectory: path=${findingsPath}, jsonFiles=${files.length}`);
 
     for (const file of files) {
       try {
@@ -382,23 +384,21 @@ export class FindingsRegistry {
           typeof finding.endpoint === "string"
         ) {
           registry.indexFinding(finding);
-          console.log(
-            `[FindingsRegistry.fromDirectory]   indexed: "${finding.title}" endpoint="${finding.endpoint}" (file=${file})`,
+          log.debug(
+            `fromDirectory: indexed "${finding.title}" endpoint="${finding.endpoint}" (file=${file})`,
           );
         } else {
-          console.log(
-            `[FindingsRegistry.fromDirectory]   skipped (missing title/endpoint): file=${file}`,
+          log.debug(
+            `fromDirectory: skipped (missing title/endpoint) file=${file}`,
           );
         }
       } catch {
-        console.log(
-          `[FindingsRegistry.fromDirectory]   skipped (malformed): file=${file}`,
-        );
+        log.debug(`fromDirectory: skipped (malformed) file=${file}`);
       }
     }
 
-    console.log(
-      `[FindingsRegistry.fromDirectory] Registry initialized: ${registry.size} findings indexed`,
+    log.debug(
+      `fromDirectory: registry initialized with ${registry.size} findings indexed`,
     );
 
     return registry;
@@ -467,8 +467,8 @@ export class FindingsRegistry {
    * **not** added to the registry.
    */
   async register(finding: Finding): Promise<DuplicateCheckResult> {
-    console.log(
-      `[FindingsRegistry.register] Checking: "${finding.title}" endpoint="${finding.endpoint}"`,
+    log.debug(
+      `register: checking "${finding.title}" endpoint="${finding.endpoint}"`,
     );
 
     // -- Fast path: Tier 1+2 inside the mutex ----------------------------
@@ -477,19 +477,19 @@ export class FindingsRegistry {
         this.mutex = this.mutex.then(() => {
           const check = this.isDuplicate(finding);
           if (check.duplicate) {
-            console.log(
-              `[FindingsRegistry.register] DUPLICATE (${check.matchType}): "${finding.title}" matched="${check.matchedFinding?.title}"`,
+            log.debug(
+              `register: DUPLICATE (${check.matchType}) "${finding.title}" matched="${check.matchedFinding?.title}"`,
             );
             resolve(check);
           } else if (!this.model || this.findings.length === 0) {
             this.indexFinding(finding);
-            console.log(
-              `[FindingsRegistry.register] UNIQUE (Tier 1+2, no LLM needed): "${finding.title}" — registry size=${this.size}`,
+            log.debug(
+              `register: UNIQUE (Tier 1+2, no LLM needed) "${finding.title}" — registry size=${this.size}`,
             );
             resolve({ duplicate: false });
           } else {
-            console.log(
-              `[FindingsRegistry.register] Tier 1+2 pass — proceeding to Tier 3 LLM check for "${finding.title}"`,
+            log.debug(
+              `register: Tier 1+2 pass — proceeding to Tier 3 LLM check for "${finding.title}"`,
             );
             resolve(null);
           }
@@ -506,14 +506,14 @@ export class FindingsRegistry {
     try {
       semanticResult = await this.semanticDedup(finding, snapshot);
     } catch {
-      console.log(
-        `[FindingsRegistry.register] Tier 3 LLM error for "${finding.title}" — falling back to Tier 1+2 only`,
+      log.warn(
+        `register: Tier 3 LLM error for "${finding.title}" — falling back to Tier 1+2 only`,
       );
     }
 
     if (semanticResult.duplicate) {
-      console.log(
-        `[FindingsRegistry.register] DUPLICATE (semantic/Tier 3): "${finding.title}" matched="${semanticResult.matchedFinding?.title}"`,
+      log.debug(
+        `register: DUPLICATE (semantic/Tier 3) "${finding.title}" matched="${semanticResult.matchedFinding?.title}"`,
       );
       return semanticResult;
     }
@@ -523,14 +523,14 @@ export class FindingsRegistry {
       this.mutex = this.mutex.then(() => {
         const recheck = this.isDuplicate(finding);
         if (recheck.duplicate) {
-          console.log(
-            `[FindingsRegistry.register] DUPLICATE (race re-check, ${recheck.matchType}): "${finding.title}" matched="${recheck.matchedFinding?.title}"`,
+          log.debug(
+            `register: DUPLICATE (race re-check, ${recheck.matchType}) "${finding.title}" matched="${recheck.matchedFinding?.title}"`,
           );
           resolve(recheck);
         } else {
           this.indexFinding(finding);
-          console.log(
-            `[FindingsRegistry.register] UNIQUE (all tiers passed): "${finding.title}" — registry size=${this.size}`,
+          log.debug(
+            `register: UNIQUE (all tiers passed) "${finding.title}" — registry size=${this.size}`,
           );
           resolve({ duplicate: false });
         }
@@ -630,9 +630,7 @@ export class FindingsRegistry {
         abortSignal: this.abortSignal,
       });
     } catch {
-      console.log(
-        `[FindingsRegistry.groupByRootCause] LLM error — skipping root-cause grouping`,
-      );
+      log.warn("groupByRootCause: LLM error — skipping root-cause grouping");
       return [];
     }
 
