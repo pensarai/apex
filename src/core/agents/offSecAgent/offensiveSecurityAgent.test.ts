@@ -318,6 +318,26 @@ describe("OffensiveSecurityAgent.consume()", () => {
       expect(emittedResults).toHaveLength(0);
     });
 
+    it("closes a truncated tool-call (started, args never completed) at finish-step", async () => {
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([
+          { type: "tool-input-start", id: "tc1", toolName: "response" },
+          { type: "finish-step" },
+        ]),
+      });
+
+      const emittedResults: Array<{ toolCallId: string; result: unknown }> = [];
+      agent.eventBus.on("tool-result", (e) => {
+        emittedResults.push({ toolCallId: e.toolCallId, result: e.result });
+      });
+
+      await agent.consume();
+
+      expect(emittedResults).toHaveLength(1);
+      expect(emittedResults[0].toolCallId).toBe("tc1");
+      expect(emittedResults[0].result).toMatchObject({ type: "error-text" });
+    });
+
     it("uses 'Agent aborted by user' when abortSignal is set", async () => {
       const controller = new AbortController();
       controller.abort();

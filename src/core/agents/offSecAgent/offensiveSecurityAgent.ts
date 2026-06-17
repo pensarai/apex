@@ -544,7 +544,11 @@ export class OffensiveSecurityAgent<TResult = void> {
 
       try {
         for await (const chunk of this.streamResult.fullStream) {
-          if (chunk.type === "tool-call") {
+          if (chunk.type === "tool-input-start") {
+            // Track from the start so a truncated call (started, args never
+            // completed) still gets closed and isn't left "running".
+            inFlightTools.set(chunk.id, chunk.toolName);
+          } else if (chunk.type === "tool-call") {
             inFlightTools.set(chunk.toolCallId, chunk.toolName);
           } else if (chunk.type === "tool-result") {
             const tc = chunk as {
@@ -560,6 +564,21 @@ export class OffensiveSecurityAgent<TResult = void> {
               toolName: tc.toolName,
               output: (tc.result ?? tc.output) as ToolResultPart["output"],
             });
+          } else if (chunk.type === "finish-step") {
+            // Close any call that started this step but produced no result
+            // (truncated args) so it doesn't render stuck "running".
+            for (const [toolCallId, toolName] of inFlightTools) {
+              bus.emit("tool-result", {
+                toolCallId,
+                toolName,
+                result: {
+                  type: "error-text",
+                  value: "Tool call did not complete",
+                },
+                subagentId: sid,
+              });
+            }
+            inFlightTools.clear();
           }
           bus.emitStreamPart(chunk, sid);
         }
