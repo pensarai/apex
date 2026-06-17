@@ -225,7 +225,11 @@ function NormalInputAreaInner({
     const echoIdx = emittedRef.current.indexOf(value);
     if (echoIdx !== -1) {
       emittedRef.current.splice(0, echoIdx + 1);
-      return;
+      if (value !== "" || emittedRef.current.length > 0) {
+        return;
+      }
+    } else {
+      emittedRef.current.length = 0;
     }
     if (value !== inputValue) {
       isExternalUpdate.current = true;
