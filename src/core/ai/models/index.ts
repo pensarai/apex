@@ -156,5 +156,16 @@ function lookupOutputBudgetByPattern(modelId: string): number {
     return 8_192;
   }
 
+  // MiniMax M3: match our top-tier Opus output budget (128K) rather than the
+  // model's advertised 512K max, keeping ample input headroom for agentic work.
+  if (modelId.includes("minimax-m3")) {
+    return 128_000;
+  }
+
+  // GLM 5.2 ships a 131.1K (128Ki) max-output window over its 1M context.
+  if (modelId.includes("glm-5.2")) {
+    return 131_072;
+  }
+
   return 4_096;
 }

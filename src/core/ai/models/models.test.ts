@@ -39,6 +39,16 @@ describe("getMaxOutputTokens", () => {
     }
   });
 
+  it("pins MiniMax M3 to the top-tier Opus output budget", () => {
+    // M3 matches our flagship Opus 128K output rather than its advertised
+    // 512K max, leaving input headroom within the 512Ki context window.
+    expect(getMaxOutputTokens("minimax/minimax-m3")).toBe(128_000);
+  });
+
+  it("recognizes GLM 5.2's 131.1K max-output window", () => {
+    expect(getMaxOutputTokens("z-ai/glm-5.2")).toBe(131_072);
+  });
+
   it("recognizes Claude tier-specific budgets", () => {
     expect(getMaxOutputTokens("claude-sonnet-4-5-20250929")).toBe(64_000);
     expect(getMaxOutputTokens("claude-opus-4-5-20250101")).toBe(64_000);
