@@ -334,7 +334,9 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
       },
       setValue: (value: string) => {
         setInputValue(value);
-        textareaRef.current?.setText(value);
+        const ta = textareaRef.current;
+        ta?.setText(value);
+        if (ta) ta.cursorOffset = value.length;
         clearPaste();
       },
       getValue: () => inputValue,
