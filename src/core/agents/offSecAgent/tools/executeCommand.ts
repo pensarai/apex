@@ -188,7 +188,6 @@ async function resolvePromptInjectionEnv(
   if (!payloadFilePath) {
     return {
       library,
-      payloadContent,
       error:
         `Unknown prompt injection id or no payload file path available: ` +
         promptInjection.id,
