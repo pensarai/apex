@@ -36,7 +36,7 @@ describe.skip("Authentication Agent — Cookie Export", () => {
 
       // Session auto-provisions credential manager — password must not be in prompt
       expect(session.credentialManager).toBeDefined();
-      expect(session.credentialManager!.formatForPrompt()).not.toContain(
+      expect(session.credentialManager?.formatForPrompt()).not.toContain(
         password,
       );
 

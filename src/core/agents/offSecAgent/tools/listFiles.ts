@@ -1,6 +1,6 @@
 import { tool } from "ai";
-import { readdir, stat } from "fs/promises";
-import { isAbsolute, join, relative, resolve } from "path";
+import { readdir, stat } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 

@@ -1,7 +1,7 @@
-import { exec as nodeExec } from "child_process";
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import path from "path";
-import { promisify } from "util";
+import { exec as nodeExec } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { promisify } from "node:util";
 
 import {
   detectFlagInArtifacts,

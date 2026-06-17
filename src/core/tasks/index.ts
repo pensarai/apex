@@ -13,8 +13,8 @@
  * - High water mark for ID generation (prevents reuse after deletion)
  */
 
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Types

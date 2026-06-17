@@ -413,7 +413,7 @@ const MAX_IMPACT_CHARS = 2_000;
 
 function truncateField(value: string, limit: number): string {
   if (value.length <= limit) return value;
-  return value.substring(0, limit) + "\n... [truncated]";
+  return `${value.substring(0, limit)}\n... [truncated]`;
 }
 
 function buildScoringPrompt(input: CVSSScorerInput): string {
@@ -521,7 +521,7 @@ function extractContextSummary(messages: Record<string, unknown>[]): string {
     return "No additional context available from testing conversation.\n";
   }
 
-  return contextParts.join("\n") + "\n";
+  return `${contextParts.join("\n")}\n`;
 }
 
 // =============================================================================

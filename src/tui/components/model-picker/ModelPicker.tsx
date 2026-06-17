@@ -220,7 +220,7 @@ export function ModelPicker({
         if (expandedProviders.has("local")) {
           items.push({ type: "local-input", field: "url" });
           items.push({ type: "local-input", field: "model" });
-          const localModels = groupedModels["local"];
+          const localModels = groupedModels.local;
           if (localModels) {
             for (const m of localModels) {
               items.push({ type: "model", model: m });
@@ -570,7 +570,7 @@ export function ModelPicker({
           const isFocused = isProviderFocused(provider);
 
           if (provider === "local") {
-            const localModels = groupedModels["local"];
+            const localModels = groupedModels.local;
             const modelCount = localModels?.length ?? 0;
             const elements: ReactNode[] = [];
 

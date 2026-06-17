@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync } from "fs";
-import fs from "fs/promises";
-import { tmpdir } from "os";
-import path from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import fs from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -113,10 +113,10 @@ describe("memory system", () => {
 
       const fetched = await getMemory("app", created.id);
       expect(fetched).not.toBeNull();
-      expect(fetched!.id).toBe(created.id);
-      expect(fetched!.category).toBe("app");
-      expect(fetched!.content).toBe("<script>alert(1)</script>");
-      expect(fetched!.tags).toEqual(["xss"]);
+      expect(fetched?.id).toBe(created.id);
+      expect(fetched?.category).toBe("app");
+      expect(fetched?.content).toBe("<script>alert(1)</script>");
+      expect(fetched?.tags).toEqual(["xss"]);
     });
 
     it("returns null for a non-existent id", async () => {
@@ -194,11 +194,11 @@ describe("memory system", () => {
 
       const appOnly = await listMemories({ category: "app" });
       expect(appOnly).toHaveLength(1);
-      expect(appOnly[0]!.category).toBe("app");
+      expect(appOnly[0]?.category).toBe("app");
 
       const fwOnly = await listMemories({ category: "framework" });
       expect(fwOnly).toHaveLength(1);
-      expect(fwOnly[0]!.category).toBe("framework");
+      expect(fwOnly[0]?.category).toBe("framework");
     });
 
     it("filters by tag", async () => {
@@ -211,7 +211,7 @@ describe("memory system", () => {
 
       const filtered = await listMemories({ tag: "important" });
       expect(filtered).toHaveLength(1);
-      expect(filtered[0]!.title).toBe("Tagged");
+      expect(filtered[0]?.title).toBe("Tagged");
     });
 
     it("combines category and tag filters", async () => {
@@ -235,7 +235,7 @@ describe("memory system", () => {
 
       const result = await listMemories({ category: "app", tag: "vuln" });
       expect(result).toHaveLength(1);
-      expect(result[0]!.title).toBe("App tagged");
+      expect(result[0]?.title).toBe("App tagged");
     });
 
     it("includes category in summaries", async () => {
@@ -246,7 +246,7 @@ describe("memory system", () => {
       });
 
       const list = await listMemories();
-      expect(list[0]!.category).toBe("framework");
+      expect(list[0]?.category).toBe("framework");
       expect(list[0]).not.toHaveProperty("content");
     });
 
@@ -257,8 +257,8 @@ describe("memory system", () => {
 
       const list = await listMemories();
       expect(list).toHaveLength(2);
-      expect(list[0]!.title).toBe("Newer");
-      expect(list[1]!.title).toBe("Older");
+      expect(list[0]?.title).toBe("Newer");
+      expect(list[1]?.title).toBe("Older");
     });
   });
 
@@ -284,7 +284,7 @@ describe("memory system", () => {
       // Verify it can be retrieved
       const fetched = await getMemory("app", "pk-abc123");
       expect(fetched).not.toBeNull();
-      expect(fetched!.content).toBe("The /health endpoint always returns 200");
+      expect(fetched?.content).toBe("The /health endpoint always returns 200");
     });
 
     it("overwrites an existing memory preserving createdAt", async () => {

@@ -7,8 +7,8 @@
  */
 
 import type { ModelMessage, ToolSet } from "ai";
-import { mkdirSync, writeFileSync } from "fs";
-import { join } from "path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * Truncate `text` so the returned string fits in **at most** `max` chars,
@@ -156,7 +156,7 @@ export function applyToolResultBudget(
       // another shot at it.
       if (newValue.length >= text.length) return part;
 
-      if (!persistedIds || !persistedIds.has(toolCallId)) {
+      if (!persistedIds?.has(toolCallId)) {
         // If this entry already carried a truncation tail, the full
         // output was persisted by an earlier pass — `text` is just the
         // preview, so writing it back would clobber the disk file with
@@ -214,7 +214,7 @@ function snipOldSteps(
   let stepCount = 0;
   let cutoffIdx = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]!.role === "assistant") {
+    if (messages[i]?.role === "assistant") {
       stepCount++;
       if (stepCount === keepRecent) {
         cutoffIdx = i;

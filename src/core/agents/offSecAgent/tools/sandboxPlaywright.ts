@@ -19,8 +19,8 @@
  */
 
 import { tool } from "ai";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import {
   resolveEffectiveHeaders,

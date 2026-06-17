@@ -1,6 +1,6 @@
-import type { Dirent } from "fs";
-import fs from "fs/promises";
-import path from "path";
+import type { Dirent } from "node:fs";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { parseSkillMd } from "./parser";
 import type { SkillEntry, SkillScript, SkillSource } from "./types";
 import {

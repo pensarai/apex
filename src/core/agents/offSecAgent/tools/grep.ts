@@ -1,5 +1,5 @@
 import { tool } from "ai";
-import { spawn } from "child_process";
+import { spawn } from "node:child_process";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 
@@ -96,7 +96,7 @@ search with flags or a more specific directory if results are truncated.`,
             once: true,
           });
           abortCleanup = () =>
-            ctx.abortSignal!.removeEventListener("abort", abortHandler);
+            ctx.abortSignal?.removeEventListener("abort", abortHandler);
         }
 
         const safeResolve = (result: GrepResult) => {

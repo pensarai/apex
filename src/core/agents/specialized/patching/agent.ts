@@ -1,5 +1,5 @@
-import { readFileSync } from "fs";
-import { join } from "path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { OffensiveSecurityAgent } from "../../offSecAgent";
 import { buildPatchingPrompt, buildSystemPrompt } from "./prompts";
 import {
@@ -25,7 +25,7 @@ function readAgentsMd(cwd: string): string | undefined {
     try {
       const content = readFileSync(join(cwd, name), "utf-8");
       if (content.length > MAX_AGENTS_MD_SIZE) {
-        return content.slice(0, MAX_AGENTS_MD_SIZE) + "\n\n(truncated)";
+        return `${content.slice(0, MAX_AGENTS_MD_SIZE)}\n\n(truncated)`;
       }
       return content;
     } catch {

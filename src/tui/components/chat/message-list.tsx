@@ -31,7 +31,7 @@ const SUBAGENT_TOOLS = new Set([
  * Determine loading state based on message context
  */
 function getLoadingState(
-  messages: DisplayMessage[],
+  _messages: DisplayMessage[],
   hasPendingTool: boolean,
   isLastAssistant: boolean,
   pendingToolName: string | null,

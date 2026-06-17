@@ -61,7 +61,7 @@ describe("httpRequest prompt injection refs", () => {
     );
 
     const tool = httpRequest(makeCtx({ promptInjectionLibrary: TEST_LIBRARY }));
-    const result = (await tool.execute!(
+    const result = (await tool.execute?.(
       {
         url: "https://example.com/chat",
         method: "POST",
@@ -92,7 +92,7 @@ describe("httpRequest prompt injection refs", () => {
     );
 
     const tool = httpRequest(makeCtx({ promptInjectionLibrary: TEST_LIBRARY }));
-    await tool.execute!(
+    await tool.execute?.(
       {
         url: "https://example.com/chat",
         method: "POST",

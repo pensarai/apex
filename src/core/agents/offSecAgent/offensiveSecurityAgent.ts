@@ -6,9 +6,9 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import { existsSync, mkdirSync } from "fs";
-import { writeFile } from "fs/promises";
-import { join } from "path";
+import { existsSync, mkdirSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { streamResponse } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
 import {

@@ -61,8 +61,8 @@ function truncateToLines(
         current = word;
       }
       i++;
-    } else if ((current + " " + word).length <= lineWidth) {
-      current += " " + word;
+    } else if ((`${current} ${word}`).length <= lineWidth) {
+      current += ` ${word}`;
       i++;
     } else {
       lines.push(current);
@@ -78,8 +78,8 @@ function truncateToLines(
     const last = lines[lines.length - 1];
     lines[lines.length - 1] =
       last.length < lineWidth
-        ? last + "\u2026"
-        : last.slice(0, lineWidth - 1) + "\u2026";
+        ? `${last}\u2026`
+        : `${last.slice(0, lineWidth - 1)}\u2026`;
   }
 
   return lines.join("\n");
@@ -439,7 +439,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
         // Append trailing space after option completions for UX
         const completedValue =
           optCtx && !slashCtx
-            ? tabResult.acceptedValue + " "
+            ? `${tabResult.acceptedValue} `
             : tabResult.acceptedValue;
         const { newText, cursorOffset } = computeInlineCompletion(
           text,

@@ -13,8 +13,8 @@ import {
   readFileSync,
   statSync,
   writeFileSync,
-} from "fs";
-import { join } from "path";
+} from "node:fs";
+import { join } from "node:path";
 import { createLogger } from "../logger/structured";
 import { scopedLogger } from "../util/lazyLogger";
 import type { SessionInfo } from "./index";

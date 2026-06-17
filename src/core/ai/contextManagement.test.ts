@@ -1,7 +1,7 @@
 import type { ModelMessage, ToolSet } from "ai";
-import { mkdtempSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -122,7 +122,7 @@ describe("truncateWithMarker", () => {
     const out = truncateWithMarker(text, 100);
     const m = out.match(/…\[truncated (\d+) chars\]$/);
     expect(m).not.toBeNull();
-    const dropped = Number(m![1]);
+    const dropped = Number(m?.[1]);
     // sliceLen is at most ~75 (100 - widestMarker(~25)), so dropped ≥ 9925.
     expect(dropped).toBeGreaterThanOrEqual(10_000 - 100);
     expect(dropped).toBeLessThan(10_000);
@@ -186,7 +186,7 @@ describe("applyToolResultBudget", () => {
         persistedIds,
       });
       const value = (
-        (current[1]!.content as Array<Record<string, unknown>>)[0]!.output as {
+        (current[1]?.content as Array<Record<string, unknown>>)[0]?.output as {
           value: string;
         }
       ).value;
@@ -226,14 +226,14 @@ describe("applyToolResultBudget", () => {
       persistedIds,
     });
     const pass1Value = (
-      (afterPass1[1]!.content as Array<Record<string, unknown>>)[0]!.output as {
+      (afterPass1[1]?.content as Array<Record<string, unknown>>)[0]?.output as {
         value: string;
       }
     ).value;
     expect(pass1Value).toMatch(/truncated 48000 chars/);
     const pass1FilePath = pass1Value.match(
       /full output saved to (.+?)\]$/,
-    )![1]!;
+    )?.[1]!;
 
     const afterPass2 = applyToolResultBudget(afterPass1, {
       sessionPath,
@@ -241,7 +241,7 @@ describe("applyToolResultBudget", () => {
       persistedIds,
     });
     const pass2Value = (
-      (afterPass2[1]!.content as Array<Record<string, unknown>>)[0]!.output as {
+      (afterPass2[1]?.content as Array<Record<string, unknown>>)[0]?.output as {
         value: string;
       }
     ).value;

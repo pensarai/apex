@@ -294,7 +294,7 @@ export default function WebWizard({
           allowedHosts: state.scope.allowedHosts,
           allowedPorts: state.scope.allowedPorts
             .map((p) => parseInt(p, 10))
-            .filter((p) => !isNaN(p)),
+            .filter((p) => !Number.isNaN(p)),
           strictScope: state.scope.strictScope,
         };
       }

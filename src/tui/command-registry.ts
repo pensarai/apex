@@ -382,7 +382,7 @@ export const commands: CommandConfig[] = [
     name: "new",
     description: "Start a new operator session",
     category: "Pentesting",
-    handler: async (args, ctx) => {
+    handler: async (_args, ctx) => {
       ctx.navigate({ type: "operator", nonce: Date.now() });
     },
   },
@@ -393,7 +393,7 @@ export const commands: CommandConfig[] = [
     aliases: ["auth"],
     description: "Connect to Pensar Console for managed inference",
     category: "Configuration",
-    handler: async (args, ctx) => {
+    handler: async (_args, ctx) => {
       ctx.openAuthDialog?.();
     },
   },
@@ -402,7 +402,7 @@ export const commands: CommandConfig[] = [
     aliases: ["buy"],
     description: "Buy credits / check balance",
     category: "Configuration",
-    handler: async (args, ctx) => {
+    handler: async (_args, ctx) => {
       ctx.openCreditsDialog?.();
     },
   },
@@ -410,7 +410,7 @@ export const commands: CommandConfig[] = [
     name: "models",
     description: "Show available AI models",
     category: "Configuration",
-    handler: async (args, ctx) => {
+    handler: async (_args, ctx) => {
       ctx.openModelDialog?.();
     },
   },
@@ -418,7 +418,7 @@ export const commands: CommandConfig[] = [
     name: "providers",
     description: "Manage AI providers and API keys",
     category: "Configuration",
-    handler: async (args, ctx) => {
+    handler: async (_args, ctx) => {
       ctx.openProvidersDialog?.();
     },
   },
@@ -526,7 +526,7 @@ export const commands: CommandConfig[] = [
     name: "help",
     description: "Show help dialog",
     category: "General",
-    handler: async (args, ctx) => {
+    handler: async (_args, ctx) => {
       ctx.openHelpDialog?.();
     },
   },
@@ -556,7 +556,7 @@ export const commands: CommandConfig[] = [
     description: "View and manage active tools (session only)",
     category: "General",
     hidden: true,
-    handler: async (args, ctx) => {
+    handler: async (_args, ctx) => {
       // This command is handled by the session view when in a session
       // From home, it does nothing - tools panel only works in session context
       if (ctx.route.type !== "operator") {

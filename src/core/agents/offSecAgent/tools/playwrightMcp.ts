@@ -11,9 +11,9 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { tool } from "ai";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { createRequire } from "module";
-import { dirname, join } from "path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import type { Logger } from "../../../logger";
 import {
@@ -494,8 +494,8 @@ export class PlaywrightMcpSession {
         }
         const camou = this.cachedCamouOptions;
 
-        const os = await import("os");
-        const fsp = await import("fs/promises");
+        const os = await import("node:os");
+        const fsp = await import("node:fs/promises");
         const cfg = {
           browser: {
             browserName: "firefox",

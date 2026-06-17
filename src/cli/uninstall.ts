@@ -12,11 +12,11 @@
  *   pensar uninstall --force      Uninstall without confirmation prompt
  */
 
-import { spawnSync } from "child_process";
-import fs from "fs/promises";
-import os from "os";
-import path from "path";
-import * as readline from "readline";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import * as readline from "node:readline";
 import {
   detectInstallMethod,
   type InstallMethod,
@@ -51,7 +51,7 @@ function findBinaryPath(): string | null {
       ?.replace(/\.exe$/, "") ?? "";
   const isCompiledBinary =
     execName !== "bun" && execName !== "node" && execName !== "bun-debug";
-  if (isCompiledBinary && require("fs").existsSync(process.execPath)) {
+  if (isCompiledBinary && require("node:fs").existsSync(process.execPath)) {
     return process.execPath;
   }
 
@@ -64,7 +64,7 @@ function findBinaryPath(): string | null {
   }
   const defaultPath = path.join(os.homedir(), ".local", "bin", "pensar");
   try {
-    const stat = require("fs").statSync(defaultPath);
+    const stat = require("node:fs").statSync(defaultPath);
     if (stat) return defaultPath;
   } catch {
     // not found
@@ -128,7 +128,7 @@ function removeBinary(method: InstallMethod): {
         };
       }
       try {
-        require("fs").unlinkSync(binPath);
+        require("node:fs").unlinkSync(binPath);
         return { success: true, message: `Removed binary at ${binPath}` };
       } catch (err) {
         return {

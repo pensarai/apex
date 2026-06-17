@@ -18,7 +18,7 @@
  */
 
 import { tool } from "ai";
-import { join } from "path";
+import { join } from "node:path";
 import { z } from "zod";
 import { createBrowserTools } from "./playwrightMcp";
 import { createSandboxBrowserTools } from "./sandboxPlaywright";
@@ -170,7 +170,7 @@ export function createBrowserToolset(ctx: ToolContext) {
         };
       }
 
-      return originalFill.execute!(
+      return originalFill.execute?.(
         { element, ref, value, toolCallDescription },
         { toolCallId: "", messages: [], abortSignal: undefined as never },
       );

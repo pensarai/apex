@@ -38,16 +38,16 @@ describe("computeUpArrow", () => {
       const state: NavState = { historyIndex: -1, selectedSuggestionIndex: 0 };
       const result = computeUpArrow(state, history, 3);
       expect(result).not.toBeNull();
-      expect(result!.nextState.selectedSuggestionIndex).toBe(-1);
-      expect(result!.textToSet).toBeNull();
+      expect(result?.nextState.selectedSuggestionIndex).toBe(-1);
+      expect(result?.textToSet).toBeNull();
     });
 
     it("moves up within suggestion list", () => {
       const state: NavState = { historyIndex: -1, selectedSuggestionIndex: 2 };
       const result = computeUpArrow(state, history, 3);
       expect(result).not.toBeNull();
-      expect(result!.nextState.selectedSuggestionIndex).toBe(1);
-      expect(result!.textToSet).toBeNull();
+      expect(result?.nextState.selectedSuggestionIndex).toBe(1);
+      expect(result?.textToSet).toBeNull();
     });
   });
 
@@ -67,9 +67,9 @@ describe("computeUpArrow", () => {
       };
       const result = computeUpArrow(state, history, 0);
       expect(result).not.toBeNull();
-      expect(result!.nextState.historyIndex).toBe(0);
-      expect(result!.textToSet).toBe("third cmd");
-      expect(result!.saveCurrentInput).toBe(true);
+      expect(result?.nextState.historyIndex).toBe(0);
+      expect(result?.textToSet).toBe("third cmd");
+      expect(result?.saveCurrentInput).toBe(true);
     });
 
     it("navigates up through history entries", () => {
@@ -79,9 +79,9 @@ describe("computeUpArrow", () => {
       };
       const result = computeUpArrow(state, history, 0);
       expect(result).not.toBeNull();
-      expect(result!.nextState.historyIndex).toBe(1);
-      expect(result!.textToSet).toBe("second cmd");
-      expect(result!.saveCurrentInput).toBe(false);
+      expect(result?.nextState.historyIndex).toBe(1);
+      expect(result?.textToSet).toBe("second cmd");
+      expect(result?.saveCurrentInput).toBe(false);
     });
 
     it("clamps at the oldest history entry", () => {
@@ -91,8 +91,8 @@ describe("computeUpArrow", () => {
       };
       const result = computeUpArrow(state, history, 0);
       expect(result).not.toBeNull();
-      expect(result!.nextState.historyIndex).toBe(2);
-      expect(result!.textToSet).toBe("first cmd");
+      expect(result?.nextState.historyIndex).toBe(2);
+      expect(result?.textToSet).toBe("first cmd");
     });
 
     it("marks saveCurrentInput only when entering history from -1", () => {
@@ -100,13 +100,13 @@ describe("computeUpArrow", () => {
         historyIndex: 0,
         selectedSuggestionIndex: -1,
       };
-      expect(computeUpArrow(from0, history, 0)!.saveCurrentInput).toBe(false);
+      expect(computeUpArrow(from0, history, 0)?.saveCurrentInput).toBe(false);
 
       const fromNeg: NavState = {
         historyIndex: -1,
         selectedSuggestionIndex: -1,
       };
-      expect(computeUpArrow(fromNeg, history, 0)!.saveCurrentInput).toBe(true);
+      expect(computeUpArrow(fromNeg, history, 0)?.saveCurrentInput).toBe(true);
     });
   });
 });
@@ -121,15 +121,15 @@ describe("computeDownArrow", () => {
       const state: NavState = { historyIndex: -1, selectedSuggestionIndex: 0 };
       const result = computeDownArrow(state, history, 3, "");
       expect(result).not.toBeNull();
-      expect(result!.nextState.selectedSuggestionIndex).toBe(1);
-      expect(result!.textToSet).toBeNull();
+      expect(result?.nextState.selectedSuggestionIndex).toBe(1);
+      expect(result?.textToSet).toBeNull();
     });
 
     it("clamps at the last suggestion", () => {
       const state: NavState = { historyIndex: -1, selectedSuggestionIndex: 2 };
       const result = computeDownArrow(state, history, 3, "");
       expect(result).not.toBeNull();
-      expect(result!.nextState.selectedSuggestionIndex).toBe(2);
+      expect(result?.nextState.selectedSuggestionIndex).toBe(2);
     });
   });
 
@@ -138,16 +138,16 @@ describe("computeDownArrow", () => {
       const state: NavState = { historyIndex: -1, selectedSuggestionIndex: 0 };
       const result = computeDownArrow(state, history, 1, "saved");
       expect(result).not.toBeNull();
-      expect(result!.nextState.selectedSuggestionIndex).toBe(-1);
+      expect(result?.nextState.selectedSuggestionIndex).toBe(-1);
     });
 
     it("exits autocomplete to history navigation when browsing history", () => {
       const state: NavState = { historyIndex: 1, selectedSuggestionIndex: 0 };
       const result = computeDownArrow(state, history, 1, "saved");
       expect(result).not.toBeNull();
-      expect(result!.nextState.selectedSuggestionIndex).toBe(-1);
-      expect(result!.nextState.historyIndex).toBe(0);
-      expect(result!.textToSet).toBe("third cmd");
+      expect(result?.nextState.selectedSuggestionIndex).toBe(-1);
+      expect(result?.nextState.historyIndex).toBe(0);
+      expect(result?.textToSet).toBe("third cmd");
     });
   });
 
@@ -159,7 +159,7 @@ describe("computeDownArrow", () => {
       };
       const result = computeDownArrow(state, [], 3, "");
       expect(result).not.toBeNull();
-      expect(result!.nextState.selectedSuggestionIndex).toBe(0);
+      expect(result?.nextState.selectedSuggestionIndex).toBe(0);
     });
 
     it("returns null when single or no suggestions", () => {
@@ -180,8 +180,8 @@ describe("computeDownArrow", () => {
       };
       const result = computeDownArrow(state, history, 0, "saved");
       expect(result).not.toBeNull();
-      expect(result!.nextState.historyIndex).toBe(1);
-      expect(result!.textToSet).toBe("second cmd");
+      expect(result?.nextState.historyIndex).toBe(1);
+      expect(result?.textToSet).toBe("second cmd");
     });
 
     it("restores saved input when reaching bottom of history", () => {
@@ -191,8 +191,8 @@ describe("computeDownArrow", () => {
       };
       const result = computeDownArrow(state, history, 0, "my saved input");
       expect(result).not.toBeNull();
-      expect(result!.nextState.historyIndex).toBe(-1);
-      expect(result!.textToSet).toBe("my saved input");
+      expect(result?.nextState.historyIndex).toBe(-1);
+      expect(result?.textToSet).toBe("my saved input");
     });
 
     it("already at current input, overflows into autocomplete when multiple suggestions", () => {
@@ -202,9 +202,9 @@ describe("computeDownArrow", () => {
       };
       const result = computeDownArrow(state, history, 3, "saved");
       expect(result).not.toBeNull();
-      expect(result!.nextState.historyIndex).toBe(-1);
-      expect(result!.nextState.selectedSuggestionIndex).toBe(0);
-      expect(result!.textToSet).toBe("saved");
+      expect(result?.nextState.historyIndex).toBe(-1);
+      expect(result?.nextState.selectedSuggestionIndex).toBe(0);
+      expect(result?.textToSet).toBe("saved");
     });
 
     it("already at current input, does not overflow with single suggestion", () => {
@@ -214,7 +214,7 @@ describe("computeDownArrow", () => {
       };
       const result = computeDownArrow(state, history, 1, "saved");
       expect(result).not.toBeNull();
-      expect(result!.nextState.selectedSuggestionIndex).toBe(-1);
+      expect(result?.nextState.selectedSuggestionIndex).toBe(-1);
     });
   });
 });
@@ -231,22 +231,22 @@ describe("computeTab", () => {
   it("accepts the highlighted suggestion", () => {
     const result = computeTab(options, 2);
     expect(result).not.toBeNull();
-    expect(result!.acceptedValue).toBe("/help");
-    expect(result!.selectedSuggestionIndex).toBe(-1);
+    expect(result?.acceptedValue).toBe("/help");
+    expect(result?.selectedSuggestionIndex).toBe(-1);
   });
 
   it("selects first suggestion when none is highlighted", () => {
     const result = computeTab(options, -1);
     expect(result).not.toBeNull();
-    expect(result!.acceptedValue).toBeNull();
-    expect(result!.selectedSuggestionIndex).toBe(0);
+    expect(result?.acceptedValue).toBeNull();
+    expect(result?.selectedSuggestionIndex).toBe(0);
   });
 
   it("selects first suggestion when index is out of bounds", () => {
     const result = computeTab(options, 999);
     expect(result).not.toBeNull();
-    expect(result!.acceptedValue).toBeNull();
-    expect(result!.selectedSuggestionIndex).toBe(0);
+    expect(result?.acceptedValue).toBeNull();
+    expect(result?.selectedSuggestionIndex).toBe(0);
   });
 });
 

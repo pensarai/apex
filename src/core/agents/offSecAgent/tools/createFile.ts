@@ -1,7 +1,7 @@
 import { tool } from "ai";
-import { existsSync } from "fs";
-import { mkdir, writeFile } from "fs/promises";
-import { dirname, isAbsolute, resolve } from "path";
+import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
@@ -113,7 +113,7 @@ async function executeSandboxCreate(
 ): Promise<CreateFileResult> {
   try {
     if (!overwrite) {
-      const checkResult = await ctx.sandbox!.execute(`test -e "${filePath}"`);
+      const checkResult = await ctx.sandbox?.execute(`test -e "${filePath}"`);
       if (checkResult.exitCode === 0) {
         return {
           success: false,
@@ -124,10 +124,10 @@ async function executeSandboxCreate(
     }
 
     const dirPath = dirname(filePath);
-    await ctx.sandbox!.execute(`mkdir -p "${dirPath}"`);
+    await ctx.sandbox?.execute(`mkdir -p "${dirPath}"`);
 
     const base64Content = Buffer.from(content).toString("base64");
-    const writeResult = await ctx.sandbox!.execute(
+    const writeResult = await ctx.sandbox?.execute(
       `echo "${base64Content}" | base64 -d > "${filePath}"`,
     );
 

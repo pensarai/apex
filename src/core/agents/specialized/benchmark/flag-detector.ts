@@ -1,8 +1,8 @@
-import crypto from "crypto";
-import { existsSync } from "fs";
-import fs from "fs/promises";
+import crypto from "node:crypto";
+import { existsSync } from "node:fs";
+import fs from "node:fs/promises";
 import { glob } from "glob";
-import path from "path";
+import path from "node:path";
 import yaml from "yaml";
 import type { FlagDetectionResult, FlagLocation } from "./types";
 
@@ -70,7 +70,7 @@ function findFlagInContent(
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (line && line.includes(flag)) {
+    if (line?.includes(flag)) {
       // Get context: the line itself, trimmed if too long
       let context = line.trim();
       if (context.length > 200) {
@@ -386,7 +386,7 @@ function extractFlagFromContent(
 
   for (const pattern of envPatterns) {
     const match = content.match(pattern);
-    if (match && match[1]) {
+    if (match?.[1]) {
       return match[1].trim();
     }
   }
@@ -439,7 +439,7 @@ function extractFlagFromContent(
 
   for (const pattern of jsonPatterns) {
     const match = content.match(pattern);
-    if (match && match[1]) {
+    if (match?.[1]) {
       return match[1].trim();
     }
   }
@@ -454,7 +454,7 @@ function extractFlagFromContent(
 
   for (const pattern of varPatterns) {
     const match = content.match(pattern);
-    if (match && match[1]) {
+    if (match?.[1]) {
       return match[1].trim();
     }
   }
@@ -471,7 +471,7 @@ function extractFlagFromContent(
 
     for (const pattern of readmePatterns) {
       const match = content.match(pattern);
-      if (match && match[1]) {
+      if (match?.[1]) {
         return match[1].trim();
       }
     }

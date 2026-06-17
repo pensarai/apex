@@ -1,6 +1,6 @@
 import { tool } from "ai";
-import { writeFileSync } from "fs";
-import { join } from "path";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import { targetFetch } from "../../../http/targetHeaders";
 import { resolverSessionFromCtx } from "./scopeGuard";

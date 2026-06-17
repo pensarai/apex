@@ -73,7 +73,7 @@ describe("listPromptInjections", () => {
     const tool = listPromptInjections(
       makeCtx({ promptInjectionLibrary: TEST_LIBRARY }),
     );
-    const result = (await tool.execute!(
+    const result = (await tool.execute?.(
       { toolCallDescription: "List prompt injection tests" },
       { toolCallId: "tc_test", messages: [], abortSignal: undefined },
     )) as ListPromptInjectionsResult;
@@ -94,7 +94,7 @@ describe("listPromptInjections", () => {
     const tool = listPromptInjections(
       makeCtx({ promptInjectionLibrary: TEST_LIBRARY }),
     );
-    const result = (await tool.execute!(
+    const result = (await tool.execute?.(
       {
         category: "encoding",
         tag: "delimiter",
@@ -113,7 +113,7 @@ describe("listPromptInjections", () => {
     delete process.env.APEX_PROMPT_INJECTION_LIBRARY;
 
     const tool = listPromptInjections(makeCtx());
-    const result = (await tool.execute!(
+    const result = (await tool.execute?.(
       { toolCallDescription: "List prompt injection tests" },
       { toolCallId: "tc_test", messages: [], abortSignal: undefined },
     )) as ListPromptInjectionsResult;

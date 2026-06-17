@@ -1,5 +1,5 @@
-import { randomBytes } from "crypto";
-import { EventEmitter } from "events";
+import { randomBytes } from "node:crypto";
+import { EventEmitter } from "node:events";
 import type {
   ActionHistoryEntry,
   ApprovalDecision,

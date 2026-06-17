@@ -68,7 +68,7 @@ function formatResult(result: unknown, maxLength: number = 2000): string {
   try {
     const str = JSON.stringify(result, null, 2);
     if (str.length > maxLength) {
-      return str.substring(0, maxLength) + "\n... (truncated)";
+      return `${str.substring(0, maxLength)}\n... (truncated)`;
     }
     return str;
   } catch {
@@ -92,9 +92,9 @@ export function extractStreamableContent(
   // document_vulnerability — combine the key narrative fields
   if (typeof args.description === "string") {
     let text = args.description;
-    if (typeof args.evidence === "string") text += "\n\n" + args.evidence;
-    if (typeof args.impact === "string") text += "\n\n" + args.impact;
-    if (typeof args.remediation === "string") text += "\n\n" + args.remediation;
+    if (typeof args.evidence === "string") text += `\n\n${args.evidence}`;
+    if (typeof args.impact === "string") text += `\n\n${args.impact}`;
+    if (typeof args.remediation === "string") text += `\n\n${args.remediation}`;
     return text;
   }
   // add_memory — stream the title + content as it arrives
@@ -114,7 +114,7 @@ export function extractStreamableContent(
 export function tryParsePartialJson(
   text: string,
 ): Record<string, unknown> | null {
-  if (!text || !text.trimStart().startsWith("{")) return null;
+  if (!text?.trimStart().startsWith("{")) return null;
 
   try {
     const result = JSON.parse(text);

@@ -1,6 +1,6 @@
-import fs from "fs/promises";
-import os from "os";
-import path from "path";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { scanSkillRoots } from "./scanner";
 
@@ -43,10 +43,10 @@ describe("scanSkillRoots", () => {
     const found = entries.find((e) => e.slug === `${TEST_PREFIX}dir-skill`);
 
     expect(found).toBeDefined();
-    expect(found!.source).toBe("user");
-    expect(found!.manifest.name).toBe("Dir Skill");
-    expect(found!.manifest.tags).toEqual(["web"]);
-    expect(found!.dirPath).toBe(dirPath);
+    expect(found?.source).toBe("user");
+    expect(found?.manifest.name).toBe("Dir Skill");
+    expect(found?.manifest.tags).toEqual(["web"]);
+    expect(found?.dirPath).toBe(dirPath);
   });
 
   it("discovers scripts in the scripts/ subdirectory", async () => {
@@ -64,8 +64,8 @@ describe("scanSkillRoots", () => {
     const found = entries.find((e) => e.slug === `${TEST_PREFIX}scripted`);
 
     expect(found).toBeDefined();
-    expect(found!.scripts).toHaveLength(1);
-    expect(found!.scripts[0].name).toBe("run.sh");
+    expect(found?.scripts).toHaveLength(1);
+    expect(found?.scripts[0].name).toBe("run.sh");
   });
 
   it("scans project-level skills directories with source 'project'", async () => {
@@ -85,8 +85,8 @@ describe("scanSkillRoots", () => {
     const found = entries.find((e) => e.slug === `${TEST_PREFIX}proj`);
 
     expect(found).toBeDefined();
-    expect(found!.source).toBe("project");
-    expect(found!.manifest.name).toBe("Project Skill");
+    expect(found?.source).toBe("project");
+    expect(found?.manifest.name).toBe("Project Skill");
   });
 
   it("project skills take priority over user skills with same slug (first-wins)", async () => {
@@ -121,8 +121,8 @@ describe("scanSkillRoots", () => {
 
     expect(found).toBeDefined();
     // Project should win since it's scanned first (first-write-wins)
-    expect(found!.source).toBe("project");
-    expect(found!.manifest.description).toBe("Project version");
+    expect(found?.source).toBe("project");
+    expect(found?.manifest.description).toBe("Project version");
   });
 
   it("returns empty array when no skills exist", async () => {

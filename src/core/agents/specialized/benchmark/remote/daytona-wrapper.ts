@@ -1,7 +1,7 @@
 import { Daytona, type Sandbox } from "@daytonaio/sdk";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import pLimit from "p-limit";
-import path from "path";
+import path from "node:path";
 import type { AIModel } from "../../../../ai";
 import { CircuitBreaker } from "./circuit-breaker";
 
@@ -270,7 +270,7 @@ async function runSingleBranchBenchmark(
     // Truncate very long error messages (e.g., HTML error pages)
     const truncatedMessage =
       message.length > 500
-        ? message.substring(0, 500) + "... (truncated)"
+        ? `${message.substring(0, 500)}... (truncated)`
         : message;
     const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
     console.error(
@@ -393,7 +393,7 @@ export async function runBenchmarkInDaytona(
   );
   const totalTokens = results.reduce((sum, r) => sum + (r.totalTokens ?? 0), 0);
 
-  console.log("\n" + "=".repeat(80));
+  console.log(`\n${"=".repeat(80)}`);
   console.log("📊 PARALLEL BENCHMARK SUMMARY");
   console.log("=".repeat(80));
   console.log(`Total Duration: ${totalDuration}m`);
@@ -511,7 +511,7 @@ async function installDocker(sandbox: Sandbox, branch?: string): Promise<void> {
   if (installResult.result) {
     const output = installResult.result.trim();
     const preview =
-      output.length > 500 ? output.substring(0, 500) + "..." : output;
+      output.length > 500 ? `${output.substring(0, 500)}...` : output;
     console.log(`${prefix}Docker install output: ${preview}`);
   }
 
@@ -685,7 +685,7 @@ async function downloadResults(
   }
 
   // Get the most recent session (last in array)
-  const sessionDir = files[files.length - 1]!.name;
+  const sessionDir = files[files.length - 1]?.name;
 
   console.log(`${prefix}Downloading session: ${sessionDir}`);
 
@@ -723,7 +723,7 @@ async function downloadResults(
   let findingsCount = 0;
   if (existsSync(findingsDir)) {
     try {
-      const findingFiles = await import("fs/promises").then((fs) =>
+      const findingFiles = await import("node:fs/promises").then((fs) =>
         fs.readdir(findingsDir),
       );
       findingsCount = findingFiles.filter((f) => f.endsWith(".json")).length;

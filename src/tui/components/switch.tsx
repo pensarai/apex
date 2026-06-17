@@ -23,13 +23,13 @@ const DefaultSymbol = Symbol("Switch.Default");
 function CaseComponent<T extends string>({
   children,
 }: CaseProps<T>): ReactElement {
-  return (<>{children}</>) as ReactElement;
+  return (children) as ReactElement;
 }
 (CaseComponent as unknown as Record<symbol, boolean>)[CaseSymbol] = true;
 
 // Default component
 function DefaultComponent({ children }: DefaultProps): ReactElement {
-  return (<>{children}</>) as ReactElement;
+  return (children) as ReactElement;
 }
 (DefaultComponent as unknown as Record<symbol, boolean>)[DefaultSymbol] = true;
 
@@ -56,7 +56,7 @@ function SwitchComponent<T extends string>({
     }
   });
 
-  return (<>{matchedChild || defaultChild}</>) as ReactElement;
+  return (matchedChild || defaultChild) as ReactElement;
 }
 
 // Helper function that creates a typed Switch with bound Case component

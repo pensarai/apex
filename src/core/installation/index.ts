@@ -1,4 +1,4 @@
-import { spawnSync } from "child_process";
+import { spawnSync } from "node:child_process";
 import packageJson from "../../../package.json";
 
 export type InstallMethod = "npm" | "homebrew" | "binary";
@@ -11,7 +11,7 @@ export interface UpgradeResult {
 }
 
 export async function resolveVersion(): Promise<string> {
-  if (process.env["APEX_VERSION"]) return process.env["APEX_VERSION"];
+  if (process.env.APEX_VERSION) return process.env.APEX_VERSION;
   return getLatestVersion();
 }
 

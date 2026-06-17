@@ -1,6 +1,6 @@
 import { tool } from "ai";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { join } from "path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";

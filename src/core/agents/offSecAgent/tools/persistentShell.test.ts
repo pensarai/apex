@@ -1,5 +1,5 @@
-import { spawnSync } from "child_process";
-import { existsSync, readdirSync } from "fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -110,7 +110,7 @@ describe("PersistentShell — long-running stability", () => {
 
     await new Promise((r) => setTimeout(r, 1_500));
 
-    const { spawnSync } = await import("child_process");
+    const { spawnSync } = await import("node:child_process");
     const out = spawnSync(
       "ps",
       ["--ppid", String(bashPid), "-o", "pid=,comm="],
@@ -360,7 +360,7 @@ describe("PersistentShell — long-running stability", () => {
       const firstC = events.find((e) => e.text.includes("line-c"));
       expect(firstA).toBeDefined();
       expect(firstC).toBeDefined();
-      expect(firstC!.t - firstA!.t).toBeGreaterThan(200);
+      expect(firstC?.t - firstA?.t).toBeGreaterThan(200);
     },
   );
 
@@ -500,12 +500,12 @@ describe("extractFallbackStdout", () => {
   });
 
   it("strips exit marker from authoritativeStdout when fallback fires mid-phase", () => {
-    const auth = "probe results\n" + exitPrefix + "0\n";
+    const auth = `probe results\n${exitPrefix}0\n`;
     expect(extractFallbackStdout(mk("ignored", auth))).toBe("probe results\n");
   });
 
   it("returns '(no output)' when authoritativeStdout contains only the exit marker", () => {
-    expect(extractFallbackStdout(mk("ignored", exitPrefix + "137\n"))).toBe(
+    expect(extractFallbackStdout(mk("ignored", `${exitPrefix}137\n`))).toBe(
       "(no output)",
     );
   });
@@ -523,14 +523,14 @@ describe("extractFallbackStdout", () => {
   });
 
   it("strips cutover when exit marker was never emitted (killed mid-cat)", () => {
-    const leaked = cut + "\n" + "[FOUND] /health -> HTTP 200\n";
+    const leaked = `${cut}\n[FOUND] /health -> HTTP 200\n`;
     expect(extractFallbackStdout(mk(leaked))).toBe(
       "[FOUND] /health -> HTTP 200\n",
     );
   });
 
   it("strips exit marker when cutover was never emitted (tail never flushed)", () => {
-    const leaked = exitPrefix + "143\n";
+    const leaked = `${exitPrefix}143\n`;
     expect(extractFallbackStdout(mk(leaked))).toBe("(no output)");
   });
 
@@ -545,7 +545,7 @@ describe("extractFallbackStdout", () => {
   });
 
   it("handles cutover immediately followed by exit marker (empty command output)", () => {
-    const leaked = cut + "\n" + exitPrefix + "0\n";
+    const leaked = `${cut}\n${exitPrefix}0\n`;
     expect(extractFallbackStdout(mk(leaked))).toBe("(no output)");
   });
 });
