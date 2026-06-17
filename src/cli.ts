@@ -45,8 +45,9 @@ if (obfuscateRequested) {
   try {
     resolvedLevel = resolveCliLogLevel(args);
   } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
-    process.exit(1);
+    // An invalid --log-level shouldn't abort the command — warn and use the
+    // default. resolveCliLogLevel has already stripped the flags from args.
+    logger.warn(err instanceof Error ? err.message : String(err));
   }
   if (resolvedLevel) {
     logger.setLevel(resolvedLevel);

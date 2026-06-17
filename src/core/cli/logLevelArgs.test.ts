@@ -31,6 +31,24 @@ describe("resolveCliLogLevel", () => {
     ).toBe("ERROR");
   });
 
+  it("an invalid earlier --log-level is ignored when the rightmost is valid", () => {
+    const argv = ["--log-level", "bogus", "--log-level", "error", "x"];
+    expect(resolveCliLogLevel(argv)).toBe("ERROR");
+    expect(argv).toEqual(["x"]);
+  });
+
+  it("throws when the rightmost --log-level is invalid", () => {
+    expect(() =>
+      resolveCliLogLevel(["--log-level", "error", "--log-level", "bogus"]),
+    ).toThrow(CliLogLevelError);
+  });
+
+  it("strips the flag + value even when invalid, so the caller can fall back", () => {
+    const argv = ["pentest", "--log-level", "bogus", "--target", "x"];
+    expect(() => resolveCliLogLevel(argv)).toThrow(CliLogLevelError);
+    expect(argv).toEqual(["pentest", "--target", "x"]);
+  });
+
   it("returns undefined and leaves argv intact when no log flags", () => {
     const argv = ["pentest", "--target", "https://x", "--obfuscate"];
     expect(resolveCliLogLevel(argv)).toBeUndefined();
