@@ -222,11 +222,29 @@ function NormalInputAreaInner({
     prevValueRef.current = value;
     if (value === prevValue) return;
 
+    // Parent-driven clears (submit, Ctrl+C, queue-block) always apply.
+    // An empty-string echo is harmless (no caret to jump in an empty
+    // input), so we never skip it. Flush the FIFO so stale emissions
+    // can't shadow the next external set (e.g. queue-edit after submit).
+    if (value === "") {
+      emittedRef.current = [];
+      if (value !== inputValue) {
+        isExternalUpdate.current = true;
+        setInputValue(value);
+        promptRef.current?.setValue(value);
+      }
+      return;
+    }
+
     const echoIdx = emittedRef.current.indexOf(value);
     if (echoIdx !== -1) {
       emittedRef.current.splice(0, echoIdx + 1);
       return;
     }
+
+    // Genuine external update (queue-edit, history load, etc.) — flush
+    // stale echoes so they can't shadow future external sets.
+    emittedRef.current = [];
     if (value !== inputValue) {
       isExternalUpdate.current = true;
       setInputValue(value);
