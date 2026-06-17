@@ -1441,6 +1441,8 @@ export default function OperatorDashboard({
       initialConfig?.taskDriven,
       initialConfig?.target,
       initialConfig?.headers,
+      initialConfig?.promptInjectionLibrarySource,
+      route.data,
       setSessionCwd,
       subagentStore.setState,
       skillsRegistry.buildCatalog,

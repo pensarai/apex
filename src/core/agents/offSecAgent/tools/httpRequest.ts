@@ -398,8 +398,12 @@ async function executeSandboxHttpRequest(
     curlCommand += ` --max-time ${timeoutSeconds}`;
     curlCommand += ` "${url}" 2>&1`;
 
+    const { sandbox } = ctx;
+    if (!sandbox) {
+      throw new Error("executeSandboxHttpRequest requires a sandbox");
+    }
     const ssmTimeout = Math.max(timeoutSeconds, 30);
-    const result = await ctx.sandbox?.execute(curlCommand, {
+    const result = await sandbox.execute(curlCommand, {
       timeout: ssmTimeout,
     });
 
