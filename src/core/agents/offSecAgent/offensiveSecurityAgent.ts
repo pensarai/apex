@@ -579,6 +579,7 @@ export class OffensiveSecurityAgent<TResult = void> {
               });
             }
             inFlightTools.clear();
+            completedResults.length = 0;
           }
           bus.emitStreamPart(chunk, sid);
         }
