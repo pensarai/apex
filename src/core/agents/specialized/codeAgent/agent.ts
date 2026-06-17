@@ -61,6 +61,47 @@ export interface CodeAgentInput<TResult = void> extends SpecializedAgentInput {
  * });
  * ```
  */
+/** The full default CodeAgent toolset, before any exclusions. */
+export const CODE_AGENT_DEFAULT_TOOLS: readonly string[] = [
+  "read_file",
+  "list_files",
+  "grep",
+  "execute_command",
+  "profile_codebase",
+  "query_whitebox_catalog",
+  "run_code_query",
+  "run_whitebox_scan",
+  "create_whitebox_candidate",
+  "update_whitebox_candidate",
+  "list_whitebox_candidates",
+  "start_whitebox_job",
+  "poll_whitebox_job",
+  "stop_whitebox_job",
+  "read_whitebox_artifact",
+  "http_request",
+  "document_app",
+  "document_endpoint",
+  // Web search tools — research vulnerable library versions, look up API docs
+  "web_search",
+  "get_page",
+];
+
+/**
+ * Resolve the active tool list for a CodeAgent: the default toolset minus any
+ * excluded tools, plus `response` when a structured-output schema is supplied.
+ * Pure so callers (and tests) can see exactly which tools an agent will get —
+ * e.g. that a blackbox threat-model agent ends up with no source-reading tools.
+ */
+export function resolveCodeAgentTools(
+  excludeTools?: string[],
+  hasResponseSchema = false,
+): string[] {
+  const excluded = new Set(excludeTools ?? []);
+  const tools = CODE_AGENT_DEFAULT_TOOLS.filter((t) => !excluded.has(t));
+  if (hasResponseSchema) tools.push("response");
+  return tools;
+}
+
 export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
   constructor(opts: CodeAgentInput<TResult>) {
     const {
@@ -84,38 +125,7 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       projectThreatModel,
     } = opts;
 
-    let activeTools: string[] = [
-      "read_file",
-      "list_files",
-      "grep",
-      "execute_command",
-      "profile_codebase",
-      "query_whitebox_catalog",
-      "run_code_query",
-      "run_whitebox_scan",
-      "create_whitebox_candidate",
-      "update_whitebox_candidate",
-      "list_whitebox_candidates",
-      "start_whitebox_job",
-      "poll_whitebox_job",
-      "stop_whitebox_job",
-      "read_whitebox_artifact",
-      "http_request",
-      "document_app",
-      "document_endpoint",
-      // Web search tools — research vulnerable library versions, look up API docs
-      "web_search",
-      "get_page",
-    ];
-
-    if (excludeTools?.length) {
-      const excluded = new Set(excludeTools);
-      activeTools = activeTools.filter((t) => !excluded.has(t));
-    }
-
-    if (responseSchema) {
-      activeTools.push("response");
-    }
+    const activeTools = resolveCodeAgentTools(excludeTools, !!responseSchema);
 
     super({
       system: system ?? CODE_AGENT_SYSTEM_PROMPT,

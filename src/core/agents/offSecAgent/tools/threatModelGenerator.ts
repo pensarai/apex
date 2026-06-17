@@ -282,6 +282,41 @@ export interface ThreatModelOutput {
   pentestObjectives: string[];
 }
 
+// Source-reading / whitebox tools. Dropped from the per-endpoint threat-model
+// agent in blackbox runs (no checked-out source), so it can't burn turns
+// failing reads of files that don't exist — the failure mode that lets it loop
+// on its `response` tool under the Bedrock wedge (issue #842).
+const SOURCE_TOOLS = [
+  "read_file",
+  "list_files",
+  "grep",
+  "execute_command",
+  "profile_codebase",
+  "query_whitebox_catalog",
+  "run_code_query",
+  "run_whitebox_scan",
+  "create_whitebox_candidate",
+  "update_whitebox_candidate",
+  "list_whitebox_candidates",
+  "start_whitebox_job",
+  "poll_whitebox_job",
+  "stop_whitebox_job",
+  "read_whitebox_artifact",
+];
+
+/**
+ * Tools to exclude from the spawned threat-model CodeAgent.
+ *
+ * `document_endpoint` / `document_app` are always excluded (the agent analyzes,
+ * it doesn't re-document). When source is unavailable (blackbox), the
+ * source-reading tools are dropped too so the agent works from the endpoint
+ * description + live HTTP instead of flailing on a non-existent codebase.
+ */
+export function threatModelExcludeTools(sourceAvailable: boolean): string[] {
+  const base = ["document_endpoint", "document_app"];
+  return sourceAvailable ? base : [...base, ...SOURCE_TOOLS];
+}
+
 /**
  * Spawn a dedicated CodeAgent to produce a business-logic model, threat model,
  * quantitative risk score, and adversarial test plan for a single endpoint.
@@ -298,6 +333,12 @@ export async function generateThreatModelForEndpoint(
 ): Promise<ThreatModelOutput | null> {
   if (!ctx.model) return null;
   const model = ctx.model;
+
+  // Blackbox / sandbox runs have no checked-out source: the agent's working
+  // dir falls back to the session root (mirrors the `sandboxMode` check in
+  // offensiveSecurityAgent.ts / prompt.ts). In that case the threat-model agent
+  // must not be a source-first CodeAgent.
+  const sourceAvailable = ctx.agentCwd !== ctx.session.rootPath;
 
   return threatModelLimiter(async () => {
     if (ctx.abortSignal?.aborted) return null;
@@ -316,7 +357,11 @@ export async function generateThreatModelForEndpoint(
     const localBus = new AgentEventBus();
     AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
 
-    const prompt = buildThreatModelPrompt(input, ctx.projectThreatModel);
+    const prompt = buildThreatModelPrompt(
+      input,
+      ctx.projectThreatModel,
+      sourceAvailable,
+    );
 
     const agent = new CodeAgent<ThreatModelResult>({
       codebasePath: ctx.agentCwd,
@@ -329,7 +374,7 @@ export async function generateThreatModelForEndpoint(
       eventBus: localBus,
       subagentId,
       responseSchema: ThreatModelResultSchema,
-      excludeTools: ["document_endpoint", "document_app"],
+      excludeTools: threatModelExcludeTools(sourceAvailable),
     });
 
     try {
@@ -383,9 +428,10 @@ export async function generateThreatModelForEndpoint(
 // Prompt construction
 // ---------------------------------------------------------------------------
 
-function buildThreatModelPrompt(
+export function buildThreatModelPrompt(
   input: GenerateThreatModelInput,
   projectThreatModel?: string,
+  sourceAvailable: boolean = true,
 ): string {
   const lineRange = input.line ? `around line ${input.line}` : "";
   const authInfo = input.authRequired
@@ -394,6 +440,25 @@ function buildThreatModelPrompt(
   const methodStr = Array.isArray(input.method)
     ? input.method.join(", ")
     : (input.method ?? "unknown");
+
+  const readingSection = sourceAvailable
+    ? `## Reading the code
+
+1. Read the source file at \`${input.file ?? "(unknown)"}\` ${lineRange ? `(${lineRange})` : ""} to understand the implementation.
+2. Trace into anything the handler depends on that affects security: auth middleware, repositories, validators, ORM models, external SDK calls, shared helpers. Do not stop at the handler function body.
+3. If a dependency is out of scope or you chose not to trace it, record that under \`analysisGaps\` in Part 1 — do not silently assume.
+4. **Source-unavailable mode.** If the handler source isn't reachable in your environment at all — not just out of scope, but actually unavailable (not checked out, missing from the sandbox, only the route table or OpenAPI spec is present) — record this once in \`analysisGaps\` and continue. In this mode the \`Cite file:line\` requirements below loosen to "cite the grounding source you actually read" (the endpoint description, route table entry, OpenAPI spec, README, or other upstream artifact). Each emitted threat-model vector and pentest objective must be tagged \`[unverified: source unavailable]\` in its title, and pentest objectives derived only from a description are capped at priority \`p1\` (never \`p0\`) because the vector hasn't been confirmed reachable in this implementation. Never fabricate file:line citations or invent code paths.`
+    : `## No source code — blackbox / source-unavailable mode
+
+This is a **blackbox** engagement: the application's source code is **not** checked out and there is no codebase to read. Do not attempt to read source files (you have no filesystem tools for it), and never fabricate \`file:line\` citations or invent code paths. Record once in \`analysisGaps\` that this is blackbox source-unavailable analysis.
+
+Work entirely from what you can actually observe:
+- the endpoint metadata above (method, path, auth, description),
+- any route table / OpenAPI / README detail referenced in the description,
+- live HTTP behavior via the \`http_request\` tool against the running target, and
+- public framework/library documentation via \`web_search\` / \`get_page\` when researching a known behavior.
+
+Operate in **source-unavailable mode** for every field below: instead of \`file:line\`, cite the grounding source you actually read (the endpoint description, route data, or a concrete live HTTP response). Tag each threat-model vector and pentest objective \`[unverified: source unavailable]\` in its title. Set **Security Indicators** to \`0\` unless a live response reveals a concrete issue — do not infer code-level patterns you cannot see. Cap every pentest objective at priority \`p1\` (never \`p0\`), since no vector can be confirmed reachable in the implementation.`;
 
   let prompt = `# Endpoint Analysis
 
@@ -406,12 +471,7 @@ function buildThreatModelPrompt(
 - **Auth**: ${authInfo}
 - **Description**: ${input.description}
 
-## Reading the code
-
-1. Read the source file at \`${input.file ?? "(unknown)"}\` ${lineRange ? `(${lineRange})` : ""} to understand the implementation.
-2. Trace into anything the handler depends on that affects security: auth middleware, repositories, validators, ORM models, external SDK calls, shared helpers. Do not stop at the handler function body.
-3. If a dependency is out of scope or you chose not to trace it, record that under \`analysisGaps\` in Part 1 — do not silently assume.
-4. **Source-unavailable mode.** If the handler source isn't reachable in your environment at all — not just out of scope, but actually unavailable (not checked out, missing from the sandbox, only the route table or OpenAPI spec is present) — record this once in \`analysisGaps\` and continue. In this mode the \`Cite file:line\` requirements below loosen to "cite the grounding source you actually read" (the endpoint description, route table entry, OpenAPI spec, README, or other upstream artifact). Each emitted threat-model vector and pentest objective must be tagged \`[unverified: source unavailable]\` in its title, and pentest objectives derived only from a description are capped at priority \`p1\` (never \`p0\`) because the vector hasn't been confirmed reachable in this implementation. Never fabricate file:line citations or invent code paths.
+${readingSection}
 
 Work Parts 1 → 4 in order. Do not start Part 2 until Part 1 is complete. Do not write Part 4 until Part 2 is complete.
 
