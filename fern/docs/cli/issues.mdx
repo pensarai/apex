@@ -7,10 +7,12 @@ description: "List, view, and update security issues via the Pensar Console API"
 
 The `pensar issues` command lets you manage security issues discovered by pentests. You can list issues with filters, view detailed information, and update issue statuses.
 
+All commands operate on the **selected workspace**, which is chosen when you connect with [`pensar login`](/apex/cli-commands/pensar-login). There is no longer a project argument.
+
 ## Usage
 
 ```bash
-pensar issues <projectId> [filters]            # List issues for a project
+pensar issues [filters]                        # List issues in the workspace (alias: pensar issues list)
 pensar issues get <issueId>                    # Get issue details
 pensar issues update <issueId> [options]       # Update an issue
 ```
@@ -24,10 +26,10 @@ You must be connected to Pensar Console via [`pensar login`](/apex/cli-commands/
 ### List Issues
 
 ```bash
-pensar issues <projectId> [filters]
+pensar issues [filters]
 ```
 
-Lists security issues for a project. Returns a JSON array.
+Lists security issues in the selected workspace. Returns a JSON array. Use filters to narrow the results.
 
 | Filter                | Description                                              |
 | --------------------- | -------------------------------------------------------- |
@@ -61,8 +63,8 @@ pensar issues update <issueId> [options]
 ## Examples
 
 ```bash
-# List all open critical issues
-pensar issues proj_abc123 --status open --severity critical
+# List all open critical issues in the workspace
+pensar issues --status open --severity critical
 
 # Get details for a specific issue
 pensar issues get issue_ghi789
