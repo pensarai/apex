@@ -389,9 +389,20 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
               .replace(/'/g, "'\\''");
             const writeCommand = `printf '%s' '${escapedPayload}' > ${sandboxTempFile}`;
 
-            await ctx.sandbox.execute(writeCommand, {
+            const writeResult = await ctx.sandbox.execute(writeCommand, {
               timeout: normalizedTimeout ?? 30,
             });
+
+            if (!writeResult.success) {
+              const errorMsg = `Failed to write prompt injection payload to sandbox: ${writeResult.stderr || "unknown error"}`;
+              return {
+                success: false,
+                error: errorMsg,
+                stdout: writeResult.stdout,
+                stderr: writeResult.stderr || errorMsg,
+                command,
+              };
+            }
 
             // Update env vars to point to the sandbox temp file
             ssmOpts.envVars = {
