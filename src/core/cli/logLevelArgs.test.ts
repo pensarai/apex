@@ -1,69 +1,83 @@
 import { describe, expect, it } from "vitest";
-import { CliLogLevelError, resolveCliLogLevel } from "./logLevelArgs";
+import { resolveCliLogLevel } from "./logLevelArgs";
 
 describe("resolveCliLogLevel", () => {
   it("--log-level sets the level and strips the flag + value (case-insensitive)", () => {
     const argv = ["pentest", "--log-level", "warn", "--target", "x"];
-    expect(resolveCliLogLevel(argv)).toBe("WARN");
+    expect(resolveCliLogLevel(argv)).toEqual({
+      level: "WARN",
+      invalid: undefined,
+    });
     expect(argv).toEqual(["pentest", "--target", "x"]);
   });
 
   it("--verbose ⇒ DEBUG and --quiet ⇒ WARN, both stripped", () => {
     const v = ["a", "--verbose", "b"];
-    expect(resolveCliLogLevel(v)).toBe("DEBUG");
+    expect(resolveCliLogLevel(v).level).toBe("DEBUG");
     expect(v).toEqual(["a", "b"]);
 
     const q = ["a", "--quiet"];
-    expect(resolveCliLogLevel(q)).toBe("WARN");
+    expect(resolveCliLogLevel(q).level).toBe("WARN");
     expect(q).toEqual(["a"]);
   });
 
   it("--log-level wins over --verbose / --quiet", () => {
-    expect(resolveCliLogLevel(["--verbose", "--log-level", "error"])).toBe(
-      "ERROR",
+    expect(
+      resolveCliLogLevel(["--verbose", "--log-level", "error"]).level,
+    ).toBe("ERROR");
+    expect(resolveCliLogLevel(["--log-level", "info", "--quiet"]).level).toBe(
+      "INFO",
     );
-    expect(resolveCliLogLevel(["--log-level", "info", "--quiet"])).toBe("INFO");
   });
 
   it("rightmost --log-level wins on duplicates", () => {
     expect(
-      resolveCliLogLevel(["--log-level", "info", "--log-level", "error"]),
+      resolveCliLogLevel(["--log-level", "info", "--log-level", "error"]).level,
     ).toBe("ERROR");
   });
 
   it("an invalid earlier --log-level is ignored when the rightmost is valid", () => {
     const argv = ["--log-level", "bogus", "--log-level", "error", "x"];
-    expect(resolveCliLogLevel(argv)).toBe("ERROR");
+    expect(resolveCliLogLevel(argv)).toEqual({
+      level: "ERROR",
+      invalid: undefined,
+    });
     expect(argv).toEqual(["x"]);
-  });
-
-  it("throws when the rightmost --log-level is invalid", () => {
-    expect(() =>
-      resolveCliLogLevel(["--log-level", "error", "--log-level", "bogus"]),
-    ).toThrow(CliLogLevelError);
-  });
-
-  it("strips the flag + value even when invalid, so the caller can fall back", () => {
-    const argv = ["pentest", "--log-level", "bogus", "--target", "x"];
-    expect(() => resolveCliLogLevel(argv)).toThrow(CliLogLevelError);
-    expect(argv).toEqual(["pentest", "--target", "x"]);
   });
 
   it("returns undefined and leaves argv intact when no log flags", () => {
     const argv = ["pentest", "--target", "https://x", "--obfuscate"];
-    expect(resolveCliLogLevel(argv)).toBeUndefined();
+    expect(resolveCliLogLevel(argv)).toEqual({
+      level: undefined,
+      invalid: undefined,
+    });
     expect(argv).toEqual(["pentest", "--target", "https://x", "--obfuscate"]);
   });
 
-  it("throws CliLogLevelError on an invalid --log-level value", () => {
-    expect(() => resolveCliLogLevel(["--log-level", "BOGUS"])).toThrow(
-      CliLogLevelError,
+  it("reports an invalid winning --log-level (no throw) and strips it", () => {
+    const argv = ["pentest", "--log-level", "bogus", "--target", "x"];
+    const r = resolveCliLogLevel(argv);
+    expect(r.level).toBeUndefined();
+    expect(r.invalid).toBe("bogus");
+    expect(argv).toEqual(["pentest", "--target", "x"]);
+  });
+
+  it("reports a missing --log-level value", () => {
+    expect(resolveCliLogLevel(["pentest", "--log-level"]).invalid).toBe(
+      "(missing)",
     );
   });
 
-  it("throws CliLogLevelError when --log-level has no value", () => {
-    expect(() => resolveCliLogLevel(["pentest", "--log-level"])).toThrow(
-      CliLogLevelError,
-    );
+  it("a value-less --log-level doesn't consume the following flag", () => {
+    const argv = ["pentest", "--log-level", "--target", "x"];
+    const r = resolveCliLogLevel(argv);
+    expect(r.invalid).toBe("(missing)");
+    expect(argv).toEqual(["pentest", "--target", "x"]);
+  });
+
+  it("falls back to the shorthand when the winning --log-level is invalid", () => {
+    const r = resolveCliLogLevel(["--verbose", "--log-level", "bogus"]);
+    expect(r.level).toBe("DEBUG");
+    expect(r.invalid).toBe("bogus");
   });
 });

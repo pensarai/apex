@@ -13,7 +13,7 @@ import { resolveCliLogLevel } from "./core/cli/logLevelArgs";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
-import { logger, type StructuredLogLevel } from "./core/logger";
+import { logger } from "./core/logger";
 import type { SessionInfo } from "./core/session";
 import {
   combinePromptParts,
@@ -41,17 +41,17 @@ if (obfuscateRequested) {
 // (resolveCliLogLevel strips the flags from `args` in place.) Export
 // PENSAR_LOG_LEVEL so child processes inherit the resolved level.
 {
-  let resolvedLevel: StructuredLogLevel | undefined;
-  try {
-    resolvedLevel = resolveCliLogLevel(args);
-  } catch (err) {
-    // An invalid --log-level shouldn't abort the command — warn and use the
-    // default. resolveCliLogLevel has already stripped the flags from args.
-    logger.warn(err instanceof Error ? err.message : String(err));
+  const { level, invalid } = resolveCliLogLevel(args);
+  if (invalid !== undefined) {
+    // Always-visible (not gated by the log threshold): the flag was rejected.
+    // We continue at the shorthand/default level rather than abort.
+    console.error(
+      `Ignoring invalid --log-level "${invalid}" (expected DEBUG|INFO|WARN|ERROR|SILENT)`,
+    );
   }
-  if (resolvedLevel) {
-    logger.setLevel(resolvedLevel);
-    process.env.PENSAR_LOG_LEVEL = resolvedLevel;
+  if (level) {
+    logger.setLevel(level);
+    process.env.PENSAR_LOG_LEVEL = level;
   }
 }
 
