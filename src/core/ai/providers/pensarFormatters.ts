@@ -21,6 +21,34 @@ export function convertToBedrockFormat(
 
 const EPHEMERAL_CACHE_CONTROL = { type: "ephemeral" as const };
 
+// Extended (1-hour) TTL variant for the static system + tools prefix. This
+// prefix is byte-identical across every step of a session and across all
+// parallel workers in a run, so a 1h TTL keeps it warm across slow tool calls
+// (browser automation, multi-minute sub-agents) and rate-limit backoffs that
+// exceed the default 5-minute window, and lets a later worker read the prefix
+// an earlier worker already wrote. Only emitted for models that support it
+// (see supportsExtendedCacheTtl) — Bedrock ignores/refuses ttl on the rest.
+const SYSTEM_CACHE_CONTROL_1H = {
+  type: "ephemeral" as const,
+  ttl: "1h" as const,
+};
+
+// Only a subset of Claude models on Bedrock support the extended 1-hour cache
+// TTL: Opus 4.5, Sonnet 4.5, and Haiku 4.5. Opus 4.6+ and Sonnet 4.6, plus
+// older models (Opus 4, 3.7/3.5 Sonnet), support ONLY the default 5-minute
+// TTL — sending ttl:"1h" to them does not extend the cache. Gate on an explicit
+// allowlist and fall back to plain 5-minute ephemeral everywhere else.
+// https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html
+function supportsExtendedCacheTtl(modelId: string): boolean {
+  // Normalize dotted version forms (4.5 → 4-5) so all id shapes match.
+  const normalized = modelId.replace(/(\d)\.(\d)/g, "$1-$2");
+  return (
+    normalized.includes("claude-opus-4-5") ||
+    normalized.includes("claude-sonnet-4-5") ||
+    normalized.includes("claude-haiku-4-5")
+  );
+}
+
 function hasCacheControl(part: Record<string, unknown>): boolean {
   const opts = part.providerOptions as
     | Record<string, Record<string, unknown>>
@@ -116,8 +144,11 @@ function convertToAnthropicFormat(
           messages.push({ role: "assistant", content: text });
         }
       } else if (part.role === "tool") {
-        // Tool results get appended as user messages in Anthropic format
-        const toolResults = (
+        // Tool results get appended as user messages in Anthropic format.
+        const partHasCache = hasCacheControl(
+          part as unknown as Record<string, unknown>,
+        );
+        const toolResults: Array<Record<string, unknown>> = (
           part.content as Array<LanguageModelV3ToolResultPart>
         ).map((c: LanguageModelV3ToolResultPart) => {
           let resultContent: string;
@@ -136,6 +167,17 @@ function convertToAnthropicFormat(
             content: resultContent,
           };
         });
+        // The rolling cache breakpoint (withCachedLastMessage) lands on
+        // whatever the last message is — in an agent loop that is almost
+        // always a tool result. Without honoring cacheControl here, the
+        // breakpoint is silently dropped and only the static system block
+        // ever caches, so the entire growing conversation is re-billed as
+        // fresh input every step. Anthropic caches the prefix up to the
+        // block carrying cache_control, so tag the LAST tool_result block.
+        const lastResult = toolResults[toolResults.length - 1];
+        if (partHasCache && lastResult) {
+          lastResult.cache_control = EPHEMERAL_CACHE_CONTROL;
+        }
         messages.push({ role: "user", content: toolResults });
       }
     }
@@ -158,12 +200,19 @@ function convertToAnthropicFormat(
   };
 
   if (systemPrompt) {
+    // 1h TTL only on models that support it; everything else uses 5-minute
+    // ephemeral. The system block precedes messages, satisfying Bedrock's
+    // "longer TTL must appear before shorter TTL" ordering constraint when the
+    // rolling 5-minute tail breakpoint is also present.
+    const systemCacheControl = supportsExtendedCacheTtl(modelId)
+      ? SYSTEM_CACHE_CONTROL_1H
+      : EPHEMERAL_CACHE_CONTROL;
     body.system = systemHasCacheControl
       ? [
           {
             type: "text",
             text: systemPrompt,
-            cache_control: EPHEMERAL_CACHE_CONTROL,
+            cache_control: systemCacheControl,
           },
         ]
       : systemPrompt;
