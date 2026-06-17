@@ -1,6 +1,6 @@
-import { createHash } from "crypto";
-import { readFileSync, statSync } from "fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "path";
+import { createHash } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 
 export type PromptInjectionCategory =
@@ -94,9 +94,9 @@ export class StaticPromptInjectionLibrary implements PromptInjectionLibrary {
 
   listCatalog(): PromptInjectionCatalogEntry[] {
     return this.ordered.map(
-      ({ payload: _payload, payloadFilePath: _path, ...entry }) => ({
+      ({ payload, payloadFilePath: _path, ...entry }) => ({
         ...entry,
-        payloadHash: this.hashes.get(entry.id)!,
+        payloadHash: sha256(payload),
       }),
     );
   }
