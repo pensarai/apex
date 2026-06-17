@@ -10,6 +10,7 @@
 import packageJson from "../package.json";
 import { type AIModel, buildAuthConfig } from "./core/ai";
 import { resolvePentestMode } from "./core/cli/pentestMode";
+import { formatSessionHandoffSummary } from "./core/cli/sessionHandoff";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
 import type { SessionInfo } from "./core/session";
@@ -297,6 +298,17 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
   });
   console.log(`PENSAR_SESSION_PATH:${session.rootPath}`);
 
+  console.log(`
+${sep}
+SESSION HANDOFF
+${sep}
+${formatSessionHandoffSummary({
+  sessionId: session.id,
+  sessionPath: session.rootPath,
+  findingsPath: session.findingsPath,
+  pocsPath: session.pocsPath,
+})}`);
+
   const { bus: pentestBus, cleanup: wandbCleanup } =
     await createInstrumentedBus(session);
 
@@ -318,8 +330,13 @@ ${sep}
 RESULTS
 ${sep}
 Findings:  ${findings.length}
-Path:      ${findingsPath}
-POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}`);
+${formatSessionHandoffSummary({
+  sessionId: session.id,
+  sessionPath: session.rootPath,
+  findingsPath,
+  pocsPath,
+  reportPath,
+})}`);
   } finally {
     await wandbCleanup();
   }
@@ -373,6 +390,17 @@ ${objectivesList}
   });
   console.log(`PENSAR_SESSION_PATH:${session.rootPath}`);
 
+  console.log(`
+${sep}
+SESSION HANDOFF
+${sep}
+${formatSessionHandoffSummary({
+  sessionId: session.id,
+  sessionPath: session.rootPath,
+  findingsPath: session.findingsPath,
+  pocsPath: session.pocsPath,
+})}`);
+
   const { bus: targetedBus, cleanup: wandbCleanup } =
     await createInstrumentedBus(session);
 
@@ -391,8 +419,12 @@ ${sep}
 RESULTS
 ${sep}
 Findings:  ${findings.length}
-Path:      ${findingsPath}
-POCs:      ${pocsPath}`);
+${formatSessionHandoffSummary({
+  sessionId: session.id,
+  sessionPath: session.rootPath,
+  findingsPath,
+  pocsPath,
+})}`);
   } finally {
     await wandbCleanup();
   }

@@ -72,6 +72,11 @@ pensar pentest --target https://example.com --cwd ./my-app
 pensar targeted-pentest --target https://example.com --objective "Test authentication bypass"
 ```
 
+Headless runs print a `Session` and `Session path` at completion. Automation
+and coding agents can read findings, POCs, and reports from
+`~/.pensar/sessions/<session-id>/`. For coding-agent PR workflows, prefer
+`targeted-pentest` scoped to changed, security-sensitive endpoints.
+
 | Flag                           | Command                   | Description                                    |
 | ------------------------------ | ------------------------- | ---------------------------------------------- |
 | `--target <url>`               | pentest, targeted-pentest | Target URL (required)                          |

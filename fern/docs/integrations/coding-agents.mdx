@@ -1,0 +1,195 @@
+---
+title: "Coding Agents"
+description: "Integrate Apex with coding agents and software factories through local session handoff"
+---
+
+## Overview
+
+Coding agents can use Apex as a security review step while they still have the
+code, dev server, and test loop available. The agent runs Apex against the
+running development environment, captures the printed session ID, then reads
+the session artifacts from local disk.
+
+Apex stores sessions under:
+
+```text
+~/.pensar/sessions/<session-id>/
+```
+
+This local session directory is the integration contract. The calling agent
+does not need a callback API or custom output flag.
+
+## When To Run Apex
+
+Run Apex after the coding agent has implemented the change, started the app,
+and passed normal validation such as lint, typecheck, and unit tests. This
+timing gives Apex a live target to test and gives the coding agent enough
+context to fix relevant findings before it opens or finalizes a PR.
+
+The coding agent should run Apex only when the user or workflow explicitly
+requests Apex security validation, or when repository policy enables Apex as a
+required gate. When Apex is enabled, still run it only for PRs that change
+security-sensitive behavior. Do not invoke Apex for clearly benign changes such
+as documentation, copy, styling, layout, or tests that do not alter runtime
+behavior.
+
+Run Apex when the PR touches:
+
+- Authentication, sessions, cookies, tokens, OAuth, SSO, or password flows
+- Authorization, RBAC, object ownership, admin checks, or tenant isolation
+- Billing, payments, plans, credits, quotas, or other entitlement logic
+- File upload, imports, exports, attachments, or user-controlled paths
+- Webhooks, callbacks, outbound integrations, proxying, or SSRF-prone fetches
+- Public API routes, admin routes, data access layers, or validation of
+  untrusted input
+- Redirects, CORS, CSP, security headers, secrets, or credential handling
+
+For coding-agent workflows, prefer `pensar targeted-pentest` scoped to
+endpoints affected by the PR. Use broad `pensar pentest` only when the agent
+cannot confidently map the changed files to specific endpoints or when the PR
+intentionally changes application-wide security behavior.
+
+## Basic Workflow
+
+<Steps>
+  <Step title="Start the development environment">
+    The coding agent installs dependencies, starts the app, and confirms the
+    local target URL responds.
+  </Step>
+  <Step title="Write optional guidance">
+    If the coding agent has context from changed files, route mappings, threat
+    models, or user instructions, write it to a local prompt file.
+  </Step>
+  <Step title="Run Apex">
+    Prefer `pensar targeted-pentest` against the affected endpoint(s). Use
+    `pensar pentest` only when the affected surface cannot be narrowed safely.
+  </Step>
+  <Step title="Capture the session ID">
+    Apex prints the session ID and session path immediately after session
+    creation, then prints the handoff block again in the final command summary.
+  </Step>
+  <Step title="Read artifacts">
+    The coding agent reads the report, findings, POCs, and logs from the session
+    directory.
+  </Step>
+  <Step title="Fix and verify">
+    The coding agent fixes findings according to the user's policy, then runs
+    targeted verification and reports the verification session ID.
+  </Step>
+</Steps>
+
+## Scoped Targeted Example
+
+Map changed files to the smallest set of affected endpoints, then run targeted
+objectives against those endpoints:
+
+```bash
+git diff --name-only origin/main...HEAD
+git diff origin/main...HEAD
+
+pensar targeted-pentest \
+  --target http://localhost:3000/api/projects/123/members \
+  --objective "Test authorization and tenant isolation for the changed project member management path"
+```
+
+Apex prints a handoff block immediately after creating the session, then prints
+it again when the run completes:
+
+```text
+Session:       session_...
+Session path:  /home/agent/.pensar/sessions/session_...
+Findings path: /home/agent/.pensar/sessions/session_.../findings
+POCs:          /home/agent/.pensar/sessions/session_.../pocs
+Report:        /home/agent/.pensar/sessions/session_.../pentest-report.md
+```
+
+The calling agent should use `Session path` as the root for all follow-up
+reads.
+
+## Broad Fallback Example
+
+If the coding agent cannot confidently map the PR to endpoints, or if the PR
+changes application-wide security behavior, use `pensar pentest` with a prompt
+that explicitly limits attention to PR-affected behavior:
+
+```bash
+PROMPT_FILE="$HOME/.pensar/agent-runs/current/prompt.md"
+mkdir -p "$(dirname "$PROMPT_FILE")"
+cat > "$PROMPT_FILE" <<'EOF'
+Only test behavior affected by this PR. Prioritize changed authentication,
+authorization, tenant isolation, public API routes, validation, and outbound
+integration paths. Do not spend time on unrelated routes unless they are needed
+to prove impact for the changed paths.
+EOF
+
+pensar pentest \
+  --target http://localhost:3000 \
+  --cwd . \
+  --prompt "@${PROMPT_FILE}"
+```
+
+## Session Artifacts
+
+The session directory contains the files and directories coding agents should
+read:
+
+| Path                  | Purpose                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------- |
+| `session.json`        | Session metadata, targets, config, and timestamps                                     |
+| `pentest-report.md`   | Human-readable findings with description, impact, evidence, POC path, and remediation |
+| `pentest-report.json` | Structured report containing findings and severity summary                            |
+| `findings/`           | Individual finding JSON files                                                         |
+| `pocs/`               | Proof-of-concept scripts and captured POC output                                      |
+| `logs/`               | Command and execution logs                                                            |
+| `agent-manifest.json` | Swarm agent lifecycle status, when present                                            |
+| `subagents/`          | Per-agent message traces, when present                                                |
+
+Targeted pentest runs may not produce `pentest-report.md`; in that case, read
+`findings/` and `pocs/` directly.
+
+## Targeted Verification
+
+After fixing a finding, run a focused verification objective:
+
+```bash
+pensar targeted-pentest \
+  --target http://localhost:3000 \
+  --objective "Verify the previous authorization bypass on /api/projects/:id is no longer exploitable"
+```
+
+The coding agent should include both the original discovery session ID and the
+verification session ID in its final PR or task summary.
+
+## Agent Policy
+
+Apex does not decide whether the coding agent should fix findings
+automatically. Put that policy in the calling agent's instructions. Common
+policies are:
+
+- Fix high-confidence findings that are clearly caused by the current change.
+- Summarize a fix plan before editing auth, billing, tenant isolation, or other
+  business-critical behavior.
+- Defer unrelated findings and report the session path for later security
+  review.
+
+## Filesystem Isolation
+
+The calling agent and Apex must share the same filesystem. By default, Apex
+uses the current user's `~/.pensar` directory. In software factories, isolate
+each job by running Apex under a per-job user or by setting `HOME` to a
+job-specific directory before invoking `pensar`.
+
+```bash
+export HOME="$WORKSPACE/.agent-home"
+mkdir -p "$HOME"
+pensar pentest --target http://localhost:3000 --cwd .
+```
+
+## Example Templates
+
+Reusable templates live in `examples/coding-agents/`:
+
+- `generic-agent-instructions.md`
+- `opencode-agent.md`
+- `cursor-background-agent.md`
+- `software-factory-runbook.md`
