@@ -385,9 +385,39 @@ async function executeSandboxHttpRequest(
       curlCommand += ` -H "${shellQuote(`${key}: ${value}`)}"`;
     }
 
+    const { sandbox } = ctx;
+    if (!sandbox) {
+      throw new Error("executeSandboxHttpRequest requires a sandbox");
+    }
+
+    // If we have a body to send, write it to a temp file in the sandbox
+    // to avoid shell escaping issues with multiline content
+    let bodyTempFile: string | null = null;
     if (body && ["POST", "PUT", "PATCH"].includes(method)) {
-      const escapedBody = body.replace(/"/g, '\\"').replace(/\$/g, "\\$");
-      curlCommand += ` -d "${escapedBody}"`;
+      bodyTempFile = `/tmp/apex_http_body_${Date.now()}_${Math.random().toString(36).slice(2, 11)}.txt`;
+      
+      // Use printf to safely write the body to the temp file
+      const escapedForPrintf = body
+        .replace(/\\/g, "\\\\")
+        .replace(/%/g, "%%");
+      const writeCommand = `printf '%s' '${escapedForPrintf.replace(/'/g, "'\\''")}' > ${bodyTempFile}`;
+      
+      const writeResult = await sandbox.execute(writeCommand, { timeout: 30 });
+      if (!writeResult.success || writeResult.exitCode !== 0) {
+        return {
+          success: false,
+          error: `Failed to write request body to sandbox temp file: ${writeResult.stderr || writeResult.stdout}`,
+          url,
+          method,
+          status: 0,
+          statusText: "",
+          headers: {},
+          body: "",
+          redirected: false,
+        };
+      }
+      
+      curlCommand += ` --data-binary @${bodyTempFile}`;
     }
 
     if (followRedirects) {
@@ -398,10 +428,6 @@ async function executeSandboxHttpRequest(
     curlCommand += ` --max-time ${timeoutSeconds}`;
     curlCommand += ` "${url}" 2>&1`;
 
-    const { sandbox } = ctx;
-    if (!sandbox) {
-      throw new Error("executeSandboxHttpRequest requires a sandbox");
-    }
     const ssmTimeout = Math.max(timeoutSeconds, 30);
     const result = await sandbox.execute(curlCommand, {
       timeout: ssmTimeout,
