@@ -67,9 +67,27 @@ describe("executeCommand prompt injection pointer", () => {
 
     let capturedCommand = "";
     let capturedEnvVars: Record<string, string> | undefined;
+    let capturedSandboxFilePath = "";
+    let executionCount = 0;
     const sandbox: UnifiedSandbox = {
       type: "linux",
       execute: async (command, opts) => {
+        executionCount++;
+        // First call writes the payload to a temp file in the sandbox
+        if (executionCount === 1) {
+          // Extract the temp file path from the write command
+          const match = command.match(/> (\/tmp\/apex_payload_\d+\.txt)/);
+          if (match) {
+            capturedSandboxFilePath = match[1];
+          }
+          return {
+            success: true,
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+          };
+        }
+        // Second call runs the actual command with env var pointing to sandbox temp file
         capturedCommand = command;
         capturedEnvVars = opts?.envVars;
         return {
@@ -86,7 +104,7 @@ describe("executeCommand prompt injection pointer", () => {
     );
     const command =
       'python3 harness.py --payload-file "$APEX_PROMPT_INJECTION_FILE"';
-    const result = (await tool.execute!(
+    const result = (await tool.execute?.(
       {
         command,
         promptInjection: { id: "pi.direct.override" },
@@ -98,11 +116,13 @@ describe("executeCommand prompt injection pointer", () => {
 
     expect(capturedCommand).toBe(command);
     expect(capturedCommand).not.toContain(payloadFilePath);
+    // In sandbox mode, env var points to the temp file in the sandbox
     expect(capturedEnvVars).toEqual({
-      APEX_PROMPT_INJECTION_FILE: payloadFilePath,
+      APEX_PROMPT_INJECTION_FILE: capturedSandboxFilePath,
     });
+    expect(capturedSandboxFilePath).toMatch(/^\/tmp\/apex_payload_\d+\.txt$/);
     expect(result.command).toBe(command);
-    expect(result.stdout).toContain(payloadFilePath);
+    expect(result.stdout).toContain(capturedSandboxFilePath);
     expect(result.stdout).toContain("[PROMPT_INJECTION:pi.direct.override]");
     expect(result.stdout).not.toContain(payload);
     expect(result.stderr).toBe("[PROMPT_INJECTION:pi.direct.override]");
@@ -123,7 +143,7 @@ describe("executeCommand prompt injection pointer", () => {
     ]);
 
     const tool = executeCommand(makeCtx({ promptInjectionLibrary: library }));
-    const result = (await tool.execute!(
+    const result = (await tool.execute?.(
       {
         command: 'cat "$APEX_PROMPT_INJECTION_FILE"',
         promptInjection: { id: "pi.memory.only" },
@@ -169,7 +189,7 @@ describe("executeCommand prompt injection pointer", () => {
       makeCtx({ promptInjectionLibrary: library, persistentShell }),
     );
     const command = 'node harness.js "$APEX_PROMPT_INJECTION_FILE"';
-    const result = (await tool.execute!(
+    const result = (await tool.execute?.(
       {
         command,
         promptInjection: { id: "pi.shell.override" },

@@ -159,9 +159,15 @@ async function resolvePromptInjectionEnv(
   | {
       envVars?: Record<string, string>;
       library?: PromptInjectionLibrary;
+      payloadContent?: string;
       error?: undefined;
     }
-  | { envVars?: undefined; library?: PromptInjectionLibrary; error: string }
+  | {
+      envVars?: undefined;
+      library?: PromptInjectionLibrary;
+      payloadContent?: undefined;
+      error: string;
+    }
 > {
   if (!promptInjection) return {};
 
@@ -169,10 +175,20 @@ async function resolvePromptInjectionEnv(
     library: ctx.promptInjectionLibrary,
     source: ctx.promptInjectionLibrarySource,
   });
+
+  const payloadContent = library.getPayload(promptInjection.id);
+  if (payloadContent === undefined) {
+    return {
+      library,
+      error: `Unknown prompt injection id: ${promptInjection.id}`,
+    };
+  }
+
   const payloadFilePath = library.getPayloadFilePath(promptInjection.id);
   if (!payloadFilePath) {
     return {
       library,
+      payloadContent,
       error:
         `Unknown prompt injection id or no payload file path available: ` +
         promptInjection.id,
@@ -181,6 +197,7 @@ async function resolvePromptInjectionEnv(
 
   return {
     library,
+    payloadContent,
     envVars: {
       [promptInjection.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV]:
         payloadFilePath,
@@ -315,6 +332,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
       let promptInjectionLibrary: PromptInjectionLibrary | undefined;
       let promptInjectionEnvVars: Record<string, string> | undefined;
+      let promptInjectionPayloadContent: string | undefined;
       try {
         const resolved = await resolvePromptInjectionEnv(promptInjection, ctx);
         if (resolved.error) {
@@ -328,6 +346,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         }
         promptInjectionLibrary = resolved.library;
         promptInjectionEnvVars = resolved.envVars;
+        promptInjectionPayloadContent = resolved.payloadContent;
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         return {
@@ -355,9 +374,33 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           if (normalizedTimeout != null) {
             ssmOpts.timeout = normalizedTimeout;
           }
-          if (promptInjectionEnvVars) {
+
+          // If we have a prompt injection payload for sandbox mode, we need to write
+          // it to a temp file in the sandbox first, since the host file path won't
+          // be accessible from inside the sandbox.
+          if (promptInjectionPayloadContent && promptInjection) {
+            const envVarName =
+              promptInjection.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV;
+            const sandboxTempFile = `/tmp/apex_payload_${Date.now()}.txt`;
+
+            // Write the payload to a temp file in the sandbox
+            const escapedPayload = promptInjectionPayloadContent
+              .replace(/\\/g, "\\\\")
+              .replace(/'/g, "'\\''");
+            const writeCommand = `printf '%s' '${escapedPayload}' > ${sandboxTempFile}`;
+
+            await ctx.sandbox.execute(writeCommand, {
+              timeout: normalizedTimeout ?? 30,
+            });
+
+            // Update env vars to point to the sandbox temp file
+            ssmOpts.envVars = {
+              [envVarName]: sandboxTempFile,
+            };
+          } else if (promptInjectionEnvVars) {
             ssmOpts.envVars = promptInjectionEnvVars;
           }
+
           const result = await ctx.sandbox.execute(commandWithHeaders, ssmOpts);
           const { text: stdout, file: outputFile } = maybeSaveFullOutput(
             redact(result.stdout),
