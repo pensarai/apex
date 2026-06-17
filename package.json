@@ -16,8 +16,8 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@openrouter/ai-sdk-provider": "^2.2.3",
     "@opentelemetry/api": "^1.9.0",
-    "@opentui/core": "^0.1.80",
-    "@opentui/react": "^0.1.80",
+    "@opentui/core": "^0.1.107",
+    "@opentui/react": "^0.1.107",
     "@pensar/surface": "0.2.1",
     "@playwright/mcp": "^0.0.54",
     "ai": "^6.0.105",
@@ -112,5 +112,5 @@
     "tsc": "tsc --noEmit"
   },
   "type": "module",
-  "version": "1.8.1"
+  "version": "1.8.2"
 }
