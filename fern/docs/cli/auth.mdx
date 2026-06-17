@@ -36,7 +36,7 @@ pensar login
 1. Apex requests a device code from the Pensar authentication service
 2. A browser window opens to the verification URL
 3. Enter the user code displayed in your terminal to confirm
-4. Select a workspace (if your account has multiple)
+4. Select a workspace. If your account has exactly one, it's selected automatically; if you have several, you'll be prompted to choose. If you have **none**, Apex opens your browser to create one and waits for it to be created.
 5. Apex stores the auth tokens locally
 
 If you're already connected, `pensar login` will show your current status and offer to reconnect.
@@ -69,7 +69,7 @@ Clears stored authentication tokens from your local configuration. You can recon
   <Card title="/login" icon="shield-check" href="/apex/tui-slash-commands/login">
     Connect via the TUI with the same device flow
   </Card>
-  <Card title="pensar projects" icon="folder" href="/apex/cli-commands/pensar-projects">
-    List workspace projects (requires login)
+  <Card title="pensar pentests" icon="bug" href="/apex/cli-commands/pensar-pentests">
+    List and dispatch pentests in your workspace (requires login)
   </Card>
 </CardGroup>

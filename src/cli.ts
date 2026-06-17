@@ -185,7 +185,6 @@ Usage:
   pensar threat-model [options]       Generate application-centric threat model
   pensar login                        Connect to Pensar Console
   pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)
-  pensar projects                     List workspace projects
   pensar apps                         Manage the attack surface (apps & endpoints)
   pensar pentests                     List and manage pentests
   pensar issues                       List and manage security issues
@@ -594,9 +593,6 @@ if (hasFlag("-p") || command === "--prompt") {
 } else if (command === "uninstall") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/uninstall");
-} else if (command === "projects") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/projects");
 } else if (command === "apps") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/apps");

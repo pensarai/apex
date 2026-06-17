@@ -10,12 +10,6 @@ import { apiRequest } from "./apiClient";
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export interface ProjectSummary {
-  id: string;
-  name: string;
-  source?: string;
-}
-
 export interface ScanSummary {
   id: string;
   label: string;
@@ -27,8 +21,8 @@ export interface ScanSummary {
 }
 
 export interface ScanDetail extends ScanSummary {
-  projectId: string;
-  projectName: string;
+  workspaceId: string;
+  workspaceName: string;
   errorMessage?: string;
   issuesFound: number;
   reportReady: boolean;
@@ -49,8 +43,8 @@ export interface IssueDetail extends IssueSummary {
   branch?: string;
   endpoint?: string;
   poc?: string;
-  projectId: string;
-  projectName: string;
+  workspaceId: string;
+  workspaceName: string;
   createdAt: string;
 }
 
@@ -117,38 +111,27 @@ export interface SearchAgentLogsResult {
 
 // ── API functions ────────────────────────────────────────────────────
 
-export async function listProjects(): Promise<ProjectSummary[]> {
-  return apiRequest<ProjectSummary[]>("GET", "/projects");
-}
-
-export async function listScans(projectId: string): Promise<ScanSummary[]> {
-  return apiRequest<ScanSummary[]>("GET", `/projects/${projectId}/pentests`);
+export async function listScans(): Promise<ScanSummary[]> {
+  return apiRequest<ScanSummary[]>("GET", "/pentests");
 }
 
 export async function getScan(scanId: string): Promise<ScanDetail> {
   return apiRequest<ScanDetail>("GET", `/pentests/${scanId}`);
 }
 
-export async function dispatchPentest(
-  projectId: string,
-  opts?: { branch?: string; scanLevel?: "priority" | "full" },
-): Promise<DispatchPentestResult> {
-  return apiRequest<DispatchPentestResult>(
-    "POST",
-    `/projects/${projectId}/pentests`,
-    opts,
-  );
+export async function dispatchPentest(opts?: {
+  branch?: string;
+  scanLevel?: "priority" | "full";
+}): Promise<DispatchPentestResult> {
+  return apiRequest<DispatchPentestResult>("POST", "/pentests", opts);
 }
 
-export async function listIssues(
-  projectId: string,
-  filters?: {
-    scanId?: string;
-    status?: string;
-    severity?: string;
-    branch?: string;
-  },
-): Promise<IssueSummary[]> {
+export async function listIssues(filters?: {
+  scanId?: string;
+  status?: string;
+  severity?: string;
+  branch?: string;
+}): Promise<IssueSummary[]> {
   const params = new URLSearchParams();
   if (filters?.scanId) params.set("scanId", filters.scanId);
   if (filters?.status) params.set("status", filters.status);
@@ -156,7 +139,7 @@ export async function listIssues(
   if (filters?.branch) params.set("branch", filters.branch);
 
   const qs = params.toString();
-  const path = `/projects/${projectId}/issues${qs ? `?${qs}` : ""}`;
+  const path = `/issues${qs ? `?${qs}` : ""}`;
   return apiRequest<IssueSummary[]>("GET", path);
 }
 

@@ -1,0 +1,249 @@
+---
+title: "pensar apps"
+description: "Manage the workspace attack surface — apps and endpoints — via the Pensar Console API"
+---
+
+## Overview
+
+The `pensar apps` command lets you manage your **attack surface** — the applications and endpoints Pensar knows about — through the Pensar Console API. You can list, view, create, update, and delete apps, and do the same for the endpoints that belong to them.
+
+All commands operate on the **selected workspace**, which is chosen when you connect with [`pensar login`](/apex/cli-commands/pensar-login). Apps and endpoints are scoped to that workspace — there is no project argument.
+
+## Usage
+
+```bash
+pensar apps                                   # List apps in the workspace (alias: pensar apps list)
+pensar apps get <appId>                        # Show app details
+pensar apps create [options]                   # Create an app
+pensar apps update <appId> [options]           # Update an app
+pensar apps delete <appId>                     # Delete an app
+pensar apps endpoints <appId> [filters]        # List an app's endpoints
+pensar apps endpoint <endpointId>              # Show endpoint details
+pensar apps endpoint-create <appId> [options]  # Create an endpoint
+pensar apps endpoint-update <endpointId> [options]  # Update an endpoint
+pensar apps endpoint-delete <endpointId>       # Delete an endpoint
+pensar apps search <query> [options]           # Substring-search apps
+pensar apps search-endpoints <query> [options] # Substring-search endpoints
+```
+
+## Prerequisites
+
+You must be connected to Pensar Console via [`pensar login`](/apex/cli-commands/pensar-login) before using this command. Every subcommand acts on the workspace you are logged into.
+
+## App Subcommands
+
+### List Apps
+
+```bash
+pensar apps
+```
+
+Lists apps in the selected workspace. Responses are paginated and returned as JSON of the form `{ apps, hasMore, limit, offset }`.
+
+| Flag             | Description                                  |
+| ---------------- | -------------------------------------------- |
+| `--limit <n>`    | Page size (default 100, max 200)             |
+| `--offset <n>`   | Page offset (default 0)                      |
+
+To page through all apps, increment `--offset` by `--limit` until `hasMore` is `false`.
+
+### Get App Details
+
+```bash
+pensar apps get <appId>
+```
+
+Returns detailed information about a single app, including its description and disallowed-actions notes.
+
+### Create an App
+
+```bash
+pensar apps create --name <name> --description <description> [options]
+```
+
+Creates a new app in the workspace. `--name` and `--description` are required.
+
+| Flag                          | Description                                  |
+| ----------------------------- | -------------------------------------------- |
+| `--name <text>`               | Application name (**required**)              |
+| `--description <text>`        | Application description (**required**)       |
+| `--type <type>`               | Application type (see [App types](#app-types)) |
+| `--framework <text>`          | Framework / runtime hint                     |
+| `--domain <id>`               | Linked domain UUID                           |
+| `--disallowed-actions <text>` | Free-form disallowed-actions notes           |
+
+### Update an App
+
+```bash
+pensar apps update <appId> [options]
+```
+
+Updates one or more fields on an existing app. Only the flags you pass are changed; the same field flags as `create` are accepted (all optional here).
+
+| Flag                          | Description                                  |
+| ----------------------------- | -------------------------------------------- |
+| `--name <text>`               | New application name                         |
+| `--description <text>`        | New description                              |
+| `--type <type>`               | New application type                         |
+| `--framework <text>`          | New framework / runtime hint                 |
+| `--domain <id>`               | New linked domain UUID                       |
+| `--disallowed-actions <text>` | New disallowed-actions notes                 |
+
+### Delete an App
+
+```bash
+pensar apps delete <appId>
+```
+
+Deletes an app from the workspace. Returns `{ success, appId }`.
+
+## Endpoint Subcommands
+
+### List Endpoints
+
+```bash
+pensar apps endpoints <appId> [filters]
+```
+
+Lists the endpoints belonging to an app. Responses are paginated and returned as JSON of the form `{ endpoints, hasMore, limit, offset }`. List responses use a lean endpoint shape — fetch a single endpoint with `endpoint <endpointId>` for the full detail (objectives, business logic, threat model, etc.).
+
+| Flag                | Description                                      |
+| ------------------- | ------------------------------------------------ |
+| `--type <type>`     | Filter by endpoint type (see [Endpoint types](#endpoint-types)) |
+| `--min-risk <score>`| Minimum risk score (0–10)                        |
+| `--limit <n>`       | Page size (default 100, max 200)                 |
+| `--offset <n>`      | Page offset (default 0)                          |
+
+### Get Endpoint Details
+
+```bash
+pensar apps endpoint <endpointId>
+```
+
+Returns full detail for a single endpoint, including its objectives, authentication requirements, risk-score breakdown, business-logic notes, and threat model.
+
+### Create an Endpoint
+
+```bash
+pensar apps endpoint-create <appId> --endpoint <path> --description <description> [options]
+```
+
+Creates an endpoint under the given app. `--endpoint` and `--description` are required.
+
+| Flag                    | Description                                          |
+| ----------------------- | --------------------------------------------------- |
+| `--endpoint <text>`     | Endpoint path / URL / route (**required**)          |
+| `--description <text>`  | Endpoint description (**required**)                  |
+| `--type <type>`         | Endpoint type (see [Endpoint types](#endpoint-types)) |
+| `--location <text>`     | Source file (whitebox)                              |
+| `--start-line <n>`      | Start line number                                   |
+| `--end-line <n>`        | End line number                                     |
+| `--objective <text>`    | Testing objective for the endpoint (repeatable)     |
+| `--auth-required`       | Mark the endpoint as authentication-required        |
+| `--no-auth-required`    | Mark the endpoint as not requiring auth             |
+| `--auth-details <text>` | Free-form authentication details                    |
+| `--business-logic <text>` | Business-logic notes                              |
+| `--threat-model <text>` | Per-endpoint threat-model notes                     |
+
+Pass `--objective` more than once to attach multiple objectives. `--auth-required` and `--no-auth-required` are mutually exclusive.
+
+### Update an Endpoint
+
+```bash
+pensar apps endpoint-update <endpointId> [options]
+```
+
+Updates one or more fields on an existing endpoint. Only the flags you pass are changed; the same field flags as `endpoint-create` are accepted (all optional here).
+
+### Delete an Endpoint
+
+```bash
+pensar apps endpoint-delete <endpointId>
+```
+
+Deletes an endpoint. Returns `{ success, endpointId }`.
+
+## Search Subcommands
+
+Both search commands run a substring match across the selected workspace and return paginated JSON (`{ ..., hasMore, limit, offset, query }`). Search pages default to 50 (max 200).
+
+### Search Apps
+
+```bash
+pensar apps search <query> [options]
+```
+
+| Flag           | Description                                  |
+| -------------- | -------------------------------------------- |
+| `--type <type>`| Filter by application type                   |
+| `--limit <n>`  | Page size (default 50, max 200)              |
+| `--offset <n>` | Page offset                                  |
+
+### Search Endpoints
+
+```bash
+pensar apps search-endpoints <query> [options]
+```
+
+| Flag                | Description                                          |
+| ------------------- | --------------------------------------------------- |
+| `--app <id>`        | Scope the search to a single app (default: workspace-wide) |
+| `--type <type>`     | Filter by endpoint type                             |
+| `--min-risk <score>`| Minimum risk score                                 |
+| `--auth-required`   | Only auth-required endpoints                        |
+| `--no-auth-required`| Only public endpoints                              |
+| `--limit <n>`       | Page size (default 50, max 200)                     |
+| `--offset <n>`      | Page offset                                         |
+
+## App types
+
+`--type` on an app accepts one of: `ui`, `api-service`, `web-application`, `full-stack`, `domain`, `subdomain`, `database`, `cloud-resource`, `storage`.
+
+## Endpoint types
+
+`--type` on an endpoint accepts one of: `api-endpoint`, `web-endpoint`, `auth-endpoint`, `database`, `file-storage`, `asset`.
+
+## Examples
+
+```bash
+# List the first page of apps in the workspace
+pensar apps
+
+# Page through apps 200 at a time
+pensar apps --limit 200 --offset 200
+
+# Create an app
+pensar apps create --name "Billing API" --description "Customer billing service" --type api-service --framework "Express"
+
+# Update an app's description
+pensar apps update app_abc123 --description "Internal billing service"
+
+# List an app's high-risk endpoints
+pensar apps endpoints app_abc123 --min-risk 7
+
+# Create an endpoint with two objectives
+pensar apps endpoint-create app_abc123 \
+  --endpoint "/api/invoices/:id" \
+  --description "Fetch an invoice" \
+  --type api-endpoint \
+  --auth-required \
+  --objective "Test for IDOR on invoice id" \
+  --objective "Check auth bypass"
+
+# Search endpoints across the workspace for "login"
+pensar apps search-endpoints login --auth-required
+
+# Delete an endpoint
+pensar apps endpoint-delete endpoint_xyz789
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="pensar pentests" icon="shield" href="/apex/cli-commands/pensar-pentests">
+    Dispatch and view pentests against your workspace
+  </Card>
+  <Card title="pensar issues" icon="bug" href="/apex/cli-commands/pensar-issues">
+    View security issues found by pentests
+  </Card>
+</CardGroup>
