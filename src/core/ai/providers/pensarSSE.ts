@@ -6,8 +6,10 @@
  * whenever a complete SSE message boundary (blank line) is encountered.
  */
 
-const DEBUG =
-  process.env.PENSAR_DEBUG === "1" || process.env.PENSAR_DEBUG === "true";
+import { createLogger } from "../../logger/structured";
+import { scopedLogger } from "../../util/lazyLogger";
+
+const log = scopedLogger(() => createLogger("pensarSSE"));
 
 export interface SSEEvent {
   event: string;
@@ -60,15 +62,11 @@ export async function* parseSSE(
         if (timeoutId) clearTimeout(timeoutId);
       }
       if (result.done) {
-        if (DEBUG) {
-          console.error(
-            `[parseSSE] stream done: ${chunkCount} chunks, ${totalBytes} bytes, ${eventCount} events yielded, remaining buffer=${buffer.length} chars`,
-          );
-          if (buffer.length > 0) {
-            console.error(
-              `[parseSSE] remaining buffer: ${buffer.slice(0, 500)}`,
-            );
-          }
+        log.debug(
+          `stream done: ${chunkCount} chunks, ${totalBytes} bytes, ${eventCount} events yielded, remaining buffer=${buffer.length} chars`,
+        );
+        if (buffer.length > 0) {
+          log.debug(`remaining buffer: ${buffer.slice(0, 500)}`);
         }
         break;
       }
@@ -78,9 +76,9 @@ export async function* parseSSE(
       totalBytes += value.byteLength;
       const decoded = decoder.decode(value, { stream: true });
 
-      if (DEBUG && chunkCount <= 3) {
-        console.error(
-          `[parseSSE] chunk #${chunkCount}: ${value.byteLength} bytes, preview: ${decoded.slice(0, 200)}`,
+      if (chunkCount <= 3) {
+        log.debug(
+          `chunk #${chunkCount}: ${value.byteLength} bytes, preview: ${decoded.slice(0, 200)}`,
         );
       }
 
@@ -109,14 +107,13 @@ export async function* parseSSE(
 
     if (currentData.length > 0) {
       eventCount++;
-      if (DEBUG)
-        console.error(`[parseSSE] flushing final event: ${currentEvent}`);
+      log.debug(`flushing final event: ${currentEvent}`);
       yield { event: currentEvent, data: currentData.join("\n") };
     }
 
     if (eventCount === 0) {
-      console.error(
-        `[parseSSE] WARNING: stream ended with 0 events! totalBytes=${totalBytes}, chunks=${chunkCount}`,
+      log.warn(
+        `stream ended with 0 events! totalBytes=${totalBytes}, chunks=${chunkCount}`,
       );
     }
   } finally {

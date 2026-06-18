@@ -212,16 +212,26 @@ function NormalInputAreaInner({
   const promptRef = useRef<PromptInputRef>(null);
   const isExternalUpdate = useRef(false);
   const prevValueRef = useRef(value);
+  const emittedRef = useRef<string[]>([]);
 
-  // Sync external value prop to context when the parent explicitly changes it.
-  // Only sync when the value prop itself changed between renders (not just a
-  // re-render with stale value), to avoid resetting user input during typing.
+  // Sync external value prop down — but ignore our own keystrokes echoing back.
+  // During fast typing the parent's value lags behind; without this guard a
+  // stale echo calls setValue() and resets the caret to the front.
   useEffect(() => {
     const prevValue = prevValueRef.current;
     prevValueRef.current = value;
+    if (value === prevValue) return;
 
-    // Only sync if the parent's value prop actually changed from the previous render
-    if (value !== prevValue && value !== inputValue) {
+    const echoIdx = emittedRef.current.indexOf(value);
+    if (echoIdx !== -1) {
+      emittedRef.current.splice(0, echoIdx + 1);
+      if (value !== "" || emittedRef.current.length > 0) {
+        return;
+      }
+    } else {
+      emittedRef.current.length = 0;
+    }
+    if (value !== inputValue) {
       isExternalUpdate.current = true;
       setInputValue(value);
       promptRef.current?.setValue(value);
@@ -235,6 +245,7 @@ function NormalInputAreaInner({
       return;
     }
     if (inputValue !== value) {
+      emittedRef.current.push(inputValue);
       onChange(inputValue);
     }
   }, [inputValue, value, onChange]);

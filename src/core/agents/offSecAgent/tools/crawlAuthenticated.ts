@@ -1,6 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { targetFetch } from "../../../http/targetHeaders";
+import { createLogger } from "../../../logger/structured";
+import { scopedLogger } from "../../../util/lazyLogger";
 import {
   type EndpointInfo,
   extractJavascriptEndpoints,
@@ -11,6 +13,8 @@ import {
   ScopeViolationError,
 } from "./scopeGuard";
 import type { ToolContext } from "./types";
+
+const log = scopedLogger(() => createLogger("crawl-authenticated"));
 
 /**
  * Factory for the `crawl_authenticated_area` tool.
@@ -134,7 +138,11 @@ export function crawlAuthenticated(ctx: ToolContext) {
               });
             }
           } catch (error) {
-            console.error(`Error crawling ${url}:`, error);
+            log.error(
+              `Error crawling ${url}`,
+              error instanceof Error ? error : undefined,
+              { error: String(error) },
+            );
           }
         }
 

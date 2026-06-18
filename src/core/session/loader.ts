@@ -10,9 +10,13 @@
 
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { createLogger } from "../logger/structured";
 import { REPORT_FILENAME_MD } from "../report";
+import { scopedLogger } from "../util/lazyLogger";
 import type { SessionInfo } from "./index";
 import { loadSubagents, type UIMessage, type UISubagent } from "./persistence";
+
+const log = scopedLogger(() => createLogger("session:loader"));
 
 /**
  * Attack surface results format
@@ -58,7 +62,11 @@ export function loadAttackSurfaceResults(
   try {
     return JSON.parse(readFileSync(resultsPath, "utf-8"));
   } catch (e) {
-    console.error("Failed to load attack surface results:", e);
+    log.error(
+      "Failed to load attack surface results",
+      e instanceof Error ? e : undefined,
+      { error: String(e) },
+    );
     return null;
   }
 }
@@ -135,7 +143,9 @@ function createDiscoveryFromLogs(
       status: "completed",
     };
   } catch (e) {
-    console.error("Failed to parse logs:", e);
+    log.error("Failed to parse logs", e instanceof Error ? e : undefined, {
+      error: String(e),
+    });
     return null;
   }
 }

@@ -16,7 +16,9 @@ import {
   type ToolSet,
 } from "ai";
 import type { z } from "zod";
+import { createLogger } from "../logger/structured";
 import { shouldRecordAiPayloads } from "../observability";
+import { scopedLogger } from "../util/lazyLogger";
 import { withCachedLastMessage, withCachedSystemPrompt } from "./caching";
 import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
 import { getMaxOutputTokens, getModelInfo } from "./models";
@@ -27,6 +29,8 @@ import {
   getProviderModel,
   isAnthropicProvider,
 } from "./utils";
+
+const log = scopedLogger(() => createLogger("ai"));
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
@@ -313,7 +317,7 @@ function wrapStreamWithErrorHandler(
               ) {
                 const nextIdleCount = idleResumeCount + 1;
                 if (!silent) {
-                  console.warn(
+                  log.warn(
                     `Stream stalled (attempt ${nextIdleCount}/${MAX_IDLE_RESUME_RETRIES}), resuming with ${messagesContainer.current.length} messages: ${errorMessage}`,
                   );
                 }
@@ -349,7 +353,7 @@ function wrapStreamWithErrorHandler(
                 const delayMs = Math.min(1000 * nextRetryCount, 30000);
 
                 if (!silent) {
-                  console.warn(
+                  log.warn(
                     `Rate limit error (attempt ${nextRetryCount}/${MAX_RATE_LIMIT_RETRIES}), waiting ${delayMs}ms: ${errorMessage}`,
                   );
                 }
@@ -412,7 +416,7 @@ function wrapStreamWithErrorHandler(
 
                 if (fitted.fitsBudget && fitted.modified) {
                   if (!silent) {
-                    console.warn(
+                    log.warn(
                       `Context length error — Layer 1+2 reduced to ~${fitted.estimatedInputTokens} tokens, retrying`,
                     );
                   }
@@ -476,7 +480,7 @@ function wrapStreamWithErrorHandler(
                 // can throw — fall back to a minimal-context restart.
                 const messagesForSummary = messagesContainer.current;
                 if (!silent) {
-                  console.warn(
+                  log.warn(
                     `Context length error — summarizing ${messagesForSummary.length} messages`,
                   );
                 }
@@ -513,7 +517,7 @@ function wrapStreamWithErrorHandler(
                       summarizeError instanceof Error
                         ? summarizeError.message
                         : String(summarizeError);
-                    console.error(
+                    log.warn(
                       `Layer 3 summarization failed (${sumMsg}). Falling back to minimal-context restart.`,
                     );
                   }
@@ -534,10 +538,9 @@ function wrapStreamWithErrorHandler(
                 }
               } else {
                 if (!silent) {
-                  console.error(
-                    "Non-recoverable stream error, re-throwing:",
-                    errorMessage,
-                  );
+                  log.error("Non-recoverable stream error, re-throwing", {
+                    error: errorMessage,
+                  });
                 }
                 throw error;
               }
@@ -718,7 +721,7 @@ export function streamResponse(
     fittedMessages = fitted.messages;
     proactiveFitFailed = !fitted.fitsBudget;
     if (fitted.modified && !silent) {
-      console.warn(
+      log.warn(
         `Proactive context fit: compacted messages to ~${fitted.estimatedInputTokens} tokens (fits=${fitted.fitsBudget})`,
       );
     }
@@ -734,7 +737,7 @@ export function streamResponse(
   // the equivalent post-streamText path (line ~880) recovers.
   if (proactiveFitFailed && fittedMessages) {
     if (!silent) {
-      console.warn(
+      log.warn(
         `Proactive context fit returned fitsBudget=false on ${fittedMessages.length} messages — escalating to summarization before send`,
       );
     }
@@ -899,8 +902,9 @@ export function streamResponse(
       }) => {
         try {
           if (!silent) {
-            console.log(`🔧 Repairing tool call: ${toolCall.toolName}`);
-            console.log(`   Error: ${error.message || error}`);
+            log.debug(`Repairing tool call: ${toolCall.toolName}`, {
+              error: error.message || String(error),
+            });
 
             // Log specific details for common enum errors
             if (
@@ -908,8 +912,8 @@ export function streamResponse(
               (error.message.includes("severity") ||
                 error.message.includes("riskLevel"))
             ) {
-              console.log(
-                `   Note: This appears to be an enum validation error. Tool call repair will normalize the value.`,
+              log.debug(
+                "Enum validation error — tool call repair will normalize the value",
               );
             }
           }
@@ -918,7 +922,7 @@ export function streamResponse(
           const tool = tools[toolCall.toolName];
           if (!tool || !tool.inputSchema) {
             if (!silent) {
-              console.error(
+              log.warn(
                 `Cannot repair tool call: ${toolCall.toolName} not found or has no schema`,
               );
             }
@@ -1002,7 +1006,7 @@ export function streamResponse(
 
           if (repairedArgs === undefined || repairedArgs === null) {
             if (!silent) {
-              console.error(
+              log.warn(
                 `Tool call repair for "${toolCall.toolName}" produced no valid output`,
               );
             }
@@ -1011,12 +1015,9 @@ export function streamResponse(
           return { ...toolCall, input: JSON.stringify(repairedArgs) };
         } catch (repairError) {
           if (!silent) {
-            console.error(
-              "Error repairing tool call:",
-              repairError instanceof Error
-                ? repairError.message
-                : String(repairError),
-            );
+            log.warn("Error repairing tool call", {
+              error: String(repairError),
+            });
           }
           return null;
         }
@@ -1040,9 +1041,9 @@ export function streamResponse(
 
     if (isContextLengthError) {
       if (!silent) {
-        console.warn(
-          `Context length error, summarizing ${messagesContainer.current.length} messages: `,
-          outerErrorMessage,
+        log.warn(
+          `Context length error, summarizing ${messagesContainer.current.length} messages`,
+          { error: outerErrorMessage },
         );
       }
       // Wrap so a context error inside the summarization stream itself
@@ -1068,7 +1069,9 @@ export function streamResponse(
       );
     }
     if (!silent) {
-      console.error("Non-context length error, re-throwing", outerErrorMessage);
+      log.error("Non-context length error, re-throwing", {
+        error: outerErrorMessage,
+      });
     }
 
     // Re-throw if it's not a context length error

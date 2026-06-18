@@ -7,12 +7,16 @@
  */
 
 import type { AIModel } from "../../../ai";
+import { createLogger } from "../../../logger/structured";
+import { scopedLogger } from "../../../util/lazyLogger";
 import type { ToolContext } from "../../offSecAgent/tools";
 import type {
   FindingJudgeAgentOutput,
   FindingJudgeInput,
   FindingJudgeResult,
 } from "./types";
+
+const log = scopedLogger(() => createLogger("FindingJudge"));
 
 export type {
   FindingJudgeAgentOutput,
@@ -78,9 +82,11 @@ export async function judgeFinding(
     return normalizeJudgeResult(result);
   } catch (err: unknown) {
     const fallback = createJudgeFailureResult(err, ctx.model);
-    console.error(
-      `[FindingJudge] Agentic validation failed: model=${fallback.error?.model} type=${fallback.error?.type} message=${fallback.error?.message}`,
-    );
+    log.warn("Agentic validation failed", {
+      model: fallback.error?.model,
+      type: fallback.error?.type,
+      message: fallback.error?.message,
+    });
     return fallback;
   }
 }

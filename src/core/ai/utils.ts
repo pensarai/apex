@@ -17,6 +17,8 @@ import {
 import { getPensarGatewayUrl } from "../api/constants";
 import { ensureValidToken } from "../auth";
 import { config } from "../config";
+import { createLogger } from "../logger/structured";
+import { scopedLogger } from "../util/lazyLogger";
 import { type AIModel, type StreamResponseOpts, streamResponse } from "./ai";
 import {
   extractTaskSummaryFromMessages,
@@ -24,6 +26,8 @@ import {
 } from "./contextManagement";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
+
+const log = scopedLogger(() => createLogger("ai:utils"));
 
 /**
  * Check if a model uses an Anthropic-compatible provider that supports prompt caching.
@@ -219,14 +223,9 @@ export function getProviderModel(
       const bedrockModelId = model.startsWith("pensar:")
         ? model.slice(7)
         : model;
-      if (
-        process.env.PENSAR_DEBUG === "1" ||
-        process.env.PENSAR_DEBUG === "true"
-      ) {
-        console.log(
-          `[pensar] getProviderModel: ${model} → bedrock:${bedrockModelId} via ${gatewayUrl}`,
-        );
-      }
+      log.debug(
+        `getProviderModel: ${model} → bedrock:${bedrockModelId} via ${gatewayUrl}`,
+      );
 
       // Build config with token refresh support for WorkOS auth
       const modelConfig: Parameters<typeof createPensarModel>[1] = {
