@@ -90,18 +90,91 @@ function getAllArgs(flag: string, argv = args): string[] {
   return values;
 }
 
-function attachCliAgentStreamListeners(bus: AgentEventBus): void {
+/**
+ * Render a tool call's arguments for verbose output. For shell commands the
+ * full command is shown (un-truncated) so an operator running with approvals
+ * off can still see — and a report can still capture — exactly what ran.
+ * Other tools get a compact single-line JSON of their meaningful args.
+ */
+function formatToolCallArgs(toolName: string, args: unknown): string {
+  if (args && typeof args === "object") {
+    const record = args as Record<string, unknown>;
+    if (toolName === "execute_command" && typeof record.command === "string") {
+      return record.command
+        .split("\n")
+        .map((line) => `    ${line}`)
+        .join("\n");
+    }
+    const meaningful = Object.fromEntries(
+      Object.entries(record).filter(
+        ([k]) => k !== "toolCallId" && k !== "toolCallDescription",
+      ),
+    );
+    if (Object.keys(meaningful).length === 0) return "";
+    return `    ${JSON.stringify(meaningful)}`;
+  }
+  return args !== undefined ? `    ${JSON.stringify(args)}` : "";
+}
+
+/** Render a tool result for verbose output, indenting and capping size. */
+function formatToolResult(result: unknown): string {
+  const MAX = 20_000;
+  const indent = (text: string) =>
+    text
+      .split("\n")
+      .map((line) => `    ${line}`)
+      .join("\n");
+
+  if (result && typeof result === "object") {
+    const r = result as Record<string, unknown>;
+    const parts: string[] = [];
+    if (typeof r.stdout === "string" && r.stdout.length > 0) {
+      parts.push(indent(r.stdout));
+    }
+    if (typeof r.stderr === "string" && r.stderr.length > 0) {
+      parts.push(indent(`[stderr] ${r.stderr}`));
+    }
+    if (typeof r.outputFile === "string" && r.outputFile.length > 0) {
+      parts.push(`    (full output saved to ${r.outputFile})`);
+    }
+    if (parts.length > 0) return parts.join("\n").slice(0, MAX);
+  }
+
+  if (typeof result === "string") return indent(result).slice(0, MAX);
+  if (result === undefined || result === null) return "";
+  return indent(JSON.stringify(result)).slice(0, MAX);
+}
+
+function attachCliAgentStreamListeners(
+  bus: AgentEventBus,
+  opts: { verbose?: boolean } = {},
+): void {
   bus.on("text-delta", (d) => process.stdout.write(d.text));
-  bus.on("tool-call-complete", (d) => console.log(`\n→ ${d.toolName}`));
-  bus.on("tool-result", (d) => console.log(`✓ ${d.toolName} completed`));
+  bus.on("tool-call-complete", (d) => {
+    console.log(`\n→ ${d.toolName}`);
+    if (opts.verbose) {
+      const detail = formatToolCallArgs(d.toolName, d.args);
+      if (detail) console.log(detail);
+    }
+  });
+  bus.on("tool-result", (d) => {
+    if (opts.verbose) {
+      const detail = formatToolResult(d.result);
+      console.log(`✓ ${d.toolName}`);
+      if (detail) console.log(detail);
+    } else {
+      console.log(`✓ ${d.toolName} completed`);
+    }
+  });
   bus.on("error", (d) => console.error("Error:", d.error));
 }
 
 async function createInstrumentedBus(
   session: SessionInfo,
+  opts: { verbose?: boolean } = {},
 ): Promise<{ bus: AgentEventBus; cleanup: () => Promise<void> }> {
   const bus = new AgentEventBus();
-  attachCliAgentStreamListeners(bus);
+  attachCliAgentStreamListeners(bus, opts);
   const { attachWandbToEventBus } = await import(
     "./core/integrations/wandb/upload"
   );
@@ -222,6 +295,7 @@ Usage:
 operator options (-p):
   -p, --prompt <text|@file>  (required) Prompt for the operator agent
   -s, --system <text|@file>  Override the default system prompt
+  --show-output              Echo full commands and tool output as they run
   --target <url>             Target URL / domain / IP
   --model <model>            AI model (default: auto-selected from configured provider)
   --header "Name: Value"     Custom HTTP header (repeatable)
@@ -497,6 +571,7 @@ async function runOperator() {
   const systemRaw = getArg("-s") ?? getArg("--system");
   const systemPrompt = systemRaw ? resolveFlagValue(systemRaw) : undefined;
   const target = getArg("--target");
+  const showOutput = hasFlag("--show-output");
   const pensarConfig = await appConfig.get();
   const model = await resolveCliModel();
 
@@ -504,7 +579,9 @@ async function runOperator() {
   console.log(`${sep}
 OPERATOR SESSION
 ${sep}
-Model:   ${model}${target ? `\nTarget:  ${target}` : ""}
+Model:   ${model}${target ? `\nTarget:  ${target}` : ""}${
+    showOutput ? "\nShow output: on" : ""
+  }
 ${sep}\n`);
 
   const headers = await resolveCliHeaders();
@@ -523,7 +600,9 @@ ${sep}\n`);
     },
   });
 
-  const { bus, cleanup: wandbCleanup } = await createInstrumentedBus(session);
+  const { bus, cleanup: wandbCleanup } = await createInstrumentedBus(session, {
+    verbose: showOutput,
+  });
 
   let currentPrompt = prompt;
   let messages: ModelMessage[] | undefined;
