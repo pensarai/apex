@@ -16,6 +16,7 @@ import { createRequire } from "module";
 import { dirname, join } from "path";
 import { z } from "zod";
 import type { Logger } from "../../../logger";
+import { ensureCamoufox, resolveCamoufoxLaunchOptions } from "./camoufox";
 
 /**
  * Playwright `BrowserContext.storageState()` shape — the JSON-serialisable
@@ -452,48 +453,55 @@ export class PlaywrightMcpSession {
         const cliPath = join(dirname(mcpPkgJsonPath), "cli.js");
 
         const args = [cliPath, "--isolated"];
-        if (this.headless) {
-          args.push("--headless");
-        }
 
-        if (this.userAgent) {
-          args.push("--user-agent", this.userAgent);
-        }
+        // Drive an anti-detect Camoufox (Firefox) instead of vanilla Chromium.
+        // camoufox-js produces the executablePath / args / firefoxUserPrefs / env
+        // that carry the fingerprint; MCP drives that browser through the same
+        // tool API. We pass these via a temp config file rather than CLI flags.
+        await ensureCamoufox();
+        const camou = await resolveCamoufoxLaunchOptions(this.headless);
 
-        if (this.viewportSize) {
-          args.push(`--viewport-size=${this.viewportSize}`);
-        }
-
-        // Pass extraHTTPHeaders via a temp @playwright/mcp config file
-        // so every Chromium request includes them.
-        if (this.extraHttpHeaders) {
-          const os = await import("os");
-          const fsp = await import("fs/promises");
-          const cfg = {
-            browser: {
-              contextOptions: { extraHTTPHeaders: this.extraHttpHeaders },
+        const os = await import("os");
+        const fsp = await import("fs/promises");
+        const cfg = {
+          browser: {
+            browserName: "firefox",
+            launchOptions: {
+              executablePath: camou.executablePath,
+              args: camou.args,
+              firefoxUserPrefs: camou.firefoxUserPrefs,
+              headless: camou.headless,
             },
-          };
-          this.mcpConfigPath = join(
-            os.tmpdir(),
-            `pensar-mcp-${process.pid}-${Date.now()}.json`,
-          );
-          await fsp.writeFile(this.mcpConfigPath, JSON.stringify(cfg), {
-            encoding: "utf-8",
-            mode: 0o600,
-          });
-          args.push("--config", this.mcpConfigPath);
-        }
+            ...(this.extraHttpHeaders
+              ? { contextOptions: { extraHTTPHeaders: this.extraHttpHeaders } }
+              : {}),
+          },
+        };
+        this.mcpConfigPath = join(
+          os.tmpdir(),
+          `pensar-mcp-${process.pid}-${Date.now()}.json`,
+        );
+        await fsp.writeFile(this.mcpConfigPath, JSON.stringify(cfg), {
+          encoding: "utf-8",
+          mode: 0o600,
+        });
+        args.push("--config", this.mcpConfigPath);
 
-        // Disable Chromium sandbox when running as root (e.g., in Docker/ECS containers).
-        if (process.getuid?.() === 0) {
-          args.push("--no-sandbox");
-        }
+        // NB: no --no-sandbox / --user-agent / --viewport-size. Those are
+        // Chromium-only flags (invalid for Firefox), and Camoufox owns the
+        // UA / viewport / fingerprint — a hand-set Chrome UA on Firefox would
+        // itself be a detection tell.
 
         const transport = new StdioClientTransport({
           command: "node",
           args,
           stderr: "pipe",
+          // CAMOU_CONFIG_* fingerprint chunks must reach the actual browser
+          // process. The MCP node child inherits them (the transport merges
+          // these over getDefaultEnvironment) and Firefox inherits in turn.
+          env: Object.fromEntries(
+            Object.entries(camou.env).map(([k, v]) => [k, String(v)]),
+          ),
         });
 
         const client = new Client({
