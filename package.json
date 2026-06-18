@@ -21,6 +21,7 @@
     "@pensar/surface": "0.2.2",
     "@playwright/mcp": "^0.0.54",
     "ai": "^6.0.105",
+    "camoufox-js": "^0.11.1",
     "glob": "^13.0.0",
     "highlight.js": "^11.11.1",
     "imapflow": "^1.2.10",
