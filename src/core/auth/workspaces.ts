@@ -1,7 +1,9 @@
 import type {
+  CreateWorkspaceSelectionResponse,
   FetchWorkspacesResponse,
   SelectWorkspaceResponse,
   WorkspaceInfo,
+  WorkspaceSelectionStatusResponse,
 } from "./types";
 
 function sleep(ms: number): Promise<void> {
@@ -103,4 +105,88 @@ export async function selectWorkspace(
   }
 
   return (await response.json()) as SelectWorkspaceResponse;
+}
+
+/**
+ * Open a browser-based workspace selection rendezvous on the Console.
+ *
+ * Returns the selection id and the URL the user should open to pick a
+ * workspace in the browser, keeping `pensar login` non-interactive.
+ */
+export async function createWorkspaceSelection(
+  apiUrl: string,
+  accessToken: string,
+): Promise<CreateWorkspaceSelectionResponse> {
+  const response = await fetch(`${apiUrl}/api/cli/workspace-selection`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to start workspace selection");
+  }
+
+  return (await response.json()) as CreateWorkspaceSelectionResponse;
+}
+
+/**
+ * Poll the Console until the user selects a workspace in the browser.
+ *
+ * Resolves with the chosen workspace id. Rejects on expiry, timeout, or
+ * cancellation via the optional `AbortSignal`.
+ */
+export async function pollWorkspaceSelection(
+  apiUrl: string,
+  accessToken: string,
+  selectionId: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const POLL_INTERVAL = 3000;
+  const TIMEOUT = 10 * 60 * 1000;
+  const deadline = Date.now() + TIMEOUT;
+
+  while (Date.now() < deadline) {
+    if (signal?.aborted) throw new Error("Cancelled");
+
+    await sleep(POLL_INTERVAL);
+
+    if (signal?.aborted) throw new Error("Cancelled");
+
+    try {
+      const response = await fetch(
+        `${apiUrl}/api/cli/workspace-selection?id=${encodeURIComponent(selectionId)}`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        },
+      );
+
+      if (!response.ok) continue;
+
+      const data = (await response.json()) as WorkspaceSelectionStatusResponse;
+
+      if (data.status === "complete" && data.workspaceId) {
+        return data.workspaceId;
+      }
+
+      if (data.status === "expired") {
+        throw new Error(
+          "Workspace selection expired. Please run `pensar login` again.",
+        );
+      }
+    } catch (err) {
+      if (signal?.aborted) throw new Error("Cancelled");
+      if (err instanceof Error && err.message.includes("Please try again")) {
+        throw err;
+      }
+      if (err instanceof Error && err.message.includes("expired")) {
+        throw err;
+      }
+      // Network glitch — retry
+    }
+  }
+
+  throw new Error("Workspace selection timed out. Please try again.");
 }
