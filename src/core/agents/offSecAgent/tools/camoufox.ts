@@ -16,7 +16,6 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { launchOptions as camoufoxLaunchOptions } from "camoufox-js";
 
 const execFileAsync = promisify(execFile);
 
@@ -58,6 +57,10 @@ export interface CamoufoxLaunchOptions {
 export async function resolveCamoufoxLaunchOptions(
   headless: boolean,
 ): Promise<CamoufoxLaunchOptions> {
+  // Loaded lazily (and kept external from the bundle) so the CLI's startup
+  // commands (--version/--help) don't pull camoufox-js + its data-file deps
+  // (fingerprint-generator/territoryInfo.xml) at module load.
+  const { launchOptions: camoufoxLaunchOptions } = await import("camoufox-js");
   return (await camoufoxLaunchOptions({
     ...CAMOUFOX_OPTIONS,
     headless,
