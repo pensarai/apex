@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -6,15 +6,18 @@ import type {
   StopCondition,
   StreamTextResult,
   TextStreamPart,
+  ToolCallPart,
+  ToolResultPart,
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
 import { streamResponse } from "../../ai";
-import { AgentEventBus } from "../../eventBus";
+import { AgentEventBus, type StreamIdContext } from "../../eventBus";
 import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../http/targetHeaders";
+import { newMessageId, newPartId } from "../../id/id";
 import { createLogger } from "../../logger/structured";
 import { getApexTracer } from "../../observability";
 import type { ApprovalGate } from "../../operator";
@@ -88,8 +91,55 @@ export class OffensiveSecurityAgent<TResult = void> {
     streamResult: StreamTextResult<ToolSet, never>,
   ) => TResult | Promise<TResult>;
 
+  /**
+   * The structured result captured by the `response` tool, or `null` if the
+   * agent has not (yet) called `response`.
+   */
+  private _capturedResponse: TResult | null = null;
+
+  /**
+   * Set synchronously the instant the `response` tool fires, before any async
+   * `resolveResult` runs. Distinguishes "agent called response (run ended
+   * cleanly)" from "agent aborted" for the synthetic-tool-result close — needed
+   * because with a custom resolveResult, `_capturedResponse` is populated
+   * asynchronously and may still be null in that close window.
+   */
+  private _responseToolFired = false;
+
+  /**
+   * Resolves the instant the `response` tool captures the structured result —
+   * the moment the agent is semantically done, independent of stream teardown
+   * (which can wedge before the final `finish` chunk). {@link consume} races
+   * this so it returns the result then and drains the rest in the background.
+   * Never rejects; never resolves if `response` is never called — there the
+   * idle-guard-bounded drain settles `consume` instead.
+   */
+  private _resolveResponseCaptured!: (result: TResult) => void;
+  public readonly responseCaptured: Promise<TResult> = new Promise(
+    (resolve) => {
+      this._resolveResponseCaptured = resolve;
+    },
+  );
+
+  /**
+   * Settles when the background drain (stream iteration + its `finally`, which
+   * closes any still-in-flight tool with a synthetic result) has fully
+   * finished. A caller that aborts right after capturing the result `await`s
+   * this before marking the run complete, so the last step's in-flight tools
+   * are closed *before* completion instead of being stranded `running`.
+   */
+  public drained: Promise<void> = Promise.resolve();
+
   /** Identifier for this agent when it is running as a subagent. */
   private readonly subagentId?: string;
+
+  /**
+   * The current open assistant message id (`msg_…`) for the in-flight step.
+   * Minted on the `start-step` chunk in {@link consume} and read by
+   * `onStepFinish` so the closing `step-finish` event carries the same id.
+   * `null` between steps.
+   */
+  private currentMessageId: string | null = null;
 
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
@@ -134,6 +184,16 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** The session this agent is operating within. */
   private readonly _session: SessionInfo;
 
+  /** Latest accumulated messages, shared with `consume()` for abort persistence. */
+  private latestMessages: ModelMessage[] | null = null;
+
+  private messagesPath: string | null = null;
+
+  /** Cancels the debounced persist timer so abort writes don't race it. */
+  private cancelPersistTimer: (() => void) | null = null;
+
+  private syntheticsPersisted = false;
+
   /**
    * Async factory that creates a session when one is not provided,
    * then constructs the agent. Use this instead of `new` when you
@@ -162,6 +222,18 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** The session this agent is operating within. */
   get session(): SessionInfo {
     return this._session;
+  }
+
+  /**
+   * This agent's identity on the event bus, as a session id (`ses_…`).
+   *
+   * For a subagent, `subagentId` is the child's own session id (minted by
+   * the spawning tool). For the root agent, it is the root session's id.
+   * Used to stamp `sessionId` (and the legacy `subagentId` alias) onto
+   * every event this agent emits.
+   */
+  private get busSessionId(): string {
+    return this.subagentId ?? this._session.id;
   }
 
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
@@ -298,15 +370,38 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
 
     // -- Response schema → auto capture / stop / resolve ----------------------
-    let capturedResponse: TResult | null = null;
-
     if (input.responseSchema) {
       tools = {
         ...tools,
         [RESPONSE_TOOL_NAME]: createResponseTool(
           input.responseSchema,
           (result) => {
-            capturedResponse = result as TResult;
+            this._responseToolFired = true;
+            // The response tool's raw input matches the response SCHEMA, which
+            // is only a valid TResult on the DEFAULT path (no custom
+            // resolveResult). When a subclass supplies a custom resolveResult
+            // (e.g. TargetedPentestAgent returns { findings, ... }, NOT the raw
+            // schema), the captured value must be funnelled through it before it
+            // can fulfil consume()'s `Promise.race`. Otherwise consume() returns
+            // the raw schema object and a destructure like `const { findings }`
+            // yields undefined → `findings.length` throws. See PentestAgent.
+            const customResolve = input.resolveResult;
+            if (customResolve) {
+              void Promise.resolve()
+                .then(() => customResolve(this.streamResult))
+                .then((resolved) => {
+                  this._capturedResponse = resolved;
+                  this._resolveResponseCaptured(resolved);
+                })
+                .catch(() => {
+                  // resolveResult failed at capture time — leave
+                  // responseCaptured unresolved so consume() settles on the
+                  // background drain (which surfaces the real error/result).
+                });
+              return;
+            }
+            this._capturedResponse = result as TResult;
+            this._resolveResponseCaptured(result as TResult);
           },
         ),
       };
@@ -316,7 +411,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       this.resolveResult = input.resolveResult;
     } else if (input.responseSchema) {
       this.resolveResult = () => {
-        if (capturedResponse !== null) return capturedResponse;
+        if (this._capturedResponse !== null) return this._capturedResponse;
         return undefined as TResult;
       };
     }
@@ -357,7 +452,8 @@ export class OffensiveSecurityAgent<TResult = void> {
     if (!existsSync(messagesDir)) {
       mkdirSync(messagesDir, { recursive: true });
     }
-    const messagesPath = join(messagesDir, "messages.json");
+    this.messagesPath = join(messagesDir, "messages.json");
+    const messagesPath = this.messagesPath;
 
     // Mutable so that summarization can clear stale history.
     const initialMessagesRef: { current: ModelMessage[] } = {
@@ -375,18 +471,24 @@ export class OffensiveSecurityAgent<TResult = void> {
     // JSON.stringify on every step when many agents run concurrently.
     const PERSIST_INTERVAL_MS = 15_000;
     let persistTimer: ReturnType<typeof setTimeout> | null = null;
-    let latestMessages: ModelMessage[] | null = null;
 
     const schedulePersist = () => {
       if (persistTimer) return;
       persistTimer = setTimeout(() => {
         persistTimer = null;
-        if (latestMessages) {
-          const toWrite = latestMessages;
-          latestMessages = null;
+        if (this.latestMessages) {
+          const toWrite = this.latestMessages;
+          this.latestMessages = null;
           writeFile(messagesPath, JSON.stringify(toWrite)).catch(() => {});
         }
       }, PERSIST_INTERVAL_MS);
+    };
+
+    this.cancelPersistTimer = () => {
+      if (persistTimer) {
+        clearTimeout(persistTimer);
+        persistTimer = null;
+      }
     };
 
     // -- Init record (trace.jsonl first line) ---------------------------------
@@ -431,8 +533,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         stopWhen,
         toolChoice: "auto",
         sessionPath: input.session.rootPath,
+        sessionId: this.busSessionId,
         onStepFinish: async (event) => {
-          latestMessages = [
+          this.latestMessages = [
             ...initialMessagesRef.current,
             ...event.response.messages,
           ];
@@ -446,7 +549,12 @@ export class OffensiveSecurityAgent<TResult = void> {
           this.eventBus.emit("step-finish", {
             messages: event.response.messages,
             subagentId: this.subagentId,
+            sessionId: this.busSessionId,
+            messageId: this.currentMessageId ?? undefined,
           });
+          // The step's message is now closed; the next `start-step` chunk in
+          // consume() mints a fresh one.
+          this.currentMessageId = null;
           await input.onStepFinish?.(event);
         },
         onSummarized: () => {
@@ -461,13 +569,16 @@ export class OffensiveSecurityAgent<TResult = void> {
             clearTimeout(persistTimer);
             persistTimer = null;
           }
-          const finalMessages = latestMessages ?? [
-            ...initialMessagesRef.current,
-            ...event.response.messages,
-          ];
-          await writeFile(messagesPath, JSON.stringify(finalMessages)).catch(
-            () => {},
-          );
+          // Skip if emitSyntheticToolResults already wrote the abort snapshot.
+          if (!this.syntheticsPersisted) {
+            const finalMessages = this.latestMessages ?? [
+              ...initialMessagesRef.current,
+              ...event.response.messages,
+            ];
+            await writeFile(messagesPath, JSON.stringify(finalMessages)).catch(
+              () => {},
+            );
+          }
           await input.onFinish?.(event);
         },
         abortSignal: input.abortSignal,
@@ -542,12 +653,132 @@ export class OffensiveSecurityAgent<TResult = void> {
     const bus = this.eventBus;
 
     const runConsume = async (): Promise<TResult> => {
+      // Per-tool-call part ids: minted on first reference and reused for that
+      // call's complete / result for the WHOLE session — NEVER reset per step.
+      // A tool call's part id is its identity for its lifetime, so its start and
+      // its (real or synthetic) result always resolve to the same part, for the
+      // TUI and the console alike. toolCallIds are globally unique within a run,
+      // so a session-long map can't collide; the per-message part INDEX is a
+      // separate concern handled by consumers.
+      const toolParts = new Map<string, string>();
+      const ids: StreamIdContext = {
+        subagentId: this.busSessionId,
+        sessionId: this.busSessionId,
+        messageId: undefined,
+        textPartId: undefined,
+        toolPartId: (toolCallId: string) => {
+          let p = toolParts.get(toolCallId);
+          if (!p) {
+            p = newPartId();
+            toolParts.set(toolCallId, p);
+          }
+          return p;
+        },
+      };
+
+      // Track the current step so it can be reconstructed on abort (PR #779):
+      // inFlightTools = calls still awaiting a result, completedResults =
+      // results already streamed but not yet persisted by onStepFinish. On
+      // stream end with calls still in flight, `emitSyntheticToolResults`
+      // closes them so no tool-call is ever left without a matching result.
+      const inFlightTools = new Map<string, string>();
+      const completedResults: ToolResultPart[] = [];
+      let streamError: unknown = null;
+
       try {
         for await (const chunk of this.streamResult.fullStream) {
-          bus.emitStreamPart(chunk, sid);
+          switch (chunk.type) {
+            case "start-step":
+              // New step → new assistant message. Tool part ids are NOT reset
+              // here: the session-long `toolParts` map (see above) keeps each
+              // tool call's id stable across steps so a late close reconciles to
+              // the running part instead of stranding it as a duplicate.
+              ids.messageId = newMessageId();
+              this.currentMessageId = ids.messageId;
+              ids.textPartId = undefined;
+              break;
+            case "text-start":
+              // Each text run within a step gets its own part id.
+              ids.textPartId = newPartId();
+              break;
+            case "text-end":
+              ids.textPartId = undefined;
+              break;
+            case "tool-input-start":
+              // Track from the start so a truncated call (started, args never
+              // completed) still gets closed and isn't left "running".
+              inFlightTools.set(chunk.id, chunk.toolName);
+              break;
+            case "tool-call":
+              inFlightTools.set(chunk.toolCallId, chunk.toolName);
+              break;
+            case "tool-result": {
+              const tc = chunk as {
+                toolCallId: string;
+                toolName: string;
+                result?: unknown;
+                output?: unknown;
+              };
+              inFlightTools.delete(tc.toolCallId);
+              completedResults.push({
+                type: "tool-result",
+                toolCallId: tc.toolCallId,
+                toolName: tc.toolName,
+                output: (tc.result ?? tc.output) as ToolResultPart["output"],
+              });
+              break;
+            }
+            case "finish-step":
+              // onStepFinish has persisted this step; drop its results so a
+              // later abort doesn't re-append already-saved tool calls/results.
+              completedResults.length = 0;
+              // Close any call that started this step but produced no result
+              // (truncated args) so it doesn't render stuck "running". Carry the
+              // running part's exact partId + messageId so the result reuses that
+              // part instead of being stranded as a duplicate while streaming.
+              for (const [toolCallId, toolName] of inFlightTools) {
+                bus.emit("tool-result", {
+                  toolCallId,
+                  toolName,
+                  result: {
+                    type: "error-text",
+                    value: "Tool call did not complete",
+                  },
+                  sessionId: this.busSessionId,
+                  subagentId: sid,
+                  partId: ids.toolPartId?.(toolCallId),
+                  messageId: ids.messageId,
+                });
+              }
+              inFlightTools.clear();
+              break;
+          }
+          bus.emitStreamPart(chunk, ids);
         }
+        // Completed normally — onStepFinish persists everything.
+        completedResults.length = 0;
+      } catch (err) {
+        streamError = err;
       } finally {
+        // Dispose first — don't block on persistence I/O.
         this.persistentShell?.dispose();
+        if (inFlightTools.size > 0) {
+          const reason = this.abortSignal?.aborted
+            ? "Agent aborted by user"
+            : streamError instanceof Error && streamError.message
+              ? streamError.message
+              : "Stream terminated unexpectedly";
+          try {
+            await this.emitSyntheticToolResults(
+              inFlightTools,
+              completedResults,
+              reason,
+              ids.toolPartId,
+            );
+          } catch {
+            // Never mask the original streamError with a listener error.
+          }
+        }
         // Tear down the Chromium child process we own. Without this, a
         // naturally-finishing agent leaks its Playwright MCP browser — over a
         // long single-process scan (many endpoints) the leaked Chromium
@@ -556,6 +787,10 @@ export class OffensiveSecurityAgent<TResult = void> {
         if (this.ownsBrowserSession && this.browserSession) {
           await this.browserSession.disconnect().catch(() => {});
         }
+      }
+
+      if (streamError) {
+        throw streamError;
       }
 
       if (this.abortSignal?.aborted) {
@@ -569,28 +804,46 @@ export class OffensiveSecurityAgent<TResult = void> {
     };
 
     // Only subagents get a span here; top-level runs are wrapped by the host.
-    if (!sid) return runConsume();
+    const drain = !sid
+      ? runConsume()
+      : getApexTracer().startActiveSpan(
+          `invoke_agent ${sid}`,
+          {
+            attributes: {
+              "gen_ai.operation.name": "invoke_agent",
+              "gen_ai.agent.name": sid,
+            },
+          },
+          async (span) => {
+            try {
+              return await runConsume();
+            } catch (err) {
+              span.recordException(err as Error);
+              throw err;
+            } finally {
+              span.end();
+            }
+          },
+        );
 
-    const tracer = getApexTracer();
-    return tracer.startActiveSpan(
-      `invoke_agent ${sid}`,
-      {
-        attributes: {
-          "gen_ai.operation.name": "invoke_agent",
-          "gen_ai.agent.name": sid,
-        },
-      },
-      async (span) => {
-        try {
-          return await runConsume();
-        } catch (err) {
-          span.recordException(err as Error);
-          throw err;
-        } finally {
-          span.end();
-        }
-      },
+    // Decouple the result from stream teardown. With a `response` schema the
+    // structured result is captured mid-stream (in the response tool), so return
+    // it the instant it's available rather than waiting for the stream to close
+    // — teardown can wedge (Bedrock goes byte-silent before the final chunk).
+    // The drain keeps running in the background for persistence/cleanup, bounded
+    // by the transport idle guard so it can't block the caller or leak. Without
+    // a response schema `responseCaptured` never fires and this is the same
+    // full-drain await as before.
+    // Expose the drain's settle so a caller that aborts after capturing the
+    // result can wait for its `finally` (in-flight tool closes) before marking
+    // the run complete.
+    this.drained = drain.then(
+      () => {},
+      () => {},
     );
+    const result = await Promise.race([drain, this.responseCaptured]);
+    drain.catch(() => {});
+    return result;
   }
 
   /**
@@ -599,6 +852,125 @@ export class OffensiveSecurityAgent<TResult = void> {
    */
   get response() {
     return this.streamResult.response;
+  }
+
+  private async emitSyntheticToolResults(
+    inFlightTools: Map<string, string>,
+    completedResults: ToolResultPart[],
+    reason: string,
+    partIdFor?: (toolCallId: string) => string,
+  ): Promise<void> {
+    const sid = this.subagentId;
+    const output = {
+      type: "error-text" as const,
+      value: `Tool execution aborted: ${reason}`,
+    };
+    const syntheticParts: ToolResultPart[] = [];
+
+    for (const [toolCallId, toolName] of inFlightTools) {
+      // The stop tool (`response`) reaching here after a successful capture
+      // didn't fail — it submitted the result, and the run ended on it. Mark it
+      // completed instead of a misleading "aborted" error; the captured result
+      // itself still flows out via consume()'s return value.
+      const result =
+        toolName === RESPONSE_TOOL_NAME && this._responseToolFired
+          ? { type: "text" as const, value: "Response submitted." }
+          : output;
+      this.eventBus.emit("tool-result", {
+        toolCallId,
+        toolName,
+        result,
+        // Carry this agent's canonical session id (not just the legacy
+        // subagentId alias) so the execution translator routes the synthetic
+        // result to THIS subagent's session rather than falling back to root.
+        sessionId: this.busSessionId,
+        subagentId: sid,
+        // Reuse the running part's id so the close lands on it instead of
+        // stranding it as a spinning duplicate.
+        partId: partIdFor?.(toolCallId),
+      });
+      syntheticParts.push({
+        type: "tool-result",
+        toolCallId,
+        toolName,
+        output: result,
+      });
+    }
+
+    if (!this.messagesPath) return;
+
+    // Cancel the debounced timer so its writeFile can't race the write below.
+    this.cancelPersistTimer?.();
+
+    // latestMessages is null once the debounced timer has flushed; fall back
+    // to the on-disk snapshot so we don't overwrite history with synthetics.
+    let base: ModelMessage[] = this.latestMessages ?? [];
+    if (base.length === 0 && existsSync(this.messagesPath)) {
+      try {
+        base = JSON.parse(readFileSync(this.messagesPath, "utf-8"));
+      } catch {
+        // Corrupt file → proceed with empty base.
+      }
+    }
+
+    // When onStepFinish hasn't fired, this step's assistant + tool messages
+    // aren't in base yet; reconstruct it so resumed sessions see valid pairs.
+    const allToolCallIds = new Set([
+      ...inFlightTools.keys(),
+      ...completedResults.map((r) => r.toolCallId),
+    ]);
+    const lastMsg = base[base.length - 1];
+    const needsStepReconstruction =
+      !lastMsg ||
+      lastMsg.role !== "assistant" ||
+      !this.baseContainsToolCalls(lastMsg, allToolCallIds);
+
+    const appended: ModelMessage[] = [];
+    if (needsStepReconstruction) {
+      const stepTools: Array<[string, string]> = [
+        ...inFlightTools,
+        ...completedResults.map((r): [string, string] => [
+          r.toolCallId,
+          r.toolName,
+        ]),
+      ];
+      const toolCalls: ToolCallPart[] = stepTools.map(
+        ([toolCallId, toolName]) => ({
+          type: "tool-call" as const,
+          toolCallId,
+          toolName,
+          input: {},
+        }),
+      );
+      appended.push({ role: "assistant", content: toolCalls });
+    }
+    appended.push({
+      role: "tool",
+      content: [...completedResults, ...syntheticParts],
+    });
+
+    const next: ModelMessage[] = [...base, ...appended];
+    this.latestMessages = next;
+    try {
+      await writeFile(this.messagesPath, JSON.stringify(next));
+      // Only suppress onFinish's write once the snapshot is safely on disk.
+      this.syntheticsPersisted = true;
+    } catch {
+      // Write failed — leave the flag false so onFinish still attempts a write.
+    }
+  }
+
+  private baseContainsToolCalls(
+    msg: ModelMessage,
+    toolCallIds: Set<string>,
+  ): boolean {
+    if (!Array.isArray(msg.content)) return false;
+    const contentToolIds = new Set(
+      (msg.content as Array<{ type: string; toolCallId?: string }>)
+        .filter((p) => p.type === "tool-call" && p.toolCallId)
+        .map((p) => p.toolCallId),
+    );
+    return [...toolCallIds].every((id) => contentToolIds.has(id));
   }
 }
 

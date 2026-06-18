@@ -1,9 +1,11 @@
+import type { TextStreamPart, ToolSet } from "ai";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { StepTraceWriter, type TraceRecord } from "./agents/offSecAgent/trace";
-import { AgentEventBus } from "./eventBus";
+import { AgentEventBus, type StreamIdContext } from "./eventBus";
+import { isPartId, newMessageId, newSessionId } from "./id/id";
 
 // ---------------------------------------------------------------------------
 // Regression coverage for issue #707 — trace-record forwarding across
@@ -147,5 +149,187 @@ describe("AgentEventBus.attachChild — child→parent forwarding contract", () 
 
     expect(received).toHaveLength(1);
     expect(received[0].subagentId).toBe("inner");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Native identity threading: emitStreamPart stamps sessionId / messageId /
+// partId, and attachChild injects the child's session id + parentSessionId.
+// ---------------------------------------------------------------------------
+
+describe("emitStreamPart — native id threading", () => {
+  function part(chunk: Partial<TextStreamPart<ToolSet>> & { type: string }) {
+    return chunk as TextStreamPart<ToolSet>;
+  }
+
+  it("stamps sessionId/messageId/partId on text and tool events", () => {
+    const bus = new AgentEventBus();
+    const sessionId = newSessionId();
+    const messageId = newMessageId();
+    const toolPartIds = new Map<string, string>();
+    let nextPart = 0;
+
+    const ids: StreamIdContext = {
+      subagentId: sessionId,
+      sessionId,
+      messageId,
+      textPartId: "prt_textrun",
+      toolPartId: (toolCallId: string) => {
+        let p = toolPartIds.get(toolCallId);
+        if (!p) {
+          p = `prt_tool_${nextPart++}`;
+          toolPartIds.set(toolCallId, p);
+        }
+        return p;
+      },
+    };
+
+    const text: AgentEventMapText[] = [];
+    bus.on("text-delta", (e) => text.push(e));
+    const starts: AgentEventMapToolStart[] = [];
+    bus.on("tool-call-start", (e) => starts.push(e));
+    const completes: AgentEventMapToolComplete[] = [];
+    bus.on("tool-call-complete", (e) => completes.push(e));
+    const results: AgentEventMapToolResult[] = [];
+    bus.on("tool-result", (e) => results.push(e));
+
+    bus.emitStreamPart(part({ type: "text-delta", id: "t1", text: "hi" }), ids);
+    bus.emitStreamPart(
+      part({ type: "tool-input-start", id: "tc-1", toolName: "exec" }),
+      ids,
+    );
+    bus.emitStreamPart(
+      part({
+        type: "tool-call",
+        toolCallId: "tc-1",
+        toolName: "exec",
+        input: { cmd: "ls" },
+      }),
+      ids,
+    );
+    bus.emitStreamPart(
+      part({
+        type: "tool-result",
+        toolCallId: "tc-1",
+        toolName: "exec",
+        output: "ok",
+      }),
+      ids,
+    );
+
+    expect(text[0]).toMatchObject({
+      sessionId,
+      messageId,
+      partId: "prt_textrun",
+    });
+
+    // Tool start mints a part id; complete + result reuse the SAME part id.
+    expect(starts[0]).toMatchObject({ sessionId, messageId });
+    const toolPartId = starts[0].partId;
+    expect(toolPartId).toBeDefined();
+    expect(completes[0].partId).toBe(toolPartId);
+    expect(results[0].partId).toBe(toolPartId);
+  });
+
+  it("accepts a bare subagentId string for backward compatibility", () => {
+    const bus = new AgentEventBus();
+    const received: AgentEventMapText[] = [];
+    bus.on("text-delta", (e) => received.push(e));
+
+    bus.emitStreamPart(
+      part({ type: "text-delta", id: "t1", text: "x" }),
+      "sub-1",
+    );
+
+    expect(received[0].subagentId).toBe("sub-1");
+    expect(received[0].sessionId).toBeUndefined();
+  });
+});
+
+describe("attachChild — session id injection", () => {
+  it("injects the child session id as sessionId + subagentId on forwarded events", () => {
+    const parent = new AgentEventBus();
+    const child = new AgentEventBus();
+    const childSessionId = newSessionId();
+    AgentEventBus.attachChild(child, parent, childSessionId);
+
+    const received: { sessionId?: string; subagentId?: string }[] = [];
+    parent.on("text-delta", (e) => received.push(e));
+
+    child.emit("text-delta", { text: "from child" });
+
+    expect(received).toHaveLength(1);
+    expect(received[0].sessionId).toBe(childSessionId);
+    expect(received[0].subagentId).toBe(childSessionId);
+  });
+
+  it("injects parentSessionId on bubbled lifecycle events", () => {
+    const parent = new AgentEventBus();
+    const child = new AgentEventBus();
+    const childSessionId = newSessionId();
+    AgentEventBus.attachChild(child, parent, childSessionId);
+
+    const received: { parentSessionId?: string; sessionId?: string }[] = [];
+    parent.on("subagent-spawn", (e) => received.push(e));
+
+    const grandchildSessionId = newSessionId();
+    child.emit("subagent-spawn", {
+      subagentId: grandchildSessionId,
+      sessionId: grandchildSessionId,
+      input: {},
+    });
+
+    expect(received).toHaveLength(1);
+    // The grandchild's own session id is preserved...
+    expect(received[0].sessionId).toBe(grandchildSessionId);
+    // ...and the child (this bus's owner) becomes the parent.
+    expect(received[0].parentSessionId).toBe(childSessionId);
+  });
+});
+
+// Local payload aliases so the test bodies stay readable without importing
+// the (intentionally not exported) AgentEventMap.
+type AgentEventMapText = {
+  text: string;
+  sessionId?: string;
+  subagentId?: string;
+  messageId?: string;
+  partId?: string;
+};
+type AgentEventMapToolStart = {
+  toolCallId: string;
+  toolName: string;
+  sessionId?: string;
+  messageId?: string;
+  partId?: string;
+};
+type AgentEventMapToolComplete = AgentEventMapToolStart & { args: unknown };
+type AgentEventMapToolResult = AgentEventMapToolStart & { result: unknown };
+
+// Reference isPartId so the import is exercised as a sanity assertion.
+describe("partId shape", () => {
+  it("minted tool/text part ids are prt_-prefixed", () => {
+    const bus = new AgentEventBus();
+    const got: string[] = [];
+    bus.on("tool-call-start", (e) => {
+      if (e.partId) got.push(e.partId);
+    });
+    let n = 0;
+    bus.emitStreamPart(
+      {
+        type: "tool-input-start",
+        id: "tc-x",
+        toolName: "t",
+      } as TextStreamPart<ToolSet>,
+      {
+        sessionId: newSessionId(),
+        toolPartId: () => {
+          n++;
+          return `prt_x${n}`;
+        },
+      },
+    );
+    expect(got).toHaveLength(1);
+    expect(isPartId(got[0])).toBe(true);
   });
 });

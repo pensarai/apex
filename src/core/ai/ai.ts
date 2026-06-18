@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
@@ -26,6 +27,7 @@ import {
   getModelInfo,
   prefersSequentialToolCalls,
 } from "./models";
+import { STREAM_DEBUG } from "./streamTelemetry";
 import {
   type AIAuthConfig,
   checkIfContextLengthError,
@@ -64,17 +66,92 @@ const OPENAI_REASONING_MODEL_IDS = new Set([
   "gpt-5.5-2026-04-23",
 ]);
 
+/**
+ * Per-step billing context attached to a usage report.
+ *
+ * Carries the identity of the step that produced the usage so the billing
+ * sink can attribute cost to a specific `(sessionId, stepSeq)` rather than a
+ * whole run. Both fields are optional for backward compatibility — callers
+ * that registered a 3-arg callback continue to work unchanged.
+ */
+export interface UsageStepContext {
+  /** Session id (`ses_…`) that emitted the step, when known. */
+  sessionId?: string;
+  /** Monotonic per-run AI-SDK step index (see {@link runWithStepContext}). */
+  stepSeq?: number;
+}
+
 /** Callback for reporting token usage from AI operations */
 type UsageCallback = (
   model: string,
   inputTokens: number,
   outputTokens: number,
+  ctx?: UsageStepContext,
 ) => void;
 let _usageCallback: UsageCallback | null = null;
 
 /** Register a callback to receive token usage reports from all AI operations */
 export function onUsage(cb: UsageCallback | null): void {
   _usageCallback = cb;
+}
+
+// ---------------------------------------------------------------------------
+// Per-run step counter (for per-step billing attribution)
+// ---------------------------------------------------------------------------
+//
+// Each AI-SDK `streamText` step that reports usage is tagged with a monotonic
+// `stepSeq` scoped to the emitting session. The counter lives in
+// AsyncLocalStorage so concurrent runs (e.g. parallel subagents) never share
+// or race a step index — each `runWithStepContext` call gets its own store.
+//
+// Monotonicity across a resumed run: the caller seeds `nextStepSeq` from the
+// count of rehydrated assistant messages (the best available proxy for "how
+// many steps already happened"). This guarantees monotonic-within-a-run and
+// approximates cross-run monotonicity. It is NOT a strict global sequence —
+// the authoritative per-session step ordering is the DB `stepSeq` on
+// `agent_messages`; this counter only labels live usage reports for billing.
+
+interface StepContext {
+  sessionId?: string;
+  /** Next step index to hand out; mutated in place as steps finish. */
+  next: number;
+}
+
+const stepContextStore = new AsyncLocalStorage<StepContext>();
+
+/**
+ * Run `fn` within a per-run step-counting context. All `streamResponse` steps
+ * executed inside `fn`'s async tree report usage tagged with `sessionId` and a
+ * monotonically increasing `stepSeq` starting at `seedStepSeq` (default 0).
+ *
+ * Pass `seedStepSeq` = number of prior assistant messages on resume so the
+ * counter continues past the rehydrated history.
+ */
+export function runWithStepContext<T>(
+  opts: { sessionId?: string; seedStepSeq?: number },
+  fn: () => T,
+): T {
+  return stepContextStore.run(
+    { sessionId: opts.sessionId, next: opts.seedStepSeq ?? 0 },
+    fn,
+  );
+}
+
+/**
+ * Take (and advance) the next `stepSeq` for the current run, returning the
+ * accompanying billing context. Returns `undefined` when no step context is
+ * active (e.g. one-off `generateText` calls outside a run) so callers stay
+ * backward compatible.
+ *
+ * Exported for testing the per-step counter in isolation; production callers
+ * should not need to call this directly.
+ */
+export function takeStepContext(): UsageStepContext | undefined {
+  const store = stepContextStore.getStore();
+  if (!store) return undefined;
+  const stepSeq = store.next;
+  store.next += 1;
+  return { sessionId: store.sessionId, stepSeq };
 }
 
 export type AIModelProvider =
@@ -237,7 +314,19 @@ async function* withIdleTimeout<T>(
 }
 
 function isStreamIdleTimeoutError(error: unknown): boolean {
-  return error instanceof StreamIdleTimeoutError;
+  // Accept the chunk-level StreamIdleTimeoutError and the transport-level
+  // ProviderStreamIdleError, which the AI SDK may rewrap — so walk `cause`.
+  for (let e: unknown = error, depth = 0; e != null && depth < 6; depth++) {
+    if (e instanceof StreamIdleTimeoutError) return true;
+    if (
+      typeof e === "object" &&
+      (e as { isProviderStreamIdle?: unknown }).isProviderStreamIdle === true
+    ) {
+      return true;
+    }
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 /**
@@ -254,10 +343,26 @@ function isStreamIdleTimeoutError(error: unknown): boolean {
  * chunks for the same id (defensive — should never happen in practice) are
  * deduplicated. `tool-result` chunks without a matching open call are
  * ignored so the counter can never go negative.
+ *
+ * EXCEPTION — the structured `response` tool is NEVER counted as in-flight. Its
+ * `execute` only captures the result and returns synchronously (it does no real
+ * work), so it can't be a slow tool the gate needs to wait out. But the model
+ * streams that tool's arguments — frequently a multi-thousand-token structured
+ * payload — and a provider (Bedrock) stream that WEDGES mid-payload would, if
+ * `response` were gated, suppress the idle timeout forever (a confirmed hang:
+ * threat-model children frozen on `response` for 10+ min, never recovered).
+ * Leaving `response` ungated keeps the idle timer live across its generation,
+ * so a stalled response stream trips the normal idle-timeout → auto-resume path.
  */
+const NON_GATED_TOOLS = new Set<string>(["response"]);
+
 function createToolExecutionGate(): {
   shouldEnforceIdleTimeout: () => boolean;
-  observe: (chunk: { type: string; toolCallId?: string }) => void;
+  observe: (chunk: {
+    type: string;
+    toolCallId?: string;
+    toolName?: string;
+  }) => void;
 } {
   let inFlight = 0;
   const open = new Set<string>();
@@ -266,6 +371,7 @@ function createToolExecutionGate(): {
     shouldEnforceIdleTimeout: () => inFlight === 0,
     observe: (chunk) => {
       if (chunk.type === "tool-call") {
+        if (chunk.toolName && NON_GATED_TOOLS.has(chunk.toolName)) return;
         const id = chunk.toolCallId;
         if (id) {
           if (!open.has(id)) {
@@ -281,7 +387,7 @@ function createToolExecutionGate(): {
           if (open.delete(id)) {
             inFlight = Math.max(0, inFlight - 1);
           }
-        } else {
+        } else if (!(chunk.toolName && NON_GATED_TOOLS.has(chunk.toolName))) {
           inFlight = Math.max(0, inFlight - 1);
         }
       }
@@ -348,7 +454,8 @@ function wrapStreamWithErrorHandler(
                 messagesContainer.current.length > 0
               ) {
                 const nextIdleCount = idleResumeCount + 1;
-                if (!silent) {
+                // Surfaced on silent sub-agents too when stream-debugging.
+                if (!silent || STREAM_DEBUG) {
                   log.warn(
                     `Stream stalled (attempt ${nextIdleCount}/${MAX_IDLE_RESUME_RETRIES}), resuming with ${messagesContainer.current.length} messages: ${errorMessage}`,
                   );
@@ -754,6 +861,13 @@ export interface StreamResponseOpts {
   /** Session root path — used by context management layers to persist truncated tool results */
   sessionPath?: string;
   /**
+   * Session id (`ses_…`) of the agent making this call — the root session for
+   * the root agent, or the subagent's own session. Stamped onto AI-span
+   * telemetry so traces are filterable by session. Forwarded unchanged through
+   * the internal retry/resume recursion via `...opts`.
+   */
+  sessionId?: string;
+  /**
    * Internal: recovery-recursion depth. Bumped at each summarize → resume
    * boundary; throws `ContextLengthExhaustedError` past `MAX_RESTART_DEPTH`.
    */
@@ -789,6 +903,7 @@ export function streamResponse(
     onCacheMetrics,
     enableThinking,
     openAIReasoningEffort,
+    sessionId,
   } = opts;
 
   // Wrap onStepFinish to fire usage callback for every step.
@@ -799,7 +914,10 @@ export function streamResponse(
     if (_usageCallback) {
       const inp = step.usage?.inputTokens ?? 0;
       const out = step.usage?.outputTokens ?? 0;
-      if (inp > 0 || out > 0) _usageCallback(model, inp, out);
+      // Always advance the step counter once per finished step (even with zero
+      // usage) so `stepSeq` stays aligned with the AI-SDK step index.
+      const stepCtx = takeStepContext();
+      if (inp > 0 || out > 0) _usageCallback(model, inp, out, stepCtx);
     }
   };
   const providerModel = getProviderModel(model, authConfig);
@@ -914,6 +1032,7 @@ export function streamResponse(
         recordInputs: recordPayloads,
         recordOutputs: recordPayloads,
         functionId: `apex.stream.${model}`,
+        ...(sessionId ? { metadata: { sessionId } } : {}),
       },
       // Pin actual emission to the same value `fitMessagesToContext`
       // reserved for output. Without this, the SDK applies provider
@@ -1050,6 +1169,7 @@ export function streamResponse(
                 recordInputs: recordPayloads,
                 recordOutputs: recordPayloads,
                 functionId: "apex.tool_repair",
+                ...(sessionId ? { metadata: { sessionId } } : {}),
               },
             });
 
@@ -1171,6 +1291,8 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
+  /** Session id (`ses_…`) of the caller — stamped onto AI-span telemetry. */
+  sessionId?: string;
 }
 
 const MAX_OBJECT_RATE_LIMIT_RETRIES = 8;
@@ -1189,6 +1311,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
     authConfig,
     abortSignal,
     onTokenUsage,
+    sessionId,
   } = opts;
 
   const providerModel = getProviderModel(model, authConfig);
@@ -1225,6 +1348,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
           recordInputs: recordPayloads,
           recordOutputs: recordPayloads,
           functionId: "apex.generate_object",
+          ...(sessionId ? { metadata: { sessionId } } : {}),
         },
       });
 
@@ -1235,7 +1359,8 @@ export async function generateObjectResponse<T extends z.ZodType>(
       if (_usageCallback && usage) {
         const inp = usage.inputTokens ?? 0;
         const out = usage.outputTokens ?? 0;
-        if (inp > 0 || out > 0) _usageCallback(model, inp, out);
+        const stepCtx = takeStepContext();
+        if (inp > 0 || out > 0) _usageCallback(model, inp, out, stepCtx);
       }
 
       // zod v4: the AI SDK's `Output.object` no longer carries the schema's
