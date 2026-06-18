@@ -42,7 +42,12 @@ export interface CamoufoxLaunchOptions {
   env: Record<string, string | number | boolean>;
   firefoxUserPrefs: Record<string, unknown>;
   headless: boolean;
-  proxy?: { server: string; username?: string; password?: string; bypass?: string };
+  proxy?: {
+    server: string;
+    username?: string;
+    password?: string;
+    bypass?: string;
+  };
 }
 
 /**
