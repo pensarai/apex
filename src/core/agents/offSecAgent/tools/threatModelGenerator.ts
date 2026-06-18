@@ -1,3 +1,4 @@
+import { stepCountIs } from "ai";
 import pLimit from "p-limit";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
@@ -8,10 +9,25 @@ import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("threat-model-generator"));
 
-// Process-wide cap — parents emit `document_endpoint` tool calls in parallel,
-// so without this gate each parent fans out unboundedly.
-const THREAT_MODEL_CONCURRENCY = 10;
+// Process-wide cap — parents emit `document_endpoint` calls in parallel, so
+// without this gate each parent fans out unboundedly. Kept at 4 (not 10): each
+// concurrent child streams a large structured response and, under the Bedrock
+// wedge rate, may resume-regenerate it; 10 at once OOM-kills the sandbox.
+const THREAT_MODEL_CONCURRENCY = 4;
 const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
+
+// `document_endpoint` blocks on `await agent.consume()`. consume() returns the
+// structured result as soon as the child captures it and is bounded by the
+// transport idle guard + resume (ai/streamIdleGuard.ts), so it always settles —
+// resolving on success, rejecting once resumes are exhausted. On any failure the
+// catch returns null and `document_endpoint` degrades to the heuristic score.
+
+// Hard ceiling on the child's agent loop. Under the Bedrock wedge rate the model
+// can truncate its structured `response`, fail schema validation, and re-call
+// `response` in a loop (observed: 7-10 calls, 100+ parts, no completion). This
+// caps that loop so the child always terminates → degrades to heuristic → the
+// recon advances. A healthy threat model finishes in well under this.
+const THREAT_MODEL_MAX_STEPS = 40;
 
 // ---------------------------------------------------------------------------
 // Response schema
@@ -322,6 +338,18 @@ export async function generateThreatModelForEndpoint(
 
     const prompt = buildThreatModelPrompt(input, ctx.projectThreatModel);
 
+    // Child-scoped abort so a failure cancels *this* threat model without
+    // touching the shared parent `ctx.abortSignal`; a parent abort still
+    // propagates down via the listener below.
+    const childAbort = new AbortController();
+    if (ctx.abortSignal) {
+      if (ctx.abortSignal.aborted) childAbort.abort();
+      else
+        ctx.abortSignal.addEventListener("abort", () => childAbort.abort(), {
+          once: true,
+        });
+    }
+
     const agent = new CodeAgent<ThreatModelResult>({
       codebasePath: ctx.agentCwd,
       objective: prompt,
@@ -329,29 +357,20 @@ export async function generateThreatModelForEndpoint(
       model,
       session: ctx.session,
       authConfig: ctx.authConfig,
-      abortSignal: ctx.abortSignal,
+      abortSignal: childAbort.signal,
       eventBus: localBus,
       subagentId,
       responseSchema: ThreatModelResultSchema,
+      stopWhen: stepCountIs(THREAT_MODEL_MAX_STEPS),
       excludeTools: ["document_endpoint", "document_app"],
     });
 
-    try {
-      const result = await agent.consume();
-      ctx.eventBus?.emit("subagent-complete", {
-        subagentId,
-        status: "completed",
-        parentSubagentId: ctx.subagentId,
-      });
-
-      if (!result) return null;
-
+    const buildOutput = (result: ThreatModelResult): ThreatModelOutput => {
       const totalScore =
         result.exposure +
         result.dataSensitivity +
         result.functionCriticality +
         result.securityIndicators;
-
       return {
         businessLogic: result.businessLogic,
         threatModel: result.threatModel,
@@ -369,7 +388,30 @@ export async function generateThreatModelForEndpoint(
           flattenPentestObjective,
         ),
       };
+    };
+
+    try {
+      // consume() returns the captured result as soon as it's available and
+      // drains the rest in the background. Abort once we have the result so that
+      // background drain stops immediately — otherwise, under the Bedrock wedge
+      // rate, it keeps resume-regenerating a response we've already discarded,
+      // and those detached drains pile up and OOM the sandbox.
+      const result = await agent.consume();
+      childAbort.abort();
+      // Wait for the aborted drain's finally to close any in-flight tool BEFORE
+      // marking the subagent complete — otherwise the last step's tools are
+      // stranded `running` past completion. The abort already stopped
+      // regeneration, so this settles fast (idle-guard bounded).
+      await agent.drained;
+      ctx.eventBus?.emit("subagent-complete", {
+        subagentId,
+        status: "completed",
+        parentSubagentId: ctx.subagentId,
+      });
+      return result ? buildOutput(result) : null;
     } catch (error) {
+      childAbort.abort();
+      await agent.drained;
       ctx.eventBus?.emit("subagent-complete", {
         subagentId,
         status: "failed",

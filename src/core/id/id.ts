@@ -54,6 +54,39 @@ function randomBase62(length: number): string {
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// Branded identity types + convenience minters / guards
+// ---------------------------------------------------------------------------
+//
+// These give session / message / part ids a nominal type so they can't be
+// accidentally crossed (e.g. passing a messageId where a sessionId is
+// expected). The runtime value is still a plain prefixed-ULID string
+// (`ses_…` / `msg_…` / `prt_…`); the brand exists only at the type level.
+
+/** A session identifier: `ses_<time><random>`. */
+export type SessionID = string & { readonly __brand: "SessionID" };
+/** A message identifier: `msg_<time><random>`. */
+export type MessageID = string & { readonly __brand: "MessageID" };
+/** A part identifier: `prt_<time><random>`. */
+export type PartID = string & { readonly __brand: "PartID" };
+
+/** Mint a fresh, time-descending session id. */
+export const newSessionId = (): SessionID => descending("session") as SessionID;
+/** Mint a fresh, time-descending message id. */
+export const newMessageId = (): MessageID => descending("message") as MessageID;
+/** Mint a fresh, time-descending part id. */
+export const newPartId = (): PartID => descending("part") as PartID;
+
+/** Runtime guard: is this string a session id? */
+export const isSessionId = (s: string): s is SessionID =>
+  s.startsWith(`${prefixes.session}_`);
+/** Runtime guard: is this string a message id? */
+export const isMessageId = (s: string): s is MessageID =>
+  s.startsWith(`${prefixes.message}_`);
+/** Runtime guard: is this string a part id? */
+export const isPartId = (s: string): s is PartID =>
+  s.startsWith(`${prefixes.part}_`);
+
 function create(
   prefix: IdentifierPrefix,
   descending: boolean,

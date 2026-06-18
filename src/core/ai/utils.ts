@@ -26,6 +26,8 @@ import {
 } from "./contextManagement";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
+import { idleGuardedResponse } from "./streamIdleGuard";
+import { StreamTelemetry, wallNow } from "./streamTelemetry";
 
 const log = scopedLogger(() => createLogger("ai:utils"));
 
@@ -40,8 +42,19 @@ export function isAnthropicProvider(model: AIModel): boolean {
   );
 }
 
-// Last-resort backstop above Bun's 300s fetch default; SSE idle timeout is the primary stall guard.
-const STREAMING_FETCH_TIMEOUT_MS = 15 * 60 * 1000;
+// Last-resort backstop ONLY — it must never be the thing that ends a healthy
+// stream. The PRIMARY liveness guard is the connection read-idle: the SSE reader
+// (pensarSSE.ts) aborts if no bytes arrive for 90s, and the AI-SDK path's
+// withIdleTimeout does the same per chunk — i.e. we judge the *connection*, not
+// the wall-clock. A live stream that legitimately takes 1-30 min (slow model,
+// long structured response) keeps delivering bytes and is never cut; a dead /
+// half-open socket stops delivering bytes and trips the 90s read-idle → error →
+// propagated and retried/degraded. This wall-clock value exists only to bound a
+// pathological "alive but never completes" stream, so it sits comfortably above
+// the longest legitimate generation (well past 30 min) rather than near it.
+// (Must also stay below dispatchAgent's autoStopInterval so we, not Daytona,
+// end such a stream — see that file.)
+const STREAMING_FETCH_TIMEOUT_MS = 35 * 60 * 1000;
 
 export function buildStreamingFetchSignal(
   callerSignal?: AbortSignal | null,
@@ -173,11 +186,26 @@ export function getProviderModel(
     }
 
     case "bedrock": {
-      const bedrockFetch = (input: RequestInfo | URL, init?: RequestInit) =>
-        globalThis.fetch(input, {
+      // Guard against a half-open Bedrock socket hanging the stream forever.
+      const rawStreamIdle = Number(process.env.PENSAR_STREAM_IDLE_TIMEOUT_MS);
+      const streamIdleMs =
+        Number.isFinite(rawStreamIdle) && rawStreamIdle > 0
+          ? rawStreamIdle
+          : 90_000;
+      const bedrockFetch = async (
+        input: RequestInfo | URL,
+        init?: RequestInit,
+      ) => {
+        const response = await globalThis.fetch(input, {
           ...init,
           signal: buildStreamingFetchSignal(init?.signal),
         });
+        const telemetry = new StreamTelemetry(`bedrock:${model}`, wallNow());
+        return idleGuardedResponse(response, {
+          idleTimeoutMs: streamIdleMs,
+          telemetry,
+        });
+      };
       const bedrock = createAmazonBedrock({
         apiKey: bedrockApiKey,
         region: bedrockRegion,

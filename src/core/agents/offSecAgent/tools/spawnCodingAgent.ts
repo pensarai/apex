@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
+import { newSessionId } from "../../../id/id";
 import { runWithBoundedConcurrency } from "../../../utils/concurrency";
 import {
   resolvePathWithinCodebaseRoot,
@@ -174,13 +175,20 @@ async function runSingleCodingAgent(
   // codeAgent → offensiveSecurityAgent → tools/index → spawnCodingAgent → codeAgent
   const { CodeAgent } = await import("../../specialized/codeAgent/agent");
 
-  const subagentId = `coding-agent-${agentIndex}`;
+  // Native identity: the subagent IS a session. Mint its session id up front
+  // and use it as the bus identity, mirroring spawnPentestAgent. The `name`
+  // field carries the human-readable UI label; the `agentIndex` slot id is no
+  // longer used as the agent's identity.
+  const childSessionId = newSessionId();
+  const subagentId = childSessionId as string;
 
   ctx.eventBus?.emit("subagent-spawn", {
     subagentId,
+    sessionId: childSessionId,
     name,
     input: { codebasePath, objective },
     parentSubagentId: ctx.subagentId,
+    parentSessionId: ctx.subagentId ?? ctx.session.id,
   });
 
   const localBus = new AgentEventBus();
@@ -208,16 +216,20 @@ async function runSingleCodingAgent(
 
     ctx.eventBus?.emit("subagent-complete", {
       subagentId,
+      sessionId: childSessionId,
       status: "completed",
       parentSubagentId: ctx.subagentId,
+      parentSessionId: ctx.subagentId ?? ctx.session.id,
     });
 
     return textOutput;
   } catch (error) {
     ctx.eventBus?.emit("subagent-complete", {
       subagentId,
+      sessionId: childSessionId,
       status: "failed",
       parentSubagentId: ctx.subagentId,
+      parentSessionId: ctx.subagentId ?? ctx.session.id,
     });
     throw error;
   }
