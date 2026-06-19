@@ -145,7 +145,7 @@ export async function installSandboxPlaywright(
   // one or the other. We run as root in the sandbox (apt needs it anyway), so
   // plain rm suffices.
   const depsResult = await sandbox.execute(
-    `rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null; cd ${SANDBOX_PW_DIR} && npx playwright install-deps firefox 2>&1`,
+    `rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null; cd ${SANDBOX_PW_DIR} && npx playwright@1.53.1 install-deps firefox 2>&1`,
     { timeout: 300 },
   );
   if (!depsResult.success) {
@@ -217,11 +217,14 @@ export async function ensureSandboxPlaywright(
 export async function ensureSandboxBrowser(
   sandbox: UnifiedSandbox,
 ): Promise<void> {
-  // Remove the cached Camoufox options so this session generates a fresh
-  // fingerprint. Without this, a reused sandbox would keep the previous
-  // session's frozen fingerprint (and headless flag) indefinitely.
+  // Reset the per-session browser identity so a reused sandbox doesn't carry
+  // over the previous session's state. Clear the cached Camoufox options (the
+  // frozen fingerprint + headless flag) AND the persistent profile dir
+  // (cookies/localStorage/nav) together — clearing only the fingerprint would
+  // launch a fresh fingerprint against a stale profile, which both leaks
+  // cross-session state and is itself a detection tell.
   await sandbox.execute(
-    `mkdir -p ${SANDBOX_EVIDENCE_DIR} /tmp/pw-user-data && rm -f ${SANDBOX_CAMOU_CACHE}`,
+    `rm -rf /tmp/pw-user-data ${SANDBOX_CAMOU_CACHE}; mkdir -p ${SANDBOX_EVIDENCE_DIR} /tmp/pw-user-data`,
     { timeout: 5 },
   );
 }
