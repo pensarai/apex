@@ -242,6 +242,26 @@ export interface RootCauseGroup {
   groupId: string;
   findingIndices: number[];
   rootCause: string;
+  /** The highest severity among the group's findings, applied to all of them. */
+  normalizedSeverity: Finding["severity"];
+  /** Index (into the snapshot passed to groupByRootCause) of the group's lead finding. */
+  leadFindingIndex: number;
+}
+
+const SEVERITY_RANK: Record<Finding["severity"], number> = {
+  CRITICAL: 4,
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1,
+};
+
+/** Return the highest-ranked severity among the given findings. */
+function maxSeverity(findings: readonly Finding[]): Finding["severity"] {
+  return findings.reduce<Finding["severity"]>(
+    (acc, f) =>
+      SEVERITY_RANK[f.severity] > SEVERITY_RANK[acc] ? f.severity : acc,
+    "LOW",
+  );
 }
 
 const RootCauseGroupResultSchema = z.object({
@@ -648,15 +668,41 @@ export class FindingsRegistry {
           );
           if (validIndices.length < 2) continue;
 
+          const groupFindings = validIndices.map((i: number) => snapshot[i]!);
+          const normalizedSeverity = maxSeverity(groupFindings);
+
+          // Lead = highest severity, tie-broken by the most detailed
+          // (longest description) finding so the consolidated write-up
+          // anchors on the richest evidence.
+          const leadFindingIndex = validIndices.reduce((best, i) => {
+            const a = snapshot[i]!;
+            const b = snapshot[best]!;
+            if (SEVERITY_RANK[a.severity] !== SEVERITY_RANK[b.severity]) {
+              return SEVERITY_RANK[a.severity] > SEVERITY_RANK[b.severity]
+                ? i
+                : best;
+            }
+            return (a.description?.length ?? 0) > (b.description?.length ?? 0)
+              ? i
+              : best;
+          }, validIndices[0]!);
+
           sanitised.push({
             groupId: group.groupId,
             findingIndices: validIndices,
             rootCause: group.rootCause,
+            normalizedSeverity,
+            leadFindingIndex,
           });
 
           for (const idx of validIndices) {
             const finding = snapshot[idx]!;
             finding.rootCauseGroup = group.groupId;
+            // Findings that share a root cause are one underlying weakness;
+            // normalize them to the group's highest severity so a member-vs-
+            // admin boundary failure isn't split across High/Medium.
+            finding.severity = normalizedSeverity;
+            finding.rootCauseLead = idx === leadFindingIndex;
             // Use index-based exclusion so same-titled findings are handled correctly
             finding.relatedFindings = validIndices
               .filter((i: number) => i !== idx)

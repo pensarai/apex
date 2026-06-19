@@ -55,6 +55,8 @@ export const ApexFindingObject = z.object({
   cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
   rootCauseGroup: z.string().optional(),
   relatedFindings: z.array(z.string()).optional(),
+  /** True for the single lead finding of a root-cause group (the one that should anchor the consolidated write-up). */
+  rootCauseLead: z.boolean().optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
 });
 
