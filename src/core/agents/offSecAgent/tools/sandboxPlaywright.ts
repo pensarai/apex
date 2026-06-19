@@ -48,6 +48,7 @@ const SANDBOX_EVIDENCE_DIR = "/tmp/evidence";
 const SANDBOX_REFS_FILE = "/tmp/pw-refs.json";
 const SANDBOX_URL_FILE = "/tmp/pw-current-url";
 const SANDBOX_CONSOLE_FILE = "/tmp/pw-console-log.json";
+const SANDBOX_CAMOU_CACHE = "/tmp/pw-camou-opts.json";
 
 /** Marker pair used to extract JSON results from script stdout. */
 const RESULT_START = "__PW_RESULT__";
@@ -259,9 +260,6 @@ const { firefox } = require('playwright-core');
 const fs = require('fs');
 
 (async () => {
-  // camoufox-js is ESM-only ("type":"module"). require() of it throws
-  // ERR_REQUIRE_ESM on Node < 20.19 (e.g. the node:20.18.1 prod base), so we
-  // load it with dynamic import(), which works on every Node version.
   const { launchOptions } = await import('camoufox-js');
   function resolve(value) {
     process.stdout.write('${RESULT_START}' + JSON.stringify(value) + '${RESULT_END}');
@@ -275,8 +273,15 @@ const fs = require('fs');
   // detectable headful. Falls back to plain headless, which is still fully
   // fingerprint-spoofed (just a weaker stealth posture, never vanilla Chromium).
   const __headless = process.env.DISPLAY ? false : true;
-  // Same launch policy as the host (MCP) path — see camoufox.ts.
-  const __camou = await launchOptions({ ...${JSON.stringify(CAMOUFOX_OPTIONS)}, headless: __headless });
+  // Resolve Camoufox options once per sandbox session and cache to disk so
+  // every tool call presents the same fingerprint on the shared profile dir.
+  let __camou;
+  try {
+    __camou = JSON.parse(fs.readFileSync('${SANDBOX_CAMOU_CACHE}', 'utf-8'));
+  } catch {
+    __camou = await launchOptions({ ...${JSON.stringify(CAMOUFOX_OPTIONS)}, headless: __headless });
+    fs.writeFileSync('${SANDBOX_CAMOU_CACHE}', JSON.stringify(__camou));
+  }
 
   let context;
   const __consoleMessages = [];
