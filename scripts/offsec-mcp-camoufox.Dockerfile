@@ -30,7 +30,11 @@ RUN npx --yes playwright install-deps firefox
 
 # Bake the Camoufox browser build into the image so the agent's ensureCamoufox()
 # finds it cached at /root/.cache/camoufox instead of fetching ~700MB on the
-# first pentest (the runtime fetch is the step that stalls). Pin the camoufox-js
-# version so the baked build matches the apex runtime dep (^0.11.1) and isn't
-# re-fetched at boot.
-RUN npx --yes camoufox-js@0.11.1 fetch
+# first pentest (the runtime fetch is the step that stalls). Install the pinned
+# camoufox-js locally and use its binary (not npx, which could resolve a
+# different build) — mirrors the sandbox Dockerfile and ensureCamoufox().
+WORKDIR /tmp/camoufox-fetch
+RUN npm init -y --silent \
+ && npm install --no-audit --no-fund camoufox-js@0.11.1 \
+ && node node_modules/camoufox-js/dist/__main__.js fetch \
+ && cd / && rm -rf /tmp/camoufox-fetch

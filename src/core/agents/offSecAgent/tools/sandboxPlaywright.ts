@@ -65,17 +65,20 @@ const RESULT_END = "__PW_END__";
 const installationCache = new WeakMap<UnifiedSandbox, Promise<void>>();
 
 /**
- * Check whether camoufox-js (and its playwright-core dependency) is importable
- * inside the sandbox.
+ * Check whether camoufox-js, playwright-core, **and** the Camoufox browser
+ * binary are all present inside the sandbox. Without the binary check,
+ * a snapshot that has the JS deps but no fetched build would pass, causing
+ * `ensureSandboxPlaywright` to skip `installSandboxPlaywright` (and its
+ * fetch step) — then `launchOptions()` would fail at first use.
  */
 export async function checkSandboxPlaywright(
   sandbox: UnifiedSandbox,
 ): Promise<boolean> {
-  // Write the check script inside the PW dir so require() can resolve
-  // node_modules relative to the script's __dirname.
   // camoufox-js is ESM-only — require() throws ERR_REQUIRE_ESM on Node < 20.19,
   // so probe it with dynamic import() (works on every Node version).
-  const script = `(async()=>{try{await import("camoufox-js");require("playwright-core");console.log("OK")}catch(e){process.exit(1)}})()`;
+  // launchPath() returns the Camoufox binary path; existsSync confirms the
+  // actual file was fetched (not just the npm package installed).
+  const script = `(async()=>{try{const{launchPath}=await import("camoufox-js/dist/pkgman.js");require("playwright-core");if(!require("fs").existsSync(launchPath()))process.exit(1);console.log("OK")}catch(e){process.exit(1)}})()`;
   const b64 = Buffer.from(script).toString("base64");
   await sandbox.execute(
     `mkdir -p ${SANDBOX_PW_DIR} && echo "${b64}" | base64 -d > ${SANDBOX_PW_DIR}/pw_check.js`,
