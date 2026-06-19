@@ -217,9 +217,13 @@ export async function ensureSandboxPlaywright(
 export async function ensureSandboxBrowser(
   sandbox: UnifiedSandbox,
 ): Promise<void> {
-  await sandbox.execute(`mkdir -p ${SANDBOX_EVIDENCE_DIR} /tmp/pw-user-data`, {
-    timeout: 5,
-  });
+  // Remove the cached Camoufox options so this session generates a fresh
+  // fingerprint. Without this, a reused sandbox would keep the previous
+  // session's frozen fingerprint (and headless flag) indefinitely.
+  await sandbox.execute(
+    `mkdir -p ${SANDBOX_EVIDENCE_DIR} /tmp/pw-user-data && rm -f ${SANDBOX_CAMOU_CACHE}`,
+    { timeout: 5 },
+  );
 }
 
 /**

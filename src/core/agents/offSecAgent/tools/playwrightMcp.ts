@@ -16,7 +16,11 @@ import { createRequire } from "module";
 import { dirname, join } from "path";
 import { z } from "zod";
 import type { Logger } from "../../../logger";
-import { ensureCamoufox, resolveCamoufoxLaunchOptions } from "./camoufox";
+import {
+  type CamoufoxLaunchOptions,
+  ensureCamoufox,
+  resolveCamoufoxLaunchOptions,
+} from "./camoufox";
 
 /**
  * Playwright `BrowserContext.storageState()` shape — the JSON-serialisable
@@ -368,6 +372,8 @@ export class PlaywrightMcpSession {
   private readonly extraHttpHeaders: Record<string, string> | undefined;
   /** Temp config file written for MCP launch — deleted on disconnect. */
   private mcpConfigPath: string | null = null;
+  /** Cached Camoufox launch options — resolved once, reused on reconnect. */
+  private cachedCamouOptions: CamoufoxLaunchOptions | null = null;
 
   /**
    * Each option is three-state: `undefined` → module default, value → use it,
@@ -479,8 +485,14 @@ export class PlaywrightMcpSession {
         // camoufox-js produces the executablePath / args / firefoxUserPrefs / env
         // that carry the fingerprint; MCP drives that browser through the same
         // tool API. We pass these via a temp config file rather than CLI flags.
+        // Resolve once per session lifetime so reconnects keep the same fingerprint.
         await ensureCamoufox();
-        const camou = await resolveCamoufoxLaunchOptions(this.headless);
+        if (!this.cachedCamouOptions) {
+          this.cachedCamouOptions = await resolveCamoufoxLaunchOptions(
+            this.headless,
+          );
+        }
+        const camou = this.cachedCamouOptions;
 
         const os = await import("os");
         const fsp = await import("fs/promises");
