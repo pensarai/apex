@@ -259,11 +259,12 @@ const SEVERITY_RANK: Record<Finding["severity"], number> = {
   LOW: 1,
 };
 
-/** Return the highest-ranked severity among the given findings. */
-function maxSeverity(findings: readonly Finding[]): Finding["severity"] {
-  return findings.reduce<Finding["severity"]>(
-    (acc, f) =>
-      SEVERITY_RANK[f.severity] > SEVERITY_RANK[acc] ? f.severity : acc,
+/** Return the highest-ranked severity among the given severities. */
+function maxSeverity(
+  severities: readonly Finding["severity"][],
+): Finding["severity"] {
+  return severities.reduce<Finding["severity"]>(
+    (acc, s) => (SEVERITY_RANK[s] > SEVERITY_RANK[acc] ? s : acc),
     "LOW",
   );
 }
@@ -660,27 +661,34 @@ export class FindingsRegistry {
 
     await new Promise<void>((resolve) => {
       this.mutex = this.mutex.then(() => {
+        // Capture severities before any normalization so that each group's
+        // max/lead is derived from the original ranks. Without this, a finding
+        // that the LLM places in more than one group would have its severity
+        // mutated by the first group and then inflate the second group's
+        // computation (over-normalizing and mispicking the lead).
+        const baseSeverities = snapshot.map((f) => f.severity);
+
         for (const group of result.groups) {
           const validIndices = group.findingIndices.filter(
             (i: number) => i >= 0 && i < snapshot.length,
           );
           if (validIndices.length < 2) continue;
 
-          const groupFindings = validIndices.map((i: number) => snapshot[i]!);
-          const normalizedSeverity = maxSeverity(groupFindings);
+          const normalizedSeverity = maxSeverity(
+            validIndices.map((i: number) => baseSeverities[i]!),
+          );
 
-          // Lead = highest severity, tie-broken by the most detailed
+          // Lead = highest (original) severity, tie-broken by the most detailed
           // (longest description) finding so the consolidated write-up
           // anchors on the richest evidence.
           const leadFindingIndex = validIndices.reduce((best, i) => {
-            const a = snapshot[i]!;
-            const b = snapshot[best]!;
-            if (SEVERITY_RANK[a.severity] !== SEVERITY_RANK[b.severity]) {
-              return SEVERITY_RANK[a.severity] > SEVERITY_RANK[b.severity]
-                ? i
-                : best;
+            const aRank = SEVERITY_RANK[baseSeverities[i]!];
+            const bRank = SEVERITY_RANK[baseSeverities[best]!];
+            if (aRank !== bRank) {
+              return aRank > bRank ? i : best;
             }
-            return (a.description?.length ?? 0) > (b.description?.length ?? 0)
+            return (snapshot[i]!.description?.length ?? 0) >
+              (snapshot[best]!.description?.length ?? 0)
               ? i
               : best;
           }, validIndices[0]!);

@@ -1346,6 +1346,52 @@ describe("groupByRootCause", () => {
     expect(allFindings[2]!.rootCauseLead).toBe(false);
   });
 
+  it("derives each group's severity from pre-normalization ranks when a finding spans multiple groups", async () => {
+    // finding[1] is in BOTH groups. group g1 normalizes it up to HIGH; g2 must
+    // still see its ORIGINAL severity (LOW) so it isn't over-normalized.
+    mockedGenerate.mockResolvedValueOnce({
+      groups: [
+        { groupId: "g1", findingIndices: [0, 1], rootCause: "shared cause A" },
+        { groupId: "g2", findingIndices: [1, 2], rootCause: "shared cause B" },
+      ],
+    });
+
+    const findings = [
+      makeFinding({
+        title: "High severity root",
+        severity: "HIGH",
+        endpoint: "https://target.com/a",
+        description: "High-severity finding in group 1.",
+      }),
+      makeFinding({
+        title: "Shared low finding",
+        severity: "LOW",
+        endpoint: "https://target.com/b",
+        description: "Low-severity finding that the LLM places in both groups.",
+      }),
+      makeFinding({
+        title: "Other low finding",
+        severity: "LOW",
+        endpoint: "https://target.com/c",
+        description: "Low-severity finding only in group 2.",
+      }),
+    ];
+    const registry = FindingsRegistry.fromFindings(findings, {
+      model: "test-model",
+    });
+
+    const groups = await registry.groupByRootCause();
+
+    const g2 = groups.find((g) => g.groupId === "g2")!;
+    // g2 contains two originally-LOW findings; it must stay LOW, not inherit
+    // HIGH from g1's mutation of the shared finding.
+    expect(g2.normalizedSeverity).toBe("LOW");
+
+    const all = registry.getFindings();
+    // finding[2] is only in g2 and must not be inflated.
+    expect(all[2]!.severity).toBe("LOW");
+  });
+
   it("groups same-endpoint auth + rate-limiting findings", async () => {
     mockedGenerate.mockResolvedValueOnce({
       groups: [
