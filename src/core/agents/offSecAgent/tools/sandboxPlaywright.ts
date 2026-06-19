@@ -123,7 +123,7 @@ export async function installSandboxPlaywright(
   // camoufox-js pulls in playwright-core, so a single install covers both the
   // launcher and the Playwright API the generated scripts use.
   const installResult = await sandbox.execute(
-    `cd ${SANDBOX_PW_DIR} && npm install camoufox-js playwright-core 2>&1`,
+    `cd ${SANDBOX_PW_DIR} && npm install camoufox-js@0.11.1 playwright-core@1.53.1 2>&1`,
     { timeout: 300 },
   );
   if (!installResult.success) {
