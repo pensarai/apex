@@ -65,6 +65,13 @@ const RESULT_END = "__PW_END__";
 const installationCache = new WeakMap<UnifiedSandbox, Promise<void>>();
 
 /**
+ * Per-sandbox browser-setup promise cache. Prevents duplicate (destructive)
+ * profile resets when multiple tool factories share the same sandbox — e.g.
+ * a parent orchestrator and its spawned workers.
+ */
+const browserSetupCache = new WeakMap<UnifiedSandbox, Promise<void>>();
+
+/**
  * Check whether camoufox-js, playwright-core, **and** the Camoufox browser
  * binary are all present inside the sandbox. Without the binary check,
  * a snapshot that has the JS deps but no fetched build would pass, causing
@@ -231,10 +238,25 @@ export async function ensureSandboxBrowser(
 
 /**
  * Full setup: install Playwright if needed, then prepare directories.
+ * Browser reset is cached per sandbox so spawned workers don't wipe
+ * cookies/profile data established by the parent or earlier workers.
  */
 async function ensureSandboxReady(sandbox: UnifiedSandbox): Promise<void> {
   await ensureSandboxPlaywright(sandbox);
-  await ensureSandboxBrowser(sandbox);
+
+  let cached = browserSetupCache.get(sandbox);
+  if (!cached) {
+    cached = ensureSandboxBrowser(sandbox);
+    browserSetupCache.set(sandbox, cached);
+    try {
+      await cached;
+    } catch (error) {
+      browserSetupCache.delete(sandbox);
+      throw error;
+    }
+  } else {
+    await cached;
+  }
 }
 
 // ---------------------------------------------------------------------------
