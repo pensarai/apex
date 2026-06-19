@@ -15,6 +15,8 @@
  */
 
 import { execFile } from "node:child_process";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -83,7 +85,10 @@ export function ensureCamoufox(log?: (msg: string) => void): Promise<void> {
       log?.(
         "Provisioning Camoufox browser (first run downloads ~150MB; cached after)…",
       );
-      await execFileAsync("npx", ["--yes", "camoufox-js", "fetch"], {
+      const require_ = createRequire(import.meta.url);
+      const pkgPath = require_.resolve("camoufox-js/package.json");
+      const fetchBin = join(dirname(pkgPath), "dist", "__main__.js");
+      await execFileAsync("node", [fetchBin, "fetch"], {
         timeout: 5 * 60_000,
       });
     })().catch((err) => {
