@@ -478,17 +478,23 @@ export function createSandboxBrowserTools(ctx: ToolContext) {
     return setupPromise;
   }
 
-  // Resolve fresh on every tool call so /headers mutations apply next call.
+  // Serialise sandbox script execution so concurrent tool calls don't race on
+  // the shared Camoufox fingerprint cache or the persistent browser profile dir.
+  let scriptQueue: Promise<unknown> = Promise.resolve();
+
   function runScript(body: string, timeout = 60): Promise<unknown> {
     const resolved = targetUrl
       ? resolveEffectiveHeaders(resolverSessionFromCtx(ctx), targetUrl)
       : ctx.session.config?.headers;
-    return runPlaywrightScript(
-      sandbox,
-      body,
-      timeout,
-      stripBrowserManagedHeaders(resolved),
+    const headers = stripBrowserManagedHeaders(resolved);
+    const next = scriptQueue.then(() =>
+      runPlaywrightScript(sandbox, body, timeout, headers),
     );
+    scriptQueue = next.then(
+      () => {},
+      () => {},
+    );
+    return next;
   }
 
   // ------- browser_navigate -------------------------------------------------
