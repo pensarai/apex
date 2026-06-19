@@ -394,13 +394,33 @@ export class PlaywrightMcpSession {
         : undefined;
   }
 
-  /** Immediately reset all instance state. Synchronous — no I/O. */
+  /**
+   * Immediately reset all instance state and schedule best-effort cleanup
+   * of the temp MCP config file (if one exists). The file unlink is async
+   * but fire-and-forget so this method stays non-blocking.
+   */
   private resetState(): void {
+    this.cleanupConfigFile();
     this.mcpClient = null;
     this.mcpTransport = null;
     this.mcpProcess = null;
     this.connectionPromise = null;
     this.disconnecting = false;
+  }
+
+  /** Best-effort async unlink of the current temp config file. */
+  private cleanupConfigFile(): void {
+    const configPath = this.mcpConfigPath;
+    if (!configPath) return;
+    this.mcpConfigPath = null;
+    void (async () => {
+      try {
+        const fsp = await import("fs/promises");
+        await fsp.unlink(configPath);
+      } catch {
+        // already-deleted or inaccessible — fine
+      }
+    })();
   }
 
   /**
@@ -602,18 +622,7 @@ export class PlaywrightMcpSession {
     ]);
     if (closeTimer) clearTimeout(closeTimer);
 
-    if (this.mcpConfigPath) {
-      const configPath = this.mcpConfigPath;
-      this.mcpConfigPath = null;
-      void (async () => {
-        try {
-          const fsp = await import("fs/promises");
-          await fsp.unlink(configPath);
-        } catch {
-          // best-effort; already-deleted is fine
-        }
-      })();
-    }
+    this.cleanupConfigFile();
 
     this.disconnecting = false;
   }
