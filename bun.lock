@@ -19,7 +19,7 @@
         "@opentelemetry/api": "^1.9.0",
         "@opentui/core": "^0.1.107",
         "@opentui/react": "^0.1.107",
-        "@pensar/surface": "0.2.1",
+        "@pensar/surface": "0.2.2",
         "@playwright/mcp": "^0.0.54",
         "ai": "^6.0.105",
         "glob": "^13.0.0",
@@ -467,7 +467,7 @@
 
     "@oxc-resolver/binding-win32-x64-msvc": ["@oxc-resolver/binding-win32-x64-msvc@11.19.1", "", { "os": "win32", "cpu": "x64" }, "sha512-6hIU3RQu45B+VNTY4Ru8ppFwjVS/S5qwYyGhBotmjxfEKk41I2DlGtRfGJndZ5+6lneE2pwloqunlOyZuX/XAw=="],
 
-    "@pensar/surface": ["@pensar/surface@0.2.1", "", { "dependencies": { "js-yaml": "^4.1.1" }, "peerDependencies": { "typescript": "^5" }, "bin": { "surface": "dist/cli.js" } }, "sha512-RgStnnre304CFN7B8A4wMraNFiL63iGPiwrASa46DEvU0s7HTS8hNjUqm1zgEkCTRy3r2TOp8u4JCfVBxZiWEQ=="],
+    "@pensar/surface": ["@pensar/surface@0.2.2", "", { "dependencies": { "js-yaml": "^4.1.1" }, "peerDependencies": { "typescript": "^5" }, "bin": { "surface": "dist/cli.js" } }, "sha512-8EmtJ0YaoUdXEsDwpaxCDnQU7jJ4M3BsZUoTjaR7l73J16cJdZhS/jXASRVhZGgGcxAZJsnLp0Or2rGi6u8XWw=="],
 
     "@pinojs/redact": ["@pinojs/redact@0.4.0", "", {}, "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="],
 
