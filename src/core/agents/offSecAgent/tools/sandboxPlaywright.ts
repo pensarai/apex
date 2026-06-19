@@ -135,10 +135,13 @@ export async function installSandboxPlaywright(
   // Camoufox is a patched Firefox — install the GTK/nss/font/X11 system
   // libraries that Firefox (even headless) requires. Playwright's
   // `install-deps firefox` handles the right apt packages for the distro.
-  // The Yarn apt repo ships a stale GPG key that makes `apt-get update`
-  // fail on many images, so remove it first (we don't need Yarn here).
+  // The Yarn apt repo ships a stale GPG key that makes `apt-get update` fail on
+  // many images, so remove it first (we don't need Yarn here). Drop both the
+  // legacy one-line list and the newer deb822 `.sources` entry — images ship
+  // one or the other. We run as root in the sandbox (apt needs it anyway), so
+  // plain rm suffices.
   const depsResult = await sandbox.execute(
-    `rm -f /etc/apt/sources.list.d/yarn.list 2>/dev/null; cd ${SANDBOX_PW_DIR} && npx playwright install-deps firefox 2>&1`,
+    `rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null; cd ${SANDBOX_PW_DIR} && npx playwright install-deps firefox 2>&1`,
     { timeout: 300 },
   );
   if (!depsResult.success) {
