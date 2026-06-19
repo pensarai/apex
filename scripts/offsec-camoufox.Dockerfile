@@ -36,8 +36,9 @@ RUN npm init -y --silent \
 # won't launch without them, even headless.
 RUN npx --yes playwright install-deps firefox
 
-# Bake the Camoufox browser build into the image (camoufox.ts says: "Bake
-# `npx camoufox-js fetch` into the runtime image to skip this"). The ~150MB
-# fetch over the network at sandbox boot is the step that hangs/stalls.
+# Bake the Camoufox browser build into the image so the runtime fetch (the
+# ~700MB step that stalls at sandbox boot) is skipped. Fetch via the pinned
+# camoufox-js installed above (not `npx`, which would pull a different version)
+# so the baked build matches the runtime camoufox-js — mirrors ensureCamoufox.
 # Cached at /root/.cache/camoufox, where the agent (running as root) looks.
-RUN npx --yes camoufox-js fetch
+RUN node node_modules/camoufox-js/dist/__main__.js fetch

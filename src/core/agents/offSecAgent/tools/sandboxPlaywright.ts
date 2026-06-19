@@ -137,10 +137,18 @@ export async function installSandboxPlaywright(
   // `install-deps firefox` handles the right apt packages for the distro.
   // The Yarn apt repo ships a stale GPG key that makes `apt-get update`
   // fail on many images, so remove it first (we don't need Yarn here).
-  await sandbox.execute(
+  const depsResult = await sandbox.execute(
     `rm -f /etc/apt/sources.list.d/yarn.list 2>/dev/null; cd ${SANDBOX_PW_DIR} && npx playwright install-deps firefox 2>&1`,
     { timeout: 300 },
   );
+  if (!depsResult.success) {
+    // Fail loudly here — otherwise the missing libraries only surface later as
+    // a cryptic Camoufox launch crash (checkSandboxPlaywright only verifies JS
+    // imports, not the native deps).
+    throw new Error(
+      `Failed to install Firefox system deps in sandbox: ${depsResult.stderr || depsResult.stdout}`,
+    );
+  }
 
   // Download the Camoufox browser build (cached under CAMOUFOX_INSTALL_DIR /
   // ~/.cache). Uses the locally-installed binary so the fetched build matches

@@ -29,6 +29,8 @@ RUN bun --version
 RUN npx --yes playwright install-deps firefox
 
 # Bake the Camoufox browser build into the image so the agent's ensureCamoufox()
-# finds it cached at /root/.cache/camoufox instead of fetching ~662MB on the
-# first pentest (the runtime fetch is the step that stalls).
-RUN npx --yes camoufox-js fetch
+# finds it cached at /root/.cache/camoufox instead of fetching ~700MB on the
+# first pentest (the runtime fetch is the step that stalls). Pin the camoufox-js
+# version so the baked build matches the apex runtime dep (^0.11.1) and isn't
+# re-fetched at boot.
+RUN npx --yes camoufox-js@0.11.1 fetch
