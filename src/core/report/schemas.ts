@@ -15,6 +15,7 @@ export const PentestReportFindingSchema = z.object({
   cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
   rootCauseGroup: z.string().optional(),
   relatedFindings: z.array(z.string()).optional(),
+  rootCauseLead: z.boolean().optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
 });
 

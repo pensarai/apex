@@ -1287,6 +1287,65 @@ describe("groupByRootCause", () => {
     expect(allFindings[1]!.relatedFindings).toEqual([allFindings[0]!.title]);
   });
 
+  it("normalizes grouped findings to the group's max severity and designates the lead", async () => {
+    mockedGenerate.mockResolvedValueOnce({
+      groups: [
+        {
+          groupId: "dev-layout-authz-bypass",
+          findingIndices: [0, 1, 2],
+          rootCause:
+            "Authorization enforced only at the /dev layout, leaking page content via RSC/307 bodies across all /dev routes",
+        },
+      ],
+    });
+
+    const findings = [
+      makeFinding({
+        title: "RSC Header Bypass on /dev/files",
+        severity: "HIGH",
+        endpoint: "https://target.com/dev/files",
+        description:
+          "The /dev/files page leaks the full file inventory because authorization is only enforced at the layout.",
+      }),
+      makeFinding({
+        title: "RSC Header Bypass on /dev/tags",
+        severity: "MEDIUM",
+        endpoint: "https://target.com/dev/tags",
+        description:
+          "The /dev/tags page leaks tag data via the same layout-only auth gap.",
+      }),
+      makeFinding({
+        title: "RSC Header Bypass on /dev/usage",
+        severity: "MEDIUM",
+        endpoint: "https://target.com/dev/usage",
+        description:
+          "The /dev/usage page leaks billing analytics via the same layout-only auth gap.",
+      }),
+    ];
+    const registry = FindingsRegistry.fromFindings(findings, {
+      model: "test-model",
+    });
+
+    const groups = await registry.groupByRootCause();
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.normalizedSeverity).toBe("HIGH");
+    expect(groups[0]!.leadFindingIndex).toBe(0);
+
+    const allFindings = registry.getFindings();
+    // All grouped findings normalized up to the group max (HIGH).
+    expect(allFindings.map((f) => f.severity)).toEqual([
+      "HIGH",
+      "HIGH",
+      "HIGH",
+    ]);
+    // Exactly one lead, and it is the originally-highest-severity finding.
+    expect(allFindings.filter((f) => f.rootCauseLead)).toHaveLength(1);
+    expect(allFindings[0]!.rootCauseLead).toBe(true);
+    expect(allFindings[1]!.rootCauseLead).toBe(false);
+    expect(allFindings[2]!.rootCauseLead).toBe(false);
+  });
+
   it("groups same-endpoint auth + rate-limiting findings", async () => {
     mockedGenerate.mockResolvedValueOnce({
       groups: [
