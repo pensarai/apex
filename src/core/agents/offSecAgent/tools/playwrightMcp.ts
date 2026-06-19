@@ -394,13 +394,29 @@ export class PlaywrightMcpSession {
         : undefined;
   }
 
-  /** Immediately reset all instance state. Synchronous — no I/O. */
+  /** Reset all instance state and schedule best-effort cleanup of the temp config file. */
   private resetState(): void {
     this.mcpClient = null;
     this.mcpTransport = null;
     this.mcpProcess = null;
     this.connectionPromise = null;
     this.disconnecting = false;
+    this.cleanupConfigFile();
+  }
+
+  /** Best-effort async unlink of the current config file (if any). */
+  private cleanupConfigFile(): void {
+    const configPath = this.mcpConfigPath;
+    if (!configPath) return;
+    this.mcpConfigPath = null;
+    void (async () => {
+      try {
+        const fsp = await import("fs/promises");
+        await fsp.unlink(configPath);
+      } catch {
+        // already-deleted or inaccessible — fine
+      }
+    })();
   }
 
   /**
@@ -581,19 +597,6 @@ export class PlaywrightMcpSession {
     }
 
     this.forceKillProcess();
-
-    if (this.mcpConfigPath) {
-      const configPath = this.mcpConfigPath;
-      this.mcpConfigPath = null;
-      void (async () => {
-        try {
-          const fsp = await import("fs/promises");
-          await fsp.unlink(configPath);
-        } catch {
-          // best-effort; already-deleted is fine
-        }
-      })();
-    }
 
     this.disconnecting = false;
   }

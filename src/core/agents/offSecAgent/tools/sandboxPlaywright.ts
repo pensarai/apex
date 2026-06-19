@@ -132,6 +132,24 @@ export async function installSandboxPlaywright(
     );
   }
 
+  // Install Firefox system libraries (GTK3, nss, fonts, X11…). Camoufox is a
+  // patched Firefox and won't launch without them, even headless. Remove broken
+  // Yarn apt repo first (common in Daytona node images).
+  await sandbox.execute(
+    `(sudo rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null || rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null || true)`,
+    { timeout: 10 },
+  );
+
+  const depsResult = await sandbox.execute(
+    `cd ${SANDBOX_PW_DIR} && npx --yes playwright install-deps firefox 2>&1`,
+    { timeout: 300 },
+  );
+  if (!depsResult.success) {
+    throw new Error(
+      `Failed to install Firefox system deps in sandbox: ${depsResult.stderr || depsResult.stdout}`,
+    );
+  }
+
   // Download the Camoufox browser build (cached under CAMOUFOX_INSTALL_DIR /
   // ~/.cache). Retried — it pulls a large archive over the network.
   let fetchResult: SandboxExecutionResult | undefined;
