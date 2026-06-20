@@ -213,6 +213,42 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
   });
 });
 
+describe("PlaywrightMcpSession.disconnect()", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  // Regression: disconnect() used to run forceKillProcess() AFTER resetState()
+  // had nulled this.mcpProcess (so the kill was a no-op) and AFTER awaiting
+  // client/transport.close(). A wedged MCP child made transport.close() hang
+  // forever, so disconnect() — and any caller awaiting it (the agent's
+  // consume() teardown) — hung, stranding an endpoint that had already
+  // finished. disconnect() must kill the child up front and never hang.
+  it("force-kills the child and resolves even when close() hangs forever", async () => {
+    const session = new PlaywrightMcpSession();
+    const kill = vi.fn();
+    const neverResolves = () => new Promise<void>(() => {});
+    // Inject wedged internals (no pid → forceKillProcess uses proc.kill()).
+    Object.assign(session as unknown as Record<string, unknown>, {
+      mcpProcess: { exitCode: null, kill },
+      mcpClient: { close: neverResolves },
+      mcpTransport: { close: neverResolves },
+    });
+
+    let settled = false;
+    const done = session.disconnect().then(() => {
+      settled = true;
+    });
+
+    // The child is SIGKILLed synchronously, before any await.
+    expect(kill).toHaveBeenCalledWith("SIGKILL");
+
+    // close() never resolves; the bounded race resolves disconnect() anyway.
+    await vi.advanceTimersByTimeAsync(5_000);
+    await done;
+    expect(settled).toBe(true);
+  });
+});
+
 describe("parseStorageStateResult", () => {
   it("returns null for null/undefined input", () => {
     expect(parseStorageStateResult(null)).toBeNull();
