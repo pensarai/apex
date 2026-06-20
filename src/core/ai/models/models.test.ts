@@ -5,7 +5,12 @@ import {
   modelSupportsOpenAIReasoning,
   normalizeOpenAIReasoningEffort,
 } from "../ai";
-import { AVAILABLE_MODELS, getMaxOutputTokens, getModelInfo } from "./index";
+import {
+  AVAILABLE_MODELS,
+  getMaxOutputTokens,
+  getModelInfo,
+  prefersSequentialToolCalls,
+} from "./index";
 
 describe("getMaxOutputTokens", () => {
   it("returns a positive value for every model in AVAILABLE_MODELS", () => {
@@ -149,6 +154,37 @@ describe("getMaxOutputTokens", () => {
 
   it("falls back to a small default for genuinely unknown providers", () => {
     expect(getMaxOutputTokens("totally-unknown-model")).toBe(4_096);
+  });
+});
+
+describe("prefersSequentialToolCalls", () => {
+  it("is true for DeepSeek models (Bedrock mis-parses parallel tool calls)", () => {
+    expect(prefersSequentialToolCalls("deepseek.v3-v1:0")).toBe(true);
+    expect(prefersSequentialToolCalls("us.deepseek.r1-v1:0")).toBe(true);
+    expect(prefersSequentialToolCalls("deepseek/deepseek-chat")).toBe(true);
+  });
+
+  it("is false for models that parse parallel tool calls natively", () => {
+    expect(prefersSequentialToolCalls("qwen.qwen3-coder-480b-a35b-v1:0")).toBe(
+      false,
+    );
+    expect(
+      prefersSequentialToolCalls(
+        "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      ),
+    ).toBe(false);
+    expect(prefersSequentialToolCalls("us.anthropic.claude-opus-4-6-v1")).toBe(
+      false,
+    );
+    // Don't false-positive on substrings of unrelated ids.
+    expect(prefersSequentialToolCalls("some-deepseeker-model")).toBe(false);
+  });
+
+  it("registers DeepSeek V3.1 and Qwen3 Coder 480B as bedrock models", () => {
+    expect(getModelInfo("deepseek.v3-v1:0").provider).toBe("bedrock");
+    expect(getModelInfo("qwen.qwen3-coder-480b-a35b-v1:0").provider).toBe(
+      "bedrock",
+    );
   });
 });
 

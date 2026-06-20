@@ -32,6 +32,23 @@ export function getModelInfo(model: AIModel): ModelInfo {
 }
 
 /**
+ * Whether a model must be constrained to ONE tool call per assistant turn.
+ *
+ * DeepSeek V3.1 emits tool calls via special tokens
+ * (`<｜tool▁call▁begin｜>name<｜tool▁sep｜>args<｜tool▁call▁end｜>`). When it
+ * emits MULTIPLE tool calls in a single turn, Bedrock's tool-call extraction
+ * mis-parses them and drops/empties the arguments of the 2nd+ call (observed:
+ * a parallel `get_weather` call came back with `{"city":""}`). Single tool
+ * calls parse correctly. The portable mitigation — the one the DeepSeek model
+ * card and community use — is to instruct the model to make one tool call per
+ * turn (see `SEQUENTIAL_TOOL_CALL_INSTRUCTION` in ai.ts). Qwen3 and Claude
+ * parse parallel calls fine, so this is scoped to DeepSeek.
+ */
+export function prefersSequentialToolCalls(model: AIModel): boolean {
+  return /(^|[./:-])deepseek([./:-]|$)/i.test(model);
+}
+
+/**
  * Single source of truth for a model's default `max_tokens`. Both
  * `streamResponse`'s budget and the Pensar gateway formatter must agree,
  * so the lookup lives next to the registry it queries against.

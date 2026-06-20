@@ -418,6 +418,23 @@ export const BEDROCK_MODELS: ModelInfo[] = [
     provider: "bedrock",
     contextLength: 64000,
   },
+  // Manually added — not yet emitted by the SDK model enumeration that
+  // generate-models.ts reads. DeepSeek V3.1 and Qwen3 Coder are in-region only
+  // (no cross-region inference profile). DeepSeek V3.1 does NOT support native
+  // Bedrock Converse tool calling (see needsTextToolCalling in ai.ts); Qwen3
+  // Coder does. Keep these on re-generation.
+  {
+    id: "deepseek.v3-v1:0",
+    name: "DeepSeek V3.1 (Bedrock)",
+    provider: "bedrock",
+    contextLength: 128000,
+  },
+  {
+    id: "qwen.qwen3-coder-480b-a35b-v1:0",
+    name: "Qwen3 Coder 480B A35B Instruct (Bedrock)",
+    provider: "bedrock",
+    contextLength: 131072,
+  },
   {
     id: "us.mistral.pixtral-large-2502-v1:0",
     name: "Pixtral Large-2502 (US)",

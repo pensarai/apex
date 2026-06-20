@@ -21,7 +21,11 @@ import { shouldRecordAiPayloads } from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
 import { withCachedLastMessage, withCachedSystemPrompt } from "./caching";
 import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
-import { getMaxOutputTokens, getModelInfo } from "./models";
+import {
+  getMaxOutputTokens,
+  getModelInfo,
+  prefersSequentialToolCalls,
+} from "./models";
 import {
   type AIAuthConfig,
   checkIfContextLengthError,
@@ -143,6 +147,14 @@ function checkIfRateLimitError(error: unknown): boolean {
     errorString.includes("request rate")
   );
 }
+
+// Injected into the system prompt for models that mis-parse parallel tool
+// calls (DeepSeek V3.1 on Bedrock). See prefersSequentialToolCalls.
+const SEQUENTIAL_TOOL_CALL_INSTRUCTION =
+  "CRITICAL TOOL-CALLING RULE: Emit EXACTLY ONE tool call per response. " +
+  "Never emit more than one tool call in a single turn. After each tool call, " +
+  "wait for its result before making the next one. Emitting multiple tool " +
+  "calls in one turn corrupts their arguments.";
 
 const MAX_RATE_LIMIT_RETRIES = 20;
 const MAX_IDLE_RESUME_RETRIES = 3;
@@ -758,16 +770,28 @@ export function streamResponse(
     );
   }
 
+  // Models that mis-parse multiple tool calls per turn (DeepSeek V3.1 on
+  // Bedrock) are constrained to one tool call per turn via system prompt —
+  // single calls parse correctly, parallel calls drop/empty arguments. Only
+  // applied when tools are actually bound. See prefersSequentialToolCalls.
+  const systemWithToolPolicy =
+    tools && Object.keys(tools).length > 0 && prefersSequentialToolCalls(model)
+      ? `${system ? `${system}\n\n` : ""}${SEQUENTIAL_TOOL_CALL_INSTRUCTION}`
+      : system;
+
   // For Anthropic models, move the system prompt into messages with cache_control.
   // This caches tools + system prompt across multi-turn conversations (~90% cost reduction on cache hits).
-  let effectiveSystem: string | undefined = system;
+  let effectiveSystem: string | undefined = systemWithToolPolicy;
   let effectiveMessages: ModelMessage[] | undefined = fittedMessages;
 
-  if (useAnthropicCaching && system) {
+  if (useAnthropicCaching && systemWithToolPolicy) {
     const baseMessages: ModelMessage[] = fittedMessages ?? [
       { role: "user" as const, content: prompt },
     ];
-    effectiveMessages = withCachedSystemPrompt(system, baseMessages);
+    effectiveMessages = withCachedSystemPrompt(
+      systemWithToolPolicy,
+      baseMessages,
+    );
     effectiveSystem = undefined;
   }
 
