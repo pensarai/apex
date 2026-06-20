@@ -1,4 +1,5 @@
 [install]
 # Refuse to install packages published less than 3 days ago (supply chain mitigation).
 minimumReleaseAge = 259200
-minimumReleaseAgeExcludes = []
+# Temporarily exempting this package from the release-age gate.
+minimumReleaseAgeExcludes = ["@pensar/surface"]
