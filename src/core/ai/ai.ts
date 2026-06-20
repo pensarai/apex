@@ -156,6 +156,26 @@ const SEQUENTIAL_TOOL_CALL_INSTRUCTION =
   "wait for its result before making the next one. Emitting multiple tool " +
   "calls in one turn corrupts their arguments.";
 
+// Returns the system prompt that is actually sent to the provider, accounting
+// for the sequential-tool-call policy appended for models that mis-parse
+// parallel tool calls. Token budgeting (`fitMessagesToContext`) must use this
+// value, not the raw `system`, or it underestimates the system prompt size and
+// overestimates the message budget near the context limit.
+function applySequentialToolCallPolicy(
+  system: string | undefined,
+  tools: ToolSet | undefined,
+  model: AIModel,
+): string | undefined {
+  if (
+    tools &&
+    Object.keys(tools).length > 0 &&
+    prefersSequentialToolCalls(model)
+  ) {
+    return `${system ? `${system}\n\n` : ""}${SEQUENTIAL_TOOL_CALL_INSTRUCTION}`;
+  }
+  return system;
+}
+
 const MAX_RATE_LIMIT_RETRIES = 20;
 const MAX_IDLE_RESUME_RETRIES = 3;
 const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -410,7 +430,11 @@ function wrapStreamWithErrorHandler(
                 const fitted = fitMessagesToContext(currentMessages, {
                   contextWindow: getContextWindow(opts.model),
                   maxOutputTokens: getMaxOutputTokens(opts.model),
-                  system: opts.system,
+                  system: applySequentialToolCallPolicy(
+                    opts.system,
+                    opts.tools,
+                    opts.model,
+                  ),
                   tools: opts.tools,
                   sessionPath: opts.sessionPath,
                 });
@@ -718,6 +742,18 @@ export function streamResponse(
   const providerModel = getProviderModel(model, authConfig);
   const useAnthropicCaching = isAnthropicProvider(model);
 
+  // Models that mis-parse multiple tool calls per turn (DeepSeek V3.1 on
+  // Bedrock) are constrained to one tool call per turn via system prompt —
+  // single calls parse correctly, parallel calls drop/empty arguments. Only
+  // applied when tools are actually bound. See prefersSequentialToolCalls.
+  // Computed before context fitting so token budgeting accounts for the
+  // appended instruction that is actually sent to the provider.
+  const systemWithToolPolicy = applySequentialToolCallPolicy(
+    system,
+    tools,
+    model,
+  );
+
   // Proactive context fit: compact before the call. Reactive recovery
   // below is a safety net for tokenizer drift the estimate doesn't catch.
   let fittedMessages = messages;
@@ -726,7 +762,7 @@ export function streamResponse(
     const fitted = fitMessagesToContext(messages, {
       contextWindow: getContextWindow(model),
       maxOutputTokens: getMaxOutputTokens(model),
-      system,
+      system: systemWithToolPolicy,
       tools,
       sessionPath: opts.sessionPath,
     });
@@ -769,15 +805,6 @@ export function streamResponse(
       silent,
     );
   }
-
-  // Models that mis-parse multiple tool calls per turn (DeepSeek V3.1 on
-  // Bedrock) are constrained to one tool call per turn via system prompt —
-  // single calls parse correctly, parallel calls drop/empty arguments. Only
-  // applied when tools are actually bound. See prefersSequentialToolCalls.
-  const systemWithToolPolicy =
-    tools && Object.keys(tools).length > 0 && prefersSequentialToolCalls(model)
-      ? `${system ? `${system}\n\n` : ""}${SEQUENTIAL_TOOL_CALL_INSTRUCTION}`
-      : system;
 
   // For Anthropic models, move the system prompt into messages with cache_control.
   // This caches tools + system prompt across multi-turn conversations (~90% cost reduction on cache hits).
@@ -1236,4 +1263,10 @@ const MAX_SCHEMA_CHARS = 6_000;
 const MINIMAL_RESTART_PROMPT =
   "Continue the previous task. Earlier context was discarded due to repeated context-length errors.";
 
-export { createToolExecutionGate, StreamIdleTimeoutError, withIdleTimeout };
+export {
+  applySequentialToolCallPolicy,
+  createToolExecutionGate,
+  SEQUENTIAL_TOOL_CALL_INSTRUCTION,
+  StreamIdleTimeoutError,
+  withIdleTimeout,
+};
