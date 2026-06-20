@@ -180,10 +180,18 @@ describe("prefersSequentialToolCalls", () => {
     expect(prefersSequentialToolCalls("some-deepseeker-model")).toBe(false);
   });
 
-  it("registers DeepSeek V3.1 and Qwen3 Coder 480B as bedrock models", () => {
+  it("registers DeepSeek V3.1, Qwen3 Coder 480B, and GLM 5 as bedrock models", () => {
     expect(getModelInfo("deepseek.v3-v1:0").provider).toBe("bedrock");
     expect(getModelInfo("qwen.qwen3-coder-480b-a35b-v1:0").provider).toBe(
       "bedrock",
+    );
+    expect(getModelInfo("zai.glm-5").provider).toBe("bedrock");
+  });
+
+  it("does not force GLM 5 / Qwen into sequential tool calls (they parse parallel calls natively)", () => {
+    expect(prefersSequentialToolCalls("zai.glm-5")).toBe(false);
+    expect(prefersSequentialToolCalls("qwen.qwen3-coder-480b-a35b-v1:0")).toBe(
+      false,
     );
   });
 });

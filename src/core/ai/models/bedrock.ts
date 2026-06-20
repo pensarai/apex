@@ -436,6 +436,12 @@ export const BEDROCK_MODELS: ModelInfo[] = [
     contextLength: 131072,
   },
   {
+    id: "zai.glm-5",
+    name: "Z.AI GLM 5 (Bedrock)",
+    provider: "bedrock",
+    contextLength: 200000,
+  },
+  {
     id: "us.mistral.pixtral-large-2502-v1:0",
     name: "Pixtral Large-2502 (US)",
     provider: "bedrock",
