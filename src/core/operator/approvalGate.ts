@@ -1,5 +1,6 @@
-import { randomBytes } from "crypto";
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
+import type { ApprovalId } from "./ids";
+import { mintActionId, mintApprovalId, mintToolCallId } from "./ids";
 import type {
   ActionHistoryEntry,
   ApprovalDecision,
@@ -23,7 +24,6 @@ export interface ApprovalGateConfig {
 /** Default operator decision SLA when `requireApproval` is true. */
 export const DEFAULT_DECISION_TIMEOUT_MS = 15 * 60 * 1000;
 
-/** Internal correlation IDs minted by this module: `apr_*`, `act_*`, `tc_*`. Never user-facing. */
 export const INTERNAL_ID_PATTERN = /^(apr|act|tc)_\d+_[0-9a-f]{8}$/;
 
 interface DeferredApproval {
@@ -42,7 +42,7 @@ interface DeferredApproval {
  */
 export class ApprovalGate extends EventEmitter {
   private config: ApprovalGateConfig;
-  private pendingApprovals: Map<string, DeferredApproval> = new Map();
+  private pendingApprovals: Map<ApprovalId, DeferredApproval> = new Map();
   private actionHistory: ActionHistoryEntry[] = [];
 
   constructor(config: ApprovalGateConfig) {
@@ -96,7 +96,7 @@ export class ApprovalGate extends EventEmitter {
     args: Record<string, unknown>,
   ): Promise<ApprovalDecision> {
     const approval: PendingApproval = {
-      id: `apr_${Date.now()}_${randomBytes(4).toString("hex")}`,
+      id: mintApprovalId(),
       toolName,
       toolCallId,
       args,
@@ -122,7 +122,7 @@ export class ApprovalGate extends EventEmitter {
     });
   }
 
-  private timeoutApproval(approvalId: string, timeoutMs: number): void {
+  private timeoutApproval(approvalId: ApprovalId, timeoutMs: number): void {
     const deferred = this.pendingApprovals.get(approvalId);
     if (!deferred) return;
 
@@ -149,7 +149,7 @@ export class ApprovalGate extends EventEmitter {
     );
   }
 
-  approve(approvalId: string): void {
+  approve(approvalId: ApprovalId): void {
     const deferred = this.pendingApprovals.get(approvalId);
     if (!deferred) {
       throw new Error(`No pending approval with id: ${approvalId}`);
@@ -174,7 +174,7 @@ export class ApprovalGate extends EventEmitter {
     deferred.resolve("approved");
   }
 
-  deny(approvalId: string): void {
+  deny(approvalId: ApprovalId): void {
     const deferred = this.pendingApprovals.get(approvalId);
     if (!deferred) return;
 
@@ -197,7 +197,7 @@ export class ApprovalGate extends EventEmitter {
     deferred.reject(new ApprovalDeniedError("Action denied by user"));
   }
 
-  batchApprove(approvalIds: string[]): void {
+  batchApprove(approvalIds: ApprovalId[]): void {
     for (const id of approvalIds) {
       if (this.pendingApprovals.has(id)) {
         this.approve(id);
@@ -217,7 +217,7 @@ export class ApprovalGate extends EventEmitter {
     decision: ApprovalDecision,
   ): ActionHistoryEntry {
     const entry: ActionHistoryEntry = {
-      id: `act_${Date.now()}_${randomBytes(4).toString("hex")}`,
+      id: mintActionId(),
       toolName,
       toolCallId,
       tier: 1,
@@ -277,8 +277,7 @@ function wrapToolWithApproval<TArgs extends Record<string, unknown>, TResult>(
   originalTool: (args: TArgs) => Promise<TResult>,
 ): (args: TArgs & { toolCallId?: string }) => Promise<TResult> {
   return async (args) => {
-    const toolCallId =
-      args.toolCallId || `tc_${Date.now()}_${randomBytes(4).toString("hex")}`;
+    const toolCallId = args.toolCallId || mintToolCallId();
     const { toolCallId: _, ...toolArgs } = args;
 
     await gate.check(toolName, toolCallId, toolArgs as Record<string, unknown>);

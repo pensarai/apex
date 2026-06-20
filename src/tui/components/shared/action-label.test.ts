@@ -6,7 +6,7 @@ function makeApproval(
   overrides: Partial<PendingApproval> = {},
 ): PendingApproval {
   return {
-    id: "apr_1777922893504_0d385b65",
+    id: "apr_1777922893504_0d385b65" as PendingApproval["id"],
     toolName: "execute_command",
     toolCallId: "tc_test_1",
     args: { command: "ls -la" },

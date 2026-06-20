@@ -19,6 +19,7 @@ import { createLogger } from "../../logger/structured";
 import { getApexTracer } from "../../observability";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
+import { mintToolCallId } from "../../operator/ids";
 import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
@@ -624,9 +625,7 @@ function wrapToolsWithApprovalGate(
       ...t,
       // biome-ignore lint/suspicious/noExplicitAny: ai-sdk tool execute receives an opaque ExecuteContext we don't need to narrow.
       execute: async (args: Record<string, unknown>, options: any) => {
-        const toolCallId =
-          args.toolCallId ??
-          `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const toolCallId = args.toolCallId ?? mintToolCallId();
 
         log.debug(`${name} (${toolCallId}): checking`);
         try {

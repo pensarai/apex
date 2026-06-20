@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ActionId, ApprovalId } from "./ids";
 
 /**
  * Permission tiers for tool classification
@@ -193,7 +194,7 @@ function getNextStage(current: OperatorStage): OperatorStage | null {
 
 /** Pending approval request. `id` is an internal correlation key, not a label. */
 export interface PendingApproval {
-  id: string;
+  id: ApprovalId;
   toolName: string;
   toolCallId: string;
   args: Record<string, unknown>;
@@ -206,7 +207,7 @@ export type ApprovalDecision = "approved" | "denied" | "auto-approved";
 
 /** Action history entry for audit log */
 export interface ActionHistoryEntry {
-  id: string;
+  id: ActionId;
   toolName: string;
   toolCallId: string;
   tier: PermissionTier;
@@ -325,7 +326,7 @@ export type OperatorEvent =
   | { type: "approval-needed"; approval: PendingApproval }
   | {
       type: "approval-resolved";
-      id: string;
+      id: ApprovalId;
       decision: ApprovalDecision;
       approval: PendingApproval;
     }

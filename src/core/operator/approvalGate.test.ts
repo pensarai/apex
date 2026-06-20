@@ -7,6 +7,16 @@ import {
 } from "./approvalGate";
 import type { PendingApproval } from "./types";
 
+function expectApprovalId(
+  approvalId: PendingApproval["id"] | undefined,
+): PendingApproval["id"] {
+  expect(approvalId).toBeDefined();
+  if (approvalId === undefined) {
+    throw new Error("approval-needed event did not fire");
+  }
+  return approvalId;
+}
+
 describe("ApprovalGate — operator decision timeout", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -54,16 +64,16 @@ describe("ApprovalGate — operator decision timeout", () => {
       decisionTimeoutMs: 1_000,
     });
 
-    let approvalId = "";
+    let approvalId: PendingApproval["id"] | undefined;
     gate.once("approval-needed", (e) => {
-      approvalId = (e as { approval: { id: string } }).approval.id;
+      approvalId = (e as { approval: PendingApproval }).approval.id;
     });
 
     const pending = gate.check("http_request", "tc_2", { url: "https://t/" });
-    expect(approvalId).not.toBe("");
+    expect(approvalId).toBeDefined();
 
     await vi.advanceTimersByTimeAsync(500);
-    gate.approve(approvalId);
+    gate.approve(expectApprovalId(approvalId));
     await vi.advanceTimersByTimeAsync(1_000);
 
     await expect(pending).resolves.toBe("approved");
@@ -76,15 +86,15 @@ describe("ApprovalGate — operator decision timeout", () => {
       decisionTimeoutMs: 1_000,
     });
 
-    let approvalId = "";
+    let approvalId: PendingApproval["id"] | undefined;
     gate.once("approval-needed", (e) => {
-      approvalId = (e as { approval: { id: string } }).approval.id;
+      approvalId = (e as { approval: PendingApproval }).approval.id;
     });
 
     const pending = gate.check("http_request", "tc_3", { url: "https://t/" });
     const assertion = expect(pending).rejects.toThrow("Action denied by user");
     await vi.advanceTimersByTimeAsync(500);
-    gate.deny(approvalId);
+    gate.deny(expectApprovalId(approvalId));
     await vi.advanceTimersByTimeAsync(1_000);
 
     await assertion;
@@ -105,9 +115,9 @@ describe("ApprovalGate — operator decision timeout", () => {
       decisionTimeoutMs: 0,
     });
 
-    let approvalId = "";
+    let approvalId: PendingApproval["id"] | undefined;
     gate.once("approval-needed", (e) => {
-      approvalId = (e as { approval: { id: string } }).approval.id;
+      approvalId = (e as { approval: PendingApproval }).approval.id;
     });
 
     const pending = gate.check("http_request", "tc_4", { url: "https://t/" });
@@ -116,7 +126,7 @@ describe("ApprovalGate — operator decision timeout", () => {
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
     expect(gate.getPendingApprovals()).toHaveLength(1);
 
-    gate.approve(approvalId);
+    gate.approve(expectApprovalId(approvalId));
     await expect(pending).resolves.toBe("approved");
   });
 
@@ -155,9 +165,9 @@ describe("ApprovalGate — approval-resolved payload shape", () => {
     }> = [];
     gate.on("approval-resolved", (e) => resolvedEvents.push(e));
 
-    let approvalId = "";
+    let approvalId: PendingApproval["id"] | undefined;
     gate.once("approval-needed", (e) => {
-      approvalId = (e as { approval: { id: string } }).approval.id;
+      approvalId = (e as { approval: PendingApproval }).approval.id;
     });
 
     const pending = gate.check("execute_command", "tc_payload_1", {
@@ -165,7 +175,7 @@ describe("ApprovalGate — approval-resolved payload shape", () => {
       toolCallDescription: "Running ffuf against example.com",
     });
 
-    gate.approve(approvalId);
+    gate.approve(expectApprovalId(approvalId));
     await expect(pending).resolves.toBe("approved");
 
     expect(resolvedEvents).toHaveLength(1);
@@ -193,9 +203,9 @@ describe("ApprovalGate — approval-resolved payload shape", () => {
     }> = [];
     gate.on("approval-resolved", (e) => resolvedEvents.push(e));
 
-    let approvalId = "";
+    let approvalId: PendingApproval["id"] | undefined;
     gate.once("approval-needed", (e) => {
-      approvalId = (e as { approval: { id: string } }).approval.id;
+      approvalId = (e as { approval: PendingApproval }).approval.id;
     });
 
     const pending = gate.check("http_request", "tc_payload_2", {
@@ -203,7 +213,7 @@ describe("ApprovalGate — approval-resolved payload shape", () => {
     });
     const assertion = expect(pending).rejects.toThrow("Action denied by user");
 
-    gate.deny(approvalId);
+    gate.deny(expectApprovalId(approvalId));
     await assertion;
 
     expect(resolvedEvents).toHaveLength(1);
@@ -263,18 +273,18 @@ describe("ApprovalGate — INTERNAL_ID_PATTERN format-source coupling", () => {
       decisionTimeoutMs: 0,
     });
 
-    let approvalId = "";
+    let approvalId: PendingApproval["id"] | undefined;
     gate.once("approval-needed", (e) => {
-      approvalId = (e as { approval: { id: string } }).approval.id;
+      approvalId = (e as { approval: PendingApproval }).approval.id;
     });
 
     const pending = gate.check("http_request", "tc_pin_1", {});
     const assertion = expect(pending).rejects.toThrow("Action denied by user");
 
     expect(approvalId).toMatch(INTERNAL_ID_PATTERN);
-    expect(approvalId.startsWith("apr_")).toBe(true);
+    expect(expectApprovalId(approvalId).startsWith("apr_")).toBe(true);
 
-    gate.deny(approvalId);
+    gate.deny(expectApprovalId(approvalId));
     await assertion;
   });
 
@@ -284,13 +294,13 @@ describe("ApprovalGate — INTERNAL_ID_PATTERN format-source coupling", () => {
       decisionTimeoutMs: 0,
     });
 
-    let approvalId = "";
+    let approvalId: PendingApproval["id"] | undefined;
     gate.once("approval-needed", (e) => {
-      approvalId = (e as { approval: { id: string } }).approval.id;
+      approvalId = (e as { approval: PendingApproval }).approval.id;
     });
 
     const pending = gate.check("http_request", "tc_pin_2", {});
-    gate.approve(approvalId);
+    gate.approve(expectApprovalId(approvalId));
     await expect(pending).resolves.toBe("approved");
 
     const [historyEntry] = gate.getActionHistory();
