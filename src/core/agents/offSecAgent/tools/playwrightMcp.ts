@@ -407,8 +407,9 @@ export class PlaywrightMcpSession {
    * shutdown, no waiting. Used during disconnect and error recovery so the
    * agent is never blocked on a hung Playwright process.
    */
-  private forceKillProcess(): void {
-    const proc = this.mcpProcess;
+  private forceKillProcess(
+    proc: import("child_process").ChildProcess | null = this.mcpProcess,
+  ): void {
     if (!proc || proc.exitCode !== null) return;
 
     try {
@@ -552,27 +553,46 @@ export class PlaywrightMcpSession {
 
     const transport = this.mcpTransport;
     const client = this.mcpClient;
+    // Capture the child BEFORE resetState() nulls it — otherwise the kill
+    // below is a no-op (the original bug).
+    const proc = this.mcpProcess;
 
     this.resetState();
     this.disconnecting = true; // re-set because resetState clears it
 
-    if (client) {
-      try {
-        await client.close();
-      } catch {
-        // Ignore — may already be closed
-      }
-    }
+    // SIGKILL the MCP child FIRST. Previously this ran *after* the awaited
+    // client/transport.close() calls AND read the already-nulled
+    // this.mcpProcess, so it never actually killed anything: disconnect relied
+    // entirely on close() to end the child. When the Playwright MCP child is
+    // wedged, transport.close() blocks indefinitely — so disconnect() (and any
+    // caller awaiting it, e.g. the agent's consume() teardown) hung forever,
+    // stranding an endpoint that had already finished its run. Killing the
+    // child up front makes the stdio transport observe EOF so close() resolves
+    // promptly, and guarantees disconnect() honors its "never hangs" contract.
+    this.forceKillProcess(proc);
 
-    if (transport) {
-      try {
-        await transport.close();
-      } catch {
-        // Ignore — may already be closed
-      }
-    }
-
-    this.forceKillProcess();
+    // Graceful close is best-effort cleanup and must never block the caller —
+    // bound it so a stuck client/transport can't re-introduce the hang.
+    const CLOSE_TIMEOUT_MS = 5_000;
+    let closeTimer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      (async () => {
+        try {
+          await client?.close();
+        } catch {
+          // Ignore — may already be closed
+        }
+        try {
+          await transport?.close();
+        } catch {
+          // Ignore — may already be closed
+        }
+      })(),
+      new Promise<void>((resolve) => {
+        closeTimer = setTimeout(resolve, CLOSE_TIMEOUT_MS);
+      }),
+    ]);
+    if (closeTimer) clearTimeout(closeTimer);
 
     if (this.mcpConfigPath) {
       const configPath = this.mcpConfigPath;
