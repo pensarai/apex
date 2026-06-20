@@ -50,8 +50,17 @@ describe("getMaxOutputTokens", () => {
     expect(getMaxOutputTokens("minimax/minimax-m3")).toBe(128_000);
   });
 
-  it("recognizes GLM 5.2's 131.1K max-output window", () => {
+  it("recognizes GLM 5 / 5.2's 131.1K max-output window", () => {
     expect(getMaxOutputTokens("z-ai/glm-5.2")).toBe(131_072);
+    expect(getMaxOutputTokens("zai.glm-5")).toBe(131_072);
+  });
+
+  it("recognizes the new Bedrock DeepSeek / Qwen output budgets", () => {
+    // These three were silently inheriting the 4,096 catch-all, capping
+    // replies far below each model's documented Bedrock limit.
+    expect(getMaxOutputTokens("deepseek.v3-v1:0")).toBe(8_192);
+    expect(getMaxOutputTokens("us.deepseek.r1-v1:0")).toBe(8_192);
+    expect(getMaxOutputTokens("qwen.qwen3-coder-480b-a35b-v1:0")).toBe(16_000);
   });
 
   it("recognizes Claude tier-specific budgets", () => {

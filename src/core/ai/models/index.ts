@@ -179,9 +179,24 @@ function lookupOutputBudgetByPattern(modelId: string): number {
     return 128_000;
   }
 
-  // GLM 5.2 ships a 131.1K (128Ki) max-output window over its 1M context.
-  if (modelId.includes("glm-5.2")) {
+  // GLM 5 / 5.2 ship a ~131K (128Ki) max-output window. Matching both keeps the
+  // Bedrock `zai.glm-5` id and OpenRouter `z-ai/glm-5.2` on the same budget.
+  if (modelId.includes("glm-5")) {
     return 131_072;
+  }
+
+  // DeepSeek (V3.1, R1, chat). Bedrock documents an 8K output window for
+  // DeepSeek V3.1; the rest of the family is no larger, so this is a safe floor
+  // that keeps new `deepseek.*` ids off the 4,096 catch-all.
+  if (modelId.includes("deepseek")) {
+    return 8_192;
+  }
+
+  // Qwen3 Coder ships a 16K max-output window over its 128K+ context. Match the
+  // whole `qwen` family so future Bedrock/OpenRouter qwen ids don't silently
+  // inherit the 4,096 default.
+  if (modelId.includes("qwen")) {
+    return 16_000;
   }
 
   return 4_096;
