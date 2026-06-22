@@ -54,31 +54,15 @@ You MAY use web_search / get_page to look up attack techniques or CVEs relevant 
 // ---------------------------------------------------------------------------
 
 export interface GenerateNextObjectivesInput {
-  /** Full target URL of the endpoint the objectives are being generated for. */
+  /** Endpoint URL. */
   target: string;
-  /**
-   * Synthesized brief of what was tested this run and the outcomes — which
-   * objectives were covered, what each worker confirmed or ruled out, and any
-   * anomalies observed during recon that remain unexplored.
-   */
+  /** What was tested this run and the outcomes. */
   testingSummary: string;
-  /**
-   * Objectives already marked completed on this endpoint (from the
-   * orchestrator's assignment context). The planner must not re-propose these.
-   */
+  /** Objectives already completed — not to be re-proposed. */
   alreadyCoveredObjectives?: string[];
 }
 
-/**
- * Spawn a focused planning sub-agent that reviews what has already been tested
- * on an endpoint and proposes the next iteration's objectives. Returns the new
- * objective strings (empty array when the endpoint is exhausted or generation
- * fails).
- *
- * Wired to the event bus as a child of the calling orchestrator (mirrors
- * `spawn_pentest_agent` / `generateThreatModelForEndpoint`) so the planning
- * pass surfaces as its own timeline in the UI.
- */
+/** Spawn a planning sub-agent that proposes next-run objectives. Returns [] on failure. */
 export async function runObjectiveGenerationAgent(
   ctx: ToolContext,
   input: GenerateNextObjectivesInput,
@@ -86,8 +70,7 @@ export async function runObjectiveGenerationAgent(
   if (!ctx.model) return [];
   const model = ctx.model;
 
-  // Lazy import to break a potential circular dependency through the tools
-  // barrel (offensiveSecurityAgent imports tools, tools import this file).
+  // Lazy import: breaks the tools-barrel circular dependency.
   const { OffensiveSecurityAgent } = await import("../offensiveSecurityAgent");
 
   const subagentId = ctx.subagentId
@@ -158,15 +141,7 @@ export async function runObjectiveGenerationAgent(
 // Tool factory — orchestrator-facing
 // ---------------------------------------------------------------------------
 
-/**
- * Factory for the `generate_next_objectives` tool.
- *
- * The pentest orchestrator calls this ONCE at the end of a run (after all
- * workers complete) to hand off a fresh set of objectives for the next run of
- * the same endpoint, informed by what was already tested. The objectives are
- * returned to the orchestrator so it can place them in its `response`'s
- * `newObjectives` field.
- */
+/** `generate_next_objectives` tool — orchestrator calls it once at end of run. */
 export function generateNextObjectives(ctx: ToolContext) {
   return tool({
     description: `Generate the NEXT run's testing objectives for this endpoint based on what was already tested.
