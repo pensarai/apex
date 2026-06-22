@@ -279,6 +279,30 @@ const CVSS_SCORER_SYSTEM_PROMPT = `You are a CVSS 4.0 scoring specialist. Your t
 - If production-like or confirmed unintentional: **E:A**
 - Severity: typically **HIGH-CRITICAL** for real bypasses, **MEDIUM** for intentional test credentials in sandbox
 
+### Denial of Service / Resource Exhaustion (unbounded input, algorithmic complexity, amplification)
+- Typically: **AV:N, AC:L, AT:N, PR** varies (often **L** for authenticated endpoints), **UI:N**
+- **VC:N, VI:N** — DoS has no confidentiality/integrity impact unless separately demonstrated
+- **VA** must reflect what the evidence actually proves, not the worst case it implies:
+  - **VA:L** when a single request degrades performance or ties up one worker temporarily (the typical demonstrated case). A slow response (e.g. several seconds) for one request is **VA:L**, not **VA:H**.
+  - **VA:H** ONLY when the POC demonstrates a *sustained, service-wide* outage — e.g. proven worker-pool exhaustion at realistic concurrency, or the service staying unavailable to other users. Extrapolating "5-10 concurrent requests would exhaust the pool" is theoretical and does NOT justify **VA:H** unless the POC actually showed it.
+- **E:P** when only the resource-consumption gap was demonstrated; **E:A** only if an actual outage was produced and observed during testing.
+- Severity range: typically **LOW-MEDIUM**. Reserve **HIGH** for a demonstrated full outage with no easy mitigation.
+
+### OAuth Flow Weaknesses (missing PKCE, weak/predictable state, state integrity)
+- These findings describe a *missing or weak control* in an auth flow. The impact (account/session takeover) is only realizable when chained with a *separate* capability: an authorization-code interception path (open redirect, referrer leakage, network MITM) or a forgeable/guessable state.
+- **Do NOT credit full VC:H/VI:H on the vulnerable system unless the interception/forgery chain was actually demonstrated end to end.** If only the absence of PKCE (or a missing signature) was shown, the direct impact on the vulnerable system is limited → prefer **VC:L/VI:L or N** and **E:P**, with **AC:H** and/or **AT:P** to reflect the required preconditions.
+- If a state parameter already binds to the initiating user (e.g. a server-side userId check on return), missing PKCE/signing is largely a **defense-in-depth / best-practice** gap → **LOW** (or informational when state is also unguessable and validated).
+- Severity range: typically **LOW** for "missing PKCE / unsigned state" in isolation; elevate only when a working interception or CSRF-via-state-forgery chain is demonstrated.
+
+## Severity Calibration Principles
+
+Apply these across every vulnerability class. They override the worst-case instinct.
+
+- **Score what was demonstrated, not what could theoretically follow.** The CVSS reflects the impact the POC actually proved on the target, not the maximal impact the weakness might enable in a different configuration or when chained with an undiscovered bug.
+- **Chained / conditional exploitation:** when realizing impact depends on a *separate, undemonstrated* vulnerability or attacker-favorable precondition (interception position, a second bug, a guessed identifier), reflect that in the exploitability metrics (**AC:H**, **AT:P**, exploit maturity **E:P/U**) and do NOT assign full **VC:H/VI:H/VA:H** to the vulnerable system. A finding whose impact is entirely contingent on a missing precondition trends **LOW**.
+- **Security-boundary bypass without proven sensitive exposure:** when a test shows an access-control/authorization boundary was bypassed but the data actually returned is non-sensitive or same-tenant/expected-visible, score the *demonstrated* confidentiality impact (often **VC:L** or **VC:N**), not the boundary's theoretical worst case. Note explicitly in the reasoning what data was (and was not) exposed.
+- **Cross-tenant vs same-tenant matters:** confirmed cross-tenant/cross-user exposure of private data justifies **VC:H**; same-tenant data the identity could plausibly already see does not. If tenancy is unproven, say so and score conservatively.
+
 ## Analysis Instructions
 
 1. Read the finding description and evidence carefully
@@ -286,8 +310,8 @@ const CVSS_SCORER_SYSTEM_PROMPT = `You are a CVSS 4.0 scoring specialist. Your t
 3. Assess complexity based on whether special conditions were needed
 4. Determine privileges based on authentication requirements
 5. Evaluate user interaction based on exploit mechanics
-6. Assess impact on both the vulnerable system AND potential subsequent systems
-7. Since a POC exists and confirmed the vulnerability, E should typically be 'A'
+6. Assess impact on both the vulnerable system AND potential subsequent systems — score what the evidence proves, not the worst case it implies (see Severity Calibration Principles)
+7. Exploit Maturity (E): use **A (Attacked)** only when the POC demonstrated the actual security impact (data accessed, outage produced, session taken over). When the POC only proved the *gap* exists — a missing control, a slow response, a boundary bypass without confirmed sensitive exposure — use **P (POC)**. Do not default to **A** merely because a script ran and exited 0.
 
 Always provide brief reasoning explaining your key decisions.
 
@@ -319,6 +343,8 @@ In addition to CVSS metrics, assign one or more CWE identifiers to the finding. 
 | Hardcoded Credentials | CWE-798 | CWE-259 (Hard-coded Password), CWE-321 (Hard-coded Crypto Key) |
 | Captcha Bypass | CWE-804 | CWE-837 (Improper Enforcement of Single Access) |
 | Missing Security Headers | CWE-1021 | CWE-693 (Protection Mechanism Failure), CWE-16 (Configuration) |
+| Denial of Service / Resource Exhaustion | CWE-400 | CWE-770 (Allocation Without Limits), CWE-1333 (Inefficient Regex) |
+| OAuth Flow Weakness (missing PKCE, weak state) | CWE-352 | CWE-345 (Insufficient Verification of Authenticity), CWE-1275 (Sensitive Cookie Weak Attributes) |
 
 ### CWE Assignment Rules
 

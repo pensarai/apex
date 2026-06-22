@@ -1287,6 +1287,111 @@ describe("groupByRootCause", () => {
     expect(allFindings[1]!.relatedFindings).toEqual([allFindings[0]!.title]);
   });
 
+  it("normalizes grouped findings to the group's max severity and designates the lead", async () => {
+    mockedGenerate.mockResolvedValueOnce({
+      groups: [
+        {
+          groupId: "dev-layout-authz-bypass",
+          findingIndices: [0, 1, 2],
+          rootCause:
+            "Authorization enforced only at the /dev layout, leaking page content via RSC/307 bodies across all /dev routes",
+        },
+      ],
+    });
+
+    const findings = [
+      makeFinding({
+        title: "RSC Header Bypass on /dev/files",
+        severity: "HIGH",
+        endpoint: "https://target.com/dev/files",
+        description:
+          "The /dev/files page leaks the full file inventory because authorization is only enforced at the layout.",
+      }),
+      makeFinding({
+        title: "RSC Header Bypass on /dev/tags",
+        severity: "MEDIUM",
+        endpoint: "https://target.com/dev/tags",
+        description:
+          "The /dev/tags page leaks tag data via the same layout-only auth gap.",
+      }),
+      makeFinding({
+        title: "RSC Header Bypass on /dev/usage",
+        severity: "MEDIUM",
+        endpoint: "https://target.com/dev/usage",
+        description:
+          "The /dev/usage page leaks billing analytics via the same layout-only auth gap.",
+      }),
+    ];
+    const registry = FindingsRegistry.fromFindings(findings, {
+      model: "test-model",
+    });
+
+    const groups = await registry.groupByRootCause();
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.normalizedSeverity).toBe("HIGH");
+    expect(groups[0]!.leadFindingIndex).toBe(0);
+
+    const allFindings = registry.getFindings();
+    // All grouped findings normalized up to the group max (HIGH).
+    expect(allFindings.map((f) => f.severity)).toEqual([
+      "HIGH",
+      "HIGH",
+      "HIGH",
+    ]);
+    // Exactly one lead, and it is the originally-highest-severity finding.
+    expect(allFindings.filter((f) => f.rootCauseLead)).toHaveLength(1);
+    expect(allFindings[0]!.rootCauseLead).toBe(true);
+    expect(allFindings[1]!.rootCauseLead).toBe(false);
+    expect(allFindings[2]!.rootCauseLead).toBe(false);
+  });
+
+  it("derives each group's severity from pre-normalization ranks when a finding spans multiple groups", async () => {
+    // finding[1] is in BOTH groups. group g1 normalizes it up to HIGH; g2 must
+    // still see its ORIGINAL severity (LOW) so it isn't over-normalized.
+    mockedGenerate.mockResolvedValueOnce({
+      groups: [
+        { groupId: "g1", findingIndices: [0, 1], rootCause: "shared cause A" },
+        { groupId: "g2", findingIndices: [1, 2], rootCause: "shared cause B" },
+      ],
+    });
+
+    const findings = [
+      makeFinding({
+        title: "High severity root",
+        severity: "HIGH",
+        endpoint: "https://target.com/a",
+        description: "High-severity finding in group 1.",
+      }),
+      makeFinding({
+        title: "Shared low finding",
+        severity: "LOW",
+        endpoint: "https://target.com/b",
+        description: "Low-severity finding that the LLM places in both groups.",
+      }),
+      makeFinding({
+        title: "Other low finding",
+        severity: "LOW",
+        endpoint: "https://target.com/c",
+        description: "Low-severity finding only in group 2.",
+      }),
+    ];
+    const registry = FindingsRegistry.fromFindings(findings, {
+      model: "test-model",
+    });
+
+    const groups = await registry.groupByRootCause();
+
+    const g2 = groups.find((g) => g.groupId === "g2")!;
+    // g2 contains two originally-LOW findings; it must stay LOW, not inherit
+    // HIGH from g1's mutation of the shared finding.
+    expect(g2.normalizedSeverity).toBe("LOW");
+
+    const all = registry.getFindings();
+    // finding[2] is only in g2 and must not be inflated.
+    expect(all[2]!.severity).toBe("LOW");
+  });
+
   it("groups same-endpoint auth + rate-limiting findings", async () => {
     mockedGenerate.mockResolvedValueOnce({
       groups: [
