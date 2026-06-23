@@ -721,6 +721,23 @@ export class OffensiveSecurityAgent<TResult = void> {
       // a finish-step "did not complete" close apart from a genuine drop.
       const responseSawTerminal = new Map<string, string>();
 
+      // Accumulated raw streamed arg text per tool-call id. When the SDK reports
+      // a `tool-error` (invalid args / Zod failure, repair returned null) the
+      // structured `input` is dropped, but the partial text the model DID stream
+      // is the only forensic record of what it tried to submit. Persisting it
+      // (instead of `{}`) lets a resumed session and the log archive show the
+      // real, truncated payload rather than an empty object.
+      const streamedArgText = new Map<string, string>();
+      // Real tool errors observed mid-stream, keyed by tool-call id. Drained by
+      // the finish-step close so it surfaces the SDK's actual error text instead
+      // of the generic "Tool call did not complete". The failed tool-result is
+      // emitted at finish-step, where the step's finishReason is known so a
+      // `length` (output-token truncation) failure can be framed distinctly.
+      const toolErrors = new Map<
+        string,
+        { message: string; input: unknown; toolName: string }
+      >();
+
       try {
         for await (const chunk of this.streamResult.fullStream) {
           // [response-debug] Observe EVERY chunk type that references the
@@ -816,10 +833,66 @@ export class OffensiveSecurityAgent<TResult = void> {
               // Track from the start so a truncated call (started, args never
               // completed) still gets closed and isn't left "running".
               inFlightTools.set(chunk.id, chunk.toolName);
+              streamedArgText.set(chunk.id, "");
               break;
+            case "tool-input-delta": {
+              // Accumulate the raw streamed arg text so a later tool-error can
+              // persist the real (possibly truncated) payload instead of `{}`.
+              const d = chunk as { id: string; delta?: string };
+              streamedArgText.set(
+                d.id,
+                (streamedArgText.get(d.id) ?? "") + (d.delta ?? ""),
+              );
+              break;
+            }
             case "tool-call":
               inFlightTools.set(chunk.toolCallId, chunk.toolName);
               break;
+            case "tool-error": {
+              // The SDK could not turn the streamed args into a valid tool input
+              // (Zod validation failed and experimental_repairToolCall returned
+              // null), OR output-token truncation cut the args off. `execute`
+              // NEVER runs for an errored call, so the response tool's capture
+              // signals never fire and the call is never cleared from
+              // inFlightTools — finish-step would then fabricate a bogus
+              // "Tool call did not complete" + input:{} and the agent would loop
+              // re-calling `response`. Handle it here: clear the in-flight entry
+              // and record the REAL error + whatever args were streamed. The
+              // failed tool-result is emitted at finish-step (below), where the
+              // step's finishReason is known so output-token truncation
+              // (`length`) can be framed distinctly.
+              const te = chunk as {
+                toolCallId: string;
+                toolName: string;
+                input?: unknown;
+                error?: unknown;
+              };
+              inFlightTools.delete(te.toolCallId);
+              const errMsg =
+                te.error instanceof Error
+                  ? te.error.message
+                  : typeof te.error === "string"
+                    ? te.error
+                    : (() => {
+                        try {
+                          return JSON.stringify(te.error);
+                        } catch {
+                          return String(te.error);
+                        }
+                      })();
+              const partialArgs =
+                te.input !== undefined &&
+                te.input !== null &&
+                responseArgBytes(te.input) > 2
+                  ? te.input
+                  : (streamedArgText.get(te.toolCallId) ?? "");
+              toolErrors.set(te.toolCallId, {
+                message: errMsg,
+                input: partialArgs,
+                toolName: te.toolName,
+              });
+              break;
+            }
             case "tool-result": {
               const tc = chunk as {
                 toolCallId: string;
@@ -836,21 +909,60 @@ export class OffensiveSecurityAgent<TResult = void> {
               });
               break;
             }
-            case "finish-step":
+            case "finish-step": {
               // onStepFinish has persisted this step; drop its results so a
               // later abort doesn't re-append already-saved tool calls/results.
               completedResults.length = 0;
-              // Close any call that started this step but produced no result
-              // (truncated args) so it doesn't render stuck "running". Carry the
-              // running part's exact partId + messageId so the result reuses that
-              // part instead of being stranded as a duplicate while streaming.
+              const finishReason = (chunk as { finishReason?: string })
+                .finishReason;
+              const truncated = finishReason === "length";
+
+              // Surface real tool errors recorded this step (Zod-invalid args,
+              // repair returned null, or output-token truncation). These were
+              // already removed from inFlightTools in the `tool-error` case, so
+              // they do NOT fall into the "did not complete" close below. Emit
+              // the ACTUAL error text (and flag truncation) so the agent and the
+              // log archive see why `response` failed instead of a fabricated
+              // generic result.
+              for (const [toolCallId, info] of toolErrors) {
+                if (RESPONSE_DEBUG && info.toolName === RESPONSE_TOOL_NAME) {
+                  rlog.warn(
+                    `[response-debug] tool-error SURFACED id=${toolCallId} ` +
+                      `streamedArgChars=${(streamedArgText.get(toolCallId) ?? "").length} ` +
+                      `finishReason=${finishReason ?? "unknown"} ` +
+                      `outputTokenTruncated=${truncated} error=${info.message.slice(0, 300)}`,
+                  );
+                }
+                bus.emit("tool-result", {
+                  toolCallId,
+                  toolName: info.toolName,
+                  result: {
+                    type: "error-text",
+                    value: truncated
+                      ? `Tool call failed: the model's output was truncated at its max output tokens before the "${info.toolName}" arguments were complete. ${info.message}`
+                      : `Tool call failed: ${info.message}`,
+                  },
+                  sessionId: this.busSessionId,
+                  subagentId: sid,
+                  partId: ids.toolPartId?.(toolCallId),
+                  messageId: ids.messageId,
+                });
+              }
+              toolErrors.clear();
+
+              // Close any call that started this step but produced neither a
+              // result nor a tool-error (e.g. args never finalized) so it doesn't
+              // render stuck "running". Carry the running part's exact partId +
+              // messageId so the result reuses that part instead of being
+              // stranded as a duplicate while streaming.
               for (const [toolCallId, toolName] of inFlightTools) {
                 if (RESPONSE_DEBUG && toolName === RESPONSE_TOOL_NAME) {
                   rlog.warn(
                     `[response-debug] CLOSING response as "did not complete" id=${toolCallId} ` +
                       `streamedArgChars=${responseArgChars.get(toolCallId) ?? 0} ` +
                       `sawTerminalChunk=${responseSawTerminal.get(toolCallId) ?? "none"} ` +
-                      `responseToolFired=${this._responseToolFired} — this persists status=error input={}`,
+                      `finishReason=${finishReason ?? "unknown"} outputTokenTruncated=${truncated} ` +
+                      `responseToolFired=${this._responseToolFired}`,
                   );
                 }
                 bus.emit("tool-result", {
@@ -858,7 +970,9 @@ export class OffensiveSecurityAgent<TResult = void> {
                   toolName,
                   result: {
                     type: "error-text",
-                    value: "Tool call did not complete",
+                    value: truncated
+                      ? "Tool call did not complete: the model's output was truncated at its max output tokens before the arguments were finalized."
+                      : "Tool call did not complete",
                   },
                   sessionId: this.busSessionId,
                   subagentId: sid,
@@ -868,6 +982,7 @@ export class OffensiveSecurityAgent<TResult = void> {
               }
               inFlightTools.clear();
               break;
+            }
           }
           bus.emitStreamPart(chunk, ids);
         }
@@ -890,6 +1005,7 @@ export class OffensiveSecurityAgent<TResult = void> {
               completedResults,
               reason,
               ids.toolPartId,
+              streamedArgText,
             );
           } catch {
             // Never mask the original streamError with a listener error.
@@ -975,6 +1091,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     completedResults: ToolResultPart[],
     reason: string,
     partIdFor?: (toolCallId: string) => string,
+    streamedArgText?: Map<string, string>,
   ): Promise<void> {
     const sid = this.subagentId;
     const output = {
@@ -1063,14 +1180,30 @@ export class OffensiveSecurityAgent<TResult = void> {
           r.toolName,
         ]),
       ];
+      // Preserve whatever args the model actually streamed instead of writing
+      // an empty `{}`. Parse the raw text when it's valid JSON; otherwise keep
+      // the truncated text under `_partial` so a resumed session and the log
+      // archive show the real (incomplete) payload, not a misleading empty call.
+      const reconstructInput = (toolCallId: string): unknown => {
+        const raw = streamedArgText?.get(toolCallId);
+        if (!raw) return {};
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return { _partial: raw };
+        }
+      };
       if (RESPONSE_DEBUG) {
         const responseReconstructed = stepTools
           .filter(([, n]) => n === RESPONSE_TOOL_NAME)
           .map(([id]) => id);
         if (responseReconstructed.length > 0) {
           rlog.warn(
-            `[response-debug] step-reconstruction writing input={} for response call(s) ` +
-              `ids=${responseReconstructed.join(",")} — the real streamed args are LOST here`,
+            `[response-debug] step-reconstruction for response call(s) ` +
+              `ids=${responseReconstructed.join(",")} ` +
+              `preservedArgChars=${responseReconstructed
+                .map((id) => streamedArgText?.get(id)?.length ?? 0)
+                .join(",")}`,
           );
         }
       }
@@ -1079,7 +1212,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           type: "tool-call" as const,
           toolCallId,
           toolName,
-          input: {},
+          input: reconstructInput(toolCallId),
         }),
       );
       appended.push({ role: "assistant", content: toolCalls });
