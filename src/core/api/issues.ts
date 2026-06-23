@@ -79,6 +79,24 @@ export interface DispatchPentestResult {
   message: string;
 }
 
+/**
+ * A pentest "target" is a single attack-surface endpoint exercised during a
+ * pentest (a `scan_endpoints` row on the backend). Pentest execution logs are
+ * persisted against the target rather than against any issue it produced, so
+ * targets are the entry point for querying those logs.
+ */
+export interface PentestTargetSummary {
+  id: string;
+  url: string | null;
+  applicationId: string;
+  applicationName: string;
+  status: string;
+  attempt: number;
+  startedAt?: string;
+  completedAt?: string;
+  error: string | null;
+}
+
 export interface AgentLogEntry {
   id: string;
   createdAt: string;
@@ -109,6 +127,25 @@ export interface SearchAgentLogsResult {
   }>;
 }
 
+export interface ListTargetLogsResult {
+  targetId: string;
+  totalLogs: number;
+  returnedLogs: number;
+  logs: AgentLogEntry[];
+}
+
+export interface SearchTargetLogsResult {
+  targetId: string;
+  query: string;
+  totalMatches: number;
+  totalLogs?: number;
+  contextLines?: number;
+  matches: Array<{
+    matchIndex: number;
+    entries: Array<AgentLogEntry & { isMatch: boolean }>;
+  }>;
+}
+
 // ── API functions ────────────────────────────────────────────────────
 
 export async function listScans(): Promise<ScanSummary[]> {
@@ -117,6 +154,15 @@ export async function listScans(): Promise<ScanSummary[]> {
 
 export async function getScan(scanId: string): Promise<ScanDetail> {
   return apiRequest<ScanDetail>("GET", `/pentests/${scanId}`);
+}
+
+export async function listPentestTargets(
+  pentestId: string,
+): Promise<PentestTargetSummary[]> {
+  return apiRequest<PentestTargetSummary[]>(
+    "GET",
+    `/pentests/${pentestId}/targets`,
+  );
 }
 
 export async function dispatchPentest(opts?: {
@@ -198,6 +244,40 @@ export async function searchAgentLogs(
   return apiRequest<SearchAgentLogsResult>(
     "POST",
     `/issues/${issueId}/logs/search`,
+    { query, ...opts },
+  );
+}
+
+export async function listTargetLogs(
+  targetId: string,
+  opts?: {
+    level?: "debug" | "info" | "warn" | "error";
+    role?: "assistant" | "user" | "system" | "tool-call" | "tool-result";
+    limit?: number;
+  },
+): Promise<ListTargetLogsResult> {
+  const params = new URLSearchParams();
+  if (opts?.level) params.set("level", opts.level);
+  if (opts?.role) params.set("role", opts.role);
+  if (opts?.limit) params.set("limit", String(opts.limit));
+
+  const qs = params.toString();
+  const path = `/targets/${targetId}/logs${qs ? `?${qs}` : ""}`;
+  return apiRequest<ListTargetLogsResult>("GET", path);
+}
+
+export async function searchTargetLogs(
+  targetId: string,
+  query: string,
+  opts?: {
+    level?: "debug" | "info" | "warn" | "error";
+    role?: "assistant" | "user" | "system" | "tool-call" | "tool-result";
+    contextLines?: number;
+  },
+): Promise<SearchTargetLogsResult> {
+  return apiRequest<SearchTargetLogsResult>(
+    "POST",
+    `/targets/${targetId}/logs/search`,
     { query, ...opts },
   );
 }
