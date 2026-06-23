@@ -26,8 +26,6 @@ import {
 } from "./contextManagement";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
-import { idleGuardedResponse } from "./streamIdleGuard";
-import { StreamTelemetry, wallNow } from "./streamTelemetry";
 
 const log = scopedLogger(() => createLogger("ai:utils"));
 
@@ -186,24 +184,22 @@ export function getProviderModel(
     }
 
     case "bedrock": {
-      // Guard against a half-open Bedrock socket hanging the stream forever.
-      const rawStreamIdle = Number(process.env.PENSAR_STREAM_IDLE_TIMEOUT_MS);
-      const streamIdleMs =
-        Number.isFinite(rawStreamIdle) && rawStreamIdle > 0
-          ? rawStreamIdle
-          : 90_000;
+      // No data-inactivity idle guard on the response stream. TCP keepalive
+      // (SO_KEEPALIVE, forced via libkeepalive in the sandbox) now provides
+      // real dead-socket detection (~30s dead-peer), so byte-silence is no
+      // longer our liveness signal. A data-inactivity timeout can't tell a
+      // dead connection from the model silently composing a large structured
+      // payload (e.g. ThreatModelResultSchema, which has shown 33s+ silent
+      // gaps and can exceed any fixed window) — that false trip errored the
+      // stream mid-`response`, which got persisted as `input:{}` and
+      // auto-resumed into an endless empty-`{}` response loop.
       const bedrockFetch = async (
         input: RequestInfo | URL,
         init?: RequestInit,
       ) => {
-        const response = await globalThis.fetch(input, {
+        return globalThis.fetch(input, {
           ...init,
           signal: buildStreamingFetchSignal(init?.signal),
-        });
-        const telemetry = new StreamTelemetry(`bedrock:${model}`, wallNow());
-        return idleGuardedResponse(response, {
-          idleTimeoutMs: streamIdleMs,
-          telemetry,
         });
       };
       const bedrock = createAmazonBedrock({
