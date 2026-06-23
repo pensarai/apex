@@ -38,6 +38,13 @@ import {
 
 const log = scopedLogger(() => createLogger("ai"));
 
+// [response-debug] Mirror of offensiveSecurityAgent's tracer flag. Default ON
+// while debugging the empty-`{}` / looping response failure. These logs bypass
+// the `silent` flag so they appear for silent threat-model sub-agents.
+const RESPONSE_DEBUG =
+  process.env.RESPONSE_DEBUG !== "0" && process.env.RESPONSE_DEBUG !== "false";
+const RESPONSE_TOOL_NAME = "response";
+
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
 export type OpenAIReasoningEffort =
@@ -429,6 +436,35 @@ function wrapStreamWithErrorHandler(
                 toolGate.shouldEnforceIdleTimeout,
               )) {
                 toolGate.observe(chunk);
+
+                // [response-debug] Log the AI-SDK-level view of the response
+                // tool lifecycle as chunks leave the transport wrapper. This is
+                // the layer BELOW the consume() loop — it reveals whether the SDK
+                // emitted a terminal tool-call/tool-error for response, and the
+                // per-step finishReason that decides whether the loop continues.
+                if (RESPONSE_DEBUG) {
+                  const c = chunk as {
+                    type: string;
+                    toolName?: string;
+                    toolCallId?: string;
+                    finishReason?: string;
+                    invalid?: boolean;
+                  };
+                  if (
+                    (c.type === "tool-call" ||
+                      c.type === "tool-error" ||
+                      c.type === "tool-result") &&
+                    c.toolName === RESPONSE_TOOL_NAME
+                  ) {
+                    log.warn(
+                      `[response-debug] ai-layer chunk=${c.type} response id=${c.toolCallId} invalid=${c.invalid === true}`,
+                    );
+                  } else if (c.type === "finish-step") {
+                    log.warn(
+                      `[response-debug] ai-layer finish-step finishReason=${c.finishReason}`,
+                    );
+                  }
+                }
 
                 // Only stream-level errors are fatal; tool-level errors
                 // flow through so the UI renders them as failed tool results.
@@ -1070,6 +1106,19 @@ export function streamResponse(
         tools,
         error,
       }) => {
+        // [response-debug] Always log (bypassing `silent`) when repair fires for
+        // the `response` tool — repair firing means the streamed args FAILED Zod
+        // validation. If we never see this for a looping session, the args were
+        // never finalized into a tool-call chunk at all (truncated mid-stream).
+        if (RESPONSE_DEBUG && toolCall.toolName === RESPONSE_TOOL_NAME) {
+          const raw = toolCall.input;
+          const rawLen =
+            typeof raw === "string" ? raw.length : JSON.stringify(raw).length;
+          log.warn(
+            `[response-debug] experimental_repairToolCall FIRED for response ` +
+              `rawInputChars=${rawLen} error=${(error.message || String(error)).slice(0, 200)}`,
+          );
+        }
         try {
           if (!silent) {
             log.debug(`Repairing tool call: ${toolCall.toolName}`, {
