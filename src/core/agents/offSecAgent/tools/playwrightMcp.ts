@@ -16,6 +16,11 @@ import { createRequire } from "module";
 import { dirname, join } from "path";
 import { z } from "zod";
 import type { Logger } from "../../../logger";
+import {
+  type CamoufoxLaunchOptions,
+  ensureCamoufox,
+  resolveCamoufoxLaunchOptions,
+} from "./camoufox";
 
 /**
  * Playwright `BrowserContext.storageState()` shape — the JSON-serialisable
@@ -367,6 +372,8 @@ export class PlaywrightMcpSession {
   private readonly extraHttpHeaders: Record<string, string> | undefined;
   /** Temp config file written for MCP launch — deleted on disconnect. */
   private mcpConfigPath: string | null = null;
+  /** Cached Camoufox launch options — resolved once, reused on reconnect. */
+  private cachedCamouOptions: CamoufoxLaunchOptions | null = null;
 
   /**
    * Each option is three-state: `undefined` → module default, value → use it,
@@ -393,13 +400,33 @@ export class PlaywrightMcpSession {
         : undefined;
   }
 
-  /** Immediately reset all instance state. Synchronous — no I/O. */
+  /**
+   * Immediately reset all instance state and schedule best-effort cleanup
+   * of the temp MCP config file (if one exists). The file unlink is async
+   * but fire-and-forget so this method stays non-blocking.
+   */
   private resetState(): void {
+    this.cleanupConfigFile();
     this.mcpClient = null;
     this.mcpTransport = null;
     this.mcpProcess = null;
     this.connectionPromise = null;
     this.disconnecting = false;
+  }
+
+  /** Best-effort async unlink of the current temp config file. */
+  private cleanupConfigFile(): void {
+    const configPath = this.mcpConfigPath;
+    if (!configPath) return;
+    this.mcpConfigPath = null;
+    void (async () => {
+      try {
+        const fsp = await import("fs/promises");
+        await fsp.unlink(configPath);
+      } catch {
+        // already-deleted or inaccessible — fine
+      }
+    })();
   }
 
   /**
@@ -453,48 +480,61 @@ export class PlaywrightMcpSession {
         const cliPath = join(dirname(mcpPkgJsonPath), "cli.js");
 
         const args = [cliPath, "--isolated"];
-        if (this.headless) {
-          args.push("--headless");
-        }
 
-        if (this.userAgent) {
-          args.push("--user-agent", this.userAgent);
-        }
-
-        if (this.viewportSize) {
-          args.push(`--viewport-size=${this.viewportSize}`);
-        }
-
-        // Pass extraHTTPHeaders via a temp @playwright/mcp config file
-        // so every Chromium request includes them.
-        if (this.extraHttpHeaders) {
-          const os = await import("os");
-          const fsp = await import("fs/promises");
-          const cfg = {
-            browser: {
-              contextOptions: { extraHTTPHeaders: this.extraHttpHeaders },
-            },
-          };
-          this.mcpConfigPath = join(
-            os.tmpdir(),
-            `pensar-mcp-${process.pid}-${Date.now()}.json`,
+        // Drive an anti-detect Camoufox (Firefox) instead of vanilla Chromium.
+        // camoufox-js produces the executablePath / args / firefoxUserPrefs / env
+        // that carry the fingerprint; MCP drives that browser through the same
+        // tool API. We pass these via a temp config file rather than CLI flags.
+        // Resolve once per session lifetime so reconnects keep the same fingerprint.
+        await ensureCamoufox();
+        if (!this.cachedCamouOptions) {
+          this.cachedCamouOptions = await resolveCamoufoxLaunchOptions(
+            this.headless,
           );
-          await fsp.writeFile(this.mcpConfigPath, JSON.stringify(cfg), {
-            encoding: "utf-8",
-            mode: 0o600,
-          });
-          args.push("--config", this.mcpConfigPath);
         }
+        const camou = this.cachedCamouOptions;
 
-        // Disable Chromium sandbox when running as root (e.g., in Docker/ECS containers).
-        if (process.getuid?.() === 0) {
-          args.push("--no-sandbox");
-        }
+        const os = await import("os");
+        const fsp = await import("fs/promises");
+        const cfg = {
+          browser: {
+            browserName: "firefox",
+            launchOptions: {
+              executablePath: camou.executablePath,
+              args: camou.args,
+              firefoxUserPrefs: camou.firefoxUserPrefs,
+              headless: camou.headless,
+            },
+            ...(this.extraHttpHeaders
+              ? { contextOptions: { extraHTTPHeaders: this.extraHttpHeaders } }
+              : {}),
+          },
+        };
+        this.mcpConfigPath = join(
+          os.tmpdir(),
+          `pensar-mcp-${process.pid}-${Date.now()}.json`,
+        );
+        await fsp.writeFile(this.mcpConfigPath, JSON.stringify(cfg), {
+          encoding: "utf-8",
+          mode: 0o600,
+        });
+        args.push("--config", this.mcpConfigPath);
+
+        // NB: no --no-sandbox / --user-agent / --viewport-size. Those are
+        // Chromium-only flags (invalid for Firefox), and Camoufox owns the
+        // UA / viewport / fingerprint — a hand-set Chrome UA on Firefox would
+        // itself be a detection tell.
 
         const transport = new StdioClientTransport({
           command: "node",
           args,
           stderr: "pipe",
+          // CAMOU_CONFIG_* fingerprint chunks must reach the actual browser
+          // process. The MCP node child inherits them (the transport merges
+          // these over getDefaultEnvironment) and Firefox inherits in turn.
+          env: Object.fromEntries(
+            Object.entries(camou.env).map(([k, v]) => [k, String(v)]),
+          ),
         });
 
         const client = new Client({
@@ -594,18 +634,7 @@ export class PlaywrightMcpSession {
     ]);
     if (closeTimer) clearTimeout(closeTimer);
 
-    if (this.mcpConfigPath) {
-      const configPath = this.mcpConfigPath;
-      this.mcpConfigPath = null;
-      void (async () => {
-        try {
-          const fsp = await import("fs/promises");
-          await fsp.unlink(configPath);
-        } catch {
-          // best-effort; already-deleted is fine
-        }
-      })();
-    }
+    this.cleanupConfigFile();
 
     this.disconnecting = false;
   }
