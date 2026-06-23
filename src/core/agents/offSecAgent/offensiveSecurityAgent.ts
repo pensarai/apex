@@ -42,6 +42,27 @@ import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
 
 const log = scopedLogger(() => createLogger("approval-gate"));
 
+// Dedicated `response` tool lifecycle tracer. Default ON while we hunt the
+// empty-`{}` / "Tool call did not complete" loop on threat-model sub-agents.
+// Set RESPONSE_DEBUG=0 to silence once the failure point is confirmed. These
+// logs are emitted at `warn` (so they survive the default INFO level) on a
+// logger that is NOT gated by the agent's `silent` flag, so they appear for
+// silent threat-model children too.
+const RESPONSE_DEBUG =
+  process.env.RESPONSE_DEBUG !== "0" && process.env.RESPONSE_DEBUG !== "false";
+const rlog = scopedLogger(() => createLogger("response-debug"));
+
+/** Accumulated streamed-arg byte length per response tool-call id. */
+function responseArgBytes(input: unknown): number {
+  if (input == null) return 0;
+  if (typeof input === "string") return input.length;
+  try {
+    return JSON.stringify(input).length;
+  } catch {
+    return -1;
+  }
+}
+
 /**
  * General-purpose offensive security agent harness.
  *
@@ -377,6 +398,12 @@ export class OffensiveSecurityAgent<TResult = void> {
           input.responseSchema,
           (result) => {
             this._responseToolFired = true;
+            if (RESPONSE_DEBUG) {
+              rlog.warn(
+                `[response-debug] response tool EXECUTED (captured) session=${this.busSessionId} ` +
+                  `resultBytes=${responseArgBytes(result)} — happy path`,
+              );
+            }
             // The response tool's raw input matches the response SCHEMA, which
             // is only a valid TResult on the DEFAULT path (no custom
             // resolveResult). When a subclass supplies a custom resolveResult
@@ -685,8 +712,89 @@ export class OffensiveSecurityAgent<TResult = void> {
       const completedResults: ToolResultPart[] = [];
       let streamError: unknown = null;
 
+      // [response-debug] Track streamed-arg bytes for response tool calls so we
+      // can see whether the model finished emitting the full structured payload
+      // before the call was closed / dropped.
+      const responseArgChars = new Map<string, number>();
+      // [response-debug] Record which response ids the loop actually observed a
+      // terminal chunk for (tool-call / tool-result / tool-error) so we can tell
+      // a finish-step "did not complete" close apart from a genuine drop.
+      const responseSawTerminal = new Map<string, string>();
+
       try {
         for await (const chunk of this.streamResult.fullStream) {
+          // [response-debug] Observe EVERY chunk type that references the
+          // response tool — including `tool-error`, which the switch below does
+          // NOT handle (the suspected leak: an invalid response is reported as a
+          // tool-error, never deleted from inFlightTools, then closed as "did not
+          // complete" at finish-step).
+          if (RESPONSE_DEBUG) {
+            const c = chunk as {
+              type: string;
+              id?: string;
+              toolCallId?: string;
+              toolName?: string;
+              delta?: string;
+              input?: unknown;
+              args?: unknown;
+              error?: unknown;
+            };
+            const idForChunk = c.toolCallId ?? c.id;
+            const nameForChunk =
+              c.toolName ??
+              (idForChunk ? inFlightTools.get(idForChunk) : undefined);
+            if (nameForChunk === RESPONSE_TOOL_NAME && idForChunk) {
+              if (chunk.type === "tool-input-start") {
+                responseArgChars.set(idForChunk, 0);
+                rlog.warn(
+                  `[response-debug] tool-input-start id=${idForChunk} session=${this.busSessionId}`,
+                );
+              } else if (chunk.type === "tool-input-delta") {
+                responseArgChars.set(
+                  idForChunk,
+                  (responseArgChars.get(idForChunk) ?? 0) +
+                    (c.delta?.length ?? 0),
+                );
+              } else if (chunk.type === "tool-input-end") {
+                rlog.warn(
+                  `[response-debug] tool-input-end id=${idForChunk} argChars=${responseArgChars.get(idForChunk) ?? 0}`,
+                );
+              } else if (chunk.type === "tool-call") {
+                responseSawTerminal.set(idForChunk, "tool-call");
+                const inputBytes = responseArgBytes(c.input ?? c.args);
+                const invalid = (c as { invalid?: boolean }).invalid === true;
+                rlog.warn(
+                  `[response-debug] tool-call id=${idForChunk} streamedArgChars=${responseArgChars.get(idForChunk) ?? 0} parsedInputBytes=${inputBytes} invalid=${invalid}`,
+                );
+              } else if (chunk.type === "tool-error") {
+                responseSawTerminal.set(idForChunk, "tool-error");
+                const errMsg =
+                  c.error instanceof Error
+                    ? c.error.message
+                    : typeof c.error === "string"
+                      ? c.error
+                      : JSON.stringify(c.error)?.slice(0, 300);
+                rlog.warn(
+                  `[response-debug] tool-error id=${idForChunk} streamedArgChars=${responseArgChars.get(idForChunk) ?? 0} stillInFlight=${inFlightTools.has(idForChunk)} error=${errMsg}`,
+                );
+              } else if (chunk.type === "tool-result") {
+                responseSawTerminal.set(idForChunk, "tool-result");
+                rlog.warn(
+                  `[response-debug] tool-result id=${idForChunk} streamedArgChars=${responseArgChars.get(idForChunk) ?? 0}`,
+                );
+              } else if (chunk.type === "finish-step") {
+                const fr = (c as { finishReason?: string }).finishReason;
+                rlog.warn(
+                  `[response-debug] finish-step finishReason=${fr} responseInFlight=${[
+                    ...inFlightTools.entries(),
+                  ]
+                    .filter(([, n]) => n === RESPONSE_TOOL_NAME)
+                    .map(([id]) => id)
+                    .join(",")} responseToolFired=${this._responseToolFired}`,
+                );
+              }
+            }
+          }
           switch (chunk.type) {
             case "start-step":
               // New step → new assistant message. Tool part ids are NOT reset
@@ -737,6 +845,14 @@ export class OffensiveSecurityAgent<TResult = void> {
               // running part's exact partId + messageId so the result reuses that
               // part instead of being stranded as a duplicate while streaming.
               for (const [toolCallId, toolName] of inFlightTools) {
+                if (RESPONSE_DEBUG && toolName === RESPONSE_TOOL_NAME) {
+                  rlog.warn(
+                    `[response-debug] CLOSING response as "did not complete" id=${toolCallId} ` +
+                      `streamedArgChars=${responseArgChars.get(toolCallId) ?? 0} ` +
+                      `sawTerminalChunk=${responseSawTerminal.get(toolCallId) ?? "none"} ` +
+                      `responseToolFired=${this._responseToolFired} — this persists status=error input={}`,
+                  );
+                }
                 bus.emit("tool-result", {
                   toolCallId,
                   toolName,
@@ -867,6 +983,19 @@ export class OffensiveSecurityAgent<TResult = void> {
     };
     const syntheticParts: ToolResultPart[] = [];
 
+    if (RESPONSE_DEBUG) {
+      const responseInFlight = [...inFlightTools.entries()].filter(
+        ([, n]) => n === RESPONSE_TOOL_NAME,
+      );
+      if (responseInFlight.length > 0) {
+        rlog.warn(
+          `[response-debug] emitSyntheticToolResults closing ${responseInFlight.length} response call(s) ` +
+            `ids=${responseInFlight.map(([id]) => id).join(",")} reason="${reason}" ` +
+            `aborted=${this.abortSignal?.aborted === true} responseToolFired=${this._responseToolFired}`,
+        );
+      }
+    }
+
     for (const [toolCallId, toolName] of inFlightTools) {
       // The stop tool (`response`) reaching here after a successful capture
       // didn't fail — it submitted the result, and the run ended on it. Mark it
@@ -934,6 +1063,17 @@ export class OffensiveSecurityAgent<TResult = void> {
           r.toolName,
         ]),
       ];
+      if (RESPONSE_DEBUG) {
+        const responseReconstructed = stepTools
+          .filter(([, n]) => n === RESPONSE_TOOL_NAME)
+          .map(([id]) => id);
+        if (responseReconstructed.length > 0) {
+          rlog.warn(
+            `[response-debug] step-reconstruction writing input={} for response call(s) ` +
+              `ids=${responseReconstructed.join(",")} — the real streamed args are LOST here`,
+          );
+        }
+      }
       const toolCalls: ToolCallPart[] = stepTools.map(
         ([toolCallId, toolName]) => ({
           type: "tool-call" as const,
