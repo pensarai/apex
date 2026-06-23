@@ -52,6 +52,20 @@ const RESPONSE_DEBUG =
   process.env.RESPONSE_DEBUG !== "0" && process.env.RESPONSE_DEBUG !== "false";
 const rlog = scopedLogger(() => createLogger("response-debug"));
 
+// consume()-level stall watchdog. Default ON; set STREAM_STALL_DEBUG=0 to
+// silence. Observation only — logs (at warn, on the same rlog logger) when the
+// fullStream goes byte-silent on a live socket, so a Bedrock wedge that never
+// completes (and so never emits [inference-fetch-timing]) still produces data.
+const STREAM_STALL_DEBUG =
+  process.env.STREAM_STALL_DEBUG !== "0" &&
+  process.env.STREAM_STALL_DEBUG !== "false";
+// Tick the watchdog every 15s; warn once a gap exceeds 20s and on each tick
+// after; on chunk arrival warn if the just-closed gap exceeded 10s (a
+// legitimate-but-long thinking pause that recovered).
+const STREAM_STALL_TICK_MS = 15_000;
+const STREAM_STALL_WARN_MS = 20_000;
+const STREAM_GAP_RECOVERED_MS = 10_000;
+
 /** Accumulated streamed-arg byte length per response tool-call id. */
 function responseArgBytes(input: unknown): number {
   if (input == null) return 0;
@@ -738,8 +752,43 @@ export class OffensiveSecurityAgent<TResult = void> {
         { message: string; input: unknown; toolName: string }
       >();
 
+      // [stream-stall] watchdog state. lastChunkAt is the only write inside the
+      // hot loop; everything else is read by the interval. Observation only.
+      let lastChunkAt = Date.now();
+      let lastChunkType = "none";
+      let stallStepIndex = -1;
+      let stallTimer: ReturnType<typeof setInterval> | undefined;
+      if (STREAM_STALL_DEBUG) {
+        const label = this._session.id;
+        stallTimer = setInterval(() => {
+          const gap = Date.now() - lastChunkAt;
+          if (gap > STREAM_STALL_WARN_MS) {
+            rlog.warn(
+              `[stream-stall] no chunk for ${Math.round(gap / 1000)}s ` +
+                `session=${label} subagent=${sid ?? "-"} step=${stallStepIndex} ` +
+                `lastChunkType=${lastChunkType} ` +
+                `inFlightTools=${[...inFlightTools.values()].join(",")} ` +
+                `responseToolFired=${this._responseToolFired}`,
+            );
+          }
+        }, STREAM_STALL_TICK_MS);
+      }
+
       try {
         for await (const chunk of this.streamResult.fullStream) {
+          if (STREAM_STALL_DEBUG) {
+            const now = Date.now();
+            const gap = now - lastChunkAt;
+            lastChunkAt = now;
+            lastChunkType = chunk.type;
+            if (chunk.type === "start-step") stallStepIndex++;
+            if (gap > STREAM_GAP_RECOVERED_MS) {
+              rlog.warn(
+                `[stream-gap] recovered after ${Math.round(gap / 1000)}s ` +
+                  `session=${this._session.id} chunkType=${chunk.type}`,
+              );
+            }
+          }
           // [response-debug] Observe EVERY chunk type that references the
           // response tool — including `tool-error`, which the switch below does
           // NOT handle (the suspected leak: an invalid response is reported as a
@@ -991,6 +1040,8 @@ export class OffensiveSecurityAgent<TResult = void> {
       } catch (err) {
         streamError = err;
       } finally {
+        // Stop the stall watchdog so it never leaks past stream end / throw.
+        if (stallTimer) clearInterval(stallTimer);
         // Dispose first — don't block on persistence I/O.
         this.persistentShell?.dispose();
         if (inFlightTools.size > 0) {
