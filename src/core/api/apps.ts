@@ -151,6 +151,8 @@ export interface CreateEndpointInput {
 }
 
 export interface UpdateEndpointInput {
+  /** Move the endpoint to a different application within the workspace. */
+  applicationId?: string;
   endpoint?: string;
   description?: string;
   type?: EndpointType | null;
