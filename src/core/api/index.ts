@@ -67,9 +67,12 @@ export type {
   IssueDetail,
   IssueSummary,
   ListAgentLogsResult,
+  ListTargetLogsResult,
+  PentestTargetSummary,
   ScanDetail,
   ScanSummary,
   SearchAgentLogsResult,
+  SearchTargetLogsResult,
   UpdateIssueResult,
 } from "./issues";
 export {
@@ -80,8 +83,11 @@ export {
   listAgentLogs,
   listFixes,
   listIssues,
+  listPentestTargets,
   listScans,
+  listTargetLogs,
   searchAgentLogs,
+  searchTargetLogs,
   updateIssue,
 } from "./issues";
 export type { RunAgentResult } from "./offesecAgent";
