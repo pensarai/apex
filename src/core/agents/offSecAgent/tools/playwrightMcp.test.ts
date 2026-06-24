@@ -1,8 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  collectDescendantPids,
   createBrowserTools,
   PlaywrightMcpSession,
   parseStorageStateResult,
@@ -246,6 +248,48 @@ describe("PlaywrightMcpSession.disconnect()", () => {
     await vi.advanceTimersByTimeAsync(5_000);
     await done;
     expect(settled).toBe(true);
+  });
+});
+
+// Regression: forceKillProcess() only group-killed the MCP node, which isn't a
+// process-group leader — so the kill fell back to killing just the node and
+// orphaned the Chromium it launched (reparented to init), leaking ~0.5GB per
+// completed endpoint until the sandbox OOM'd. collectDescendantPids enumerates
+// the browser tree so it can be SIGKILLed explicitly.
+describe("collectDescendantPids", () => {
+  const hasProc = existsSync("/proc/self");
+
+  (hasProc ? it : it.skip)(
+    "enumerates descendant processes spawned under a parent",
+    async () => {
+      // sh forks two background `sleep` children we can discover + reap.
+      const parent = spawn("sh", ["-c", "sleep 30 & sleep 30 & wait"], {
+        stdio: "ignore",
+      });
+      const cleanup = (pids: number[]) => {
+        for (const pid of pids) {
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch {
+            /* already gone */
+          }
+        }
+      };
+      try {
+        // Give sh a moment to fork its children.
+        await new Promise((r) => setTimeout(r, 400));
+        const descendants = collectDescendantPids(parent.pid!);
+        expect(descendants.length).toBeGreaterThanOrEqual(2);
+        cleanup([...descendants, parent.pid!]);
+      } finally {
+        cleanup([parent.pid!]);
+      }
+    },
+  );
+
+  (hasProc ? it : it.skip)("returns [] for a leaf pid with no children", () => {
+    // A made-up high pid that almost certainly has no children.
+    expect(collectDescendantPids(2_147_483_646)).toEqual([]);
   });
 });
 
