@@ -34,7 +34,7 @@
     "sharp": "^0.34.4",
     "tldts": "^7.0.28",
     "yaml": "^2.8.2",
-    "zod": "^3.25.76"
+    "zod": "^4.1.12"
   },
   "description": "AI-powered penetration testing CLI tool with terminal UI",
   "devDependencies": {

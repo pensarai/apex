@@ -1147,7 +1147,7 @@ const MAX_OBJECT_RATE_LIMIT_RETRIES = 8;
 
 export async function generateObjectResponse<T extends z.ZodType>(
   opts: GenerateObjectOpts<T>,
-) {
+): Promise<z.infer<T>> {
   const {
     model,
     schema,
@@ -1208,7 +1208,10 @@ export async function generateObjectResponse<T extends z.ZodType>(
         if (inp > 0 || out > 0) _usageCallback(model, inp, out);
       }
 
-      return output;
+      // zod v4: the AI SDK's `Output.object` no longer carries the schema's
+      // inferred type through `output` (it widens to `unknown`), so restore it
+      // from the schema generic for callers.
+      return output as z.infer<T>;
     } catch (error) {
       lastError = error;
 
