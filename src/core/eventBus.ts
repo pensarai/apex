@@ -11,6 +11,13 @@ import type { TextStreamPart, ToolSet } from "ai";
  */
 export type AgentEventMap = {
   "text-delta": { text: string; subagentId?: string };
+  /**
+   * Extended-thinking / reasoning output streamed incrementally. Mirrors
+   * `text-delta` but carries the model's reasoning tokens (Anthropic
+   * extended thinking, OpenAI reasoning) so consumers can surface a
+   * "thinking" indicator instead of appearing to hang between tool calls.
+   */
+  "reasoning-delta": { text: string; subagentId?: string };
   "tool-call-start": {
     toolCallId: string;
     toolName: string;
@@ -95,6 +102,7 @@ const CHILD_BUS_FORWARD_POLICY: {
   readonly [K in keyof AgentEventMap]: ChildForwardPolicy;
 } = {
   "text-delta": "forward",
+  "reasoning-delta": "forward",
   "tool-call-start": "forward",
   "tool-call-delta": "forward",
   "tool-call-complete": "forward",
@@ -232,6 +240,7 @@ export class AgentEventBus {
    *
    * Maps Vercel AI SDK `TextStreamPart` types to `AgentEventMap` keys:
    *   text-delta        → text-delta
+   *   reasoning-delta   → reasoning-delta
    *   tool-input-start  → tool-call-start
    *   tool-input-delta  → tool-call-delta
    *   tool-call         → tool-call-complete
@@ -242,6 +251,9 @@ export class AgentEventBus {
     switch (chunk.type) {
       case "text-delta":
         this.emit("text-delta", { text: chunk.text, subagentId });
+        break;
+      case "reasoning-delta":
+        this.emit("reasoning-delta", { text: chunk.text, subagentId });
         break;
       case "tool-input-start":
         this.emit("tool-call-start", {
