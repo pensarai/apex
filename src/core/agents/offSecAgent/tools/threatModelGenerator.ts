@@ -17,10 +17,9 @@ const THREAT_MODEL_CONCURRENCY = 4;
 const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 
 // `document_endpoint` blocks on `await agent.consume()`. consume() returns the
-// structured result as soon as the child captures it and is bounded by the
-// transport idle guard + resume (ai/streamIdleGuard.ts), so it always settles —
-// resolving on success, rejecting once resumes are exhausted. On any failure the
-// catch returns null and `document_endpoint` degrades to the heuristic score.
+// structured result as soon as the child captures it, so it always settles —
+// resolving on success, rejecting once the agent loop terminates. On any failure
+// the catch returns null and `document_endpoint` degrades to the heuristic score.
 
 // Hard ceiling on the child's agent loop. Under the Bedrock wedge rate the model
 // can truncate its structured `response`, fail schema validation, and re-call
