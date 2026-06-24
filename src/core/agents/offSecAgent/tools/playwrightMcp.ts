@@ -8,7 +8,13 @@
  * - "operator": User-driven operator mode - SPA reconnaissance, authenticated flows, attack surface mapping
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -280,6 +286,65 @@ function withTimeout<T>(
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * Collect every descendant PID of `rootPid` by walking `/proc` parent links
+ * (Linux only). Returns `[]` on platforms without `/proc` (e.g. macOS dev),
+ * where the process-group SIGKILL path is relied on instead.
+ *
+ * Used to reap the Chromium browser tree a Playwright MCP `node` child
+ * launches. `StdioClientTransport` does not spawn that `node` as a
+ * process-group leader, so `process.kill(-pid)` fails and only the `node`
+ * dies — orphaning Chromium (reparented to init) and leaking ~0.5GB per
+ * completed endpoint until the sandbox OOMs. Enumerating descendants lets us
+ * SIGKILL the browser explicitly. Must be called BEFORE the parent is killed:
+ * once it dies its children reparent to init and are no longer reachable via
+ * its pid.
+ *
+ * @internal Exported for testing.
+ */
+export function collectDescendantPids(rootPid: number): number[] {
+  let entries: string[];
+  try {
+    entries = readdirSync("/proc");
+  } catch {
+    return [];
+  }
+
+  const childrenByPpid = new Map<number, number[]>();
+  for (const name of entries) {
+    if (!/^\d+$/.test(name)) continue;
+    const pid = Number(name);
+    let ppid: number;
+    try {
+      // /proc/<pid>/stat: "pid (comm) state ppid ...". comm can contain spaces
+      // and parens, so parse the ppid from after the final ')'.
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const afterComm = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+      ppid = Number(afterComm[1]);
+    } catch {
+      continue; // process exited between readdir and read
+    }
+    if (!Number.isFinite(ppid)) continue;
+    const list = childrenByPpid.get(ppid);
+    if (list) list.push(pid);
+    else childrenByPpid.set(ppid, [pid]);
+  }
+
+  const descendants: number[] = [];
+  const seen = new Set<number>([rootPid]);
+  const stack = [rootPid];
+  while (stack.length > 0) {
+    const pid = stack.pop()!;
+    for (const child of childrenByPpid.get(pid) ?? []) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      descendants.push(child);
+      stack.push(child);
+    }
+  }
+  return descendants;
+}
+
 // ---------------------------------------------------------------------------
 // Module-level defaults (used when not explicitly provided)
 // ---------------------------------------------------------------------------
@@ -439,6 +504,13 @@ export class PlaywrightMcpSession {
   ): void {
     if (!proc || proc.exitCode !== null) return;
 
+    // Snapshot the descendant tree (Chromium browser + renderers) BEFORE the
+    // node dies — afterwards they reparent to init and can't be found via its
+    // pid. The group-kill below misses them because the MCP node isn't spawned
+    // as a process-group leader, which orphaned Chromium and leaked memory
+    // across endpoints until the sandbox OOM'd.
+    const descendants = proc.pid ? collectDescendantPids(proc.pid) : [];
+
     try {
       if (proc.pid) {
         try {
@@ -451,6 +523,15 @@ export class PlaywrightMcpSession {
       }
     } catch {
       // Already dead — fine
+    }
+
+    // Reap the browser tree explicitly so a failed group-kill can't strand it.
+    for (const pid of descendants) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone — fine
+      }
     }
   }
 

@@ -352,9 +352,47 @@ const fs = require('fs');
         fs.writeFileSync('${SANDBOX_CONSOLE_FILE}', JSON.stringify(existing));
       } catch {}
     }
+    // Tear the browser down so a wedged Camoufox can't orphan inside the
+    // sandbox and accumulate across tool calls until it OOMs. context.close()
+    // can hang on a stuck browser (same wedge class as the host MCP path), so
+    // bound it, then SIGKILL any surviving descendant PIDs of this script — the
+    // in-sandbox analog of collectDescendantPids() in playwrightMcp.ts. Only
+    // this script's own children are touched, so it is safe under the parent +
+    // worker concurrency that shares a sandbox.
     if (context) {
-      try { await context.close(); } catch {}
+      let __closeTimer;
+      await Promise.race([
+        (async () => { try { await context.close(); } catch {} })(),
+        new Promise((r) => { __closeTimer = setTimeout(r, 8000); }),
+      ]);
+      if (__closeTimer) clearTimeout(__closeTimer);
     }
+    try {
+      if (fs.existsSync('/proc')) {
+        const __childrenByPpid = new Map();
+        for (const __name of fs.readdirSync('/proc')) {
+          if (!/^[0-9]+$/.test(__name)) continue;
+          try {
+            const __stat = fs.readFileSync('/proc/' + __name + '/stat', 'utf8');
+            const __ppid = Number(__stat.slice(__stat.lastIndexOf(')') + 2).split(' ')[1]);
+            if (!Number.isFinite(__ppid)) continue;
+            if (!__childrenByPpid.has(__ppid)) __childrenByPpid.set(__ppid, []);
+            __childrenByPpid.get(__ppid).push(Number(__name));
+          } catch {}
+        }
+        const __doomed = [];
+        const __seen = new Set([process.pid]);
+        const __stack = [process.pid];
+        while (__stack.length) {
+          const __p = __stack.pop();
+          for (const __c of (__childrenByPpid.get(__p) || [])) {
+            if (__seen.has(__c)) continue;
+            __seen.add(__c); __doomed.push(__c); __stack.push(__c);
+          }
+        }
+        for (const __p of __doomed) { try { process.kill(__p, 'SIGKILL'); } catch {} }
+      }
+    } catch {}
   }
 })();
 `;
