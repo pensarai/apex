@@ -104,6 +104,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  /** Enable extended thinking for supported models (Anthropic Claude 3.7+). */
+  enableThinking?: boolean;
   /** Known domains associated with the project — agents can map discovered apps to these. */
   domains?: string[];
   /** Project-level threat model content (e.g. from .pensar/threat_model.md), if found */
@@ -158,6 +160,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish,
     onCacheMetrics,
     openAIReasoningEffort,
+    enableThinking,
     domains,
     projectThreatModel,
     environments,
@@ -188,6 +191,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
     openAIReasoningEffort,
+    enableThinking,
     responseSchema: AppsDiscoveryResultSchema,
     projectThreatModel,
     // Reserved for Phase 2's per-app task agents. Inline documentation
@@ -342,6 +346,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       onStepFinish: (event) => onStepFinish?.(event),
       onCacheMetrics,
       openAIReasoningEffort,
+      enableThinking,
       responseSchema: DiscoverySummarySchema,
       excludeTools: ["document_app"],
       projectThreatModel,
@@ -434,6 +439,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
               onStepFinish,
               onCacheMetrics,
               openAIReasoningEffort,
+              enableThinking,
               projectThreatModel,
               parentSubagentId: appNodeId,
             });
@@ -1153,6 +1159,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     subagentId: "whitebox-incremental",
     onStepFinish: (event) => onStepFinish?.(event),
     openAIReasoningEffort: input.openAIReasoningEffort,
+    enableThinking: input.enableThinking,
     responseSchema: IncrementalResultSchema,
     projectThreatModel,
   });
