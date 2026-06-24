@@ -1,8 +1,10 @@
 import type { BuiltInSkill } from "../types";
 import { pentestSkill } from "./pentest";
+import { promptInjectionSkill } from "./promptInjection";
 import { threatModelSkill } from "./threatModel";
 
 export { buildPentestPrompt } from "./pentest";
+export { promptInjectionSkill } from "./promptInjection";
 export { buildThreatModelPrompt } from "./threatModel";
 
 /**
@@ -13,4 +15,8 @@ export { buildThreatModelPrompt } from "./threatModel";
  *
  * To add a built-in skill, push a BuiltInSkill object into this array.
  */
-export const BUILTIN_SKILLS: BuiltInSkill[] = [pentestSkill, threatModelSkill];
+export const BUILTIN_SKILLS: BuiltInSkill[] = [
+  pentestSkill,
+  threatModelSkill,
+  promptInjectionSkill,
+];

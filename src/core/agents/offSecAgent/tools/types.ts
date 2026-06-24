@@ -3,6 +3,7 @@ import type { CredentialManager } from "../../../credentials";
 import type { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../../findings/registry";
+import type { PromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
 import type { StepTraceWriter } from "../trace";
@@ -75,6 +76,19 @@ export type ToolContext = {
    * When present, read_skill is available.
    */
   skillsRegistry?: SkillsRegistry;
+
+  /**
+   * Runtime-only prompt-injection payload resolver. Agents receive safe
+   * metadata and IDs; tools resolve raw payloads only during execution.
+   */
+  promptInjectionLibrary?: PromptInjectionLibrary;
+
+  /**
+   * Local filesystem path for a prompt-injection payload library. When set,
+   * tools load safe metadata and runtime payloads from this source instead of
+   * shipping payloads inside Apex.
+   */
+  promptInjectionLibrarySource?: string;
 
   /**
    * Step trace writer for appending records to trace.jsonl.

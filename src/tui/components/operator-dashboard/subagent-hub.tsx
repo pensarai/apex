@@ -60,7 +60,7 @@ function getLastActivity(session: SubagentSession, maxLen: number): string {
         (m.args as Record<string, unknown>) ?? {},
       );
       const line = `${icon} ${label}`;
-      return line.length > maxLen ? line.slice(0, maxLen - 1) + "\u2026" : line;
+      return line.length > maxLen ? `${line.slice(0, maxLen - 1)}\u2026` : line;
     }
     if (
       m.role === "assistant" &&
@@ -72,7 +72,7 @@ function getLastActivity(session: SubagentSession, maxLen: number): string {
       const last = lines[lines.length - 1].trim();
       if (last) {
         return last.length > maxLen
-          ? last.slice(0, maxLen - 1) + "\u2026"
+          ? `${last.slice(0, maxLen - 1)}\u2026`
           : last;
       }
     }

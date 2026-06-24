@@ -791,7 +791,7 @@ describe("FindingsRegistry", () => {
     let mockedFs: typeof import("fs");
 
     beforeEach(async () => {
-      mockedFs = await import("fs");
+      mockedFs = await import("node:fs");
     });
 
     afterEach(() => {
@@ -1093,7 +1093,7 @@ describe("FindingsRegistry Tier 3 (semantic dedup)", () => {
     );
 
     // The prompt should contain the existing finding
-    const callArgs = mockedGenerate.mock.calls[0]![0] as { prompt: string };
+    const callArgs = mockedGenerate.mock.calls[0]?.[0] as { prompt: string };
     expect(callArgs.prompt).toContain(sqlInjectionProducts.title);
   });
 
@@ -1190,7 +1190,7 @@ describe("FindingsRegistry.unregister", () => {
 
     await registry.unregister(sqlInjectionProducts);
     expect(registry.size).toBe(1);
-    expect(registry.getFindings()[0]!.title).toBe(reflectedXss.title);
+    expect(registry.getFindings()[0]?.title).toBe(reflectedXss.title);
   });
 
   it("only removes the exact reference — not another finding with the same fingerprint", async () => {
@@ -1277,14 +1277,14 @@ describe("groupByRootCause", () => {
     const groups = await registry.groupByRootCause();
 
     expect(groups).toHaveLength(1);
-    expect(groups[0]!.groupId).toBe("cognito-user-existence-leak");
-    expect(groups[0]!.findingIndices).toEqual([0, 1]);
+    expect(groups[0]?.groupId).toBe("cognito-user-existence-leak");
+    expect(groups[0]?.findingIndices).toEqual([0, 1]);
 
     const allFindings = registry.getFindings();
-    expect(allFindings[0]!.rootCauseGroup).toBe("cognito-user-existence-leak");
-    expect(allFindings[1]!.rootCauseGroup).toBe("cognito-user-existence-leak");
-    expect(allFindings[0]!.relatedFindings).toEqual([allFindings[1]!.title]);
-    expect(allFindings[1]!.relatedFindings).toEqual([allFindings[0]!.title]);
+    expect(allFindings[0]?.rootCauseGroup).toBe("cognito-user-existence-leak");
+    expect(allFindings[1]?.rootCauseGroup).toBe("cognito-user-existence-leak");
+    expect(allFindings[0]?.relatedFindings).toEqual([allFindings[1]?.title]);
+    expect(allFindings[1]?.relatedFindings).toEqual([allFindings[0]?.title]);
   });
 
   it("normalizes grouped findings to the group's max severity and designates the lead", async () => {
@@ -1426,11 +1426,11 @@ describe("groupByRootCause", () => {
     const groups = await registry.groupByRootCause();
 
     expect(groups).toHaveLength(1);
-    expect(groups[0]!.groupId).toBe("unauth-ses-access");
+    expect(groups[0]?.groupId).toBe("unauth-ses-access");
 
     const allFindings = registry.getFindings();
-    expect(allFindings[0]!.rootCauseGroup).toBe("unauth-ses-access");
-    expect(allFindings[1]!.rootCauseGroup).toBe("unauth-ses-access");
+    expect(allFindings[0]?.rootCauseGroup).toBe("unauth-ses-access");
+    expect(allFindings[1]?.rootCauseGroup).toBe("unauth-ses-access");
   });
 
   it("does not group unrelated findings", async () => {
@@ -1459,8 +1459,8 @@ describe("groupByRootCause", () => {
     expect(groups).toHaveLength(0);
 
     const allFindings = registry.getFindings();
-    expect(allFindings[0]!.rootCauseGroup).toBeUndefined();
-    expect(allFindings[1]!.rootCauseGroup).toBeUndefined();
+    expect(allFindings[0]?.rootCauseGroup).toBeUndefined();
+    expect(allFindings[1]?.rootCauseGroup).toBeUndefined();
   });
 
   it("returns empty array when no model configured", async () => {
@@ -1527,7 +1527,7 @@ describe("groupByRootCause", () => {
     const groups = await registry.groupByRootCause();
 
     expect(groups).toHaveLength(1);
-    expect(groups[0]!.findingIndices).toEqual([0, 1]);
+    expect(groups[0]?.findingIndices).toEqual([0, 1]);
   });
 
   it("uses index-based exclusion for relatedFindings (handles same-titled findings)", async () => {
@@ -1563,15 +1563,15 @@ describe("groupByRootCause", () => {
 
     const allFindings = registry.getFindings();
     // Index 0 should see indices 1 and 2 as related (even though idx 1 has same title)
-    expect(allFindings[0]!.relatedFindings).toEqual([
+    expect(allFindings[0]?.relatedFindings).toEqual([
       "User Enumeration",
       "Different Finding",
     ]);
-    expect(allFindings[1]!.relatedFindings).toEqual([
+    expect(allFindings[1]?.relatedFindings).toEqual([
       "User Enumeration",
       "Different Finding",
     ]);
-    expect(allFindings[2]!.relatedFindings).toEqual([
+    expect(allFindings[2]?.relatedFindings).toEqual([
       "User Enumeration",
       "User Enumeration",
     ]);
@@ -1599,7 +1599,7 @@ describe("groupByRootCause", () => {
 
     expect(groups).toEqual([]);
     const allFindings = registry.getFindings();
-    expect(allFindings[0]!.rootCauseGroup).toBeUndefined();
-    expect(allFindings[1]!.rootCauseGroup).toBeUndefined();
+    expect(allFindings[0]?.rootCauseGroup).toBeUndefined();
+    expect(allFindings[1]?.rootCauseGroup).toBeUndefined();
   });
 });

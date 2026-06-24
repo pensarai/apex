@@ -137,7 +137,7 @@ describe("buildPentestReport", () => {
 
     expect(result.success).toBe(true);
     expect(report.findings[0].cwes).toHaveLength(1);
-    expect(report.findings[0].cwes![0].id).toBe("CWE-89");
+    expect(report.findings[0].cwes?.[0].id).toBe("CWE-89");
   });
 
   it("handles findings without cwes (backward compat)", () => {
@@ -174,8 +174,8 @@ describe("buildPentestReport", () => {
 
     expect(result.success).toBe(true);
     expect(report.findings[0].evidenceFiles).toHaveLength(2);
-    expect(report.findings[0].evidenceFiles![0].type).toBe("raw-evidence");
-    expect(report.findings[0].evidenceFiles![1].type).toBe("poc-output");
+    expect(report.findings[0].evidenceFiles?.[0].type).toBe("raw-evidence");
+    expect(report.findings[0].evidenceFiles?.[1].type).toBe("poc-output");
   });
 
   it("omits evidenceFiles when not present on finding", () => {

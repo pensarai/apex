@@ -62,6 +62,8 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   nuclei_scan: (args) =>
     `nuclei ${args.templates || "all"} -> ${args.target || ""}`,
   document_finding: (args) => `finding: ${args.title || args.name || ""}`,
+  list_prompt_injections: (args) =>
+    args.category ? `prompt injections: ${args.category}` : "prompt injections",
   smart_enumerate: (args) => `smart_enumerate ${args.target || args.url || ""}`,
   get_attack_surface: (args) =>
     `get_attack_surface ${args.target || args.url || ""}`,
@@ -219,7 +221,7 @@ function hasToolSummary(name: string): boolean {
  * @returns Compact args preview string
  */
 export function getArgsPreview(
-  toolName: string,
+  _toolName: string,
   args: Record<string, unknown>,
   maxLength: number = 60,
 ): string {
@@ -235,7 +237,7 @@ export function getArgsPreview(
     const [, value] = filteredArgs[0];
     const str = typeof value === "string" ? value : JSON.stringify(value);
     const truncated =
-      str.length > maxLength ? str.slice(0, maxLength) + "…" : str;
+      str.length > maxLength ? `${str.slice(0, maxLength)}…` : str;
     return truncated;
   }
 
@@ -247,7 +249,7 @@ export function getArgsPreview(
       .replace(/^_/, "");
     let shortValue: string;
     if (typeof value === "string") {
-      shortValue = value.length > 20 ? value.slice(0, 20) + "…" : value;
+      shortValue = value.length > 20 ? `${value.slice(0, 20)}…` : value;
     } else if (typeof value === "boolean") {
       shortValue = value ? "✓" : "✗";
     } else if (typeof value === "number") {
@@ -262,6 +264,6 @@ export function getArgsPreview(
 
   const preview = parts.join(" ");
   const truncated =
-    preview.length > maxLength ? preview.slice(0, maxLength) + "…" : preview;
+    preview.length > maxLength ? `${preview.slice(0, maxLength)}…` : preview;
   return truncated;
 }

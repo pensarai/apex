@@ -303,7 +303,7 @@ function wrapStreamWithErrorHandler(
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
 
   const handler = {
-    get(target: StreamTextResult<ToolSet, never>, prop: string | symbol) {
+    get(_target: StreamTextResult<ToolSet, never>, prop: string | symbol) {
       // Intercept access to fullStream
       if (prop === "fullStream") {
         if (!wrappedStream) {
@@ -971,7 +971,7 @@ export function streamResponse(
 
           // Get the actual tool definition which contains the Zod schema
           const tool = tools[toolCall.toolName];
-          if (!tool || !tool.inputSchema) {
+          if (!tool?.inputSchema) {
             if (!silent) {
               log.warn(
                 `Cannot repair tool call: ${toolCall.toolName} not found or has no schema`,

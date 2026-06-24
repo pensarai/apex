@@ -1,6 +1,5 @@
-import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
-import { execFileSync } from "child_process";
-import { createHash } from "crypto";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -8,8 +7,9 @@ import {
   readFileSync,
   statSync,
   writeFileSync,
-} from "fs";
-import { join } from "path";
+} from "node:fs";
+import { join } from "node:path";
+import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { z } from "zod";
 import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";

@@ -76,7 +76,7 @@ function patchChildrenSetter(): void {
     TextNodeRenderable.prototype,
     "children",
   );
-  if (!descriptor || !descriptor.set) {
+  if (!descriptor?.set) {
     throw new Error(
       "Obfuscation patch: TextNodeRenderable.prototype.children setter not found.",
     );

@@ -24,6 +24,7 @@ import type { AgentEventBus } from "../../eventBus";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../findings/registry";
 import type { ApprovalGate } from "../../operator";
+import type { PromptInjectionLibrary } from "../../prompt-injections";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
 import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
@@ -237,6 +238,18 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * When provided, read_skill is available.
    */
   skillsRegistry?: SkillsRegistry;
+
+  /**
+   * Runtime-only prompt-injection library. Raw payloads are resolved inside
+   * trusted tool execution paths, not in prompts or model-visible messages.
+   */
+  promptInjectionLibrary?: PromptInjectionLibrary;
+
+  /**
+   * Local filesystem path for a prompt-injection payload library. Falls back
+   * to PENSAR_PROMPT_INJECTION_LIBRARY / APEX_PROMPT_INJECTION_LIBRARY.
+   */
+  promptInjectionLibrarySource?: string;
 
   /**
    * When provided, each tool call is gated through the approval gate.

@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID } from "crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 
 /**
  * Sign an inference request for the Pensar Gateway.

@@ -1,8 +1,8 @@
+import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
 import { tool } from "ai";
-import { readFile } from "fs/promises";
 import { lookup } from "mime-types";
 import { createTransport } from "nodemailer";
-import { basename } from "path";
 import { z } from "zod";
 import type { ToolContext } from "../types";
 

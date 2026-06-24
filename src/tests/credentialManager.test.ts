@@ -28,19 +28,19 @@ describe("CredentialManager", () => {
 
       const stored = cm.resolve(id);
       expect(stored).toBeDefined();
-      expect(stored!.username).toBe("alice");
-      expect(stored!.password).toBe("s3cret");
-      expect(stored!.role).toBe("admin");
-      expect(stored!.type).toBe("username-password");
+      expect(stored?.username).toBe("alice");
+      expect(stored?.password).toBe("s3cret");
+      expect(stored?.role).toBe("admin");
+      expect(stored?.type).toBe("username-password");
     });
 
     it("stores an api-key credential", () => {
       const id = cm.add({ apiKey: "sk-12345", label: "prod key" });
 
       const stored = cm.resolve(id);
-      expect(stored!.type).toBe("api-key");
-      expect(stored!.apiKey).toBe("sk-12345");
-      expect(stored!.label).toBe("prod key");
+      expect(stored?.type).toBe("api-key");
+      expect(stored?.apiKey).toBe("sk-12345");
+      expect(stored?.label).toBe("prod key");
     });
 
     it("stores a bearer-token credential", () => {
@@ -49,8 +49,8 @@ describe("CredentialManager", () => {
       });
 
       const stored = cm.resolve(id);
-      expect(stored!.type).toBe("bearer-token");
-      expect(stored!.tokens!.bearerToken).toBe("jwt.abc.xyz");
+      expect(stored?.type).toBe("bearer-token");
+      expect(stored?.tokens?.bearerToken).toBe("jwt.abc.xyz");
     });
 
     it("stores custom-headers credential", () => {
@@ -59,7 +59,7 @@ describe("CredentialManager", () => {
       });
 
       const stored = cm.resolve(id);
-      expect(stored!.type).toBe("custom-headers");
+      expect(stored?.type).toBe("custom-headers");
     });
 
     it("stores cookies credential", () => {
@@ -68,7 +68,7 @@ describe("CredentialManager", () => {
       });
 
       const stored = cm.resolve(id);
-      expect(stored!.type).toBe("cookies");
+      expect(stored?.type).toBe("cookies");
     });
 
     it("infers composite type when multiple secret fields present", () => {
@@ -79,7 +79,7 @@ describe("CredentialManager", () => {
       });
 
       const stored = cm.resolve(id);
-      expect(stored!.type).toBe("composite");
+      expect(stored?.type).toBe("composite");
     });
 
     it("allows explicit type override", () => {
@@ -90,7 +90,7 @@ describe("CredentialManager", () => {
       });
 
       const stored = cm.resolve(id);
-      expect(stored!.type).toBe("username-password");
+      expect(stored?.type).toBe("username-password");
     });
 
     it("allows explicit id", () => {
@@ -127,19 +127,19 @@ describe("CredentialManager", () => {
 
       const stored = cm.resolve(id);
       expect(stored).toBeDefined();
-      expect(stored!.username).toBe("admin");
-      expect(stored!.password).toBe("admin123");
-      expect(stored!.loginUrl).toBe("https://app.test/login");
-      expect(stored!.tokens!.bearerToken).toBe("tok-abc");
-      expect(stored!.tokens!.cookies).toBe("sess=xyz");
-      expect(stored!.label).toBe("admin creds");
-      expect(stored!.role).toBe("admin");
-      expect(stored!.type).toBe("composite");
+      expect(stored?.username).toBe("admin");
+      expect(stored?.password).toBe("admin123");
+      expect(stored?.loginUrl).toBe("https://app.test/login");
+      expect(stored?.tokens?.bearerToken).toBe("tok-abc");
+      expect(stored?.tokens?.cookies).toBe("sess=xyz");
+      expect(stored?.label).toBe("admin creds");
+      expect(stored?.role).toBe("admin");
+      expect(stored?.type).toBe("composite");
     });
 
     it("handles minimal AuthCredentials", () => {
       const id = cm.addFromAuthCredentials({ username: "u", password: "p" });
-      expect(cm.resolve(id)!.type).toBe("username-password");
+      expect(cm.resolve(id)?.type).toBe("username-password");
     });
 
     it("returns existing ID when duplicate credentials are added", () => {
@@ -291,13 +291,13 @@ describe("CredentialManager", () => {
 
       const legacy = cm.toAuthCredentials(id);
       expect(legacy).toBeDefined();
-      expect(legacy!.username).toBe("alice");
-      expect(legacy!.password).toBe("pass");
-      expect(legacy!.apiKey).toBe("key");
-      expect(legacy!.loginUrl).toBe("https://app.test");
-      expect(legacy!.additionalFields).toEqual({ org: "acme" });
-      expect(legacy!.tokens!.bearerToken).toBe("tok");
-      expect(legacy!.tokens!.cookies).toBe("c=v");
+      expect(legacy?.username).toBe("alice");
+      expect(legacy?.password).toBe("pass");
+      expect(legacy?.apiKey).toBe("key");
+      expect(legacy?.loginUrl).toBe("https://app.test");
+      expect(legacy?.additionalFields).toEqual({ org: "acme" });
+      expect(legacy?.tokens?.bearerToken).toBe("tok");
+      expect(legacy?.tokens?.cookies).toBe("c=v");
     });
 
     it("returns undefined for unknown ID", () => {
@@ -455,9 +455,9 @@ describe("CredentialManager", () => {
       expect(roles).toEqual(["admin", "service", "user"]);
 
       // Tool execution resolves full secrets
-      expect(cm.resolve(adminId)!.password).toBe("admin_pass");
-      expect(cm.resolve(userId)!.password).toBe("user_pass");
-      expect(cm.resolve(apiId)!.apiKey).toBe("sk-test");
+      expect(cm.resolve(adminId)?.password).toBe("admin_pass");
+      expect(cm.resolve(userId)?.password).toBe("user_pass");
+      expect(cm.resolve(apiId)?.apiKey).toBe("sk-test");
     });
   });
 });

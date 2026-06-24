@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import type { Finding } from "../agents/offSecAgent";
 import { type AIAuthConfig, type AIModel, generateObjectResponse } from "../ai";
@@ -712,7 +712,7 @@ export class FindingsRegistry {
             // Use index-based exclusion so same-titled findings are handled correctly
             finding.relatedFindings = validIndices
               .filter((i: number) => i !== idx)
-              .map((i: number) => snapshot[i]!.title);
+              .map((i: number) => snapshot[i]?.title);
           }
         }
         resolve();

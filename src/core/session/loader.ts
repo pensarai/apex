@@ -8,8 +8,8 @@
  * This file orchestrates the higher-level session state assembly.
  */
 
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createLogger } from "../logger/structured";
 import { REPORT_FILENAME_MD } from "../report";
 import { scopedLogger } from "../util/lazyLogger";

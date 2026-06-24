@@ -7,7 +7,7 @@ const MAX_DESCRIPTION_CHARS = 4_000;
 
 function truncate(value: string, limit: number): string {
   if (value.length <= limit) return value;
-  return value.substring(0, limit) + "\n... [truncated]";
+  return `${value.substring(0, limit)}\n... [truncated]`;
 }
 
 export const FINDING_JUDGE_SYSTEM_PROMPT = `You are a security finding validation specialist running as an agentic verifier inside an automated penetration testing pipeline.

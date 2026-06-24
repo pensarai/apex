@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type {
   ModelMessage,
   StopCondition,
@@ -6,9 +9,6 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import { existsSync, mkdirSync } from "fs";
-import { writeFile } from "fs/promises";
-import { join } from "path";
 import { streamResponse } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
 import {
@@ -264,6 +264,10 @@ export class OffensiveSecurityAgent<TResult = void> {
       credentialManager,
       persistentShell: this.persistentShell,
       skillsRegistry: input.skillsRegistry,
+      promptInjectionLibrary: input.promptInjectionLibrary,
+      promptInjectionLibrarySource:
+        input.promptInjectionLibrarySource ??
+        input.session.config?.promptInjectionLibrarySource,
       traceWriter,
       tasksDir,
       enableThinking: input.enableThinking,

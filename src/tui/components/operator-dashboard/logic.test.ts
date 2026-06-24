@@ -657,15 +657,15 @@ describe("accumulateTokenUsage", () => {
   it("accumulates when only input tokens are provided", () => {
     const result = accumulateTokenUsage(base, 10, 0);
     expect(result).not.toBeNull();
-    expect(result!.inputTokens).toBe(110);
-    expect(result!.outputTokens).toBe(50);
+    expect(result?.inputTokens).toBe(110);
+    expect(result?.outputTokens).toBe(50);
   });
 
   it("accumulates when only output tokens are provided", () => {
     const result = accumulateTokenUsage(base, 0, 5);
     expect(result).not.toBeNull();
-    expect(result!.outputTokens).toBe(55);
-    expect(result!.inputTokens).toBe(100);
+    expect(result?.outputTokens).toBe(55);
+    expect(result?.inputTokens).toBe(100);
   });
 
   it("handles zero base", () => {

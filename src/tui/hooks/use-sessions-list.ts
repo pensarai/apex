@@ -3,8 +3,8 @@
  * Used by SessionsDisplay.
  */
 
-import { existsSync, readdirSync } from "fs";
-import { join } from "path";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { useCallback, useEffect, useState } from "react";
 import { REPORT_FILENAME_MD } from "../../core/report";
 import {

@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { readFileSync } from "node:fs";
 
 /**
  * Type definitions for Attack Surface Analysis results

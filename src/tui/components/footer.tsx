@@ -1,5 +1,5 @@
+import os from "node:os";
 import type { RGBA } from "@opentui/core";
-import os from "os";
 import { useAgent } from "../context/agent";
 import { useDimensions } from "../context/dimensions";
 import { useInput } from "../context/input";
@@ -41,8 +41,8 @@ export default function Footer({
   const segments = relativeCwd.split("/").filter(Boolean);
   const rawDisplayCwd =
     segments.length <= 2
-      ? "~/" + segments.join("/")
-      : "…/" + segments.slice(-2).join("/");
+      ? `~/${segments.join("/")}`
+      : `…/${segments.slice(-2).join("/")}`;
   // When obfuscation is on, show a generic placeholder rather than leaking
   // the operator's local working directory in screenshots.
   const displayCwd = obfuscateEnabled ? "~/[workdir]" : rawDisplayCwd;

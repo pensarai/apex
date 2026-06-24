@@ -966,5 +966,5 @@ function hasImapAttachments(
 }
 
 function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) + "\n\n(truncated)" : s;
+  return s.length > max ? `${s.slice(0, max)}\n\n(truncated)` : s;
 }
