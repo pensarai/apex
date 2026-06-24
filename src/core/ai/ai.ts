@@ -38,11 +38,12 @@ import {
 
 const log = scopedLogger(() => createLogger("ai"));
 
-// [response-debug] Mirror of offensiveSecurityAgent's tracer flag. Default ON
-// while debugging the empty-`{}` / looping response failure. These logs bypass
-// the `silent` flag so they appear for silent threat-model sub-agents.
+// [response-debug] Mirror of offensiveSecurityAgent's tracer flag. Opt-in: set
+// RESPONSE_DEBUG=1 (or "true") to surface it while debugging the empty-`{}` /
+// looping response failure. When enabled these logs bypass the `silent` flag so
+// they appear for silent threat-model sub-agents.
 const RESPONSE_DEBUG =
-  process.env.RESPONSE_DEBUG !== "0" && process.env.RESPONSE_DEBUG !== "false";
+  process.env.RESPONSE_DEBUG === "1" || process.env.RESPONSE_DEBUG === "true";
 const RESPONSE_TOOL_NAME = "response";
 
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
@@ -321,16 +322,10 @@ async function* withIdleTimeout<T>(
 }
 
 function isStreamIdleTimeoutError(error: unknown): boolean {
-  // Accept the chunk-level StreamIdleTimeoutError and the transport-level
-  // ProviderStreamIdleError, which the AI SDK may rewrap — so walk `cause`.
+  // The chunk-level StreamIdleTimeoutError, which the AI SDK may rewrap — so
+  // walk `cause`.
   for (let e: unknown = error, depth = 0; e != null && depth < 6; depth++) {
     if (e instanceof StreamIdleTimeoutError) return true;
-    if (
-      typeof e === "object" &&
-      (e as { isProviderStreamIdle?: unknown }).isProviderStreamIdle === true
-    ) {
-      return true;
-    }
     e = (e as { cause?: unknown }).cause;
   }
   return false;

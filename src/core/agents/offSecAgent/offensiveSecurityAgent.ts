@@ -42,23 +42,23 @@ import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
 
 const log = scopedLogger(() => createLogger("approval-gate"));
 
-// Dedicated `response` tool lifecycle tracer. Default ON while we hunt the
-// empty-`{}` / "Tool call did not complete" loop on threat-model sub-agents.
-// Set RESPONSE_DEBUG=0 to silence once the failure point is confirmed. These
-// logs are emitted at `warn` (so they survive the default INFO level) on a
-// logger that is NOT gated by the agent's `silent` flag, so they appear for
-// silent threat-model children too.
+// Dedicated `response` tool lifecycle tracer. Opt-in: set RESPONSE_DEBUG=1 (or
+// "true") to surface it while hunting the empty-`{}` / "Tool call did not
+// complete" loop on threat-model sub-agents. When enabled the logs are emitted
+// at `warn` (so they survive the default INFO level) on a logger that is NOT
+// gated by the agent's `silent` flag, so they appear for silent threat-model
+// children too.
 const RESPONSE_DEBUG =
-  process.env.RESPONSE_DEBUG !== "0" && process.env.RESPONSE_DEBUG !== "false";
+  process.env.RESPONSE_DEBUG === "1" || process.env.RESPONSE_DEBUG === "true";
 const rlog = scopedLogger(() => createLogger("response-debug"));
 
-// consume()-level stall watchdog. Default ON; set STREAM_STALL_DEBUG=0 to
-// silence. Observation only — logs (at warn, on the same rlog logger) when the
+// consume()-level stall watchdog. Opt-in: set STREAM_STALL_DEBUG=1 (or "true")
+// to enable. Observation only — logs (at warn, on the same rlog logger) when the
 // fullStream goes byte-silent on a live socket, so a Bedrock wedge that never
 // completes (and so never emits [inference-fetch-timing]) still produces data.
 const STREAM_STALL_DEBUG =
-  process.env.STREAM_STALL_DEBUG !== "0" &&
-  process.env.STREAM_STALL_DEBUG !== "false";
+  process.env.STREAM_STALL_DEBUG === "1" ||
+  process.env.STREAM_STALL_DEBUG === "true";
 // Tick the watchdog every 15s; warn once a gap exceeds 20s and on each tick
 // after; on chunk arrival warn if the just-closed gap exceeded 10s (a
 // legitimate-but-long thinking pause that recovered).
