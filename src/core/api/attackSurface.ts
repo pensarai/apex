@@ -74,6 +74,8 @@ async function runWhiteboxAttackSurface(
     attackSurfaceRegistry: input.attackSurfaceRegistry,
     eventBus: input.eventBus,
     surfaceIntegrationEnabled: input.surfaceIntegrationEnabled,
+    enableThinking: input.enableThinking,
+    openAIReasoningEffort: input.openAIReasoningEffort,
   });
 
   console.log(
