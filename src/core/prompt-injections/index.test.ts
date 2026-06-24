@@ -148,6 +148,54 @@ describe("prompt injection library", () => {
     }
   });
 
+  it("tolerates externally-curated catalogs with novel categories and missing names", async () => {
+    const root = await mkdtemp(join(tmpdir(), "apex-prompt-library-ext-"));
+    try {
+      await mkdir(join(root, "payloads"));
+      await writeFile(join(root, "payloads", "p0.txt"), "RAW PAYLOAD ZERO");
+      await writeFile(join(root, "payloads", "p1.txt"), "RAW PAYLOAD ONE");
+      await writeFile(
+        join(root, "catalog.json"),
+        JSON.stringify({
+          payloads: [
+            {
+              // No `name`, a category outside Apex's built-in set, and no
+              // `description` — the loader must still accept this entry.
+              id: "pi.ext.jailbreak",
+              category: "jailbreak",
+              payloadPath: "payloads/p0.txt",
+            },
+            {
+              id: "pi.ext.exfil",
+              name: "Exfil Variant",
+              category: "data-exfiltration",
+              tags: ["exfil"],
+              payloadPath: "payloads/p1.txt",
+            },
+          ],
+        }),
+      );
+
+      const library = await getPromptInjectionLibrary({ source: root });
+      const catalog = library.listCatalog();
+
+      expect(catalog).toHaveLength(2);
+
+      const jailbreak = catalog.find((e) => e.id === "pi.ext.jailbreak")!;
+      expect(jailbreak.category).toBe("jailbreak");
+      // Missing name falls back to the id.
+      expect(jailbreak.name).toBe("pi.ext.jailbreak");
+      expect(jailbreak.description).toBe("");
+      expect(jailbreak.tags).toEqual([]);
+
+      // Payload text is still resolvable but never present in the catalog.
+      expect(library.getPayload("pi.ext.jailbreak")).toBe("RAW PAYLOAD ZERO");
+      expect(JSON.stringify(catalog)).not.toContain("RAW PAYLOAD ZERO");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects remote prompt injection library sources", async () => {
     await expect(
       getPromptInjectionLibrary({

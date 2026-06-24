@@ -3,12 +3,25 @@ import { readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 
+/**
+ * Categories Apex ships with first-class knowledge of. The runtime library is
+ * an open-ended, externally-curated dataset, so the catalog schema accepts any
+ * non-empty category string — these are kept only for typing/autocomplete and
+ * as the suggested set surfaced to agents.
+ */
+export const KNOWN_PROMPT_INJECTION_CATEGORIES = [
+  "instruction-hijack",
+  "data-exfiltration",
+  "tool-misuse",
+  "role-confusion",
+  "encoding",
+] as const;
+
 export type PromptInjectionCategory =
-  | "instruction-hijack"
-  | "data-exfiltration"
-  | "tool-misuse"
-  | "role-confusion"
-  | "encoding";
+  | (typeof KNOWN_PROMPT_INJECTION_CATEGORIES)[number]
+  // Allow any other category the external library defines without losing
+  // autocomplete on the known values above.
+  | (string & {});
 
 export type PromptInjectionRef = {
   kind: "prompt_injection_ref";
@@ -43,17 +56,16 @@ function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+// The runtime catalog is a large, externally-curated dataset that evolves
+// independently of Apex. Only `id` and `payloadPath` are structurally required;
+// every other field is optional and tolerant so a new taxonomy or a missing
+// display name never hard-fails the whole library load (and never surfaces a
+// raw Zod union error to the agent calling list_prompt_injections).
 const PromptInjectionCatalogEntrySchema = z.object({
   id: z.string().min(1),
-  name: z.string().min(1),
-  category: z.enum([
-    "instruction-hijack",
-    "data-exfiltration",
-    "tool-misuse",
-    "role-confusion",
-    "encoding",
-  ]),
-  description: z.string(),
+  name: z.string().min(1).optional(),
+  category: z.string().min(1).optional(),
+  description: z.string().default(""),
   tags: z.array(z.string()).default([]),
   deliveryHints: z.array(z.string()).default([]),
   expectedObservation: z.string().default(""),
@@ -183,8 +195,17 @@ function parsePromptInjectionLibrary(
   const entries: PromptInjectionEntry[] = catalogEntries.map((entry) => {
     const payloadFile = resolvePayloadPath(root, entry.payloadPath);
     const payload = readFileSync(payloadFile, "utf-8");
-    const { payloadPath: _payloadPath, ...safeEntry } = entry;
-    return { ...safeEntry, payload, payloadFilePath: payloadFile };
+    const { payloadPath: _payloadPath, name, category, ...safeEntry } = entry;
+    return {
+      ...safeEntry,
+      // Fall back to the id for display when the catalog omits a name, and to a
+      // neutral bucket when it omits a category, so downstream metadata is
+      // always populated.
+      name: name ?? entry.id,
+      category: category ?? "uncategorized",
+      payload,
+      payloadFilePath: payloadFile,
+    };
   });
 
   return new StaticPromptInjectionLibrary(entries);
