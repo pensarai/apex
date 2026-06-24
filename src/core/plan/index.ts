@@ -9,8 +9,8 @@
  * multiple plan agents run concurrently.
  */
 
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const PLAN_FILENAME = "plan.md";
 

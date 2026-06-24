@@ -28,7 +28,7 @@ export function QueuedMessages({
       {messages.map((msg, index) => {
         const isSelected = index === selectedIndex;
         const displayText =
-          msg.text.length > 80 ? msg.text.slice(0, 77) + "…" : msg.text;
+          msg.text.length > 80 ? `${msg.text.slice(0, 77)}…` : msg.text;
         return (
           <box key={msg.id} flexDirection="row" gap={1}>
             <text fg={isSelected ? colors.primary : colors.textMuted}>

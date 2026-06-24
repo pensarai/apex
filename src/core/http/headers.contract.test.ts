@@ -1,10 +1,10 @@
 // Contract tests for the custom-headers subsystem: resolver layering/scope,
 // `targetFetch`, shell injection, history redaction, parser errors.
 
-import { mkdtempSync, rmSync } from "fs";
-import { writeFile } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { redactSecretsInHistoryEntry } from "../history";
 import {

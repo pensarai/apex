@@ -1,4 +1,3 @@
-import type { ModelMessage } from "ai";
 import {
   existsSync,
   mkdirSync,
@@ -6,9 +5,10 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
-} from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { ModelMessage } from "ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getResumeMessages, normalizeMessages } from "./index";
 import {
@@ -101,10 +101,10 @@ describe("saveSubagentData + loadSubagents roundtrip", () => {
     // Verify tool-call was paired with its result in UI messages
     const toolMsg = loaded[0].messages.find((m) => m.role === "tool");
     expect(toolMsg).toBeDefined();
-    expect(toolMsg!.toolName).toBe("execute_command");
-    expect(toolMsg!.args).toEqual({ cmd: "ls" });
-    expect(toolMsg!.result).toBe("file1.txt\nfile2.txt");
-    expect(toolMsg!.status).toBe("completed");
+    expect(toolMsg?.toolName).toBe("execute_command");
+    expect(toolMsg?.args).toEqual({ cmd: "ls" });
+    expect(toolMsg?.result).toBe("file1.txt\nfile2.txt");
+    expect(toolMsg?.status).toBe("completed");
 
     // Verify text part also came through
     const textMsg = loaded[0].messages.find(
@@ -136,9 +136,9 @@ describe("saveSubagentData + loadSubagents roundtrip", () => {
 
     // Verify names are parsed correctly from filenames
     const attackSurface = loaded.find((s) => s.type === "attack-surface");
-    expect(attackSurface!.name).toBe("Attack Surface Discovery");
+    expect(attackSurface?.name).toBe("Attack Surface Discovery");
     const pentest = loaded.find((s) => s.type === "pentest");
-    expect(pentest!.name).toBe("Pentest Agent 1");
+    expect(pentest?.name).toBe("Pentest Agent 1");
   });
 
   it("saves and loads a single agent", () => {
@@ -220,7 +220,7 @@ describe("saveSubagentData + loadSubagents roundtrip", () => {
     });
 
     // Verify the raw JSON has the correct findingsCount
-    const files = require("fs").readdirSync(join(tmpDir, "subagents"));
+    const files = require("node:fs").readdirSync(join(tmpDir, "subagents"));
     const data = JSON.parse(
       readFileSync(join(tmpDir, "subagents", files[0]), "utf-8"),
     );
@@ -299,7 +299,7 @@ describe("loadSubagents manifest merge", () => {
     expect(loaded).toHaveLength(1);
     expect(loaded[0].status).toBe("paused");
     expect(loaded[0].resumeInfo).toBeDefined();
-    expect(loaded[0].resumeInfo!.vulnerabilityClass).toBe("SQL Injection");
+    expect(loaded[0].resumeInfo?.vulnerabilityClass).toBe("SQL Injection");
   });
 
   it("leaves completed file as-is when manifest also says completed", () => {
@@ -351,7 +351,7 @@ describe("loadSubagents manifest merge", () => {
     expect(loaded[0].id).toBe("pentest-agent-1");
     expect(loaded[0].status).toBe("paused");
     expect(loaded[0].messages).toHaveLength(0);
-    expect(loaded[0].resumeInfo!.target).toBe("http://localhost:8080");
+    expect(loaded[0].resumeInfo?.target).toBe("http://localhost:8080");
   });
 
   it("does not duplicate when manifest matches existing file", () => {
@@ -398,8 +398,8 @@ describe("loadSubagents manifest merge", () => {
     expect(loaded).toHaveLength(2);
     const agent1 = loaded.find((s) => s.name === "Pentest Agent 1");
     const agent2 = loaded.find((s) => s.name === "Pentest Agent 2");
-    expect(agent1!.status).toBe("paused");
-    expect(agent2!.status).toBe("completed");
+    expect(agent1?.status).toBe("paused");
+    expect(agent2?.status).toBe("completed");
   });
 
   it("skips orchestrator files", () => {
@@ -600,7 +600,7 @@ describe("operator state persistence", () => {
 
     const loaded = readOperatorState(tmpDir);
     expect(loaded).not.toBeNull();
-    expect(loaded!.messages).toEqual(messages);
+    expect(loaded?.messages).toEqual(messages);
   });
 
   it("handles empty messages array", () => {
@@ -613,7 +613,7 @@ describe("operator state persistence", () => {
 
     const loaded = readOperatorState(tmpDir);
     expect(loaded).not.toBeNull();
-    expect(loaded!.messages).toEqual([]);
+    expect(loaded?.messages).toEqual([]);
   });
 });
 

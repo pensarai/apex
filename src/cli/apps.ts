@@ -173,6 +173,8 @@ Search options (scoped to the workspace):
   --offset <n>                 Page offset
 
 Endpoint fields (create requires --endpoint and --description):
+  --app <id>                   endpoint-update only: move the endpoint to a
+                               different application (UUID) in the workspace
   --endpoint <text>            Endpoint path / URL / route
   --description <text>         Endpoint description
   --type <type>                One of: ${ENDPOINT_TYPES.join(", ")}
@@ -280,6 +282,8 @@ function parseEndpointCreateOptions(argv: string[]): CreateEndpointInput {
 
 function parseEndpointUpdateOptions(argv: string[]): UpdateEndpointInput {
   const update: UpdateEndpointInput = {};
+  const applicationId = getFlag("--app", argv);
+  if (applicationId !== undefined) update.applicationId = applicationId;
   const endpoint = getFlag("--endpoint", argv);
   if (endpoint !== undefined) update.endpoint = endpoint;
   const description = getFlag("--description", argv);

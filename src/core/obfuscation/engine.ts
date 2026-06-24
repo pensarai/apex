@@ -483,7 +483,7 @@ function extractHostLabel(host: string): string | null {
 /** Pull the host out of an `https://host[:port]/path...` URL match. */
 function extractHostFromUrl(url: string): string | null {
   const m = /^https?:\/\/([^\/?#:]+)/i.exec(url);
-  return m && m[1] ? m[1] : null;
+  return m?.[1] ? m[1] : null;
 }
 
 /**

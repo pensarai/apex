@@ -881,7 +881,7 @@ function formatResultDetail(result: unknown, maxLength: number = 2000): string {
   }
   const truncated =
     str.length > maxLength
-      ? str.substring(0, maxLength) + "\n... (truncated)"
+      ? `${str.substring(0, maxLength)}\n... (truncated)`
       : str;
   // No obfuscation here — callers render this through `<text>` string
   // children, which the central TextNodeRenderable patch redacts.

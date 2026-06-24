@@ -68,7 +68,7 @@ export function DialogControls({ controls }: DialogControlsProps) {
         <span key={control.key}>
           {i > 0 && " · "}
           <span fg={keyColor(control.variant)}>[{control.key}]</span>
-          {" " + control.label}
+          {` ${control.label}`}
         </span>
       ))}
     </text>

@@ -1,8 +1,10 @@
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  collectDescendantPids,
   createBrowserTools,
   PlaywrightMcpSession,
   parseStorageStateResult,
@@ -249,6 +251,48 @@ describe("PlaywrightMcpSession.disconnect()", () => {
   });
 });
 
+// Regression: forceKillProcess() only group-killed the MCP node, which isn't a
+// process-group leader — so the kill fell back to killing just the node and
+// orphaned the Chromium it launched (reparented to init), leaking ~0.5GB per
+// completed endpoint until the sandbox OOM'd. collectDescendantPids enumerates
+// the browser tree so it can be SIGKILLed explicitly.
+describe("collectDescendantPids", () => {
+  const hasProc = existsSync("/proc/self");
+
+  (hasProc ? it : it.skip)(
+    "enumerates descendant processes spawned under a parent",
+    async () => {
+      // sh forks two background `sleep` children we can discover + reap.
+      const parent = spawn("sh", ["-c", "sleep 30 & sleep 30 & wait"], {
+        stdio: "ignore",
+      });
+      const cleanup = (pids: number[]) => {
+        for (const pid of pids) {
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch {
+            /* already gone */
+          }
+        }
+      };
+      try {
+        // Give sh a moment to fork its children.
+        await new Promise((r) => setTimeout(r, 400));
+        const descendants = collectDescendantPids(parent.pid!);
+        expect(descendants.length).toBeGreaterThanOrEqual(2);
+        cleanup([...descendants, parent.pid!]);
+      } finally {
+        cleanup([parent.pid!]);
+      }
+    },
+  );
+
+  (hasProc ? it : it.skip)("returns [] for a leaf pid with no children", () => {
+    // A made-up high pid that almost certainly has no children.
+    expect(collectDescendantPids(2_147_483_646)).toEqual([]);
+  });
+});
+
 describe("parseStorageStateResult", () => {
   it("returns null for null/undefined input", () => {
     expect(parseStorageStateResult(null)).toBeNull();
@@ -259,15 +303,15 @@ describe("parseStorageStateResult", () => {
     const wrapped = `### Result\n{"cookies":[{"name":"a","value":"b","domain":"x","path":"/"}],"origins":[]}\n\n### Ran Playwright code\nfoo`;
     const out = parseStorageStateResult(wrapped);
     expect(out).not.toBeNull();
-    expect(out!.cookies[0].name).toBe("a");
-    expect(out!.origins).toEqual([]);
+    expect(out?.cookies[0].name).toBe("a");
+    expect(out?.origins).toEqual([]);
   });
 
   it("falls back to a regex JSON extract for unwrapped strings", () => {
     const raw = `garbage prefix {"cookies":[],"origins":[{"origin":"https://x","localStorage":[]}]} trailing`;
     const out = parseStorageStateResult(raw);
     expect(out).not.toBeNull();
-    expect(out!.origins[0].origin).toBe("https://x");
+    expect(out?.origins[0].origin).toBe("https://x");
   });
 
   it("accepts a pre-parsed object directly", () => {
@@ -315,7 +359,7 @@ describe("createBrowserTools — shared session reuse", () => {
     );
 
     // Invoke a browser tool; it should call through to the SHARED session.
-    await tools.browser_navigate.execute!(
+    await tools.browser_navigate.execute?.(
       { url: "https://example.com/login", toolCallDescription: "test" },
       // biome-ignore lint/suspicious/noExplicitAny: ai-sdk ToolCallOptions is opaque and irrelevant for this test.
       { toolCallId: "tc1", messages: [], abortSignal: undefined } as any,
@@ -364,10 +408,10 @@ describe("createBrowserTools — shared session reuse", () => {
 
     const state = await session.captureStorageState();
     expect(state).not.toBeNull();
-    expect(state!.cookies).toHaveLength(1);
-    expect(state!.cookies[0].name).toBe("session");
-    expect(state!.origins).toHaveLength(1);
-    expect(state!.origins[0].localStorage[0].value).toBe("alice");
+    expect(state?.cookies).toHaveLength(1);
+    expect(state?.cookies[0].name).toBe("session");
+    expect(state?.origins).toHaveLength(1);
+    expect(state?.origins[0].localStorage[0].value).toBe("alice");
   });
 
   it("seedStorageState forwards cookies + origins into a browser_run_code call", async () => {

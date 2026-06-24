@@ -1,6 +1,6 @@
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { hasToolCall, stepCountIs } from "ai";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { join } from "path";
 import type { SessionInfo } from "../../../session";
 import {
   OffensiveSecurityAgent,

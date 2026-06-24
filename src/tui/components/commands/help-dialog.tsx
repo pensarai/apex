@@ -41,7 +41,7 @@ export default function HelpDialog({ onClose }: HelpDialogProps) {
     for (const cmd of visible) {
       const cat: CommandCategory = cmd.category || "General";
       if (!byCategory.has(cat)) byCategory.set(cat, []);
-      byCategory.get(cat)!.push(cmd);
+      byCategory.get(cat)?.push(cmd);
     }
 
     for (const cat of categories) {

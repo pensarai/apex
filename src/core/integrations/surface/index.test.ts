@@ -74,10 +74,10 @@ describe("consolidateBySameRoute", () => {
     const out = consolidateBySameRoute(rows);
 
     expect(out).toHaveLength(1);
-    expect(out[0]!.method).toEqual(["GET", "POST"]);
-    expect(out[0]!.path).toBe("/users");
-    expect(out[0]!.file).toBe("src/routes/users.ts");
-    expect(out[0]!.handler).toBe("listUsers, createUser");
+    expect(out[0]?.method).toEqual(["GET", "POST"]);
+    expect(out[0]?.path).toBe("/users");
+    expect(out[0]?.file).toBe("src/routes/users.ts");
+    expect(out[0]?.handler).toBe("listUsers, createUser");
   });
 
   it("keeps distinct files with the same path as separate records", () => {
@@ -124,7 +124,7 @@ describe("consolidateBySameRoute", () => {
     const out = consolidateBySameRoute(rows);
 
     expect(out).toHaveLength(1);
-    expect(out[0]!.method).toEqual(["GET"]);
+    expect(out[0]?.method).toEqual(["GET"]);
   });
 
   it("unions auth arrays across consolidated rows", () => {
@@ -148,7 +148,7 @@ describe("consolidateBySameRoute", () => {
     const out = consolidateBySameRoute(rows);
 
     expect(out).toHaveLength(1);
-    expect(out[0]!.auth).toEqual(["session", "csrf"]);
+    expect(out[0]?.auth).toEqual(["session", "csrf"]);
   });
 });
 
@@ -225,10 +225,10 @@ describe("mapAppWithSurface — pass-through behavior", () => {
 
     const page = consolidated.find((e) => e.file.endsWith("page.tsx"));
     const api = consolidated.find((e) => e.file.endsWith("route.ts"));
-    expect(page!.kind).toBe("page");
-    expect(page!.method).toEqual(["GET"]);
-    expect(api!.kind).toBe("api");
-    expect(api!.method).toEqual(["GET", "POST"]);
+    expect(page?.kind).toBe("page");
+    expect(page?.method).toEqual(["GET"]);
+    expect(api?.kind).toBe("api");
+    expect(api?.method).toEqual(["GET", "POST"]);
   });
 
   it("returns a fallback signal when surface produces no frameworks", () => {

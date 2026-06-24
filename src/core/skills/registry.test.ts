@@ -1,6 +1,6 @@
-import fs from "fs/promises";
-import os from "os";
-import path from "path";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BUILTIN_SKILLS } from "./builtins";
 import { SkillsRegistry } from "./registry";
@@ -156,9 +156,9 @@ describe("SkillsRegistry", () => {
 
       const entry = registry.get(testBuiltin.slug);
       expect(entry).toBeDefined();
-      expect(entry!.source).toBe("builtin");
-      expect(entry!.manifest.name).toBe("Built-in Test Skill");
-      expect(entry!.manifest.description).toBe("A test built-in skill");
+      expect(entry?.source).toBe("builtin");
+      expect(entry?.manifest.name).toBe("Built-in Test Skill");
+      expect(entry?.manifest.description).toBe("A test built-in skill");
     });
 
     it("readSkillContent returns in-memory content", async () => {
@@ -183,8 +183,8 @@ describe("SkillsRegistry", () => {
 
       const entry = registry.get(testBuiltin.slug);
       expect(entry).toBeDefined();
-      expect(entry!.source).toBe("builtin");
-      expect(entry!.manifest.name).toBe("Built-in Test Skill");
+      expect(entry?.source).toBe("builtin");
+      expect(entry?.manifest.name).toBe("Built-in Test Skill");
 
       const { content } = await registry.readSkillContent(testBuiltin.slug);
       expect(content).toBe("These are the built-in instructions.");

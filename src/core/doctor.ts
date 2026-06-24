@@ -1,5 +1,5 @@
-import { execSync, spawnSync } from "child_process";
-import readline from "readline";
+import { execSync, spawnSync } from "node:child_process";
+import readline from "node:readline";
 import { toolExists } from "./agents/specialized/utils.js";
 
 function detectPackageManager(): { name: string; installCmd: string } | null {

@@ -123,6 +123,15 @@ const ALL_TOOLS: ToolDefinition[] = [
     defaultEnabled: true,
   },
   {
+    id: "list_prompt_injections",
+    name: "Prompt Injection Catalog",
+    description: "List prompt-injection tests",
+    detail:
+      "List safe metadata for bundled prompt-injection tests. Raw payloads are resolved only inside tools that support runtime prompt-injection references.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
     id: "fuzz_endpoint",
     name: "Fuzz Endpoint",
     description: "Fuzz with payloads",

@@ -24,7 +24,7 @@ export interface UpArrowResult {
 export function computeUpArrow(
   currentState: NavState,
   history: string[],
-  suggestionsCount: number,
+  _suggestionsCount: number,
 ): UpArrowResult | null {
   const inAutocomplete = currentState.selectedSuggestionIndex >= 0;
 

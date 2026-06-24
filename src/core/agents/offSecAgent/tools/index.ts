@@ -44,6 +44,7 @@ export { grep } from "./grep";
 export { httpRequest } from "./httpRequest";
 export { listFiles } from "./listFiles";
 export { listMemories } from "./listMemories";
+export { listPromptInjections } from "./listPromptInjections";
 export { listTasksTool } from "./listTasks";
 // Persistent shell — long-lived shell session shared across tool calls.
 export {
@@ -178,6 +179,7 @@ import { grep } from "./grep";
 import { httpRequest } from "./httpRequest";
 import { listFiles } from "./listFiles";
 import { listMemories } from "./listMemories";
+import { listPromptInjections } from "./listPromptInjections";
 import { listTasksTool } from "./listTasks";
 import { probeAuthEndpoints } from "./probeAuthEndpoints";
 import { profileCodebase } from "./profileCodebase";
@@ -283,6 +285,9 @@ export function createAllTools(ctx: ToolContext) {
     list_memories: listMemories(ctx),
     get_memory: getMemory(ctx),
 
+    // Prompt-injection test catalog (safe metadata only; no raw payloads)
+    list_prompt_injections: listPromptInjections(ctx),
+
     // Email tools (inbox + outbound — gated at activeTools level by base class)
     ...createEmailToolset(ctx),
     email_list_inboxes: emailListInboxes(ctx),
@@ -370,6 +375,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "add_memory",
   "list_memories",
   "get_memory",
+  // Prompt-injection testing
+  "list_prompt_injections",
   // Email
   "email_list_inboxes",
   "email_list_messages",
@@ -435,6 +442,8 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "add_memory",
   "list_memories",
   "get_memory",
+  // Prompt-injection testing (safe metadata only)
+  "list_prompt_injections",
   // Email (read-only)
   "email_list_inboxes",
   "email_list_messages",

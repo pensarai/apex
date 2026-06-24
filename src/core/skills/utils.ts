@@ -1,5 +1,5 @@
-import os from "os";
-import path from "path";
+import os from "node:os";
+import path from "node:path";
 
 /** Global skills directory: ~/.pensar/skills/ */
 export const SKILLS_DIR = path.join(os.homedir(), ".pensar", "skills");

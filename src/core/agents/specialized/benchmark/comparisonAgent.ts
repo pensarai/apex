@@ -1,6 +1,6 @@
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { stepCountIs, tool } from "ai";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
 import { z } from "zod";
 import { type AIModel, streamResponse } from "../../../ai";
 import type { ComparisonResult } from "./types";
@@ -316,7 +316,7 @@ Be thorough in your analysis and provide clear explanations for your matches. St
   // Read comparison results from file
   if (!existsSync(comparisonResultsPath)) {
     throw new Error(
-      "Comparison agent did not save results to file: " + comparisonResultsPath,
+      `Comparison agent did not save results to file: ${comparisonResultsPath}`,
     );
   }
 

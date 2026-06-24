@@ -1,7 +1,7 @@
-import { exec as nodeExec } from "child_process";
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import path from "path";
-import { promisify } from "util";
+import { exec as nodeExec } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { promisify } from "node:util";
 import yaml from "yaml";
 
 const exec = promisify(nodeExec);
@@ -89,7 +89,7 @@ export function parseDockerComposePort(
               // Parse port mapping (e.g., "80:80" or "8080:80")
               if (typeof firstPort === "string") {
                 const match = firstPort.match(/^(\d+):(\d+)$/);
-                if (match && match[1] && match[2]) {
+                if (match?.[1] && match[2]) {
                   console.log(
                     `  ✅ Found web service: ${serviceName} on port ${match[1]}`,
                   );
@@ -237,7 +237,7 @@ export async function getActualDockerPort(
 
     // Output format: "0.0.0.0:6340" or "0.0.0.0:6340\n:::6340"
     const match = portOutput.match(/0\.0\.0\.0:(\d+)/);
-    if (match && match[1]) {
+    if (match?.[1]) {
       const hostPort = parseInt(match[1], 10);
       console.log(
         `  ✅ Container ${serviceName}:${containerPort} is mapped to localhost:${hostPort}`,

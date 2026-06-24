@@ -303,7 +303,7 @@ function wrapStreamWithErrorHandler(
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
 
   const handler = {
-    get(target: StreamTextResult<ToolSet, never>, prop: string | symbol) {
+    get(_target: StreamTextResult<ToolSet, never>, prop: string | symbol) {
       // Intercept access to fullStream
       if (prop === "fullStream") {
         if (!wrappedStream) {
@@ -971,7 +971,7 @@ export function streamResponse(
 
           // Get the actual tool definition which contains the Zod schema
           const tool = tools[toolCall.toolName];
-          if (!tool || !tool.inputSchema) {
+          if (!tool?.inputSchema) {
             if (!silent) {
               log.warn(
                 `Cannot repair tool call: ${toolCall.toolName} not found or has no schema`,
@@ -1147,7 +1147,7 @@ const MAX_OBJECT_RATE_LIMIT_RETRIES = 8;
 
 export async function generateObjectResponse<T extends z.ZodType>(
   opts: GenerateObjectOpts<T>,
-) {
+): Promise<z.infer<T>> {
   const {
     model,
     schema,
@@ -1208,7 +1208,10 @@ export async function generateObjectResponse<T extends z.ZodType>(
         if (inp > 0 || out > 0) _usageCallback(model, inp, out);
       }
 
-      return output;
+      // zod v4: the AI SDK's `Output.object` no longer carries the schema's
+      // inferred type through `output` (it widens to `unknown`), so restore it
+      // from the schema generic for callers.
+      return output as z.infer<T>;
     } catch (error) {
       lastError = error;
 

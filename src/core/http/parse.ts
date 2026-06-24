@@ -164,7 +164,7 @@ function parseHeaderRecord(
 export async function parseHeadersFromFile(
   filePath: string,
 ): Promise<Result<HeaderEntry[], ParseError[]>> {
-  const fs = await import("fs/promises");
+  const fs = await import("node:fs/promises");
   let raw: string;
   try {
     raw = await fs.readFile(filePath, "utf-8");

@@ -34,10 +34,10 @@ describe.skip("Authentication Agent", () => {
 
     // Session should auto-provision a CredentialManager
     expect(session.credentialManager).toBeDefined();
-    expect(session.credentialManager!.size).toBe(1);
+    expect(session.credentialManager?.size).toBe(1);
 
     // Prompt must contain the credential ID but NOT the raw password
-    const prompt = session.credentialManager!.formatForPrompt();
+    const prompt = session.credentialManager?.formatForPrompt();
     expect(prompt).toContain(username);
     expect(prompt).not.toContain(password);
 

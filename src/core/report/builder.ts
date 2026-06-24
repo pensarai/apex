@@ -50,6 +50,7 @@ export function buildPentestReport(
       cwes: f.cwes,
       rootCauseGroup: f.rootCauseGroup,
       relatedFindings: f.relatedFindings,
+      rootCauseLead: f.rootCauseLead,
       evidenceFiles: f.evidenceFiles,
     })),
   };

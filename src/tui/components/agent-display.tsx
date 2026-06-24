@@ -357,7 +357,7 @@ const AgentMessage = memo(function AgentMessage({
                 <box flexDirection="column" marginTop={0} paddingLeft={2}>
                   {streamingLogs.slice(-3).map((log, idx) => {
                     const trimmed =
-                      log.length > 100 ? log.slice(0, 100) + "…" : log;
+                      log.length > 100 ? `${log.slice(0, 100)}…` : log;
                     const offset = Math.max(0, streamingLogs.length - 3) + idx;
                     return (
                       <text
@@ -433,7 +433,7 @@ function ToolDetails({ message }: { message: DisplayMessage }) {
       str = String(result);
     }
     const truncated =
-      str.length > 2000 ? str.substring(0, 2000) + "\n... (truncated)" : str;
+      str.length > 2000 ? `${str.substring(0, 2000)}\n... (truncated)` : str;
     return truncated;
   };
 
