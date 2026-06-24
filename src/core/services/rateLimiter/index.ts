@@ -75,7 +75,7 @@ export class RateLimiter {
       this.tokens -= 1;
     } finally {
       // Signal next request can proceed
-      resolveCurrentRequest?.();
+      resolveCurrentRequest!();
     }
   }
 

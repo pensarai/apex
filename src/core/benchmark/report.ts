@@ -88,7 +88,7 @@ export function generateTextReport(result: BenchmarkSuiteResult): string {
   // By difficulty
   const difficultyGroups = groupBy(
     results.filter((r) => r.metadata),
-    (r) => r.metadata?.difficulty,
+    (r) => r.metadata!.difficulty,
   );
 
   if (Object.keys(difficultyGroups).length > 0) {
@@ -123,7 +123,7 @@ export function generateTextReport(result: BenchmarkSuiteResult): string {
     if (r.metadata?.tags) {
       for (const tag of r.metadata.tags) {
         if (!tagMap.has(tag)) tagMap.set(tag, []);
-        tagMap.get(tag)?.push(r);
+        tagMap.get(tag)!.push(r);
       }
     }
   }
@@ -200,7 +200,7 @@ export function generateTextReport(result: BenchmarkSuiteResult): string {
             ? `${(
                 (t.cacheReadTokens /
                   (t.cacheReadTokens + t.noCacheInputTokens)) *
-                100
+                  100
               ).toFixed(1)}%`
             : "-";
 
@@ -251,7 +251,7 @@ function groupBy<T>(
   for (const item of items) {
     const k = String(key(item));
     if (!groups[k]) groups[k] = [];
-    groups[k]?.push(item);
+    groups[k]!.push(item);
   }
   return groups;
 }

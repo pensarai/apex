@@ -257,7 +257,7 @@ The following credentials are configured for this domain:
       prompt += `- Context: ${input.credentials?.context}
 `;
     }
-    const tokens = input.credentials?.tokens!;
+    const tokens = input.credentials!.tokens!;
     if (tokens.bearerToken) {
       prompt += `- Bearer Token: ${tokens.bearerToken}
   Use as: Authorization: Bearer <token>

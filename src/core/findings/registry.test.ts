@@ -1057,7 +1057,7 @@ describe("FindingsRegistry Tier 3 (semantic dedup)", () => {
     const promise2 = registry.register(finding2);
 
     // Release the LLM calls
-    resolveSlowCall?.(undefined);
+    resolveSlowCall!(undefined);
 
     const [result1, result2] = await Promise.all([promise1, promise2]);
 

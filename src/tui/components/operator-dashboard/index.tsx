@@ -6,10 +6,10 @@
  * Reuses MessageList and InputArea from the shared/chat components.
  */
 
-import { useKeyboard } from "@opentui/react";
-import { hasToolCall, type ModelMessage, stepCountIs } from "ai";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
+import { useKeyboard } from "@opentui/react";
+import { hasToolCall, type ModelMessage, stepCountIs } from "ai";
 import {
   useCallback,
   useEffect,

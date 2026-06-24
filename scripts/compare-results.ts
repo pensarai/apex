@@ -12,8 +12,6 @@
  *   bun run scripts/compare-results.ts --benchmark-ids XBEN-001-24 XBEN-002-24
  */
 
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateText, Output } from "ai";
 import {
   existsSync,
   readdirSync,
@@ -21,8 +19,10 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import pLimit from "p-limit";
 import path from "node:path";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { generateText, Output } from "ai";
+import pLimit from "p-limit";
 import { z } from "zod";
 
 // Schema for the AI comparison response
@@ -494,12 +494,12 @@ async function compareBenchmark(
     console.error(`No primary expected result for ${benchmarkId}`);
     return null;
   }
-  
+
   if (!bestComparison) {
     console.error(`No comparison result for ${benchmarkId}`);
     return null;
   }
-  
+
   const comparison = bestComparison;
 
   // For multi-vuln benchmarks, vulnerability_found is true if ANY expected vuln was found

@@ -283,17 +283,29 @@ function formatModelName(modelId: string, provider: string): string {
       // claude-3-5-haiku → Claude 3.5 Haiku
       [
         /^(\d+)-(\d+)-(\w+)$/,
-        (m) => m[1] && m[2] && m[3] ? `Claude ${m[1]}.${m[2]} ${capitalize(m[3])}` : rest,
+        (m) =>
+          m[1] && m[2] && m[3]
+            ? `Claude ${m[1]}.${m[2]} ${capitalize(m[3])}`
+            : rest,
       ],
       // claude-3-haiku → Claude 3 Haiku
-      [/^(\d+)-(\w+)$/, (m) => m[1] && m[2] ? `Claude ${m[1]} ${capitalize(m[2])}` : rest],
+      [
+        /^(\d+)-(\w+)$/,
+        (m) => (m[1] && m[2] ? `Claude ${m[1]} ${capitalize(m[2])}` : rest),
+      ],
       // claude-haiku-4-5 → Claude Haiku 4.5
       [
         /^(\w+)-(\d+)-(\d+)$/,
-        (m) => m[1] && m[2] && m[3] ? `Claude ${capitalize(m[1])} ${m[2]}.${m[3]}` : rest,
+        (m) =>
+          m[1] && m[2] && m[3]
+            ? `Claude ${capitalize(m[1])} ${m[2]}.${m[3]}`
+            : rest,
       ],
       // claude-haiku-4 → Claude Haiku 4
-      [/^(\w+)-(\d+)$/, (m) => m[1] && m[2] ? `Claude ${capitalize(m[1])} ${m[2]}` : rest],
+      [
+        /^(\w+)-(\d+)$/,
+        (m) => (m[1] && m[2] ? `Claude ${capitalize(m[1])} ${m[2]}` : rest),
+      ],
       // claude-v2 → Claude v2
       [/^v(\d+)$/, (m) => `Claude v${m[1]}`],
       // claude-instant-v1 → Claude Instant v1

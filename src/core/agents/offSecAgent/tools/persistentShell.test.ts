@@ -360,7 +360,7 @@ describe("PersistentShell — long-running stability", () => {
       const firstC = events.find((e) => e.text.includes("line-c"));
       expect(firstA).toBeDefined();
       expect(firstC).toBeDefined();
-      expect(firstC?.t - firstA?.t).toBeGreaterThan(200);
+      expect(firstC!.t - firstA!.t).toBeGreaterThan(200);
     },
   );
 

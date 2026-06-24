@@ -170,6 +170,7 @@ export class PersistentShell {
   private readonly extraEnv?: Record<string, string>;
 
   private current: PendingCommand | null = null;
+  private pendingCancel: ((result: ShellExecuteResult) => void) | null = null;
 
   // FIFO mutex tail. Each execute() call snapshots, installs a new tail, and
   // awaits its snapshot — serializing concurrent calls so they can't race on
@@ -372,8 +373,7 @@ export class PersistentShell {
 
     cmd.stderr += chunk;
     if (cmd.stderr.length > MAX_BUFFER) {
-      cmd.stderr =
-        `${cmd.stderr.substring(0, MAX_BUFFER)}...\n(stderr truncated)`;
+      cmd.stderr = `${cmd.stderr.substring(0, MAX_BUFFER)}...\n(stderr truncated)`;
     }
   }
 

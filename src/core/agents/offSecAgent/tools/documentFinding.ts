@@ -1,4 +1,3 @@
-import { tool } from "ai";
 import { spawn } from "node:child_process";
 import {
   appendFileSync,
@@ -9,6 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { tool } from "ai";
 import { z } from "zod";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
@@ -723,12 +723,12 @@ async function executeSandboxPoc(
   // Pipeline sandbox setup into a single command to reduce round-trips
   const sandboxPocPath = `/tmp/pocs/${filename}`;
   const base64Content = Buffer.from(pocContent).toString("base64");
-  await ctx.sandbox?.execute(
+  await ctx.sandbox!.execute(
     `mkdir -p /tmp/pocs && echo "${base64Content}" | base64 -d > ${sandboxPocPath} && chmod +x ${sandboxPocPath}`,
   );
 
   const runner = POC_RUNNERS[input.pocType];
-  const result = await ctx.sandbox?.execute(
+  const result = await ctx.sandbox!.execute(
     `cd /tmp && ${runner} ${sandboxPocPath}`,
     { timeout: 60 },
   );
@@ -736,7 +736,7 @@ async function executeSandboxPoc(
   const executionSuccess = result.success || result.exitCode === 0;
 
   if (!executionSuccess) {
-    await ctx.sandbox?.execute(`rm -f ${sandboxPocPath}`);
+    await ctx.sandbox!.execute(`rm -f ${sandboxPocPath}`);
     try {
       unlinkSync(localPocPath);
     } catch {

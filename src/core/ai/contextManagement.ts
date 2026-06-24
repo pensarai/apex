@@ -6,9 +6,9 @@
  * token budget so callers can compact proactively, not only on error.
  */
 
-import type { ModelMessage, ToolSet } from "ai";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ModelMessage, ToolSet } from "ai";
 
 /**
  * Truncate `text` so the returned string fits in **at most** `max` chars,

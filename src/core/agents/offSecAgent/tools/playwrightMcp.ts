@@ -8,12 +8,12 @@
  * - "operator": User-driven operator mode - SPA reconnaissance, authenticated flows, attack surface mapping
  */
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { tool } from "ai";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { tool } from "ai";
 import { z } from "zod";
 import type { Logger } from "../../../logger";
 import {

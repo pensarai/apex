@@ -1,6 +1,6 @@
-import { tool } from "ai";
 import { readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
+import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 
@@ -136,7 +136,7 @@ async function executeSandboxUpdate(
   replaceAll: boolean,
 ): Promise<UpdateFileResult> {
   try {
-    const readResult = await ctx.sandbox?.execute(
+    const readResult = await ctx.sandbox!.execute(
       `cat "${filePath}" | base64 -w 0`,
     );
     if (!readResult.success) {
@@ -174,7 +174,7 @@ async function executeSandboxUpdate(
     }
 
     const base64Updated = Buffer.from(updated).toString("base64");
-    const writeResult = await ctx.sandbox?.execute(
+    const writeResult = await ctx.sandbox!.execute(
       `echo "${base64Updated}" | base64 -d > "${filePath}"`,
     );
 

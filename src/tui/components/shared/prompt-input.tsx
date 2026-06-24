@@ -61,7 +61,7 @@ function truncateToLines(
         current = word;
       }
       i++;
-    } else if ((`${current} ${word}`).length <= lineWidth) {
+    } else if (`${current} ${word}`.length <= lineWidth) {
       current += ` ${word}`;
       i++;
     } else {

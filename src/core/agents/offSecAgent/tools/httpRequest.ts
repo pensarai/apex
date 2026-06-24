@@ -395,13 +395,11 @@ async function executeSandboxHttpRequest(
     let bodyTempFile: string | null = null;
     if (body && ["POST", "PUT", "PATCH"].includes(method)) {
       bodyTempFile = `/tmp/apex_http_body_${Date.now()}_${Math.random().toString(36).slice(2, 11)}.txt`;
-      
+
       // Use printf to safely write the body to the temp file
-      const escapedForPrintf = body
-        .replace(/\\/g, "\\\\")
-        .replace(/%/g, "%%");
+      const escapedForPrintf = body.replace(/\\/g, "\\\\").replace(/%/g, "%%");
       const writeCommand = `printf '%s' '${escapedForPrintf.replace(/'/g, "'\\''")}' > ${bodyTempFile}`;
-      
+
       const writeResult = await sandbox.execute(writeCommand, { timeout: 30 });
       if (!writeResult.success || writeResult.exitCode !== 0) {
         return {
@@ -416,7 +414,7 @@ async function executeSandboxHttpRequest(
           redirected: false,
         };
       }
-      
+
       curlCommand += ` --data-binary @${bodyTempFile}`;
     }
 
