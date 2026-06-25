@@ -34,10 +34,6 @@ export {
 // Core pentest tools
 export { executeCommand } from "./executeCommand";
 export { extractJsEndpoints } from "./extractJsEndpoints";
-export {
-  generateNextObjectives,
-  runObjectiveGenerationAgent,
-} from "./generateNextObjectives";
 export { getMemory } from "./getMemory";
 export { getPage } from "./getPage";
 export { grep } from "./grep";
@@ -172,7 +168,6 @@ import {
 } from "./email";
 import { executeCommand } from "./executeCommand";
 import { extractJsEndpoints } from "./extractJsEndpoints";
-import { generateNextObjectives } from "./generateNextObjectives";
 import { getMemory } from "./getMemory";
 import { getPage } from "./getPage";
 import { grep } from "./grep";
@@ -264,7 +259,6 @@ export function createAllTools(ctx: ToolContext) {
     run_attack_surface: runAttackSurface(ctx),
     spawn_pentest_swarm: spawnPentestSwarm(ctx),
     spawn_pentest_agent: spawnPentestAgent(ctx),
-    generate_next_objectives: generateNextObjectives(ctx),
     spawn_coding_agent: spawnCodingAgent(ctx),
     run_pentest_workflow: runPentestWorkflow(ctx),
     run_whitebox_scan: runWhiteboxScan(ctx),
@@ -358,7 +352,6 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "run_attack_surface",
   "spawn_pentest_swarm",
   "spawn_pentest_agent",
-  "generate_next_objectives",
   "spawn_coding_agent",
   "run_pentest_workflow",
   "run_whitebox_scan",
