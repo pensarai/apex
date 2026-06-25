@@ -243,7 +243,22 @@ COMMON TESTING PATTERNS:
 
       // Single rate-limit chokepoint for http_request's two dispatch paths
       // (local fetch + sandbox curl). No-op when requestsPerSecond is unset.
-      await ctx.session._rateLimiter?.acquireSlot();
+      // The signal makes a queued/sleeping wait interruptible and keeps an
+      // aborted request from burning a slot; the guard below covers both paths.
+      await ctx.session._rateLimiter?.acquireSlot(ctx.abortSignal);
+      if (ctx.abortSignal?.aborted) {
+        return {
+          success: false,
+          error: "Request aborted by user",
+          url,
+          method,
+          status: 0,
+          statusText: "",
+          headers: {},
+          body: "",
+          redirected: false,
+        };
+      }
 
       // Sandbox mode: build a curl command and run it inside the sandbox
       if (ctx.sandbox) {
@@ -265,20 +280,6 @@ COMMON TESTING PATTERNS:
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
       try {
-        if (ctx.abortSignal?.aborted) {
-          return {
-            success: false,
-            error: "Request aborted by user",
-            url,
-            method,
-            status: 0,
-            statusText: "",
-            headers: {},
-            body: "",
-            redirected: false,
-          };
-        }
-
         const timeoutController = new AbortController();
         timeoutId = setTimeout(() => timeoutController.abort(), timeout);
 

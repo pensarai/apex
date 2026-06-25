@@ -117,10 +117,7 @@ describe("httpRequest rate limiting", () => {
     vi.restoreAllMocks();
   });
 
-  function ctxWithLimiter(): {
-    ctx: ToolContext;
-    acquireSlot: ReturnType<typeof vi.spyOn>;
-  } {
+  function ctxWithLimiter() {
     const limiter = new RateLimiter({ requestsPerSecond: 5 });
     const acquireSlot = vi
       .spyOn(limiter, "acquireSlot")
@@ -169,6 +166,56 @@ describe("httpRequest rate limiting", () => {
 
     expect(result.success).toBe(false);
     expect(acquireSlot).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("acquires one slot before the sandbox curl dispatch", async () => {
+    const { ctx, acquireSlot } = ctxWithLimiter();
+    const execute = vi.fn(async () => ({
+      success: true,
+      exitCode: 0,
+      stdout: "HTTP/1.1 200 OK\n\n",
+      stderr: "",
+    }));
+    ctx.sandbox = { execute } as unknown as ToolContext["sandbox"];
+
+    const result = (await httpRequest(ctx).execute?.(
+      {
+        url: "https://example.com/api",
+        method: "GET",
+        followRedirects: false,
+        timeout: 1000,
+        toolCallDescription: "Sandbox GET",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(acquireSlot).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe(200);
+  });
+
+  it("returns an aborted result without dispatching when already aborted", async () => {
+    const fetchSpy = vi.fn(async () => new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const { ctx } = ctxWithLimiter();
+    const controller = new AbortController();
+    controller.abort();
+    ctx.abortSignal = controller.signal;
+
+    const result = (await httpRequest(ctx).execute?.(
+      {
+        url: "https://example.com/api",
+        method: "GET",
+        followRedirects: false,
+        timeout: 1000,
+        toolCallDescription: "Aborted GET",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: controller.signal },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("aborted");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
