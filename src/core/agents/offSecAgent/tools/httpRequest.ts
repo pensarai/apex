@@ -241,10 +241,7 @@ COMMON TESTING PATTERNS:
         };
       }
 
-      // Single rate-limit chokepoint for http_request's two dispatch paths
-      // (local fetch + sandbox curl). No-op when requestsPerSecond is unset.
-      // The signal makes a queued/sleeping wait interruptible and keeps an
-      // aborted request from burning a slot; the guard below covers both paths.
+      // Rate-limit chokepoint for both dispatch paths (no-op when unset).
       await ctx.session._rateLimiter?.acquireSlot(ctx.abortSignal);
       if (ctx.abortSignal?.aborted) {
         return {

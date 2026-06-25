@@ -54,18 +54,13 @@ export class RateLimiter {
   }
 
   /**
-   * Acquire a slot for making a request.
-   * Blocks until a token is available, using a queue to prevent race
-   * conditions from concurrent calls.
-   *
-   * When `signal` aborts, an in-flight wait is interrupted and the call
-   * returns WITHOUT consuming a token (the request won't be sent). Callers
-   * must still check the signal after awaiting to skip the request.
+   * Acquire a slot, blocking until a token is available (concurrent calls are
+   * queued FIFO). If `signal` aborts, the wait is interrupted and no token is
+   * consumed — callers must still check the signal afterward.
    */
   async acquireSlot(signal?: AbortSignal): Promise<void> {
     // Early exit for unlimited mode - skip all token logic
     if (!this.rps || !this.msPerToken) return;
-    // Don't enqueue an already-cancelled request.
     if (signal?.aborted) return;
 
     // Queue this request to ensure sequential processing
@@ -79,7 +74,6 @@ export class RateLimiter {
     await previousPromise;
 
     try {
-      // Bail without consuming a token if cancelled while queued.
       if (signal?.aborted) return;
 
       // Cache now for this call to avoid multiple time calls
@@ -89,7 +83,6 @@ export class RateLimiter {
       if (this.tokens < 1) {
         const waitTime = (1 - this.tokens) * this.msPerToken;
         await sleep(waitTime, signal);
-        // Cancelled mid-wait: don't consume a token.
         if (signal?.aborted) return;
         const nowAfterSleep = performance.now();
         this.refill(nowAfterSleep);

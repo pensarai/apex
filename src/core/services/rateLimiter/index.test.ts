@@ -16,7 +16,7 @@ describe("RateLimiter", () => {
     await rl.acquireSlot();
     await rl.acquireSlot();
     await rl.acquireSlot();
-    // First is free (full bucket); the next two each wait ~20ms.
+    // first acquire is free; the next two each wait ~20ms
     expect(performance.now() - start).toBeGreaterThanOrEqual(30);
     expect(rl.isEnabled()).toBe(true);
   });
@@ -39,9 +39,8 @@ describe("RateLimiter", () => {
     const aborted = rl.acquireSlot(controller.signal);
     controller.abort();
     await aborted;
-    // The aborted request must release the queue so this one doesn't deadlock.
     const start = performance.now();
-    await rl.acquireSlot();
+    await rl.acquireSlot(); // must not deadlock
     expect(performance.now() - start).toBeLessThan(500);
   });
 });
