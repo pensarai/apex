@@ -106,8 +106,9 @@ export class RateLimiter {
 
       this.tokens -= 1;
     } finally {
-      // Signal next request can proceed
-      resolveCurrentRequest!();
+      // Chain on previousPromise so that an abort-induced early exit does not
+      // unblock the next waiter before the prior acquisition finishes.
+      previousPromise.then(() => resolveCurrentRequest!());
     }
   }
 
