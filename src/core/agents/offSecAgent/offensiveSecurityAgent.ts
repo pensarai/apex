@@ -207,6 +207,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         input.browserSession ??
         new PlaywrightMcpSession({
           extraHttpHeaders: stripBrowserManagedHeaders(sessionHeaders),
+          display: input.display,
         });
     } else {
       this.ownsBrowserSession = false;

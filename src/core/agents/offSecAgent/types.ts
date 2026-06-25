@@ -316,6 +316,16 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * worker session on completion).
    */
   browserSession?: PlaywrightMcpSession;
+
+  /**
+   * X display (e.g. `":11"`) for this agent's browser. Overrides
+   * `process.env.DISPLAY` for the session this agent constructs, so several
+   * headed agents in one process (concurrent per-endpoint pentests) each run
+   * on their own virtual desktop. Ignored when `browserSession` is supplied
+   * (that session already owns its display). Omit to fall back to the
+   * process-wide `DISPLAY`.
+   */
+  display?: string;
 };
 
 /**
@@ -409,6 +419,13 @@ export interface SpecializedAgentInput {
    * {@link OffensiveSecurityAgentInput}.
    */
   browserSession?: PlaywrightMcpSession;
+
+  /**
+   * X display (e.g. `":11"`) for this agent's browser, forwarded to the
+   * underlying {@link OffensiveSecurityAgentInput} so concurrent per-endpoint
+   * pentests can each run headed on their own virtual desktop.
+   */
+  display?: string;
 }
 
 /**
