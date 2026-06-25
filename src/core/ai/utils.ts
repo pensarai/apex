@@ -323,9 +323,9 @@ async function summarizeConversation(
   let slicedMessages: ModelMessage[];
   if (
     cleanMessages.length === 1 &&
-    typeof cleanMessages[0]!.content === "string"
+    typeof cleanMessages[0]?.content === "string"
   ) {
-    const content = cleanMessages[0]!.content;
+    const content = cleanMessages[0]?.content;
     const lines = content.split("\n");
     const truncatedContent = lines.slice(-50).join("\n");
     slicedMessages = [

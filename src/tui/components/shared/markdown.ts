@@ -46,7 +46,7 @@ export function markdownToStyledText(
   const linkColor = colors?.markdownLink ?? RGBA.fromInts(100, 200, 255, 255);
 
   // Handle empty or whitespace-only content
-  if (!content || !content.trim()) {
+  if (!content?.trim()) {
     return new StyledText([
       { __isChunk: true, text: content || "", fg: textColor, attributes: 0 },
     ]);
@@ -164,7 +164,7 @@ export function markdownToStyledText(
       } else if (token.type === "code") {
         chunks.push({
           __isChunk: true,
-          text: token.text + "\n",
+          text: `${token.text}\n`,
           fg: codeColor,
           attributes: 0,
         });
@@ -210,9 +210,9 @@ export function markdownToStyledText(
       const lastChunk = chunks[chunks.length - 1];
       if (lastChunk && lastChunk.text === "\n") {
         chunks.pop();
-      } else if (lastChunk && lastChunk.text.endsWith("\n\n")) {
+      } else if (lastChunk?.text.endsWith("\n\n")) {
         lastChunk.text = lastChunk.text.slice(0, -1);
-      } else if (lastChunk && lastChunk.text) {
+      } else if (lastChunk?.text) {
         lastChunk.text = lastChunk.text.trimEnd();
         if (lastChunk.text === "") {
           chunks.pop();

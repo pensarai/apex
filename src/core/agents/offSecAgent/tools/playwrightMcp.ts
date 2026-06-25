@@ -8,14 +8,25 @@
  * - "operator": User-driven operator mode - SPA reconnaissance, authenticated flows, attack surface mapping
  */
 
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { tool } from "ai";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { createRequire } from "module";
-import { dirname, join } from "path";
 import { z } from "zod";
 import type { Logger } from "../../../logger";
+import {
+  type CamoufoxLaunchOptions,
+  ensureCamoufox,
+  resolveCamoufoxLaunchOptions,
+} from "./camoufox";
 
 /**
  * Playwright `BrowserContext.storageState()` shape — the JSON-serialisable
@@ -275,6 +286,65 @@ function withTimeout<T>(
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * Collect every descendant PID of `rootPid` by walking `/proc` parent links
+ * (Linux only). Returns `[]` on platforms without `/proc` (e.g. macOS dev),
+ * where the process-group SIGKILL path is relied on instead.
+ *
+ * Used to reap the Chromium browser tree a Playwright MCP `node` child
+ * launches. `StdioClientTransport` does not spawn that `node` as a
+ * process-group leader, so `process.kill(-pid)` fails and only the `node`
+ * dies — orphaning Chromium (reparented to init) and leaking ~0.5GB per
+ * completed endpoint until the sandbox OOMs. Enumerating descendants lets us
+ * SIGKILL the browser explicitly. Must be called BEFORE the parent is killed:
+ * once it dies its children reparent to init and are no longer reachable via
+ * its pid.
+ *
+ * @internal Exported for testing.
+ */
+export function collectDescendantPids(rootPid: number): number[] {
+  let entries: string[];
+  try {
+    entries = readdirSync("/proc");
+  } catch {
+    return [];
+  }
+
+  const childrenByPpid = new Map<number, number[]>();
+  for (const name of entries) {
+    if (!/^\d+$/.test(name)) continue;
+    const pid = Number(name);
+    let ppid: number;
+    try {
+      // /proc/<pid>/stat: "pid (comm) state ppid ...". comm can contain spaces
+      // and parens, so parse the ppid from after the final ')'.
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const afterComm = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+      ppid = Number(afterComm[1]);
+    } catch {
+      continue; // process exited between readdir and read
+    }
+    if (!Number.isFinite(ppid)) continue;
+    const list = childrenByPpid.get(ppid);
+    if (list) list.push(pid);
+    else childrenByPpid.set(ppid, [pid]);
+  }
+
+  const descendants: number[] = [];
+  const seen = new Set<number>([rootPid]);
+  const stack = [rootPid];
+  while (stack.length > 0) {
+    const pid = stack.pop()!;
+    for (const child of childrenByPpid.get(pid) ?? []) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      descendants.push(child);
+      stack.push(child);
+    }
+  }
+  return descendants;
+}
+
 // ---------------------------------------------------------------------------
 // Module-level defaults (used when not explicitly provided)
 // ---------------------------------------------------------------------------
@@ -367,6 +437,8 @@ export class PlaywrightMcpSession {
   private readonly extraHttpHeaders: Record<string, string> | undefined;
   /** Temp config file written for MCP launch — deleted on disconnect. */
   private mcpConfigPath: string | null = null;
+  /** Cached Camoufox launch options — resolved once, reused on reconnect. */
+  private cachedCamouOptions: CamoufoxLaunchOptions | null = null;
 
   /**
    * Each option is three-state: `undefined` → module default, value → use it,
@@ -393,8 +465,13 @@ export class PlaywrightMcpSession {
         : undefined;
   }
 
-  /** Immediately reset all instance state. Synchronous — no I/O. */
+  /**
+   * Immediately reset all instance state and schedule best-effort cleanup
+   * of the temp MCP config file (if one exists). The file unlink is async
+   * but fire-and-forget so this method stays non-blocking.
+   */
   private resetState(): void {
+    this.cleanupConfigFile();
     this.mcpClient = null;
     this.mcpTransport = null;
     this.mcpProcess = null;
@@ -402,14 +479,37 @@ export class PlaywrightMcpSession {
     this.disconnecting = false;
   }
 
+  /** Best-effort async unlink of the current temp config file. */
+  private cleanupConfigFile(): void {
+    const configPath = this.mcpConfigPath;
+    if (!configPath) return;
+    this.mcpConfigPath = null;
+    void (async () => {
+      try {
+        const fsp = await import("fs/promises");
+        await fsp.unlink(configPath);
+      } catch {
+        // already-deleted or inaccessible — fine
+      }
+    })();
+  }
+
   /**
    * Force-kill the MCP child process. Sends SIGKILL directly — no graceful
    * shutdown, no waiting. Used during disconnect and error recovery so the
    * agent is never blocked on a hung Playwright process.
    */
-  private forceKillProcess(): void {
-    const proc = this.mcpProcess;
+  private forceKillProcess(
+    proc: import("child_process").ChildProcess | null = this.mcpProcess,
+  ): void {
     if (!proc || proc.exitCode !== null) return;
+
+    // Snapshot the descendant tree (Chromium browser + renderers) BEFORE the
+    // node dies — afterwards they reparent to init and can't be found via its
+    // pid. The group-kill below misses them because the MCP node isn't spawned
+    // as a process-group leader, which orphaned Chromium and leaked memory
+    // across endpoints until the sandbox OOM'd.
+    const descendants = proc.pid ? collectDescendantPids(proc.pid) : [];
 
     try {
       if (proc.pid) {
@@ -423,6 +523,15 @@ export class PlaywrightMcpSession {
       }
     } catch {
       // Already dead — fine
+    }
+
+    // Reap the browser tree explicitly so a failed group-kill can't strand it.
+    for (const pid of descendants) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone — fine
+      }
     }
   }
 
@@ -452,48 +561,61 @@ export class PlaywrightMcpSession {
         const cliPath = join(dirname(mcpPkgJsonPath), "cli.js");
 
         const args = [cliPath, "--isolated"];
-        if (this.headless) {
-          args.push("--headless");
-        }
 
-        if (this.userAgent) {
-          args.push("--user-agent", this.userAgent);
-        }
-
-        if (this.viewportSize) {
-          args.push(`--viewport-size=${this.viewportSize}`);
-        }
-
-        // Pass extraHTTPHeaders via a temp @playwright/mcp config file
-        // so every Chromium request includes them.
-        if (this.extraHttpHeaders) {
-          const os = await import("os");
-          const fsp = await import("fs/promises");
-          const cfg = {
-            browser: {
-              contextOptions: { extraHTTPHeaders: this.extraHttpHeaders },
-            },
-          };
-          this.mcpConfigPath = join(
-            os.tmpdir(),
-            `pensar-mcp-${process.pid}-${Date.now()}.json`,
+        // Drive an anti-detect Camoufox (Firefox) instead of vanilla Chromium.
+        // camoufox-js produces the executablePath / args / firefoxUserPrefs / env
+        // that carry the fingerprint; MCP drives that browser through the same
+        // tool API. We pass these via a temp config file rather than CLI flags.
+        // Resolve once per session lifetime so reconnects keep the same fingerprint.
+        await ensureCamoufox();
+        if (!this.cachedCamouOptions) {
+          this.cachedCamouOptions = await resolveCamoufoxLaunchOptions(
+            this.headless,
           );
-          await fsp.writeFile(this.mcpConfigPath, JSON.stringify(cfg), {
-            encoding: "utf-8",
-            mode: 0o600,
-          });
-          args.push("--config", this.mcpConfigPath);
         }
+        const camou = this.cachedCamouOptions;
 
-        // Disable Chromium sandbox when running as root (e.g., in Docker/ECS containers).
-        if (process.getuid?.() === 0) {
-          args.push("--no-sandbox");
-        }
+        const os = await import("node:os");
+        const fsp = await import("node:fs/promises");
+        const cfg = {
+          browser: {
+            browserName: "firefox",
+            launchOptions: {
+              executablePath: camou.executablePath,
+              args: camou.args,
+              firefoxUserPrefs: camou.firefoxUserPrefs,
+              headless: camou.headless,
+            },
+            ...(this.extraHttpHeaders
+              ? { contextOptions: { extraHTTPHeaders: this.extraHttpHeaders } }
+              : {}),
+          },
+        };
+        this.mcpConfigPath = join(
+          os.tmpdir(),
+          `pensar-mcp-${process.pid}-${Date.now()}.json`,
+        );
+        await fsp.writeFile(this.mcpConfigPath, JSON.stringify(cfg), {
+          encoding: "utf-8",
+          mode: 0o600,
+        });
+        args.push("--config", this.mcpConfigPath);
+
+        // NB: no --no-sandbox / --user-agent / --viewport-size. Those are
+        // Chromium-only flags (invalid for Firefox), and Camoufox owns the
+        // UA / viewport / fingerprint — a hand-set Chrome UA on Firefox would
+        // itself be a detection tell.
 
         const transport = new StdioClientTransport({
           command: "node",
           args,
           stderr: "pipe",
+          // CAMOU_CONFIG_* fingerprint chunks must reach the actual browser
+          // process. The MCP node child inherits them (the transport merges
+          // these over getDefaultEnvironment) and Firefox inherits in turn.
+          env: Object.fromEntries(
+            Object.entries(camou.env).map(([k, v]) => [k, String(v)]),
+          ),
         });
 
         const client = new Client({
@@ -552,40 +674,48 @@ export class PlaywrightMcpSession {
 
     const transport = this.mcpTransport;
     const client = this.mcpClient;
+    // Capture the child BEFORE resetState() nulls it — otherwise the kill
+    // below is a no-op (the original bug).
+    const proc = this.mcpProcess;
 
     this.resetState();
     this.disconnecting = true; // re-set because resetState clears it
 
-    if (client) {
-      try {
-        await client.close();
-      } catch {
-        // Ignore — may already be closed
-      }
-    }
+    // SIGKILL the MCP child FIRST. Previously this ran *after* the awaited
+    // client/transport.close() calls AND read the already-nulled
+    // this.mcpProcess, so it never actually killed anything: disconnect relied
+    // entirely on close() to end the child. When the Playwright MCP child is
+    // wedged, transport.close() blocks indefinitely — so disconnect() (and any
+    // caller awaiting it, e.g. the agent's consume() teardown) hung forever,
+    // stranding an endpoint that had already finished its run. Killing the
+    // child up front makes the stdio transport observe EOF so close() resolves
+    // promptly, and guarantees disconnect() honors its "never hangs" contract.
+    this.forceKillProcess(proc);
 
-    if (transport) {
-      try {
-        await transport.close();
-      } catch {
-        // Ignore — may already be closed
-      }
-    }
-
-    this.forceKillProcess();
-
-    if (this.mcpConfigPath) {
-      const configPath = this.mcpConfigPath;
-      this.mcpConfigPath = null;
-      void (async () => {
+    // Graceful close is best-effort cleanup and must never block the caller —
+    // bound it so a stuck client/transport can't re-introduce the hang.
+    const CLOSE_TIMEOUT_MS = 5_000;
+    let closeTimer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      (async () => {
         try {
-          const fsp = await import("fs/promises");
-          await fsp.unlink(configPath);
+          await client?.close();
         } catch {
-          // best-effort; already-deleted is fine
+          // Ignore — may already be closed
         }
-      })();
-    }
+        try {
+          await transport?.close();
+        } catch {
+          // Ignore — may already be closed
+        }
+      })(),
+      new Promise<void>((resolve) => {
+        closeTimer = setTimeout(resolve, CLOSE_TIMEOUT_MS);
+      }),
+    ]);
+    if (closeTimer) clearTimeout(closeTimer);
+
+    this.cleanupConfigFile();
 
     this.disconnecting = false;
   }

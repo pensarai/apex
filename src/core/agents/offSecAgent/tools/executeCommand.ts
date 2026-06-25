@@ -1,8 +1,13 @@
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { tool } from "ai";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { join } from "path";
 import { z } from "zod";
 import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
+import {
+  getPromptInjectionLibrary,
+  type PromptInjectionLibrary,
+  redactPromptInjectionPayloads,
+} from "../../../prompt-injections";
 import {
   assertCommandInScope,
   extractHostsFromCommand,
@@ -13,6 +18,21 @@ import type { ToolContext } from "./types";
 
 const MAX_INLINE = 50_000;
 const MS_TIMEOUT_THRESHOLD = 10_000;
+const DEFAULT_PROMPT_INJECTION_FILE_ENV = "APEX_PROMPT_INJECTION_FILE";
+
+const promptInjectionPointerSchema = z.object({
+  id: z
+    .string()
+    .min(1)
+    .describe("Stable prompt-injection id returned by list_prompt_injections."),
+  envVar: z
+    .string()
+    .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+    .optional()
+    .describe(
+      `Environment variable that will contain the payload file path at runtime. Defaults to ${DEFAULT_PROMPT_INJECTION_FILE_ENV}.`,
+    ),
+});
 
 const executeCommandInputSchema = z.object({
   // not actually sure if placing this above the other keys/zod values ensures that the model generates it first...
@@ -22,6 +42,11 @@ const executeCommandInputSchema = z.object({
       "A concise, human-readable description of what this tool call is doing (e.g., 'Scanning for open ports on target')",
     ),
   command: z.string().describe("The shell command to execute"),
+  promptInjection: promptInjectionPointerSchema
+    .optional()
+    .describe(
+      "Optional runtime prompt-injection file pointer. The tool resolves the id to a local payload file path and exposes that path through envVar. The raw payload text is never inserted into the command.",
+    ),
   timeout: z
     .number()
     .optional()
@@ -105,6 +130,80 @@ function maybeSaveFullOutput(
   };
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function wrapCommandWithEnv(
+  command: string,
+  envVars?: Record<string, string>,
+): string {
+  if (!envVars || Object.keys(envVars).length === 0) return command;
+
+  const assignments = Object.entries(envVars)
+    .map(([name, value]) => {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+        throw new Error(`Invalid environment variable name: ${name}`);
+      }
+      return `${name}=${shellQuote(value)}`;
+    })
+    .join(" ");
+
+  return `env ${assignments} bash -lc ${shellQuote(command)}`;
+}
+
+async function resolvePromptInjectionEnv(
+  promptInjection: ExecuteCommandInput["promptInjection"],
+  ctx: ToolContext,
+): Promise<
+  | {
+      envVars?: Record<string, string>;
+      library?: PromptInjectionLibrary;
+      payloadContent?: string;
+      error?: undefined;
+    }
+  | {
+      envVars?: undefined;
+      library?: PromptInjectionLibrary;
+      payloadContent?: undefined;
+      error: string;
+    }
+> {
+  if (!promptInjection) return {};
+
+  const library = await getPromptInjectionLibrary({
+    library: ctx.promptInjectionLibrary,
+    source: ctx.promptInjectionLibrarySource,
+  });
+
+  const payloadContent = library.getPayload(promptInjection.id);
+  if (payloadContent === undefined) {
+    return {
+      library,
+      error: `Unknown prompt injection id: ${promptInjection.id}`,
+    };
+  }
+
+  const payloadFilePath = library.getPayloadFilePath(promptInjection.id);
+  if (!payloadFilePath) {
+    return {
+      library,
+      error:
+        `Unknown prompt injection id or no payload file path available: ` +
+        promptInjection.id,
+    };
+  }
+
+  return {
+    library,
+    payloadContent,
+    envVars: {
+      [promptInjection.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV]:
+        payloadFilePath,
+    },
+  };
+}
+
 export function executeCommand(ctx: ToolContext) {
   return tool({
     description: `Execute a shell command for penetration testing activities.
@@ -165,10 +264,18 @@ results to disk before any signal arrives.
 - nmap: prefer --host-timeout, --max-rtt-timeout, and -T4 / --min-rate
   to bound total runtime against slow networks.
 
+PROMPT-INJECTION PAYLOADS:
+- Do not put raw prompt-injection payload text in the command.
+- To run a local harness with a payload, set promptInjection.id to an id from
+  list_prompt_injections and reference "$APEX_PROMPT_INJECTION_FILE" in the
+  command. The tool resolves that variable to the local payload file path only
+  at runtime.
+
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
     execute: async ({
       command,
+      promptInjection,
       timeout,
       allow_unprotected,
     }): Promise<ExecuteCommandResult> => {
@@ -219,27 +326,102 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           command,
         };
       }
-      const effectiveCommand =
+      const commandWithHeaders =
         inject.status === "injected" ? inject.command : command;
+
+      let promptInjectionLibrary: PromptInjectionLibrary | undefined;
+      let promptInjectionEnvVars: Record<string, string> | undefined;
+      let promptInjectionPayloadContent: string | undefined;
+      try {
+        const resolved = await resolvePromptInjectionEnv(promptInjection, ctx);
+        if (resolved.error) {
+          return {
+            success: false,
+            error: resolved.error,
+            stdout: "",
+            stderr: resolved.error,
+            command,
+          };
+        }
+        promptInjectionLibrary = resolved.library;
+        promptInjectionEnvVars = resolved.envVars;
+        promptInjectionPayloadContent = resolved.payloadContent;
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return {
+          success: false,
+          error: msg,
+          stdout: "",
+          stderr: msg,
+          command,
+        };
+      }
+
+      const redact = (value: string) =>
+        promptInjectionLibrary
+          ? redactPromptInjectionPayloads(value, promptInjectionLibrary)
+          : value;
 
       // Sandbox mode: route execution through the sandbox
       if (ctx.sandbox) {
         try {
-          const ssmOpts: { timeout?: number } = {};
+          const ssmOpts: {
+            timeout?: number;
+            envVars?: Record<string, string>;
+          } = {};
           const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
           if (normalizedTimeout != null) {
             ssmOpts.timeout = normalizedTimeout;
           }
-          const result = await ctx.sandbox.execute(effectiveCommand, ssmOpts);
+
+          // If we have a prompt injection payload for sandbox mode, we need to write
+          // it to a temp file in the sandbox first, since the host file path won't
+          // be accessible from inside the sandbox.
+          if (promptInjectionPayloadContent && promptInjection) {
+            const envVarName =
+              promptInjection.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV;
+            const sandboxTempFile = `/tmp/apex_payload_${Date.now()}.txt`;
+
+            // Write the payload to a temp file in the sandbox
+            const escapedPayload = promptInjectionPayloadContent
+              .replace(/\\/g, "\\\\")
+              .replace(/'/g, "'\\''");
+            const writeCommand = `printf '%s' '${escapedPayload}' > ${sandboxTempFile}`;
+
+            const writeResult = await ctx.sandbox.execute(writeCommand, {
+              timeout: normalizedTimeout ?? 30,
+            });
+
+            if (!writeResult.success) {
+              const errorMsg = `Failed to write prompt injection payload to sandbox: ${writeResult.stderr || "unknown error"}`;
+              return {
+                success: false,
+                error: errorMsg,
+                stdout: writeResult.stdout,
+                stderr: writeResult.stderr || errorMsg,
+                command,
+              };
+            }
+
+            // Update env vars to point to the sandbox temp file
+            ssmOpts.envVars = {
+              [envVarName]: sandboxTempFile,
+            };
+          } else if (promptInjectionEnvVars) {
+            ssmOpts.envVars = promptInjectionEnvVars;
+          }
+
+          const result = await ctx.sandbox.execute(commandWithHeaders, ssmOpts);
           const { text: stdout, file: outputFile } = maybeSaveFullOutput(
-            result.stdout,
+            redact(result.stdout),
             ctx,
           );
+          const stderr = redact(result.stderr || "");
           return {
             success: result.success,
-            error: !result.success ? result.stderr || "Command failed" : "",
+            error: !result.success ? stderr || "Command failed" : "",
             stdout,
-            stderr: result.stderr || "",
+            stderr,
             command,
             outputFile,
           };
@@ -260,18 +442,20 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         try {
           const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
           const onData = ctx.eventBus
-            ? (data: string) => ctx.eventBus!.emit("command-output", { data })
+            ? (data: string) =>
+                ctx.eventBus?.emit("command-output", { data: redact(data) })
             : undefined;
           const result = await ctx.persistentShell.execute(
-            effectiveCommand,
+            wrapCommandWithEnv(commandWithHeaders, promptInjectionEnvVars),
             normalizedTimeout,
             onData,
             ctx.abortSignal,
           );
           const { text: stdout, file: outputFile } = maybeSaveFullOutput(
-            result.stdout,
+            redact(result.stdout),
             ctx,
           );
+          const stderr = redact(result.stderr);
           return {
             success: result.exitCode === 0,
             error:
@@ -281,7 +465,7 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
                   ? `Exit code: ${result.exitCode}`
                   : "",
             stdout,
-            stderr: result.stderr,
+            stderr,
             command,
             outputFile,
           };

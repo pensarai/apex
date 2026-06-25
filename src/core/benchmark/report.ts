@@ -197,11 +197,11 @@ export function generateTextReport(result: BenchmarkSuiteResult): string {
         const t = r.tokenMetrics!;
         const hitRate =
           t.cacheReadTokens + t.noCacheInputTokens > 0
-            ? (
+            ? `${(
                 (t.cacheReadTokens /
                   (t.cacheReadTokens + t.noCacheInputTokens)) *
-                100
-              ).toFixed(1) + "%"
+                  100
+              ).toFixed(1)}%`
             : "-";
 
         lines.push(

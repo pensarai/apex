@@ -1,5 +1,5 @@
-import { type ChildProcess, spawn, spawnSync } from "child_process";
-import { randomBytes } from "crypto";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
   closeSync,
   mkdirSync,
@@ -8,9 +8,9 @@ import {
   readSync,
   statSync,
   unlinkSync,
-} from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const MAX_BUFFER = 5_000_000;
 
@@ -41,7 +41,7 @@ export function readTempfileCapped(path: string): string {
     try {
       const buf = Buffer.alloc(MAX_BUFFER);
       readSync(fd, buf, 0, MAX_BUFFER, stat.size - MAX_BUFFER);
-      return "(stdout truncated)...\n" + buf.toString("utf-8");
+      return `(stdout truncated)...\n${buf.toString("utf-8")}`;
     } finally {
       closeSync(fd);
     }
@@ -301,13 +301,13 @@ export class PersistentShell {
 
       let commandOutput = cmd.authoritativeStdout.substring(0, markerIdx);
       if (cmd.stdoutTruncated) {
-        commandOutput = "(stdout truncated)...\n" + commandOutput;
+        commandOutput = `(stdout truncated)...\n${commandOutput}`;
       }
 
       const effectiveExit =
         cmd.forcedExitCode != null
           ? cmd.forcedExitCode
-          : isNaN(naturalExitCode)
+          : Number.isNaN(naturalExitCode)
             ? 1
             : naturalExitCode;
       const effectiveStderr = cmd.forcedStderrSuffix
@@ -373,8 +373,7 @@ export class PersistentShell {
 
     cmd.stderr += chunk;
     if (cmd.stderr.length > MAX_BUFFER) {
-      cmd.stderr =
-        cmd.stderr.substring(0, MAX_BUFFER) + "...\n(stderr truncated)";
+      cmd.stderr = `${cmd.stderr.substring(0, MAX_BUFFER)}...\n(stderr truncated)`;
     }
   }
 
@@ -405,7 +404,7 @@ export class PersistentShell {
       this.ensureAlive();
 
       const proc = this.proc;
-      if (!proc || !proc.stdin || !proc.stdout || !proc.stderr) {
+      if (!proc?.stdin || !proc.stdout || !proc.stderr) {
         return { stdout: "", stderr: "Failed to spawn shell", exitCode: 1 };
       }
 
@@ -524,7 +523,7 @@ export class PersistentShell {
         ].join("\n");
 
         try {
-          proc.stdin!.write(wrapped);
+          proc.stdin?.write(wrapped);
         } catch {
           pending.resolve({
             stdout: "",

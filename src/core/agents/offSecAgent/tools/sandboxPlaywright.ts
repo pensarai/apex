@@ -8,24 +8,25 @@
  * parsed from stdout.
  *
  * Architecture:
- *   1. On first browser tool call, check/install Playwright + Chromium in the sandbox.
- *   2. Launch a persistent headless Chromium via its CLI with `--remote-debugging-port`.
- *   3. Each tool call writes a short Node.js script that connects via CDP,
- *      performs the action, and prints a JSON result to stdout.
- *   4. The host parses the JSON result and returns it to the agent.
+ *   1. On first browser tool call, check/install camoufox-js + Camoufox in the sandbox.
+ *   2. Each tool call writes a short Node.js script that launches a persistent
+ *      Camoufox (Firefox) context, performs the action, and prints a JSON
+ *      result to stdout. State persists via the shared user-data dir.
+ *   3. The host parses the JSON result and returns it to the agent.
  *
  * Browser state (pages, cookies, localStorage) persists across tool calls
  * because the Chromium process stays alive between connections.
  */
 
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { tool } from "ai";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
 import { z } from "zod";
 import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../../http/targetHeaders";
+import { CAMOUFOX_OPTIONS } from "./camoufox";
 import type {
   BrowserClickResult,
   BrowserConsoleResult,
@@ -47,6 +48,7 @@ const SANDBOX_EVIDENCE_DIR = "/tmp/evidence";
 const SANDBOX_REFS_FILE = "/tmp/pw-refs.json";
 const SANDBOX_URL_FILE = "/tmp/pw-current-url";
 const SANDBOX_CONSOLE_FILE = "/tmp/pw-console-log.json";
+const SANDBOX_CAMOU_CACHE = "/tmp/pw-camou-opts.json";
 
 /** Marker pair used to extract JSON results from script stdout. */
 const RESULT_START = "__PW_RESULT__";
@@ -63,14 +65,27 @@ const RESULT_END = "__PW_END__";
 const installationCache = new WeakMap<UnifiedSandbox, Promise<void>>();
 
 /**
- * Check whether the `playwright` package is importable inside the sandbox.
+ * Per-sandbox browser-setup promise cache. Prevents duplicate (destructive)
+ * profile resets when multiple tool factories share the same sandbox — e.g.
+ * a parent orchestrator and its spawned workers.
+ */
+const browserSetupCache = new WeakMap<UnifiedSandbox, Promise<void>>();
+
+/**
+ * Check whether camoufox-js, playwright-core, **and** the Camoufox browser
+ * binary are all present inside the sandbox. Without the binary check,
+ * a snapshot that has the JS deps but no fetched build would pass, causing
+ * `ensureSandboxPlaywright` to skip `installSandboxPlaywright` (and its
+ * fetch step) — then `launchOptions()` would fail at first use.
  */
 export async function checkSandboxPlaywright(
   sandbox: UnifiedSandbox,
 ): Promise<boolean> {
-  // Write the check script inside the PW dir so require() can resolve
-  // node_modules relative to the script's __dirname.
-  const script = `try{require("playwright");console.log("OK")}catch(e){process.exit(1)}`;
+  // camoufox-js is ESM-only — require() throws ERR_REQUIRE_ESM on Node < 20.19,
+  // so probe it with dynamic import() (works on every Node version).
+  // launchPath() returns the Camoufox binary path; existsSync confirms the
+  // actual file was fetched (not just the npm package installed).
+  const script = `(async()=>{try{const{launchPath}=await import("camoufox-js/dist/pkgman.js");require("playwright-core");if(!require("fs").existsSync(launchPath()))process.exit(1);console.log("OK")}catch(e){process.exit(1)}})()`;
   const b64 = Buffer.from(script).toString("base64");
   await sandbox.execute(
     `mkdir -p ${SANDBOX_PW_DIR} && echo "${b64}" | base64 -d > ${SANDBOX_PW_DIR}/pw_check.js`,
@@ -83,15 +98,16 @@ export async function checkSandboxPlaywright(
 }
 
 /**
- * Install Playwright and the Chromium browser inside the sandbox.
+ * Install camoufox-js (+ playwright-core) and download the Camoufox browser
+ * build inside the sandbox.
  *
- * When Playwright + Chromium have already been baked into the Daytona image
- * snapshot (via `createSandbox({ installPlaywright: true })`), this function
- * is never called because {@link checkSandboxPlaywright} will return `true`
- * and {@link ensureSandboxPlaywright} will skip it.
+ * When these have already been baked into the Daytona image snapshot, this
+ * function is never called because {@link checkSandboxPlaywright} returns
+ * `true` and {@link ensureSandboxPlaywright} skips it.
  *
- * As a fallback this handles both Alpine (system Chromium via `apk`) and
- * Debian (Playwright's own installer).
+ * Camoufox ships glibc-linked Firefox builds, so the sandbox image must be
+ * glibc-based (Debian/Ubuntu). Alpine/musl is unsupported and fails loudly
+ * rather than silently falling back to a detectable browser.
  */
 export async function installSandboxPlaywright(
   sandbox: UnifiedSandbox,
@@ -99,6 +115,11 @@ export async function installSandboxPlaywright(
   await sandbox.execute(`mkdir -p ${SANDBOX_PW_DIR}`, { timeout: 10 });
 
   const isAlpine = (await sandbox.execute("which apk", { timeout: 5 })).success;
+  if (isAlpine) {
+    throw new Error(
+      "Camoufox requires a glibc-based sandbox image (Debian/Ubuntu); Alpine/musl is unsupported.",
+    );
+  }
 
   const initResult = await sandbox.execute(
     `cd ${SANDBOX_PW_DIR} && npm init -y --silent 2>/dev/null`,
@@ -110,53 +131,57 @@ export async function installSandboxPlaywright(
     );
   }
 
-  // On Alpine, skip Playwright's bundled browser download — we install
-  // system Chromium via apk instead.
-  const npmInstallCmd = isAlpine
-    ? `cd ${SANDBOX_PW_DIR} && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install playwright 2>&1`
-    : `cd ${SANDBOX_PW_DIR} && npm install playwright 2>&1`;
-
-  const installResult = await sandbox.execute(npmInstallCmd, { timeout: 300 });
+  // camoufox-js pulls in playwright-core, so a single install covers both the
+  // launcher and the Playwright API the generated scripts use.
+  const installResult = await sandbox.execute(
+    `cd ${SANDBOX_PW_DIR} && npm install camoufox-js@0.11.1 playwright-core@1.53.1 2>&1`,
+    { timeout: 300 },
+  );
   if (!installResult.success) {
     throw new Error(
-      `Failed to install Playwright in sandbox: ${installResult.stderr || installResult.stdout}`,
+      `Failed to install camoufox-js in sandbox: ${installResult.stderr || installResult.stdout}`,
     );
   }
 
-  if (isAlpine) {
-    const apkResult = await sandbox.execute(
-      "apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont 2>&1",
-      { timeout: 120 },
+  // Camoufox is a patched Firefox — install the GTK/nss/font/X11 system
+  // libraries that Firefox (even headless) requires. Playwright's
+  // `install-deps firefox` handles the right apt packages for the distro.
+  // The Yarn apt repo ships a stale GPG key that makes `apt-get update` fail on
+  // many images, so remove it first (we don't need Yarn here). Drop both the
+  // legacy one-line list and the newer deb822 `.sources` entry — images ship
+  // one or the other. We run as root in the sandbox (apt needs it anyway), so
+  // plain rm suffices.
+  const depsResult = await sandbox.execute(
+    `rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null; cd ${SANDBOX_PW_DIR} && npx playwright@1.53.1 install-deps firefox 2>&1`,
+    { timeout: 300 },
+  );
+  if (!depsResult.success) {
+    // Fail loudly here — otherwise the missing libraries only surface later as
+    // a cryptic Camoufox launch crash (checkSandboxPlaywright only verifies JS
+    // imports, not the native deps).
+    throw new Error(
+      `Failed to install Firefox system deps in sandbox: ${depsResult.stderr || depsResult.stdout}`,
     );
-    if (!apkResult.success) {
-      throw new Error(
-        `Failed to install Chromium via apk: ${apkResult.stderr || apkResult.stdout}`,
-      );
-    }
-  } else {
-    // Debian/Ubuntu: use Playwright's own installer.
-    // Remove broken Yarn apt repo before installing system deps.
-    await sandbox.execute(
-      `(sudo rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null || rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn.sources 2>/dev/null || true)`,
-      { timeout: 10 },
-    );
+  }
 
-    let browserResult: SandboxExecutionResult | undefined;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      browserResult = await sandbox.execute(
-        `cd ${SANDBOX_PW_DIR} && npx playwright install chromium --with-deps 2>&1`,
-        { timeout: 300 },
-      );
-      if (browserResult.success) break;
-      if (attempt < 3) {
-        await new Promise((r) => setTimeout(r, 3000));
-      }
+  // Download the Camoufox browser build (cached under CAMOUFOX_INSTALL_DIR /
+  // ~/.cache). Uses the locally-installed binary so the fetched build matches
+  // the pinned camoufox-js version (npx could pull a different one).
+  let fetchResult: SandboxExecutionResult | undefined;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    fetchResult = await sandbox.execute(
+      `cd ${SANDBOX_PW_DIR} && node ./node_modules/camoufox-js/dist/__main__.js fetch 2>&1`,
+      { timeout: 300 },
+    );
+    if (fetchResult.success) break;
+    if (attempt < 3) {
+      await new Promise((r) => setTimeout(r, 3000));
     }
-    if (!browserResult!.success) {
-      throw new Error(
-        `Failed to install Chromium in sandbox: ${browserResult!.stderr || browserResult!.stdout}`,
-      );
-    }
+  }
+  if (!fetchResult!.success) {
+    throw new Error(
+      `Failed to fetch Camoufox in sandbox: ${fetchResult!.stderr || fetchResult!.stdout}`,
+    );
   }
 }
 
@@ -199,17 +224,39 @@ export async function ensureSandboxPlaywright(
 export async function ensureSandboxBrowser(
   sandbox: UnifiedSandbox,
 ): Promise<void> {
-  await sandbox.execute(`mkdir -p ${SANDBOX_EVIDENCE_DIR} /tmp/pw-user-data`, {
-    timeout: 5,
-  });
+  // Reset the per-session browser identity so a reused sandbox doesn't carry
+  // over the previous session's state. Clear the cached Camoufox options (the
+  // frozen fingerprint + headless flag) AND the persistent profile dir
+  // (cookies/localStorage/nav) together — clearing only the fingerprint would
+  // launch a fresh fingerprint against a stale profile, which both leaks
+  // cross-session state and is itself a detection tell.
+  await sandbox.execute(
+    `rm -rf /tmp/pw-user-data ${SANDBOX_CAMOU_CACHE}; mkdir -p ${SANDBOX_EVIDENCE_DIR} /tmp/pw-user-data`,
+    { timeout: 5 },
+  );
 }
 
 /**
  * Full setup: install Playwright if needed, then prepare directories.
+ * Browser reset is cached per sandbox so spawned workers don't wipe
+ * cookies/profile data established by the parent or earlier workers.
  */
 async function ensureSandboxReady(sandbox: UnifiedSandbox): Promise<void> {
   await ensureSandboxPlaywright(sandbox);
-  await ensureSandboxBrowser(sandbox);
+
+  let cached = browserSetupCache.get(sandbox);
+  if (!cached) {
+    cached = ensureSandboxBrowser(sandbox);
+    browserSetupCache.set(sandbox, cached);
+    try {
+      await cached;
+    } catch (error) {
+      browserSetupCache.delete(sandbox);
+      throw error;
+    }
+  } else {
+    await cached;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -241,31 +288,38 @@ async function runPlaywrightScript(
       ? JSON.stringify(extraHttpHeaders)
       : "null";
   const script = `
-const { chromium } = require('playwright');
+const { firefox } = require('playwright-core');
 const fs = require('fs');
 
 (async () => {
+  const { launchOptions } = await import('camoufox-js');
   function resolve(value) {
     process.stdout.write('${RESULT_START}' + JSON.stringify(value) + '${RESULT_END}');
-  }
-
-  // Prefer system Chromium (Alpine apk install) over Playwright's bundled binary.
-  let executablePath;
-  for (const p of ['/usr/bin/chromium-browser', '/usr/bin/chromium']) {
-    try { fs.accessSync(p, fs.constants.X_OK); executablePath = p; break; } catch {}
   }
 
   // Resolved per script invocation so /headers mutations take effect
   // on the next browser tool call.
   const __extraHeaders = ${headersJson};
 
+  // Use the sandbox's virtual display if one is present — Camoufox is far less
+  // detectable headful. Falls back to plain headless, which is still fully
+  // fingerprint-spoofed (just a weaker stealth posture, never vanilla Chromium).
+  const __headless = process.env.DISPLAY ? false : true;
+  // Resolve Camoufox options once per sandbox session and cache to disk so
+  // every tool call presents the same fingerprint on the shared profile dir.
+  let __camou;
+  try {
+    __camou = JSON.parse(fs.readFileSync('${SANDBOX_CAMOU_CACHE}', 'utf-8'));
+  } catch {
+    __camou = await launchOptions({ ...${JSON.stringify(CAMOUFOX_OPTIONS)}, headless: __headless });
+    fs.writeFileSync('${SANDBOX_CAMOU_CACHE}', JSON.stringify(__camou));
+  }
+
   let context;
   const __consoleMessages = [];
   try {
-    context = await chromium.launchPersistentContext('/tmp/pw-user-data', {
-      headless: true,
-      ...(executablePath ? { executablePath } : {}),
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    context = await firefox.launchPersistentContext('/tmp/pw-user-data', {
+      ...__camou,
       ...(__extraHeaders ? { extraHTTPHeaders: __extraHeaders } : {}),
     });
     const pages = context.pages();
@@ -298,9 +352,47 @@ const fs = require('fs');
         fs.writeFileSync('${SANDBOX_CONSOLE_FILE}', JSON.stringify(existing));
       } catch {}
     }
+    // Tear the browser down so a wedged Camoufox can't orphan inside the
+    // sandbox and accumulate across tool calls until it OOMs. context.close()
+    // can hang on a stuck browser (same wedge class as the host MCP path), so
+    // bound it, then SIGKILL any surviving descendant PIDs of this script — the
+    // in-sandbox analog of collectDescendantPids() in playwrightMcp.ts. Only
+    // this script's own children are touched, so it is safe under the parent +
+    // worker concurrency that shares a sandbox.
     if (context) {
-      try { await context.close(); } catch {}
+      let __closeTimer;
+      await Promise.race([
+        (async () => { try { await context.close(); } catch {} })(),
+        new Promise((r) => { __closeTimer = setTimeout(r, 8000); }),
+      ]);
+      if (__closeTimer) clearTimeout(__closeTimer);
     }
+    try {
+      if (fs.existsSync('/proc')) {
+        const __childrenByPpid = new Map();
+        for (const __name of fs.readdirSync('/proc')) {
+          if (!/^[0-9]+$/.test(__name)) continue;
+          try {
+            const __stat = fs.readFileSync('/proc/' + __name + '/stat', 'utf8');
+            const __ppid = Number(__stat.slice(__stat.lastIndexOf(')') + 2).split(' ')[1]);
+            if (!Number.isFinite(__ppid)) continue;
+            if (!__childrenByPpid.has(__ppid)) __childrenByPpid.set(__ppid, []);
+            __childrenByPpid.get(__ppid).push(Number(__name));
+          } catch {}
+        }
+        const __doomed = [];
+        const __seen = new Set([process.pid]);
+        const __stack = [process.pid];
+        while (__stack.length) {
+          const __p = __stack.pop();
+          for (const __c of (__childrenByPpid.get(__p) || [])) {
+            if (__seen.has(__c)) continue;
+            __seen.add(__c); __doomed.push(__c); __stack.push(__c);
+          }
+        }
+        for (const __p of __doomed) { try { process.kill(__p, 'SIGKILL'); } catch {} }
+      }
+    } catch {}
   }
 })();
 `;
@@ -449,17 +541,23 @@ export function createSandboxBrowserTools(ctx: ToolContext) {
     return setupPromise;
   }
 
-  // Resolve fresh on every tool call so /headers mutations apply next call.
+  // Serialise sandbox script execution so concurrent tool calls don't race on
+  // the shared Camoufox fingerprint cache or the persistent browser profile dir.
+  let scriptQueue: Promise<unknown> = Promise.resolve();
+
   function runScript(body: string, timeout = 60): Promise<unknown> {
     const resolved = targetUrl
       ? resolveEffectiveHeaders(resolverSessionFromCtx(ctx), targetUrl)
       : ctx.session.config?.headers;
-    return runPlaywrightScript(
-      sandbox,
-      body,
-      timeout,
-      stripBrowserManagedHeaders(resolved),
+    const headers = stripBrowserManagedHeaders(resolved);
+    const next = scriptQueue.then(() =>
+      runPlaywrightScript(sandbox, body, timeout, headers),
     );
+    scriptQueue = next.then(
+      () => {},
+      () => {},
+    );
+    return next;
   }
 
   // ------- browser_navigate -------------------------------------------------

@@ -32,6 +32,23 @@ export function getModelInfo(model: AIModel): ModelInfo {
 }
 
 /**
+ * Whether a model must be constrained to ONE tool call per assistant turn.
+ *
+ * DeepSeek V3.1 emits tool calls via special tokens
+ * (`<｜tool▁call▁begin｜>name<｜tool▁sep｜>args<｜tool▁call▁end｜>`). When it
+ * emits MULTIPLE tool calls in a single turn, Bedrock's tool-call extraction
+ * mis-parses them and drops/empties the arguments of the 2nd+ call (observed:
+ * a parallel `get_weather` call came back with `{"city":""}`). Single tool
+ * calls parse correctly. The portable mitigation — the one the DeepSeek model
+ * card and community use — is to instruct the model to make one tool call per
+ * turn (see `SEQUENTIAL_TOOL_CALL_INSTRUCTION` in ai.ts). Qwen3 and Claude
+ * parse parallel calls fine, so this is scoped to DeepSeek.
+ */
+export function prefersSequentialToolCalls(model: AIModel): boolean {
+  return /(^|[./:-])deepseek([./:-]|$)/i.test(model);
+}
+
+/**
  * Single source of truth for a model's default `max_tokens`. Both
  * `streamResponse`'s budget and the Pensar gateway formatter must agree,
  * so the lookup lives next to the registry it queries against.
@@ -162,9 +179,24 @@ function lookupOutputBudgetByPattern(modelId: string): number {
     return 128_000;
   }
 
-  // GLM 5.2 ships a 131.1K (128Ki) max-output window over its 1M context.
-  if (modelId.includes("glm-5.2")) {
+  // GLM 5 / 5.2 ship a ~131K (128Ki) max-output window. Matching both keeps the
+  // Bedrock `zai.glm-5` id and OpenRouter `z-ai/glm-5.2` on the same budget.
+  if (modelId.includes("glm-5")) {
     return 131_072;
+  }
+
+  // DeepSeek (V3.1, R1, chat). Bedrock documents an 8K output window for
+  // DeepSeek V3.1; the rest of the family is no larger, so this is a safe floor
+  // that keeps new `deepseek.*` ids off the 4,096 catch-all.
+  if (modelId.includes("deepseek")) {
+    return 8_192;
+  }
+
+  // Qwen3 Coder ships a 16K max-output window over its 128K+ context. Match the
+  // whole `qwen` family so future Bedrock/OpenRouter qwen ids don't silently
+  // inherit the 4,096 default.
+  if (modelId.includes("qwen")) {
+    return 16_000;
   }
 
   return 4_096;

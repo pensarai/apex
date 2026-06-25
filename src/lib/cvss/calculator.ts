@@ -334,7 +334,7 @@ function getMetricDistance(metrics: CVSS4Metrics, metric: string): number {
   let value: string;
 
   // Handle modified metrics
-  const modifiedMetric = "M" + metric;
+  const modifiedMetric = `M${metric}`;
   const metricsRecord = metrics as unknown as Record<
     string,
     string | undefined
@@ -383,12 +383,12 @@ function interpolateScore(
   macroVector: string,
   baseScore: number,
 ): number {
-  const eq1 = parseInt(macroVector[0]);
-  const eq2 = parseInt(macroVector[1]);
-  const eq3 = parseInt(macroVector[2]);
-  const eq4 = parseInt(macroVector[3]);
-  const eq5 = parseInt(macroVector[4]);
-  const eq6 = parseInt(macroVector[5]);
+  const eq1 = parseInt(macroVector[0], 10);
+  const eq2 = parseInt(macroVector[1], 10);
+  const eq3 = parseInt(macroVector[2], 10);
+  const eq4 = parseInt(macroVector[3], 10);
+  const eq5 = parseInt(macroVector[4], 10);
+  const eq6 = parseInt(macroVector[5], 10);
 
   // Calculate severity distances for each EQ
   let meanDistance = 0;

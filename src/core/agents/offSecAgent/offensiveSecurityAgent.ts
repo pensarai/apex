@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type {
   ModelMessage,
   StopCondition,
@@ -6,9 +9,6 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import { existsSync, mkdirSync } from "fs";
-import { writeFile } from "fs/promises";
-import { join } from "path";
 import { streamResponse } from "../../ai";
 import { AgentEventBus } from "../../eventBus";
 import {
@@ -117,6 +117,15 @@ export class OffensiveSecurityAgent<TResult = void> {
    */
   public readonly browserSession?: PlaywrightMcpSession;
 
+  /**
+   * True when this agent constructed its own {@link browserSession} (no
+   * `browserSession` was passed in). Only the owner disconnects it on
+   * `consume()` completion — an inherited session is torn down by whoever
+   * created it (e.g. `spawn_pentest_agent` for worker clones), so we must
+   * never disconnect a session we don't own.
+   */
+  private readonly ownsBrowserSession: boolean;
+
   private readonly abortSignal?: AbortSignal;
 
   /** The user-facing prompt passed to the model. */
@@ -193,11 +202,14 @@ export class OffensiveSecurityAgent<TResult = void> {
       const sessionHeaders = input.target
         ? resolveEffectiveHeaders(input.session, input.target)
         : input.session.config?.headers;
+      this.ownsBrowserSession = !input.browserSession;
       this.browserSession =
         input.browserSession ??
         new PlaywrightMcpSession({
           extraHttpHeaders: stripBrowserManagedHeaders(sessionHeaders),
         });
+    } else {
+      this.ownsBrowserSession = false;
     }
 
     // -- Step trace (trace.jsonl) ---------------------------------------------
@@ -252,6 +264,10 @@ export class OffensiveSecurityAgent<TResult = void> {
       credentialManager,
       persistentShell: this.persistentShell,
       skillsRegistry: input.skillsRegistry,
+      promptInjectionLibrary: input.promptInjectionLibrary,
+      promptInjectionLibrarySource:
+        input.promptInjectionLibrarySource ??
+        input.session.config?.promptInjectionLibrarySource,
       traceWriter,
       tasksDir,
       enableThinking: input.enableThinking,
@@ -527,6 +543,14 @@ export class OffensiveSecurityAgent<TResult = void> {
         }
       } finally {
         this.persistentShell?.dispose();
+        // Tear down the Chromium child process we own. Without this, a
+        // naturally-finishing agent leaks its Playwright MCP browser — over a
+        // long single-process scan (many endpoints) the leaked Chromium
+        // processes exhaust memory and OOM the run. disconnect() force-kills
+        // and never hangs, so awaiting here is safe.
+        if (this.ownsBrowserSession && this.browserSession) {
+          await this.browserSession.disconnect().catch(() => {});
+        }
       }
 
       if (this.abortSignal?.aborted) {

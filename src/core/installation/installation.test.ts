@@ -35,25 +35,25 @@ describe("getCurrentVersion", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveVersion", () => {
-  const originalEnv = process.env["APEX_VERSION"];
+  const originalEnv = process.env.APEX_VERSION;
 
   afterEach(() => {
     if (originalEnv !== undefined) {
-      process.env["APEX_VERSION"] = originalEnv;
+      process.env.APEX_VERSION = originalEnv;
     } else {
-      delete process.env["APEX_VERSION"];
+      delete process.env.APEX_VERSION;
     }
     vi.restoreAllMocks();
   });
 
   it("returns APEX_VERSION env var when set", async () => {
-    process.env["APEX_VERSION"] = "1.2.3-custom";
+    process.env.APEX_VERSION = "1.2.3-custom";
     const version = await resolveVersion();
     expect(version).toBe("1.2.3-custom");
   });
 
   it("delegates to getLatestVersion when env var is not set", async () => {
-    delete process.env["APEX_VERSION"];
+    delete process.env.APEX_VERSION;
     const mockFetch = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
@@ -183,7 +183,7 @@ describe("detectInstallMethod", () => {
     });
     process.argv[1] = "/usr/local/bin/pensar";
 
-    const { spawnSync } = await import("child_process");
+    const { spawnSync } = await import("node:child_process");
     const mockedSpawnSync = vi.mocked(spawnSync);
     mockedSpawnSync.mockReturnValue({
       status: 0,
@@ -209,7 +209,7 @@ describe("detectInstallMethod", () => {
     });
     process.argv[1] = "/usr/local/bin/pensar";
 
-    const { spawnSync } = await import("child_process");
+    const { spawnSync } = await import("node:child_process");
     const mockedSpawnSync = vi.mocked(spawnSync);
     mockedSpawnSync.mockReturnValue({
       status: 1,
@@ -230,7 +230,7 @@ describe("detectInstallMethod", () => {
     });
     process.argv[1] = "upgrade";
 
-    const { spawnSync } = await import("child_process");
+    const { spawnSync } = await import("node:child_process");
     const mockedSpawnSync = vi.mocked(spawnSync);
     mockedSpawnSync.mockReturnValue({
       status: 0,
@@ -361,7 +361,7 @@ describe("upgrade", () => {
       new Response(JSON.stringify({ version: "99.99.99" }), { status: 200 }),
     );
 
-    const { spawnSync } = await import("child_process");
+    const { spawnSync } = await import("node:child_process");
     const mockedSpawnSync = vi.mocked(spawnSync);
     mockedSpawnSync.mockReturnValue({
       status: 0,
@@ -384,7 +384,7 @@ describe("upgrade", () => {
       new Response(JSON.stringify({ version: "99.99.99" }), { status: 200 }),
     );
 
-    const { spawnSync } = await import("child_process");
+    const { spawnSync } = await import("node:child_process");
     const mockedSpawnSync = vi.mocked(spawnSync);
     mockedSpawnSync.mockReturnValue({
       status: 0,
@@ -409,7 +409,7 @@ describe("upgrade", () => {
       new Response(JSON.stringify({ version: "99.99.99" }), { status: 200 }),
     );
 
-    const { spawnSync } = await import("child_process");
+    const { spawnSync } = await import("node:child_process");
     const mockedSpawnSync = vi.mocked(spawnSync);
     mockedSpawnSync.mockReturnValue({
       status: 0,
@@ -434,7 +434,7 @@ describe("upgrade", () => {
       new Response(JSON.stringify({ version: "99.99.99" }), { status: 200 }),
     );
 
-    const { spawnSync } = await import("child_process");
+    const { spawnSync } = await import("node:child_process");
     const mockedSpawnSync = vi.mocked(spawnSync);
     mockedSpawnSync.mockReturnValue({
       status: 1,

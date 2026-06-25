@@ -25,7 +25,7 @@ function normalizeQuestion(q: AskUserQuestion, index: number): AskUserQuestion {
     trimmedHeader.length === 0
       ? fallbackHeader
       : trimmedHeader.length > 20
-        ? trimmedHeader.slice(0, 19) + "…"
+        ? `${trimmedHeader.slice(0, 19)}…`
         : trimmedHeader;
 
   const options = (q.options ?? []).slice(0, 4);
@@ -543,7 +543,7 @@ function TabBar({
 
         return (
           <box
-            key={isSubmit ? "submit" : q!.id}
+            key={isSubmit ? "submit" : q?.id}
             flexDirection="row"
             paddingLeft={1}
             paddingRight={1}
@@ -647,7 +647,7 @@ function Row({
     return (
       <box flexDirection="column">
         <box flexDirection="row">
-          <text fg={markerColor}>{marker + " "}</text>
+          <text fg={markerColor}>{`${marker} `}</text>
           <text>
             <span fg={colors.textMuted}>{`${number}. `}</span>
             {question.multiSelect ? (
@@ -661,7 +661,7 @@ function Row({
         {opt.description ? (
           <box flexDirection="row">
             <text fg={descColor}>
-              {"    " + (question.multiSelect ? "    " : "") + opt.description}
+              {`    ${question.multiSelect ? "    " : ""}${opt.description}`}
             </text>
           </box>
         ) : null}
@@ -680,7 +680,7 @@ function Row({
       : colors.textMuted;
     return (
       <box flexDirection="row">
-        <text fg={markerColor}>{marker + " "}</text>
+        <text fg={markerColor}>{`${marker} `}</text>
         <text>
           <span fg={colors.textMuted}>{`${number}. `}</span>
           {question.multiSelect ? <span fg={prefixColor}>{prefix}</span> : null}
@@ -707,7 +707,7 @@ function Row({
 
   return (
     <box flexDirection="row" marginTop={1}>
-      <text fg={markerColor}>{marker + " "}</text>
+      <text fg={markerColor}>{`${marker} `}</text>
       <text fg={focused ? colors.primary : colors.textMuted}>Next</text>
     </box>
   );

@@ -8,9 +8,9 @@
  * any newly added models automatically.
  */
 
-import { readFileSync, writeFileSync } from "fs";
-import { dirname, resolve } from "path";
-import { fileURLToPath } from "url";
+import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -24,11 +24,11 @@ function extractUnionMembers(dtsPath: string, typeName: string): string[] {
   const content = readFileSync(dtsPath, "utf-8");
   const typeRegex = new RegExp(`type\\s+${typeName}\\s*=\\s*([^;]+)`, "s");
   const match = content.match(typeRegex);
-  if (!match) {
+  if (!match?.[1]) {
     throw new Error(`Could not find type ${typeName} in ${dtsPath}`);
   }
 
-  const unionBody = match[1]!;
+  const unionBody = match[1];
   const members: string[] = [];
   const literalRegex = /'([^']+)'/g;
   for (
@@ -36,7 +36,7 @@ function extractUnionMembers(dtsPath: string, typeName: string): string[] {
     m !== null;
     m = literalRegex.exec(unionBody)
   ) {
-    members.push(m[1]!);
+    if (m[1]) members.push(m[1]);
   }
   return members;
 }
@@ -158,8 +158,8 @@ function appendMissing<T>(target: T[], extras: readonly T[]): void {
 // stable sort keeps the SDK's intra-family ordering intact.
 function openaiVersionScore(id: string): number {
   const gpt = id.match(/^gpt-(\d+)(?:\.(\d+))?/);
-  if (gpt) {
-    const major = parseInt(gpt[1]!, 10);
+  if (gpt?.[1]) {
+    const major = parseInt(gpt[1], 10);
     const minor = gpt[2] ? parseInt(gpt[2], 10) : 0;
     // major*1000 leaves room for minor versions ≥10 (gpt-5.10 won't collide
     // with gpt-6.0). Pro variants edge out non-pro siblings within a generation.
@@ -167,8 +167,8 @@ function openaiVersionScore(id: string): number {
     return 5000 + major * 1000 + minor * 10 + pro;
   }
   const o = id.match(/^o(\d+)(?:-|$)/);
-  if (o) {
-    return 4000 + parseInt(o[1]!, 10) * 100;
+  if (o?.[1]) {
+    return 4000 + parseInt(o[1], 10) * 100;
   }
   return 0;
 }
@@ -226,8 +226,8 @@ function formatModelName(modelId: string, provider: string): string {
   const dateVersionMatch = id.match(
     /^(.*)-(\d{4})(\d{2})(\d{2})-v\d+(?::\d+)?$/,
   );
-  if (dateVersionMatch) {
-    id = dateVersionMatch[1]!;
+  if (dateVersionMatch?.[1]) {
+    id = dateVersionMatch[1];
     dateSuffix = ` (${dateVersionMatch[2]}-${dateVersionMatch[3]}-${dateVersionMatch[4]})`;
   } else {
     // Try: just a date suffix (no version)
@@ -270,29 +270,42 @@ function formatModelName(modelId: string, provider: string): string {
   // Handle "-preview" suffix
   if (id.endsWith("-preview")) {
     id = id.replace(/-preview$/, "");
-    dateSuffix = " Preview" + dateSuffix;
+    dateSuffix = ` Preview${dateSuffix}`;
   }
 
   // --- Claude models ---
   const claudeMatch = id.match(/^Claude\s+(.+)$|^claude-(.+)$/);
   if (claudeMatch) {
-    const rest = (claudeMatch[1] || claudeMatch[2])!;
+    const rest = claudeMatch[1] || claudeMatch[2];
+    if (!rest) return id + dateSuffix;
     // Parse Claude model families: "3-5-haiku", "opus-4-1", "sonnet-4-5", etc.
     const familyPatterns: [RegExp, (m: RegExpMatchArray) => string][] = [
       // claude-3-5-haiku → Claude 3.5 Haiku
       [
         /^(\d+)-(\d+)-(\w+)$/,
-        (m) => `Claude ${m[1]}.${m[2]} ${capitalize(m[3]!)}`,
+        (m) =>
+          m[1] && m[2] && m[3]
+            ? `Claude ${m[1]}.${m[2]} ${capitalize(m[3])}`
+            : rest,
       ],
       // claude-3-haiku → Claude 3 Haiku
-      [/^(\d+)-(\w+)$/, (m) => `Claude ${m[1]} ${capitalize(m[2]!)}`],
+      [
+        /^(\d+)-(\w+)$/,
+        (m) => (m[1] && m[2] ? `Claude ${m[1]} ${capitalize(m[2])}` : rest),
+      ],
       // claude-haiku-4-5 → Claude Haiku 4.5
       [
         /^(\w+)-(\d+)-(\d+)$/,
-        (m) => `Claude ${capitalize(m[1]!)} ${m[2]}.${m[3]}`,
+        (m) =>
+          m[1] && m[2] && m[3]
+            ? `Claude ${capitalize(m[1])} ${m[2]}.${m[3]}`
+            : rest,
       ],
       // claude-haiku-4 → Claude Haiku 4
-      [/^(\w+)-(\d+)$/, (m) => `Claude ${capitalize(m[1]!)} ${m[2]}`],
+      [
+        /^(\w+)-(\d+)$/,
+        (m) => (m[1] && m[2] ? `Claude ${capitalize(m[1])} ${m[2]}` : rest),
+      ],
       // claude-v2 → Claude v2
       [/^v(\d+)$/, (m) => `Claude v${m[1]}`],
       // claude-instant-v1 → Claude Instant v1
@@ -313,13 +326,13 @@ function formatModelName(modelId: string, provider: string): string {
 
   // --- GPT models ---
   if (id.startsWith("gpt-") || id.startsWith("GPT-")) {
-    const name = "GPT-" + id.replace(/^gpt-/i, "") + dateSuffix;
+    const name = `GPT-${id.replace(/^gpt-/i, "")}${dateSuffix}`;
     return provider === "bedrock"
       ? name + (regionSuffix || " (Bedrock)")
       : name;
   }
   if (id.startsWith("chatgpt-") || id.startsWith("ChatGPT-")) {
-    const name = "ChatGPT-" + id.replace(/^chatgpt-/i, "") + dateSuffix;
+    const name = `ChatGPT-${id.replace(/^chatgpt-/i, "")}${dateSuffix}`;
     return provider === "bedrock"
       ? name + (regionSuffix || " (Bedrock)")
       : name;
@@ -335,8 +348,8 @@ function formatModelName(modelId: string, provider: string): string {
 
   // --- Llama models ---
   const llamaMatch = id.match(/^llama(\d+)-?(.*)$/i);
-  if (llamaMatch) {
-    const majorVersion = llamaMatch[1]!;
+  if (llamaMatch?.[1]) {
+    const majorVersion = llamaMatch[1];
     let rest = llamaMatch[2] || "";
     rest = rest.replace(/-instruct$/, "");
 
@@ -354,7 +367,7 @@ function formatModelName(modelId: string, provider: string): string {
       return capitalize(p);
     });
 
-    const name = `Llama ${majorVersion}${subVersion}${formatted.length ? " " + formatted.join(" ") : ""} Instruct${dateSuffix}`;
+    const name = `Llama ${majorVersion}${subVersion}${formatted.length ? ` ${formatted.join(" ")}` : ""} Instruct${dateSuffix}`;
     return provider === "bedrock"
       ? name + (regionSuffix || " (Bedrock)")
       : name;
@@ -388,9 +401,9 @@ function formatModelName(modelId: string, provider: string): string {
 
   // --- Mistral/Mixtral/Pixtral ---
   const mistralMatch = id.match(/^(mistral|mixtral|pixtral)-(.+)$/i);
-  if (mistralMatch) {
-    const brand = capitalize(mistralMatch[1]!);
-    let rest = mistralMatch[2]!;
+  if (mistralMatch?.[1] && mistralMatch[2]) {
+    const brand = capitalize(mistralMatch[1]);
+    let rest = mistralMatch[2];
     // 7b-instruct → 7B Instruct
     rest = rest
       .replace(/-instruct$/, " Instruct")
@@ -433,8 +446,8 @@ function formatModelName(modelId: string, provider: string): string {
     if (parts[0] === "gemini") {
       name = "Gemini";
       const rest = parts.slice(1);
-      if (rest.length > 0) {
-        const version = rest[0]!;
+      if (rest.length > 0 && rest[0]) {
+        const version = rest[0];
         name += ` ${version}`;
         const remaining = rest.slice(1);
         if (remaining.length > 0) {

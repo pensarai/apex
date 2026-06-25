@@ -91,10 +91,10 @@ export async function extractJavascriptEndpoints(
           match = patternCopy.exec(scriptContent)
         ) {
           const endpoint = match[1] || match[2];
-          if (endpoint && endpoint.startsWith("/")) {
+          if (endpoint?.startsWith("/")) {
             endpoints.push({
               endpoint,
-              pattern: pattern.source.substring(0, 30) + "...",
+              pattern: `${pattern.source.substring(0, 30)}...`,
               source: "inline-script",
             });
           }

@@ -1,5 +1,4 @@
-import { tool } from "ai";
-import { spawn } from "child_process";
+import { spawn } from "node:child_process";
 import {
   appendFileSync,
   chmodSync,
@@ -7,8 +6,9 @@ import {
   mkdirSync,
   unlinkSync,
   writeFileSync,
-} from "fs";
-import { join } from "path";
+} from "node:fs";
+import { join } from "node:path";
+import { tool } from "ai";
 import { z } from "zod";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";

@@ -1,7 +1,7 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall } from "ai";
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
 import type { AIAuthConfig, AIModel, OpenAIReasoningEffort } from "../../../ai";
 import type { AgentEventBus } from "../../../eventBus";
 import { createLogger } from "../../../logger/structured";

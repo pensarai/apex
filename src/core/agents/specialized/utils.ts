@@ -1,5 +1,5 @@
-import { execSync } from "child_process";
-import { existsSync, readFileSync } from "fs";
+import { execSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { getBundledWordlists } from "../../assets/wordlists";
 import { createLogger } from "../../logger/structured";
 import { scopedLogger } from "../../util/lazyLogger";
@@ -74,9 +74,9 @@ export function toolExists(commandName: string): boolean {
 
 function detectEnvironment(): DetectedEnvironment {
   const osRelease = readOsRelease();
-  const prettyName = osRelease["PRETTY_NAME"];
-  const id = osRelease["ID"]?.toLowerCase();
-  const idLike = osRelease["ID_LIKE"];
+  const prettyName = osRelease.PRETTY_NAME;
+  const id = osRelease.ID?.toLowerCase();
+  const idLike = osRelease.ID_LIKE;
 
   const isKali = Boolean(
     (id && /kali/.test(id)) || (prettyName && /kali/i.test(prettyName)),

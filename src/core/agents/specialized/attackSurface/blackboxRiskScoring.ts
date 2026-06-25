@@ -127,7 +127,7 @@ function computeExposure(
 
 function computeDataSensitivity(
   riskLevel: RiskLevel,
-  assetType: string,
+  _assetType: string,
   details?: EndpointDetails,
 ): number {
   if (riskLevel === "CRITICAL") return 3;

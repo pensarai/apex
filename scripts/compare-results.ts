@@ -12,17 +12,17 @@
  *   bun run scripts/compare-results.ts --benchmark-ids XBEN-001-24 XBEN-002-24
  */
 
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateText, Output } from "ai";
 import {
   existsSync,
   readdirSync,
   readFileSync,
   statSync,
   writeFileSync,
-} from "fs";
+} from "node:fs";
+import path from "node:path";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { generateText, Output } from "ai";
 import pLimit from "p-limit";
-import path from "path";
 import { z } from "zod";
 
 // Schema for the AI comparison response
@@ -150,8 +150,8 @@ function extractBenchmarkId(dirName: string, isPace?: boolean): string | null {
 
     for (const pattern of pacePatterns) {
       const match = dirName.match(pattern);
-      if (match) {
-        return match[1]!;
+      if (match?.[1]) {
+        return match[1];
       }
     }
   } else {
@@ -164,8 +164,8 @@ function extractBenchmarkId(dirName: string, isPace?: boolean): string | null {
 
     for (const pattern of xbenPatterns) {
       const match = dirName.match(pattern);
-      if (match) {
-        return match[1]!;
+      if (match?.[1]) {
+        return match[1];
       }
     }
   }
@@ -288,7 +288,8 @@ async function compareWithClaude(
   // Prepare findings summary
   let findingsText = "";
   for (let i = 0; i < findings.length; i++) {
-    const f = findings[i]!;
+    const f = findings[i];
+    if (!f) continue;
     findingsText += `
 Finding ${i + 1}:
 - Title: ${f.title}
@@ -348,7 +349,10 @@ Determine whether the agent identified the correct vulnerability TYPE in the cor
       temperature: 0,
     });
 
-    return output!;
+    if (!output) {
+      throw new Error("No output received from Claude API");
+    }
+    return output;
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error calling Claude API:`, errorMessage);
@@ -485,8 +489,18 @@ async function compareBenchmark(
   }
 
   // Use the first expected result as the primary one for backward compatibility
-  const primaryExpected = expectedResults[0]!;
-  const comparison = bestComparison!;
+  const primaryExpected = expectedResults[0];
+  if (!primaryExpected) {
+    console.error(`No primary expected result for ${benchmarkId}`);
+    return null;
+  }
+
+  if (!bestComparison) {
+    console.error(`No comparison result for ${benchmarkId}`);
+    return null;
+  }
+
+  const comparison = bestComparison;
 
   // For multi-vuln benchmarks, vulnerability_found is true if ANY expected vuln was found
   const anyVulnFound = multiVulnDetails.some((d) => d.found);
@@ -573,7 +587,8 @@ function generateTextReport(results: ComparisonResult[]): string {
     lines.push("MULTI-VULNERABILITY DETAILS (PACEbench)");
     lines.push("─".repeat(width));
     for (const r of multiVulnResults) {
-      const mv = r.multi_vuln!;
+      const mv = r.multi_vuln;
+      if (!mv) continue;
       lines.push(
         `  ${r.benchmark_id}: ${mv.found}/${mv.total_expected} vulnerabilities found`,
       );
@@ -593,7 +608,8 @@ function generateTextReport(results: ComparisonResult[]): string {
     lines.push("MULTI-FLAG DETAILS (PACEbench)");
     lines.push("─".repeat(width));
     for (const r of multiFlagResults) {
-      const mf = r.multi_flag!;
+      const mf = r.multi_flag;
+      if (!mf) continue;
       lines.push(`  ${r.benchmark_id}: ${mf.found}/${mf.total} flags captured`);
       for (const detail of mf.details) {
         const status = detail.detected ? "✓" : "✗";
@@ -650,7 +666,7 @@ function generateTextReport(results: ComparisonResult[]): string {
   for (const [vulnClass, stats] of sortedClasses) {
     const rate =
       stats.total > 0
-        ? ((stats.flagged / stats.total) * 100).toFixed(0) + "%"
+        ? `${((stats.flagged / stats.total) * 100).toFixed(0)}%`
         : "0%";
     const miniBar =
       "█".repeat(Math.round((stats.flagged / stats.total) * 8)) +
@@ -798,26 +814,27 @@ async function main(): Promise<void> {
       printUsage();
       process.exit(0);
     } else if (arg === "--executions-dir" && args[i + 1]) {
-      executionsDir = args[++i]!;
+      executionsDir = args[++i] ?? "";
     } else if (arg === "--benchmarks-dir" && args[i + 1]) {
-      benchmarksDir = args[++i]!;
+      benchmarksDir = args[++i] ?? "";
     } else if (arg === "--execution-path" && args[i + 1]) {
-      executionPath = args[++i]!;
+      executionPath = args[++i] ?? "";
     } else if (arg === "--benchmark-ids") {
       benchmarkIds = [];
-      while (args[i + 1] && !args[i + 1]!.startsWith("-")) {
-        benchmarkIds.push(args[++i]!);
+      while (args[i + 1] && !args[i + 1]?.startsWith("-")) {
+        const nextArg = args[++i];
+        if (nextArg) benchmarkIds.push(nextArg);
       }
     } else if (arg === "--prefix" && args[i + 1]) {
-      prefix = args[++i]!;
+      prefix = args[++i] ?? "";
     } else if (arg === "--pace") {
       isPace = true;
     } else if (arg === "--latest-only") {
       latestOnly = true;
     } else if (arg === "--format" && args[i + 1]) {
-      outputFormat = args[++i]!;
+      outputFormat = args[++i] ?? "";
     } else if (arg === "--output" && args[i + 1]) {
-      outputPath = args[++i]!;
+      outputPath = args[++i] ?? "";
     } else if (arg === "--show-missed") {
       printMissed = true;
     } else if (arg === "--dry") {

@@ -1,11 +1,56 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { streamResponse } from "./ai";
+import {
+  applySequentialToolCallPolicy,
+  SEQUENTIAL_TOOL_CALL_INSTRUCTION,
+  streamResponse,
+} from "./ai";
 import { consumeStream } from "./utils";
 
 // Skip tests if API keys are not available (e.g., in CI)
 const hasApiKeys = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
 const describeOrSkip = hasApiKeys ? describe : describe.skip;
+
+describe("applySequentialToolCallPolicy", () => {
+  const tools = {
+    probe: {
+      description: "test tool",
+      inputSchema: z.object({ q: z.string() }),
+    },
+  };
+
+  it("appends the instruction for DeepSeek models when tools are bound", () => {
+    const result = applySequentialToolCallPolicy(
+      "Base system prompt.",
+      tools,
+      "deepseek.v3-v1:0",
+    );
+    expect(result).toBe(
+      `Base system prompt.\n\n${SEQUENTIAL_TOOL_CALL_INSTRUCTION}`,
+    );
+  });
+
+  it("uses the instruction alone when there is no base system prompt", () => {
+    expect(
+      applySequentialToolCallPolicy(undefined, tools, "deepseek.v3-v1:0"),
+    ).toBe(SEQUENTIAL_TOOL_CALL_INSTRUCTION);
+  });
+
+  it("leaves the system prompt unchanged when no tools are bound", () => {
+    expect(applySequentialToolCallPolicy("Base.", {}, "deepseek.v3-v1:0")).toBe(
+      "Base.",
+    );
+    expect(
+      applySequentialToolCallPolicy("Base.", undefined, "deepseek.v3-v1:0"),
+    ).toBe("Base.");
+  });
+
+  it("leaves the system prompt unchanged for non-DeepSeek models", () => {
+    expect(
+      applySequentialToolCallPolicy("Base.", tools, "claude-haiku-4-5"),
+    ).toBe("Base.");
+  });
+});
 
 describeOrSkip("AI Stream Response", () => {
   it("should stream a basic response", async () => {

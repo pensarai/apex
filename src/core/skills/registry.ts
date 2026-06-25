@@ -1,4 +1,4 @@
-import fs from "fs/promises";
+import fs from "node:fs/promises";
 import { BUILTIN_SKILLS } from "./builtins";
 import { parseSkillMd } from "./parser";
 import { scanSkillRoots } from "./scanner";

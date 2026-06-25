@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentEventBus, type AgentEventMap } from "../../../eventBus";
 import {
@@ -143,7 +143,7 @@ describe("documentVulnerability judge handling", () => {
 
     const ctx = makeToolContext(rootPath);
     const tool = documentVulnerability(ctx);
-    const result = (await tool.execute!(makeDocumentInput(), {
+    const result = (await tool.execute?.(makeDocumentInput(), {
       toolCallId: "test",
       messages: [],
     })) as DocumentToolResult;
@@ -180,7 +180,7 @@ describe("documentVulnerability judge handling", () => {
 
     const ctx = makeToolContext(rootPath);
     const tool = documentVulnerability(ctx);
-    const result = (await tool.execute!(makeDocumentInput(), {
+    const result = (await tool.execute?.(makeDocumentInput(), {
       toolCallId: "test",
       messages: [],
     })) as DocumentToolResult;
@@ -253,7 +253,7 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
       subagentId: "pentest-agent-worker-1",
     };
     const tool = documentVulnerability(ctx);
-    const result = (await tool.execute!(makeDocumentInput(), {
+    const result = (await tool.execute?.(makeDocumentInput(), {
       toolCallId: "test",
       messages: [],
     })) as DocumentToolResult;
@@ -294,11 +294,11 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
       subagentId: "pentest-agent-worker-2",
     };
     const tool = documentVulnerability(ctx);
-    await tool.execute!(makeDocumentInput(), {
+    await tool.execute?.(makeDocumentInput(), {
       toolCallId: "t1",
       messages: [],
     });
-    await tool.execute!(
+    await tool.execute?.(
       { ...makeDocumentInput(), title: "Second Finding" },
       { toolCallId: "t2", messages: [] },
     );
@@ -315,7 +315,7 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
 
     const ctx = { ...makeToolContext(rootPath), eventBus: parentBus };
     const tool = documentVulnerability(ctx);
-    await tool.execute!(makeDocumentInput(), {
+    await tool.execute?.(makeDocumentInput(), {
       toolCallId: "test",
       messages: [],
     });
@@ -350,7 +350,7 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
       subagentId: "pentest-agent-worker-3",
     };
     const tool = documentVulnerability(ctx);
-    await tool.execute!(makeDocumentInput(), {
+    await tool.execute?.(makeDocumentInput(), {
       toolCallId: "test",
       messages: [],
     });

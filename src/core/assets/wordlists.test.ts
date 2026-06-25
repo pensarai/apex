@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, statSync } from "fs";
-import { isAbsolute } from "path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   _resetBundledWordlistsCacheForTests,

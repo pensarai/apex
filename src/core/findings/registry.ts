@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import type { Finding } from "../agents/offSecAgent";
 import { type AIAuthConfig, type AIModel, generateObjectResponse } from "../ai";
@@ -246,6 +246,27 @@ export interface RootCauseGroup {
   groupId: string;
   findingIndices: number[];
   rootCause: string;
+  /** The highest severity among the group's findings, applied to all of them. */
+  normalizedSeverity: Finding["severity"];
+  /** Index (into the snapshot passed to groupByRootCause) of the group's lead finding. */
+  leadFindingIndex: number;
+}
+
+const SEVERITY_RANK: Record<Finding["severity"], number> = {
+  CRITICAL: 4,
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1,
+};
+
+/** Return the highest-ranked severity among the given severities. */
+function maxSeverity(
+  severities: readonly Finding["severity"][],
+): Finding["severity"] {
+  return severities.reduce<Finding["severity"]>(
+    (acc, s) => (SEVERITY_RANK[s] > SEVERITY_RANK[acc] ? s : acc),
+    "LOW",
+  );
 }
 
 const RootCauseGroupResultSchema = z.object({
@@ -640,25 +661,58 @@ export class FindingsRegistry {
 
     await new Promise<void>((resolve) => {
       this.mutex = this.mutex.then(() => {
+        // Capture severities before any normalization so that each group's
+        // max/lead is derived from the original ranks. Without this, a finding
+        // that the LLM places in more than one group would have its severity
+        // mutated by the first group and then inflate the second group's
+        // computation (over-normalizing and mispicking the lead).
+        const baseSeverities = snapshot.map((f) => f.severity);
+
         for (const group of result.groups) {
           const validIndices = group.findingIndices.filter(
             (i: number) => i >= 0 && i < snapshot.length,
           );
           if (validIndices.length < 2) continue;
 
+          const normalizedSeverity = maxSeverity(
+            validIndices.map((i: number) => baseSeverities[i]!),
+          );
+
+          // Lead = highest (original) severity, tie-broken by the most detailed
+          // (longest description) finding so the consolidated write-up
+          // anchors on the richest evidence.
+          const leadFindingIndex = validIndices.reduce((best, i) => {
+            const aRank = SEVERITY_RANK[baseSeverities[i]!];
+            const bRank = SEVERITY_RANK[baseSeverities[best]!];
+            if (aRank !== bRank) {
+              return aRank > bRank ? i : best;
+            }
+            return (snapshot[i]!.description?.length ?? 0) >
+              (snapshot[best]!.description?.length ?? 0)
+              ? i
+              : best;
+          }, validIndices[0]!);
+
           sanitised.push({
             groupId: group.groupId,
             findingIndices: validIndices,
             rootCause: group.rootCause,
+            normalizedSeverity,
+            leadFindingIndex,
           });
 
           for (const idx of validIndices) {
             const finding = snapshot[idx]!;
             finding.rootCauseGroup = group.groupId;
+            // Findings that share a root cause are one underlying weakness;
+            // normalize them to the group's highest severity so a member-vs-
+            // admin boundary failure isn't split across High/Medium.
+            finding.severity = normalizedSeverity;
+            finding.rootCauseLead = idx === leadFindingIndex;
             // Use index-based exclusion so same-titled findings are handled correctly
             finding.relatedFindings = validIndices
               .filter((i: number) => i !== idx)
-              .map((i: number) => snapshot[i]!.title);
+              .map((i: number) => snapshot[i]?.title);
           }
         }
         resolve();

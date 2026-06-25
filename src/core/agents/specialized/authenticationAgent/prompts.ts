@@ -249,12 +249,12 @@ The following credentials are configured for this domain:
 **Mode: Token Verification** - Your goal is to verify these tokens grant access.
 
 `;
-    if (input.credentials!.role) {
-      prompt += `- Role: ${input.credentials!.role}
+    if (input.credentials?.role) {
+      prompt += `- Role: ${input.credentials?.role}
 `;
     }
-    if (input.credentials!.context) {
-      prompt += `- Context: ${input.credentials!.context}
+    if (input.credentials?.context) {
+      prompt += `- Context: ${input.credentials?.context}
 `;
     }
     const tokens = input.credentials!.tokens!;
@@ -379,7 +379,7 @@ You have working credentials. Your task is to USE THEM to authenticate.
 1. Use \`validate_session\` to test if the provided tokens grant authenticated access
 `;
     if (hasProtectedEndpoints) {
-      prompt += `   - Test against the protected endpoints provided above: ${input.authFlowHints!.protectedEndpoints!.join(", ")}
+      prompt += `   - Test against the protected endpoints provided above: ${input.authFlowHints?.protectedEndpoints?.join(", ")}
    - These are KNOWN to require auth - use them directly, don't guess endpoints
 `;
     } else {

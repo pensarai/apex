@@ -185,11 +185,11 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       {children}
       <box position="absolute">
         {stack.length > 0 &&
-          (stack[stack.length - 1]!.bare ? (
-            stack[stack.length - 1]!.element
+          (stack[stack.length - 1]?.bare ? (
+            stack[stack.length - 1]?.element
           ) : (
             <Dialog onClose={clear} size={size}>
-              {stack[stack.length - 1]!.element}
+              {stack[stack.length - 1]?.element}
             </Dialog>
           ))}
       </box>

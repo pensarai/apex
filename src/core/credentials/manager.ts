@@ -6,7 +6,7 @@
  * secrets are resolved at tool-execution time via {@link resolve}.
  */
 
-import { randomBytes } from "crypto";
+import { randomBytes } from "node:crypto";
 import type { AuthCredentials } from "../session";
 import type {
   CredentialReference,

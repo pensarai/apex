@@ -76,6 +76,8 @@ function buildStubAgent(overrides: {
   persistentShell?: { dispose: () => void };
   abortSignal?: AbortSignal;
   resolveResult?: (sr: unknown) => unknown;
+  browserSession?: { disconnect: () => Promise<void> };
+  ownsBrowserSession?: boolean;
 }): OffensiveSecurityAgent<unknown> {
   const agent = Object.create(
     OffensiveSecurityAgent.prototype,
@@ -97,6 +99,12 @@ function buildStubAgent(overrides: {
   });
   Object.defineProperty(agent, "resolveResult", {
     value: overrides.resolveResult,
+  });
+  Object.defineProperty(agent, "browserSession", {
+    value: overrides.browserSession,
+  });
+  Object.defineProperty(agent, "ownsBrowserSession", {
+    value: overrides.ownsBrowserSession ?? false,
   });
 
   return agent;
@@ -170,6 +178,57 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       await expect(agent.consume()).rejects.toThrow("bus emit failed");
       expect(dispose).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe("browser session teardown on completion (Chromium leak fix)", () => {
+    it("disconnects the owned browser session after a successful stream", async () => {
+      const disconnect = vi.fn().mockResolvedValue(undefined);
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([textDelta]),
+        browserSession: { disconnect },
+        ownsBrowserSession: true,
+      });
+
+      await agent.consume();
+      expect(disconnect).toHaveBeenCalledOnce();
+    });
+
+    it("disconnects the owned browser session when the stream throws", async () => {
+      const disconnect = vi.fn().mockResolvedValue(undefined);
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow([textDelta], new Error("stream exploded")),
+        browserSession: { disconnect },
+        ownsBrowserSession: true,
+      });
+
+      await expect(agent.consume()).rejects.toThrow("stream exploded");
+      expect(disconnect).toHaveBeenCalledOnce();
+    });
+
+    it("does NOT disconnect an inherited (not-owned) browser session", async () => {
+      const disconnect = vi.fn().mockResolvedValue(undefined);
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([textDelta]),
+        browserSession: { disconnect },
+        ownsBrowserSession: false,
+      });
+
+      await agent.consume();
+      expect(disconnect).not.toHaveBeenCalled();
+    });
+
+    it("swallows a disconnect failure so it never masks the run result", async () => {
+      const disconnect = vi.fn().mockRejectedValue(new Error("kill failed"));
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([textDelta]),
+        browserSession: { disconnect },
+        ownsBrowserSession: true,
+        resolveResult: () => "ok",
+      });
+
+      await expect(agent.consume()).resolves.toBe("ok");
+      expect(disconnect).toHaveBeenCalledOnce();
     });
   });
 

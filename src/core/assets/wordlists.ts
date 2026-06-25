@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, statSync } from "fs";
-import { dirname, join, resolve } from "path";
-import { fileURLToPath } from "url";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * Absolute paths to the wordlists bundled inside the published package.

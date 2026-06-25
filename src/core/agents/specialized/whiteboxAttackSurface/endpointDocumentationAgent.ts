@@ -48,6 +48,7 @@ interface SharedAgentOptions {
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  enableThinking?: boolean;
   projectThreatModel?: string;
   /** Parent subagent id for hierarchy tracking on emitted lifecycle events. */
   parentSubagentId?: string;
@@ -168,6 +169,7 @@ async function runEndpointDocumentationAgent(
     onStepFinish,
     onCacheMetrics,
     openAIReasoningEffort,
+    enableThinking,
     projectThreatModel,
     parentSubagentId,
   } = opts;
@@ -209,6 +211,7 @@ async function runEndpointDocumentationAgent(
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
     openAIReasoningEffort,
+    enableThinking,
     responseSchema: DiscoverySummarySchema,
     // Hard-exclude tools an endpoint documentation agent must never use:
     // - document_app: Phase 1 owns app discovery.
