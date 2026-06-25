@@ -448,7 +448,13 @@ export class PlaywrightMcpSession {
   constructor(options: PlaywrightMcpSessionOptions = {}) {
     const { headless, userAgent, viewportSize, extraHttpHeaders } = options;
 
-    this.headless = headless ?? defaultHeadless;
+    // An explicit option always wins. Otherwise, if a virtual display is
+    // present (e.g. a Daytona computer-use desktop on `DISPLAY=:1`), default
+    // to headed — Camoufox is far less detectable headful and the display
+    // lets the session be streamed/observed. With no display we keep the
+    // module default (headless). Mirrors the `DISPLAY`-aware policy already
+    // used on the sandbox-executor path (`sandboxPlaywright.ts`).
+    this.headless = headless ?? (process.env.DISPLAY ? false : defaultHeadless);
     this.userAgent =
       userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
     this.viewportSize =
@@ -613,9 +619,16 @@ export class PlaywrightMcpSession {
           // CAMOU_CONFIG_* fingerprint chunks must reach the actual browser
           // process. The MCP node child inherits them (the transport merges
           // these over getDefaultEnvironment) and Firefox inherits in turn.
-          env: Object.fromEntries(
-            Object.entries(camou.env).map(([k, v]) => [k, String(v)]),
-          ),
+          // `DISPLAY` is NOT in the transport's default-inherited set, so a
+          // headful launch on a virtual display needs it threaded explicitly
+          // — without it Firefox can't find the X server and headed mode
+          // fails to start.
+          env: {
+            ...Object.fromEntries(
+              Object.entries(camou.env).map(([k, v]) => [k, String(v)]),
+            ),
+            ...(process.env.DISPLAY ? { DISPLAY: process.env.DISPLAY } : {}),
+          },
         });
 
         const client = new Client({
