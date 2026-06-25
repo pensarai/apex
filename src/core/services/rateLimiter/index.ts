@@ -70,8 +70,24 @@ export class RateLimiter {
       resolveCurrentRequest = resolve;
     });
 
-    // Wait for previous request to complete
-    await previousPromise;
+    // Wait for previous request to complete, or abort early.
+    // Without the race, a queued caller would block on previousPromise even
+    // after its signal fires — the abort check on the next line would only run
+    // once the prior acquisition finishes its full throttle delay.
+    if (signal) {
+      await Promise.race([
+        previousPromise,
+        new Promise<void>((resolve) => {
+          if (signal.aborted) {
+            resolve();
+            return;
+          }
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        }),
+      ]);
+    } else {
+      await previousPromise;
+    }
 
     try {
       if (signal?.aborted) return;

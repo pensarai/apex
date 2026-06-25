@@ -32,6 +32,29 @@ describe("RateLimiter", () => {
     expect(performance.now() - start).toBeLessThan(500);
   });
 
+  it("interrupts a queue wait when the signal aborts before the prior request finishes", async () => {
+    const rl = new RateLimiter({ requestsPerSecond: 1 }); // 1000ms / token
+    await rl.acquireSlot(); // drain the initial token
+
+    // First queued request — will block for ~1s waiting on a token refill.
+    const req1 = rl.acquireSlot();
+
+    // Second queued request sits behind req1 in the FIFO queue.
+    const controller = new AbortController();
+    const start = performance.now();
+    const req2 = rl.acquireSlot(controller.signal);
+
+    // Abort req2 while it's still queued behind req1.
+    controller.abort();
+    await req2;
+
+    // req2 should return almost immediately — not after req1's full 1s delay.
+    expect(performance.now() - start).toBeLessThan(500);
+
+    // req1 must still complete so the queue doesn't deadlock.
+    await req1;
+  });
+
   it("keeps the queue flowing for the next request after an abort", async () => {
     const rl = new RateLimiter({ requestsPerSecond: 50 });
     await rl.acquireSlot(); // drain the initial token
