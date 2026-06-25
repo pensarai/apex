@@ -174,11 +174,21 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     viewportSize: string | undefined;
   };
 
-  it("defaults to headless + desktop UA + 1920x1080 when constructed with no args (regression: don't fall back to Chromium's tiny default viewport)", () => {
-    const session = new PlaywrightMcpSession() as unknown as InternalShape;
-    expect(session.headless).toBe(true);
-    expect(session.viewportSize).toBe("1920,1080");
-    expect(session.userAgent).toContain("Chrome/");
+  it("defaults to headless + desktop UA + 1920x1080 when constructed with no args and no display (regression: don't fall back to Chromium's tiny default viewport)", () => {
+    // The headless default is DISPLAY-aware (headed when a virtual display is
+    // present), so pin DISPLAY off to assert the no-display contract
+    // deterministically regardless of the host environment.
+    const originalDisplay = process.env.DISPLAY;
+    delete process.env.DISPLAY;
+    try {
+      const session = new PlaywrightMcpSession() as unknown as InternalShape;
+      expect(session.headless).toBe(true);
+      expect(session.viewportSize).toBe("1920,1080");
+      expect(session.userAgent).toContain("Chrome/");
+    } finally {
+      if (originalDisplay === undefined) delete process.env.DISPLAY;
+      else process.env.DISPLAY = originalDisplay;
+    }
   });
 
   it("uses explicit values when provided", () => {
@@ -200,6 +210,34 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     }) as unknown as InternalShape;
     expect(session.userAgent).toBeUndefined();
     expect(session.viewportSize).toBeUndefined();
+  });
+
+  describe("DISPLAY-aware headless default", () => {
+    const originalDisplay = process.env.DISPLAY;
+    afterEach(() => {
+      if (originalDisplay === undefined) delete process.env.DISPLAY;
+      else process.env.DISPLAY = originalDisplay;
+    });
+
+    it("defaults to headed when a virtual display is present and no explicit headless is given", () => {
+      process.env.DISPLAY = ":1";
+      const session = new PlaywrightMcpSession() as unknown as InternalShape;
+      expect(session.headless).toBe(false);
+    });
+
+    it("defaults to headless when no display is present", () => {
+      delete process.env.DISPLAY;
+      const session = new PlaywrightMcpSession() as unknown as InternalShape;
+      expect(session.headless).toBe(true);
+    });
+
+    it("respects an explicit headless=true even when a display is present", () => {
+      process.env.DISPLAY = ":1";
+      const session = new PlaywrightMcpSession({
+        headless: true,
+      }) as unknown as InternalShape;
+      expect(session.headless).toBe(true);
+    });
   });
 
   it("falls back to a hardcoded 1920x1080 floor for viewport even if the module default was cleared (regression: don't ship a Chromium-tiny viewport just because someone called setViewportSize(undefined))", () => {
