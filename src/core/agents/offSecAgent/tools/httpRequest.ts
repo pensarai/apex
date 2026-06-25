@@ -241,6 +241,10 @@ COMMON TESTING PATTERNS:
         };
       }
 
+      // Single rate-limit chokepoint for http_request's two dispatch paths
+      // (local fetch + sandbox curl). No-op when requestsPerSecond is unset.
+      await ctx.session._rateLimiter?.acquireSlot();
+
       // Sandbox mode: build a curl command and run it inside the sandbox
       if (ctx.sandbox) {
         return executeSandboxHttpRequest(

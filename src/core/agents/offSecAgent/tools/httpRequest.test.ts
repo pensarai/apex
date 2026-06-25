@@ -3,6 +3,7 @@ import {
   promptInjectionRef,
   StaticPromptInjectionLibrary,
 } from "../../../prompt-injections";
+import { RateLimiter } from "../../../services/rateLimiter";
 import type { SessionInfo } from "../../../session";
 import { type HttpRequestResult, httpRequest } from "./httpRequest";
 import type { ToolContext } from "./types";
@@ -107,5 +108,67 @@ describe("httpRequest prompt injection refs", () => {
     expect(capturedBody).toBe(
       "payload={{prompt_injection:pi.encoded.override}}",
     );
+  });
+});
+
+describe("httpRequest rate limiting", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function ctxWithLimiter(): {
+    ctx: ToolContext;
+    acquireSlot: ReturnType<typeof vi.spyOn>;
+  } {
+    const limiter = new RateLimiter({ requestsPerSecond: 5 });
+    const acquireSlot = vi
+      .spyOn(limiter, "acquireSlot")
+      .mockResolvedValue(undefined);
+    const ctx = makeCtx();
+    ctx.session._rateLimiter = limiter;
+    return { ctx, acquireSlot };
+  }
+
+  it("acquires exactly one rate-limit slot per dispatched request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("ok", { status: 200 })),
+    );
+    const { ctx, acquireSlot } = ctxWithLimiter();
+
+    await httpRequest(ctx).execute?.(
+      {
+        url: "https://example.com/api",
+        method: "GET",
+        followRedirects: false,
+        timeout: 1000,
+        toolCallDescription: "Rate-limited GET",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    );
+
+    expect(acquireSlot).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not consume a slot when the request is out of scope", async () => {
+    const fetchSpy = vi.fn(async () => new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const { ctx, acquireSlot } = ctxWithLimiter();
+
+    const result = (await httpRequest(ctx).execute?.(
+      {
+        url: "https://evil.com/",
+        method: "GET",
+        followRedirects: false,
+        timeout: 1000,
+        toolCallDescription: "Out-of-scope GET",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(acquireSlot).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
