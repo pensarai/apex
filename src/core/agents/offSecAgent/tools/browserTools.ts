@@ -20,7 +20,11 @@
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
-import { createBrowserTools } from "./playwrightMcp";
+import {
+  getPromptInjectionLibrary,
+  redactPromptInjectionPayloads,
+} from "../../../prompt-injections";
+import { type BrowserFillResult, createBrowserTools } from "./playwrightMcp";
 import { createSandboxBrowserTools } from "./sandboxPlaywright";
 import type { ToolContext } from "./types";
 
@@ -73,71 +77,168 @@ export function createBrowserToolset(ctx: ToolContext) {
         ctx.browserSession,
       );
 
-  if (!ctx.credentialManager) {
+  const cm = ctx.credentialManager;
+  // A prompt-injection payload library lets the agent deliver hidden payloads
+  // into text fields (chat boxes, comments, profile fields) by reference —
+  // the raw payload is resolved at execution time and never shown to the model,
+  // mirroring how execute_command / http_request handle refs. This is the only
+  // delivery path for browser-rendered LLM chat UIs.
+  const injectionEnabled = !!(
+    ctx.promptInjectionLibrary || ctx.promptInjectionLibrarySource
+  );
+
+  // Nothing to wrap — return the raw browser tools unchanged.
+  if (!cm && !injectionEnabled) {
     return tools;
   }
 
   const originalFill = tools.browser_fill;
-  const cm = ctx.credentialManager;
 
-  const credentialAwareFill = tool({
-    description:
-      originalFill.description +
-      `\n\nCredential mode: Instead of passing a raw secret as "value", you can pass ` +
-      `"credentialId" + "credentialField" (e.g. "password") and the value will be ` +
-      `resolved securely. Always prefer this when filling password or secret fields.`,
-    inputSchema: z.object({
-      element: z
-        .string()
-        .describe(
-          "Description of form field, e.g., 'Username field' or 'Search input'",
-        ),
-      ref: z
-        .string()
-        .optional()
-        .describe(
-          "Element reference from browser_snapshot (e.g., 'e3'). If provided, uses exact element reference for precise filling.",
-        ),
-      value: z
-        .string()
-        .optional()
-        .describe(
-          "Value to fill into the field. Omit when using credentialId + credentialField.",
-        ),
-      credentialId: z
-        .string()
-        .optional()
-        .describe(
-          "ID of a stored credential. When provided with credentialField, the secret is resolved automatically.",
-        ),
-      credentialField: z
-        .enum([
-          "password",
-          "username",
-          "apiKey",
-          "bearerToken",
-          "cookies",
-          "sessionToken",
-        ])
-        .optional()
-        .describe(
-          "Which field to extract from the credential (e.g. 'password'). Required when credentialId is set.",
-        ),
-      toolCallDescription: z
-        .string()
-        .describe("Why you are filling this field with this value"),
-    }),
-    execute: async (params) => {
-      let { value } = params;
-      const {
-        element,
-        ref,
-        credentialId,
-        credentialField,
-        toolCallDescription,
-      } = params;
+  const shape: Record<string, z.ZodTypeAny> = {
+    element: z
+      .string()
+      .describe(
+        "Description of form field, e.g., 'Username field' or 'Search input'",
+      ),
+    ref: z
+      .string()
+      .optional()
+      .describe(
+        "Element reference from browser_snapshot (e.g., 'e3'). If provided, uses exact element reference for precise filling.",
+      ),
+    value: z
+      .string()
+      .optional()
+      .describe(
+        "Literal value to fill into the field. Omit when using promptInjection.id or credentialId + credentialField.",
+      ),
+    toolCallDescription: z
+      .string()
+      .describe("Why you are filling this field with this value"),
+  };
+  if (injectionEnabled) {
+    shape.promptInjection = z
+      .object({
+        id: z
+          .string()
+          .describe(
+            "Stable prompt-injection id returned by list_prompt_injections.",
+          ),
+      })
+      .optional()
+      .describe(
+        "Deliver a hidden prompt-injection payload into this field instead of a literal `value`. The payload is resolved from the library by id and typed into the field WITHOUT being revealed to you; the echoed result is redacted. Use this to fire library payloads into chat boxes / text inputs, then click send.",
+      );
+  }
+  if (cm) {
+    shape.credentialId = z
+      .string()
+      .optional()
+      .describe(
+        "ID of a stored credential. When provided with credentialField, the secret is resolved automatically.",
+      );
+    shape.credentialField = z
+      .enum([
+        "password",
+        "username",
+        "apiKey",
+        "bearerToken",
+        "cookies",
+        "sessionToken",
+      ])
+      .optional()
+      .describe(
+        "Which field to extract from the credential (e.g. 'password'). Required when credentialId is set.",
+      );
+  }
 
-      if (credentialId && credentialField) {
+  let description = originalFill.description ?? "";
+  if (injectionEnabled) {
+    description +=
+      `\n\nPrompt-injection delivery: to type a library payload into a field ` +
+      `(chat box, comment, profile field, etc.), pass "promptInjection": ` +
+      `{ "id": "<id from list_prompt_injections>" } and omit "value". The ` +
+      `payload is injected without being revealed to you and the echoed result ` +
+      `is redacted. Click send/submit afterward to deliver it.`;
+  }
+  if (cm) {
+    description +=
+      `\n\nCredential mode: Instead of passing a raw secret as "value", you can ` +
+      `pass "credentialId" + "credentialField" (e.g. "password") and the value ` +
+      `will be resolved securely. Always prefer this when filling password or ` +
+      `secret fields.`;
+  }
+
+  const execOptions = {
+    toolCallId: "",
+    messages: [],
+    abortSignal: undefined as never,
+  };
+
+  const wrappedFill = tool({
+    description,
+    inputSchema: z.object(shape),
+    execute: async (rawParams) => {
+      const params = rawParams as {
+        element: string;
+        ref?: string;
+        value?: string;
+        toolCallDescription: string;
+        promptInjection?: { id?: string };
+        credentialId?: string;
+        credentialField?:
+          | "password"
+          | "username"
+          | "apiKey"
+          | "bearerToken"
+          | "cookies"
+          | "sessionToken";
+      };
+      const { element, ref, toolCallDescription } = params;
+      let value = params.value;
+
+      // 1. Prompt-injection payload (highest precedence; never surfaced).
+      if (injectionEnabled && params.promptInjection?.id) {
+        const id = params.promptInjection.id;
+        const library = await getPromptInjectionLibrary({
+          library: ctx.promptInjectionLibrary,
+          source: ctx.promptInjectionLibrarySource,
+        });
+        const payload = library.getPayload(id);
+        if (!payload) {
+          return {
+            success: false,
+            error: `Unknown prompt injection id: ${id}`,
+          };
+        }
+        // The underlying browser_fill always resolves to a BrowserFillResult
+        // object (never the streaming AsyncIterable form), so narrow to it.
+        const fill = (await originalFill.execute?.(
+          { element, ref, value: payload, toolCallDescription },
+          execOptions,
+        )) as BrowserFillResult | undefined;
+        if (fill && fill.success === false) {
+          return {
+            success: false,
+            element,
+            error:
+              redactPromptInjectionPayloads(
+                String(fill.error ?? ""),
+                library,
+              ) || "browser_fill failed",
+          };
+        }
+        // Redact the typed payload from the model-visible result.
+        return {
+          success: true,
+          element,
+          result: `[prompt_injection_ref ${id} typed into field; payload hidden]`,
+        };
+      }
+
+      // 2. Credential resolution (only when a credential manager is present).
+      if (cm && params.credentialId && params.credentialField) {
+        const { credentialId, credentialField } = params;
         const stored = cm.resolve(credentialId);
         if (!stored) {
           return {
@@ -165,20 +266,21 @@ export function createBrowserToolset(ctx: ToolContext) {
       if (!value) {
         return {
           success: false,
-          error:
-            "Either value or credentialId + credentialField must be provided",
+          error: injectionEnabled
+            ? "Provide one of: value, promptInjection.id, or credentialId + credentialField"
+            : "Either value or credentialId + credentialField must be provided",
         };
       }
 
       return originalFill.execute?.(
         { element, ref, value, toolCallDescription },
-        { toolCallId: "", messages: [], abortSignal: undefined as never },
+        execOptions,
       );
     },
   });
 
   return {
     ...tools,
-    browser_fill: credentialAwareFill,
+    browser_fill: wrappedFill,
   };
 }
