@@ -20,11 +20,28 @@ const MAX_INLINE = 50_000;
 const MS_TIMEOUT_THRESHOLD = 10_000;
 const DEFAULT_PROMPT_INJECTION_FILE_ENV = "APEX_PROMPT_INJECTION_FILE";
 
+/**
+ * Placeholder ids models emit for the optional promptInjection pointer when
+ * they mean "no payload" but fill the field anyway instead of omitting it.
+ * These are non-empty strings, so they pass schema validation and would
+ * otherwise fail as "Unknown prompt injection id". Compared lowercase.
+ */
+const OMITTED_PROMPT_INJECTION_IDS = new Set([
+  "null",
+  "undefined",
+  "none",
+  "__omit__",
+]);
+
 const promptInjectionPointerSchema = z.object({
   id: z
     .string()
     .min(1)
-    .describe("Stable prompt-injection id returned by list_prompt_injections."),
+    .nullable()
+    .optional()
+    .describe(
+      'Stable prompt-injection id returned by list_prompt_injections. Leave unset/null unless you are intentionally running a prompt-injection harness. Do NOT pass placeholder values like "__omit__", "none", or "null" — just omit the field.',
+    ),
   envVar: z
     .string()
     .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
@@ -45,7 +62,7 @@ const executeCommandInputSchema = z.object({
   promptInjection: promptInjectionPointerSchema
     .optional()
     .describe(
-      "Optional runtime prompt-injection file pointer. The tool resolves the id to a local payload file path and exposes that path through envVar. The raw payload text is never inserted into the command.",
+      "Optional runtime prompt-injection file pointer. Omit this entirely unless you are running a prompt-injection harness with a payload id from list_prompt_injections. When set, the tool resolves the id to a local payload file path and exposes that path through envVar. The raw payload text is never inserted into the command.",
     ),
   timeout: z
     .number()
@@ -62,6 +79,24 @@ const executeCommandInputSchema = z.object({
 });
 
 type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
+
+/**
+ * Models sometimes fill the optional promptInjection pointer with placeholder
+ * sentinels ("__omit__", "null", "none", empty) instead of leaving it out.
+ * Normalize those to undefined so the command runs without a payload pointer
+ * rather than failing with "Unknown prompt injection id".
+ */
+export function normalizePromptInjectionPointer(
+  promptInjection: ExecuteCommandInput["promptInjection"],
+): { id: string; envVar?: string } | undefined {
+  if (!promptInjection) return undefined;
+  const id =
+    typeof promptInjection.id === "string" ? promptInjection.id.trim() : "";
+  if (id === "" || OMITTED_PROMPT_INJECTION_IDS.has(id.toLowerCase())) {
+    return undefined;
+  }
+  return { ...promptInjection, id };
+}
 
 export type ExecuteCommandResult = {
   success: boolean;
@@ -169,28 +204,29 @@ async function resolvePromptInjectionEnv(
       error: string;
     }
 > {
-  if (!promptInjection) return {};
+  const normalized = normalizePromptInjectionPointer(promptInjection);
+  if (!normalized) return {};
 
   const library = await getPromptInjectionLibrary({
     library: ctx.promptInjectionLibrary,
     source: ctx.promptInjectionLibrarySource,
   });
 
-  const payloadContent = library.getPayload(promptInjection.id);
+  const payloadContent = library.getPayload(normalized.id);
   if (payloadContent === undefined) {
     return {
       library,
-      error: `Unknown prompt injection id: ${promptInjection.id}`,
+      error: `Unknown prompt injection id: ${normalized.id}`,
     };
   }
 
-  const payloadFilePath = library.getPayloadFilePath(promptInjection.id);
+  const payloadFilePath = library.getPayloadFilePath(normalized.id);
   if (!payloadFilePath) {
     return {
       library,
       error:
         `Unknown prompt injection id or no payload file path available: ` +
-        promptInjection.id,
+        normalized.id,
     };
   }
 
@@ -198,8 +234,7 @@ async function resolvePromptInjectionEnv(
     library,
     payloadContent,
     envVars: {
-      [promptInjection.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV]:
-        payloadFilePath,
+      [normalized.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV]: payloadFilePath,
     },
   };
 }

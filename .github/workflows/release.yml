@@ -48,13 +48,13 @@ jobs:
       - name: Build binary (Unix)
         if: runner.os != 'Windows'
         run: |
-          bun build src/cli.ts --compile --target=${{ matrix.target }} --outfile pensar
+          bun build src/cli.ts --compile --external electron --external chromium-bidi --external camoufox-js --target=${{ matrix.target }} --outfile pensar
           tar -czvf ${{ matrix.name }}.tar.gz pensar
 
       - name: Build binary (Windows)
         if: runner.os == 'Windows'
         run: |
-          bun build src/cli.ts --compile --target=${{ matrix.target }} --outfile pensar.exe
+          bun build src/cli.ts --compile --external electron --external chromium-bidi --external camoufox-js --target=${{ matrix.target }} --outfile pensar.exe
           Compress-Archive -Path "pensar.exe" -DestinationPath "${{ matrix.name }}.zip"
 
       - name: Upload artifact (Unix)

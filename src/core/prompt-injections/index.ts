@@ -3,12 +3,25 @@ import { readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 
+/**
+ * Categories Apex ships with first-class knowledge of. The runtime library is
+ * an open-ended, externally-curated dataset, so the catalog schema accepts any
+ * non-empty category string — these are kept only for typing/autocomplete and
+ * as the suggested set surfaced to agents.
+ */
+export const KNOWN_PROMPT_INJECTION_CATEGORIES = [
+  "instruction-hijack",
+  "data-exfiltration",
+  "tool-misuse",
+  "role-confusion",
+  "encoding",
+] as const;
+
 export type PromptInjectionCategory =
-  | "instruction-hijack"
-  | "data-exfiltration"
-  | "tool-misuse"
-  | "role-confusion"
-  | "encoding";
+  | (typeof KNOWN_PROMPT_INJECTION_CATEGORIES)[number]
+  // Allow any other category the external library defines without losing
+  // autocomplete on the known values above.
+  | (string & {});
 
 export type PromptInjectionRef = {
   kind: "prompt_injection_ref";
@@ -43,24 +56,27 @@ function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-const PromptInjectionCatalogEntrySchema = z.object({
+// The runtime catalog is a large, externally-curated dataset that evolves
+// independently of Apex. Only `id` and `payloadPath` are structurally required;
+// every other field is optional and tolerant so a new taxonomy or a missing
+// display name never hard-fails the whole library load (and never surfaces a
+// raw Zod union error to the agent calling list_prompt_injections).
+//
+// Exported so producers of the catalog (e.g. the console admin upload route)
+// can validate against the exact same contract Apex parses at runtime, instead
+// of duplicating the shape and silently drifting.
+export const PromptInjectionCatalogEntrySchema = z.object({
   id: z.string().min(1),
-  name: z.string().min(1),
-  category: z.enum([
-    "instruction-hijack",
-    "data-exfiltration",
-    "tool-misuse",
-    "role-confusion",
-    "encoding",
-  ]),
-  description: z.string(),
+  name: z.string().min(1).optional(),
+  category: z.string().min(1).optional(),
+  description: z.string().default(""),
   tags: z.array(z.string()).default([]),
   deliveryHints: z.array(z.string()).default([]),
   expectedObservation: z.string().default(""),
   payloadPath: z.string().min(1),
 });
 
-const PromptInjectionLibraryFileSchema = z.union([
+export const PromptInjectionLibraryFileSchema = z.union([
   z.array(PromptInjectionCatalogEntrySchema),
   z.object({
     payloads: z.array(PromptInjectionCatalogEntrySchema),
@@ -69,6 +85,63 @@ const PromptInjectionLibraryFileSchema = z.union([
     injections: z.array(PromptInjectionCatalogEntrySchema),
   }),
 ]);
+
+export type PromptInjectionCatalogValidation =
+  | { ok: true; entryCount: number }
+  | { ok: false; error: string };
+
+/**
+ * Structurally validate a parsed `catalog.json` against the canonical schema
+ * Apex's loader uses, WITHOUT touching the filesystem (the payload files the
+ * entries point at are uploaded separately and may not exist yet at validation
+ * time). Returns the entry count on success or a concise, human-readable error
+ * string on failure. Intended for upload-time validation at the perimeter.
+ */
+export function validatePromptInjectionCatalog(
+  raw: unknown,
+): PromptInjectionCatalogValidation {
+  // Resolve the accepted container shape first so per-entry errors carry a
+  // useful path (e.g. `payloads.0.payloadPath`). Validating against the raw
+  // `z.union` instead collapses to a single unhelpful "(root): Invalid input".
+  let entriesRaw: unknown;
+  let pathPrefix: string;
+  if (Array.isArray(raw)) {
+    entriesRaw = raw;
+    pathPrefix = "";
+  } else if (
+    raw !== null &&
+    typeof raw === "object" &&
+    Array.isArray((raw as { payloads?: unknown }).payloads)
+  ) {
+    entriesRaw = (raw as { payloads: unknown }).payloads;
+    pathPrefix = "payloads.";
+  } else if (
+    raw !== null &&
+    typeof raw === "object" &&
+    Array.isArray((raw as { injections?: unknown }).injections)
+  ) {
+    entriesRaw = (raw as { injections: unknown }).injections;
+    pathPrefix = "injections.";
+  } else {
+    return {
+      ok: false,
+      error:
+        "Catalog must be a JSON array of entries, or an object with a `payloads` (or `injections`) array.",
+    };
+  }
+
+  const result = z
+    .array(PromptInjectionCatalogEntrySchema)
+    .safeParse(entriesRaw);
+  if (!result.success) {
+    const error = result.error.issues
+      .slice(0, 8)
+      .map((issue) => `${pathPrefix}${issue.path.join(".")}: ${issue.message}`)
+      .join("; ");
+    return { ok: false, error: error || "Invalid prompt-injection catalog" };
+  }
+  return { ok: true, entryCount: result.data.length };
+}
 
 function isPromptInjectionRef(value: unknown): value is PromptInjectionRef {
   return (
@@ -183,8 +256,17 @@ function parsePromptInjectionLibrary(
   const entries: PromptInjectionEntry[] = catalogEntries.map((entry) => {
     const payloadFile = resolvePayloadPath(root, entry.payloadPath);
     const payload = readFileSync(payloadFile, "utf-8");
-    const { payloadPath: _payloadPath, ...safeEntry } = entry;
-    return { ...safeEntry, payload, payloadFilePath: payloadFile };
+    const { payloadPath: _payloadPath, name, category, ...safeEntry } = entry;
+    return {
+      ...safeEntry,
+      // Fall back to the id for display when the catalog omits a name, and to a
+      // neutral bucket when it omits a category, so downstream metadata is
+      // always populated.
+      name: name ?? entry.id,
+      category: category ?? "uncategorized",
+      payload,
+      payloadFilePath: payloadFile,
+    };
   });
 
   return new StaticPromptInjectionLibrary(entries);
