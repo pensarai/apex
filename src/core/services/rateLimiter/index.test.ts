@@ -79,6 +79,19 @@ describe("RateLimiter", () => {
     expect(performance.now() - start).toBeGreaterThanOrEqual(800);
   });
 
+  it("releaseSlot restores a consumed token", async () => {
+    const rl = new RateLimiter({ requestsPerSecond: 50 }); // 20ms / token
+    await rl.acquireSlot(); // drain the initial token
+
+    // Without release, the next acquire would wait ~20ms for a refill.
+    rl.releaseSlot();
+
+    // Token was restored — next acquire should be near-instant.
+    const start = performance.now();
+    await rl.acquireSlot();
+    expect(performance.now() - start).toBeLessThan(10);
+  });
+
   it("keeps the queue flowing for the next request after an abort", async () => {
     const rl = new RateLimiter({ requestsPerSecond: 50 });
     await rl.acquireSlot(); // drain the initial token

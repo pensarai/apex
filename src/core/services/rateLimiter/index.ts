@@ -139,6 +139,11 @@ export class RateLimiter {
     this.lastRefillTime = now;
   }
 
+  releaseSlot(): void {
+    if (!this.rps) return;
+    this.tokens = Math.min(this.bucketSize, this.tokens + 1);
+  }
+
   isEnabled(): boolean {
     return this.rps !== undefined;
   }
