@@ -98,7 +98,6 @@ describe("executeCommand prompt injection pointer", () => {
     expect(capturedCommand).toBe("echo hello");
   });
 
-
   it("passes a payload file path pointer through env vars and redacts echoed payloads", async () => {
     const payload = "TEST PAYLOAD: direct override";
     const payloadFilePath = "/tmp/apex-prompt-library/payloads/direct.txt";

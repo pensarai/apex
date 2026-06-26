@@ -40,7 +40,7 @@ const promptInjectionPointerSchema = z.object({
     .nullable()
     .optional()
     .describe(
-      "Stable prompt-injection id returned by list_prompt_injections. Leave unset/null unless you are intentionally running a prompt-injection harness. Do NOT pass placeholder values like \"__omit__\", \"none\", or \"null\" — just omit the field.",
+      'Stable prompt-injection id returned by list_prompt_injections. Leave unset/null unless you are intentionally running a prompt-injection harness. Do NOT pass placeholder values like "__omit__", "none", or "null" — just omit the field.',
     ),
   envVar: z
     .string()
