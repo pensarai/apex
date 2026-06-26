@@ -70,6 +70,14 @@ export {
 } from "./playwrightMcp";
 export { probeAuthEndpoints } from "./probeAuthEndpoints";
 export { profileCodebase } from "./profileCodebase";
+// Terminal blocking-error tool — ends the run and surfaces a failure.
+export {
+  createReportErrorTool,
+  PentestReportedError,
+  REPORT_ERROR_TOOL_NAME,
+  type ReportedError,
+  ReportErrorReasonSchema,
+} from "./reportError";
 
 // Reporting / benchmark tools
 // export { generateReport } from "./generateReport";
