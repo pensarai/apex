@@ -153,4 +153,11 @@ export type ToolContext = {
    * its own session and wires `abortSignal` to disconnect.
    */
   browserSession?: PlaywrightMcpSession;
+
+  /**
+   * X display (e.g. `":11"`) the owning agent's browser runs on. Spawn tools
+   * pass it to worker sessions so a spawned worker's browser shares the same
+   * virtual desktop instead of falling back to the process-wide `DISPLAY`.
+   */
+  display?: string;
 };

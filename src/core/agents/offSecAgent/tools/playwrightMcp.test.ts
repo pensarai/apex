@@ -172,6 +172,7 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     headless: boolean;
     userAgent: string | undefined;
     viewportSize: string | undefined;
+    display: string | undefined;
   };
 
   it("defaults to headless + desktop UA + 1920x1080 when constructed with no args and no display (regression: don't fall back to Chromium's tiny default viewport)", () => {
@@ -237,6 +238,33 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
         headless: true,
       }) as unknown as InternalShape;
       expect(session.headless).toBe(true);
+    });
+
+    it("an explicit display option defaults to headed and overrides process.env.DISPLAY", () => {
+      // Pin the process-wide display to a different value (or absent) to prove
+      // the per-session option wins — this is what lets concurrent headed
+      // sessions in one process each target their own virtual desktop.
+      process.env.DISPLAY = ":1";
+      const session = new PlaywrightMcpSession({
+        display: ":11",
+      }) as unknown as InternalShape;
+      expect(session.display).toBe(":11");
+      expect(session.headless).toBe(false);
+    });
+
+    it("falls back to process.env.DISPLAY when no explicit display is given", () => {
+      process.env.DISPLAY = ":7";
+      const session = new PlaywrightMcpSession() as unknown as InternalShape;
+      expect(session.display).toBe(":7");
+    });
+
+    it("an explicit display still yields headed even with no process-wide display", () => {
+      delete process.env.DISPLAY;
+      const session = new PlaywrightMcpSession({
+        display: ":12",
+      }) as unknown as InternalShape;
+      expect(session.display).toBe(":12");
+      expect(session.headless).toBe(false);
     });
   });
 
