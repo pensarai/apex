@@ -10,6 +10,7 @@ import {
   redactPromptInjectionPayloads,
   resolvePromptInjectionRefs,
   StaticPromptInjectionLibrary,
+  validatePromptInjectionCatalog,
 } from "./index";
 
 const TEST_LIBRARY = new StaticPromptInjectionLibrary([
@@ -194,6 +195,47 @@ describe("prompt injection library", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  describe("validatePromptInjectionCatalog", () => {
+    it("accepts a well-formed { payloads: [...] } catalog", () => {
+      const result = validatePromptInjectionCatalog({
+        payloads: [
+          { id: "a", name: "A", category: "x", payloadPath: "payloads/a.txt" },
+          { id: "b", payloadPath: "payloads/b.txt" },
+        ],
+      });
+      expect(result).toEqual({ ok: true, entryCount: 2 });
+    });
+
+    it("accepts a bare array catalog", () => {
+      const result = validatePromptInjectionCatalog([
+        { id: "a", payloadPath: "payloads/a.txt" },
+      ]);
+      expect(result).toEqual({ ok: true, entryCount: 1 });
+    });
+
+    it("rejects entries missing payloadPath with a path-scoped message", () => {
+      const result = validatePromptInjectionCatalog({
+        payloads: [{ id: "a", path: "payloads/a.txt" }],
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain("payloadPath");
+      }
+    });
+
+    it("rejects entries missing id", () => {
+      const result = validatePromptInjectionCatalog({
+        payloads: [{ payloadPath: "payloads/a.txt" }],
+      });
+      expect(result.ok).toBe(false);
+    });
+
+    it("rejects a non-object/array top level", () => {
+      expect(validatePromptInjectionCatalog("nope").ok).toBe(false);
+      expect(validatePromptInjectionCatalog(null).ok).toBe(false);
+    });
   });
 
   it("rejects remote prompt injection library sources", async () => {

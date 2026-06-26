@@ -61,7 +61,11 @@ function sha256(value: string): string {
 // every other field is optional and tolerant so a new taxonomy or a missing
 // display name never hard-fails the whole library load (and never surfaces a
 // raw Zod union error to the agent calling list_prompt_injections).
-const PromptInjectionCatalogEntrySchema = z.object({
+//
+// Exported so producers of the catalog (e.g. the console admin upload route)
+// can validate against the exact same contract Apex parses at runtime, instead
+// of duplicating the shape and silently drifting.
+export const PromptInjectionCatalogEntrySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).optional(),
   category: z.string().min(1).optional(),
@@ -72,7 +76,7 @@ const PromptInjectionCatalogEntrySchema = z.object({
   payloadPath: z.string().min(1),
 });
 
-const PromptInjectionLibraryFileSchema = z.union([
+export const PromptInjectionLibraryFileSchema = z.union([
   z.array(PromptInjectionCatalogEntrySchema),
   z.object({
     payloads: z.array(PromptInjectionCatalogEntrySchema),
@@ -81,6 +85,63 @@ const PromptInjectionLibraryFileSchema = z.union([
     injections: z.array(PromptInjectionCatalogEntrySchema),
   }),
 ]);
+
+export type PromptInjectionCatalogValidation =
+  | { ok: true; entryCount: number }
+  | { ok: false; error: string };
+
+/**
+ * Structurally validate a parsed `catalog.json` against the canonical schema
+ * Apex's loader uses, WITHOUT touching the filesystem (the payload files the
+ * entries point at are uploaded separately and may not exist yet at validation
+ * time). Returns the entry count on success or a concise, human-readable error
+ * string on failure. Intended for upload-time validation at the perimeter.
+ */
+export function validatePromptInjectionCatalog(
+  raw: unknown,
+): PromptInjectionCatalogValidation {
+  // Resolve the accepted container shape first so per-entry errors carry a
+  // useful path (e.g. `payloads.0.payloadPath`). Validating against the raw
+  // `z.union` instead collapses to a single unhelpful "(root): Invalid input".
+  let entriesRaw: unknown;
+  let pathPrefix: string;
+  if (Array.isArray(raw)) {
+    entriesRaw = raw;
+    pathPrefix = "";
+  } else if (
+    raw !== null &&
+    typeof raw === "object" &&
+    Array.isArray((raw as { payloads?: unknown }).payloads)
+  ) {
+    entriesRaw = (raw as { payloads: unknown }).payloads;
+    pathPrefix = "payloads.";
+  } else if (
+    raw !== null &&
+    typeof raw === "object" &&
+    Array.isArray((raw as { injections?: unknown }).injections)
+  ) {
+    entriesRaw = (raw as { injections: unknown }).injections;
+    pathPrefix = "injections.";
+  } else {
+    return {
+      ok: false,
+      error:
+        "Catalog must be a JSON array of entries, or an object with a `payloads` (or `injections`) array.",
+    };
+  }
+
+  const result = z
+    .array(PromptInjectionCatalogEntrySchema)
+    .safeParse(entriesRaw);
+  if (!result.success) {
+    const error = result.error.issues
+      .slice(0, 8)
+      .map((issue) => `${pathPrefix}${issue.path.join(".")}: ${issue.message}`)
+      .join("; ");
+    return { ok: false, error: error || "Invalid prompt-injection catalog" };
+  }
+  return { ok: true, entryCount: result.data.length };
+}
 
 function isPromptInjectionRef(value: unknown): value is PromptInjectionRef {
   return (
