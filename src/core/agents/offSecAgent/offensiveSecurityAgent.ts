@@ -278,6 +278,10 @@ export class OffensiveSecurityAgent<TResult = void> {
       planSubagentId: input.planSubagentId,
       subagentId: input.subagentId,
       browserSession: this.browserSession,
+      // Propagate this agent's display so spawned workers run on the SAME
+      // virtual desktop (their browsers belong to the same endpoint's stream),
+      // rather than falling back to the process-wide DISPLAY (:0).
+      display: input.display,
     });
 
     let tools: ToolSet = input.extraTools
