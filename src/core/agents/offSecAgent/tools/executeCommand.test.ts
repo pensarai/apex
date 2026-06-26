@@ -5,6 +5,7 @@ import {
   type ExecuteCommandResult,
   executeCommand,
   normalizeExecuteCommandTimeout,
+  normalizePromptInjectionPointer,
 } from "./executeCommand";
 import type { UnifiedSandbox } from "./sandbox";
 import type { ToolContext } from "./types";
@@ -47,7 +48,57 @@ describe("normalizeExecuteCommandTimeout", () => {
   });
 });
 
+describe("normalizePromptInjectionPointer", () => {
+  it("passes through a real pointer with a trimmed id", () => {
+    const pointer = { id: "pi.real", envVar: "CUSTOM_ENV" };
+    expect(normalizePromptInjectionPointer(pointer)).toEqual(pointer);
+  });
+
+  it("treats placeholder sentinel ids as omitted", () => {
+    for (const id of ["__omit__", "null", "NULL", "undefined", "none", ""]) {
+      expect(normalizePromptInjectionPointer({ id })).toBeUndefined();
+    }
+  });
+
+  it("treats whitespace-only, null, and missing pointers as omitted", () => {
+    expect(normalizePromptInjectionPointer({ id: "   " })).toBeUndefined();
+    expect(normalizePromptInjectionPointer(undefined)).toBeUndefined();
+    expect(normalizePromptInjectionPointer({})).toBeUndefined();
+    expect(normalizePromptInjectionPointer({ id: null })).toBeUndefined();
+  });
+});
+
 describe("executeCommand prompt injection pointer", () => {
+  it("runs the command normally when given a placeholder sentinel id", async () => {
+    const library = new StaticPromptInjectionLibrary([]);
+
+    let capturedCommand = "";
+    const persistentShell = {
+      execute: async (command: string) => {
+        capturedCommand = command;
+        return { exitCode: 0, stdout: "ok", stderr: "" };
+      },
+    } as unknown as ToolContext["persistentShell"];
+
+    const tool = executeCommand(
+      makeCtx({ promptInjectionLibrary: library, persistentShell }),
+    );
+    const result = (await tool.execute?.(
+      {
+        command: "echo hello",
+        promptInjection: { id: "__omit__" },
+        toolCallDescription: "Command with a placeholder prompt-injection id",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as ExecuteCommandResult;
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBe("");
+    // No env wrapping (no `env ... bash -lc`) means no payload pointer was applied.
+    expect(capturedCommand).toBe("echo hello");
+  });
+
+
   it("passes a payload file path pointer through env vars and redacts echoed payloads", async () => {
     const payload = "TEST PAYLOAD: direct override";
     const payloadFilePath = "/tmp/apex-prompt-library/payloads/direct.txt";
