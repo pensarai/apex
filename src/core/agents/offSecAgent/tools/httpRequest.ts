@@ -242,9 +242,10 @@ COMMON TESTING PATTERNS:
       }
 
       // Rate-limit chokepoint for both dispatch paths (no-op when unset).
-      await ctx.session._rateLimiter?.acquireSlot(ctx.abortSignal);
+      const slotAcquired =
+        (await ctx.session._rateLimiter?.acquireSlot(ctx.abortSignal)) ?? false;
       if (ctx.abortSignal?.aborted) {
-        ctx.session._rateLimiter?.releaseSlot();
+        if (slotAcquired) ctx.session._rateLimiter?.releaseSlot();
         return {
           success: false,
           error: "Request aborted by user",

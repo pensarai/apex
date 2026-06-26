@@ -121,7 +121,7 @@ describe("httpRequest rate limiting", () => {
     const limiter = new RateLimiter({ requestsPerSecond: 5 });
     const acquireSlot = vi
       .spyOn(limiter, "acquireSlot")
-      .mockResolvedValue(undefined);
+      .mockResolvedValue(true);
     const ctx = makeCtx();
     ctx.session._rateLimiter = limiter;
     return { ctx, acquireSlot };

@@ -55,13 +55,14 @@ export class RateLimiter {
 
   /**
    * Acquire a slot, blocking until a token is available (concurrent calls are
-   * queued FIFO). If `signal` aborts, the wait is interrupted and no token is
-   * consumed — callers must still check the signal afterward.
+   * queued FIFO). Returns `true` when a token was consumed, `false` when the
+   * call exited early (unlimited mode, signal already aborted, or abort during
+   * wait). Callers should only {@link releaseSlot} when this returns `true`.
    */
-  async acquireSlot(signal?: AbortSignal): Promise<void> {
+  async acquireSlot(signal?: AbortSignal): Promise<boolean> {
     // Early exit for unlimited mode - skip all token logic
-    if (!this.rps || !this.msPerToken) return;
-    if (signal?.aborted) return;
+    if (!this.rps || !this.msPerToken) return false;
+    if (signal?.aborted) return false;
 
     // Queue this request to ensure sequential processing
     const previousPromise = this.queue;
@@ -98,10 +99,12 @@ export class RateLimiter {
     // FIFO serialization.  Chain the resolution to previousPromise instead.
     let chainedResolution = false;
 
+    let acquired = false;
+
     try {
       if (signal?.aborted) {
         chainedResolution = true;
-        return;
+        return false;
       }
 
       // Cache now for this call to avoid multiple time calls
@@ -111,12 +114,14 @@ export class RateLimiter {
       if (this.tokens < 1) {
         const waitTime = (1 - this.tokens) * this.msPerToken;
         await sleep(waitTime, signal);
-        if (signal?.aborted) return;
+        if (signal?.aborted) return false;
         const nowAfterSleep = performance.now();
         this.refill(nowAfterSleep);
       }
 
       this.tokens -= 1;
+      acquired = true;
+      return true;
     } finally {
       if (chainedResolution) {
         previousPromise.then(() => resolveCurrentRequest!());
