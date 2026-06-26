@@ -241,6 +241,24 @@ COMMON TESTING PATTERNS:
         };
       }
 
+      // Rate-limit chokepoint for both dispatch paths (no-op when unset).
+      const slotAcquired =
+        (await ctx.session._rateLimiter?.acquireSlot(ctx.abortSignal)) ?? false;
+      if (ctx.abortSignal?.aborted) {
+        if (slotAcquired) ctx.session._rateLimiter?.releaseSlot();
+        return {
+          success: false,
+          error: "Request aborted by user",
+          url,
+          method,
+          status: 0,
+          statusText: "",
+          headers: {},
+          body: "",
+          redirected: false,
+        };
+      }
+
       // Sandbox mode: build a curl command and run it inside the sandbox
       if (ctx.sandbox) {
         return executeSandboxHttpRequest(
@@ -261,20 +279,6 @@ COMMON TESTING PATTERNS:
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
       try {
-        if (ctx.abortSignal?.aborted) {
-          return {
-            success: false,
-            error: "Request aborted by user",
-            url,
-            method,
-            status: 0,
-            statusText: "",
-            headers: {},
-            body: "",
-            redirected: false,
-          };
-        }
-
         const timeoutController = new AbortController();
         timeoutId = setTimeout(() => timeoutController.abort(), timeout);
 

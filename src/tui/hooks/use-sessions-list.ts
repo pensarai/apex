@@ -19,7 +19,7 @@ export interface EnrichedSession extends SessionInfo {
   hasReport: boolean;
 }
 
-export interface DateGroup {
+interface DateGroup {
   date: string;
   timestamp: number;
   sessions: (EnrichedSession & { index: number })[];
