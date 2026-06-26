@@ -72,25 +72,37 @@ export class RateLimiter {
 
     // Wait for previous request to complete, or abort early.
     // Without the race, a queued caller would block on previousPromise even
-    // after its signal fires — the abort check on the next line would only run
-    // once the prior acquisition finishes its full throttle delay.
+    // after its signal fires — the abort check below would only run once the
+    // prior acquisition finishes its full throttle delay.
+    let onAbort: (() => void) | undefined;
     if (signal) {
-      await Promise.race([
-        previousPromise,
-        new Promise<void>((resolve) => {
-          if (signal.aborted) {
-            resolve();
-            return;
-          }
-          signal.addEventListener("abort", () => resolve(), { once: true });
-        }),
-      ]);
+      const abortPromise = new Promise<void>((resolve) => {
+        if (signal.aborted) {
+          resolve();
+          return;
+        }
+        onAbort = () => resolve();
+        signal.addEventListener("abort", onAbort, { once: true });
+      });
+      await Promise.race([previousPromise, abortPromise]);
+      if (onAbort && !signal.aborted) {
+        signal.removeEventListener("abort", onAbort);
+      }
     } else {
       await previousPromise;
     }
 
+    // When the abort won the race, previousPromise may still be pending.
+    // Resolving our queue slot immediately would let the next waiter enter
+    // token logic concurrently with the still-running prior request, breaking
+    // FIFO serialization.  Chain the resolution to previousPromise instead.
+    let chainedResolution = false;
+
     try {
-      if (signal?.aborted) return;
+      if (signal?.aborted) {
+        chainedResolution = true;
+        return;
+      }
 
       // Cache now for this call to avoid multiple time calls
       const now = performance.now();
@@ -106,9 +118,11 @@ export class RateLimiter {
 
       this.tokens -= 1;
     } finally {
-      // Chain on previousPromise so that an abort-induced early exit does not
-      // unblock the next waiter before the prior acquisition finishes.
-      previousPromise.then(() => resolveCurrentRequest!());
+      if (chainedResolution) {
+        previousPromise.then(() => resolveCurrentRequest!());
+      } else {
+        resolveCurrentRequest!();
+      }
     }
   }
 

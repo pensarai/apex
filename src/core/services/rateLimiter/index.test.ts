@@ -55,6 +55,30 @@ describe("RateLimiter", () => {
     await req1;
   });
 
+  it("preserves FIFO serialization when a queued request aborts", async () => {
+    const rl = new RateLimiter({ requestsPerSecond: 2 }); // 500ms / token
+    const start = performance.now();
+    await rl.acquireSlot(); // T+0: consume the initial token
+
+    // req1: queued, will wait ~500ms for a refill
+    const req1 = rl.acquireSlot();
+    // req2: queued behind req1, will be immediately aborted
+    const ctrl = new AbortController();
+    const req2 = rl.acquireSlot(ctrl.signal);
+    // req3: queued behind req2
+    const req3 = rl.acquireSlot();
+
+    ctrl.abort();
+    await req2;
+
+    await req1; // finishes at ~T+500ms
+    await req3; // must wait for its own refill after req1: ~T+1000ms
+
+    // Without the chained-resolution fix, req3 would enter token logic
+    // concurrently with req1 and both would complete around T+500ms.
+    expect(performance.now() - start).toBeGreaterThanOrEqual(800);
+  });
+
   it("keeps the queue flowing for the next request after an abort", async () => {
     const rl = new RateLimiter({ requestsPerSecond: 50 });
     await rl.acquireSlot(); // drain the initial token
