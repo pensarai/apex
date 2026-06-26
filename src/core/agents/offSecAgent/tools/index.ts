@@ -70,15 +70,6 @@ export {
 } from "./playwrightMcp";
 export { probeAuthEndpoints } from "./probeAuthEndpoints";
 export { profileCodebase } from "./profileCodebase";
-// Terminal blocking-error tool — ends the run and surfaces a failure.
-export {
-  createReportErrorTool,
-  PentestReportedError,
-  REPORT_ERROR_TOOL_NAME,
-  type ReportedError,
-  ReportErrorReasonSchema,
-} from "./reportError";
-
 // Reporting / benchmark tools
 // export { generateReport } from "./generateReport";
 export { provideComparisonResults } from "./provideComparisonResults";
@@ -87,6 +78,14 @@ export { queryWhiteboxCatalog } from "./queryWhiteboxCatalog";
 export { readFile } from "./readFile";
 // Skill tools
 export { readSkill } from "./readSkill";
+// Terminal blocking-error tool — ends the run and surfaces a failure.
+export {
+  createReportErrorTool,
+  PentestReportedError,
+  REPORT_ERROR_TOOL_NAME,
+  ReportErrorReasonSchema,
+  type ReportedError,
+} from "./reportError";
 // Response (structured final-output) tool — used by sub-agents that emit
 // validated result objects.
 export { createResponseTool, RESPONSE_TOOL_NAME } from "./response";
