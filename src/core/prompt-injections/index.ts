@@ -61,16 +61,36 @@ function sha256(value: string): string {
 // every other field is optional and tolerant so a new taxonomy or a missing
 // display name never hard-fails the whole library load (and never surfaces a
 // raw Zod union error to the agent calling list_prompt_injections).
-const PromptInjectionCatalogEntrySchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1).optional(),
-  category: z.string().min(1).optional(),
-  description: z.string().default(""),
-  tags: z.array(z.string()).default([]),
-  deliveryHints: z.array(z.string()).default([]),
-  expectedObservation: z.string().default(""),
-  payloadPath: z.string().min(1),
-});
+//
+// Field-name tolerance: real-world catalogs (e.g. the L1B3RT4S ingest deployed
+// to the sandbox library bucket, schemaVersion 1) name the payload pointer
+// `path` and the display name `title`. Normalize those to Apex's canonical
+// `payloadPath` / `name` before validation so the loader accepts either shape.
+// Unknown extra fields (vendor, sourceFile, bytes, sha256, techniques, …) are
+// stripped by the object schema.
+const PromptInjectionCatalogEntrySchema = z.preprocess(
+  (value) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const entry = value as Record<string, unknown>;
+      return {
+        ...entry,
+        payloadPath: entry.payloadPath ?? entry.path,
+        name: entry.name ?? entry.title,
+      };
+    }
+    return value;
+  },
+  z.object({
+    id: z.string().min(1),
+    name: z.string().min(1).optional(),
+    category: z.string().min(1).optional(),
+    description: z.string().default(""),
+    tags: z.array(z.string()).default([]),
+    deliveryHints: z.array(z.string()).default([]),
+    expectedObservation: z.string().default(""),
+    payloadPath: z.string().min(1),
+  }),
+);
 
 const PromptInjectionLibraryFileSchema = z.union([
   z.array(PromptInjectionCatalogEntrySchema),

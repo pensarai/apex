@@ -196,6 +196,57 @@ describe("prompt injection library", () => {
     }
   });
 
+  it("accepts catalogs that name fields `path`/`title` (L1B3RT4S schemaVersion 1)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "apex-prompt-library-l1b-"));
+    try {
+      await mkdir(join(root, "payloads", "anthropic"), { recursive: true });
+      await writeFile(
+        join(root, "payloads", "anthropic", "00-opus.txt"),
+        "RAW L1B3RT4S PAYLOAD",
+      );
+      await writeFile(
+        join(root, "catalog.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          name: "L1B3RT4S prompt-injection payload library",
+          payloads: [
+            {
+              id: "anthropic-opus-1",
+              title: "Anthropic Opus",
+              category: "anthropic",
+              vendor: "Anthropic (Claude)",
+              path: "payloads/anthropic/00-opus.txt",
+              sourceFile: "ANTHROPIC.mkd",
+              bytes: 19,
+              sha256: "ignored",
+              techniques: ["invisible-unicode"],
+              tags: ["jailbreak", "prompt-injection"],
+            },
+          ],
+        }),
+      );
+
+      const library = await getPromptInjectionLibrary({ source: root });
+      const catalog = library.listCatalog();
+
+      expect(catalog).toHaveLength(1);
+      const entry = catalog[0];
+      expect(entry.id).toBe("anthropic-opus-1");
+      // `title` is normalized to `name`.
+      expect(entry.name).toBe("Anthropic Opus");
+      expect(entry.category).toBe("anthropic");
+      // `path` is normalized to the payload pointer and resolves the file.
+      expect(library.getPayload("anthropic-opus-1")).toBe(
+        "RAW L1B3RT4S PAYLOAD",
+      );
+      // Unknown extra fields never leak into the safe catalog metadata.
+      expect(JSON.stringify(entry)).not.toContain("sourceFile");
+      expect(JSON.stringify(entry)).not.toContain("RAW L1B3RT4S PAYLOAD");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects remote prompt injection library sources", async () => {
     await expect(
       getPromptInjectionLibrary({
