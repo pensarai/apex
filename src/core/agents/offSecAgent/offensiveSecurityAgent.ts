@@ -211,6 +211,9 @@ export class OffensiveSecurityAgent<TResult = void> {
    */
   private readonly ownsBrowserSession: boolean;
 
+  /** Guards against double force-kill across the drain-finally and result-capture paths. */
+  private browserDisconnected = false;
+
   private readonly abortSignal?: AbortSignal;
 
   /** The user-facing prompt passed to the model. */
@@ -1067,9 +1070,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         // long single-process scan (many endpoints) the leaked Chromium
         // processes exhaust memory and OOM the run. disconnect() force-kills
         // and never hangs, so awaiting here is safe.
-        if (this.ownsBrowserSession && this.browserSession) {
-          await this.browserSession.disconnect().catch(() => {});
-        }
+        await this.disconnectOwnedBrowser();
       }
 
       if (streamError) {
@@ -1126,11 +1127,17 @@ export class OffensiveSecurityAgent<TResult = void> {
     );
     const result = await Promise.race([drain, this.responseCaptured]);
     // Free the browser on result capture; the drain can wedge and leak camoufox.
-    if (this.ownsBrowserSession && this.browserSession) {
-      await this.browserSession.disconnect().catch(() => {});
-    }
+    await this.disconnectOwnedBrowser();
     drain.catch(() => {});
     return result;
+  }
+
+  /** Force-kills the owned Chromium child process exactly once; safe to call from multiple teardown paths. */
+  private async disconnectOwnedBrowser(): Promise<void> {
+    if (this.browserDisconnected) return;
+    if (!this.ownsBrowserSession || !this.browserSession) return;
+    this.browserDisconnected = true;
+    await this.browserSession.disconnect().catch(() => {});
   }
 
   /**
