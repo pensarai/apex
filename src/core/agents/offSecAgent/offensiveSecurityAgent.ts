@@ -1125,6 +1125,10 @@ export class OffensiveSecurityAgent<TResult = void> {
       () => {},
     );
     const result = await Promise.race([drain, this.responseCaptured]);
+    // Free the browser on result capture; the drain can wedge and leak camoufox.
+    if (this.ownsBrowserSession && this.browserSession) {
+      await this.browserSession.disconnect().catch(() => {});
+    }
     drain.catch(() => {});
     return result;
   }
