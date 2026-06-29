@@ -26,12 +26,22 @@ const log = scopedLogger(() => createLogger("endpoint-documentation-agent"));
 // ---------------------------------------------------------------------------
 
 /**
- * Per-app fan-out concurrency. Each app's documentation runs N endpoint
- * agents in parallel up to this cap. Workflow-level concurrency (across
- * apps) is separately bounded by `DEFAULT_CONCURRENCY` in
- * `runWhiteboxAttackSurfaceWorkflow` Phase 2.
+ * Per-app fan-out concurrency — the maximum number of endpoint agents a single
+ * app may *schedule* at once. The number that actually *run* concurrently is
+ * additionally bounded across ALL apps by the workflow-level `agentLimiter`
+ * (see {@link SharedAgentOptions.agentLimiter}); without that shared gate this
+ * per-app cap multiplied by the app-level concurrency, so a repo with many apps
+ * could run ~50 endpoint agents at once.
  */
 const ENDPOINT_DOCUMENTATION_CONCURRENCY = 10;
+
+/**
+ * A shared concurrency gate (e.g. a `p-limit` instance). When provided, every
+ * endpoint/discovery CodeAgent run is funneled through it so the TOTAL number of
+ * concurrently-running agents across all apps stays bounded regardless of how
+ * many apps/endpoints the repo has.
+ */
+export type AgentConcurrencyLimiter = <T>(fn: () => Promise<T>) => Promise<T>;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,6 +62,11 @@ interface SharedAgentOptions {
   projectThreatModel?: string;
   /** Parent subagent id for hierarchy tracking on emitted lifecycle events. */
   parentSubagentId?: string;
+  /**
+   * Optional shared gate bounding total concurrent agents across the whole
+   * workflow. When omitted, agents run ungated (per-app cap only).
+   */
+  agentLimiter?: AgentConcurrencyLimiter;
 }
 
 interface EndpointDocumentationInput extends SharedAgentOptions {
@@ -172,6 +187,7 @@ async function runEndpointDocumentationAgent(
     enableThinking,
     projectThreatModel,
     parentSubagentId,
+    agentLimiter,
   } = opts;
 
   const subagentId = `endpoint-doc-${slug(app.name)}-${slug(endpoint.path)}`;
@@ -223,7 +239,9 @@ async function runEndpointDocumentationAgent(
   });
 
   try {
-    await agent.consume();
+    await (agentLimiter
+      ? agentLimiter(() => agent.consume())
+      : agent.consume());
     eventBus?.emit("subagent-complete", {
       subagentId,
       status: "completed",
