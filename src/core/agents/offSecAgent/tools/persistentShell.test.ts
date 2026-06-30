@@ -6,6 +6,7 @@ import {
   extractFallbackStdout,
   getApexTmpRoot,
   PersistentShell,
+  readSandboxAgentEnv,
 } from "./persistentShell";
 
 function tempfileCount(): number {
@@ -547,5 +548,98 @@ describe("extractFallbackStdout", () => {
   it("handles cutover immediately followed by exit marker (empty command output)", () => {
     const leaked = `${cut}\n${exitPrefix}0\n`;
     expect(extractFallbackStdout(mk(leaked))).toBe("(no output)");
+  });
+});
+
+describe("readSandboxAgentEnv", () => {
+  const orig = process.env.PENSAR_AGENT_ENV_VARS;
+  afterEach(() => {
+    if (orig === undefined) delete process.env.PENSAR_AGENT_ENV_VARS;
+    else process.env.PENSAR_AGENT_ENV_VARS = orig;
+  });
+
+  it("parses a JSON object of string values", () => {
+    process.env.PENSAR_AGENT_ENV_VARS = JSON.stringify({
+      API_TOKEN: "tok",
+      BASE_URL: "https://x",
+    });
+    expect(readSandboxAgentEnv()).toEqual({
+      API_TOKEN: "tok",
+      BASE_URL: "https://x",
+    });
+  });
+
+  it("returns {} when unset", () => {
+    delete process.env.PENSAR_AGENT_ENV_VARS;
+    expect(readSandboxAgentEnv()).toEqual({});
+  });
+
+  it("fails soft to {} on malformed JSON", () => {
+    process.env.PENSAR_AGENT_ENV_VARS = "{not json";
+    expect(readSandboxAgentEnv()).toEqual({});
+  });
+
+  it("ignores non-string values and non-object blobs", () => {
+    process.env.PENSAR_AGENT_ENV_VARS = JSON.stringify({
+      KEEP: "yes",
+      DROP: 123,
+    });
+    expect(readSandboxAgentEnv()).toEqual({ KEEP: "yes" });
+
+    process.env.PENSAR_AGENT_ENV_VARS = JSON.stringify(["a", "b"]);
+    expect(readSandboxAgentEnv()).toEqual({});
+  });
+});
+
+describe("PersistentShell — sandbox agent env injection", () => {
+  const shells: PersistentShell[] = [];
+  const orig = process.env.PENSAR_AGENT_ENV_VARS;
+
+  afterEach(() => {
+    while (shells.length) {
+      try {
+        shells.pop()?.dispose();
+      } catch {
+        // ignore
+      }
+    }
+    if (orig === undefined) delete process.env.PENSAR_AGENT_ENV_VARS;
+    else process.env.PENSAR_AGENT_ENV_VARS = orig;
+  });
+
+  it("exposes PENSAR_AGENT_ENV_VARS to execute_command", async () => {
+    process.env.PENSAR_AGENT_ENV_VARS = JSON.stringify({
+      MY_AGENT_TOKEN: "s3cr3t-value",
+    });
+    const shell = new PersistentShell();
+    shells.push(shell);
+
+    const r = await shell.execute('echo "tok=$MY_AGENT_TOKEN"', 5);
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("tok=s3cr3t-value");
+  });
+
+  it("lets explicit per-agent env override the sandbox blob", async () => {
+    process.env.PENSAR_AGENT_ENV_VARS = JSON.stringify({
+      SHARED: "from-blob",
+    });
+    const shell = new PersistentShell({ env: { SHARED: "from-extra-env" } });
+    shells.push(shell);
+
+    const r = await shell.execute('echo "v=$SHARED"', 5);
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("v=from-extra-env");
+  });
+
+  it("does not leak unrelated process.env into the shell", async () => {
+    delete process.env.PENSAR_AGENT_ENV_VARS;
+    process.env.__APEX_TEST_LEAK_CHECK = "should-not-appear";
+    const shell = new PersistentShell();
+    shells.push(shell);
+
+    const r = await shell.execute('echo "leak=[$__APEX_TEST_LEAK_CHECK]"', 5);
+    delete process.env.__APEX_TEST_LEAK_CHECK;
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("leak=[]");
   });
 });
