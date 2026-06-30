@@ -214,7 +214,7 @@ function buildPrompt(target: string, session: SessionInfo): string {
     authBlock = `⚠️ AUTHENTICATION CREDENTIALS PROVIDED — YOU MUST LOG IN FIRST.
 
 Your FIRST tool call must be: browser_navigate to ${loginTarget}
-Then use browser tools to authenticate. Pass the credentialId to authenticate_session or delegate_to_auth_subagent — secrets are resolved automatically.
+Then use browser tools to authenticate. Pass the credentialId to delegate_to_auth_subagent — secrets are resolved automatically.
 For browser_fill on password/secret fields, use credentialId + credentialField instead of raw values.
 
 Do NOT run curl, nmap, dig, or any other command before completing login.
