@@ -5,18 +5,162 @@ import type {
   LanguageModelV3TextPart,
   LanguageModelV3ToolResultPart,
 } from "@ai-sdk/provider";
+import { isMantleResponsesModelId } from "../mantle";
 import { getMaxOutputTokens } from "../models";
 
 export function convertToBedrockFormat(
   modelId: string,
   options: LanguageModelV3CallOptions,
 ): Record<string, unknown> {
+  // GPT-5.x on Bedrock Mantle speaks the OpenAI Responses API, which has a
+  // different request shape than Anthropic Messages.
+  if (isMantleResponsesModelId(modelId)) {
+    return convertToResponsesFormat(modelId, options);
+  }
+
   if (modelId.includes("anthropic.claude")) {
     return convertToAnthropicFormat(modelId, options);
   }
 
   // Fallback: attempt Anthropic format for unknown models
   return convertToAnthropicFormat(modelId, options);
+}
+
+/**
+ * Convert AI-SDK call options to an OpenAI Responses API request body for
+ * Bedrock Mantle (`POST …/openai/v1/responses`). System prompt → `instructions`;
+ * messages → typed `input` items; tool calls/results → `function_call` /
+ * `function_call_output` items. Temperature/top_p are omitted because GPT-5.x
+ * are reasoning models that reject sampling params on the Responses API.
+ */
+function convertToResponsesFormat(
+  modelId: string,
+  options: LanguageModelV3CallOptions,
+): Record<string, unknown> {
+  const input: Array<Record<string, unknown>> = [];
+  let instructions: string | undefined;
+
+  if (options.prompt) {
+    for (const part of options.prompt) {
+      if (part.role === "system") {
+        instructions = instructions
+          ? `${instructions}\n\n${part.content}`
+          : part.content;
+      } else if (part.role === "user") {
+        const text = (part.content as Array<LanguageModelV3TextPart>)
+          .map((c: LanguageModelV3TextPart) => {
+            if (c.type === "text") return c.text;
+            if (c.type === "file") return "[file]";
+            return "";
+          })
+          .join("");
+        input.push({
+          role: "user",
+          content: [{ type: "input_text", text }],
+        });
+      } else if (part.role === "assistant") {
+        const assistantContent = part.content as unknown as Array<
+          Record<string, unknown>
+        >;
+        const text = assistantContent
+          .filter((c) => c.type === "text")
+          .map((c) => c.text as string)
+          .join("");
+        if (text) {
+          input.push({
+            role: "assistant",
+            content: [{ type: "output_text", text }],
+          });
+        }
+        for (const c of assistantContent) {
+          if (c.type === "tool-call") {
+            input.push({
+              type: "function_call",
+              call_id: c.toolCallId,
+              name: c.toolName,
+              arguments:
+                typeof c.input === "string"
+                  ? c.input
+                  : JSON.stringify(c.input ?? {}),
+            });
+          }
+          // Reasoning parts are server-managed on the Responses API and are
+          // not replayed back as input.
+        }
+      } else if (part.role === "tool") {
+        for (const c of part.content as Array<LanguageModelV3ToolResultPart>) {
+          let outputText: string;
+          if (c.output.type === "text") {
+            outputText = c.output.value;
+          } else if (c.output.type === "json") {
+            outputText = JSON.stringify(c.output.value);
+          } else if (c.output.type === "execution-denied") {
+            outputText = c.output.reason ?? "Tool execution denied";
+          } else {
+            outputText = JSON.stringify(c.output);
+          }
+          input.push({
+            type: "function_call_output",
+            call_id: c.toolCallId,
+            output: outputText,
+          });
+        }
+      }
+    }
+  }
+
+  const body: Record<string, unknown> = {
+    input,
+    max_output_tokens: options.maxOutputTokens ?? getMaxOutputTokens(modelId),
+    stream: true,
+  };
+
+  if (instructions) {
+    body.instructions = instructions;
+  }
+
+  if (options.responseFormat?.type === "json") {
+    body.text = options.responseFormat.schema
+      ? {
+          format: {
+            type: "json_schema",
+            name: "response",
+            schema: options.responseFormat.schema,
+          },
+        }
+      : { format: { type: "json_object" } };
+  }
+
+  if (options.tools && options.tools.length > 0) {
+    body.tools = options.tools
+      .filter(
+        (tool): tool is Extract<typeof tool, { type: "function" }> =>
+          tool.type === "function",
+      )
+      .map((tool) => ({
+        type: "function",
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema,
+      }));
+  }
+
+  if (options.toolChoice) {
+    if (options.toolChoice.type === "auto") {
+      body.tool_choice = "auto";
+    } else if (options.toolChoice.type === "required") {
+      body.tool_choice = "required";
+    } else if (options.toolChoice.type === "none") {
+      delete body.tools;
+    } else if (options.toolChoice.type === "tool") {
+      body.tool_choice = {
+        type: "function",
+        name: options.toolChoice.toolName,
+      };
+    }
+  }
+
+  return body;
 }
 
 const EPHEMERAL_CACHE_CONTROL = { type: "ephemeral" as const };
