@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
+import pLimit from "p-limit";
 import { z } from "zod";
 import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
@@ -47,6 +48,17 @@ const log = scopedLogger(() => createLogger("whitebox-workflow"));
 // ---------------------------------------------------------------------------
 
 const DEFAULT_CONCURRENCY = 5;
+
+/**
+ * Hard ceiling on CodeAgents running concurrently across ALL apps and their
+ * endpoints. Previously the app-level cap (`DEFAULT_CONCURRENCY` = 5) and the
+ * per-app endpoint cap (`ENDPOINT_DOCUMENTATION_CONCURRENCY` = 10) multiplied,
+ * so a repo with many apps could run ~50 agents at once — the dominant memory
+ * driver in the 8 GiB recon sandbox. A single shared `p-limit` gate makes the
+ * cap independent of app/endpoint counts. Override via
+ * `WhiteboxAttackSurfaceWorkflowInput.maxConcurrentAgents`.
+ */
+const MAX_CONCURRENT_AGENTS = 12;
 
 type DiscoveryTaskType = "pages" | "apiEndpoints" | "cloudResourceEndpoints";
 
@@ -118,6 +130,12 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
    * service apps. Defaults to `true`.
    */
   surfaceIntegrationEnabled?: boolean;
+  /**
+   * Hard ceiling on CodeAgents running concurrently across all apps/endpoints.
+   * Defaults to {@link MAX_CONCURRENT_AGENTS}. Bounds total agent fan-out so it
+   * doesn't scale with the number of apps in the repo.
+   */
+  maxConcurrentAgents?: number;
 }
 
 interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
@@ -165,7 +183,17 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     projectThreatModel,
     environments,
     surfaceIntegrationEnabled = true,
+    maxConcurrentAgents = MAX_CONCURRENT_AGENTS,
   } = input;
+
+  // Single shared gate for every CodeAgent run in this workflow (Phase 1
+  // discovery, Phase 2 per-app discovery, and per-endpoint documentation). This
+  // is what makes total concurrency independent of app count: the nested
+  // app-level (`DEFAULT_CONCURRENCY`) and per-app endpoint-level
+  // (`ENDPOINT_DOCUMENTATION_CONCURRENCY`) loops still control scheduling, but
+  // the number of agents actually running at once can never exceed this.
+  const agentSlots = pLimit(Math.max(1, maxConcurrentAgents));
+  const agentLimiter = <T>(fn: () => Promise<T>): Promise<T> => agentSlots(fn);
 
   // =========================================================================
   // Phase 1: Identify all apps in the repository
@@ -212,7 +240,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     input: { codebasePath },
   });
 
-  const appsResult = await appsAgent.consume();
+  const appsResult = await agentLimiter(() => appsAgent.consume());
 
   log.info(
     `Phase 1 complete: ${appsResult?.apps.length ?? 0} apps discovered` +
@@ -353,7 +381,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     });
 
     try {
-      await agent.consume();
+      await agentLimiter(() => agent.consume());
 
       log.debug(`Phase 2: agent "${subagentId}" completed`);
 
@@ -442,6 +470,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
               enableThinking,
               projectThreatModel,
               parentSubagentId: appNodeId,
+              agentLimiter,
             });
           } else {
             log.debug(`${app.name}: fallback (${surfaceResult.reason})`);
