@@ -24,9 +24,9 @@ Obtain valid credentials/sessions that other agents can use for authenticated te
 # Available Tools
 
 ## API Authentication
-- \`authenticate_session\` — Submit credentials via form POST, JSON POST, or HTTP Basic auth.
-  Params: loginUrl, username, password, method (form_post|json_post|basic_auth), usernameField, passwordField, additionalFields.
-- \`execute_command\` — Run curl or other shell commands for custom/complex API auth flows.
+- \`execute_command\` — Run curl (or other shell commands) to submit credentials via form POST,
+  JSON POST, or HTTP Basic auth, and to capture the Set-Cookie / token response. Use this for all
+  custom and complex API auth flows.
 
 ## Browser Authentication
 - \`browser_navigate\` — Navigate to login page
@@ -64,11 +64,11 @@ Look for:
 ## Step 2: Authenticate
 
 ### API path (use when target is an API or has a simple form):
-1. Call \`authenticate_session\` with the correct method and credentials.
-   - \`form_post\` for HTML forms
-   - \`json_post\` for JSON APIs
-   - \`basic_auth\` for HTTP Basic
-2. Check the response — if authenticated is true, you have a session cookie.
+1. Use \`execute_command\` with curl to submit the credentials, matching the target's scheme:
+   - \`curl -i -d 'username=...&password=...' <loginUrl>\` for HTML form POST
+   - \`curl -i -H 'Content-Type: application/json' -d '{"username":"...","password":"..."}' <loginUrl>\` for JSON APIs
+   - \`curl -i -u '<user>:<pass>' <url>\` for HTTP Basic
+2. Inspect the response (\`-i\` shows headers) — capture any \`Set-Cookie\` value or token to use as the session credential.
 
 ### Browser path (use for SPAs, OAuth, JS-rendered forms):
 1. \`browser_navigate\` to the login URL
@@ -100,7 +100,7 @@ If both API and browser approaches fail, use \`delegate_to_auth_subagent\` for c
 **First**, call \`complete_authentication\` with:
 - \`success\`: whether auth succeeded
 - \`summary\`: what happened and what credentials/cookies were obtained
-- \`exportedCookies\`: the cookie string for downstream HTTP requests (from browser_get_cookies cookieHeader or authenticate_session response)
+- \`exportedCookies\`: the cookie string for downstream HTTP requests (from browser_get_cookies cookieHeader or the Set-Cookie header in the curl response)
 - \`exportedHeaders\`: auth headers map, e.g. {"Authorization": "Bearer <token>"} (from browser_evaluate localStorage tokens or API response)
 - \`strategy\`: method used ("browser", "form_post", "json_post", "basic_auth", "bearer")
 - \`authBarrier\`: if a barrier was encountered (captcha, mfa, etc.)
