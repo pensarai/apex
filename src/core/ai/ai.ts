@@ -83,6 +83,7 @@ export type AIModelProvider =
   | "google"
   | "openrouter"
   | "bedrock"
+  | "bedrock-mantle"
   | "pensar"
   | "inception"
   | "local";

@@ -6,6 +6,8 @@ import { ANTHROPIC_MODELS } from "./anthropic";
 import { BEDROCK_MODELS } from "./bedrock";
 import { GOOGLE_MODELS } from "./google";
 import { INCEPTION_MODELS } from "./inception";
+// Bedrock Mantle (OpenAI Responses API) — curated manually.
+import { MANTLE_MODELS } from "./mantle";
 import { OPENAI_MODELS } from "./openai";
 // OpenRouter — curated manually (SDK doesn't enumerate models).
 import { OPENROUTER_MODELS } from "./openrouter";
@@ -16,6 +18,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   ...OPENAI_MODELS,
   ...GOOGLE_MODELS,
   ...BEDROCK_MODELS,
+  ...MANTLE_MODELS,
   ...OPENROUTER_MODELS,
   ...PENSAR_MODELS,
   ...INCEPTION_MODELS,

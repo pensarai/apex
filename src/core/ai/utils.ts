@@ -1,4 +1,5 @@
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
+import { createBedrockMantle } from "@ai-sdk/amazon-bedrock/mantle";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -24,6 +25,11 @@ import {
   extractTaskSummaryFromMessages,
   truncateWithMarker,
 } from "./contextManagement";
+import {
+  MANTLE_REGION,
+  mantleBaseUrl,
+  stripMantlePrefix,
+} from "./mantle";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
 
@@ -191,6 +197,32 @@ export function getProviderModel(
         fetch: bedrockFetch as typeof globalThis.fetch,
       });
       providerModel = bedrock(model);
+      break;
+    }
+
+    case "bedrock-mantle": {
+      // GPT-5.x on Bedrock Mantle: OpenAI Responses API only, region-locked to
+      // us-east-2, on the `/openai/v1` path. Authenticates via the same SigV4
+      // credential chain / keys as standard Bedrock.
+      const bedrockFetch = (input: RequestInfo | URL, init?: RequestInit) =>
+        globalThis.fetch(input, {
+          ...init,
+          signal: buildStreamingFetchSignal(init?.signal),
+        });
+      const mantle = createBedrockMantle({
+        apiKey: bedrockApiKey,
+        region: MANTLE_REGION,
+        baseURL: mantleBaseUrl(),
+        accessKeyId: bedrockAccessKeyId,
+        secretAccessKey: bedrockSecretAccessKey,
+        sessionToken: bedrockSessionToken,
+        credentialProvider: authConfig?.bedrock
+          ?.credentialProvider as NonNullable<
+          Parameters<typeof createBedrockMantle>[0]
+        >["credentialProvider"],
+        fetch: bedrockFetch as typeof globalThis.fetch,
+      });
+      providerModel = mantle.responses(stripMantlePrefix(model));
       break;
     }
 
