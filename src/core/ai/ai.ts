@@ -653,6 +653,69 @@ export function normalizeOpenAIReasoningEffort(
   return DEFAULT_OPENAI_REASONING_EFFORT;
 }
 
+/**
+ * Provider-specific options passed to `streamText` to request reasoning /
+ * extended thinking. Each provider reads only its own namespace:
+ *   - `anthropic.thinking` — direct Anthropic provider AND the Pensar gateway
+ *     (the gateway formatter maps it to the Bedrock `thinking` field).
+ *   - `bedrock.reasoningConfig` — the AWS Bedrock provider; it ignores the
+ *     `anthropic` namespace entirely, so Anthropic-on-Bedrock thinking is only
+ *     requested when this key is present. `display: 'summarized'` makes the
+ *     model actually return reasoning text (adaptive can otherwise omit it).
+ *   - `openai.reasoningEffort` — OpenAI/o-series reasoning models.
+ */
+export type ReasoningProviderOptions = {
+  anthropic?: { thinking: { type: "adaptive" } };
+  bedrock?: { reasoningConfig: { type: "adaptive"; display: "summarized" } };
+  openai?: OpenAIResponsesProviderOptions;
+};
+
+/**
+ * Build the `providerOptions` for a request based on the model and reasoning
+ * settings. Returns `undefined` when no reasoning/thinking is requested.
+ *
+ * When thinking is enabled for an Anthropic-family model we set BOTH the
+ * `anthropic` and `bedrock` keys: the resolved provider (direct Anthropic,
+ * Pensar gateway, or Bedrock) reads only its own namespace and ignores the
+ * other, so this is safe across all three and avoids brittle provider
+ * branching here.
+ */
+export function buildReasoningProviderOptions(
+  model: AIModel,
+  opts: {
+    enableThinking?: boolean;
+    openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  },
+): ReasoningProviderOptions | undefined {
+  const useThinking =
+    !!opts.enableThinking &&
+    isAnthropicProvider(model) &&
+    modelSupportsThinking(model);
+  const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
+    model,
+    opts.openAIReasoningEffort,
+  );
+
+  if (!useThinking && !normalizedOpenAIEffort) return undefined;
+
+  return {
+    ...(useThinking
+      ? {
+          anthropic: { thinking: { type: "adaptive" as const } },
+          bedrock: {
+            reasoningConfig: {
+              type: "adaptive" as const,
+              display: "summarized" as const,
+            },
+          },
+        }
+      : {}),
+    ...(normalizedOpenAIEffort
+      ? { openai: { reasoningEffort: normalizedOpenAIEffort } }
+      : {}),
+  };
+}
+
 /** Cache token metrics extracted from Anthropic providerMetadata */
 export interface CacheMetrics {
   cacheReadInputTokens: number;
@@ -825,45 +888,12 @@ export function streamResponse(
   // Build providerOptions for extended thinking when enabled on a supported model.
   // Caching uses message-level cache_control (withCachedSystemPrompt / withCachedLastMessage),
   // not providerOptions, so there is no collision.
-  // Note: when thinking is enabled, temperature must not be set (Anthropic rejects it).
-  const useThinking =
-    enableThinking &&
-    isAnthropicProvider(model) &&
-    modelSupportsThinking(model);
-  const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
-    model,
+  // Note: when thinking is enabled, temperature must not be set (Anthropic rejects it);
+  // this path never sets temperature, so there is nothing to clear.
+  const providerOptions = buildReasoningProviderOptions(model, {
+    enableThinking,
     openAIReasoningEffort,
-  );
-  const providerOptions:
-    | {
-        anthropic?: {
-          thinking: {
-            type: "adaptive";
-          };
-        };
-        openai?: OpenAIResponsesProviderOptions;
-      }
-    | undefined =
-    useThinking || normalizedOpenAIEffort
-      ? {
-          ...(useThinking
-            ? {
-                anthropic: {
-                  thinking: {
-                    type: "adaptive" as const,
-                  },
-                },
-              }
-            : {}),
-          ...(normalizedOpenAIEffort
-            ? {
-                openai: {
-                  reasoningEffort: normalizedOpenAIEffort,
-                },
-              }
-            : {}),
-        }
-      : undefined;
+  });
 
   let rateLimitRetryCount = 0;
 
