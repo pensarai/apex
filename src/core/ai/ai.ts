@@ -694,24 +694,39 @@ export interface ModelInfo {
   contextLength?: number;
 }
 
-/**
- * Check whether a model supports extended thinking based on its ID.
- *
- * Thinking is available on Claude 3.7 Sonnet and all Claude 4.x+ models
- * (Sonnet, Opus, Haiku 4.5). Works for Anthropic direct, Bedrock, and
- * Pensar provider IDs.
- */
-export function modelSupportsThinking(modelId: string): boolean {
-  // Normalize: strip provider prefixes so we match the base Claude model ID
-  const normalized = modelId
+function normalizeClaudeModelId(modelId: string): string {
+  return modelId
     .replace(/^pensar:/, "")
     .replace(/^(us\.|eu\.|global\.|ap\.)?anthropic\./, "");
+}
+
+/**
+ * Whether a model supports extended thinking in any form (Claude 3.7 Sonnet
+ * and all 4.x+). Whether it accepts the newer `adaptive` type or only the
+ * legacy `enabled` form is separate — see `modelSupportsAdaptiveThinking`.
+ */
+export function modelSupportsThinking(modelId: string): boolean {
+  const normalized = normalizeClaudeModelId(modelId);
 
   return (
     /^claude-3-7-sonnet/.test(normalized) ||
     /^claude-sonnet-4/.test(normalized) ||
     /^claude-opus-4/.test(normalized) ||
     /^claude-haiku-4-5/.test(normalized)
+  );
+}
+
+/**
+ * Whether a model accepts the `adaptive` thinking type. Only Claude 4.6+
+ * families do; older thinking-capable models reject it. Conservative: when
+ * unsure return false, since the legacy `enabled` form works everywhere.
+ */
+function modelSupportsAdaptiveThinking(modelId: string): boolean {
+  const normalized = normalizeClaudeModelId(modelId);
+
+  return (
+    /^claude-(sonnet|opus|haiku)-4-[6-9]/.test(normalized) ||
+    /^claude-(sonnet|opus|haiku)-[5-9]/.test(normalized)
   );
 }
 
@@ -755,10 +770,19 @@ export function normalizeOpenAIReasoningEffort(
  *   - `openai.reasoningEffort` — OpenAI/o-series reasoning models.
  */
 export type ReasoningProviderOptions = {
-  anthropic?: { thinking: { type: "adaptive" } };
-  bedrock?: { reasoningConfig: { type: "adaptive"; display: "summarized" } };
+  anthropic?: {
+    thinking: { type: "adaptive" } | { type: "enabled"; budgetTokens: number };
+  };
+  bedrock?: {
+    reasoningConfig:
+      | { type: "adaptive"; display: "summarized" }
+      | { type: "enabled"; budgetTokens: number };
+  };
   openai?: OpenAIResponsesProviderOptions;
 };
+
+// Budget for legacy `enabled` thinking; matches the Pensar gateway default.
+const LEGACY_THINKING_BUDGET_TOKENS = 10_000;
 
 /**
  * Build the `providerOptions` for a request based on the model and reasoning
@@ -788,18 +812,32 @@ export function buildReasoningProviderOptions(
 
   if (!useThinking && !normalizedOpenAIEffort) return undefined;
 
-  return {
-    ...(useThinking
+  const thinkingOptions: ReasoningProviderOptions = !useThinking
+    ? {}
+    : modelSupportsAdaptiveThinking(model)
       ? {
-          anthropic: { thinking: { type: "adaptive" as const } },
+          anthropic: { thinking: { type: "adaptive" } },
           bedrock: {
-            reasoningConfig: {
-              type: "adaptive" as const,
-              display: "summarized" as const,
-            },
+            reasoningConfig: { type: "adaptive", display: "summarized" },
           },
         }
-      : {}),
+      : {
+          anthropic: {
+            thinking: {
+              type: "enabled",
+              budgetTokens: LEGACY_THINKING_BUDGET_TOKENS,
+            },
+          },
+          bedrock: {
+            reasoningConfig: {
+              type: "enabled",
+              budgetTokens: LEGACY_THINKING_BUDGET_TOKENS,
+            },
+          },
+        };
+
+  return {
+    ...thinkingOptions,
     ...(normalizedOpenAIEffort
       ? { openai: { reasoningEffort: normalizedOpenAIEffort } }
       : {}),
