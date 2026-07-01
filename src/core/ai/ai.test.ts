@@ -68,27 +68,37 @@ describe("buildReasoningProviderOptions", () => {
     });
   });
 
-  it("uses the legacy `enabled` form for the Bedrock recon model (Haiku 4.5), never adaptive", () => {
-    // Regression: Haiku 4.5 rejects `adaptive` — recon must get the legacy form.
-    const result = buildReasoningProviderOptions(
-      "global.anthropic.claude-haiku-4-5-20251001-v1:0",
-      { enableThinking: true },
-    );
-    expect(result).toEqual({
-      anthropic: { thinking: { type: "enabled", budgetTokens: 10_000 } },
-      bedrock: {
-        reasoningConfig: { type: "enabled", budgetTokens: 10_000 },
-      },
-    });
+  it("requests no thinking for the Bedrock recon model (Haiku 4.5), which rejects adaptive", () => {
+    // Regression: Haiku 4.5 supports extended thinking but not the adaptive
+    // type; requesting it failed recon. Non-4.6 models get no thinking.
+    expect(
+      buildReasoningProviderOptions(
+        "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+        { enableThinking: true },
+      ),
+    ).toBeUndefined();
   });
 
-  it("uses the legacy `enabled` form for pre-4.6 thinking models (Sonnet 4.5)", () => {
-    const result = buildReasoningProviderOptions("claude-sonnet-4-5", {
-      enableThinking: true,
-    });
-    expect(result?.anthropic).toEqual({
-      thinking: { type: "enabled", budgetTokens: 10_000 },
-    });
+  it("requests no thinking for pre-4.6 thinking models (Sonnet 4.5)", () => {
+    expect(
+      buildReasoningProviderOptions("claude-sonnet-4-5", {
+        enableThinking: true,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("requests no thinking for pre-4.6 Opus models (Opus 4.0, 4.1, 4.5)", () => {
+    for (const id of [
+      "claude-opus-4-0",
+      "claude-opus-4-20250514",
+      "claude-opus-4-1-20250805",
+      "claude-opus-4-5",
+      "global.anthropic.claude-opus-4-5-20251101-v1:0",
+    ]) {
+      expect(
+        buildReasoningProviderOptions(id, { enableThinking: true }),
+      ).toBeUndefined();
+    }
   });
 
   it("returns undefined when thinking is disabled and no OpenAI effort applies", () => {
