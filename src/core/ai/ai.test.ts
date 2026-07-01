@@ -68,11 +68,27 @@ describe("buildReasoningProviderOptions", () => {
     });
   });
 
-  it("sets anthropic.thinking for a direct Anthropic model when thinking is enabled", () => {
+  it("uses the legacy `enabled` form for the Bedrock recon model (Haiku 4.5), never adaptive", () => {
+    // Regression: Haiku 4.5 rejects `adaptive` — recon must get the legacy form.
+    const result = buildReasoningProviderOptions(
+      "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      { enableThinking: true },
+    );
+    expect(result).toEqual({
+      anthropic: { thinking: { type: "enabled", budgetTokens: 10_000 } },
+      bedrock: {
+        reasoningConfig: { type: "enabled", budgetTokens: 10_000 },
+      },
+    });
+  });
+
+  it("uses the legacy `enabled` form for pre-4.6 thinking models (Sonnet 4.5)", () => {
     const result = buildReasoningProviderOptions("claude-sonnet-4-5", {
       enableThinking: true,
     });
-    expect(result?.anthropic).toEqual({ thinking: { type: "adaptive" } });
+    expect(result?.anthropic).toEqual({
+      thinking: { type: "enabled", budgetTokens: 10_000 },
+    });
   });
 
   it("returns undefined when thinking is disabled and no OpenAI effort applies", () => {
