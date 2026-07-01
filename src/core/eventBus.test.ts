@@ -246,10 +246,8 @@ describe("emitStreamPart — native id threading", () => {
   });
 
   it("leaves subagentId undefined for orchestrator streams (sessionId set, no subagentId)", () => {
-    // Regression (#851): emitStreamPart must NOT alias sessionId into
-    // subagentId. The orchestrator emits with no subagentId; if sessionId
-    // leaks into it, the TUI's `if (d.subagentId)` check routes the reply into
-    // a (non-existent) subagent panel and it never renders in the main view.
+    // Regression (#851): emitStreamPart must not alias sessionId into subagentId,
+    // or the TUI routes the orchestrator's reply into a subagent panel.
     const bus = new AgentEventBus();
     const sessionId = newSessionId();
     const received: AgentEventMapText[] = [];

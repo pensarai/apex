@@ -670,8 +670,7 @@ function CommandDisplay({
 }
 
 async function main() {
-  // OpenTUI is about to take over the screen — send all logger output to the
-  // error log so no raw stderr write can garble a live frame.
+  // OpenTUI is about to own the screen — route logs to file, not stderr.
   routeLogsToErrorFile();
 
   const appConfig = await config.get();

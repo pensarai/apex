@@ -23,18 +23,12 @@ export enum LogLevel {
 
 const ERROR_LOG_PATH = path.join(os.homedir(), ".pensar", "error.log");
 const RETENTION_DAYS = 7;
-// error.log holds two line shapes: the human `<ts> - [LEVEL]` entries from
-// writeErrorLog, and structured JSON lines (`{"ts":"<ts>",...}`) that the TUI
-// sink appends. Prune must recognize both, or a recent JSON line following an
-// expired human entry inherits its drop decision and gets deleted.
+// error.log holds human `<ts> - [ERROR]` entries and structured JSON lines
+// (the TUI sink); prune dates both shapes so neither is dropped by the other.
 const TIMESTAMP_RE = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z) - /;
 const JSON_TS_RE = /^\{"ts":"(\d{4}-\d{2}-\d{2}T[\d:.]+Z)"/;
 
-/**
- * ISO timestamp starting a log entry, from either shape. Returns null for
- * continuation lines (e.g. stack-trace lines) that carry no timestamp of their
- * own — those inherit the preceding entry's keep decision.
- */
+/** Entry timestamp (ms) from either line shape; null for continuation lines. */
 function entryTimestamp(line: string): number | null {
   const m = TIMESTAMP_RE.exec(line) ?? JSON_TS_RE.exec(line);
   return m ? new Date(m[1]!).getTime() : null;
@@ -119,17 +113,12 @@ export function writeErrorLog(
 }
 
 /**
- * Redirect all structured-logger output from stderr into ~/.pensar/error.log.
- *
- * The interactive TUI calls this at startup: OpenTUI owns the screen, so any
- * raw stderr write (a `log.warn`, a stack trace) lands on the live frame and
- * garbles it — e.g. the per-turn Weave flush warning bleeding into the input
- * box. User-facing errors are surfaced through the TUI itself; the file keeps
- * everything diagnosable. Headless/CLI runs never call this, so they keep
- * logging to stderr as before.
+ * Redirect structured-logger output from stderr into ~/.pensar/error.log.
+ * The TUI calls this at startup: OpenTUI owns the screen, so a raw stderr write
+ * garbles the live frame. Headless/CLI runs keep logging to stderr.
  */
 export function routeLogsToErrorFile(): void {
-  // Force JSON so pretty-format ANSI color codes don't end up in the file.
+  // JSON so pretty-format ANSI codes don't end up in the file.
   process.env.PENSAR_LOG_FORMAT = "json";
   setLogSink((line) => {
     try {

@@ -73,9 +73,6 @@ describe("error() → ~/.pensar/error.log", () => {
     expect(readFileSync(errLog, "utf8")).toBe(before);
   });
 
-  // error.log mixes human `<ts> - [ERROR]` entries with structured JSON lines
-  // (the TUI sink). Prune must date each shape on its own, or a recent JSON line
-  // trailing an expired human entry inherits its drop decision and is deleted.
   it("prune keeps a recent JSON line that follows an expired human entry", async () => {
     const dir = path.join(tmpHome, ".pensar");
     mkdirSync(dir, { recursive: true });
@@ -90,12 +87,12 @@ describe("error() → ~/.pensar/error.log", () => {
       "utf8",
     );
 
-    // Any write triggers the once-per-process prune before appending.
+    // Any write triggers the once-per-process prune.
     const { writeErrorLog } = await import("./index");
     writeErrorLog("trigger prune", "TEST");
 
     const content = readFileSync(errLog, "utf8");
-    expect(content).toContain("recent structured line"); // survives (regression guard)
-    expect(content).not.toContain("expired legacy entry"); // pruned
+    expect(content).toContain("recent structured line");
+    expect(content).not.toContain("expired legacy entry");
   });
 });

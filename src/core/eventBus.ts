@@ -284,8 +284,7 @@ export class AgentEventBus {
   ): void {
     const ctx: StreamIdContext =
       typeof ids === "string" ? { subagentId: ids } : (ids ?? {});
-    // Do NOT fall back to sessionId: subagentId must stay undefined for the
-    // orchestrator so consumers can distinguish it from a subagent's stream.
+    // No sessionId fallback: subagentId stays undefined for the orchestrator.
     const subagentId = ctx.subagentId;
     const sessionId = ctx.sessionId;
     const messageId = ctx.messageId;
