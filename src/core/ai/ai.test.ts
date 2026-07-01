@@ -68,11 +68,23 @@ describe("buildReasoningProviderOptions", () => {
     });
   });
 
-  it("sets anthropic.thinking for a direct Anthropic model when thinking is enabled", () => {
-    const result = buildReasoningProviderOptions("claude-sonnet-4-5", {
-      enableThinking: true,
-    });
-    expect(result?.anthropic).toEqual({ thinking: { type: "adaptive" } });
+  it("requests no thinking for the Bedrock recon model (Haiku 4.5), which rejects adaptive", () => {
+    // Regression: Haiku 4.5 supports extended thinking but not the adaptive
+    // type; requesting it failed recon. Non-4.6 models get no thinking.
+    expect(
+      buildReasoningProviderOptions(
+        "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+        { enableThinking: true },
+      ),
+    ).toBeUndefined();
+  });
+
+  it("requests no thinking for pre-4.6 thinking models (Sonnet 4.5)", () => {
+    expect(
+      buildReasoningProviderOptions("claude-sonnet-4-5", {
+        enableThinking: true,
+      }),
+    ).toBeUndefined();
   });
 
   it("returns undefined when thinking is disabled and no OpenAI effort applies", () => {
