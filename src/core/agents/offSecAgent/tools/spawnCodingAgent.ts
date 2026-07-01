@@ -175,10 +175,7 @@ async function runSingleCodingAgent(
   // codeAgent → offensiveSecurityAgent → tools/index → spawnCodingAgent → codeAgent
   const { CodeAgent } = await import("../../specialized/codeAgent/agent");
 
-  // Native identity: the subagent IS a session. Mint its session id up front
-  // and use it as the bus identity, mirroring spawnPentestAgent. The `name`
-  // field carries the human-readable UI label; the `agentIndex` slot id is no
-  // longer used as the agent's identity.
+  // The subagent IS a session; its id doubles as the bus identity (mirrors spawnPentestAgent).
   const childSessionId = newSessionId();
   const subagentId = childSessionId as string;
 

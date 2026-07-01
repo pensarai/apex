@@ -5,12 +5,9 @@
  * Both saveSubagentData (write) and loadSubagents (read) share the
  * same path constants and filename conventions so they can never drift.
  *
- * Directory key — every subagent is stored under
- * `{rootPath}/subagents/{key}/` where `key` is the subagent's identity. For
- * subagents spawned via `spawn_pentest_agent` the key IS the child's session
- * id (`ses_…`), minted before spawn. The swarm path (`spawn_pentest_swarm`)
- * still uses stable slot ids (`pentest-agent-N`) so its index-based manifest
- * resume logic keeps working; this layer is agnostic to the key's shape.
+ * Directory key: subagents live under `{rootPath}/subagents/{key}/`, where
+ * `key` is a session id (`ses_…`) for `spawn_pentest_agent` workers, or a
+ * stable slot id (`pentest-agent-N`) for the swarm.
  */
 
 import {
@@ -125,13 +122,7 @@ export interface SubagentSaveInput {
   userPrompt?: string;
 }
 
-/**
- * Read a subagent's persisted messages by directory key.
- *
- * `key` is the subagent's identity directory under `subagents/` — a session
- * id (`ses_…`) for `spawn_pentest_agent` workers, or a slot id
- * (`pentest-agent-N`) for the swarm.
- */
+/** Read a subagent's persisted messages by directory key (session id or slot id). */
 export function loadSubagentMessages(
   session: SessionInfo,
   key: string,
@@ -207,17 +198,9 @@ export function saveSubagentData(
 // ---------------------------------------------------------------------------
 
 export interface AgentManifestEntry {
-  /**
-   * Directory key / identity for this subagent. Equal to {@link sessionId}
-   * when the subagent's identity is a minted session id (`ses_…`); for the
-   * swarm path this is a stable slot id (`pentest-agent-N`).
-   */
+  /** Directory key / identity for this subagent — session id or slot id. */
   id: string;
-  /**
-   * The subagent's session id (`ses_…`) when it has one. Mirrors {@link id}
-   * for session-keyed subagents; carried explicitly so downstream consumers
-   * can route by session without re-parsing the directory key.
-   */
+  /** The subagent's session id (`ses_…`) when it has one; mirrors {@link id} for session-keyed subagents. */
   sessionId?: string;
   name: string;
   target: string;
@@ -429,10 +412,7 @@ function parseSubagentFilename(filename: string): {
     return { agentType: "pentest", name: "Orchestrator Summary" };
   }
 
-  // Session-id-keyed subagent (spawn_pentest_agent worker). The
-  // human-readable label lives on the `subagent-spawn` bus event / manifest;
-  // when loading from disk alone we don't have it, so fall back to a generic
-  // pentest worker label rather than surfacing the raw `ses_…` id.
+  // Session-id-keyed subagent; disk alone has no label, so use a generic one.
   if (filename.startsWith("ses_")) {
     return { agentType: "pentest", name: "Pentest Worker" };
   }
@@ -744,11 +724,8 @@ export function loadSubagents(rootPath: string): UISubagent[] {
 // ---------------------------------------------------------------------------
 // Console rehydration — rebuild on-disk session state from the Console DB
 // ---------------------------------------------------------------------------
-//
-// Apex must stay standalone: it cannot import any `@console/*` package. The
-// Console session tree is therefore supplied through an INJECTED `fetchTree`
-// callback (the parent `runApexAgent` passes the agent-SDK fetcher). This file
-// only knows the *shape* of the data, declared inline below.
+// Apex can't import `@console/*`, so the session tree is supplied via an
+// injected `fetchTree` callback and its shape is declared inline below.
 
 /** A persisted agent message row (Console `agent_messages`). */
 interface ConsoleMessageRow {
@@ -841,21 +818,15 @@ function toolOutputToModelOutput(output: ToolOutput): {
   value: string;
 } {
   if (typeof output === "string") return { type: "text", value: output };
-  // S3-offloaded: inline previews are enough for resume context. Fetching the
-  // full blob from S3 is out of scope here.
-  // TODO(A2): a tool that re-reads its own prior full output would need the S3
-  // blob; resume only needs the preview for conversational context.
+  // S3-offloaded: the inline preview is enough for resume context.
   return { type: "text", value: output.preview };
 }
 
 /**
  * Convert one Console message + its ordered parts into AI-SDK `ModelMessage`s.
- *
- * A single Console assistant message can expand into TWO model messages: the
- * assistant turn (text + tool-call parts) followed by a `tool` message holding
- * the matching tool-results. `subagent_ref` parts are spawn markers only — the
- * child transcript lives in its own `subagents/{childSessionId}/messages.json`,
- * never inlined here.
+ * An assistant message can expand into two: the assistant turn, followed by a
+ * `tool` message for completed tool-results. `subagent_ref` parts are spawn
+ * markers only — the child transcript lives in its own file.
  */
 function consoleMessageToModelMessages(
   message: ConsoleMessageRow,
@@ -863,7 +834,6 @@ function consoleMessageToModelMessages(
 ): ModelMessage[] {
   const ordered = [...parts].sort((a, b) => a.index - b.index);
 
-  // user / system → plain text content (concatenate text parts).
   if (message.role === "user" || message.role === "system") {
     const text = ordered
       .filter((p) => p.type === "text")
@@ -872,8 +842,6 @@ function consoleMessageToModelMessages(
     return [{ role: message.role, content: text } as ModelMessage];
   }
 
-  // assistant → assistant content array (text + tool-call) plus a trailing
-  // tool message for completed tool-results.
   const assistantContent: Array<Record<string, unknown>> = [];
   const toolResults: Array<Record<string, unknown>> = [];
 
@@ -908,9 +876,7 @@ function consoleMessageToModelMessages(
           },
         });
       }
-      // pending/running tool-calls are left without a tool-result here; the
-      // open-tool-call repair pass below synthesizes one so the in-memory
-      // message list is valid for the agent constructor.
+      // pending/running tool-calls are repaired below (repairOrphanToolCalls).
     }
     // `file` and `subagent_ref` parts are not inlined into model messages.
   }
@@ -948,21 +914,13 @@ function nodeToModelMessages(node: ConsoleSessionNode): ModelMessage[] {
 }
 
 /**
- * Repair orphan (open) tool-calls left by a mid-step crash.
- *
- * A trailing assistant `tool-call` with no matching `tool` message means the
- * process died after issuing the call but before persisting a result. The DB
- * row stays `running` (monotonicity invariant); this repair ONLY mutates the
- * in-memory message list handed to the agent constructor, so the conversation
- * is well-formed (every tool-call has a tool-result).
- *
- * For each unmatched tool-call we append a synthesized `tool` message with
- * `output: { type: "text", value: "tool failed: process terminated" }`.
+ * Repair orphan tool-calls left by a mid-step crash by synthesizing a
+ * "process terminated" tool-result for each. Only mutates the in-memory
+ * message list handed to the agent constructor — DB rows are untouched.
  */
 export function repairOrphanToolCalls(
   messages: ModelMessage[],
 ): ModelMessage[] {
-  // Collect every toolCallId that already has a tool-result.
   const resolved = new Set<string>();
   for (const msg of messages) {
     if (msg.role !== "tool" || !Array.isArray(msg.content)) continue;
@@ -1015,19 +973,11 @@ function atomicWriteJson(filePath: string, value: unknown): void {
 }
 
 /**
- * Rebuild a session's on-disk state from an already-fetched Console session
- * tree. Prefer this over {@link rehydrateFromConsole} when the caller already
- * holds the tree (avoids a double fetch).
- *
- * Writes (atomically):
- *  - `~/.pensar/sessions/{id}/session.json` — minimal metadata stub
- *  - `~/.pensar/sessions/{id}/messages.json` — root model messages
- *  - `~/.pensar/sessions/{id}/subagents/{childSessionId}/messages.json` per
- *    descendant
- *
- * Returns the in-memory root `messages` and a `subagentMessages` map for the
- * constructor. Open tool-calls are repaired in the returned in-memory messages
- * only (the DB rows are untouched).
+ * Rebuild a session's on-disk state (session.json, messages.json, and each
+ * descendant's subagents/{childSessionId}/messages.json) from an
+ * already-fetched Console session tree, and return the same messages
+ * in-memory for the agent constructor. Prefer over {@link rehydrateFromConsole}
+ * when the caller already holds the tree.
  */
 export function rehydrateFromConsoleTree(
   sessionId: SessionID,
@@ -1035,12 +985,10 @@ export function rehydrateFromConsoleTree(
 ): RehydrateResult {
   const rootPath = getSessionRoot(sessionId);
 
-  // Root.
   const rootMessages = finalizeResumeMessages(nodeToModelMessages(tree));
 
-  // session.json stub — enough for downstream readers; the live session.json
-  // written by sessions.create() already carries full config, so only refresh
-  // it if it does not already exist (do not clobber richer metadata).
+  // Only write the stub if session.json doesn't exist yet, so we don't
+  // clobber the richer metadata sessions.create() already wrote.
   const sessionJsonPath = join(rootPath, "session.json");
   if (!existsSync(sessionJsonPath)) {
     atomicWriteJson(sessionJsonPath, {
@@ -1054,7 +1002,6 @@ export function rehydrateFromConsoleTree(
 
   atomicWriteJson(join(rootPath, "messages.json"), rootMessages);
 
-  // Descendants → subagents/{childSessionId}/messages.json.
   const subagentMessages = new Map<string, ModelMessage[]>();
   for (const descendant of tree.descendants) {
     const childId = descendant.session.id;

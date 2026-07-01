@@ -42,31 +42,19 @@ import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
 
 const log = scopedLogger(() => createLogger("approval-gate"));
 
-// Dedicated `response` tool lifecycle tracer. Opt-in: set RESPONSE_DEBUG=1 (or
-// "true") to surface it while hunting the empty-`{}` / "Tool call did not
-// complete" loop on threat-model sub-agents. When enabled the logs are emitted
-// at `warn` (so they survive the default INFO level) on a logger that is NOT
-// gated by the agent's `silent` flag, so they appear for silent threat-model
-// children too.
+// Opt-in `response` tool lifecycle tracer (RESPONSE_DEBUG=1) for the empty-`{}` / "Tool call did not complete" loop on threat-model sub-agents.
 const RESPONSE_DEBUG =
   process.env.RESPONSE_DEBUG === "1" || process.env.RESPONSE_DEBUG === "true";
 const rlog = scopedLogger(() => createLogger("response-debug"));
 
-// consume()-level stall watchdog. Opt-in: set STREAM_STALL_DEBUG=1 (or "true")
-// to enable. Observation only — logs (at warn, on the same rlog logger) when the
-// fullStream goes byte-silent on a live socket, so a Bedrock wedge that never
-// completes (and so never emits [inference-fetch-timing]) still produces data.
+// Opt-in stall watchdog (STREAM_STALL_DEBUG=1): warns when fullStream goes byte-silent, catching a Bedrock wedge.
 const STREAM_STALL_DEBUG =
   process.env.STREAM_STALL_DEBUG === "1" ||
   process.env.STREAM_STALL_DEBUG === "true";
-// Tick the watchdog every 15s; warn once a gap exceeds 20s and on each tick
-// after; on chunk arrival warn if the just-closed gap exceeded 10s (a
-// legitimate-but-long thinking pause that recovered).
 const STREAM_STALL_TICK_MS = 15_000;
 const STREAM_STALL_WARN_MS = 20_000;
 const STREAM_GAP_RECOVERED_MS = 10_000;
 
-/** Accumulated streamed-arg byte length per response tool-call id. */
 function responseArgBytes(input: unknown): number {
   if (input == null) return 0;
   if (typeof input === "string") return input.length;
@@ -126,29 +114,13 @@ export class OffensiveSecurityAgent<TResult = void> {
     streamResult: StreamTextResult<ToolSet, never>,
   ) => TResult | Promise<TResult>;
 
-  /**
-   * The structured result captured by the `response` tool, or `null` if the
-   * agent has not (yet) called `response`.
-   */
+  /** The structured result captured by the `response` tool, or `null` until it fires. */
   private _capturedResponse: TResult | null = null;
 
-  /**
-   * Set synchronously the instant the `response` tool fires, before any async
-   * `resolveResult` runs. Distinguishes "agent called response (run ended
-   * cleanly)" from "agent aborted" for the synthetic-tool-result close — needed
-   * because with a custom resolveResult, `_capturedResponse` is populated
-   * asynchronously and may still be null in that close window.
-   */
+  /** Set synchronously when `response` fires, ahead of any async `resolveResult`, to distinguish a clean finish from an abort. */
   private _responseToolFired = false;
 
-  /**
-   * Resolves the instant the `response` tool captures the structured result —
-   * the moment the agent is semantically done, independent of stream teardown
-   * (which can wedge before the final `finish` chunk). {@link consume} races
-   * this so it returns the result then and drains the rest in the background.
-   * Never resolves if `response` is never called — there the
-   * idle-guard-bounded drain settles `consume` instead.
-   */
+  /** Resolves the instant `response` captures the result, so {@link consume} can return early and drain in the background. */
   private _resolveResponseCaptured!: (result: TResult) => void;
   private _rejectResponseCaptured!: (err: unknown) => void;
   public readonly responseCaptured: Promise<TResult> = new Promise(
@@ -158,31 +130,16 @@ export class OffensiveSecurityAgent<TResult = void> {
     },
   );
 
-  /**
-   * Rejects when the background drain settles with an error. Custom resolvers
-   * race `streamResult.response` against this so a wedged stream (Bedrock
-   * half-open) doesn't prevent the resolver from completing.
-   */
+  /** Rejects when the background drain errors, so a custom resolver racing `streamResult.response` isn't blocked by a wedged stream. */
   private _drainRejection: Promise<never> = new Promise<never>(() => {});
 
-  /**
-   * Settles when the background drain (stream iteration + its `finally`, which
-   * closes any still-in-flight tool with a synthetic result) has fully
-   * finished. A caller that aborts right after capturing the result `await`s
-   * this before marking the run complete, so the last step's in-flight tools
-   * are closed *before* completion instead of being stranded `running`.
-   */
+  /** Settles when the background drain (including its synthetic-close finally) has fully finished. */
   public drained: Promise<void> = Promise.resolve();
 
   /** Identifier for this agent when it is running as a subagent. */
   private readonly subagentId?: string;
 
-  /**
-   * The current open assistant message id (`msg_…`) for the in-flight step.
-   * Minted on the `start-step` chunk in {@link consume} and read by
-   * `onStepFinish` so the closing `step-finish` event carries the same id.
-   * `null` between steps.
-   */
+  /** The current open assistant message id (`msg_…`); minted on `start-step` in {@link consume}, `null` between steps. */
   private currentMessageId: string | null = null;
 
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
@@ -271,14 +228,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     return this._session;
   }
 
-  /**
-   * This agent's identity on the event bus, as a session id (`ses_…`).
-   *
-   * For a subagent, `subagentId` is the child's own session id (minted by
-   * the spawning tool). For the root agent, it is the root session's id.
-   * Used to stamp `sessionId` (and the legacy `subagentId` alias) onto
-   * every event this agent emits.
-   */
+  /** This agent's identity on the event bus (subagent's session id, or the root session's id). */
   private get busSessionId(): string {
     return this.subagentId ?? this._session.id;
   }
@@ -430,22 +380,12 @@ export class OffensiveSecurityAgent<TResult = void> {
                   `resultBytes=${responseArgBytes(result)} — happy path`,
               );
             }
-            // The response tool's raw input matches the response SCHEMA, which
-            // is only a valid TResult on the DEFAULT path (no custom
-            // resolveResult). When a subclass supplies a custom resolveResult
-            // (e.g. TargetedPentestAgent returns { findings, ... }, NOT the raw
-            // schema), the captured value must be funnelled through it before it
-            // can fulfil consume()'s `Promise.race`. Otherwise consume() returns
-            // the raw schema object and a destructure like `const { findings }`
-            // yields undefined → `findings.length` throws. See PentestAgent.
+            // With a custom resolveResult (e.g. TargetedPentestAgent), the raw schema result must be funnelled through it before fulfilling consume()'s race.
             const customResolve = input.resolveResult;
             if (customResolve) {
               void Promise.resolve()
                 .then(() => {
-                  // Guard .response against wedged streams: the drain's
-                  // idle-timeout rejects _drainRejection, so a custom
-                  // resolver that awaits streamResult.response (e.g.
-                  // TargetedPentestAgent) won't hang indefinitely.
+                  // Race .response against _drainRejection so a wedged stream can't hang a resolver awaiting it.
                   const sr = this.streamResult;
                   const guarded = Object.create(sr, {
                     response: {
@@ -616,8 +556,6 @@ export class OffensiveSecurityAgent<TResult = void> {
             sessionId: this.busSessionId,
             messageId: this.currentMessageId ?? undefined,
           });
-          // The step's message is now closed; the next `start-step` chunk in
-          // consume() mints a fresh one.
           this.currentMessageId = null;
           await input.onStepFinish?.(event);
         },
@@ -717,13 +655,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     const bus = this.eventBus;
 
     const runConsume = async (): Promise<TResult> => {
-      // Per-tool-call part ids: minted on first reference and reused for that
-      // call's complete / result for the WHOLE session — NEVER reset per step.
-      // A tool call's part id is its identity for its lifetime, so its start and
-      // its (real or synthetic) result always resolve to the same part, for the
-      // TUI and the console alike. toolCallIds are globally unique within a run,
-      // so a session-long map can't collide; the per-message part INDEX is a
-      // separate concern handled by consumers.
+      // Tool-call part ids are minted once and reused for the WHOLE session, never reset per step.
       const toolParts = new Map<string, string>();
       const ids: StreamIdContext = {
         subagentId: this.busSessionId,
@@ -740,43 +672,22 @@ export class OffensiveSecurityAgent<TResult = void> {
         },
       };
 
-      // Track the current step so it can be reconstructed on abort (PR #779):
-      // inFlightTools = calls still awaiting a result, completedResults =
-      // results already streamed but not yet persisted by onStepFinish. On
-      // stream end with calls still in flight, `emitSyntheticToolResults`
-      // closes them so no tool-call is ever left without a matching result.
+      // inFlightTools = calls awaiting a result; completedResults = streamed but not yet persisted by onStepFinish (PR #779).
       const inFlightTools = new Map<string, string>();
       const completedResults: ToolResultPart[] = [];
       let streamError: unknown = null;
 
-      // [response-debug] Track streamed-arg bytes for response tool calls so we
-      // can see whether the model finished emitting the full structured payload
-      // before the call was closed / dropped.
       const responseArgChars = new Map<string, number>();
-      // [response-debug] Record which response ids the loop actually observed a
-      // terminal chunk for (tool-call / tool-result / tool-error) so we can tell
-      // a finish-step "did not complete" close apart from a genuine drop.
       const responseSawTerminal = new Map<string, string>();
 
-      // Accumulated raw streamed arg text per tool-call id. When the SDK reports
-      // a `tool-error` (invalid args / Zod failure, repair returned null) the
-      // structured `input` is dropped, but the partial text the model DID stream
-      // is the only forensic record of what it tried to submit. Persisting it
-      // (instead of `{}`) lets a resumed session and the log archive show the
-      // real, truncated payload rather than an empty object.
+      // Raw streamed arg text per tool-call id, kept so a `tool-error` can persist the real (possibly truncated) payload instead of `{}`.
       const streamedArgText = new Map<string, string>();
-      // Real tool errors observed mid-stream, keyed by tool-call id. Drained by
-      // the finish-step close so it surfaces the SDK's actual error text instead
-      // of the generic "Tool call did not complete". The failed tool-result is
-      // emitted at finish-step, where the step's finishReason is known so a
-      // `length` (output-token truncation) failure can be framed distinctly.
+      // Tool errors observed mid-stream, surfaced at finish-step (where finishReason is known) instead of a generic "did not complete".
       const toolErrors = new Map<
         string,
         { message: string; input: unknown; toolName: string }
       >();
 
-      // [stream-stall] watchdog state. lastChunkAt is the only write inside the
-      // hot loop; everything else is read by the interval. Observation only.
       let lastChunkAt = Date.now();
       let lastChunkType = "none";
       let stallStepIndex = -1;
@@ -812,11 +723,6 @@ export class OffensiveSecurityAgent<TResult = void> {
               );
             }
           }
-          // [response-debug] Observe EVERY chunk type that references the
-          // response tool — including `tool-error`, which the switch below does
-          // NOT handle (the suspected leak: an invalid response is reported as a
-          // tool-error, never deleted from inFlightTools, then closed as "did not
-          // complete" at finish-step).
           if (RESPONSE_DEBUG) {
             const c = chunk as {
               type: string;
@@ -886,30 +792,22 @@ export class OffensiveSecurityAgent<TResult = void> {
           }
           switch (chunk.type) {
             case "start-step":
-              // New step → new assistant message. Tool part ids are NOT reset
-              // here: the session-long `toolParts` map (see above) keeps each
-              // tool call's id stable across steps so a late close reconciles to
-              // the running part instead of stranding it as a duplicate.
               ids.messageId = newMessageId();
               this.currentMessageId = ids.messageId;
               ids.textPartId = undefined;
               break;
             case "text-start":
-              // Each text run within a step gets its own part id.
               ids.textPartId = newPartId();
               break;
             case "text-end":
               ids.textPartId = undefined;
               break;
             case "tool-input-start":
-              // Track from the start so a truncated call (started, args never
-              // completed) still gets closed and isn't left "running".
+              // Track from the start so a truncated call still gets closed instead of left "running".
               inFlightTools.set(chunk.id, chunk.toolName);
               streamedArgText.set(chunk.id, "");
               break;
             case "tool-input-delta": {
-              // Accumulate the raw streamed arg text so a later tool-error can
-              // persist the real (possibly truncated) payload instead of `{}`.
               const d = chunk as { id: string; delta?: string };
               streamedArgText.set(
                 d.id,
@@ -921,18 +819,7 @@ export class OffensiveSecurityAgent<TResult = void> {
               inFlightTools.set(chunk.toolCallId, chunk.toolName);
               break;
             case "tool-error": {
-              // The SDK could not turn the streamed args into a valid tool input
-              // (Zod validation failed and experimental_repairToolCall returned
-              // null), OR output-token truncation cut the args off. `execute`
-              // NEVER runs for an errored call, so the response tool's capture
-              // signals never fire and the call is never cleared from
-              // inFlightTools — finish-step would then fabricate a bogus
-              // "Tool call did not complete" + input:{} and the agent would loop
-              // re-calling `response`. Handle it here: clear the in-flight entry
-              // and record the REAL error + whatever args were streamed. The
-              // failed tool-result is emitted at finish-step (below), where the
-              // step's finishReason is known so output-token truncation
-              // (`length`) can be framed distinctly.
+              // `execute` never runs for an errored call, so it must be cleared here or finish-step would fabricate a bogus "did not complete".
               const te = chunk as {
                 toolCallId: string;
                 toolName: string;
@@ -982,20 +869,12 @@ export class OffensiveSecurityAgent<TResult = void> {
               break;
             }
             case "finish-step": {
-              // onStepFinish has persisted this step; drop its results so a
-              // later abort doesn't re-append already-saved tool calls/results.
+              // onStepFinish has persisted this step; drop its results so a later abort doesn't re-append them.
               completedResults.length = 0;
               const finishReason = (chunk as { finishReason?: string })
                 .finishReason;
               const truncated = finishReason === "length";
 
-              // Surface real tool errors recorded this step (Zod-invalid args,
-              // repair returned null, or output-token truncation). These were
-              // already removed from inFlightTools in the `tool-error` case, so
-              // they do NOT fall into the "did not complete" close below. Emit
-              // the ACTUAL error text (and flag truncation) so the agent and the
-              // log archive see why `response` failed instead of a fabricated
-              // generic result.
               for (const [toolCallId, info] of toolErrors) {
                 if (RESPONSE_DEBUG && info.toolName === RESPONSE_TOOL_NAME) {
                   rlog.warn(
@@ -1022,11 +901,7 @@ export class OffensiveSecurityAgent<TResult = void> {
               }
               toolErrors.clear();
 
-              // Close any call that started this step but produced neither a
-              // result nor a tool-error (e.g. args never finalized) so it doesn't
-              // render stuck "running". Carry the running part's exact partId +
-              // messageId so the result reuses that part instead of being
-              // stranded as a duplicate while streaming.
+              // Close any call still in flight (args never finalized) so it doesn't render stuck "running".
               for (const [toolCallId, toolName] of inFlightTools) {
                 if (RESPONSE_DEBUG && toolName === RESPONSE_TOOL_NAME) {
                   rlog.warn(
@@ -1063,8 +938,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           }
           bus.emitStreamPart(chunk, ids);
         }
-        // Keep completedResults: an abort with no trailing finish-step needs
-        // them for the finally snapshot (finish-step clears its own).
+        // Keep completedResults: an abort with no trailing finish-step needs them for the finally snapshot.
       } catch (err) {
         streamError = err;
       } finally {
@@ -1095,8 +969,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           });
         }
         toolErrors.clear();
-        // Snapshot unpersisted step state: open tools get synthetic closes,
-        // completed/errored results (no finish-step yet) get written.
+        // Snapshot unpersisted step state: open tools get synthetic closes, completed/errored results get written.
         if (inFlightTools.size > 0 || completedResults.length > 0) {
           const reason = this.abortSignal?.aborted
             ? "Agent aborted by user"
@@ -1161,34 +1034,20 @@ export class OffensiveSecurityAgent<TResult = void> {
           },
         );
 
-    // Decouple the result from stream teardown. With a `response` schema the
-    // structured result is captured mid-stream (in the response tool), so return
-    // it the instant it's available rather than waiting for the stream to close
-    // — teardown can wedge (Bedrock goes byte-silent before the final chunk).
-    // The drain keeps running in the background for persistence/cleanup, bounded
-    // by the transport idle guard so it can't block the caller or leak. Without
-    // a response schema `responseCaptured` never fires and this is the same
-    // full-drain await as before.
-
-    // Signal the capture callback's custom resolver when the drain fails so a
-    // resolver stuck on streamResult.response (wedged stream) is unblocked.
+    // Decouple the result from stream teardown: with a `response` schema, return as soon as it's captured rather than waiting for the stream to close (which can wedge).
     let rejectDrain: ((err: unknown) => void) | undefined;
     this._drainRejection = new Promise<never>((_, reject) => {
       rejectDrain = reject;
     });
     this._drainRejection.catch(() => {});
 
-    // Expose the drain's settle so a caller that aborts after capturing the
-    // result can wait for its `finally` (in-flight tool closes) before marking
-    // the run complete.
+    // Lets a caller that aborts after capturing the result await the drain's finally (in-flight tool closes) before completing.
     this.drained = drain.then(
       () => {},
       () => {},
     );
 
-    // Wrap drain so its rejection doesn't propagate when the response was
-    // already captured — instead wait for responseCaptured (now unblocked
-    // via _drainRejection → custom resolver completes).
+    // Don't propagate drain's rejection if the response was already captured.
     const guardedDrain = drain.catch((err) => {
       rejectDrain?.(err);
       if (!this._responseToolFired) throw err;
@@ -1247,10 +1106,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
 
     for (const [toolCallId, toolName] of inFlightTools) {
-      // The stop tool (`response`) reaching here after a successful capture
-      // didn't fail — it submitted the result, and the run ended on it. Mark it
-      // completed instead of a misleading "aborted" error; the captured result
-      // itself still flows out via consume()'s return value.
+      // The `response` tool reaching here after a successful capture didn't fail — mark it completed, not aborted.
       const result =
         toolName === RESPONSE_TOOL_NAME && this._responseToolFired
           ? { type: "text" as const, value: "Response submitted." }
@@ -1259,15 +1115,10 @@ export class OffensiveSecurityAgent<TResult = void> {
         toolCallId,
         toolName,
         result,
-        // Carry this agent's canonical session id (not just the legacy
-        // subagentId alias) so the execution translator routes the synthetic
-        // result to THIS subagent's session rather than falling back to root.
+        // Canonical session id, not just the legacy subagentId alias, so the translator routes to THIS subagent's session.
         sessionId: this.busSessionId,
         subagentId: sid,
-        // Reuse the running part's id so the close lands on it instead of
-        // stranding it as a spinning duplicate.
         partId: partIdFor?.(toolCallId),
-        // Route by (sessionId, messageId, partId), matching finish-step.
         messageId,
       });
       syntheticParts.push({
@@ -1283,8 +1134,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     // Cancel the debounced timer so its writeFile can't race the write below.
     this.cancelPersistTimer?.();
 
-    // latestMessages is null once the debounced timer has flushed; fall back
-    // to the on-disk snapshot so we don't overwrite history with synthetics.
+    // Fall back to the on-disk snapshot once the debounced timer has flushed latestMessages, so we don't overwrite history.
     let base: ModelMessage[] = this.latestMessages ?? [];
     if (base.length === 0 && existsSync(this.messagesPath)) {
       try {
@@ -1294,8 +1144,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
-    // When onStepFinish hasn't fired, this step's assistant + tool messages
-    // aren't in base yet; reconstruct it so resumed sessions see valid pairs.
+    // When onStepFinish hasn't fired, this step's messages aren't in base yet; reconstruct so resumed sessions see valid pairs.
     const allToolCallIds = new Set([
       ...inFlightTools.keys(),
       ...completedResults.map((r) => r.toolCallId),
@@ -1315,10 +1164,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           r.toolName,
         ]),
       ];
-      // Preserve whatever args the model actually streamed instead of writing
-      // an empty `{}`. Parse the raw text when it's valid JSON; otherwise keep
-      // the truncated text under `_partial` so a resumed session and the log
-      // archive show the real (incomplete) payload, not a misleading empty call.
+      // Preserve whatever args the model actually streamed instead of writing an empty `{}`.
       const reconstructInput = (toolCallId: string): unknown => {
         const raw = streamedArgText?.get(toolCallId);
         if (!raw) return {};

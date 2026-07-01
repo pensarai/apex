@@ -38,10 +38,7 @@ import {
 
 const log = scopedLogger(() => createLogger("ai"));
 
-// [response-debug] Mirror of offensiveSecurityAgent's tracer flag. Opt-in: set
-// RESPONSE_DEBUG=1 (or "true") to surface it while debugging the empty-`{}` /
-// looping response failure. When enabled these logs bypass the `silent` flag so
-// they appear for silent threat-model sub-agents.
+// Opt-in debug logging for the empty-`{}` / looping response failure; bypasses `silent`.
 const RESPONSE_DEBUG =
   process.env.RESPONSE_DEBUG === "1" || process.env.RESPONSE_DEBUG === "true";
 const RESPONSE_TOOL_NAME = "response";
@@ -74,18 +71,9 @@ const OPENAI_REASONING_MODEL_IDS = new Set([
   "gpt-5.5-2026-04-23",
 ]);
 
-/**
- * Per-step billing context attached to a usage report.
- *
- * Carries the identity of the step that produced the usage so the billing
- * sink can attribute cost to a specific `(sessionId, stepSeq)` rather than a
- * whole run. Both fields are optional for backward compatibility — callers
- * that registered a 3-arg callback continue to work unchanged.
- */
+/** Per-step billing context attached to a usage report, attributing cost to a specific `(sessionId, stepSeq)`. */
 export interface UsageStepContext {
-  /** Session id (`ses_…`) that emitted the step, when known. */
   sessionId?: string;
-  /** Monotonic per-run AI-SDK step index (see {@link runWithStepContext}). */
   stepSeq?: number;
 }
 
@@ -103,21 +91,10 @@ export function onUsage(cb: UsageCallback | null): void {
   _usageCallback = cb;
 }
 
-// ---------------------------------------------------------------------------
-// Per-run step counter (for per-step billing attribution)
-// ---------------------------------------------------------------------------
-//
-// Each AI-SDK `streamText` step that reports usage is tagged with a monotonic
-// `stepSeq` scoped to the emitting session. The counter lives in
-// AsyncLocalStorage so concurrent runs (e.g. parallel subagents) never share
-// or race a step index — each `runWithStepContext` call gets its own store.
-//
-// Monotonicity across a resumed run: the caller seeds `nextStepSeq` from the
-// count of rehydrated assistant messages (the best available proxy for "how
-// many steps already happened"). This guarantees monotonic-within-a-run and
-// approximates cross-run monotonicity. It is NOT a strict global sequence —
-// the authoritative per-session step ordering is the DB `stepSeq` on
-// `agent_messages`; this counter only labels live usage reports for billing.
+// Per-run step counter for billing attribution, scoped via AsyncLocalStorage so
+// concurrent runs never race a shared index. Not a strict global sequence —
+// the DB `stepSeq` on `agent_messages` remains authoritative; this only labels
+// live usage reports.
 
 interface StepContext {
   sessionId?: string;
@@ -127,14 +104,7 @@ interface StepContext {
 
 const stepContextStore = new AsyncLocalStorage<StepContext>();
 
-/**
- * Run `fn` within a per-run step-counting context. All `streamResponse` steps
- * executed inside `fn`'s async tree report usage tagged with `sessionId` and a
- * monotonically increasing `stepSeq` starting at `seedStepSeq` (default 0).
- *
- * Pass `seedStepSeq` = number of prior assistant messages on resume so the
- * counter continues past the rehydrated history.
- */
+/** Runs `fn` in a per-run step-counting context; `streamResponse` steps inside it report usage tagged with `sessionId` and an increasing `stepSeq` starting at `seedStepSeq`. */
 export function runWithStepContext<T>(
   opts: { sessionId?: string; seedStepSeq?: number },
   fn: () => T,
@@ -145,15 +115,7 @@ export function runWithStepContext<T>(
   );
 }
 
-/**
- * Take (and advance) the next `stepSeq` for the current run, returning the
- * accompanying billing context. Returns `undefined` when no step context is
- * active (e.g. one-off `generateText` calls outside a run) so callers stay
- * backward compatible.
- *
- * Exported for testing the per-step counter in isolation; production callers
- * should not need to call this directly.
- */
+/** Takes and advances the next `stepSeq` for the current run; returns `undefined` outside any run context. */
 export function takeStepContext(): UsageStepContext | undefined {
   const store = stepContextStore.getStore();
   if (!store) return undefined;
@@ -322,8 +284,7 @@ async function* withIdleTimeout<T>(
 }
 
 function isStreamIdleTimeoutError(error: unknown): boolean {
-  // The chunk-level StreamIdleTimeoutError, which the AI SDK may rewrap — so
-  // walk `cause`.
+  // AI SDK may rewrap the error, so walk `cause`.
   for (let e: unknown = error, depth = 0; e != null && depth < 6; depth++) {
     if (e instanceof StreamIdleTimeoutError) return true;
     e = (e as { cause?: unknown }).cause;
@@ -346,15 +307,10 @@ function isStreamIdleTimeoutError(error: unknown): boolean {
  * deduplicated. `tool-result` chunks without a matching open call are
  * ignored so the counter can never go negative.
  *
- * EXCEPTION — the structured `response` tool is NEVER counted as in-flight. Its
- * `execute` only captures the result and returns synchronously (it does no real
- * work), so it can't be a slow tool the gate needs to wait out. But the model
- * streams that tool's arguments — frequently a multi-thousand-token structured
- * payload — and a provider (Bedrock) stream that WEDGES mid-payload would, if
- * `response` were gated, suppress the idle timeout forever (a confirmed hang:
- * threat-model children frozen on `response` for 10+ min, never recovered).
- * Leaving `response` ungated keeps the idle timer live across its generation,
- * so a stalled response stream trips the normal idle-timeout → auto-resume path.
+ * EXCEPTION: `response` is never gated — its `execute` returns synchronously so
+ * it's not a slow tool, but a Bedrock stream wedging mid-payload while
+ * streaming its (often large) args would otherwise suppress the idle timeout
+ * forever (confirmed hang). Leaving it ungated keeps idle-timeout auto-resume working.
  */
 const NON_GATED_TOOLS = new Set<string>(["response"]);
 
@@ -432,11 +388,7 @@ function wrapStreamWithErrorHandler(
               )) {
                 toolGate.observe(chunk);
 
-                // [response-debug] Log the AI-SDK-level view of the response
-                // tool lifecycle as chunks leave the transport wrapper. This is
-                // the layer BELOW the consume() loop — it reveals whether the SDK
-                // emitted a terminal tool-call/tool-error for response, and the
-                // per-step finishReason that decides whether the loop continues.
+                // [response-debug] Log AI-SDK-level response-tool chunks / finish-step, below the consume() loop.
                 if (RESPONSE_DEBUG) {
                   const c = chunk as {
                     type: string;
@@ -891,12 +843,7 @@ export interface StreamResponseOpts {
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
   /** Session root path — used by context management layers to persist truncated tool results */
   sessionPath?: string;
-  /**
-   * Session id (`ses_…`) of the agent making this call — the root session for
-   * the root agent, or the subagent's own session. Stamped onto AI-span
-   * telemetry so traces are filterable by session. Forwarded unchanged through
-   * the internal retry/resume recursion via `...opts`.
-   */
+  /** Session id (`ses_…`) of the agent making this call; stamped onto AI-span telemetry so traces are filterable by session. */
   sessionId?: string;
   /**
    * Internal: recovery-recursion depth. Bumped at each summarize → resume
@@ -945,8 +892,7 @@ export function streamResponse(
     if (_usageCallback) {
       const inp = step.usage?.inputTokens ?? 0;
       const out = step.usage?.outputTokens ?? 0;
-      // Always advance the step counter once per finished step (even with zero
-      // usage) so `stepSeq` stays aligned with the AI-SDK step index.
+      // Advance stepSeq every finished step (even zero-usage) to stay aligned with the AI-SDK step index.
       const stepCtx = takeStepContext();
       if (inp > 0 || out > 0) _usageCallback(model, inp, out, stepCtx);
     }
@@ -1131,10 +1077,7 @@ export function streamResponse(
         tools,
         error,
       }) => {
-        // [response-debug] Always log (bypassing `silent`) when repair fires for
-        // the `response` tool — repair firing means the streamed args FAILED Zod
-        // validation. If we never see this for a looping session, the args were
-        // never finalized into a tool-call chunk at all (truncated mid-stream).
+        // [response-debug] Log when repair fires for `response` (streamed args failed Zod validation), bypassing `silent`.
         if (RESPONSE_DEBUG && toolCall.toolName === RESPONSE_TOOL_NAME) {
           const raw = toolCall.input;
           const rawLen =

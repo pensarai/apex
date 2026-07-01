@@ -40,18 +40,10 @@ export function isAnthropicProvider(model: AIModel): boolean {
   );
 }
 
-// Last-resort backstop ONLY — it must never be the thing that ends a healthy
-// stream. The PRIMARY liveness guard is the connection read-idle: the SSE reader
-// (pensarSSE.ts) aborts if no bytes arrive for 90s, and the AI-SDK path's
-// withIdleTimeout does the same per chunk — i.e. we judge the *connection*, not
-// the wall-clock. A live stream that legitimately takes 1-30 min (slow model,
-// long structured response) keeps delivering bytes and is never cut; a dead /
-// half-open socket stops delivering bytes and trips the 90s read-idle → error →
-// propagated and retried/degraded. This wall-clock value exists only to bound a
-// pathological "alive but never completes" stream, so it sits comfortably above
-// the longest legitimate generation (well past 30 min) rather than near it.
-// (Must also stay below dispatchAgent's autoStopInterval so we, not Daytona,
-// end such a stream — see that file.)
+// Last-resort backstop only — the primary liveness guard is the SSE/AI-SDK
+// read-idle timeout (90s of no bytes). This wall-clock bound just needs to
+// exceed the longest legitimate generation while staying below dispatchAgent's
+// autoStopInterval (see that file).
 const STREAMING_FETCH_TIMEOUT_MS = 35 * 60 * 1000;
 
 export function buildStreamingFetchSignal(
@@ -184,15 +176,10 @@ export function getProviderModel(
     }
 
     case "bedrock": {
-      // No data-inactivity idle guard on the response stream. TCP keepalive
-      // (SO_KEEPALIVE, forced via libkeepalive in the sandbox) now provides
-      // real dead-socket detection (~30s dead-peer), so byte-silence is no
-      // longer our liveness signal. A data-inactivity timeout can't tell a
-      // dead connection from the model silently composing a large structured
-      // payload (e.g. ThreatModelResultSchema, which has shown 33s+ silent
-      // gaps and can exceed any fixed window) — that false trip errored the
-      // stream mid-`response`, which got persisted as `input:{}` and
-      // auto-resumed into an endless empty-`{}` response loop.
+      // No data-inactivity guard here: TCP keepalive (libkeepalive in the
+      // sandbox) handles dead-socket detection. A fixed idle timeout
+      // previously false-tripped during long silent `response` payload
+      // generation, causing an endless empty-`{}` response loop.
       const bedrockFetch = async (
         input: RequestInfo | URL,
         init?: RequestInit,

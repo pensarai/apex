@@ -13,8 +13,7 @@ import {
   repairOrphanToolCalls,
 } from "./persistence";
 
-// rehydrateFromConsoleTree writes under os.homedir()/.pensar/sessions/{id};
-// point homedir at a throwaway tmp dir so the test never touches the real ~.
+// Point homedir at a throwaway tmp dir so the test never touches the real ~.
 let homeDir: string;
 
 beforeEach(() => {

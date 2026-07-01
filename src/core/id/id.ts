@@ -57,11 +57,8 @@ function randomBase62(length: number): string {
 // ---------------------------------------------------------------------------
 // Branded identity types + convenience minters / guards
 // ---------------------------------------------------------------------------
-//
-// These give session / message / part ids a nominal type so they can't be
-// accidentally crossed (e.g. passing a messageId where a sessionId is
-// expected). The runtime value is still a plain prefixed-ULID string
-// (`ses_…` / `msg_…` / `prt_…`); the brand exists only at the type level.
+// Nominal typing only — prevents e.g. a messageId being passed where a
+// sessionId is expected. Runtime value is still a plain prefixed-ULID string.
 
 /** A session identifier: `ses_<time><random>`. */
 export type SessionID = string & { readonly __brand: "SessionID" };

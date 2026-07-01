@@ -9,24 +9,14 @@ import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("threat-model-generator"));
 
-// Process-wide cap — parents emit `document_endpoint` calls in parallel, so
-// without this gate each parent fans out unboundedly. Kept at 4 (not 10): each
-// concurrent child streams a large structured response and, under the Bedrock
-// wedge rate, may resume-regenerate it; 10 at once OOM-kills the sandbox.
-const THREAT_MODEL_CONCURRENCY = 4;
+// Process-wide cap — parents emit `document_endpoint` calls in parallel; without this gate each parent fans out unboundedly.
+const THREAT_MODEL_CONCURRENCY = 10;
 const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 
-// `document_endpoint` blocks on `await agent.consume()`. consume() returns the
-// structured result as soon as the child captures it, so it always settles —
-// resolving on success, rejecting once the agent loop terminates. On any failure
-// the catch returns null and `document_endpoint` degrades to the heuristic score.
+// consume() always settles — resolves on success, rejects once the agent loop terminates; on failure `document_endpoint` degrades to the heuristic score.
 
-// Hard ceiling on the child's agent loop. Under the Bedrock wedge rate the model
-// can truncate its structured `response`, fail schema validation, and re-call
-// `response` in a loop (observed: 7-10 calls, 100+ parts, no completion). This
-// caps that loop so the child always terminates → degrades to heuristic → the
-// recon advances. A healthy threat model finishes in well under this.
-const THREAT_MODEL_MAX_STEPS = 40;
+// Bounds a Bedrock wedge-rate failure mode where the model loops re-calling `response` without completing, so the child always terminates and degrades to heuristic.
+const THREAT_MODEL_MAX_STEPS = 100;
 
 // Cap the post-abort drain wait so a wedged drain can't pin a p-limit slot.
 const DRAIN_GRACE_MS = 30_000;
@@ -347,9 +337,7 @@ export async function generateThreatModelForEndpoint(
 
     const prompt = buildThreatModelPrompt(input, ctx.projectThreatModel);
 
-    // Child-scoped abort so a failure cancels *this* threat model without
-    // touching the shared parent `ctx.abortSignal`; a parent abort still
-    // propagates down via the listener below.
+    // Child-scoped abort so a failure cancels only this threat model, not the shared parent `ctx.abortSignal` (which still propagates down).
     const childAbort = new AbortController();
     if (ctx.abortSignal) {
       if (ctx.abortSignal.aborted) childAbort.abort();
@@ -400,11 +388,7 @@ export async function generateThreatModelForEndpoint(
     };
 
     try {
-      // consume() returns the captured result as soon as it's available and
-      // drains the rest in the background. Abort once we have the result so that
-      // background drain stops immediately — otherwise, under the Bedrock wedge
-      // rate, it keeps resume-regenerating a response we've already discarded,
-      // and those detached drains pile up and OOM the sandbox.
+      // Abort right after consume() resolves so the background drain doesn't keep resume-regenerating a discarded response and OOM the sandbox.
       const result = await agent.consume();
       childAbort.abort();
       // Close in-flight tools before marking complete (bounded, can't pin the slot).

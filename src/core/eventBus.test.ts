@@ -280,15 +280,12 @@ describe("attachChild — session id injection", () => {
     });
 
     expect(received).toHaveLength(1);
-    // The grandchild's own session id is preserved...
     expect(received[0].sessionId).toBe(grandchildSessionId);
-    // ...and the child (this bus's owner) becomes the parent.
     expect(received[0].parentSessionId).toBe(childSessionId);
   });
 });
 
-// Local payload aliases so the test bodies stay readable without importing
-// the (intentionally not exported) AgentEventMap.
+// Local aliases: AgentEventMap is intentionally not exported.
 type AgentEventMapText = {
   text: string;
   sessionId?: string;
@@ -306,7 +303,6 @@ type AgentEventMapToolStart = {
 type AgentEventMapToolComplete = AgentEventMapToolStart & { args: unknown };
 type AgentEventMapToolResult = AgentEventMapToolStart & { result: unknown };
 
-// Reference isPartId so the import is exercised as a sanity assertion.
 describe("partId shape", () => {
   it("minted tool/text part ids are prt_-prefixed", () => {
     const bus = new AgentEventBus();

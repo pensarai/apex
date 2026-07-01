@@ -4,24 +4,9 @@ import type { TextStreamPart, ToolSet } from "ai";
 /**
  * Typed event map for the agent event bus.
  *
- * Events mirror the AI SDK's `TextStreamPart` types and carry native
- * identity so a downstream translator can route them without inference:
- *
- *   - `sessionId`  — the session id (`ses_…`) of the emitting agent (root or
- *     subagent). This is the canonical multi-agent delineator and supersedes
- *     the legacy `subagentId` string. For a subagent it is the child's own
- *     session id; for the root agent it is the root session id.
- *   - `messageId`  — the assistant message (`msg_…`) the part belongs to,
- *     minted at step start and closed on `step-finish`.
- *   - `partId`     — the part (`prt_…`) within that message; minted per text
- *     run and per tool call (stable across a tool's start/complete/result).
- *
- * `subagentId` is retained as a backward-compatible alias of the emitting
- * agent's identity so the existing consumer surface (W&B uploader,
- * operator dashboard, persistence) keeps working during the migration.
- * When a `ses_…` session id is the agent's identity, `subagentId` carries
- * that same value.
- *
+ * Events mirror the AI SDK's `TextStreamPart` types, plus native identity
+ * (`sessionId`/`messageId`/`partId`) for routing without inference.
+ * `subagentId` is kept as a backward-compatible alias of `sessionId`.
  * Lifecycle events (`subagent-spawn`, `subagent-complete`) and side-channel
  * events (`command-output`, `error`) round out the map.
  */
@@ -239,19 +224,9 @@ export class AgentEventBus {
   }
 
   /**
-   * Forward selected events from a child bus to a parent bus, ensuring
-   * all forwarded payloads carry the child's identity.
-   *
-   * `childSessionId` is the spawned subagent's own session id (`ses_…`).
-   * It is injected as both `sessionId` (canonical) and `subagentId`
-   * (legacy alias) on every bubbled event that lacks one, so the
-   * parent's routing logic (subagent store vs main view, downstream
-   * translator) works correctly without inference.
-   *
-   * Tools running inside a subagent emit side-channel events (e.g.
-   * `command-output`) without any identity. For `subagent-spawn` /
-   * `subagent-complete` this additionally injects `parentSubagentId`
-   * and `parentSessionId` to preserve hierarchy across nested subagents.
+   * Forward selected events from a child bus to a parent bus, stamping
+   * `sessionId`/`subagentId` (and `parentSessionId`/`parentSubagentId`
+   * for lifecycle events) so the parent's routing works without inference.
    */
   static attachChild(
     child: AgentEventBus,
@@ -270,9 +245,7 @@ export class AgentEventBus {
           forwardKey === "subagent-spawn" || forwardKey === "subagent-complete";
 
         if (isLifecycle) {
-          // The child bus belongs to a NESTED subagent: this lifecycle
-          // event describes a grandchild, so `childSessionId` is the
-          // parent of that grandchild.
+          // Nested subagent case: childSessionId becomes the grandchild's parent id.
           const next: Record<string, unknown> = { ...p };
           if (!p.parentSubagentId) next.parentSubagentId = childSessionId;
           if (!p.parentSessionId) next.parentSessionId = childSessionId;
@@ -289,16 +262,6 @@ export class AgentEventBus {
   }
 
   /**
-   * Per-stream identity context threaded into {@link emitStreamPart}.
-   *
-   * The emitting agent owns this object and mutates it as the stream
-   * progresses (a new `messageId` at step start, a fresh text `partId`
-   * per text run). It is passed by reference on every chunk so the bus
-   * stamps each event with the right native ids.
-   */
-  // (interface declared at module scope as StreamIdContext)
-
-  /**
    * Emit the appropriate bus event for an AI SDK `fullStream` chunk.
    *
    * Maps Vercel AI SDK `TextStreamPart` types to `AgentEventMap` keys:
@@ -312,16 +275,8 @@ export class AgentEventBus {
    *   tool-result       → tool-result
    *   error             → error
    *
-   * The second argument carries the emitting agent's identity. For
-   * backward compatibility a bare `subagentId` string is still accepted;
-   * callers that have full identity should pass a {@link StreamIdContext}
-   * so events carry `sessionId` / `messageId` / `partId`.
-   *
-   * Part ids:
-   *   - text parts reuse `ids.textPartId` (the agent mints a fresh one at
-   *     the start of each text run and clears it at step boundaries).
-   *   - tool parts are minted on `tool-input-start` keyed by `toolCallId`
-   *     and reused for `tool-call` / `tool-result` of the same call.
+   * `ids` accepts a bare `subagentId` string for backward compatibility, or
+   * a {@link StreamIdContext} to also stamp `sessionId`/`messageId`/`partId`.
    */
   emitStreamPart(
     chunk: TextStreamPart<ToolSet>,
@@ -431,9 +386,6 @@ export interface StreamIdContext {
   messageId?: string;
   /** Current text part id (`prt_…`); minted per text run by the agent. */
   textPartId?: string;
-  /**
-   * Resolve a stable part id (`prt_…`) for a tool call, minting on first
-   * call for a given `toolCallId` and returning the same id thereafter.
-   */
+  /** Resolves a stable part id (`prt_…`) for a `toolCallId`, minting on first use. */
   toolPartId?: (toolCallId: string) => string;
 }

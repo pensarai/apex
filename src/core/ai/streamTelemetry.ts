@@ -1,7 +1,6 @@
-// Per-stream connection telemetry for diagnosing provider-stream wedges. OFF
-// unless PENSAR_STREAM_DEBUG=1. Tracks bytes off the socket separately from
-// parsed events so a dead/half-open stream (no bytes) is distinguishable from a
-// slow-but-alive one (bytes still trickling). Single-line grep-friendly output.
+// Per-stream connection telemetry for diagnosing provider-stream wedges (OFF
+// unless PENSAR_STREAM_DEBUG=1); tracks bytes separately from parsed events to
+// distinguish a dead stream from a slow-but-alive one.
 
 export const STREAM_DEBUG =
   process.env.PENSAR_STREAM_DEBUG === "1" ||
@@ -85,8 +84,7 @@ export class StreamTelemetry {
   }
 }
 
-// Real wall clock — fine here (provider streaming isn't workflow-deterministic
-// code) and it's the elapsed measure stall detection needs.
+// Real wall clock is fine here — provider streaming isn't workflow-deterministic code.
 export function wallNow(): number {
   return Date.now();
 }

@@ -96,13 +96,11 @@ function buildStubAgent(overrides: {
     value: { fullStream: overrides.fullStream },
   });
   Object.defineProperty(agent, "subagentId", { value: undefined });
-  // consume() races the drain against this; default never resolves so the
-  // drain (the full-stream path these tests exercise) always wins.
+  // Never resolves by default, so consume() settles via the drain path.
   Object.defineProperty(agent, "responseCaptured", {
     value: overrides.responseCaptured ?? new Promise(() => {}),
   });
-  // A real agent always has a session; the stub bypasses the constructor,
-  // so provide a minimal one for busSessionId (used to stamp event ids).
+  // Stub bypasses the constructor, so provide a minimal session for busSessionId.
   Object.defineProperty(agent, "_session", {
     value: { id: "ses_stub" },
   });
@@ -454,9 +452,7 @@ describe("OffensiveSecurityAgent.consume()", () => {
     });
 
     it("flushes a tool-error into the snapshot when the stream aborts before finish-step", async () => {
-      // tool-error moves the call out of inFlightTools into toolErrors, deferred
-      // to finish-step. If the stream throws first, the finally must still flush
-      // it — otherwise the Zod failure is lost (never emitted or persisted).
+      // finally must flush deferred toolErrors even if the stream throws first.
       const agent = buildStubAgent({
         fullStream: yieldThenThrow(
           [
@@ -511,8 +507,7 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
   describe("result/drain decoupling", () => {
     it("returns the captured result without waiting for the stream to drain", async () => {
-      // A teardown that never completes (a wedged stream). consume() must still
-      // settle from responseCaptured rather than hang on the drain.
+      // Wedged stream: consume() must settle from responseCaptured, not the drain.
       const neverDrains = (async function* () {
         await new Promise(() => {});
       })();
@@ -555,7 +550,6 @@ describe("OffensiveSecurityAgent.consume()", () => {
         await agent.consume();
       } catch {}
 
-      // Wait for async writeFile
       await new Promise((r) => setTimeout(r, 50));
 
       const written = JSON.parse(readFileSync(messagesPath, "utf-8"));
@@ -754,8 +748,7 @@ describe("OffensiveSecurityAgent.consume()", () => {
       ];
       writeFileSync(messagesPath, JSON.stringify(persistedAfterStep1));
 
-      // Stream replays step 1's chunks, finishes the step, then opens tool B
-      // in step 2 before erroring.
+      // Replays step 1's chunks, finishes the step, then opens tool B in step 2 before erroring.
       const agent = buildStubAgent({
         fullStream: yieldThenThrow(
           [
@@ -849,7 +842,6 @@ describe("OffensiveSecurityAgent.consume()", () => {
         ),
       });
 
-      // Make the event listener throw during synthetic emission
       agent.eventBus.on("tool-result", () => {
         throw new Error("listener explosion");
       });
