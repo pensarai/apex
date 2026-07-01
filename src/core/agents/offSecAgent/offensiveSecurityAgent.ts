@@ -1006,6 +1006,9 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
 
       if (this.resolveResult) {
+        if (this._responseToolFired) {
+          return undefined as TResult;
+        }
         return this.resolveResult(this.streamResult);
       }
       return undefined as TResult;
@@ -1047,12 +1050,21 @@ export class OffensiveSecurityAgent<TResult = void> {
       () => {},
     );
 
-    // Don't propagate drain's rejection if the response was already captured.
-    const guardedDrain = drain.catch((err) => {
-      rejectDrain?.(err);
-      if (!this._responseToolFired) throw err;
-      return this.responseCaptured;
-    });
+    // Don't let drain's settle (reject OR resolve) mask an already-captured
+    // response; unblock the resolver's streamResult.response wait either way.
+    const guardedDrain = drain
+      .then((result) => {
+        if (this._responseToolFired) {
+          rejectDrain?.(new Error("drain resolved"));
+          return this.responseCaptured;
+        }
+        return result;
+      })
+      .catch((err) => {
+        rejectDrain?.(err);
+        if (!this._responseToolFired) throw err;
+        return this.responseCaptured;
+      });
     guardedDrain.catch(() => {});
 
     const result = await Promise.race([guardedDrain, this.responseCaptured]);
