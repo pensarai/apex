@@ -28,6 +28,16 @@ const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
 // recon advances. A healthy threat model finishes in well under this.
 const THREAT_MODEL_MAX_STEPS = 40;
 
+// Cap the post-abort drain wait so a wedged drain can't pin a p-limit slot.
+const DRAIN_GRACE_MS = 30_000;
+const waitDrainBounded = (drained: Promise<void>): Promise<void> =>
+  Promise.race([
+    drained,
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, DRAIN_GRACE_MS).unref?.();
+    }),
+  ]);
+
 // ---------------------------------------------------------------------------
 // Response schema
 // ---------------------------------------------------------------------------
@@ -397,11 +407,8 @@ export async function generateThreatModelForEndpoint(
       // and those detached drains pile up and OOM the sandbox.
       const result = await agent.consume();
       childAbort.abort();
-      // Wait for the aborted drain's finally to close any in-flight tool BEFORE
-      // marking the subagent complete — otherwise the last step's tools are
-      // stranded `running` past completion. The abort already stopped
-      // regeneration, so this settles fast (idle-guard bounded).
-      await agent.drained;
+      // Close in-flight tools before marking complete (bounded, can't pin the slot).
+      await waitDrainBounded(agent.drained);
       ctx.eventBus?.emit("subagent-complete", {
         subagentId,
         status: "completed",
@@ -410,7 +417,7 @@ export async function generateThreatModelForEndpoint(
       return result ? buildOutput(result) : null;
     } catch (error) {
       childAbort.abort();
-      await agent.drained;
+      await waitDrainBounded(agent.drained);
       ctx.eventBus?.emit("subagent-complete", {
         subagentId,
         status: "failed",

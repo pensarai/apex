@@ -146,15 +146,24 @@ export class OffensiveSecurityAgent<TResult = void> {
    * the moment the agent is semantically done, independent of stream teardown
    * (which can wedge before the final `finish` chunk). {@link consume} races
    * this so it returns the result then and drains the rest in the background.
-   * Never rejects; never resolves if `response` is never called — there the
+   * Never resolves if `response` is never called — there the
    * idle-guard-bounded drain settles `consume` instead.
    */
   private _resolveResponseCaptured!: (result: TResult) => void;
+  private _rejectResponseCaptured!: (err: unknown) => void;
   public readonly responseCaptured: Promise<TResult> = new Promise(
-    (resolve) => {
+    (resolve, reject) => {
       this._resolveResponseCaptured = resolve;
+      this._rejectResponseCaptured = reject;
     },
   );
+
+  /**
+   * Rejects when the background drain settles with an error. Custom resolvers
+   * race `streamResult.response` against this so a wedged stream (Bedrock
+   * half-open) doesn't prevent the resolver from completing.
+   */
+  private _drainRejection: Promise<never> = new Promise<never>(() => {});
 
   /**
    * Settles when the background drain (stream iteration + its `finally`, which
@@ -432,15 +441,26 @@ export class OffensiveSecurityAgent<TResult = void> {
             const customResolve = input.resolveResult;
             if (customResolve) {
               void Promise.resolve()
-                .then(() => customResolve(this.streamResult))
+                .then(() => {
+                  // Guard .response against wedged streams: the drain's
+                  // idle-timeout rejects _drainRejection, so a custom
+                  // resolver that awaits streamResult.response (e.g.
+                  // TargetedPentestAgent) won't hang indefinitely.
+                  const sr = this.streamResult;
+                  const guarded = Object.create(sr, {
+                    response: {
+                      get: () =>
+                        Promise.race([sr.response, this._drainRejection]),
+                    },
+                  });
+                  return customResolve(guarded);
+                })
                 .then((resolved) => {
                   this._capturedResponse = resolved;
                   this._resolveResponseCaptured(resolved);
                 })
-                .catch(() => {
-                  // resolveResult failed at capture time — leave
-                  // responseCaptured unresolved so consume() settles on the
-                  // background drain (which surfaces the real error/result).
+                .catch((err) => {
+                  this._rejectResponseCaptured(err);
                 });
               return;
             }
@@ -1017,15 +1037,20 @@ export class OffensiveSecurityAgent<TResult = void> {
                       `responseToolFired=${this._responseToolFired}`,
                   );
                 }
+                // Already-fired response: mark submitted, not "did not complete".
+                const result =
+                  toolName === RESPONSE_TOOL_NAME && this._responseToolFired
+                    ? { type: "text" as const, value: "Response submitted." }
+                    : {
+                        type: "error-text" as const,
+                        value: truncated
+                          ? "Tool call did not complete: the model's output was truncated at its max output tokens before the arguments were finalized."
+                          : "Tool call did not complete",
+                      };
                 bus.emit("tool-result", {
                   toolCallId,
                   toolName,
-                  result: {
-                    type: "error-text",
-                    value: truncated
-                      ? "Tool call did not complete: the model's output was truncated at its max output tokens before the arguments were finalized."
-                      : "Tool call did not complete",
-                  },
+                  result,
                   sessionId: this.busSessionId,
                   subagentId: sid,
                   partId: ids.toolPartId?.(toolCallId),
@@ -1038,8 +1063,8 @@ export class OffensiveSecurityAgent<TResult = void> {
           }
           bus.emitStreamPart(chunk, ids);
         }
-        // Completed normally — onStepFinish persists everything.
-        completedResults.length = 0;
+        // Keep completedResults: an abort with no trailing finish-step needs
+        // them for the finally snapshot (finish-step clears its own).
       } catch (err) {
         streamError = err;
       } finally {
@@ -1047,7 +1072,32 @@ export class OffensiveSecurityAgent<TResult = void> {
         if (stallTimer) clearInterval(stallTimer);
         // Dispose first — don't block on persistence I/O.
         this.persistentShell?.dispose();
-        if (inFlightTools.size > 0) {
+        // Flush tool-errors that never reached a finish-step into the snapshot.
+        for (const [toolCallId, info] of toolErrors) {
+          const result = {
+            type: "error-text" as const,
+            value: `Tool call failed: ${info.message}`,
+          };
+          bus.emit("tool-result", {
+            toolCallId,
+            toolName: info.toolName,
+            result,
+            sessionId: this.busSessionId,
+            subagentId: sid,
+            partId: ids.toolPartId?.(toolCallId),
+            messageId: ids.messageId,
+          });
+          completedResults.push({
+            type: "tool-result",
+            toolCallId,
+            toolName: info.toolName,
+            output: result,
+          });
+        }
+        toolErrors.clear();
+        // Snapshot unpersisted step state: open tools get synthetic closes,
+        // completed/errored results (no finish-step yet) get written.
+        if (inFlightTools.size > 0 || completedResults.length > 0) {
           const reason = this.abortSignal?.aborted
             ? "Agent aborted by user"
             : streamError instanceof Error && streamError.message
@@ -1059,6 +1109,7 @@ export class OffensiveSecurityAgent<TResult = void> {
               completedResults,
               reason,
               ids.toolPartId,
+              ids.messageId,
               streamedArgText,
             );
           } catch {
@@ -1118,6 +1169,15 @@ export class OffensiveSecurityAgent<TResult = void> {
     // by the transport idle guard so it can't block the caller or leak. Without
     // a response schema `responseCaptured` never fires and this is the same
     // full-drain await as before.
+
+    // Signal the capture callback's custom resolver when the drain fails so a
+    // resolver stuck on streamResult.response (wedged stream) is unblocked.
+    let rejectDrain: ((err: unknown) => void) | undefined;
+    this._drainRejection = new Promise<never>((_, reject) => {
+      rejectDrain = reject;
+    });
+    this._drainRejection.catch(() => {});
+
     // Expose the drain's settle so a caller that aborts after capturing the
     // result can wait for its `finally` (in-flight tool closes) before marking
     // the run complete.
@@ -1125,10 +1185,20 @@ export class OffensiveSecurityAgent<TResult = void> {
       () => {},
       () => {},
     );
-    const result = await Promise.race([drain, this.responseCaptured]);
+
+    // Wrap drain so its rejection doesn't propagate when the response was
+    // already captured — instead wait for responseCaptured (now unblocked
+    // via _drainRejection → custom resolver completes).
+    const guardedDrain = drain.catch((err) => {
+      rejectDrain?.(err);
+      if (!this._responseToolFired) throw err;
+      return this.responseCaptured;
+    });
+    guardedDrain.catch(() => {});
+
+    const result = await Promise.race([guardedDrain, this.responseCaptured]);
     // Free the browser on result capture; the drain can wedge and leak camoufox.
     await this.disconnectOwnedBrowser();
-    drain.catch(() => {});
     return result;
   }
 
@@ -1153,6 +1223,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     completedResults: ToolResultPart[],
     reason: string,
     partIdFor?: (toolCallId: string) => string,
+    messageId?: string,
     streamedArgText?: Map<string, string>,
   ): Promise<void> {
     const sid = this.subagentId;
@@ -1196,6 +1267,8 @@ export class OffensiveSecurityAgent<TResult = void> {
         // Reuse the running part's id so the close lands on it instead of
         // stranding it as a spinning duplicate.
         partId: partIdFor?.(toolCallId),
+        // Route by (sessionId, messageId, partId), matching finish-step.
+        messageId,
       });
       syntheticParts.push({
         type: "tool-result",

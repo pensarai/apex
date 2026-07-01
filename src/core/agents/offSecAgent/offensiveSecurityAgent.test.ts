@@ -452,6 +452,40 @@ describe("OffensiveSecurityAgent.consume()", () => {
         value: expect.stringContaining("aborted by user"),
       });
     });
+
+    it("flushes a tool-error into the snapshot when the stream aborts before finish-step", async () => {
+      // tool-error moves the call out of inFlightTools into toolErrors, deferred
+      // to finish-step. If the stream throws first, the finally must still flush
+      // it — otherwise the Zod failure is lost (never emitted or persisted).
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow(
+          [
+            toolCallChunk,
+            {
+              type: "tool-error",
+              toolCallId: "tc1",
+              toolName: "execute_command",
+              error: new Error("Zod: expected string"),
+            },
+          ],
+          new Error("connection reset"),
+        ),
+      });
+
+      const emittedResults: Array<{ toolCallId: string; result: unknown }> = [];
+      agent.eventBus.on("tool-result", (e) => {
+        emittedResults.push({ toolCallId: e.toolCallId, result: e.result });
+      });
+
+      await expect(agent.consume()).rejects.toThrow("connection reset");
+
+      expect(emittedResults).toHaveLength(1);
+      expect(emittedResults[0].toolCallId).toBe("tc1");
+      expect(emittedResults[0].result).toMatchObject({
+        type: "error-text",
+        value: expect.stringContaining("Zod: expected string"),
+      });
+    });
   });
 
   describe("resolveResult", () => {
