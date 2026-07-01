@@ -34,7 +34,7 @@ export function crawlAuthenticated(ctx: ToolContext) {
       startUrl: z.string().describe("Starting URL (e.g., /dashboard)"),
       sessionCookie: z
         .string()
-        .describe("Session cookie from authenticate_session"),
+        .describe("Session cookie from delegate_to_auth_subagent"),
       maxDepth: z.number().default(3).describe("Maximum crawl depth"),
       maxPages: z.number().default(50).describe("Maximum pages to visit"),
       toolCallDescription: z

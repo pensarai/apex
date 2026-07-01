@@ -105,6 +105,36 @@ interface PendingCommand {
   _activeSalvageId?: object;
 }
 
+/**
+ * Workspace-configured agent environment variables, transported into the
+ * sandbox as a single JSON blob (`PENSAR_AGENT_ENV_VARS`) by the platform's
+ * dispatch layer. They are merged into every shell's environment so the
+ * agent's `execute_command` calls see them — the curated env below
+ * deliberately does NOT inherit arbitrary `process.env`, so platform secrets
+ * (AGENT_API_TOKEN, AWS creds, …) never leak into the agent's shell, but that
+ * also means these workspace vars must be re-introduced explicitly here.
+ *
+ * Fail-soft: a missing or malformed blob yields no extra vars rather than
+ * throwing — a parse failure must not break command execution.
+ */
+export function readSandboxAgentEnv(): Record<string, string> {
+  const raw = process.env.PENSAR_AGENT_ENV_VARS;
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === "string") out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 let stdbufAvailable: boolean | null = null;
 function hasStdbuf(): boolean {
   if (stdbufAvailable !== null) return stdbufAvailable;
@@ -195,6 +225,10 @@ export class PersistentShell {
       // interactive prompts off the TUI's TTY.
       detached: process.platform !== "win32",
       env: {
+        // Workspace-configured agent env vars first (lowest precedence) so the
+        // curated essentials below and explicit per-agent `extraEnv` always
+        // win — a workspace var can never clobber PATH/HOME or shell controls.
+        ...readSandboxAgentEnv(),
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
         USER: process.env.USER ?? "",

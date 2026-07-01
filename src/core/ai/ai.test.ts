@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   applySequentialToolCallPolicy,
+  buildReasoningProviderOptions,
   SEQUENTIAL_TOOL_CALL_INSTRUCTION,
   streamResponse,
 } from "./ai";
@@ -49,6 +50,55 @@ describe("applySequentialToolCallPolicy", () => {
     expect(
       applySequentialToolCallPolicy("Base.", tools, "claude-haiku-4-5"),
     ).toBe("Base.");
+  });
+});
+
+describe("buildReasoningProviderOptions", () => {
+  it("sets the bedrock reasoningConfig (and anthropic.thinking) for a Bedrock Claude model when thinking is enabled", () => {
+    // Console sandbox agents run on Bedrock; this is the path the bug starved.
+    const result = buildReasoningProviderOptions(
+      "global.anthropic.claude-opus-4-6-v1",
+      { enableThinking: true },
+    );
+    expect(result).toEqual({
+      anthropic: { thinking: { type: "adaptive" } },
+      bedrock: {
+        reasoningConfig: { type: "adaptive", display: "summarized" },
+      },
+    });
+  });
+
+  it("sets anthropic.thinking for a direct Anthropic model when thinking is enabled", () => {
+    const result = buildReasoningProviderOptions("claude-sonnet-4-5", {
+      enableThinking: true,
+    });
+    expect(result?.anthropic).toEqual({ thinking: { type: "adaptive" } });
+  });
+
+  it("returns undefined when thinking is disabled and no OpenAI effort applies", () => {
+    expect(
+      buildReasoningProviderOptions("global.anthropic.claude-opus-4-6-v1", {
+        enableThinking: false,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined for a model that does not support thinking, even when enabled", () => {
+    // claude-3-haiku has no extended thinking; the gate must not request it.
+    expect(
+      buildReasoningProviderOptions("claude-3-haiku-20240307", {
+        enableThinking: true,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("sets openai.reasoningEffort for an OpenAI reasoning model without thinking keys", () => {
+    const result = buildReasoningProviderOptions("gpt-5.5", {
+      openAIReasoningEffort: "high",
+    });
+    expect(result).toEqual({ openai: { reasoningEffort: "high" } });
+    expect(result?.anthropic).toBeUndefined();
+    expect(result?.bedrock).toBeUndefined();
   });
 });
 

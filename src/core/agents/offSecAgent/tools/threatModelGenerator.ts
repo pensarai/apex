@@ -1,3 +1,4 @@
+import { stepCountIs } from "ai";
 import pLimit from "p-limit";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
@@ -8,10 +9,24 @@ import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("threat-model-generator"));
 
-// Process-wide cap — parents emit `document_endpoint` tool calls in parallel,
-// so without this gate each parent fans out unboundedly.
+// Process-wide cap — parents emit `document_endpoint` calls in parallel; without this gate each parent fans out unboundedly.
 const THREAT_MODEL_CONCURRENCY = 10;
 const threatModelLimiter = pLimit(THREAT_MODEL_CONCURRENCY);
+
+// consume() always settles — resolves on success, rejects once the agent loop terminates; on failure `document_endpoint` degrades to the heuristic score.
+
+// Bounds a Bedrock wedge-rate failure mode where the model loops re-calling `response` without completing, so the child always terminates and degrades to heuristic.
+const THREAT_MODEL_MAX_STEPS = 100;
+
+// Cap the post-abort drain wait so a wedged drain can't pin a p-limit slot.
+const DRAIN_GRACE_MS = 30_000;
+const waitDrainBounded = (drained: Promise<void>): Promise<void> =>
+  Promise.race([
+    drained,
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, DRAIN_GRACE_MS).unref?.();
+    }),
+  ]);
 
 // ---------------------------------------------------------------------------
 // Response schema
@@ -322,6 +337,16 @@ export async function generateThreatModelForEndpoint(
 
     const prompt = buildThreatModelPrompt(input, ctx.projectThreatModel);
 
+    // Child-scoped abort so a failure cancels only this threat model, not the shared parent `ctx.abortSignal` (which still propagates down).
+    const childAbort = new AbortController();
+    if (ctx.abortSignal) {
+      if (ctx.abortSignal.aborted) childAbort.abort();
+      else
+        ctx.abortSignal.addEventListener("abort", () => childAbort.abort(), {
+          once: true,
+        });
+    }
+
     const agent = new CodeAgent<ThreatModelResult>({
       codebasePath: ctx.agentCwd,
       objective: prompt,
@@ -329,29 +354,20 @@ export async function generateThreatModelForEndpoint(
       model,
       session: ctx.session,
       authConfig: ctx.authConfig,
-      abortSignal: ctx.abortSignal,
+      abortSignal: childAbort.signal,
       eventBus: localBus,
       subagentId,
       responseSchema: ThreatModelResultSchema,
+      stopWhen: stepCountIs(THREAT_MODEL_MAX_STEPS),
       excludeTools: ["document_endpoint", "document_app"],
     });
 
-    try {
-      const result = await agent.consume();
-      ctx.eventBus?.emit("subagent-complete", {
-        subagentId,
-        status: "completed",
-        parentSubagentId: ctx.subagentId,
-      });
-
-      if (!result) return null;
-
+    const buildOutput = (result: ThreatModelResult): ThreatModelOutput => {
       const totalScore =
         result.exposure +
         result.dataSensitivity +
         result.functionCriticality +
         result.securityIndicators;
-
       return {
         businessLogic: result.businessLogic,
         threatModel: result.threatModel,
@@ -369,7 +385,23 @@ export async function generateThreatModelForEndpoint(
           flattenPentestObjective,
         ),
       };
+    };
+
+    try {
+      // Abort right after consume() resolves so the background drain doesn't keep resume-regenerating a discarded response and OOM the sandbox.
+      const result = await agent.consume();
+      childAbort.abort();
+      // Close in-flight tools before marking complete (bounded, can't pin the slot).
+      await waitDrainBounded(agent.drained);
+      ctx.eventBus?.emit("subagent-complete", {
+        subagentId,
+        status: "completed",
+        parentSubagentId: ctx.subagentId,
+      });
+      return result ? buildOutput(result) : null;
     } catch (error) {
+      childAbort.abort();
+      await waitDrainBounded(agent.drained);
       ctx.eventBus?.emit("subagent-complete", {
         subagentId,
         status: "failed",

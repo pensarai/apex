@@ -88,12 +88,12 @@ export function delegateAuth(ctx: ToolContext) {
   return tool({
     description: `Delegate authentication to the specialized auth subagent.
 
-Use when:
-- Complex auth flow detected (OAuth, SAML, CSRF tokens)
-- Browser-based login required (SPA, JavaScript forms)
-- Built-in authenticate_session tool failed
-- MFA or CAPTCHA barrier detected
-- Need to verify pre-existing tokens (bearer, API key, cookies)
+This is the single entry point for authenticating against a target. Use it for:
+- Simple logins (form POST, JSON API, HTTP Basic)
+- Complex auth flows (OAuth, SAML, CSRF tokens)
+- Browser-based login (SPA, JavaScript forms)
+- MFA or CAPTCHA barriers (will report a barrier if it can't proceed)
+- Verifying pre-existing tokens (bearer, API key, cookies)
 - No credentials provided (will probe for open registration)
 
 The auth subagent will:
@@ -102,14 +102,7 @@ The auth subagent will:
 3. Return cookies/headers for authenticated requests
 4. Verify tokens against protected endpoints if provided
 
-IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 endpoints.
-
-When to use delegate_to_auth_subagent vs authenticate_session:
-- Simple form POST without CSRF -> use authenticate_session
-- JSON API with username/password -> use authenticate_session
-- Complex flow (OAuth, CSRF, SPA, browser required) -> delegate_to_auth_subagent
-- If authenticate_session fails -> delegate_to_auth_subagent
-- Token verification needed -> delegate_to_auth_subagent`,
+IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 endpoints.`,
     inputSchema: z.object({
       target: z.string().describe("Target URL requiring authentication"),
       credentialId: z

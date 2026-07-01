@@ -167,7 +167,6 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       activeTools: [
         // Auth flow tools
         "execute_command",
-        "authenticate_session",
         "complete_authentication",
         // Browser automation for login forms, OAuth, SPA auth
         "browser_navigate",
@@ -289,17 +288,16 @@ function buildAuthPrompt(
   if (credBlock) {
     parts.push(`INSTRUCTIONS:
 You have credentials available via credential IDs — authenticate immediately.
-1. Try authenticate_session first (pass the credentialId — secrets are resolved automatically)
-2. If authenticate_session fails, use browser tools. For browser_fill on password/secret fields,
+1. For API/form logins, use execute_command (curl) to submit credentials and capture the Set-Cookie / token response
+2. For browser-based logins, use the browser tools. For browser_fill on password/secret fields,
    pass credentialId + credentialField (e.g. credentialField="password") instead of the raw value —
    the secret is resolved securely at execution time. NEVER type a password directly.
 3. Call complete_authentication with exported cookies/headers to persist credentials and end the run`);
   } else {
     parts.push(`INSTRUCTIONS:
 1. Probe the target with execute_command (curl) to determine the auth mechanism
-2. Attempt authentication with authenticate_session or the browser tools
-3. If that fails, try delegate_to_auth_subagent as a fallback
-4. Call complete_authentication with exported cookies/headers to persist credentials and end the run`);
+2. Attempt authentication with execute_command (curl) or the browser tools
+3. Call complete_authentication with exported cookies/headers to persist credentials and end the run`);
   }
 
   return parts.join("\n");

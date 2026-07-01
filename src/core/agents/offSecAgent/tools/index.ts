@@ -7,7 +7,6 @@ export {
   AskUserQuestionSchema,
   type AskUserQuestionsResult,
 } from "./askUserQuestions";
-export { authenticateSession } from "./authenticateSession";
 // Browser automation tools
 export { BROWSER_TOOL_NAMES, createBrowserToolset } from "./browserTools";
 // Observability tools
@@ -153,7 +152,6 @@ import {
   ASK_USER_QUESTIONS_TOOL_NAME,
   askUserQuestions,
 } from "./askUserQuestions";
-import { authenticateSession } from "./authenticateSession";
 import { createBrowserToolset } from "./browserTools";
 import { checkpointState } from "./checkpointState";
 import { completeAuthentication } from "./completeAuthentication";
@@ -249,7 +247,6 @@ export function createAllTools(ctx: ToolContext) {
     // Attack surface / recon tools
     document_app: documentApp(ctx),
     document_endpoint: documentEndpoint(ctx),
-    authenticate_session: authenticateSession(ctx),
     delegate_to_auth_subagent: delegateAuth(ctx),
     extract_js_endpoints: extractJsEndpoints(ctx),
     crawl_authenticated_area: crawlAuthenticated(ctx),
@@ -352,7 +349,6 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "update_file",
   "document_app",
   "document_endpoint",
-  "authenticate_session",
   "delegate_to_auth_subagent",
   "create_attack_surface_report",
   "complete_authentication",
@@ -427,7 +423,6 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "grep",
   "query_whitebox_catalog",
   // Recon (read-only probing and discovery)
-  "authenticate_session",
   "delegate_to_auth_subagent",
   "complete_authentication",
   "extract_js_endpoints",

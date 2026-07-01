@@ -49,7 +49,6 @@ export {
   addMemory,
   assertCommandInScope,
   assertUrlInScope,
-  authenticateSession,
   BROWSER_TOOL_NAMES,
   checkpointState,
   checkSandboxPlaywright,

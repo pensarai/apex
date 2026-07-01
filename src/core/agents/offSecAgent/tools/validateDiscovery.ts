@@ -56,7 +56,7 @@ Returns a confidence score and identifies potential gaps based on:
           gap: "Credentials found but never used for authentication",
           severity: "CRITICAL",
           recommendation:
-            "Use authenticate_session with discovered credentials, then use crawl_authenticated_area to explore authenticated sections",
+            "Use delegate_to_auth_subagent with discovered credentials, then use crawl_authenticated_area to explore authenticated sections",
         });
         confidence -= 40;
       }
