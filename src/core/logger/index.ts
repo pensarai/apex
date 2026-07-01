@@ -10,6 +10,7 @@ import path from "node:path";
 import { type SessionInfo, sessions } from "../session";
 
 export { type LogLevel as StructuredLogLevel, logger } from "./structured";
+import { setLogSink } from "./structured";
 
 export enum LogLevel {
   INFO = "INFO",
@@ -99,6 +100,32 @@ export function writeErrorLog(
   } catch {
     // Last resort — don't throw from the error logger
   }
+}
+
+/**
+ * Redirect all structured-logger output from stderr into ~/.pensar/error.log.
+ *
+ * The interactive TUI calls this at startup: OpenTUI owns the screen, so any
+ * raw stderr write (a `log.warn`, a stack trace) lands on the live frame and
+ * garbles it — e.g. the per-turn Weave flush warning bleeding into the input
+ * box. User-facing errors are surfaced through the TUI itself; the file keeps
+ * everything diagnosable. Headless/CLI runs never call this, so they keep
+ * logging to stderr as before.
+ */
+export function routeLogsToErrorFile(): void {
+  // Force JSON so pretty-format ANSI color codes don't end up in the file.
+  process.env.PENSAR_LOG_FORMAT = "json";
+  setLogSink((line) => {
+    try {
+      const dir = path.dirname(ERROR_LOG_PATH);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      appendFileSync(ERROR_LOG_PATH, `${line}\n`, "utf8");
+    } catch {
+      // Last resort — never throw from the logger.
+    }
+  });
 }
 
 export class Logger {
