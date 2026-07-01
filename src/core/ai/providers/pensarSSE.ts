@@ -8,6 +8,7 @@
 
 import { createLogger } from "../../logger/structured";
 import { scopedLogger } from "../../util/lazyLogger";
+import { type StreamTelemetry, wallNow } from "../streamTelemetry";
 
 const log = scopedLogger(() => createLogger("pensarSSE"));
 
@@ -23,6 +24,8 @@ export interface ParseSSEOptions {
    * Default: 90_000.
    */
   idleTimeoutMs?: number;
+  /** Optional per-stream connection telemetry (see streamTelemetry.ts). */
+  telemetry?: StreamTelemetry;
 }
 
 export async function* parseSSE(
@@ -56,6 +59,7 @@ export async function* parseSSE(
       try {
         result = await Promise.race([reader.read(), idlePromise]);
       } catch (err) {
+        options.telemetry?.wedge(`no bytes for ${idleTimeoutMs}ms`, wallNow());
         await reader.cancel(err).catch(() => {});
         throw err;
       } finally {
@@ -74,6 +78,7 @@ export async function* parseSSE(
       const value = result.value;
       chunkCount++;
       totalBytes += value.byteLength;
+      options.telemetry?.recordByte(value.byteLength, wallNow());
       const decoded = decoder.decode(value, { stream: true });
 
       if (chunkCount <= 3) {
@@ -93,6 +98,7 @@ export async function* parseSSE(
         if (line === "") {
           if (currentData.length > 0) {
             eventCount++;
+            options.telemetry?.recordEvent(wallNow());
             yield { event: currentEvent, data: currentData.join("\n") };
           }
           currentEvent = "message";

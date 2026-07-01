@@ -4,13 +4,20 @@ import type { TextStreamPart, ToolSet } from "ai";
 /**
  * Typed event map for the agent event bus.
  *
- * Events mirror the AI SDK's `TextStreamPart` types with an added
- * `subagentId` for multi-agent delineation.  Lifecycle events
- * (`subagent-spawn`, `subagent-complete`) and side-channel events
- * (`command-output`, `error`) round out the map.
+ * Events mirror the AI SDK's `TextStreamPart` types, plus native identity
+ * (`sessionId`/`messageId`/`partId`) for routing without inference.
+ * `subagentId` is kept as a backward-compatible alias of `sessionId`.
+ * Lifecycle events (`subagent-spawn`, `subagent-complete`) and side-channel
+ * events (`command-output`, `error`) round out the map.
  */
 export type AgentEventMap = {
-  "text-delta": { text: string; subagentId?: string };
+  "text-delta": {
+    text: string;
+    subagentId?: string;
+    sessionId?: string;
+    messageId?: string;
+    partId?: string;
+  };
   /**
    * Extended-thinking / reasoning output streamed incrementally. Mirrors
    * `text-delta` but carries the model's reasoning tokens (Anthropic
@@ -26,36 +33,56 @@ export type AgentEventMap = {
     toolCallId: string;
     toolName: string;
     subagentId?: string;
+    sessionId?: string;
+    messageId?: string;
+    partId?: string;
   };
   "tool-call-delta": {
     toolCallId: string;
     argsTextDelta: string;
     subagentId?: string;
+    sessionId?: string;
+    messageId?: string;
+    partId?: string;
   };
   "tool-call-complete": {
     toolCallId: string;
     toolName: string;
     args: unknown;
     subagentId?: string;
+    sessionId?: string;
+    messageId?: string;
+    partId?: string;
   };
   "tool-result": {
     toolCallId: string;
     toolName: string;
     result: unknown;
     subagentId?: string;
+    sessionId?: string;
+    messageId?: string;
+    partId?: string;
   };
   "subagent-spawn": {
     subagentId: string;
+    /** The spawned child's own session id (`ses_…`). */
+    sessionId?: string;
     name?: string;
     input: unknown;
     /** Omitted means top-level. Auto-populated by {@link AgentEventBus.attachChild}. */
     parentSubagentId?: string;
+    /** Parent agent's session id (`ses_…`). Auto-populated by {@link AgentEventBus.attachChild}. */
+    parentSessionId?: string;
   };
   "subagent-complete": {
     subagentId: string;
+    /** The completed child's own session id (`ses_…`). */
+    sessionId?: string;
     status: "completed" | "failed";
     /** Omitted means top-level. Auto-populated by {@link AgentEventBus.attachChild}. */
     parentSubagentId?: string;
+    /** Parent agent's session id (`ses_…`). Auto-populated by {@link AgentEventBus.attachChild}. */
+    parentSessionId?: string;
   };
   "workflow-phase-start": {
     phase: "discovery" | "pentesting" | "reporting";
@@ -74,6 +101,9 @@ export type AgentEventMap = {
   "step-finish": {
     messages: unknown[];
     subagentId?: string;
+    sessionId?: string;
+    /** The assistant message (`msg_…`) that just closed this step. */
+    messageId?: string;
   };
   "command-output": { data: string; subagentId?: string };
   error: { error: unknown; subagentId?: string };
@@ -194,20 +224,14 @@ export class AgentEventBus {
   }
 
   /**
-   * Forward selected events from a child bus to a parent bus, ensuring
-   * all forwarded payloads carry the given `subagentId`.
-   *
-   * Tools running inside a subagent emit side-channel events (e.g.
-   * `command-output`) without `subagentId`. This method injects the
-   * ID so the parent's routing logic (subagent store vs main view)
-   * works correctly. For `subagent-spawn` / `subagent-complete` it
-   * additionally injects `parentSubagentId` to preserve hierarchy
-   * across nested subagents.
+   * Forward selected events from a child bus to a parent bus, stamping
+   * `sessionId`/`subagentId` (and `parentSessionId`/`parentSubagentId`
+   * for lifecycle events) so the parent's routing works without inference.
    */
   static attachChild(
     child: AgentEventBus,
     parent: AgentEventBus | undefined,
-    subagentId: string,
+    childSessionId: string,
   ): void {
     if (!parent) return;
     for (const key of CHILD_BUS_FORWARDED_EVENTS) {
@@ -221,22 +245,18 @@ export class AgentEventBus {
           forwardKey === "subagent-spawn" || forwardKey === "subagent-complete";
 
         if (isLifecycle) {
-          if (p.parentSubagentId) {
-            parent.emit(forwardKey, payload as never);
-          } else {
-            parent.emit(forwardKey, {
-              ...p,
-              parentSubagentId: subagentId,
-            } as never);
-          }
+          // Nested subagent case: childSessionId becomes the grandchild's parent id.
+          const next: Record<string, unknown> = { ...p };
+          if (!p.parentSubagentId) next.parentSubagentId = childSessionId;
+          if (!p.parentSessionId) next.parentSessionId = childSessionId;
+          parent.emit(forwardKey, next as never);
           return;
         }
 
-        if (!p.subagentId) {
-          parent.emit(forwardKey, { ...p, subagentId } as never);
-        } else {
-          parent.emit(forwardKey, payload as never);
-        }
+        const next: Record<string, unknown> = { ...p };
+        if (!p.subagentId) next.subagentId = childSessionId;
+        if (!p.sessionId) next.sessionId = childSessionId;
+        parent.emit(forwardKey, next as never);
       });
     }
   }
@@ -254,11 +274,29 @@ export class AgentEventBus {
    *   tool-call         → tool-call-complete
    *   tool-result       → tool-result
    *   error             → error
+   *
+   * `ids` accepts a bare `subagentId` string for backward compatibility, or
+   * a {@link StreamIdContext} to also stamp `sessionId`/`messageId`/`partId`.
    */
-  emitStreamPart(chunk: TextStreamPart<ToolSet>, subagentId?: string): void {
+  emitStreamPart(
+    chunk: TextStreamPart<ToolSet>,
+    ids?: string | StreamIdContext,
+  ): void {
+    const ctx: StreamIdContext =
+      typeof ids === "string" ? { subagentId: ids } : (ids ?? {});
+    const subagentId = ctx.subagentId ?? ctx.sessionId;
+    const sessionId = ctx.sessionId;
+    const messageId = ctx.messageId;
+
     switch (chunk.type) {
       case "text-delta":
-        this.emit("text-delta", { text: chunk.text, subagentId });
+        this.emit("text-delta", {
+          text: chunk.text,
+          subagentId,
+          sessionId,
+          messageId,
+          partId: ctx.textPartId,
+        });
         break;
       case "reasoning-start":
         this.emit("reasoning-start", { subagentId });
@@ -274,6 +312,9 @@ export class AgentEventBus {
           toolCallId: chunk.id,
           toolName: chunk.toolName,
           subagentId,
+          sessionId,
+          messageId,
+          partId: ctx.toolPartId?.(chunk.id),
         });
         break;
       case "tool-input-delta":
@@ -281,6 +322,9 @@ export class AgentEventBus {
           toolCallId: chunk.id,
           argsTextDelta: chunk.delta,
           subagentId,
+          sessionId,
+          messageId,
+          partId: ctx.toolPartId?.(chunk.id),
         });
         break;
       case "tool-call": {
@@ -295,6 +339,9 @@ export class AgentEventBus {
           toolName: tc.toolName,
           args: tc.args ?? tc.input,
           subagentId,
+          sessionId,
+          messageId,
+          partId: ctx.toolPartId?.(tc.toolCallId),
         });
         break;
       }
@@ -310,6 +357,9 @@ export class AgentEventBus {
           toolName: tr.toolName,
           result: tr.result ?? tr.output,
           subagentId,
+          sessionId,
+          messageId,
+          partId: ctx.toolPartId?.(tr.toolCallId),
         });
         break;
       }
@@ -321,4 +371,21 @@ export class AgentEventBus {
         break;
     }
   }
+}
+
+/**
+ * Identity context the emitting agent threads through
+ * {@link AgentEventBus.emitStreamPart}.
+ */
+export interface StreamIdContext {
+  /** Legacy multi-agent delineator; equals {@link sessionId} when set. */
+  subagentId?: string;
+  /** Emitting agent's session id (`ses_…`). */
+  sessionId?: string;
+  /** Current open assistant message id (`msg_…`) for this step. */
+  messageId?: string;
+  /** Current text part id (`prt_…`); minted per text run by the agent. */
+  textPartId?: string;
+  /** Resolves a stable part id (`prt_…`) for a `toolCallId`, minting on first use. */
+  toolPartId?: (toolCallId: string) => string;
 }
