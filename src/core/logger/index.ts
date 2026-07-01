@@ -10,6 +10,7 @@ import path from "node:path";
 import { type SessionInfo, sessions } from "../session";
 
 export { type LogLevel as StructuredLogLevel, logger } from "./structured";
+
 import { setLogSink } from "./structured";
 
 export enum LogLevel {
@@ -22,7 +23,22 @@ export enum LogLevel {
 
 const ERROR_LOG_PATH = path.join(os.homedir(), ".pensar", "error.log");
 const RETENTION_DAYS = 7;
+// error.log holds two line shapes: the human `<ts> - [LEVEL]` entries from
+// writeErrorLog, and structured JSON lines (`{"ts":"<ts>",...}`) that the TUI
+// sink appends. Prune must recognize both, or a recent JSON line following an
+// expired human entry inherits its drop decision and gets deleted.
 const TIMESTAMP_RE = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z) - /;
+const JSON_TS_RE = /^\{"ts":"(\d{4}-\d{2}-\d{2}T[\d:.]+Z)"/;
+
+/**
+ * ISO timestamp starting a log entry, from either shape. Returns null for
+ * continuation lines (e.g. stack-trace lines) that carry no timestamp of their
+ * own — those inherit the preceding entry's keep decision.
+ */
+function entryTimestamp(line: string): number | null {
+  const m = TIMESTAMP_RE.exec(line) ?? JSON_TS_RE.exec(line);
+  return m ? new Date(m[1]!).getTime() : null;
+}
 
 let hasPruned = false;
 
@@ -43,9 +59,9 @@ function pruneErrorLog(): void {
     const kept: string[] = [];
     let keeping = true;
     for (const line of lines) {
-      const match = TIMESTAMP_RE.exec(line);
-      if (match) {
-        keeping = new Date(match[1]!).getTime() >= cutoff;
+      const ts = entryTimestamp(line);
+      if (ts !== null) {
+        keeping = ts >= cutoff;
       }
       if (keeping) {
         kept.push(line);

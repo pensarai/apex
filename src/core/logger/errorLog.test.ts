@@ -1,4 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -64,5 +71,31 @@ describe("error() → ~/.pensar/error.log", () => {
     log.error("second", new Error("y")); // suppressed
 
     expect(readFileSync(errLog, "utf8")).toBe(before);
+  });
+
+  // error.log mixes human `<ts> - [ERROR]` entries with structured JSON lines
+  // (the TUI sink). Prune must date each shape on its own, or a recent JSON line
+  // trailing an expired human entry inherits its drop decision and is deleted.
+  it("prune keeps a recent JSON line that follows an expired human entry", async () => {
+    const dir = path.join(tmpHome, ".pensar");
+    mkdirSync(dir, { recursive: true });
+    const errLog = path.join(dir, "error.log");
+
+    const oldTs = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    const recentTs = new Date().toISOString();
+    writeFileSync(
+      errLog,
+      `${oldTs} - [ERROR] expired legacy entry\n` +
+        `{"ts":"${recentTs}","level":"WARN","msg":"recent structured line"}\n`,
+      "utf8",
+    );
+
+    // Any write triggers the once-per-process prune before appending.
+    const { writeErrorLog } = await import("./index");
+    writeErrorLog("trigger prune", "TEST");
+
+    const content = readFileSync(errLog, "utf8");
+    expect(content).toContain("recent structured line"); // survives (regression guard)
+    expect(content).not.toContain("expired legacy entry"); // pruned
   });
 });
