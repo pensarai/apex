@@ -87,6 +87,20 @@ describe("buildReasoningProviderOptions", () => {
     ).toBeUndefined();
   });
 
+  it("requests no thinking for pre-4.6 Opus models (Opus 4.0, 4.1, 4.5)", () => {
+    for (const id of [
+      "claude-opus-4-0",
+      "claude-opus-4-20250514",
+      "claude-opus-4-1-20250805",
+      "claude-opus-4-5",
+      "global.anthropic.claude-opus-4-5-20251101-v1:0",
+    ]) {
+      expect(
+        buildReasoningProviderOptions(id, { enableThinking: true }),
+      ).toBeUndefined();
+    }
+  });
+
   it("returns undefined when thinking is disabled and no OpenAI effort applies", () => {
     expect(
       buildReasoningProviderOptions("global.anthropic.claude-opus-4-6-v1", {
