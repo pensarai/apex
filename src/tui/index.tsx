@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { config } from "../core/config";
 import type { Config } from "../core/config/config";
 import { checkForUpdate } from "../core/installation";
-import { writeErrorLog } from "../core/logger";
+import { routeLogsToErrorFile, writeErrorLog } from "../core/logger";
 import { hasAnyProviderConfigured } from "../core/providers";
 import type { SessionConfig } from "../core/session";
 import { setupAutoCopy } from "./auto-copy";
@@ -670,6 +670,9 @@ function CommandDisplay({
 }
 
 async function main() {
+  // OpenTUI is about to own the screen — route logs to file, not stderr.
+  routeLogsToErrorFile();
+
   const appConfig = await config.get();
 
   registerBuiltinThemes();

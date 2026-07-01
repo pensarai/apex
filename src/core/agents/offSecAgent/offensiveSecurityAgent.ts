@@ -658,7 +658,9 @@ export class OffensiveSecurityAgent<TResult = void> {
       // Tool-call part ids are minted once and reused for the WHOLE session, never reset per step.
       const toolParts = new Map<string, string>();
       const ids: StreamIdContext = {
-        subagentId: this.busSessionId,
+        // The TUI routes any event with a subagentId into a subagent panel, so
+        // the orchestrator must leave it undefined; only real subagents set it.
+        subagentId: this.subagentId,
         sessionId: this.busSessionId,
         messageId: undefined,
         textPartId: undefined,

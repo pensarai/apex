@@ -244,6 +244,22 @@ describe("emitStreamPart — native id threading", () => {
     expect(received[0].subagentId).toBe("sub-1");
     expect(received[0].sessionId).toBeUndefined();
   });
+
+  it("leaves subagentId undefined for orchestrator streams (sessionId set, no subagentId)", () => {
+    // Regression (#851): emitStreamPart must not alias sessionId into subagentId,
+    // or the TUI routes the orchestrator's reply into a subagent panel.
+    const bus = new AgentEventBus();
+    const sessionId = newSessionId();
+    const received: AgentEventMapText[] = [];
+    bus.on("text-delta", (e) => received.push(e));
+
+    bus.emitStreamPart(part({ type: "text-delta", id: "t1", text: "hi" }), {
+      sessionId,
+    });
+
+    expect(received[0].subagentId).toBeUndefined();
+    expect(received[0].sessionId).toBe(sessionId);
+  });
 });
 
 describe("attachChild — session id injection", () => {

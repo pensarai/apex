@@ -11,6 +11,8 @@ import { type SessionInfo, sessions } from "../session";
 
 export { type LogLevel as StructuredLogLevel, logger } from "./structured";
 
+import { setLogSink } from "./structured";
+
 export enum LogLevel {
   INFO = "INFO",
   ERROR = "ERROR",
@@ -21,7 +23,16 @@ export enum LogLevel {
 
 const ERROR_LOG_PATH = path.join(os.homedir(), ".pensar", "error.log");
 const RETENTION_DAYS = 7;
+// error.log holds human `<ts> - [ERROR]` entries and structured JSON lines
+// (the TUI sink); prune dates both shapes so neither is dropped by the other.
 const TIMESTAMP_RE = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z) - /;
+const JSON_TS_RE = /^\{"ts":"(\d{4}-\d{2}-\d{2}T[\d:.]+Z)"/;
+
+/** Entry timestamp (ms) from either line shape; null for continuation lines. */
+function entryTimestamp(line: string): number | null {
+  const m = TIMESTAMP_RE.exec(line) ?? JSON_TS_RE.exec(line);
+  return m ? new Date(m[1]!).getTime() : null;
+}
 
 let hasPruned = false;
 
@@ -42,9 +53,9 @@ function pruneErrorLog(): void {
     const kept: string[] = [];
     let keeping = true;
     for (const line of lines) {
-      const match = TIMESTAMP_RE.exec(line);
-      if (match) {
-        keeping = new Date(match[1]!).getTime() >= cutoff;
+      const ts = entryTimestamp(line);
+      if (ts !== null) {
+        keeping = ts >= cutoff;
       }
       if (keeping) {
         kept.push(line);
@@ -99,6 +110,27 @@ export function writeErrorLog(
   } catch {
     // Last resort — don't throw from the error logger
   }
+}
+
+/**
+ * Redirect structured-logger output from stderr into ~/.pensar/error.log.
+ * The TUI calls this at startup: OpenTUI owns the screen, so a raw stderr write
+ * garbles the live frame. Headless/CLI runs keep logging to stderr.
+ */
+export function routeLogsToErrorFile(): void {
+  // JSON so pretty-format ANSI codes don't end up in the file.
+  process.env.PENSAR_LOG_FORMAT = "json";
+  setLogSink((line) => {
+    try {
+      const dir = path.dirname(ERROR_LOG_PATH);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      appendFileSync(ERROR_LOG_PATH, `${line}\n`, "utf8");
+    } catch {
+      // Last resort — never throw from the logger.
+    }
+  });
 }
 
 export class Logger {
