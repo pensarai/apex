@@ -14,6 +14,11 @@ import { buildStreamingFetchSignal } from "../utils";
 import { convertToBedrockFormat } from "./pensarFormatters";
 import { signGatewayRequest } from "./pensarSigning";
 import { parseSSE } from "./pensarSSE";
+import {
+  applyAnthropicStreamUsage,
+  createEmptyStreamUsage,
+  toLanguageModelV3Usage,
+} from "./pensarStreamUsage";
 
 const structuredLog = scopedLogger(() => createLogger("pensar"));
 
@@ -331,10 +336,7 @@ export function createPensarModel(
       const abortSignal = options.abortSignal;
       const stream = new ReadableStream<LanguageModelV3StreamPart>({
         async start(controller) {
-          let inputTokens = 0;
-          let outputTokens = 0;
-          let cacheReadTokens = 0;
-          let cacheCreationTokens = 0;
+          const streamUsage = createEmptyStreamUsage();
           let finishReasonUnified: LanguageModelV3FinishReason["unified"] =
             "other";
           let finishReasonRaw: string | undefined;
@@ -424,15 +426,7 @@ export function createPensarModel(
                   const usage = msg?.usage as
                     | Record<string, number>
                     | undefined;
-                  if (usage?.input_tokens) {
-                    inputTokens = usage.input_tokens;
-                  }
-                  if (usage?.cache_read_input_tokens) {
-                    cacheReadTokens = usage.cache_read_input_tokens;
-                  }
-                  if (usage?.cache_creation_input_tokens) {
-                    cacheCreationTokens = usage.cache_creation_input_tokens;
-                  }
+                  applyAnthropicStreamUsage(streamUsage, usage);
                   break;
                 }
 
@@ -561,9 +555,7 @@ export function createPensarModel(
                   const usage = parsed.usage as
                     | Record<string, number>
                     | undefined;
-                  if (usage?.output_tokens) {
-                    outputTokens = usage.output_tokens;
-                  }
+                  applyAnthropicStreamUsage(streamUsage, usage);
                   break;
                 }
 
@@ -576,7 +568,7 @@ export function createPensarModel(
             }
 
             logInfo(
-              `  stream complete: ${finishReasonUnified}, ${inputTokens}in/${outputTokens}out, cacheRead=${cacheReadTokens}, cacheWrite=${cacheCreationTokens} (${Date.now() - startTime}ms)`,
+              `  stream complete: ${finishReasonUnified}, ${streamUsage.inputTokens}in/${streamUsage.outputTokens}out, cacheRead=${streamUsage.cacheReadTokens}, cacheWrite=${streamUsage.cacheCreationTokens} (${Date.now() - startTime}ms)`,
             );
 
             controller.enqueue({
@@ -585,22 +577,7 @@ export function createPensarModel(
                 unified: finishReasonUnified,
                 raw: finishReasonRaw,
               },
-              usage: {
-                inputTokens: {
-                  total:
-                    inputTokens +
-                    (cacheReadTokens || 0) +
-                    (cacheCreationTokens || 0),
-                  noCache: inputTokens,
-                  cacheRead: cacheReadTokens || undefined,
-                  cacheWrite: cacheCreationTokens || undefined,
-                },
-                outputTokens: {
-                  total: outputTokens,
-                  text: undefined,
-                  reasoning: undefined,
-                },
-              },
+              usage: toLanguageModelV3Usage(streamUsage),
             });
             telemetry.finish(wallNow());
             controller.close();

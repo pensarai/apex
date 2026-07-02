@@ -1071,9 +1071,11 @@ export function streamResponse(
 
             // Pensar provider doesn't populate providerMetadata.anthropic;
             // fall back to the SDK's normalized usage.inputTokenDetails.
-            if (cacheRead === 0 && cacheCreation === 0) {
-              const { inputTokenDetails } = stepResult.usage;
+            const { inputTokenDetails } = stepResult.usage;
+            if (cacheRead === 0) {
               cacheRead = inputTokenDetails?.cacheReadTokens ?? 0;
+            }
+            if (cacheCreation === 0) {
               cacheCreation = inputTokenDetails?.cacheWriteTokens ?? 0;
             }
 
