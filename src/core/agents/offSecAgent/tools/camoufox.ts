@@ -36,6 +36,29 @@ export const CAMOUFOX_OPTIONS = {
   // the agent grows proxy support — one object, both launch paths inherit it.
 } as const;
 
+/**
+ * Firefox prefs layered on top of Camoufox's fingerprint prefs to cut per-browser
+ * memory. Merged AFTER camoufox-js output so these win; every key here is
+ * process-topology / caching only — none are observable from page JS, so they do
+ * not weaken the fingerprint.
+ *
+ * Why: in the sandbox each endpoint drives ~one page at a time, but Firefox's
+ * Fission (per-origin site isolation) + default content-process pool fan a single
+ * browser out to ~6 content processes (~4 GB across 8 browsers, measured live).
+ * Site isolation is a defense for untrusted multi-origin browsing — irrelevant for
+ * a single-purpose recon driver — so collapsing it to one content process reclaims
+ * ~3 GB with no loss of capability. The rest drop caches a throwaway browser never
+ * reuses.
+ */
+export const MEMORY_FIREFOX_PREFS: Record<string, unknown> = {
+  "fission.autostart": false, // no per-origin site isolation → no process-per-origin fan-out
+  "dom.ipc.processCount": 1, // single content-process pool
+  "dom.ipc.processPrelaunch.enabled": false, // don't keep a spare content process warm
+  "browser.cache.disk.enable": false, // throwaway profile: never persists a cache
+  "browser.cache.memory.enable": false,
+  "browser.sessionhistory.max_total_viewers": 0, // disable bfcache page retention
+};
+
 /** What camoufox-js `launchOptions()` returns: Playwright-firefox launch opts. */
 export interface CamoufoxLaunchOptions {
   executablePath: string;
@@ -63,10 +86,16 @@ export async function resolveCamoufoxLaunchOptions(
   // commands (--version/--help) don't pull camoufox-js + its data-file deps
   // (fingerprint-generator/territoryInfo.xml) at module load.
   const { launchOptions: camoufoxLaunchOptions } = await import("camoufox-js");
-  return (await camoufoxLaunchOptions({
+  const opts = (await camoufoxLaunchOptions({
     ...CAMOUFOX_OPTIONS,
     headless,
   })) as CamoufoxLaunchOptions;
+  // Layer our memory prefs over Camoufox's fingerprint prefs (ours win).
+  opts.firefoxUserPrefs = {
+    ...opts.firefoxUserPrefs,
+    ...MEMORY_FIREFOX_PREFS,
+  };
+  return opts;
 }
 
 let ensurePromise: Promise<void> | null = null;
