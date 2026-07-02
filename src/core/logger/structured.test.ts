@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createLogger, type LogLevel, resolveInitialLevel } from "./structured";
+import {
+  createLogger,
+  type LogLevel,
+  resolveInitialLevel,
+  setLogSink,
+} from "./structured";
 
 // Capture process.stderr.write into `sink`; returns a restore fn.
 function captureStderr(sink: string[]): () => void {
@@ -171,5 +176,37 @@ describe("JSON record shape", () => {
     const rec = firstRecord(writes);
     expect(rec.code).toBe("E_X");
     expect(rec.error).toBeUndefined();
+  });
+});
+
+describe("setLogSink — redirect away from stderr", () => {
+  afterEach(() => setLogSink(null));
+
+  it("routes emitted lines to the custom sink, not stderr (TUI corruption fix)", () => {
+    const stderrWrites: string[] = [];
+    const restore = captureStderr(stderrWrites);
+    const captured: string[] = [];
+    setLogSink((line) => captured.push(line));
+    try {
+      createLogger("wandb").warn("getGlobalClient not found — flush skipped.");
+    } finally {
+      restore();
+    }
+    expect(stderrWrites).toHaveLength(0);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toContain("flush skipped");
+  });
+
+  it("restores the stderr sink when reset with null", () => {
+    setLogSink(() => {});
+    setLogSink(null);
+    const stderrWrites: string[] = [];
+    const restore = captureStderr(stderrWrites);
+    try {
+      createLogger("t").warn("hello");
+    } finally {
+      restore();
+    }
+    expect(stderrWrites.length).toBeGreaterThan(0);
   });
 });

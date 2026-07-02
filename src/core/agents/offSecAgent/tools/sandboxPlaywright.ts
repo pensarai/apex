@@ -26,7 +26,7 @@ import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../../http/targetHeaders";
-import { CAMOUFOX_OPTIONS } from "./camoufox";
+import { CAMOUFOX_OPTIONS, MEMORY_FIREFOX_PREFS } from "./camoufox";
 import type {
   BrowserClickResult,
   BrowserConsoleResult,
@@ -320,6 +320,10 @@ const fs = require('fs');
   try {
     context = await firefox.launchPersistentContext('/tmp/pw-user-data', {
       ...__camou,
+      // Layer memory prefs over Camoufox's fingerprint prefs (ours win); see
+      // MEMORY_FIREFOX_PREFS in ./camoufox — collapses Fission/content-process
+      // fan-out that otherwise costs ~3 GB across the run.
+      firefoxUserPrefs: { ...__camou.firefoxUserPrefs, ...${JSON.stringify(MEMORY_FIREFOX_PREFS)} },
       ...(__extraHeaders ? { extraHTTPHeaders: __extraHeaders } : {}),
     });
     const pages = context.pages();

@@ -715,6 +715,23 @@ export function modelSupportsThinking(modelId: string): boolean {
   );
 }
 
+/**
+ * Whether a model accepts the `adaptive` thinking type — Claude Opus 4.6+ and
+ * Sonnet 4.6+. Pre-4.6 models (Opus 4.0–4.5, Sonnet 4.5, Haiku 4.5) support
+ * extended thinking but reject `adaptive`, so we don't request thinking for
+ * them at all.
+ */
+function modelSupportsAdaptiveThinking(modelId: string): boolean {
+  const normalized = modelId
+    .replace(/^pensar:/, "")
+    .replace(/^(us\.|eu\.|global\.|ap\.)?anthropic\./, "");
+
+  return (
+    /^claude-sonnet-4-[6-9]/.test(normalized) ||
+    /^claude-opus-4-[6-9]/.test(normalized)
+  );
+}
+
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
   const { provider } = getModelInfo(modelId);
   if (provider !== "openai") return false;
@@ -780,7 +797,7 @@ export function buildReasoningProviderOptions(
   const useThinking =
     !!opts.enableThinking &&
     isAnthropicProvider(model) &&
-    modelSupportsThinking(model);
+    modelSupportsAdaptiveThinking(model);
   const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
     model,
     opts.openAIReasoningEffort,
