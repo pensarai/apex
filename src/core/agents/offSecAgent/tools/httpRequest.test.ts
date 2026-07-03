@@ -195,6 +195,40 @@ describe("httpRequest rate limiting", () => {
     expect(result.status).toBe(200);
   });
 
+  it("deletes the request-body temp file after a sandbox POST", async () => {
+    const { ctx } = ctxWithLimiter();
+    const commands: string[] = [];
+    const execute = vi.fn(async (command: string) => {
+      commands.push(command);
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: "HTTP/1.1 200 OK\n\n",
+        stderr: "",
+      };
+    });
+    ctx.sandbox = { execute } as unknown as ToolContext["sandbox"];
+
+    await httpRequest(ctx).execute?.(
+      {
+        url: "https://example.com/api",
+        method: "POST",
+        body: "hello=world",
+        followRedirects: false,
+        timeout: 1000,
+        toolCallDescription: "Sandbox POST",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    );
+
+    const bodyFile = commands
+      .join("\n")
+      .match(/\/tmp\/apex_http_body_[^\s"']+\.txt/)?.[0];
+    expect(bodyFile).toBeDefined();
+    // The temp file is both written (curl --data-binary) and removed.
+    expect(commands.some((c) => c.includes(`rm -f ${bodyFile}`))).toBe(true);
+  });
+
   it("returns an aborted result without dispatching when already aborted", async () => {
     const fetchSpy = vi.fn(async () => new Response("ok", { status: 200 }));
     vi.stubGlobal("fetch", fetchSpy);
