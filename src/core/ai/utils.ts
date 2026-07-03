@@ -243,15 +243,20 @@ export function getProviderModel(
     case "pensar": {
       const pensarApiKey =
         authConfig?.pensarAPIKey || process.env.PENSAR_API_KEY;
+      const agentApiUrl = process.env.AGENT_API_URL;
+      const agentApiToken = process.env.AGENT_API_TOKEN;
       const hasWorkOSAuth = !!authConfig?.accessToken;
+      const hasSandboxAgentAuth = !!agentApiUrl && !!agentApiToken;
 
-      if (!pensarApiKey && !hasWorkOSAuth) {
+      if (!pensarApiKey && !hasWorkOSAuth && !hasSandboxAgentAuth) {
         throw new Error(
           "Pensar not configured. Run /login to connect to Pensar Console.",
         );
       }
 
-      const gatewayUrl = authConfig?.gatewayUrl || getPensarGatewayUrl();
+      const gatewayUrl =
+        authConfig?.gatewayUrl ||
+        (agentApiUrl ? `${agentApiUrl}/agent` : getPensarGatewayUrl());
       const bedrockModelId = model.startsWith("pensar:")
         ? model.slice(7)
         : model;
@@ -261,7 +266,7 @@ export function getProviderModel(
 
       // Build config with token refresh support for WorkOS auth
       const modelConfig: Parameters<typeof createPensarModel>[1] = {
-        apiKey: pensarApiKey || authConfig?.accessToken || "",
+        apiKey: agentApiToken || pensarApiKey || authConfig?.accessToken || "",
         baseUrl: gatewayUrl,
         workspaceId: authConfig?.workspaceId,
         signingKey: authConfig?.gatewaySigningKey,
