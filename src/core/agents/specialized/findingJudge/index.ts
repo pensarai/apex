@@ -34,6 +34,7 @@ export type FindingJudgeRuntimeContext = Pick<
   | "sandbox"
   | "target"
   | "enableThinking"
+  | "thinkingEffort"
   | "openAIReasoningEffort"
 > & {
   model: AIModel;
@@ -71,6 +72,7 @@ export async function judgeFinding(
       sandbox: ctx.sandbox,
       target: input.target ?? ctx.target ?? ctx.session.targets[0],
       enableThinking: ctx.enableThinking,
+      thinkingEffort: ctx.thinkingEffort,
       openAIReasoningEffort: ctx.openAIReasoningEffort,
     });
 

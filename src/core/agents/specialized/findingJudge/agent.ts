@@ -1,5 +1,9 @@
 import { stepCountIs } from "ai";
-import type { AIModel, OpenAIReasoningEffort } from "../../../ai";
+import type {
+  AIModel,
+  OpenAIReasoningEffort,
+  ThinkingEffort,
+} from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { AgentEventBus } from "../../../eventBus";
 import type { SessionInfo } from "../../../session";
@@ -28,6 +32,7 @@ export interface FindingJudgeAgentInput {
   sandbox?: UnifiedSandbox;
   target?: string;
   enableThinking?: boolean;
+  thinkingEffort?: ThinkingEffort | null;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
 }
 
@@ -58,6 +63,7 @@ export class FindingJudgeAgent extends OffensiveSecurityAgent<FindingJudgeAgentO
       eventBus: opts.eventBus,
       sandbox: opts.sandbox,
       enableThinking: opts.enableThinking,
+      thinkingEffort: opts.thinkingEffort,
       openAIReasoningEffort: opts.openAIReasoningEffort,
       subagentId: opts.subagentId ?? "finding-judge",
       activeTools: [...FINDING_JUDGE_ACTIVE_TOOLS],

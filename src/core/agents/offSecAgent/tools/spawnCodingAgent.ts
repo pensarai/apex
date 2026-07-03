@@ -205,6 +205,7 @@ async function runSingleCodingAgent(
     eventBus: localBus,
     subagentId,
     enableThinking: ctx.enableThinking,
+    thinkingEffort: ctx.thinkingEffort,
     openAIReasoningEffort: ctx.openAIReasoningEffort,
   });
 
