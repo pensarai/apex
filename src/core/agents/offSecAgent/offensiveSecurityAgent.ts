@@ -536,7 +536,12 @@ export class OffensiveSecurityAgent<TResult = void> {
         activeTools,
         stopWhen,
         toolChoice: "auto",
-        sessionPath: input.session.rootPath,
+        // Per-subagent so the overflow tool-result dumps land next to this
+        // agent's messages.json (`subagents/{id}/tool-results/`) and a host
+        // can reclaim them when the subagent finishes, instead of piling up
+        // at the shared session root for the whole scan (ENOSPC). Falls back
+        // to the session root for the root/operator agent.
+        sessionPath: messagesDir,
         sessionId: this.busSessionId,
         onStepFinish: async (event) => {
           this.latestMessages = [

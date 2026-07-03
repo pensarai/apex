@@ -637,6 +637,14 @@ Use this to document:
             mkdirSync(dir, { recursive: true });
           }
           writeFileSync(localPath, Buffer.from(result.data, "base64"));
+          // The PNG bytes are already back on the host (via base64) and
+          // written to `evidenceDir`; the sandbox-side staging copy in
+          // `/tmp/evidence` is never read again. Drop it so a
+          // screenshot-heavy scan doesn't accumulate them until teardown
+          // (ENOSPC). Best-effort — a failed cleanup must not fail the tool.
+          void sandbox
+            .execute(`rm -f ${sandboxPath}`, { timeout: 10 })
+            .catch(() => {});
           return {
             success: true,
             path: localPath,
