@@ -33,6 +33,7 @@ import type {
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ThinkingEffort,
 } from "../ai";
 import type { AgentEventBus } from "../eventBus";
 import { mapAppWithSurface } from "../integrations/surface";
@@ -118,6 +119,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+). */
   enableThinking?: boolean;
+  /** Adaptive-thinking effort hint (Anthropic Opus/Sonnet 4.6+); ignored elsewhere. */
+  thinkingEffort?: ThinkingEffort | null;
   /** Known domains associated with the project — agents can map discovered apps to these. */
   domains?: string[];
   /** Project-level threat model content (e.g. from .pensar/threat_model.md), if found */
@@ -179,6 +182,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onCacheMetrics,
     openAIReasoningEffort,
     enableThinking,
+    thinkingEffort,
     domains,
     projectThreatModel,
     environments,
@@ -220,6 +224,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onCacheMetrics,
     openAIReasoningEffort,
     enableThinking,
+    thinkingEffort,
     responseSchema: AppsDiscoveryResultSchema,
     projectThreatModel,
     // Reserved for Phase 2's per-app task agents. Inline documentation
@@ -375,6 +380,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       onCacheMetrics,
       openAIReasoningEffort,
       enableThinking,
+      thinkingEffort,
       responseSchema: DiscoverySummarySchema,
       excludeTools: ["document_app"],
       projectThreatModel,
@@ -468,6 +474,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
               onCacheMetrics,
               openAIReasoningEffort,
               enableThinking,
+              thinkingEffort,
               projectThreatModel,
               parentSubagentId: appNodeId,
               agentLimiter,
@@ -1189,6 +1196,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     onStepFinish: (event) => onStepFinish?.(event),
     openAIReasoningEffort: input.openAIReasoningEffort,
     enableThinking: input.enableThinking,
+    thinkingEffort: input.thinkingEffort,
     responseSchema: IncrementalResultSchema,
     projectThreatModel,
   });

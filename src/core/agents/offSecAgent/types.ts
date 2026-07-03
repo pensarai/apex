@@ -18,6 +18,7 @@ import type {
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ThinkingEffort,
 } from "../../ai";
 import type { CredentialManager } from "../../credentials";
 import type { AgentEventBus } from "../../eventBus";
@@ -282,6 +283,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
 
+  /** Adaptive-thinking effort hint (Anthropic Opus/Sonnet 4.6+); ignored elsewhere. */
+  thinkingEffort?: ThinkingEffort | null;
+
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
 
@@ -393,6 +397,9 @@ export interface SpecializedAgentInput {
 
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
+
+  /** Adaptive-thinking effort hint (Anthropic Opus/Sonnet 4.6+); ignored elsewhere. */
+  thinkingEffort?: ThinkingEffort | null;
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;

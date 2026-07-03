@@ -54,6 +54,14 @@ export type OpenAIReasoningEffort =
 
 export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 
+/**
+ * Anthropic adaptive-thinking effort hint. Soft guidance for how much the model
+ * reasons (see AWS "adaptive thinking"): `low` minimizes thinking, `high` (the
+ * model default) reasons deeply. Only meaningful for models that support
+ * adaptive thinking (Claude Opus/Sonnet 4.6+); ignored elsewhere.
+ */
+export type ThinkingEffort = "low" | "medium" | "high";
+
 const OPENAI_REASONING_MODEL_IDS = new Set([
   "gpt-5",
   "gpt-5-2025-08-07",
@@ -721,7 +729,7 @@ export function modelSupportsThinking(modelId: string): boolean {
  * extended thinking but reject `adaptive`, so we don't request thinking for
  * them at all.
  */
-function modelSupportsAdaptiveThinking(modelId: string): boolean {
+export function modelSupportsAdaptiveThinking(modelId: string): boolean {
   const normalized = modelId
     .replace(/^pensar:/, "")
     .replace(/^(us\.|eu\.|global\.|ap\.)?anthropic\./, "");
@@ -772,8 +780,21 @@ export function normalizeOpenAIReasoningEffort(
  *   - `openai.reasoningEffort` — OpenAI/o-series reasoning models.
  */
 export type ReasoningProviderOptions = {
-  anthropic?: { thinking: { type: "adaptive" } };
-  bedrock?: { reasoningConfig: { type: "adaptive"; display: "summarized" } };
+  anthropic?: {
+    thinking: { type: "adaptive" };
+    // Soft effort hint for adaptive thinking; omitted when no level requested
+    // (model defaults to "high"). Sibling of `thinking` per the AI SDK.
+    effort?: ThinkingEffort;
+  };
+  bedrock?: {
+    reasoningConfig: {
+      type: "adaptive";
+      display: "summarized";
+      // Bedrock's channel for the adaptive effort hint (maps to Claude's
+      // output_config.effort). Omitted when no level requested.
+      maxReasoningEffort?: ThinkingEffort;
+    };
+  };
   openai?: OpenAIResponsesProviderOptions;
 };
 
@@ -791,6 +812,12 @@ export function buildReasoningProviderOptions(
   model: AIModel,
   opts: {
     enableThinking?: boolean;
+    /**
+     * Adaptive-thinking effort hint for Anthropic models that support it
+     * (Opus/Sonnet 4.6+). Ignored on models without adaptive support. When
+     * omitted the model uses its own default (`high`).
+     */
+    thinkingEffort?: ThinkingEffort | null;
     openAIReasoningEffort?: OpenAIReasoningEffort | null;
   },
 ): ReasoningProviderOptions | undefined {
@@ -802,17 +829,23 @@ export function buildReasoningProviderOptions(
     model,
     opts.openAIReasoningEffort,
   );
+  // The effort hint only rides along when adaptive thinking is actually used.
+  const effort = useThinking ? (opts.thinkingEffort ?? undefined) : undefined;
 
   if (!useThinking && !normalizedOpenAIEffort) return undefined;
 
   return {
     ...(useThinking
       ? {
-          anthropic: { thinking: { type: "adaptive" as const } },
+          anthropic: {
+            thinking: { type: "adaptive" as const },
+            ...(effort ? { effort } : {}),
+          },
           bedrock: {
             reasoningConfig: {
               type: "adaptive" as const,
               display: "summarized" as const,
+              ...(effort ? { maxReasoningEffort: effort } : {}),
             },
           },
         }
@@ -856,6 +889,11 @@ export interface StreamResponseOpts {
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+) */
   enableThinking?: boolean;
+  /**
+   * Adaptive-thinking effort hint for Anthropic models that support it
+   * (Opus/Sonnet 4.6+). Ignored where unsupported; model defaults to `high`.
+   */
+  thinkingEffort?: ThinkingEffort | null;
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
   /** Session root path — used by context management layers to persist truncated tool results */
@@ -897,6 +935,7 @@ export function streamResponse(
     onFinish,
     onCacheMetrics,
     enableThinking,
+    thinkingEffort,
     openAIReasoningEffort,
     sessionId,
   } = opts;
@@ -1004,6 +1043,7 @@ export function streamResponse(
   // this path never sets temperature, so there is nothing to clear.
   const providerOptions = buildReasoningProviderOptions(model, {
     enableThinking,
+    thinkingEffort,
     openAIReasoningEffort,
   });
 

@@ -1,4 +1,9 @@
-import type { AIAuthConfig, AIModel, OpenAIReasoningEffort } from "../../../ai";
+import type {
+  AIAuthConfig,
+  AIModel,
+  OpenAIReasoningEffort,
+  ThinkingEffort,
+} from "../../../ai";
 import type { CredentialManager } from "../../../credentials";
 import type { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
@@ -106,6 +111,9 @@ export type ToolContext = {
 
   /** Enable extended thinking for sub-agents spawned by orchestration tools. */
   enableThinking?: boolean;
+
+  /** Adaptive-thinking effort hint for spawned sub-agents (Anthropic 4.6+). */
+  thinkingEffort?: ThinkingEffort | null;
 
   /** OpenAI reasoning effort for GPT/o-series sub-agents. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;

@@ -80,6 +80,7 @@ export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
       eventBus,
       sandbox,
       enableThinking,
+      thinkingEffort,
       openAIReasoningEffort,
     } = opts;
 
@@ -96,6 +97,7 @@ export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
       eventBus,
       sandbox,
       enableThinking,
+      thinkingEffort,
       openAIReasoningEffort,
 
       activeTools: [

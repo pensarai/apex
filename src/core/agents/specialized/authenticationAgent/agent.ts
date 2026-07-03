@@ -2,7 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import { hasToolCall } from "ai";
-import type { AIAuthConfig, AIModel, OpenAIReasoningEffort } from "../../../ai";
+import type {
+  AIAuthConfig,
+  AIModel,
+  OpenAIReasoningEffort,
+  ThinkingEffort,
+} from "../../../ai";
 import type { AgentEventBus } from "../../../eventBus";
 import { createLogger } from "../../../logger/structured";
 import type { SessionInfo } from "../../../session";
@@ -70,6 +75,9 @@ export interface AuthenticationAgentInput {
 
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
+
+  /** Adaptive-thinking effort hint (Anthropic Opus/Sonnet 4.6+); ignored elsewhere. */
+  thinkingEffort?: ThinkingEffort | null;
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
@@ -144,6 +152,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       context,
       environmentVariables,
       enableThinking,
+      thinkingEffort,
       openAIReasoningEffort,
     } = opts;
 
@@ -162,6 +171,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       subagentId,
       environmentVariables,
       enableThinking,
+      thinkingEffort,
       openAIReasoningEffort,
       toolChoice: "auto",
       activeTools: [

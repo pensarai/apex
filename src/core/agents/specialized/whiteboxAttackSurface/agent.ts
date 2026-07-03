@@ -65,6 +65,7 @@ export class WhiteboxAttackSurfaceAgent extends OffensiveSecurityAgent<WhiteboxA
       attackSurfaceRegistry,
       domains,
       enableThinking,
+      thinkingEffort,
       openAIReasoningEffort,
     } = opts;
 
@@ -96,6 +97,7 @@ This ends the agent run — make sure all data is included.`,
       subagentId,
       attackSurfaceRegistry,
       enableThinking,
+      thinkingEffort,
       openAIReasoningEffort,
       activeTools: [
         // Filesystem tools — for Phase 1 repo identification

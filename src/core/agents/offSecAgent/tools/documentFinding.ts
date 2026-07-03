@@ -267,6 +267,7 @@ CRITICAL RULES — READ BEFORE CALLING:
             sandbox: ctx.sandbox,
             target: ctx.target,
             enableThinking: ctx.enableThinking,
+            thinkingEffort: ctx.thinkingEffort,
             openAIReasoningEffort: ctx.openAIReasoningEffort,
           });
         } catch (error) {

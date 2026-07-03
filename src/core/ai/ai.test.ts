@@ -126,6 +126,59 @@ describe("buildReasoningProviderOptions", () => {
     expect(result?.anthropic).toBeUndefined();
     expect(result?.bedrock).toBeUndefined();
   });
+
+  it("carries the adaptive-thinking effort hint on both anthropic and bedrock for a 4.6 model", () => {
+    const result = buildReasoningProviderOptions(
+      "global.anthropic.claude-opus-4-6-v1",
+      { enableThinking: true, thinkingEffort: "low" },
+    );
+    expect(result?.anthropic).toEqual({
+      thinking: { type: "adaptive" },
+      effort: "low",
+    });
+    expect(result?.bedrock).toEqual({
+      reasoningConfig: {
+        type: "adaptive",
+        display: "summarized",
+        maxReasoningEffort: "low",
+      },
+    });
+  });
+
+  it("omits the effort hint when none is provided (model default)", () => {
+    const result = buildReasoningProviderOptions(
+      "global.anthropic.claude-opus-4-6-v1",
+      { enableThinking: true },
+    );
+    expect(result?.anthropic).toEqual({ thinking: { type: "adaptive" } });
+    expect(
+      (result?.anthropic as { effort?: string } | undefined)?.effort,
+    ).toBeUndefined();
+    expect(result?.bedrock?.reasoningConfig).toEqual({
+      type: "adaptive",
+      display: "summarized",
+    });
+  });
+
+  it("drops the effort hint when thinking is not actually used (non-adaptive model)", () => {
+    // Haiku 4.5 supports thinking but not adaptive; the effort hint must not
+    // ride along on a request that requests no thinking at all.
+    expect(
+      buildReasoningProviderOptions(
+        "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+        { enableThinking: true, thinkingEffort: "high" },
+      ),
+    ).toBeUndefined();
+  });
+
+  it("ignores the effort hint when thinking is disabled", () => {
+    expect(
+      buildReasoningProviderOptions("global.anthropic.claude-opus-4-6-v1", {
+        enableThinking: false,
+        thinkingEffort: "high",
+      }),
+    ).toBeUndefined();
+  });
 });
 
 describeOrSkip("AI Stream Response", () => {
