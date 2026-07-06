@@ -10,6 +10,7 @@ import {
   renderJson,
   renderMarkdown,
 } from "../report";
+import { createThreatModelPrompt } from "../utils/prompt";
 import type { PentestWorkflowInput, PentestWorkflowResult } from "./pentest";
 
 const FastStrikeResult = z.object({
@@ -70,6 +71,25 @@ export async function runFastStrike(
     session.config!.codebasePath ??= cwd;
   }
 
+  // Merge prompt/threatModel into session.config.prompt, mirroring the full
+  // workflow. The CLI passes operator guidance via session.config.prompt (not
+  // input.prompt/threatModel), so this is the canonical source to read from.
+  if (prompt || threatModel) {
+    const parts: string[] = [];
+    if (threatModel) parts.push(createThreatModelPrompt(threatModel));
+    if (prompt) parts.push(prompt);
+    const combined = parts.join("\n\n");
+
+    if (!session.config) {
+      (session as { config: Record<string, unknown> }).config = {};
+    }
+    session.config!.prompt = session.config?.prompt
+      ? `${session.config?.prompt}\n\n${combined}`
+      : combined;
+  }
+
+  const operatorGuidance = session.config?.prompt;
+
   const mode: "blackbox" | "whitebox" = cwd ? "whitebox" : "blackbox";
 
   eventBus?.emit("workflow-phase-start", {
@@ -84,8 +104,7 @@ export async function runFastStrike(
   );
 
   const promptParts: string[] = [`Target: ${target}`];
-  if (threatModel) promptParts.push(`Threat model:\n${threatModel}`);
-  if (prompt) promptParts.push(`Operator guidance:\n${prompt}`);
+  if (operatorGuidance) promptParts.push(operatorGuidance);
   promptParts.push(
     "Run the fast strike: find and exploit the vulnerability, complete the objective, and report what worked.",
   );
