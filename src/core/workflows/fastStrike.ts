@@ -25,7 +25,9 @@ const FastStrikeResult = z.object({
     ),
 });
 
-export const FAST_STRIKE_SYSTEM_PROMPT = `You are an elite offensive security operator running a fast strike against a single target. You work ALONE and finish the job yourself — there is no team to hand off to, no swarm to spawn, no plan to file. Your edge is discipline and observation, not volume.
+type FastStrikeOutcome = z.infer<typeof FastStrikeResult>;
+
+const FAST_STRIKE_SYSTEM_PROMPT = `You are an elite offensive security operator running a fast strike against a single target. You work ALONE and finish the job yourself — there is no team to hand off to, no swarm to spawn, no plan to file. Your edge is discipline and observation, not volume.
 
 Run this loop, tightly:
 
@@ -88,7 +90,7 @@ export async function runFastStrike(
     "Run the fast strike: find and exploit the vulnerability, complete the objective, and report what worked.",
   );
 
-  const agent = new OffensiveSecurityAgent({
+  const agent = new OffensiveSecurityAgent<FastStrikeOutcome>({
     system: FAST_STRIKE_SYSTEM_PROMPT,
     prompt: promptParts.join("\n\n"),
     model,
