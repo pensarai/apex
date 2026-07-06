@@ -9,9 +9,9 @@
  * unambiguous vs standard Bedrock.
  */
 
-export const MANTLE_PREFIX = "mantle:";
+const MANTLE_PREFIX = "mantle:";
 
-export const MANTLE_GPT_5_5_MODEL_ID = "openai.gpt-5.5";
+const MANTLE_GPT_5_5_MODEL_ID = "openai.gpt-5.5";
 
 export const MANTLE_GPT_5_5_ROUTED_ID = `${MANTLE_PREFIX}${MANTLE_GPT_5_5_MODEL_ID}`;
 

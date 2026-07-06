@@ -43,7 +43,10 @@ describe("mantle model registry", () => {
 
 describe("getProviderModel bedrock-mantle case", () => {
   it("builds a Mantle Responses model for the routed id", () => {
-    const model = getProviderModel("mantle:openai.gpt-5.5", {});
+    const model = getProviderModel("mantle:openai.gpt-5.5", {}) as unknown as {
+      modelId: string;
+      provider: string;
+    };
     expect(model.modelId).toBe("openai.gpt-5.5");
     expect(model.provider).toContain("mantle");
   });
