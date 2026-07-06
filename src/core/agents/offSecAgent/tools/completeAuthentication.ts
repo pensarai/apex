@@ -35,8 +35,8 @@ Call this when you have either:
 
 CRITICAL: When authentication succeeds, you MUST include the exported cookies and headers
 so downstream agents can make authenticated requests. Pass:
-- exportedCookies: The cookie string from browser_get_cookies (cookieHeader) or authenticate_session
-- exportedHeaders: Any auth headers (e.g. {"Authorization": "Bearer <token>"}) from browser_evaluate or authenticate_session
+- exportedCookies: The cookie string from browser_get_cookies (cookieHeader) or the Set-Cookie response header
+- exportedHeaders: Any auth headers (e.g. {"Authorization": "Bearer <token>"}) from browser_evaluate or the auth response
 - strategy: The method used ("browser", "form_post", "json_post", "basic_auth", "bearer", etc.)
 
 On success the credentials are persisted to the session's auth/ directory for reuse.

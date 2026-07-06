@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ModelMessage } from "ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { newSessionId } from "../id/id";
 import { getResumeMessages, normalizeMessages } from "./index";
 import {
   type AgentManifestEntry,
@@ -515,6 +516,32 @@ describe("loadSubagents directory-only discovery", () => {
 
     const loaded = loadSubagents(tmpDir);
     expect(loaded).toHaveLength(0);
+  });
+
+  it("discovers a session-id-keyed subagent directory (spawn_pentest_agent)", () => {
+    const childSessionId = newSessionId();
+    const subagentsDir = join(tmpDir, "subagents");
+    const dir = join(subagentsDir, childSessionId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "messages.json"),
+      JSON.stringify([
+        { role: "user", content: "Test /api/users for IDOR" },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Probing IDOR..." }],
+        },
+      ]),
+    );
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(1);
+    // Directory key (and thus the loaded id) IS the child's session id.
+    expect(loaded[0].id).toBe(childSessionId);
+    expect(loaded[0].id.startsWith("ses_")).toBe(true);
+    expect(loaded[0].type).toBe("pentest");
+    expect(loaded[0].name).toBe("Pentest Worker");
+    expect(loaded[0].messages.length).toBeGreaterThan(0);
   });
 
   it("skips directories without messages.json", () => {

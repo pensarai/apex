@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
+import { newSessionId } from "../../../id/id";
 import { runWithBoundedConcurrency } from "../../../utils/concurrency";
 import {
   resolvePathWithinCodebaseRoot,
@@ -174,13 +175,17 @@ async function runSingleCodingAgent(
   // codeAgent → offensiveSecurityAgent → tools/index → spawnCodingAgent → codeAgent
   const { CodeAgent } = await import("../../specialized/codeAgent/agent");
 
-  const subagentId = `coding-agent-${agentIndex}`;
+  // The subagent IS a session; its id doubles as the bus identity (mirrors spawnPentestAgent).
+  const childSessionId = newSessionId();
+  const subagentId = childSessionId as string;
 
   ctx.eventBus?.emit("subagent-spawn", {
     subagentId,
+    sessionId: childSessionId,
     name,
     input: { codebasePath, objective },
     parentSubagentId: ctx.subagentId,
+    parentSessionId: ctx.subagentId ?? ctx.session.id,
   });
 
   const localBus = new AgentEventBus();
@@ -200,6 +205,7 @@ async function runSingleCodingAgent(
     eventBus: localBus,
     subagentId,
     enableThinking: ctx.enableThinking,
+    thinkingEffort: ctx.thinkingEffort,
     openAIReasoningEffort: ctx.openAIReasoningEffort,
   });
 
@@ -208,16 +214,20 @@ async function runSingleCodingAgent(
 
     ctx.eventBus?.emit("subagent-complete", {
       subagentId,
+      sessionId: childSessionId,
       status: "completed",
       parentSubagentId: ctx.subagentId,
+      parentSessionId: ctx.subagentId ?? ctx.session.id,
     });
 
     return textOutput;
   } catch (error) {
     ctx.eventBus?.emit("subagent-complete", {
       subagentId,
+      sessionId: childSessionId,
       status: "failed",
       parentSubagentId: ctx.subagentId,
+      parentSessionId: ctx.subagentId ?? ctx.session.id,
     });
     throw error;
   }

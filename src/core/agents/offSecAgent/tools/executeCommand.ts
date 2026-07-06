@@ -8,6 +8,7 @@ import {
   type PromptInjectionLibrary,
   redactPromptInjectionPayloads,
 } from "../../../prompt-injections";
+import { agentLogsDir } from "./agentScratch";
 import {
   assertCommandInScope,
   extractHostsFromCommand,
@@ -129,9 +130,11 @@ export function normalizeExecuteCommandTimeout(
 }
 
 /**
- * If `raw` exceeds the inline limit, save the full text to a file under
- * `{session.logsPath}/cmd-output/` and return truncated text + file path.
- * Otherwise return the text as-is with no file.
+ * If `raw` exceeds the inline limit, save the full text to a file under this
+ * agent's log dir (`cmd-output/`) and return truncated text + file path.
+ * Otherwise return the text as-is with no file. Scoped per-subagent via
+ * {@link agentLogsDir} so a host can reclaim a finished subagent's command
+ * dumps mid-scan.
  */
 function maybeSaveFullOutput(
   raw: string,
@@ -141,7 +144,7 @@ function maybeSaveFullOutput(
     return { text: raw || "(no output)" };
   }
 
-  const outputDir = join(ctx.session.logsPath, "cmd-output");
+  const outputDir = join(agentLogsDir(ctx), "cmd-output");
   if (!existsSync(outputDir)) {
     mkdirSync(outputDir, { recursive: true });
   }

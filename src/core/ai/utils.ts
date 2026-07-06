@@ -46,8 +46,11 @@ export function isAnthropicProvider(model: AIModel): boolean {
   );
 }
 
-// Last-resort backstop above Bun's 300s fetch default; SSE idle timeout is the primary stall guard.
-const STREAMING_FETCH_TIMEOUT_MS = 15 * 60 * 1000;
+// Last-resort backstop only — the primary liveness guard is the SSE/AI-SDK
+// read-idle timeout (90s of no bytes). This wall-clock bound just needs to
+// exceed the longest legitimate generation while staying below dispatchAgent's
+// autoStopInterval (see that file).
+const STREAMING_FETCH_TIMEOUT_MS = 35 * 60 * 1000;
 
 export function buildStreamingFetchSignal(
   callerSignal?: AbortSignal | null,
@@ -179,11 +182,19 @@ export function getProviderModel(
     }
 
     case "bedrock": {
-      const bedrockFetch = (input: RequestInfo | URL, init?: RequestInit) =>
-        globalThis.fetch(input, {
+      // No data-inactivity guard here: TCP keepalive (libkeepalive in the
+      // sandbox) handles dead-socket detection. A fixed idle timeout
+      // previously false-tripped during long silent `response` payload
+      // generation, causing an endless empty-`{}` response loop.
+      const bedrockFetch = async (
+        input: RequestInfo | URL,
+        init?: RequestInit,
+      ) => {
+        return globalThis.fetch(input, {
           ...init,
           signal: buildStreamingFetchSignal(init?.signal),
         });
+      };
       const bedrock = createAmazonBedrock({
         apiKey: bedrockApiKey,
         region: bedrockRegion,

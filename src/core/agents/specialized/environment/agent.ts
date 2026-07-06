@@ -55,6 +55,7 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
       subagentId,
       sandbox,
       enableThinking,
+      thinkingEffort,
       openAIReasoningEffort,
     } = opts;
 
@@ -70,6 +71,7 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
       subagentId,
       sandbox,
       enableThinking,
+      thinkingEffort,
       openAIReasoningEffort,
 
       activeTools: [

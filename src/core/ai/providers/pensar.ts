@@ -10,11 +10,17 @@ import type {
 import { createLogger } from "../../logger/structured";
 import { scopedLogger } from "../../util/lazyLogger";
 import { isMantleResponsesModelId } from "../mantle";
+import { StreamTelemetry, wallNow } from "../streamTelemetry";
 import { buildStreamingFetchSignal } from "../utils";
 import { convertToBedrockFormat } from "./pensarFormatters";
 import { parseResponsesSSE } from "./pensarResponsesStream";
 import { signGatewayRequest } from "./pensarSigning";
 import { parseSSE } from "./pensarSSE";
+import {
+  applyAnthropicStreamUsage,
+  createEmptyStreamUsage,
+  toLanguageModelV3Usage,
+} from "./pensarStreamUsage";
 
 const structuredLog = scopedLogger(() => createLogger("pensar"));
 
@@ -351,10 +357,7 @@ export function createPensarModel(
 
       const stream = new ReadableStream<LanguageModelV3StreamPart>({
         async start(controller) {
-          let inputTokens = 0;
-          let outputTokens = 0;
-          let cacheReadTokens = 0;
-          let cacheCreationTokens = 0;
+          const streamUsage = createEmptyStreamUsage();
           let finishReasonUnified: LanguageModelV3FinishReason["unified"] =
             "other";
           let finishReasonRaw: string | undefined;
@@ -387,8 +390,12 @@ export function createPensarModel(
             Number.isFinite(rawIdleTimeout) && rawIdleTimeout > 0
               ? rawIdleTimeout
               : 90_000;
+          const telemetry = new StreamTelemetry(bedrockModelId, wallNow());
           try {
-            for await (const sse of parseSSE(sseStream, { idleTimeoutMs })) {
+            for await (const sse of parseSSE(sseStream, {
+              idleTimeoutMs,
+              telemetry,
+            })) {
               const now = Date.now();
               const gap = now - lastEventTime;
               if (gap > 5000) {
@@ -440,15 +447,7 @@ export function createPensarModel(
                   const usage = msg?.usage as
                     | Record<string, number>
                     | undefined;
-                  if (usage?.input_tokens) {
-                    inputTokens = usage.input_tokens;
-                  }
-                  if (usage?.cache_read_input_tokens) {
-                    cacheReadTokens = usage.cache_read_input_tokens;
-                  }
-                  if (usage?.cache_creation_input_tokens) {
-                    cacheCreationTokens = usage.cache_creation_input_tokens;
-                  }
+                  applyAnthropicStreamUsage(streamUsage, usage);
                   break;
                 }
 
@@ -469,6 +468,7 @@ export function createPensarModel(
                       id: activeReasoningId,
                     });
                   } else if (cbType === "text") {
+                    telemetry.setPhase("streaming-text", wallNow());
                     activeTextId = `text-${Date.now()}-${parsed.index}`;
                     controller.enqueue({
                       type: "text-start",
@@ -477,6 +477,10 @@ export function createPensarModel(
                   } else if (cbType === "tool_use") {
                     activeToolId = (cb?.id as string) ?? `tool-${Date.now()}`;
                     activeToolName = (cb?.name as string) ?? "unknown";
+                    telemetry.setPhase(
+                      `streaming-tool-args:${activeToolName}`,
+                      wallNow(),
+                    );
                     activeToolInput = "";
                     controller.enqueue({
                       type: "tool-input-start",
@@ -572,21 +576,20 @@ export function createPensarModel(
                   const usage = parsed.usage as
                     | Record<string, number>
                     | undefined;
-                  if (usage?.output_tokens) {
-                    outputTokens = usage.output_tokens;
-                  }
+                  applyAnthropicStreamUsage(streamUsage, usage);
                   break;
                 }
 
                 case "message_stop": {
                   // Stream complete
+                  telemetry.setPhase("finish", wallNow());
                   break;
                 }
               }
             }
 
             logInfo(
-              `  stream complete: ${finishReasonUnified}, ${inputTokens}in/${outputTokens}out, cacheRead=${cacheReadTokens}, cacheWrite=${cacheCreationTokens} (${Date.now() - startTime}ms)`,
+              `  stream complete: ${finishReasonUnified}, ${streamUsage.inputTokens}in/${streamUsage.outputTokens}out, cacheRead=${streamUsage.cacheReadTokens}, cacheWrite=${streamUsage.cacheCreationTokens} (${Date.now() - startTime}ms)`,
             );
 
             controller.enqueue({
@@ -595,25 +598,16 @@ export function createPensarModel(
                 unified: finishReasonUnified,
                 raw: finishReasonRaw,
               },
-              usage: {
-                inputTokens: {
-                  total:
-                    inputTokens +
-                    (cacheReadTokens || 0) +
-                    (cacheCreationTokens || 0),
-                  noCache: inputTokens,
-                  cacheRead: cacheReadTokens || undefined,
-                  cacheWrite: cacheCreationTokens || undefined,
-                },
-                outputTokens: {
-                  total: outputTokens,
-                  text: undefined,
-                  reasoning: undefined,
-                },
-              },
+              usage: toLanguageModelV3Usage(streamUsage),
             });
+            telemetry.finish(wallNow());
             controller.close();
           } catch (err) {
+            telemetry.wedge(
+              err instanceof Error ? err.message : String(err),
+              wallNow(),
+            );
+            telemetry.finish(wallNow());
             logError(
               `  stream error: events=${eventCount}, activeToolId=${activeToolId}, activeToolName=${activeToolName}, toolInputLen=${activeToolInput.length}, timeSinceLastEvent=${Date.now() - lastEventTime}ms`,
             );
