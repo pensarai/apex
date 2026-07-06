@@ -236,6 +236,8 @@ pentest options:
   --model <model>          AI model (default: auto-selected from configured provider)
   --extended-thinking       Enable extended thinking for supported models
   --task-driven             Enable task-driven architecture (experimental)
+  --fast-strike            Single-operator fast strike: skip attack-surface/swarm
+                           phases, one tight recon→exploit loop against the target
   --prompt <text|@file>    Guidance for the pentest agent (inline text or @filepath)
   --threat-model <text|@file>  Threat model to guide the pentest (inline or @filepath)
   --header "Name: Value"   Custom HTTP header (repeatable)
@@ -285,6 +287,7 @@ async function runPentest() {
   const threatModelRaw = getArg("--threat-model");
   const enableThinking = hasFlag("--extended-thinking");
   const taskDriven = hasFlag("--task-driven");
+  const fastStrike = hasFlag("--fast-strike");
 
   // Resolve and combine threat model + prompt
   const resolvedTm = threatModelRaw
@@ -302,19 +305,25 @@ async function runPentest() {
     console.warn(modeWarning);
   }
 
+  if (taskDriven && fastStrike) {
+    console.warn(
+      "Warning: --task-driven has no effect with --fast-strike (task tools are excluded).",
+    );
+  }
+
   const sep = "=".repeat(60);
   console.log(`${sep}
 PENTEST ORCHESTRATION
 ${sep}
 Target:  ${target}${cwd ? `\nCwd:     ${cwd} (whitebox)` : ""}${exfilMode ? "\nMode:    exfil" : ""}
-Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\nTask-driven: enabled" : ""}${headers ? `\nHeaders: ${Object.keys(headers).length} configured` : ""}
+Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\nTask-driven: enabled" : ""}${fastStrike ? "\nFast strike: enabled" : ""}${headers ? `\nHeaders: ${Object.keys(headers).length} configured` : ""}
 `);
 
   const session = await sessions.create({
     name: cwd ? "Whitebox Pentest" : "Blackbox Pentest",
     targets: [target],
     config: {
-      ...(cwd ? { cwd } : {}),
+      ...(cwd ? { codebasePath: cwd } : {}),
       ...(exfilMode ? { exfilMode: true } : {}),
       ...(prompt ? { prompt } : {}),
       ...(taskDriven ? { taskDriven: true } : {}),
@@ -334,6 +343,7 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
         session,
         model,
         enableThinking,
+        ...(fastStrike ? { fastStrike: true } : {}),
         surfaceIntegrationEnabled: pensarConfig.surfaceIntegrationEnabled,
         authConfig: buildAuthConfig(pensarConfig),
         eventBus: pentestBus,

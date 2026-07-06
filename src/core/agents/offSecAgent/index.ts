@@ -78,6 +78,7 @@ export {
   extractHostname,
   extractHostsFromCommand,
   extractJsEndpoints,
+  FAST_STRIKE_EXCLUDED_TOOL_NAMES,
   getAllowedHosts,
   getApexTmpRoot,
   getMemory,

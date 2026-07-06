@@ -396,6 +396,36 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   ASK_USER_QUESTIONS_TOOL_NAME,
 ];
 
+/** Orchestration/ceremony tools excluded from fast-strike mode (registry minus this list). */
+export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
+  // Sub-agents / workflow
+  "run_attack_surface",
+  "spawn_pentest_swarm",
+  "spawn_pentest_agent",
+  "spawn_coding_agent",
+  "run_pentest_workflow",
+  "delegate_to_auth_subagent",
+  // Whitebox jobs
+  "run_whitebox_scan",
+  "create_whitebox_candidate",
+  "update_whitebox_candidate",
+  "list_whitebox_candidates",
+  "start_whitebox_job",
+  "poll_whitebox_job",
+  "stop_whitebox_job",
+  "read_whitebox_artifact",
+  // Planning / tasks
+  "write_plan",
+  "submit_plan",
+  "create_task",
+  "update_task",
+  "list_tasks",
+  // Reporting / interactive
+  "create_attack_surface_report",
+  "provide_comparison_results",
+  ASK_USER_QUESTIONS_TOOL_NAME,
+];
+
 /**
  * Tool names available in plan mode (read-only / non-mutating).
  *
