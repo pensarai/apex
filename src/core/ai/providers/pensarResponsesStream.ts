@@ -164,7 +164,8 @@ export function parseResponsesSSE(
               if (item?.type === "function_call") {
                 const itemId = String(item.id ?? parsed.item_id ?? "");
                 const pending = toolsByItemId.get(itemId);
-                const callId = pending?.callId ?? String(item.call_id ?? itemId);
+                const callId =
+                  pending?.callId ?? String(item.call_id ?? itemId);
                 const name = pending?.name ?? String(item.name ?? "unknown");
                 const args =
                   typeof item.arguments === "string"
@@ -182,7 +183,10 @@ export function parseResponsesSSE(
               } else {
                 const reasoningId = reasoningKey(parsed);
                 if (openReasoning.has(reasoningId)) {
-                  controller.enqueue({ type: "reasoning-end", id: reasoningId });
+                  controller.enqueue({
+                    type: "reasoning-end",
+                    id: reasoningId,
+                  });
                   openReasoning.delete(reasoningId);
                 }
               }

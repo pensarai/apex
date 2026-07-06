@@ -25,11 +25,7 @@ import {
   extractTaskSummaryFromMessages,
   truncateWithMarker,
 } from "./contextManagement";
-import {
-  MANTLE_REGION,
-  mantleBaseUrl,
-  stripMantlePrefix,
-} from "./mantle";
+import { MANTLE_REGION, mantleBaseUrl, stripMantlePrefix } from "./mantle";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
 

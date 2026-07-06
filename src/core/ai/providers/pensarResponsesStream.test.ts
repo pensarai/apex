@@ -68,7 +68,12 @@ describe("parseResponsesSSE", () => {
         event: "response.output_item.added",
         data: {
           type: "response.output_item.added",
-          item: { id: "fc_1", type: "function_call", call_id: "call_abc", name: "run_tool" },
+          item: {
+            id: "fc_1",
+            type: "function_call",
+            call_id: "call_abc",
+            name: "run_tool",
+          },
         },
       },
       {
@@ -114,8 +119,9 @@ describe("parseResponsesSSE", () => {
     expect(types).toContain("text-end");
 
     const text = parts
-      .filter((p): p is Extract<LanguageModelV3StreamPart, { type: "text-delta" }> =>
-        p.type === "text-delta",
+      .filter(
+        (p): p is Extract<LanguageModelV3StreamPart, { type: "text-delta" }> =>
+          p.type === "text-delta",
       )
       .map((p) => p.delta)
       .join("");
