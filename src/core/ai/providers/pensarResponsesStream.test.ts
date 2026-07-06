@@ -138,6 +138,38 @@ describe("parseResponsesSSE", () => {
     expect(finish?.usage.outputTokens.total).toBe(22);
   });
 
+  it("does not double-count cached input tokens", async () => {
+    const sse = sseStreamFrom([
+      {
+        event: "response.completed",
+        data: {
+          type: "response.completed",
+          response: {
+            status: "completed",
+            usage: {
+              input_tokens: 100,
+              input_tokens_details: { cached_tokens: 40 },
+              output_tokens: 12,
+            },
+          },
+        },
+      },
+    ]);
+
+    const parts = await collect(
+      parseResponsesSSE(sse, { idleTimeoutMs: 5_000 }),
+    );
+    const finish = parts.find(
+      (p): p is Extract<LanguageModelV3StreamPart, { type: "finish" }> =>
+        p.type === "finish",
+    );
+
+    expect(finish?.usage.inputTokens.total).toBe(100);
+    expect(finish?.usage.inputTokens.noCache).toBe(60);
+    expect(finish?.usage.inputTokens.cacheRead).toBe(40);
+    expect(finish?.usage.outputTokens.total).toBe(12);
+  });
+
   it("surfaces upstream error events", async () => {
     const sse = sseStreamFrom([
       {

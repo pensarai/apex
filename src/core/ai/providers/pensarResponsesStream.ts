@@ -39,6 +39,7 @@ export function parseResponsesSSE(
       let inputTokens = 0;
       let outputTokens = 0;
       let cacheReadTokens = 0;
+      let noCacheInputTokens = 0;
       let finishReasonUnified: LanguageModelV3FinishReason["unified"] = "stop";
       let finishReasonRaw: string | undefined;
       let sawToolCall = false;
@@ -203,6 +204,7 @@ export function parseResponsesSSE(
                   | Record<string, unknown>
                   | undefined;
                 cacheReadTokens = numberOf(details?.cached_tokens);
+                noCacheInputTokens = Math.max(inputTokens - cacheReadTokens, 0);
               }
               const incomplete = response?.incomplete_details as
                 | Record<string, unknown>
@@ -236,8 +238,8 @@ export function parseResponsesSSE(
           finishReason: { unified: finishReasonUnified, raw: finishReasonRaw },
           usage: {
             inputTokens: {
-              total: inputTokens + cacheReadTokens,
-              noCache: inputTokens,
+              total: inputTokens,
+              noCache: noCacheInputTokens || inputTokens,
               cacheRead: cacheReadTokens || undefined,
               cacheWrite: undefined,
             },

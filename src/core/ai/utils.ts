@@ -265,9 +265,9 @@ export function getProviderModel(
         );
       }
 
-      const gatewayUrl =
-        authConfig?.gatewayUrl ||
-        (agentApiUrl ? `${agentApiUrl}/agent` : getPensarGatewayUrl());
+      const gatewayUrl = hasSandboxAgentAuth
+        ? `${agentApiUrl}/agent`
+        : authConfig?.gatewayUrl || getPensarGatewayUrl();
       const bedrockModelId = model.startsWith("pensar:")
         ? model.slice(7)
         : model;
@@ -286,7 +286,7 @@ export function getProviderModel(
       // If WorkOS tokens are available, use token refresh callback.
       // Read fresh config each time so rotated tokens are picked up
       // (WorkOS refresh tokens are single-use).
-      if (hasWorkOSAuth) {
+      if (!hasSandboxAgentAuth && hasWorkOSAuth) {
         modelConfig.getToken = async () => {
           const freshConfig = await config.get();
           return ensureValidToken({
