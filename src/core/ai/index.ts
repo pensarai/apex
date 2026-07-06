@@ -9,14 +9,11 @@ export type {
   ThinkingEffort,
 } from "./ai";
 export {
-  buildReasoningProviderOptions,
   DEFAULT_OPENAI_REASONING_EFFORT,
   generateObjectResponse,
   getOpenAIReasoningEfforts,
-  modelSupportsAdaptiveThinking,
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,
-  normalizeOpenAIReasoningEffort,
   streamResponse,
 } from "./ai";
 export { AVAILABLE_MODELS } from "./models";
