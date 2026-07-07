@@ -2,6 +2,14 @@ import type { ModelInfo } from "../ai";
 
 export const PENSAR_MODELS: ModelInfo[] = [
   {
+    // GPT 5.5 via Bedrock Mantle, routed through the Pensar Gateway for
+    // usage-based billing. The gateway proxies to the OpenAI Responses API.
+    id: "pensar:openai.gpt-5.5",
+    name: "GPT 5.5 (Pensar)",
+    provider: "pensar",
+    contextLength: 272000,
+  },
+  {
     id: "pensar:anthropic.claude-opus-4-8",
     name: "Claude Opus 4.8",
     provider: "pensar",

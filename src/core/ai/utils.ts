@@ -1,4 +1,5 @@
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
+import { createBedrockMantle } from "@ai-sdk/amazon-bedrock/mantle";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -24,6 +25,7 @@ import {
   extractTaskSummaryFromMessages,
   truncateWithMarker,
 } from "./contextManagement";
+import { MANTLE_REGION, mantleBaseUrl, stripMantlePrefix } from "./mantle";
 import { getModelInfo } from "./models";
 import { createPensarModel } from "./providers/pensar";
 
@@ -205,6 +207,32 @@ export function getProviderModel(
       break;
     }
 
+    case "bedrock-mantle": {
+      // GPT-5.x on Bedrock Mantle: OpenAI Responses API only, region-locked to
+      // us-east-2, on the `/openai/v1` path. Authenticates via the same SigV4
+      // credential chain / keys as standard Bedrock.
+      const bedrockFetch = (input: RequestInfo | URL, init?: RequestInit) =>
+        globalThis.fetch(input, {
+          ...init,
+          signal: buildStreamingFetchSignal(init?.signal),
+        });
+      const mantle = createBedrockMantle({
+        apiKey: bedrockApiKey,
+        region: MANTLE_REGION,
+        baseURL: mantleBaseUrl(),
+        accessKeyId: bedrockAccessKeyId,
+        secretAccessKey: bedrockSecretAccessKey,
+        sessionToken: bedrockSessionToken,
+        credentialProvider: authConfig?.bedrock
+          ?.credentialProvider as NonNullable<
+          Parameters<typeof createBedrockMantle>[0]
+        >["credentialProvider"],
+        fetch: bedrockFetch as typeof globalThis.fetch,
+      });
+      providerModel = mantle.responses(stripMantlePrefix(model));
+      break;
+    }
+
     case "anthropic":
       providerModel = createAnthropic({
         apiKey: anthropicAPIKey,
@@ -222,15 +250,20 @@ export function getProviderModel(
     case "pensar": {
       const pensarApiKey =
         authConfig?.pensarAPIKey || process.env.PENSAR_API_KEY;
+      const agentApiUrl = process.env.AGENT_API_URL;
+      const agentApiToken = process.env.AGENT_API_TOKEN;
       const hasWorkOSAuth = !!authConfig?.accessToken;
+      const hasSandboxAgentAuth = !!agentApiUrl && !!agentApiToken;
 
-      if (!pensarApiKey && !hasWorkOSAuth) {
+      if (!pensarApiKey && !hasWorkOSAuth && !hasSandboxAgentAuth) {
         throw new Error(
           "Pensar not configured. Run /login to connect to Pensar Console.",
         );
       }
 
-      const gatewayUrl = authConfig?.gatewayUrl || getPensarGatewayUrl();
+      const gatewayUrl = hasSandboxAgentAuth
+        ? `${agentApiUrl}/agent`
+        : authConfig?.gatewayUrl || getPensarGatewayUrl();
       const bedrockModelId = model.startsWith("pensar:")
         ? model.slice(7)
         : model;
@@ -240,7 +273,7 @@ export function getProviderModel(
 
       // Build config with token refresh support for WorkOS auth
       const modelConfig: Parameters<typeof createPensarModel>[1] = {
-        apiKey: pensarApiKey || authConfig?.accessToken || "",
+        apiKey: agentApiToken || pensarApiKey || authConfig?.accessToken || "",
         baseUrl: gatewayUrl,
         workspaceId: authConfig?.workspaceId,
         signingKey: authConfig?.gatewaySigningKey,
@@ -249,7 +282,7 @@ export function getProviderModel(
       // If WorkOS tokens are available, use token refresh callback.
       // Read fresh config each time so rotated tokens are picked up
       // (WorkOS refresh tokens are single-use).
-      if (hasWorkOSAuth) {
+      if (!hasSandboxAgentAuth && hasWorkOSAuth) {
         modelConfig.getToken = async () => {
           const freshConfig = await config.get();
           return ensureValidToken({

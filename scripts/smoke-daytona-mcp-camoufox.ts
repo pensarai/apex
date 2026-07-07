@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 /**
  * MCP-path smoke test — the path PRODUCTION actually uses.
  *
@@ -21,9 +22,9 @@
  * Flags: --target <url> (required), --keep (don't delete the sandbox).
  */
 
+import { execSync } from "node:child_process";
+import path from "node:path";
 import { Daytona, Image } from "@daytonaio/sdk";
-import { execSync } from "child_process";
-import path from "path";
 
 const BRANCH = "enhancement/camoufox-support";
 
@@ -176,7 +177,7 @@ process.exit(0);
       " 2>&1",
     240,
   );
-  process.stdout.write(res.out.endsWith("\n") ? res.out : res.out + "\n");
+  process.stdout.write(res.out.endsWith("\n") ? res.out : `${res.out}\n`);
 
   if (!res.out.includes("SMOKE_PASS")) {
     throw new Error("MCP browser path did not reach SMOKE_PASS");

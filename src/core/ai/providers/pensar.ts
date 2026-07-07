@@ -9,9 +9,11 @@ import type {
 } from "@ai-sdk/provider";
 import { createLogger } from "../../logger/structured";
 import { scopedLogger } from "../../util/lazyLogger";
+import { isMantleResponsesModelId } from "../mantle";
 import { StreamTelemetry, wallNow } from "../streamTelemetry";
 import { buildStreamingFetchSignal } from "../utils";
 import { convertToBedrockFormat } from "./pensarFormatters";
+import { parseResponsesSSE } from "./pensarResponsesStream";
 import { signGatewayRequest } from "./pensarSigning";
 import { parseSSE } from "./pensarSSE";
 import {
@@ -334,6 +336,25 @@ export function createPensarModel(
       const sseStream = response.body;
 
       const abortSignal = options.abortSignal;
+
+      const rawIdleTimeoutTop = Number(process.env.PENSAR_SSE_IDLE_TIMEOUT_MS);
+      const topIdleTimeoutMs =
+        Number.isFinite(rawIdleTimeoutTop) && rawIdleTimeoutTop > 0
+          ? rawIdleTimeoutTop
+          : 90_000;
+
+      // GPT-5.x on Bedrock Mantle streams OpenAI Responses events, not
+      // Anthropic Messages events — parse them with the dedicated reader.
+      if (isMantleResponsesModelId(bedrockModelId)) {
+        return {
+          stream: parseResponsesSSE(sseStream, {
+            abortSignal,
+            idleTimeoutMs: topIdleTimeoutMs,
+          }),
+          request: { body },
+        };
+      }
+
       const stream = new ReadableStream<LanguageModelV3StreamPart>({
         async start(controller) {
           const streamUsage = createEmptyStreamUsage();
