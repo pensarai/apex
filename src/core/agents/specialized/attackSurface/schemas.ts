@@ -3,6 +3,10 @@ import {
   RiskScoreBreakdownSchema,
   RiskScoreSchema,
 } from "../whiteboxAttackSurface";
+import {
+  EndpointTransportEnum,
+  GrpcEndpointMetadataSchema,
+} from "./grpcSchema";
 
 export type { RiskScore, RiskScoreBreakdown } from "../whiteboxAttackSurface";
 export { RiskScoreBreakdownSchema, RiskScoreSchema };
@@ -95,6 +99,19 @@ export const EndpointTypeEnum = z.enum([
   "asset",
 ]);
 
+export type {
+  EndpointTransport,
+  GrpcEndpointMetadata,
+} from "./grpcSchema";
+// Transport is orthogonal to endpointType — a gRPC method is still an
+// `api-endpoint`, carried over a non-http transport. Schemas live in a zod-only
+// leaf so the live tool can share them without a circular import.
+export {
+  EndpointTransportEnum,
+  GrpcEndpointMetadataSchema,
+  GrpcStreamingTypeEnum,
+} from "./grpcSchema";
+
 /**
  * Schema for document_app tool input
  */
@@ -169,7 +186,17 @@ export const DocumentEndpointSchema = z.object({
     ),
   endpointType: EndpointTypeEnum.describe(
     "Type of endpoint: 'api-endpoint' for REST/GraphQL APIs, " +
-      "'web-endpoint' for pages/views, 'asset' for other resources",
+      "'web-endpoint' for pages/views, 'asset' for other resources. " +
+      "A gRPC method is still 'api-endpoint' — set `transport` to mark it gRPC.",
+  ),
+  transport: EndpointTransportEnum.optional().describe(
+    "Wire transport. Omit or 'http' for normal endpoints. Set 'grpc' " +
+      "(or 'grpc_web' / 'connect') for a gRPC method and populate `grpc`.",
+  ),
+  grpc: GrpcEndpointMetadataSchema.optional().describe(
+    "gRPC attributes — required when transport is a gRPC variant. Put the " +
+      "wire path '/package.Service/Method' in both `routePath` and " +
+      "`grpc.fullMethodPath`; do not glue on a host.",
   ),
   description: z
     .string()

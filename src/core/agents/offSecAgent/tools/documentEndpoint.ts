@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import { computeBlackboxRiskScore } from "../../specialized/attackSurface/blackboxRiskScoring";
+import {
+  EndpointTransportEnum,
+  GrpcEndpointMetadataSchema,
+} from "../../specialized/attackSurface/grpcSchema";
 import { generateThreatModelForEndpoint } from "./threatModelGenerator";
 import type { ToolContext } from "./types";
 
@@ -33,8 +37,18 @@ const documentEndpointInputSchema = z.object({
     .enum(["api-endpoint", "web-endpoint", "asset"])
     .describe(
       "Type of endpoint: 'api-endpoint' for REST/GraphQL APIs, " +
-        "'web-endpoint' for pages/views, 'asset' for other resources",
+        "'web-endpoint' for pages/views, 'asset' for other resources. " +
+        "A gRPC method is still 'api-endpoint' — set `transport` to mark it gRPC.",
     ),
+  transport: EndpointTransportEnum.optional().describe(
+    "Wire transport. Omit or 'http' for normal endpoints. Set 'grpc' " +
+      "(or 'grpc_web' / 'connect') for a gRPC method and populate `grpc`.",
+  ),
+  grpc: GrpcEndpointMetadataSchema.optional().describe(
+    "gRPC attributes — required when transport is a gRPC variant. Put the " +
+      "wire path '/package.Service/Method' in both `routePath` and " +
+      "`grpc.fullMethodPath`; do not glue on a host.",
+  ),
   description: z
     .string()
     .describe("Detailed description of the endpoint including what it does"),
@@ -148,9 +162,11 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         }
       }
 
+      const isGrpc = !!input.transport && input.transport !== "http";
       if (
-        input.routePath.startsWith("https://") ||
-        input.routePath.startsWith("http://")
+        !isGrpc &&
+        (input.routePath.startsWith("https://") ||
+          input.routePath.startsWith("http://"))
       ) {
         return {
           success: false,
@@ -239,6 +255,8 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         appName: input.appName,
         routePath: input.routePath,
         endpointType: input.endpointType,
+        transport: input.transport,
+        grpc: input.grpc,
         riskLevel: input.riskLevel,
         filepath,
         businessLogic: businessLogic ?? undefined,

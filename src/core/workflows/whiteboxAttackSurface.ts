@@ -937,6 +937,15 @@ Find ALL API endpoints **whose route definitions live in this application's sour
 - **Rails**: routes.rb API namespaces, resources, controller actions
 - **Spring**: @GetMapping, @PostMapping, @PutMapping, @DeleteMapping, @RequestMapping
 - **Go**: http.HandleFunc, mux.Handle, gin router methods
+- **gRPC**: \`.proto\` service definitions (\`service X { rpc Method (Req) returns (Resp); }\`), \`buf.yaml\`/\`buf.gen.yaml\`, or generated gRPC stubs
+
+### gRPC / Connect services — do NOT flatten into HTTP paths
+A gRPC method looks like a path (\`/package.Service/Method\`) but is NOT an HTTP route. When this app defines gRPC/Connect services, document **one \`document_endpoint\` per \`rpc\` method** with:
+- **endpointType**: \`"api-endpoint"\` (a gRPC method is still an API endpoint)
+- **transport**: \`"grpc"\` (or \`"grpc_web"\` / \`"connect"\` if the service is served that way)
+- **routePath**: the wire path \`/package.Service/Method\` (e.g. \`/account.v1.AccountService/GetAccount\`) — do NOT prepend a host
+- **grpc**: \`{ serviceFqn, method, fullMethodPath, streamingType, schemaSource: "proto" }\` where \`serviceFqn\` is the fully-qualified service (\`account.v1.AccountService\`), \`method\` is the rpc name, \`fullMethodPath\` equals \`routePath\`, and \`streamingType\` is one of \`unary | server_stream | client_stream | bidi\` (based on the \`stream\` keywords in the rpc signature). Set \`reflectionAvailable: true\` if the server registers the gRPC reflection service.
+- If a REST/GraphQL gateway (e.g. grpc-gateway annotations, a GraphQL resolver) fronts a method, set \`grpc.frontingGatewayOperation\`.
 
 ### How to document each endpoint
 For each **unique route path**, call \`document_endpoint\` with:
