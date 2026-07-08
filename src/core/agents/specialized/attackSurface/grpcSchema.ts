@@ -1,11 +1,7 @@
 import { z } from "zod";
 
-/**
- * Transport + gRPC schemas for endpoints. Kept in a zod-only leaf module (no
- * imports from the attack-surface agents) so both the live `document_endpoint`
- * tool and the exported `schemas.ts` contract can share them without creating a
- * circular import through `whiteboxAttackSurface`.
- */
+// Zod-only leaf module: keeps this shareable between the live tool and
+// `schemas.ts` without a circular import through `whiteboxAttackSurface`.
 
 export const EndpointTransportEnum = z.enum([
   "http",

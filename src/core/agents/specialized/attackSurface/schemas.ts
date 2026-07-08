@@ -104,8 +104,7 @@ export type {
   GrpcEndpointMetadata,
 } from "./grpcSchema";
 // Transport is orthogonal to endpointType — a gRPC method is still an
-// `api-endpoint`, carried over a non-http transport. Schemas live in a zod-only
-// leaf so the live tool can share them without a circular import.
+// `api-endpoint`, carried over a non-http transport.
 export {
   EndpointTransportEnum,
   GrpcEndpointMetadataSchema,
