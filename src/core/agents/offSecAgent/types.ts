@@ -192,6 +192,14 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   subagentId?: string;
 
   /**
+   * Human-readable label for this subagent (the display slug that used to be
+   * the `subagentId`, e.g. "Attack Surface", "Threat Model: /api/users").
+   * Used only for the OTel span name / `gen_ai.agent.name` so Sentry traces
+   * stay readable now that `subagentId` is an opaque `ses_` id.
+   */
+  subagentName?: string;
+
+  /**
    * Override the auto-computed task directory. When set, takes precedence
    * over the directory derived from `subagentId`. Use this when a plan
    * agent needs to write tasks to the execution agent's task directory.
@@ -376,6 +384,13 @@ export interface SpecializedAgentInput {
    * are tagged with this id on the event bus (for multi-agent UIs).
    */
   subagentId?: string;
+
+  /**
+   * Human-readable label for this subagent (the display slug that used to be
+   * the `subagentId`). Forwarded to the underlying
+   * {@link OffensiveSecurityAgentInput} for readable OTel span names.
+   */
+  subagentName?: string;
 
   /** Shared findings registry for cross-agent dedup */
   findingsRegistry?: FindingsRegistry;

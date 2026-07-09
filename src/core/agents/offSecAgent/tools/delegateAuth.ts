@@ -4,6 +4,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { CredentialManager } from "../../../credentials";
 import { AgentEventBus } from "../../../eventBus";
+import { newSessionId } from "../../../id/id";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import type { AuthCredentials } from "../../specialized/authenticationAgent/types";
@@ -185,6 +186,10 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
       authHints,
       reason,
     }) => {
+      // Declared outside the try so the failure path's subagent-complete can
+      // reference the same `ses_` id emitted at spawn.
+      const subagentId = newSessionId();
+      const subagentName = "Authentication Agent";
       try {
         if (!ctx.model) {
           return {
@@ -214,10 +219,9 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
           }
         }
 
-        const subagentId = "auth-agent";
-
         ctx.eventBus?.emit("subagent-spawn", {
           subagentId,
+          name: subagentName,
           input: { target, reason },
           parentSubagentId: ctx.subagentId,
         });
@@ -305,6 +309,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
           abortSignal: ctx.abortSignal,
           eventBus: localBus,
           subagentId,
+          subagentName,
         });
 
         ctx.eventBus?.emit("subagent-complete", {
@@ -375,7 +380,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
         };
       } catch (error: unknown) {
         ctx.eventBus?.emit("subagent-complete", {
-          subagentId: "auth-agent",
+          subagentId,
           status: "failed",
           parentSubagentId: ctx.subagentId,
         });

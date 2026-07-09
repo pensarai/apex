@@ -2,6 +2,7 @@ import { stepCountIs } from "ai";
 import pLimit from "p-limit";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
+import { newSessionId } from "../../../id/id";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import type { RiskScore } from "../../specialized/whiteboxAttackSurface";
@@ -323,11 +324,12 @@ export async function generateThreatModelForEndpoint(
 
     const { CodeAgent } = await import("../../specialized/codeAgent/agent");
 
-    const subagentId = `threat-model-${sanitize(input.appName)}-${sanitize(input.routePath)}`;
+    const subagentId = newSessionId();
+    const subagentName = `Threat Model: ${input.routePath}`;
 
     ctx.eventBus?.emit("subagent-spawn", {
       subagentId,
-      name: `Threat Model: ${input.routePath}`,
+      name: subagentName,
       input: { app: input.appName, endpoint: input.routePath },
       parentSubagentId: ctx.subagentId,
     });
@@ -357,6 +359,7 @@ export async function generateThreatModelForEndpoint(
       abortSignal: childAbort.signal,
       eventBus: localBus,
       subagentId,
+      subagentName,
       responseSchema: ThreatModelResultSchema,
       stopWhen: stepCountIs(THREAT_MODEL_MAX_STEPS),
       excludeTools: ["document_endpoint", "document_app"],
@@ -647,8 +650,4 @@ function flattenPentestObjective(o: PentestObjective): string {
     ``,
     `Success signal: ${o.successSignal}`,
   ].join("\n");
-}
-
-function sanitize(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9-_.]/g, "_");
 }

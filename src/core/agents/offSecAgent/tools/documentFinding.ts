@@ -13,6 +13,7 @@ import { z } from "zod";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
 import { AgentEventBus } from "../../../eventBus";
+import { newSessionId } from "../../../id/id";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import {
@@ -243,11 +244,12 @@ CRITICAL RULES — READ BEFORE CALLING:
         // spawn_pentest_agent / spawn_coding_agent. Without this the judge's
         // stream renders as a top-level sibling instead of nested under the
         // worker that invoked document_vulnerability.
-        const judgeSubagentId = nextJudgeSubagentId(ctx.subagentId);
+        const judgeSubagentId = newSessionId();
+        const judgeSubagentName = "Finding Judge";
 
         ctx.eventBus?.emit("subagent-spawn", {
           subagentId: judgeSubagentId,
-          name: "Finding Judge",
+          name: judgeSubagentName,
           input: { title: input.title, endpoint: input.endpoint },
           parentSubagentId: ctx.subagentId,
         });
@@ -264,6 +266,7 @@ CRITICAL RULES — READ BEFORE CALLING:
             abortSignal: ctx.abortSignal,
             eventBus: judgeBus,
             subagentId: judgeSubagentId,
+            subagentName: judgeSubagentName,
             sandbox: ctx.sandbox,
             target: ctx.target,
             enableThinking: ctx.enableThinking,
@@ -642,23 +645,6 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
       }
     },
   });
-}
-
-// ---------------------------------------------------------------------------
-// Finding Judge subagent ids
-// ---------------------------------------------------------------------------
-
-// Per-parent counter so repeated/concurrent judge runs within the same
-// parent stream get unique subagent ids (mirrors spawn_pentest_agent's
-// child-id allocation). Keyed by parent subagentId ("" for top-level).
-const judgeCounters = new Map<string, number>();
-
-function nextJudgeSubagentId(parentSubagentId: string | undefined): string {
-  const key = parentSubagentId ?? "";
-  const next = (judgeCounters.get(key) ?? 0) + 1;
-  judgeCounters.set(key, next);
-  const prefix = parentSubagentId ? `${parentSubagentId}-` : "";
-  return `${prefix}finding-judge-${next}`;
 }
 
 // ---------------------------------------------------------------------------

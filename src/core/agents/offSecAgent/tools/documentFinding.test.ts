@@ -263,9 +263,10 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
     // Lifecycle: one spawn + one complete, anchored to the worker.
     expect(spawns).toHaveLength(1);
     expect(spawns[0].name).toBe("Finding Judge");
-    expect(spawns[0].subagentId).toMatch(
-      /^pentest-agent-worker-1-finding-judge-\d+$/,
-    );
+    // The judge now gets its own `ses_` execution-session id (distinct Sentry
+    // span session); the human label lives on `name`. Parent threading is
+    // unchanged.
+    expect(spawns[0].subagentId).toMatch(/^ses_/);
     expect(spawns[0].parentSubagentId).toBe("pentest-agent-worker-1");
 
     expect(completes).toHaveLength(1);
@@ -321,7 +322,7 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
     });
 
     expect(spawns).toHaveLength(1);
-    expect(spawns[0].subagentId).toMatch(/^finding-judge-\d+$/);
+    expect(spawns[0].subagentId).toMatch(/^ses_/);
     expect(spawns[0].parentSubagentId).toBeUndefined();
   });
 
