@@ -46,8 +46,7 @@ const documentEndpointInputSchema = z.object({
   ),
   grpc: GrpcEndpointMetadataSchema.optional().describe(
     "gRPC attributes — required when transport is a gRPC variant. Put the " +
-      "wire path '/package.Service/Method' in both `routePath` and " +
-      "`grpc.fullMethodPath`; do not glue on a host.",
+      "wire path '/package.Service/Method' in `routePath`; do not glue on a host.",
   ),
   description: z
     .string()

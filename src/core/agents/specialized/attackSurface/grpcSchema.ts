@@ -22,11 +22,6 @@ export const GrpcEndpointMetadataSchema = z.object({
     .string()
     .describe("Fully-qualified service name, e.g. 'account.v1.AccountService'"),
   method: z.string().describe("RPC method name, e.g. 'GetAccount'"),
-  fullMethodPath: z
-    .string()
-    .describe(
-      "Verbatim wire path '/package.Service/Method', e.g. '/account.v1.AccountService/GetAccount'",
-    ),
   streamingType: GrpcStreamingTypeEnum.default("unary"),
   reflectionAvailable: z.boolean().optional(),
   schemaSource: z
