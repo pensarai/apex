@@ -39,6 +39,55 @@ describe("buildEndpointDocumentationObjective (per-endpoint)", () => {
     internal: false,
   };
 
+  const grpcEndpoint: ConsolidatedEndpoint = {
+    method: ["ANY"],
+    kind: "api",
+    path: "/ledger.v1.LedgerService/GetAccount",
+    handler: "GetAccount",
+    file: "proto/ledger/v1/ledger.proto",
+    line: 8,
+    framework: "grpc",
+    auth: [],
+    internal: false,
+    transport: "grpc",
+    grpc: {
+      serviceFqn: "ledger.v1.LedgerService",
+      method: "GetAccount",
+      streamingType: "unary",
+    },
+  };
+
+  describe("grpc endpoint", () => {
+    const objective = buildEndpointDocumentationObjective({
+      app,
+      codebasePath: "/repo",
+      endpoint: grpcEndpoint,
+      frameworks: ["grpc"],
+    });
+
+    it("renders the gRPC section with transport + service metadata", () => {
+      expect(objective).toContain(
+        "## gRPC (deterministically extracted by surface)",
+      );
+      expect(objective).toContain("**transport**: grpc");
+      expect(objective).toContain(
+        "**grpc.serviceFqn**: ledger.v1.LedgerService",
+      );
+      expect(objective).toContain("**grpc.method**: GetAccount");
+      expect(objective).toContain("**grpc.streamingType**: unary");
+    });
+
+    it("instructs the agent to pass transport + grpc to document_endpoint", () => {
+      expect(objective).toContain('transport: "grpc"');
+      expect(objective).toContain("a `grpc` object");
+      expect(objective).toContain('schemaSource: "proto"');
+    });
+
+    it("keeps endpointType api-endpoint (a gRPC method is still an API)", () => {
+      expect(objective).toContain("**endpointType**: api-endpoint");
+    });
+  });
+
   describe("page endpoint", () => {
     const objective = buildEndpointDocumentationObjective({
       app,

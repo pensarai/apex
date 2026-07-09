@@ -18,7 +18,7 @@
     "@opentelemetry/api": "^1.9.1",
     "@opentui/core": "^0.1.107",
     "@opentui/react": "^0.1.107",
-    "@pensar/surface": "0.2.2",
+    "@pensar/surface": "0.3.0",
     "@playwright/mcp": "^0.0.54",
     "ai": "^6.0.208",
     "camoufox-js": "^0.11.1",

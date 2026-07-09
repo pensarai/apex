@@ -719,6 +719,8 @@ function assetRecordToEndpoint(
     pentestObjectives: record.pentestObjectives ?? [],
     riskScore: record.riskScore,
     threatModel: record.threatModel,
+    transport: record.transport,
+    grpc: record.grpc,
   });
 
   return parsed.success ? parsed.data : null;

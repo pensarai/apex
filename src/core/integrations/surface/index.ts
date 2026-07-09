@@ -96,6 +96,9 @@ export function consolidateBySameRoute(
         kind: ep.kind,
         auth: [...ep.auth],
         internal: ep.internal,
+        // A gRPC method is 1:1 per (file, path), so no merge across rows.
+        transport: ep.transport,
+        grpc: ep.grpc,
       });
       handlerSets.set(key, new Set(ep.handler ? [ep.handler] : []));
       continue;
