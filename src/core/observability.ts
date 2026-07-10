@@ -39,7 +39,15 @@ export function withSubagentSessionBaggage<T>(
   sessionId: string | undefined,
   fn: () => T,
 ): T {
-  if (!sessionId || !isSessionId(sessionId)) return fn();
+  // Only stamp a *pure* session id. Composite routing ids like
+  // `${sessionId}-plan` / `${sessionId}-tasks` still start with `ses_` (so
+  // isSessionId passes) but are not real `agent_sessions` ids — stamping one as
+  // pensar.session.id would break the join. A well-formed id is `ses_<ULID>`
+  // with no `-`, so a hyphen marks a derived id; those fall through and inherit
+  // the parent session instead.
+  if (!sessionId || !isSessionId(sessionId) || sessionId.includes("-")) {
+    return fn();
+  }
   const baggage = (
     propagation.getActiveBaggage() ?? propagation.createBaggage()
   ).setEntry(SESSION_BAGGAGE_KEY, { value: sessionId });

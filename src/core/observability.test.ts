@@ -128,6 +128,20 @@ describe("withSubagentSessionBaggage", () => {
     });
   });
 
+  it("does NOT override for a composite id (e.g. `${ses_}-plan`)", () => {
+    const root = newSessionId();
+    const worker = newSessionId();
+    // The plan agent's routing id is the worker's ses_ + a suffix. It passes
+    // isSessionId (startsWith ses_) but is NOT a real agent_sessions id, so it
+    // must be rejected and inherit the parent session rather than stamp a bogus
+    // composite as pensar.session.id.
+    withRootBaggage(root, () => {
+      withSubagentSessionBaggage(`${worker}-plan`, () => {
+        expect(activeSessionId()).toBe(root);
+      });
+    });
+  });
+
   it("still sets the baggage when there is no active baggage to inherit", () => {
     const child = newSessionId();
     withSubagentSessionBaggage(child, () => {
