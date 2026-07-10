@@ -31,6 +31,7 @@ import {
   createAllTools,
   createResponseTool,
   EMAIL_TOOL_NAMES_ACTIVE,
+  FAST_STRIKE_EXCLUDED_TOOL_NAMES,
   PersistentShell,
   PLAN_MODE_TOOL_NAMES,
   PlaywrightMcpSession,
@@ -461,6 +462,15 @@ export class OffensiveSecurityAgent<TResult = void> {
     if (input.mode === "plan") {
       const planSet = new Set<string>(PLAN_MODE_TOOL_NAMES);
       activeTools = activeTools.filter((t) => planSet.has(t));
+    } else if (input.mode === "fast-strike") {
+      // Registry minus orchestration tools; email gating matches default mode.
+      const excluded = new Set<string>(FAST_STRIKE_EXCLUDED_TOOL_NAMES);
+      activeTools = Object.keys(tools).filter((t) => {
+        if (excluded.has(t)) return false;
+        if (!emailToolSet.has(t)) return true;
+        if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
+        return hasEmail;
+      });
     }
 
     // -- Messages persistence -------------------------------------------------

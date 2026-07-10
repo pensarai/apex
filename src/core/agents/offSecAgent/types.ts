@@ -73,7 +73,7 @@ export type Finding = z.infer<typeof ApexFindingObject>;
  * @typeParam TResult - The type returned by `consume()`. Defaults to `void`.
  */
 /** Agent operating mode that controls which tools are available. */
-export type AgentMode = "default" | "plan";
+export type AgentMode = "default" | "plan" | "fast-strike";
 
 export type OffensiveSecurityAgentInput<TResult = void> = {
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
@@ -90,6 +90,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    *
    * - `"default"` — all tools in `activeTools` are available (default)
    * - `"plan"` — only read-only / non-mutating tools are available
+   * - `"fast-strike"` — live registry minus {@link FAST_STRIKE_EXCLUDED_TOOL_NAMES}; ignores `activeTools`
    *
    * When set to `"plan"`, the agent's `activeTools` are intersected with
    * {@link PLAN_MODE_TOOL_NAMES} so that mutation tools (create_file,
