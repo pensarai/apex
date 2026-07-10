@@ -129,7 +129,7 @@ const ThreatModelResultSchema = z.object({
         "rules it must uphold. Use markdown headings. Cover, in order: " +
         "(1) Purpose — what the endpoint accomplishes in user terms. " +
         "(2) Actors — who legitimately interacts with it, what they can do, how they authenticate. " +
-        "(3) Data flow — inputs (with channel and trust level), transformations, side effects, outputs. " +
+        "(3) Data flow — inputs including implicit framework-provided entry points reachable through the endpoint (with channel and trust level), transformations, side effects, outputs. " +
         "(4) Invariants — falsifiable business rules the endpoint must uphold, with enforcement " +
         "location (file:line) and confidence level. " +
         "(5) Trust boundaries — what actually guards each crossing (not what should). " +
@@ -145,7 +145,7 @@ const ThreatModelResultSchema = z.object({
         "Use markdown headings. Cover: " +
         "(1) Attacker profiles — 2-4 realistic attackers with motivation, skill, position, and goal. " +
         "(2) Attack vectors — enumerate thoroughly (typically 8-15 for a non-trivial endpoint). " +
-        "Each vector must reference a concrete input from the business logic, the invariant it " +
+        "Each vector must reference a concrete entry point from the business logic (including implicit framework-provided entry points), the invariant it " +
         "would break, the mechanism, the observable signal of success, an attacker profile, " +
         "likelihood, and impact. Cite file:line. " +
         "(3) Risk assessment — worst-case impact and vector prioritization. " +
@@ -464,7 +464,7 @@ Produce a comprehensive narrative of what this endpoint does and what must be tr
 Who legitimately interacts with this endpoint. For each actor list their role, what they can legitimately do via this endpoint, and how they authenticate (session cookie, JWT, signed webhook, mTLS, API key, IP allowlist, etc.).
 
 ### Data Flow
-- **Inputs**: each input the handler accepts — name, channel (path / query / body / header / cookie / file / env / upstream-service / queue / webhook), trust level (untrusted / semi-trusted / trusted), and any observed validation. Cite file:line.
+- **Inputs**: each input reachable through this endpoint — name, channel (path / query / body / header / cookie / file / env / upstream-service / queue / webhook / server-action / rsc), trust level (untrusted / semi-trusted / trusted), and any observed validation. Include not just what the handler's signature accepts but implicit, framework-provided entry points a client can reach through this endpoint (e.g. server actions invoked from a page, RSC data fetches, framework-generated routes). Cite file:line.
 - **Transformations**: the ordered steps the handler takes — fetch, validate, authorize, compute, call external service. Cite file:line for each.
 - **Side effects**: every write the handler causes — DB writes, external API calls, email/queue/file writes, auth-state changes, payments. Name the target (table, service, queue).
 - **Outputs**: what the response body, headers, and status codes contain.
@@ -519,10 +519,16 @@ Before enumerating, name the 1–3 **functional roles** this endpoint plays (fro
 
 This is a **recall checklist, not a license to invent.** Skip role classes that have no anchor in this endpoint's code. Endpoint-specific vectors that don't fall under a listed role are welcome — mark them "endpoint-specific". Endpoint descriptions that name a role (e.g. "AI assistant", "payment intent", "webhook receiver", "password reset") are a strong signal to classify the corresponding role; if the handler source is unreachable, classify the role anyway and proceed under **source-unavailable mode** (defined in the reading-the-code section) — vectors still emit, but they're tagged \`[unverified: source unavailable]\` and capped at \`p1\` in Part 4.
 
+#### Step 1b — recall framework-derived surface
+
+Identify the framework and stack this endpoint runs on — from the code where available (package.json, config, imports, file-system conventions), or from the endpoint description in source-unavailable mode. Frameworks expose implicit, convention-based surface that is reachable *through* this endpoint but never appears as an explicit route in the endpoint list. Enumerate it and fold it into this endpoint's threat model and test plan.
+
+For example, a Next.js page can invoke **server actions** — server-side functions reached by POSTing to the same route with a \`Next-Action\` header — and trigger RSC data fetches that are attacker-reachable through the page yet often skip the auth and validation applied to normal API routes. That is one illustration, not a catalog: **generalize to whatever stack you actually detect.** Reason from the framework you see to the hidden or generated surface it implies (server-side actions, auto-generated CRUD/admin endpoints, RPC/GraphQL resolvers behind a single gateway path, framework-default debug/introspection routes, mass-assignable model bindings), and treat that surface as in-scope for this endpoint whenever this endpoint can reach it.
+
 #### Step 2 — enumerate
 
 Each vector must:
-- Reference a concrete **input** from Part 1's data flow (the entry point).
+- Reference a concrete **entry point** — an input from Part 1's data flow, including the framework-derived entry points captured there (Step 1b).
 - Reference the **invariant(s)** from Part 1 that it would break, when applicable. If a vector is a config/infrastructure concern with no business invariant, say so.
 - Describe the **mechanism** concretely — reference actual parameters, data flows, and code patterns you observed. Cite file:line (or, in source-unavailable mode, the grounding source you read — see the reading-the-code section).
 - State the **observable signal** of a successful exploit (what you would see externally to confirm it worked).
