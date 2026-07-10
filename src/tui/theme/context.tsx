@@ -62,7 +62,15 @@ export function resolveThemeColors(
   for (const [key, value] of entries) {
     resolved[key] = resolveColor(value, mode);
   }
-  if (transparent) resolved.background = RGBA.defaultBackground();
+  if (transparent) {
+    resolved.background = RGBA.defaultBackground();
+    // A semi-transparent overlay alpha-blends against the layer beneath it.
+    // In transparent mode that layer is the terminal default, so blending
+    // resolves to a solid opaque color and the terminal no longer shows
+    // through once a dialog opens. Fall back to the terminal default so the
+    // dialog backdrop stays transparent, matching the rest of the UI.
+    resolved.backgroundOverlay = RGBA.defaultBackground();
+  }
   return resolved as unknown as ThemeColors;
 }
 
