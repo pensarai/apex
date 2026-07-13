@@ -161,11 +161,9 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         }
       }
 
-      const isGrpc = !!input.transport && input.transport !== "http";
       if (
-        !isGrpc &&
-        (input.routePath.startsWith("https://") ||
-          input.routePath.startsWith("http://"))
+        input.routePath.startsWith("https://") ||
+        input.routePath.startsWith("http://")
       ) {
         return {
           success: false,

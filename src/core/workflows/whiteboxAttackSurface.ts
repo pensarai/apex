@@ -962,6 +962,7 @@ For each **unique route path**, call \`document_endpoint\` with:
 - **handler**: Handler function name (comma-separate if multiple handlers for different methods)
 - **authRequired**: Whether the endpoint requires authentication (true if ANY method requires it)
 - **riskLevel**: CRITICAL for auth/payment/admin, HIGH for user data mutations, MEDIUM for general, LOW for read-only public
+- **transport / grpc**: for gRPC / Connect / gRPC-Web methods, this checklist is not enough — ALSO pass the \`transport\` and \`grpc\` fields exactly as described in the "gRPC / Connect services" section above. Never document an \`rpc\` as a plain HTTP route.
 
 **CRITICAL: ONE entry per route path.** If \`/api/products\` has GET (list) and POST (create), document it as ONE entry with \`method: ["GET", "POST"]\`. Do NOT create two separate entries.
 
