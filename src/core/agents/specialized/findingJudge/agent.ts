@@ -29,6 +29,8 @@ export interface FindingJudgeAgentInput {
   eventBus?: AgentEventBus;
   /** Id used to tag the judge's stream events. Defaults to "finding-judge". */
   subagentId?: string;
+  /** Human-readable label for readable OTel span names. Defaults to "Finding Judge". */
+  subagentName?: string;
   sandbox?: UnifiedSandbox;
   target?: string;
   enableThinking?: boolean;
@@ -66,6 +68,7 @@ export class FindingJudgeAgent extends OffensiveSecurityAgent<FindingJudgeAgentO
       thinkingEffort: opts.thinkingEffort,
       openAIReasoningEffort: opts.openAIReasoningEffort,
       subagentId: opts.subagentId ?? "finding-judge",
+      subagentName: opts.subagentName ?? "Finding Judge",
       activeTools: [...FINDING_JUDGE_ACTIVE_TOOLS],
       responseSchema: FindingJudgeOutputSchema,
       stopWhen: stepCountIs(60),

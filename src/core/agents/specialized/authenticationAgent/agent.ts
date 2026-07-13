@@ -61,6 +61,9 @@ export interface AuthenticationAgentInput {
   /** Tags stream events when this agent runs as a named subagent */
   subagentId?: string;
 
+  /** Human-readable label for readable OTel span names (see base input). */
+  subagentName?: string;
+
   /**
    * Arbitrary context to include in the agent prompt (e.g. application name/description).
    * The agent will treat non-malicious instructions within the context as guidance.
@@ -169,6 +172,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       abortSignal,
       eventBus,
       subagentId,
+      subagentName: opts.subagentName,
       environmentVariables,
       enableThinking,
       thinkingEffort,

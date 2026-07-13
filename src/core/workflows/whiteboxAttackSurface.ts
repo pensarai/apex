@@ -36,6 +36,7 @@ import type {
   ThinkingEffort,
 } from "../ai";
 import type { AgentEventBus } from "../eventBus";
+import { newSessionId } from "../id/id";
 import { mapAppWithSurface } from "../integrations/surface";
 import { createLogger } from "../logger/structured";
 import type { SessionInfo } from "../session";
@@ -203,6 +204,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   // Phase 1: Identify all apps in the repository
   // =========================================================================
 
+  // Umbrella node — real `ses_` id so the appsAgent span and its agent_sessions
+  // row share one id; also the parent for per-app nodes (held open until Phase 2).
+  const WORKFLOW_UMBRELLA_ID = newSessionId();
+
   const appsAgent = new CodeAgent<AppsDiscoveryResult>({
     codebasePath,
     objective: buildAppsDiscoveryObjective(codebasePath, domains, environments),
@@ -219,7 +224,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     abortSignal,
     attackSurfaceRegistry,
     eventBus,
-    subagentId: "whitebox-apps-discovery",
+    subagentId: WORKFLOW_UMBRELLA_ID,
+    subagentName: "Whitebox Apps Discovery",
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
     openAIReasoningEffort,
@@ -235,9 +241,6 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   log.info(
     `Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`,
   );
-
-  // Held open until Phase 2 finishes so per-app synthetic nodes can nest under it.
-  const WORKFLOW_UMBRELLA_ID = "whitebox-apps-discovery";
 
   eventBus?.emit("subagent-spawn", {
     subagentId: WORKFLOW_UMBRELLA_ID,
@@ -351,7 +354,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     type: DiscoveryTaskType,
     objective: string,
   ): Promise<void> => {
-    const subagentId = `${type}-${app.name}`;
+    const subagentId = newSessionId();
     const appNodeId = appNodeIdFor(app.name);
 
     log.debug(
@@ -376,6 +379,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       attackSurfaceRegistry,
       eventBus,
       subagentId,
+      subagentName: TASK_TYPE_LABELS[type],
       onStepFinish: (event) => onStepFinish?.(event),
       onCacheMetrics,
       openAIReasoningEffort,
@@ -1192,7 +1196,8 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     abortSignal,
     attackSurfaceRegistry,
     eventBus,
-    subagentId: "whitebox-incremental",
+    subagentId: newSessionId(),
+    subagentName: "Incremental Recon",
     onStepFinish: (event) => onStepFinish?.(event),
     openAIReasoningEffort: input.openAIReasoningEffort,
     enableThinking: input.enableThinking,

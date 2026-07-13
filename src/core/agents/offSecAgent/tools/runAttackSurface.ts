@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
+import { newSessionId } from "../../../id/id";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
@@ -56,10 +57,14 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         };
       }
 
-      const subagentId = "attack-surface-agent";
+      const subagentName = "Attack Surface";
+      // Blackbox hard-codes a `subagents/attack-surface-agent/` folder, so keep
+      // the slug there; whitebox gets a fresh `ses_` id.
+      const subagentId = cwd ? newSessionId() : "attack-surface-agent";
 
       ctx.eventBus?.emit("subagent-spawn", {
         subagentId,
+        name: subagentName,
         input: { target, cwd },
         parentSubagentId: ctx.subagentId,
       });
@@ -85,6 +90,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             attackSurfaceRegistry: ctx.attackSurfaceRegistry,
             eventBus: localBus,
             subagentId,
+            subagentName,
           });
 
           const result: WhiteboxAttackSurfaceResult = await agent.consume();

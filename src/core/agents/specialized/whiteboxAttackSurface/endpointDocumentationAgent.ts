@@ -8,6 +8,7 @@ import type {
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
+import { newSessionId } from "../../../id/id";
 import type {
   ConsolidatedEndpoint,
   FrameworkId,
@@ -90,13 +91,6 @@ export interface AppEndpointDocumentationInput extends SharedAgentOptions {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function slug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_|_$/g, "");
-}
 
 function getDocumentMethod(endpoint: ConsolidatedEndpoint): string[] {
   return endpoint.kind === "page" ? ["PAGE"] : endpoint.method;
@@ -197,7 +191,7 @@ async function runEndpointDocumentationAgent(
     agentLimiter,
   } = opts;
 
-  const subagentId = `endpoint-doc-${slug(app.name)}-${slug(endpoint.path)}`;
+  const subagentId = newSessionId();
   const displayMethod = getDocumentMethod(endpoint);
   const displayName = `${app.name}: ${displayMethod.join(",")} ${endpoint.path}`;
 
@@ -231,6 +225,7 @@ async function runEndpointDocumentationAgent(
     attackSurfaceRegistry,
     eventBus,
     subagentId,
+    subagentName: displayName,
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
     openAIReasoningEffort,

@@ -204,6 +204,7 @@ async function runSingleCodingAgent(
     abortSignal: ctx.abortSignal,
     eventBus: localBus,
     subagentId,
+    subagentName: name,
     enableThinking: ctx.enableThinking,
     thinkingEffort: ctx.thinkingEffort,
     openAIReasoningEffort: ctx.openAIReasoningEffort,

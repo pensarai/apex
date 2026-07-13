@@ -27,7 +27,7 @@ import { getSessionRoot, normalizeMessages, type SessionInfo } from "./index";
 export type { SessionInfo };
 
 import type { ModelMessage } from "ai";
-import type { SessionID } from "../id/id";
+import { newSessionId, type SessionID } from "../id/id";
 import type { AuthenticationInfo } from "./types";
 
 const log = scopedLogger(() => createLogger("session:persistence"));
@@ -256,15 +256,44 @@ export interface SwarmTarget {
 export function buildManifestEntries(
   targets: SwarmTarget[],
 ): AgentManifestEntry[] {
-  return targets.map((t, i) => ({
-    id: `pentest-agent-${i + 1}`,
-    name: `Pentest Agent ${i + 1}`,
-    target: t.target,
-    vulnerabilityClass: t.objectives[0] || "general",
-    objective: t.objectives.join("; "),
-    status: "running" as const,
-    spawnedAt: new Date().toISOString(),
-  }));
+  return targets.map((t, i) => {
+    // Stable id, minted once and persisted; the swarm reuses it on resume so the
+    // worker's on-disk dir/messages and `pensar.session.id` stay put.
+    const sessionId = newSessionId();
+    return {
+      id: sessionId,
+      sessionId,
+      name: `Pentest Agent ${i + 1}`,
+      target: t.target,
+      vulnerabilityClass: t.objectives[0] || "general",
+      objective: t.objectives.join("; "),
+      status: "running" as const,
+      spawnedAt: new Date().toISOString(),
+    };
+  });
+}
+
+/**
+ * Reconcile a fresh manifest against the persisted one on resume so each
+ * worker's stable `ses_` id survives. Matches by position (targets re-supplied
+ * in the same order) and reuses the persisted id only when the target lines up;
+ * an in-progress worker resets to "running" for a retry.
+ */
+export function reconcileManifestOnResume(
+  existing: AgentManifestEntry[],
+  fresh: AgentManifestEntry[],
+): AgentManifestEntry[] {
+  return fresh.map((f, i) => {
+    const prev = existing[i];
+    if (!prev || prev.target !== f.target) return f;
+    if (prev.status === "completed") return prev;
+    return {
+      ...f,
+      id: prev.id,
+      sessionId: prev.sessionId ?? prev.id,
+      spawnedAt: prev.spawnedAt,
+    };
+  });
 }
 
 /**
@@ -311,12 +340,9 @@ export function updateManifestEntryStatus(
 
 export function getCompletedAgentIds(session: SessionInfo): Set<string> {
   const manifest = readAgentManifest(session);
+  // Ids are now opaque `ses_` (not `pentest-agent-N`); the manifest is swarm-only, so match on status alone.
   return new Set(
-    manifest
-      .filter(
-        (e) => e.id.startsWith("pentest-agent-") && e.status === "completed",
-      )
-      .map((e) => e.id),
+    manifest.filter((e) => e.status === "completed").map((e) => e.id),
   );
 }
 
@@ -550,6 +576,24 @@ export function convertModelMessagesToUI(
 export function loadSubagents(rootPath: string): UISubagent[] {
   const subagentsPath = join(rootPath, SUBAGENTS_DIR);
 
+  // Swarm workers are keyed by opaque `ses_` ids that only get a generic
+  // filename label; resolve the human name from the manifest instead.
+  const manifestNameById = new Map<string, string>();
+  {
+    const manifestPath = join(rootPath, MANIFEST_FILE);
+    if (existsSync(manifestPath)) {
+      try {
+        const manifest: AgentManifestEntry[] = JSON.parse(
+          readFileSync(manifestPath, "utf-8"),
+        );
+        for (const entry of manifest)
+          manifestNameById.set(entry.id, entry.name);
+      } catch {
+        // Malformed manifest — fall back to filename-derived labels.
+      }
+    }
+  }
+
   // --- Load files ---
   const subagents: UISubagent[] = [];
   /** Map from agentName → index in subagents[] for manifest matching */
@@ -614,9 +658,10 @@ export function loadSubagents(rootPath: string): UISubagent[] {
         subagents.push({
           id: data.agentName,
           name:
-            data.agentName === "attack-surface-agent"
+            manifestNameById.get(data.agentName) ??
+            (data.agentName === "attack-surface-agent"
               ? "Attack Surface Discovery"
-              : name,
+              : name),
           type: agentType,
           target: data.target || "Unknown",
           messages,
@@ -657,7 +702,7 @@ export function loadSubagents(rootPath: string): UISubagent[] {
         agentNameIndex.set(entry, subagents.length);
         subagents.push({
           id: entry,
-          name,
+          name: manifestNameById.get(entry) ?? name,
           type: agentType,
           target: "Unknown",
           messages,

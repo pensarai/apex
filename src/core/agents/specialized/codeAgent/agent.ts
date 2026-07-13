@@ -129,6 +129,7 @@ export class CodeAgent<TResult = void> extends OffensiveSecurityAgent<TResult> {
       abortSignal,
       eventBus,
       subagentId,
+      subagentName: opts.subagentName,
       attackSurfaceRegistry,
       enableThinking,
       thinkingEffort,
