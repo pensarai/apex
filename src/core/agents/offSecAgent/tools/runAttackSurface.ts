@@ -5,7 +5,10 @@ import { newSessionId } from "../../../id/id";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
-import { toGrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
+import {
+  grpcAuthorityTarget,
+  toGrpcPentestContext,
+} from "../../specialized/attackSurface/grpcSchema";
 import type { WhiteboxAttackSurfaceResult } from "../../specialized/whiteboxAttackSurface";
 import type { ToolContext } from "./types";
 
@@ -98,12 +101,15 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
 
           // Flatten whitebox results into the same targets shape the swarm expects
           const targets = result.apps.flatMap((app) =>
-            [...app.pages, ...app.apiEndpoints].map((ep) => ({
-              target: ep.path,
-              objective: ep.pentestObjectives.join("; "),
-              rationale: `${app.framework} ${ep.method} endpoint in ${app.name} (${ep.file}${ep.line ? `:${ep.line}` : ""})`,
-              grpc: toGrpcPentestContext(ep.transport, ep.grpc),
-            })),
+            [...app.pages, ...app.apiEndpoints].map((ep) => {
+              const grpc = toGrpcPentestContext(ep.transport, ep.grpc, ep.path);
+              return {
+                target: grpcAuthorityTarget(grpc, ep.path) ?? ep.path,
+                objective: ep.pentestObjectives.join("; "),
+                rationale: `${app.framework} ${ep.method} endpoint in ${app.name} (${ep.file}${ep.line ? `:${ep.line}` : ""})`,
+                grpc,
+              };
+            }),
           );
 
           log.info(
