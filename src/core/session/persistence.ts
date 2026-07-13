@@ -257,11 +257,8 @@ export function buildManifestEntries(
   targets: SwarmTarget[],
 ): AgentManifestEntry[] {
   return targets.map((t, i) => {
-    // Stable, joinable execution-session id, minted once and persisted in the
-    // manifest. On resume the swarm reuses this id (see runPentestSwarm) so the
-    // worker's on-disk dir/messages are found and its Sentry spans keep a
-    // stable `pensar.session.id`. The human "Pentest Agent N" slug lives on
-    // `name` (used for the display label; see loadSubagents + subagentName).
+    // Stable id, minted once and persisted; the swarm reuses it on resume so the
+    // worker's on-disk dir/messages and `pensar.session.id` stay put.
     const sessionId = newSessionId();
     return {
       id: sessionId,
@@ -277,16 +274,10 @@ export function buildManifestEntries(
 }
 
 /**
- * Reconcile a freshly-built manifest against the persisted one on resume so
- * each worker's stable `ses_` session id survives across runs.
- *
- * Matches by position (the swarm re-supplies targets in the same order, exactly
- * as the previous id-based matching assumed) and reuses the persisted id only
- * when the target at that position still lines up:
- *  - completed worker → kept as-is (so the swarm skips it), and
- *  - in-progress worker → id (+ sessionId, spawnedAt) reused so its on-disk
- *    dir/messages are found, but its status resets to "running" for a retry.
- * A new or changed target keeps its freshly-minted id.
+ * Reconcile a fresh manifest against the persisted one on resume so each
+ * worker's stable `ses_` id survives. Matches by position (targets re-supplied
+ * in the same order) and reuses the persisted id only when the target lines up;
+ * an in-progress worker resets to "running" for a retry.
  */
 export function reconcileManifestOnResume(
   existing: AgentManifestEntry[],
@@ -349,9 +340,7 @@ export function updateManifestEntryStatus(
 
 export function getCompletedAgentIds(session: SessionInfo): Set<string> {
   const manifest = readAgentManifest(session);
-  // The manifest is written exclusively by the pentest swarm, so every entry is
-  // a swarm worker. Entry ids are now stable `ses_` session ids (not the old
-  // `pentest-agent-N` slug), so match on status alone.
+  // Ids are now opaque `ses_` (not `pentest-agent-N`); the manifest is swarm-only, so match on status alone.
   return new Set(
     manifest.filter((e) => e.status === "completed").map((e) => e.id),
   );
@@ -587,10 +576,8 @@ export function convertModelMessagesToUI(
 export function loadSubagents(rootPath: string): UISubagent[] {
   const subagentsPath = join(rootPath, SUBAGENTS_DIR);
 
-  // Manifest-provided display names, keyed by entry id. Swarm workers are now
-  // keyed by an opaque `ses_` id (which `parseSubagentFilename` can only label
-  // generically), so the human "Pentest Agent N" label is resolved from the
-  // manifest to keep the reconstructed tree identical to the pre-`ses_` labels.
+  // Swarm workers are keyed by opaque `ses_` ids that only get a generic
+  // filename label; resolve the human name from the manifest instead.
   const manifestNameById = new Map<string, string>();
   {
     const manifestPath = join(rootPath, MANIFEST_FILE);

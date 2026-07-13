@@ -12,11 +12,8 @@ import {
   withSubagentSessionBaggage,
 } from "./observability";
 
-// Minimal synchronous context manager. Without a registered manager, OTel's
-// default no-op manager makes `context.with` a passthrough and drops baggage.
-// The helper and these tests are fully synchronous, so a plain stack suffices
-// (avoids depending on @opentelemetry/context-async-hooks, which apex does not
-// declare directly).
+// OTel's default no-op context manager drops baggage, so register a minimal
+// synchronous stack manager (these tests are fully synchronous).
 class SyncContextManager implements ContextManager {
   private stack: Context[] = [];
   active(): Context {
@@ -49,12 +46,6 @@ class SyncContextManager implements ContextManager {
 beforeAll(() => {
   context.setGlobalContextManager(new SyncContextManager());
 });
-
-// ---------------------------------------------------------------------------
-// Per-subagent `pensar.session.id` baggage: each subagent's span subtree must
-// carry its OWN ses_ execution-session id, while the dispatched root
-// (`pensar.root_session.id`) is left untouched.
-// ---------------------------------------------------------------------------
 
 const ROOT_BAGGAGE_KEY = "pensar.root_session.id";
 
@@ -93,18 +84,14 @@ describe("withSubagentSessionBaggage", () => {
     expect(root).not.toBe(child);
 
     withRootBaggage(root, () => {
-      // Sanity: before the override, session == root (the inherited default).
       expect(activeSessionId()).toBe(root);
       expect(activeRootSessionId()).toBe(root);
 
       withSubagentSessionBaggage(child, () => {
-        // session flips to the child's own ses_ …
         expect(activeSessionId()).toBe(child);
-        // … but the dispatched root is preserved for the subtree.
         expect(activeRootSessionId()).toBe(root);
       });
 
-      // Scope restored after the child context closes.
       expect(activeSessionId()).toBe(root);
     });
   });
@@ -131,10 +118,7 @@ describe("withSubagentSessionBaggage", () => {
   it("does NOT override for a composite id (e.g. `${ses_}-plan`)", () => {
     const root = newSessionId();
     const worker = newSessionId();
-    // The plan agent's routing id is the worker's ses_ + a suffix. It passes
-    // isSessionId (startsWith ses_) but is NOT a real agent_sessions id, so it
-    // must be rejected and inherit the parent session rather than stamp a bogus
-    // composite as pensar.session.id.
+    // A composite id (`${worker}-plan`) starts with ses_ but isn't a real agent_sessions id — must be rejected.
     withRootBaggage(root, () => {
       withSubagentSessionBaggage(`${worker}-plan`, () => {
         expect(activeSessionId()).toBe(root);

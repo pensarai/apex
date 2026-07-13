@@ -186,8 +186,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
       authHints,
       reason,
     }) => {
-      // Declared outside the try so the failure path's subagent-complete can
-      // reference the same `ses_` id emitted at spawn.
+      // Outside the try so the failure-path subagent-complete reuses this id.
       const subagentId = newSessionId();
       const subagentName = "Authentication Agent";
       try {

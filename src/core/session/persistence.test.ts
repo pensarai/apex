@@ -1079,10 +1079,6 @@ describe("normalizeMessages", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Swarm manifest — stable, persisted `ses_` session ids + resume reuse
-// ---------------------------------------------------------------------------
-
 describe("swarm manifest — stable ses_ ids", () => {
   const targets: SwarmTarget[] = [
     { name: "Login", target: "https://app/login", objectives: ["auth bypass"] },
@@ -1097,15 +1093,12 @@ describe("swarm manifest — stable ses_ ids", () => {
       expect(e.sessionId).toBe(e.id);
     }
     expect(entries[0].id).not.toBe(entries[1].id);
-    // Human label is preserved off the id.
     expect(entries[0].name).toBe("Pentest Agent 1");
     expect(entries[1].name).toBe("Pentest Agent 2");
   });
 
   it("reconcileManifestOnResume REUSES the persisted ses_ id rather than minting a new one", () => {
-    // First run: build + persist.
     const first = buildManifestEntries(targets);
-    // Worker 1 finished; worker 2 was still running when the run was interrupted.
     const persisted: AgentManifestEntry[] = [
       {
         ...first[0],
@@ -1115,17 +1108,12 @@ describe("swarm manifest — stable ses_ ids", () => {
       { ...first[1], status: "running" },
     ];
 
-    // Resume: a fresh build mints NEW ids, but reconciliation must reuse the
-    // persisted ones so on-disk dirs/messages and status matching still line up.
     const freshOnResume = buildManifestEntries(targets);
-    expect(freshOnResume[0].id).not.toBe(first[0].id); // fresh mint differs …
+    expect(freshOnResume[0].id).not.toBe(first[0].id);
     const reconciled = reconcileManifestOnResume(persisted, freshOnResume);
 
-    // … but reconciliation pins both workers back to their persisted ids.
     expect(reconciled[0].id).toBe(first[0].id);
     expect(reconciled[1].id).toBe(first[1].id);
-    // Completed worker stays completed (so the swarm skips it); in-progress
-    // worker is reset to running for a retry.
     expect(reconciled[0].status).toBe("completed");
     expect(reconciled[1].status).toBe("running");
   });
@@ -1142,7 +1130,6 @@ describe("swarm manifest — stable ses_ ids", () => {
       { ...first[0], status: "running" },
       { ...first[1], status: "running" },
     ];
-    // Position 0 now points at a different target.
     const changed: SwarmTarget[] = [
       { name: "New", target: "https://app/new", objectives: ["x"] },
       targets[1],
@@ -1152,7 +1139,7 @@ describe("swarm manifest — stable ses_ ids", () => {
       buildManifestEntries(changed),
     );
     expect(reconciled[0].id).not.toBe(first[0].id); // changed target → fresh id
-    expect(reconciled[1].id).toBe(first[1].id); // unchanged target → reused
+    expect(reconciled[1].id).toBe(first[1].id); // unchanged target → reused id
   });
 
   it("getCompletedAgentIds resolves completed workers by their stable ses_ id", () => {
@@ -1166,7 +1153,6 @@ describe("swarm manifest — stable ses_ ids", () => {
     const completed = getCompletedAgentIds(session);
     expect(completed.has(entries[0].id)).toBe(true);
     expect(completed.has(entries[1].id)).toBe(false);
-    // Matching keys on the ses_ id, not a slug.
     expect([...completed][0]).toMatch(/^ses_/);
   });
 
@@ -1175,7 +1161,6 @@ describe("swarm manifest — stable ses_ ids", () => {
     const entries = buildManifestEntries(targets);
     writeAgentManifest(session, entries);
 
-    // Worker 0 produced a result, worker 1 failed (null).
     finalizeManifest(session, entries, [{ ok: true }, null]);
 
     const final = readAgentManifest(session);
@@ -1192,7 +1177,6 @@ describe("swarm manifest — stable ses_ ids", () => {
       { ...entries[0], status: "completed" },
       entries[1],
     ]);
-    // Persist the completed worker's data keyed by its ses_ id.
     saveSubagentData(session, {
       agentName: entries[0].id,
       target: targets[0].target,
@@ -1204,8 +1188,7 @@ describe("swarm manifest — stable ses_ ids", () => {
     const loaded = loadSubagents(tmpDir);
     const worker = loaded.find((s) => s.id === entries[0].id);
     expect(worker).toBeDefined();
-    // Without the manifest lookup this would fall back to the generic
-    // "Pentest Worker" label parsed from the ses_ filename.
+    // Without the manifest lookup this would fall back to a generic filename label.
     expect(worker?.name).toBe("Pentest Agent 1");
   });
 });

@@ -204,9 +204,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
   // Phase 1: Identify all apps in the repository
   // =========================================================================
 
-  // Umbrella node id — a real `ses_` execution-session so the appsAgent's span
-  // and its own `agent_sessions` row share one id. Also the parent for the
-  // per-app synthetic nodes (held open until Phase 2 finishes).
+  // Umbrella node — real `ses_` id so the appsAgent span and its agent_sessions
+  // row share one id; also the parent for per-app nodes (held open until Phase 2).
   const WORKFLOW_UMBRELLA_ID = newSessionId();
 
   const appsAgent = new CodeAgent<AppsDiscoveryResult>({

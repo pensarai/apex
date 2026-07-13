@@ -140,13 +140,7 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Identifier for this agent when it is running as a subagent. */
   private readonly subagentId?: string;
 
-  /**
-   * Human-readable label for this subagent (e.g. "Attack Surface",
-   * "Threat Model: /api/users"). Since {@link subagentId} is now an opaque
-   * `ses_` execution-session id, this carries the display slug that was
-   * previously the id. Used only for the OTel span name / `gen_ai.agent.name`
-   * so Sentry traces stay readable; the id remains the join key.
-   */
+  /** Display label for span name / `gen_ai.agent.name`; the id stays the join key. */
   private readonly subagentName?: string;
 
   /** The current open assistant message id (`msg_…`); minted on `start-step` in {@link consume}, `null` between steps. */
@@ -1044,9 +1038,6 @@ export class OffensiveSecurityAgent<TResult = void> {
     };
 
     // Only subagents get a span here; top-level runs are wrapped by the host.
-    // Span display uses the human label (subagentName) so Sentry traces stay
-    // readable now that `subagentId` is an opaque `ses_` id; the id remains the
-    // baggage join key.
     const spanLabel = this.subagentName ?? sid;
     const drain = !sid
       ? runConsume()

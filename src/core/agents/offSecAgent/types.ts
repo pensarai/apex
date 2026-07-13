@@ -192,12 +192,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** The subagent ID if this agent is a subagent */
   subagentId?: string;
 
-  /**
-   * Human-readable label for this subagent (the display slug that used to be
-   * the `subagentId`, e.g. "Attack Surface", "Threat Model: /api/users").
-   * Used only for the OTel span name / `gen_ai.agent.name` so Sentry traces
-   * stay readable now that `subagentId` is an opaque `ses_` id.
-   */
+  /** Display label for the OTel span name / `gen_ai.agent.name`. */
   subagentName?: string;
 
   /**
@@ -386,11 +381,7 @@ export interface SpecializedAgentInput {
    */
   subagentId?: string;
 
-  /**
-   * Human-readable label for this subagent (the display slug that used to be
-   * the `subagentId`). Forwarded to the underlying
-   * {@link OffensiveSecurityAgentInput} for readable OTel span names.
-   */
+  /** Display label forwarded to {@link OffensiveSecurityAgentInput} for span names. */
   subagentName?: string;
 
   /** Shared findings registry for cross-agent dedup */

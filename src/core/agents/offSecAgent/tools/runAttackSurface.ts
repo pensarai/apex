@@ -58,10 +58,8 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       }
 
       const subagentName = "Attack Surface";
-      // Whitebox mode gets its own `ses_` execution-session id (distinct
-      // Sentry span session). The blackbox agent hard-codes a
-      // `subagents/attack-surface-agent/` folder, so its branch keeps the slug
-      // to preserve that on-disk layout.
+      // Blackbox hard-codes a `subagents/attack-surface-agent/` folder, so keep
+      // the slug there; whitebox gets a fresh `ses_` id.
       const subagentId = cwd ? newSessionId() : "attack-surface-agent";
 
       ctx.eventBus?.emit("subagent-spawn", {
