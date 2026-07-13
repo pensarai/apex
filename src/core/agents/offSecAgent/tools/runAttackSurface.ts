@@ -104,7 +104,11 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             [...app.pages, ...app.apiEndpoints].map((ep) => {
               const grpc = toGrpcPentestContext(ep.transport, ep.grpc, ep.path);
               return {
-                target: grpcAuthorityTarget(grpc, ep.path) ?? ep.path,
+                target:
+                  grpcAuthorityTarget(grpc, ep.path) ??
+                  (ep.path.startsWith("http")
+                    ? ep.path
+                    : `${target}${ep.path}`),
                 objective: ep.pentestObjectives.join("; "),
                 rationale: `${app.framework} ${ep.method} endpoint in ${app.name} (${ep.file}${ep.line ? `:${ep.line}` : ""})`,
                 grpc,
