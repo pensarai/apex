@@ -44,12 +44,6 @@ export const GrpcEndpointMetadataSchema = z.object({
       operation: z.string(),
     })
     .nullish(),
-  reachability: z
-    .enum(["public", "internal", "unknown"])
-    .optional()
-    .describe(
-      "'public' if the service is exposed on a public listener, 'internal' if it's an internal/in-cluster service with no public route, else 'unknown'",
-    ),
 });
 
 export type EndpointTransport = z.infer<typeof EndpointTransportEnum>;

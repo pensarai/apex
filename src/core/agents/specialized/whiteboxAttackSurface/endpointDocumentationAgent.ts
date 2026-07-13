@@ -136,7 +136,7 @@ This endpoint is a **gRPC method**, not a plain HTTP route. \`routePath\` is the
 `
     : "";
   const grpcInstruction = isGrpc
-    ? ` Because this is a gRPC method, ALSO pass \`transport: "${endpoint.transport}"\` and a \`grpc\` object built from the values above (\`serviceFqn\`, \`method\`, \`streamingType\`, plus \`schemaSource: "proto"\`); you MAY add \`reflectionAvailable\`, \`reachability\`, or \`frontingGatewayOperation\` when the source makes them clear.`
+    ? ` Because this is a gRPC method, ALSO pass \`transport: "${endpoint.transport}"\` and a \`grpc\` object built from the values above (\`serviceFqn\`, \`method\`, \`streamingType\`, plus \`schemaSource: "proto"\`); you MAY add \`reflectionAvailable\` or \`frontingGatewayOperation\` when the source makes them clear.`
     : "";
 
   const auth = endpoint.auth.length > 0 ? endpoint.auth.join(", ") : "none";

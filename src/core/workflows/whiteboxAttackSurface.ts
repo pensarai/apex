@@ -948,7 +948,6 @@ A gRPC method looks like a path (\`/package.Service/Method\`) but is NOT an HTTP
 - **routePath**: the wire path \`/package.Service/Method\` (e.g. \`/account.v1.AccountService/GetAccount\`) — do NOT prepend a host
 - **grpc**: \`{ serviceFqn, method, streamingType, schemaSource: "proto" }\` where \`serviceFqn\` is the fully-qualified service (\`account.v1.AccountService\`), \`method\` is the rpc name, and \`streamingType\` is one of \`unary | server_stream | client_stream | bidi\` (based on the \`stream\` keywords in the rpc signature). Set \`reflectionAvailable: true\` if the server registers the gRPC reflection service.
 - If a REST/GraphQL gateway (e.g. grpc-gateway annotations, a GraphQL resolver, a Connect handler) maps to this rpc, set \`grpc.frontingGatewayOperation\` — prefer marking this whenever a gateway mapping exists, since it's what lets us later compute "shadow" methods (proto methods reachable directly but NOT exposed via the gateway, where auth checks usually live).
-- Set \`grpc.reachability\` when determinable: \`"public"\` if the service is exposed on a public listener, \`"internal"\` if it's an internal/in-cluster service with no public route, else \`"unknown"\`.
 
 ### How to document each endpoint
 For each **unique route path**, call \`document_endpoint\` with:
