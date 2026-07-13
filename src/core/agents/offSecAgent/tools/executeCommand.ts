@@ -172,6 +172,23 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+/**
+ * Exact-match redaction of known credential values from command output so the
+ * model never reads back a secret injected into the shell env. Longest-first so
+ * a value can't be partially masked; values under 6 chars are skipped so a stray
+ * short secret can't corrupt unrelated output.
+ */
+function redactSecretValues(text: string, secrets?: string[]): string {
+  if (!secrets?.length) return text;
+  let out = text;
+  for (const s of [...secrets]
+    .filter((v) => v && v.length >= 6)
+    .sort((a, b) => b.length - a.length)) {
+    out = out.split(s).join("[REDACTED]");
+  }
+  return out;
+}
+
 function wrapCommandWithEnv(
   command: string,
   envVars?: Record<string, string>,
@@ -395,10 +412,12 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
-      const redact = (value: string) =>
-        promptInjectionLibrary
+      const redact = (value: string) => {
+        const stripped = promptInjectionLibrary
           ? redactPromptInjectionPayloads(value, promptInjectionLibrary)
           : value;
+        return redactSecretValues(stripped, ctx.secretValues);
+      };
 
       // Sandbox mode: route execution through the sandbox
       if (ctx.sandbox) {
