@@ -15,7 +15,9 @@ import {
 import { config } from "../../../core/config";
 import { useConfig } from "../../context/config";
 import { Dialog } from "../../context/dialog";
+import { useToast } from "../../context/toast";
 import { useTheme } from "../../theme";
+import { openUrlInBrowser } from "../../utils/open-url";
 import DialogLayout, { type FooterAction } from "../dialog-layout";
 
 interface AuthFlowProps {
@@ -36,6 +38,7 @@ type AuthStep =
 export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
   const { colors } = useTheme();
   const appConfig = useConfig();
+  const { toast } = useToast();
 
   const alreadyConnected = isConnected(appConfig.data);
   const hasWorkspace = !!appConfig.data.workspaceId;
@@ -82,18 +85,9 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
   }, [cleanup]);
 
   const openUrl = (url: string) => {
-    try {
-      const platform = process.platform;
-      if (platform === "darwin") {
-        Bun.spawn(["open", url]);
-      } else if (platform === "win32") {
-        Bun.spawn(["cmd", "/c", "start", url]);
-      } else {
-        Bun.spawn(["xdg-open", url]);
-      }
-    } catch {
-      // Browser open failed — user will see the fallback URL
-    }
+    openUrlInBrowser(url).then((err) => {
+      if (err) toast(err, "warn");
+    });
   };
 
   const consoleUrlRef = useRef<string>(getPensarConsoleUrl());
