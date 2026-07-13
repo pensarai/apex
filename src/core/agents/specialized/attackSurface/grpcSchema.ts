@@ -17,7 +17,7 @@ export const GrpcStreamingTypeEnum = z.enum([
   "bidi",
 ]);
 
-export const GrpcSchemaSourceEnum = z.enum([
+const GrpcSchemaSourceEnum = z.enum([
   "proto",
   "reflection",
   "protoset",
@@ -26,7 +26,7 @@ export const GrpcSchemaSourceEnum = z.enum([
   "unknown",
 ]);
 
-export const GrpcGatewayTypeEnum = z.enum(["rest", "graphql", "connect"]);
+const GrpcGatewayTypeEnum = z.enum(["rest", "graphql", "connect"]);
 
 export const GrpcEndpointMetadataSchema = z.object({
   serviceFqn: z
@@ -49,9 +49,6 @@ export const GrpcEndpointMetadataSchema = z.object({
 });
 
 export type EndpointTransport = z.infer<typeof EndpointTransportEnum>;
-export type GrpcStreamingType = z.infer<typeof GrpcStreamingTypeEnum>;
-export type GrpcSchemaSource = z.infer<typeof GrpcSchemaSourceEnum>;
-export type GrpcGatewayType = z.infer<typeof GrpcGatewayTypeEnum>;
 export type GrpcEndpointMetadata = z.infer<typeof GrpcEndpointMetadataSchema>;
 
 // ---------------------------------------------------------------------------
