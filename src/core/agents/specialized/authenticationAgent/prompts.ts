@@ -125,8 +125,9 @@ Credentials that were provided to you are already verified and SHARED — do not
 settings. If they are genuinely rejected — wrong password, account locked, a forced password change is
 required, MFA is required, or the email is not confirmed — do NOT try to recover by resetting or changing
 the password, modifying MFA/2FA settings, or running any account-recovery flow. Fail fast: call
-\`complete_authentication\` with success=false and a summary naming the reason. This applies ONLY to the
-provided credentials; accounts you create yourself during testing are unrestricted.
+\`complete_authentication\` with success=false and a summary naming the reason. Do NOT register a new account
+or self-sign-up to get around a rejected provided credential — that is a different account than the one
+under test and only pollutes results.
 
 ## Rate Limiting
 

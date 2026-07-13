@@ -309,9 +309,9 @@ do not modify them or their account settings. NEVER change the password, complet
 forced-password-change / account-recovery flow, or modify MFA/2FA settings (enrolling, disabling, or
 resetting a second factor) for this account. If they do not authenticate (rejected, locked out, forced
 password change required, MFA required, email not confirmed), call complete_authentication with
-success=false and a clear summary of why — do not attempt to recover, reset, or rotate them. This
-restriction applies ONLY to the provided credentials; accounts you register or create yourself during
-testing are unrestricted.`);
+success=false and a clear summary of why — do not attempt to recover, reset, or rotate them. Do NOT
+register a new account or self-sign-up to work around a failed login: that is not the credential under test
+and only pollutes results — fail fast with success=false instead.`);
   } else {
     parts.push(`INSTRUCTIONS:
 1. Probe the target with execute_command (curl) to determine the auth mechanism
