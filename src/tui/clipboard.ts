@@ -8,11 +8,13 @@ export function createClipboardManager(renderer: CliRenderer) {
   const copyToClipboard = (text: string) => {
     renderer.copyToClipboardOSC52(text);
     try {
+      // Suppress child stdio — xclip errors (e.g. "Can't open display" on
+      // headless systems) would otherwise print over the TUI.
       const proc = Bun.spawn(
         process.platform === "darwin"
           ? ["pbcopy"]
           : ["xclip", "-selection", "clipboard"],
-        { stdin: "pipe" },
+        { stdin: "pipe", stdout: "ignore", stderr: "ignore" },
       );
       proc.stdin.write(text);
       proc.stdin.end();

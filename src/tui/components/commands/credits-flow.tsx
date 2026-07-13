@@ -4,7 +4,9 @@ import { getPensarConsoleUrl } from "../../../core/api";
 import { validateGateway } from "../../../core/auth";
 import { Dialog } from "../../context/dialog";
 import { useRoute } from "../../context/route";
+import { useToast } from "../../context/toast";
 import { useTheme } from "../../theme";
+import { openUrlInBrowser } from "../../utils/open-url";
 import DialogLayout, { type FooterAction } from "../dialog-layout";
 
 type CreditsStep = "loading" | "no-auth" | "display" | "browser-opened";
@@ -25,6 +27,7 @@ export default function CreditsFlow({
 }: CreditsFlowProps) {
   const route = useRoute();
   const { colors } = useTheme();
+  const { toast } = useToast();
   const [step, setStep] = useState<CreditsStep>("loading");
   const [credits, setCredits] = useState<CreditsInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,19 +43,9 @@ export default function CreditsFlow({
   };
 
   const openBrowser = () => {
-    const url = creditsUrl;
-    try {
-      const platform = process.platform;
-      if (platform === "darwin") {
-        Bun.spawn(["open", url]);
-      } else if (platform === "win32") {
-        Bun.spawn(["cmd", "/c", "start", url]);
-      } else {
-        Bun.spawn(["xdg-open", url]);
-      }
-    } catch {
-      // Browser open failed — user will see the fallback URL
-    }
+    openUrlInBrowser(creditsUrl).then((err) => {
+      if (err) toast(err, "warn");
+    });
     setStep("browser-opened");
   };
 
