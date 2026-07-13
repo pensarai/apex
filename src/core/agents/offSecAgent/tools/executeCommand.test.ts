@@ -259,14 +259,17 @@ describe("executeCommand prompt injection pointer", () => {
 
 describe("redactSecretValues", () => {
   it("replaces every occurrence of a known secret", () => {
-    expect(redactSecretValues("token=s3cr3tvalue s3cr3tvalue", ["s3cr3tvalue"])).toBe(
-      "token=[REDACTED] [REDACTED]",
-    );
+    expect(
+      redactSecretValues("token=s3cr3tvalue s3cr3tvalue", ["s3cr3tvalue"]),
+    ).toBe("token=[REDACTED] [REDACTED]");
   });
 
   it("masks the longer secret first so it isn't left partially exposed", () => {
     // "abcdef" is a substring of "abcdef-longtail"; longest-first must win.
-    const out = redactSecretValues("val=abcdef-longtail", ["abcdef", "abcdef-longtail"]);
+    const out = redactSecretValues("val=abcdef-longtail", [
+      "abcdef",
+      "abcdef-longtail",
+    ]);
     expect(out).toBe("val=[REDACTED]");
     expect(out).not.toContain("longtail");
   });
@@ -277,6 +280,8 @@ describe("redactSecretValues", () => {
 
   it("no-ops when there are no secrets", () => {
     expect(redactSecretValues("nothing to hide", [])).toBe("nothing to hide");
-    expect(redactSecretValues("nothing to hide", undefined)).toBe("nothing to hide");
+    expect(redactSecretValues("nothing to hide", undefined)).toBe(
+      "nothing to hide",
+    );
   });
 });
