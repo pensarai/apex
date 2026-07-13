@@ -173,12 +173,10 @@ function shellQuote(value: string): string {
 }
 
 /**
- * Exact-match redaction of known credential values from command output so the
- * model never reads back a secret injected into the shell env. Longest-first so
- * a value can't be partially masked; values under 6 chars are skipped so a stray
- * short secret can't corrupt unrelated output.
+ * Redact known secret values from command output. Longest-first to avoid
+ * partial masking; skip values under 6 chars so they can't corrupt output.
  */
-function redactSecretValues(text: string, secrets?: string[]): string {
+export function redactSecretValues(text: string, secrets?: string[]): string {
   if (!secrets?.length) return text;
   let out = text;
   for (const s of [...secrets]

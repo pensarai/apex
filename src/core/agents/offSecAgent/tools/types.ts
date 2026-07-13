@@ -69,11 +69,7 @@ export type ToolContext = {
    */
   credentialManager?: CredentialManager;
 
-  /**
-   * Exact secret strings (credential passwords / tokens / header values) that
-   * are injected into the shell env. execute_command scrubs these from its
-   * output so the model can use `$VAR` but never read the raw value back.
-   */
+  /** Secret values injected into the shell env; scrubbed from execute_command output. */
   secretValues?: string[];
 
   /**

@@ -284,10 +284,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    */
   environmentVariables?: Record<string, string>;
 
-  /**
-   * Exact secret strings (credential passwords / tokens / header values) to
-   * scrub from execute_command output. Forwarded into the {@link ToolContext}.
-   */
+  /** Secret values to scrub from execute_command output. Forwarded into the {@link ToolContext}. */
   secretValues?: string[];
 
   /** Enable extended thinking (reasoning) for supported models. */
@@ -408,10 +405,7 @@ export interface SpecializedAgentInput {
    */
   environmentVariables?: Record<string, string>;
 
-  /**
-   * Exact secret strings (credential passwords / tokens / header values) to
-   * scrub from execute_command output. Forwarded into the {@link ToolContext}.
-   */
+  /** Secret values to scrub from execute_command output. Forwarded into the {@link ToolContext}. */
   secretValues?: string[];
 
   /** Enable extended thinking (reasoning) for supported models. */

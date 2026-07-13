@@ -226,8 +226,7 @@ The following credentials are configured for this domain:
       if (cred.context) prompt += `- Context: ${cred.context}\n`;
       if (cred.username) prompt += `- Username: ${cred.username}\n`;
       if (cred.loginUrl) prompt += `- Login URL: ${cred.loginUrl}\n`;
-      // Raw secret values omitted — credentials are referenced by ID via tools,
-      // never emitted into prompt text.
+      // Secrets omitted — referenced by credential ID via tools, never in prompt text.
       prompt += `\n`;
     }
   }
@@ -246,8 +245,7 @@ The following credentials are configured for this domain:
       prompt += `- Context: ${input.credentials?.context}
 `;
     }
-    // Raw token values omitted — the auth agent validates the stored session by
-    // credential ID via tools rather than receiving secrets in prose.
+    // Secrets omitted — session validated by credential ID via tools, never in prompt text.
     prompt += `
 **Instructions for Token Verification:**
 1. Use \`validate_session\` with the provided tokens to test if they grant access
@@ -276,8 +274,7 @@ The following credentials are configured for this domain:
       prompt += `- Username: ${input.credentials.username}
 `;
     }
-    // Raw secret values omitted — the agent authenticates via credential-ID
-    // tools; secrets are never emitted into prompt text.
+    // Secrets omitted — referenced by credential ID via tools, never in prompt text.
     if (input.credentials.loginUrl) {
       prompt += `- Login URL Hint: ${input.credentials.loginUrl}
 `;
