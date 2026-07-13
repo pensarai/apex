@@ -121,9 +121,9 @@ If authentication fails, try these mechanical fixes (they are login mechanics, n
 4. Try a different method (form_post vs json_post)
 5. If all else fails, call \`complete_authentication\` with success=false
 
-Credentials that were provided to you are already verified and SHARED — do not modify them or their account
-settings. If they are genuinely rejected — wrong password, account locked, a forced password change is
-required, MFA is required, or the email is not confirmed — do NOT try to recover by resetting or changing
+If credentials were provided to you, they are already verified and SHARED — do not modify them or their
+account settings. When such provided credentials are genuinely rejected — wrong password, account locked, a
+forced password change is required, MFA is required, or the email is not confirmed — do NOT try to recover by resetting or changing
 the password, modifying MFA/2FA settings, or running any account-recovery flow. Fail fast: call
 \`complete_authentication\` with success=false and a summary naming the reason. Do NOT register a new account
 or self-sign-up to get around a rejected provided credential — that is a different account than the one
