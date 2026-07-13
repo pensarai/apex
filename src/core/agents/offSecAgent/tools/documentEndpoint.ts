@@ -209,6 +209,8 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         handler: input.handler,
         authRequired: input.authRequired,
         description: input.description,
+        transport: input.transport,
+        grpc: input.grpc,
       };
 
       const threatModelOutput = await generateThreatModelForEndpoint(
