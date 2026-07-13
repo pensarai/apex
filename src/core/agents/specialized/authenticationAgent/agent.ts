@@ -76,6 +76,9 @@ export interface AuthenticationAgentInput {
    */
   environmentVariables?: Record<string, string>;
 
+  /** Secret values to scrub from execute_command output. Forwarded to the underlying {@link OffensiveSecurityAgentInput}. */
+  secretValues?: string[];
+
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
 
@@ -154,6 +157,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       subagentId,
       context,
       environmentVariables,
+      secretValues,
       enableThinking,
       thinkingEffort,
       openAIReasoningEffort,
@@ -174,6 +178,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       subagentId,
       subagentName: opts.subagentName,
       environmentVariables,
+      secretValues,
       enableThinking,
       thinkingEffort,
       openAIReasoningEffort,
