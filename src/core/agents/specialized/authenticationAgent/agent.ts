@@ -302,7 +302,16 @@ You have credentials available via credential IDs — authenticate immediately.
 2. For browser-based logins, use the browser tools. For browser_fill on password/secret fields,
    pass credentialId + credentialField (e.g. credentialField="password") instead of the raw value —
    the secret is resolved securely at execution time. NEVER type a password directly.
-3. Call complete_authentication with exported cookies/headers to persist credentials and end the run`);
+3. Call complete_authentication with exported cookies/headers to persist credentials and end the run
+
+The credentials above were provided to you and have already been verified — they are SHARED across runs, so
+do not modify them or their account settings. NEVER change the password, complete a password reset /
+forced-password-change / account-recovery flow, or modify MFA/2FA settings (enrolling, disabling, or
+resetting a second factor) for this account. If they do not authenticate (rejected, locked out, forced
+password change required, MFA required, email not confirmed), call complete_authentication with
+success=false and a clear summary of why — do not attempt to recover, reset, or rotate them. Do NOT
+register a new account or self-sign-up to work around a failed login: that is not the credential under test
+and only pollutes results — fail fast with success=false instead.`);
   } else {
     parts.push(`INSTRUCTIONS:
 1. Probe the target with execute_command (curl) to determine the auth mechanism
