@@ -129,7 +129,7 @@ const ThreatModelResultSchema = z.object({
         "rules it must uphold. Use markdown headings. Cover, in order: " +
         "(1) Purpose — what the endpoint accomplishes in user terms. " +
         "(2) Actors — who legitimately interacts with it, what they can do, how they authenticate. " +
-        "(3) Data flow — inputs (with channel and trust level), transformations, side effects, outputs. " +
+        "(3) Data flow — inputs including implicit framework-provided entry points reachable through the endpoint (with channel and trust level), transformations, side effects, outputs. " +
         "(4) Invariants — falsifiable business rules the endpoint must uphold, with enforcement " +
         "location (file:line) and confidence level. " +
         "(5) Trust boundaries — what actually guards each crossing (not what should). " +
@@ -145,7 +145,7 @@ const ThreatModelResultSchema = z.object({
         "Use markdown headings. Cover: " +
         "(1) Attacker profiles — 2-4 realistic attackers with motivation, skill, position, and goal. " +
         "(2) Attack vectors — enumerate thoroughly (typically 8-15 for a non-trivial endpoint). " +
-        "Each vector must reference a concrete input from the business logic, the invariant it " +
+        "Each vector must reference a concrete entry point from the business logic (including implicit framework-provided entry points), the invariant it " +
         "would break, the mechanism, the observable signal of success, an attacker profile, " +
         "likelihood, and impact. Cite file:line. " +
         "(3) Risk assessment — worst-case impact and vector prioritization. " +
@@ -464,7 +464,7 @@ Produce a comprehensive narrative of what this endpoint does and what must be tr
 Who legitimately interacts with this endpoint. For each actor list their role, what they can legitimately do via this endpoint, and how they authenticate (session cookie, JWT, signed webhook, mTLS, API key, IP allowlist, etc.).
 
 ### Data Flow
-- **Inputs**: each input the handler accepts — name, channel (path / query / body / header / cookie / file / env / upstream-service / queue / webhook), trust level (untrusted / semi-trusted / trusted), and any observed validation. Cite file:line.
+- **Inputs**: each input reachable through this endpoint — name, channel (path / query / body / header / cookie / file / env / upstream-service / queue / webhook / server-action / rsc), trust level (untrusted / semi-trusted / trusted), and any observed validation. Include not just what the handler's signature accepts but implicit, framework-provided entry points a client can reach through this endpoint (e.g. server actions invoked from a page, RSC data fetches, framework-generated routes). Cite file:line.
 - **Transformations**: the ordered steps the handler takes — fetch, validate, authorize, compute, call external service. Cite file:line for each.
 - **Side effects**: every write the handler causes — DB writes, external API calls, email/queue/file writes, auth-state changes, payments. Name the target (table, service, queue).
 - **Outputs**: what the response body, headers, and status codes contain.
@@ -519,10 +519,29 @@ Before enumerating, name the 1–3 **functional roles** this endpoint plays (fro
 
 This is a **recall checklist, not a license to invent.** Skip role classes that have no anchor in this endpoint's code. Endpoint-specific vectors that don't fall under a listed role are welcome — mark them "endpoint-specific". Endpoint descriptions that name a role (e.g. "AI assistant", "payment intent", "webhook receiver", "password reset") are a strong signal to classify the corresponding role; if the handler source is unreachable, classify the role anyway and proceed under **source-unavailable mode** (defined in the reading-the-code section) — vectors still emit, but they're tagged \`[unverified: source unavailable]\` and capped at \`p1\` in Part 4.
 
+#### Step 1b — recall framework-derived surface
+
+Identify the framework and stack this endpoint runs on — from the code where available (package.json, config, imports, file-system conventions), or from the endpoint description in source-unavailable mode. Frameworks expose implicit, convention-based surface that is reachable *through* this endpoint but never appears as an explicit route in the endpoint list. Enumerate it and fold it into this endpoint's threat model and test plan.
+
+The classes below are high-signal framework sharp edges, with a few frameworks named under each. **They are examples to jog recall — not an exhaustive catalog, and not a fixed list of frameworks.** The named frameworks are illustrations; every stack has its own version of each class, and classes not listed here exist too. Skip any class with no anchor in this endpoint's code, and **generalize the same reasoning to whatever framework you actually detect**, including ones not named here — the point is the *class of sharp edge*, not the specific example.
+
+| Framework sharp-edge class (examples) | Where it shows up (example frameworks) | Probe / confirming signal |
+|---|---|---|
+| **Hidden data/RPC endpoint reachable by suffix or header** — auth enforced in the UI component, not the loader/action/endpoint | e.g. Next.js server actions (POST the page URL + \`Next-Action: <hash>\`), RSC stream (\`RSC: 1\`); Remix / React Router \`<route>.data\` or \`?_data=<id>\`; SvelteKit \`<route>/__data.json\`, \`+server.ts\`; Nuxt \`<route>/_payload.json\`, \`/__nuxt_island/<Name>_<hash>?props=\`, \`server/api/**\`; FastAPI \`/openapi.json\` | Hit the data URL directly with no / other-tenant session; a 200 with data instead of 302/401 means access control lives only in the UI |
+| **Debug/error mode shipped to prod → secret leak, often RCE** — force a 500 and fingerprint the framework error UI | e.g. Django technical-500 (dumps \`SECRET_KEY\`), Flask/Werkzeug \`/console\`, Rails dev pages + \`/rails/info\`, Laravel Ignition (\`POST /_ignition/execute-solution\` = unauth RCE), ASP.NET dev-exception page / \`elmah.axd\` / \`Trace.axd\`, Nuxt devtools + \`/_nuxt/*.map\` | Trigger an unhandled error; a framework-styled traceback means debug is on — chase the signing secret or the console/Ignition RCE from there |
+| **Conventional admin / introspection / actuator paths** | e.g. Spring \`/actuator/{env,heapdump,mappings,gateway/routes}\` (heapdump → creds, env → RCE), Django \`/admin\`, Laravel \`/telescope\` \`/horizon\`, Rails \`/rails/info/routes\` | GET the known paths directly; 200 = exposed (\`/actuator/heapdump\` returning an \`octet-stream\` hprof is the tell) |
+| **Signing key / app secret → cookie & session forgery (sometimes RCE)** | e.g. Django \`SECRET_KEY\` (+ pickle sessions → RCE), Flask \`SECRET_KEY\`, Rails \`secret_key_base\` (Marshal cookie → RCE), Laravel \`APP_KEY\`, ASP.NET \`machineKey\` / ViewState | Recover the key via a debug/config leak, forge an elevated session cookie, replay it |
+| **"Public" env by naming prefix → secret inlined into the client bundle** | e.g. Next \`NEXT_PUBLIC_*\`, SvelteKit \`PUBLIC_*\` (\`/_app/env.js\`), Nuxt \`runtimeConfig.public\` (\`__NUXT_DATA__\`) | Grep \`/_next/static\`, \`/_app/immutable\`, and hydration blobs for secret-shaped values and \`.map\` files |
+| **ORM mass-assignment via binding defaults** | e.g. Django \`ModelForm fields='__all__'\` / DRF, Rails \`permit!\`, Laravel \`$guarded = []\`, NestJS missing \`whitelist: true\`, FastAPI missing \`response_model\` (over-serializes \`hashed_password\`) | Over-post \`is_admin\` / \`role\` / \`owner_id\`; check whether it persists or leaks |
+| **Built-in fetch or image proxy → SSRF / traversal** | e.g. Next \`/_next/image?url=\`, Nuxt \`/_ipx/\`, Rails \`open()\` / open-uri | Point it at \`http://169.254.169.254/…\` or an internal host; a proxied or timing-differentiated response confirms |
+| **Framework expression / deserialization RCE** | e.g. Spring SpEL (\`#{T(java.lang.Runtime)…}\`) and data-binding classloader (\`class.module.classLoader.*\`), ASP.NET ViewState / Json.NET \`$type\`, Rails YAML/Marshal, template injection in Jinja / Blade / ERB, Node prototype pollution (\`__proto__[x]\`) | A framework-specific canary (\`#{7*7}\`, \`{{7*7}}\`, a bad-\`$type\` error, \`__proto__\` reflection) that proves evaluation |
+
+Treat any framework-derived surface you find this way as in-scope for this endpoint whenever this endpoint can reach it, and carry it into Part 4's test plan.
+
 #### Step 2 — enumerate
 
 Each vector must:
-- Reference a concrete **input** from Part 1's data flow (the entry point).
+- Reference a concrete **entry point** — an input from Part 1's data flow, including the framework-derived entry points captured there (Step 1b).
 - Reference the **invariant(s)** from Part 1 that it would break, when applicable. If a vector is a config/infrastructure concern with no business invariant, say so.
 - Describe the **mechanism** concretely — reference actual parameters, data flows, and code patterns you observed. Cite file:line (or, in source-unavailable mode, the grounding source you read — see the reading-the-code section).
 - State the **observable signal** of a successful exploit (what you would see externally to confirm it worked).
