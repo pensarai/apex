@@ -127,6 +127,14 @@ describe("buildReasoningProviderOptions", () => {
     expect(result?.bedrock).toBeUndefined();
   });
 
+  it("sends GPT-5.6 ultra effort as the API-supported max value", () => {
+    expect(
+      buildReasoningProviderOptions("gpt-5.6-sol", {
+        openAIReasoningEffort: "ultra",
+      }),
+    ).toEqual({ openai: { reasoningEffort: "max" } });
+  });
+
   it("carries the adaptive-thinking effort hint on both anthropic and bedrock for a 4.6 model", () => {
     const result = buildReasoningProviderOptions(
       "global.anthropic.claude-opus-4-6-v1",
