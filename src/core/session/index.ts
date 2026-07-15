@@ -126,6 +126,14 @@ const EmailInboxConfigObject = z.discriminatedUnion("provider", [
     password: z.string(),
     tls: z.boolean(),
   }),
+  z.object({
+    provider: z.literal("http"),
+    id: z.string(),
+    name: z.string(),
+    emailAddress: z.string(),
+    endpoint: z.string(),
+    token: z.string(),
+  }),
 ]);
 
 export type EmailInboxConfig = z.infer<typeof EmailInboxConfigObject>;
