@@ -299,9 +299,19 @@ function withTimeout<T>(
  * SIGKILL the browser explicitly. Must be called BEFORE the parent is killed:
  * once it dies its children reparent to init and are no longer reachable via
  * its pid.
- *
- * @internal Exported for testing.
  */
+/** `/proc/<pid>/stat` starttime (field 22) — used to refuse PID-reuse kills. */
+function readProcStartTime(pid: number): number | null {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const afterComm = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    const starttime = Number(afterComm[19]);
+    return Number.isFinite(starttime) ? starttime : null;
+  } catch {
+    return null;
+  }
+}
+
 export function collectDescendantPids(rootPid: number): number[] {
   let entries: string[];
   try {
@@ -532,12 +542,18 @@ export class PlaywrightMcpSession {
     // pid. The group-kill below misses them because the MCP node isn't spawned
     // as a process-group leader, which orphaned Chromium and leaked memory
     // across endpoints until the sandbox OOM'd.
-    const descendants = proc.pid ? collectDescendantPids(proc.pid) : [];
+    const rootPid = proc.pid ?? null;
+    const descendants = rootPid != null ? collectDescendantPids(rootPid) : [];
+    // Snapshot starttimes before kill so we refuse PID-reuse kills after reparent.
+    const descendantStarts = new Map<number, number | null>();
+    for (const pid of descendants) {
+      descendantStarts.set(pid, readProcStartTime(pid));
+    }
 
     try {
-      if (proc.pid) {
+      if (rootPid != null) {
         try {
-          process.kill(-proc.pid, "SIGKILL");
+          process.kill(-rootPid, "SIGKILL");
         } catch {
           proc.kill("SIGKILL");
         }
@@ -548,8 +564,12 @@ export class PlaywrightMcpSession {
       // Already dead — fine
     }
 
-    // Reap the browser tree explicitly so a failed group-kill can't strand it.
     for (const pid of descendants) {
+      const expected = descendantStarts.get(pid);
+      if (expected != null) {
+        const now = readProcStartTime(pid);
+        if (now == null || now !== expected) continue;
+      }
       try {
         process.kill(pid, "SIGKILL");
       } catch {
