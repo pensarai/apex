@@ -545,8 +545,8 @@ export class PlaywrightMcpSession {
     // as a process-group leader, which orphaned Chromium and leaked memory
     // across endpoints until the sandbox OOM'd.
     const rootPid = proc.pid ?? null;
-    const rootStart = rootPid != null ? readProcStartTime(rootPid) : null;
     const descendants = rootPid != null ? collectDescendantPids(rootPid) : [];
+    // Snapshot starttimes before kill so we refuse PID-reuse kills after reparent.
     const descendantStarts = new Map<number, number | null>();
     for (const pid of descendants) {
       descendantStarts.set(pid, readProcStartTime(pid));
@@ -566,8 +566,6 @@ export class PlaywrightMcpSession {
       // Already dead — fine
     }
 
-    // Reap the browser tree explicitly so a failed group-kill can't strand it.
-    // Refuse to kill a PID whose starttime changed (kernel reused the pid).
     for (const pid of descendants) {
       const expected = descendantStarts.get(pid);
       if (expected != null) {
@@ -578,14 +576,6 @@ export class PlaywrightMcpSession {
         process.kill(pid, "SIGKILL");
       } catch {
         // Already gone — fine
-      }
-    }
-
-    if (rootPid != null && rootStart != null) {
-      const now = readProcStartTime(rootPid);
-      if (now != null && now !== rootStart) {
-        // Root pid was recycled — do not touch it.
-        return;
       }
     }
   }
