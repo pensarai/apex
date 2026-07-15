@@ -137,6 +137,7 @@ This tool never resolves raw external-library payloads. Library attempts contain
           protectedCanarySha256: canaryCredential?.canary
             ? sha256(canaryCredential.canary)
             : undefined,
+          credentialManager: ctx.credentialManager,
           goals: input.goals,
           vectors: input.vectors,
           surfaces: input.surfaces,

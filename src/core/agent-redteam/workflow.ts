@@ -1,3 +1,4 @@
+import type { CredentialManager } from "../credentials";
 import {
   getPromptInjectionLibrary,
   type PromptInjectionLibrary,
@@ -50,6 +51,7 @@ export interface AgentRedTeamWorkflowInput {
   campaignSeed?: string;
   protectedCanaryCredentialId?: string;
   protectedCanarySha256?: string;
+  credentialManager?: CredentialManager;
   goals?: AgentRedTeamGoal[];
   vectors?: AgentRedTeamVector[];
   surfaces?: AgentRedTeamSurface[];
@@ -172,6 +174,12 @@ export async function runAgentRedTeamWorkflow(
     ReturnType<typeof recordAgentRedTeamObservation>
   >();
 
+  const protectedCanaryValue =
+    input.protectedCanaryCredentialId && input.credentialManager
+      ? input.credentialManager.resolve(input.protectedCanaryCredentialId)
+          ?.canary
+      : undefined;
+
   for (const observationInput of input.observations ?? []) {
     const attempt = selectObservationAttempt(campaign, observationInput);
     if (!attempt) continue;
@@ -183,6 +191,7 @@ export async function runAgentRedTeamWorkflow(
       latencyMs: observationInput.latencyMs,
       inputTokens: observationInput.inputTokens,
       outputTokens: observationInput.outputTokens,
+      protectedCanaryValue,
       sessionRootPath: input.sessionRootPath,
     });
     observationByAttempt.set(attempt.id, observation);
