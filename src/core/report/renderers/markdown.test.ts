@@ -129,6 +129,33 @@ describe("renderMarkdown", () => {
     );
   });
 
+  it("renders agent red-team provenance for campaign-backed findings", () => {
+    const report = makeSampleReport();
+    const finding = report.findings[0];
+    if (!finding) throw new Error("Sample report must contain a finding.");
+    finding.agentRedTeam = {
+      campaignId: "campaign-123",
+      attemptId: "attempt-456",
+      evaluationId: "evaluation-789",
+      techniqueId: "tool-surface-indirect",
+      vector: "tool-output-injection",
+      surface: "tool-return-value",
+      oracleIds: ["oracle.tool-authorization"],
+      evidenceStrength: "deterministic",
+      confidence: 1,
+    };
+
+    const output = renderMarkdown(report);
+
+    expect(output).toContain("## Agent Red-Team Provenance");
+    expect(output).toContain("**Campaign:** `campaign-123`");
+    expect(output).toContain("**Vector:** `tool-output-injection`");
+    expect(output).toContain("**Surface:** `tool-return-value`");
+    expect(output).toContain("**Oracles:** `oracle.tool-authorization`");
+    expect(output).toContain("**Evidence strength:** deterministic");
+    expect(output).toContain("**Confidence:** 1.00");
+  });
+
   it("renders multiple findings separated correctly", () => {
     const report = makeSampleReport({
       findings: [

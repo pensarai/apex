@@ -68,6 +68,22 @@ function renderFinding(
           "",
         ]
       : []),
+    ...(finding.agentRedTeam
+      ? [
+          "## Agent Red-Team Provenance",
+          "",
+          `**Campaign:** \`${finding.agentRedTeam.campaignId}\`  `,
+          `**Attempt:** \`${finding.agentRedTeam.attemptId}\`  `,
+          `**Evaluation:** \`${finding.agentRedTeam.evaluationId}\`  `,
+          `**Technique:** \`${finding.agentRedTeam.techniqueId}\`  `,
+          `**Vector:** \`${finding.agentRedTeam.vector}\`  `,
+          `**Surface:** \`${finding.agentRedTeam.surface}\`  `,
+          `**Oracles:** ${finding.agentRedTeam.oracleIds.map((id) => `\`${id}\``).join(", ")}  `,
+          `**Evidence strength:** ${finding.agentRedTeam.evidenceStrength}  `,
+          `**Confidence:** ${finding.agentRedTeam.confidence.toFixed(2)}`,
+          "",
+        ]
+      : []),
     ...(finding.cwes?.length
       ? [
           "## CWE Classification",

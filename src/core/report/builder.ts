@@ -52,6 +52,7 @@ export function buildPentestReport(
       relatedFindings: f.relatedFindings,
       rootCauseLead: f.rootCauseLead,
       evidenceFiles: f.evidenceFiles,
+      agentRedTeam: f.agentRedTeam,
     })),
   };
 }

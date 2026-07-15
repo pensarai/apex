@@ -71,6 +71,22 @@ describe("CredentialManager", () => {
       expect(stored?.type).toBe("cookies");
     });
 
+    it("stores a protected red-team canary without exposing it in references", () => {
+      const canary = "PROTECTED_AGENT_RED_TEAM_CANARY";
+      const id = cm.add({
+        canary,
+        label: "agent red-team disclosure oracle",
+      });
+
+      expect(cm.resolve(id)).toMatchObject({
+        type: "red-team-canary",
+        canary,
+      });
+      expect(JSON.stringify(cm.getReference(id))).not.toContain(canary);
+      expect(JSON.stringify(cm.listReferences())).not.toContain(canary);
+      expect(cm.formatForPrompt()).not.toContain(canary);
+    });
+
     it("infers composite type when multiple secret fields present", () => {
       const id = cm.add({
         username: "bob",

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CweEntrySchema, ValidatedCweEntrySchema } from "../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../lib/evidence/types";
+import { AgentRedTeamFindingMetadataSchema } from "../agent-redteam/finding-metadata";
 
 /**
  * Supported vulnerability classes for testing
@@ -120,6 +121,7 @@ export const DocumentFindingSchema = z.object({
   references: z.string().optional().describe("CVE, CWE, or related references"),
   cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
+  agentRedTeam: AgentRedTeamFindingMetadataSchema.optional(),
 });
 
 type DocumentFindingInput = z.infer<typeof DocumentFindingSchema>;

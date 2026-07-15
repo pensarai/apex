@@ -13,6 +13,7 @@ import {
   ValidatedCweEntrySchema,
 } from "../../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
+import { AgentRedTeamFindingMetadataSchema } from "../../agent-redteam/finding-metadata";
 import type {
   AIAuthConfig,
   AIModel,
@@ -61,6 +62,7 @@ export const ApexFindingObject = z.object({
   /** True for the single lead finding of a root-cause group (the one that should anchor the consolidated write-up). */
   rootCauseLead: z.boolean().optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
+  agentRedTeam: AgentRedTeamFindingMetadataSchema.optional(),
 });
 
 export type Finding = z.infer<typeof ApexFindingObject>;
