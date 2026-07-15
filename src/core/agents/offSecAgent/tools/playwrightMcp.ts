@@ -299,11 +299,9 @@ function withTimeout<T>(
  * SIGKILL the browser explicitly. Must be called BEFORE the parent is killed:
  * once it dies its children reparent to init and are no longer reachable via
  * its pid.
- *
- * @internal Exported for testing.
  */
 /** `/proc/<pid>/stat` starttime (field 22) — used to refuse PID-reuse kills. */
-export function readProcStartTime(pid: number): number | null {
+function readProcStartTime(pid: number): number | null {
   try {
     const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
     const afterComm = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
