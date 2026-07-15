@@ -50,7 +50,9 @@ export type OpenAIReasoningEffort =
   | "low"
   | "medium"
   | "high"
-  | "xhigh";
+  | "xhigh"
+  | "max"
+  | "ultra";
 
 export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 
@@ -77,6 +79,9 @@ const OPENAI_REASONING_MODEL_IDS = new Set([
   "gpt-5.4-pro-2026-03-05",
   "gpt-5.5",
   "gpt-5.5-2026-04-23",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
 ]);
 
 /** Per-step billing context attached to a usage report, attributing cost to a specific `(sessionId, stepSeq)`. */
@@ -753,6 +758,9 @@ export function getOpenAIReasoningEfforts(
   modelId: string,
 ): OpenAIReasoningEffort[] {
   if (!modelSupportsOpenAIReasoning(modelId)) return [];
+  if (/^gpt-5\.6(?:\b|-)/.test(modelId)) {
+    return ["low", "medium", "high", "xhigh", "max", "ultra"];
+  }
   if (/^gpt-5\.5(?:\b|-)/.test(modelId)) {
     return ["none", "low", "medium", "high", "xhigh"];
   }
@@ -765,7 +773,10 @@ export function normalizeOpenAIReasoningEffort(
 ): OpenAIReasoningEffort | undefined {
   const efforts = getOpenAIReasoningEfforts(modelId);
   if (efforts.length === 0) return undefined;
-  if (effort && efforts.includes(effort)) return effort;
+  if (effort && efforts.includes(effort)) {
+    // ponytail: OpenAI has no distinct ultra level; keep the UI choice as a max alias.
+    return effort === "ultra" ? "max" : effort;
+  }
   return DEFAULT_OPENAI_REASONING_EFFORT;
 }
 

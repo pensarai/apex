@@ -49,7 +49,7 @@ describe("getDefaultModelForConfig", () => {
     const model = getDefaultModelForConfig(config);
     expect(model).not.toBeNull();
     expect(model?.provider).toBe("openai");
-    expect(model?.id).toBe("gpt-5.5");
+    expect(model?.id).toBe("gpt-5.6-sol");
   });
 
   it("returns Google best model when only Google is configured", () => {

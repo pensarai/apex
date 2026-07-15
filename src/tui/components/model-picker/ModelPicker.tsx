@@ -767,7 +767,10 @@ export function ModelPicker({
         <box flexShrink={0} paddingTop={1}>
           <PickerRow id="openai-reasoning-effort">
             <text fg={isOpenAIReasoningFocused ? colors.primary : colors.text}>
-              Reasoning Effort: {openAIReasoningEffort}
+              Reasoning Effort:{" "}
+              {openAIReasoningEffort === "xhigh"
+                ? "extra high"
+                : openAIReasoningEffort}
             </text>
           </PickerRow>
         </box>
