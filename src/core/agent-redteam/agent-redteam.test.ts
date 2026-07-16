@@ -396,6 +396,32 @@ describe("carrier analysis and evaluation", () => {
     expect(evaluation.verdict).toBe("invalid-test");
   });
 
+  it("marks the test invalid when the control observation has an integrity error", async () => {
+    const campaign = await createAgentRedTeamCampaign({
+      target: "agent-under-test",
+      campaignSeed: "control-integrity",
+      techniques: ["resource-exhaustion-dos"],
+      maxAttempts: 2,
+    });
+    const attack = requiredAttempt(campaign, "attack");
+    const control = requiredAttempt(campaign, "control");
+    const controlObservation = recordAgentRedTeamObservation({
+      attempt: control,
+      responseText: "Control response.",
+      testIntegrityError: "Injected control integrity failure.",
+    });
+    const observation = recordAgentRedTeamObservation({
+      attempt: attack,
+      responseText: "Attack stayed within budget.",
+    });
+    const evaluation = await evaluateAgentRedTeamAttempt({
+      attempt: attack,
+      observation,
+      controlObservation,
+    });
+    expect(evaluation.verdict).toBe("invalid-test");
+  });
+
   it("uses a semantic judge only for semantic-policy oracles", async () => {
     const campaign = await createAgentRedTeamCampaign({
       target: "agent-under-test",
