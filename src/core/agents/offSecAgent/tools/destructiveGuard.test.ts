@@ -109,6 +109,16 @@ describe("classifyHttpAction", () => {
     ).toBe(true);
   });
 
+  it("flags a method-override to DELETE via header", () => {
+    expect(
+      classifyHttpAction({
+        method: "POST",
+        url: "https://x.com/users/1",
+        headers: { "X-HTTP-Method-Override": "DELETE" },
+      }).destructive,
+    ).toBe(true);
+  });
+
   it("flags destructive SQL in the body regardless of method", () => {
     const c = classifyHttpAction({
       method: "POST",

@@ -106,7 +106,7 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH"]);
 const DESTRUCTIVE_PATH_PATTERN =
   /(?:^|[/_?&=.-])(?:delete|destroy|drop|purge|truncate|wipe|obliterate|nuke|remove|hard[-_]?delete|force[-_]?delete)(?:[/_?&=.-]|$)/i;
 
-/** Method-override to DELETE via query/body (e.g. `?_method=DELETE`). */
+/** Method-override to DELETE via header/query/body (e.g. `?_method=DELETE`). */
 const METHOD_OVERRIDE_DELETE_PATTERN =
   /(?:_method|x-http-method-override|httpmethod)\s*[=:]\s*['"]?delete\b/i;
 
@@ -114,15 +114,25 @@ const METHOD_OVERRIDE_DELETE_PATTERN =
 // Classifiers (pure)
 // ---------------------------------------------------------------------------
 
-/** Classify an HTTP request. `body` is only inspected when it is a string. */
+/**
+ * Classify an HTTP request. `body` is only inspected when it is a string.
+ * `headers` are folded into the haystack as `name: value` lines so a
+ * method-override header (e.g. `X-HTTP-Method-Override: DELETE`) is caught.
+ */
 export function classifyHttpAction(input: {
   method: string;
   url: string;
   body?: unknown;
+  headers?: Record<string, unknown>;
 }): DestructiveClassification {
   const method = input.method.toUpperCase();
   const bodyText = typeof input.body === "string" ? input.body : "";
-  const haystack = `${input.url}\n${bodyText}`;
+  const headerText = input.headers
+    ? Object.entries(input.headers)
+        .map(([name, value]) => `${name}: ${String(value)}`)
+        .join("\n")
+    : "";
+  const haystack = `${input.url}\n${bodyText}\n${headerText}`;
 
   // Raw destructive SQL / NoSQL carried in the URL or body (SQLi payloads,
   // admin/query endpoints) — destructive regardless of method.
@@ -261,7 +271,12 @@ export function isDestructiveTestingAllowed(ctx: ToolContext): boolean {
  * destructive-classified request.
  */
 export function assertHttpActionAllowed(
-  input: { method: string; url: string; body?: unknown },
+  input: {
+    method: string;
+    url: string;
+    body?: unknown;
+    headers?: Record<string, unknown>;
+  },
   ctx: ToolContext,
 ): void {
   if (isDestructiveTestingAllowed(ctx)) return;

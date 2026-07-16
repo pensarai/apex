@@ -192,9 +192,11 @@ COMMON TESTING PATTERNS:
       followRedirects,
       timeout,
     }): Promise<HttpRequestResult> => {
+      let headers = parseHeaders(rawHeaders);
+
       try {
         assertUrlInScope(url, ctx);
-        assertHttpActionAllowed({ method, url, body }, ctx);
+        assertHttpActionAllowed({ method, url, body, headers }, ctx);
       } catch (e) {
         if (
           e instanceof ScopeViolationError ||
@@ -215,7 +217,6 @@ COMMON TESTING PATTERNS:
         throw e;
       }
 
-      let headers = parseHeaders(rawHeaders);
       let resolvedBody: string | undefined;
       let library: PromptInjectionLibrary = EMPTY_PROMPT_INJECTION_LIBRARY;
 
