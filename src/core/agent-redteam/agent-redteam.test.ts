@@ -365,6 +365,14 @@ describe("carrier analysis and evaluation", () => {
 
 describe("compatibility facade", () => {
   it("processes observations independently of the generation budget", async () => {
+    const preview = await createAgentRedTeamCampaign({
+      target: "agent-under-test",
+      campaignSeed: "facade-observation",
+      techniques: ["resource-exhaustion-dos"],
+      maxAttempts: 2,
+    });
+    const control = requiredAttempt(preview, "control");
+    const attack = requiredAttempt(preview, "attack");
     const result = await runAgentRedTeamWorkflow({
       target: "agent-under-test",
       campaignSeed: "facade-observation",
@@ -373,6 +381,12 @@ describe("compatibility facade", () => {
       maxAttempts: 2,
       observations: [
         {
+          attemptId: control.id,
+          responseText: "Control request handled within budget.",
+          events: [{ kind: "resource-usage", value: 100 }],
+        },
+        {
+          attemptId: attack.id,
           responseText: "Request rejected within budget.",
           events: [{ kind: "resource-usage", value: 100 }],
         },
@@ -380,6 +394,32 @@ describe("compatibility facade", () => {
     });
     expect(result.attempts).toHaveLength(2);
     expect(result.evaluations).toHaveLength(1);
+  });
+
+  it("skips attack evaluation when the paired control was not observed", async () => {
+    const preview = await createAgentRedTeamCampaign({
+      target: "agent-under-test",
+      campaignSeed: "facade-observation",
+      techniques: ["resource-exhaustion-dos"],
+      maxAttempts: 2,
+    });
+    const attack = requiredAttempt(preview, "attack");
+    const result = await runAgentRedTeamWorkflow({
+      target: "agent-under-test",
+      campaignSeed: "facade-observation",
+      usePromptInjectionLibrarySeeds: false,
+      techniques: ["resource-exhaustion-dos"],
+      maxAttempts: 2,
+      observations: [
+        {
+          attemptId: attack.id,
+          responseText: "Request rejected within budget.",
+          events: [{ kind: "resource-usage", value: 100 }],
+        },
+      ],
+    });
+    expect(result.attempts).toHaveLength(2);
+    expect(result.evaluations).toHaveLength(0);
   });
 
   it("starts coverage as not-tested before planning", () => {

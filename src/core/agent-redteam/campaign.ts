@@ -526,8 +526,10 @@ export async function createAgentRedTeamCampaign(
       input.surfaces,
     )[1];
     const vector = selected(technique.targetVectors, input.vectors)[0];
-    const goal = goals.find((item) =>
-      technique.targetImpacts.includes(item.impact),
+    const goal = goals.find(
+      (item) =>
+        technique.targetImpacts.includes(item.impact) &&
+        (!input.impacts?.length || input.impacts.includes(item.impact)),
     );
     if (!surface || !vector || !goal) continue;
     addPair(

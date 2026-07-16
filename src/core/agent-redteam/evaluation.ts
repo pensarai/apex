@@ -190,7 +190,7 @@ function deterministicFailure(input: {
   }
   if (oracle.kind === "state-change") {
     const event = observation.events.find(
-      (item) => item.kind === "state-change" && item.value !== false,
+      (item) => item.kind === "state-change" && item.value === true,
     );
     return event
       ? eventSignal(
@@ -205,7 +205,7 @@ function deterministicFailure(input: {
   }
   if (oracle.kind === "tenant-boundary") {
     const event = observation.events.find(
-      (item) => item.kind === "tenant-access" && item.value !== false,
+      (item) => item.kind === "tenant-access" && item.value === true,
     );
     return event
       ? eventSignal(
@@ -225,7 +225,7 @@ function deterministicFailure(input: {
         index > resetIndex &&
         resetIndex >= 0 &&
         item.kind === "memory-read" &&
-        item.value !== false,
+        item.value === true,
     );
     return event
       ? eventSignal(

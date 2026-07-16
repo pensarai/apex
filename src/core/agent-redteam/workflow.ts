@@ -148,10 +148,9 @@ function selectObservationAttempt(
   observation: AgentRedTeamObservationInput,
 ): AgentRedTeamAttempt | undefined {
   if (observation.attemptId) {
-    const exact = campaign.attempts.find(
+    return campaign.attempts.find(
       (attempt) => attempt.id === observation.attemptId,
     );
-    if (exact) return exact;
   }
   return campaign.attempts.find(
     (attempt) =>
@@ -180,6 +179,8 @@ export async function runAgentRedTeamWorkflow(
           ?.canary
       : undefined;
 
+  // Record every observation first so control/attack input ordering does not
+  // matter, then evaluate only attacks whose paired control was observed.
   for (const observationInput of input.observations ?? []) {
     const attempt = selectObservationAttempt(campaign, observationInput);
     if (!attempt) continue;
@@ -195,9 +196,16 @@ export async function runAgentRedTeamWorkflow(
       sessionRootPath: input.sessionRootPath,
     });
     observationByAttempt.set(attempt.id, observation);
+  }
+
+  for (const attempt of campaign.attempts) {
+    if (attempt.variant === "control") continue;
+    const observation = observationByAttempt.get(attempt.id);
+    if (!observation) continue;
     const controlObservation = attempt.controlAttemptId
       ? observationByAttempt.get(attempt.controlAttemptId)
       : undefined;
+    if (attempt.controlAttemptId && !controlObservation) continue;
     evaluations.push(
       await evaluateAgentRedTeamAttempt({
         attempt,
