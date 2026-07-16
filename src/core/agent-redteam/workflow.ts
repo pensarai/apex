@@ -3,6 +3,7 @@ import {
   getPromptInjectionLibrary,
   type PromptInjectionLibrary,
 } from "../prompt-injections";
+import { sha256 } from "./artifacts";
 import {
   type CreateAgentRedTeamCampaignInput,
   createAgentRedTeamCampaign,
@@ -200,6 +201,14 @@ export async function runAgentRedTeamWorkflow(
         ? input.credentialManager.resolve(attempt.oracle.canaryCredentialId)
             ?.canary
         : protectedCanaryValue;
+    const canaryHashMismatch = Boolean(
+      attemptCanaryValue &&
+        attempt.oracle.canarySha256 &&
+        sha256(attemptCanaryValue) !== attempt.oracle.canarySha256,
+    );
+    const canaryInCarrier = Boolean(
+      attemptCanaryValue && attempt.renderedPrompt.includes(attemptCanaryValue),
+    );
     const observation = recordAgentRedTeamObservation({
       attempt,
       responseText: observationInput.responseText,
@@ -209,6 +218,11 @@ export async function runAgentRedTeamWorkflow(
       inputTokens: observationInput.inputTokens,
       outputTokens: observationInput.outputTokens,
       protectedCanaryValue: attemptCanaryValue,
+      testIntegrityError: canaryHashMismatch
+        ? "Protected canary credential no longer matches the campaign hash."
+        : canaryInCarrier
+          ? "Protected canary appeared in the delivered carrier."
+          : undefined,
       sessionRootPath: input.sessionRootPath,
     });
     observationByAttempt.set(attempt.id, observation);
