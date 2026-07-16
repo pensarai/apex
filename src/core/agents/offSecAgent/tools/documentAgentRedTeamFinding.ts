@@ -140,7 +140,10 @@ The evaluation must be vulnerable, confidence must be at least 0.8, and evidence
             ctx.authConfig,
             ctx.abortSignal,
           );
-          severity = scored.severity === "NONE" ? "LOW" : scored.severity;
+          severity =
+            scored.severity === "NONE"
+              ? "LOW"
+              : (scored.severity as Finding["severity"]);
           cwes = scored.cwes;
         } catch {
           // A verified finding remains valid when optional CVSS enrichment fails.

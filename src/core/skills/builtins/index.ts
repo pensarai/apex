@@ -4,7 +4,6 @@ import { pentestSkill } from "./pentest";
 import { promptInjectionSkill } from "./promptInjection";
 import { threatModelSkill } from "./threatModel";
 
-export { agentRedTeamSkill } from "./agentRedTeam";
 export { buildPentestPrompt } from "./pentest";
 export { promptInjectionSkill } from "./promptInjection";
 export { buildThreatModelPrompt } from "./threatModel";

@@ -31,7 +31,7 @@ export interface AgentRedTeamJudgeOptions {
   sessionId?: string;
 }
 
-export async function judgeAgentRedTeamSemantics(
+async function judgeAgentRedTeamSemantics(
   input: Parameters<AgentRedTeamSemanticJudge>[0],
   options: AgentRedTeamJudgeOptions,
 ): Promise<AgentRedTeamSemanticJudgeResult> {
