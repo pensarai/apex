@@ -70,6 +70,7 @@ export interface AgentRedTeamWorkflowInput {
 
 export interface AgentRedTeamWorkflowResult {
   campaignId: string;
+  campaignSeed: string;
   coverage: AgentRedTeamCoverageMatrix;
   attempts: AgentRedTeamAttempt[];
   evaluations: AgentRedTeamEvaluation[];
@@ -146,15 +147,19 @@ function campaignInput(
 function selectObservationAttempt(
   campaign: AgentRedTeamCampaign,
   observation: AgentRedTeamObservationInput,
+  assigned: ReadonlyMap<string, unknown>,
 ): AgentRedTeamAttempt | undefined {
   if (observation.attemptId) {
     return campaign.attempts.find(
       (attempt) => attempt.id === observation.attemptId,
     );
   }
+  // Without an explicit id, consume the next unassigned attack so multiple
+  // observations do not collapse onto (and overwrite) the same attempt.
   return campaign.attempts.find(
     (attempt) =>
       attempt.variant !== "control" &&
+      !assigned.has(attempt.id) &&
       (!observation.goal || attempt.impact === observation.goal.impact),
   );
 }
@@ -182,7 +187,11 @@ export async function runAgentRedTeamWorkflow(
   // Record every observation first so control/attack input ordering does not
   // matter, then evaluate only attacks whose paired control was observed.
   for (const observationInput of input.observations ?? []) {
-    const attempt = selectObservationAttempt(campaign, observationInput);
+    const attempt = selectObservationAttempt(
+      campaign,
+      observationInput,
+      observationByAttempt,
+    );
     if (!attempt) continue;
     const observation = recordAgentRedTeamObservation({
       attempt,
@@ -221,6 +230,7 @@ export async function runAgentRedTeamWorkflow(
     : undefined;
   return {
     campaignId: campaign.id,
+    campaignSeed: campaign.seed,
     coverage: campaign.coverage,
     attempts: campaign.attempts,
     evaluations,

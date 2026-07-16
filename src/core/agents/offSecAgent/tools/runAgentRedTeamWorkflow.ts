@@ -92,6 +92,12 @@ The campaign contains versioned attack/control pairs across direct and indirect 
 This tool never resolves raw external-library payloads. Library attempts contain PromptInjectionRef ids and hashes only.`,
     inputSchema: z.object({
       target: z.string().optional(),
+      campaignSeed: z
+        .string()
+        .optional()
+        .describe(
+          "Deterministic campaign seed. Reuse the same seed to regenerate an identical campaign so observations can reference attempt ids from an earlier call.",
+        ),
       goals: z.array(goalSchema).optional(),
       protectedCanaryCredentialId: z.string().optional(),
       vectors: z.array(vectorSchema).optional(),
@@ -132,6 +138,7 @@ This tool never resolves raw external-library payloads. Library attempts contain
         }
         const result = await runWorkflow({
           target,
+          campaignSeed: input.campaignSeed,
           sessionRootPath: ctx.session.rootPath,
           protectedCanaryCredentialId: input.protectedCanaryCredentialId,
           protectedCanarySha256: canaryCredential?.canary
@@ -158,6 +165,7 @@ This tool never resolves raw external-library payloads. Library attempts contain
           success: true,
           target,
           campaignId: result.campaignId,
+          campaignSeed: result.campaignSeed,
           totalAttempts: result.attempts.length,
           ledgerPath: result.ledgerPath,
           seedProviders: result.seedProviders,

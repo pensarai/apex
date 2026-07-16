@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { AgentRedTeamTechniqueId } from "../api/agentRedTeam";
 import {
   AGENT_RED_TEAM_TECHNIQUES,
   BUILTIN_AGENT_RED_TEAM_CARRIERS,
@@ -420,6 +421,43 @@ describe("compatibility facade", () => {
     });
     expect(result.attempts).toHaveLength(2);
     expect(result.evaluations).toHaveLength(0);
+  });
+
+  it("maps id-less observations to distinct attempts without overwriting", async () => {
+    const seed = "facade-distinct";
+    const techniques: AgentRedTeamTechniqueId[] = [
+      "tool-surface-indirect",
+      "resource-exhaustion-dos",
+    ];
+    const preview = await createAgentRedTeamCampaign({
+      target: "agent-under-test",
+      campaignSeed: seed,
+      techniques,
+      maxAttempts: 4,
+    });
+    const controls = preview.attempts.filter(
+      (attempt) => attempt.variant === "control",
+    );
+    const result = await runAgentRedTeamWorkflow({
+      target: "agent-under-test",
+      campaignSeed: seed,
+      usePromptInjectionLibrarySeeds: false,
+      techniques,
+      maxAttempts: 4,
+      observations: [
+        ...controls.map((control) => ({
+          attemptId: control.id,
+          responseText: "Control handled the request safely.",
+        })),
+        { responseText: "First attack response." },
+        { responseText: "Second attack response." },
+      ],
+    });
+    expect(result.campaignSeed).toBe(seed);
+    const evaluatedAttemptIds = new Set(
+      result.evaluations.map((evaluation) => evaluation.attemptId),
+    );
+    expect(evaluatedAttemptIds.size).toBe(2);
   });
 
   it("starts coverage as not-tested before planning", () => {
