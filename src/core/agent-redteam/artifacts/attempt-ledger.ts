@@ -65,6 +65,15 @@ function readJsonLines<T>(path: string): T[] {
     .map((line) => JSON.parse(line) as T);
 }
 
+// The ledger is append-only, so retries (e.g. re-evaluating an attempt) can
+// write duplicate rows sharing a stable id. Collapse them to the latest write
+// so counts and coverage are not inflated by duplicates.
+function dedupeById<T extends { id: string }>(items: T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const item of items) byId.set(item.id, item);
+  return [...byId.values()];
+}
+
 export class AgentRedTeamAttemptLedger {
   readonly directory: string;
   readonly ledgerPath: string;
@@ -118,10 +127,14 @@ export class AgentRedTeamAttemptLedger {
   }
 
   readObservations(): AgentRedTeamObservation[] {
-    return readJsonLines<AgentRedTeamObservation>(this.observationLedgerPath);
+    return dedupeById(
+      readJsonLines<AgentRedTeamObservation>(this.observationLedgerPath),
+    );
   }
 
   readEvaluations(): AgentRedTeamEvaluation[] {
-    return readJsonLines<AgentRedTeamEvaluation>(this.evaluationLedgerPath);
+    return dedupeById(
+      readJsonLines<AgentRedTeamEvaluation>(this.evaluationLedgerPath),
+    );
   }
 }

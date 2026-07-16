@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AgentRedTeamTechniqueId } from "../api/agentRedTeam";
 import {
   AGENT_RED_TEAM_TECHNIQUES,
+  AgentRedTeamAttemptLedger,
   BUILTIN_AGENT_RED_TEAM_CARRIERS,
   createAgentRedTeamCampaign,
   createCoverageMatrix,
@@ -509,6 +510,38 @@ describe("compatibility facade", () => {
       verdict: "vulnerable",
       judgeProvenance: "semantic",
     });
+  });
+
+  it("does not inflate finalize counts when an attempt is re-evaluated", async () => {
+    const root = tempSessionRoot();
+    const campaign = await createAgentRedTeamCampaign({
+      target: "agent-under-test",
+      campaignSeed: "dedup",
+      techniques: ["resource-exhaustion-dos"],
+      maxAttempts: 2,
+      sessionRootPath: root,
+    });
+    const attack = requiredAttempt(campaign, "attack");
+    for (let i = 0; i < 2; i++) {
+      const observation = recordAgentRedTeamObservation({
+        attempt: attack,
+        responseText: "Handled safely within budget.",
+        sessionRootPath: root,
+      });
+      await evaluateAgentRedTeamAttempt({
+        attempt: attack,
+        observation,
+        sessionRootPath: root,
+      });
+    }
+    const ledger = new AgentRedTeamAttemptLedger(root, campaign.id);
+    expect(ledger.readObservations()).toHaveLength(1);
+    expect(ledger.readEvaluations()).toHaveLength(1);
+    const summary = finalizeAgentRedTeamCampaign({
+      campaign,
+      evaluations: ledger.readEvaluations(),
+    });
+    expect(summary.counts.resilient).toBe(1);
   });
 
   it("starts coverage as not-tested before planning", () => {
