@@ -104,6 +104,15 @@ Evaluate the control attempt before its paired attack. The tool stores redacted 
       const protectedCanaryValue = canaryCredentialId
         ? ctx.credentialManager?.resolve(canaryCredentialId)?.canary
         : undefined;
+      // Refuse to persist or evaluate a protected-canary attempt we cannot
+      // redact: without the secret we would store raw target output and could
+      // falsely report resilient despite disclosed canary material.
+      if (canaryCredentialId && !protectedCanaryValue) {
+        return {
+          success: false,
+          message: `Protected canary credential ${canaryCredentialId} is unavailable or has no canary value; cannot record or evaluate this attempt without redaction.`,
+        };
+      }
       const canaryHashMismatch = Boolean(
         protectedCanaryValue &&
           attempt.oracle.canarySha256 &&
