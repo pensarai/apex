@@ -164,6 +164,81 @@ describe("classifyHttpAction", () => {
       }).destructive,
     ).toBe(false);
   });
+
+  it("flags method-override to DELETE via alternate header spellings", () => {
+    for (const name of [
+      "X-HTTP-Method-Override",
+      "X-HTTP-Method",
+      "X-Method-Override",
+      "X-Method",
+    ]) {
+      expect(
+        classifyHttpAction({
+          method: "POST",
+          url: "https://x.com/users/1",
+          headers: { [name]: "DELETE" },
+        }).destructive,
+      ).toBe(true);
+    }
+  });
+
+  it("flags a GET that overrides the method to DELETE (some stacks honor it)", () => {
+    expect(
+      classifyHttpAction({
+        method: "GET",
+        url: "https://x.com/users/1?_method=DELETE",
+      }).destructive,
+    ).toBe(true);
+    expect(
+      classifyHttpAction({
+        method: "GET",
+        url: "https://x.com/users/1",
+        headers: { "X-HTTP-Method-Override": "DELETE" },
+      }).destructive,
+    ).toBe(true);
+  });
+
+  it("flags a write to a percent-encoded delete route", () => {
+    expect(
+      classifyHttpAction({
+        method: "POST",
+        url: "https://x.com/users/1%2Fdelete",
+      }).category,
+    ).toBe("http-destructive-path");
+  });
+
+  it("flags percent-encoded destructive SQLi payloads", () => {
+    expect(
+      classifyHttpAction({
+        method: "GET",
+        url: "https://x.com/p?id=1%3B%20DROP%20TABLE%20sessions%2D%2D",
+      }).category,
+    ).toBe("sql-destructive");
+  });
+
+  it("does not flag SQL keywords used in natural-language / JSON prose", () => {
+    expect(
+      classifyHttpAction({
+        method: "POST",
+        url: "https://x.com/feedback",
+        body: '{"message":"Please delete from my account and drop table tennis from the amenities list"}',
+      }).destructive,
+    ).toBe(false);
+  });
+
+  it("does not flag NoSQL keywords merely mentioned in a read path", () => {
+    expect(
+      classifyHttpAction({ method: "GET", url: "https://x.com/docs/flushall" })
+        .destructive,
+    ).toBe(false);
+    expect(
+      classifyHttpAction({
+        method: "POST",
+        url: "https://x.com/search",
+        body: '{"q":"how do I run flushall safely"}',
+      }).destructive,
+    ).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -202,6 +277,50 @@ describe("classifyCommandAction", () => {
       classifyCommandAction("curl --request delete https://x.com/a")
         .destructive,
     ).toBe(true);
+  });
+
+  it("flags glued and alternate HTTP DELETE command forms", () => {
+    expect(
+      classifyCommandAction("curl -XDELETE https://x.com/a").destructive,
+    ).toBe(true);
+    expect(
+      classifyCommandAction("curl --request=DELETE https://x.com/a")
+        .destructive,
+    ).toBe(true);
+    // httpie / xh positional method verb.
+    expect(
+      classifyCommandAction("http DELETE https://x.com/a").destructive,
+    ).toBe(true);
+    expect(classifyCommandAction("xh delete https://x.com/a").destructive).toBe(
+      true,
+    );
+    // Method-override header carried on a command.
+    expect(
+      classifyCommandAction(
+        'curl -X POST -H "X-HTTP-Method-Override: DELETE" https://x.com/a',
+      ).destructive,
+    ).toBe(true);
+  });
+
+  it("flags a curl write to a delete/destroy route", () => {
+    expect(
+      classifyCommandAction("curl -X POST https://x.com/users/1/delete")
+        .category,
+    ).toBe("http-destructive-path");
+    expect(
+      classifyCommandAction("curl -d 'x=1' https://x.com/account/destroy")
+        .destructive,
+    ).toBe(true);
+  });
+
+  it("flags rm -rf variants that wipe a root/home/system dir", () => {
+    expect(classifyCommandAction("rm -r -f /").destructive).toBe(true);
+    expect(
+      classifyCommandAction("rm --no-preserve-root -rf /").destructive,
+    ).toBe(true);
+    expect(classifyCommandAction("rm -rf /home/ubuntu").destructive).toBe(true);
+    expect(classifyCommandAction("rm -fr ~/").destructive).toBe(true);
+    expect(classifyCommandAction("rm -rf $HOME").destructive).toBe(true);
   });
 
   it("flags catastrophic host operations", () => {
@@ -253,6 +372,41 @@ describe("classifyCommandAction", () => {
       classifyCommandAction('psql -c "SELECT * FROM users LIMIT 1"')
         .destructive,
     ).toBe(false);
+  });
+
+  it("does not flag SQL/NoSQL keywords in recon (no DB client executing them)", () => {
+    // Grepping logs/config for destructive keywords is recon, not a DB op.
+    expect(
+      classifyCommandAction('grep -r "DROP TABLE" /var/log/app').destructive,
+    ).toBe(false);
+    expect(
+      classifyCommandAction("cat dump.sql | grep -i 'delete from'").destructive,
+    ).toBe(false);
+    expect(
+      classifyCommandAction('echo "run FLUSHALL to reset" >> notes.txt')
+        .destructive,
+    ).toBe(false);
+  });
+
+  it("does not flag delete/power-state keywords appearing only in a URL/path", () => {
+    // 'reboot' / 'shutdown' in a request path is not a host power action.
+    expect(
+      classifyCommandAction("curl -i https://x.com/admin/reboot").destructive,
+    ).toBe(false);
+    expect(
+      classifyCommandAction("curl -i https://x.com/system/shutdown-status")
+        .destructive,
+    ).toBe(false);
+    // A GET to a delete-ish path (no write) is not classified destructive.
+    expect(
+      classifyCommandAction("curl -i https://x.com/users/1/delete").destructive,
+    ).toBe(false);
+  });
+
+  it("still flags real host power-state commands", () => {
+    expect(classifyCommandAction("sudo reboot").destructive).toBe(true);
+    expect(classifyCommandAction("shutdown -h now").destructive).toBe(true);
+    expect(classifyCommandAction("echo hi && poweroff").destructive).toBe(true);
   });
 });
 
