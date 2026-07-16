@@ -28,6 +28,7 @@ import type { ApprovalGate } from "../../operator";
 import type { PromptInjectionLibrary } from "../../prompt-injections";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
+import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
@@ -106,6 +107,13 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** The target URL / host — passed to browser tools for context */
   target?: string;
+
+  /**
+   * gRPC context when the target is a gRPC method rather than an HTTP
+   * endpoint. Forwarded into the {@link ToolContext} so `spawn_pentest_agent`
+   * can hand it down to spawned workers.
+   */
+  grpc?: GrpcPentestContext;
 
   /**
    * Which tools the agent is allowed to use.

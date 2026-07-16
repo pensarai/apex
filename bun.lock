@@ -19,7 +19,7 @@
         "@opentelemetry/api": "^1.9.1",
         "@opentui/core": "^0.1.107",
         "@opentui/react": "^0.1.107",
-        "@pensar/surface": "0.2.2",
+        "@pensar/surface": "0.3.0",
         "@playwright/mcp": "^0.0.54",
         "ai": "^6.0.208",
         "camoufox-js": "^0.11.1",
@@ -466,7 +466,7 @@
 
     "@oxc-resolver/binding-win32-x64-msvc": ["@oxc-resolver/binding-win32-x64-msvc@11.21.3", "", { "os": "win32", "cpu": "x64" }, "sha512-H7BCt/VnS9hnmMp42eGhZ99izSCRvlnWwy/N71K1/J8QoExwY4262Z8QiEkMDtduRJrztayDxETTckmUuAVL9Q=="],
 
-    "@pensar/surface": ["@pensar/surface@0.2.2", "", { "dependencies": { "js-yaml": "^4.1.1" }, "peerDependencies": { "typescript": "^5" }, "bin": { "surface": "dist/cli.js" } }, "sha512-8EmtJ0YaoUdXEsDwpaxCDnQU7jJ4M3BsZUoTjaR7l73J16cJdZhS/jXASRVhZGgGcxAZJsnLp0Or2rGi6u8XWw=="],
+    "@pensar/surface": ["@pensar/surface@0.3.0", "", { "dependencies": { "js-yaml": "^4.1.1" }, "peerDependencies": { "typescript": "^5" }, "bin": { "surface": "dist/cli.js" } }, "sha512-ahqegzJhaJaF4jKXtRzFeC0YlNciRzyO4P6Xli6Cl5Pfs0Fj0D1flX9cIbbMuxKom/uU8+gZzwu2+N5IWNQ0Ww=="],
 
     "@pinojs/redact": ["@pinojs/redact@0.4.0", "", {}, "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="],
 

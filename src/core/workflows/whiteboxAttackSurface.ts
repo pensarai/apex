@@ -719,6 +719,8 @@ function assetRecordToEndpoint(
     pentestObjectives: record.pentestObjectives ?? [],
     riskScore: record.riskScore,
     threatModel: record.threatModel,
+    transport: record.transport,
+    grpc: record.grpc,
   });
 
   return parsed.success ? parsed.data : null;
@@ -937,6 +939,15 @@ Find ALL API endpoints **whose route definitions live in this application's sour
 - **Rails**: routes.rb API namespaces, resources, controller actions
 - **Spring**: @GetMapping, @PostMapping, @PutMapping, @DeleteMapping, @RequestMapping
 - **Go**: http.HandleFunc, mux.Handle, gin router methods
+- **gRPC**: \`.proto\` service definitions (\`service X { rpc Method (Req) returns (Resp); }\`), \`buf.yaml\`/\`buf.gen.yaml\`, or generated gRPC stubs
+
+### gRPC / Connect services — do NOT flatten into HTTP paths
+A gRPC method looks like a path (\`/package.Service/Method\`) but is NOT an HTTP route. When this app defines gRPC/Connect services, document **one \`document_endpoint\` per \`rpc\` method** with:
+- **endpointType**: \`"api-endpoint"\` (a gRPC method is still an API endpoint)
+- **transport**: \`"grpc"\` (or \`"grpc_web"\` / \`"connect"\` if the service is served that way)
+- **routePath**: the wire path \`/package.Service/Method\` (e.g. \`/account.v1.AccountService/GetAccount\`) — do NOT prepend a host
+- **grpc**: \`{ serviceFqn, method, streamingType, schemaSource: "proto" }\` where \`serviceFqn\` is the fully-qualified service (\`account.v1.AccountService\`), \`method\` is the rpc name, and \`streamingType\` is one of \`unary | server_stream | client_stream | bidi\` (based on the \`stream\` keywords in the rpc signature). Set \`reflectionAvailable: true\` if the server registers the gRPC reflection service.
+- If a REST/GraphQL gateway (e.g. grpc-gateway annotations, a GraphQL resolver, a Connect handler) maps to this rpc, set \`grpc.frontingGatewayOperation\` — prefer marking this whenever a gateway mapping exists, since it's what lets us later compute "shadow" methods (proto methods reachable directly but NOT exposed via the gateway, where auth checks usually live).
 
 ### How to document each endpoint
 For each **unique route path**, call \`document_endpoint\` with:
@@ -950,6 +961,7 @@ For each **unique route path**, call \`document_endpoint\` with:
 - **handler**: Handler function name (comma-separate if multiple handlers for different methods)
 - **authRequired**: Whether the endpoint requires authentication (true if ANY method requires it)
 - **riskLevel**: CRITICAL for auth/payment/admin, HIGH for user data mutations, MEDIUM for general, LOW for read-only public
+- **transport / grpc**: for gRPC / Connect / gRPC-Web methods, this checklist is not enough — ALSO pass the \`transport\` and \`grpc\` fields exactly as described in the "gRPC / Connect services" section above. Never document an \`rpc\` as a plain HTTP route.
 
 **CRITICAL: ONE entry per route path.** If \`/api/products\` has GET (list) and POST (create), document it as ONE entry with \`method: ["GET", "POST"]\`. Do NOT create two separate entries.
 

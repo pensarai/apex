@@ -11,6 +11,7 @@ import type { FindingsRegistry } from "../../../findings/registry";
 import type { PromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
+import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { StepTraceWriter } from "../trace";
 import type { PersistentShell } from "./persistentShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
@@ -32,6 +33,13 @@ export type ToolContext = {
 
   /** The target URL / host — needed by browser tools for context */
   target?: string;
+
+  /**
+   * gRPC context when the owning agent's target is a gRPC method. Set on a
+   * pentest orchestrator so `spawn_pentest_agent` forwards it to workers,
+   * which then run the gRPC test battery instead of HTTP-style tests.
+   */
+  grpc?: GrpcPentestContext;
 
   /** Signal to cancel in-flight operations */
   abortSignal?: AbortSignal;

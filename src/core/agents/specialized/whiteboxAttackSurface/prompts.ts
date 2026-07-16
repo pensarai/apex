@@ -246,6 +246,7 @@ Your primary search tool. Use it to find route definitions, middleware, controll
 - **Always set \`routePath\`** to the HTTP route (e.g., \`/api/users\`). This is the URL path a client requests — NOT a source-file path.
 - **Always set \`file\`** to the source-code file (e.g., \`src/routes/users.ts\`). This is NOT the HTTP route.
 - **Always set \`handler\`** to the function name, and \`authRequired\` to indicate auth requirements.
+- **gRPC methods:** when an endpoint is a gRPC RPC rather than a plain HTTP route, set \`routePath\` to the wire path \`/package.Service/Method\`, set \`transport\` to \`"grpc"\` (or \`"grpc_web"\`/\`"connect"\`), and populate the \`grpc\` object (\`serviceFqn\`, \`method\`, \`streamingType\`). Carry these same \`transport\`/\`grpc\` fields into the matching endpoint entry in \`submit_results\` — without them the swarm tests the wire path as HTTP instead of running the gRPC methodology.
 
 Call these tools throughout your analysis as you discover apps and endpoints — don't wait until the end.
 
@@ -288,8 +289,9 @@ For each app you identified, spawn a coding agent with a detailed objective. The
    - Source-code file in \`file\` (e.g., \`src/routes/users.ts\`) — this is NOT the route
    - Line number in \`line\`
    - Auth requirement in \`authRequired\`
+   - For gRPC RPCs: \`transport\` (\`"grpc"\`/\`"grpc_web"\`/\`"connect"\`) and a \`grpc\` object (\`serviceFqn\`, \`method\`, \`streamingType\`), with \`routePath\` set to the wire path \`/package.Service/Method\`
 
-**IMPORTANT:** Tell each coding agent to set \`appName\` on every \`document_endpoint\` call so endpoints are organized by application.
+**IMPORTANT:** Tell each coding agent to set \`appName\` on every \`document_endpoint\` call so endpoints are organized by application. Preserve any \`transport\`/\`grpc\` fields the coding agents report on gRPC endpoints when you assemble the final \`submit_results\` payload — dropping them makes the swarm test gRPC wire paths as HTTP.
 
 ## Phase 3: COVERAGE DOUBLE-CHECK (do this yourself — DO NOT SKIP)
 
