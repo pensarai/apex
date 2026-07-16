@@ -283,6 +283,17 @@ export class OffensiveSecurityAgent<TResult = void> {
           extraHttpHeaders: stripBrowserManagedHeaders(sessionHeaders),
           display: input.display,
         });
+      // Owned sessions aren't wired through createBrowserTools' abort path
+      // (existingSession skips that listener). Disconnect on abort so timeout/
+      // pause reaps Camoufox even when consume()'s drain is still unwinding.
+      if (this.ownsBrowserSession && this.abortSignal) {
+        const onAbort = () => {
+          void this.disconnectOwnedBrowser();
+        };
+        if (this.abortSignal.aborted) onAbort();
+        else
+          this.abortSignal.addEventListener("abort", onAbort, { once: true });
+      }
     } else {
       this.ownsBrowserSession = false;
     }
@@ -1106,6 +1117,17 @@ export class OffensiveSecurityAgent<TResult = void> {
     if (!this.ownsBrowserSession || !this.browserSession) return;
     this.browserDisconnected = true;
     await this.browserSession.disconnect().catch(() => {});
+  }
+
+  /**
+   * Idempotent teardown for hosts that abort before `consume()` settles
+   * (Console `settleOnAbort` on timeout/pause). Force-disconnects the owned
+   * browser, then awaits the drain so Camoufox is reaped before the next
+   * endpoint starts.
+   */
+  async abortAndDrain(): Promise<void> {
+    await this.disconnectOwnedBrowser();
+    await this.drained.catch(() => {});
   }
 
   /**

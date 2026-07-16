@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_OPENAI_REASONING_EFFORT,
+  getOpenAIReasoningEfforts,
   modelSupportsOpenAIReasoning,
   normalizeOpenAIReasoningEffort,
 } from "../ai";
@@ -147,6 +148,15 @@ describe("getMaxOutputTokens", () => {
     expect(getModelInfo("gpt-5.5-2026-04-23").contextLength).toBe(1_050_000);
   });
 
+  it("registers the GPT-5.6 family with its 1.05M context window", () => {
+    for (const id of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+      expect(getModelInfo(id)).toMatchObject({
+        provider: "openai",
+        contextLength: 1_050_000,
+      });
+    }
+  });
+
   it("recognizes Google Gemini family budgets", () => {
     expect(getMaxOutputTokens("gemini-2.5-pro")).toBe(65_000);
     expect(getMaxOutputTokens("gemini-2.5-flash")).toBe(65_000);
@@ -206,6 +216,20 @@ describe("prefersSequentialToolCalls", () => {
 });
 
 describe("OpenAI reasoning effort support", () => {
+  it("supports the requested GPT-5.6 effort levels", () => {
+    expect(getOpenAIReasoningEfforts("gpt-5.6-sol")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+    ]);
+    expect(modelSupportsOpenAIReasoning("gpt-5.6-terra")).toBe(true);
+    expect(modelSupportsOpenAIReasoning("gpt-5.6-luna")).toBe(true);
+    expect(normalizeOpenAIReasoningEffort("gpt-5.6-sol", "ultra")).toBe("max");
+  });
+
   it("supports GPT-5.5 and o-series reasoning models", () => {
     expect(modelSupportsOpenAIReasoning("gpt-5.5")).toBe(true);
     expect(modelSupportsOpenAIReasoning("gpt-5.5-2026-04-23")).toBe(true);
