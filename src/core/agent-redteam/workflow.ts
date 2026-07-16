@@ -193,6 +193,11 @@ export async function runAgentRedTeamWorkflow(
       observationByAttempt,
     );
     if (!attempt) continue;
+    const attemptCanaryValue =
+      attempt.oracle.canaryCredentialId && input.credentialManager
+        ? input.credentialManager.resolve(attempt.oracle.canaryCredentialId)
+            ?.canary
+        : protectedCanaryValue;
     const observation = recordAgentRedTeamObservation({
       attempt,
       responseText: observationInput.responseText,
@@ -201,7 +206,7 @@ export async function runAgentRedTeamWorkflow(
       latencyMs: observationInput.latencyMs,
       inputTokens: observationInput.inputTokens,
       outputTokens: observationInput.outputTokens,
-      protectedCanaryValue,
+      protectedCanaryValue: attemptCanaryValue,
       sessionRootPath: input.sessionRootPath,
     });
     observationByAttempt.set(attempt.id, observation);
