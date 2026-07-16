@@ -315,6 +315,9 @@ describe("classifyCommandAction", () => {
 
   it("flags rm -rf variants that wipe a root/home/system dir", () => {
     expect(classifyCommandAction("rm -r -f /").destructive).toBe(true);
+    expect(classifyCommandAction("rm --recursive --force /").destructive).toBe(
+      true,
+    );
     expect(
       classifyCommandAction("rm --no-preserve-root -rf /").destructive,
     ).toBe(true);
@@ -327,18 +330,6 @@ describe("classifyCommandAction", () => {
     expect(classifyCommandAction("rm -rf /").destructive).toBe(true);
     expect(classifyCommandAction("rm -rf ~").destructive).toBe(true);
     expect(classifyCommandAction("rm -rf /etc").category).toBe(
-      "host-destructive",
-    );
-    // Split flags, long options, other flags, and sensitive-prefix subpaths
-    // are all equivalent host wipes.
-    expect(classifyCommandAction("rm -r -f /").destructive).toBe(true);
-    expect(classifyCommandAction("rm --recursive --force /").destructive).toBe(
-      true,
-    );
-    expect(
-      classifyCommandAction("rm --no-preserve-root -rf /").destructive,
-    ).toBe(true);
-    expect(classifyCommandAction("rm -rf /home/ubuntu").category).toBe(
       "host-destructive",
     );
     expect(classifyCommandAction("mkfs.ext4 /dev/sda1").destructive).toBe(true);

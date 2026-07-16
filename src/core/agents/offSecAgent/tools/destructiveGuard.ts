@@ -457,13 +457,10 @@ export function isDestructiveTestingAllowed(ctx: ToolContext): boolean {
  * authorized; otherwise throws {@link DestructiveActionError} for a
  * destructive-classified request.
  *
- * Trust boundary: this classifies the AGENT-AUTHORED request — method, url,
- * headers, and a literal string body. A prompt-injection ref body is delivered
- * by reference to a curated, operator-provided payload library (the agent never
- * authors its content), so it is intentionally out of scope here; re-checking
- * the resolved payload would break prompt-injection testing without adding real
- * safety (the library is not agent-controlled). Method / override / delete-path
- * detection does not depend on the body and is unaffected by resolution.
+ * `http_request` calls this on the FULLY-RESOLVED request (after any
+ * prompt-injection ref in the body expands to a concrete string), so a resolved
+ * payload carrying destructive SQL/NoSQL is classified before the request is
+ * sent. `body` is only inspected when it is a string.
  */
 export function assertHttpActionAllowed(
   input: {
