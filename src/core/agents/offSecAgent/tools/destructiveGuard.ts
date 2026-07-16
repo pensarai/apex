@@ -74,10 +74,13 @@ const NOSQL_DESTRUCTIVE_PATTERN =
  */
 const HOST_DESTRUCTIVE_PATTERNS: Array<{ id: string; re: RegExp }> = [
   // rm -rf targeting a filesystem root, home, or wildcard root (`/`, `/*`,
-  // `~`, `$HOME`, `/etc`, `/var`, ...). Flags may appear in any order.
+  // `~`, `$HOME`, `/etc`, `/var`, `/home/ubuntu`, ...). The recursive and force
+  // flags may appear in any order, combined (`-rf`/`-fr`), split (`-r -f`), or
+  // long-form (`--recursive --force`), interleaved with other flags such as
+  // `--no-preserve-root`; sensitive prefixes match with or without a subpath.
   {
     id: "rm-rf-root",
-    re: /\brm\s+(?:-[a-z]*\s+)*-?[a-z]*(?:rf|fr)[a-z]*\s+(?:--\s+)?(?:['"]?(?:\/(?:\*|etc|var|usr|bin|boot|lib|root|home|sys|proc|dev)?|~|\$HOME)(?:['"\s]|$))/i,
+    re: /\brm\s+(?=(?:-\S+\s+)*(?:-\w*r\w*|--recursive))(?=(?:-\S+\s+)*(?:-\w*f\w*|--force))(?:-\S+\s+)*(?:--\s+)?(?:['"]?(?:\/(?:\*|(?:etc|var|usr|bin|boot|lib|root|home|sys|proc|dev)(?:\/\S*)?)?|~|\$HOME)(?:['"\s/]|$))/i,
   },
   // Raw block-device write / disk imaging.
   { id: "dd-to-device", re: /\bdd\b[^\n;|&]*\bof=\s*['"]?\/dev\//i },

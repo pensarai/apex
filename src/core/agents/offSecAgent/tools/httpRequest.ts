@@ -16,10 +16,7 @@ import {
   resolvePromptInjectionRefs,
 } from "../../../prompt-injections";
 import { agentLogsDir } from "./agentScratch";
-import {
-  assertHttpActionAllowed,
-  DestructiveActionError,
-} from "./destructiveGuard";
+import { assertHttpActionAllowed } from "./destructiveGuard";
 import {
   assertUrlInScope,
   resolverSessionFromCtx,
@@ -196,12 +193,8 @@ COMMON TESTING PATTERNS:
 
       try {
         assertUrlInScope(url, ctx);
-        assertHttpActionAllowed({ method, url, body, headers }, ctx);
       } catch (e) {
-        if (
-          e instanceof ScopeViolationError ||
-          e instanceof DestructiveActionError
-        ) {
+        if (e instanceof ScopeViolationError) {
           return {
             success: false,
             error: e.message,
@@ -239,6 +232,15 @@ COMMON TESTING PATTERNS:
             : String(
                 resolvePromptInjectionRefs(body as HttpRequestBody, library),
               );
+
+        // Enforce the destructive-action guard on the fully resolved body and
+        // headers — a prompt-injection ref expands to a concrete string only
+        // here, so classifying before this point would miss destructive
+        // SQL/NoSQL payloads delivered via a ref.
+        assertHttpActionAllowed(
+          { method, url, body: resolvedBody, headers },
+          ctx,
+        );
       } catch (e) {
         return {
           success: false,
