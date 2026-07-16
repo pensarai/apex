@@ -594,7 +594,8 @@ export async function createAgentRedTeamCampaign(
       const control = campaign.attempts.find(
         (attempt) =>
           attempt.techniqueId === seedInput.techniqueId &&
-          attempt.variant === "control",
+          attempt.variant === "control" &&
+          attempt.impact === goal.impact,
       );
       const attempt = makeAttempt({
         campaignId,
