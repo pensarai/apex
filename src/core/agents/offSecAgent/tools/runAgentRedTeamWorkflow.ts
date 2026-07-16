@@ -16,6 +16,7 @@ import {
   runAgentRedTeamWorkflow as runWorkflow,
   sha256,
 } from "../../../agent-redteam";
+import { createAgentRedTeamSemanticJudge } from "../../specialized/agentRedTeamJudge";
 import type { ToolContext } from "./types";
 
 const vectorSchema = z.enum(
@@ -136,6 +137,15 @@ This tool never resolves raw external-library payloads. Library attempts contain
             message: `Protected canary credential ${input.protectedCanaryCredentialId} is unavailable or has no canary value.`,
           };
         }
+        const semanticJudge = ctx.model
+          ? createAgentRedTeamSemanticJudge({
+              model: ctx.model,
+              authConfig: ctx.authConfig,
+              abortSignal: ctx.abortSignal,
+              openAIReasoningEffort: ctx.openAIReasoningEffort,
+              sessionId: ctx.session.id,
+            })
+          : undefined;
         const result = await runWorkflow({
           target,
           campaignSeed: input.campaignSeed,
@@ -159,6 +169,7 @@ This tool never resolves raw external-library payloads. Library attempts contain
           promptInjectionSeedTags: input.promptInjectionSeedTags,
           maxPromptInjectionSeeds: input.maxPromptInjectionSeeds,
           observations: input.observations,
+          semanticJudge,
         });
 
         return {

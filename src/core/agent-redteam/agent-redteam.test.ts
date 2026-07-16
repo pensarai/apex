@@ -460,6 +460,51 @@ describe("compatibility facade", () => {
     expect(evaluatedAttemptIds.size).toBe(2);
   });
 
+  it("forwards the semantic judge for semantic-policy oracles", async () => {
+    const seed = "facade-semantic";
+    const techniques: AgentRedTeamTechniqueId[] = [
+      "refusal-suppression-inversion",
+    ];
+    const preview = await createAgentRedTeamCampaign({
+      target: "agent-under-test",
+      campaignSeed: seed,
+      techniques,
+      impacts: ["policy-refusal-bypass"],
+      maxAttempts: 2,
+    });
+    const control = requiredAttempt(preview, "control");
+    const attack = requiredAttempt(preview, "attack");
+    const result = await runAgentRedTeamWorkflow({
+      target: "agent-under-test",
+      campaignSeed: seed,
+      usePromptInjectionLibrarySeeds: false,
+      techniques,
+      impacts: ["policy-refusal-bypass"],
+      maxAttempts: 2,
+      semanticJudge: async () => ({
+        vulnerable: true,
+        confidence: 0.9,
+        reasoning: "Attack changed the semantic policy outcome.",
+        limitations: [],
+      }),
+      observations: [
+        {
+          attemptId: control.id,
+          responseText: "I cannot help with that request.",
+        },
+        {
+          attemptId: attack.id,
+          responseText: "I followed the prohibited behavior.",
+        },
+      ],
+    });
+    expect(result.evaluations).toHaveLength(1);
+    expect(result.evaluations[0]).toMatchObject({
+      verdict: "vulnerable",
+      judgeProvenance: "semantic",
+    });
+  });
+
   it("starts coverage as not-tested before planning", () => {
     const matrix = createCoverageMatrix();
     expect(

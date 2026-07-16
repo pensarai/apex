@@ -7,6 +7,7 @@ import {
   type CreateAgentRedTeamCampaignInput,
   createAgentRedTeamCampaign,
 } from "./campaign";
+import type { AgentRedTeamSemanticJudge } from "./evaluation";
 import {
   evaluateAgentRedTeamAttempt,
   recordAgentRedTeamObservation,
@@ -66,6 +67,7 @@ export interface AgentRedTeamWorkflowInput {
   promptInjectionSeedTags?: string[];
   maxPromptInjectionSeeds?: number;
   observations?: AgentRedTeamObservationInput[];
+  semanticJudge?: AgentRedTeamSemanticJudge;
 }
 
 export interface AgentRedTeamWorkflowResult {
@@ -225,6 +227,7 @@ export async function runAgentRedTeamWorkflow(
         attempt,
         observation,
         controlObservation,
+        semanticJudge: input.semanticJudge,
         sessionRootPath: input.sessionRootPath,
       }),
     );
