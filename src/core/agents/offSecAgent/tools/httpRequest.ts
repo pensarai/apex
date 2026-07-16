@@ -17,6 +17,10 @@ import {
 } from "../../../prompt-injections";
 import { agentLogsDir } from "./agentScratch";
 import {
+  assertHttpActionAllowed,
+  DestructiveActionError,
+} from "./destructiveGuard";
+import {
   assertUrlInScope,
   resolverSessionFromCtx,
   ScopeViolationError,
@@ -190,8 +194,12 @@ COMMON TESTING PATTERNS:
     }): Promise<HttpRequestResult> => {
       try {
         assertUrlInScope(url, ctx);
+        assertHttpActionAllowed({ method, url, body }, ctx);
       } catch (e) {
-        if (e instanceof ScopeViolationError) {
+        if (
+          e instanceof ScopeViolationError ||
+          e instanceof DestructiveActionError
+        ) {
           return {
             success: false,
             error: e.message,

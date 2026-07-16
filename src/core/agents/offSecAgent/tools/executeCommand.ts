@@ -10,6 +10,10 @@ import {
 } from "../../../prompt-injections";
 import { agentLogsDir } from "./agentScratch";
 import {
+  assertCommandActionAllowed,
+  DestructiveActionError,
+} from "./destructiveGuard";
+import {
   assertCommandInScope,
   extractHostsFromCommand,
   resolverSessionFromCtx,
@@ -344,8 +348,12 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
       try {
         assertCommandInScope(command, ctx);
+        assertCommandActionAllowed(command, ctx);
       } catch (e) {
-        if (e instanceof ScopeViolationError) {
+        if (
+          e instanceof ScopeViolationError ||
+          e instanceof DestructiveActionError
+        ) {
           return {
             success: false,
             error: e.message,
