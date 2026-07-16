@@ -225,28 +225,8 @@ The following credentials are configured for this domain:
       prompt += `\n`;
       if (cred.context) prompt += `- Context: ${cred.context}\n`;
       if (cred.username) prompt += `- Username: ${cred.username}\n`;
-      if (cred.password) prompt += `- Password: ${cred.password}\n`;
-      if (cred.apiKey) prompt += `- API Key: ${cred.apiKey}\n`;
       if (cred.loginUrl) prompt += `- Login URL: ${cred.loginUrl}\n`;
-      if (cred.tokens) {
-        if (cred.tokens.bearerToken)
-          prompt += `- Bearer Token: ${cred.tokens.bearerToken}\n`;
-        if (cred.tokens.cookies)
-          prompt += `- Cookies: ${cred.tokens.cookies}\n`;
-        if (cred.tokens.sessionToken)
-          prompt += `- Session Token: ${cred.tokens.sessionToken}\n`;
-        if (
-          cred.tokens.customHeaders &&
-          Object.keys(cred.tokens.customHeaders).length > 0
-        ) {
-          prompt += `- Custom Headers:\n`;
-          for (const [key, value] of Object.entries(
-            cred.tokens.customHeaders,
-          )) {
-            prompt += `  - ${key}: ${value}\n`;
-          }
-        }
-      }
+      // Secrets omitted — referenced by credential ID via tools, never in prompt text.
       prompt += `\n`;
     }
   }
@@ -265,29 +245,7 @@ The following credentials are configured for this domain:
       prompt += `- Context: ${input.credentials?.context}
 `;
     }
-    const tokens = input.credentials!.tokens!;
-    if (tokens.bearerToken) {
-      prompt += `- Bearer Token: ${tokens.bearerToken}
-  Use as: Authorization: Bearer <token>
-`;
-    }
-    if (tokens.cookies) {
-      prompt += `- Cookies: ${tokens.cookies}
-  Use as: Cookie header value
-`;
-    }
-    if (tokens.sessionToken) {
-      prompt += `- Session Token: ${tokens.sessionToken}
-`;
-    }
-    if (tokens.customHeaders && Object.keys(tokens.customHeaders).length > 0) {
-      prompt += `- Custom Headers:
-`;
-      for (const [key, value] of Object.entries(tokens.customHeaders)) {
-        prompt += `  - ${key}: ${value}
-`;
-      }
-    }
+    // Secrets omitted — session validated by credential ID via tools, never in prompt text.
     prompt += `
 **Instructions for Token Verification:**
 1. Use \`validate_session\` with the provided tokens to test if they grant access
@@ -316,14 +274,7 @@ The following credentials are configured for this domain:
       prompt += `- Username: ${input.credentials.username}
 `;
     }
-    if (input.credentials.password) {
-      prompt += `- Password: ${input.credentials.password}
-`;
-    }
-    if (input.credentials.apiKey) {
-      prompt += `- API Key: ${input.credentials.apiKey}
-`;
-    }
+    // Secrets omitted — referenced by credential ID via tools, never in prompt text.
     if (input.credentials.loginUrl) {
       prompt += `- Login URL Hint: ${input.credentials.loginUrl}
 `;

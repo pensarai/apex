@@ -133,6 +133,7 @@ Each application creates a JSON file in the apps directory for tracking and anal
         .optional()
         .describe(
           "Base URL / domain this application is associated with. Only provide this if you can deterministically derive it from evidence — source code, IaC, config, Known Domains list, or live discovery. " +
+            // biome-ignore lint/suspicious/noTemplateCurlyInString: literal ${stage} shown to the model as example prompt text
             "Substituting a known environment/stage name into an IaC template IS deterministic (e.g. IaC defines '${stage}-bucket' and environments include 'production' → 'https://production-bucket.s3.amazonaws.com' is valid). " +
             "Do NOT invent domains with no supporting evidence — if no domain can be derived, omit this field. " +
             "Must be a full URL with scheme when provided. " +

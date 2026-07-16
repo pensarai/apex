@@ -77,6 +77,9 @@ export type ToolContext = {
    */
   credentialManager?: CredentialManager;
 
+  /** Secret values injected into the shell env; scrubbed from execute_command output. */
+  secretValues?: string[];
+
   /**
    * Long-lived bash process shared across execute_command calls.
    * Environment variables, working directory, and background processes

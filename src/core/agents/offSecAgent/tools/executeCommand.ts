@@ -172,6 +172,21 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+/**
+ * Redact known secret values from command output. Longest-first to avoid
+ * partial masking; skip values under 6 chars so they can't corrupt output.
+ */
+export function redactSecretValues(text: string, secrets?: string[]): string {
+  if (!secrets?.length) return text;
+  let out = text;
+  for (const s of [...secrets]
+    .filter((v) => v && v.length >= 6)
+    .sort((a, b) => b.length - a.length)) {
+    out = out.split(s).join("[REDACTED]");
+  }
+  return out;
+}
+
 function wrapCommandWithEnv(
   command: string,
   envVars?: Record<string, string>,
@@ -395,10 +410,12 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
-      const redact = (value: string) =>
-        promptInjectionLibrary
+      const redact = (value: string) => {
+        const stripped = promptInjectionLibrary
           ? redactPromptInjectionPayloads(value, promptInjectionLibrary)
           : value;
+        return redactSecretValues(stripped, ctx.secretValues);
+      };
 
       // Sandbox mode: route execution through the sandbox
       if (ctx.sandbox) {

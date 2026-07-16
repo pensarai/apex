@@ -292,6 +292,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    */
   environmentVariables?: Record<string, string>;
 
+  /** Secret values to scrub from execute_command output. Forwarded into the {@link ToolContext}. */
+  secretValues?: string[];
+
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
 
@@ -409,6 +412,9 @@ export interface SpecializedAgentInput {
    * Forwarded to the underlying {@link OffensiveSecurityAgentInput}.
    */
   environmentVariables?: Record<string, string>;
+
+  /** Secret values to scrub from execute_command output. Forwarded into the {@link ToolContext}. */
+  secretValues?: string[];
 
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
