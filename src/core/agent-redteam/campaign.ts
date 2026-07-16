@@ -580,14 +580,16 @@ export async function createAgentRedTeamCampaign(
         campaignSeed,
         seedInput.seed.id,
       );
-      // Reuse a control that already tests this technique+impact; otherwise mint
-      // one so the seed has a matching baseline and cannot be scored vulnerable
-      // without a control comparison.
+      // Reuse a control only when it tests the same delivery context (technique,
+      // impact, surface, vector); otherwise mint one so the seed has a matching
+      // baseline and cannot be scored vulnerable without a control comparison.
       const existingControl = campaign.attempts.find(
         (attempt) =>
           attempt.techniqueId === seedInput.techniqueId &&
           attempt.variant === "control" &&
-          attempt.impact === goal.impact,
+          attempt.impact === goal.impact &&
+          attempt.surface === seedInput.surface &&
+          attempt.vector === seedInput.vector,
       );
       const slotsNeeded = existingControl ? 1 : 2;
       if (campaign.attempts.length + slotsNeeded > expansionLimit) break;

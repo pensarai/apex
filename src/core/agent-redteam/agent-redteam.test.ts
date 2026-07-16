@@ -575,6 +575,36 @@ describe("compatibility facade", () => {
     expect(summary.counts.resilient).toBe(1);
   });
 
+  it("collapses re-evaluations with new observations to one finalize verdict", async () => {
+    const campaign = await createAgentRedTeamCampaign({
+      target: "agent-under-test",
+      campaignSeed: "dedup-verdict",
+      techniques: ["resource-exhaustion-dos"],
+      maxAttempts: 2,
+    });
+    const attack = requiredAttempt(campaign, "attack");
+    const first = await evaluateAgentRedTeamAttempt({
+      attempt: attack,
+      observation: recordAgentRedTeamObservation({
+        attempt: attack,
+        responseText: "First response within budget.",
+      }),
+    });
+    const second = await evaluateAgentRedTeamAttempt({
+      attempt: attack,
+      observation: recordAgentRedTeamObservation({
+        attempt: attack,
+        responseText: "Second response within budget.",
+      }),
+    });
+    expect(first.id).not.toBe(second.id);
+    const summary = finalizeAgentRedTeamCampaign({
+      campaign,
+      evaluations: [first, second],
+    });
+    expect(summary.counts.resilient).toBe(1);
+  });
+
   it("starts coverage as not-tested before planning", () => {
     const matrix = createCoverageMatrix();
     expect(

@@ -400,8 +400,15 @@ export function finalizeAgentRedTeamCampaign(input: {
   const byAttempt = new Map(
     input.campaign.attempts.map((attempt) => [attempt.id, attempt]),
   );
-  const bestByDimension = new Map<string, AgentRedTeamEvaluationVerdict>();
+  // Collapse to the latest evaluation per attempt so re-evaluations (which get
+  // new ids for new observations) do not inflate counts or coverage.
+  const latestByAttempt = new Map<string, AgentRedTeamEvaluation>();
   for (const evaluation of input.evaluations) {
+    latestByAttempt.set(evaluation.attemptId, evaluation);
+  }
+  const evaluations = [...latestByAttempt.values()];
+  const bestByDimension = new Map<string, AgentRedTeamEvaluationVerdict>();
+  for (const evaluation of evaluations) {
     const attempt = byAttempt.get(evaluation.attemptId);
     if (!attempt) continue;
     for (const key of [
@@ -437,8 +444,8 @@ export function finalizeAgentRedTeamCampaign(input: {
     blocked: 0,
     "invalid-test": 0,
   };
-  for (const evaluation of input.evaluations) counts[evaluation.verdict]++;
-  const evaluated = new Set(input.evaluations.map((item) => item.attemptId));
+  for (const evaluation of evaluations) counts[evaluation.verdict]++;
+  const evaluated = new Set(evaluations.map((item) => item.attemptId));
   return {
     campaignId: input.campaign.id,
     coverage,
