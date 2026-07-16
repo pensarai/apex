@@ -395,6 +395,12 @@ describe("compatibility facade", () => {
     });
     expect(result.attempts).toHaveLength(2);
     expect(result.evaluations).toHaveLength(1);
+    expect(result.coverage.techniques).toContainEqual(
+      expect.objectContaining({
+        id: "resource-exhaustion-dos",
+        status: "resilient",
+      }),
+    );
   });
 
   it("skips attack evaluation when the paired control was not observed", async () => {

@@ -11,6 +11,7 @@ import {
 import type { AgentRedTeamSemanticJudge } from "./evaluation";
 import {
   evaluateAgentRedTeamAttempt,
+  finalizeAgentRedTeamCampaign,
   recordAgentRedTeamObservation,
 } from "./evaluation";
 import { BUILTIN_AGENT_RED_TEAM_ABUSE_CHAINS } from "./scenarios";
@@ -26,6 +27,7 @@ import type {
   AgentRedTeamSurface,
   AgentRedTeamTechniqueId,
   AgentRedTeamVector,
+  CoverageItem,
 } from "./types";
 
 export interface AgentRedTeamSeedProviderStatus {
@@ -167,6 +169,30 @@ function selectObservationAttempt(
   );
 }
 
+// Overlay evaluated statuses onto planning coverage so consumers see completed
+// results while unobserved-but-planned dimensions keep their planned status.
+function mergeEvaluatedCoverage(
+  planning: AgentRedTeamCoverageMatrix,
+  evaluated: AgentRedTeamCoverageMatrix,
+): AgentRedTeamCoverageMatrix {
+  const overlay = <T extends string>(
+    base: CoverageItem<T>[],
+    evaluatedItems: CoverageItem<T>[],
+  ): CoverageItem<T>[] => {
+    const byId = new Map(evaluatedItems.map((item) => [item.id, item]));
+    return base.map((item) => {
+      const result = byId.get(item.id);
+      return result && result.status !== "not-tested" ? result : item;
+    });
+  };
+  return {
+    vectors: overlay(planning.vectors, evaluated.vectors),
+    impacts: overlay(planning.impacts, evaluated.impacts),
+    surfaces: overlay(planning.surfaces, evaluated.surfaces),
+    techniques: overlay(planning.techniques, evaluated.techniques),
+  };
+}
+
 /** Compatibility facade over the campaign lifecycle APIs. */
 export async function runAgentRedTeamWorkflow(
   input: AgentRedTeamWorkflowInput,
@@ -247,13 +273,20 @@ export async function runAgentRedTeamWorkflow(
     );
   }
 
+  const coverage = evaluations.length
+    ? mergeEvaluatedCoverage(
+        campaign.coverage,
+        finalizeAgentRedTeamCampaign({ campaign, evaluations }).coverage,
+      )
+    : campaign.coverage;
+
   const ledgerPath = input.sessionRootPath
     ? `${input.sessionRootPath}/agent-redteam/campaigns/${campaign.id}/attempts.jsonl`
     : undefined;
   return {
     campaignId: campaign.id,
     campaignSeed: campaign.seed,
-    coverage: campaign.coverage,
+    coverage,
     attempts: campaign.attempts,
     evaluations,
     ledgerPath,
