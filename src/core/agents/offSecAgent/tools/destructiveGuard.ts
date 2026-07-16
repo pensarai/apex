@@ -251,7 +251,27 @@ const CURL_WRITE_METHOD =
 const CURL_DATA_FLAG =
   /(?:^|\s)(?:-d|--data(?:-raw|-binary|-urlencode|-ascii)?|-F|--form|--json)\b/i;
 
-/** Classify an HTTP call expressed as a shell command (curl/wget/httpie/xh). */
+/**
+ * In-script HTTP DELETE nested inside `execute_command` (Node/Bun/Deno,
+ * Playwright, ts-node, etc.) — the path apex's http_request-level controls and
+ * the curl-based detection above both miss. The reliable signal is a DELETE
+ * method on an HTTP call, NOT the URL: the dangerous path is frequently built
+ * dynamically (`fetch(`/api/x/${id}`, …)` where `id` resolves to `undefined`),
+ * so it never contains a literal delete keyword.
+ *
+ * Two forms:
+ *  - a request-options object carrying `method: 'DELETE'` (fetch / axios config
+ *    / Playwright request options), paired with an HTTP-client token so a grep
+ *    for the literal string is not misclassified; and
+ *  - a positional client delete call (`axios.delete(`, `page.request.delete(`).
+ */
+const JS_METHOD_DELETE = /\bmethod\s*:\s*['"`]?\s*delete\b/i;
+const JS_HTTP_CLIENT_HINT =
+  /\b(?:fetch|axios|got|ky|superagent|needle|node-fetch|undici|phin|XMLHttpRequest|xhr)\b|\.\s*(?:request|open)\s*\(/i;
+const JS_CLIENT_DELETE_CALL =
+  /\b(?:axios|got|ky|superagent|needle|supertest|phin|page|apiContext|apiRequestContext|request)\s*(?:\.\s*\w+)*\.\s*delete\s*\(/i;
+
+/** Classify an HTTP call expressed as a shell command (curl/wget/httpie/xh, or an in-script fetch/axios). */
 function classifyCommandHttp(command: string): DestructiveClassification {
   const decoded = safeDecode(command);
 
@@ -263,6 +283,20 @@ function classifyCommandHttp(command: string): DestructiveClassification {
       category: "http-delete-method",
       ruleId: "cmd-http-delete",
       reason: "command issues an HTTP DELETE against the target",
+    };
+  }
+
+  // In-script HTTP DELETE (fetch/axios/Playwright) run via a JS runtime.
+  if (
+    (JS_METHOD_DELETE.test(command) && JS_HTTP_CLIENT_HINT.test(command)) ||
+    JS_CLIENT_DELETE_CALL.test(command)
+  ) {
+    return {
+      destructive: true,
+      category: "http-delete-method",
+      ruleId: "cmd-script-http-delete",
+      reason:
+        "command runs an in-script HTTP DELETE (fetch/axios/Playwright) against the target",
     };
   }
 

@@ -402,6 +402,82 @@ describe("classifyCommandAction", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Regression: in-script HTTP DELETE nested inside execute_command
+// (the Lilt multipart-delete vector — a fetch/axios/Playwright DELETE run via a
+// JS runtime, which curl-based and http_request-level controls both miss).
+// ---------------------------------------------------------------------------
+
+describe("in-script HTTP DELETE inside execute_command", () => {
+  // Encoding 1 — sanitized curl equivalent.
+  it("flags a curl DELETE to the multipart path", () => {
+    expect(
+      classifyCommandAction(
+        'curl -i -X DELETE -H "Cookie: session=x" "https://mock-target.test/app/api/upload/s3/multipart/undefined"',
+      ).category,
+    ).toBe("http-delete-method");
+  });
+
+  // Encoding 2 — literal fetch with method: 'DELETE'.
+  it("flags a fetch() call with method DELETE", () => {
+    expect(
+      classifyCommandAction(
+        "fetch('/app/api/upload/s3/multipart/undefined', { method: 'DELETE' });",
+      ).category,
+    ).toBe("http-delete-method");
+  });
+
+  // Encoding 3 — dynamically-built path (the closest reproduction: the path is
+  // interpolated, so it never contains a literal delete keyword or "undefined").
+  it("flags a fetch() DELETE whose path is built dynamically", () => {
+    expect(
+      classifyCommandAction(
+        "node -e \"const id = resp.id; fetch(`/app/api/upload/s3/multipart/${id}`, { method: 'DELETE' })\"",
+      ).destructive,
+    ).toBe(true);
+  });
+
+  it("flags valid-ID DELETE variants and parallel bursts", () => {
+    expect(
+      classifyCommandAction(
+        "node -e \"fetch('/app/api/upload/s3/multipart/81029', { method: 'DELETE' })\"",
+      ).destructive,
+    ).toBe(true);
+    expect(
+      classifyCommandAction(
+        "node -e \"await Promise.all(Array.from({length:10}, () => fetch('/app/api/upload/s3/multipart/undefined', { method: 'DELETE' })))\"",
+      ).destructive,
+    ).toBe(true);
+  });
+
+  it("flags positional client DELETE calls (axios / Playwright)", () => {
+    expect(
+      classifyCommandAction("node -e \"axios.delete('/api/x/1')\"").destructive,
+    ).toBe(true);
+    expect(
+      classifyCommandAction(
+        "npx playwright test -c \"await page.request.delete('/app/api/upload/s3/multipart/81067')\"",
+      ).destructive,
+    ).toBe(true);
+  });
+
+  it("does not flag benign look-alikes (recon greps, Map.delete, GET fetch)", () => {
+    // Grepping source for the literal string is recon, not an HTTP call.
+    expect(
+      classifyCommandAction("grep -rn \"method: 'DELETE'\" src/").destructive,
+    ).toBe(false);
+    // Map/Set/Cache .delete() is not an HTTP client.
+    expect(
+      classifyCommandAction("node -e \"seen.delete('key')\"").destructive,
+    ).toBe(false);
+    // A non-destructive fetch (GET) stays allowed.
+    expect(
+      classifyCommandAction("node -e \"fetch('/app/api/upload/s3/multipart')\"")
+        .destructive,
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Enforcement
 // ---------------------------------------------------------------------------
 
