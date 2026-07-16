@@ -234,11 +234,18 @@ COMMON TESTING PATTERNS:
               );
 
         // Enforce the destructive-action guard on the fully resolved body and
-        // headers — a prompt-injection ref expands to a concrete string only
-        // here, so classifying before this point would miss destructive
-        // SQL/NoSQL payloads delivered via a ref.
+        // the EFFECTIVE headers (agent-supplied + session/credential headers
+        // merged in) — a prompt-injection ref expands to a concrete string only
+        // here, and a method-override header can be injected by the session
+        // layer, so classifying before this point (or on agent headers alone)
+        // would miss those.
+        const effectiveHeaders = resolveEffectiveHeaders(
+          resolverSessionFromCtx(ctx),
+          url,
+          headers,
+        );
         assertHttpActionAllowed(
-          { method, url, body: resolvedBody, headers },
+          { method, url, body: resolvedBody, headers: effectiveHeaders },
           ctx,
         );
       } catch (e) {

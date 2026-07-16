@@ -402,6 +402,96 @@ describe("classifyCommandAction", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Hardening (round 3): obfuscation bypasses + false-positive fixes
+// ---------------------------------------------------------------------------
+
+describe("classifier hardening", () => {
+  it("flags comment-obfuscated destructive SQL via a DB client", () => {
+    expect(
+      classifyCommandAction('psql -c "DROP/**/TABLE users"').category,
+    ).toBe("sql-destructive");
+    expect(
+      classifyCommandAction('mysql -e "DELETE/**/FROM sessions"').destructive,
+    ).toBe(true);
+  });
+
+  it("flags percent-encoded destructive SQL in DB-client args", () => {
+    expect(
+      classifyCommandAction('psql -c "DROP%20TABLE%20audit"').destructive,
+    ).toBe(true);
+  });
+
+  it("flags destructive SQL sent through curl/wget (not just http_request)", () => {
+    expect(
+      classifyCommandAction(
+        'curl -X POST -d "q=1;DROP TABLE users--" https://x.com/api',
+      ).category,
+    ).toBe("sql-destructive");
+  });
+
+  it("flags httpie and wget writes to a delete route", () => {
+    expect(
+      classifyCommandAction("http POST https://x.com/users/1/delete")
+        .destructive,
+    ).toBe(true);
+    expect(
+      classifyCommandAction(
+        "wget --post-data='x=1' https://x.com/account/destroy",
+      ).category,
+    ).toBe("http-destructive-path");
+  });
+
+  it("normalizes rm path tricks and ~user home wipes", () => {
+    expect(classifyCommandAction("rm -rf /tmp/../").destructive).toBe(true);
+    expect(classifyCommandAction("rm -rf //").destructive).toBe(true);
+    expect(
+      classifyCommandAction("rm -rf /home/ubuntu/../../").destructive,
+    ).toBe(true);
+    expect(classifyCommandAction("rm -rf /*").destructive).toBe(true);
+    expect(classifyCommandAction("rm -rf ~alice").destructive).toBe(true);
+    // A genuinely-scoped scratch path stays allowed.
+    expect(
+      classifyCommandAction("rm -rf /tmp/build/../cache").destructive,
+    ).toBe(false);
+  });
+
+  it("flags dd/redirect wipes of virtual disks but allows pseudo-devices", () => {
+    expect(
+      classifyCommandAction("dd if=/dev/zero of=/dev/vda").destructive,
+    ).toBe(true);
+    expect(classifyCommandAction("cat img > /dev/xvda").category).toBe(
+      "host-destructive",
+    );
+    // Discarding output to a pseudo-device is safe.
+    expect(
+      classifyCommandAction("dd if=/dev/urandom of=/dev/null bs=1M count=1")
+        .destructive,
+    ).toBe(false);
+  });
+
+  it("sees host-destructive commands wrapped in bash -c / sh -lc", () => {
+    expect(
+      classifyCommandAction('bash -c "dd if=/dev/zero of=/dev/sda"')
+        .destructive,
+    ).toBe(true);
+    expect(
+      classifyCommandAction("sh -lc 'mkfs.ext4 /dev/sdb1'").destructive,
+    ).toBe(true);
+    expect(classifyCommandAction('bash -c "reboot"').destructive).toBe(true);
+  });
+
+  it("does not flag DELETE keywords in recon with no HTTP client", () => {
+    expect(
+      classifyCommandAction('grep -rn "_method=DELETE" src/').destructive,
+    ).toBe(false);
+    expect(
+      classifyCommandAction('echo "pass the -X DELETE flag to remove"')
+        .destructive,
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Regression: in-script HTTP DELETE nested inside execute_command
 // (the Lilt multipart-delete vector — a fetch/axios/Playwright DELETE run via a
 // JS runtime, which curl-based and http_request-level controls both miss).

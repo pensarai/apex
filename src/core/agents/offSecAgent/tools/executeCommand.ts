@@ -348,12 +348,8 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
       try {
         assertCommandInScope(command, ctx);
-        assertCommandActionAllowed(command, ctx);
       } catch (e) {
-        if (
-          e instanceof ScopeViolationError ||
-          e instanceof DestructiveActionError
-        ) {
+        if (e instanceof ScopeViolationError) {
           return {
             success: false,
             error: e.message,
@@ -389,6 +385,27 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       }
       const commandWithHeaders =
         inject.status === "injected" ? inject.command : command;
+
+      // Enforce the destructive-action guard on the header-injected command so
+      // a method-override header (e.g. `X-HTTP-Method-Override: DELETE`) added
+      // by the session/credential layer is classified, not just agent-authored
+      // flags. (Prompt-injection payloads are written to a temp file and
+      // referenced by env var below — never inlined into the command string —
+      // so their content is out of scope for this string classifier.)
+      try {
+        assertCommandActionAllowed(commandWithHeaders, ctx);
+      } catch (e) {
+        if (e instanceof DestructiveActionError) {
+          return {
+            success: false,
+            error: e.message,
+            stdout: "",
+            stderr: e.message,
+            command,
+          };
+        }
+        throw e;
+      }
 
       let promptInjectionLibrary: PromptInjectionLibrary | undefined;
       let promptInjectionEnvVars: Record<string, string> | undefined;

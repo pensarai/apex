@@ -61,7 +61,7 @@ const NOT_DESTRUCTIVE: DestructiveClassification = { destructive: false };
  * `DROP TABLE`). Runs up to two passes to unwrap double-encoding, decodes each
  * `%XX` sequence independently so a stray `%` never throws.
  */
-export function safeDecode(input: string): string {
+function safeDecode(input: string): string {
   let out = input ?? "";
   for (let pass = 0; pass < 2; pass++) {
     const decoded = out.replace(/\+/g, " ").replace(/%[0-9a-fA-F]{2}/g, (m) => {
@@ -82,12 +82,24 @@ export function safeDecode(input: string): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * Inter-keyword separator: whitespace or an inline SQL block comment, so
+ * comment-obfuscated forms like `DROP/**​/TABLE` or `DELETE/**​/FROM` still
+ * match (a common SQLi bypass).
+ */
+const SQL_SEP = String.raw`(?:\s|/\*[\s\S]*?\*/)+`;
+
+/**
  * Destructive SQL DML/DDL statement head: DROP {TABLE,DATABASE,...}, TRUNCATE,
  * DELETE FROM, ALTER TABLE ... DROP. Deliberately does NOT match
  * INSERT/UPDATE/SELECT — ordinary writes stay allowed.
  */
-const SQL_DESTRUCTIVE_STATEMENT =
-  /(?:drop\s+(?:table|database|schema|index|view|column|role|user|sequence|trigger|function|procedure)|truncate\s+(?:table\s+)?[`"\w]|delete\s+from\s+[`"\w]|alter\s+table\s+[^;]*\bdrop\b)/i;
+const SQL_DESTRUCTIVE_STATEMENT = new RegExp(
+  `(?:drop${SQL_SEP}(?:table|database|schema|index|view|column|role|user|sequence|trigger|function|procedure)` +
+    `|truncate${SQL_SEP}(?:table${SQL_SEP})?[\`"\\w]` +
+    `|delete${SQL_SEP}from${SQL_SEP}[\`"\\w]` +
+    `|alter${SQL_SEP}table${SQL_SEP}[^;]*\\bdrop\\b)`,
+  "i",
+);
 
 /** The statement is the (trimmed) start of the payload — a raw-SQL body. */
 const SQL_STATEMENT_START = new RegExp(
@@ -154,16 +166,45 @@ const METHOD_OVERRIDE_DELETE_PATTERN =
 // Host-destructive command rules (anchored to command position, not substring)
 // ---------------------------------------------------------------------------
 
-/** Start of a command word: line start, or after a shell separator. */
-const CMD_BOUNDARY = String.raw`(?:^|[\n;&|]|&&|\|\|)\s*(?:sudo\s+)?`;
+/**
+ * Start of a command word: line start, after a shell separator or subshell
+ * `(`, or immediately inside a shell wrapper's quoted `-c "…"` argument (so
+ * `bash -c "dd …"` / `sh -lc 'mkfs …'` are not hidden from the host rules).
+ */
+const CMD_BOUNDARY = String.raw`(?:^|[\n;&|(]|&&|\|\||-[a-z]*c\s+["']?)\s*(?:sudo\s+)?`;
+
+/** Home-directory reference: `~`, `~user`, `$HOME`, `${HOME}`. */
+const HOME_REF = /^(?:~[^/]*|\$\{?HOME\}?)(?:\/|$)/;
+
+/**
+ * Normalize an `rm` target so path tricks resolve to their real destination:
+ * strip quotes, collapse `//` and `.`/`..` segments. Home refs collapse to
+ * `~`. Returns the normalized absolute/relative path (or `~`).
+ */
+function normalizeRmTarget(raw: string): string {
+  const unquoted = raw.replace(/^['"]|['"]$/g, "");
+  if (HOME_REF.test(unquoted)) return "~";
+  if (!unquoted.startsWith("/")) return unquoted;
+  const stack: string[] = [];
+  for (const seg of unquoted.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") {
+      stack.pop();
+      continue;
+    }
+    stack.push(seg);
+  }
+  return `/${stack.join("/")}`;
+}
 
 /**
  * `rm` with BOTH recursive and force semantics (flags in any order, combined or
  * split) aimed at a filesystem root, home, or system dir — or with
- * `--no-preserve-root`. Ordinary sandbox scratch cleanup (`rm -rf /tmp/x`,
- * `rm -rf ./build`) does NOT match.
+ * `--no-preserve-root`. Path tricks (`/tmp/../`, `//`, `/.`) are normalized
+ * first. Ordinary sandbox scratch cleanup (`rm -rf /tmp/x`, `rm -rf ./build`)
+ * does NOT match.
  */
-export function isDangerousRm(command: string): boolean {
+function isDangerousRm(command: string): boolean {
   const rmRe = /\brm\b([^\n;|&]*)/gi;
   for (const match of command.matchAll(rmRe)) {
     const args = match[1] ?? "";
@@ -173,14 +214,15 @@ export function isDangerousRm(command: string): boolean {
     if (/--no-preserve-root/i.test(args)) return true;
     for (const rawToken of args.split(/\s+/)) {
       if (!rawToken || rawToken.startsWith("-")) continue;
-      const token = rawToken.replace(/^['"]|['"]$/g, "");
-      // Root / wildcard-root / home shorthands.
-      if (/^(?:\/|\/\*|~|\$HOME|\$\{HOME\})$/.test(token)) return true;
-      if (/^(?:~|\$HOME|\$\{HOME\})\//.test(token)) return true;
+      // Wildcard root (`/*`) — a full-filesystem glob.
+      if (/^['"]?\/\*/.test(rawToken)) return true;
+      const norm = normalizeRmTarget(rawToken);
+      if (norm === "~") return true; // home directory wipe
+      if (norm === "/") return true; // filesystem root
       // A system or home directory, with or without a subpath.
       if (
         /^\/(?:etc|var|usr|bin|sbin|boot|lib|lib64|root|home|opt|srv|sys|proc|dev)(?:\/|$)/i.test(
-          token,
+          norm,
         )
       ) {
         return true;
@@ -195,14 +237,21 @@ const HOST_DESTRUCTIVE_RULES: Array<{
   test: (command: string) => boolean;
 }> = [
   { id: "rm-rf-root", test: isDangerousRm },
-  // Raw block-device write / disk imaging.
+  // Raw block-device write / disk imaging — excluding safe pseudo-devices
+  // (`/dev/null`, `/dev/stdout`, …) that ordinary commands write to.
   {
     id: "dd-to-device",
-    test: (c) =>
-      new RegExp(
-        `${CMD_BOUNDARY}dd\\b[^\\n;|&]*\\bof=\\s*['"]?/dev/`,
+    test: (c) => {
+      const m = new RegExp(
+        `${CMD_BOUNDARY}dd\\b[^\\n;|&]*\\bof=\\s*['"]?(/dev/\\S+)`,
         "i",
-      ).test(c),
+      ).exec(c);
+      if (!m) return false;
+      const dev = m[1].replace(/['"].*$/, "");
+      return !/^\/dev\/(?:null|zero|full|random|urandom|stdout|stderr|tty|fd\/)/i.test(
+        dev,
+      );
+    },
   },
   // Filesystem creation over a device.
   {
@@ -210,10 +259,11 @@ const HOST_DESTRUCTIVE_RULES: Array<{
     test: (c) =>
       new RegExp(`${CMD_BOUNDARY}(?:/s?bin/)?mkfs(?:\\.\\w+)?\\b`, "i").test(c),
   },
-  // Redirect into a block device.
+  // Redirect into a block device (physical or virtual/cloud root disks).
   {
     id: "clobber-device",
-    test: (c) => />\s*['"]?\/dev\/(?:sd|nvme|hd|mapper|disk)/i.test(c),
+    test: (c) =>
+      />\s*['"]?\/dev\/(?:sd|nvme|hd|vd|xvd|mapper|disk|loop|dm-|md)/i.test(c),
   },
   // Classic fork bomb.
   {
@@ -248,8 +298,10 @@ const HTTPIE_METHOD = new RegExp(
 );
 const CURL_WRITE_METHOD =
   /(?:-X|--request|--method)[=\s]*['"]?(?:post|put|patch)\b/i;
+// Body/data flags across curl (-d/--data*/-F/--form/--json) and wget
+// (--post-data/--post-file/--body-data/--body-file) that indicate a write.
 const CURL_DATA_FLAG =
-  /(?:^|\s)(?:-d|--data(?:-raw|-binary|-urlencode|-ascii)?|-F|--form|--json)\b/i;
+  /(?:^|\s)(?:-d|--data(?:-raw|-binary|-urlencode|-ascii)?|-F|--form|--json|--post-data|--post-file|--body-data|--body-file)\b/i;
 
 /**
  * In-script HTTP DELETE nested inside `execute_command` (Node/Bun/Deno,
@@ -274,10 +326,19 @@ const JS_CLIENT_DELETE_CALL =
 /** Classify an HTTP call expressed as a shell command (curl/wget/httpie/xh, or an in-script fetch/axios). */
 function classifyCommandHttp(command: string): DestructiveClassification {
   const decoded = safeDecode(command);
-
-  // Explicit DELETE via flag or httpie positional method.
   const httpieMethod = HTTPIE_METHOD.exec(command)?.[1]?.toLowerCase();
-  if (CURL_DELETE.test(command) || httpieMethod === "delete") {
+  // A real HTTP context — a shell client (curl/wget/xh/httpie) or an in-script
+  // JS client. DELETE / override / SQL detection is gated on this so a benign
+  // recon `grep -X DELETE` / `echo _method=DELETE` is not misclassified.
+  const hasShellHttpClient =
+    HTTP_CLIENT_PATTERN.test(command) || httpieMethod !== undefined;
+  const hasJsHttpClient = JS_HTTP_CLIENT_HINT.test(command);
+
+  // Explicit DELETE via curl flag or httpie positional method.
+  if (
+    hasShellHttpClient &&
+    (CURL_DELETE.test(command) || httpieMethod === "delete")
+  ) {
     return {
       destructive: true,
       category: "http-delete-method",
@@ -288,7 +349,7 @@ function classifyCommandHttp(command: string): DestructiveClassification {
 
   // In-script HTTP DELETE (fetch/axios/Playwright) run via a JS runtime.
   if (
-    (JS_METHOD_DELETE.test(command) && JS_HTTP_CLIENT_HINT.test(command)) ||
+    (JS_METHOD_DELETE.test(command) && hasJsHttpClient) ||
     JS_CLIENT_DELETE_CALL.test(command)
   ) {
     return {
@@ -300,13 +361,37 @@ function classifyCommandHttp(command: string): DestructiveClassification {
     };
   }
 
-  // Method-override to DELETE carried in headers/data.
-  if (METHOD_OVERRIDE_DELETE_PATTERN.test(decoded)) {
+  // Method-override to DELETE carried in headers/data — only in an HTTP context.
+  if (
+    (hasShellHttpClient || hasJsHttpClient) &&
+    METHOD_OVERRIDE_DELETE_PATTERN.test(decoded)
+  ) {
     return {
       destructive: true,
       category: "http-delete-method",
       ruleId: "cmd-http-override-delete",
       reason: "command overrides the HTTP method to DELETE",
+    };
+  }
+
+  // Destructive SQL / NoSQL carried in an HTTP client's URL or data body — the
+  // same statement `http_request` blocks, but delivered through curl/wget.
+  if (hasShellHttpClient && httpCarriesDestructiveSql(decoded)) {
+    return {
+      destructive: true,
+      category: "sql-destructive",
+      ruleId: "cmd-http-sql",
+      reason:
+        "command sends a destructive SQL statement in an HTTP request (DROP/TRUNCATE/DELETE FROM/ALTER…DROP)",
+    };
+  }
+  if (hasShellHttpClient && NOSQL_HTTP_DESTRUCTIVE.test(decoded)) {
+    return {
+      destructive: true,
+      category: "nosql-destructive",
+      ruleId: "cmd-http-nosql",
+      reason:
+        "command sends a destructive NoSQL/cache operation in an HTTP request",
     };
   }
 
@@ -317,7 +402,7 @@ function classifyCommandHttp(command: string): DestructiveClassification {
     httpieMethod === "post" ||
     httpieMethod === "put" ||
     httpieMethod === "patch";
-  if (HTTP_CLIENT_PATTERN.test(command) && writeIndicated) {
+  if (hasShellHttpClient && writeIndicated) {
     for (const rawUrl of command.match(URL_IN_COMMAND) ?? []) {
       if (DESTRUCTIVE_PATH_PATTERN.test(safeDecode(rawUrl))) {
         return {
@@ -436,8 +521,10 @@ export function classifyCommandAction(
 
   // SQL/NoSQL is destructive only when an actual DB client executes it — a
   // grep/cat/echo that merely contains "DROP TABLE" or "FLUSHALL" is recon.
+  // Decode first so percent-encoded statements in client args are matched.
+  const decodedCommand = safeDecode(command);
   if (DB_CLIENT_PATTERN.test(command)) {
-    if (SQL_DESTRUCTIVE_STATEMENT.test(command)) {
+    if (SQL_DESTRUCTIVE_STATEMENT.test(decodedCommand)) {
       return {
         destructive: true,
         category: "sql-destructive",
@@ -446,7 +533,7 @@ export function classifyCommandAction(
           "command runs a destructive SQL statement via a DB client (DROP/TRUNCATE/DELETE FROM/ALTER…DROP)",
       };
     }
-    if (NOSQL_CMD_DESTRUCTIVE.test(command)) {
+    if (NOSQL_CMD_DESTRUCTIVE.test(decodedCommand)) {
       return {
         destructive: true,
         category: "nosql-destructive",
