@@ -560,7 +560,6 @@ export async function createAgentRedTeamCampaign(
       },
     );
     for (const seedInput of seeds) {
-      if (campaign.attempts.length >= expansionLimit) break;
       if (!techniques.includes(seedInput.techniqueId)) continue;
       const carrier = carrierRegistry.defaultCarrierFor(seedInput.techniqueId);
       const goal = sanitizedGoal(
@@ -581,6 +580,18 @@ export async function createAgentRedTeamCampaign(
         campaignSeed,
         seedInput.seed.id,
       );
+      // Reuse a control that already tests this technique+impact; otherwise mint
+      // one so the seed has a matching baseline and cannot be scored vulnerable
+      // without a control comparison.
+      const existingControl = campaign.attempts.find(
+        (attempt) =>
+          attempt.techniqueId === seedInput.techniqueId &&
+          attempt.variant === "control" &&
+          attempt.impact === goal.impact,
+      );
+      const slotsNeeded = existingControl ? 1 : 2;
+      if (campaign.attempts.length + slotsNeeded > expansionLimit) break;
+
       const seedTurns = carrier.render(goal, seedInput.surface);
       const lastIndex = seedTurns.length - 1;
       const withReference = seedTurns.map((turn, index) =>
@@ -591,12 +602,28 @@ export async function createAgentRedTeamCampaign(
             }
           : turn,
       );
-      const control = campaign.attempts.find(
-        (attempt) =>
-          attempt.techniqueId === seedInput.techniqueId &&
-          attempt.variant === "control" &&
-          attempt.impact === goal.impact,
-      );
+      let controlAttemptId = existingControl?.id;
+      if (!existingControl) {
+        const control = makeAttempt({
+          campaignId,
+          campaignSeed,
+          target: input.target,
+          vector: seedInput.vector,
+          surface: seedInput.surface,
+          techniqueId: seedInput.techniqueId,
+          goal,
+          oracle,
+          carrier,
+          variant: "control",
+          comparisonGroupId,
+          turns: carrier.renderControl(goal, seedInput.surface),
+          mutationChain: ["identity"],
+          primitiveStack: [],
+        });
+        campaign.attempts.push(control);
+        markPlanned(campaign, control);
+        controlAttemptId = control.id;
+      }
       const attempt = makeAttempt({
         campaignId,
         campaignSeed,
@@ -612,7 +639,7 @@ export async function createAgentRedTeamCampaign(
         turns: withReference,
         mutationChain: seedInput.mutationChain,
         primitiveStack,
-        controlAttemptId: control?.id,
+        controlAttemptId,
         seed: seedInput.seed,
       });
       campaign.attempts.push(attempt);

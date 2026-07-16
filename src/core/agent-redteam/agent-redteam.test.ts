@@ -174,13 +174,21 @@ describe("agent red-team planning", () => {
       techniques: ["tool-surface-indirect"],
       promptInjectionLibrary: library,
       promptInjectionSeedOptions: { maxSeeds: 1 },
-      maxAttempts: 3,
+      maxAttempts: 6,
     });
     const seeded = campaign.attempts.find(
       (attempt) => attempt.variant === "external-seed",
     );
     expect(seeded?.renderedPrompt).toContain("PromptInjectionRef");
     expect(seeded?.seed?.id).toBe("pi.seed.tool");
+    // Every external-seed attempt must have a control baseline matching its
+    // classified impact, so evaluation cannot mark it vulnerable without one.
+    expect(seeded?.controlAttemptId).toBeTruthy();
+    const seedControl = campaign.attempts.find(
+      (attempt) => attempt.id === seeded?.controlAttemptId,
+    );
+    expect(seedControl?.variant).toBe("control");
+    expect(seedControl?.impact).toBe(seeded?.impact);
     expect(JSON.stringify(campaign)).not.toContain(rawPayload);
     expect(
       readFileSync(
