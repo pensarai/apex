@@ -209,6 +209,14 @@ const SessionConfigObject = z.object({
     .optional(),
   authenticationInstructions: z.string().optional(),
   requestsPerSecond: z.number().optional(),
+  /**
+   * Opt-in: the client has authorized destructive testing (DB deletes/drops,
+   * API write-deletes, catastrophic host operations). Defaults to off — when
+   * absent or false, the destructive-action guard blocks those operations at
+   * the `http_request` / `execute_command` tool boundary. See
+   * `agents/offSecAgent/tools/destructiveGuard.ts`.
+   */
+  allowDestructiveActions: z.boolean().optional(),
   operatorSettings: OperatorSettingsObject.optional(),
   /** Toolset state for controlling which tools are available */
   toolsetState: ToolsetStateSchema.optional(),

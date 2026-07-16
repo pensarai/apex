@@ -16,6 +16,7 @@ import {
   resolvePromptInjectionRefs,
 } from "../../../prompt-injections";
 import { agentLogsDir } from "./agentScratch";
+import { assertHttpActionAllowed } from "./destructiveGuard";
 import {
   assertUrlInScope,
   resolverSessionFromCtx,
@@ -188,6 +189,8 @@ COMMON TESTING PATTERNS:
       followRedirects,
       timeout,
     }): Promise<HttpRequestResult> => {
+      let headers = parseHeaders(rawHeaders);
+
       try {
         assertUrlInScope(url, ctx);
       } catch (e) {
@@ -207,7 +210,6 @@ COMMON TESTING PATTERNS:
         throw e;
       }
 
-      let headers = parseHeaders(rawHeaders);
       let resolvedBody: string | undefined;
       let library: PromptInjectionLibrary = EMPTY_PROMPT_INJECTION_LIBRARY;
 
@@ -230,6 +232,22 @@ COMMON TESTING PATTERNS:
             : String(
                 resolvePromptInjectionRefs(body as HttpRequestBody, library),
               );
+
+        // Enforce the destructive-action guard on the fully resolved body and
+        // the EFFECTIVE headers (agent-supplied + session/credential headers
+        // merged in) — a prompt-injection ref expands to a concrete string only
+        // here, and a method-override header can be injected by the session
+        // layer, so classifying before this point (or on agent headers alone)
+        // would miss those.
+        const effectiveHeaders = resolveEffectiveHeaders(
+          resolverSessionFromCtx(ctx),
+          url,
+          headers,
+        );
+        assertHttpActionAllowed(
+          { method, url, body: resolvedBody, headers: effectiveHeaders },
+          ctx,
+        );
       } catch (e) {
         return {
           success: false,
