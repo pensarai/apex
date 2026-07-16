@@ -119,6 +119,26 @@ export function buildEndpointDocumentationObjective(opts: {
   const endpointType =
     endpoint.kind === "page" ? "web-endpoint" : "api-endpoint";
 
+  // gRPC methods arrive from surface with a non-http transport and a `grpc`
+  // metadata object. Surface gives serviceFqn/method/streamingType; the agent
+  // may enrich the remaining optional grpc fields from the source.
+  const isGrpc = !!endpoint.transport && endpoint.transport !== "http";
+  const grpcSection = isGrpc
+    ? `
+## gRPC (deterministically extracted by surface)
+
+This endpoint is a **gRPC method**, not a plain HTTP route. \`routePath\` is the wire path \`/package.Service/Method\` — do NOT glue a host onto it.
+
+- **transport**: ${endpoint.transport}
+- **grpc.serviceFqn**: ${endpoint.grpc?.serviceFqn ?? "(derive from routePath)"}
+- **grpc.method**: ${endpoint.grpc?.method ?? "(derive from routePath)"}
+- **grpc.streamingType**: ${endpoint.grpc?.streamingType ?? "unary"}
+`
+    : "";
+  const grpcInstruction = isGrpc
+    ? ` Because this is a gRPC method, ALSO pass \`transport: "${endpoint.transport}"\` and a \`grpc\` object built from the values above (\`serviceFqn\`, \`method\`, \`streamingType\`, plus \`schemaSource: "proto"\`); you MAY add \`reflectionAvailable\` or \`frontingGatewayOperation\` when the source makes them clear.`
+    : "";
+
   const auth = endpoint.auth.length > 0 ? endpoint.auth.join(", ") : "none";
   const authPrefill = endpoint.auth.length > 0;
 
@@ -139,10 +159,10 @@ export function buildEndpointDocumentationObjective(opts: {
 - **endpointType**: ${endpointType}
 - **auth signals**: ${auth}
 - **prefilled authRequired**: ${authPrefill}
-
+${grpcSection}
 ## Task
 
-Document this **single endpoint** by calling \`document_endpoint\` exactly once. Use the deterministic fields above as-is for \`appName\` (\`"${app.name}"\`), \`routePath\`, \`method\` (\`${methodValue}\`), \`endpointType\` (\`"${endpointType}"\`), \`file\`, \`line\`, and \`handler\`. The remaining fields you must produce yourself:
+Document this **single endpoint** by calling \`document_endpoint\` exactly once. Use the deterministic fields above as-is for \`appName\` (\`"${app.name}"\`), \`routePath\`, \`method\` (\`${methodValue}\`), \`endpointType\` (\`"${endpointType}"\`), \`file\`, \`line\`, and \`handler\`.${grpcInstruction} The remaining fields you must produce yourself:
 
 - **authRequired**: start from the prefilled value above. Override only after reading the middleware chain at the indicated file when the signals are genuinely ambiguous.
 - **description**: 1–2 sentences explaining what this endpoint does in plain English. Read the handler at \`${endpoint.file}:${endpoint.line}\` to ground it.

@@ -80,6 +80,31 @@ describe("consolidateBySameRoute", () => {
     expect(out[0]?.handler).toBe("listUsers, createUser");
   });
 
+  it("carries gRPC transport and metadata through consolidation", () => {
+    const rows: EndpointInfo[] = [
+      makeEndpointInfo({
+        framework: "grpc",
+        file: "proto/ledger/v1/ledger.proto",
+        method: "ANY",
+        path: "/ledger.v1.LedgerService/GetAccount",
+        transport: "grpc",
+        grpc: {
+          serviceFqn: "ledger.v1.LedgerService",
+          method: "GetAccount",
+          streamingType: "unary",
+        },
+      }),
+    ];
+
+    const out = consolidateBySameRoute(rows);
+
+    expect(out).toHaveLength(1);
+    expect(out[0]?.transport).toBe("grpc");
+    expect(out[0]?.grpc?.serviceFqn).toBe("ledger.v1.LedgerService");
+    expect(out[0]?.grpc?.method).toBe("GetAccount");
+    expect(out[0]?.grpc?.streamingType).toBe("unary");
+  });
+
   it("keeps distinct files with the same path as separate records", () => {
     const rows: EndpointInfo[] = [
       makeEndpointInfo({

@@ -5,6 +5,10 @@ import { AgentEventBus } from "../../../eventBus";
 import { newSessionId } from "../../../id/id";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
+import type {
+  EndpointTransport,
+  GrpcEndpointMetadata,
+} from "../../specialized/attackSurface/grpcSchema";
 import type { RiskScore } from "../../specialized/whiteboxAttackSurface";
 import type { ToolContext } from "./types";
 
@@ -293,6 +297,8 @@ export interface GenerateThreatModelInput {
   handler?: string;
   authRequired?: boolean;
   description: string;
+  transport?: EndpointTransport;
+  grpc?: GrpcEndpointMetadata;
 }
 
 export interface ThreatModelOutput {
@@ -434,6 +440,16 @@ function buildThreatModelPrompt(
     ? input.method.join(", ")
     : (input.method ?? "unknown");
 
+  const isGrpc = !!input.transport && input.transport !== "http";
+  const grpcSection = isGrpc
+    ? `- **Transport**: ${input.transport} — this is a **gRPC method**, not an HTTP route. \`Path\` is the wire path \`/package.Service/Method\`; do NOT model it as a REST URL.
+- **gRPC service**: ${input.grpc?.serviceFqn ?? "(derive from Path)"}
+- **gRPC method**: ${input.grpc?.method ?? "(derive from Path)"}
+- **Streaming**: ${input.grpc?.streamingType ?? "unary"}
+The threat model and pentest objectives must be gRPC-specific (reflection/schema recovery, per-method missing-auth, BOLA on request-message IDs, metadata trust, \`:path\` authz bypass, protobuf fuzzing, streaming abuse) rather than HTTP-centric.
+`
+    : "";
+
   let prompt = `# Endpoint Analysis
 
 ## Target Endpoint
@@ -444,7 +460,7 @@ function buildThreatModelPrompt(
 - **Handler**: ${input.handler ?? "unknown"}
 - **Auth**: ${authInfo}
 - **Description**: ${input.description}
-
+${grpcSection}
 ## Reading the code
 
 1. Read the source file at \`${input.file ?? "(unknown)"}\` ${lineRange ? `(${lineRange})` : ""} to understand the implementation.

@@ -27,6 +27,7 @@ import { getSessionRoot, normalizeMessages, type SessionInfo } from "./index";
 export type { SessionInfo };
 
 import type { ModelMessage } from "ai";
+import type { GrpcPentestContext } from "../agents/specialized/attackSurface/grpcSchema";
 import { newSessionId, type SessionID } from "../id/id";
 import type { AuthenticationInfo } from "./types";
 
@@ -247,6 +248,12 @@ export interface SwarmTarget {
   name?: string;
   target: string;
   objectives: string[];
+  /**
+   * gRPC method context for gRPC/Connect targets. When set, the spawned
+   * pentest agent runs the gRPC test battery instead of treating the wire
+   * path as an ordinary HTTP route.
+   */
+  grpc?: GrpcPentestContext;
 }
 
 /**
