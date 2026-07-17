@@ -7,6 +7,7 @@ export type {
   OpenAIReasoningEffort,
   StreamResponseOpts,
   ThinkingEffort,
+  UsageRecorder,
 } from "./ai";
 export {
   buildReasoningProviderOptions,

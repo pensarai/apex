@@ -1,4 +1,5 @@
 import type {
+  LanguageModelMiddleware,
   ModelMessage,
   StopCondition,
   StreamTextOnFinishCallback,
@@ -19,6 +20,7 @@ import type {
   CacheMetrics,
   OpenAIReasoningEffort,
   ThinkingEffort,
+  UsageRecorder,
 } from "../../ai";
 import type { CredentialManager } from "../../credentials";
 import type { AgentEventBus } from "../../eventBus";
@@ -75,6 +77,14 @@ export type Finding = z.infer<typeof ApexFindingObject>;
  */
 /** Agent operating mode that controls which tools are available. */
 export type AgentMode = "default" | "plan" | "fast-strike";
+
+export type StreamIdFactoryContext =
+  | { kind: "message"; stepIndex: number }
+  | { kind: "text-part"; stepIndex: number; textPartIndex: number }
+  | { kind: "tool-part"; toolCallId: string };
+
+/** Creates message and part IDs for streamed events. */
+export type StreamIdFactory = (context: StreamIdFactoryContext) => string;
 
 export type OffensiveSecurityAgentInput<TResult = void> = {
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
@@ -146,6 +156,18 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Callback fired after each agent step completes */
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+
+  /** Optional provider middleware applied only to this agent's model calls. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+
+  /** Optional AI SDK retry override for this agent's model calls. */
+  maxRetries?: number;
+
+  /** Optional deterministic message/part ID factory for streamed events. */
+  streamIdFactory?: StreamIdFactory;
+
+  /** Optional usage recorder awaited before the next model step. */
+  usageRecorder?: UsageRecorder;
 
   /** Callback fired when the entire stream finishes */
   onFinish?: StreamTextOnFinishCallback<ToolSet>;

@@ -5,6 +5,7 @@ import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
 import {
   generateText,
   type LanguageModel,
+  type LanguageModelMiddleware,
   type ModelMessage,
   Output,
   type StopCondition,
@@ -15,6 +16,7 @@ import {
   type TextStreamPart,
   type ToolChoice,
   type ToolSet,
+  wrapLanguageModel,
 } from "ai";
 import type { z } from "zod";
 import { createLogger } from "../logger/structured";
@@ -97,6 +99,15 @@ type UsageCallback = (
   outputTokens: number,
   ctx?: UsageStepContext,
 ) => void;
+
+/** Per-call usage recorder. Async work is awaited before the next model step. */
+export type UsageRecorder = (
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  ctx?: UsageStepContext,
+) => void | Promise<void>;
+
 let _usageCallback: UsageCallback | null = null;
 
 /** Register a callback to receive token usage reports from all AI operations */
@@ -885,6 +896,12 @@ export interface StreamResponseOpts {
   toolChoice?: ToolChoice<ToolSet>;
   tools?: ToolSet;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  /** Optional provider middleware applied only to this model loop. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+  /** AI SDK retry count. Defaults to the existing main-stream value of 3. */
+  maxRetries?: number;
+  /** Per-call usage recorder awaited before the next model step. */
+  usageRecorder?: UsageRecorder;
   abortSignal?: AbortSignal;
   activeTools?: string[];
   silent?: boolean;
@@ -940,6 +957,9 @@ export function streamResponse(
     toolChoice,
     tools,
     onStepFinish: userOnStepFinish,
+    languageModelMiddleware,
+    maxRetries,
+    usageRecorder,
     abortSignal,
     activeTools,
     silent,
@@ -957,15 +977,25 @@ export function streamResponse(
   // issue queuing) are fully awaited before the AI SDK starts the next step.
   const onStepFinish: typeof userOnStepFinish = async (step) => {
     await userOnStepFinish?.(step);
-    if (_usageCallback) {
+    const globalUsageCallback = _usageCallback;
+    if (globalUsageCallback || usageRecorder) {
       const inp = step.usage?.inputTokens ?? 0;
       const out = step.usage?.outputTokens ?? 0;
       // Advance stepSeq every finished step (even zero-usage) to stay aligned with the AI-SDK step index.
       const stepCtx = takeStepContext();
-      if (inp > 0 || out > 0) _usageCallback(model, inp, out, stepCtx);
+      if (inp > 0 || out > 0) {
+        globalUsageCallback?.(model, inp, out, stepCtx);
+        await usageRecorder?.(model, inp, out, stepCtx);
+      }
     }
   };
-  const providerModel = getProviderModel(model, authConfig);
+  const baseProviderModel = getProviderModel(model, authConfig);
+  const providerModel = languageModelMiddleware
+    ? wrapLanguageModel({
+        model: baseProviderModel,
+        middleware: languageModelMiddleware,
+      })
+    : baseProviderModel;
   const useAnthropicCaching = isAnthropicProvider(model);
 
   // Models that mis-parse multiple tool calls per turn (DeepSeek V3.1 on
@@ -1071,7 +1101,7 @@ export function streamResponse(
       stopWhen,
       toolChoice,
       tools,
-      maxRetries: 3,
+      maxRetries: maxRetries ?? 3,
       providerOptions,
       experimental_telemetry: {
         isEnabled: true,
@@ -1113,7 +1143,7 @@ export function streamResponse(
         throw error;
       },
       onStepFinish: onCacheMetrics
-        ? (stepResult) => {
+        ? async (stepResult) => {
             // Extract Anthropic cache metrics from providerMetadata (direct Anthropic / Bedrock SDK)
             const meta = stepResult.providerMetadata?.anthropic as
               | Record<string, unknown>
@@ -1137,7 +1167,7 @@ export function streamResponse(
                 cacheCreationInputTokens: cacheCreation,
               });
             }
-            onStepFinish?.(stepResult);
+            await onStepFinish?.(stepResult);
           }
         : onStepFinish,
       abortSignal,
@@ -1158,6 +1188,14 @@ export function streamResponse(
               `rawInputChars=${rawLen} error=${(error.message || String(error)).slice(0, 200)}`,
           );
         }
+        let repairedArgs: unknown;
+        let repairUsage:
+          | {
+              inputTokens?: number;
+              outputTokens?: number;
+              totalTokens?: number;
+            }
+          | undefined;
         try {
           if (!silent) {
             log.debug(`Repairing tool call: ${toolCall.toolName}`, {
@@ -1203,65 +1241,33 @@ export function streamResponse(
             "schema",
           );
 
-          const { output: repairedArgs, usage: repairUsage } =
-            await generateText({
-              model: providerModel,
-              output: Output.object({
-                schema: tool.inputSchema, // Use the actual Zod schema from the tool
-              }),
-              prompt: [
-                `The model tried to call the tool "${toolCall.toolName}"` +
-                  ` with the following inputs:`,
-                boundedInput,
-                `The tool accepts the following schema:`,
-                boundedSchema,
-                `Error encountered: ${error}`,
-                "Please fix the inputs to match the schema.",
-                "",
-                "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
-                "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
-              ].join("\n"),
-              abortSignal,
-              experimental_telemetry: {
-                isEnabled: true,
-                recordInputs: recordPayloads,
-                recordOutputs: recordPayloads,
-                functionId: "apex.tool_repair",
-                ...(sessionId ? { metadata: { sessionId } } : {}),
-              },
-            });
-
-          // Report tool repair token usage if onStepFinish callback is provided
-          if (onStepFinish && repairUsage) {
-            onStepFinish({
-              text: "",
-              reasoning: undefined,
-              reasoningDetails: [],
-              files: [],
-              sources: [],
-              toolCalls: [],
-              toolResults: [],
-              finishReason: "stop",
-              usage: {
-                inputTokens: repairUsage.inputTokens ?? 0,
-                outputTokens: repairUsage.outputTokens ?? 0,
-                totalTokens: repairUsage.totalTokens ?? 0,
-              },
-              warnings: [],
-              request: {},
-              response: {
-                id: "tool-repair",
-                timestamp: new Date(),
-                modelId: "",
-                messages: [],
-              },
-              providerMetadata: undefined,
-              stepType: "initial",
-              isContinued: false,
-            } as unknown as Parameters<
-              StreamTextOnStepFinishCallback<ToolSet>
-            >[0]);
-          }
+          ({ output: repairedArgs, usage: repairUsage } = await generateText({
+            model: providerModel,
+            output: Output.object({
+              schema: tool.inputSchema, // Use the actual Zod schema from the tool
+            }),
+            prompt: [
+              `The model tried to call the tool "${toolCall.toolName}"` +
+                ` with the following inputs:`,
+              boundedInput,
+              `The tool accepts the following schema:`,
+              boundedSchema,
+              `Error encountered: ${error}`,
+              "Please fix the inputs to match the schema.",
+              "",
+              "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
+              "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
+            ].join("\n"),
+            abortSignal,
+            ...(maxRetries === undefined ? {} : { maxRetries }),
+            experimental_telemetry: {
+              isEnabled: true,
+              recordInputs: recordPayloads,
+              recordOutputs: recordPayloads,
+              functionId: "apex.tool_repair",
+              ...(sessionId ? { metadata: { sessionId } } : {}),
+            },
+          }));
 
           if (repairedArgs === undefined || repairedArgs === null) {
             if (!silent) {
@@ -1271,7 +1277,6 @@ export function streamResponse(
             }
             return null;
           }
-          return { ...toolCall, input: JSON.stringify(repairedArgs) };
         } catch (repairError) {
           if (!silent) {
             log.warn("Error repairing tool call", {
@@ -1280,6 +1285,41 @@ export function streamResponse(
           }
           return null;
         }
+
+        // Durable usage recording is not a repair fallback. Its failure must
+        // propagate so callers never continue after losing billing state.
+        if (onStepFinish && repairUsage) {
+          await onStepFinish({
+            text: "",
+            reasoning: undefined,
+            reasoningDetails: [],
+            files: [],
+            sources: [],
+            toolCalls: [],
+            toolResults: [],
+            finishReason: "stop",
+            usage: {
+              inputTokens: repairUsage.inputTokens ?? 0,
+              outputTokens: repairUsage.outputTokens ?? 0,
+              totalTokens: repairUsage.totalTokens ?? 0,
+            },
+            warnings: [],
+            request: {},
+            response: {
+              id: "tool-repair",
+              timestamp: new Date(),
+              modelId: "",
+              messages: [],
+            },
+            providerMetadata: undefined,
+            stepType: "initial",
+            isContinued: false,
+          } as unknown as Parameters<
+            StreamTextOnStepFinishCallback<ToolSet>
+          >[0]);
+        }
+
+        return { ...toolCall, input: JSON.stringify(repairedArgs) };
       },
       onFinish,
     });

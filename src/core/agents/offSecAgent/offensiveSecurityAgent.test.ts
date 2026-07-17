@@ -62,6 +62,7 @@ vi.mock("ai", () => ({ hasToolCall: () => () => false }));
 
 import { AgentEventBus } from "../../eventBus";
 import { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
+import type { StreamIdFactory } from "./types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -83,6 +84,7 @@ function buildStubAgent(overrides: {
   messagesPath?: string | null;
   latestMessages?: unknown[] | null;
   responseCaptured?: Promise<unknown>;
+  streamIdFactory?: StreamIdFactory;
 }): OffensiveSecurityAgent<unknown> {
   const agent = Object.create(
     OffensiveSecurityAgent.prototype,
@@ -113,6 +115,9 @@ function buildStubAgent(overrides: {
   });
   Object.defineProperty(agent, "abortSignal", {
     value: overrides.abortSignal,
+  });
+  Object.defineProperty(agent, "streamIdFactory", {
+    value: overrides.streamIdFactory,
   });
   Object.defineProperty(agent, "resolveResult", {
     value: overrides.resolveResult,
@@ -157,6 +162,127 @@ async function* yieldThenThrow(
 
 describe("OffensiveSecurityAgent.consume()", () => {
   const textDelta = { type: "text-delta", text: "hi" };
+
+  describe("stream event identity", () => {
+    it("uses deterministic IDs from the injected factory exactly once per identity", async () => {
+      const streamIdFactory = vi.fn(
+        (context: Parameters<StreamIdFactory>[0]) => {
+          switch (context.kind) {
+            case "message":
+              return `msg_step_${context.stepIndex}`;
+            case "text-part":
+              return `prt_text_${context.stepIndex}_${context.textPartIndex}`;
+            case "tool-part":
+              return `prt_tool_${context.toolCallId}`;
+          }
+        },
+      );
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([
+          { type: "start-step" },
+          { type: "text-start", id: "text-1" },
+          { type: "text-delta", id: "text-1", text: "first" },
+          { type: "text-end", id: "text-1" },
+          { type: "text-start", id: "text-2" },
+          { type: "text-delta", id: "text-2", text: "second" },
+          { type: "text-end", id: "text-2" },
+          {
+            type: "tool-input-start",
+            id: "call-1",
+            toolName: "probe",
+          },
+          {
+            type: "tool-call",
+            toolCallId: "call-1",
+            toolName: "probe",
+            input: {},
+          },
+          {
+            type: "tool-result",
+            toolCallId: "call-1",
+            toolName: "probe",
+            output: { type: "text", value: "done" },
+          },
+          { type: "finish-step", finishReason: "tool-calls" },
+          { type: "start-step" },
+          { type: "text-start", id: "text-3" },
+          { type: "text-delta", id: "text-3", text: "third" },
+          { type: "text-end", id: "text-3" },
+        ]),
+        streamIdFactory,
+      });
+
+      const emitted: unknown[] = [];
+      vi.mocked(agent.eventBus.emitStreamPart).mockImplementation(
+        (chunk, ids) => {
+          if (typeof ids === "string" || !ids) return;
+          if (chunk.type === "tool-input-start") {
+            ids.toolPartId?.(chunk.id);
+          }
+          if (chunk.type === "tool-call") {
+            ids.toolPartId?.(chunk.toolCallId);
+          }
+          emitted.push({ chunk, ids: { ...ids, toolPartId: undefined } });
+        },
+      );
+
+      await agent.consume();
+
+      expect(streamIdFactory.mock.calls.map(([context]) => context)).toEqual([
+        { kind: "message", stepIndex: 0 },
+        { kind: "text-part", stepIndex: 0, textPartIndex: 0 },
+        { kind: "text-part", stepIndex: 0, textPartIndex: 1 },
+        { kind: "tool-part", toolCallId: "call-1" },
+        { kind: "message", stepIndex: 1 },
+        { kind: "text-part", stepIndex: 1, textPartIndex: 0 },
+      ]);
+      expect(emitted).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            chunk: expect.objectContaining({ text: "first" }),
+            ids: expect.objectContaining({
+              messageId: "msg_step_0",
+              textPartId: "prt_text_0_0",
+            }),
+          }),
+          expect.objectContaining({
+            chunk: expect.objectContaining({ text: "third" }),
+            ids: expect.objectContaining({
+              messageId: "msg_step_1",
+              textPartId: "prt_text_1_0",
+            }),
+          }),
+        ]),
+      );
+    });
+
+    it("keeps prefixed random IDs when no factory is provided", async () => {
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([
+          { type: "start-step" },
+          { type: "text-start", id: "text-1" },
+          { type: "text-delta", id: "text-1", text: "hello" },
+          { type: "text-end", id: "text-1" },
+        ]),
+      });
+      let observed: { messageId?: string; textPartId?: string } | undefined;
+      vi.mocked(agent.eventBus.emitStreamPart).mockImplementation(
+        (chunk, ids) => {
+          if (chunk.type === "text-delta" && typeof ids !== "string" && ids) {
+            observed = {
+              messageId: ids.messageId,
+              textPartId: ids.textPartId,
+            };
+          }
+        },
+      );
+
+      await agent.consume();
+
+      expect(observed?.messageId).toMatch(/^msg_/);
+      expect(observed?.textPartId).toMatch(/^prt_/);
+    });
+  });
 
   describe("persistentShell disposal on stream error (leak fix)", () => {
     it("disposes shell after a successful stream", async () => {

@@ -144,4 +144,6 @@ export {
   type Finding,
   type OffensiveSecurityAgentInput,
   type SpecializedAgentInput,
+  type StreamIdFactory,
+  type StreamIdFactoryContext,
 } from "./types";

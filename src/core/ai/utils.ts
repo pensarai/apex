@@ -4,6 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   generateText,
@@ -20,7 +21,12 @@ import { ensureValidToken } from "../auth";
 import { config } from "../config";
 import { createLogger } from "../logger/structured";
 import { scopedLogger } from "../util/lazyLogger";
-import { type AIModel, type StreamResponseOpts, streamResponse } from "./ai";
+import {
+  type AIModel,
+  type StreamResponseOpts,
+  streamResponse,
+  takeStepContext,
+} from "./ai";
 import {
   extractTaskSummaryFromMessages,
   truncateWithMarker,
@@ -122,7 +128,7 @@ export function buildAuthConfig(cfg: {
 export function getProviderModel(
   model: AIModel,
   authConfig?: AIAuthConfig,
-): LanguageModel {
+): LanguageModelV3 {
   const { provider } = getModelInfo(model);
 
   const openAiAPIKey = authConfig?.openAiAPIKey || process.env.OPENAI_API_KEY;
@@ -148,7 +154,7 @@ export function getProviderModel(
     process.env.LOCAL_MODEL_URL ||
     "http://127.0.0.1:1234/v1";
 
-  let providerModel: LanguageModel;
+  let providerModel: LanguageModelV3;
 
   switch (provider) {
     case "openai": {
@@ -419,13 +425,14 @@ async function summarizeConversation(
     system: `You are a helpful assistant that summarizes conversations to pass to another agent. Review the conversation and system prompt at the end provided by the user.`,
     messages: summarizedMessages,
     abortSignal: opts.abortSignal,
+    ...(opts.maxRetries === undefined ? {} : { maxRetries: opts.maxRetries }),
   });
 
   // Report summarization token usage if onStepFinish callback is provided
   // This ensures summarization tokens are tracked even though it's not a "step"
   if (opts.onStepFinish && summaryUsage) {
     // Create a minimal step finish event for the summarization
-    opts.onStepFinish({
+    await opts.onStepFinish({
       text: "",
       reasoning: undefined,
       reasoningDetails: [],
@@ -450,6 +457,14 @@ async function summarizeConversation(
       stepType: "initial",
       isContinued: false,
     } as unknown as Parameters<NonNullable<typeof opts.onStepFinish>>[0]);
+  }
+  if (opts.usageRecorder && summaryUsage) {
+    const inputTokens = summaryUsage.inputTokens ?? 0;
+    const outputTokens = summaryUsage.outputTokens ?? 0;
+    const stepCtx = takeStepContext();
+    if (inputTokens > 0 || outputTokens > 0) {
+      await opts.usageRecorder(opts.model, inputTokens, outputTokens, stepCtx);
+    }
   }
 
   // Preserve task state through summarization so the agent doesn't lose

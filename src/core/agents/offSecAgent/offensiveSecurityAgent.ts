@@ -39,7 +39,11 @@ import {
   SEND_EMAIL_TOOL_NAME,
 } from "./tools";
 import { StepTraceWriter } from "./trace";
-import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
+import type {
+  CreateAgentInput,
+  OffensiveSecurityAgentInput,
+  StreamIdFactory,
+} from "./types";
 
 const log = scopedLogger(() => createLogger("approval-gate"));
 
@@ -186,6 +190,8 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   private readonly abortSignal?: AbortSignal;
 
+  private readonly streamIdFactory?: StreamIdFactory;
+
   /** The user-facing prompt passed to the model. */
   public readonly userPrompt: string;
 
@@ -242,6 +248,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.subagentId = input.subagentId;
     this.subagentName = input.subagentName;
     this.abortSignal = input.abortSignal;
+    this.streamIdFactory = input.streamIdFactory;
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
 
@@ -564,6 +571,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         activeTools,
         stopWhen,
         toolChoice: "auto",
+        languageModelMiddleware: input.languageModelMiddleware,
+        maxRetries: input.maxRetries,
+        usageRecorder: input.usageRecorder,
         // Per-subagent so the overflow tool-result dumps land next to this
         // agent's messages.json (`subagents/{id}/tool-results/`) and a host
         // can reclaim them when the subagent finishes, instead of piling up
@@ -691,6 +701,8 @@ export class OffensiveSecurityAgent<TResult = void> {
     const runConsume = async (): Promise<TResult> => {
       // Tool-call part ids are minted once and reused for the WHOLE session, never reset per step.
       const toolParts = new Map<string, string>();
+      let stepIndex = -1;
+      let textPartIndex = 0;
       const ids: StreamIdContext = {
         // The TUI routes any event with a subagentId into a subagent panel, so
         // the orchestrator must leave it undefined; only real subagents set it.
@@ -701,7 +713,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         toolPartId: (toolCallId: string) => {
           let p = toolParts.get(toolCallId);
           if (!p) {
-            p = newPartId();
+            p =
+              this.streamIdFactory?.({ kind: "tool-part", toolCallId }) ??
+              newPartId();
             toolParts.set(toolCallId, p);
           }
           return p;
@@ -827,14 +841,26 @@ export class OffensiveSecurityAgent<TResult = void> {
             }
           }
           switch (chunk.type) {
-            case "start-step":
-              ids.messageId = newMessageId();
+            case "start-step": {
+              stepIndex++;
+              textPartIndex = 0;
+              ids.messageId =
+                this.streamIdFactory?.({ kind: "message", stepIndex }) ??
+                newMessageId();
               this.currentMessageId = ids.messageId;
               ids.textPartId = undefined;
               break;
-            case "text-start":
-              ids.textPartId = newPartId();
+            }
+            case "text-start": {
+              ids.textPartId =
+                this.streamIdFactory?.({
+                  kind: "text-part",
+                  stepIndex,
+                  textPartIndex,
+                }) ?? newPartId();
+              textPartIndex++;
               break;
+            }
             case "text-end":
               ids.textPartId = undefined;
               break;
