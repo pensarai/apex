@@ -18,6 +18,7 @@ export {
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,
   normalizeOpenAIReasoningEffort,
+  runWithStepContext,
   streamResponse,
 } from "./ai";
 export { AVAILABLE_MODELS } from "./models";
