@@ -11,6 +11,7 @@ import {
   filterInlineOptionSuggestions,
   filterInlineSuggestions,
   type NavState,
+  shouldNavigateHistory,
   shouldResetHistory,
 } from "./prompt-input-logic";
 
@@ -27,6 +28,23 @@ const options: AutocompleteOption[] = [
 ];
 
 const history = ["first cmd", "second cmd", "third cmd"];
+
+describe("shouldNavigateHistory", () => {
+  it("keeps arrow keys in the textarea between visual boundaries", () => {
+    expect(shouldNavigateHistory("up", 1, 0, 3)).toBe(false);
+    expect(shouldNavigateHistory("down", 1, 0, 3)).toBe(false);
+  });
+
+  it("allows history at the first and last visual lines", () => {
+    expect(shouldNavigateHistory("up", 0, 0, 3)).toBe(true);
+    expect(shouldNavigateHistory("down", 2, 0, 3)).toBe(true);
+  });
+
+  it("accounts for a scrolled textarea viewport", () => {
+    expect(shouldNavigateHistory("up", 0, 2, 6)).toBe(false);
+    expect(shouldNavigateHistory("down", 2, 3, 6)).toBe(true);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // computeUpArrow

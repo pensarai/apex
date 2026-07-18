@@ -2,6 +2,11 @@
 // unless PENSAR_STREAM_DEBUG=1); tracks bytes separately from parsed events to
 // distinguish a dead stream from a slow-but-alive one.
 
+import { createLogger } from "../logger/structured";
+import { scopedLogger } from "../util/lazyLogger";
+
+const log = scopedLogger(() => createLogger("stream-telemetry"));
+
 export const STREAM_DEBUG =
   process.env.PENSAR_STREAM_DEBUG === "1" ||
   process.env.PENSAR_STREAM_DEBUG === "true";
@@ -75,7 +80,7 @@ export class StreamTelemetry {
   private log(tag: string, nowMs?: number): void {
     if (!STREAM_DEBUG) return;
     const t = nowMs ?? wallNow();
-    console.error(
+    log.info(
       `[stream-telem] ${this.id} ${tag} label=${JSON.stringify(this.label)} ` +
         `phase=${this.phase} elapsed=${t - this.startAt}ms ` +
         `bytes=${this.bytes} chunks=${this.chunks} events=${this.events} ` +

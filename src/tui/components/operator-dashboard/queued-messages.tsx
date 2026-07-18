@@ -1,5 +1,6 @@
+import { useDimensions } from "../../context/dimensions";
 import { useTheme } from "../../theme";
-import type { QueuedMessage } from "./queue";
+import { getQueueWindow, type QueuedMessage } from "./queue";
 
 interface QueuedMessagesProps {
   messages: QueuedMessage[];
@@ -11,8 +12,16 @@ export function QueuedMessages({
   selectedIndex,
 }: QueuedMessagesProps) {
   const { colors } = useTheme();
+  const { width } = useDimensions();
 
   if (messages.length === 0) return null;
+
+  const window = getQueueWindow(messages, selectedIndex);
+  const maxTextWidth = Math.max(12, width - 6);
+  const range =
+    messages.length > window.items.length
+      ? ` · ${window.start + 1}–${window.end}`
+      : "";
 
   return (
     <box
@@ -23,12 +32,16 @@ export function QueuedMessages({
       flexShrink={0}
     >
       <box flexDirection="row" gap={1} marginBottom={0}>
-        <text fg={colors.textMuted}>Queued ({messages.length})</text>
+        <text fg={colors.textMuted}>
+          Queued ({messages.length}){range}
+        </text>
       </box>
-      {messages.map((msg, index) => {
+      {window.items.map(({ message: msg, index }) => {
         const isSelected = index === selectedIndex;
         const displayText =
-          msg.text.length > 80 ? `${msg.text.slice(0, 77)}…` : msg.text;
+          msg.text.length > maxTextWidth
+            ? `${msg.text.slice(0, maxTextWidth - 1)}…`
+            : msg.text;
         return (
           <box key={msg.id} flexDirection="row" gap={1}>
             <text fg={isSelected ? colors.primary : colors.textMuted}>
@@ -40,11 +53,13 @@ export function QueuedMessages({
           </box>
         );
       })}
-      <box flexDirection="row" gap={2} marginTop={0}>
-        <text fg={colors.textMuted}>
-          ↑↓ select • Enter send now • ⌫ delete • e edit
-        </text>
-      </box>
+      {selectedIndex >= 0 && (
+        <box flexDirection="row" gap={2} marginTop={0}>
+          <text fg={colors.textMuted}>
+            [Enter] send · [⌫] delete · [E] edit
+          </text>
+        </box>
+      )}
     </box>
   );
 }

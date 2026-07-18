@@ -45,9 +45,13 @@ function ToastItem({
       borderColor={accent}
       backgroundColor={colors.backgroundPanel}
       onMouseUp={() => onDismiss()}
+      width="100%"
+      overflow="hidden"
     >
       <text fg={accent}>{VARIANT_ICONS[variant]}</text>
-      <text fg={colors.text}>{message}</text>
+      <text fg={colors.text} wrapMode="word" width="100%">
+        {message}
+      </text>
     </box>
   );
 }
@@ -66,10 +70,12 @@ export function ToastContainer() {
       flexDirection="column"
       gap={0}
       alignItems="flex-end"
-      maxWidth={Math.min(80, dims.width - 4)}
+      maxWidth={Math.max(1, Math.min(80, dims.width - 4))}
+      maxHeight={Math.max(1, dims.height - 2)}
+      overflow="hidden"
       zIndex={9999}
     >
-      {toasts.map((t) => (
+      {toasts.slice(-3).map((t) => (
         <ToastItem
           key={t.id}
           message={t.message}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   clampQueueSelection,
   createQueuedMessage,
+  getQueueWindow,
   navigateDown,
   navigateUp,
   type QueuedMessage,
@@ -149,6 +150,33 @@ describe("queued message helpers", () => {
     it("no-op when already at input (-1)", () => {
       expect(navigateDown(-1, 3)).toBe(-1);
       expect(navigateDown(-1, 0)).toBe(-1);
+    });
+  });
+
+  describe("getQueueWindow", () => {
+    it("shows the newest messages when the queue is not selected", () => {
+      const window = getQueueWindow(q("a", "b", "c", "d", "e"), -1, 3);
+      expect(window.items.map((item) => item.message.text)).toEqual([
+        "c",
+        "d",
+        "e",
+      ]);
+      expect(window).toMatchObject({ start: 2, end: 5 });
+    });
+
+    it("keeps the selected message inside a centered window", () => {
+      const window = getQueueWindow(q("a", "b", "c", "d", "e"), 2, 3);
+      expect(window.items.map((item) => item.index)).toEqual([1, 2, 3]);
+    });
+
+    it("clamps the window at either edge", () => {
+      const queue = q("a", "b", "c", "d", "e");
+      expect(
+        getQueueWindow(queue, 0, 3).items.map((item) => item.index),
+      ).toEqual([0, 1, 2]);
+      expect(
+        getQueueWindow(queue, 4, 3).items.map((item) => item.index),
+      ).toEqual([2, 3, 4]);
     });
   });
 

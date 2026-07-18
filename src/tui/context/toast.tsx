@@ -3,7 +3,9 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -34,8 +36,12 @@ const DEFAULT_DURATION: Record<ToastVariant, number> = {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
   const dismiss = useCallback((id: number) => {
+    const timer = timers.current.get(id);
+    if (timer) clearTimeout(timer);
+    timers.current.delete(id);
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
@@ -44,9 +50,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       const id = nextId++;
       const ms = duration ?? DEFAULT_DURATION[variant];
       setToasts((prev) => [...prev, { id, message, variant, duration: ms }]);
-      setTimeout(() => dismiss(id), ms);
+      const timer = setTimeout(() => dismiss(id), ms);
+      timer.unref?.();
+      timers.current.set(id, timer);
     },
     [dismiss],
+  );
+
+  useEffect(
+    () => () => {
+      for (const timer of timers.current.values()) clearTimeout(timer);
+      timers.current.clear();
+    },
+    [],
   );
 
   const value = useMemo(

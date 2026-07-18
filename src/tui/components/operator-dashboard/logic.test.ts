@@ -3,15 +3,53 @@ import type { OperatorSessionState } from "../../../core/operator";
 import type { AutocompleteOption } from "../shared";
 import {
   accumulateTokenUsage,
+  buildClearSessionConfig,
   buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
+  formatRuntimeError,
   resolveAbortAction,
   resolveInputFocused,
   resolveKeyboardShortcut,
   resolveSubmit,
   routeCommand,
 } from "./logic";
+
+describe("formatRuntimeError", () => {
+  it("extracts messages from non-Error SSE payloads", () => {
+    expect(formatRuntimeError({ message: "stream failed" })).toBe(
+      "stream failed",
+    );
+  });
+
+  it("removes terminal control sequences before rendering", () => {
+    expect(formatRuntimeError(new Error("\u001b[31mbad\u001b[0m\u0000"))).toBe(
+      "bad",
+    );
+  });
+
+  it("bounds provider errors so they cannot consume the TUI layout", () => {
+    expect(formatRuntimeError("x".repeat(10), "failed", 6)).toBe("xxxxx…");
+  });
+});
+
+describe("buildClearSessionConfig", () => {
+  it("preserves the target and manual approval mode", () => {
+    expect(buildClearSessionConfig("manual", "https://target.test")).toEqual({
+      target: "https://target.test",
+      operatorMode: "manual",
+      requireApproval: true,
+    });
+  });
+
+  it("preserves non-manual modes without carrying session-only state", () => {
+    expect(buildClearSessionConfig("auto", undefined)).toEqual({
+      target: undefined,
+      operatorMode: "auto",
+      requireApproval: false,
+    });
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -23,6 +61,9 @@ const allOptions: AutocompleteOption[] = [
   { value: "/help", label: "/help", description: "Show help" },
   { value: "/models", label: "/models", description: "Switch model" },
   { value: "/skills", label: "/skills", description: "View skills" },
+  { value: "/clear", label: "/clear", description: "Start fresh" },
+  { value: "/resume", label: "/resume", description: "Resume session" },
+  { value: "/new", label: "/new", description: "Legacy start fresh" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -45,7 +86,10 @@ describe("filterOperatorAutocomplete", () => {
 
   it("returns only allowed commands", () => {
     const result = filterOperatorAutocomplete(allOptions);
-    expect(result).toHaveLength(4);
+    expect(result).toHaveLength(6);
+    expect(result.map((option) => option.value)).toContain("/clear");
+    expect(result.map((option) => option.value)).toContain("/resume");
+    expect(result.map((option) => option.value)).not.toContain("/new");
   });
 
   it("preserves description on allowed commands", () => {
@@ -122,6 +166,18 @@ describe("routeCommand", () => {
 
   it("routes /MODELS (case-insensitive) to show-models", () => {
     expect(routeCommand("/MODELS", noSkill)).toEqual({ type: "show-models" });
+  });
+
+  it("routes /clear and its /new compatibility alias to a fresh session", () => {
+    expect(routeCommand("/clear", noSkill)).toEqual({
+      type: "clear-session",
+    });
+    expect(routeCommand("/ clear", noSkill)).toEqual({
+      type: "clear-session",
+    });
+    expect(routeCommand("/new", noSkill)).toEqual({
+      type: "clear-session",
+    });
   });
 
   it("routes a skill command to run-skill with slug", () => {
@@ -249,7 +305,7 @@ describe("resolveKeyboardShortcut", () => {
   });
 
   describe("Ctrl+C", () => {
-    it("returns ctrl-c-abort when running", () => {
+    it("leaves agent cancellation to Escape while running", () => {
       expect(
         resolveKeyboardShortcut(
           { name: "c", ctrl: true },
@@ -258,10 +314,10 @@ describe("resolveKeyboardShortcut", () => {
           false,
           false,
         ),
-      ).toEqual({ type: "ctrl-c-abort" });
+      ).toEqual({ type: "skip" });
     });
 
-    it("returns ctrl-c-abort when waiting", () => {
+    it("leaves agent cancellation to Escape while waiting", () => {
       expect(
         resolveKeyboardShortcut(
           { name: "c", ctrl: true },
@@ -270,10 +326,10 @@ describe("resolveKeyboardShortcut", () => {
           false,
           false,
         ),
-      ).toEqual({ type: "ctrl-c-abort" });
+      ).toEqual({ type: "skip" });
     });
 
-    it("returns ctrl-c-clear when idle with input", () => {
+    it("leaves draft clearing to the global Ctrl+C handler", () => {
       expect(
         resolveKeyboardShortcut(
           { name: "c", ctrl: true },
@@ -282,7 +338,7 @@ describe("resolveKeyboardShortcut", () => {
           false,
           false,
         ),
-      ).toEqual({ type: "ctrl-c-clear" });
+      ).toEqual({ type: "skip" });
     });
 
     it("returns skip when idle with empty input", () => {
@@ -311,22 +367,22 @@ describe("resolveKeyboardShortcut", () => {
   });
 
   describe("Escape", () => {
-    it("returns escape when idle", () => {
+    it("does nothing when idle", () => {
       expect(
         resolveKeyboardShortcut({ name: "escape" }, idle, "", false, false),
-      ).toEqual({ type: "escape" });
+      ).toEqual({ type: "skip" });
     });
 
-    it("returns skip when running", () => {
+    it("stops the agent when running", () => {
       expect(
         resolveKeyboardShortcut({ name: "escape" }, running, "", false, false),
-      ).toEqual({ type: "skip" });
+      ).toEqual({ type: "escape-abort" });
     });
 
-    it("returns skip when waiting", () => {
+    it("stops the agent when waiting", () => {
       expect(
         resolveKeyboardShortcut({ name: "escape" }, waiting, "", false, false),
-      ).toEqual({ type: "skip" });
+      ).toEqual({ type: "escape-abort" });
     });
   });
 

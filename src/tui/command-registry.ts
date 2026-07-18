@@ -379,8 +379,9 @@ export const commands: CommandConfig[] = [
     },
   },
   {
-    name: "new",
-    description: "Start a new operator session",
+    name: "clear",
+    aliases: ["new"],
+    description: "Clear conversation and start a fresh session",
     category: "Pentesting",
     handler: async (_args, ctx) => {
       ctx.navigate({ type: "operator", nonce: Date.now() });

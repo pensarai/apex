@@ -1,10 +1,11 @@
-import { createCliRenderer, FrameBufferRenderable, RGBA } from "@opentui/core";
-import { createRoot, extend } from "@opentui/react";
+import { createCliRenderer, RGBA } from "@opentui/core";
+import { createRoot } from "@opentui/react";
 import { useEffect, useState } from "react";
 import { config } from "../core/config";
 import type { Config } from "../core/config/config";
 import { checkForUpdate } from "../core/installation";
 import { routeLogsToErrorFile, writeErrorLog } from "../core/logger";
+import { createLogger } from "../core/logger/structured";
 import { hasAnyProviderConfigured } from "../core/providers";
 import type { SessionConfig } from "../core/session";
 import { setupAutoCopy } from "./auto-copy";
@@ -65,19 +66,7 @@ import {
 
 installObfuscationTextPatch();
 
-extend({ frameBuffer: FrameBufferRenderable });
-declare module "@opentui/react" {
-  interface OpenTUIComponents {
-    frameBuffer: typeof FrameBufferRenderable;
-  }
-}
-
-extend({ frameBuffer: FrameBufferRenderable });
-declare module "@opentui/react" {
-  interface OpenTUIComponents {
-    frameBuffer: typeof FrameBufferRenderable;
-  }
-}
+const log = createLogger("tui");
 
 interface AppProps {
   appConfig: Config;
@@ -322,6 +311,8 @@ function AppContent({
 
   // Track external dialog state so operator input unfocuses while a dialog overlay is open
   const anyExternalDialog =
+    showSessionsDialog ||
+    showShortcutsDialog ||
     showThemeDialog ||
     showModelDialog ||
     showProvidersDialog ||
@@ -466,7 +457,7 @@ function AppContent({
     });
   };
 
-  // Check if we're on the home route
+  const isBaseRoute = route.data.type === "base";
   const isHomeRoute = route.data.type === "base" && route.data.path === "home";
 
   return (
@@ -486,7 +477,12 @@ function AppContent({
         onOpenModelDialog={() => setShowModelDialog(true)}
       />
 
-      <Footer cwd={cwd} showExitWarning={showExitWarning} />
+      <Footer
+        cwd={cwd}
+        showExitWarning={showExitWarning}
+        showSessionStats={!isBaseRoute}
+        isHome={isHomeRoute}
+      />
 
       {showSessionsDialog && (
         <SessionsDisplay onClose={handleCloseSessionsDialog} />
@@ -672,6 +668,9 @@ function CommandDisplay({
 async function main() {
   // OpenTUI is about to own the screen — route logs to file, not stderr.
   routeLogsToErrorFile();
+  globalThis.AI_SDK_LOG_WARNINGS = ({ warnings, provider, model }) => {
+    log.warn("AI SDK model warning", { provider, model, warnings });
+  };
 
   const appConfig = await config.get();
 
@@ -695,36 +694,49 @@ async function main() {
 
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
+    enableMouseMovement: false,
+    useKittyKeyboard: {
+      allKeysAsEscapes: true,
+    },
+    openConsoleOnError: false,
     consoleOptions: buildConsoleOptions(themeColors),
     // Opaque themes paint over this; transparent mode leaves it showing through.
     backgroundColor: RGBA.defaultBackground(),
   });
 
   const { copyToClipboard } = createClipboardManager(renderer);
-  setupAutoCopy(renderer, copyToClipboard);
+  const cleanupAutoCopy = setupAutoCopy(renderer, copyToClipboard);
 
-  const cleanup = () => {
+  let exiting = false;
+  let rendererCleaned = false;
+  const destroyRenderer = () => {
+    if (rendererCleaned) return;
+    rendererCleaned = true;
+    cleanupAutoCopy();
     cleanupTerminalFocusMode();
-    renderer.destroy();
-    process.exit(0);
+    if (!renderer.isDestroyed) renderer.destroy();
   };
-  process.on("SIGINT", cleanup);
-  process.on("SIGTERM", cleanup);
+  const exit = (code: number) => {
+    if (exiting) return;
+    exiting = true;
+    destroyRenderer();
+    process.exit(code);
+  };
+  process.on("SIGINT", () => exit(0));
+  process.on("SIGTERM", () => exit(0));
 
   process.on("uncaughtException", (err) => {
-    cleanupTerminalFocusMode();
-    renderer.destroy();
+    destroyRenderer();
     console.error("Uncaught exception:", err);
     writeErrorLog(err, "UNCAUGHT");
-    process.exit(1);
+    exit(1);
   });
 
   process.on("unhandledRejection", (reason) => {
-    cleanupTerminalFocusMode();
-    renderer.destroy();
+    destroyRenderer();
     console.error("Unhandled rejection:", reason);
     writeErrorLog(reason, "UNHANDLED_REJECTION");
-    process.exit(1);
+    exit(1);
   });
 
   const obfuscateEnabled = process.env.PENSAR_OBFUSCATE === "1";

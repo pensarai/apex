@@ -47,6 +47,7 @@ import {
   renderHeaderValue,
 } from "../../../core/http/types";
 import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
+import { createLogger } from "../../../core/logger/structured";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
   ApprovalGate,
@@ -77,10 +78,12 @@ import {
   buildPentestPrompt,
   buildThreatModelPrompt,
 } from "../../../core/skills/builtins";
+import { scopedLogger } from "../../../core/util/lazyLogger";
 import { useAgent } from "../../context/agent";
 import { useCommand } from "../../context/command";
 import { useConfig } from "../../context/config";
 import { useDialog } from "../../context/dialog";
+import { useDimensions } from "../../context/dimensions";
 import { useFocus } from "../../context/focus";
 import { useRoute } from "../../context/route";
 import { useTheme } from "../../theme";
@@ -98,9 +101,11 @@ import {
 } from "../shared";
 import {
   accumulateTokenUsage,
+  buildClearSessionConfig,
   buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
+  formatRuntimeError,
   resolveAbortAction,
   resolveInputFocused,
   resolveKeyboardShortcut,
@@ -122,6 +127,8 @@ import {
   loadSubagentSessionsFromDisk,
 } from "./subagent-state";
 import { SubagentStatusBar } from "./subagent-status-bar";
+
+const log = scopedLogger(() => createLogger("operator-dashboard"));
 
 function markInFlightToolsErrored(
   messages: DisplayMessage[],
@@ -155,6 +162,7 @@ export default function OperatorDashboard({
   };
 }) {
   const { colors } = useTheme();
+  const { width: terminalWidth } = useDimensions();
   const route = useRoute();
   const config = useConfig();
   const {
@@ -217,7 +225,7 @@ export default function OperatorDashboard({
   const sessionRef = useRef<SessionInfo | null>(null);
   sessionRef.current = session;
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Captures an AI-generated name that arrives before the session is stored in state
   const pendingNameRef = useRef<string | null>(null);
 
@@ -225,8 +233,9 @@ export default function OperatorDashboard({
   const [status, setStatus] = useState<DashboardStatus>("idle");
   const abortControllerRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
+  const stopAgentRef = useRef<() => void>(() => {});
 
-  // Two-stage abort: first Ctrl+C cancels the running command, second kills the agent.
+  // Two-stage abort: first Escape cancels the running command, second kills the agent.
   // The agent populates cancelHandle.cancel with the shell's cancel function.
   const cancelHandleRef = useRef<{ cancel: () => boolean }>({
     cancel: () => false,
@@ -484,7 +493,7 @@ export default function OperatorDashboard({
           approvalGateRef.current.updateConfig({ requireApproval });
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load session");
+        setLoadError(formatRuntimeError(e, "Failed to load session", 1000));
       } finally {
         setLoading(false);
       }
@@ -788,7 +797,6 @@ export default function OperatorDashboard({
       setStatus("running");
       setThinking(true);
       setIsExecuting(true);
-      setError(null);
       textRef.current = "";
 
       const controller = new AbortController();
@@ -862,6 +870,26 @@ export default function OperatorDashboard({
       };
 
       const eventBus = new AgentEventBus();
+      let runtimeErrorReported = false;
+      const reportRuntimeError = (runtimeError: unknown) => {
+        if (runtimeErrorReported) return;
+        runtimeErrorReported = true;
+        const errorMessage = formatRuntimeError(runtimeError);
+        log.error(
+          "Agent run failed",
+          runtimeError instanceof Error
+            ? runtimeError
+            : { error: errorMessage },
+        );
+        setMessages((prev) => [
+          ...markInFlightToolsErrored(prev, errorMessage),
+          {
+            role: "system",
+            content: `Error: ${errorMessage}`,
+            createdAt: new Date(),
+          },
+        ]);
+      };
 
       // Only pentest swarm agents (pentest-agent-*) get entries in
       // WorkflowData.pentesting.subagents. All others (discovery, risk
@@ -1010,20 +1038,15 @@ export default function OperatorDashboard({
       eventBus.on("error", (d) => {
         if (gen !== generationRef.current) return;
         if (d.subagentId) {
-          const errMsg =
-            d.error instanceof Error ? d.error.message : "Unknown error";
+          const errMsg = formatRuntimeError(d.error, "Unknown error");
           subagentHelpers.appendText(d.subagentId, `\nError: ${errMsg}\n`);
           return;
         }
-        console.error("Agent error:", d.error);
         // Clear pending-questions state so an error after the tool-call event
         // doesn't leave the questions form stuck over a failed conversation.
         pendingToolCallIdRef.current = null;
         setPendingQuestions(null);
-        const errorMessage =
-          d.error instanceof Error ? d.error.message : "Unknown error";
-        setError(errorMessage);
-        setMessages((prev) => markInFlightToolsErrored(prev, errorMessage));
+        reportRuntimeError(d.error);
       });
 
       eventBus.on("subagent-spawn", ({ subagentId, name }) => {
@@ -1229,7 +1252,10 @@ export default function OperatorDashboard({
         if (wandbCleanup) return;
         const cleanup = await attachWandbToEventBus(s, eventBus).catch(
           (e: unknown) => {
-            console.error("[wandb] Attach failed:", e);
+            log.error(
+              "W&B attach failed",
+              e instanceof Error ? e : { error: String(e) },
+            );
             return null;
           },
         );
@@ -1382,16 +1408,7 @@ export default function OperatorDashboard({
             }
           }
 
-          const errorMsg = e instanceof Error ? e.message : "Agent failed";
-          setError(errorMsg);
-          setMessages((prev) => [
-            ...markInFlightToolsErrored(prev, errorMsg),
-            {
-              role: "system",
-              content: `Error: ${errorMsg}`,
-              createdAt: new Date(),
-            },
-          ]);
+          reportRuntimeError(e);
         }
       } finally {
         // Clean up early buffer listener on all paths (abort, error, success)
@@ -1400,9 +1417,12 @@ export default function OperatorDashboard({
 
         if (wandbCleanup) {
           const fn = wandbCleanup as () => Promise<void>;
-          await fn().catch((e: unknown) =>
-            console.error("[wandb] Flush failed:", e),
-          );
+          await fn().catch((e: unknown) => {
+            log.error(
+              "W&B flush failed",
+              e instanceof Error ? e : { error: String(e) },
+            );
+          });
         }
         if (gen === generationRef.current) {
           setStatus(pendingToolCallIdRef.current ? "waiting" : "idle");
@@ -1778,6 +1798,18 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           );
           return;
         }
+        case "clear-session": {
+          stopAgentRef.current();
+          route.navigate({
+            type: "operator",
+            nonce: Date.now(),
+            initialConfig: buildClearSessionConfig(
+              operatorMode,
+              sessionRef.current?.targets[0] ?? initialConfig?.target,
+            ),
+          });
+          return;
+        }
         case "headers": {
           await handleHeadersSlash(action.op);
           return;
@@ -1795,29 +1827,14 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       showModelPicker,
       addSystemMessage,
       handleHeadersSlash,
+      initialConfig?.target,
+      operatorMode,
+      route,
     ],
   );
 
-  const handleAbort = useCallback(() => {
+  const stopAgent = useCallback(() => {
     if (!abortControllerRef.current) return;
-
-    const action = resolveAbortAction(commandCancelledRef.current, () =>
-      cancelHandleRef.current.cancel(),
-    );
-
-    if (action.type === "cancel-command") {
-      commandCancelledRef.current = true;
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "system" as const,
-          content:
-            "Command cancelled — agent will continue with partial output.",
-          createdAt: new Date(),
-        },
-      ]);
-      return;
-    }
 
     // Kill the agent
     generationRef.current++;
@@ -1975,6 +1992,31 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       ];
     });
   }, [setThinking, setIsExecuting, subagentStore.setState]);
+  stopAgentRef.current = stopAgent;
+
+  const handleAbort = useCallback(() => {
+    if (!abortControllerRef.current) return;
+
+    const action = resolveAbortAction(commandCancelledRef.current, () =>
+      cancelHandleRef.current.cancel(),
+    );
+
+    if (action.type === "cancel-command") {
+      commandCancelledRef.current = true;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "system" as const,
+          content:
+            "Command cancelled — agent will continue with partial output.",
+          createdAt: new Date(),
+        },
+      ]);
+      return;
+    }
+
+    stopAgent();
+  }, [stopAgent]);
 
   const resumeWithQuestionResult = useCallback(
     (result: AskUserQuestionsResult) => {
@@ -2041,9 +2083,57 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     [resumeWithQuestionResult],
   );
 
-  const handleQuestionsSkip = useCallback(() => {
-    resumeWithQuestionResult({ answers: [], skipped: true });
-  }, [resumeWithQuestionResult]);
+  const handleQuestionsAbort = useCallback(() => {
+    const toolCallId = pendingToolCallIdRef.current;
+    if (toolCallId) {
+      const abortedResult = {
+        type: "json" as const,
+        value: {
+          answers: [],
+          skipped: true,
+          aborted: true,
+        } as unknown as Record<string, unknown>,
+      };
+      conversationRef.current = conversationRef.current.map((msg) => {
+        if (msg.role !== "tool" || !Array.isArray(msg.content)) return msg;
+        let mutated = false;
+        const nextContent = msg.content.map((part) => {
+          if (
+            part &&
+            typeof part === "object" &&
+            "type" in part &&
+            (part as { type?: unknown }).type === "tool-result" &&
+            (part as { toolCallId?: unknown }).toolCallId === toolCallId
+          ) {
+            mutated = true;
+            return {
+              ...(part as Record<string, unknown>),
+              output: abortedResult,
+            };
+          }
+          return part;
+        });
+        return mutated
+          ? ({ ...msg, content: nextContent } as ModelMessage)
+          : msg;
+      });
+      const activeSession = sessionRef.current;
+      if (activeSession) {
+        try {
+          writeFileSync(
+            join(activeSession.rootPath, "messages.json"),
+            JSON.stringify(conversationRef.current, null, 2),
+          );
+        } catch {
+          // The next completed step will overwrite this best-effort update.
+        }
+      }
+    }
+    pendingToolCallIdRef.current = null;
+    setPendingQuestions(null);
+    setStatus("idle");
+    addSystemMessage("Aborted — questions dismissed.");
+  }, [addSystemMessage]);
 
   // Complete a mode transition (shared by cycleMode and plan approval)
   const transitionToMode = useCallback((next: OperatorMode) => {
@@ -2062,7 +2152,12 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     if (sid) {
       sessions
         .updateOperatorSettings(sid, { initialMode: next })
-        .catch((e) => console.error("[operator] Failed to persist mode:", e));
+        .catch((e) =>
+          log.error(
+            "Failed to persist operator mode",
+            e instanceof Error ? e : { error: String(e) },
+          ),
+        );
     }
   }, []);
 
@@ -2191,65 +2286,6 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       }
     }
 
-    // Ctrl+C while questions are pending — abort without resuming the agent.
-    // The abort controller is null at this point (runAgent's finally block
-    // already cleared it), so handleAbort() would early-return. Handle it
-    // explicitly: overwrite the sentinel tool-result so the next run doesn't
-    // see stale "questions answered" data, then dismiss the form and go idle.
-    if (pendingQuestions && key.ctrl && key.name === "c") {
-      key.preventDefault?.();
-      const toolCallId = pendingToolCallIdRef.current;
-      if (toolCallId) {
-        const abortedResult = {
-          type: "json" as const,
-          value: {
-            answers: [],
-            skipped: true,
-            aborted: true,
-          } as unknown as Record<string, unknown>,
-        };
-        conversationRef.current = conversationRef.current.map((msg) => {
-          if (msg.role !== "tool" || !Array.isArray(msg.content)) return msg;
-          let mutated = false;
-          const nextContent = msg.content.map((part) => {
-            if (
-              part &&
-              typeof part === "object" &&
-              "type" in part &&
-              (part as { type?: unknown }).type === "tool-result" &&
-              (part as { toolCallId?: unknown }).toolCallId === toolCallId
-            ) {
-              mutated = true;
-              return {
-                ...(part as Record<string, unknown>),
-                output: abortedResult,
-              };
-            }
-            return part;
-          });
-          return mutated
-            ? ({ ...msg, content: nextContent } as ModelMessage)
-            : msg;
-        });
-        const activeSession = sessionRef.current;
-        if (activeSession) {
-          try {
-            writeFileSync(
-              join(activeSession.rootPath, "messages.json"),
-              JSON.stringify(conversationRef.current, null, 2),
-            );
-          } catch {
-            /* onStepFinish will overwrite shortly */
-          }
-        }
-      }
-      pendingToolCallIdRef.current = null;
-      setPendingQuestions(null);
-      setStatus("idle");
-      addSystemMessage("Aborted — questions dismissed.");
-      return;
-    }
-
     // Treat the questions form as a dialog so that dashboard-level shortcuts
     // (Shift+Tab cycle-mode, etc.) don't fire while the form owns the keyboard.
     const dialogOpen =
@@ -2289,16 +2325,9 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     switch (action.type) {
       case "skip":
         return;
-      case "ctrl-c-abort":
+      case "escape-abort":
         key.preventDefault?.();
         handleAbort();
-        return;
-      case "ctrl-c-clear":
-        key.preventDefault?.();
-        setInputValue("");
-        return;
-      case "escape":
-        route.navigate({ type: "base", path: "home" });
         return;
       case "toggle-verbose":
         setVerboseMode((v) => !v);
@@ -2360,7 +2389,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     );
   }
 
-  if (!session && error) {
+  if (!session && loadError) {
     return (
       <box
         flexDirection="column"
@@ -2371,7 +2400,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         gap={1}
       >
         <text fg={colors.error}>Failed to load session</text>
-        <text fg={colors.textMuted}>{error}</text>
+        <text fg={colors.textMuted}>{loadError}</text>
         <text fg={colors.textMuted}>Press ESC to go back</text>
       </box>
     );
@@ -2380,6 +2409,13 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
   // Determine the current pending approval for the input area
   const currentPending =
     pendingApprovals.length > 0 ? pendingApprovals[0] : undefined;
+  const statusDisplay = currentPending
+    ? { label: "Approval needed", color: colors.warning }
+    : status === "running" || status === "waiting"
+      ? { label: "Working", color: colors.primary }
+      : status === "done"
+        ? { label: "Complete", color: colors.success }
+        : { label: "Ready", color: colors.textMuted };
 
   return (
     <box
@@ -2389,35 +2425,35 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       flexGrow={1}
       overflow="hidden"
     >
-      {/* Header bar */}
       <box
         flexDirection="row"
         justifyContent="space-between"
         paddingLeft={2}
         paddingRight={2}
-        paddingTop={1}
-        paddingBottom={1}
+        height={1}
         flexShrink={0}
+        overflow="hidden"
+        backgroundColor={colors.backgroundPanel}
       >
-        <box flexDirection="row" gap={2}>
+        <box flexDirection="row" gap={1} flexShrink={1} overflow="hidden">
           <text fg={colors.text}>{session?.name ?? "New Session"}</text>
-          {(session?.targets[0] || initialConfig?.target) && (
-            <>
-              <text fg={colors.textMuted}>•</text>
-              <text fg={colors.textMuted}>
-                {session?.targets[0] || initialConfig?.target || ""}
-              </text>
-            </>
-          )}
+          {terminalWidth >= 60 &&
+            (session?.targets[0] || initialConfig?.target) && (
+              <>
+                <text fg={colors.textMuted}>·</text>
+                <text fg={colors.textMuted}>
+                  {session?.targets[0] || initialConfig?.target || ""}
+                </text>
+              </>
+            )}
         </box>
+        {terminalWidth >= 44 && (
+          <box flexDirection="row" gap={1} flexShrink={0}>
+            <text fg={statusDisplay.color}>●</text>
+            <text fg={colors.textMuted}>{statusDisplay.label}</text>
+          </box>
+        )}
       </box>
-
-      {/* Error banner */}
-      {error && (
-        <box paddingLeft={2} paddingRight={2} flexShrink={0}>
-          <text fg={colors.error}>{error}</text>
-        </box>
-      )}
 
       {/* Message display */}
       <MessageList
@@ -2446,7 +2482,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         <QuestionsForm
           questions={pendingQuestions}
           onSubmit={handleQuestionsSubmit}
-          onSkip={handleQuestionsSkip}
+          onAbort={handleQuestionsAbort}
         />
       ) : (
         <>
