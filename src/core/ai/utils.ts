@@ -65,6 +65,7 @@ export type AIAuthConfig = {
   // WorkOS CLI auth
   accessToken?: string;
   refreshToken?: string;
+  workosSession?: boolean;
   workspaceId?: string;
   // Gateway request signing
   gatewaySigningKey?: string;
@@ -96,6 +97,7 @@ export function buildAuthConfig(cfg: {
   pensarAPIKey?: string | null;
   accessToken?: string | null;
   refreshToken?: string | null;
+  workosSession?: boolean;
   workspaceId?: string | null;
   gatewaySigningKey?: string | null;
   gatewayUrl?: string | null;
@@ -111,6 +113,7 @@ export function buildAuthConfig(cfg: {
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
     accessToken: cfg.accessToken ?? undefined,
     refreshToken: cfg.refreshToken ?? undefined,
+    workosSession: cfg.workosSession,
     workspaceId: cfg.workspaceId ?? undefined,
     gatewaySigningKey: cfg.gatewaySigningKey ?? undefined,
     gatewayUrl: cfg.gatewayUrl ?? undefined,
@@ -252,7 +255,11 @@ export function getProviderModel(
         authConfig?.pensarAPIKey || process.env.PENSAR_API_KEY;
       const agentApiUrl = process.env.AGENT_API_URL;
       const agentApiToken = process.env.AGENT_API_TOKEN;
-      const hasWorkOSAuth = !!authConfig?.accessToken;
+      const hasWorkOSAuth = !!(
+        authConfig?.workosSession ||
+        authConfig?.refreshToken ||
+        authConfig?.accessToken
+      );
       const hasSandboxAgentAuth = !!agentApiUrl && !!agentApiToken;
 
       if (!pensarApiKey && !hasWorkOSAuth && !hasSandboxAgentAuth) {
@@ -283,13 +290,18 @@ export function getProviderModel(
       // Read fresh config each time so rotated tokens are picked up
       // (WorkOS refresh tokens are single-use).
       if (!hasSandboxAgentAuth && hasWorkOSAuth) {
-        modelConfig.getToken = async () => {
+        modelConfig.getToken = async (options) => {
           const freshConfig = await config.get();
-          return ensureValidToken({
-            accessToken: freshConfig.accessToken,
-            refreshToken: freshConfig.refreshToken,
-            pensarAPIKey: freshConfig.pensarAPIKey,
-          });
+          return ensureValidToken(
+            {
+              accessToken: freshConfig.accessToken,
+              refreshToken: freshConfig.refreshToken,
+              pensarAPIKey: freshConfig.pensarAPIKey,
+              workosSession: freshConfig.workosSession,
+              credentialBackend: freshConfig.credentialBackend,
+            },
+            options,
+          );
         };
       }
 

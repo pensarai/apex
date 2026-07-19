@@ -7,7 +7,20 @@ export {
 export type { GatewayValidateResult } from "./gateway";
 export { validateGateway } from "./gateway";
 export { signGatewayRequest } from "./signing";
-export { ensureValidToken, isTokenExpired } from "./token";
+export type {
+  EnsureValidTokenOptions,
+  TokenConfig,
+  WorkOSSessionTokens,
+} from "./token";
+export {
+  AuthRefreshError,
+  AuthSessionExpiredError,
+  clearWorkOSSession,
+  ensureValidToken,
+  isTokenExpired,
+  saveWorkOSSession,
+  WorkOSTokenManager,
+} from "./token";
 export type {
   CreateWorkspaceSelectionResponse,
   DeviceFlowInfo,

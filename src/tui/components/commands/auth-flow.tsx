@@ -4,11 +4,13 @@ import { getPensarApiUrl, getPensarConsoleUrl } from "../../../core/api";
 import type { DeviceFlowInfo, WorkspaceInfo } from "../../../core/auth";
 import {
   disconnect,
+  ensureValidToken,
   fetchWorkspaces,
   isConnected,
   pollForWorkspaceCreation,
   pollLegacyToken,
   pollWorkOSToken,
+  saveWorkOSSession,
   selectWorkspace as selectWorkspaceApi,
   startDeviceFlow,
 } from "../../../core/auth";
@@ -43,7 +45,13 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
   const alreadyConnected = isConnected(appConfig.data);
   const hasWorkspace = !!appConfig.data.workspaceId;
   const needsWorkspace =
-    alreadyConnected && !hasWorkspace && !!appConfig.data.accessToken;
+    alreadyConnected &&
+    !hasWorkspace &&
+    !!(
+      appConfig.data.workosSession ||
+      appConfig.data.refreshToken ||
+      appConfig.data.accessToken
+    );
 
   const [step, setStep] = useState<AuthStep>(
     needsWorkspace ? "requesting" : alreadyConnected ? "success" : "start",
@@ -63,6 +71,7 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
   } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  const accessTokenRef = useRef<string | null>(null);
 
   const connectedWorkspace = appConfig.data.workspaceSlug
     ? {
@@ -167,10 +176,8 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
 
       if (ac.signal.aborted) return;
 
-      await config.update({
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-      });
+      accessTokenRef.current = tokens.accessToken;
+      await saveWorkOSSession(tokens);
       await appConfig.reload();
 
       await handleFetchWorkspaces(apiUrl, tokens.accessToken, ac);
@@ -241,6 +248,7 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
     ac: AbortController,
   ) => {
     try {
+      accessTokenRef.current = accessToken;
       const wsResult = await fetchWorkspaces(apiUrl, accessToken);
       if (ac.signal.aborted) return;
 
@@ -353,13 +361,30 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
     const ac = new AbortController();
     abortRef.current = ac;
     const apiUrl = getPensarApiUrl();
-    handleFetchWorkspaces(apiUrl, appConfig.data.accessToken!, ac);
+    ensureValidToken(appConfig.data)
+      .then((token) => {
+        if (ac.signal.aborted) return;
+        if (!token || token.type !== "workos") {
+          throw new Error("Pensar Console authentication is unavailable");
+        }
+        return handleFetchWorkspaces(apiUrl, token.token, ac);
+      })
+      .catch((error) => {
+        if (ac.signal.aborted) return;
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Failed to restore authentication",
+        );
+        setStep("error");
+      });
   }, []);
 
   // ── Disconnect ──────────────────────────────────────────────────────
 
   const handleDisconnect = async () => {
     await disconnect();
+    accessTokenRef.current = null;
     appConfig.reload();
     setFlowInfo(null);
     setSelectedWorkspace(null);
@@ -427,9 +452,13 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
         setSelectedIndex((i) => i + 1);
       }
       if (key.name === "return" && workspaces[selectedIndex]) {
-        const currentConfig = appConfig.data;
         const apiUrl = getPensarApiUrl();
-        const accessToken = currentConfig.accessToken!;
+        const accessToken = accessTokenRef.current;
+        if (!accessToken) {
+          setError("Pensar Console authentication is unavailable");
+          setStep("error");
+          return;
+        }
         const ac = abortRef.current ?? new AbortController();
         handleSelectWorkspace(
           apiUrl,

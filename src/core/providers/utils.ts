@@ -59,7 +59,12 @@ function isProviderConfigured(
         process.env.LOCAL_MODEL_URL
       );
     case "pensar":
-      return !!(config.pensarAPIKey || config.accessToken);
+      return !!(
+        config.pensarAPIKey ||
+        config.workosSession ||
+        config.refreshToken ||
+        config.accessToken
+      );
     default:
       return false;
   }
@@ -77,6 +82,8 @@ export function hasAnyProviderConfigured(config: Config): boolean {
     !!config.localModelName ||
     !!process.env.LOCAL_MODEL_URL ||
     !!config.pensarAPIKey ||
+    !!config.workosSession ||
+    !!config.refreshToken ||
     !!config.accessToken
   );
 }

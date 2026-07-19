@@ -28,26 +28,44 @@ export interface GatewayValidateResult {
 export async function validateGateway(): Promise<GatewayValidateResult | null> {
   const cfg = await config.get();
 
-  const tokenResult = await ensureValidToken({
+  let tokenResult = await ensureValidToken({
     accessToken: cfg.accessToken,
     refreshToken: cfg.refreshToken,
     pensarAPIKey: cfg.pensarAPIKey,
+    workosSession: cfg.workosSession,
+    credentialBackend: cfg.credentialBackend,
   });
 
   if (!tokenResult) return null;
 
   const gatewayUrl = cfg.gatewayUrl || getPensarGatewayUrl();
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${tokenResult.token}`,
+  const sendRequest = (token: string) => {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+    };
+    if (cfg.workspaceId) headers["X-Workspace-Id"] = cfg.workspaceId;
+    return fetch(`${gatewayUrl}/gateway/validate`, {
+      method: "GET",
+      headers,
+    });
   };
-  if (cfg.workspaceId) {
-    headers["X-Workspace-Id"] = cfg.workspaceId;
-  }
 
-  const response = await fetch(`${gatewayUrl}/gateway/validate`, {
-    method: "GET",
-    headers,
-  });
+  let response = await sendRequest(tokenResult.token);
+  if (response.status === 401 && tokenResult.type === "workos") {
+    const refreshed = await ensureValidToken(
+      {
+        accessToken: cfg.accessToken,
+        refreshToken: cfg.refreshToken,
+        pensarAPIKey: cfg.pensarAPIKey,
+        workosSession: cfg.workosSession,
+        credentialBackend: cfg.credentialBackend,
+      },
+      { forceRefresh: true, rejectedToken: tokenResult.token },
+    );
+    if (!refreshed) return null;
+    tokenResult = refreshed;
+    response = await sendRequest(tokenResult.token);
+  }
 
   if (!response.ok) {
     throw new Error(`Gateway validation failed (${response.status})`);

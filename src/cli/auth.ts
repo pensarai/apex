@@ -17,17 +17,21 @@
 import * as readline from "node:readline";
 import { getPensarApiUrl, getPensarConsoleUrl } from "../core/api";
 import {
+  AuthSessionExpiredError,
   createWorkspaceSelection,
   disconnect,
+  ensureValidToken,
   fetchWorkspaces,
   isConnected,
   pollForWorkspaceCreation,
   pollLegacyToken,
   pollWorkOSToken,
   pollWorkspaceSelection,
+  saveWorkOSSession,
   selectWorkspace,
   startDeviceFlow,
 } from "../core/auth";
+import { AuthRefreshError } from "../core/auth/token";
 import { config } from "../core/config";
 
 // ---------------------------------------------------------------------------
@@ -129,10 +133,7 @@ async function login(): Promise<void> {
       expiresIn: deviceInfo.expires_in,
     });
 
-    await config.update({
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-    });
+    await saveWorkOSSession(tokens);
 
     console.log("\nAuthenticated successfully. Fetching workspaces...");
     await handleWorkspaces(apiUrl, tokens.accessToken);
@@ -258,12 +259,44 @@ async function logout(): Promise<void> {
 
 async function status(): Promise<void> {
   const appConfig = await config.get();
+  let authMethod = appConfig.pensarAPIKey ? "API key" : "WorkOS";
 
   if (!isConnected(appConfig)) {
     console.log(
       "Not connected to Pensar Console.\n\nRun `pensar login` to connect.",
     );
     return;
+  }
+
+  if (
+    appConfig.workosSession ||
+    appConfig.refreshToken ||
+    appConfig.accessToken
+  ) {
+    try {
+      const validToken = await ensureValidToken(appConfig);
+      if (!validToken) {
+        console.log(
+          "Not connected to Pensar Console.\n\nRun `pensar login` to connect.",
+        );
+        return;
+      }
+      authMethod = validToken.type === "workos" ? "WorkOS" : "API key";
+    } catch (error) {
+      if (error instanceof AuthSessionExpiredError) {
+        console.log(
+          "Not connected to Pensar Console.\n\nRun `pensar login` to connect.",
+        );
+        return;
+      }
+      if (error instanceof AuthRefreshError) {
+        console.log(
+          "Unable to access secure credentials. Unlock your system and try again.\n\nRun `pensar login` if the problem persists.",
+        );
+        return;
+      }
+      throw error;
+    }
   }
 
   // If using an API key without stored workspace info, resolve it from the server
@@ -295,7 +328,6 @@ async function status(): Promise<void> {
     }
   }
 
-  const authMethod = appConfig.accessToken ? "WorkOS" : "API key";
   console.log(
     `✓ Connected to Pensar Console\n  Workspace: ${appConfig.workspaceSlug ?? "not set"}\n  Auth: ${authMethod}`,
   );

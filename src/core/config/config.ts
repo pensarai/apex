@@ -55,6 +55,8 @@ export interface Config {
   // WorkOS CLI auth (replaces pensarAPIKey for new auth flow)
   accessToken?: string | null;
   refreshToken?: string | null;
+  workosSession?: boolean;
+  credentialBackend?: "os-vault" | "secure-file" | null;
   workspaceId?: string | null;
   workspaceSlug?: string | null;
   // Gateway request signing key (server-issued)
@@ -74,15 +76,17 @@ export async function init() {
     .then(() => true)
     .catch(() => false);
   if (!dirExists) {
-    await fs.mkdir(folder, { recursive: true });
+    await fs.mkdir(folder, { recursive: true, mode: 0o700 });
   }
+  await fs.chmod(folder, 0o700).catch(() => {});
   const fileExists = await fs
     .access(file)
     .then(() => true)
     .catch(() => false);
   if (!fileExists) {
-    await fs.writeFile(file, JSON.stringify(DEFAULT_CONFIG));
+    await fs.writeFile(file, JSON.stringify(DEFAULT_CONFIG), { mode: 0o600 });
   }
+  await fs.chmod(file, 0o600).catch(() => {});
 
   const version = getCurrentVersion();
   return { ...DEFAULT_CONFIG, version };
@@ -145,21 +149,44 @@ export async function get(): Promise<Config> {
     await init();
     return applyEnvFallbacks(DEFAULT_CONFIG);
   }
+  await fs.chmod(folder, 0o700).catch(() => {});
+  await fs.chmod(file, 0o600).catch(() => {});
   const config = await fs.readFile(file, "utf8");
   const parsedConfig = JSON.parse(config);
   return applyEnvFallbacks(parsedConfig);
 }
 
-export async function update(config: Partial<Config>) {
-  const folder = path.join(os.homedir(), ".pensar");
-  const file = path.join(folder, "config.json");
-  const exists = await fs
-    .access(file)
-    .then(() => true)
-    .catch(() => false);
-  const currentConfig = exists
-    ? JSON.parse(await fs.readFile(file, "utf8"))
-    : DEFAULT_CONFIG;
-  const newConfig = { ...currentConfig, ...config };
-  await fs.writeFile(file, JSON.stringify(newConfig));
+let updateQueue: Promise<void> = Promise.resolve();
+
+export async function update(next: Partial<Config>) {
+  const write = async () => {
+    const folder = path.join(os.homedir(), ".pensar");
+    const file = path.join(folder, "config.json");
+    const temporaryFile = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    await fs.mkdir(folder, { recursive: true, mode: 0o700 });
+    await fs.chmod(folder, 0o700).catch(() => {});
+    const exists = await fs
+      .access(file)
+      .then(() => true)
+      .catch(() => false);
+    const currentConfig = exists
+      ? JSON.parse(await fs.readFile(file, "utf8"))
+      : DEFAULT_CONFIG;
+    const newConfig = { ...currentConfig, ...next };
+
+    try {
+      await fs.writeFile(temporaryFile, JSON.stringify(newConfig), {
+        mode: 0o600,
+      });
+      await fs.chmod(temporaryFile, 0o600).catch(() => {});
+      await fs.rename(temporaryFile, file);
+      await fs.chmod(file, 0o600).catch(() => {});
+    } finally {
+      await fs.rm(temporaryFile, { force: true }).catch(() => {});
+    }
+  };
+
+  const result = updateQueue.then(write, write);
+  updateQueue = result.catch(() => {});
+  return result;
 }
