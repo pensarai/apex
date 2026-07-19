@@ -131,26 +131,27 @@ export class WorkOSTokenManager {
           credentialBackend: backend,
         });
       } catch (error) {
-        this.accessToken = null;
-        await this.store.clear();
+        await this.clearSessionUnlocked();
         throw error;
       }
       return backend;
     });
   }
 
-  async clearSession(): Promise<void> {
-    return this.withRefreshLock(async () => {
-      this.refreshPromise = null;
-      this.accessToken = null;
-      await this.store.clear();
-      await this.updateConfig({
-        accessToken: null,
-        refreshToken: null,
-        workosSession: false,
-        credentialBackend: null,
-      });
+  private async clearSessionUnlocked(): Promise<void> {
+    this.refreshPromise = null;
+    this.accessToken = null;
+    await this.store.clear();
+    await this.updateConfig({
+      accessToken: null,
+      refreshToken: null,
+      workosSession: false,
+      credentialBackend: null,
     });
+  }
+
+  async clearSession(): Promise<void> {
+    return this.withRefreshLock(() => this.clearSessionUnlocked());
   }
 
   async ensureValidToken(
@@ -328,7 +329,7 @@ export class WorkOSTokenManager {
       }
 
       if (response.status === 400 || response.status === 401) {
-        await this.clearSession();
+        await this.clearSessionUnlocked();
         throw new AuthSessionExpiredError();
       }
       if (!response.ok) {

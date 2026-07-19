@@ -185,14 +185,11 @@ export function createCredentialStore(
           name: ACCOUNT,
         });
       } catch (error) {
-        if (isMissingEntryError(error)) {
-          await clearFallback();
-          return;
+        if (!isMissingEntryError(error)) {
+          log.warn("Unable to clear native auth credential", {
+            error: String(error),
+          });
         }
-        log.warn("Unable to clear native auth credential", {
-          error: String(error),
-        });
-        throw new CredentialStoreUnavailableError({ cause: error });
       }
       await clearFallback();
     },
