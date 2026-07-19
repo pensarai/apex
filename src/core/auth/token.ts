@@ -119,31 +119,37 @@ export class WorkOSTokenManager {
   }
 
   async saveSession(tokens: WorkOSSessionTokens): Promise<CredentialBackend> {
-    const backend = await this.store.save(tokens.refreshToken);
-    this.accessToken = tokens.accessToken;
-    try {
-      await this.updateConfig({
-        accessToken: null,
-        refreshToken: null,
-        workosSession: true,
-        credentialBackend: backend,
-      });
-    } catch (error) {
-      this.accessToken = null;
-      await this.store.clear();
-      throw error;
-    }
-    return backend;
+    return this.withRefreshLock(async () => {
+      this.refreshPromise = null;
+      const backend = await this.store.save(tokens.refreshToken);
+      this.accessToken = tokens.accessToken;
+      try {
+        await this.updateConfig({
+          accessToken: null,
+          refreshToken: null,
+          workosSession: true,
+          credentialBackend: backend,
+        });
+      } catch (error) {
+        this.accessToken = null;
+        await this.store.clear();
+        throw error;
+      }
+      return backend;
+    });
   }
 
   async clearSession(): Promise<void> {
-    this.accessToken = null;
-    await this.store.clear();
-    await this.updateConfig({
-      accessToken: null,
-      refreshToken: null,
-      workosSession: false,
-      credentialBackend: null,
+    return this.withRefreshLock(async () => {
+      this.refreshPromise = null;
+      this.accessToken = null;
+      await this.store.clear();
+      await this.updateConfig({
+        accessToken: null,
+        refreshToken: null,
+        workosSession: false,
+        credentialBackend: null,
+      });
     });
   }
 
