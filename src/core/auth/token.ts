@@ -229,6 +229,9 @@ export class WorkOSTokenManager {
       }
       return;
     }
+    if (current.workosSession !== undefined) {
+      return;
+    }
     if (this.migrationPromise) return this.migrationPromise;
 
     this.migrationPromise = this.withRefreshLock(async () => {

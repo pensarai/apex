@@ -173,6 +173,14 @@ export function createCredentialStore(
         log.warn("Native credential store unavailable; using secure file", {
           error: String(error),
         });
+        try {
+          await getNativeSecrets(options).delete({
+            service: SERVICE,
+            name: ACCOUNT,
+          });
+        } catch {
+          // Ignore errors clearing vault - already in fallback mode
+        }
         await saveFallback(refreshToken);
         return "secure-file";
       }
