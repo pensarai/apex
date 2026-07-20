@@ -130,6 +130,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 262144,
   },
   {
+    id: "moonshotai/kimi-k3",
+    name: "Kimi K3",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
     id: "moonshot/kimi-k2-turbo",
     name: "Kimi K2 Turbo",
     provider: "openrouter",
