@@ -1,9 +1,9 @@
-import { chmod, mkdir, open, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 const LOCK_RETRY_MS = 50;
-const LOCK_TIMEOUT_MS = 15_000;
+const LOCK_TIMEOUT_MS = 35_000;
 const STALE_LOCK_MS = 30_000;
 
 interface RefreshLockOptions {
@@ -37,14 +37,22 @@ export async function withAuthRefreshLock<T>(
   while (true) {
     try {
       const handle = await open(lockPath, "wx", 0o600);
+      const pid = process.pid;
       try {
-        await handle.writeFile(
-          JSON.stringify({ pid: process.pid, createdAt: now() }),
-        );
+        await handle.writeFile(JSON.stringify({ pid, createdAt: now() }));
         return await action();
       } finally {
         await handle.close().catch(() => {});
-        await rm(lockPath, { force: true }).catch(() => {});
+        // Only remove if we still own it
+        try {
+          const content = await readFile(lockPath, "utf8");
+          const lock = JSON.parse(content) as { pid: number };
+          if (lock.pid === pid) {
+            await rm(lockPath, { force: true }).catch(() => {});
+          }
+        } catch {
+          // Lock was already removed or is unreadable
+        }
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;

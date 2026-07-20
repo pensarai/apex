@@ -13,13 +13,9 @@ export type {
   WorkOSSessionTokens,
 } from "./token";
 export {
-  AuthRefreshError,
   AuthSessionExpiredError,
-  clearWorkOSSession,
   ensureValidToken,
-  isTokenExpired,
   saveWorkOSSession,
-  WorkOSTokenManager,
 } from "./token";
 export type {
   CreateWorkspaceSelectionResponse,

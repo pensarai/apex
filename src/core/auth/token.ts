@@ -71,10 +71,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 }
 
 /** Return true when an access token is expired or within the refresh buffer. */
-export function isTokenExpired(
-  token: string,
-  bufferSeconds: number = 60,
-): boolean {
+function isTokenExpired(token: string, bufferSeconds: number = 60): boolean {
   const payload = decodeJwtPayload(token);
   if (!payload || typeof payload.exp !== "number") return true;
 
@@ -207,11 +204,17 @@ export class WorkOSTokenManager {
     }
 
     if (current.workosSession) {
-      await this.updateConfig({
-        workosSession: false,
-        credentialBackend: null,
+      return this.withRefreshLock(async () => {
+        const stillStored = await this.store.load().catch(() => null);
+        if (!stillStored) {
+          await this.updateConfig({
+            workosSession: false,
+            credentialBackend: null,
+          });
+          if (!current.pensarAPIKey) throw new AuthSessionExpiredError();
+        }
+        return null;
       });
-      if (!current.pensarAPIKey) throw new AuthSessionExpiredError();
     }
 
     if (current.pensarAPIKey) {
@@ -235,12 +238,20 @@ export class WorkOSTokenManager {
     if (this.migrationPromise) return this.migrationPromise;
 
     this.migrationPromise = this.withRefreshLock(async () => {
+      const currentCfg = await config.get();
+      if (currentCfg.workosSession !== undefined) {
+        return;
+      }
       const existing = await this.store.load().catch((error) => {
         if (error instanceof CredentialStoreUnavailableError) return null;
         throw error;
       });
-      const backend =
-        existing?.backend ?? (await this.store.save(legacyRefreshToken));
+      let backend: CredentialBackend;
+      if (existing && existing.refreshToken === legacyRefreshToken) {
+        backend = existing.backend;
+      } else {
+        backend = await this.store.save(legacyRefreshToken);
+      }
       if (current.accessToken && !isTokenExpired(current.accessToken)) {
         this.accessToken = current.accessToken;
       }

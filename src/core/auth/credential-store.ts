@@ -178,8 +178,12 @@ export function createCredentialStore(
             service: SERVICE,
             name: ACCOUNT,
           });
-        } catch {
-          // Ignore errors clearing vault - already in fallback mode
+        } catch (clearError) {
+          if (!isMissingEntryError(clearError)) {
+            log.warn("Unable to clear stale vault credential during fallback", {
+              error: String(clearError),
+            });
+          }
         }
         await saveFallback(refreshToken);
         return "secure-file";
@@ -187,11 +191,13 @@ export function createCredentialStore(
     },
 
     async clear() {
+      let vaultCleared = false;
       try {
         await getNativeSecrets(options).delete({
           service: SERVICE,
           name: ACCOUNT,
         });
+        vaultCleared = true;
       } catch (error) {
         if (!isMissingEntryError(error)) {
           log.warn("Unable to clear native auth credential", {

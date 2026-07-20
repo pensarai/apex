@@ -135,7 +135,7 @@ COMMON SEARCH PATTERNS:
         const body = JSON.stringify({ query });
 
         // API key mode: authenticate directly without token exchange or signing
-        if (cfg.pensarAPIKey && !cfg.accessToken) {
+        if (cfg.pensarAPIKey && !cfg.workosSession) {
           // biome-ignore lint/style/noRestrictedGlobals: Pensar Console (not the pentest target); must not pass through targetFetch.
           const response = await fetch(`${apiUrl}/agents/web_search`, {
             method: "POST",
