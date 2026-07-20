@@ -461,7 +461,11 @@ function ApprovalInputArea({
         onAutoApprove();
       } else if (focusedElement === 2 && redirectInput.trim()) {
         const value = redirectInput.trim();
-        if (value.startsWith("/") && onCommandExecute) {
+        const isCommand =
+          value.startsWith("/") &&
+          !value.startsWith("//") &&
+          !/\//.test(value.slice(1));
+        if (isCommand && onCommandExecute) {
           setRedirectInput("");
           void onCommandExecute(value);
         } else {

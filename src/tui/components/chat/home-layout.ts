@@ -25,16 +25,20 @@ export function getHomeLayout(width: number, height: number): HomeLayout {
           : Math.max(6, Math.floor(height * 0.2));
 
   const fixedRows =
+    patternHeight +
     (showSubtitle ? 2 : 1) +
     (showWorkflowHints ? 2 + verticalGap : 0) +
     inputPadding * 2 +
     4 +
     2;
 
+  const available = Math.max(0, height - fixedRows);
+  const maxSuggestions = height >= 40 ? 8 : 4;
+
   return {
     inputPadding,
     inputWidth,
-    maxVisibleSuggestions: Math.max(2, Math.min(8, height - fixedRows)),
+    maxVisibleSuggestions: Math.max(2, Math.min(maxSuggestions, available)),
     patternHeight,
     showSubtitle,
     showWorkflowHints,
