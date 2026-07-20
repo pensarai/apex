@@ -19,13 +19,18 @@ export function isChatNewlineKey(key: {
 /** Enter submits; modified Enter and Ctrl+J insert newlines. */
 export const CHAT_KEY_BINDINGS: TextareaKeyBinding[] = [
   { name: "return", action: "submit" },
+  { name: "enter", action: "submit" },
   { name: "kpenter", action: "submit" },
   { name: "linefeed", action: "newline" },
+  { name: "j", ctrl: true, action: "newline" },
   { name: "return", shift: true, action: "newline" },
+  { name: "enter", shift: true, action: "newline" },
   { name: "kpenter", shift: true, action: "newline" },
   { name: "linefeed", shift: true, action: "newline" },
   { name: "return", ctrl: true, action: "newline" },
+  { name: "enter", ctrl: true, action: "newline" },
   { name: "kpenter", ctrl: true, action: "newline" },
   { name: "return", meta: true, action: "newline" },
+  { name: "enter", meta: true, action: "newline" },
   { name: "kpenter", meta: true, action: "newline" },
 ];

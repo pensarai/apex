@@ -53,10 +53,3 @@ export function SessionProvider({ children, session }: SessionProviderProps) {
 
   return <ctx.Provider value={value}>{children}</ctx.Provider>;
 }
-
-export const useSession = () => {
-  const session = useContext(ctx);
-  if (!session)
-    throw new Error("useSession must be called within a SessionProvider");
-  return session;
-};

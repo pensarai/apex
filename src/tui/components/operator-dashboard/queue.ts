@@ -8,7 +8,7 @@ export interface QueuedMessage {
   text: string;
 }
 
-export interface QueueWindowItem {
+interface QueueWindowItem {
   index: number;
   message: QueuedMessage;
 }
