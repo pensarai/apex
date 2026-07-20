@@ -299,9 +299,11 @@ async function status(): Promise<void> {
     }
   }
 
-  // If using an API key without stored workspace info, resolve it from the server
+  // If the active credential is an API key without stored workspace info,
+  // resolve it from the server. WorkOS access tokens are memory-only, so the
+  // absence of appConfig.accessToken does not identify API-key auth.
   if (
-    !appConfig.accessToken &&
+    authMethod === "API key" &&
     appConfig.pensarAPIKey &&
     !appConfig.workspaceSlug
   ) {
