@@ -32,12 +32,12 @@ pensar issues [filters]
 
 Lists security issues in the selected workspace. Returns a JSON array. Use filters to narrow the results.
 
-| Filter                | Description                                              |
-| --------------------- | -------------------------------------------------------- |
-| `--status <status>`   | Filter by: `open`, `closed`, `false-positive`, `in-review` |
-| `--severity <sev>`    | Filter by: `critical`, `high`, `medium`, `low`           |
-| `--scan <scanId>`     | Filter by scan (pentest) ID                              |
-| `--branch <branch>`   | Filter by branch                                         |
+| Filter              | Description                                                |
+| ------------------- | ---------------------------------------------------------- |
+| `--status <status>` | Filter by: `open`, `closed`, `false-positive`, `in-review` |
+| `--severity <sev>`  | Filter by: `critical`, `high`, `medium`, `low`             |
+| `--scan <scanId>`   | Filter by scan (pentest) ID                                |
+| `--branch <branch>` | Filter by branch                                           |
 
 ### Get Issue Details
 
@@ -53,13 +53,13 @@ Returns detailed information about a specific issue, including vulnerability des
 pensar issues update <issueId> [options]
 ```
 
-| Option                       | Description                         |
-| ---------------------------- | ----------------------------------- |
-| `--status <status>`          | New status                          |
-| `--closed-reason <reason>`   | Reason for closing                  |
-| `--closed-comments <text>`   | Additional comments when closing    |
-| `--false-positive`           | Flag the issue as a false positive  |
-| `--fp-reason <reason>`       | Reason for the false positive flag  |
+| Option                     | Description                        |
+| -------------------------- | ---------------------------------- |
+| `--status <status>`        | New status                         |
+| `--closed-reason <reason>` | Reason for closing                 |
+| `--closed-comments <text>` | Additional comments when closing   |
+| `--false-positive`         | Flag the issue as a false positive |
+| `--fp-reason <reason>`     | Reason for the false positive flag |
 
 ### Retest an Issue
 
@@ -91,7 +91,11 @@ pensar issues retest issue_ghi789
 ## Related Commands
 
 <CardGroup cols={2}>
-  <Card title="pensar fixes" icon="wrench" href="/apex/cli-commands/pensar-fixes">
+  <Card
+    title="pensar fixes"
+    icon="wrench"
+    href="/apex/cli-commands/pensar-fixes"
+  >
     View suggested fixes for an issue
   </Card>
   <Card title="pensar logs" icon="scroll" href="/apex/cli-commands/pensar-logs">

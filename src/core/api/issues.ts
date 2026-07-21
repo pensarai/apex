@@ -213,13 +213,8 @@ export async function updateIssue(
   return apiRequest<UpdateIssueResult>("PATCH", `/issues/${issueId}`, data);
 }
 
-export async function retestIssue(
-  issueId: string,
-): Promise<RetestIssueResult> {
-  return apiRequest<RetestIssueResult>(
-    "POST",
-    `/issues/${issueId}/retest`,
-  );
+export async function retestIssue(issueId: string): Promise<RetestIssueResult> {
+  return apiRequest<RetestIssueResult>("POST", `/issues/${issueId}/retest`);
 }
 
 export async function listFixes(issueId: string): Promise<FixSummary[]> {
