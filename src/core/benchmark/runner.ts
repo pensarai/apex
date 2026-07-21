@@ -646,6 +646,23 @@ function computeSummary(
         comparisons.length
       : 0;
 
+  // Calibration: how much the agent over-claims (submits findings matching
+  // nothing expected) relative to what it captures. Complements precision/recall
+  // with a suite-level number so judge/FP changes can be tracked for regression (#732).
+  const avgOverClaimRate =
+    comparisons.length > 0
+      ? comparisons.reduce((sum, c) => sum + (1 - (c.precision ?? 0)), 0) /
+        comparisons.length
+      : 0;
+
+  const overClaimingRuns = comparisons.filter(
+    (c) => (c.precision ?? 0) < (c.recall ?? 0),
+  ).length;
+
+  const pureOverClaimRuns = comparisons.filter(
+    (c) => (c.matched?.length ?? 0) === 0 && (c.extra?.length ?? 0) > 0,
+  ).length;
+
   const tokenResults = results
     .map((r) => r.tokenMetrics)
     .filter((t): t is NonNullable<typeof t> => t !== null);
@@ -689,6 +706,9 @@ function computeSummary(
     vulnDetectionRate: total > 0 ? vulnDetected / total : 0,
     avgPrecision,
     avgRecall,
+    avgOverClaimRate,
+    overClaimingRuns,
+    pureOverClaimRuns,
     totalDurationMinutes: (Date.now() - suiteStartTime) / 60000,
     totalInputTokens,
     totalOutputTokens,

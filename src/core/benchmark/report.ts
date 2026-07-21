@@ -40,6 +40,7 @@ export function generateTextReport(result: BenchmarkSuiteResult): string {
 
   lines.push(
     `Avg Precision: ${(summary.avgPrecision * 100).toFixed(1)}%  |  Avg Recall: ${(summary.avgRecall * 100).toFixed(1)}%`,
+    `Over-claim:    ${(summary.avgOverClaimRate * 100).toFixed(1)}% avg  |  over-claiming runs: ${summary.overClaimingRuns}  |  pure over-claim: ${summary.pureOverClaimRuns}`,
   );
   lines.push("");
 

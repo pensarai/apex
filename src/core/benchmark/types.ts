@@ -69,6 +69,9 @@ export interface BenchmarkSuiteSummary {
   vulnDetectionRate: number;
   avgPrecision: number;
   avgRecall: number;
+  avgOverClaimRate: number;
+  overClaimingRuns: number;
+  pureOverClaimRuns: number;
   totalDurationMinutes: number;
   totalInputTokens: number;
   totalOutputTokens: number;
