@@ -61,6 +61,13 @@ export interface UpdateIssueResult {
   };
 }
 
+export interface RetestIssueResult {
+  issueId: string;
+  sessionId: string;
+  status: "queued";
+  message: string;
+}
+
 export interface FixSummary {
   id: string;
   filePath: string;
@@ -204,6 +211,15 @@ export async function updateIssue(
   },
 ): Promise<UpdateIssueResult> {
   return apiRequest<UpdateIssueResult>("PATCH", `/issues/${issueId}`, data);
+}
+
+export async function retestIssue(
+  issueId: string,
+): Promise<RetestIssueResult> {
+  return apiRequest<RetestIssueResult>(
+    "POST",
+    `/issues/${issueId}/retest`,
+  );
 }
 
 export async function listFixes(issueId: string): Promise<FixSummary[]> {

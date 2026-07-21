@@ -1,11 +1,11 @@
 ---
 title: "pensar issues"
-description: "List, view, and update security issues via the Pensar Console API"
+description: "List, view, update, and retest security issues via the Pensar Console API"
 ---
 
 ## Overview
 
-The `pensar issues` command lets you manage security issues discovered by pentests. You can list issues with filters, view detailed information, and update issue statuses.
+The `pensar issues` command lets you manage security issues discovered by pentests. You can list issues with filters, view detailed information, update issue statuses, and queue retests.
 
 All commands operate on the **selected workspace**, which is chosen when you connect with [`pensar login`](/apex/cli-commands/pensar-login). There is no longer a project argument.
 
@@ -15,6 +15,7 @@ All commands operate on the **selected workspace**, which is chosen when you con
 pensar issues [filters]                        # List issues in the workspace (alias: pensar issues list)
 pensar issues get <issueId>                    # Get issue details
 pensar issues update <issueId> [options]       # Update an issue
+pensar issues retest <issueId>                 # Queue an issue retest
 ```
 
 ## Prerequisites
@@ -60,6 +61,14 @@ pensar issues update <issueId> [options]
 | `--false-positive`           | Flag the issue as a false positive  |
 | `--fp-reason <reason>`       | Reason for the false positive flag  |
 
+### Retest an Issue
+
+```bash
+pensar issues retest <issueId>
+```
+
+Queues an asynchronous retest of the issue against its original target. The JSON response includes the agent session ID for the queued run.
+
 ## Examples
 
 ```bash
@@ -74,6 +83,9 @@ pensar issues update issue_ghi789 --status closed --closed-reason "Patched in v2
 
 # Flag as false positive
 pensar issues update issue_ghi789 --false-positive --fp-reason "Test environment only"
+
+# Retest an issue after deploying a fix
+pensar issues retest issue_ghi789
 ```
 
 ## Related Commands
