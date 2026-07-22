@@ -176,7 +176,12 @@ export function routeCommand(
     return { type: "open-session" };
   }
 
-  if (commandLower === "clear" || commandLower === "new") {
+  if (
+    commandLower === "clear" ||
+    commandLower === "new" ||
+    commandLower.startsWith("clear ") ||
+    commandLower.startsWith("new ")
+  ) {
     return { type: "clear-session" };
   }
 
