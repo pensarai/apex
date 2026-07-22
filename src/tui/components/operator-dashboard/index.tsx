@@ -2190,6 +2190,19 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
   // Keyboard shortcuts
   useKeyboard((key) => {
+    if (
+      key.name === "escape" &&
+      !session &&
+      loadError &&
+      stack.length === 0 &&
+      !externalDialogOpen
+    ) {
+      key.preventDefault?.();
+      route.navigate({ type: "base", path: "home" });
+      refocusPrompt();
+      return;
+    }
+
     // Queue navigation: handle before general shortcuts
     if (
       status === "running" &&
