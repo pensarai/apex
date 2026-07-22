@@ -1,4 +1,9 @@
-import type { AIAuthConfig, AIModel, OpenAIReasoningEffort } from "../../../ai";
+import type {
+  AIAuthConfig,
+  AIModel,
+  OpenAIReasoningEffort,
+  ThinkingEffort,
+} from "../../../ai";
 import type { CredentialManager } from "../../../credentials";
 import type { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
@@ -6,6 +11,7 @@ import type { FindingsRegistry } from "../../../findings/registry";
 import type { PromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
+import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { StepTraceWriter } from "../trace";
 import type { PersistentShell } from "./persistentShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
@@ -27,6 +33,13 @@ export type ToolContext = {
 
   /** The target URL / host — needed by browser tools for context */
   target?: string;
+
+  /**
+   * gRPC context when the owning agent's target is a gRPC method. Set on a
+   * pentest orchestrator so `spawn_pentest_agent` forwards it to workers,
+   * which then run the gRPC test battery instead of HTTP-style tests.
+   */
+  grpc?: GrpcPentestContext;
 
   /** Signal to cancel in-flight operations */
   abortSignal?: AbortSignal;
@@ -63,6 +76,9 @@ export type ToolContext = {
    * credential IDs to full secrets without the agent ever seeing them.
    */
   credentialManager?: CredentialManager;
+
+  /** Secret values injected into the shell env; scrubbed from execute_command output. */
+  secretValues?: string[];
 
   /**
    * Long-lived bash process shared across execute_command calls.
@@ -106,6 +122,9 @@ export type ToolContext = {
 
   /** Enable extended thinking for sub-agents spawned by orchestration tools. */
   enableThinking?: boolean;
+
+  /** Adaptive-thinking effort hint for spawned sub-agents (Anthropic 4.6+). */
+  thinkingEffort?: ThinkingEffort | null;
 
   /** OpenAI reasoning effort for GPT/o-series sub-agents. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;

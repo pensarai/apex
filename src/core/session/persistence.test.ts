@@ -10,13 +10,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ModelMessage } from "ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { newSessionId } from "../id/id";
 import { getResumeMessages, normalizeMessages } from "./index";
 import {
   type AgentManifestEntry,
+  buildManifestEntries,
   convertModelMessagesToUI,
+  finalizeManifest,
+  getCompletedAgentIds,
   loadSubagents,
   readAgentManifest,
+  reconcileManifestOnResume,
   type SessionInfo,
+  type SwarmTarget,
   saveSubagentData,
   writeAgentManifest,
 } from "./persistence";
@@ -515,6 +521,32 @@ describe("loadSubagents directory-only discovery", () => {
 
     const loaded = loadSubagents(tmpDir);
     expect(loaded).toHaveLength(0);
+  });
+
+  it("discovers a session-id-keyed subagent directory (spawn_pentest_agent)", () => {
+    const childSessionId = newSessionId();
+    const subagentsDir = join(tmpDir, "subagents");
+    const dir = join(subagentsDir, childSessionId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "messages.json"),
+      JSON.stringify([
+        { role: "user", content: "Test /api/users for IDOR" },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Probing IDOR..." }],
+        },
+      ]),
+    );
+
+    const loaded = loadSubagents(tmpDir);
+    expect(loaded).toHaveLength(1);
+    // Directory key (and thus the loaded id) IS the child's session id.
+    expect(loaded[0].id).toBe(childSessionId);
+    expect(loaded[0].id.startsWith("ses_")).toBe(true);
+    expect(loaded[0].type).toBe("pentest");
+    expect(loaded[0].name).toBe("Pentest Worker");
+    expect(loaded[0].messages.length).toBeGreaterThan(0);
   });
 
   it("skips directories without messages.json", () => {
@@ -1044,5 +1076,119 @@ describe("normalizeMessages", () => {
       }
     ).content;
     expect(parts[0].output).toEqual({ type: "json", value: { ok: true } });
+  });
+});
+
+describe("swarm manifest — stable ses_ ids", () => {
+  const targets: SwarmTarget[] = [
+    { name: "Login", target: "https://app/login", objectives: ["auth bypass"] },
+    { name: "API", target: "https://app/api", objectives: ["idor"] },
+  ];
+
+  it("buildManifestEntries mints a ses_ id per worker, distinct, id === sessionId", () => {
+    const entries = buildManifestEntries(targets);
+    expect(entries).toHaveLength(2);
+    for (const e of entries) {
+      expect(e.id).toMatch(/^ses_/);
+      expect(e.sessionId).toBe(e.id);
+    }
+    expect(entries[0].id).not.toBe(entries[1].id);
+    expect(entries[0].name).toBe("Pentest Agent 1");
+    expect(entries[1].name).toBe("Pentest Agent 2");
+  });
+
+  it("reconcileManifestOnResume REUSES the persisted ses_ id rather than minting a new one", () => {
+    const first = buildManifestEntries(targets);
+    const persisted: AgentManifestEntry[] = [
+      {
+        ...first[0],
+        status: "completed",
+        completedAt: new Date().toISOString(),
+      },
+      { ...first[1], status: "running" },
+    ];
+
+    const freshOnResume = buildManifestEntries(targets);
+    expect(freshOnResume[0].id).not.toBe(first[0].id);
+    const reconciled = reconcileManifestOnResume(persisted, freshOnResume);
+
+    expect(reconciled[0].id).toBe(first[0].id);
+    expect(reconciled[1].id).toBe(first[1].id);
+    expect(reconciled[0].status).toBe("completed");
+    expect(reconciled[1].status).toBe("running");
+  });
+
+  it("reconcileManifestOnResume mints fresh ids for a brand-new run (no prior manifest)", () => {
+    const fresh = buildManifestEntries(targets);
+    const reconciled = reconcileManifestOnResume([], fresh);
+    expect(reconciled.map((e) => e.id)).toEqual(fresh.map((e) => e.id));
+  });
+
+  it("reconcileManifestOnResume does NOT reuse an id when the target at that position changed", () => {
+    const first = buildManifestEntries(targets);
+    const persisted: AgentManifestEntry[] = [
+      { ...first[0], status: "running" },
+      { ...first[1], status: "running" },
+    ];
+    const changed: SwarmTarget[] = [
+      { name: "New", target: "https://app/new", objectives: ["x"] },
+      targets[1],
+    ];
+    const reconciled = reconcileManifestOnResume(
+      persisted,
+      buildManifestEntries(changed),
+    );
+    expect(reconciled[0].id).not.toBe(first[0].id); // changed target → fresh id
+    expect(reconciled[1].id).toBe(first[1].id); // unchanged target → reused id
+  });
+
+  it("getCompletedAgentIds resolves completed workers by their stable ses_ id", () => {
+    const session = makeSession();
+    const entries = buildManifestEntries(targets);
+    writeAgentManifest(session, [
+      { ...entries[0], status: "completed" },
+      { ...entries[1], status: "running" },
+    ]);
+
+    const completed = getCompletedAgentIds(session);
+    expect(completed.has(entries[0].id)).toBe(true);
+    expect(completed.has(entries[1].id)).toBe(false);
+    expect([...completed][0]).toMatch(/^ses_/);
+  });
+
+  it("finalizeManifest resolves each worker by position and keeps its stable id", () => {
+    const session = makeSession();
+    const entries = buildManifestEntries(targets);
+    writeAgentManifest(session, entries);
+
+    finalizeManifest(session, entries, [{ ok: true }, null]);
+
+    const final = readAgentManifest(session);
+    expect(final[0].id).toBe(entries[0].id);
+    expect(final[1].id).toBe(entries[1].id);
+    expect(final[0].status).toBe("completed");
+    expect(final[1].status).toBe("failed");
+  });
+
+  it("loadSubagents labels a ses_-keyed worker from the manifest name (not a generic ses_ label)", () => {
+    const session = makeSession();
+    const entries = buildManifestEntries(targets);
+    writeAgentManifest(session, [
+      { ...entries[0], status: "completed" },
+      entries[1],
+    ]);
+    saveSubagentData(session, {
+      agentName: entries[0].id,
+      target: targets[0].target,
+      status: "completed",
+      findingsCount: 1,
+      messages: [makeMsg("assistant", "done")],
+    });
+
+    const loaded = loadSubagents(tmpDir);
+    const worker = loaded.find((s) => s.id === entries[0].id);
+    expect(worker).toBeDefined();
+    // Without the manifest lookup this would fall back to a generic filename label.
+    expect(worker?.name).toBe("Pentest Agent 1");
   });
 });

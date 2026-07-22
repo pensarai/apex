@@ -34,6 +34,7 @@ export type FindingJudgeRuntimeContext = Pick<
   | "sandbox"
   | "target"
   | "enableThinking"
+  | "thinkingEffort"
   | "openAIReasoningEffort"
 > & {
   model: AIModel;
@@ -44,6 +45,8 @@ export type FindingJudgeRuntimeContext = Pick<
    * persisted logs line up. Defaults to `"finding-judge"`.
    */
   subagentId?: string;
+  /** Human-readable label for readable OTel span names. Defaults to "Finding Judge". */
+  subagentName?: string;
 };
 
 /**
@@ -68,9 +71,11 @@ export async function judgeFinding(
       abortSignal: ctx.abortSignal,
       eventBus: ctx.eventBus,
       subagentId: ctx.subagentId,
+      subagentName: ctx.subagentName,
       sandbox: ctx.sandbox,
       target: input.target ?? ctx.target ?? ctx.session.targets[0],
       enableThinking: ctx.enableThinking,
+      thinkingEffort: ctx.thinkingEffort,
       openAIReasoningEffort: ctx.openAIReasoningEffort,
     });
 

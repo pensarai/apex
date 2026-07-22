@@ -18,6 +18,7 @@ import type {
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ThinkingEffort,
 } from "../../ai";
 import type { CredentialManager } from "../../credentials";
 import type { AgentEventBus } from "../../eventBus";
@@ -27,6 +28,7 @@ import type { ApprovalGate } from "../../operator";
 import type { PromptInjectionLibrary } from "../../prompt-injections";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
+import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
@@ -72,7 +74,7 @@ export type Finding = z.infer<typeof ApexFindingObject>;
  * @typeParam TResult - The type returned by `consume()`. Defaults to `void`.
  */
 /** Agent operating mode that controls which tools are available. */
-export type AgentMode = "default" | "plan";
+export type AgentMode = "default" | "plan" | "fast-strike";
 
 export type OffensiveSecurityAgentInput<TResult = void> = {
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
@@ -89,6 +91,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    *
    * - `"default"` — all tools in `activeTools` are available (default)
    * - `"plan"` — only read-only / non-mutating tools are available
+   * - `"fast-strike"` — live registry minus {@link FAST_STRIKE_EXCLUDED_TOOL_NAMES}; ignores `activeTools`
    *
    * When set to `"plan"`, the agent's `activeTools` are intersected with
    * {@link PLAN_MODE_TOOL_NAMES} so that mutation tools (create_file,
@@ -104,6 +107,13 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** The target URL / host — passed to browser tools for context */
   target?: string;
+
+  /**
+   * gRPC context when the target is a gRPC method rather than an HTTP
+   * endpoint. Forwarded into the {@link ToolContext} so `spawn_pentest_agent`
+   * can hand it down to spawned workers.
+   */
+  grpc?: GrpcPentestContext;
 
   /**
    * Which tools the agent is allowed to use.
@@ -189,6 +199,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** The subagent ID if this agent is a subagent */
   subagentId?: string;
+
+  /** Display label for the OTel span name / `gen_ai.agent.name`. */
+  subagentName?: string;
 
   /**
    * Override the auto-computed task directory. When set, takes precedence
@@ -279,8 +292,14 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    */
   environmentVariables?: Record<string, string>;
 
+  /** Secret values to scrub from execute_command output. Forwarded into the {@link ToolContext}. */
+  secretValues?: string[];
+
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
+
+  /** Adaptive-thinking effort hint (Anthropic Opus/Sonnet 4.6+); ignored elsewhere. */
+  thinkingEffort?: ThinkingEffort | null;
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
@@ -373,6 +392,9 @@ export interface SpecializedAgentInput {
    */
   subagentId?: string;
 
+  /** Display label forwarded to {@link OffensiveSecurityAgentInput} for span names. */
+  subagentName?: string;
+
   /** Shared findings registry for cross-agent dedup */
   findingsRegistry?: FindingsRegistry;
 
@@ -391,8 +413,14 @@ export interface SpecializedAgentInput {
    */
   environmentVariables?: Record<string, string>;
 
+  /** Secret values to scrub from execute_command output. Forwarded into the {@link ToolContext}. */
+  secretValues?: string[];
+
   /** Enable extended thinking (reasoning) for supported models. */
   enableThinking?: boolean;
+
+  /** Adaptive-thinking effort hint (Anthropic Opus/Sonnet 4.6+); ignored elsewhere. */
+  thinkingEffort?: ThinkingEffort | null;
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;

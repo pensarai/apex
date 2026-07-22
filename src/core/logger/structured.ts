@@ -60,6 +60,16 @@ const COLORS: Record<LogLevel, string> = {
 const RESET = "\x1b[0m";
 const DIM = "\x1b[2m";
 
+// Sink for emitted lines. Defaults to stderr; the TUI redirects it to a file
+// (routeLogsToErrorFile) so writes don't corrupt the OpenTUI frame.
+type LogSink = (line: string) => void;
+const stderrSink: LogSink = (line) => process.stderr.write(`${line}\n`);
+let sink: LogSink = stderrSink;
+
+export function setLogSink(next: LogSink | null): void {
+  sink = next ?? stderrSink;
+}
+
 class Logger {
   private level: LogLevel;
   private explicit = false;
@@ -134,7 +144,7 @@ class Logger {
         ? this.formatJson(ts, level, msg, fields)
         : this.formatPretty(ts, level, msg, fields);
 
-    process.stderr.write(`${line}\n`);
+    sink(line);
   }
 
   private formatJson(

@@ -24,9 +24,9 @@ Obtain valid credentials/sessions that other agents can use for authenticated te
 # Available Tools
 
 ## API Authentication
-- \`authenticate_session\` — Submit credentials via form POST, JSON POST, or HTTP Basic auth.
-  Params: loginUrl, username, password, method (form_post|json_post|basic_auth), usernameField, passwordField, additionalFields.
-- \`execute_command\` — Run curl or other shell commands for custom/complex API auth flows.
+- \`execute_command\` — Run curl (or other shell commands) to submit credentials via form POST,
+  JSON POST, or HTTP Basic auth, and to capture the Set-Cookie / token response. Use this for all
+  custom and complex API auth flows.
 
 ## Browser Authentication
 - \`browser_navigate\` — Navigate to login page
@@ -64,11 +64,11 @@ Look for:
 ## Step 2: Authenticate
 
 ### API path (use when target is an API or has a simple form):
-1. Call \`authenticate_session\` with the correct method and credentials.
-   - \`form_post\` for HTML forms
-   - \`json_post\` for JSON APIs
-   - \`basic_auth\` for HTTP Basic
-2. Check the response — if authenticated is true, you have a session cookie.
+1. Use \`execute_command\` with curl to submit the credentials, matching the target's scheme:
+   - \`curl -i -d 'username=...&password=...' <loginUrl>\` for HTML form POST
+   - \`curl -i -H 'Content-Type: application/json' -d '{"username":"...","password":"..."}' <loginUrl>\` for JSON APIs
+   - \`curl -i -u '<user>:<pass>' <url>\` for HTTP Basic
+2. Inspect the response (\`-i\` shows headers) — capture any \`Set-Cookie\` value or token to use as the session credential.
 
 ### Browser path (use for SPAs, OAuth, JS-rendered forms):
 1. \`browser_navigate\` to the login URL
@@ -100,7 +100,7 @@ If both API and browser approaches fail, use \`delegate_to_auth_subagent\` for c
 **First**, call \`complete_authentication\` with:
 - \`success\`: whether auth succeeded
 - \`summary\`: what happened and what credentials/cookies were obtained
-- \`exportedCookies\`: the cookie string for downstream HTTP requests (from browser_get_cookies cookieHeader or authenticate_session response)
+- \`exportedCookies\`: the cookie string for downstream HTTP requests (from browser_get_cookies cookieHeader or the Set-Cookie header in the curl response)
 - \`exportedHeaders\`: auth headers map, e.g. {"Authorization": "Bearer <token>"} (from browser_evaluate localStorage tokens or API response)
 - \`strategy\`: method used ("browser", "form_post", "json_post", "basic_auth", "bearer")
 - \`authBarrier\`: if a barrier was encountered (captcha, mfa, etc.)
@@ -114,12 +114,20 @@ These are the ONLY way downstream agents receive the session credentials.
 
 # Error Recovery
 
-If authentication fails:
+If authentication fails, try these mechanical fixes (they are login mechanics, not credential changes):
 1. Try alternative field names (email vs username, passwd vs password)
 2. Check for CSRF token requirements (look in page source or hidden form fields)
 3. Verify the endpoint URL is correct
 4. Try a different method (form_post vs json_post)
 5. If all else fails, call \`complete_authentication\` with success=false
+
+If credentials were provided to you, they are already verified and SHARED — do not modify them or their
+account settings. When such provided credentials are genuinely rejected — wrong password, account locked, a
+forced password change is required, MFA is required, or the email is not confirmed — do NOT try to recover by resetting or changing
+the password, modifying MFA/2FA settings, or running any account-recovery flow. Fail fast: call
+\`complete_authentication\` with success=false and a summary naming the reason. Do NOT register a new account
+or self-sign-up to get around a rejected provided credential — that is a different account than the one
+under test and only pollutes results.
 
 ## Rate Limiting
 
@@ -217,28 +225,8 @@ The following credentials are configured for this domain:
       prompt += `\n`;
       if (cred.context) prompt += `- Context: ${cred.context}\n`;
       if (cred.username) prompt += `- Username: ${cred.username}\n`;
-      if (cred.password) prompt += `- Password: ${cred.password}\n`;
-      if (cred.apiKey) prompt += `- API Key: ${cred.apiKey}\n`;
       if (cred.loginUrl) prompt += `- Login URL: ${cred.loginUrl}\n`;
-      if (cred.tokens) {
-        if (cred.tokens.bearerToken)
-          prompt += `- Bearer Token: ${cred.tokens.bearerToken}\n`;
-        if (cred.tokens.cookies)
-          prompt += `- Cookies: ${cred.tokens.cookies}\n`;
-        if (cred.tokens.sessionToken)
-          prompt += `- Session Token: ${cred.tokens.sessionToken}\n`;
-        if (
-          cred.tokens.customHeaders &&
-          Object.keys(cred.tokens.customHeaders).length > 0
-        ) {
-          prompt += `- Custom Headers:\n`;
-          for (const [key, value] of Object.entries(
-            cred.tokens.customHeaders,
-          )) {
-            prompt += `  - ${key}: ${value}\n`;
-          }
-        }
-      }
+      // Secrets omitted — referenced by credential ID via tools, never in prompt text.
       prompt += `\n`;
     }
   }
@@ -257,29 +245,7 @@ The following credentials are configured for this domain:
       prompt += `- Context: ${input.credentials?.context}
 `;
     }
-    const tokens = input.credentials!.tokens!;
-    if (tokens.bearerToken) {
-      prompt += `- Bearer Token: ${tokens.bearerToken}
-  Use as: Authorization: Bearer <token>
-`;
-    }
-    if (tokens.cookies) {
-      prompt += `- Cookies: ${tokens.cookies}
-  Use as: Cookie header value
-`;
-    }
-    if (tokens.sessionToken) {
-      prompt += `- Session Token: ${tokens.sessionToken}
-`;
-    }
-    if (tokens.customHeaders && Object.keys(tokens.customHeaders).length > 0) {
-      prompt += `- Custom Headers:
-`;
-      for (const [key, value] of Object.entries(tokens.customHeaders)) {
-        prompt += `  - ${key}: ${value}
-`;
-      }
-    }
+    // Secrets omitted — session validated by credential ID via tools, never in prompt text.
     prompt += `
 **Instructions for Token Verification:**
 1. Use \`validate_session\` with the provided tokens to test if they grant access
@@ -308,14 +274,7 @@ The following credentials are configured for this domain:
       prompt += `- Username: ${input.credentials.username}
 `;
     }
-    if (input.credentials.password) {
-      prompt += `- Password: ${input.credentials.password}
-`;
-    }
-    if (input.credentials.apiKey) {
-      prompt += `- API Key: ${input.credentials.apiKey}
-`;
-    }
+    // Secrets omitted — referenced by credential ID via tools, never in prompt text.
     if (input.credentials.loginUrl) {
       prompt += `- Login URL Hint: ${input.credentials.loginUrl}
 `;

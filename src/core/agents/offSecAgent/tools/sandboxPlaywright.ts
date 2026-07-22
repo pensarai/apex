@@ -26,7 +26,7 @@ import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../../http/targetHeaders";
-import { CAMOUFOX_OPTIONS } from "./camoufox";
+import { CAMOUFOX_OPTIONS, MEMORY_FIREFOX_PREFS } from "./camoufox";
 import type {
   BrowserClickResult,
   BrowserConsoleResult,
@@ -320,6 +320,10 @@ const fs = require('fs');
   try {
     context = await firefox.launchPersistentContext('/tmp/pw-user-data', {
       ...__camou,
+      // Layer memory prefs over Camoufox's fingerprint prefs (ours win); see
+      // MEMORY_FIREFOX_PREFS in ./camoufox — collapses Fission/content-process
+      // fan-out that otherwise costs ~3 GB across the run.
+      firefoxUserPrefs: { ...__camou.firefoxUserPrefs, ...${JSON.stringify(MEMORY_FIREFOX_PREFS)} },
       ...(__extraHeaders ? { extraHTTPHeaders: __extraHeaders } : {}),
     });
     const pages = context.pages();
@@ -633,6 +637,14 @@ Use this to document:
             mkdirSync(dir, { recursive: true });
           }
           writeFileSync(localPath, Buffer.from(result.data, "base64"));
+          // The PNG bytes are already back on the host (via base64) and
+          // written to `evidenceDir`; the sandbox-side staging copy in
+          // `/tmp/evidence` is never read again. Drop it so a
+          // screenshot-heavy scan doesn't accumulate them until teardown
+          // (ENOSPC). Best-effort — a failed cleanup must not fail the tool.
+          void sandbox
+            .execute(`rm -f ${sandboxPath}`, { timeout: 10 })
+            .catch(() => {});
           return {
             success: true,
             path: localPath,

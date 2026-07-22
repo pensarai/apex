@@ -4,6 +4,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { CredentialManager } from "../../../credentials";
 import { AgentEventBus } from "../../../eventBus";
+import { newSessionId } from "../../../id/id";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import type { AuthCredentials } from "../../specialized/authenticationAgent/types";
@@ -88,12 +89,12 @@ export function delegateAuth(ctx: ToolContext) {
   return tool({
     description: `Delegate authentication to the specialized auth subagent.
 
-Use when:
-- Complex auth flow detected (OAuth, SAML, CSRF tokens)
-- Browser-based login required (SPA, JavaScript forms)
-- Built-in authenticate_session tool failed
-- MFA or CAPTCHA barrier detected
-- Need to verify pre-existing tokens (bearer, API key, cookies)
+This is the single entry point for authenticating against a target. Use it for:
+- Simple logins (form POST, JSON API, HTTP Basic)
+- Complex auth flows (OAuth, SAML, CSRF tokens)
+- Browser-based login (SPA, JavaScript forms)
+- MFA or CAPTCHA barriers (will report a barrier if it can't proceed)
+- Verifying pre-existing tokens (bearer, API key, cookies)
 - No credentials provided (will probe for open registration)
 
 The auth subagent will:
@@ -102,14 +103,7 @@ The auth subagent will:
 3. Return cookies/headers for authenticated requests
 4. Verify tokens against protected endpoints if provided
 
-IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 endpoints.
-
-When to use delegate_to_auth_subagent vs authenticate_session:
-- Simple form POST without CSRF -> use authenticate_session
-- JSON API with username/password -> use authenticate_session
-- Complex flow (OAuth, CSRF, SPA, browser required) -> delegate_to_auth_subagent
-- If authenticate_session fails -> delegate_to_auth_subagent
-- Token verification needed -> delegate_to_auth_subagent`,
+IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 endpoints.`,
     inputSchema: z.object({
       target: z.string().describe("Target URL requiring authentication"),
       credentialId: z
@@ -192,6 +186,9 @@ When to use delegate_to_auth_subagent vs authenticate_session:
       authHints,
       reason,
     }) => {
+      // Outside the try so the failure-path subagent-complete reuses this id.
+      const subagentId = newSessionId();
+      const subagentName = "Authentication Agent";
       try {
         if (!ctx.model) {
           return {
@@ -221,10 +218,9 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           }
         }
 
-        const subagentId = "auth-agent";
-
         ctx.eventBus?.emit("subagent-spawn", {
           subagentId,
+          name: subagentName,
           input: { target, reason },
           parentSubagentId: ctx.subagentId,
         });
@@ -312,6 +308,8 @@ When to use delegate_to_auth_subagent vs authenticate_session:
           abortSignal: ctx.abortSignal,
           eventBus: localBus,
           subagentId,
+          subagentName,
+          secretValues: ctx.secretValues,
         });
 
         ctx.eventBus?.emit("subagent-complete", {
@@ -382,7 +380,7 @@ When to use delegate_to_auth_subagent vs authenticate_session:
         };
       } catch (error: unknown) {
         ctx.eventBus?.emit("subagent-complete", {
-          subagentId: "auth-agent",
+          subagentId,
           status: "failed",
           parentSubagentId: ctx.subagentId,
         });

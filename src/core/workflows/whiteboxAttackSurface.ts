@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
+import pLimit from "p-limit";
 import { z } from "zod";
 import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
@@ -32,8 +33,10 @@ import type {
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
+  ThinkingEffort,
 } from "../ai";
 import type { AgentEventBus } from "../eventBus";
+import { newSessionId } from "../id/id";
 import { mapAppWithSurface } from "../integrations/surface";
 import { createLogger } from "../logger/structured";
 import type { SessionInfo } from "../session";
@@ -47,6 +50,17 @@ const log = scopedLogger(() => createLogger("whitebox-workflow"));
 // ---------------------------------------------------------------------------
 
 const DEFAULT_CONCURRENCY = 5;
+
+/**
+ * Hard ceiling on CodeAgents running concurrently across ALL apps and their
+ * endpoints. Previously the app-level cap (`DEFAULT_CONCURRENCY` = 5) and the
+ * per-app endpoint cap (`ENDPOINT_DOCUMENTATION_CONCURRENCY` = 10) multiplied,
+ * so a repo with many apps could run ~50 agents at once — the dominant memory
+ * driver in the 8 GiB recon sandbox. A single shared `p-limit` gate makes the
+ * cap independent of app/endpoint counts. Override via
+ * `WhiteboxAttackSurfaceWorkflowInput.maxConcurrentAgents`.
+ */
+const MAX_CONCURRENT_AGENTS = 12;
 
 type DiscoveryTaskType = "pages" | "apiEndpoints" | "cloudResourceEndpoints";
 
@@ -106,6 +120,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+). */
   enableThinking?: boolean;
+  /** Adaptive-thinking effort hint (Anthropic Opus/Sonnet 4.6+); ignored elsewhere. */
+  thinkingEffort?: ThinkingEffort | null;
   /** Known domains associated with the project — agents can map discovered apps to these. */
   domains?: string[];
   /** Project-level threat model content (e.g. from .pensar/threat_model.md), if found */
@@ -118,6 +134,12 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
    * service apps. Defaults to `true`.
    */
   surfaceIntegrationEnabled?: boolean;
+  /**
+   * Hard ceiling on CodeAgents running concurrently across all apps/endpoints.
+   * Defaults to {@link MAX_CONCURRENT_AGENTS}. Bounds total agent fan-out so it
+   * doesn't scale with the number of apps in the repo.
+   */
+  maxConcurrentAgents?: number;
 }
 
 interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
@@ -161,15 +183,30 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     onCacheMetrics,
     openAIReasoningEffort,
     enableThinking,
+    thinkingEffort,
     domains,
     projectThreatModel,
     environments,
     surfaceIntegrationEnabled = true,
+    maxConcurrentAgents = MAX_CONCURRENT_AGENTS,
   } = input;
+
+  // Single shared gate for every CodeAgent run in this workflow (Phase 1
+  // discovery, Phase 2 per-app discovery, and per-endpoint documentation). This
+  // is what makes total concurrency independent of app count: the nested
+  // app-level (`DEFAULT_CONCURRENCY`) and per-app endpoint-level
+  // (`ENDPOINT_DOCUMENTATION_CONCURRENCY`) loops still control scheduling, but
+  // the number of agents actually running at once can never exceed this.
+  const agentSlots = pLimit(Math.max(1, maxConcurrentAgents));
+  const agentLimiter = <T>(fn: () => Promise<T>): Promise<T> => agentSlots(fn);
 
   // =========================================================================
   // Phase 1: Identify all apps in the repository
   // =========================================================================
+
+  // Umbrella node — real `ses_` id so the appsAgent span and its agent_sessions
+  // row share one id; also the parent for per-app nodes (held open until Phase 2).
+  const WORKFLOW_UMBRELLA_ID = newSessionId();
 
   const appsAgent = new CodeAgent<AppsDiscoveryResult>({
     codebasePath,
@@ -187,11 +224,13 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     abortSignal,
     attackSurfaceRegistry,
     eventBus,
-    subagentId: "whitebox-apps-discovery",
+    subagentId: WORKFLOW_UMBRELLA_ID,
+    subagentName: "Whitebox Apps Discovery",
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
     openAIReasoningEffort,
     enableThinking,
+    thinkingEffort,
     responseSchema: AppsDiscoveryResultSchema,
     projectThreatModel,
     // Reserved for Phase 2's per-app task agents. Inline documentation
@@ -203,16 +242,13 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     `Phase 1: discovering apps in ${codebasePath}${domains?.length ? ` (${domains.length} known domains)` : ""}`,
   );
 
-  // Held open until Phase 2 finishes so per-app synthetic nodes can nest under it.
-  const WORKFLOW_UMBRELLA_ID = "whitebox-apps-discovery";
-
   eventBus?.emit("subagent-spawn", {
     subagentId: WORKFLOW_UMBRELLA_ID,
     name: "Whitebox Apps Discovery",
     input: { codebasePath },
   });
 
-  const appsResult = await appsAgent.consume();
+  const appsResult = await agentLimiter(() => appsAgent.consume());
 
   log.info(
     `Phase 1 complete: ${appsResult?.apps.length ?? 0} apps discovered` +
@@ -318,7 +354,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     type: DiscoveryTaskType,
     objective: string,
   ): Promise<void> => {
-    const subagentId = `${type}-${app.name}`;
+    const subagentId = newSessionId();
     const appNodeId = appNodeIdFor(app.name);
 
     log.debug(
@@ -343,17 +379,19 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       attackSurfaceRegistry,
       eventBus,
       subagentId,
+      subagentName: TASK_TYPE_LABELS[type],
       onStepFinish: (event) => onStepFinish?.(event),
       onCacheMetrics,
       openAIReasoningEffort,
       enableThinking,
+      thinkingEffort,
       responseSchema: DiscoverySummarySchema,
       excludeTools: ["document_app"],
       projectThreatModel,
     });
 
     try {
-      await agent.consume();
+      await agentLimiter(() => agent.consume());
 
       log.debug(`Phase 2: agent "${subagentId}" completed`);
 
@@ -440,8 +478,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
               onCacheMetrics,
               openAIReasoningEffort,
               enableThinking,
+              thinkingEffort,
               projectThreatModel,
               parentSubagentId: appNodeId,
+              agentLimiter,
             });
           } else {
             log.debug(`${app.name}: fallback (${surfaceResult.reason})`);
@@ -679,6 +719,8 @@ function assetRecordToEndpoint(
     pentestObjectives: record.pentestObjectives ?? [],
     riskScore: record.riskScore,
     threatModel: record.threatModel,
+    transport: record.transport,
+    grpc: record.grpc,
   });
 
   return parsed.success ? parsed.data : null;
@@ -897,6 +939,15 @@ Find ALL API endpoints **whose route definitions live in this application's sour
 - **Rails**: routes.rb API namespaces, resources, controller actions
 - **Spring**: @GetMapping, @PostMapping, @PutMapping, @DeleteMapping, @RequestMapping
 - **Go**: http.HandleFunc, mux.Handle, gin router methods
+- **gRPC**: \`.proto\` service definitions (\`service X { rpc Method (Req) returns (Resp); }\`), \`buf.yaml\`/\`buf.gen.yaml\`, or generated gRPC stubs
+
+### gRPC / Connect services — do NOT flatten into HTTP paths
+A gRPC method looks like a path (\`/package.Service/Method\`) but is NOT an HTTP route. When this app defines gRPC/Connect services, document **one \`document_endpoint\` per \`rpc\` method** with:
+- **endpointType**: \`"api-endpoint"\` (a gRPC method is still an API endpoint)
+- **transport**: \`"grpc"\` (or \`"grpc_web"\` / \`"connect"\` if the service is served that way)
+- **routePath**: the wire path \`/package.Service/Method\` (e.g. \`/account.v1.AccountService/GetAccount\`) — do NOT prepend a host
+- **grpc**: \`{ serviceFqn, method, streamingType, schemaSource: "proto" }\` where \`serviceFqn\` is the fully-qualified service (\`account.v1.AccountService\`), \`method\` is the rpc name, and \`streamingType\` is one of \`unary | server_stream | client_stream | bidi\` (based on the \`stream\` keywords in the rpc signature). Set \`reflectionAvailable: true\` if the server registers the gRPC reflection service.
+- If a REST/GraphQL gateway (e.g. grpc-gateway annotations, a GraphQL resolver, a Connect handler) maps to this rpc, set \`grpc.frontingGatewayOperation\` — prefer marking this whenever a gateway mapping exists, since it's what lets us later compute "shadow" methods (proto methods reachable directly but NOT exposed via the gateway, where auth checks usually live).
 
 ### How to document each endpoint
 For each **unique route path**, call \`document_endpoint\` with:
@@ -910,6 +961,7 @@ For each **unique route path**, call \`document_endpoint\` with:
 - **handler**: Handler function name (comma-separate if multiple handlers for different methods)
 - **authRequired**: Whether the endpoint requires authentication (true if ANY method requires it)
 - **riskLevel**: CRITICAL for auth/payment/admin, HIGH for user data mutations, MEDIUM for general, LOW for read-only public
+- **transport / grpc**: for gRPC / Connect / gRPC-Web methods, this checklist is not enough — ALSO pass the \`transport\` and \`grpc\` fields exactly as described in the "gRPC / Connect services" section above. Never document an \`rpc\` as a plain HTTP route.
 
 **CRITICAL: ONE entry per route path.** If \`/api/products\` has GET (list) and POST (create), document it as ONE entry with \`method: ["GET", "POST"]\`. Do NOT create two separate entries.
 
@@ -1156,10 +1208,12 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     abortSignal,
     attackSurfaceRegistry,
     eventBus,
-    subagentId: "whitebox-incremental",
+    subagentId: newSessionId(),
+    subagentName: "Incremental Recon",
     onStepFinish: (event) => onStepFinish?.(event),
     openAIReasoningEffort: input.openAIReasoningEffort,
     enableThinking: input.enableThinking,
+    thinkingEffort: input.thinkingEffort,
     responseSchema: IncrementalResultSchema,
     projectThreatModel,
   });

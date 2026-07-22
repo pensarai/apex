@@ -7,7 +7,6 @@ export {
   AskUserQuestionSchema,
   type AskUserQuestionsResult,
 } from "./askUserQuestions";
-export { authenticateSession } from "./authenticateSession";
 // Browser automation tools
 export { BROWSER_TOOL_NAMES, createBrowserToolset } from "./browserTools";
 // Observability tools
@@ -70,7 +69,6 @@ export {
 } from "./playwrightMcp";
 export { probeAuthEndpoints } from "./probeAuthEndpoints";
 export { profileCodebase } from "./profileCodebase";
-
 // Reporting / benchmark tools
 // export { generateReport } from "./generateReport";
 export { provideComparisonResults } from "./provideComparisonResults";
@@ -79,6 +77,14 @@ export { queryWhiteboxCatalog } from "./queryWhiteboxCatalog";
 export { readFile } from "./readFile";
 // Skill tools
 export { readSkill } from "./readSkill";
+// Terminal blocking-error tool — ends the run and surfaces a failure.
+export {
+  createReportErrorTool,
+  PentestReportedError,
+  REPORT_ERROR_TOOL_NAME,
+  ReportErrorReasonSchema,
+  type ReportedError,
+} from "./reportError";
 // Response (structured final-output) tool — used by sub-agents that emit
 // validated result objects.
 export { createResponseTool, RESPONSE_TOOL_NAME } from "./response";
@@ -146,7 +152,6 @@ import {
   ASK_USER_QUESTIONS_TOOL_NAME,
   askUserQuestions,
 } from "./askUserQuestions";
-import { authenticateSession } from "./authenticateSession";
 import { createBrowserToolset } from "./browserTools";
 import { checkpointState } from "./checkpointState";
 import { completeAuthentication } from "./completeAuthentication";
@@ -242,7 +247,6 @@ export function createAllTools(ctx: ToolContext) {
     // Attack surface / recon tools
     document_app: documentApp(ctx),
     document_endpoint: documentEndpoint(ctx),
-    authenticate_session: authenticateSession(ctx),
     delegate_to_auth_subagent: delegateAuth(ctx),
     extract_js_endpoints: extractJsEndpoints(ctx),
     crawl_authenticated_area: crawlAuthenticated(ctx),
@@ -345,7 +349,6 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "update_file",
   "document_app",
   "document_endpoint",
-  "authenticate_session",
   "delegate_to_auth_subagent",
   "create_attack_surface_report",
   "complete_authentication",
@@ -393,6 +396,36 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   ASK_USER_QUESTIONS_TOOL_NAME,
 ];
 
+/** Orchestration/ceremony tools excluded from fast-strike mode (registry minus this list). */
+export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
+  // Sub-agents / workflow
+  "run_attack_surface",
+  "spawn_pentest_swarm",
+  "spawn_pentest_agent",
+  "spawn_coding_agent",
+  "run_pentest_workflow",
+  "delegate_to_auth_subagent",
+  // Whitebox jobs
+  "run_whitebox_scan",
+  "create_whitebox_candidate",
+  "update_whitebox_candidate",
+  "list_whitebox_candidates",
+  "start_whitebox_job",
+  "poll_whitebox_job",
+  "stop_whitebox_job",
+  "read_whitebox_artifact",
+  // Planning / tasks
+  "write_plan",
+  "submit_plan",
+  "create_task",
+  "update_task",
+  "list_tasks",
+  // Reporting / interactive
+  "create_attack_surface_report",
+  "provide_comparison_results",
+  ASK_USER_QUESTIONS_TOOL_NAME,
+];
+
 /**
  * Tool names available in plan mode (read-only / non-mutating).
  *
@@ -420,7 +453,6 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "grep",
   "query_whitebox_catalog",
   // Recon (read-only probing and discovery)
-  "authenticate_session",
   "delegate_to_auth_subagent",
   "complete_authentication",
   "extract_js_endpoints",

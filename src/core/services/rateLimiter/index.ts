@@ -1,7 +1,19 @@
 import type { RateLimiterConfig } from "./types";
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms));
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      resolve();
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 /**
@@ -42,13 +54,15 @@ export class RateLimiter {
   }
 
   /**
-   * Acquire a slot for making a request
-   * Blocks until a token is available
-   * Uses a queue to prevent race conditions from concurrent calls
+   * Acquire a slot, blocking until a token is available (concurrent calls are
+   * queued FIFO). Returns `true` when a token was consumed, `false` when the
+   * call exited early (unlimited mode, signal already aborted, or abort during
+   * wait). Callers should only {@link releaseSlot} when this returns `true`.
    */
-  async acquireSlot(): Promise<void> {
+  async acquireSlot(signal?: AbortSignal): Promise<boolean> {
     // Early exit for unlimited mode - skip all token logic
-    if (!this.rps || !this.msPerToken) return;
+    if (!this.rps || !this.msPerToken) return false;
+    if (signal?.aborted) return false;
 
     // Queue this request to ensure sequential processing
     const previousPromise = this.queue;
@@ -57,25 +71,63 @@ export class RateLimiter {
       resolveCurrentRequest = resolve;
     });
 
-    // Wait for previous request to complete
-    await previousPromise;
+    // Wait for previous request to complete, or abort early.
+    // Without the race, a queued caller would block on previousPromise even
+    // after its signal fires — the abort check below would only run once the
+    // prior acquisition finishes its full throttle delay.
+    let onAbort: (() => void) | undefined;
+    if (signal) {
+      const abortPromise = new Promise<void>((resolve) => {
+        if (signal.aborted) {
+          resolve();
+          return;
+        }
+        onAbort = () => resolve();
+        signal.addEventListener("abort", onAbort, { once: true });
+      });
+      await Promise.race([previousPromise, abortPromise]);
+      if (onAbort && !signal.aborted) {
+        signal.removeEventListener("abort", onAbort);
+      }
+    } else {
+      await previousPromise;
+    }
+
+    // When the abort won the race, previousPromise may still be pending.
+    // Resolving our queue slot immediately would let the next waiter enter
+    // token logic concurrently with the still-running prior request, breaking
+    // FIFO serialization.  Chain the resolution to previousPromise instead.
+    let chainedResolution = false;
+
+    let acquired = false;
 
     try {
+      if (signal?.aborted) {
+        chainedResolution = true;
+        return false;
+      }
+
       // Cache now for this call to avoid multiple time calls
       const now = performance.now();
       this.refill(now);
 
       if (this.tokens < 1) {
         const waitTime = (1 - this.tokens) * this.msPerToken;
-        await sleep(waitTime);
+        await sleep(waitTime, signal);
+        if (signal?.aborted) return false;
         const nowAfterSleep = performance.now();
         this.refill(nowAfterSleep);
       }
 
       this.tokens -= 1;
+      acquired = true;
+      return true;
     } finally {
-      // Signal next request can proceed
-      resolveCurrentRequest!();
+      if (chainedResolution) {
+        previousPromise.then(() => resolveCurrentRequest!());
+      } else {
+        resolveCurrentRequest!();
+      }
     }
   }
 
@@ -90,6 +142,11 @@ export class RateLimiter {
     const tokensToAdd = elapsed / this.msPerToken!;
     this.tokens = Math.min(this.bucketSize, this.tokens + tokensToAdd);
     this.lastRefillTime = now;
+  }
+
+  releaseSlot(): void {
+    if (!this.rps) return;
+    this.tokens = Math.min(this.bucketSize, this.tokens + 1);
   }
 
   isEnabled(): boolean {

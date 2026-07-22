@@ -8,6 +8,11 @@ import {
   type PromptInjectionLibrary,
   redactPromptInjectionPayloads,
 } from "../../../prompt-injections";
+import { agentLogsDir } from "./agentScratch";
+import {
+  assertCommandActionAllowed,
+  DestructiveActionError,
+} from "./destructiveGuard";
 import {
   assertCommandInScope,
   extractHostsFromCommand,
@@ -40,7 +45,7 @@ const promptInjectionPointerSchema = z.object({
     .nullable()
     .optional()
     .describe(
-      "Stable prompt-injection id returned by list_prompt_injections. Leave unset/null unless you are intentionally running a prompt-injection harness. Do NOT pass placeholder values like \"__omit__\", \"none\", or \"null\" — just omit the field.",
+      'Stable prompt-injection id returned by list_prompt_injections. Leave unset/null unless you are intentionally running a prompt-injection harness. Do NOT pass placeholder values like "__omit__", "none", or "null" — just omit the field.',
     ),
   envVar: z
     .string()
@@ -129,9 +134,11 @@ export function normalizeExecuteCommandTimeout(
 }
 
 /**
- * If `raw` exceeds the inline limit, save the full text to a file under
- * `{session.logsPath}/cmd-output/` and return truncated text + file path.
- * Otherwise return the text as-is with no file.
+ * If `raw` exceeds the inline limit, save the full text to a file under this
+ * agent's log dir (`cmd-output/`) and return truncated text + file path.
+ * Otherwise return the text as-is with no file. Scoped per-subagent via
+ * {@link agentLogsDir} so a host can reclaim a finished subagent's command
+ * dumps mid-scan.
  */
 function maybeSaveFullOutput(
   raw: string,
@@ -141,7 +148,7 @@ function maybeSaveFullOutput(
     return { text: raw || "(no output)" };
   }
 
-  const outputDir = join(ctx.session.logsPath, "cmd-output");
+  const outputDir = join(agentLogsDir(ctx), "cmd-output");
   if (!existsSync(outputDir)) {
     mkdirSync(outputDir, { recursive: true });
   }
@@ -167,6 +174,21 @@ function maybeSaveFullOutput(
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Redact known secret values from command output. Longest-first to avoid
+ * partial masking; skip values under 6 chars so they can't corrupt output.
+ */
+export function redactSecretValues(text: string, secrets?: string[]): string {
+  if (!secrets?.length) return text;
+  let out = text;
+  for (const s of [...secrets]
+    .filter((v) => v && v.length >= 6)
+    .sort((a, b) => b.length - a.length)) {
+    out = out.split(s).join("[REDACTED]");
+  }
+  return out;
 }
 
 function wrapCommandWithEnv(
@@ -364,6 +386,27 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       const commandWithHeaders =
         inject.status === "injected" ? inject.command : command;
 
+      // Enforce the destructive-action guard on the header-injected command so
+      // a method-override header (e.g. `X-HTTP-Method-Override: DELETE`) added
+      // by the session/credential layer is classified, not just agent-authored
+      // flags. (Prompt-injection payloads are written to a temp file and
+      // referenced by env var below — never inlined into the command string —
+      // so their content is out of scope for this string classifier.)
+      try {
+        assertCommandActionAllowed(commandWithHeaders, ctx);
+      } catch (e) {
+        if (e instanceof DestructiveActionError) {
+          return {
+            success: false,
+            error: e.message,
+            stdout: "",
+            stderr: e.message,
+            command,
+          };
+        }
+        throw e;
+      }
+
       let promptInjectionLibrary: PromptInjectionLibrary | undefined;
       let promptInjectionEnvVars: Record<string, string> | undefined;
       let promptInjectionPayloadContent: string | undefined;
@@ -392,10 +435,12 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
-      const redact = (value: string) =>
-        promptInjectionLibrary
+      const redact = (value: string) => {
+        const stripped = promptInjectionLibrary
           ? redactPromptInjectionPayloads(value, promptInjectionLibrary)
           : value;
+        return redactSecretValues(stripped, ctx.secretValues);
+      };
 
       // Sandbox mode: route execution through the sandbox
       if (ctx.sandbox) {

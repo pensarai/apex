@@ -15,6 +15,8 @@ import {
   redactPromptInjectionPayloads,
   resolvePromptInjectionRefs,
 } from "../../../prompt-injections";
+import { agentLogsDir } from "./agentScratch";
+import { assertHttpActionAllowed } from "./destructiveGuard";
 import {
   assertUrlInScope,
   resolverSessionFromCtx,
@@ -105,7 +107,9 @@ function containsPromptInjectionRef(value: unknown): boolean {
 
 /**
  * If `body` exceeds the inline limit, save the full text to a file under
- * `{session.logsPath}/http-responses/` and return truncated text + file path.
+ * this agent's log dir (`http-responses/`) and return truncated text + file
+ * path. Scoped per-subagent via {@link agentLogsDir} so a host can reclaim a
+ * finished subagent's response dumps mid-scan.
  */
 function maybeSaveBody(
   body: string,
@@ -113,7 +117,7 @@ function maybeSaveBody(
 ): { text: string; file?: string } {
   if (body.length <= MAX_INLINE_BODY) return { text: body };
 
-  const outputDir = join(ctx.session.logsPath, "http-responses");
+  const outputDir = join(agentLogsDir(ctx), "http-responses");
   if (!existsSync(outputDir)) {
     mkdirSync(outputDir, { recursive: true });
   }
@@ -185,6 +189,8 @@ COMMON TESTING PATTERNS:
       followRedirects,
       timeout,
     }): Promise<HttpRequestResult> => {
+      let headers = parseHeaders(rawHeaders);
+
       try {
         assertUrlInScope(url, ctx);
       } catch (e) {
@@ -204,7 +210,6 @@ COMMON TESTING PATTERNS:
         throw e;
       }
 
-      let headers = parseHeaders(rawHeaders);
       let resolvedBody: string | undefined;
       let library: PromptInjectionLibrary = EMPTY_PROMPT_INJECTION_LIBRARY;
 
@@ -227,10 +232,44 @@ COMMON TESTING PATTERNS:
             : String(
                 resolvePromptInjectionRefs(body as HttpRequestBody, library),
               );
+
+        // Enforce the destructive-action guard on the fully resolved body and
+        // the EFFECTIVE headers (agent-supplied + session/credential headers
+        // merged in) — a prompt-injection ref expands to a concrete string only
+        // here, and a method-override header can be injected by the session
+        // layer, so classifying before this point (or on agent headers alone)
+        // would miss those.
+        const effectiveHeaders = resolveEffectiveHeaders(
+          resolverSessionFromCtx(ctx),
+          url,
+          headers,
+        );
+        assertHttpActionAllowed(
+          { method, url, body: resolvedBody, headers: effectiveHeaders },
+          ctx,
+        );
       } catch (e) {
         return {
           success: false,
           error: e instanceof Error ? e.message : String(e),
+          url,
+          method,
+          status: 0,
+          statusText: "",
+          headers: {},
+          body: "",
+          redirected: false,
+        };
+      }
+
+      // Rate-limit chokepoint for both dispatch paths (no-op when unset).
+      const slotAcquired =
+        (await ctx.session._rateLimiter?.acquireSlot(ctx.abortSignal)) ?? false;
+      if (ctx.abortSignal?.aborted) {
+        if (slotAcquired) ctx.session._rateLimiter?.releaseSlot();
+        return {
+          success: false,
+          error: "Request aborted by user",
           url,
           method,
           status: 0,
@@ -261,20 +300,6 @@ COMMON TESTING PATTERNS:
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
       try {
-        if (ctx.abortSignal?.aborted) {
-          return {
-            success: false,
-            error: "Request aborted by user",
-            url,
-            method,
-            status: 0,
-            statusText: "",
-            headers: {},
-            body: "",
-            redirected: false,
-          };
-        }
-
         const timeoutController = new AbortController();
         timeoutId = setTimeout(() => timeoutController.abort(), timeout);
 
@@ -371,6 +396,17 @@ async function executeSandboxHttpRequest(
 ): Promise<HttpRequestResult> {
   const { url, method, headers, body, followRedirects, timeout } = opts;
 
+  const { sandbox } = ctx;
+  if (!sandbox) {
+    throw new Error("executeSandboxHttpRequest requires a sandbox");
+  }
+
+  // Hoisted so the `finally` can delete the request-body temp file on every
+  // path — otherwise every POST/PUT/PATCH leaves a `/tmp/apex_http_body_*`
+  // file behind for the life of the sandbox, and a body-heavy scan can fill
+  // the disk (ENOSPC).
+  let bodyTempFile: string | null = null;
+
   try {
     let curlCommand = `curl -i -X ${method}`;
 
@@ -385,14 +421,8 @@ async function executeSandboxHttpRequest(
       curlCommand += ` -H "${shellQuote(`${key}: ${value}`)}"`;
     }
 
-    const { sandbox } = ctx;
-    if (!sandbox) {
-      throw new Error("executeSandboxHttpRequest requires a sandbox");
-    }
-
     // If we have a body to send, write it to a temp file in the sandbox
     // to avoid shell escaping issues with multiline content
-    let bodyTempFile: string | null = null;
     if (body && ["POST", "PUT", "PATCH"].includes(method)) {
       bodyTempFile = `/tmp/apex_http_body_${Date.now()}_${Math.random().toString(36).slice(2, 11)}.txt`;
 
@@ -490,5 +520,13 @@ async function executeSandboxHttpRequest(
       url,
       redirected: false,
     };
+  } finally {
+    // Reclaim the request-body temp file now that curl has read it. Best-effort
+    // — a failed cleanup must not change the request result.
+    if (bodyTempFile) {
+      await sandbox
+        .execute(`rm -f ${bodyTempFile}`, { timeout: 10 })
+        .catch(() => {});
+    }
   }
 }

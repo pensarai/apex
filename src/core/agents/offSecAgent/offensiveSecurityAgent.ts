@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -6,17 +6,20 @@ import type {
   StopCondition,
   StreamTextResult,
   TextStreamPart,
+  ToolCallPart,
+  ToolResultPart,
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
 import { streamResponse } from "../../ai";
-import { AgentEventBus } from "../../eventBus";
+import { AgentEventBus, type StreamIdContext } from "../../eventBus";
 import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../http/targetHeaders";
+import { newMessageId, newPartId } from "../../id/id";
 import { createLogger } from "../../logger/structured";
-import { getApexTracer } from "../../observability";
+import { getApexTracer, withSubagentSessionBaggage } from "../../observability";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
@@ -28,6 +31,7 @@ import {
   createAllTools,
   createResponseTool,
   EMAIL_TOOL_NAMES_ACTIVE,
+  FAST_STRIKE_EXCLUDED_TOOL_NAMES,
   PersistentShell,
   PLAN_MODE_TOOL_NAMES,
   PlaywrightMcpSession,
@@ -38,6 +42,29 @@ import { StepTraceWriter } from "./trace";
 import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
 
 const log = scopedLogger(() => createLogger("approval-gate"));
+
+// Opt-in `response` tool lifecycle tracer (RESPONSE_DEBUG=1) for the empty-`{}` / "Tool call did not complete" loop on threat-model sub-agents.
+const RESPONSE_DEBUG =
+  process.env.RESPONSE_DEBUG === "1" || process.env.RESPONSE_DEBUG === "true";
+const rlog = scopedLogger(() => createLogger("response-debug"));
+
+// Opt-in stall watchdog (STREAM_STALL_DEBUG=1): warns when fullStream goes byte-silent, catching a Bedrock wedge.
+const STREAM_STALL_DEBUG =
+  process.env.STREAM_STALL_DEBUG === "1" ||
+  process.env.STREAM_STALL_DEBUG === "true";
+const STREAM_STALL_TICK_MS = 15_000;
+const STREAM_STALL_WARN_MS = 20_000;
+const STREAM_GAP_RECOVERED_MS = 10_000;
+
+function responseArgBytes(input: unknown): number {
+  if (input == null) return 0;
+  if (typeof input === "string") return input.length;
+  try {
+    return JSON.stringify(input).length;
+  } catch {
+    return -1;
+  }
+}
 
 /**
  * General-purpose offensive security agent harness.
@@ -88,8 +115,36 @@ export class OffensiveSecurityAgent<TResult = void> {
     streamResult: StreamTextResult<ToolSet, never>,
   ) => TResult | Promise<TResult>;
 
+  /** The structured result captured by the `response` tool, or `null` until it fires. */
+  private _capturedResponse: TResult | null = null;
+
+  /** Set synchronously when `response` fires, ahead of any async `resolveResult`, to distinguish a clean finish from an abort. */
+  private _responseToolFired = false;
+
+  /** Resolves the instant `response` captures the result, so {@link consume} can return early and drain in the background. */
+  private _resolveResponseCaptured!: (result: TResult) => void;
+  private _rejectResponseCaptured!: (err: unknown) => void;
+  public readonly responseCaptured: Promise<TResult> = new Promise(
+    (resolve, reject) => {
+      this._resolveResponseCaptured = resolve;
+      this._rejectResponseCaptured = reject;
+    },
+  );
+
+  /** Rejects when the background drain errors, so a custom resolver racing `streamResult.response` isn't blocked by a wedged stream. */
+  private _drainRejection: Promise<never> = new Promise<never>(() => {});
+
+  /** Settles when the background drain (including its synthetic-close finally) has fully finished. */
+  public drained: Promise<void> = Promise.resolve();
+
   /** Identifier for this agent when it is running as a subagent. */
   private readonly subagentId?: string;
+
+  /** Display label for span name / `gen_ai.agent.name`; the id stays the join key. */
+  private readonly subagentName?: string;
+
+  /** The current open assistant message id (`msg_…`); minted on `start-step` in {@link consume}, `null` between steps. */
+  private currentMessageId: string | null = null;
 
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
@@ -126,6 +181,9 @@ export class OffensiveSecurityAgent<TResult = void> {
    */
   private readonly ownsBrowserSession: boolean;
 
+  /** Guards against double force-kill across the drain-finally and result-capture paths. */
+  private browserDisconnected = false;
+
   private readonly abortSignal?: AbortSignal;
 
   /** The user-facing prompt passed to the model. */
@@ -133,6 +191,16 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** The session this agent is operating within. */
   private readonly _session: SessionInfo;
+
+  /** Latest accumulated messages, shared with `consume()` for abort persistence. */
+  private latestMessages: ModelMessage[] | null = null;
+
+  private messagesPath: string | null = null;
+
+  /** Cancels the debounced persist timer so abort writes don't race it. */
+  private cancelPersistTimer: (() => void) | null = null;
+
+  private syntheticsPersisted = false;
 
   /**
    * Async factory that creates a session when one is not provided,
@@ -164,9 +232,15 @@ export class OffensiveSecurityAgent<TResult = void> {
     return this._session;
   }
 
+  /** This agent's identity on the event bus (subagent's session id, or the root session's id). */
+  private get busSessionId(): string {
+    return this.subagentId ?? this._session.id;
+  }
+
   constructor(input: OffensiveSecurityAgentInput<TResult>) {
     this._session = input.session;
     this.subagentId = input.subagentId;
+    this.subagentName = input.subagentName;
     this.abortSignal = input.abortSignal;
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
@@ -209,6 +283,17 @@ export class OffensiveSecurityAgent<TResult = void> {
           extraHttpHeaders: stripBrowserManagedHeaders(sessionHeaders),
           display: input.display,
         });
+      // Owned sessions aren't wired through createBrowserTools' abort path
+      // (existingSession skips that listener). Disconnect on abort so timeout/
+      // pause reaps Camoufox even when consume()'s drain is still unwinding.
+      if (this.ownsBrowserSession && this.abortSignal) {
+        const onAbort = () => {
+          void this.disconnectOwnedBrowser();
+        };
+        if (this.abortSignal.aborted) onAbort();
+        else
+          this.abortSignal.addEventListener("abort", onAbort, { once: true });
+      }
     } else {
       this.ownsBrowserSession = false;
     }
@@ -255,6 +340,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       session: input.session,
       agentCwd,
       target: input.target,
+      grpc: input.grpc,
       abortSignal: input.abortSignal,
       model: input.model,
       authConfig: input.authConfig,
@@ -263,6 +349,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       findingsRegistry: input.findingsRegistry,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
+      secretValues: input.secretValues,
       persistentShell: this.persistentShell,
       skillsRegistry: input.skillsRegistry,
       promptInjectionLibrary: input.promptInjectionLibrary,
@@ -272,6 +359,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       traceWriter,
       tasksDir,
       enableThinking: input.enableThinking,
+      thinkingEffort: input.thinkingEffort,
       openAIReasoningEffort: input.openAIReasoningEffort,
       surfaceIntegrationEnabled: input.surfaceIntegrationEnabled,
       projectThreatModel: input.projectThreatModel,
@@ -298,15 +386,45 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
 
     // -- Response schema → auto capture / stop / resolve ----------------------
-    let capturedResponse: TResult | null = null;
-
     if (input.responseSchema) {
       tools = {
         ...tools,
         [RESPONSE_TOOL_NAME]: createResponseTool(
           input.responseSchema,
           (result) => {
-            capturedResponse = result as TResult;
+            this._responseToolFired = true;
+            if (RESPONSE_DEBUG) {
+              rlog.warn(
+                `[response-debug] response tool EXECUTED (captured) session=${this.busSessionId} ` +
+                  `resultBytes=${responseArgBytes(result)} — happy path`,
+              );
+            }
+            // With a custom resolveResult (e.g. TargetedPentestAgent), the raw schema result must be funnelled through it before fulfilling consume()'s race.
+            const customResolve = input.resolveResult;
+            if (customResolve) {
+              void Promise.resolve()
+                .then(() => {
+                  // Race .response against _drainRejection so a wedged stream can't hang a resolver awaiting it.
+                  const sr = this.streamResult;
+                  const guarded = Object.create(sr, {
+                    response: {
+                      get: () =>
+                        Promise.race([sr.response, this._drainRejection]),
+                    },
+                  });
+                  return customResolve(guarded);
+                })
+                .then((resolved) => {
+                  this._capturedResponse = resolved;
+                  this._resolveResponseCaptured(resolved);
+                })
+                .catch((err) => {
+                  this._rejectResponseCaptured(err);
+                });
+              return;
+            }
+            this._capturedResponse = result as TResult;
+            this._resolveResponseCaptured(result as TResult);
           },
         ),
       };
@@ -316,7 +434,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       this.resolveResult = input.resolveResult;
     } else if (input.responseSchema) {
       this.resolveResult = () => {
-        if (capturedResponse !== null) return capturedResponse;
+        if (this._capturedResponse !== null) return this._capturedResponse;
         return undefined as TResult;
       };
     }
@@ -351,13 +469,23 @@ export class OffensiveSecurityAgent<TResult = void> {
     if (input.mode === "plan") {
       const planSet = new Set<string>(PLAN_MODE_TOOL_NAMES);
       activeTools = activeTools.filter((t) => planSet.has(t));
+    } else if (input.mode === "fast-strike") {
+      // Registry minus orchestration tools; email gating matches default mode.
+      const excluded = new Set<string>(FAST_STRIKE_EXCLUDED_TOOL_NAMES);
+      activeTools = Object.keys(tools).filter((t) => {
+        if (excluded.has(t)) return false;
+        if (!emailToolSet.has(t)) return true;
+        if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
+        return hasEmail;
+      });
     }
 
     // -- Messages persistence -------------------------------------------------
     if (!existsSync(messagesDir)) {
       mkdirSync(messagesDir, { recursive: true });
     }
-    const messagesPath = join(messagesDir, "messages.json");
+    this.messagesPath = join(messagesDir, "messages.json");
+    const messagesPath = this.messagesPath;
 
     // Mutable so that summarization can clear stale history.
     const initialMessagesRef: { current: ModelMessage[] } = {
@@ -375,18 +503,24 @@ export class OffensiveSecurityAgent<TResult = void> {
     // JSON.stringify on every step when many agents run concurrently.
     const PERSIST_INTERVAL_MS = 15_000;
     let persistTimer: ReturnType<typeof setTimeout> | null = null;
-    let latestMessages: ModelMessage[] | null = null;
 
     const schedulePersist = () => {
       if (persistTimer) return;
       persistTimer = setTimeout(() => {
         persistTimer = null;
-        if (latestMessages) {
-          const toWrite = latestMessages;
-          latestMessages = null;
+        if (this.latestMessages) {
+          const toWrite = this.latestMessages;
+          this.latestMessages = null;
           writeFile(messagesPath, JSON.stringify(toWrite)).catch(() => {});
         }
       }, PERSIST_INTERVAL_MS);
+    };
+
+    this.cancelPersistTimer = () => {
+      if (persistTimer) {
+        clearTimeout(persistTimer);
+        persistTimer = null;
+      }
     };
 
     // -- Init record (trace.jsonl first line) ---------------------------------
@@ -430,9 +564,15 @@ export class OffensiveSecurityAgent<TResult = void> {
         activeTools,
         stopWhen,
         toolChoice: "auto",
-        sessionPath: input.session.rootPath,
+        // Per-subagent so the overflow tool-result dumps land next to this
+        // agent's messages.json (`subagents/{id}/tool-results/`) and a host
+        // can reclaim them when the subagent finishes, instead of piling up
+        // at the shared session root for the whole scan (ENOSPC). Falls back
+        // to the session root for the root/operator agent.
+        sessionPath: messagesDir,
+        sessionId: this.busSessionId,
         onStepFinish: async (event) => {
-          latestMessages = [
+          this.latestMessages = [
             ...initialMessagesRef.current,
             ...event.response.messages,
           ];
@@ -446,7 +586,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           this.eventBus.emit("step-finish", {
             messages: event.response.messages,
             subagentId: this.subagentId,
+            sessionId: this.busSessionId,
+            messageId: this.currentMessageId ?? undefined,
           });
+          this.currentMessageId = null;
           await input.onStepFinish?.(event);
         },
         onSummarized: () => {
@@ -461,13 +604,16 @@ export class OffensiveSecurityAgent<TResult = void> {
             clearTimeout(persistTimer);
             persistTimer = null;
           }
-          const finalMessages = latestMessages ?? [
-            ...initialMessagesRef.current,
-            ...event.response.messages,
-          ];
-          await writeFile(messagesPath, JSON.stringify(finalMessages)).catch(
-            () => {},
-          );
+          // Skip if emitSyntheticToolResults already wrote the abort snapshot.
+          if (!this.syntheticsPersisted) {
+            const finalMessages = this.latestMessages ?? [
+              ...initialMessagesRef.current,
+              ...event.response.messages,
+            ];
+            await writeFile(messagesPath, JSON.stringify(finalMessages)).catch(
+              () => {},
+            );
+          }
           await input.onFinish?.(event);
         },
         abortSignal: input.abortSignal,
@@ -480,6 +626,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           input.onCacheMetrics?.(metrics);
         },
         enableThinking: input.enableThinking,
+        thinkingEffort: input.thinkingEffort,
         openAIReasoningEffort: input.openAIReasoningEffort,
         silent: true,
       });
@@ -542,20 +689,352 @@ export class OffensiveSecurityAgent<TResult = void> {
     const bus = this.eventBus;
 
     const runConsume = async (): Promise<TResult> => {
+      // Tool-call part ids are minted once and reused for the WHOLE session, never reset per step.
+      const toolParts = new Map<string, string>();
+      const ids: StreamIdContext = {
+        // The TUI routes any event with a subagentId into a subagent panel, so
+        // the orchestrator must leave it undefined; only real subagents set it.
+        subagentId: this.subagentId,
+        sessionId: this.busSessionId,
+        messageId: undefined,
+        textPartId: undefined,
+        toolPartId: (toolCallId: string) => {
+          let p = toolParts.get(toolCallId);
+          if (!p) {
+            p = newPartId();
+            toolParts.set(toolCallId, p);
+          }
+          return p;
+        },
+      };
+
+      // inFlightTools = calls awaiting a result; completedResults = streamed but not yet persisted by onStepFinish (PR #779).
+      const inFlightTools = new Map<string, string>();
+      const completedResults: ToolResultPart[] = [];
+      let streamError: unknown = null;
+
+      const responseArgChars = new Map<string, number>();
+      const responseSawTerminal = new Map<string, string>();
+
+      // Raw streamed arg text per tool-call id, kept so a `tool-error` can persist the real (possibly truncated) payload instead of `{}`.
+      const streamedArgText = new Map<string, string>();
+      // Tool errors observed mid-stream, surfaced at finish-step (where finishReason is known) instead of a generic "did not complete".
+      const toolErrors = new Map<
+        string,
+        { message: string; input: unknown; toolName: string }
+      >();
+
+      let lastChunkAt = Date.now();
+      let lastChunkType = "none";
+      let stallStepIndex = -1;
+      let stallTimer: ReturnType<typeof setInterval> | undefined;
+      if (STREAM_STALL_DEBUG) {
+        const label = this._session.id;
+        stallTimer = setInterval(() => {
+          const gap = Date.now() - lastChunkAt;
+          if (gap > STREAM_STALL_WARN_MS) {
+            rlog.warn(
+              `[stream-stall] no chunk for ${Math.round(gap / 1000)}s ` +
+                `session=${label} subagent=${sid ?? "-"} step=${stallStepIndex} ` +
+                `lastChunkType=${lastChunkType} ` +
+                `inFlightTools=${[...inFlightTools.values()].join(",")} ` +
+                `responseToolFired=${this._responseToolFired}`,
+            );
+          }
+        }, STREAM_STALL_TICK_MS);
+      }
+
       try {
         for await (const chunk of this.streamResult.fullStream) {
-          bus.emitStreamPart(chunk, sid);
+          if (STREAM_STALL_DEBUG) {
+            const now = Date.now();
+            const gap = now - lastChunkAt;
+            lastChunkAt = now;
+            lastChunkType = chunk.type;
+            if (chunk.type === "start-step") stallStepIndex++;
+            if (gap > STREAM_GAP_RECOVERED_MS) {
+              rlog.warn(
+                `[stream-gap] recovered after ${Math.round(gap / 1000)}s ` +
+                  `session=${this._session.id} chunkType=${chunk.type}`,
+              );
+            }
+          }
+          if (RESPONSE_DEBUG) {
+            const c = chunk as {
+              type: string;
+              id?: string;
+              toolCallId?: string;
+              toolName?: string;
+              delta?: string;
+              input?: unknown;
+              args?: unknown;
+              error?: unknown;
+            };
+            const idForChunk = c.toolCallId ?? c.id;
+            const nameForChunk =
+              c.toolName ??
+              (idForChunk ? inFlightTools.get(idForChunk) : undefined);
+            if (nameForChunk === RESPONSE_TOOL_NAME && idForChunk) {
+              if (chunk.type === "tool-input-start") {
+                responseArgChars.set(idForChunk, 0);
+                rlog.warn(
+                  `[response-debug] tool-input-start id=${idForChunk} session=${this.busSessionId}`,
+                );
+              } else if (chunk.type === "tool-input-delta") {
+                responseArgChars.set(
+                  idForChunk,
+                  (responseArgChars.get(idForChunk) ?? 0) +
+                    (c.delta?.length ?? 0),
+                );
+              } else if (chunk.type === "tool-input-end") {
+                rlog.warn(
+                  `[response-debug] tool-input-end id=${idForChunk} argChars=${responseArgChars.get(idForChunk) ?? 0}`,
+                );
+              } else if (chunk.type === "tool-call") {
+                responseSawTerminal.set(idForChunk, "tool-call");
+                const inputBytes = responseArgBytes(c.input ?? c.args);
+                const invalid = (c as { invalid?: boolean }).invalid === true;
+                rlog.warn(
+                  `[response-debug] tool-call id=${idForChunk} streamedArgChars=${responseArgChars.get(idForChunk) ?? 0} parsedInputBytes=${inputBytes} invalid=${invalid}`,
+                );
+              } else if (chunk.type === "tool-error") {
+                responseSawTerminal.set(idForChunk, "tool-error");
+                const errMsg =
+                  c.error instanceof Error
+                    ? c.error.message
+                    : typeof c.error === "string"
+                      ? c.error
+                      : JSON.stringify(c.error)?.slice(0, 300);
+                rlog.warn(
+                  `[response-debug] tool-error id=${idForChunk} streamedArgChars=${responseArgChars.get(idForChunk) ?? 0} stillInFlight=${inFlightTools.has(idForChunk)} error=${errMsg}`,
+                );
+              } else if (chunk.type === "tool-result") {
+                responseSawTerminal.set(idForChunk, "tool-result");
+                rlog.warn(
+                  `[response-debug] tool-result id=${idForChunk} streamedArgChars=${responseArgChars.get(idForChunk) ?? 0}`,
+                );
+              } else if (chunk.type === "finish-step") {
+                const fr = (c as { finishReason?: string }).finishReason;
+                rlog.warn(
+                  `[response-debug] finish-step finishReason=${fr} responseInFlight=${[
+                    ...inFlightTools.entries(),
+                  ]
+                    .filter(([, n]) => n === RESPONSE_TOOL_NAME)
+                    .map(([id]) => id)
+                    .join(",")} responseToolFired=${this._responseToolFired}`,
+                );
+              }
+            }
+          }
+          switch (chunk.type) {
+            case "start-step":
+              ids.messageId = newMessageId();
+              this.currentMessageId = ids.messageId;
+              ids.textPartId = undefined;
+              break;
+            case "text-start":
+              ids.textPartId = newPartId();
+              break;
+            case "text-end":
+              ids.textPartId = undefined;
+              break;
+            case "tool-input-start":
+              // Track from the start so a truncated call still gets closed instead of left "running".
+              inFlightTools.set(chunk.id, chunk.toolName);
+              streamedArgText.set(chunk.id, "");
+              break;
+            case "tool-input-delta": {
+              const d = chunk as { id: string; delta?: string };
+              streamedArgText.set(
+                d.id,
+                (streamedArgText.get(d.id) ?? "") + (d.delta ?? ""),
+              );
+              break;
+            }
+            case "tool-call":
+              inFlightTools.set(chunk.toolCallId, chunk.toolName);
+              break;
+            case "tool-error": {
+              // `execute` never runs for an errored call, so it must be cleared here or finish-step would fabricate a bogus "did not complete".
+              const te = chunk as {
+                toolCallId: string;
+                toolName: string;
+                input?: unknown;
+                error?: unknown;
+              };
+              inFlightTools.delete(te.toolCallId);
+              const errMsg =
+                te.error instanceof Error
+                  ? te.error.message
+                  : typeof te.error === "string"
+                    ? te.error
+                    : (() => {
+                        try {
+                          return JSON.stringify(te.error);
+                        } catch {
+                          return String(te.error);
+                        }
+                      })();
+              const partialArgs =
+                te.input !== undefined &&
+                te.input !== null &&
+                responseArgBytes(te.input) > 2
+                  ? te.input
+                  : (streamedArgText.get(te.toolCallId) ?? "");
+              toolErrors.set(te.toolCallId, {
+                message: errMsg,
+                input: partialArgs,
+                toolName: te.toolName,
+              });
+              break;
+            }
+            case "tool-result": {
+              const tc = chunk as {
+                toolCallId: string;
+                toolName: string;
+                result?: unknown;
+                output?: unknown;
+              };
+              inFlightTools.delete(tc.toolCallId);
+              completedResults.push({
+                type: "tool-result",
+                toolCallId: tc.toolCallId,
+                toolName: tc.toolName,
+                output: (tc.result ?? tc.output) as ToolResultPart["output"],
+              });
+              break;
+            }
+            case "finish-step": {
+              // onStepFinish has persisted this step; drop its results so a later abort doesn't re-append them.
+              completedResults.length = 0;
+              const finishReason = (chunk as { finishReason?: string })
+                .finishReason;
+              const truncated = finishReason === "length";
+
+              for (const [toolCallId, info] of toolErrors) {
+                if (RESPONSE_DEBUG && info.toolName === RESPONSE_TOOL_NAME) {
+                  rlog.warn(
+                    `[response-debug] tool-error SURFACED id=${toolCallId} ` +
+                      `streamedArgChars=${(streamedArgText.get(toolCallId) ?? "").length} ` +
+                      `finishReason=${finishReason ?? "unknown"} ` +
+                      `outputTokenTruncated=${truncated} error=${info.message.slice(0, 300)}`,
+                  );
+                }
+                bus.emit("tool-result", {
+                  toolCallId,
+                  toolName: info.toolName,
+                  result: {
+                    type: "error-text",
+                    value: truncated
+                      ? `Tool call failed: the model's output was truncated at its max output tokens before the "${info.toolName}" arguments were complete. ${info.message}`
+                      : `Tool call failed: ${info.message}`,
+                  },
+                  sessionId: this.busSessionId,
+                  subagentId: sid,
+                  partId: ids.toolPartId?.(toolCallId),
+                  messageId: ids.messageId,
+                });
+              }
+              toolErrors.clear();
+
+              // Close any call still in flight (args never finalized) so it doesn't render stuck "running".
+              for (const [toolCallId, toolName] of inFlightTools) {
+                if (RESPONSE_DEBUG && toolName === RESPONSE_TOOL_NAME) {
+                  rlog.warn(
+                    `[response-debug] CLOSING response as "did not complete" id=${toolCallId} ` +
+                      `streamedArgChars=${responseArgChars.get(toolCallId) ?? 0} ` +
+                      `sawTerminalChunk=${responseSawTerminal.get(toolCallId) ?? "none"} ` +
+                      `finishReason=${finishReason ?? "unknown"} outputTokenTruncated=${truncated} ` +
+                      `responseToolFired=${this._responseToolFired}`,
+                  );
+                }
+                // Already-fired response: mark submitted, not "did not complete".
+                const result =
+                  toolName === RESPONSE_TOOL_NAME && this._responseToolFired
+                    ? { type: "text" as const, value: "Response submitted." }
+                    : {
+                        type: "error-text" as const,
+                        value: truncated
+                          ? "Tool call did not complete: the model's output was truncated at its max output tokens before the arguments were finalized."
+                          : "Tool call did not complete",
+                      };
+                bus.emit("tool-result", {
+                  toolCallId,
+                  toolName,
+                  result,
+                  sessionId: this.busSessionId,
+                  subagentId: sid,
+                  partId: ids.toolPartId?.(toolCallId),
+                  messageId: ids.messageId,
+                });
+              }
+              inFlightTools.clear();
+              break;
+            }
+          }
+          bus.emitStreamPart(chunk, ids);
         }
+        // Keep completedResults: an abort with no trailing finish-step needs them for the finally snapshot.
+      } catch (err) {
+        streamError = err;
       } finally {
+        // Stop the stall watchdog so it never leaks past stream end / throw.
+        if (stallTimer) clearInterval(stallTimer);
+        // Dispose first — don't block on persistence I/O.
         this.persistentShell?.dispose();
+        // Flush tool-errors that never reached a finish-step into the snapshot.
+        for (const [toolCallId, info] of toolErrors) {
+          const result = {
+            type: "error-text" as const,
+            value: `Tool call failed: ${info.message}`,
+          };
+          bus.emit("tool-result", {
+            toolCallId,
+            toolName: info.toolName,
+            result,
+            sessionId: this.busSessionId,
+            subagentId: sid,
+            partId: ids.toolPartId?.(toolCallId),
+            messageId: ids.messageId,
+          });
+          completedResults.push({
+            type: "tool-result",
+            toolCallId,
+            toolName: info.toolName,
+            output: result,
+          });
+        }
+        toolErrors.clear();
+        // Snapshot unpersisted step state: open tools get synthetic closes, completed/errored results get written.
+        if (inFlightTools.size > 0 || completedResults.length > 0) {
+          const reason = this.abortSignal?.aborted
+            ? "Agent aborted by user"
+            : streamError instanceof Error && streamError.message
+              ? streamError.message
+              : "Stream terminated unexpectedly";
+          try {
+            await this.emitSyntheticToolResults(
+              inFlightTools,
+              completedResults,
+              reason,
+              ids.toolPartId,
+              ids.messageId,
+              streamedArgText,
+            );
+          } catch {
+            // Never mask the original streamError with a listener error.
+          }
+        }
         // Tear down the Chromium child process we own. Without this, a
         // naturally-finishing agent leaks its Playwright MCP browser — over a
         // long single-process scan (many endpoints) the leaked Chromium
         // processes exhaust memory and OOM the run. disconnect() force-kills
         // and never hangs, so awaiting here is safe.
-        if (this.ownsBrowserSession && this.browserSession) {
-          await this.browserSession.disconnect().catch(() => {});
-        }
+        await this.disconnectOwnedBrowser();
+      }
+
+      if (streamError) {
+        throw streamError;
       }
 
       if (this.abortSignal?.aborted) {
@@ -563,34 +1042,93 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
 
       if (this.resolveResult) {
+        if (this._responseToolFired) {
+          return undefined as TResult;
+        }
         return this.resolveResult(this.streamResult);
       }
       return undefined as TResult;
     };
 
     // Only subagents get a span here; top-level runs are wrapped by the host.
-    if (!sid) return runConsume();
+    const spanLabel = this.subagentName ?? sid;
+    const drain = !sid
+      ? runConsume()
+      : withSubagentSessionBaggage(sid, () =>
+          getApexTracer().startActiveSpan(
+            `invoke_agent ${spanLabel}`,
+            {
+              attributes: {
+                "gen_ai.operation.name": "invoke_agent",
+                "gen_ai.agent.name": spanLabel,
+              },
+            },
+            async (span) => {
+              try {
+                return await runConsume();
+              } catch (err) {
+                span.recordException(err as Error);
+                throw err;
+              } finally {
+                span.end();
+              }
+            },
+          ),
+        );
 
-    const tracer = getApexTracer();
-    return tracer.startActiveSpan(
-      `invoke_agent ${sid}`,
-      {
-        attributes: {
-          "gen_ai.operation.name": "invoke_agent",
-          "gen_ai.agent.name": sid,
-        },
-      },
-      async (span) => {
-        try {
-          return await runConsume();
-        } catch (err) {
-          span.recordException(err as Error);
-          throw err;
-        } finally {
-          span.end();
-        }
-      },
+    // Decouple the result from stream teardown: with a `response` schema, return as soon as it's captured rather than waiting for the stream to close (which can wedge).
+    let rejectDrain: ((err: unknown) => void) | undefined;
+    this._drainRejection = new Promise<never>((_, reject) => {
+      rejectDrain = reject;
+    });
+    this._drainRejection.catch(() => {});
+
+    // Lets a caller that aborts after capturing the result await the drain's finally (in-flight tool closes) before completing.
+    this.drained = drain.then(
+      () => {},
+      () => {},
     );
+
+    // Don't let drain's settle (reject OR resolve) mask an already-captured
+    // response; unblock the resolver's streamResult.response wait either way.
+    const guardedDrain = drain
+      .then((result) => {
+        if (this._responseToolFired) {
+          rejectDrain?.(new Error("drain resolved"));
+          return this.responseCaptured;
+        }
+        return result;
+      })
+      .catch((err) => {
+        rejectDrain?.(err);
+        if (!this._responseToolFired) throw err;
+        return this.responseCaptured;
+      });
+    guardedDrain.catch(() => {});
+
+    const result = await Promise.race([guardedDrain, this.responseCaptured]);
+    // Free the browser on result capture; the drain can wedge and leak camoufox.
+    await this.disconnectOwnedBrowser();
+    return result;
+  }
+
+  /** Force-kills the owned Chromium child process exactly once; safe to call from multiple teardown paths. */
+  private async disconnectOwnedBrowser(): Promise<void> {
+    if (this.browserDisconnected) return;
+    if (!this.ownsBrowserSession || !this.browserSession) return;
+    this.browserDisconnected = true;
+    await this.browserSession.disconnect().catch(() => {});
+  }
+
+  /**
+   * Idempotent teardown for hosts that abort before `consume()` settles
+   * (Console `settleOnAbort` on timeout/pause). Force-disconnects the owned
+   * browser, then awaits the drain so Camoufox is reaped before the next
+   * endpoint starts.
+   */
+  async abortAndDrain(): Promise<void> {
+    await this.disconnectOwnedBrowser();
+    await this.drained.catch(() => {});
   }
 
   /**
@@ -599,6 +1137,156 @@ export class OffensiveSecurityAgent<TResult = void> {
    */
   get response() {
     return this.streamResult.response;
+  }
+
+  private async emitSyntheticToolResults(
+    inFlightTools: Map<string, string>,
+    completedResults: ToolResultPart[],
+    reason: string,
+    partIdFor?: (toolCallId: string) => string,
+    messageId?: string,
+    streamedArgText?: Map<string, string>,
+  ): Promise<void> {
+    const sid = this.subagentId;
+    const output = {
+      type: "error-text" as const,
+      value: `Tool execution aborted: ${reason}`,
+    };
+    const syntheticParts: ToolResultPart[] = [];
+
+    if (RESPONSE_DEBUG) {
+      const responseInFlight = [...inFlightTools.entries()].filter(
+        ([, n]) => n === RESPONSE_TOOL_NAME,
+      );
+      if (responseInFlight.length > 0) {
+        rlog.warn(
+          `[response-debug] emitSyntheticToolResults closing ${responseInFlight.length} response call(s) ` +
+            `ids=${responseInFlight.map(([id]) => id).join(",")} reason="${reason}" ` +
+            `aborted=${this.abortSignal?.aborted === true} responseToolFired=${this._responseToolFired}`,
+        );
+      }
+    }
+
+    for (const [toolCallId, toolName] of inFlightTools) {
+      // The `response` tool reaching here after a successful capture didn't fail — mark it completed, not aborted.
+      const result =
+        toolName === RESPONSE_TOOL_NAME && this._responseToolFired
+          ? { type: "text" as const, value: "Response submitted." }
+          : output;
+      this.eventBus.emit("tool-result", {
+        toolCallId,
+        toolName,
+        result,
+        // Canonical session id, not just the legacy subagentId alias, so the translator routes to THIS subagent's session.
+        sessionId: this.busSessionId,
+        subagentId: sid,
+        partId: partIdFor?.(toolCallId),
+        messageId,
+      });
+      syntheticParts.push({
+        type: "tool-result",
+        toolCallId,
+        toolName,
+        output: result,
+      });
+    }
+
+    if (!this.messagesPath) return;
+
+    // Cancel the debounced timer so its writeFile can't race the write below.
+    this.cancelPersistTimer?.();
+
+    // Fall back to the on-disk snapshot once the debounced timer has flushed latestMessages, so we don't overwrite history.
+    let base: ModelMessage[] = this.latestMessages ?? [];
+    if (base.length === 0 && existsSync(this.messagesPath)) {
+      try {
+        base = JSON.parse(readFileSync(this.messagesPath, "utf-8"));
+      } catch {
+        // Corrupt file → proceed with empty base.
+      }
+    }
+
+    // When onStepFinish hasn't fired, this step's messages aren't in base yet; reconstruct so resumed sessions see valid pairs.
+    const allToolCallIds = new Set([
+      ...inFlightTools.keys(),
+      ...completedResults.map((r) => r.toolCallId),
+    ]);
+    const lastMsg = base[base.length - 1];
+    const needsStepReconstruction =
+      !lastMsg ||
+      lastMsg.role !== "assistant" ||
+      !this.baseContainsToolCalls(lastMsg, allToolCallIds);
+
+    const appended: ModelMessage[] = [];
+    if (needsStepReconstruction) {
+      const stepTools: Array<[string, string]> = [
+        ...inFlightTools,
+        ...completedResults.map((r): [string, string] => [
+          r.toolCallId,
+          r.toolName,
+        ]),
+      ];
+      // Preserve whatever args the model actually streamed instead of writing an empty `{}`.
+      const reconstructInput = (toolCallId: string): unknown => {
+        const raw = streamedArgText?.get(toolCallId);
+        if (!raw) return {};
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return { _partial: raw };
+        }
+      };
+      if (RESPONSE_DEBUG) {
+        const responseReconstructed = stepTools
+          .filter(([, n]) => n === RESPONSE_TOOL_NAME)
+          .map(([id]) => id);
+        if (responseReconstructed.length > 0) {
+          rlog.warn(
+            `[response-debug] step-reconstruction for response call(s) ` +
+              `ids=${responseReconstructed.join(",")} ` +
+              `preservedArgChars=${responseReconstructed
+                .map((id) => streamedArgText?.get(id)?.length ?? 0)
+                .join(",")}`,
+          );
+        }
+      }
+      const toolCalls: ToolCallPart[] = stepTools.map(
+        ([toolCallId, toolName]) => ({
+          type: "tool-call" as const,
+          toolCallId,
+          toolName,
+          input: reconstructInput(toolCallId),
+        }),
+      );
+      appended.push({ role: "assistant", content: toolCalls });
+    }
+    appended.push({
+      role: "tool",
+      content: [...completedResults, ...syntheticParts],
+    });
+
+    const next: ModelMessage[] = [...base, ...appended];
+    this.latestMessages = next;
+    try {
+      await writeFile(this.messagesPath, JSON.stringify(next));
+      // Only suppress onFinish's write once the snapshot is safely on disk.
+      this.syntheticsPersisted = true;
+    } catch {
+      // Write failed — leave the flag false so onFinish still attempts a write.
+    }
+  }
+
+  private baseContainsToolCalls(
+    msg: ModelMessage,
+    toolCallIds: Set<string>,
+  ): boolean {
+    if (!Array.isArray(msg.content)) return false;
+    const contentToolIds = new Set(
+      (msg.content as Array<{ type: string; toolCallId?: string }>)
+        .filter((p) => p.type === "tool-call" && p.toolCallId)
+        .map((p) => p.toolCallId),
+    );
+    return [...toolCallIds].every((id) => contentToolIds.has(id));
   }
 }
 

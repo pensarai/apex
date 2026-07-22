@@ -1,8 +1,14 @@
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
-import type { AIModel, CacheMetrics, OpenAIReasoningEffort } from "../../../ai";
+import type {
+  AIModel,
+  CacheMetrics,
+  OpenAIReasoningEffort,
+  ThinkingEffort,
+} from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { AgentEventBus } from "../../../eventBus";
 import type { AttackSurfaceRegistry } from "../../../findings/attackSurfaceRegistry";
+import { newSessionId } from "../../../id/id";
 import type {
   ConsolidatedEndpoint,
   FrameworkId,
@@ -26,12 +32,22 @@ const log = scopedLogger(() => createLogger("endpoint-documentation-agent"));
 // ---------------------------------------------------------------------------
 
 /**
- * Per-app fan-out concurrency. Each app's documentation runs N endpoint
- * agents in parallel up to this cap. Workflow-level concurrency (across
- * apps) is separately bounded by `DEFAULT_CONCURRENCY` in
- * `runWhiteboxAttackSurfaceWorkflow` Phase 2.
+ * Per-app fan-out concurrency — the maximum number of endpoint agents a single
+ * app may *schedule* at once. The number that actually *run* concurrently is
+ * additionally bounded across ALL apps by the workflow-level `agentLimiter`
+ * (see {@link SharedAgentOptions.agentLimiter}); without that shared gate this
+ * per-app cap multiplied by the app-level concurrency, so a repo with many apps
+ * could run ~50 endpoint agents at once.
  */
 const ENDPOINT_DOCUMENTATION_CONCURRENCY = 10;
+
+/**
+ * A shared concurrency gate (e.g. a `p-limit` instance). When provided, every
+ * endpoint/discovery CodeAgent run is funneled through it so the TOTAL number of
+ * concurrently-running agents across all apps stays bounded regardless of how
+ * many apps/endpoints the repo has.
+ */
+export type AgentConcurrencyLimiter = <T>(fn: () => Promise<T>) => Promise<T>;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,9 +65,15 @@ interface SharedAgentOptions {
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
   enableThinking?: boolean;
+  thinkingEffort?: ThinkingEffort | null;
   projectThreatModel?: string;
   /** Parent subagent id for hierarchy tracking on emitted lifecycle events. */
   parentSubagentId?: string;
+  /**
+   * Optional shared gate bounding total concurrent agents across the whole
+   * workflow. When omitted, agents run ungated (per-app cap only).
+   */
+  agentLimiter?: AgentConcurrencyLimiter;
 }
 
 interface EndpointDocumentationInput extends SharedAgentOptions {
@@ -69,13 +91,6 @@ export interface AppEndpointDocumentationInput extends SharedAgentOptions {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function slug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_|_$/g, "");
-}
 
 function getDocumentMethod(endpoint: ConsolidatedEndpoint): string[] {
   return endpoint.kind === "page" ? ["PAGE"] : endpoint.method;
@@ -104,6 +119,26 @@ export function buildEndpointDocumentationObjective(opts: {
   const endpointType =
     endpoint.kind === "page" ? "web-endpoint" : "api-endpoint";
 
+  // gRPC methods arrive from surface with a non-http transport and a `grpc`
+  // metadata object. Surface gives serviceFqn/method/streamingType; the agent
+  // may enrich the remaining optional grpc fields from the source.
+  const isGrpc = !!endpoint.transport && endpoint.transport !== "http";
+  const grpcSection = isGrpc
+    ? `
+## gRPC (deterministically extracted by surface)
+
+This endpoint is a **gRPC method**, not a plain HTTP route. \`routePath\` is the wire path \`/package.Service/Method\` — do NOT glue a host onto it.
+
+- **transport**: ${endpoint.transport}
+- **grpc.serviceFqn**: ${endpoint.grpc?.serviceFqn ?? "(derive from routePath)"}
+- **grpc.method**: ${endpoint.grpc?.method ?? "(derive from routePath)"}
+- **grpc.streamingType**: ${endpoint.grpc?.streamingType ?? "unary"}
+`
+    : "";
+  const grpcInstruction = isGrpc
+    ? ` Because this is a gRPC method, ALSO pass \`transport: "${endpoint.transport}"\` and a \`grpc\` object built from the values above (\`serviceFqn\`, \`method\`, \`streamingType\`, plus \`schemaSource: "proto"\`); you MAY add \`reflectionAvailable\` or \`frontingGatewayOperation\` when the source makes them clear.`
+    : "";
+
   const auth = endpoint.auth.length > 0 ? endpoint.auth.join(", ") : "none";
   const authPrefill = endpoint.auth.length > 0;
 
@@ -124,10 +159,10 @@ export function buildEndpointDocumentationObjective(opts: {
 - **endpointType**: ${endpointType}
 - **auth signals**: ${auth}
 - **prefilled authRequired**: ${authPrefill}
-
+${grpcSection}
 ## Task
 
-Document this **single endpoint** by calling \`document_endpoint\` exactly once. Use the deterministic fields above as-is for \`appName\` (\`"${app.name}"\`), \`routePath\`, \`method\` (\`${methodValue}\`), \`endpointType\` (\`"${endpointType}"\`), \`file\`, \`line\`, and \`handler\`. The remaining fields you must produce yourself:
+Document this **single endpoint** by calling \`document_endpoint\` exactly once. Use the deterministic fields above as-is for \`appName\` (\`"${app.name}"\`), \`routePath\`, \`method\` (\`${methodValue}\`), \`endpointType\` (\`"${endpointType}"\`), \`file\`, \`line\`, and \`handler\`.${grpcInstruction} The remaining fields you must produce yourself:
 
 - **authRequired**: start from the prefilled value above. Override only after reading the middleware chain at the indicated file when the signals are genuinely ambiguous.
 - **description**: 1–2 sentences explaining what this endpoint does in plain English. Read the handler at \`${endpoint.file}:${endpoint.line}\` to ground it.
@@ -170,11 +205,13 @@ async function runEndpointDocumentationAgent(
     onCacheMetrics,
     openAIReasoningEffort,
     enableThinking,
+    thinkingEffort,
     projectThreatModel,
     parentSubagentId,
+    agentLimiter,
   } = opts;
 
-  const subagentId = `endpoint-doc-${slug(app.name)}-${slug(endpoint.path)}`;
+  const subagentId = newSessionId();
   const displayMethod = getDocumentMethod(endpoint);
   const displayName = `${app.name}: ${displayMethod.join(",")} ${endpoint.path}`;
 
@@ -208,10 +245,12 @@ async function runEndpointDocumentationAgent(
     attackSurfaceRegistry,
     eventBus,
     subagentId,
+    subagentName: displayName,
     onStepFinish: (event) => onStepFinish?.(event),
     onCacheMetrics,
     openAIReasoningEffort,
     enableThinking,
+    thinkingEffort,
     responseSchema: DiscoverySummarySchema,
     // Hard-exclude tools an endpoint documentation agent must never use:
     // - document_app: Phase 1 owns app discovery.
@@ -223,7 +262,9 @@ async function runEndpointDocumentationAgent(
   });
 
   try {
-    await agent.consume();
+    await (agentLimiter
+      ? agentLimiter(() => agent.consume())
+      : agent.consume());
     eventBus?.emit("subagent-complete", {
       subagentId,
       status: "completed",

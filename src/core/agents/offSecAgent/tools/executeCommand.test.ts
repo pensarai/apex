@@ -6,6 +6,7 @@ import {
   executeCommand,
   normalizeExecuteCommandTimeout,
   normalizePromptInjectionPointer,
+  redactSecretValues,
 } from "./executeCommand";
 import type { UnifiedSandbox } from "./sandbox";
 import type { ToolContext } from "./types";
@@ -97,7 +98,6 @@ describe("executeCommand prompt injection pointer", () => {
     // No env wrapping (no `env ... bash -lc`) means no payload pointer was applied.
     expect(capturedCommand).toBe("echo hello");
   });
-
 
   it("passes a payload file path pointer through env vars and redacts echoed payloads", async () => {
     const payload = "TEST PAYLOAD: direct override";
@@ -254,5 +254,34 @@ describe("executeCommand prompt injection pointer", () => {
     expect(result.command).toBe(command);
     expect(result.command).not.toContain(payloadFilePath);
     expect(result.stdout).toBe("[PROMPT_INJECTION:pi.shell.override]");
+  });
+});
+
+describe("redactSecretValues", () => {
+  it("replaces every occurrence of a known secret", () => {
+    expect(
+      redactSecretValues("token=s3cr3tvalue s3cr3tvalue", ["s3cr3tvalue"]),
+    ).toBe("token=[REDACTED] [REDACTED]");
+  });
+
+  it("masks the longer secret first so it isn't left partially exposed", () => {
+    // "abcdef" is a substring of "abcdef-longtail"; longest-first must win.
+    const out = redactSecretValues("val=abcdef-longtail", [
+      "abcdef",
+      "abcdef-longtail",
+    ]);
+    expect(out).toBe("val=[REDACTED]");
+    expect(out).not.toContain("longtail");
+  });
+
+  it("skips values shorter than 6 chars so they can't corrupt unrelated output", () => {
+    expect(redactSecretValues("the cat sat", ["cat"])).toBe("the cat sat");
+  });
+
+  it("no-ops when there are no secrets", () => {
+    expect(redactSecretValues("nothing to hide", [])).toBe("nothing to hide");
+    expect(redactSecretValues("nothing to hide", undefined)).toBe(
+      "nothing to hide",
+    );
   });
 });

@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  EndpointTransportEnum,
+  GrpcEndpointMetadataSchema,
+} from "../attackSurface/grpcSchema";
 
 // ---------------------------------------------------------------------------
 // Risk score schemas
@@ -85,6 +89,12 @@ export const EndpointSchema = z.object({
     .describe(
       "Endpoint-specific threat model describing attack vectors, data sensitivity, and testing priorities",
     ),
+  transport: EndpointTransportEnum.optional().describe(
+    "Wire transport; 'grpc'/'grpc_web'/'connect' for gRPC methods, else http",
+  ),
+  grpc: GrpcEndpointMetadataSchema.optional().describe(
+    "gRPC service/method/streaming metadata when transport is a gRPC variant",
+  ),
 });
 
 export type Endpoint = z.infer<typeof EndpointSchema>;

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
@@ -26,6 +27,7 @@ import {
   getModelInfo,
   prefersSequentialToolCalls,
 } from "./models";
+import { STREAM_DEBUG } from "./streamTelemetry";
 import {
   type AIAuthConfig,
   checkIfContextLengthError,
@@ -36,6 +38,11 @@ import {
 
 const log = scopedLogger(() => createLogger("ai"));
 
+// Opt-in debug logging for the empty-`{}` / looping response failure; bypasses `silent`.
+const RESPONSE_DEBUG =
+  process.env.RESPONSE_DEBUG === "1" || process.env.RESPONSE_DEBUG === "true";
+const RESPONSE_TOOL_NAME = "response";
+
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
 
 export type OpenAIReasoningEffort =
@@ -43,9 +50,19 @@ export type OpenAIReasoningEffort =
   | "low"
   | "medium"
   | "high"
-  | "xhigh";
+  | "xhigh"
+  | "max"
+  | "ultra";
 
 export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
+
+/**
+ * Anthropic adaptive-thinking effort hint. Soft guidance for how much the model
+ * reasons (see AWS "adaptive thinking"): `low` minimizes thinking, `high` (the
+ * model default) reasons deeply. Only meaningful for models that support
+ * adaptive thinking (Claude Opus/Sonnet 4.6+); ignored elsewhere.
+ */
+export type ThinkingEffort = "low" | "medium" | "high";
 
 const OPENAI_REASONING_MODEL_IDS = new Set([
   "gpt-5",
@@ -62,13 +79,23 @@ const OPENAI_REASONING_MODEL_IDS = new Set([
   "gpt-5.4-pro-2026-03-05",
   "gpt-5.5",
   "gpt-5.5-2026-04-23",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
 ]);
+
+/** Per-step billing context attached to a usage report, attributing cost to a specific `(sessionId, stepSeq)`. */
+export interface UsageStepContext {
+  sessionId?: string;
+  stepSeq?: number;
+}
 
 /** Callback for reporting token usage from AI operations */
 type UsageCallback = (
   model: string,
   inputTokens: number,
   outputTokens: number,
+  ctx?: UsageStepContext,
 ) => void;
 let _usageCallback: UsageCallback | null = null;
 
@@ -77,12 +104,46 @@ export function onUsage(cb: UsageCallback | null): void {
   _usageCallback = cb;
 }
 
+// Per-run step counter for billing attribution, scoped via AsyncLocalStorage so
+// concurrent runs never race a shared index. Not a strict global sequence —
+// the DB `stepSeq` on `agent_messages` remains authoritative; this only labels
+// live usage reports.
+
+interface StepContext {
+  sessionId?: string;
+  /** Next step index to hand out; mutated in place as steps finish. */
+  next: number;
+}
+
+const stepContextStore = new AsyncLocalStorage<StepContext>();
+
+/** Runs `fn` in a per-run step-counting context; `streamResponse` steps inside it report usage tagged with `sessionId` and an increasing `stepSeq` starting at `seedStepSeq`. */
+export function runWithStepContext<T>(
+  opts: { sessionId?: string; seedStepSeq?: number },
+  fn: () => T,
+): T {
+  return stepContextStore.run(
+    { sessionId: opts.sessionId, next: opts.seedStepSeq ?? 0 },
+    fn,
+  );
+}
+
+/** Takes and advances the next `stepSeq` for the current run; returns `undefined` outside any run context. */
+export function takeStepContext(): UsageStepContext | undefined {
+  const store = stepContextStore.getStore();
+  if (!store) return undefined;
+  const stepSeq = store.next;
+  store.next += 1;
+  return { sessionId: store.sessionId, stepSeq };
+}
+
 export type AIModelProvider =
   | "anthropic"
   | "openai"
   | "google"
   | "openrouter"
   | "bedrock"
+  | "bedrock-mantle"
   | "pensar"
   | "inception"
   | "local";
@@ -237,7 +298,12 @@ async function* withIdleTimeout<T>(
 }
 
 function isStreamIdleTimeoutError(error: unknown): boolean {
-  return error instanceof StreamIdleTimeoutError;
+  // AI SDK may rewrap the error, so walk `cause`.
+  for (let e: unknown = error, depth = 0; e != null && depth < 6; depth++) {
+    if (e instanceof StreamIdleTimeoutError) return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 /**
@@ -254,10 +320,21 @@ function isStreamIdleTimeoutError(error: unknown): boolean {
  * chunks for the same id (defensive — should never happen in practice) are
  * deduplicated. `tool-result` chunks without a matching open call are
  * ignored so the counter can never go negative.
+ *
+ * EXCEPTION: `response` is never gated — its `execute` returns synchronously so
+ * it's not a slow tool, but a Bedrock stream wedging mid-payload while
+ * streaming its (often large) args would otherwise suppress the idle timeout
+ * forever (confirmed hang). Leaving it ungated keeps idle-timeout auto-resume working.
  */
+const NON_GATED_TOOLS = new Set<string>(["response"]);
+
 function createToolExecutionGate(): {
   shouldEnforceIdleTimeout: () => boolean;
-  observe: (chunk: { type: string; toolCallId?: string }) => void;
+  observe: (chunk: {
+    type: string;
+    toolCallId?: string;
+    toolName?: string;
+  }) => void;
 } {
   let inFlight = 0;
   const open = new Set<string>();
@@ -266,6 +343,7 @@ function createToolExecutionGate(): {
     shouldEnforceIdleTimeout: () => inFlight === 0,
     observe: (chunk) => {
       if (chunk.type === "tool-call") {
+        if (chunk.toolName && NON_GATED_TOOLS.has(chunk.toolName)) return;
         const id = chunk.toolCallId;
         if (id) {
           if (!open.has(id)) {
@@ -281,7 +359,7 @@ function createToolExecutionGate(): {
           if (open.delete(id)) {
             inFlight = Math.max(0, inFlight - 1);
           }
-        } else {
+        } else if (!(chunk.toolName && NON_GATED_TOOLS.has(chunk.toolName))) {
           inFlight = Math.max(0, inFlight - 1);
         }
       }
@@ -324,6 +402,31 @@ function wrapStreamWithErrorHandler(
               )) {
                 toolGate.observe(chunk);
 
+                // [response-debug] Log AI-SDK-level response-tool chunks / finish-step, below the consume() loop.
+                if (RESPONSE_DEBUG) {
+                  const c = chunk as {
+                    type: string;
+                    toolName?: string;
+                    toolCallId?: string;
+                    finishReason?: string;
+                    invalid?: boolean;
+                  };
+                  if (
+                    (c.type === "tool-call" ||
+                      c.type === "tool-error" ||
+                      c.type === "tool-result") &&
+                    c.toolName === RESPONSE_TOOL_NAME
+                  ) {
+                    log.warn(
+                      `[response-debug] ai-layer chunk=${c.type} response id=${c.toolCallId} invalid=${c.invalid === true}`,
+                    );
+                  } else if (c.type === "finish-step") {
+                    log.warn(
+                      `[response-debug] ai-layer finish-step finishReason=${c.finishReason}`,
+                    );
+                  }
+                }
+
                 // Only stream-level errors are fatal; tool-level errors
                 // flow through so the UI renders them as failed tool results.
                 if (chunk.type === "error") {
@@ -348,7 +451,8 @@ function wrapStreamWithErrorHandler(
                 messagesContainer.current.length > 0
               ) {
                 const nextIdleCount = idleResumeCount + 1;
-                if (!silent) {
+                // Surfaced on silent sub-agents too when stream-debugging.
+                if (!silent || STREAM_DEBUG) {
                   log.warn(
                     `Stream stalled (attempt ${nextIdleCount}/${MAX_IDLE_RESUME_RETRIES}), resuming with ${messagesContainer.current.length} messages: ${errorMessage}`,
                   );
@@ -625,6 +729,23 @@ export function modelSupportsThinking(modelId: string): boolean {
   );
 }
 
+/**
+ * Whether a model accepts the `adaptive` thinking type — Claude Opus 4.6+ and
+ * Sonnet 4.6+. Pre-4.6 models (Opus 4.0–4.5, Sonnet 4.5, Haiku 4.5) support
+ * extended thinking but reject `adaptive`, so we don't request thinking for
+ * them at all.
+ */
+export function modelSupportsAdaptiveThinking(modelId: string): boolean {
+  const normalized = modelId
+    .replace(/^pensar:/, "")
+    .replace(/^(us\.|eu\.|global\.|ap\.)?anthropic\./, "");
+
+  return (
+    /^claude-sonnet-4-[6-9]/.test(normalized) ||
+    /^claude-opus-4-[6-9]/.test(normalized)
+  );
+}
+
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
   const { provider } = getModelInfo(modelId);
   if (provider !== "openai") return false;
@@ -637,6 +758,9 @@ export function getOpenAIReasoningEfforts(
   modelId: string,
 ): OpenAIReasoningEffort[] {
   if (!modelSupportsOpenAIReasoning(modelId)) return [];
+  if (/^gpt-5\.6(?:\b|-)/.test(modelId)) {
+    return ["low", "medium", "high", "xhigh", "max", "ultra"];
+  }
   if (/^gpt-5\.5(?:\b|-)/.test(modelId)) {
     return ["none", "low", "medium", "high", "xhigh"];
   }
@@ -649,8 +773,99 @@ export function normalizeOpenAIReasoningEffort(
 ): OpenAIReasoningEffort | undefined {
   const efforts = getOpenAIReasoningEfforts(modelId);
   if (efforts.length === 0) return undefined;
-  if (effort && efforts.includes(effort)) return effort;
+  if (effort && efforts.includes(effort)) {
+    // ponytail: OpenAI has no distinct ultra level; keep the UI choice as a max alias.
+    return effort === "ultra" ? "max" : effort;
+  }
   return DEFAULT_OPENAI_REASONING_EFFORT;
+}
+
+/**
+ * Provider-specific options passed to `streamText` to request reasoning /
+ * extended thinking. Each provider reads only its own namespace:
+ *   - `anthropic.thinking` — direct Anthropic provider AND the Pensar gateway
+ *     (the gateway formatter maps it to the Bedrock `thinking` field).
+ *   - `bedrock.reasoningConfig` — the AWS Bedrock provider; it ignores the
+ *     `anthropic` namespace entirely, so Anthropic-on-Bedrock thinking is only
+ *     requested when this key is present. `display: 'summarized'` makes the
+ *     model actually return reasoning text (adaptive can otherwise omit it).
+ *   - `openai.reasoningEffort` — OpenAI/o-series reasoning models.
+ */
+export type ReasoningProviderOptions = {
+  anthropic?: {
+    thinking: { type: "adaptive" };
+    // Soft effort hint for adaptive thinking; omitted when no level requested
+    // (model defaults to "high"). Sibling of `thinking` per the AI SDK.
+    effort?: ThinkingEffort;
+  };
+  bedrock?: {
+    reasoningConfig: {
+      type: "adaptive";
+      display: "summarized";
+      // Bedrock's channel for the adaptive effort hint (maps to Claude's
+      // output_config.effort). Omitted when no level requested.
+      maxReasoningEffort?: ThinkingEffort;
+    };
+  };
+  openai?: OpenAIResponsesProviderOptions;
+};
+
+/**
+ * Build the `providerOptions` for a request based on the model and reasoning
+ * settings. Returns `undefined` when no reasoning/thinking is requested.
+ *
+ * When thinking is enabled for an Anthropic-family model we set BOTH the
+ * `anthropic` and `bedrock` keys: the resolved provider (direct Anthropic,
+ * Pensar gateway, or Bedrock) reads only its own namespace and ignores the
+ * other, so this is safe across all three and avoids brittle provider
+ * branching here.
+ */
+export function buildReasoningProviderOptions(
+  model: AIModel,
+  opts: {
+    enableThinking?: boolean;
+    /**
+     * Adaptive-thinking effort hint for Anthropic models that support it
+     * (Opus/Sonnet 4.6+). Ignored on models without adaptive support. When
+     * omitted the model uses its own default (`high`).
+     */
+    thinkingEffort?: ThinkingEffort | null;
+    openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  },
+): ReasoningProviderOptions | undefined {
+  const useThinking =
+    !!opts.enableThinking &&
+    isAnthropicProvider(model) &&
+    modelSupportsAdaptiveThinking(model);
+  const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
+    model,
+    opts.openAIReasoningEffort,
+  );
+  // The effort hint only rides along when adaptive thinking is actually used.
+  const effort = useThinking ? (opts.thinkingEffort ?? undefined) : undefined;
+
+  if (!useThinking && !normalizedOpenAIEffort) return undefined;
+
+  return {
+    ...(useThinking
+      ? {
+          anthropic: {
+            thinking: { type: "adaptive" as const },
+            ...(effort ? { effort } : {}),
+          },
+          bedrock: {
+            reasoningConfig: {
+              type: "adaptive" as const,
+              display: "summarized" as const,
+              ...(effort ? { maxReasoningEffort: effort } : {}),
+            },
+          },
+        }
+      : {}),
+    ...(normalizedOpenAIEffort
+      ? { openai: { reasoningEffort: normalizedOpenAIEffort } }
+      : {}),
+  };
 }
 
 /** Cache token metrics extracted from Anthropic providerMetadata */
@@ -686,10 +901,17 @@ export interface StreamResponseOpts {
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+) */
   enableThinking?: boolean;
+  /**
+   * Adaptive-thinking effort hint for Anthropic models that support it
+   * (Opus/Sonnet 4.6+). Ignored where unsupported; model defaults to `high`.
+   */
+  thinkingEffort?: ThinkingEffort | null;
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
   /** Session root path — used by context management layers to persist truncated tool results */
   sessionPath?: string;
+  /** Session id (`ses_…`) of the agent making this call; stamped onto AI-span telemetry so traces are filterable by session. */
+  sessionId?: string;
   /**
    * Internal: recovery-recursion depth. Bumped at each summarize → resume
    * boundary; throws `ContextLengthExhaustedError` past `MAX_RESTART_DEPTH`.
@@ -725,7 +947,9 @@ export function streamResponse(
     onFinish,
     onCacheMetrics,
     enableThinking,
+    thinkingEffort,
     openAIReasoningEffort,
+    sessionId,
   } = opts;
 
   // Wrap onStepFinish to fire usage callback for every step.
@@ -736,7 +960,9 @@ export function streamResponse(
     if (_usageCallback) {
       const inp = step.usage?.inputTokens ?? 0;
       const out = step.usage?.outputTokens ?? 0;
-      if (inp > 0 || out > 0) _usageCallback(model, inp, out);
+      // Advance stepSeq every finished step (even zero-usage) to stay aligned with the AI-SDK step index.
+      const stepCtx = takeStepContext();
+      if (inp > 0 || out > 0) _usageCallback(model, inp, out, stepCtx);
     }
   };
   const providerModel = getProviderModel(model, authConfig);
@@ -825,45 +1051,13 @@ export function streamResponse(
   // Build providerOptions for extended thinking when enabled on a supported model.
   // Caching uses message-level cache_control (withCachedSystemPrompt / withCachedLastMessage),
   // not providerOptions, so there is no collision.
-  // Note: when thinking is enabled, temperature must not be set (Anthropic rejects it).
-  const useThinking =
-    enableThinking &&
-    isAnthropicProvider(model) &&
-    modelSupportsThinking(model);
-  const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
-    model,
+  // Note: when thinking is enabled, temperature must not be set (Anthropic rejects it);
+  // this path never sets temperature, so there is nothing to clear.
+  const providerOptions = buildReasoningProviderOptions(model, {
+    enableThinking,
+    thinkingEffort,
     openAIReasoningEffort,
-  );
-  const providerOptions:
-    | {
-        anthropic?: {
-          thinking: {
-            type: "adaptive";
-          };
-        };
-        openai?: OpenAIResponsesProviderOptions;
-      }
-    | undefined =
-    useThinking || normalizedOpenAIEffort
-      ? {
-          ...(useThinking
-            ? {
-                anthropic: {
-                  thinking: {
-                    type: "adaptive" as const,
-                  },
-                },
-              }
-            : {}),
-          ...(normalizedOpenAIEffort
-            ? {
-                openai: {
-                  reasoningEffort: normalizedOpenAIEffort,
-                },
-              }
-            : {}),
-        }
-      : undefined;
+  });
 
   let rateLimitRetryCount = 0;
 
@@ -884,6 +1078,7 @@ export function streamResponse(
         recordInputs: recordPayloads,
         recordOutputs: recordPayloads,
         functionId: `apex.stream.${model}`,
+        ...(sessionId ? { metadata: { sessionId } } : {}),
       },
       // Pin actual emission to the same value `fitMessagesToContext`
       // reserved for output. Without this, the SDK applies provider
@@ -928,9 +1123,11 @@ export function streamResponse(
 
             // Pensar provider doesn't populate providerMetadata.anthropic;
             // fall back to the SDK's normalized usage.inputTokenDetails.
-            if (cacheRead === 0 && cacheCreation === 0) {
-              const { inputTokenDetails } = stepResult.usage;
+            const { inputTokenDetails } = stepResult.usage;
+            if (cacheRead === 0) {
               cacheRead = inputTokenDetails?.cacheReadTokens ?? 0;
+            }
+            if (cacheCreation === 0) {
               cacheCreation = inputTokenDetails?.cacheWriteTokens ?? 0;
             }
 
@@ -951,6 +1148,16 @@ export function streamResponse(
         tools,
         error,
       }) => {
+        // [response-debug] Log when repair fires for `response` (streamed args failed Zod validation), bypassing `silent`.
+        if (RESPONSE_DEBUG && toolCall.toolName === RESPONSE_TOOL_NAME) {
+          const raw = toolCall.input;
+          const rawLen =
+            typeof raw === "string" ? raw.length : JSON.stringify(raw).length;
+          log.warn(
+            `[response-debug] experimental_repairToolCall FIRED for response ` +
+              `rawInputChars=${rawLen} error=${(error.message || String(error)).slice(0, 200)}`,
+          );
+        }
         try {
           if (!silent) {
             log.debug(`Repairing tool call: ${toolCall.toolName}`, {
@@ -1020,6 +1227,7 @@ export function streamResponse(
                 recordInputs: recordPayloads,
                 recordOutputs: recordPayloads,
                 functionId: "apex.tool_repair",
+                ...(sessionId ? { metadata: { sessionId } } : {}),
               },
             });
 
@@ -1141,6 +1349,8 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
+  /** Session id (`ses_…`) of the caller — stamped onto AI-span telemetry. */
+  sessionId?: string;
 }
 
 const MAX_OBJECT_RATE_LIMIT_RETRIES = 8;
@@ -1159,6 +1369,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
     authConfig,
     abortSignal,
     onTokenUsage,
+    sessionId,
   } = opts;
 
   const providerModel = getProviderModel(model, authConfig);
@@ -1195,6 +1406,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
           recordInputs: recordPayloads,
           recordOutputs: recordPayloads,
           functionId: "apex.generate_object",
+          ...(sessionId ? { metadata: { sessionId } } : {}),
         },
       });
 
@@ -1205,7 +1417,8 @@ export async function generateObjectResponse<T extends z.ZodType>(
       if (_usageCallback && usage) {
         const inp = usage.inputTokens ?? 0;
         const out = usage.outputTokens ?? 0;
-        if (inp > 0 || out > 0) _usageCallback(model, inp, out);
+        const stepCtx = takeStepContext();
+        if (inp > 0 || out > 0) _usageCallback(model, inp, out, stepCtx);
       }
 
       // zod v4: the AI SDK's `Output.object` no longer carries the schema's

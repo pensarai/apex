@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 /**
  * Smoke test: does the offSec agent's in-sandbox Camoufox browser path actually
  * work inside a Daytona sandbox built the way we launch Apex in production?
@@ -19,8 +20,8 @@
  * Flags: --target <url> (required), --keep (don't delete the sandbox).
  */
 
+import path from "node:path";
 import { Daytona, Image } from "@daytonaio/sdk";
-import path from "path";
 import type { UnifiedSandbox } from "../src/core/agents/offSecAgent/tools/sandbox";
 import {
   createSandboxBrowserTools,
