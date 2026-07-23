@@ -2560,6 +2560,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
             pendingApproval={currentPending}
             onApprove={handleApprove}
             onAutoApprove={handleAutoApprove}
+            onAbort={handleAbort}
             enableAutocomplete={true}
             autocompleteOptions={autocompleteOptions}
             commandOptionMap={commandOptionMap}

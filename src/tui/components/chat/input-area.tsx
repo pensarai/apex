@@ -56,6 +56,8 @@ export interface InputAreaProps {
   onApprove?: () => void;
   /** Handler for auto-approve */
   onAutoApprove?: () => void;
+  /** Abort/stop handler (e.g. Esc while the approval redirect input is focused) */
+  onAbort?: () => void;
   /** Last decline note */
   lastDeclineNote?: string | null;
   /** Enable autocomplete suggestions (e.g. slash commands, skills) */
@@ -354,6 +356,7 @@ export function InputArea(props: InputAreaProps) {
     pendingApproval,
     onApprove,
     onAutoApprove,
+    onAbort,
     lastDeclineNote,
     value,
     onChange,
@@ -380,6 +383,7 @@ export function InputArea(props: InputAreaProps) {
         setRedirectInput={onChange}
         lastDeclineNote={lastDeclineNote}
         onCommandExecute={onCommandExecute}
+        onAbort={onAbort}
       />
     );
   }
@@ -416,6 +420,7 @@ interface ApprovalInputAreaProps {
   setRedirectInput: (value: string) => void;
   lastDeclineNote?: string | null;
   onCommandExecute?: (command: string) => Promise<void>;
+  onAbort?: () => void;
 }
 
 function ApprovalInputArea({
@@ -427,6 +432,7 @@ function ApprovalInputArea({
   setRedirectInput,
   lastDeclineNote,
   onCommandExecute,
+  onAbort,
 }: ApprovalInputAreaProps) {
   const { colors } = useTheme();
   const { setExternalDialogOpen } = useDialog();
@@ -439,6 +445,17 @@ function ApprovalInputArea({
   }, [focusedElement, setExternalDialogOpen]);
 
   useKeyboard((key) => {
+    // Esc stops the agent. When the redirect input is focused we set
+    // externalDialogOpen, which makes the dashboard skip its Esc handler, so
+    // own it here to honor the advertised "Esc stop". When not focused on the
+    // input, let the event fall through to the dashboard handler.
+    if (key.name === "escape" && focusedElement === 2) {
+      key.preventDefault?.();
+      key.stopPropagation?.();
+      onAbort?.();
+      return;
+    }
+
     // Navigation
     if (key.name === "up") {
       setFocusedElement((prev) => Math.max(0, prev - 1));
