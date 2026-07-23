@@ -2164,6 +2164,11 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     }
     pendingToolCallIdRef.current = null;
     setPendingQuestions(null);
+    // Clear the queue before going idle, or the idle auto-send effect would
+    // immediately restart the agent with a hidden queued follow-up.
+    setQueuedMessages([]);
+    queuedMessagesRef.current = [];
+    setSelectedQueueIndex(-1);
     setStatus("idle");
     setThinking(false);
     setIsExecuting(false);
