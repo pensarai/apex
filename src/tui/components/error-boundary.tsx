@@ -1,3 +1,4 @@
+import { useKeyboard } from "@opentui/react";
 import React, { useCallback } from "react";
 import { createLogger } from "../../core/logger/structured";
 import { scopedLogger } from "../../core/util/lazyLogger";
@@ -69,14 +70,54 @@ class ErrorBoundaryInner extends React.Component<
   }
 }
 
+function HaltedFallback({
+  message,
+  onExit,
+}: {
+  message: string;
+  onExit: () => void;
+}) {
+  const { colors } = useTheme();
+
+  useKeyboard((key) => {
+    if (key.ctrl && key.name === "c") {
+      key.preventDefault();
+      key.stopPropagation();
+      onExit();
+    }
+  });
+
+  return (
+    <box
+      flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+      width="100%"
+      height="100%"
+      gap={1}
+      padding={2}
+      overflow="hidden"
+    >
+      <text fg={colors.error}>Apex could not recover this view</text>
+      <text fg={colors.textMuted}>{message}</text>
+      <text fg={colors.textMuted}>Press Ctrl+C to exit safely.</text>
+    </box>
+  );
+}
+
 /**
  * Functional wrapper that bridges the useToast hook into the class-based
  * ErrorBoundary. Uses React.createElement to avoid @opentui/react JSX
  * type mismatch with class components.
  */
-export function ErrorBoundary({ children }: { children: React.ReactNode }) {
+export function ErrorBoundary({
+  children,
+  onExit,
+}: {
+  children: React.ReactNode;
+  onExit: () => void;
+}) {
   const { toast } = useToast();
-  const { colors } = useTheme();
 
   const handleError = useCallback(
     (message: string) => {
@@ -90,20 +131,7 @@ export function ErrorBoundary({ children }: { children: React.ReactNode }) {
     {
       onError: handleError,
       fallback: (message: string) => (
-        <box
-          flexDirection="column"
-          alignItems="center"
-          justifyContent="center"
-          width="100%"
-          height="100%"
-          gap={1}
-          padding={2}
-          overflow="hidden"
-        >
-          <text fg={colors.error}>Apex could not recover this view</text>
-          <text fg={colors.textMuted}>{message}</text>
-          <text fg={colors.textMuted}>Press Ctrl+C to exit safely.</text>
-        </box>
+        <HaltedFallback message={message} onExit={onExit} />
       ),
     },
     children,

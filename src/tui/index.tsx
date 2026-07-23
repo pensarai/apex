@@ -751,7 +751,7 @@ async function main() {
         <ConsoleThemeSync />
         <TerminalDimensionsProvider>
           <ToastProvider>
-            <ErrorBoundary>
+            <ErrorBoundary onExit={() => exit(0)}>
               <App appConfig={appConfig} />
             </ErrorBoundary>
             <ToastContainer />
