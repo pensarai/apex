@@ -1,9 +1,4 @@
-import {
-  createContext,
-  type ReactNode,
-  useMemo,
-  useState,
-} from "react";
+import { createContext, type ReactNode, useMemo, useState } from "react";
 import { type SessionInfo, sessions } from "../../core/session";
 
 type SessionContext = {
