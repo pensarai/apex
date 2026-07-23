@@ -18,6 +18,7 @@ const listing = `
     <p>https://app.acme.test/admin and status.acme.test</p>
     <h2>Rules of engagement</h2>
     <p>You must not perform denial of service testing.</p>
+    <p>Rate limit: 120 requests per minute.</p>
     <p>All requests must include header X-Bug-Bounty: researcher-123</p>
   </body>
 </html>`;
@@ -53,6 +54,7 @@ describe("bug bounty listing analysis", () => {
     expect(
       brief.rules.some((rule) => rule.category === "prohibited-action"),
     ).toBe(true);
+    expect(compileEngagementPolicy(brief).requestsPerSecond).toBe(2);
   });
 
   it("rejects loopback listing URLs before fetching", async () => {

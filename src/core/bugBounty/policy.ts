@@ -42,6 +42,7 @@ export function compileEngagementPolicy(
       }),
     ),
   ];
+  const requestsPerSecond = effectiveRateLimit(brief);
   const guidance = buildGuidance(brief, allowedTargets, excludedTargets);
   const base = {
     version: "1" as const,
@@ -53,6 +54,7 @@ export function compileEngagementPolicy(
     excludedTargets,
     allowedHosts,
     requiredHeaders,
+    requestsPerSecond,
     rules: brief.rules,
     guidance,
     blockers: [...new Set(blockers)],
@@ -62,6 +64,25 @@ export function compileEngagementPolicy(
     ...base,
     policyHash: hashCanonical(base),
   });
+}
+
+function effectiveRateLimit(brief: BugBountyBrief): number | undefined {
+  const rates = brief.rules.flatMap((rule) => {
+    if (rule.category !== "rate-limit") return [];
+    const match = rule.statement.match(
+      /(\d+(?:\.\d+)?)\s*(?:requests?|reqs?)\s*(?:per|\/)\s*(second|sec(?:ond)?s?|minute|min(?:ute)?s?|hour|hours?)/i,
+    );
+    if (!match) return [];
+    const amount = Number(match[1]);
+    const unit = match[2]?.toLowerCase() ?? "second";
+    const divisor = unit.startsWith("min")
+      ? 60
+      : unit.startsWith("hour")
+        ? 3600
+        : 1;
+    return [amount / divisor];
+  });
+  return rates.length > 0 ? Math.min(...rates) : undefined;
 }
 
 function assetCoveredBy(

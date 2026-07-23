@@ -75,6 +75,13 @@ export async function runBugBountyWorkflow(
         ...input.session.config,
         mode: "auto",
         allowDestructiveActions: false,
+        requestsPerSecond: input.policy.requestsPerSecond
+          ? Math.min(
+              input.session.config?.requestsPerSecond ??
+                input.policy.requestsPerSecond,
+              input.policy.requestsPerSecond,
+            )
+          : input.session.config?.requestsPerSecond,
         headers: {
           ...(input.session.config?.headers ?? {}),
           ...input.policy.requiredHeaders,

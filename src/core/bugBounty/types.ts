@@ -72,6 +72,7 @@ export const EngagementPolicySchema = z.object({
   excludedTargets: z.array(BugBountyAssetSchema),
   allowedHosts: z.array(z.string()),
   requiredHeaders: z.record(z.string(), z.string()),
+  requestsPerSecond: z.number().positive().optional(),
   rules: z.array(BugBountyRuleSchema),
   guidance: z.string(),
   blockers: z.array(z.string()),
