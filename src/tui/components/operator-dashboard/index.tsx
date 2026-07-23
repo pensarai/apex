@@ -2090,6 +2090,16 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
   );
 
   const handleQuestionsAbort = useCallback(() => {
+    // Stop the in-flight run first. The questions form appears on the tool-call
+    // event while runAgent is still settling; aborting unwinds it via
+    // AbortError, which skips the messages.json read-back that would otherwise
+    // overwrite the aborted tool result below (and clears isExecuting so a
+    // later Esc can stop).
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
     const toolCallId = pendingToolCallIdRef.current;
     if (toolCallId) {
       const abortedResult = {
@@ -2155,8 +2165,10 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     pendingToolCallIdRef.current = null;
     setPendingQuestions(null);
     setStatus("idle");
+    setThinking(false);
+    setIsExecuting(false);
     addSystemMessage("Aborted — questions dismissed.");
-  }, [addSystemMessage]);
+  }, [addSystemMessage, setThinking, setIsExecuting]);
 
   // Complete a mode transition (shared by cycleMode and plan approval)
   const transitionToMode = useCallback((next: OperatorMode) => {
