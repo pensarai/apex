@@ -5,6 +5,7 @@ import type { ModelMessage } from "ai";
 import z from "zod";
 import { generateRandomName, generateSessionName } from "../../util/name";
 import type { AIAuthConfig, AIModel } from "../ai";
+import { EngagementPolicySchema } from "../bugBounty/types";
 import { CredentialManager } from "../credentials";
 import * as Identifier from "../id/id";
 import { getCurrentVersion } from "../installation";
@@ -204,6 +205,8 @@ const SessionConfigObject = z.object({
   mode: z.enum(["auto", "driver", "operator"]).optional(),
   outcomeGuidance: z.string().optional(),
   scopeConstraints: ScopeConstraintsObject.optional(),
+  /** Immutable, approved bug-bounty scope and rules enforced by tool guards. */
+  engagementPolicy: EngagementPolicySchema.optional(),
   authCredentials: z
     .union([AuthCredentialsObject, z.array(AuthCredentialsObject)])
     .optional(),

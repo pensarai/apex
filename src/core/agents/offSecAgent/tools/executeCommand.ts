@@ -15,6 +15,7 @@ import {
 } from "./destructiveGuard";
 import {
   assertCommandInScope,
+  EngagementPolicyViolationError,
   extractHostsFromCommand,
   resolverSessionFromCtx,
   ScopeViolationError,
@@ -349,7 +350,10 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       try {
         assertCommandInScope(command, ctx);
       } catch (e) {
-        if (e instanceof ScopeViolationError) {
+        if (
+          e instanceof ScopeViolationError ||
+          e instanceof EngagementPolicyViolationError
+        ) {
           return {
             success: false,
             error: e.message,
@@ -370,11 +374,19 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         resolverSessionFromCtx(ctx),
         cmdHosts,
       );
-      if (inject.status === "unknown-tool" && !allow_unprotected) {
+      const policyRequiresHeaders =
+        Object.keys(ctx.session.config?.engagementPolicy?.requiredHeaders ?? {})
+          .length > 0;
+      if (
+        inject.status === "unknown-tool" &&
+        (!allow_unprotected || policyRequiresHeaders)
+      ) {
         const msg =
           "Command rejected: configured custom HTTP headers cannot be injected because the tool is unrecognized or the command is pipelined. " +
           "Supported HTTP tools: curl, wget, nuclei, ffuf, gobuster, httpx, feroxbuster, dirb, wfuzz, wpscan, sqlmap, nikto. " +
-          "Either (a) rewrite the command using one of those tools, (b) use the http_request tool, or (c) pass allow_unprotected: true to acknowledge headers will NOT be sent.";
+          (policyRequiresHeaders
+            ? "This engagement requires headers on every applicable request, so allow_unprotected cannot override this policy."
+            : "Either (a) rewrite the command using one of those tools, (b) use the http_request tool, or (c) pass allow_unprotected: true to acknowledge headers will NOT be sent.");
         return {
           success: false,
           error: msg,

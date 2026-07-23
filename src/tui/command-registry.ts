@@ -89,6 +89,49 @@ export interface CommandConfig {
 export const commands: CommandConfig[] = [
   // — Pentesting —
   {
+    name: "bug-bounty",
+    aliases: ["bounty"],
+    description: "Run an approval-gated bug bounty engagement",
+    category: "Pentesting",
+    options: [
+      {
+        name: "--listing",
+        valueHint: "<url>",
+        description: "Bug bounty program listing URL",
+      },
+      {
+        name: "--max-targets",
+        valueHint: "<count>",
+        description: "Maximum actionable roots to test",
+      },
+    ],
+    handler: (args, ctx) => {
+      const listingFlag = args.indexOf("--listing");
+      const maxTargetsFlag = args.indexOf("--max-targets");
+      const listing =
+        listingFlag >= 0
+          ? args[listingFlag + 1]
+          : args.find((arg) => !arg.startsWith("--"));
+      if (!listing) {
+        ctx.toast?.("Usage: /bug-bounty --listing <program-url>", "warn");
+        return;
+      }
+      const skillArgs: Record<string, string> = { listing };
+      if (maxTargetsFlag >= 0 && args[maxTargetsFlag + 1]) {
+        skillArgs["max-targets"] = args[maxTargetsFlag + 1];
+      }
+      ctx.navigate({
+        type: "operator",
+        nonce: Date.now(),
+        initialConfig: {
+          requireApproval: true,
+          sandbox: true,
+        },
+        initialSkill: { slug: "bug-bounty", args: skillArgs },
+      });
+    },
+  },
+  {
     name: "pentest",
     aliases: ["p", "web", "w"],
     description: "Start autonomous pentest swarm",

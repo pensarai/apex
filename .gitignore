@@ -65,7 +65,9 @@ sst-env.d.ts
 .agents/skills/*
 !.agents/skills/.gitkeep
 !.agents/skills/create-skill/
+!.agents/skills/bug-bounty-loop/
 .claude/skills/*
 !.claude/skills/.gitkeep
 !.claude/skills/create-skill
+!.claude/skills/bug-bounty-loop
 .claude/settings.local.json
