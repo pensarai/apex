@@ -40,7 +40,7 @@ export async function runBugBountyWorkflow(
     );
   }
 
-  const maxTargets = input.maxTargets ?? 25;
+  const maxTargets = Math.min(input.maxTargets ?? 25, 25);
   const actionable = input.policy.allowedTargets
     .map((asset) => ({
       asset,

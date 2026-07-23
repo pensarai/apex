@@ -18,7 +18,7 @@ traffic after human approval.`,
         .string()
         .regex(/^[a-f0-9]{64}$/)
         .describe("Policy hash explicitly approved by the human reviewer"),
-      maxTargets: z.number().int().positive().max(100).optional(),
+      maxTargets: z.number().int().positive().max(25).optional(),
       toolCallDescription: z.string(),
     }),
     execute: async ({ listingUrl, approvedPolicyHash, maxTargets }) => {
