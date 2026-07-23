@@ -65,6 +65,37 @@ describe("bug bounty listing analysis", () => {
     ).rejects.toThrow("publicly routable");
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  it("rejects public hostnames that resolve to private addresses", async () => {
+    const fetchImpl = vi.fn();
+    await expect(
+      analyzeBugBountyListing({
+        listingUrl: "https://listing.example/program",
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        resolveHostname: async () => ["169.254.169.254"],
+      }),
+    ).rejects.toThrow("publicly routable");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("revalidates every redirect target before following it", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "http://metadata.example/latest" },
+        }),
+    );
+    await expect(
+      analyzeBugBountyListing({
+        listingUrl: "https://listing.example/program",
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        resolveHostname: async (hostname) =>
+          hostname === "metadata.example" ? ["10.0.0.1"] : ["8.8.8.8"],
+      }),
+    ).rejects.toThrow("publicly routable");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("engagement policy", () => {

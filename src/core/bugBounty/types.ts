@@ -90,6 +90,7 @@ export interface AnalyzeBugBountyListingInput {
   /** Pre-fetched public or authenticated listing content. */
   content?: string;
   fetchImpl?: typeof fetch;
+  resolveHostname?: (hostname: string) => Promise<string[]>;
   abortSignal?: AbortSignal;
 }
 

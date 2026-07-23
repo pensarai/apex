@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import {
   type AnalyzeBugBountyListingInput,
@@ -12,6 +13,7 @@ import {
 
 const MAX_LISTING_BYTES = 2 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 30_000;
+const MAX_REDIRECTS = 5;
 
 export async function analyzeBugBountyListing(
   input: AnalyzeBugBountyListingInput,
@@ -23,6 +25,7 @@ export async function analyzeBugBountyListing(
       listingUrl,
       input.fetchImpl ?? fetch,
       input.abortSignal,
+      input.resolveHostname ?? resolveHostname,
     ));
 
   if (Buffer.byteLength(content, "utf8") > MAX_LISTING_BYTES) {
@@ -100,37 +103,100 @@ function validateListingUrl(value: string): string {
 }
 
 function isPrivateAddress(hostname: string): boolean {
+  hostname = hostname.replace(/^\[|\]$/g, "");
   if (isIP(hostname) === 4) {
-    const [a, b] = hostname.split(".").map(Number);
+    const [a, b, c] = hostname.split(".").map(Number);
     return (
+      a === 0 ||
       a === 10 ||
       a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
       (a === 169 && b === 254) ||
       (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168)
+      (a === 192 && b === 0 && (c === 0 || c === 2)) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      (a === 198 && b === 51 && c === 100) ||
+      (a === 203 && b === 0 && c === 113) ||
+      a >= 224
     );
   }
   if (isIP(hostname) === 6) {
     const lower = hostname.toLowerCase();
-    return lower === "::1" || lower.startsWith("fc") || lower.startsWith("fd");
+    const mappedV4 = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
+    if (mappedV4) return isPrivateAddress(mappedV4);
+    return (
+      lower === "::" ||
+      lower === "::1" ||
+      lower.startsWith("fc") ||
+      lower.startsWith("fd") ||
+      lower.startsWith("fe8") ||
+      lower.startsWith("fe9") ||
+      lower.startsWith("fea") ||
+      lower.startsWith("feb")
+    );
   }
   return false;
+}
+
+async function resolveHostname(hostname: string): Promise<string[]> {
+  const normalized = hostname.replace(/^\[|\]$/g, "");
+  if (isIP(normalized)) return [normalized];
+  return (await lookup(normalized, { all: true, verbatim: true })).map(
+    (entry) => entry.address,
+  );
+}
+
+async function assertPublicResolution(
+  url: string,
+  resolver: (hostname: string) => Promise<string[]>,
+): Promise<void> {
+  const hostname = new URL(url).hostname.toLowerCase();
+  let addresses: string[];
+  try {
+    addresses = await resolver(hostname);
+  } catch (error) {
+    throw new Error(
+      `Unable to resolve bug bounty listing host: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (
+    addresses.length === 0 ||
+    addresses.some((address) => isPrivateAddress(address))
+  ) {
+    throw new Error("Bug bounty listing URL must be publicly routable");
+  }
 }
 
 async function fetchListingContent(
   listingUrl: string,
   fetchImpl: typeof fetch,
   parentSignal?: AbortSignal,
+  resolver: (hostname: string) => Promise<string[]> = resolveHostname,
 ): Promise<string> {
   const timeout = AbortSignal.timeout(FETCH_TIMEOUT_MS);
   const signal = parentSignal
     ? AbortSignal.any([parentSignal, timeout])
     : timeout;
-  const response = await fetchImpl(listingUrl, {
-    redirect: "follow",
-    signal,
-    headers: { "User-Agent": "pensar-apex-bug-bounty-preflight" },
-  });
+  let currentUrl = listingUrl;
+  let response: Response | undefined;
+  for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
+    await assertPublicResolution(currentUrl, resolver);
+    response = await fetchImpl(currentUrl, {
+      redirect: "manual",
+      signal,
+      headers: { "User-Agent": "pensar-apex-bug-bounty-preflight" },
+    });
+    if (![301, 302, 303, 307, 308].includes(response.status)) break;
+    const location = response.headers.get("location");
+    if (!location)
+      throw new Error("Bug bounty listing redirect has no location");
+    if (redirects === MAX_REDIRECTS) {
+      throw new Error("Bug bounty listing exceeded the redirect limit");
+    }
+    currentUrl = validateListingUrl(new URL(location, currentUrl).toString());
+  }
+  if (!response) throw new Error("Unable to fetch bug bounty listing");
   if (!response.ok) {
     throw new Error(
       `Unable to fetch bug bounty listing: HTTP ${response.status}`,
