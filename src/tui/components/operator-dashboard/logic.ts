@@ -81,21 +81,61 @@ export interface SubmitResult {
   denyPending: boolean;
 }
 
+/** Launch options that must survive a fresh-session clear (e.g. sandboxing). */
+export interface ClearSessionCarryOver {
+  sandbox?: boolean;
+  taskDriven?: boolean;
+  headers?: Record<string, string>;
+  promptInjectionLibrarySource?: string;
+}
+
 export function buildClearSessionConfig(
   operatorMode: OperatorMode,
   target: string | undefined,
-  initialConfig?: {
-    sandbox?: boolean;
-    taskDriven?: boolean;
-    headers?: Record<string, string>;
-    promptInjectionLibrarySource?: string;
-  },
+  carryOver?: ClearSessionCarryOver,
 ) {
   return {
-    ...initialConfig,
+    ...carryOver,
     target,
     operatorMode,
     requireApproval: operatorMode === "manual",
+  };
+}
+
+/**
+ * Merge launch options for a fresh-session clear. Prefers the live route
+ * `initialConfig`, falling back to the persisted `session.config` — the only
+ * source for resumed sessions, which carry no `initialConfig`. Sandbox mode is
+ * encoded on persisted config as an undefined `agentCwd`, so a resumed
+ * sandboxed session must stay sandboxed after clear.
+ */
+export function resolveClearCarryOver(
+  initialConfig:
+    | {
+        sandbox?: boolean;
+        taskDriven?: boolean;
+        headers?: Record<string, string>;
+        promptInjectionLibrarySource?: string;
+      }
+    | undefined,
+  sessionConfig:
+    | {
+        agentCwd?: string;
+        taskDriven?: boolean;
+        headers?: Record<string, string>;
+        promptInjectionLibrarySource?: string;
+      }
+    | undefined,
+): ClearSessionCarryOver {
+  return {
+    sandbox:
+      initialConfig?.sandbox ??
+      (sessionConfig ? sessionConfig.agentCwd === undefined : undefined),
+    taskDriven: initialConfig?.taskDriven ?? sessionConfig?.taskDriven,
+    headers: initialConfig?.headers ?? sessionConfig?.headers,
+    promptInjectionLibrarySource:
+      initialConfig?.promptInjectionLibrarySource ??
+      sessionConfig?.promptInjectionLibrarySource,
   };
 }
 

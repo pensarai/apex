@@ -107,6 +107,7 @@ import {
   filterOperatorAutocomplete,
   formatRuntimeError,
   resolveAbortAction,
+  resolveClearCarryOver,
   resolveInputFocused,
   resolveKeyboardShortcut,
   resolveSubmit,
@@ -1810,7 +1811,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
             initialConfig: buildClearSessionConfig(
               operatorMode,
               sessionRef.current?.targets[0] ?? initialConfig?.target,
-              initialConfig,
+              resolveClearCarryOver(initialConfig, sessionRef.current?.config),
             ),
           });
           return;

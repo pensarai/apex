@@ -9,6 +9,7 @@ import {
   filterOperatorAutocomplete,
   formatRuntimeError,
   resolveAbortAction,
+  resolveClearCarryOver,
   resolveInputFocused,
   resolveKeyboardShortcut,
   resolveSubmit,
@@ -58,6 +59,66 @@ describe("buildClearSessionConfig", () => {
       target: undefined,
       operatorMode: "auto",
       requireApproval: false,
+    });
+  });
+});
+
+describe("resolveClearCarryOver", () => {
+  it("prefers live initialConfig over persisted session config", () => {
+    expect(
+      resolveClearCarryOver(
+        {
+          sandbox: true,
+          taskDriven: true,
+          headers: { A: "1" },
+          promptInjectionLibrarySource: "live.json",
+        },
+        {
+          agentCwd: "/repo",
+          taskDriven: false,
+          headers: { B: "2" },
+          promptInjectionLibrarySource: "persisted.json",
+        },
+      ),
+    ).toEqual({
+      sandbox: true,
+      taskDriven: true,
+      headers: { A: "1" },
+      promptInjectionLibrarySource: "live.json",
+    });
+  });
+
+  it("keeps a resumed sandboxed session sandboxed (undefined agentCwd)", () => {
+    expect(
+      resolveClearCarryOver(undefined, {
+        headers: { Authorization: "Bearer x" },
+        promptInjectionLibrarySource: "persisted.json",
+      }),
+    ).toEqual({
+      sandbox: true,
+      taskDriven: undefined,
+      headers: { Authorization: "Bearer x" },
+      promptInjectionLibrarySource: "persisted.json",
+    });
+  });
+
+  it("keeps a resumed non-sandboxed session unsandboxed (agentCwd set)", () => {
+    expect(
+      resolveClearCarryOver(undefined, { agentCwd: "/repo", taskDriven: true }),
+    ).toEqual({
+      sandbox: false,
+      taskDriven: true,
+      headers: undefined,
+      promptInjectionLibrarySource: undefined,
+    });
+  });
+
+  it("leaves sandbox undefined when neither source is present", () => {
+    expect(resolveClearCarryOver(undefined, undefined)).toEqual({
+      sandbox: undefined,
+      taskDriven: undefined,
+      headers: undefined,
+      promptInjectionLibrarySource: undefined,
     });
   });
 });
