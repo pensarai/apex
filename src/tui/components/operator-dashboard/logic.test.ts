@@ -42,8 +42,19 @@ describe("buildClearSessionConfig", () => {
     });
   });
 
-  it("preserves non-manual modes without carrying session-only state", () => {
-    expect(buildClearSessionConfig("auto", undefined)).toEqual({
+  it("preserves launch config for non-manual modes", () => {
+    expect(
+      buildClearSessionConfig("auto", undefined, {
+        sandbox: true,
+        taskDriven: true,
+        headers: { Authorization: "Bearer token" },
+        promptInjectionLibrarySource: "payloads.json",
+      }),
+    ).toEqual({
+      sandbox: true,
+      taskDriven: true,
+      headers: { Authorization: "Bearer token" },
+      promptInjectionLibrarySource: "payloads.json",
       target: undefined,
       operatorMode: "auto",
       requireApproval: false,

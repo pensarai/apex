@@ -84,8 +84,15 @@ export interface SubmitResult {
 export function buildClearSessionConfig(
   operatorMode: OperatorMode,
   target: string | undefined,
+  initialConfig?: {
+    sandbox?: boolean;
+    taskDriven?: boolean;
+    headers?: Record<string, string>;
+    promptInjectionLibrarySource?: string;
+  },
 ) {
   return {
+    ...initialConfig,
     target,
     operatorMode,
     requireApproval: operatorMode === "manual",

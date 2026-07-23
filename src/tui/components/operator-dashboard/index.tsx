@@ -1810,6 +1810,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
             initialConfig: buildClearSessionConfig(
               operatorMode,
               sessionRef.current?.targets[0] ?? initialConfig?.target,
+              initialConfig,
             ),
           });
           return;
@@ -1831,7 +1832,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       showModelPicker,
       addSystemMessage,
       handleHeadersSlash,
-      initialConfig?.target,
+      initialConfig,
       operatorMode,
       route,
     ],
