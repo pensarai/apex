@@ -2128,6 +2128,23 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           // The next completed step will overwrite this best-effort update.
         }
       }
+
+      // Resolve the display row. Unlike the submit path, aborting does not
+      // re-run the agent, so no later tool-result arrives to mark this call
+      // done — it would otherwise stay stuck in "pending" in the transcript.
+      setMessages((prev) => {
+        const idx = prev.findIndex(
+          (m) => isToolMessage(m) && m.toolCallId === toolCallId,
+        );
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        updated[idx] = {
+          ...updated[idx],
+          status: "completed",
+          result: abortedResult.value,
+        };
+        return updated;
+      });
     }
     pendingToolCallIdRef.current = null;
     setPendingQuestions(null);
