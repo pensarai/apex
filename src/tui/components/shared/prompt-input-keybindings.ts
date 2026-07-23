@@ -1,7 +1,18 @@
 import type { KeyBinding as TextareaKeyBinding } from "@opentui/core";
 
 const ENTER_KEY_NAMES = new Set(["return", "enter", "kpenter", "linefeed"]);
-const SHIFT_ENTER_SEQUENCES = new Set(["\u001b[13;2u", "\u001b[27;2;13~"]);
+// Raw escape sequences for modified Enter under Kitty (`allKeysAsEscapes`) and
+// legacy modifyOtherKeys. Terminals that deliver these without parsed modifier
+// flags would otherwise submit instead of inserting a newline. Modifier codes:
+// 2=Shift, 3=Alt/Option, 5=Ctrl (Kitty CSI-u `13;<mod>u`; legacy `27;<mod>;13~`).
+const MODIFIED_ENTER_SEQUENCES = new Set([
+  "\u001b[13;2u",
+  "\u001b[13;3u",
+  "\u001b[13;5u",
+  "\u001b[27;2;13~",
+  "\u001b[27;3;13~",
+  "\u001b[27;5;13~",
+]);
 
 export function isChatNewlineKey(key: {
   name: string;
@@ -10,7 +21,7 @@ export function isChatNewlineKey(key: {
   meta?: boolean;
   raw?: string;
 }): boolean {
-  if (key.raw && SHIFT_ENTER_SEQUENCES.has(key.raw)) return true;
+  if (key.raw && MODIFIED_ENTER_SEQUENCES.has(key.raw)) return true;
   return (
     ENTER_KEY_NAMES.has(key.name) && Boolean(key.shift || key.ctrl || key.meta)
   );

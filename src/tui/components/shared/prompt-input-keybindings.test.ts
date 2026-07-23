@@ -46,6 +46,23 @@ describe("CHAT_KEY_BINDINGS", () => {
     expect(isChatNewlineKey({ name: "return" })).toBe(false);
   });
 
+  it("treats Ctrl+Enter and Option+Enter raw sequences as newlines", () => {
+    // Kitty CSI-u form (3=Alt/Option, 5=Ctrl)
+    expect(isChatNewlineKey({ name: "return", raw: "\u001b[13;3u" })).toBe(
+      true,
+    );
+    expect(isChatNewlineKey({ name: "return", raw: "\u001b[13;5u" })).toBe(
+      true,
+    );
+    // Legacy modifyOtherKeys form
+    expect(isChatNewlineKey({ name: "return", raw: "\u001b[27;3;13~" })).toBe(
+      true,
+    );
+    expect(isChatNewlineKey({ name: "return", raw: "\u001b[27;5;13~" })).toBe(
+      true,
+    );
+  });
+
   it("supports the modified Enter fallbacks used by OpenCode", () => {
     expect(isChatNewlineKey({ name: "return", ctrl: true })).toBe(true);
     expect(isChatNewlineKey({ name: "return", meta: true })).toBe(true);
