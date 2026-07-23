@@ -401,8 +401,6 @@ export default function OperatorDashboard({
       try {
         if (sessionId) {
           const s = await sessions.get(sessionId);
-          setSession(s);
-          setSessionCwd(s.rootPath);
 
           const hasState = sessions.hasOperatorState(s);
           if (hasState) {
@@ -482,6 +480,12 @@ export default function OperatorDashboard({
             setOperatorState(initialState);
             approvalGateRef.current.updateConfig({ requireApproval });
           }
+
+          // Commit the session only after restore work succeeds. A mid-load
+          // throw must leave `session` null so the failure UI and Esc-to-home
+          // path (guarded by `!session && loadError`) can recover.
+          setSession(s);
+          setSessionCwd(s.rootPath);
         } else {
           // New session — just set up operator config; the agent creates the
           // session on the first runAgent call.
