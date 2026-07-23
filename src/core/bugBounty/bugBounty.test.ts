@@ -156,4 +156,27 @@ describe("engagement policy", () => {
       "X-Bug-Bounty": "internal-handle",
     });
   });
+
+  it("blocks rules that cannot be enforced deterministically", async () => {
+    const brief = await analyzeBugBountyListing({
+      listingUrl: "https://hackerone.com/acme",
+      content: listing
+        .replace(
+          "Rate limit: 120 requests per minute.",
+          "Rate limit: be gentle.",
+        )
+        .replace(
+          "You must not perform denial of service testing.",
+          "Testing window: weekends only.",
+        ),
+    });
+    const policy = compileEngagementPolicy(brief);
+    expect(policy.canExecute).toBe(false);
+    expect(policy.blockers).toEqual(
+      expect.arrayContaining([
+        "The program rate limit could not be enforced automatically.",
+        expect.stringContaining("testing window requires manual scheduling"),
+      ]),
+    );
+  });
 });

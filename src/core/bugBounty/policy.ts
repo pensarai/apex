@@ -43,6 +43,27 @@ export function compileEngagementPolicy(
     ),
   ];
   const requestsPerSecond = effectiveRateLimit(brief);
+  if (
+    brief.rules.some((rule) => rule.category === "rate-limit") &&
+    requestsPerSecond === undefined
+  ) {
+    blockers.push(
+      "The program rate limit could not be enforced automatically.",
+    );
+  }
+  for (const rule of brief.rules.filter(
+    (candidate) => candidate.category === "testing-window",
+  )) {
+    if (
+      !/\b(?:24\s*\/\s*7|any\s+time|no\s+testing\s+window)\b/i.test(
+        rule.statement,
+      )
+    ) {
+      blockers.push(
+        `The testing window requires manual scheduling: ${rule.statement}`,
+      );
+    }
+  }
   const guidance = buildGuidance(brief, allowedTargets, excludedTargets);
   const base = {
     version: "1" as const,
