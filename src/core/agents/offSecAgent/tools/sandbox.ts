@@ -11,7 +11,7 @@
  * ```
  */
 
-export type SandboxType = "linux" | "windows";
+export type SandboxType = "linux" | "windows" | "macos";
 
 export interface SandboxExecuteOptions {
   cwd?: string;
