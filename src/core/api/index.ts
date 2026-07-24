@@ -50,6 +50,13 @@ export type { AuthenticationAgentInput } from "./authentication";
 export { runAuthenticationAgent } from "./authentication";
 export { runBenchmarkComparisonAgent } from "./benchmark";
 export { runPentestAgent } from "./blackboxPentest";
+export type {
+  ArtifactPlatform,
+  ReleaseChannel,
+  UploadBuildInput,
+  UploadedArtifact,
+} from "./builds";
+export { uploadDesktopBuild } from "./builds";
 export {
   getPensarApiUrl,
   getPensarConsoleUrl,

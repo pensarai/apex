@@ -210,6 +210,7 @@ Usage:
   pensar uninstall                    Uninstall Pensar (keeps sessions, memories, skills)
   pensar apps                         Manage the attack surface (apps & endpoints)
   pensar pentests                     List and manage pentests
+  pensar builds                       Upload desktop-app build artifacts
   pensar targets                      List pentest targets and view their agent logs
   pensar issues                       List and manage security issues
   pensar fixes                        View security fixes
@@ -636,6 +637,9 @@ if (hasFlag("-p") || command === "--prompt") {
 } else if (command === "pentests") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/pentests");
+} else if (command === "builds") {
+  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+  await import("./cli/builds");
 } else if (command === "targets") {
   process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
   await import("./cli/targets");
