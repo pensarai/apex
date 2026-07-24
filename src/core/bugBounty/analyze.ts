@@ -71,7 +71,7 @@ export async function analyzeBugBountyListing(
   });
 }
 
-export function detectPlatform(listingUrl: string): BugBountyPlatform {
+function detectPlatform(listingUrl: string): BugBountyPlatform {
   const hostname = new URL(listingUrl).hostname.toLowerCase();
   if (hostname === "hackerone.com" || hostname.endsWith(".hackerone.com")) {
     return "hackerone";

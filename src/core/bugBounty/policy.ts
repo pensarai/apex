@@ -125,7 +125,7 @@ function assetCoveredBy(
   return false;
 }
 
-export function assetHostname(asset: BugBountyAsset): string | null {
+function assetHostname(asset: BugBountyAsset): string | null {
   if (asset.type === "url") {
     try {
       return new URL(asset.value).hostname.toLowerCase();

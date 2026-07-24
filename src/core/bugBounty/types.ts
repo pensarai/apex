@@ -7,7 +7,7 @@ export const BugBountyPlatformSchema = z.enum([
   "generic",
 ]);
 
-export const BugBountyAssetTypeSchema = z.enum([
+const BugBountyAssetTypeSchema = z.enum([
   "url",
   "domain",
   "wildcard",

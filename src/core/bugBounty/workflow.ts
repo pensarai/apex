@@ -15,7 +15,7 @@ export interface BugBountyWorkflowInput {
   maxTargets?: number;
 }
 
-export interface BugBountyTargetResult {
+interface BugBountyTargetResult {
   target: string;
   sessionId?: string;
   reportPath?: string | null;
