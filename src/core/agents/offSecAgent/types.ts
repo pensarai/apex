@@ -135,6 +135,18 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   activeTools: (ToolName | (string & {}))[];
 
   /**
+   * Enforce `activeTools` at EXECUTION, not just visibility.
+   *
+   * The AI SDK's `activeTools` only filters what the model is shown; the full
+   * registry stays callable, so a model that names a tool it was never shown
+   * still runs it. With this set, the executable tool map is reduced to
+   * `activeTools`, and any unlisted name raises NoSuchTool. Default (false/
+   * omitted) leaves the pentest/recon agents unchanged; curated surfaces like
+   * workspace chat opt in.
+   */
+  strictActiveTools?: boolean;
+
+  /**
    * Additional tools to merge into the toolset.
    *
    * Use this to inject agent-specific tools (e.g. a structured response

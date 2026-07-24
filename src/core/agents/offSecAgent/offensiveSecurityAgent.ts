@@ -38,6 +38,7 @@ import {
   RESPONSE_TOOL_NAME,
   SEND_EMAIL_TOOL_NAME,
 } from "./tools";
+import { restrictToolsToActive } from "./toolGating";
 import { StepTraceWriter } from "./trace";
 import type {
   CreateAgentInput,
@@ -485,6 +486,16 @@ export class OffensiveSecurityAgent<TResult = void> {
         if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
         return hasEmail;
       });
+    }
+
+    // -- Execution gating (opt-in) -------------------------------------------
+    // `activeTools` above only controls what the model is *shown*; every tool
+    // in `tools` stays callable, so a model that names a builtin it was never
+    // shown (e.g. execute_command) runs it anyway. Curated surfaces opt in via
+    // strictActiveTools to reduce the executable map to the allowlist, turning
+    // such calls into a NoSuchTool error the model self-corrects from.
+    if (input.strictActiveTools) {
+      tools = restrictToolsToActive(tools, activeTools);
     }
 
     // -- Messages persistence -------------------------------------------------
