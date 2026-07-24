@@ -9,9 +9,10 @@
  *   pensar issues [filters]                       List issues in the workspace
  *   pensar issues get <issueId>                   Get issue details
  *   pensar issues update <issueId> [opts]         Update an issue
+ *   pensar issues retest <issueId>                Retest an issue
  */
 
-import { getIssue, listIssues, updateIssue } from "../core/api";
+import { getIssue, listIssues, retestIssue, updateIssue } from "../core/api";
 
 function getFlag(flag: string, argv: string[]): string | undefined {
   const idx = argv.indexOf(flag);
@@ -27,6 +28,7 @@ Usage:
   pensar issues [filters]                        List issues in the workspace
   pensar issues get <issueId>                    Get issue details
   pensar issues update <issueId> [options]       Update an issue
+  pensar issues retest <issueId>                 Retest an issue
 
 List filters:
   --status <status>     Filter: open, closed, false-positive, in-review
@@ -93,6 +95,15 @@ async function main(): Promise<void> {
         userFlaggedFalsePositive,
         userFlaggedFalsePositiveReason,
       });
+      console.log(JSON.stringify(result, null, 2));
+    } else if (sub === "retest") {
+      const issueId = args[1];
+      if (!issueId) {
+        console.error("Error: issue ID is required");
+        console.error("Usage: pensar issues retest <issueId>");
+        process.exit(1);
+      }
+      const result = await retestIssue(issueId);
       console.log(JSON.stringify(result, null, 2));
     } else if (!sub || sub === "list" || sub.startsWith("--")) {
       const issues = await listIssues({
