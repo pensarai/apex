@@ -8,6 +8,22 @@
 //    eliminate the split. The lint rule for module barriers exempts this.
 
 export type {
+  AnalyzeBugBountyListingInput,
+  BugBountyAsset,
+  BugBountyBrief,
+  BugBountyPlatform,
+  BugBountyRule,
+  BugBountyWorkflowInput,
+  BugBountyWorkflowResult,
+  EngagementPolicy,
+  RequiredHeader,
+} from "../bugBounty";
+export {
+  analyzeBugBountyListing,
+  compileEngagementPolicy,
+  runBugBountyWorkflow,
+} from "../bugBounty";
+export type {
   AppDetail,
   ApplicationType,
   AppSummary,

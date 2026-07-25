@@ -27,6 +27,7 @@
 
 import { getDomain } from "tldts";
 import { parseTargetUrl } from "../../../../util/url";
+import type { BugBountyAsset, EngagementPolicy } from "../../../bugBounty";
 import type { ResolverSession } from "../../../http/targetHeaders";
 import type { ToolContext } from "./types";
 
@@ -51,6 +52,16 @@ export class ScopeViolationError extends Error {
         `Only the target host and its subdomains are permitted.`,
     );
     this.name = "ScopeViolationError";
+  }
+}
+
+export class EngagementPolicyViolationError extends Error {
+  constructor(
+    public readonly target: string,
+    reason: string,
+  ) {
+    super(`Bug bounty engagement policy violation for "${target}": ${reason}`);
+    this.name = "EngagementPolicyViolationError";
   }
 }
 
@@ -148,6 +159,90 @@ export function assertUrlInScope(url: string, ctx: ToolContext): void {
   if (!isHostAllowed(hostname, allowedHosts)) {
     throw new ScopeViolationError(hostname, allowedHosts);
   }
+
+  const policy = ctx.session?.config?.engagementPolicy;
+  if (policy) assertUrlAllowedByPolicy(url, policy);
+}
+
+/** Enforce exact/wildcard host and URL-prefix exclusions from an approved policy. */
+export function assertUrlAllowedByPolicy(
+  url: string,
+  policy: EngagementPolicy,
+): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new EngagementPolicyViolationError(url, "URL is not parseable");
+  }
+
+  const excluded = policy.excludedTargets.find((asset) =>
+    urlMatchesAsset(parsed, asset),
+  );
+  if (excluded) {
+    throw new EngagementPolicyViolationError(
+      url,
+      `matches excluded asset ${excluded.value}`,
+    );
+  }
+
+  if (!policy.allowedTargets.some((asset) => urlMatchesAsset(parsed, asset))) {
+    throw new EngagementPolicyViolationError(
+      url,
+      "does not match an explicitly approved asset",
+    );
+  }
+}
+
+function assertHostnameAllowedByPolicy(
+  hostname: string,
+  policy: EngagementPolicy,
+): void {
+  const lower = hostname.toLowerCase();
+  const matchesHostAsset = (asset: BugBountyAsset): boolean => {
+    const value = asset.value.toLowerCase();
+    if (asset.type === "wildcard") {
+      const base = value.replace(/^\*\./, "");
+      return lower.endsWith(`.${base}`);
+    }
+    return (asset.type === "domain" || asset.type === "ip") && lower === value;
+  };
+  const excluded = policy.excludedTargets.find(matchesHostAsset);
+  if (excluded) {
+    throw new EngagementPolicyViolationError(
+      hostname,
+      `matches excluded asset ${excluded.value}`,
+    );
+  }
+  if (!policy.allowedTargets.some(matchesHostAsset)) {
+    throw new EngagementPolicyViolationError(
+      hostname,
+      "bare-host commands require an explicitly approved domain, wildcard, or IP asset",
+    );
+  }
+}
+
+function urlMatchesAsset(url: URL, asset: BugBountyAsset): boolean {
+  const hostname = url.hostname.toLowerCase();
+  const value = asset.value.toLowerCase();
+  if (asset.type === "url") {
+    try {
+      const assetUrl = new URL(asset.value);
+      if (hostname !== assetUrl.hostname.toLowerCase()) return false;
+      const prefix = assetUrl.pathname.replace(/\/$/, "");
+      return !prefix || prefix === "" || url.pathname.startsWith(prefix);
+    } catch {
+      return false;
+    }
+  }
+  if (asset.type === "wildcard") {
+    const base = value.replace(/^\*\./, "");
+    return hostname.endsWith(`.${base}`);
+  }
+  if (asset.type === "domain" || asset.type === "ip") {
+    return hostname === value;
+  }
+  return false;
 }
 
 /**
@@ -312,10 +407,28 @@ export function assertCommandInScope(command: string, ctx: ToolContext): void {
   if (allowedHosts.length === 0) return;
 
   const commandHosts = extractHostsFromCommand(command);
+  const commandUrlHosts = new Set<string>();
+  const urlPattern = /https?:\/\/[^\s"'`;|&)<>]+/gi;
+  for (const match of command.matchAll(urlPattern)) {
+    const hostname = extractHostname(match[0]);
+    if (hostname) commandUrlHosts.add(hostname);
+  }
 
   for (const hostname of commandHosts) {
     if (!isHostAllowed(hostname, allowedHosts)) {
       throw new ScopeViolationError(hostname, allowedHosts);
+    }
+  }
+
+  const policy = ctx.session?.config?.engagementPolicy;
+  if (policy) {
+    for (const hostname of commandHosts) {
+      if (!commandUrlHosts.has(hostname)) {
+        assertHostnameAllowedByPolicy(hostname, policy);
+      }
+    }
+    for (const match of command.matchAll(urlPattern)) {
+      assertUrlAllowedByPolicy(match[0], policy);
     }
   }
 }

@@ -1,5 +1,6 @@
 // Memory tools
 export { addMemory } from "./addMemory";
+export { analyzeBugBountyListing } from "./analyzeBugBountyListing";
 // askUserQuestions schema/types — used by TUI for the question-prompt UX.
 export {
   type AskUserQuestion,
@@ -90,6 +91,7 @@ export {
 export { createResponseTool, RESPONSE_TOOL_NAME } from "./response";
 // Orchestration tools
 export { runAttackSurface } from "./runAttackSurface";
+export { runBugBountyWorkflow } from "./runBugBountyWorkflow";
 export { runCodeQuery } from "./runCodeQuery";
 export { runPentestWorkflow } from "./runPentestWorkflow";
 export { runWhiteboxScan } from "./runWhiteboxScan";
@@ -110,7 +112,9 @@ export {
 // Scope guard utilities
 export {
   assertCommandInScope,
+  assertUrlAllowedByPolicy,
   assertUrlInScope,
+  EngagementPolicyViolationError,
   extractHostname,
   extractHostsFromCommand,
   getAllowedHosts,
@@ -148,6 +152,7 @@ export { writePlan } from "./writePlan";
 // ---------------------------------------------------------------------------
 
 import { addMemory } from "./addMemory";
+import { analyzeBugBountyListing } from "./analyzeBugBountyListing";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
   askUserQuestions,
@@ -189,6 +194,7 @@ import { queryWhiteboxCatalog } from "./queryWhiteboxCatalog";
 import { readFile } from "./readFile";
 import { readSkill } from "./readSkill";
 import { runAttackSurface } from "./runAttackSurface";
+import { runBugBountyWorkflow } from "./runBugBountyWorkflow";
 import { runCodeQuery } from "./runCodeQuery";
 import { runPentestWorkflow } from "./runPentestWorkflow";
 import { runWhiteboxScan } from "./runWhiteboxScan";
@@ -265,6 +271,8 @@ export function createAllTools(ctx: ToolContext) {
     spawn_pentest_agent: spawnPentestAgent(ctx),
     spawn_coding_agent: spawnCodingAgent(ctx),
     run_pentest_workflow: runPentestWorkflow(ctx),
+    analyze_bug_bounty_listing: analyzeBugBountyListing(ctx),
+    run_bug_bounty_workflow: runBugBountyWorkflow(ctx),
     run_whitebox_scan: runWhiteboxScan(ctx),
     create_whitebox_candidate: createWhiteboxCandidate(ctx),
     update_whitebox_candidate: updateWhiteboxCandidate(ctx),
@@ -357,6 +365,8 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "spawn_pentest_agent",
   "spawn_coding_agent",
   "run_pentest_workflow",
+  "analyze_bug_bounty_listing",
+  "run_bug_bounty_workflow",
   "run_whitebox_scan",
   "create_whitebox_candidate",
   "update_whitebox_candidate",
@@ -404,6 +414,8 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "spawn_pentest_agent",
   "spawn_coding_agent",
   "run_pentest_workflow",
+  "analyze_bug_bounty_listing",
+  "run_bug_bounty_workflow",
   "delegate_to_auth_subagent",
   // Whitebox jobs
   "run_whitebox_scan",
@@ -447,6 +459,7 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   // Core pentest (read-only)
   "execute_command",
   "http_request",
+  "analyze_bug_bounty_listing",
   // Filesystem / search (read-only)
   "read_file",
   "list_files",
