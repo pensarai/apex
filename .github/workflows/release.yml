@@ -25,6 +25,10 @@ jobs:
             target: bun-linux-x64
             name: pensar-linux-x64
             ext: ""
+          - os: ubuntu-24.04-arm
+            target: bun-linux-arm64
+            name: pensar-linux-arm64
+            ext: ""
           - os: windows-latest
             target: bun-windows-x64
             name: pensar-windows-x64
@@ -106,6 +110,7 @@ jobs:
             artifacts/pensar-darwin-arm64/pensar-darwin-arm64.tar.gz
             artifacts/pensar-darwin-x64/pensar-darwin-x64.tar.gz
             artifacts/pensar-linux-x64/pensar-linux-x64.tar.gz
+            artifacts/pensar-linux-arm64/pensar-linux-arm64.tar.gz
             artifacts/pensar-windows-x64/pensar-windows-x64.zip
           generate_release_notes: true
           body: |
@@ -190,10 +195,12 @@ jobs:
           curl -sL "${BASE_URL}/pensar-darwin-arm64.tar.gz" -o darwin-arm64.tar.gz
           curl -sL "${BASE_URL}/pensar-darwin-x64.tar.gz" -o darwin-x64.tar.gz
           curl -sL "${BASE_URL}/pensar-linux-x64.tar.gz" -o linux-x64.tar.gz
+          curl -sL "${BASE_URL}/pensar-linux-arm64.tar.gz" -o linux-arm64.tar.gz
 
           echo "darwin_arm64=$(sha256sum darwin-arm64.tar.gz | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
           echo "darwin_x64=$(sha256sum darwin-x64.tar.gz | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
           echo "linux_x64=$(sha256sum linux-x64.tar.gz | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
+          echo "linux_arm64=$(sha256sum linux-arm64.tar.gz | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
 
       - name: Checkout Homebrew tap
         uses: actions/checkout@v4
@@ -208,6 +215,7 @@ jobs:
           SHA_DARWIN_ARM64: ${{ steps.sha256.outputs.darwin_arm64 }}
           SHA_DARWIN_X64: ${{ steps.sha256.outputs.darwin_x64 }}
           SHA_LINUX_X64: ${{ steps.sha256.outputs.linux_x64 }}
+          SHA_LINUX_ARM64: ${{ steps.sha256.outputs.linux_arm64 }}
         run: |
           cat > homebrew-tap/Formula/apex.rb << EOF
           class Apex < Formula
@@ -231,6 +239,10 @@ jobs:
               on_intel do
                 url "https://github.com/pensarai/apex/releases/download/v${VERSION}/pensar-linux-x64.tar.gz"
                 sha256 "${SHA_LINUX_X64}"
+              end
+              on_arm do
+                url "https://github.com/pensarai/apex/releases/download/v${VERSION}/pensar-linux-arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM64}"
               end
             end
 
