@@ -59,9 +59,7 @@ export function resolveGlobRoot(agentCwd: string, path?: string): string {
     : agentCwd;
   const rel = relative(agentCwd, root);
   if (rel.startsWith("..") || isAbsolute(rel)) {
-    throw new Error(
-      `Path escapes agent working directory: ${path ?? root}`,
-    );
+    throw new Error(`Path escapes agent working directory: ${path ?? root}`);
   }
   return root;
 }

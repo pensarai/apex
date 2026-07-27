@@ -227,15 +227,15 @@ async function writeLocal(path: string, content: string): Promise<void> {
 }
 
 async function readViaSandbox(
-  ctx: ToolContext,
+  sandbox: NonNullable<ToolContext["sandbox"]>,
   path: string,
 ): Promise<string | null> {
-  const result = await ctx.sandbox!.execute(
+  const result = await sandbox.execute(
     `test -f "${path}" && cat "${path}" | base64 -w 0`,
   );
   if (!result.success || !result.stdout.trim()) {
     // Distinguish missing vs empty
-    const exists = await ctx.sandbox!.execute(`test -f "${path}"`);
+    const exists = await sandbox.execute(`test -f "${path}"`);
     if (exists.exitCode !== 0) return null;
     return "";
   }
@@ -243,23 +243,24 @@ async function readViaSandbox(
 }
 
 async function writeViaSandbox(
-  ctx: ToolContext,
+  sandbox: NonNullable<ToolContext["sandbox"]>,
   path: string,
   content: string,
 ): Promise<void> {
   const dir = dirname(path);
-  await ctx.sandbox!.execute(`mkdir -p "${dir}"`);
+  await sandbox.execute(`mkdir -p "${dir}"`);
   const b64 = Buffer.from(content).toString("base64");
-  const result = await ctx.sandbox!.execute(
-    `echo "${b64}" | base64 -d > "${path}"`,
-  );
+  const result = await sandbox.execute(`echo "${b64}" | base64 -d > "${path}"`);
   if (!result.success) {
     throw new Error(result.stderr || `Failed to write ${path} in sandbox`);
   }
 }
 
-async function deleteViaSandbox(ctx: ToolContext, path: string): Promise<void> {
-  const result = await ctx.sandbox!.execute(`rm "${path}"`);
+async function deleteViaSandbox(
+  sandbox: NonNullable<ToolContext["sandbox"]>,
+  path: string,
+): Promise<void> {
+  const result = await sandbox.execute(`rm "${path}"`);
   if (!result.success) {
     throw new Error(result.stderr || `Failed to delete ${path} in sandbox`);
   }
@@ -312,7 +313,7 @@ Example:
 
           if (file.isDelete) {
             if (ctx.sandbox) {
-              await deleteViaSandbox(ctx, targetPath);
+              await deleteViaSandbox(ctx.sandbox, targetPath);
             } else {
               await unlink(targetPath);
             }
@@ -325,7 +326,7 @@ Example:
           }
 
           const existing = ctx.sandbox
-            ? await readViaSandbox(ctx, targetPath)
+            ? await readViaSandbox(ctx.sandbox, targetPath)
             : await readLocal(targetPath);
 
           if (file.isNew) {
@@ -336,7 +337,7 @@ Example:
             }
             const created = applyHunksToContent("", file.hunks);
             if (ctx.sandbox) {
-              await writeViaSandbox(ctx, targetPath, created);
+              await writeViaSandbox(ctx.sandbox, targetPath, created);
             } else {
               await writeLocal(targetPath, created);
             }
@@ -354,7 +355,7 @@ Example:
 
           const updated = applyHunksToContent(existing, file.hunks);
           if (ctx.sandbox) {
-            await writeViaSandbox(ctx, targetPath, updated);
+            await writeViaSandbox(ctx.sandbox, targetPath, updated);
           } else {
             await writeLocal(targetPath, updated);
           }

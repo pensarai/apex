@@ -19,7 +19,7 @@ export type DeleteFileResult = {
   path: string;
 };
 
-export function resolveUnderCwd(agentCwd: string, filePath: string): string {
+function resolveUnderCwd(agentCwd: string, filePath: string): string {
   const resolved = isAbsolute(filePath)
     ? filePath
     : resolve(agentCwd, filePath);
