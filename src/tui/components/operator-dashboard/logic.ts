@@ -1,6 +1,12 @@
-import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent";
+import {
+  type AgentMode,
+  buildBaseSystemPrompt,
+} from "../../../core/agents/offSecAgent";
 import { detectOSAndEnhancePrompt } from "../../../core/agents/specialized/utils";
-import type { OperatorSessionState } from "../../../core/operator";
+import type {
+  OperatorMode,
+  OperatorSessionState,
+} from "../../../core/operator";
 import type { AutocompleteOption } from "../shared";
 
 // ---------------------------------------------------------------------------
@@ -16,6 +22,7 @@ const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/pentest",
   "/skills",
   "/plan",
+  "/advanced",
   "/obfuscate",
   "/headers",
   "/help",
@@ -32,6 +39,31 @@ export function filterOperatorAutocomplete(
 // ---------------------------------------------------------------------------
 
 export type DashboardStatus = "idle" | "running" | "waiting" | "done";
+
+export function resolveOperatorAgentMode(
+  operatorMode: OperatorMode,
+  strikeMode: boolean,
+): AgentMode {
+  if (operatorMode === "plan") return "plan";
+  return strikeMode ? "fast-strike" : "default";
+}
+
+interface StrikeModeResolutionInput {
+  resuming: boolean;
+  savedSessionValue?: boolean;
+  routeOverride?: boolean;
+  persistedDefault?: boolean;
+}
+
+export function resolveOperatorStrikeMode({
+  resuming,
+  savedSessionValue,
+  routeOverride,
+  persistedDefault,
+}: StrikeModeResolutionInput): boolean {
+  if (resuming) return savedSessionValue ?? false;
+  return routeOverride ?? persistedDefault ?? false;
+}
 
 export interface SubmitResult {
   action: "run" | "blocked" | "empty";
@@ -245,7 +277,7 @@ export function resolveAbortAction(
 export function buildOperatorSystemPrompt(
   target: string | undefined,
   operatorState: OperatorSessionState,
-  agentMode?: "default" | "plan",
+  agentMode?: AgentMode,
   opts?: {
     requireApproval?: boolean;
     sandboxMode?: boolean;
@@ -269,8 +301,26 @@ export function buildOperatorSystemPrompt(
       opts?.planFilePath,
       opts?.existingPlanContent,
     );
-  } else if (opts?.approvedPlanContent) {
-    modeSection = `
+  } else {
+    if (agentMode === "fast-strike") {
+      modeSection = `
+
+# Strike Mode
+
+Work as one focused vulnerability researcher under the human operator's direction. Do not delegate, spawn agents, map the entire attack surface, or create task lists.
+
+For each directive, run a tight loop:
+1. OBSERVE — read the available evidence and state the strongest new signal.
+2. HYPOTHESIZE — choose the single most likely vulnerability or next pivot.
+3. ACT — use the minimum tool calls needed to confirm or reject it.
+4. PRUNE — drop disproven leads instead of repeating them.
+5. EXPLOIT — prove impact and document confirmed vulnerabilities.
+
+Stop and summarize when the objective is met, credible leads are exhausted, or human input is needed. Stay in scope and never trade verification for speed.`;
+    }
+
+    if (opts?.approvedPlanContent) {
+      modeSection += `
 
 # Approved Plan
 
@@ -279,6 +329,7 @@ The operator has approved the following pentest plan. Execute it systematically,
 <plan>
 ${opts.approvedPlanContent}
 </plan>`;
+    }
   }
 
   let prompt = `${detectOSAndEnhancePrompt(buildBaseSystemPrompt({ sandboxMode: opts?.sandboxMode }))}
@@ -324,7 +375,7 @@ still win over session headers if you need a one-off override.${modeSection}`;
     }
   }
 
-  if (opts?.taskDriven && agentMode !== "plan") {
+  if (opts?.taskDriven && (agentMode ?? "default") === "default") {
     prompt += `
 
 # Task-Driven Testing

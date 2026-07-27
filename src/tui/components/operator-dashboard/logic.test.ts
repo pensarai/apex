@@ -9,6 +9,8 @@ import {
   resolveAbortAction,
   resolveInputFocused,
   resolveKeyboardShortcut,
+  resolveOperatorAgentMode,
+  resolveOperatorStrikeMode,
   resolveSubmit,
   routeCommand,
 } from "./logic";
@@ -23,6 +25,11 @@ const allOptions: AutocompleteOption[] = [
   { value: "/help", label: "/help", description: "Show help" },
   { value: "/models", label: "/models", description: "Switch model" },
   { value: "/skills", label: "/skills", description: "View skills" },
+  {
+    value: "/advanced",
+    label: "/advanced",
+    description: "Advanced settings",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -30,11 +37,12 @@ const allOptions: AutocompleteOption[] = [
 // ---------------------------------------------------------------------------
 
 describe("filterOperatorAutocomplete", () => {
-  it("includes allowed commands (/models, /skills)", () => {
+  it("includes allowed commands (/models, /skills, /advanced)", () => {
     const result = filterOperatorAutocomplete(allOptions);
     const values = result.map((o) => o.value);
     expect(values).toContain("/models");
     expect(values).toContain("/skills");
+    expect(values).toContain("/advanced");
   });
 
   it("excludes commands that are not in the allowed set", () => {
@@ -45,7 +53,7 @@ describe("filterOperatorAutocomplete", () => {
 
   it("returns only allowed commands", () => {
     const result = filterOperatorAutocomplete(allOptions);
-    expect(result).toHaveLength(4);
+    expect(result).toHaveLength(5);
   });
 
   it("preserves description on allowed commands", () => {
@@ -56,6 +64,70 @@ describe("filterOperatorAutocomplete", () => {
 
   it("returns empty for empty input", () => {
     expect(filterOperatorAutocomplete([])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Operator agent mode
+// ---------------------------------------------------------------------------
+
+describe("resolveOperatorAgentMode", () => {
+  it("uses Strike Mode for manual and automatic operator sessions", () => {
+    expect(resolveOperatorAgentMode("manual", true)).toBe("fast-strike");
+    expect(resolveOperatorAgentMode("auto", true)).toBe("fast-strike");
+  });
+
+  it("keeps the standard agent mode when Strike Mode is disabled", () => {
+    expect(resolveOperatorAgentMode("manual", false)).toBe("default");
+    expect(resolveOperatorAgentMode("auto", false)).toBe("default");
+  });
+
+  it("gives plan mode precedence over Strike Mode", () => {
+    expect(resolveOperatorAgentMode("plan", true)).toBe("plan");
+  });
+});
+
+describe("resolveOperatorStrikeMode", () => {
+  it("defaults new operator sessions to off", () => {
+    expect(resolveOperatorStrikeMode({ resuming: false })).toBe(false);
+  });
+
+  it("uses the persisted preference for new operator sessions", () => {
+    expect(
+      resolveOperatorStrikeMode({
+        resuming: false,
+        persistedDefault: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("lets an explicit workflow override the persisted preference", () => {
+    expect(
+      resolveOperatorStrikeMode({
+        resuming: false,
+        routeOverride: false,
+        persistedDefault: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("restores a resumed session's saved mode", () => {
+    expect(
+      resolveOperatorStrikeMode({
+        resuming: true,
+        savedSessionValue: true,
+        persistedDefault: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps legacy resumed sessions off instead of applying a global default", () => {
+    expect(
+      resolveOperatorStrikeMode({
+        resuming: true,
+        persistedDefault: true,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -537,12 +609,47 @@ describe("buildOperatorSystemPrompt", () => {
     expect(prompt).not.toContain("PLAN MODE");
   });
 
+  it("includes the focused research loop in Strike Mode", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "fast-strike");
+    expect(prompt).toContain("# Strike Mode");
+    expect(prompt).toContain("OBSERVE");
+    expect(prompt).toContain("HYPOTHESIZE");
+    expect(prompt).toContain("Do not delegate");
+  });
+
+  it("does not include Strike Mode instructions in the standard mode", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "default");
+    expect(prompt).not.toContain("# Strike Mode");
+  });
+
+  it("does not add task-driven instructions when Strike Mode excludes task tools", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "fast-strike", {
+      taskDriven: true,
+    });
+    expect(prompt).not.toContain("# Task-Driven Testing");
+  });
+
+  it("keeps task-driven instructions when the agent mode is omitted", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, undefined, {
+      taskDriven: true,
+    });
+    expect(prompt).toContain("# Task-Driven Testing");
+  });
+
   it("includes approved plan content when provided outside plan mode", () => {
     const prompt = buildOperatorSystemPrompt(target, state, "default", {
       approvedPlanContent: "Test plan content",
     });
     expect(prompt).toContain("Approved Plan");
     expect(prompt).toContain("Test plan content");
+  });
+
+  it("keeps approved plan content when executing in Strike Mode", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "fast-strike", {
+      approvedPlanContent: "Focused strike plan",
+    });
+    expect(prompt).toContain("# Strike Mode");
+    expect(prompt).toContain("Focused strike plan");
   });
 
   it("includes refinement block when existingPlanContent provided in plan mode", () => {

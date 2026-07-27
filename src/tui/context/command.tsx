@@ -56,6 +56,7 @@ interface CommandProviderProps {
   children: ReactNode;
   onOpenSessionsDialog?: () => void;
   onOpenThemeDialog?: () => void;
+  onOpenAdvancedDialog?: () => void;
   onOpenModelDialog?: () => void;
   onOpenProvidersDialog?: () => void;
   onOpenCreditsDialog?: () => void;
@@ -69,6 +70,7 @@ export function CommandProvider({
   children,
   onOpenSessionsDialog,
   onOpenThemeDialog,
+  onOpenAdvancedDialog,
   onOpenModelDialog,
   onOpenProvidersDialog,
   onOpenCreditsDialog,
@@ -89,6 +91,7 @@ export function CommandProvider({
       navigate: route.navigate,
       openSessionsDialog: onOpenSessionsDialog,
       openThemeDialog: onOpenThemeDialog,
+      openAdvancedDialog: onOpenAdvancedDialog,
       openModelDialog: onOpenModelDialog,
       openProvidersDialog: onOpenProvidersDialog,
       openCreditsDialog: onOpenCreditsDialog,
@@ -113,6 +116,7 @@ export function CommandProvider({
     route,
     onOpenSessionsDialog,
     onOpenThemeDialog,
+    onOpenAdvancedDialog,
     onOpenModelDialog,
     onOpenProvidersDialog,
     onOpenCreditsDialog,
