@@ -7,6 +7,7 @@
  * - Gmail  → @googleapis/gmail
  * - Outlook → @microsoft/microsoft-graph-client
  * - IMAP   → imapflow
+ * - HTTP   → native fetch (any mailbox API implementing the wire contract)
  */
 
 import type { Attachment as ParsedAttachment } from "mailparser";
@@ -77,6 +78,8 @@ export function createEmailAdapter(inbox: EmailInboxConfig): EmailAdapter {
       );
     case "imap":
       return new ImapAdapter(inbox);
+    case "http":
+      return new HttpAdapter(inbox);
     default:
       throw new Error(
         `Unsupported email provider: ${(inbox as { provider: string }).provider}`,
@@ -967,4 +970,127 @@ function hasImapAttachments(
 
 function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max)}\n\n(truncated)` : s;
+}
+
+// ---------------------------------------------------------------------------
+// HTTP adapter  (generic mailbox HTTP API)
+// ---------------------------------------------------------------------------
+
+/**
+ * Adapter for any HTTP mailbox API implementing the pinned wire contract:
+ *
+ *   GET {endpoint}/messages?address=&limit=&cursor=&q=  → { messages, nextCursor? }
+ *   GET {endpoint}/messages/{id}                        → EmailMessageFull
+ *
+ * Auth is `Authorization: Bearer {token}` on every request. Message shapes map
+ * 1:1 to {@link EmailMessageSummary} / {@link EmailMessageFull}. Attachments are
+ * unsupported and markAsRead is a no-op.
+ */
+class HttpAdapter implements EmailAdapter {
+  private endpoint: string;
+  private token: string;
+  private address: string;
+
+  constructor(inbox: {
+    endpoint: string;
+    token: string;
+    emailAddress: string;
+  }) {
+    this.endpoint = inbox.endpoint.replace(/\/+$/, "");
+    this.token = inbox.token;
+    this.address = inbox.emailAddress;
+  }
+
+  private async get<T>(
+    path: string,
+    params?: Record<string, string>,
+  ): Promise<T> {
+    const url = new URL(`${this.endpoint}${path}`);
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        url.searchParams.set(key, value);
+      }
+    }
+
+    // biome-ignore lint/style/noRestrictedGlobals: generic mailbox HTTP API (not the pentest target); must not pass through targetFetch.
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${this.token}` },
+    });
+
+    if (!res.ok) {
+      throw new Error(
+        `Mailbox HTTP error ${res.status} ${res.statusText} for ${path}`,
+      );
+    }
+
+    return (await res.json()) as T;
+  }
+
+  async listMessages(opts: {
+    folder?: string;
+    maxResults?: number;
+    pageToken?: string;
+  }): Promise<EmailListResult> {
+    const params: Record<string, string> = { address: this.address };
+    if (opts.maxResults !== undefined) params.limit = String(opts.maxResults);
+    if (opts.pageToken) params.cursor = opts.pageToken;
+
+    const data = await this.get<{
+      messages: EmailMessageSummary[];
+      nextCursor?: string;
+    }>("/messages", params);
+
+    return { messages: data.messages, nextPageToken: data.nextCursor };
+  }
+
+  async searchMessages(opts: {
+    query: string;
+    folder?: string;
+    maxResults?: number;
+    pageToken?: string;
+  }): Promise<EmailSearchResult> {
+    const params: Record<string, string> = {
+      address: this.address,
+      q: opts.query,
+    };
+    if (opts.maxResults !== undefined) params.limit = String(opts.maxResults);
+    if (opts.pageToken) params.cursor = opts.pageToken;
+
+    const data = await this.get<{
+      messages: EmailMessageSummary[];
+      nextCursor?: string;
+    }>("/messages", params);
+
+    return { messages: data.messages, nextPageToken: data.nextCursor };
+  }
+
+  async getMessage(
+    messageId: string,
+    _folder?: string,
+  ): Promise<EmailMessageFull> {
+    return this.get<EmailMessageFull>(
+      `/messages/${encodeURIComponent(messageId)}`,
+    );
+  }
+
+  async getAttachments(
+    _messageId: string,
+    _folder?: string,
+  ): Promise<EmailAttachment[]> {
+    return [];
+  }
+
+  async getAttachmentContent(
+    _messageId: string,
+    _attachmentId: string,
+    _folder?: string,
+  ): Promise<{ filename: string; mimeType: string; base64Content: string }> {
+    throw new Error(
+      "Attachments are not supported by the http mailbox provider",
+    );
+  }
+
+  markAsRead(_messageId: string, _folder?: string): Promise<void> {
+    return Promise.resolve();
+  }
 }
