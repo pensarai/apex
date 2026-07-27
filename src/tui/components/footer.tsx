@@ -4,13 +4,14 @@ import { useAgent } from "../context/agent";
 import { useDimensions } from "../context/dimensions";
 import { useInput } from "../context/input";
 import { useObfuscation } from "../context/obfuscation";
-import { useSession } from "../context/session";
 import { useTheme } from "../theme";
 import { withAlpha } from "./loaders";
 
 interface FooterProps {
   cwd?: string;
   showExitWarning?: boolean;
+  showSessionStats?: boolean;
+  isHome?: boolean;
 }
 
 function formatTokenCount(count: number): string {
@@ -31,6 +32,8 @@ function formatTokenCount(count: number): string {
 export default function Footer({
   cwd = process.cwd(),
   showExitWarning = false,
+  showSessionStats = true,
+  isHome = false,
 }: FooterProps) {
   const { colors } = useTheme();
   const { isExecuting, sessionCwd } = useAgent();
@@ -46,13 +49,13 @@ export default function Footer({
   // When obfuscation is on, show a generic placeholder rather than leaking
   // the operator's local working directory in screenshots.
   const displayCwd = obfuscateEnabled ? "~/[workdir]" : rawDisplayCwd;
-  const showCwd = termWidth >= 100;
-  const session = useSession();
+  const showCwd = termWidth >= 48;
+  const showHotkeyLabels = termWidth >= 60;
   const { isInputEmpty } = useInput();
   const hotkeys = isExecuting
-    ? [{ key: "Ctrl+C", label: "Stop Execution" }]
+    ? [{ key: "Esc", label: "Stop Agent" }]
     : [
-        { key: "Ctrl+C", label: "Clear/Exit" },
+        { key: "Ctrl+C", label: isHome ? "Exit" : "Clear/Exit" },
         ...(isInputEmpty ? [{ key: "?", label: "Shortcuts" }] : []),
       ];
 
@@ -68,7 +71,7 @@ export default function Footer({
     >
       <box flexDirection="row" gap={1} flexShrink={1} overflow="hidden">
         {showCwd && <text fg={colors.textMuted}>{displayCwd}</text>}
-        <AgentStatus />
+        {showSessionStats && <AgentStatus />}
       </box>
       {showExitWarning ? (
         <box flexDirection="row" gap={1} flexShrink={0}>
@@ -79,7 +82,9 @@ export default function Footer({
           {hotkeys.map((hotkey) => (
             <box key={hotkey.key} flexDirection="row" gap={1}>
               <text fg={colors.primary}>[{hotkey.key}]</text>
-              <text fg={colors.textMuted}>{hotkey.label}</text>
+              {showHotkeyLabels && (
+                <text fg={colors.textMuted}>{hotkey.label}</text>
+              )}
             </box>
           ))}
         </box>
@@ -93,6 +98,8 @@ function AgentStatus() {
   const { tokenUsage } = useAgent();
   const { width: termWidth } = useDimensions();
   const showTokenCount = termWidth > 85;
+
+  if (tokenUsage.totalTokens === 0) return null;
 
   const tokenLabel = `↓${formatTokenCount(tokenUsage.inputTokens)} ↑${formatTokenCount(tokenUsage.outputTokens)}${tokenUsage.cachedTokens > 0 ? ` ⚡${formatTokenCount(tokenUsage.cachedTokens)}` : ""} Σ${formatTokenCount(tokenUsage.totalTokens)}`;
 
@@ -166,7 +173,7 @@ function ContextProgress({
     const isFilled = col < filledCells;
     if (inLabel) {
       cells.push({
-        ch: labelText[col - labelStart]!,
+        ch: labelText[col - labelStart] ?? " ",
         fg: colors.text,
       });
     } else if (isFilled) {

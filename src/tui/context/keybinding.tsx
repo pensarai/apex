@@ -68,6 +68,11 @@ export function KeybindingProvider({
             }
           }
 
+          if (binding.combo === "?") {
+            key.preventDefault();
+            key.stopPropagation();
+          }
+
           // Execute the keybinding function
           binding.fn();
           return;

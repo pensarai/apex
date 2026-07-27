@@ -56,6 +56,8 @@ export interface InputAreaProps {
   onApprove?: () => void;
   /** Handler for auto-approve */
   onAutoApprove?: () => void;
+  /** Abort/stop handler (e.g. Esc while the approval redirect input is focused) */
+  onAbort?: () => void;
   /** Last decline note */
   lastDeclineNote?: string | null;
   /** Enable autocomplete suggestions (e.g. slash commands, skills) */
@@ -99,6 +101,7 @@ export function OperatorModeBar({
   maxWidth,
   rightContent,
   rightContentWidth = 0,
+  compact = false,
 }: {
   operatorMode: OperatorMode;
   modelName: string;
@@ -110,6 +113,7 @@ export function OperatorModeBar({
   rightContent?: React.ReactNode;
   /** Character width of rightContent for collapse calculations. */
   rightContentWidth?: number;
+  compact?: boolean;
 }) {
   const { colors } = useTheme();
   const { width: termWidth } = useDimensions();
@@ -159,7 +163,7 @@ export function OperatorModeBar({
     <box
       flexDirection="row"
       justifyContent={canRight ? "space-between" : "flex-start"}
-      marginTop={1}
+      marginTop={compact ? 0 : 1}
       backgroundColor="transparent"
       alignItems="center"
       overflow="hidden"
@@ -208,7 +212,10 @@ function NormalInputAreaInner({
 >) {
   const { colors, theme, mode: colorMode } = useTheme();
   const { model } = useAgent();
+  const { height: termHeight } = useDimensions();
   const { inputValue, setInputValue } = useInput();
+  const compact = termHeight <= 24;
+  const maxComposerHeight = compact ? 3 : 6;
   const promptRef = useRef<PromptInputRef>(null);
   const isExternalUpdate = useRef(false);
   const prevValueRef = useRef(value);
@@ -262,9 +269,10 @@ function NormalInputAreaInner({
       flexShrink={0}
       paddingLeft={2}
       paddingRight={2}
-      paddingTop={1}
-      paddingBottom={1}
-      backgroundColor="transparent"
+      paddingTop={compact ? 0 : 1}
+      paddingBottom={compact ? 0 : 1}
+      backgroundColor={colors.backgroundPanel}
+      overflow="hidden"
     >
       <box flexDirection="row" gap={1} backgroundColor="transparent">
         <text fg={!focused ? colors.textMuted : colors.primary}>{">"}</text>
@@ -273,7 +281,7 @@ function NormalInputAreaInner({
           ref={promptRef}
           width="100%"
           minHeight={1}
-          maxHeight={3}
+          maxHeight={maxComposerHeight}
           textColor={colors.text}
           focused={focused}
           placeholder={placeholder}
@@ -297,6 +305,26 @@ function NormalInputAreaInner({
           operatorMode={operatorMode}
           modelName={model.name}
           providerName={providerDisplayName(model.provider)}
+          compact={compact}
+          showCycleHint={!compact}
+          rightContent={
+            <text fg={colors.textMuted}>
+              {status === "running" ? (
+                <>
+                  <span fg={colors.text}>[Esc]</span> Stop
+                </>
+              ) : (
+                <>
+                  <span fg={colors.text}>[Shift+Enter]</span> Newline
+                </>
+              )}
+            </text>
+          }
+          rightContentWidth={
+            status === "running"
+              ? "[Esc] Stop".length
+              : "[Shift+Enter] Newline".length
+          }
         />
       )}
 
@@ -309,10 +337,10 @@ function NormalInputAreaInner({
           backgroundColor="transparent"
         >
           <text fg={colors.textMuted}>
-            ^C {value.trim() ? "clear" : "stop"}
+            ^C {value.trim() ? "clear" : "exit"}
           </text>
           <text fg={colors.textMuted}>^B sidebar</text>
-          <text fg={colors.textMuted}>ESC quit</text>
+          <text fg={colors.textMuted}>ESC close</text>
         </box>
       )}
     </box>
@@ -328,6 +356,7 @@ export function InputArea(props: InputAreaProps) {
     pendingApproval,
     onApprove,
     onAutoApprove,
+    onAbort,
     lastDeclineNote,
     value,
     onChange,
@@ -353,6 +382,8 @@ export function InputArea(props: InputAreaProps) {
         redirectInput={value}
         setRedirectInput={onChange}
         lastDeclineNote={lastDeclineNote}
+        onCommandExecute={onCommandExecute}
+        onAbort={onAbort}
       />
     );
   }
@@ -388,6 +419,8 @@ interface ApprovalInputAreaProps {
   redirectInput: string;
   setRedirectInput: (value: string) => void;
   lastDeclineNote?: string | null;
+  onCommandExecute?: (command: string) => Promise<void>;
+  onAbort?: () => void;
 }
 
 function ApprovalInputArea({
@@ -398,6 +431,8 @@ function ApprovalInputArea({
   redirectInput,
   setRedirectInput,
   lastDeclineNote,
+  onCommandExecute,
+  onAbort,
 }: ApprovalInputAreaProps) {
   const { colors } = useTheme();
   const { setExternalDialogOpen } = useDialog();
@@ -410,6 +445,17 @@ function ApprovalInputArea({
   }, [focusedElement, setExternalDialogOpen]);
 
   useKeyboard((key) => {
+    // Esc stops the agent. When the redirect input is focused we set
+    // externalDialogOpen, which makes the dashboard skip its Esc handler, so
+    // own it here to honor the advertised "Esc stop". When not focused on the
+    // input, let the event fall through to the dashboard handler.
+    if (key.name === "escape" && focusedElement === 2) {
+      key.preventDefault?.();
+      key.stopPropagation?.();
+      onAbort?.();
+      return;
+    }
+
     // Navigation
     if (key.name === "up") {
       setFocusedElement((prev) => Math.max(0, prev - 1));
@@ -431,7 +477,18 @@ function ApprovalInputArea({
       } else if (focusedElement === 1) {
         onAutoApprove();
       } else if (focusedElement === 2 && redirectInput.trim()) {
-        onRedirect(redirectInput);
+        const value = redirectInput.trim();
+        const firstWord = value.split(/\s+/)[0] || "";
+        const isCommand =
+          firstWord.startsWith("/") &&
+          !firstWord.startsWith("//") &&
+          !/\//.test(firstWord.slice(1));
+        if (isCommand && onCommandExecute) {
+          setRedirectInput("");
+          void onCommandExecute(value);
+        } else {
+          onRedirect(value);
+        }
       }
       return;
     }
@@ -458,6 +515,8 @@ function ApprovalInputArea({
       paddingRight={2}
       paddingTop={1}
       paddingBottom={1}
+      backgroundColor={colors.backgroundPanel}
+      overflow="hidden"
     >
       {/* Yes option */}
       <box flexDirection="row" gap={1}>
@@ -520,7 +579,7 @@ function ApprovalInputArea({
       <box flexDirection="row" gap={2} marginTop={1}>
         <text
           fg={colors.textMuted}
-          content="Y approve | A auto | Enter select"
+          content="Y approve · A auto · Enter select · Esc stop"
         />
       </box>
     </box>

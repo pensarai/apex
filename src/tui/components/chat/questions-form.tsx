@@ -42,7 +42,7 @@ function normalizeQuestion(q: AskUserQuestion, index: number): AskUserQuestion {
 interface QuestionsFormProps {
   questions: AskUserQuestion[];
   onSubmit: (answers: AskUserQuestionAnswer[]) => void;
-  onSkip: () => void;
+  onAbort: () => void;
 }
 
 interface QuestionState {
@@ -108,7 +108,7 @@ function tabWidth(header: string): number {
 export function QuestionsForm({
   questions: rawQuestions,
   onSubmit,
-  onSkip,
+  onAbort,
 }: QuestionsFormProps) {
   const { colors } = useTheme();
   const { width: termWidth } = useDimensions();
@@ -287,15 +287,7 @@ export function QuestionsForm({
     if (editingFreeform || isFreeformFocused) {
       if (key.name === "escape") {
         key.preventDefault?.();
-        setEditingFreeform(false);
-        // Move focus off the freeform row so the input loses focus.
-        // When there are no option rows above (focusedIndex === 0), skip
-        // instead — otherwise Esc is trapped on freeform-only questions.
-        if (activeState && activeState.focusedIndex > 0) {
-          moveRow(-1);
-        } else {
-          onSkip();
-        }
+        onAbort();
         return;
       }
       if (key.name === "up") {
@@ -330,7 +322,7 @@ export function QuestionsForm({
 
     if (key.name === "escape") {
       key.preventDefault?.();
-      onSkip();
+      onAbort();
       return;
     }
 

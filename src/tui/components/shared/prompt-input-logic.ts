@@ -13,6 +13,18 @@ export interface NavState {
   selectedSuggestionIndex: number;
 }
 
+export function shouldNavigateHistory(
+  direction: "up" | "down",
+  visualRow: number,
+  scrollY: number,
+  virtualLineCount: number,
+): boolean {
+  const absoluteVisualRow = scrollY + visualRow;
+  return direction === "up"
+    ? absoluteVisualRow === 0
+    : absoluteVisualRow >= Math.max(0, virtualLineCount - 1);
+}
+
 export interface UpArrowResult {
   nextState: NavState;
   /** History entry to display, or null when staying in autocomplete */

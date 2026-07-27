@@ -1,9 +1,4 @@
-import {
-  type RGBA,
-  SyntaxStyle,
-  type KeyBinding as TextareaKeyBinding,
-  type TextareaRenderable,
-} from "@opentui/core";
+import { type RGBA, SyntaxStyle, type TextareaRenderable } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import {
   forwardRef,
@@ -23,6 +18,10 @@ import { useInput } from "../../context/input";
 import { useObfuscation } from "../../context/obfuscation";
 import { useTheme } from "../../theme";
 import {
+  CHAT_KEY_BINDINGS,
+  isChatNewlineKey,
+} from "./prompt-input-keybindings";
+import {
   computeDownArrow,
   computeInlineCompletion,
   computeTab,
@@ -34,6 +33,7 @@ import {
   filterInlineSuggestions,
   type InlineOptionContext,
   type InlineSlashContext,
+  shouldNavigateHistory,
   shouldResetHistory,
 } from "./prompt-input-logic";
 import { usePasteExtmarks } from "./use-paste-extmarks";
@@ -90,20 +90,6 @@ export interface AutocompleteOption {
   label: string;
   description?: string;
 }
-
-/**
- * Chat-style keybindings: Enter submits, Shift+Enter / Ctrl+J inserts newline.
- * Overrides @opentui defaults (return=newline, Cmd+return=submit).
- *
- * Both "return" (\r) and "linefeed" (\n) need shift variants because
- * @opentui matches modifiers exactly (Kitty protocol reports shift explicitly).
- */
-const chatKeyBindings: TextareaKeyBinding[] = [
-  { name: "return", action: "submit" },
-  { name: "linefeed", action: "newline" },
-  { name: "return", shift: true, action: "newline" },
-  { name: "linefeed", shift: true, action: "newline" },
-];
 
 // Highlight ref ID for slash command highlighting (stable across renders)
 const SLASH_HL_REF = 99;
@@ -470,13 +456,12 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     useKeyboard((key) => {
       if (!focused) return;
 
-      // --- Ctrl+C: clear input ------------------------------------------
-      if (key.ctrl && key.name === "c") {
-        textareaRef.current?.setText("");
-        clearPaste();
-        setInputValue("");
-        setHistoryIndex(-1);
-        setSelectedSuggestionIndex(-1);
+      // Handle modified Enter before parent shortcuts and textarea defaults.
+      // Terminal protocols expose several names for the same physical key.
+      if (isChatNewlineKey(key)) {
+        key.preventDefault?.();
+        key.stopPropagation?.();
+        textareaRef.current?.newLine();
         return;
       }
 
@@ -498,12 +483,27 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
 
       // --- Up arrow -----------------------------------------------------
       if (key.name === "up") {
+        const textarea = textareaRef.current;
+        if (
+          selectedIndexRef.current < 0 &&
+          textarea &&
+          !shouldNavigateHistory(
+            "up",
+            textarea.visualCursor.visualRow,
+            textarea.scrollY,
+            textarea.virtualLineCount,
+          )
+        ) {
+          return;
+        }
+
         const result = computeUpArrow(
           currentState,
           history,
           suggestions.length,
         );
         if (!result) return;
+        key.preventDefault?.();
 
         if (result.saveCurrentInput) {
           savedInputRef.current = resolveText(
@@ -529,6 +529,20 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
 
       // --- Down arrow ---------------------------------------------------
       if (key.name === "down") {
+        const textarea = textareaRef.current;
+        if (
+          selectedIndexRef.current < 0 &&
+          textarea &&
+          !shouldNavigateHistory(
+            "down",
+            textarea.visualCursor.visualRow,
+            textarea.scrollY,
+            textarea.virtualLineCount,
+          )
+        ) {
+          return;
+        }
+
         const result = computeDownArrow(
           currentState,
           history,
@@ -536,6 +550,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
           savedInputRef.current,
         );
         if (!result) return;
+        key.preventDefault?.();
 
         setSelectedSuggestionIndex(result.nextState.selectedSuggestionIndex);
         if (result.textToSet !== null) {
@@ -766,7 +781,7 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
             backgroundColor={backgroundColor}
             focusedBackgroundColor={focusedBackgroundColor}
             cursorColor={cursorColor ?? colors.textMuted}
-            keyBindings={chatKeyBindings}
+            keyBindings={CHAT_KEY_BINDINGS}
             onContentChange={handleContentChange}
             onSubmit={handleSubmit}
             onPaste={handlePaste}

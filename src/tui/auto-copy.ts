@@ -4,7 +4,7 @@ import type { CliRenderer } from "@opentui/core";
 export function setupAutoCopy(
   renderer: CliRenderer,
   copyToClipboard: (text: string) => void,
-) {
+): () => void {
   // biome-ignore lint/suspicious/noExplicitAny: opentui CliRenderer.console is loosely typed and exposes runtime hooks not in its public type.
   (renderer.console as any).getCopyButtonLabel = () => "Select to copy";
 
@@ -24,7 +24,7 @@ export function setupAutoCopy(
   };
 
   // biome-ignore lint/suspicious/noExplicitAny: opentui selection event payload is not exported from its public type.
-  renderer.on("selection", (selection: any) => {
+  const handleSelection = (selection: any) => {
     if (selection && !selection.isDragging) {
       const text = selection.getSelectedText();
       if (text) {
@@ -32,5 +32,14 @@ export function setupAutoCopy(
       }
       process.nextTick(() => renderer.clearSelection());
     }
-  });
+  };
+  renderer.on("selection", handleSelection);
+
+  let cleaned = false;
+  return () => {
+    if (cleaned) return;
+    cleaned = true;
+    renderer.off("selection", handleSelection);
+    renderer.console.handleMouse = originalHandleMouse;
+  };
 }

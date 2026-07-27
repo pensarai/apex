@@ -26,7 +26,11 @@ export const keybindings: Keybinding[] = [
   },
   {
     key: "Escape",
-    description: "Return to home",
+    description: "Stop active agent / Close dialog",
+  },
+  {
+    key: "Shift+Enter",
+    description: "Insert newline",
   },
   {
     key: "Tab",

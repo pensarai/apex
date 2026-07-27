@@ -34,6 +34,7 @@ export function setupTerminalFocusHandling(
   options: TerminalFocusOptions = {},
 ): () => void {
   const { onTerminalFocus, debug = false } = options;
+  const refocusTimers = new Set<ReturnType<typeof setTimeout>>();
 
   const log = (...args: unknown[]) => {
     if (debug) console.error("[TerminalFocus]", ...args);
@@ -66,19 +67,23 @@ export function setupTerminalFocusHandling(
     }
   };
 
+  const scheduleRefocus = (message: string) => {
+    if (!onTerminalFocus) return;
+    const timer = setTimeout(() => {
+      refocusTimers.delete(timer);
+      onTerminalFocus();
+      log(message);
+    }, 10);
+    refocusTimers.add(timer);
+  };
+
   // Handle terminal gaining focus
   const handleFocusIn = () => {
     log("Terminal gained focus");
     showCursor();
     renderer.requestRender();
 
-    // Re-focus the input after a short delay to ensure the terminal is ready
-    if (onTerminalFocus) {
-      setTimeout(() => {
-        onTerminalFocus();
-        log("Re-focused prompt input");
-      }, 10);
-    }
+    scheduleRefocus("Re-focused prompt input");
   };
 
   // Handle terminal losing focus
@@ -94,12 +99,7 @@ export function setupTerminalFocusHandling(
     showCursor();
     renderer.requestRender();
 
-    if (onTerminalFocus) {
-      setTimeout(() => {
-        onTerminalFocus();
-        log("Re-focused prompt input after SIGCONT");
-      }, 10);
-    }
+    scheduleRefocus("Re-focused prompt input after SIGCONT");
   };
 
   // Listen for bracketed focus events on stdin
@@ -153,6 +153,9 @@ export function setupTerminalFocusHandling(
       process.stdin.off("data", handleStdinData);
       stdinListenerActive = false;
     }
+
+    for (const timer of refocusTimers) clearTimeout(timer);
+    refocusTimers.clear();
   };
 
   // Set up listeners

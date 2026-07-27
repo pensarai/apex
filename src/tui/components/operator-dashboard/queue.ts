@@ -8,6 +8,17 @@ export interface QueuedMessage {
   text: string;
 }
 
+interface QueueWindowItem {
+  index: number;
+  message: QueuedMessage;
+}
+
+export interface QueueWindow {
+  end: number;
+  items: QueueWindowItem[];
+  start: number;
+}
+
 let nextId = 0;
 
 export function createQueuedMessage(text: string): QueuedMessage {
@@ -81,4 +92,34 @@ export function navigateDown(
   if (selectedIndex === -1) return -1;
   if (selectedIndex >= queueLength - 1) return -1;
   return selectedIndex + 1;
+}
+
+export function getQueueWindow(
+  queue: QueuedMessage[],
+  selectedIndex: number,
+  maxVisible = 3,
+): QueueWindow {
+  if (queue.length === 0 || maxVisible <= 0) {
+    return { start: 0, end: 0, items: [] };
+  }
+
+  const size = Math.min(maxVisible, queue.length);
+  const anchor =
+    selectedIndex >= 0 && selectedIndex < queue.length
+      ? selectedIndex
+      : queue.length - 1;
+  const start = Math.max(
+    0,
+    Math.min(anchor - Math.floor(size / 2), queue.length - size),
+  );
+  const end = start + size;
+
+  return {
+    start,
+    end,
+    items: queue.slice(start, end).map((message, offset) => ({
+      index: start + offset,
+      message,
+    })),
+  };
 }

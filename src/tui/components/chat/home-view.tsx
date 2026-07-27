@@ -2,7 +2,7 @@
  * Home View
  *
  * Main entry screen with centered command input:
- * - Green ASCII petri animation
+ * - Animated, terminal-responsive brand art
  * - Title and description
  * - Centered command input with inline autocomplete
  */
@@ -19,8 +19,9 @@ import { useInput } from "../../context/input";
 import { useRoute } from "../../context/route";
 import { useTheme } from "../../theme";
 import { PromptInput } from "../shared";
+import { HomeGradientArt } from "./home-gradient-art";
+import { getHomeLayout } from "./home-layout";
 import { OperatorModeBar, providerDisplayName } from "./input-area";
-import { PetriAnimation } from "./petri-animation";
 
 type ViewType = "home" | "config" | "chat";
 
@@ -46,8 +47,6 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
   const { setInputValue } = useInput();
   const { promptRef } = useFocus();
   const { externalDialogOpen, stack } = useDialog();
-
-  const [hintMessage, setHintMessage] = useState<string | null>(null);
   const [commandHistory, setCommandHistory] = useState<string[]>(
     History.getEntries,
   );
@@ -85,13 +84,6 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     [launchOperator, pushHistory],
   );
 
-  // Auto-clear hint after 3 seconds
-  useEffect(() => {
-    if (!hintMessage) return;
-    const timer = setTimeout(() => setHintMessage(null), 3000);
-    return () => clearTimeout(timer);
-  }, [hintMessage]);
-
   const handleCommandExecute = useCallback(
     async (command: string) => {
       const trimmed = command.trim();
@@ -116,48 +108,7 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
     [executeCommand, pushHistory, skillsRegistry, route],
   );
 
-  // Responsive layout calculations
-  const height = dimensions.height;
-
-  // Animation: scale down on small terminals, hide below 15 rows
-  const animationHeight =
-    height < 15
-      ? 0
-      : height < 20
-        ? 2
-        : height < 30
-          ? Math.max(3, Math.floor(height * 0.15))
-          : Math.max(6, Math.floor(height * 0.2));
-
-  // Margins: reduce spacing on small terminals
-  const titleMarginTop = height >= 20 ? 1 : 0;
-  const menuMarginTop = height >= 25 ? 2 : height >= 15 ? 1 : 0;
-  const inputMarginTop = height >= 25 ? 2 : height >= 15 ? 1 : 0;
-
-  // Content visibility: hide decorative elements first
-  const showCommands = height >= 22;
-  const showHelpText = height >= 18;
-  const inputPadding = height >= 20 ? 1 : 0;
-  const inputWidth = Math.min(80, dimensions.width - 10);
-
-  // Estimate rows consumed above the input to size the autocomplete dropdown
-  const rowsAboveInput =
-    animationHeight +
-    titleMarginTop +
-    2 + // title + subtitle
-    (showCommands ? menuMarginTop + 5 : 0) +
-    inputMarginTop +
-    inputPadding + // top padding
-    1; // input row itself
-  const rowsBelowInput =
-    (showHelpText ? 2 : 0) + // help text + marginTop
-    inputPadding + // bottom padding
-    3; // footer bar approximate
-  // Subtract 3 extra rows: 1 margin + 1 "↑ more above" + 1 "↓ more below" indicators
-  const maxSuggestions = Math.max(
-    2,
-    height - rowsAboveInput - rowsBelowInput - 3,
-  );
+  const layout = getHomeLayout(dimensions.width, dimensions.height);
 
   return (
     <box
@@ -167,18 +118,16 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
       alignItems="center"
       overflow="hidden"
     >
-      {/* Petri Animation - absolutely positioned so it doesn't push the
-          centered content block off-center. Sits behind/above the column flow
-          starting at the top of the home view. */}
-      {animationHeight > 0 && (
+      {layout.patternHeight > 0 && (
         <box
           position="absolute"
           top={0}
           left={0}
-          height={animationHeight}
+          height={layout.patternHeight}
           width="100%"
+          overflow="hidden"
         >
-          <PetriAnimation height={animationHeight} />
+          <HomeGradientArt height={layout.patternHeight} />
         </box>
       )}
 
@@ -188,37 +137,40 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
         justifyContent="center"
         height="100%"
       >
-        {/* Title - centered */}
         <box
           flexDirection="column"
           alignItems="center"
-          marginTop={titleMarginTop}
           flexShrink={0}
+          overflow="hidden"
         >
           <text fg={colors.text}>
-            Apex{" "}
+            <span fg={colors.primary}>Apex</span>{" "}
             <span fg={colors.textMuted}>
               ({config.data.version || "local"})
             </span>
           </text>
-          <text fg={colors.textMuted}>Automated offensive security</text>
+          {layout.showSubtitle && (
+            <text fg={colors.textMuted}>
+              Autonomous security testing, from your terminal
+            </text>
+          )}
         </box>
 
-        {/* Command Quick Reference */}
-        {showCommands && (
-          <box flexDirection="column" marginTop={menuMarginTop} flexShrink={0}>
+        {layout.showWorkflowHints && (
+          <box
+            flexDirection="column"
+            marginTop={layout.verticalGap}
+            flexShrink={0}
+          >
             {[
-              { cmd: "/pentest", desc: "autonomous pentest" },
-              { cmd: "/operator", desc: "interactive operator" },
-              { cmd: "/login", desc: "login to Pensar" },
-              { cmd: "/models", desc: "select AI model" },
-              { cmd: "/providers", desc: "manage API keys" },
+              { cmd: "/pentest", desc: "run an autonomous assessment" },
+              { cmd: "/operator", desc: "direct the agent interactively" },
             ].map(({ cmd, desc }) => (
               <box key={cmd} flexDirection="row">
-                <box width={24} justifyContent="flex-end">
+                <box width={12} justifyContent="flex-end">
                   <text fg={colors.primary}>{cmd}</text>
                 </box>
-                <box width={4} />
+                <box width={3} />
                 <box>
                   <text fg={colors.textMuted}>{desc}</text>
                 </box>
@@ -227,25 +179,24 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
           </box>
         )}
 
-        {/* Centered Input Area */}
         <box
           flexDirection="column"
-          width={inputWidth}
-          marginTop={inputMarginTop}
-          padding={inputPadding}
+          width={layout.inputWidth}
+          marginTop={layout.verticalGap}
+          padding={layout.inputPadding}
           border={["left", "right"]}
           borderColor={colors.primary}
           flexShrink={0}
+          overflow="hidden"
         >
-          {/* Input with built-in autocomplete */}
           <PromptInput
             ref={promptRef}
             focused={!externalDialogOpen && stack.length === 0}
-            width={inputWidth - 2 - inputPadding * 2}
+            width={Math.max(1, layout.inputWidth - 2 - layout.inputPadding * 2)}
             minHeight={1}
             maxHeight={4}
             onSubmit={handleSubmit}
-            placeholder="Type a message to start operator, or / for commands..."
+            placeholder="Describe a target or task, or type / for commands..."
             textColor={colors.text}
             focusedTextColor={colors.text}
             backgroundColor="transparent"
@@ -254,26 +205,22 @@ export function HomeView({ onNavigate, onStartSession }: HomeViewProps) {
             autocompleteOptions={autocompleteOptions}
             commandOptionMap={commandOptionMap}
             commandNames={commandNames}
-            maxVisibleSuggestions={maxSuggestions}
+            maxVisibleSuggestions={layout.maxVisibleSuggestions}
             enableCommands={true}
             onCommandExecute={handleCommandExecute}
             commandHistory={commandHistory}
             showPromptIndicator={true}
           />
 
-          {/* Hint message */}
-          {hintMessage && (
-            <box marginTop={1}>
-              <text fg={colors.text}>{hintMessage}</text>
-            </box>
-          )}
-
           <OperatorModeBar
             operatorMode="manual"
             modelName={model.name}
             providerName={providerDisplayName(model.provider)}
             showMode={false}
-            maxWidth={inputWidth - 2 - inputPadding * 2}
+            maxWidth={Math.max(
+              1,
+              layout.inputWidth - 2 - layout.inputPadding * 2,
+            )}
             rightContent={
               <text fg={colors.textMuted}>
                 <span fg={colors.text}>[/]</span> commands

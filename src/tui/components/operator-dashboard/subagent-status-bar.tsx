@@ -8,6 +8,7 @@
  */
 
 import { memo } from "react";
+import { useDimensions } from "../../context/dimensions";
 import { useTheme } from "../../theme";
 import { AsciiSpinner } from "../shared";
 import type { SubagentSession } from "./subagent-state";
@@ -25,6 +26,7 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
   onOpen,
 }: SubagentStatusBarProps) {
   const { colors } = useTheme();
+  const { width } = useDimensions();
 
   if (sessions.size === 0) return null;
 
@@ -60,7 +62,7 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
   return (
     <box
       flexDirection="row"
-      justifyContent="space-between"
+      justifyContent={width >= 72 ? "space-between" : "flex-start"}
       paddingLeft={2}
       paddingRight={2}
       flexShrink={0}
@@ -68,7 +70,7 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
       onMouseDown={onOpen}
     >
       {/* Left side: agent stats */}
-      <box flexDirection="row">
+      <box flexDirection="row" flexShrink={1} overflow="hidden">
         {allDone ? (
           <text
             fg={colors.textMuted}
@@ -77,17 +79,20 @@ export const SubagentStatusBar = memo(function SubagentStatusBar({
         ) : (
           <AsciiSpinner label={`${total} agent${total !== 1 ? "s" : ""}`} />
         )}
-        {parts.length > 0 && <text fg={colors.textMuted} content="  " />}
-        {parts.map((part, i) => (
-          <box key={part.label} flexDirection="row">
-            {i > 0 && <text fg={colors.textMuted} content={" \u00b7 "} />}
-            <text fg={part.color} content={part.label} />
-          </box>
-        ))}
+        {width >= 54 && parts.length > 0 && (
+          <text fg={colors.textMuted} content="  " />
+        )}
+        {width >= 54 &&
+          parts.map((part, i) => (
+            <box key={part.label} flexDirection="row">
+              {i > 0 && <text fg={colors.textMuted} content={" \u00b7 "} />}
+              <text fg={part.color} content={part.label} />
+            </box>
+          ))}
       </box>
 
       {/* Right side: keyboard shortcut hint */}
-      <text fg={colors.textMuted} content="Ctrl+A view agents" />
+      {width >= 72 && <text fg={colors.textMuted} content="[Ctrl+A] agents" />}
     </box>
   );
 });

@@ -1,6 +1,10 @@
+import { stripVTControlCharacters } from "node:util";
 import { buildBaseSystemPrompt } from "../../../core/agents/offSecAgent";
 import { detectOSAndEnhancePrompt } from "../../../core/agents/specialized/utils";
-import type { OperatorSessionState } from "../../../core/operator";
+import type {
+  OperatorMode,
+  OperatorSessionState,
+} from "../../../core/operator";
 import type { AutocompleteOption } from "../shared";
 
 // ---------------------------------------------------------------------------
@@ -11,7 +15,8 @@ const OPERATOR_ALLOWED_COMMANDS = new Set([
   "/models",
   "/login",
   "/themes",
-  "/new",
+  "/clear",
+  "/resume",
   "/operator",
   "/pentest",
   "/skills",
@@ -27,6 +32,43 @@ export function filterOperatorAutocomplete(
   return allOptions.filter((opt) => OPERATOR_ALLOWED_COMMANDS.has(opt.value));
 }
 
+export function formatRuntimeError(
+  error: unknown,
+  fallback = "Agent failed",
+  maxLength = 2000,
+): string {
+  const raw =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : typeof error === "object" &&
+            error !== null &&
+            "message" in error &&
+            typeof error.message === "string"
+          ? error.message
+          : fallback;
+  const withoutTerminalCodes = stripVTControlCharacters(raw).replace(
+    /\r\n?/g,
+    "\n",
+  );
+  const safe = Array.from(withoutTerminalCodes)
+    .filter((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return (
+        character === "\n" ||
+        character === "\t" ||
+        (code >= 32 && code !== 127 && !(code >= 128 && code <= 159))
+      );
+    })
+    .join("")
+    .trim();
+  const message = safe || fallback;
+  return message.length > maxLength
+    ? `${message.slice(0, Math.max(0, maxLength - 1))}…`
+    : message;
+}
+
 // ---------------------------------------------------------------------------
 // Submit gating
 // ---------------------------------------------------------------------------
@@ -37,6 +79,64 @@ export interface SubmitResult {
   action: "run" | "blocked" | "empty";
   prompt?: string;
   denyPending: boolean;
+}
+
+/** Launch options that must survive a fresh-session clear (e.g. sandboxing). */
+export interface ClearSessionCarryOver {
+  sandbox?: boolean;
+  taskDriven?: boolean;
+  headers?: Record<string, string>;
+  promptInjectionLibrarySource?: string;
+}
+
+export function buildClearSessionConfig(
+  operatorMode: OperatorMode,
+  target: string | undefined,
+  carryOver?: ClearSessionCarryOver,
+) {
+  return {
+    ...carryOver,
+    target,
+    operatorMode,
+    requireApproval: operatorMode === "manual",
+  };
+}
+
+/**
+ * Merge launch options for a fresh-session clear. Prefers the live route
+ * `initialConfig`, falling back to the persisted `session.config` — the only
+ * source for resumed sessions, which carry no `initialConfig`. Sandbox mode is
+ * encoded on persisted config as an undefined `agentCwd`, so a resumed
+ * sandboxed session must stay sandboxed after clear.
+ */
+export function resolveClearCarryOver(
+  initialConfig:
+    | {
+        sandbox?: boolean;
+        taskDriven?: boolean;
+        headers?: Record<string, string>;
+        promptInjectionLibrarySource?: string;
+      }
+    | undefined,
+  sessionConfig:
+    | {
+        agentCwd?: string;
+        taskDriven?: boolean;
+        headers?: Record<string, string>;
+        promptInjectionLibrarySource?: string;
+      }
+    | undefined,
+): ClearSessionCarryOver {
+  return {
+    sandbox:
+      initialConfig?.sandbox ??
+      (sessionConfig ? sessionConfig.agentCwd === undefined : undefined),
+    taskDriven: initialConfig?.taskDriven ?? sessionConfig?.taskDriven,
+    headers: initialConfig?.headers ?? sessionConfig?.headers,
+    promptInjectionLibrarySource:
+      initialConfig?.promptInjectionLibrarySource ??
+      sessionConfig?.promptInjectionLibrarySource,
+  };
 }
 
 export function resolveSubmit(
@@ -66,6 +166,7 @@ export type CommandAction =
   | { type: "show-models" }
   | { type: "show-plan" }
   | { type: "open-session" }
+  | { type: "clear-session" }
   | { type: "run-skill"; slug: string; autopilot: boolean }
   | { type: "headers"; op: HeadersOp }
   | { type: "execute-command"; command: string };
@@ -107,7 +208,7 @@ export function routeCommand(
   command: string,
   resolveSkill: (cmd: string) => string | null,
 ): CommandAction {
-  const stripped = command.trim().replace(/^\/+/, "");
+  const stripped = command.trim().replace(/^\/+/, "").trimStart();
   const commandLower = stripped.toLowerCase();
 
   if (commandLower === "models" || commandLower === "model") {
@@ -120,6 +221,15 @@ export function routeCommand(
 
   if (commandLower === "open-session") {
     return { type: "open-session" };
+  }
+
+  if (
+    commandLower === "clear" ||
+    commandLower === "new" ||
+    commandLower.startsWith("clear ") ||
+    commandLower.startsWith("new ")
+  ) {
+    return { type: "clear-session" };
   }
 
   if (commandLower === "skills") {
@@ -158,9 +268,7 @@ interface KeyInfo {
 
 export type KeyboardAction =
   | { type: "skip" }
-  | { type: "ctrl-c-abort" }
-  | { type: "ctrl-c-clear" }
-  | { type: "escape" }
+  | { type: "escape-abort" }
   | { type: "toggle-verbose" }
   | { type: "toggle-expanded-logs" }
   | { type: "cycle-mode" }
@@ -170,7 +278,7 @@ export type KeyboardAction =
 export function resolveKeyboardShortcut(
   key: KeyInfo,
   status: DashboardStatus,
-  inputValue: string,
+  _inputValue: string,
   hasPendingApprovals: boolean,
   dialogOpen: boolean,
 ): KeyboardAction {
@@ -179,17 +287,14 @@ export function resolveKeyboardShortcut(
   // Terminal-native copy (Cmd+C / Super+C) passes through
   if ((key.meta || key.super) && key.name === "c") return { type: "skip" };
 
-  // Ctrl+C
-  if (key.ctrl && key.name === "c") {
-    if (status === "running" || status === "waiting")
-      return { type: "ctrl-c-abort" };
-    if (inputValue.trim()) return { type: "ctrl-c-clear" };
-    return { type: "skip" };
-  }
+  // Ctrl+C is owned globally: clear a draft or exit on a double press.
+  if (key.ctrl && key.name === "c") return { type: "skip" };
 
   // Escape
-  if (key.name === "escape" && status !== "running" && status !== "waiting") {
-    return { type: "escape" };
+  if (key.name === "escape") {
+    return status === "running" || status === "waiting"
+      ? { type: "escape-abort" }
+      : { type: "skip" };
   }
 
   // Ctrl+V — toggle verbose

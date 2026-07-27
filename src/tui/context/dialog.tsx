@@ -34,6 +34,12 @@ export function Dialog({
   const dimensions = useDimensions();
   const renderer = useRenderer();
   const { colors: themeColors } = useTheme();
+  const verticalInset = dimensions.height >= 8 ? 2 : 0;
+  const dialogWidth = Math.max(
+    1,
+    Math.min(DIALOG_WIDTHS[size] ?? 60, dimensions.width - 2),
+  );
+  const dialogHeight = Math.max(1, dimensions.height - verticalInset * 2);
   return (
     <box
       onMouseUp={async () => {
@@ -46,8 +52,8 @@ export function Dialog({
       alignItems="center"
       justifyContent="center"
       position="absolute"
-      paddingTop={2}
-      paddingBottom={2}
+      paddingTop={verticalInset}
+      paddingBottom={verticalInset}
       left={0}
       top={0}
       backgroundColor={themeColors.backgroundOverlay}
@@ -57,10 +63,9 @@ export function Dialog({
           if (renderer.getSelection()) return;
           e.stopPropagation();
         }}
-        width={DIALOG_WIDTHS[size] ?? 60}
-        maxWidth={dimensions.width - 2}
-        maxHeight={dimensions.height - 4}
-        overflow="scroll"
+        width={dialogWidth}
+        maxHeight={dialogHeight}
+        overflow="hidden"
         backgroundColor={themeColors.backgroundElement}
         flexDirection="column"
         flexGrow={0}

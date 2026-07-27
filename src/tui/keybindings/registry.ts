@@ -4,6 +4,7 @@ import { useFocus } from "../context/focus";
 import { useInput } from "../context/input";
 import { useRoute } from "../context/route";
 import { cleanupTerminalFocusMode } from "../terminal-focus";
+import { resolveCtrlCAction } from "./ctrl-c";
 
 export interface KeybindingEntry {
   combo: string;
@@ -46,25 +47,38 @@ export function createKeybindings(
   const route = useRoute();
   const renderer = useRenderer();
   const { promptRef } = useFocus();
-  const { inputValue, setInputValue, clearInput } = useInput();
+  const { clearInput } = useInput();
   const { stack, externalDialogOpen } = useDialog();
 
   return [
     {
       combo: "ctrl+c",
-      description: "Exit (press twice)",
+      description: "Clear input / Exit (press twice)",
       fn: async () => {
         const now = Date.now();
-        const lastPress = ctrlCPressTime;
+        const textarea = promptRef.current?.getTextareaRef();
+        const action = resolveCtrlCAction(
+          promptRef.current?.getValue() ?? "",
+          Boolean(textarea && !textarea.isDestroyed && textarea.focused),
+          ctrlCPressTime,
+          now,
+        );
 
-        if (lastPress && now - lastPress < 1000) {
-          cleanupTerminalFocusMode();
-          renderer.destroy();
-          process.exit(0);
-        } else {
-          setInputKey((prev) => prev + 1);
-          setCtrlCPressTime(now);
-          setShowExitWarning(true);
+        switch (action) {
+          case "clear-input":
+            promptRef.current?.reset();
+            setCtrlCPressTime(null);
+            setShowExitWarning(false);
+            return;
+          case "exit":
+            cleanupTerminalFocusMode();
+            renderer.destroy();
+            process.exit(0);
+            return;
+          case "warn-exit":
+            setInputKey((prev) => prev + 1);
+            setCtrlCPressTime(now);
+            setShowExitWarning(true);
         }
       },
     },
@@ -77,7 +91,7 @@ export function createKeybindings(
     },
     {
       combo: "escape",
-      description: "Return to home",
+      description: "Close current view",
       fn: async () => {
         if (stack.length > 0 || externalDialogOpen) {
           return;
