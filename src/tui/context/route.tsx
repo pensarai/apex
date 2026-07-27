@@ -68,6 +68,8 @@ export type Route =
         requireApproval?: boolean;
         target?: string;
         operatorMode?: import("../../core/operator").OperatorMode;
+        /** Overrides the persisted Strike Mode preference for this new session. */
+        strikeMode?: boolean;
         sandbox?: boolean;
         taskDriven?: boolean;
         /** Headers from wizard/CLI; replace the snapshotted global defaults. */
