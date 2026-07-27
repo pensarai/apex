@@ -34,6 +34,15 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   Write: (args) => `write ${args.path || args.file_path || ""}`,
   create_file: (args) => `create ${args.path || ""}`,
   update_file: (args) => `update ${args.path || ""}`,
+  delete_file: (args) => `delete ${args.path || ""}`,
+  apply_patch: () => "apply_patch",
+  git_status: () => "git status",
+  git_diff: (args) =>
+    args.path
+      ? `git diff ${args.path}`
+      : args.staged
+        ? "git diff --staged"
+        : "git diff",
   document_vulnerability: (args) => {
     const title = args.title || args.name || "";
     const pocName = args.pocName || "";
@@ -45,6 +54,7 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
   Grep: (args) => `grep ${args.pattern || ""}`,
   grep: (args) => `grep ${args.pattern || ""}`,
   Glob: (args) => `glob ${args.pattern || ""}`,
+  glob: (args) => `glob ${args.pattern || ""}`,
 
   // Web search
   web_search: (args) => `search "${args.query || ""}"`,

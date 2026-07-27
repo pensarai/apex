@@ -1,5 +1,6 @@
 // Memory tools
 export { addMemory } from "./addMemory";
+export { applyPatch } from "./applyPatch";
 // askUserQuestions schema/types — used by TUI for the question-prompt UX.
 export {
   type AskUserQuestion,
@@ -19,6 +20,7 @@ export { createFile } from "./createFile";
 // Task decomposition tools
 export { createTask } from "./createTask";
 export { delegateAuth } from "./delegateAuth";
+export { deleteFile } from "./deleteFile";
 export { detectAuthScheme } from "./detectAuthScheme";
 // Attack surface / recon tools
 export { documentApp } from "./documentApp";
@@ -35,6 +37,9 @@ export { executeCommand } from "./executeCommand";
 export { extractJsEndpoints } from "./extractJsEndpoints";
 export { getMemory } from "./getMemory";
 export { getPage } from "./getPage";
+export { gitDiff } from "./gitDiff";
+export { gitStatus } from "./gitStatus";
+export { globFiles } from "./glob";
 export { grep } from "./grep";
 export { httpRequest } from "./httpRequest";
 export { listFiles } from "./listFiles";
@@ -148,6 +153,7 @@ export { writePlan } from "./writePlan";
 // ---------------------------------------------------------------------------
 
 import { addMemory } from "./addMemory";
+import { applyPatch } from "./applyPatch";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
   askUserQuestions,
@@ -160,6 +166,7 @@ import { createAttackSurfaceReport } from "./createAttackSurfaceReport";
 import { createFile } from "./createFile";
 import { createTask } from "./createTask";
 import { delegateAuth } from "./delegateAuth";
+import { deleteFile } from "./deleteFile";
 import { detectAuthScheme } from "./detectAuthScheme";
 import { documentApp } from "./documentApp";
 import { documentEndpoint } from "./documentEndpoint";
@@ -175,6 +182,9 @@ import { executeCommand } from "./executeCommand";
 import { extractJsEndpoints } from "./extractJsEndpoints";
 import { getMemory } from "./getMemory";
 import { getPage } from "./getPage";
+import { gitDiff } from "./gitDiff";
+import { gitStatus } from "./gitStatus";
+import { globFiles } from "./glob";
 import { grep } from "./grep";
 import { httpRequest } from "./httpRequest";
 import { listFiles } from "./listFiles";
@@ -237,12 +247,17 @@ export function createAllTools(ctx: ToolContext) {
     // Filesystem / search tools
     read_file: readFile(ctx),
     list_files: listFiles(ctx),
+    glob: globFiles(ctx),
     grep: grep(ctx),
     profile_codebase: profileCodebase(ctx),
     query_whitebox_catalog: queryWhiteboxCatalog(ctx),
     run_code_query: runCodeQuery(ctx),
     create_file: createFile(ctx),
     update_file: updateFile(ctx),
+    delete_file: deleteFile(ctx),
+    apply_patch: applyPatch(ctx),
+    git_status: gitStatus(ctx),
+    git_diff: gitDiff(ctx),
 
     // Attack surface / recon tools
     document_app: documentApp(ctx),
@@ -341,12 +356,17 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   // Filesystem / search
   "read_file",
   "list_files",
+  "glob",
   "grep",
   "profile_codebase",
   "query_whitebox_catalog",
   "run_code_query",
   "create_file",
   "update_file",
+  "delete_file",
+  "apply_patch",
+  "git_status",
+  "git_diff",
   "document_app",
   "document_endpoint",
   "delegate_to_auth_subagent",
@@ -450,8 +470,11 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   // Filesystem / search (read-only)
   "read_file",
   "list_files",
+  "glob",
   "grep",
   "query_whitebox_catalog",
+  "git_status",
+  "git_diff",
   // Recon (read-only probing and discovery)
   "delegate_to_auth_subagent",
   "complete_authentication",

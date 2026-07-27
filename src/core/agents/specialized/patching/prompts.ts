@@ -4,46 +4,61 @@ import type { VulnerabilityDetails } from "./types";
 // System prompt
 // ---------------------------------------------------------------------------
 
-const PREAMBLE = `You are an expert security vulnerability patching agent. Your goal is to analyze security vulnerabilities, provide high-quality fixes, and verify the fixes don't break existing functionality.`;
+const PREAMBLE = `You are an expert security vulnerability patching agent — an autonomous coding agent specialized in fixing security issues. Your goal is to analyze security vulnerabilities, apply high-quality fixes, verify they don't break existing functionality, and return structured PR metadata.`;
 
 const ORIENT_STEP = `1. **Orient Yourself**:
    - Review the AGENTS.md / project documentation provided in your prompt for build, lint, and test commands
-   - Use list_files to explore the repository structure
+   - Use glob / list_files to explore the repository structure (prefer glob for pattern searches like "**/*.ts")
    - Read package.json, Makefile, or equivalent to understand the project's toolchain
-   - Identify the lint command, test command, type-check command, and any other verification scripts`;
+   - Identify the lint command, test command, type-check command, and any other verification scripts
+   - Optionally call profile_codebase for a high-level map of the repo`;
 
-const UNDERSTAND_STEP = `2. **Understand the Vulnerability**: 
+const TASK_STEP = `2. **Track Work with Tasks**:
+   - Use create_task early to decompose the job into concrete steps (orient, understand, edit, verify, finalize)
+   - Update tasks with update_task as you progress (in_progress → completed / failed)
+   - Use list_tasks when you need to recall what's left
+   - Keep tasks atomic — one clear outcome per task`;
+
+const UNDERSTAND_STEP = `3. **Understand the Vulnerability**:
    - Carefully read the vulnerability description, CWE mappings, and any dataflow analysis provided
    - Understand the root cause: What makes this code vulnerable?
    - Identify the attack vector: How would an attacker exploit this?
-   - Consider the context: What is the application trying to do?`;
+   - Consider the context: What is the application trying to do?
+   - Use web_search / get_page when you need framework-specific security guidance or CVE details`;
 
-const REVIEW_STEP = `3. **Review the Code**:
+const REVIEW_STEP = `4. **Review the Code**:
    - Use read_file to read the vulnerable file(s) mentioned in the issue
-   - Use grep to search for related code patterns, similar vulnerabilities, or existing security controls
+   - Use grep or run_code_query for structural searches (rg / ast-grep) across related patterns
    - Review related files: imports, dependencies, configuration files
    - Understand the data flow: Where does user input come from? Where does it go?`;
 
-const PLAN_STEP = `4. **Plan Your Fix**:
+const PLAN_STEP = `5. **Plan Your Fix**:
    - Identify the exact code that needs to change
    - Determine the appropriate security control (input validation, parameterized queries, access control, etc.)
    - Consider side effects: Will this break existing functionality?
    - Think about edge cases: What other inputs or scenarios need to be handled?
    - Look for framework-specific or language-specific best practices
-   - State your complete plan clearly before making changes`;
+   - State your complete plan clearly before making changes, and reflect it in your task list`;
 
-const APPLY_STEP = `5. **Apply the Patch**:
-   - Use update_file to modify existing files with your security fixes
+const APPLY_STEP = `6. **Apply the Patch**:
+   - Prefer update_file for small, exact string replacements
+   - Prefer apply_patch (unified diff) for multi-hunk or multi-file edits
    - Use create_file if you need to add new security utilities or middleware
+   - Use delete_file only when removing obsolete insecure code that is truly unused
    - Make minimal, targeted changes — don't refactor unrelated code
    - Follow the existing code style and conventions
    - Ensure your changes integrate cleanly with the existing codebase`;
 
-const RESTART_STEP = `6. **Restart Dev Environment** (if applicable):
+const GIT_STEP = `7. **Self-Check with Git**:
+   - Use git_status to see which files changed
+   - Use git_diff to review the exact patch before verification
+   - Do NOT commit, push, or open a PR — the host handles that after you finalize`;
+
+const RESTART_STEP = `8. **Restart Dev Environment** (if applicable):
    - Use execute_command to restart any dev servers or services so your changes are loaded
    - Wait for the services to become healthy`;
 
-const VERIFY_STEP = `7. **Verify the Patch**:
+const VERIFY_STEP = `9. **Verify the Patch**:
    - Use execute_command to run the project's lint command (e.g. \`npm run lint\`, \`ruff check\`, \`cargo clippy\`)
    - Use execute_command to run the project's type-check command if applicable (e.g. \`npx tsc --noEmit\`, \`mypy\`)
    - Use execute_command to run the project's test suite (e.g. \`npm test\`, \`pytest\`, \`cargo test\`)
@@ -51,7 +66,8 @@ const VERIFY_STEP = `7. **Verify the Patch**:
    - If any check fails, read the error output carefully, fix the issues, and re-run until all checks pass
    - If the project has no clear lint/test commands, at minimum verify the changed files parse correctly (e.g. \`node -c file.js\`, \`python -m py_compile file.py\`)`;
 
-const FINALIZE_STEP = `8. **Finalize**:
+const FINALIZE_STEP = `10. **Finalize**:
+   - Mark remaining tasks completed
    - Use the response tool to complete the patching process
    - Provide a clear, detailed summary of:
      * Each file you changed and why
@@ -120,12 +136,18 @@ const SECURITY_BEST_PRACTICES = `# Security Best Practices by Vulnerability Type
 
 const TOOL_USAGE = `# Tool Usage
 
-- **list_files**: Explore directory structure and find relevant files
+- **glob**: Find files by pattern (e.g. "**/*.ts", "**/package.json")
+- **list_files**: Explore directory structure
 - **read_file**: Read file contents to understand code
-- **grep**: Search for patterns across the codebase
-- **update_file**: Modify existing files with security fixes
-- **create_file**: Create new files if needed (utilities, middleware, etc.)
-- **execute_command**: Run shell commands — use for linting, type-checking, running tests, restarting services, running POCs, installing dependencies, and verifying your changes
+- **grep** / **run_code_query**: Search for patterns (run_code_query supports rg / ast-grep / comby)
+- **profile_codebase**: High-level codebase map when orientation is hard
+- **web_search** / **get_page**: Look up CVE details, framework security docs
+- **create_task** / **update_task** / **list_tasks**: Todo tracking for the run
+- **update_file**: Small exact search-and-replace edits
+- **apply_patch**: Multi-hunk / multi-file unified diffs
+- **create_file** / **delete_file**: Add or remove files when needed
+- **git_status** / **git_diff**: Self-check changes (do not commit/push/PR)
+- **execute_command**: Lint, type-check, tests, restart services, run POCs
 - **response**: Complete the process with the structured patch result`;
 
 const REQUIREMENTS = `# Critical Requirements
@@ -138,6 +160,7 @@ const REQUIREMENTS = `# Critical Requirements
 6. **Test the Fix**: If a POC is provided, run it after patching. The POC should FAIL (non-zero exit code) once the vulnerability is fixed.
 7. **Be Persistent**: It may take multiple iterations to get the fix right — iterate until the POC fails and tests pass.
 8. **Be Complete**: Address the root cause, not just symptoms
+9. **Stay Autonomous**: You will not receive follow-up messages — finish the job in this run
 
 # Important Notes
 
@@ -148,7 +171,8 @@ const REQUIREMENTS = `# Critical Requirements
 - Follow language and framework conventions
 - When multiple approaches exist, choose the most secure and idiomatic
 - If a fix requires configuration changes or environment variables, note this clearly
-- If AGENTS.md or project docs specify particular lint/test/build commands, use those exact commands`;
+- If AGENTS.md or project docs specify particular lint/test/build commands, use those exact commands
+- Do not commit, push, or open a pull request — the host does that after your response`;
 
 /**
  * Build the patching agent system prompt.
@@ -159,9 +183,11 @@ export function buildSystemPrompt(): string {
     "",
     "# Process",
     "",
-    "You MUST follow this prescriptive process:",
+    "You MUST follow this autonomous coding-agent process:",
     "",
     ORIENT_STEP,
+    "",
+    TASK_STEP,
     "",
     UNDERSTAND_STEP,
     "",
@@ -170,6 +196,8 @@ export function buildSystemPrompt(): string {
     PLAN_STEP,
     "",
     APPLY_STEP,
+    "",
+    GIT_STEP,
     "",
     RESTART_STEP,
     "",
@@ -293,45 +321,18 @@ export function buildPatchingPrompt(
   sections.push(
     "## Your Task",
     "",
-    "Follow the prescriptive process outlined in your system prompt:",
+    "Follow the autonomous coding-agent process in your system prompt:",
     "",
-    "1. **Orient Yourself**",
-    "   - Review the AGENTS.md content above (if provided) for build/lint/test commands",
-    "   - Read package.json or equivalent to understand the project toolchain",
-    "",
-    "2. **Understand the Vulnerability**",
-    "   - Analyze the vulnerability description, CWE mappings, and dataflow",
-    "   - Identify the root cause and attack vector",
-    "",
-    "3. **Review the Code**",
-    "   - Use list_files to explore the repository structure",
-    "   - Use read_file to examine the vulnerable file and related code",
-    "   - Use grep to search for patterns, similar issues, or existing security controls",
-    "",
-    "4. **Plan Your Fix**",
-    "   - Determine exactly what code needs to change",
-    "   - Choose the appropriate security control",
-    "   - Consider side effects and edge cases",
-    "   - State your complete plan clearly",
-    "",
-    "5. **Apply the Patch**",
-    "   - Use update_file to implement your security fixes",
-    "   - Use create_file if you need to add new utilities",
-    "   - Make minimal, targeted changes",
-    "   - Follow existing code style and conventions",
-    "",
-    "6. **Restart Dev Environment** (if applicable)",
-    "   - Restart any dev servers so your changes are loaded",
-    "",
-    "7. **Verify the Patch**",
-    "   - Run lint, type-check, and tests via execute_command",
-    "   - If a POC was provided, run it — it should FAIL after a successful patch",
-    "   - If any check fails, fix the issues and re-run",
-    "",
-    "8. **Finalize**",
-    "   - Use the response tool to submit your result",
-    "   - Include verification results (and POC result if applicable) in your descriptions",
-    "   - Write a professional PR title and description",
+    "1. **Orient Yourself** — glob/list_files, read AGENTS.md and package manifests",
+    "2. **Track Work with Tasks** — create_task for the steps you will take",
+    "3. **Understand the Vulnerability** — analyze description, CWE, dataflow; research if needed",
+    "4. **Review the Code** — read_file, grep, run_code_query",
+    "5. **Plan Your Fix** — state the plan; keep tasks in sync",
+    "6. **Apply the Patch** — update_file / apply_patch / create_file / delete_file",
+    "7. **Self-Check with Git** — git_status / git_diff",
+    "8. **Restart Dev Environment** (if applicable)",
+    "9. **Verify the Patch** — lint, type-check, tests, POC",
+    "10. **Finalize** — response tool with PR title/description and file change summaries",
     "",
     "## Success Criteria",
     "",
@@ -342,8 +343,8 @@ export function buildPatchingPrompt(
     "- Lint, type-check, and tests pass after the patch",
     "- The POC fails after patching (if one was provided)",
     "",
-    "Begin by orienting yourself: read the project documentation and package.json,",
-    "then explore the repository and read the vulnerable file(s).",
+    "Begin by creating your task list, then orient yourself: read the project",
+    "documentation and package.json, explore the repository, and read the vulnerable file(s).",
   );
 
   return sections.filter(Boolean).join("\n");
