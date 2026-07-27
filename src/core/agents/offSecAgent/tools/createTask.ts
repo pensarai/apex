@@ -7,28 +7,30 @@ const createTaskInputSchema = z.object({
   subject: z
     .string()
     .describe(
-      "Short subject line for the task (e.g., 'Test /api/users id param for UNION-based SQLi')",
+      "Short subject line for the task (e.g., 'Apply parameterized query fix in login handler', 'Test /api/users id param for UNION-based SQLi')",
     ),
   description: z
     .string()
     .describe(
-      "Detailed description of what to test and how — include specific payloads, encoding strategies, or bypass techniques to try",
+      "Detailed description of the work — for coding: what to change and how to verify; for testing: payloads, encoding strategies, or bypass techniques",
     ),
   objective: z
     .string()
+    .optional()
     .describe(
-      "The testing objective this task addresses (from your assigned objectives)",
+      "Optional higher-level objective this task addresses (e.g. a pentest objective or 'Fix SQL injection in auth'). Defaults to the subject when omitted.",
     ),
   technique: z
     .string()
+    .optional()
     .describe(
-      "The specific attack technique (e.g., 'UNION-based SQL injection', 'reflected XSS via search parameter', 'time-based blind SQLi')",
+      "Optional technique or approach label (e.g. 'parameterized queries', 'UNION-based SQL injection'). Defaults to 'general' when omitted.",
     ),
   metadata: z
     .record(z.string(), z.unknown())
     .optional()
     .describe(
-      "Optional metadata (e.g., { priority: 'high', endpoint: '/api/users', parameter: 'id' })",
+      "Optional metadata (e.g. { priority: 'high', file: 'src/auth.ts', endpoint: '/api/users' })",
     ),
 });
 
@@ -46,16 +48,19 @@ type CreateTaskResult = {
 
 export function createTask(ctx: ToolContext) {
   return tool({
-    description: `Create a testing task to track your work.
+    description: `Create a task to track your work.
 
-Decompose each objective into concrete, atomic testing tasks — one task per technique × endpoint combination. Tasks track what you've planned, what you're doing, and what's done.
+Use tasks as a lightweight todo list: decompose the job into concrete, atomic steps, create them early, and update status as you go.
 
-Call this BEFORE you start testing to build your task list. You can also add tasks mid-run when you discover new attack vectors.
+Works for both coding agents (patch/fix/verify steps) and pentest agents (technique × endpoint tests).
+
+Call this BEFORE you start substantive work to build your task list. Add more mid-run when you discover extra work.
 
 Examples of good tasks:
-- "Test /api/users id parameter for error-based SQL injection"
-- "Test /search q parameter for reflected XSS with event handler payloads"
-- "Test /api/auth for JWT signature bypass via algorithm confusion"`,
+- "Read vulnerable login handler and related DB helpers"
+- "Apply parameterized query fix in src/auth/login.ts"
+- "Run lint, typecheck, and unit tests"
+- "Test /api/users id parameter for error-based SQL injection"`,
     inputSchema: createTaskInputSchema,
     execute: async ({
       subject,
@@ -75,8 +80,8 @@ Examples of good tasks:
         const task = coreCreateTask(ctx.tasksDir, {
           subject,
           description,
-          objective,
-          technique,
+          objective: objective ?? subject,
+          technique: technique ?? "general",
           metadata,
         });
 
