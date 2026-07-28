@@ -1,7 +1,7 @@
 import { type ToolSet, tool } from "ai";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { createCodeModeTools } from "./tools";
+import { buildCodeModeInstructions, createCodeModeTools } from "./tools";
 
 const runtime = {
   execute: async () => ({
@@ -44,5 +44,13 @@ describe("createCodeModeTools", () => {
       "checkpoint_state",
     ]);
     expect(tools.response).toBe(canonicalTools.response);
+  });
+
+  test("instructions teach bounded program-first composition", () => {
+    const instructions = buildCodeModeInstructions("schema-code");
+    expect(instructions).toContain("mapLimitSettled");
+    expect(instructions).toContain("Do not split them across outer tool calls");
+    expect(instructions).toContain("persistent session workspace");
+    expect(instructions).toContain("Guidance is process feedback");
   });
 });

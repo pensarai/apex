@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { ModelMessage } from "ai";
 import { getQuickJS } from "quickjs-emscripten";
-import type { CanonicalCapabilityInvoker } from "./capabilityInvoker";
+import type {
+  CanonicalCapabilityInvoker,
+  CodeModeCellMetrics,
+} from "./capabilityInvoker";
 
 const DEFAULT_YIELD_MS = 10_000;
 const MAX_YIELD_MS = 60_000;
@@ -17,6 +20,8 @@ export type CodeCellResult = {
   cellId: string;
   status: CodeCellStatus;
   output: string;
+  metrics?: CodeModeCellMetrics & { durationMs: number };
+  guidance?: string[];
 };
 
 type ExecutionContext = {
@@ -101,6 +106,42 @@ const GUEST_PRELUDE = `
     const value = __apexLoad(key);
     return value === undefined ? undefined : JSON.parse(value);
   };
+  const runLimited = async (items, concurrency, worker, settle) => {
+    if (!Array.isArray(items)) throw new TypeError("items must be an array");
+    if (!Number.isInteger(concurrency) || concurrency < 1) {
+      throw new TypeError("concurrency must be a positive integer");
+    }
+    const results = new Array(items.length);
+    let nextIndex = 0;
+    const lane = async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex++;
+        if (settle) {
+          try {
+            results[index] = {
+              status: "fulfilled",
+              value: await worker(items[index], index),
+            };
+          } catch (reason) {
+            results[index] = { status: "rejected", reason: String(reason) };
+          }
+        } else {
+          results[index] = await worker(items[index], index);
+        }
+      }
+    };
+    await Promise.all(
+      Array.from(
+        { length: Math.min(concurrency, items.length) },
+        () => lane(),
+      ),
+    );
+    return results;
+  };
+  globalThis.mapLimit = (items, concurrency, worker) =>
+    runLimited(items, concurrency, worker, false);
+  globalThis.mapLimitSettled = (items, concurrency, worker) =>
+    runLimited(items, concurrency, worker, true);
 })();
 `;
 
@@ -182,6 +223,7 @@ export class CodeModeRuntime {
     code: string,
     context: ExecutionContext,
   ): Promise<CodeCellResult> {
+    const startedAt = Date.now();
     const output: string[] = [];
     const hostCalls = new Set<Promise<unknown>>();
     const deadline = Date.now() + MAX_CELL_RUNTIME_MS;
@@ -295,19 +337,35 @@ export class CodeModeRuntime {
       await Promise.allSettled([...hostCalls]);
       await pumpJobs();
       if (returned !== undefined) output.push(serializeOutput(returned));
+      const observation = this.invoker.completeCell(context.parentToolCallId);
       return {
         cellId,
         status: "completed",
         output: truncateOutput(output.filter(Boolean).join("\n")),
+        metrics: {
+          ...observation.metrics,
+          durationMs: Date.now() - startedAt,
+        },
+        ...(observation.guidance.length > 0
+          ? { guidance: observation.guidance }
+          : {}),
       };
     } catch (error) {
       const terminated = context.abortSignal?.aborted === true;
+      const observation = this.invoker.completeCell(context.parentToolCallId);
       return {
         cellId,
         status: terminated ? "terminated" : "failed",
         output: truncateOutput(
           error instanceof Error ? error.message : String(error),
         ),
+        metrics: {
+          ...observation.metrics,
+          durationMs: Date.now() - startedAt,
+        },
+        ...(observation.guidance.length > 0
+          ? { guidance: observation.guidance }
+          : {}),
       };
     } finally {
       vm.dispose();
