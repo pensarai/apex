@@ -344,9 +344,10 @@ export class PersistentShell {
           : Number.isNaN(naturalExitCode)
             ? 1
             : naturalExitCode;
+      const diskStderr = readTempfileCapped(cmd.errPath);
       const effectiveStderr = cmd.forcedStderrSuffix
-        ? (cmd.stderr || "") + cmd.forcedStderrSuffix
-        : cmd.stderr || "";
+        ? (diskStderr || cmd.stderr || "") + cmd.forcedStderrSuffix
+        : diskStderr || cmd.stderr || "";
 
       // Cleanup is owned by Node now that the wrapper no longer rm's.
       unlinkSafe(cmd.outPath);

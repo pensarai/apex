@@ -396,6 +396,25 @@ describe("PersistentShell — long-running stability", () => {
     expect(b.stdout).toContain("apex-call-b-stdout");
   }, 15_000);
 
+  it("captures stderr when its pipe delivery trails stdout completion", async () => {
+    const shell = make();
+    await shell.execute("echo warm", 5);
+    const stderr = (
+      shell as unknown as {
+        proc: { stderr: { pause: () => void; resume: () => void } };
+      }
+    ).proc.stderr;
+
+    stderr.pause();
+    try {
+      const result = await shell.execute(">&2 echo delayed-stderr", 5);
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toContain("delayed-stderr");
+    } finally {
+      stderr.resume();
+    }
+  });
+
   it("isolates parallel-call timeouts (no marker or kill-message leakage)", async () => {
     const shell = make();
     const [timedOut, ok] = await Promise.all([
