@@ -435,8 +435,6 @@ function ApprovalInputArea({
         onApprove();
       } else if (focusedElement === 1) {
         onAutoApprove();
-      } else if (focusedElement === 2 && redirectInputRef.current.trim()) {
-        onRedirectRef.current(redirectInputRef.current);
       }
       return;
     }
