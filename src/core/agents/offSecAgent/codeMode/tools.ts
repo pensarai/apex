@@ -1,0 +1,147 @@
+import { openai } from "@ai-sdk/openai";
+import { type ModelMessage, type Tool, type ToolSet, tool } from "ai";
+import { z } from "zod";
+import type { AgentToolProtocol } from "../../../ai";
+import type { CodeCellResult, CodeModeRuntime } from "./runtime";
+
+export const CODE_MODE_NESTED_TOOL_NAMES = [
+  "execute_command",
+  "document_vulnerability",
+  "checkpoint_state",
+  "response",
+  "browser_navigate",
+  "browser_snapshot",
+  "browser_screenshot",
+  "browser_click",
+  "browser_fill",
+  "browser_evaluate",
+  "browser_console",
+  "browser_get_cookies",
+] as const;
+
+const CODE_MODE_CONTRACT_TOOL_NAMES = [
+  "response",
+  "document_vulnerability",
+  "checkpoint_state",
+] as const;
+
+const EXEC_DESCRIPTION = `Execute JavaScript in Apex's isolated orchestration runtime. The runtime has no direct filesystem or network access. Compose allowed nested capabilities through the global tools object, branch and loop in JavaScript, and use Promise.all for independent work. Use text(value) to include intermediate values in the result. Long-running cells return a cellId for wait.`;
+
+type ExecutionOptions = {
+  toolCallId: string;
+  messages: ModelMessage[];
+  abortSignal?: AbortSignal;
+};
+
+function serializeCellResult(result: CodeCellResult): string {
+  return JSON.stringify(result);
+}
+
+function executeCode(
+  runtime: CodeModeRuntime,
+  code: string,
+  options: ExecutionOptions,
+  yieldTimeMs?: number,
+): Promise<string> {
+  return runtime
+    .execute(
+      code,
+      {
+        parentToolCallId: options.toolCallId,
+        messages: options.messages,
+        abortSignal: options.abortSignal,
+      },
+      yieldTimeMs,
+    )
+    .then(serializeCellResult);
+}
+
+/** Build the deliberately small model-facing tool surface for code mode. */
+export function createCodeModeTools(
+  protocol: Exclude<AgentToolProtocol, "direct">,
+  runtime: CodeModeRuntime,
+  canonicalTools: ToolSet,
+): ToolSet {
+  const schemaExec = tool({
+    description: EXEC_DESCRIPTION,
+    inputSchema: z.object({
+      code: z.string().min(1).describe("JavaScript source to execute"),
+      yield_time_ms: z
+        .number()
+        .int()
+        .min(0)
+        .max(60_000)
+        .optional()
+        .describe("How long to wait before yielding a resumable cellId"),
+    }),
+    execute: ({ code, yield_time_ms }, options) =>
+      executeCode(runtime, code, options, yield_time_ms),
+  });
+
+  const nativeExec = {
+    ...openai.tools.customTool({
+      name: "exec",
+      description: EXEC_DESCRIPTION,
+      format: { type: "text" },
+    }),
+    execute: (code: string, options: ExecutionOptions) =>
+      executeCode(runtime, code, options),
+  } as Tool<string, string>;
+
+  const wait = tool({
+    description:
+      "Resume a running exec cell, or terminate it. Call only with a cellId returned by exec or wait.",
+    inputSchema: z.object({
+      cell_id: z.string().min(1),
+      yield_time_ms: z.number().int().min(0).max(60_000).optional(),
+      terminate: z.boolean().optional(),
+    }),
+    execute: ({ cell_id, yield_time_ms, terminate }) =>
+      runtime
+        .wait(cell_id, { yieldTimeMs: yield_time_ms, terminate })
+        .then(serializeCellResult),
+  });
+
+  const presented: ToolSet = {
+    exec: protocol === "native-code" ? nativeExec : schemaExec,
+    wait,
+  };
+
+  // Console contract tools remain first-class for every provider. This keeps
+  // their exact schemas visible to the model and preserves stop conditions,
+  // audit events, and UI rendering while still collapsing the broad action
+  // surface behind exec.
+  for (const name of CODE_MODE_CONTRACT_TOOL_NAMES) {
+    if (canonicalTools[name]) presented[name] = canonicalTools[name];
+  }
+
+  return presented;
+}
+
+export function buildCodeModeInstructions(
+  _protocol: Exclude<AgentToolProtocol, "direct">,
+): string {
+  return `
+
+## Code execution interface
+
+You have a compact code-oriented interface. Prefer writing JavaScript in exec to compose work over issuing repetitive one-off calls. The exec runtime is isolated: it has no direct filesystem, process, or network APIs. All effects go through governed nested capabilities.
+
+Available globals inside exec:
+- tools.shell({ toolCallDescription, command, timeout?, allow_unprotected? })
+- tools.call(name, input) for any allowed capability listed in ALL_TOOLS
+- tools.browser.navigate({ url, toolCallDescription })
+- tools.browser.snapshot({ toolCallDescription })
+- tools.browser.screenshot({ filename, toolCallDescription })
+- tools.browser.click({ element, ref?, toolCallDescription })
+- tools.browser.fill({ element, ref?, value, toolCallDescription })
+- tools.browser.evaluate({ script, toolCallDescription })
+- tools.browser.console({ toolCallDescription })
+- tools.browser.getCookies({ urls?, toolCallDescription })
+- tools.findings.document(input), tools.checkpoint.record(input), tools.response.submit(result)
+- text(value) to return intermediate output; store(key, value) and load(key) across cells
+
+Independent calls may run concurrently with Promise.all. Keep concurrency bounded. Use wait when exec returns status "running". A submitted response is terminal.
+
+Use the top-level response, document_vulnerability, and checkpoint_state tools for their normal Console contract and exact schemas. Do not simulate those calls in prose. The nested aliases remain available when composition inside exec is necessary.`;
+}
