@@ -14,6 +14,7 @@ import {
 } from "../../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
 import type {
+  AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
   CacheMetrics,
@@ -101,6 +102,16 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * @default "default"
    */
   mode?: AgentMode;
+
+  /**
+   * Model-facing tool protocol. `auto` selects native code mode for GPT-5.6
+   * Sol, schema code mode for Opus 4.8 on Bedrock and GLM-5.2 on OpenRouter,
+   * and direct tools for other models in fast-strike mode. Other modes default
+   * to direct tools unless this option is set explicitly.
+   *
+   * @default "auto"
+   */
+  toolProtocol?: AgentToolProtocolPreference;
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;

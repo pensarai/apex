@@ -11,7 +11,7 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import { streamResponse } from "../../ai";
+import { resolveModelRuntimeProfile, streamResponse } from "../../ai";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
 import {
   resolveEffectiveHeaders,
@@ -25,6 +25,13 @@ import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
+import {
+  buildCodeModeInstructions,
+  CanonicalCapabilityInvoker,
+  CODE_MODE_NESTED_TOOL_NAMES,
+  CodeModeRuntime,
+  createCodeModeTools,
+} from "./codeMode";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
@@ -273,6 +280,9 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
+
+  /** Isolated JavaScript orchestration runtime used by compact code-mode profiles. */
+  private codeModeRuntime?: CodeModeRuntime;
 
   /**
    * This agent's Playwright MCP browser session. Either constructed fresh
@@ -582,6 +592,37 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
+    // -- Model-facing tool protocol -------------------------------------------
+    // Canonical tools and their event identities remain stable. Only the
+    // presentation to the model changes: direct schemas, schema-based exec, or
+    // OpenAI's native freeform custom tool.
+    const runtimeProfile = resolveModelRuntimeProfile(
+      input.model,
+      input.toolProtocol ?? (input.mode === "fast-strike" ? "auto" : "direct"),
+    );
+    let codeModeInstructions = "";
+    if (runtimeProfile.protocol !== "direct") {
+      const canonicalTools = tools;
+      const allowedTools = CODE_MODE_NESTED_TOOL_NAMES.filter(
+        (name) => canonicalTools[name] !== undefined,
+      );
+      const invoker = new CanonicalCapabilityInvoker({
+        tools: canonicalTools,
+        allowedTools,
+        eventBus: this.eventBus,
+        sessionId: this.busSessionId,
+        subagentId: this.subagentId,
+        getMessageId: () => this.currentMessageId ?? undefined,
+      });
+      this.codeModeRuntime = new CodeModeRuntime(invoker);
+      tools = createCodeModeTools(
+        runtimeProfile.protocol,
+        this.codeModeRuntime,
+        canonicalTools,
+      );
+      codeModeInstructions = buildCodeModeInstructions(runtimeProfile.protocol);
+    }
+
     // -- Filter email tools when no inboxes / SMTP are configured -----------
     const hasEmail =
       (input.session.config?.emailIntegration?.inboxes?.length ?? 0) > 0;
@@ -670,13 +711,14 @@ export class OffensiveSecurityAgent<TResult = void> {
           sandboxMode: agentCwd === input.session.rootPath,
         }),
       );
+    const effectiveBaseSystemPrompt = baseSystemPrompt + codeModeInstructions;
     const systemPrompt =
-      baseSystemPrompt +
+      effectiveBaseSystemPrompt +
       buildSessionWorkspaceSection(input.session, agentCwd, activeTools);
 
     traceWriter.writeInit({
       model: input.model,
-      systemPrompt: baseSystemPrompt,
+      systemPrompt: effectiveBaseSystemPrompt,
       activeTools,
       sessionId: input.session.id,
       target: input.target,
@@ -1127,6 +1169,11 @@ export class OffensiveSecurityAgent<TResult = void> {
 
         try {
           // Dispose first — don't block on persistence I/O.
+          try {
+            await this.codeModeRuntime?.dispose();
+          } catch (error) {
+            recordFinalizationError(error);
+          }
           try {
             this.persistentShell?.dispose();
           } catch (error) {
