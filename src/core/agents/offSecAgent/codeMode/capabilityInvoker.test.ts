@@ -77,4 +77,64 @@ describe("CanonicalCapabilityInvoker", () => {
       invoker.invoke("other", {}, { parentToolCallId: "exec_1", messages: [] }),
     ).rejects.toThrow("Capability is not available");
   });
+
+  it("records nested concurrency and repeated calls per cell", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const { invoker } = createInvoker(
+      vi.fn(async ({ value }: { value: string }) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active -= 1;
+        return value;
+      }),
+    );
+
+    await Promise.all([
+      invoker.invoke(
+        "example",
+        { value: "a" },
+        { parentToolCallId: "exec_parallel", messages: [] },
+      ),
+      invoker.invoke(
+        "example",
+        { value: "b" },
+        { parentToolCallId: "exec_parallel", messages: [] },
+      ),
+      invoker.invoke(
+        "example",
+        { value: "a" },
+        { parentToolCallId: "exec_parallel", messages: [] },
+      ),
+    ]);
+
+    const observation = invoker.completeCell("exec_parallel");
+    expect(maxActive).toBe(3);
+    expect(observation.metrics).toEqual({
+      nestedCalls: 3,
+      uniqueCalls: 2,
+      repeatedCalls: 1,
+      maxConcurrency: 3,
+    });
+    expect(observation.guidance).toEqual([]);
+  });
+
+  it("warns after repeated one-call cells return no new result", async () => {
+    const { invoker } = createInvoker();
+    let guidance: string[] = [];
+
+    for (let index = 0; index < 4; index += 1) {
+      const parentToolCallId = `exec_${index}`;
+      await invoker.invoke(
+        "example",
+        { value: "same" },
+        { parentToolCallId, messages: [] },
+      );
+      guidance = invoker.completeCell(parentToolCallId).guidance;
+    }
+
+    expect(guidance.join(" ")).toContain("one-call exec cells");
+    expect(guidance.join(" ")).toContain("same result");
+  });
 });
