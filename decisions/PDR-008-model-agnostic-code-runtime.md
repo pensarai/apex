@@ -21,6 +21,8 @@ Code profiles expose `exec`, `wait`, `response`, `document_vulnerability`, and `
 
 The JavaScript runtime uses QuickJS with a memory ceiling, deadline interrupt, abort propagation, bounded output, and no direct filesystem, process, or network globals. It exposes only explicit host bridges. Independent nested calls can be composed with `Promise.all`; sandbox Camoufox actions are serialized per sandbox because they share one persistent Firefox profile.
 
+Code mode also exposes bounded concurrency helpers and reports per-cell execution metrics. The capability bridge conservatively detects repeated one-call cells, sequential batches, and identical calls that repeatedly return the same result. It returns advisory process guidance with the completed cell rather than blocking execution. This improves long-horizon discipline without changing capability authority or preventing intentional race and fuzzing programs.
+
 Non-fast-strike modes remain on direct tools by default. This limits the initial behavioral change to the benchmarked workflow while allowing explicit experiments elsewhere.
 
 ## Rationale
@@ -45,6 +47,7 @@ Non-fast-strike modes remain on direct tools by default. This limits the initial
 - ✅ A compact interface for long-horizon offensive work across OpenAI, Bedrock, and OpenRouter
 - ✅ Canonical approval, event, finding, checkpoint, and response behavior is preserved
 - ✅ Parallel shell/request orchestration without concurrent Camoufox profile corruption
+- ✅ Observable code-mode efficiency and advisory stagnation feedback without benchmark-specific knowledge
 - ✅ Direct host filesystem and network access are absent from guest JavaScript
 - ⚠️ QuickJS is a new runtime dependency and requires lifecycle and memory-leak tests
 - ⚠️ Provider profiles require benchmark calibration as model behavior changes

@@ -47,6 +47,44 @@ describe("CodeModeRuntime", () => {
     await runtime.dispose();
   });
 
+  test("mapLimit bounds nested capability concurrency", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const runtime = createRuntime({
+      inspect: tool({
+        inputSchema: z.object({ value: z.number() }),
+        execute: async ({ value }) => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          active -= 1;
+          return value * 2;
+        },
+      }),
+    });
+
+    const result = await runtime.execute(
+      `
+        const values = await mapLimit([1, 2, 3, 4, 5, 6], 2, value =>
+          tools.call("inspect", { value })
+        );
+        text(values);
+      `,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toBe("[2,4,6,8,10,12]");
+    expect(maxActive).toBe(2);
+    expect(result.metrics).toMatchObject({
+      nestedCalls: 6,
+      uniqueCalls: 6,
+      maxConcurrency: 2,
+    });
+    await runtime.dispose();
+  });
+
   test("persists explicitly stored values without exposing host globals", async () => {
     const runtime = createRuntime({});
     const first = await runtime.execute(

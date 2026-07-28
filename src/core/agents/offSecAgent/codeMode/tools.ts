@@ -25,7 +25,7 @@ const CODE_MODE_CONTRACT_TOOL_NAMES = [
   "checkpoint_state",
 ] as const;
 
-const EXEC_DESCRIPTION = `Execute JavaScript in Apex's isolated orchestration runtime. The runtime has no direct filesystem or network access. Compose allowed nested capabilities through the global tools object, branch and loop in JavaScript, and use Promise.all for independent work. Use text(value) to include intermediate values in the result. Long-running cells return a cellId for wait.`;
+const EXEC_DESCRIPTION = `Execute JavaScript in Apex's isolated orchestration runtime. Treat each exec as a bounded stage: group independent calls whose inputs are already known with mapLimit, mapLimitSettled, Promise.all, or Promise.allSettled; keep calls sequential only when one result determines the next. The runtime has no direct filesystem or network access, so effects go through the global tools object. Prefer writing and reusing scripts in the persistent session workspace over issuing repetitive one-off shell calls. Use text(value) to return selected evidence, and store/load for compact state across cells. Long-running cells return a cellId for wait.`;
 
 type ExecutionOptions = {
   toolCallId: string;
@@ -140,8 +140,58 @@ Available globals inside exec:
 - tools.browser.getCookies({ urls?, toolCallDescription })
 - tools.findings.document(input), tools.checkpoint.record(input), tools.response.submit(result)
 - text(value) to return intermediate output; store(key, value) and load(key) across cells
+- mapLimit(items, concurrency, worker) for bounded fail-fast concurrency
+- mapLimitSettled(items, concurrency, worker) for bounded concurrency when partial results are useful
 
-Independent calls may run concurrently with Promise.all. Keep concurrency bounded. Use wait when exec returns status "running". A submitted response is terminal.
+Nested capability declarations:
+
+\`\`\`ts
+type ShellInput = {
+  toolCallDescription: string;
+  command: string;
+  timeout?: number;
+  allow_unprotected?: boolean;
+};
+declare const tools: {
+  shell(input: ShellInput): Promise<unknown>;
+  call(name: string, input: unknown): Promise<unknown>;
+  browser: {
+    navigate(input: { url: string; toolCallDescription: string }): Promise<unknown>;
+    snapshot(input: { toolCallDescription: string }): Promise<unknown>;
+    screenshot(input: { filename: string; toolCallDescription: string }): Promise<unknown>;
+    click(input: { element: string; ref?: string; toolCallDescription: string }): Promise<unknown>;
+    fill(input: { element: string; ref?: string; value: string; toolCallDescription: string }): Promise<unknown>;
+    evaluate(input: { script: string; toolCallDescription: string }): Promise<unknown>;
+    console(input: { toolCallDescription: string }): Promise<unknown>;
+    getCookies(input: { urls?: string[]; toolCallDescription: string }): Promise<unknown>;
+  };
+};
+declare function mapLimit<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]>;
+declare function mapLimitSettled<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>): Promise<PromiseSettledResult<R>[]>;
+\`\`\`
+
+Program-first execution policy:
+1. Batch known independent probes into one bounded exec stage. Do not split them across outer tool calls.
+2. Keep adaptive dependencies, waits, browser mutations, and conflicting writes sequential.
+3. After a few one-off shell calls, consolidate the exploit into a Python, JavaScript, or shell program in the persistent session workspace and rerun that program as it evolves.
+4. Persist tokens, identifiers, attempted hypotheses, and useful artifacts once. Do not paste or reconstruct the same state in later cells.
+5. Parallelism is for executing a chosen experiment faster, not for expanding reconnaissance scope.
+
+Example bounded stage:
+
+\`\`\`js
+const endpoints = ["/api/me", "/api/admin", "/api/health"];
+const results = await mapLimitSettled(endpoints, 4, endpoint =>
+  tools.shell({
+    toolCallDescription: \`Probe \${endpoint}\`,
+    command: \`curl -sS -i \"\${load("target")}\${endpoint}\"\`,
+    timeout: 20,
+  }),
+);
+text(results);
+\`\`\`
+
+Use wait when exec returns status "running". Inspect the metrics and any guidance returned with each completed cell. Guidance is process feedback from the harness, not target evidence. A submitted response is terminal.
 
 Use the top-level response, document_vulnerability, and checkpoint_state tools for their normal Console contract and exact schemas. Do not simulate those calls in prose. The nested aliases remain available when composition inside exec is necessary.`;
 }
