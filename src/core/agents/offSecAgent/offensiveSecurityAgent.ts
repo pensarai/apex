@@ -45,6 +45,11 @@ import {
   RESPONSE_TOOL_NAME,
   SEND_EMAIL_TOOL_NAME,
 } from "./tools";
+import {
+  buildSandboxSecurityPrompt,
+  createSandboxSessionSecurity,
+  type SandboxSessionSecurity,
+} from "./tools/sandboxSecurity";
 import { StepTraceWriter } from "./trace";
 import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
 
@@ -159,6 +164,9 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Isolated JavaScript orchestration runtime used by compact code-mode profiles. */
   private codeModeRuntime?: CodeModeRuntime;
 
+  /** Ref-counted externally-enforced egress and callback lease. */
+  private readonly sandboxSecurity?: SandboxSessionSecurity;
+
   /**
    * This agent's Playwright MCP browser session. Either constructed fresh
    * by this agent (when no `browserSession` was passed in) or supplied by
@@ -255,13 +263,20 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
 
+    this.sandboxSecurity = createSandboxSessionSecurity(
+      input.sandbox,
+      input.session,
+      input.target,
+    );
+    const sandbox = this.sandboxSecurity?.sandbox ?? input.sandbox;
+
     // -- Resolve agent working directory ----------------------------------------
     const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
 
     // -- Persistent shell (local mode only) -----------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
     // stream ends, or when the agent is fully killed.
-    if (!input.sandbox) {
+    if (!sandbox) {
       this.persistentShell = new PersistentShell({
         cwd: agentCwd,
         env: input.environmentVariables,
@@ -280,7 +295,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     // for agents that never use browser tools. Sandbox-mode agents already
     // share browser state via the sandbox's per-sandbox Playwright user-data
     // dir, so they don't need a session object on the host.
-    if (!input.sandbox) {
+    if (!sandbox) {
       // Snapshot resolved headers into the browser session. Later mutations
       // require a browser restart to take effect.
       const sessionHeaders = input.target
@@ -355,7 +370,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       model: input.model,
       authConfig: input.authConfig,
       eventBus: this.eventBus,
-      sandbox: input.sandbox,
+      sandbox,
       findingsRegistry: input.findingsRegistry,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
@@ -574,7 +589,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           sandboxMode: agentCwd === input.session.rootPath,
         }),
       );
-    const effectiveBaseSystemPrompt = baseSystemPrompt + codeModeInstructions;
+    const effectiveBaseSystemPrompt =
+      baseSystemPrompt +
+      codeModeInstructions +
+      buildSandboxSecurityPrompt(input.session);
     const systemPrompt =
       effectiveBaseSystemPrompt +
       buildSessionWorkspaceSection(input.session, agentCwd);
@@ -1027,6 +1045,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         // be held indefinitely by an unresponsive nested capability.
         this.persistentShell?.dispose();
         await this.codeModeRuntime?.dispose();
+        await this.sandboxSecurity?.dispose();
         // Flush tool-errors that never reached a finish-step into the snapshot.
         for (const [toolCallId, info] of toolErrors) {
           const result = {

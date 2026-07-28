@@ -68,6 +68,22 @@ const ScopeConstraintsObject = z.object({
 
 type ScopeConstraints = z.infer<typeof ScopeConstraintsObject>;
 
+const NetworkSecurityConfigObject = z.object({
+  /** `strict` requires externally-attested default-deny process egress. */
+  egress: z.enum(["unrestricted", "strict"]).optional(),
+  /** Permit DNS through a controller-owned resolver. Defaults to true. */
+  allowDns: z.boolean().optional(),
+  /** Allocate an opaque session callback route and reserved listener port. */
+  oast: z
+    .object({
+      enabled: z.boolean().default(true),
+      callbackPort: z.number().int().min(1024).max(65535).default(4000),
+    })
+    .optional(),
+});
+
+export type NetworkSecurityConfig = z.infer<typeof NetworkSecurityConfigObject>;
+
 // The header map IS the state — empty record means "send no custom headers".
 const SessionHeadersRecord = z.record(z.string(), z.string());
 
@@ -214,6 +230,8 @@ const SessionConfigObject = z.object({
   mode: z.enum(["auto", "driver", "operator"]).optional(),
   outcomeGuidance: z.string().optional(),
   scopeConstraints: ScopeConstraintsObject.optional(),
+  /** Sandbox control-plane policy. Strict mode fails closed without attestation. */
+  networkSecurity: NetworkSecurityConfigObject.optional(),
   authCredentials: z
     .union([AuthCredentialsObject, z.array(AuthCredentialsObject)])
     .optional(),
