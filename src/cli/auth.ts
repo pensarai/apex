@@ -16,14 +16,15 @@
 
 import * as readline from "node:readline";
 import { getPensarApiUrl, getPensarConsoleUrl } from "../core/api";
-import type { WorkspaceInfo } from "../core/auth";
 import {
+  createWorkspaceSelection,
   disconnect,
   fetchWorkspaces,
   isConnected,
   pollForWorkspaceCreation,
   pollLegacyToken,
   pollWorkOSToken,
+  pollWorkspaceSelection,
   selectWorkspace,
   startDeviceFlow,
 } from "../core/auth";
@@ -65,30 +66,26 @@ function prompt(question: string): Promise<string> {
   });
 }
 
-async function promptWorkspaceSelection(
-  workspaces: WorkspaceInfo[],
-): Promise<WorkspaceInfo> {
-  console.log("\nSelect a workspace:\n");
-  workspaces.forEach((ws, i) => {
-    console.log(
-      `  ${i + 1}. ${ws.name} (${ws.slug}) — $${ws.balance.toFixed(2)}`,
-    );
-  });
+/**
+ * Resolve a workspace when the user has more than one, by handing selection off
+ * to the browser. The CLI opens a Console page, the user picks there, and we
+ * poll until the choice comes back — so login never blocks on a terminal prompt.
+ *
+ * Returns the chosen workspace id.
+ */
+async function selectWorkspaceInBrowser(
+  apiUrl: string,
+  accessToken: string,
+): Promise<string> {
+  const selection = await createWorkspaceSelection(apiUrl, accessToken);
 
-  const answer = await prompt(`\nEnter number (1-${workspaces.length}): `);
-  const index = parseInt(answer, 10) - 1;
+  openUrl(selection.selectionUrl);
 
-  if (Number.isNaN(index) || index < 0 || index >= workspaces.length) {
-    console.error("Invalid selection.");
-    process.exit(1);
-  }
+  console.log(
+    `\nYou have multiple workspaces. Choose one in your browser to continue.\nIf the browser didn't open, visit:\n  ${selection.selectionUrl}\n\nWaiting for workspace selection...`,
+  );
 
-  const workspace = workspaces[index];
-  if (!workspace) {
-    console.error("Invalid selection.");
-    process.exit(1);
-  }
-  return workspace;
+  return pollWorkspaceSelection(apiUrl, accessToken, selection.selectionId);
 }
 
 // ---------------------------------------------------------------------------
@@ -204,18 +201,19 @@ async function handleWorkspaces(
     workspaces = await pollForWorkspaceCreation(apiUrl, accessToken);
   }
 
-  let workspace: WorkspaceInfo;
+  let workspaceId: string;
   if (workspaces.length === 1) {
     const onlyWorkspace = workspaces[0];
     if (!onlyWorkspace) {
       throw new Error("No workspace available after workspace lookup");
     }
-    workspace = onlyWorkspace;
+    workspaceId = onlyWorkspace.id;
   } else {
-    workspace = await promptWorkspaceSelection(workspaces);
+    workspaceId = await selectWorkspaceInBrowser(apiUrl, accessToken);
   }
 
-  const result = await selectWorkspace(apiUrl, accessToken, workspace.id);
+  const result = await selectWorkspace(apiUrl, accessToken, workspaceId);
+  const workspace = result.workspace;
 
   await config.update({
     workspaceId: workspace.id,

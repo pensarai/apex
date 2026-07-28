@@ -17,6 +17,33 @@ const AGENTS_MD_FILENAMES = [
 const MAX_AGENTS_MD_SIZE = 50_000;
 
 /**
+ * Tools available to the autonomous patching agent.
+ * Mirrors a Cursor / Claude Code coding loop: explore, research, todo,
+ * multi-file edit, git self-check, verify, structured finalize.
+ */
+export const PATCHING_ACTIVE_TOOLS = [
+  "read_file",
+  "list_files",
+  "glob",
+  "grep",
+  "profile_codebase",
+  "run_code_query",
+  "web_search",
+  "get_page",
+  "create_task",
+  "update_task",
+  "list_tasks",
+  "create_file",
+  "update_file",
+  "delete_file",
+  "apply_patch",
+  "git_status",
+  "git_diff",
+  "execute_command",
+  "response",
+] as const;
+
+/**
  * Try to read an AGENTS.md (or similar) file from the repository root.
  * Returns the file content or undefined if none is found.
  */
@@ -100,15 +127,7 @@ export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
       thinkingEffort,
       openAIReasoningEffort,
 
-      activeTools: [
-        "read_file",
-        "list_files",
-        "grep",
-        "create_file",
-        "update_file",
-        "execute_command",
-        "response",
-      ],
+      activeTools: [...PATCHING_ACTIVE_TOOLS],
 
       responseSchema: PatchResultSchema,
     });

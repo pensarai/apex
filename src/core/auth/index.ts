@@ -9,6 +9,7 @@ export { validateGateway } from "./gateway";
 export { signGatewayRequest } from "./signing";
 export { ensureValidToken, isTokenExpired } from "./token";
 export type {
+  CreateWorkspaceSelectionResponse,
   DeviceFlowInfo,
   FetchWorkspacesResponse,
   LegacyDeviceCodeResponse,
@@ -17,9 +18,12 @@ export type {
   ValidToken,
   WorkOSDeviceResponse,
   WorkspaceInfo,
+  WorkspaceSelectionStatusResponse,
 } from "./types";
 export {
+  createWorkspaceSelection,
   fetchWorkspaces,
   pollForWorkspaceCreation,
+  pollWorkspaceSelection,
   selectWorkspace,
 } from "./workspaces";

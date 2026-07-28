@@ -57,6 +57,20 @@ export interface FetchWorkspacesResponse {
   consoleUrl?: string;
 }
 
+// Browser-based workspace selection rendezvous (WorkOS flow). The CLI creates a
+// pending selection, opens `selectionUrl` in the browser, and polls until the
+// user picks a workspace there — so login never prompts in the terminal.
+export interface CreateWorkspaceSelectionResponse {
+  selectionId: string;
+  selectionUrl: string;
+  expiresIn: number;
+}
+
+export interface WorkspaceSelectionStatusResponse {
+  status: "pending" | "complete" | "expired";
+  workspaceId?: string;
+}
+
 export interface SelectWorkspaceResponse {
   confirmed: boolean;
   workspace: { id: string; name: string; slug: string };

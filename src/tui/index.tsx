@@ -10,6 +10,7 @@ import type { SessionConfig } from "../core/session";
 import { setupAutoCopy } from "./auto-copy";
 import { createClipboardManager } from "./clipboard";
 import { ChatApp } from "./components/chat";
+import AdvancedSettings from "./components/commands/advanced-settings";
 import AuthFlow from "./components/commands/auth-flow";
 import CreditsFlow from "./components/commands/credits-flow";
 import HelpDialog from "./components/commands/help-dialog";
@@ -92,6 +93,7 @@ function App({ appConfig }: AppProps) {
   const [showSessionsDialog, setShowSessionsDialog] = useState(false);
   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
   const [showThemeDialog, setShowThemeDialog] = useState(false);
+  const [showAdvancedDialog, setShowAdvancedDialog] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [showModelDialog, setShowModelDialog] = useState(false);
   const [showProvidersDialog, setShowProvidersDialog] = useState(false);
@@ -120,6 +122,7 @@ function App({ appConfig }: AppProps) {
                   <CommandProvider
                     onOpenSessionsDialog={() => setShowSessionsDialog(true)}
                     onOpenThemeDialog={() => setShowThemeDialog(true)}
+                    onOpenAdvancedDialog={() => setShowAdvancedDialog(true)}
                     onOpenModelDialog={() => setShowModelDialog(true)}
                     onOpenProvidersDialog={() => setShowProvidersDialog(true)}
                     onOpenCreditsDialog={() => setShowCreditsDialog(true)}
@@ -154,6 +157,8 @@ function App({ appConfig }: AppProps) {
                         setShowShortcutsDialog={setShowShortcutsDialog}
                         showThemeDialog={showThemeDialog}
                         setShowThemeDialog={setShowThemeDialog}
+                        showAdvancedDialog={showAdvancedDialog}
+                        setShowAdvancedDialog={setShowAdvancedDialog}
                         showModelDialog={showModelDialog}
                         setShowModelDialog={setShowModelDialog}
                         showProvidersDialog={showProvidersDialog}
@@ -199,6 +204,8 @@ function AppContent({
   setShowShortcutsDialog,
   showThemeDialog,
   setShowThemeDialog,
+  showAdvancedDialog,
+  setShowAdvancedDialog,
   showModelDialog,
   setShowModelDialog,
   showProvidersDialog,
@@ -231,6 +238,8 @@ function AppContent({
   setShowShortcutsDialog: (show: boolean) => void;
   showThemeDialog: boolean;
   setShowThemeDialog: (show: boolean) => void;
+  showAdvancedDialog: boolean;
+  setShowAdvancedDialog: (show: boolean) => void;
   showModelDialog: boolean;
   setShowModelDialog: (show: boolean) => void;
   showProvidersDialog: boolean;
@@ -323,6 +332,7 @@ function AppContent({
   // Track external dialog state so operator input unfocuses while a dialog overlay is open
   const anyExternalDialog =
     showThemeDialog ||
+    showAdvancedDialog ||
     showModelDialog ||
     showProvidersDialog ||
     showCreditsDialog ||
@@ -365,6 +375,12 @@ function AppContent({
 
   const handleCloseThemeDialog = () => {
     setShowThemeDialog(false);
+    setInputKey((prev) => prev + 1);
+    refocusPrompt();
+  };
+
+  const handleCloseAdvancedDialog = () => {
+    setShowAdvancedDialog(false);
     setInputKey((prev) => prev + 1);
     refocusPrompt();
   };
@@ -459,6 +475,7 @@ function AppContent({
       initialConfig: {
         requireApproval: false,
         target,
+        strikeMode: false,
         sandbox: isBlackbox,
         headers: sessionConfig.headers,
       },
@@ -500,6 +517,10 @@ function AppContent({
       )}
 
       {showThemeDialog && <ThemePicker onClose={handleCloseThemeDialog} />}
+
+      {showAdvancedDialog && (
+        <AdvancedSettings onClose={handleCloseAdvancedDialog} />
+      )}
 
       {showModelDialog && (
         <ModelPickerDialog onClose={handleCloseModelDialog} />

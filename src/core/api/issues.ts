@@ -68,6 +68,26 @@ export interface RetestIssueResult {
   message: string;
 }
 
+export interface PullRequestSummary {
+  id: number;
+  url: string;
+  status: string;
+  createMethod: string;
+  createdAt: string;
+}
+
+export interface LinkPullRequestResult {
+  success: boolean;
+  created: boolean;
+  pullRequest: PullRequestSummary;
+  issue: {
+    id: string;
+    issueLabel: string | null;
+    name: string | null;
+    pullRequest: string;
+  };
+}
+
 export interface FixSummary {
   id: string;
   filePath: string;
@@ -215,6 +235,31 @@ export async function updateIssue(
 
 export async function retestIssue(issueId: string): Promise<RetestIssueResult> {
   return apiRequest<RetestIssueResult>("POST", `/issues/${issueId}/retest`);
+}
+
+/**
+ * Link an externally opened pull request to an issue so Pensar tracks its
+ * status and closes the issue when the PR merges. `issueId` accepts a UUID
+ * or a `VULN-XXXXXX` label. Idempotent per (issue, url).
+ */
+export async function linkPullRequest(
+  issueId: string,
+  url: string,
+): Promise<LinkPullRequestResult> {
+  return apiRequest<LinkPullRequestResult>(
+    "POST",
+    `/issues/${issueId}/pull-requests`,
+    { url },
+  );
+}
+
+export async function listIssuePullRequests(
+  issueId: string,
+): Promise<PullRequestSummary[]> {
+  return apiRequest<PullRequestSummary[]>(
+    "GET",
+    `/issues/${issueId}/pull-requests`,
+  );
 }
 
 export async function listFixes(issueId: string): Promise<FixSummary[]> {

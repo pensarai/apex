@@ -104,6 +104,8 @@ import {
   resolveAbortAction,
   resolveInputFocused,
   resolveKeyboardShortcut,
+  resolveOperatorAgentMode,
+  resolveOperatorStrikeMode,
   resolveSubmit,
   routeCommand,
 } from "./logic";
@@ -148,6 +150,7 @@ export default function OperatorDashboard({
     requireApproval?: boolean;
     target?: string;
     operatorMode?: OperatorMode;
+    strikeMode?: boolean;
     sandbox?: boolean;
     taskDriven?: boolean;
     headers?: Record<string, string>;
@@ -187,18 +190,35 @@ export default function OperatorDashboard({
     clear: clearDialog,
   } = useDialog();
   const { refocusPrompt } = useFocus();
+  const initialStrikeModeRef = useRef(
+    resolveOperatorStrikeMode({
+      resuming: !!sessionId,
+      routeOverride: initialConfig?.strikeMode,
+      persistedDefault: config.data.strikeMode,
+    }),
+  );
+  const [strikeMode, setStrikeMode] = useState(initialStrikeModeRef.current);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `skillsVersion` is an intentional cache-buster — forces recomputation when skills are refreshed even though `skillsRegistry` (stable ref) hasn't changed.
   const autocompleteOptions = useMemo(() => {
-    const commandOptions = filterOperatorAutocomplete(allAutocompleteOptions);
-    const skillOptions = skillsRegistry.list().map((s) => {
-      const slug = `/${s.slug}`;
-      return {
-        value: slug,
-        label: slug,
-        description: s.manifest.description || "Skill",
-      };
-    });
+    const commandOptions = filterOperatorAutocomplete(
+      allAutocompleteOptions,
+    ).filter((option) => !strikeMode || option.value !== "/pentest");
+    const skillOptions = skillsRegistry
+      .list()
+      .filter(
+        (skill) =>
+          !strikeMode ||
+          (skill.slug !== "pentest" && skill.slug !== "threat-model"),
+      )
+      .map((skill) => {
+        const slug = `/${skill.slug}`;
+        return {
+          value: slug,
+          label: slug,
+          description: skill.manifest.description || "Skill",
+        };
+      });
     const operatorOnlyOptions = [
       {
         value: "/open-session",
@@ -207,7 +227,7 @@ export default function OperatorDashboard({
       },
     ];
     return [...commandOptions, ...operatorOnlyOptions, ...skillOptions];
-  }, [allAutocompleteOptions, skillsRegistry, skillsVersion]);
+  }, [allAutocompleteOptions, skillsRegistry, skillsVersion, strikeMode]);
 
   // Session state
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -322,7 +342,10 @@ export default function OperatorDashboard({
   const [operatorMode, setOperatorMode] = useState<OperatorMode>(
     initialConfig?.operatorMode ?? "manual",
   );
-  const agentMode: AgentMode = operatorMode === "plan" ? "plan" : "default";
+  const agentMode: AgentMode = resolveOperatorAgentMode(
+    operatorMode,
+    strikeMode,
+  );
   const requireApproval = operatorMode === "manual";
   // Plan mode review state
   const [approvedPlanContent, setApprovedPlanContent] = useState<string | null>(
@@ -394,6 +417,12 @@ export default function OperatorDashboard({
           const s = await sessions.get(sessionId);
           setSession(s);
           setSessionCwd(s.rootPath);
+          setStrikeMode(
+            resolveOperatorStrikeMode({
+              resuming: true,
+              savedSessionValue: s.config?.operatorSettings?.strikeMode,
+            }),
+          );
 
           const hasState = sessions.hasOperatorState(s);
           if (hasState) {
@@ -476,6 +505,7 @@ export default function OperatorDashboard({
         } else {
           // New session — just set up operator config; the agent creates the
           // session on the first runAgent call.
+          setStrikeMode(initialStrikeModeRef.current);
           const newMode = initialConfig?.operatorMode ?? "manual";
           setOperatorMode(newMode);
           const requireApproval = newMode === "manual";
@@ -1297,6 +1327,7 @@ export default function OperatorDashboard({
               initialMode: operatorMode,
               requireApproval,
               enableSuggestions: true,
+              strikeMode,
             },
             agentCwd: initialConfig?.sandbox ? undefined : process.cwd(),
             codebasePath: initialConfig?.sandbox ? undefined : process.cwd(),
@@ -1442,6 +1473,7 @@ export default function OperatorDashboard({
       initialConfig?.target,
       initialConfig?.headers,
       initialConfig?.promptInjectionLibrarySource,
+      strikeMode,
       route.data,
       setSessionCwd,
       subagentStore.setState,
@@ -1726,6 +1758,15 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           showModelPicker();
           return;
         case "run-skill": {
+          if (
+            strikeMode &&
+            (action.slug === "pentest" || action.slug === "threat-model")
+          ) {
+            addSystemMessage(
+              `/${action.slug} requires standard operator mode. Disable Strike Mode in /advanced, then start a new session.`,
+            );
+            return;
+          }
           if (action.autopilot) {
             setOperatorMode("auto");
             approvalGateRef.current.updateConfig({ requireApproval: false });
@@ -1795,6 +1836,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       showModelPicker,
       addSystemMessage,
       handleHeadersSlash,
+      strikeMode,
     ],
   );
 
@@ -2401,6 +2443,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       >
         <box flexDirection="row" gap={2}>
           <text fg={colors.text}>{session?.name ?? "New Session"}</text>
+          {strikeMode && <text fg={colors.warning}>STRIKE</text>}
           {(session?.targets[0] || initialConfig?.target) && (
             <>
               <text fg={colors.textMuted}>•</text>

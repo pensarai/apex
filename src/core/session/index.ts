@@ -88,6 +88,8 @@ const OperatorSettingsObject = z.object({
   initialMode: z.enum(["plan", "manual", "auto"]).default("manual"),
   requireApproval: z.boolean().default(true),
   enableSuggestions: z.boolean().default(true),
+  /** Run the top-level operator as a focused solo researcher without orchestration tools. */
+  strikeMode: z.boolean().optional(),
 });
 
 export type OperatorSettings = z.infer<typeof OperatorSettingsObject>;
@@ -125,6 +127,14 @@ const EmailInboxConfigObject = z.discriminatedUnion("provider", [
     username: z.string(),
     password: z.string(),
     tls: z.boolean(),
+  }),
+  z.object({
+    provider: z.literal("http"),
+    id: z.string(),
+    name: z.string(),
+    emailAddress: z.string(),
+    endpoint: z.string(),
+    token: z.string(),
   }),
 ]);
 
@@ -920,6 +930,7 @@ export async function updateOperatorSettings(
         initialMode: "manual",
         requireApproval: true,
         enableSuggestions: true,
+        strikeMode: false,
       };
     }
 
@@ -934,6 +945,9 @@ export async function updateOperatorSettings(
     if (settings.enableSuggestions !== undefined) {
       session.config.operatorSettings.enableSuggestions =
         settings.enableSuggestions;
+    }
+    if (settings.strikeMode !== undefined) {
+      session.config.operatorSettings.strikeMode = settings.strikeMode;
     }
   });
 }

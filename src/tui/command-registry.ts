@@ -26,6 +26,7 @@ export interface AppCommandContext {
   navigate: (route: Route) => void;
   openSessionsDialog?: () => void;
   openThemeDialog?: () => void;
+  openAdvancedDialog?: () => void;
   openModelDialog?: () => void;
   openProvidersDialog?: () => void;
   openCreditsDialog?: () => void;
@@ -181,6 +182,7 @@ export const commands: CommandConfig[] = [
           initialConfig: {
             requireApproval: false,
             target: flags.target,
+            strikeMode: false,
             sandbox: true,
             headers: resolveHeadersFromFlags(flags),
           },
@@ -319,6 +321,7 @@ export const commands: CommandConfig[] = [
         nonce: Date.now(),
         initialConfig: {
           requireApproval: true,
+          strikeMode: false,
         },
         initialSkill: {
           slug: "threat-model",
@@ -463,6 +466,15 @@ export const commands: CommandConfig[] = [
           : "Obfuscation mode disabled.",
         next ? "warn" : "default",
       );
+    },
+  },
+  {
+    name: "advanced",
+    aliases: ["advanced-settings"],
+    description: "Manage advanced operator settings",
+    category: "Configuration",
+    handler: async (_args, ctx) => {
+      ctx.openAdvancedDialog?.();
     },
   },
   {

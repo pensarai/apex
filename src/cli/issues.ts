@@ -10,9 +10,18 @@
  *   pensar issues get <issueId>                   Get issue details
  *   pensar issues update <issueId> [opts]         Update an issue
  *   pensar issues retest <issueId>                Retest an issue
+ *   pensar issues link-pr <issueId> --url <url>   Link a pull request to an issue
+ *   pensar issues prs <issueId>                   List pull requests linked to an issue
  */
 
-import { getIssue, listIssues, retestIssue, updateIssue } from "../core/api";
+import {
+  getIssue,
+  linkPullRequest,
+  listIssuePullRequests,
+  listIssues,
+  retestIssue,
+  updateIssue,
+} from "../core/api";
 
 function getFlag(flag: string, argv: string[]): string | undefined {
   const idx = argv.indexOf(flag);
@@ -29,6 +38,10 @@ Usage:
   pensar issues get <issueId>                    Get issue details
   pensar issues update <issueId> [options]       Update an issue
   pensar issues retest <issueId>                 Retest an issue
+  pensar issues link-pr <issueId> --url <url>    Link a pull request to an issue
+  pensar issues prs <issueId>                    List pull requests linked to an issue
+
+<issueId> accepts the issue UUID or its label (e.g. VULN-000123).
 
 List filters:
   --status <status>     Filter: open, closed, false-positive, in-review
@@ -42,6 +55,9 @@ Update options:
   --closed-comments <text>  Additional comments
   --false-positive          Flag as false positive
   --fp-reason <reason>      Reason for false positive flag
+
+Link-pr options:
+  --url <url>               URL of the pull request to link (required)
 
 Options:
   -h, --help                Show this help message`);
@@ -104,6 +120,25 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       const result = await retestIssue(issueId);
+      console.log(JSON.stringify(result, null, 2));
+    } else if (sub === "link-pr") {
+      const issueId = args[1];
+      const url = getFlag("--url", args);
+      if (!issueId || issueId.startsWith("--") || !url) {
+        console.error("Error: issue ID and --url are required");
+        console.error("Usage: pensar issues link-pr <issueId> --url <prUrl>");
+        process.exit(1);
+      }
+      const result = await linkPullRequest(issueId, url);
+      console.log(JSON.stringify(result, null, 2));
+    } else if (sub === "prs") {
+      const issueId = args[1];
+      if (!issueId) {
+        console.error("Error: issue ID is required");
+        console.error("Usage: pensar issues prs <issueId>");
+        process.exit(1);
+      }
+      const result = await listIssuePullRequests(issueId);
       console.log(JSON.stringify(result, null, 2));
     } else if (!sub || sub === "list" || sub.startsWith("--")) {
       const issues = await listIssues({

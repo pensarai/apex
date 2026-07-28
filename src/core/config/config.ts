@@ -6,6 +6,7 @@ import { getCurrentVersion } from "../installation";
 const DEFAULT_CONFIG: Config = {
   responsibleUseAccepted: false,
   defaultHeaders: { "User-Agent": "pensar-apex" },
+  strikeMode: false,
 };
 
 export interface Config {
@@ -45,6 +46,8 @@ export interface Config {
     | "max"
     | "ultra"
     | null;
+  // Default workflow for newly created TUI operator sessions.
+  strikeMode?: boolean;
   // Whitebox attack surface: when false, skip the @pensar/surface deterministic
   // enumeration path and use the legacy pages+apiEndpoints discovery agents.
   // Defaults to true when unset.
@@ -108,6 +111,7 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
     responsibleUseAccepted: parsedConfig.responsibleUseAccepted ?? false,
     defaultHeaders:
       parsedConfig.defaultHeaders ?? DEFAULT_CONFIG.defaultHeaders,
+    strikeMode: parsedConfig.strikeMode ?? DEFAULT_CONFIG.strikeMode,
     surfaceIntegrationEnabled:
       parsedConfig.surfaceIntegrationEnabled ??
       parseBoolEnv(process.env.PENSAR_SURFACE_INTEGRATION),
