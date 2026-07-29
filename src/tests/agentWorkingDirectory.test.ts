@@ -4,6 +4,7 @@ import {
   buildBaseSystemPrompt,
   buildSessionWorkspaceSection,
 } from "../core/agents/offSecAgent";
+import { PATCHING_ACTIVE_TOOLS } from "../core/agents/specialized/patching";
 import {
   buildOperatorSessionConfig,
   parseWebFlags,
@@ -119,6 +120,50 @@ describe("buildSessionWorkspaceSection", () => {
     expect(result).toContain("pocs/");
     expect(result).toContain("scratchpad/");
     expect(result).toContain("logs/");
+  });
+
+  it("keeps the read-only repo default for assessment agents", () => {
+    const result = buildSessionWorkspaceSection(
+      mockSession,
+      "/home/user/Projects/my-app",
+      ["read_file", "grep", "profile_codebase", "run_code_query"],
+    );
+    expect(result).toContain("Source Code Assessment");
+    expect(result).toContain("Do not modify the target repo by default");
+  });
+
+  it("drops the read-only repo default for agents dispatched to edit the repo", () => {
+    // The patching agent holds the whitebox tools AND the mutation tools; it
+    // exists to rewrite the repo, so telling it not to contradicts its task.
+    const result = buildSessionWorkspaceSection(
+      mockSession,
+      "/home/user/Projects/my-app",
+      [...PATCHING_ACTIVE_TOOLS],
+    );
+    expect(result).toContain("Source Code Assessment");
+    expect(result).not.toContain("Do not modify the target repo by default");
+    expect(result).toContain(
+      "Limit repo edits to the change you were dispatched to make",
+    );
+  });
+
+  it("omits source-assessment guidance for agents without the whitebox tools", () => {
+    const result = buildSessionWorkspaceSection(
+      mockSession,
+      "/home/user/Projects/my-app",
+      ["read_file", "list_files", "grep", "execute_command", "response"],
+    );
+    expect(result).toContain("Working Directory");
+    expect(result).not.toContain("Source Code Assessment");
+  });
+
+  it("keeps source-assessment guidance when tools are unknown", () => {
+    const result = buildSessionWorkspaceSection(
+      mockSession,
+      "/home/user/Projects/my-app",
+    );
+    expect(result).toContain("Source Code Assessment");
+    expect(result).toContain("Do not modify the target repo by default");
   });
 });
 
