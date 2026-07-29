@@ -85,6 +85,70 @@ describe("CodeModeRuntime", () => {
     await runtime.dispose();
   });
 
+  test("rejects overlapping calls to the single-lane shell", async () => {
+    let calls = 0;
+    const runtime = createRuntime({
+      execute_command: tool({
+        inputSchema: z.object({ command: z.string() }),
+        execute: async () => {
+          calls += 1;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return { stdout: "ok" };
+        },
+      }),
+    });
+
+    const result = await runtime.execute(
+      `
+        const results = await Promise.allSettled([
+          tools.shell({ command: "first" }),
+          tools.call("execute_command", { command: "second" }),
+        ]);
+        text(results);
+      `,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toContain("tools.shell is single-lane");
+    expect(calls).toBe(1);
+    await runtime.dispose();
+  });
+
+  test("shares one lane across browser operations", async () => {
+    let calls = 0;
+    const browserTool = tool({
+      inputSchema: z.object({}),
+      execute: async () => {
+        calls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return { ok: true };
+      },
+    });
+    const runtime = createRuntime({
+      browser_navigate: browserTool,
+      browser_snapshot: browserTool,
+    });
+
+    const result = await runtime.execute(
+      `
+        const results = await Promise.allSettled([
+          tools.browser.navigate({}),
+          tools.browser.snapshot({}),
+        ]);
+        text(results);
+      `,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toContain("Browser operations are single-lane");
+    expect(calls).toBe(1);
+    await runtime.dispose();
+  });
+
   test("persists explicitly stored values without exposing host globals", async () => {
     const runtime = createRuntime({});
     const first = await runtime.execute(

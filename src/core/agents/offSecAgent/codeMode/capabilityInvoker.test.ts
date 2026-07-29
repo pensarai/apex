@@ -137,4 +137,33 @@ describe("CanonicalCapabilityInvoker", () => {
     expect(guidance.join(" ")).toContain("one-call exec cells");
     expect(guidance.join(" ")).toContain("same result");
   });
+
+  it("directs sequential shell batches into one script", async () => {
+    const bus = new AgentEventBus();
+    const invoker = new CanonicalCapabilityInvoker({
+      tools: {
+        execute_command: tool({
+          inputSchema: z.object({ command: z.string() }),
+          execute: async ({ command }) => command,
+        }),
+      },
+      allowedTools: ["execute_command"],
+      eventBus: bus,
+      sessionId: "ses_test",
+      getMessageId: () => "msg_test",
+    });
+
+    for (const command of ["one", "two", "three", "four"]) {
+      await invoker.invoke(
+        "execute_command",
+        { command },
+        { parentToolCallId: "exec_shell", messages: [] },
+      );
+    }
+
+    const guidance = invoker.completeCell("exec_shell").guidance.join(" ");
+    expect(guidance).toContain("one reusable script");
+    expect(guidance).toContain("single-lane shell");
+    expect(guidance).not.toContain("combine them with mapLimit");
+  });
 });
