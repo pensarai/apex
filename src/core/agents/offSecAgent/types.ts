@@ -83,6 +83,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** Append shell/filesystem session guidance. Defaults to true. */
   includeSessionWorkspace?: boolean;
 
+  /** Construct local shell/browser capabilities when no sandbox is supplied. Defaults to true. */
+  allowLocalToolExecution?: boolean;
+
+  /** Remove inactive tools from the executable tool map, not only the model-visible definitions. */
+  restrictToolsToActiveSet?: boolean;
+
   /** Initial user prompt that kicks off the agent */
   prompt: string;
 

@@ -251,7 +251,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     // -- Persistent shell (local mode only) -----------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
     // stream ends, or when the agent is fully killed.
-    if (!input.sandbox) {
+    if (!input.sandbox && input.allowLocalToolExecution !== false) {
       this.persistentShell = new PersistentShell({
         cwd: agentCwd,
         env: input.environmentVariables,
@@ -270,7 +270,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     // for agents that never use browser tools. Sandbox-mode agents already
     // share browser state via the sandbox's per-sandbox Playwright user-data
     // dir, so they don't need a session object on the host.
-    if (!input.sandbox) {
+    if (!input.sandbox && input.allowLocalToolExecution !== false) {
       // Snapshot resolved headers into the browser session. Later mutations
       // require a browser restart to take effect.
       const sessionHeaders = input.target
@@ -478,6 +478,13 @@ export class OffensiveSecurityAgent<TResult = void> {
         if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
         return hasEmail;
       });
+    }
+
+    if (input.restrictToolsToActiveSet) {
+      const activeToolSet = new Set(activeTools);
+      tools = Object.fromEntries(
+        Object.entries(tools).filter(([name]) => activeToolSet.has(name)),
+      );
     }
 
     // -- Messages persistence -------------------------------------------------

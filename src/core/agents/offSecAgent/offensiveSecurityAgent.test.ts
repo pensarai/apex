@@ -14,6 +14,15 @@ import { describe, expect, it, vi } from "vitest";
 const promptMocks = vi.hoisted(() => ({
   buildSessionWorkspaceSection: vi.fn(() => "workspace-section"),
 }));
+const capabilityMocks = vi.hoisted(() => ({
+  createAllTools: vi.fn(() => ({
+    safe_tool: {},
+    execute_command: {},
+  })),
+  streamResponse: vi.fn((_opts: { tools: Record<string, unknown> }) => ({})),
+  persistentShell: vi.fn(),
+  browserSession: vi.fn(),
+}));
 
 // ---------------------------------------------------------------------------
 // Module stubs — prevent the full tool/AI/zod import chain from loading.
@@ -36,16 +45,25 @@ vi.mock("zod", () => {
 });
 
 vi.mock("./tools", () => ({
-  createAllTools: () => ({}),
+  createAllTools: capabilityMocks.createAllTools,
   EMAIL_TOOL_NAMES_ACTIVE: [],
   SEND_EMAIL_TOOL_NAME: "send_email",
   PLAN_MODE_TOOL_NAMES: [],
   createResponseTool: () => {},
   RESPONSE_TOOL_NAME: "response",
   ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
-  PersistentShell: class {},
+  PersistentShell: class {
+    constructor() {
+      capabilityMocks.persistentShell();
+    }
+  },
+  PlaywrightMcpSession: class {
+    constructor() {
+      capabilityMocks.browserSession();
+    }
+  },
 }));
-vi.mock("../../ai", () => ({ streamResponse: () => {} }));
+vi.mock("../../ai", () => ({ streamResponse: capabilityMocks.streamResponse }));
 vi.mock("../../session", () => ({ create: () => {} }));
 vi.mock("../specialized/utils", () => ({
   detectOSAndEnhancePrompt: (p: string) => p,
@@ -181,6 +199,47 @@ describe("OffensiveSecurityAgent system prompt", () => {
       } as never);
 
       expect(promptMocks.buildSessionWorkspaceSection).not.toHaveBeenCalled();
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it("hard-removes inactive tools and skips local capabilities when requested", () => {
+    const rootPath = join("/tmp", `apex-restricted-tools-${Date.now()}`);
+    mkdirSync(rootPath, { recursive: true });
+    capabilityMocks.streamResponse.mockClear();
+    capabilityMocks.persistentShell.mockClear();
+    capabilityMocks.browserSession.mockClear();
+    try {
+      const agent = new OffensiveSecurityAgent({
+        system: "profile prompt",
+        prompt: "continue",
+        model: "global.anthropic.claude-opus-4-6-v1",
+        session: {
+          id: "ses_tool_test",
+          rootPath,
+          config: { agentCwd: rootPath },
+        },
+        activeTools: ["safe_tool", "allowed_custom"],
+        extraTools: {
+          allowed_custom: {},
+          inactive_custom: {},
+        },
+        allowLocalToolExecution: false,
+        restrictToolsToActiveSet: true,
+      } as never);
+
+      void agent.streamResult;
+
+      expect(capabilityMocks.persistentShell).not.toHaveBeenCalled();
+      expect(capabilityMocks.browserSession).not.toHaveBeenCalled();
+      const streamCall = capabilityMocks.streamResponse.mock.calls.at(0);
+      expect(streamCall).toBeDefined();
+      if (!streamCall) throw new Error("streamResponse was not called");
+      expect(Object.keys(streamCall[0].tools)).toEqual([
+        "safe_tool",
+        "allowed_custom",
+      ]);
     } finally {
       rmSync(rootPath, { recursive: true, force: true });
     }
