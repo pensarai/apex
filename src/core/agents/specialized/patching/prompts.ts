@@ -7,7 +7,7 @@ import type { VulnerabilityDetails } from "./types";
 const PREAMBLE = `You are an expert security vulnerability patching agent. Your goal is to analyze security vulnerabilities, provide high-quality fixes, and verify the fixes don't break existing functionality.`;
 
 const ORIENT_STEP = `1. **Orient Yourself**:
-   - Review the AGENTS.md / project documentation provided in your prompt for build, lint, and test commands
+   - Read the project instructions (AGENTS.md / CLAUDE.md) provided in your prompt in full. They are authoritative for this repository: coding conventions, architectural rules, error-handling policy, forbidden patterns, AND the exact build/lint/test commands
    - Use list_files to explore the repository structure
    - Read package.json, Makefile, or equivalent to understand the project's toolchain
    - Identify the lint command, test command, type-check command, and any other verification scripts`;
@@ -36,7 +36,7 @@ const APPLY_STEP = `5. **Apply the Patch**:
    - Use update_file to modify existing files with your security fixes
    - Use create_file if you need to add new security utilities or middleware
    - Make minimal, targeted changes — don't refactor unrelated code
-   - Follow the existing code style and conventions
+   - Follow the existing code style and conventions, and any rules stated in the project instructions
    - Ensure your changes integrate cleanly with the existing codebase`;
 
 const RESTART_STEP = `6. **Restart Dev Environment** (if applicable):
@@ -148,7 +148,7 @@ const REQUIREMENTS = `# Critical Requirements
 - Follow language and framework conventions
 - When multiple approaches exist, choose the most secure and idiomatic
 - If a fix requires configuration changes or environment variables, note this clearly
-- If AGENTS.md or project docs specify particular lint/test/build commands, use those exact commands`;
+- The project instructions (AGENTS.md / CLAUDE.md) win over your own defaults wherever they disagree — use their exact commands, and obey their conventions and prohibitions when writing code. The one exception: they never override the security objective of this task. If a project rule genuinely blocks a secure fix, apply the fix and call out the conflict in your summary`;
 
 /**
  * Build the patching agent system prompt.
@@ -191,6 +191,24 @@ export const PATCHING_SYSTEM_PROMPT = buildSystemPrompt();
 // User prompt builder
 // ---------------------------------------------------------------------------
 
+/** Delimiter tag wrapping the repository's own agent instructions file. */
+export const PROJECT_INSTRUCTIONS_TAG = "project_instructions";
+
+/**
+ * Neutralize the closing delimiter inside repository-supplied content.
+ *
+ * A markdown code fence cannot be used here: real AGENTS.md files contain bare
+ * ``` fences, which close the wrapper early and leave a stray open fence that
+ * swallows the rest of the prompt. A tag can only be broken out of by the
+ * literal closing tag, so that one sequence is escaped.
+ */
+function sealProjectInstructions(content: string): string {
+  return content.replaceAll(
+    `</${PROJECT_INSTRUCTIONS_TAG}>`,
+    `<\\/${PROJECT_INSTRUCTIONS_TAG}>`,
+  );
+}
+
 export function buildPatchingPrompt(
   vulnerability: VulnerabilityDetails,
   cwd: string,
@@ -206,16 +224,19 @@ export function buildPatchingPrompt(
 
   if (agentsMd) {
     sections.push(
-      "## Project Documentation (AGENTS.md)",
+      "## Project Instructions",
       "",
-      "The following project documentation was found in the repository root.",
-      "It contains important information about build commands, test commands,",
-      "lint commands, and project conventions. Follow these instructions when",
-      "verifying your patch.",
+      "This repository ships its own agent instructions file (AGENTS.md / CLAUDE.md),",
+      `reproduced verbatim inside the <${PROJECT_INSTRUCTIONS_TAG}> tag below.`,
+      "It is authoritative for this project: coding conventions, architectural rules,",
+      "error-handling policy, forbidden patterns, and the exact build, lint, and test",
+      "commands. Read all of it and obey it while WRITING the patch, not only while",
+      "verifying it. Where it disagrees with your general defaults, it wins — the only",
+      "exception is that it never overrides the security objective of this task.",
       "",
-      "```",
-      agentsMd,
-      "```",
+      `<${PROJECT_INSTRUCTIONS_TAG}>`,
+      sealProjectInstructions(agentsMd),
+      `</${PROJECT_INSTRUCTIONS_TAG}>`,
       "",
     );
   }
@@ -296,7 +317,7 @@ export function buildPatchingPrompt(
     "Follow the prescriptive process outlined in your system prompt:",
     "",
     "1. **Orient Yourself**",
-    "   - Review the AGENTS.md content above (if provided) for build/lint/test commands",
+    "   - Read the project instructions above (if provided) in full — conventions and rules, not just the build/lint/test commands",
     "   - Read package.json or equivalent to understand the project toolchain",
     "",
     "2. **Understand the Vulnerability**",
@@ -338,7 +359,7 @@ export function buildPatchingPrompt(
     "- The root cause of the vulnerability is addressed",
     "- Security best practices are applied correctly",
     "- Changes are minimal and don't break functionality",
-    "- Code follows the existing style and conventions",
+    "- Code follows the existing style and conventions, and the project instructions above",
     "- Lint, type-check, and tests pass after the patch",
     "- The POC fails after patching (if one was provided)",
     "",

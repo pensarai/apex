@@ -69,6 +69,7 @@ Read these with \`read_file\` and list directory contents with \`list_files prov
 export function buildSessionWorkspaceSection(
   session: SessionPaths,
   agentCwd: string,
+  activeTools?: readonly string[],
 ): string {
   const sandboxMode = agentCwd === session.rootPath;
   const providedFilesSection = buildProvidedFilesSection(session.rootPath);
@@ -76,6 +77,7 @@ export function buildSessionWorkspaceSection(
     session,
     agentCwd,
     sandboxMode,
+    activeTools,
   );
 
   if (sandboxMode) {
@@ -114,14 +116,36 @@ Session artifacts are stored separately at ${session.rootPath}:
 Tools like \`document_vulnerability\` and browser evidence capture write to the session directory automatically.${providedFilesSection}${sourceAssessmentSection}`;
 }
 
+/**
+ * Tools the source-assessment guidance below tells the agent to reach for. An
+ * agent without them (e.g. the patching agent, which only gets the filesystem
+ * tools and exists specifically to modify the repo) must not receive this
+ * section: every workflow it prescribes is uncallable, and its "do not modify
+ * the target repo" default directly contradicts such an agent's task.
+ */
+const SOURCE_ASSESSMENT_TOOL_NAMES = [
+  "profile_codebase",
+  "query_whitebox_catalog",
+  "run_code_query",
+  "run_whitebox_scan",
+] as const;
+
 function buildSourceAssessmentSection(
   session: SessionPaths,
   agentCwd: string,
   sandboxMode: boolean,
+  activeTools?: readonly string[],
 ): string {
   const codebasePath = session.config?.codebasePath;
   const hasSourceAccess = Boolean(codebasePath) || !sandboxMode;
   if (!hasSourceAccess) return "";
+
+  if (
+    activeTools &&
+    !SOURCE_ASSESSMENT_TOOL_NAMES.some((name) => activeTools.includes(name))
+  ) {
+    return "";
+  }
 
   const sourceRoot = codebasePath ?? agentCwd;
   const alignmentNote =

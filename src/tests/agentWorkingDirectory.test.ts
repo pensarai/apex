@@ -120,6 +120,45 @@ describe("buildSessionWorkspaceSection", () => {
     expect(result).toContain("scratchpad/");
     expect(result).toContain("logs/");
   });
+
+  it("keeps source-assessment guidance for agents holding the whitebox tools", () => {
+    const result = buildSessionWorkspaceSection(
+      mockSession,
+      "/home/user/Projects/my-app",
+      ["read_file", "profile_codebase"],
+    );
+    expect(result).toContain("Source Code Assessment");
+    expect(result).toContain("Do not modify the target repo by default");
+  });
+
+  it("omits source-assessment guidance for agents without the whitebox tools", () => {
+    // The patching agent's tool set: filesystem + shell only. It exists to
+    // modify the repo, so "do not modify the target repo" must not reach it.
+    const result = buildSessionWorkspaceSection(
+      mockSession,
+      "/home/user/Projects/my-app",
+      [
+        "read_file",
+        "list_files",
+        "grep",
+        "create_file",
+        "update_file",
+        "execute_command",
+        "response",
+      ],
+    );
+    expect(result).toContain("Working Directory");
+    expect(result).not.toContain("Source Code Assessment");
+    expect(result).not.toContain("Do not modify the target repo by default");
+  });
+
+  it("keeps source-assessment guidance when tools are unknown", () => {
+    const result = buildSessionWorkspaceSection(
+      mockSession,
+      "/home/user/Projects/my-app",
+    );
+    expect(result).toContain("Source Code Assessment");
+  });
 });
 
 describe("buildBaseSystemPrompt", () => {
