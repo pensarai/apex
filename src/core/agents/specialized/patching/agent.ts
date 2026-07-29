@@ -47,7 +47,7 @@ export const PATCHING_ACTIVE_TOOLS = [
  * Try to read an AGENTS.md (or similar) file from the repository root.
  * Returns the file content or undefined if none is found.
  */
-function readAgentsMd(cwd: string): string | undefined {
+export function readAgentsMd(cwd: string): string | undefined {
   for (const name of AGENTS_MD_FILENAMES) {
     try {
       const content = readFileSync(join(cwd, name), "utf-8");

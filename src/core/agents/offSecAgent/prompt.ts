@@ -69,6 +69,7 @@ Read these with \`read_file\` and list directory contents with \`list_files prov
 export function buildSessionWorkspaceSection(
   session: SessionPaths,
   agentCwd: string,
+  activeTools?: readonly string[],
 ): string {
   const sandboxMode = agentCwd === session.rootPath;
   const providedFilesSection = buildProvidedFilesSection(session.rootPath);
@@ -76,6 +77,7 @@ export function buildSessionWorkspaceSection(
     session,
     agentCwd,
     sandboxMode,
+    activeTools,
   );
 
   if (sandboxMode) {
@@ -114,20 +116,60 @@ Session artifacts are stored separately at ${session.rootPath}:
 Tools like \`document_vulnerability\` and browser evidence capture write to the session directory automatically.${providedFilesSection}${sourceAssessmentSection}`;
 }
 
+/**
+ * Tools the source-assessment guidance reaches for. An agent holding none of
+ * them cannot act on any of this, so the section is omitted entirely.
+ */
+const SOURCE_ASSESSMENT_TOOL_NAMES = [
+  "profile_codebase",
+  "query_whitebox_catalog",
+  "run_code_query",
+  "run_whitebox_scan",
+] as const;
+
+/**
+ * Tools that exist to rewrite the target repository. An agent holding one was
+ * dispatched to edit the repo (the patching agent, say), so the assessment
+ * default of "do not modify the target repo" contradicts its task and is
+ * dropped for it.
+ */
+const REPO_MUTATION_TOOL_NAMES = [
+  "update_file",
+  "apply_patch",
+  "create_file",
+  "delete_file",
+] as const;
+
 function buildSourceAssessmentSection(
   session: SessionPaths,
   agentCwd: string,
   sandboxMode: boolean,
+  activeTools?: readonly string[],
 ): string {
   const codebasePath = session.config?.codebasePath;
   const hasSourceAccess = Boolean(codebasePath) || !sandboxMode;
   if (!hasSourceAccess) return "";
+
+  if (
+    activeTools &&
+    !SOURCE_ASSESSMENT_TOOL_NAMES.some((name) => activeTools.includes(name))
+  ) {
+    return "";
+  }
 
   const sourceRoot = codebasePath ?? agentCwd;
   const alignmentNote =
     codebasePath && codebasePath !== agentCwd
       ? `\nThe configured codebase path is ${codebasePath}, while your shell starts in ${agentCwd}. Use the configured codebase path for source analysis unless the user says otherwise.`
       : "";
+
+  const mayEditRepo =
+    activeTools?.some((name) =>
+      (REPO_MUTATION_TOOL_NAMES as readonly string[]).includes(name),
+    ) ?? false;
+  const repoEditBullet = mayEditRepo
+    ? `\n- Keep harnesses, generated inputs, and scratch scripts under the session scratchpad. Limit repo edits to the change you were dispatched to make.`
+    : `\n- Do not modify the target repo by default. Put harnesses, generated inputs, and scratch scripts under the session scratchpad unless the operator approves repo edits.`;
 
   return `
 
@@ -141,8 +183,7 @@ Use source access as a force multiplier, not as a rigid workflow:
 - Prefer sink-first analysis: find dangerous operations, then trace backward to attacker-controlled entry points and trust boundaries.
 - Use \`run_code_query\` for batched source searches, \`run_whitebox_scan\` for installed scanners, and \`spawn_coding_agent\` for independent deep dives.
 - Track unverified hypotheses with whitebox candidates. Only call \`document_vulnerability\` after a PoC, crash reproducer, or dynamic check confirms exploitability.
-- Run builds, local servers, sanitizer runs, and microfuzzers through bounded whitebox jobs so logs and crashes are preserved as artifacts.
-- Do not modify the target repo by default. Put harnesses, generated inputs, and scratch scripts under the session scratchpad unless the operator approves repo edits.`;
+- Run builds, local servers, sanitizer runs, and microfuzzers through bounded whitebox jobs so logs and crashes are preserved as artifacts.${repoEditBullet}`;
 }
 
 /** Options for building the base system prompt. */
