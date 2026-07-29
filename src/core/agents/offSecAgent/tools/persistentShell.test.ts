@@ -424,11 +424,29 @@ describe("PersistentShell — long-running stability", () => {
     for (const r of results) expect(r.exitCode).toBe(0);
   }, 15_000);
 
+  it("includes queue wait in each command timeout", async () => {
+    const shell = make();
+    const first = shell.execute("sleep 1", 5);
+
+    const startedAt = Date.now();
+    const queued = await shell.execute("echo should-not-run", 0.2);
+
+    expect(queued.exitCode).toBe(124);
+    expect(queued.stderr).toContain("waiting for the persistent shell");
+    expect(queued.stdout).not.toContain("should-not-run");
+    expect(Date.now() - startedAt).toBeLessThan(800);
+
+    expect((await first).exitCode).toBe(0);
+    const recovered = await shell.execute("echo recovered", 5);
+    expect(recovered.exitCode).toBe(0);
+    expect(recovered.stdout).toContain("recovered");
+  }, 10_000);
+
   it.concurrent("aborts a queued execute() without running its bash command", async () => {
     const shell = make();
     const ac = new AbortController();
 
-    const first = shell.execute("sleep 1", 10);
+    const first = shell.execute("sleep 2", 10);
     // Fire the second call synchronously so it queues, then abort before
     // its turn arrives.
     const queued = shell.execute("sleep 5", 10, undefined, ac.signal);
@@ -440,8 +458,8 @@ describe("PersistentShell — long-running stability", () => {
 
     expect(queuedResult.exitCode).toBe(130);
     expect(queuedResult.stderr).toContain("aborted");
-    // Must not have run its own 5s sleep — aborted calls bail on turn arrival.
-    expect(elapsed).toBeLessThan(3_000);
+    // Must not wait for the active command or run its own 5s sleep.
+    expect(elapsed).toBeLessThan(1_000);
 
     const firstResult = await first;
     expect(firstResult.exitCode).toBe(0);

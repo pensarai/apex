@@ -69,6 +69,11 @@ export interface ShellExecuteResult {
   exitCode: number;
 }
 
+type ShellTurn =
+  | { status: "acquired"; release: () => void }
+  | { status: "aborted" }
+  | { status: "timed_out" };
+
 interface PendingCommand {
   // Raw bytes from `tail -f` of the per-command tempfile. Best-effort live UX
   // only — may be partial/empty on platforms where tail block-buffers.
@@ -424,7 +429,24 @@ export class PersistentShell {
       return { stdout: "", stderr: "Command aborted", exitCode: 130 };
     }
 
-    const release = await this.acquireTurn();
+    const timeoutMs =
+      timeoutSeconds != null && timeoutSeconds > 0
+        ? timeoutSeconds * 1_000
+        : undefined;
+    const deadline = timeoutMs == null ? undefined : Date.now() + timeoutMs;
+    const turn = await this.acquireTurn(timeoutMs, abortSignal);
+    if (turn.status === "aborted") {
+      return { stdout: "", stderr: "Command aborted", exitCode: 130 };
+    }
+    if (turn.status === "timed_out") {
+      return {
+        stdout: "",
+        stderr: "Command timed out while waiting for the persistent shell",
+        exitCode: 124,
+      };
+    }
+
+    const { release } = turn;
     try {
       // Re-validate after the queue wait — disposal/abort may have happened
       // while we were queued.
@@ -433,6 +455,15 @@ export class PersistentShell {
       }
       if (abortSignal?.aborted) {
         return { stdout: "", stderr: "Command aborted", exitCode: 130 };
+      }
+      const remainingTimeoutMs =
+        deadline == null ? undefined : Math.max(0, deadline - Date.now());
+      if (remainingTimeoutMs === 0) {
+        return {
+          stdout: "",
+          stderr: "Command timed out while waiting for the persistent shell",
+          exitCode: 124,
+        };
       }
 
       this.ensureAlive();
@@ -504,7 +535,7 @@ export class PersistentShell {
             abortSignal.removeEventListener("abort", onAbort);
         }
 
-        if (timeoutSeconds != null && timeoutSeconds > 0) {
+        if (remainingTimeoutMs != null) {
           timeoutTimer = setTimeout(() => {
             if (resolved) return;
             pending.forcedExitCode = 124;
@@ -513,7 +544,7 @@ export class PersistentShell {
               pending,
               124,
             );
-          }, timeoutSeconds * 1_000);
+          }, remainingTimeoutMs);
         }
 
         // Wrap command:
@@ -577,14 +608,48 @@ export class PersistentShell {
     }
   }
 
-  private async acquireTurn(): Promise<() => void> {
+  private acquireTurn(
+    timeoutMs?: number,
+    abortSignal?: AbortSignal,
+  ): Promise<ShellTurn> {
     const myTurn = this.writeChain;
     let release!: () => void;
     this.writeChain = new Promise<void>((res) => {
       release = res;
     });
-    await myTurn;
-    return release;
+
+    return new Promise<ShellTurn>((resolve) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+
+      const onAbort = () => settle({ status: "aborted" });
+      const settle = (result: ShellTurn) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        abortSignal?.removeEventListener("abort", onAbort);
+        resolve(result);
+      };
+
+      void myTurn.then(() => {
+        if (settled) {
+          release();
+          return;
+        }
+        settle({ status: "acquired", release });
+      });
+
+      if (timeoutMs != null) {
+        timer = setTimeout(() => settle({ status: "timed_out" }), timeoutMs);
+      }
+      if (abortSignal) {
+        if (abortSignal.aborted) {
+          settle({ status: "aborted" });
+        } else {
+          abortSignal.addEventListener("abort", onAbort, { once: true });
+        }
+      }
+    });
   }
 
   /**

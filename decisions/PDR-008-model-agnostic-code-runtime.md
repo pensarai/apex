@@ -19,9 +19,9 @@ Fast-strike resolves a provider profile by default:
 
 Code profiles expose `exec`, `wait`, `response`, `document_vulnerability`, and `checkpoint_state`. The isolated JavaScript runtime can invoke a small allowlist of canonical shell and browser capabilities. Nested invocations pass through the original schema validation, approval wrappers, implementations, and AgentEventBus lifecycle. Console therefore continues to observe canonical tool names and results regardless of the model protocol.
 
-The JavaScript runtime uses QuickJS with a memory ceiling, deadline interrupt, abort propagation, bounded output, and no direct filesystem, process, or network globals. It exposes only explicit host bridges. Independent nested calls can be composed with `Promise.all`; sandbox Camoufox actions are serialized per sandbox because they share one persistent Firefox profile.
+The JavaScript runtime uses QuickJS with a memory ceiling, deadline interrupt, abort propagation, bounded output, and no direct filesystem, process, or network globals. It exposes only explicit host bridges. The persistent shell, browser, and Console contract capabilities are stateful single-lane resources; overlapping calls fail fast with actionable guidance. Models implement request-level concurrency inside one reusable sandbox program rather than queuing parallel calls against those resources.
 
-Code mode also exposes bounded concurrency helpers and reports per-cell execution metrics. The capability bridge conservatively detects repeated one-call cells, sequential batches, and identical calls that repeatedly return the same result. It returns advisory process guidance with the completed cell rather than blocking execution. This improves long-horizon discipline without changing capability authority or preventing intentional race and fuzzing programs.
+Code mode also exposes bounded concurrency helpers for capabilities that are explicitly safe to invoke concurrently and reports per-cell execution metrics. The capability bridge conservatively detects repeated one-call cells, sequential batches, and identical calls that repeatedly return the same result. It returns advisory process guidance with the completed cell. Persistent-shell command timeouts include queue wait so one blocked command cannot silently multiply the deadline of every queued caller.
 
 Non-fast-strike modes remain on direct tools by default. This limits the initial behavioral change to the benchmarked workflow while allowing explicit experiments elsewhere.
 
@@ -46,7 +46,7 @@ Non-fast-strike modes remain on direct tools by default. This limits the initial
 
 - ✅ A compact interface for long-horizon offensive work across OpenAI, Bedrock, and OpenRouter
 - ✅ Canonical approval, event, finding, checkpoint, and response behavior is preserved
-- ✅ Parallel shell/request orchestration without concurrent Camoufox profile corruption
+- ✅ Script-owned request concurrency without persistent-shell queues or concurrent Camoufox profile corruption
 - ✅ Observable code-mode efficiency and advisory stagnation feedback without benchmark-specific knowledge
 - ✅ Direct host filesystem and network access are absent from guest JavaScript
 - ⚠️ QuickJS is a new runtime dependency and requires lifecycle and memory-leak tests

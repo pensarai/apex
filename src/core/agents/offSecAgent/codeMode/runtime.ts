@@ -56,9 +56,34 @@ function combineSignals(local: AbortSignal, parent?: AbortSignal): AbortSignal {
 
 const GUEST_PRELUDE = `
 (() => {
+  const laneFor = (name) => {
+    if (name === "execute_command") return "shell";
+    if (name.startsWith("browser_")) return "browser";
+    if (["document_vulnerability", "checkpoint_state", "response"].includes(name)) {
+      return "contract";
+    }
+    return undefined;
+  };
+  const activeLanes = new Set();
   const invoke = async (name, input = {}) => {
-    const encoded = await __apexInvoke(name, JSON.stringify(input));
-    return JSON.parse(encoded);
+    const lane = laneFor(name);
+    if (lane && activeLanes.has(lane)) {
+      const hint = lane === "shell"
+        ? "tools.shell is single-lane. Do not call it with Promise.all or mapLimit; put concurrent work inside one script and invoke that script once."
+        : lane === "browser"
+          ? "Browser operations are single-lane and stateful; await each mutation before starting the next."
+          : "Console contract tools are single-lane; await the active call before invoking another.";
+      const error = new Error(hint);
+      error.toJSON = () => ({ name: "Error", message: hint });
+      throw error;
+    }
+    if (lane) activeLanes.add(lane);
+    try {
+      const encoded = await __apexInvoke(name, JSON.stringify(input));
+      return JSON.parse(encoded);
+    } finally {
+      if (lane) activeLanes.delete(lane);
+    }
   };
   const shell = (input) => invoke("execute_command", input);
   const browser = Object.freeze({
