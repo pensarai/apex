@@ -116,6 +116,35 @@ describe("CodeModeRuntime", () => {
     await runtime.dispose();
   });
 
+  test("bounds shell calls by default without overriding explicit timeouts", async () => {
+    const timeouts: Array<number | undefined> = [];
+    const runtime = createRuntime({
+      execute_command: tool({
+        inputSchema: z.object({
+          command: z.string(),
+          timeout: z.number().optional(),
+        }),
+        execute: async ({ timeout }) => {
+          timeouts.push(timeout);
+          return { stdout: "ok" };
+        },
+      }),
+    });
+
+    const result = await runtime.execute(
+      `
+        await tools.shell({ command: "default" });
+        await tools.shell({ command: "explicit", timeout: 300 });
+      `,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("completed");
+    expect(timeouts).toEqual([120, 300]);
+    await runtime.dispose();
+  });
+
   test("shares one lane across browser operations", async () => {
     let calls = 0;
     const browserTool = tool({

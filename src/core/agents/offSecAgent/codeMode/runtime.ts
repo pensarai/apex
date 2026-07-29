@@ -79,7 +79,10 @@ const GUEST_PRELUDE = `
     }
     if (lane) activeLanes.add(lane);
     try {
-      const encoded = await __apexInvoke(name, JSON.stringify(input));
+      const normalizedInput = name === "execute_command" && input && typeof input === "object" && !Array.isArray(input) && input.timeout == null
+        ? { ...input, timeout: 120 }
+        : input;
+      const encoded = await __apexInvoke(name, JSON.stringify(normalizedInput));
       return JSON.parse(encoded);
     } finally {
       if (lane) activeLanes.delete(lane);
