@@ -25,7 +25,7 @@ const CODE_MODE_CONTRACT_TOOL_NAMES = [
   "checkpoint_state",
 ] as const;
 
-const EXEC_DESCRIPTION = `Execute JavaScript in Apex's isolated orchestration runtime. Treat each exec as a bounded stage. The shell and browser are stateful, single-lane capabilities: never call them with Promise.all or mapLimit. For concurrent requests or scans, write one Python, JavaScript, or shell program in the persistent session workspace and invoke it once with tools.shell. Use mapLimit only for independent, concurrency-safe capabilities. The runtime has no direct filesystem or network access, so effects go through the global tools object. Use text(value) to return selected evidence, and store/load for compact state across cells. Long-running cells return a cellId for wait.`;
+const EXEC_DESCRIPTION = `Execute JavaScript in Apex's isolated orchestration runtime. Treat each exec as a bounded stage. The shell and browser are stateful, single-lane capabilities: never call them with Promise.all or mapLimit. For concurrent requests or scans, write one Python, JavaScript, or shell program in the persistent session workspace and invoke it once with tools.shell. Shell calls default to a 120-second timeout; set an explicit timeout only when chosen work needs longer. Use mapLimit only for independent, concurrency-safe capabilities. The runtime has no direct filesystem or network access, so effects go through the global tools object. Use text(value) to return selected evidence, and store/load for compact state across cells. Long-running cells return a cellId for wait.`;
 
 type ExecutionOptions = {
   toolCallId: string;
@@ -149,7 +149,7 @@ Nested capability declarations:
 type ShellInput = {
   toolCallDescription: string;
   command: string;
-  timeout?: number;
+  timeout?: number; // defaults to 120 seconds in code mode
   allow_unprotected?: boolean;
 };
 declare const tools: {
@@ -171,7 +171,7 @@ declare function mapLimitSettled<T, R>(items: T[], concurrency: number, worker: 
 \`\`\`
 
 Program-first execution policy:
-1. \`tools.shell\` and \`execute_command\` share one persistent, single-lane shell. Call them at most once at a time and never wrap them in Promise.all, mapLimit, or mapLimitSettled.
+1. \`tools.shell\` and \`execute_command\` share one persistent, single-lane shell. Call them at most once at a time and never wrap them in Promise.all, mapLimit, or mapLimitSettled. Omitted timeouts default to 120 seconds so one command cannot monopolize the shell.
 2. Put concurrent HTTP requests, scans, payload generation, and result filtering inside one Python, JavaScript, or shell program in the persistent session workspace, then run that program with one shell call. Reuse the program as the exploit evolves.
 3. Browser operations and Console contract tools are stateful and single-lane. Await them sequentially.
 4. Persist tokens, identifiers, attempted hypotheses, and useful artifacts once. Do not paste or reconstruct the same state in later cells.
