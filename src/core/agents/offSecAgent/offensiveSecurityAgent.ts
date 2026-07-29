@@ -534,7 +534,10 @@ export class OffensiveSecurityAgent<TResult = void> {
         }),
       );
     const systemPrompt =
-      baseSystemPrompt + buildSessionWorkspaceSection(input.session, agentCwd);
+      baseSystemPrompt +
+      (input.includeSessionWorkspace === false
+        ? ""
+        : buildSessionWorkspaceSection(input.session, agentCwd));
 
     traceWriter.writeInit({
       model: input.model,

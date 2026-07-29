@@ -18,7 +18,10 @@ import {
 } from "ai";
 import type { z } from "zod";
 import { createLogger } from "../logger/structured";
-import { shouldRecordAiPayloads } from "../observability";
+import {
+  shouldEnableAiTelemetry,
+  shouldRecordAiPayloads,
+} from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
 import { withCachedLastMessage, withCachedSystemPrompt } from "./caching";
 import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
@@ -1074,7 +1077,7 @@ export function streamResponse(
       maxRetries: 3,
       providerOptions,
       experimental_telemetry: {
-        isEnabled: true,
+        isEnabled: shouldEnableAiTelemetry(),
         recordInputs: recordPayloads,
         recordOutputs: recordPayloads,
         functionId: `apex.stream.${model}`,
@@ -1223,7 +1226,7 @@ export function streamResponse(
               ].join("\n"),
               abortSignal,
               experimental_telemetry: {
-                isEnabled: true,
+                isEnabled: shouldEnableAiTelemetry(),
                 recordInputs: recordPayloads,
                 recordOutputs: recordPayloads,
                 functionId: "apex.tool_repair",
@@ -1402,7 +1405,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
         maxRetries: 0,
         abortSignal,
         experimental_telemetry: {
-          isEnabled: true,
+          isEnabled: shouldEnableAiTelemetry(),
           recordInputs: recordPayloads,
           recordOutputs: recordPayloads,
           functionId: "apex.generate_object",

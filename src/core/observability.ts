@@ -15,6 +15,10 @@ export function shouldRecordAiPayloads(): boolean {
   return process.env.AI_TRACE_RECORD_PAYLOADS === "true";
 }
 
+export function shouldEnableAiTelemetry(): boolean {
+  return process.env.AGENT_TRACES_ENABLED !== "false";
+}
+
 /**
  * OTel baggage key for the execution-session id. Console's SpanProcessor copies
  * `pensar.*` baggage onto every span — must stay in sync with it.

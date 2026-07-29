@@ -9,6 +9,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { newSessionId } from "./id/id";
 import {
   SESSION_BAGGAGE_KEY,
+  shouldEnableAiTelemetry,
+  shouldRecordAiPayloads,
   withSubagentSessionBaggage,
 } from "./observability";
 
@@ -48,6 +50,39 @@ beforeAll(() => {
 });
 
 const ROOT_BAGGAGE_KEY = "pensar.root_session.id";
+
+describe("AI telemetry environment", () => {
+  it("defaults traces on and payloads off", () => {
+    const traces = process.env.AGENT_TRACES_ENABLED;
+    const payloads = process.env.AI_TRACE_RECORD_PAYLOADS;
+    delete process.env.AGENT_TRACES_ENABLED;
+    delete process.env.AI_TRACE_RECORD_PAYLOADS;
+    try {
+      expect(shouldEnableAiTelemetry()).toBe(true);
+      expect(shouldRecordAiPayloads()).toBe(false);
+    } finally {
+      if (traces !== undefined) process.env.AGENT_TRACES_ENABLED = traces;
+      if (payloads !== undefined)
+        process.env.AI_TRACE_RECORD_PAYLOADS = payloads;
+    }
+  });
+
+  it("honors host-resolved trace and payload flags", () => {
+    const traces = process.env.AGENT_TRACES_ENABLED;
+    const payloads = process.env.AI_TRACE_RECORD_PAYLOADS;
+    process.env.AGENT_TRACES_ENABLED = "false";
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    try {
+      expect(shouldEnableAiTelemetry()).toBe(false);
+      expect(shouldRecordAiPayloads()).toBe(true);
+    } finally {
+      if (traces === undefined) delete process.env.AGENT_TRACES_ENABLED;
+      else process.env.AGENT_TRACES_ENABLED = traces;
+      if (payloads === undefined) delete process.env.AI_TRACE_RECORD_PAYLOADS;
+      else process.env.AI_TRACE_RECORD_PAYLOADS = payloads;
+    }
+  });
+});
 
 function activeSessionId(): string | undefined {
   return propagation.getActiveBaggage()?.getEntry(SESSION_BAGGAGE_KEY)?.value;

@@ -80,6 +80,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
   system?: string;
 
+  /** Append shell/filesystem session guidance. Defaults to true. */
+  includeSessionWorkspace?: boolean;
+
   /** Initial user prompt that kicks off the agent */
   prompt: string;
 

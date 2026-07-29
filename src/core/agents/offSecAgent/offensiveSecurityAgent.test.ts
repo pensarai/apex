@@ -11,6 +11,10 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+const promptMocks = vi.hoisted(() => ({
+  buildSessionWorkspaceSection: vi.fn(() => "workspace-section"),
+}));
+
 // ---------------------------------------------------------------------------
 // Module stubs — prevent the full tool/AI/zod import chain from loading.
 //
@@ -48,10 +52,11 @@ vi.mock("../specialized/utils", () => ({
 }));
 vi.mock("./prompt", () => ({
   buildBaseSystemPrompt: () => "system",
-  buildSessionWorkspaceSection: () => "",
+  buildSessionWorkspaceSection: promptMocks.buildSessionWorkspaceSection,
 }));
 vi.mock("./trace", () => ({
   StepTraceWriter: class {
+    writeInit() {}
     onStepFinish() {}
   },
 }));
@@ -154,6 +159,33 @@ async function* yieldThenThrow(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("OffensiveSecurityAgent system prompt", () => {
+  it("omits shell workspace guidance for a filesystem-less host", () => {
+    const rootPath = join("/tmp", `apex-no-filesystem-prompt-${Date.now()}`);
+    mkdirSync(rootPath, { recursive: true });
+    promptMocks.buildSessionWorkspaceSection.mockClear();
+    try {
+      new OffensiveSecurityAgent({
+        system: "profile prompt",
+        prompt: "continue",
+        model: "global.anthropic.claude-opus-4-6-v1",
+        session: {
+          id: "ses_prompt_test",
+          rootPath,
+          config: { agentCwd: rootPath },
+        },
+        activeTools: [],
+        sandbox: {},
+        includeSessionWorkspace: false,
+      } as never);
+
+      expect(promptMocks.buildSessionWorkspaceSection).not.toHaveBeenCalled();
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("OffensiveSecurityAgent.consume()", () => {
   const textDelta = { type: "text-delta", text: "hi" };
