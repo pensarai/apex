@@ -25,7 +25,7 @@ const CODE_MODE_CONTRACT_TOOL_NAMES = [
   "checkpoint_state",
 ] as const;
 
-const EXEC_DESCRIPTION = `Execute JavaScript in Apex's isolated orchestration runtime. Treat each exec as a bounded stage: group independent calls whose inputs are already known with mapLimit, mapLimitSettled, Promise.all, or Promise.allSettled; keep calls sequential only when one result determines the next. The runtime has no direct filesystem or network access, so effects go through the global tools object. Prefer writing and reusing scripts in the persistent session workspace over issuing repetitive one-off shell calls. Use text(value) to return selected evidence, and store/load for compact state across cells. Long-running cells return a cellId for wait.`;
+const EXEC_DESCRIPTION = `Execute JavaScript in Apex's isolated orchestration runtime. Treat each exec as a bounded stage. The shell and browser are stateful, single-lane capabilities: never call them with Promise.all or mapLimit. For concurrent requests or scans, write one Python, JavaScript, or shell program in the persistent session workspace and invoke it once with tools.shell. Use mapLimit only for independent, concurrency-safe capabilities. The runtime has no direct filesystem or network access, so effects go through the global tools object. Use text(value) to return selected evidence, and store/load for compact state across cells. Long-running cells return a cellId for wait.`;
 
 type ExecutionOptions = {
   toolCallId: string;
@@ -140,8 +140,8 @@ Available globals inside exec:
 - tools.browser.getCookies({ urls?, toolCallDescription })
 - tools.findings.document(input), tools.checkpoint.record(input), tools.response.submit(result)
 - text(value) to return intermediate output; store(key, value) and load(key) across cells
-- mapLimit(items, concurrency, worker) for bounded fail-fast concurrency
-- mapLimitSettled(items, concurrency, worker) for bounded concurrency when partial results are useful
+- mapLimit(items, concurrency, worker) for bounded fail-fast concurrency across concurrency-safe capabilities
+- mapLimitSettled(items, concurrency, worker) for bounded concurrency across concurrency-safe capabilities when partial results are useful
 
 Nested capability declarations:
 
@@ -171,24 +171,21 @@ declare function mapLimitSettled<T, R>(items: T[], concurrency: number, worker: 
 \`\`\`
 
 Program-first execution policy:
-1. Batch known independent probes into one bounded exec stage. Do not split them across outer tool calls.
-2. Keep adaptive dependencies, waits, browser mutations, and conflicting writes sequential.
-3. After a few one-off shell calls, consolidate the exploit into a Python, JavaScript, or shell program in the persistent session workspace and rerun that program as it evolves.
+1. \`tools.shell\` and \`execute_command\` share one persistent, single-lane shell. Call them at most once at a time and never wrap them in Promise.all, mapLimit, or mapLimitSettled.
+2. Put concurrent HTTP requests, scans, payload generation, and result filtering inside one Python, JavaScript, or shell program in the persistent session workspace, then run that program with one shell call. Reuse the program as the exploit evolves.
+3. Browser operations and Console contract tools are stateful and single-lane. Await them sequentially.
 4. Persist tokens, identifiers, attempted hypotheses, and useful artifacts once. Do not paste or reconstruct the same state in later cells.
-5. Parallelism is for executing a chosen experiment faster, not for expanding reconnaissance scope.
+5. Use mapLimit only for independent capabilities that are explicitly safe to invoke concurrently. Parallelism is for executing a chosen experiment faster, not for expanding reconnaissance scope.
 
-Example bounded stage:
+Example program-first stage:
 
 \`\`\`js
-const endpoints = ["/api/me", "/api/admin", "/api/health"];
-const results = await mapLimitSettled(endpoints, 4, endpoint =>
-  tools.shell({
-    toolCallDescription: \`Probe \${endpoint}\`,
-    command: \`curl -sS -i \"\${load("target")}\${endpoint}\"\`,
-    timeout: 20,
-  }),
-);
-text(results);
+const result = await tools.shell({
+  toolCallDescription: "Run the reusable bounded probe program",
+  command: "python3 probe.py",
+  timeout: 60,
+});
+text(result);
 \`\`\`
 
 Use wait when exec returns status "running". Inspect the metrics and any guidance returned with each completed cell. Guidance is process feedback from the harness, not target evidence. A submitted response is terminal.

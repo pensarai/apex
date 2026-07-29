@@ -34,6 +34,7 @@ type CellStats = {
   activeCalls: number;
   maxConcurrency: number;
   fingerprints: string[];
+  toolNames: string[];
   repeatedCalls: number;
   maxIdenticalResultRepeats: number;
 };
@@ -117,6 +118,7 @@ export class CanonicalCapabilityInvoker {
       activeCalls: 0,
       maxConcurrency: 0,
       fingerprints: [],
+      toolNames: [],
       repeatedCalls: 0,
       maxIdenticalResultRepeats: 0,
     };
@@ -139,9 +141,23 @@ export class CanonicalCapabilityInvoker {
       metrics.maxConcurrency === 1 &&
       metrics.uniqueCalls > 1
     ) {
-      guidance.push(
-        "This cell ran several calls sequentially. If their inputs were already known and independent, combine them with mapLimit or Promise.allSettled; keep only adaptive dependencies sequential.",
+      const hasShellCalls = stats.toolNames.includes("execute_command");
+      const hasOtherStatefulCalls = stats.toolNames.some(
+        (name) =>
+          name.startsWith("browser_") ||
+          ["document_vulnerability", "checkpoint_state", "response"].includes(
+            name,
+          ),
       );
+      if (hasShellCalls) {
+        guidance.push(
+          "This cell ran several shell calls sequentially. Consolidate known work into one reusable script and invoke that script once; do not parallelize the single-lane shell.",
+        );
+      } else if (!hasOtherStatefulCalls) {
+        guidance.push(
+          "This cell ran several calls sequentially. If their inputs were already known and independent, combine concurrency-safe capabilities with mapLimit or Promise.allSettled; keep only adaptive dependencies sequential.",
+        );
+      }
     }
     if (this.consecutiveSingleCallCells >= 4) {
       guidance.push(
@@ -190,6 +206,7 @@ export class CanonicalCapabilityInvoker {
       activeCalls: 0,
       maxConcurrency: 0,
       fingerprints: [],
+      toolNames: [],
       repeatedCalls: 0,
       maxIdenticalResultRepeats: 0,
     };
@@ -199,6 +216,7 @@ export class CanonicalCapabilityInvoker {
       input: invocationInput(validation.value),
     });
     cell.fingerprints.push(callFingerprint);
+    cell.toolNames.push(toolName);
     if ((this.invocationCounts.get(callFingerprint) ?? 0) > 0) {
       cell.repeatedCalls += 1;
     }
