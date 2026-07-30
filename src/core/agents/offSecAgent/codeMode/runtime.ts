@@ -274,8 +274,8 @@ export class CodeModeRuntime {
           messages: context.messages,
           abortSignal: context.abortSignal,
         });
-        hostCalls.add(call);
-        void call
+        let bridgedCall: Promise<void>;
+        bridgedCall = call
           .then((result) => {
             const value = vm.newString(JSON.stringify(result ?? null));
             deferred.resolve(value);
@@ -288,10 +288,11 @@ export class CodeModeRuntime {
             deferred.reject(value);
             value.dispose();
           })
-          .finally(() => {
-            hostCalls.delete(call);
-            void pumpJobs();
+          .finally(async () => {
+            hostCalls.delete(bridgedCall);
+            await pumpJobs();
           });
+        hostCalls.add(bridgedCall);
         return deferred.handle;
       },
     );
@@ -362,6 +363,13 @@ export class CodeModeRuntime {
           : {}),
       };
     } catch (error) {
+      // A guest Promise.all can reject immediately while an earlier nested
+      // capability is still running (for example, the single-lane shell
+      // rejects its second overlapping call). Keep the VM alive until every
+      // host-to-guest bridge callback and its QuickJS jobs have settled.
+      // Disposing first lets a late callback allocate into a freed context.
+      await Promise.allSettled([...hostCalls]);
+      await pendingJobs.catch(() => undefined);
       const terminated = context.abortSignal?.aborted === true;
       const observation = this.invoker.completeCell(context.parentToolCallId);
       return {

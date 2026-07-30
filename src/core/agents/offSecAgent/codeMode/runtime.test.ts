@@ -116,6 +116,36 @@ describe("CodeModeRuntime", () => {
     await runtime.dispose();
   });
 
+  test("keeps the VM alive until an in-flight host call settles after Promise.all rejects", async () => {
+    let firstCompleted = false;
+    const runtime = createRuntime({
+      execute_command: tool({
+        inputSchema: z.object({ command: z.string() }),
+        execute: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          firstCompleted = true;
+          return { stdout: "ok" };
+        },
+      }),
+    });
+
+    const result = await runtime.execute(
+      `
+        await Promise.all([
+          tools.shell({ command: "first" }),
+          tools.shell({ command: "second" }),
+        ]);
+      `,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.output).toContain("tools.shell is single-lane");
+    expect(firstCompleted).toBe(true);
+    await runtime.dispose();
+  });
+
   test("bounds shell calls by default without overriding explicit timeouts", async () => {
     const timeouts: Array<number | undefined> = [];
     const runtime = createRuntime({
