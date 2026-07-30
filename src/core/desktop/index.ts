@@ -5,6 +5,20 @@
  * Public API for the module — import from here, not the internals.
  */
 
+// Computer-use (desktop GUI automation) command builders. The install/launch
+// builders (shellRun / launchCommand / readinessProbe) stay module-internal —
+// only the runner uses them.
+export {
+  keyPressCommand,
+  mouseClickCommand,
+  mouseDoubleClickCommand,
+  mouseDragCommand,
+  mouseMoveCommand,
+  screenInfoCommand,
+  screenshotCommand,
+  scrollCommand,
+  typeTextCommand,
+} from "./commands";
 export {
   type RunBuildOptions,
   type RunBuildResult,
