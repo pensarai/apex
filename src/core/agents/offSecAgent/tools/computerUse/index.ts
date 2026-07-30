@@ -56,16 +56,3 @@ export function createComputerUseToolset(ctx: ToolContext) {
     computer_screen_info: computerScreenInfo(ctx),
   } as const;
 }
-
-export { localExec, resolveDesktopOs } from "./runtime";
-export {
-  computerKeyPress,
-  computerMouseClick,
-  computerMouseDoubleClick,
-  computerMouseDrag,
-  computerMouseMove,
-  computerScreenInfo,
-  computerScreenshot,
-  computerScroll,
-  computerTypeText,
-};
