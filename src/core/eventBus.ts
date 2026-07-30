@@ -24,11 +24,24 @@ export type AgentEventMap = {
    * extended thinking, OpenAI reasoning) so consumers can surface a
    * "thinking" indicator instead of appearing to hang between tool calls.
    */
-  "reasoning-delta": { text: string; subagentId?: string };
+  "reasoning-delta": {
+    text: string;
+    subagentId?: string;
+    sessionId?: string;
+    messageId?: string;
+  };
   /** A reasoning block opened. Lets consumers time the thinking window. */
-  "reasoning-start": { subagentId?: string };
+  "reasoning-start": {
+    subagentId?: string;
+    sessionId?: string;
+    messageId?: string;
+  };
   /** A reasoning block closed. Paired with `reasoning-start` to derive duration. */
-  "reasoning-end": { subagentId?: string };
+  "reasoning-end": {
+    subagentId?: string;
+    sessionId?: string;
+    messageId?: string;
+  };
   "tool-call-start": {
     toolCallId: string;
     toolName: string;
@@ -300,13 +313,18 @@ export class AgentEventBus {
         });
         break;
       case "reasoning-start":
-        this.emit("reasoning-start", { subagentId });
+        this.emit("reasoning-start", { subagentId, sessionId, messageId });
         break;
       case "reasoning-delta":
-        this.emit("reasoning-delta", { text: chunk.text, subagentId });
+        this.emit("reasoning-delta", {
+          text: chunk.text,
+          subagentId,
+          sessionId,
+          messageId,
+        });
         break;
       case "reasoning-end":
-        this.emit("reasoning-end", { subagentId });
+        this.emit("reasoning-end", { subagentId, sessionId, messageId });
         break;
       case "tool-input-start":
         this.emit("tool-call-start", {

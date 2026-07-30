@@ -231,6 +231,33 @@ describe("emitStreamPart — native id threading", () => {
     expect(results[0].partId).toBe(toolPartId);
   });
 
+  it("stamps sessionId/messageId on reasoning events", () => {
+    // Reasoning opens each step's message before any text flows, so downstream
+    // consumers need the ids to attach the thinking block to the right message
+    // instead of minting a fallback.
+    const bus = new AgentEventBus();
+    const sessionId = newSessionId();
+    const messageId = newMessageId();
+    const received: Array<{ sessionId?: string; messageId?: string }> = [];
+    bus.on("reasoning-start", (e) => received.push(e));
+    bus.on("reasoning-delta", (e) => received.push(e));
+    bus.on("reasoning-end", (e) => received.push(e));
+
+    const ids: StreamIdContext = { sessionId, messageId };
+    bus.emitStreamPart(part({ type: "reasoning-start", id: "r1" }), ids);
+    bus.emitStreamPart(
+      part({ type: "reasoning-delta", id: "r1", text: "hm" }),
+      ids,
+    );
+    bus.emitStreamPart(part({ type: "reasoning-end", id: "r1" }), ids);
+
+    expect(received).toHaveLength(3);
+    for (const e of received) {
+      expect(e.sessionId).toBe(sessionId);
+      expect(e.messageId).toBe(messageId);
+    }
+  });
+
   it("accepts a bare subagentId string for backward compatibility", () => {
     const bus = new AgentEventBus();
     const received: AgentEventMapText[] = [];
