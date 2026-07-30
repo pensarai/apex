@@ -49,6 +49,21 @@ describe("launchCommand", () => {
     expect(cmd).toContain("$env:LOG=");
   });
 
+  it("skips env entries whose value is not a string", () => {
+    // Manifests are parsed JSON — a null/numeric value must not reach quoting.
+    const withNull = {
+      ...launch,
+      environment: [
+        { name: "NULLED", value: null },
+        { name: "LOG", value: "debug" },
+      ] as unknown as BuildManifest["launch"]["environment"],
+    };
+    expect(() => launchCommand("linux", withNull)).not.toThrow();
+    expect(launchCommand("linux", withNull)).not.toContain("NULLED");
+    expect(launchCommand("linux", withNull)).toContain("LOG=");
+    expect(launchCommand("windows", withNull)).not.toContain("NULLED");
+  });
+
   it("throws without an executablePath", () => {
     expect(() =>
       launchCommand("linux", { ...launch, executablePath: null }),
@@ -67,7 +82,31 @@ describe("readinessProbe", () => {
     ).toContain("pgrep");
     expect(
       readinessProbe("windows", { kind: "process", process: "app" }),
-    ).toContain("Get-Process");
+    ).toContain("Get-CimInstance Win32_Process");
+  });
+
+  it("matches the windows process probe against the command line", () => {
+    // pgrep -f accepts a path fragment; the windows probe must too, so it
+    // checks CommandLine (not just the bare image name).
+    const probe = readinessProbe("windows", {
+      kind: "process",
+      process: "C:\\Program Files\\App\\app.exe --headless",
+    });
+    expect(probe).toContain("$_.CommandLine -like");
+    expect(probe).toContain("$_.Name -like");
+    expect(probe).toContain("app.exe --headless");
+  });
+
+  it("escapes -like wildcards in windows patterns", () => {
+    expect(
+      readinessProbe("windows", { kind: "process", process: "a[p]p*" }),
+    ).toContain("*a`[p`]p`**");
+    expect(
+      readinessProbe("windows", {
+        kind: "window-title",
+        titleContains: "Save?",
+      }),
+    ).toContain("*Save`?*");
   });
 
   it("builds port probes per OS", () => {

@@ -94,6 +94,12 @@ async function main(): Promise<void> {
         onLog: (line) => console.error(`[desktop] ${line}`),
       });
       console.log(JSON.stringify(result, null, 2));
+      if (!result.ready) {
+        console.error(
+          `\nError: the app never became ready (${result.readinessKind} check timed out).`,
+        );
+        process.exit(1);
+      }
     } catch (err) {
       console.error(
         `\nError: ${err instanceof Error ? err.message : String(err)}`,

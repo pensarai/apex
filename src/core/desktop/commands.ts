@@ -18,6 +18,12 @@ function psQuote(body: string): string {
   return `'${body.replace(/'/g, "''")}'`;
 }
 
+// Manifest strings are literals, but PowerShell's -like treats these as
+// wildcards — backtick-escape them so the match stays literal.
+function escapeLikePattern(value: string): string {
+  return value.replace(/([`*?[\]])/g, "`$1");
+}
+
 /**
  * Wrap an install/teardown script body in the OS's shell. Windows scripts run
  * under PowerShell; Linux/macOS under bash. The body itself is author-supplied
@@ -49,9 +55,12 @@ export function launchCommand(
     );
   }
   const args = (launch.args ?? []).map((a) => quoteArg(os, a)).join(" ");
-  const envPairs = (launch.environment ?? [])
-    .filter((e) => e.value !== undefined)
-    .map((e) => ({ name: e.name, value: e.value as string }));
+  // Manifests are parsed JSON: only inline entries that actually carry a
+  // string value (secretRef-only entries, and nulls, are not inlined).
+  const envPairs = (launch.environment ?? []).filter(
+    (e): e is { name: string; value: string } =>
+      typeof e.name === "string" && typeof e.value === "string",
+  );
 
   if (os === "windows") {
     const argList = launch.args?.length
@@ -89,12 +98,18 @@ export function readinessProbe(
   switch (check.kind) {
     case "sleep":
       return null;
-    case "process":
+    case "process": {
       if (os === "windows") {
-        return `powershell -NoProfile -Command "if (Get-Process -Name ${psQuote(check.process)} -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"`;
+        // Match the full command line (and fall back to the image name) so the
+        // same manifest string — a path fragment or an argv substring — works
+        // here as it does under `pgrep -f`. Get-Process -Name only matches the
+        // bare image name, which silently never fires for those manifests.
+        const pattern = psQuote(`*${escapeLikePattern(check.process)}*`);
+        return `powershell -NoProfile -Command "if (Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like ${pattern} -or $_.Name -like ${pattern} }) { exit 0 } else { exit 1 }"`;
       }
       // pgrep works on linux; macOS ships it too.
       return `pgrep -f ${quoteArg(os, check.process)} >/dev/null`;
+    }
     case "port":
       if (os === "windows") {
         return `powershell -NoProfile -Command "if (Get-NetTCPConnection -State Listen -LocalPort ${check.port} -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"`;
@@ -111,7 +126,7 @@ export function readinessProbe(
       if (os === "macos") {
         return `osascript -e 'tell application "System Events" to (name of every window of every process) as string' 2>/dev/null | grep -q ${quoteArg(os, check.titleContains)}`;
       }
-      return `powershell -NoProfile -Command "if (Get-Process | Where-Object { $_.MainWindowTitle -like '*${check.titleContains.replace(/'/g, "''")}*' }) { exit 0 } else { exit 1 }"`;
+      return `powershell -NoProfile -Command "if (Get-Process | Where-Object { $_.MainWindowTitle -like ${psQuote(`*${escapeLikePattern(check.titleContains)}*`)} }) { exit 0 } else { exit 1 }"`;
     case "log-line":
       if (os === "windows") {
         return `powershell -NoProfile -Command "if (Select-String -Path ${psQuote(check.path)} -Pattern ${psQuote(check.contains)} -Quiet) { exit 0 } else { exit 1 }"`;
