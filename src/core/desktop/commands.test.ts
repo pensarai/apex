@@ -186,10 +186,13 @@ describe("screenshotCommand", () => {
     expect(cmd).toContain("/tmp/shot.png");
   });
 
-  it("uses screencapture on macos", () => {
-    expect(screenshotCommand("macos", "/tmp/shot.png")).toContain(
-      "screencapture -x",
-    );
+  it("uses screencapture on macos, downscaled to point space for Retina", () => {
+    const cmd = screenshotCommand("macos", "/tmp/shot.png");
+    expect(cmd).toContain("screencapture -x");
+    // Retina displays capture at pixel resolution while cliclick/screen_info
+    // operate in point space — the capture must be rescaled to match.
+    expect(cmd).toContain("NSScreen.mainScreen");
+    expect(cmd).toContain("sips -Z");
   });
 
   it("uses .NET Graphics.CopyFromScreen on windows", () => {

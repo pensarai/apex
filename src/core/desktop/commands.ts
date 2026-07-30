@@ -192,7 +192,8 @@ public class PensarWin32 {
   public const uint MIDDLEDOWN=0x0020; public const uint MIDDLEUP=0x0040;
   public const uint WHEEL=0x0800;
 }
-"@`;
+"@
+`;
 
 // Down/up mouse_event flag pair for a button.
 const WIN32_CLICK_FLAGS: Record<"left" | "middle" | "right", string> = {
@@ -227,7 +228,17 @@ export function screenshotCommand(os: DesktopOs, outputPath: string): string {
     return `scrot -o ${quoteArg(os, outputPath)} 2>/dev/null || import -window root ${quoteArg(os, outputPath)}`;
   }
   if (os === "macos") {
-    return `screencapture -x ${quoteArg(os, outputPath)}`;
+    // screencapture captures at pixel resolution, but cliclick and
+    // screen_info (NSScreen.frame) operate in point space — on Retina
+    // displays those differ by the backing scale factor. Downscale the
+    // capture to the screen's point width so image coordinates line up with
+    // the coordinates the click/move builders expect.
+    const path = quoteArg(os, outputPath);
+    return (
+      `screencapture -x ${path} && { ` +
+      `W=$(osascript -l JavaScript -e 'ObjC.import("AppKit"); Math.round($.NSScreen.mainScreen.frame.size.width)' 2>/dev/null); ` +
+      `[ -n "$W" ] && sips -Z "$W" ${path} >/dev/null 2>&1; true; }`
+    );
   }
   return pwshEncoded(
     `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; ` +
