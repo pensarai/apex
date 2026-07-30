@@ -1,3 +1,7 @@
+import { exec } from "node:child_process";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { launchCommand, readinessProbe, shellRun } from "./commands";
 import type { BuildManifest } from "./types";
@@ -69,6 +73,34 @@ describe("launchCommand", () => {
       launchCommand("linux", { ...launch, executablePath: null }),
     ).toThrow(/executablePath is required/);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "returns to the executor without waiting for the app to exit",
+    async () => {
+      // Regression: `cd X && app >log &` backgrounds a subshell that keeps the
+      // executor's stdout/stderr pipes open, so the launch step blocked until
+      // the app exited — i.e. forever, for a real desktop app.
+      const dir = await mkdtemp(join(tmpdir(), "pensar-launch-"));
+      const script = join(dir, "app.sh");
+      await writeFile(script, "#!/usr/bin/env bash\nsleep 5\n", {
+        mode: 0o755,
+      });
+
+      const started = Date.now();
+      await new Promise<void>((resolve, reject) => {
+        exec(
+          launchCommand("linux", {
+            executablePath: script,
+            args: [],
+            workingDirectory: dir,
+            environment: [],
+          }),
+          (err) => (err ? reject(err) : resolve()),
+        );
+      });
+      expect(Date.now() - started).toBeLessThan(3000);
+    },
+  );
 });
 
 describe("readinessProbe", () => {
@@ -110,9 +142,10 @@ describe("readinessProbe", () => {
   });
 
   it("builds port probes per OS", () => {
-    expect(readinessProbe("linux", { kind: "port", port: 8080 })).toContain(
-      ":8080",
-    );
+    const linux = readinessProbe("linux", { kind: "port", port: 8080 });
+    expect(linux).toContain(":8080");
+    // ss is missing on minimal images, so the probe must have a fallback.
+    expect(linux).toContain("/dev/tcp/127.0.0.1/8080");
     expect(readinessProbe("macos", { kind: "port", port: 8080 })).toContain(
       "lsof",
     );

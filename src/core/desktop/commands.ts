@@ -41,6 +41,10 @@ function quoteArg(os: DesktopOs, arg: string): string {
   return `"${arg.replace(/(["\\$`])/g, "\\$1")}"`;
 }
 
+// Where a backgrounded linux/macOS app's stdout+stderr land, so the readiness
+// log-line check has something to grep.
+const LAUNCH_LOG_PATH = "/tmp/pensar-app.log";
+
 /**
  * Build a command that launches the app in the background so the runner can
  * proceed to readiness checks. Requires `launch.executablePath`.
@@ -76,14 +80,19 @@ export function launchCommand(
   }
 
   // linux / macos: cd (if wd) then background the process with env prefix.
+  // The redirects must wrap the whole group, not just the app: `cd X && app
+  // >log &` backgrounds a subshell that keeps the executor's stdout/stderr
+  // pipes open, so the executor blocks until the app exits.
   const env = envPairs
     .map((e) => `${e.name}=${quoteArg(os, e.value)}`)
     .join(" ");
   const cd = launch.workingDirectory
     ? `cd ${quoteArg(os, launch.workingDirectory)} && `
     : "";
-  const prefix = env ? `${env} ` : "";
-  return `bash -lc ${singleQuote(`${cd}${prefix}${quoteArg(os, launch.executablePath)} ${args} >/tmp/pensar-app.log 2>&1 &`)}`;
+  const run = [env, quoteArg(os, launch.executablePath), args]
+    .filter((part) => part !== "")
+    .join(" ");
+  return `bash -lc ${singleQuote(`{ ${cd}${run}; } </dev/null >${LAUNCH_LOG_PATH} 2>&1 &`)}`;
 }
 
 /**
@@ -117,8 +126,9 @@ export function readinessProbe(
       if (os === "macos") {
         return `lsof -iTCP:${check.port} -sTCP:LISTEN >/dev/null 2>&1`;
       }
-      // linux: prefer ss, fall back to /proc-based check via grep on the hex port.
-      return `bash -lc ${singleQuote(`ss -ltn 2>/dev/null | grep -q ":${check.port} "`)}`;
+      // linux: prefer ss, but minimal images often ship without iproute2 — fall
+      // back to a loopback connect so the probe doesn't silently never fire.
+      return `bash -lc ${singleQuote(`ss -ltn 2>/dev/null | grep -q ":${check.port} " || (exec 3<>/dev/tcp/127.0.0.1/${check.port}) 2>/dev/null`)}`;
     case "window-title":
       if (os === "linux") {
         return `bash -lc ${singleQuote(`xdotool search --name ${JSON.stringify(check.titleContains)} >/dev/null 2>&1`)}`;
