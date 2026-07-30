@@ -14,6 +14,8 @@ import {
   type ReleaseChannel,
   uploadDesktopBuild,
 } from "../core/api/builds";
+import { runDesktopBuild } from "../core/api/desktopBuild";
+import type { DesktopOs } from "../core/desktop";
 
 function getFlag(flag: string, argv: string[]): string | undefined {
   const idx = argv.indexOf(flag);
@@ -30,6 +32,12 @@ All commands operate on the selected workspace (set via \`pensar login\`).
 
 Usage:
   pensar builds upload <file> [options]
+  pensar builds run <manifest.json> [--os linux|windows|macos]
+
+run:
+  Installs + launches a desktop build from a pensar-build.json manifest using
+  the local OS shell (intended to run inside the target sandbox). The OS is
+  read from the manifest's artifact.platform unless --os overrides it.
 
 upload options (required):
   --app <ref>            Application id or label (e.g. APP-3) the build belongs to
@@ -63,6 +71,41 @@ async function main(): Promise<void> {
 
   if (!sub || sub === "--help" || sub === "-h" || sub === "help") {
     showHelp();
+    return;
+  }
+
+  if (sub === "run") {
+    const manifestPath =
+      args[1] && !args[1].startsWith("--") ? args[1] : undefined;
+    if (!manifestPath) {
+      console.error("Error: missing required argument: <manifest.json>");
+      console.error("Usage: pensar builds run <manifest.json> [--os <os>]");
+      process.exit(1);
+    }
+    const osOverride = getFlag("--os", args) as DesktopOs | undefined;
+    if (osOverride && !PLATFORMS.includes(osOverride as ArtifactPlatform)) {
+      console.error(`Error: --os must be one of: ${PLATFORMS.join(", ")}`);
+      process.exit(1);
+    }
+    try {
+      const result = await runDesktopBuild({
+        manifestPath,
+        os: osOverride,
+        onLog: (line) => console.error(`[desktop] ${line}`),
+      });
+      console.log(JSON.stringify(result, null, 2));
+      if (!result.ready) {
+        console.error(
+          `\nError: the app never became ready (${result.readinessKind} check timed out).`,
+        );
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error(
+        `\nError: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      process.exit(1);
+    }
     return;
   }
 

@@ -64,6 +64,8 @@ export {
   PENSAR_API_BASE_URL,
   PENSAR_CONSOLE_BASE_URL,
 } from "./constants";
+export type { RunDesktopBuildInput } from "./desktopBuild";
+export { runDesktopBuild } from "./desktopBuild";
 export type { EnvironmentAgentInput, EnvironmentResult } from "./environment";
 export { runEnvironmentAgent } from "./environment";
 export type {
