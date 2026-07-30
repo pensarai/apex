@@ -206,6 +206,98 @@ const ALL_TOOLS: ToolDefinition[] = [
     defaultEnabled: true,
   },
 
+  // Computer-use tools (desktop GUI automation)
+  {
+    id: "computer_screenshot",
+    name: "Computer Screenshot",
+    description: "Capture the desktop",
+    detail:
+      "Take a screenshot of the desktop. Returns the PNG as an image for visual inspection and saves a copy to the evidence directory. Used by the Computer Use agent to observe the application under test.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "computer_mouse_click",
+    name: "Computer Mouse Click",
+    description: "Click at coordinates",
+    detail:
+      "Click the mouse at specific (x, y) screen coordinates. Supports left, right, and middle buttons. Used to interact with desktop GUI elements.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "computer_mouse_double_click",
+    name: "Computer Double Click",
+    description: "Double-click at coords",
+    detail:
+      "Double-click the left mouse button at specific (x, y) coordinates — opening files, selecting words, or activating list items.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "computer_mouse_move",
+    name: "Computer Mouse Move",
+    description: "Move the cursor",
+    detail:
+      "Move the mouse cursor to (x, y) without clicking — used to hover and reveal tooltips or menus.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "computer_mouse_drag",
+    name: "Computer Mouse Drag",
+    description: "Click-and-drag",
+    detail:
+      "Drag the left mouse button from one point to another — selecting text, moving elements, or operating sliders.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "computer_type_text",
+    name: "Computer Type Text",
+    description: "Type via keyboard",
+    detail:
+      "Type literal text as if on a physical keyboard. Click the target input field first so it has focus.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "computer_key_press",
+    name: "Computer Key Press",
+    description: "Press key combo",
+    detail:
+      "Press a key or key combination (e.g. Return, ctrl+c, alt+Tab) for keyboard shortcuts and navigation in desktop applications.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "computer_scroll",
+    name: "Computer Scroll",
+    description: "Scroll the wheel",
+    detail:
+      "Scroll the mouse wheel up or down, optionally at a specific position, to reveal off-screen content.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "computer_screen_info",
+    name: "Computer Screen Info",
+    description: "Screen + cursor state",
+    detail:
+      "Report the screen dimensions, current cursor position, and active window title so the agent knows the coordinate bounds before interacting.",
+    category: "browser",
+    defaultEnabled: true,
+  },
+  {
+    id: "delegate_to_computer_use_agent",
+    name: "Computer Use Agent",
+    description: "Delegate GUI tasks",
+    detail:
+      "Delegate a task to the specialized Computer Use subagent for autonomous desktop GUI interaction. The agent uses screenshots and mouse/keyboard to drive the launched application under test.",
+    category: "utility",
+    defaultEnabled: true,
+  },
+
   // Reporting tools
   {
     id: "document_vulnerability",

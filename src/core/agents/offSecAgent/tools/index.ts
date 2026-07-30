@@ -13,12 +13,19 @@ export { BROWSER_TOOL_NAMES, createBrowserToolset } from "./browserTools";
 export { checkpointState } from "./checkpointState";
 // Authentication tools
 export { completeAuthentication } from "./completeAuthentication";
+// Computer-use tools (desktop GUI automation via xdotool / cliclick / PowerShell)
+export {
+  COMPUTER_USE_TOOL_NAMES,
+  type ComputerUseToolName,
+  createComputerUseToolset,
+} from "./computerUse";
 export { crawlAuthenticated } from "./crawlAuthenticated";
 export { createAttackSurfaceReport } from "./createAttackSurfaceReport";
 export { createFile } from "./createFile";
 // Task decomposition tools
 export { createTask } from "./createTask";
 export { delegateAuth } from "./delegateAuth";
+export { delegateComputerUse } from "./delegateComputerUse";
 export { detectAuthScheme } from "./detectAuthScheme";
 // Attack surface / recon tools
 export { documentApp } from "./documentApp";
@@ -155,11 +162,13 @@ import {
 import { createBrowserToolset } from "./browserTools";
 import { checkpointState } from "./checkpointState";
 import { completeAuthentication } from "./completeAuthentication";
+import { createComputerUseToolset } from "./computerUse";
 import { crawlAuthenticated } from "./crawlAuthenticated";
 import { createAttackSurfaceReport } from "./createAttackSurfaceReport";
 import { createFile } from "./createFile";
 import { createTask } from "./createTask";
 import { delegateAuth } from "./delegateAuth";
+import { delegateComputerUse } from "./delegateComputerUse";
 import { detectAuthScheme } from "./detectAuthScheme";
 import { documentApp } from "./documentApp";
 import { documentEndpoint } from "./documentEndpoint";
@@ -229,6 +238,9 @@ export function createAllTools(ctx: ToolContext) {
     // Browser automation tools (8 tools from Playwright MCP)
     ...createBrowserToolset(ctx),
 
+    // Computer-use tools (desktop GUI automation via xdotool / cliclick / PowerShell)
+    ...createComputerUseToolset(ctx),
+
     // Core pentest tools
     execute_command: executeCommand(ctx),
     http_request: httpRequest(ctx),
@@ -248,6 +260,7 @@ export function createAllTools(ctx: ToolContext) {
     document_app: documentApp(ctx),
     document_endpoint: documentEndpoint(ctx),
     delegate_to_auth_subagent: delegateAuth(ctx),
+    delegate_to_computer_use_agent: delegateComputerUse(ctx),
     extract_js_endpoints: extractJsEndpoints(ctx),
     crawl_authenticated_area: crawlAuthenticated(ctx),
     test_endpoint_variations: testEndpointVariations(ctx),
@@ -334,6 +347,16 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "browser_evaluate",
   "browser_console",
   "browser_get_cookies",
+  // Computer use (desktop GUI automation)
+  "computer_screenshot",
+  "computer_mouse_click",
+  "computer_mouse_double_click",
+  "computer_mouse_move",
+  "computer_mouse_drag",
+  "computer_type_text",
+  "computer_key_press",
+  "computer_scroll",
+  "computer_screen_info",
   // Core pentest
   "execute_command",
   "http_request",
@@ -350,6 +373,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "document_app",
   "document_endpoint",
   "delegate_to_auth_subagent",
+  "delegate_to_computer_use_agent",
   "create_attack_surface_report",
   "complete_authentication",
   "run_attack_surface",
@@ -405,6 +429,7 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "spawn_coding_agent",
   "run_pentest_workflow",
   "delegate_to_auth_subagent",
+  "delegate_to_computer_use_agent",
   // Whitebox jobs
   "run_whitebox_scan",
   "create_whitebox_candidate",
@@ -444,6 +469,10 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "browser_evaluate",
   "browser_console",
   "browser_get_cookies",
+  // Computer use (read-only desktop observation)
+  "computer_screenshot",
+  "computer_screen_info",
+  "computer_mouse_move",
   // Core pentest (read-only)
   "execute_command",
   "http_request",

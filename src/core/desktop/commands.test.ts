@@ -3,8 +3,31 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { launchCommand, readinessProbe, shellRun } from "./commands";
+import {
+  keyPressCommand,
+  launchCommand,
+  mouseClickCommand,
+  mouseDoubleClickCommand,
+  mouseDragCommand,
+  mouseMoveCommand,
+  readinessProbe,
+  screenInfoCommand,
+  screenshotCommand,
+  scrollCommand,
+  shellRun,
+  typeTextCommand,
+} from "./commands";
 import type { BuildManifest } from "./types";
+
+// Decode a Windows `-EncodedCommand` payload back to the PowerShell source so
+// tests can assert on the script the sandbox will actually run.
+function decodeWindows(cmd: string): string {
+  const marker = "-EncodedCommand ";
+  const idx = cmd.indexOf(marker);
+  if (idx === -1) throw new Error(`not an -EncodedCommand string: ${cmd}`);
+  const b64 = cmd.slice(idx + marker.length).trim();
+  return Buffer.from(b64, "base64").toString("utf16le");
+}
 
 describe("shellRun", () => {
   it("wraps linux/macos scripts in bash", () => {
@@ -152,5 +175,184 @@ describe("readinessProbe", () => {
     expect(readinessProbe("windows", { kind: "port", port: 8080 })).toContain(
       "Get-NetTCPConnection",
     );
+  });
+});
+
+describe("screenshotCommand", () => {
+  it("captures via scrot with an ImageMagick fallback on linux", () => {
+    const cmd = screenshotCommand("linux", "/tmp/shot.png");
+    expect(cmd).toContain("scrot -o");
+    expect(cmd).toContain("import -window root");
+    expect(cmd).toContain("/tmp/shot.png");
+  });
+
+  it("uses screencapture on macos", () => {
+    expect(screenshotCommand("macos", "/tmp/shot.png")).toContain(
+      "screencapture -x",
+    );
+  });
+
+  it("uses .NET Graphics.CopyFromScreen on windows", () => {
+    const script = decodeWindows(screenshotCommand("windows", "C:/shot.png"));
+    expect(script).toContain("System.Drawing.Graphics");
+    expect(script).toContain("CopyFromScreen");
+    expect(script).toContain("C:/shot.png");
+  });
+});
+
+describe("mouseMoveCommand", () => {
+  it("builds per-OS move commands", () => {
+    expect(mouseMoveCommand("linux", 10, 20)).toBe("xdotool mousemove 10 20");
+    expect(mouseMoveCommand("macos", 10, 20)).toBe("cliclick m:10,20");
+    expect(decodeWindows(mouseMoveCommand("windows", 10, 20))).toContain(
+      "[PensarWin32]::SetCursorPos(10, 20)",
+    );
+  });
+});
+
+describe("mouseClickCommand", () => {
+  it("moves then clicks the mapped button on linux", () => {
+    expect(mouseClickCommand("linux", "left", 5, 6)).toBe(
+      "xdotool mousemove 5 6 click 1",
+    );
+    expect(mouseClickCommand("linux", "right", 5, 6)).toContain("click 3");
+    expect(mouseClickCommand("linux", "middle", 5, 6)).toContain("click 2");
+  });
+
+  it("uses cliclick c/rc on macos (middle falls back to left)", () => {
+    expect(mouseClickCommand("macos", "left", 5, 6)).toBe("cliclick c:5,6");
+    expect(mouseClickCommand("macos", "right", 5, 6)).toBe("cliclick rc:5,6");
+    expect(mouseClickCommand("macos", "middle", 5, 6)).toBe("cliclick c:5,6");
+  });
+
+  it("uses user32 mouse_event on windows", () => {
+    const script = decodeWindows(mouseClickCommand("windows", "right", 5, 6));
+    expect(script).toContain("user32.dll");
+    expect(script).toContain("[PensarWin32]::SetCursorPos(5, 6)");
+    expect(script).toContain("[PensarWin32]::RIGHTDOWN");
+    expect(script).toContain("mouse_event");
+  });
+});
+
+describe("mouseDoubleClickCommand", () => {
+  it("builds per-OS double-click commands", () => {
+    expect(mouseDoubleClickCommand("linux", 1, 2)).toContain(
+      "click --repeat 2",
+    );
+    expect(mouseDoubleClickCommand("macos", 1, 2)).toBe("cliclick dc:1,2");
+    expect(decodeWindows(mouseDoubleClickCommand("windows", 1, 2))).toContain(
+      "mouse_event",
+    );
+  });
+});
+
+describe("mouseDragCommand", () => {
+  it("builds press-move-release drags per OS", () => {
+    expect(mouseDragCommand("linux", 1, 2, 3, 4)).toBe(
+      "xdotool mousemove 1 2 mousedown 1 mousemove 3 4 mouseup 1",
+    );
+    expect(mouseDragCommand("macos", 1, 2, 3, 4)).toBe(
+      "cliclick dd:1,2 du:3,4",
+    );
+    const script = decodeWindows(mouseDragCommand("windows", 1, 2, 3, 4));
+    expect(script).toContain("[PensarWin32]::SetCursorPos(1, 2)");
+    expect(script).toContain("[PensarWin32]::SetCursorPos(3, 4)");
+    expect(script).toContain("LEFTUP");
+  });
+});
+
+describe("typeTextCommand", () => {
+  it("types literal text per OS", () => {
+    expect(typeTextCommand("linux", "hi there")).toContain(
+      "xdotool type --clearmodifiers --",
+    );
+    expect(typeTextCommand("linux", "hi there")).toContain("hi there");
+    expect(typeTextCommand("macos", "hi there")).toContain("cliclick");
+    expect(typeTextCommand("macos", "hi there")).toContain("t:hi there");
+    expect(decodeWindows(typeTextCommand("windows", "hi there"))).toContain(
+      "SendKeys",
+    );
+  });
+
+  it("escapes SendKeys control chars on windows", () => {
+    const script = decodeWindows(typeTextCommand("windows", "a+b(c)"));
+    expect(script).toContain("a{+}b{(}c{)}");
+  });
+});
+
+describe("keyPressCommand", () => {
+  it("passes combos straight through to xdotool on linux", () => {
+    expect(keyPressCommand("linux", "ctrl+c")).toContain(
+      "xdotool key --clearmodifiers",
+    );
+    expect(keyPressCommand("linux", "ctrl+c")).toContain("ctrl+c");
+  });
+
+  it("expands combos into cliclick kd/kp/ku on macos", () => {
+    const cmd = keyPressCommand("macos", "ctrl+c");
+    expect(cmd).toContain("cliclick");
+    expect(cmd).toContain("kd:ctrl");
+    expect(cmd).toContain("kp:c");
+    expect(cmd).toContain("ku:ctrl");
+    // Named single keys map to cliclick's vocabulary.
+    expect(keyPressCommand("macos", "Return")).toContain("kp:return");
+  });
+
+  it("maps combos to SendKeys notation on windows", () => {
+    expect(decodeWindows(keyPressCommand("windows", "ctrl+c"))).toContain(
+      "SendKeys",
+    );
+    expect(decodeWindows(keyPressCommand("windows", "ctrl+c"))).toContain(
+      "SendWait('^c')",
+    );
+    expect(decodeWindows(keyPressCommand("windows", "alt+Tab"))).toContain(
+      "SendWait('%{TAB}')",
+    );
+  });
+});
+
+describe("scrollCommand", () => {
+  it("scrolls with xdotool wheel buttons on linux", () => {
+    expect(scrollCommand("linux", 3)).toContain("click --repeat 3");
+    expect(scrollCommand("linux", 3)).toContain("50 5"); // down = button 5
+    expect(scrollCommand("linux", -2)).toContain("50 4"); // up = button 4
+    expect(scrollCommand("linux", 1, 10, 20)).toContain("mousemove 10 20");
+  });
+
+  it("approximates scroll with arrow keys on macos", () => {
+    expect(scrollCommand("macos", 2)).toContain("kp:arrow-down");
+    expect(scrollCommand("macos", -2)).toContain("kp:arrow-up");
+    expect(scrollCommand("macos", 1, 10, 20)).toContain("m:10,20");
+  });
+
+  it("uses the mouse wheel event on windows", () => {
+    const down = decodeWindows(scrollCommand("windows", 2));
+    expect(down).toContain("[PensarWin32]::WHEEL");
+    expect(down).toContain("-120"); // negative delta = scroll down
+    expect(decodeWindows(scrollCommand("windows", -1))).toContain(", 120,");
+  });
+});
+
+describe("screenInfoCommand", () => {
+  it("reads geometry, mouse position, and active window on linux", () => {
+    const cmd = screenInfoCommand("linux");
+    expect(cmd).toContain("xdotool getdisplaygeometry");
+    expect(cmd).toContain("getmouselocation --shell");
+    expect(cmd).toContain("getactivewindow getwindowname");
+    expect(cmd).toContain("SIZE=");
+  });
+
+  it("uses osascript + cliclick on macos", () => {
+    const cmd = screenInfoCommand("macos");
+    expect(cmd).toContain("osascript");
+    expect(cmd).toContain("NSScreen");
+    expect(cmd).toContain("cliclick p");
+  });
+
+  it("uses SystemInformation + user32 on windows", () => {
+    const script = decodeWindows(screenInfoCommand("windows"));
+    expect(script).toContain("System.Windows.Forms.SystemInformation");
+    expect(script).toContain("GetForegroundWindow");
+    expect(script).toContain("GetCursorPos");
   });
 });
