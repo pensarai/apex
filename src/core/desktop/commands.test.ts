@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  launchCommand,
-  readinessProbe,
-  screenshotCommand,
-  shellRun,
-} from "./commands";
+import { launchCommand, readinessProbe, shellRun } from "./commands";
 import type { BuildManifest } from "./types";
 
 describe("shellRun", () => {
@@ -85,15 +80,5 @@ describe("readinessProbe", () => {
     expect(readinessProbe("windows", { kind: "port", port: 8080 })).toContain(
       "Get-NetTCPConnection",
     );
-  });
-});
-
-describe("screenshotCommand", () => {
-  it("uses the OS-native capture tool", () => {
-    expect(screenshotCommand("macos", "/tmp/s.png")).toContain("screencapture");
-    expect(screenshotCommand("windows", "/tmp/s.png")).toContain(
-      "CopyFromScreen",
-    );
-    expect(screenshotCommand("linux", "/tmp/s.png")).toContain("scrot");
   });
 });

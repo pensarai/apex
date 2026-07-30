@@ -126,14 +126,3 @@ export async function runBuildManifest(
     readinessKind: manifest.readinessCheck?.kind ?? null,
   };
 }
-
-export async function teardownBuild(opts: {
-  exec: DesktopExec;
-  os: DesktopOs;
-  manifest: BuildManifest;
-}): Promise<void> {
-  const { exec, os, manifest } = opts;
-  if (!manifest.teardownScript) return;
-  // Best-effort — the sandbox is destroyed regardless.
-  await exec(shellRun(os, manifest.teardownScript));
-}

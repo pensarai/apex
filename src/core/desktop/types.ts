@@ -39,7 +39,7 @@ export type ReadinessCheck =
       timeoutSeconds?: number;
     };
 
-export interface BuildManifestLaunchEnv {
+interface BuildManifestLaunchEnv {
   name: string;
   secretRef?: string;
   value?: string;

@@ -119,17 +119,3 @@ export function readinessProbe(
       return `grep -q ${quoteArg(os, check.contains)} ${quoteArg(os, check.path)}`;
   }
 }
-
-/** Capture a screenshot of the desktop to `outPath`. */
-export function screenshotCommand(os: DesktopOs, outPath: string): string {
-  if (os === "windows") {
-    // Uses .NET via PowerShell to grab the virtual screen.
-    const body = `Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $b=[System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp=New-Object System.Drawing.Bitmap($b.Width,$b.Height); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); $bmp.Save(${psQuote(outPath)})`;
-    return `powershell -NoProfile -Command ${psQuote(body)}`;
-  }
-  if (os === "macos") {
-    return `screencapture -x ${quoteArg(os, outPath)}`;
-  }
-  // linux: scrot or import (ImageMagick); try scrot first.
-  return `bash -lc ${singleQuote(`scrot ${outPath} 2>/dev/null || import -window root ${outPath}`)}`;
-}
