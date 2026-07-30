@@ -309,6 +309,17 @@ describe("keyPressCommand", () => {
       "SendWait('%{TAB}')",
     );
   });
+
+  it("maps function keys per backend", () => {
+    expect(keyPressCommand("macos", "alt+F4")).toContain("kp:f4");
+    expect(keyPressCommand("macos", "F12")).toContain("kp:f12");
+    expect(decodeWindows(keyPressCommand("windows", "alt+F4"))).toContain(
+      "SendWait('%{F4}')",
+    );
+    expect(decodeWindows(keyPressCommand("windows", "F12"))).toContain(
+      "SendWait('{F12}')",
+    );
+  });
 });
 
 describe("scrollCommand", () => {

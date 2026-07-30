@@ -434,7 +434,15 @@ const CLICLICK_MODIFIERS: Record<string, string> = {
   command: "cmd",
 };
 
+/** `f1` … `f12` mapped onto a backend's function-key spelling. */
+function functionKeys(format: (n: number) => string): Record<string, string> {
+  const keys: Record<string, string> = {};
+  for (let n = 1; n <= 12; n++) keys[`f${n}`] = format(n);
+  return keys;
+}
+
 const CLICLICK_KEYS: Record<string, string> = {
+  ...functionKeys((n) => `f${n}`),
   return: "return",
   enter: "return",
   escape: "esc",
@@ -485,6 +493,7 @@ const SENDKEYS_MODIFIERS: Record<string, string> = {
 };
 
 const SENDKEYS_KEYS: Record<string, string> = {
+  ...functionKeys((n) => `{F${n}}`),
   return: "{ENTER}",
   enter: "{ENTER}",
   escape: "{ESC}",
