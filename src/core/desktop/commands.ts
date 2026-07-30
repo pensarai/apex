@@ -131,7 +131,7 @@ export function readinessProbe(
       return `bash -lc ${singleQuote(`ss -ltn 2>/dev/null | grep -q ":${check.port} " || (exec 3<>/dev/tcp/127.0.0.1/${check.port}) 2>/dev/null`)}`;
     case "window-title":
       if (os === "linux") {
-        return `bash -lc ${singleQuote(`xdotool search --name ${JSON.stringify(check.titleContains)} >/dev/null 2>&1`)}`;
+        return `bash -lc ${singleQuote(`xdotool search --name ${quoteArg(os, check.titleContains)} >/dev/null 2>&1`)}`;
       }
       if (os === "macos") {
         return `osascript -e 'tell application "System Events" to (name of every window of every process) as string' 2>/dev/null | grep -q ${quoteArg(os, check.titleContains)}`;
