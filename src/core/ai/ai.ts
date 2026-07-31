@@ -90,18 +90,48 @@ export interface UsageStepContext {
   stepSeq?: number;
 }
 
+export interface UsageCacheDetails {
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
 /** Callback for reporting token usage from AI operations */
 type UsageCallback = (
   model: string,
   inputTokens: number,
   outputTokens: number,
   ctx?: UsageStepContext,
+  cache?: UsageCacheDetails,
 ) => void;
 let _usageCallback: UsageCallback | null = null;
 
 /** Register a callback to receive token usage reports from all AI operations */
 export function onUsage(cb: UsageCallback | null): void {
   _usageCallback = cb;
+}
+
+export function getUsageCacheDetails(
+  usage:
+    | {
+        inputTokenDetails?: {
+          cacheReadTokens?: number;
+          cacheWriteTokens?: number;
+        };
+      }
+    | undefined,
+  providerMetadata?: Record<string, Record<string, unknown> | undefined>,
+): UsageCacheDetails {
+  const anthropic = providerMetadata?.anthropic;
+  return {
+    cacheReadTokens:
+      usage?.inputTokenDetails?.cacheReadTokens ??
+      (anthropic?.cacheReadInputTokens as number | undefined) ??
+      0,
+    cacheWriteTokens:
+      usage?.inputTokenDetails?.cacheWriteTokens ??
+      (anthropic?.cacheCreationInputTokens as number | undefined) ??
+      0,
+  };
 }
 
 // Per-run step counter for billing attribution, scoped via AsyncLocalStorage so
@@ -962,7 +992,15 @@ export function streamResponse(
       const out = step.usage?.outputTokens ?? 0;
       // Advance stepSeq every finished step (even zero-usage) to stay aligned with the AI-SDK step index.
       const stepCtx = takeStepContext();
-      if (inp > 0 || out > 0) _usageCallback(model, inp, out, stepCtx);
+      if (inp > 0 || out > 0) {
+        _usageCallback(
+          model,
+          inp,
+          out,
+          stepCtx,
+          getUsageCacheDetails(step.usage, step.providerMetadata),
+        );
+      }
     }
   };
   const providerModel = getProviderModel(model, authConfig);
@@ -1383,7 +1421,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
   for (let attempt = 0; attempt <= MAX_OBJECT_RATE_LIMIT_RETRIES; attempt++) {
     try {
       const recordPayloads = shouldRecordAiPayloads();
-      const { output, usage } = await generateText({
+      const { output, usage, providerMetadata } = await generateText({
         model: providerModel,
         output: Output.object({
           schema,
@@ -1418,7 +1456,15 @@ export async function generateObjectResponse<T extends z.ZodType>(
         const inp = usage.inputTokens ?? 0;
         const out = usage.outputTokens ?? 0;
         const stepCtx = takeStepContext();
-        if (inp > 0 || out > 0) _usageCallback(model, inp, out, stepCtx);
+        if (inp > 0 || out > 0) {
+          _usageCallback(
+            model,
+            inp,
+            out,
+            stepCtx,
+            getUsageCacheDetails(usage, providerMetadata),
+          );
+        }
       }
 
       // zod v4: the AI SDK's `Output.object` no longer carries the schema's
