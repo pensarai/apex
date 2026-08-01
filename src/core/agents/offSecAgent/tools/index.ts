@@ -97,6 +97,7 @@ export { createResponseTool, RESPONSE_TOOL_NAME } from "./response";
 export { runAttackSurface } from "./runAttackSurface";
 export { runCodeQuery } from "./runCodeQuery";
 export { runPentestWorkflow } from "./runPentestWorkflow";
+export { runWhiteboxRecon } from "./runWhiteboxRecon";
 export { runWhiteboxScan } from "./runWhiteboxScan";
 export type {
   SandboxExecuteOptions,
@@ -201,6 +202,7 @@ import { readSkill } from "./readSkill";
 import { runAttackSurface } from "./runAttackSurface";
 import { runCodeQuery } from "./runCodeQuery";
 import { runPentestWorkflow } from "./runPentestWorkflow";
+import { runWhiteboxRecon } from "./runWhiteboxRecon";
 import { runWhiteboxScan } from "./runWhiteboxScan";
 import { spawnCodingAgent } from "./spawnCodingAgent";
 import { spawnPentestAgent } from "./spawnPentestAgent";
@@ -280,6 +282,7 @@ export function createAllTools(ctx: ToolContext) {
     spawn_pentest_agent: spawnPentestAgent(ctx),
     spawn_coding_agent: spawnCodingAgent(ctx),
     run_pentest_workflow: runPentestWorkflow(ctx),
+    run_whitebox_recon: runWhiteboxRecon(ctx),
     run_whitebox_scan: runWhiteboxScan(ctx),
     create_whitebox_candidate: createWhiteboxCandidate(ctx),
     update_whitebox_candidate: updateWhiteboxCandidate(ctx),
@@ -377,6 +380,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "spawn_pentest_agent",
   "spawn_coding_agent",
   "run_pentest_workflow",
+  "run_whitebox_recon",
   "run_whitebox_scan",
   "create_whitebox_candidate",
   "update_whitebox_candidate",
@@ -424,6 +428,7 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "spawn_pentest_agent",
   "spawn_coding_agent",
   "run_pentest_workflow",
+  "run_whitebox_recon",
   "delegate_to_auth_subagent",
   // Whitebox jobs
   "run_whitebox_scan",

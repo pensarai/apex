@@ -2,6 +2,7 @@ import type { BuiltInSkill } from "../types";
 import { pentestSkill } from "./pentest";
 import { promptInjectionSkill } from "./promptInjection";
 import { threatModelSkill } from "./threatModel";
+import { whiteboxReconSkill } from "./whiteboxRecon";
 
 export { buildPentestPrompt } from "./pentest";
 export { promptInjectionSkill } from "./promptInjection";
@@ -19,4 +20,5 @@ export const BUILTIN_SKILLS: BuiltInSkill[] = [
   pentestSkill,
   threatModelSkill,
   promptInjectionSkill,
+  whiteboxReconSkill,
 ];

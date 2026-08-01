@@ -116,6 +116,37 @@ function getResultSummaryRaw(
         }
         break;
       }
+      case "run_whitebox_recon": {
+        if (typeof result === "object" && result !== null) {
+          const obj = result as Record<string, unknown>;
+          if (obj.success === false) {
+            return {
+              text: String(obj.message || "Whitebox recon failed").slice(
+                0,
+                120,
+              ),
+              isError: true,
+            };
+          }
+          const status = String(obj.status || "unknown");
+          return {
+            text: `${status}: ${Number(obj.surfaces || 0)} interfaces across ${Number(obj.applications || 0)} applications`,
+            isError: false,
+            fullText: [
+              `${Number(obj.resources || 0)} resources`,
+              `${Number(obj.unresolved || 0)} unresolved`,
+              `${Number(obj.filesScanned || 0)}/${Number(obj.filesRelevant || 0)} files scanned`,
+              `${Number(obj.candidates || 0)} candidates in ${Number(obj.bundles || 0)} bundles`,
+              `${Number(obj.modelCalls || 0)} model calls; ${Number(obj.tokensIn || 0)} input / ${Number(obj.tokensOut || 0)} output tokens`,
+              `${Number(obj.bundleCacheHits || 0)} bundle cache hits`,
+              obj.resultPath ? `Result: ${String(obj.resultPath)}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          };
+        }
+        break;
+      }
       case "Grep": {
         if (typeof result === "string") {
           const lines = result.trim() ? result.split("\n").length : 0;

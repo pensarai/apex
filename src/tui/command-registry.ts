@@ -61,9 +61,14 @@ interface CommandOption {
 /**
  * Command category type and display order.
  */
-export type CommandCategory = "Pentesting" | "Configuration" | "General";
+export type CommandCategory =
+  | "Reconnaissance"
+  | "Pentesting"
+  | "Configuration"
+  | "General";
 
 export const categories: CommandCategory[] = [
+  "Reconnaissance",
   "Pentesting",
   "Configuration",
   "General",
@@ -325,6 +330,51 @@ export const commands: CommandConfig[] = [
         },
         initialSkill: {
           slug: "threat-model",
+          args: skillArgs,
+        },
+      });
+    },
+  },
+  {
+    name: "whitebox-recon",
+    aliases: ["wbr"],
+    description: "Profile repository attack surface from source",
+    category: "Reconnaissance",
+    options: [
+      {
+        name: "--cwd",
+        valueHint: "<path>",
+        description: "Repository path (default: current directory)",
+      },
+      {
+        name: "--workers",
+        valueHint: "<1-4>",
+        description: "Maximum concurrent analysis workers",
+      },
+    ],
+    handler: async (args, ctx) => {
+      const skillArgs: Record<string, string> = {};
+      for (let index = 0; index < args.length; index++) {
+        const next = args[index + 1];
+        if (args[index] === "--cwd" && next) {
+          skillArgs.cwd = next;
+          index++;
+        } else if (args[index] === "--workers" && next) {
+          skillArgs.workers = next;
+          index++;
+        }
+      }
+
+      ctx.navigate({
+        type: "operator",
+        nonce: Date.now(),
+        initialConfig: {
+          requireApproval: false,
+          strikeMode: false,
+          sandbox: false,
+        },
+        initialSkill: {
+          slug: "whitebox-recon",
           args: skillArgs,
         },
       });

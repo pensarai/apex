@@ -20,6 +20,7 @@ import { LoadingIndicator, type LoadingState } from "./loading-indicator";
 /** Tools that spawn subagents — show "Waiting for agents" instead of "Executing" */
 const SUBAGENT_TOOLS = new Set([
   "run_pentest_workflow",
+  "run_whitebox_recon",
   "spawn_pentest_swarm",
   "spawn_pentest_agent",
   "run_attack_surface",

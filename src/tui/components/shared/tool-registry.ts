@@ -115,6 +115,8 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
     const mode = args.cwd ? "whitebox" : "blackbox";
     return `pentest workflow (${mode}) ${args.target || ""}`;
   },
+  run_whitebox_recon: (args) =>
+    `whitebox recon ${args.cwd || "working directory"}`,
   profile_codebase: (args) =>
     `profile codebase${args.path ? ` ${args.path}` : ""}`,
   query_whitebox_catalog: (args) =>

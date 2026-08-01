@@ -203,13 +203,19 @@ export default function OperatorDashboard({
   const autocompleteOptions = useMemo(() => {
     const commandOptions = filterOperatorAutocomplete(
       allAutocompleteOptions,
-    ).filter((option) => !strikeMode || option.value !== "/pentest");
+    ).filter(
+      (option) =>
+        !strikeMode ||
+        (option.value !== "/pentest" && option.value !== "/whitebox-recon"),
+    );
     const skillOptions = skillsRegistry
       .list()
       .filter(
         (skill) =>
           !strikeMode ||
-          (skill.slug !== "pentest" && skill.slug !== "threat-model"),
+          (skill.slug !== "pentest" &&
+            skill.slug !== "threat-model" &&
+            skill.slug !== "whitebox-recon"),
       )
       .map((skill) => {
         const slug = `/${skill.slug}`;
@@ -1760,7 +1766,9 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         case "run-skill": {
           if (
             strikeMode &&
-            (action.slug === "pentest" || action.slug === "threat-model")
+            (action.slug === "pentest" ||
+              action.slug === "threat-model" ||
+              action.slug === "whitebox-recon")
           ) {
             addSystemMessage(
               `/${action.slug} requires standard operator mode. Disable Strike Mode in /advanced, then start a new session.`,

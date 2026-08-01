@@ -106,3 +106,16 @@ export type {
   ThreatModelWorkflowResult,
 } from "./threatModel";
 export { runThreatModelWorkflow } from "./threatModel";
+export type {
+  ReconApplication,
+  ReconMetrics,
+  ReconResource,
+  ReconSurface,
+  UnresolvedItem,
+  WhiteboxReconEvaluation,
+  WhiteboxReconGroundTruth,
+  WhiteboxReconInput,
+  WhiteboxReconResult,
+  WhiteboxReconRunResult,
+} from "./whiteboxRecon";
+export { evaluateWhiteboxRecon, runWhiteboxRecon } from "./whiteboxRecon";

@@ -1349,6 +1349,8 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
+  /** Maximum provider rate-limit retries. Defaults to the shared object-generation policy. */
+  maxRateLimitRetries?: number;
   /** Session id (`ses_…`) of the caller — stamped onto AI-span telemetry. */
   sessionId?: string;
 }
@@ -1369,10 +1371,14 @@ export async function generateObjectResponse<T extends z.ZodType>(
     authConfig,
     abortSignal,
     onTokenUsage,
+    maxRateLimitRetries = MAX_OBJECT_RATE_LIMIT_RETRIES,
     sessionId,
   } = opts;
 
   const providerModel = getProviderModel(model, authConfig);
+  if (!Number.isInteger(maxRateLimitRetries) || maxRateLimitRetries < 0) {
+    throw new Error("maxRateLimitRetries must be a non-negative integer");
+  }
   const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
     model,
     openAIReasoningEffort,
@@ -1380,7 +1386,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
 
   let lastError: unknown;
 
-  for (let attempt = 0; attempt <= MAX_OBJECT_RATE_LIMIT_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= maxRateLimitRetries; attempt++) {
     try {
       const recordPayloads = shouldRecordAiPayloads();
       const { output, usage } = await generateText({
@@ -1435,10 +1441,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
         );
       }
 
-      if (
-        checkIfRateLimitError(error) &&
-        attempt < MAX_OBJECT_RATE_LIMIT_RETRIES
-      ) {
+      if (checkIfRateLimitError(error) && attempt < maxRateLimitRetries) {
         const delayMs = Math.min(1000 * 2 ** attempt, 60_000);
         await new Promise((resolve) => setTimeout(resolve, delayMs));
         continue;

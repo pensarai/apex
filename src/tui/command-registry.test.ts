@@ -68,4 +68,27 @@ describe("autonomous workflow Strike Mode overrides", () => {
       }),
     );
   });
+
+  it("launches /whitebox-recon as a new standard operator workflow", async () => {
+    const navigate = vi.fn();
+
+    await getCommand("whitebox-recon").handler(
+      ["--cwd", "/tmp/example", "--workers", "3"],
+      createContext({ navigate }),
+    );
+
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "operator",
+        initialConfig: expect.objectContaining({
+          strikeMode: false,
+          sandbox: false,
+        }),
+        initialSkill: {
+          slug: "whitebox-recon",
+          args: { cwd: "/tmp/example", workers: "3" },
+        },
+      }),
+    );
+  });
 });

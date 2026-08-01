@@ -22,6 +22,7 @@ const TOOLS_WITH_LOG_WINDOW = new Set([
   "spawn_pentest_swarm",
   "spawn_pentest_agent",
   "run_pentest_workflow",
+  "run_whitebox_recon",
   "delegate_to_auth_subagent",
   "create_file",
   "update_file",

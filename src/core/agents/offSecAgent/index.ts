@@ -105,6 +105,7 @@ export {
   readTempfileCapped,
   runAttackSurface,
   runPentestWorkflow,
+  runWhiteboxRecon,
   ScopeViolationError,
   SEND_EMAIL_TOOL_NAME,
   SKILL_TOOL_NAMES,
