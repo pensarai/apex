@@ -50,6 +50,13 @@ export type { AuthenticationAgentInput } from "./authentication";
 export { runAuthenticationAgent } from "./authentication";
 export { runBenchmarkComparisonAgent } from "./benchmark";
 export { runPentestAgent } from "./blackboxPentest";
+export type {
+  ArtifactPlatform,
+  ReleaseChannel,
+  UploadBuildInput,
+  UploadedArtifact,
+} from "./builds";
+export { uploadDesktopBuild } from "./builds";
 export {
   getPensarApiUrl,
   getPensarConsoleUrl,
@@ -57,6 +64,8 @@ export {
   PENSAR_API_BASE_URL,
   PENSAR_CONSOLE_BASE_URL,
 } from "./constants";
+export type { RunDesktopBuildInput } from "./desktopBuild";
+export { runDesktopBuild } from "./desktopBuild";
 export type { EnvironmentAgentInput, EnvironmentResult } from "./environment";
 export { runEnvironmentAgent } from "./environment";
 export type {

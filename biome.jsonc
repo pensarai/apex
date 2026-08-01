@@ -112,6 +112,10 @@
                 "message": "Import from the offSecAgent/tools/email barrel (index), not its internals."
               },
               {
+                "group": ["**/core/desktop/*", "!**/core/desktop/index"],
+                "message": "Import from the core/desktop barrel (index), not its internals."
+              },
+              {
                 "group": [
                   "**/core/skills/builtins/*",
                   "!**/core/skills/builtins/index"
