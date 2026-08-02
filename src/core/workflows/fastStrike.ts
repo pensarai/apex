@@ -29,6 +29,15 @@ const FastStrikeResult = z.object({
 type FastStrikeOutcome = z.infer<typeof FastStrikeResult>;
 
 const EXACT_FLAG_PATTERN = /FLAG\{(?!\.\.\.\})[^}\r\n]+\}/;
+const DEFAULT_COMPETITIVE_LANE_TIMEOUT_MS = 30 * 60 * 1000;
+
+export function resolveFastStrikeLaneTimeoutMs(
+  laneCount: number,
+  configuredTimeoutMs?: number,
+): number | undefined {
+  if (configuredTimeoutMs !== undefined) return configuredTimeoutMs;
+  return laneCount > 1 ? DEFAULT_COMPETITIVE_LANE_TIMEOUT_MS : undefined;
+}
 
 export function requestsExactFlag(guidance: string | undefined): boolean {
   if (!guidance) return false;
@@ -298,6 +307,10 @@ export async function runFastStrike(
   );
 
   const laneCount = session.config?.fastStrikeLanes ?? 2;
+  const laneTimeoutMs = resolveFastStrikeLaneTimeoutMs(
+    laneCount,
+    session.config?.fastStrikeLaneTimeoutMs,
+  );
   const laneOutcomes: Array<FastStrikeOutcome | undefined> = Array.from({
     length: laneCount,
   });
@@ -312,6 +325,12 @@ export async function runFastStrike(
     mkdirSync(laneWorkspace, { recursive: true });
 
     return async (laneSignal: AbortSignal) => {
+      const deadlineSignal = laneTimeoutMs
+        ? AbortSignal.timeout(laneTimeoutMs)
+        : undefined;
+      const effectiveLaneSignal = deadlineSignal
+        ? AbortSignal.any([laneSignal, deadlineSignal])
+        : laneSignal;
       const agent = new OffensiveSecurityAgent<FastStrikeOutcome>({
         system: FAST_STRIKE_SYSTEM_PROMPT,
         prompt: [
@@ -344,17 +363,29 @@ export async function runFastStrike(
         subagentName: `Fast Strike Lane ${laneIndex + 1}`,
         agentCwd: laneWorkspace,
         authConfig,
-        abortSignal: laneSignal,
+        abortSignal: effectiveLaneSignal,
         eventBus,
         onStepFinish,
         enableThinking,
         openAIReasoningEffort,
       });
-      const outcome = normalizeFastStrikeOutcome(await agent.consume(), {
-        exactFlagRequired,
-      });
-      laneOutcomes[laneIndex] = outcome;
-      return outcome;
+      try {
+        const outcome = normalizeFastStrikeOutcome(await agent.consume(), {
+          exactFlagRequired,
+        });
+        laneOutcomes[laneIndex] = outcome;
+        return outcome;
+      } catch (error) {
+        if (deadlineSignal?.aborted && !laneSignal.aborted) {
+          const outcome: FastStrikeOutcome = {
+            solved: false,
+            summary: `Lane ${laneIndex + 1} reached its bounded ${laneTimeoutMs}ms deadline without verified proof. Preserve target state and checkpoints for the recovery operator; do not treat the deadline as evidence against the remaining hypotheses.`,
+          };
+          laneOutcomes[laneIndex] = outcome;
+          return outcome;
+        }
+        throw error;
+      }
     };
   });
 

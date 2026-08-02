@@ -5,12 +5,20 @@ import {
   normalizeFastStrikeOutcome,
   rejectUnverifiedFastStrikeResponse,
   requestsExactFlag,
+  resolveFastStrikeLaneTimeoutMs,
   runCompetitiveLanes,
 } from "./fastStrike";
 
 type Outcome = { solved: boolean; lane: number };
 
 describe("runCompetitiveLanes", () => {
+  it("reserves recovery time for competitive lanes while leaving one lane unlimited", () => {
+    expect(resolveFastStrikeLaneTimeoutMs(1)).toBeUndefined();
+    expect(resolveFastStrikeLaneTimeoutMs(2)).toBe(30 * 60 * 1000);
+    expect(resolveFastStrikeLaneTimeoutMs(3)).toBe(30 * 60 * 1000);
+    expect(resolveFastStrikeLaneTimeoutMs(3, 900_000)).toBe(900_000);
+  });
+
   it("returns the first success and cancels the remaining lane", async () => {
     let resolveWinner!: (value: Outcome) => void;
     const loserAborted = vi.fn();

@@ -273,6 +273,13 @@ const SessionConfigObject = z.object({
   requireSuccessfulResponse: z.boolean().optional(),
   /** Independent fast-strike operators; first verified success cancels the rest. */
   fastStrikeLanes: z.number().int().min(1).max(3).optional(),
+  /** Per-lane deadline in competitive fast strike; reserves budget for recovery. */
+  fastStrikeLaneTimeoutMs: z
+    .number()
+    .int()
+    .min(60_000)
+    .max(3_600_000)
+    .optional(),
   /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
   agentCwd: z.string().optional(),
   /** Operator-provided guidance injected into the orchestrator/agent system prompts */

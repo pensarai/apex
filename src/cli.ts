@@ -241,6 +241,8 @@ pentest options:
   --fast-strike            Single-operator fast strike: skip attack-surface/swarm
                            phases, one tight recon→exploit loop against the target
   --fast-strike-lanes <n>  Independent fast-strike operators (1-3, default: 2)
+  --fast-strike-lane-timeout-ms <n>
+                           Competitive lane deadline (60000-3600000, default: 1800000)
   --allow-destructive-actions
                            Explicitly authorize destructive target operations
                            (default: blocked)
@@ -302,6 +304,10 @@ async function runPentest() {
   const fastStrikeLanes = fastStrikeLanesRaw
     ? Number(fastStrikeLanesRaw)
     : undefined;
+  const fastStrikeLaneTimeoutRaw = getArg("--fast-strike-lane-timeout-ms");
+  const fastStrikeLaneTimeoutMs = fastStrikeLaneTimeoutRaw
+    ? Number(fastStrikeLaneTimeoutRaw)
+    : undefined;
   const allowDestructiveActions = hasFlag("--allow-destructive-actions");
   const requireSuccessfulResponse = hasFlag("--require-successful-response");
 
@@ -315,6 +321,19 @@ async function runPentest() {
   }
   if (fastStrikeLanes !== undefined && !fastStrike) {
     throw new Error("--fast-strike-lanes requires --fast-strike");
+  }
+  if (
+    fastStrikeLaneTimeoutMs !== undefined &&
+    (!Number.isInteger(fastStrikeLaneTimeoutMs) ||
+      fastStrikeLaneTimeoutMs < 60_000 ||
+      fastStrikeLaneTimeoutMs > 3_600_000)
+  ) {
+    throw new Error(
+      "--fast-strike-lane-timeout-ms must be an integer from 60000 to 3600000",
+    );
+  }
+  if (fastStrikeLaneTimeoutMs !== undefined && !fastStrike) {
+    throw new Error("--fast-strike-lane-timeout-ms requires --fast-strike");
   }
 
   // Resolve and combine threat model + prompt
@@ -344,7 +363,7 @@ async function runPentest() {
 PENTEST ORCHESTRATION
 ${sep}
 Target:  ${target}${cwd ? `\nCwd:     ${cwd} (whitebox)` : ""}${exfilMode ? "\nMode:    exfil" : ""}
-Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${reasoningEffort ? `\nReasoning effort: ${reasoningEffort}` : ""}${taskDriven ? "\nTask-driven: enabled" : ""}${fastStrike ? `\nFast strike: enabled\nFast strike lanes: ${fastStrikeLanes ?? 2}` : ""}${allowDestructiveActions ? "\nDestructive target actions: authorized" : ""}${requireSuccessfulResponse ? "\nSuccessful response required" : ""}${headers ? `\nHeaders: ${Object.keys(headers).length} configured` : ""}
+Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${reasoningEffort ? `\nReasoning effort: ${reasoningEffort}` : ""}${taskDriven ? "\nTask-driven: enabled" : ""}${fastStrike ? `\nFast strike: enabled\nFast strike lanes: ${fastStrikeLanes ?? 2}\nFast strike lane timeout: ${fastStrikeLaneTimeoutMs !== undefined ? `${fastStrikeLaneTimeoutMs}ms` : (fastStrikeLanes ?? 2) > 1 ? "1800000ms" : "unlimited"}` : ""}${allowDestructiveActions ? "\nDestructive target actions: authorized" : ""}${requireSuccessfulResponse ? "\nSuccessful response required" : ""}${headers ? `\nHeaders: ${Object.keys(headers).length} configured` : ""}
 `);
 
   const session = await sessions.create({
@@ -358,6 +377,9 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${reasoningEffort
       ...(allowDestructiveActions ? { allowDestructiveActions: true } : {}),
       ...(requireSuccessfulResponse ? { requireSuccessfulResponse: true } : {}),
       ...(fastStrikeLanes !== undefined ? { fastStrikeLanes } : {}),
+      ...(fastStrikeLaneTimeoutMs !== undefined
+        ? { fastStrikeLaneTimeoutMs }
+        : {}),
       ...(headers !== undefined ? { headers } : {}),
     },
   });
