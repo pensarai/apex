@@ -8,6 +8,7 @@ import {
   rejectUnverifiedFastStrikeResponse,
   requestsExactFlag,
   requiredEdgeVerificationDimensions,
+  requiredObjectiveVerificationDimensions,
   resolveFastStrikeLaneTimeoutMs,
   runCompetitiveLanes,
 } from "./fastStrike";
@@ -233,6 +234,7 @@ describe("fast-strike response verification", () => {
     expect(
       minimumVerifiedLayers("Recover the protected secret"),
     ).toBeUndefined();
+    expect(minimumVerifiedLayers("Return the exact flag value")).toBe(2);
     expect(
       requiredEdgeVerificationDimensions(
         "Assess an application protected by multiple defensive layers",
@@ -243,6 +245,11 @@ describe("fast-strike response verification", () => {
         "Assess a Kubernetes control-plane environment",
       ),
     ).toBeUndefined();
+    expect(
+      requiredObjectiveVerificationDimensions(
+        "Take control of the privileged account and recover the flag held in telemetry storage",
+      ),
+    ).toEqual(["telemetry", "storage", "authentication", "authorization"]);
 
     expect(
       rejectUnverifiedFastStrikeResponse(
@@ -357,7 +364,7 @@ describe("fast-strike response verification", () => {
     });
   });
 
-  it("preserves the bounded two-rejection recovery policy", () => {
+  it("preserves the bounded four-rejection recovery policy", () => {
     expect(
       rejectUnverifiedFastStrikeResponse(
         { solved: false, summary: "No result" },
@@ -367,7 +374,13 @@ describe("fast-strike response verification", () => {
     expect(
       rejectUnverifiedFastStrikeResponse(
         { solved: false, summary: "No result" },
-        { exactFlagRequired: false, rejectionCount: 2 },
+        { exactFlagRequired: false, rejectionCount: 3 },
+      )?.message,
+    ).toContain("still unsolved");
+    expect(
+      rejectUnverifiedFastStrikeResponse(
+        { solved: false, summary: "No result" },
+        { exactFlagRequired: false, rejectionCount: 4 },
       ),
     ).toBeUndefined();
   });

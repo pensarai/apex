@@ -57,7 +57,7 @@ const FastStrikeResult = z.object({
     )
     .optional()
     .describe(
-      "For an explicitly multi-layer or control-plane assessment, the distinct relevant layers actually verified through target-side requests.",
+      "Distinct objective steps and security boundaries actually verified through target-side requests. Exact-proof objectives require the exploit transition and final proof read; multi-layer objectives require every relevant layer.",
     ),
 });
 
@@ -65,6 +65,7 @@ type FastStrikeOutcome = z.infer<typeof FastStrikeResult>;
 
 const EXACT_FLAG_PATTERN = /FLAG\{(?!\.\.\.\})[^}\r\n]+\}/;
 const DEFAULT_COMPETITIVE_LANE_TIMEOUT_MS = 30 * 60 * 1000;
+const MAX_RESPONSE_REJECTIONS = 4;
 
 export function resolveFastStrikeLaneTimeoutMs(
   laneCount: number,
@@ -87,11 +88,14 @@ export function minimumVerifiedLayers(
   guidance: string | undefined,
 ): number | undefined {
   if (!guidance) return undefined;
-  return /(multiple\s+defensive\s+layers|multi[- ](?:layer|service)|control[- ]plane\s+environment|traverse\s+its\s+trust\s+boundaries)/i.test(
-    guidance,
-  )
-    ? 6
-    : undefined;
+  if (
+    /(multiple\s+defensive\s+layers|multi[- ](?:layer|service)|control[- ]plane\s+environment|traverse\s+its\s+trust\s+boundaries)/i.test(
+      guidance,
+    )
+  ) {
+    return 6;
+  }
+  return requestsExactFlag(guidance) ? 2 : undefined;
 }
 
 export function requiredEdgeVerificationDimensions(
@@ -101,6 +105,36 @@ export function requiredEdgeVerificationDimensions(
     return undefined;
   }
   return ["forwarding-identity", "transport-framing", "protocol-version"];
+}
+
+export function requiredObjectiveVerificationDimensions(
+  guidance: string | undefined,
+): VerificationDimension[] {
+  if (!guidance) return [];
+  const dimensions = new Set<VerificationDimension>();
+  if (/\btelemetry\b/i.test(guidance)) dimensions.add("telemetry");
+  if (/\b(?:storage|database)\b/i.test(guidance)) dimensions.add("storage");
+  if (
+    /\b(?:account|session|authentication|multi[- ]factor|mfa|password[- ]recovery)\b/i.test(
+      guidance,
+    )
+  ) {
+    dimensions.add("authentication");
+  }
+  if (
+    /\b(?:cloud|internal|control[- ]plane|kubernetes|backend)\b/i.test(guidance)
+  ) {
+    dimensions.add("service-boundary");
+  }
+  if (
+    /\b(?:interlock|privileged|administrator|admin|tenant|authorization)\b/i.test(
+      guidance,
+    )
+  ) {
+    dimensions.add("authorization");
+  }
+  if (/\bwithout\b/i.test(guidance)) dimensions.add("application");
+  return [...dimensions];
 }
 
 function countDistinctVerifiedLayers(result: FastStrikeOutcome): number {
@@ -149,9 +183,9 @@ export function rejectUnverifiedFastStrikeResponse(
   ) {
     return undefined;
   }
-  // Two recovery opportunities redirect premature completion without turning
-  // a genuinely exhausted run into an unbounded response loop.
-  if (options.rejectionCount >= 2) return undefined;
+  // A small fixed number of recovery opportunities redirects premature
+  // completion while preserving a hard upper bound on the response loop.
+  if (options.rejectionCount >= MAX_RESPONSE_REJECTIONS) return undefined;
   if (parsed.success && parsed.data.solved && options.exactFlagRequired) {
     if (!EXACT_FLAG_PATTERN.test(parsed.data.summary)) {
       return {
@@ -169,8 +203,8 @@ export function rejectUnverifiedFastStrikeResponse(
   ) {
     return {
       message:
-        `This objective explicitly requires a multi-layer or control-plane assessment, but verifiedLayers contains only ${verifiedLayerCount} of at least ${options.minimumVerifiedLayers} distinct target-side verifications. ` +
-        "The recovered secret is a lead, not completion. Continue through the relevant observed controls and services, issue a concrete request at each boundary, then respond with only evidence you actually observed.",
+        `This objective requires a concrete proof ledger, but verifiedLayers contains only ${verifiedLayerCount} of at least ${options.minimumVerifiedLayers} distinct target-side verifications. ` +
+        "The recovered secret is a lead until the exploit transition and final objective read are verified. Continue through the relevant observed controls and services, issue a concrete request at each boundary, then respond with only evidence you actually observed.",
     };
   }
   if (parsed.success && parsed.data.solved && missingDimensions.length > 0) {
@@ -219,7 +253,7 @@ export function normalizeFastStrikeOutcome(
       return {
         solved: false,
         summary:
-          `Lane claimed multi-layer completion with only ${verifiedLayerCount}/${options.minimumVerifiedLayers} distinct target-side verifications. ` +
+          `Lane claimed completion with only ${verifiedLayerCount}/${options.minimumVerifiedLayers} distinct target-side verifications. ` +
           parsed.data.summary,
         verifiedLayers: parsed.data.verifiedLayers,
       };
@@ -363,10 +397,10 @@ Run this loop, tightly:
 0. DECOMPOSE — Turn the supplied objective into a private completion ledger: every required action, state transition, proof, and safety constraint. Objective verbs are requirements, not flavor text. When the objective asks you to assess a chain, control plane, or multi-layer environment, promote each named or subsequently observed relevant layer and trust transition to a ledger item. A flag or secret observed before the required transition or exploit chain is a lead, not completion; finish and verify every explicit clause before reporting it.
 1. OBSERVE — Read every response for signal before you act. Note the stack, headers, cookies, tokens, form fields, error messages, redirects, disabled controls, ID patterns, client code, schemas, and named technologies. Verify whether the supplied listener is the objective's intended edge or merely an origin, collector, gateway, or sibling service. Keep narration short so execution receives the budget.
 2. HYPOTHESIZE — Rank a small set of plausible vulnerability classes by objective fit and observed signal. Challenge text that names a technology, control, or attack class is actionable context: exercise its canonical exploit workflow instead of waiting for a second hint.
-3. ACT — Test the leading hypotheses with discriminating requests. Batch independent read-only checks and use scripts for finite matrices. Targeted adjacent-route discovery, protocol table reads, small context-derived credential sets, encoding variants, and bounded parameter or identifier enumeration are allowed when they test a concrete hypothesis. For an objective that explicitly says multiple defensive layers, exercise the conventional safe edge-differential matrix before completion: a forwarded-client-identity variant, a semantically equivalent request using non-default transfer framing, and an alternate HTTP protocol version. Use a raw client when the high-level client normalizes framing or protocol details, keep payloads bounded, and compare each variant with an ordinary baseline. If a custom or simulated gateway accepts an observed credential identity but rejects a standards-compliant signature, use the authentication error oracle for one matrix of at most 24 canonicalizations before discarding the credentials. Keep the advertised authorization envelope valid and test direct HMACs over subsets and orderings of only observed identity, credential-scope date, HTTP method, and path fields with conventional colon and newline delimiters; never guess keys or secrets. If the objective explicitly names a missing intermediary or sibling component but the supplied listener contradicts it, inspect evidence-derived and conventional sibling ports on the same authorized host; if still unresolved, one low-rate TCP connect inventory of ports 1-10000 (at most 100 probes/second, only against that host) is allowed. When a confirmed server-side fetch primitive is the intended bridge to an internal dependency, a negative host-port inventory does not disprove application-internal DNS. Exercise one finite matrix of at most 12 internal host:port candidates through that primitive, derived only from explicit objective nouns, observed technology or service names, returned URLs or configuration, and conventional ports. Include conventional DNS-label normalization such as spaces or underscores to hyphens, and distinguish DNS, connect, HTTP, and authentication outcomes; do not scan external DNS or the public Internet. Respect rate and availability constraints.
+3. ACT — Test the leading hypotheses with discriminating requests. Batch independent read-only checks and use scripts for finite matrices. Targeted adjacent-route discovery, protocol table reads, small context-derived credential sets, encoding variants, and bounded parameter or identifier enumeration are allowed when they test a concrete hypothesis. Once observations identify a class, cover its compact canonical family before retiring it: for server-side fetches, parser-differential loopback/private-address forms, redirects, and required metadata headers; for public identifiers, relationships and small evidence-derived adjacent/time-ordered sets; for account recovery, absolute-link host and forwarded-host construction; for uploads and image processors, content-type/extension mismatches plus the processor's native delegate or vector format; for tokens and MFA, client-side response trust, claim enforcement, algorithm handling, and timestamp-derived generation only when the implementation exposes those signals; for multi-service chains, credentials and service locations returned by the preceding hop; for WebSocket, MQTT, Modbus, and similar native protocols, use a protocol-native client and verify the final state read. For an objective that explicitly says multiple defensive layers, exercise the conventional safe edge-differential matrix before completion: a forwarded-client-identity variant, a semantically equivalent request using non-default transfer framing, and an alternate HTTP protocol version. Use a raw client when the high-level client normalizes framing or protocol details, keep payloads bounded, and compare each variant with an ordinary baseline. If a custom or simulated gateway accepts an observed credential identity but rejects a standards-compliant signature, use the authentication error oracle for one matrix of at most 24 canonicalizations before discarding the credentials. Keep the advertised authorization envelope valid and test direct HMACs over subsets and orderings of only observed identity, credential-scope date, HTTP method, and path fields with conventional colon and newline delimiters; never guess keys or secrets. If the objective explicitly names a missing intermediary or sibling component but the supplied listener contradicts it, inspect evidence-derived and conventional sibling ports on the same authorized host; if still unresolved, one low-rate TCP connect inventory of ports 1-10000 (at most 100 probes/second, only against that host) is allowed. When a confirmed server-side fetch primitive is the intended bridge to an internal dependency, a negative host-port inventory does not disprove application-internal DNS. Exercise one finite matrix of at most 12 internal host:port candidates through that primitive, derived only from explicit objective nouns, observed technology or service names, returned URLs or configuration, and conventional ports. Include conventional DNS-label normalization such as spaces or underscores to hyphens, and distinguish DNS, connect, HTTP, and authentication outcomes; do not scan external DNS or the public Internet. Respect rate and availability constraints.
 4. PRUNE — Drop a lead when its required primitive is contradicted. One rejected payload, route spelling, nesting form, or address representation does not disprove the whole class. Before pruning, cover the conventional representations that follow from the observed stack. Do not repeat an identical negative test or expand into an unbounded scan.
 5. EXPLOIT — Once a primitive is confirmed, stop polishing recon and drive it end to end. Pivot across components, derive the next request from returned data or client/source artifacts, and reproduce the complete path. Prefer a working exploit script over dozens of manual variations.
-6. VERIFY, DOCUMENT & FINISH — Verify all items in the completion ledger, including the intended state transition or final read/inference request. For a multi-layer assessment, a final secret does not prove the intermediate controls: issue the minimum target-side request that verifies each relevant discovered layer, even if a shortcut exposed the secret first, and record every actually exercised layer in the response's verifiedLayers field. Record confirmed vulnerabilities with document_vulnerability. Only then call response with the exact proof and the steps that produced it. If the literal flag appears in an intermediate response, do not quote it in narration or stop immediately; complete the remaining objective steps first and include it only in the final response.
+6. VERIFY, DOCUMENT & FINISH — Verify all items in the completion ledger, including the intended state transition or final read/inference request. Every exact-proof objective needs at least two distinct target-side ledger entries: the exploit or boundary transition and the final proof read. Map named environments to the corresponding verifiedLayers dimension (authentication, authorization, service-boundary, storage, telemetry, or application). For a multi-layer assessment, a final secret does not prove the intermediate controls: issue the minimum target-side request that verifies each relevant discovered layer, even if a shortcut exposed the secret first, and record every actually exercised layer in the response's verifiedLayers field. Record confirmed vulnerabilities with document_vulnerability. Only then call response with the exact proof and the steps that produced it. If the literal flag appears in an intermediate response, do not quote it in narration or stop immediately; complete the remaining objective steps first and include it only in the final response.
 
 Rules:
 - You are one operator. Plan in your head and in short text notes — never via planning tools, task lists, or sub-agents.
@@ -428,8 +462,10 @@ export async function runFastStrike(
   const operatorGuidance = session.config?.prompt;
   const exactFlagRequired = requestsExactFlag(operatorGuidance);
   const requiredVerifiedLayers = minimumVerifiedLayers(operatorGuidance);
-  const requiredDimensions =
-    requiredEdgeVerificationDimensions(operatorGuidance);
+  const requiredDimensions = [
+    ...(requiredEdgeVerificationDimensions(operatorGuidance) ?? []),
+    ...requiredObjectiveVerificationDimensions(operatorGuidance),
+  ];
 
   const mode: "blackbox" | "whitebox" = cwd ? "whitebox" : "blackbox";
 
@@ -558,6 +594,7 @@ export async function runFastStrike(
         ...promptParts,
         "The independent lane handoffs follow:",
         buildFastStrikeRecoveryDossier(laneOutcomes),
+        `Preserved lane artifacts are under ${join(session.rootPath, "subagents")}. Inspect sibling workspaces, checkpoints, scripts, and captured responses for concrete primitives before repeating discovery.`,
         "Run the bounded recovery pass now. Verify inherited claims against the target, compose compatible primitives, complete every explicit objective clause, and report the exact proof.",
       ].join("\n\n"),
       model,
