@@ -152,6 +152,16 @@ describe("fast-strike missing-intermediary guidance", () => {
       "do not scan external DNS or the public Internet",
     );
   });
+
+  it("requires target-side verification across multi-layer objectives", () => {
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "promote each named or subsequently observed relevant layer",
+    );
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "a final secret does not prove the intermediate controls",
+    );
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("minimum target-side request");
+  });
 });
 
 describe("fast-strike response verification", () => {
