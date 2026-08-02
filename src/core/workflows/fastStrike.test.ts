@@ -194,6 +194,19 @@ describe("fast-strike missing-intermediary guidance", () => {
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("colon and newline delimiters");
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("never guess keys or secrets");
   });
+
+  it("dispatches observed high-friction classes to bounded canonical families", () => {
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "document renderers, HTML, CSS, SVG",
+    );
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "duplicate-parameter, content-type, and browser-reparse variants",
+    );
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("serverless event adapters");
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "correlation-labeled concurrency",
+    );
+  });
 });
 
 describe("fast-strike tool envelope", () => {
