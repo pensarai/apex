@@ -24,6 +24,24 @@ const FastStrikeResult = z.object({
     .describe(
       "Concise account of the vulnerability exploited, the exact steps that worked, and any flag or sensitive data recovered. If unsolved, preserve confirmed primitives, decisive negative evidence, and the best materially different next action for a recovery operator.",
     ),
+  verifiedLayers: z
+    .array(
+      z.object({
+        layer: z
+          .string()
+          .describe("Distinct control, service, or trust boundary"),
+        targetSideRequest: z
+          .string()
+          .describe("Concrete request that exercised this layer"),
+        observedResult: z
+          .string()
+          .describe("Observed response or state transition, not an inference"),
+      }),
+    )
+    .optional()
+    .describe(
+      "For an explicitly multi-layer or control-plane assessment, the distinct relevant layers actually verified through target-side requests.",
+    ),
 });
 
 type FastStrikeOutcome = z.infer<typeof FastStrikeResult>;
@@ -48,15 +66,44 @@ export function requestsExactFlag(guidance: string | undefined): boolean {
   );
 }
 
+export function minimumVerifiedLayers(
+  guidance: string | undefined,
+): number | undefined {
+  if (!guidance) return undefined;
+  return /(multiple\s+defensive\s+layers|multi[- ](?:layer|service)|control[- ]plane\s+environment|traverse\s+its\s+trust\s+boundaries)/i.test(
+    guidance,
+  )
+    ? 6
+    : undefined;
+}
+
+function countDistinctVerifiedLayers(result: FastStrikeOutcome): number {
+  return new Set(
+    (result.verifiedLayers ?? [])
+      .map(({ layer }) => layer.trim().toLowerCase())
+      .filter(Boolean),
+  ).size;
+}
+
 export function rejectUnverifiedFastStrikeResponse(
   result: unknown,
-  options: { exactFlagRequired: boolean; rejectionCount: number },
+  options: {
+    exactFlagRequired: boolean;
+    minimumVerifiedLayers?: number;
+    rejectionCount: number;
+  },
 ): { message: string } | undefined {
   const parsed = FastStrikeResult.safeParse(result);
+  const verifiedLayerCount = parsed.success
+    ? countDistinctVerifiedLayers(parsed.data)
+    : 0;
   if (
     parsed.success &&
     parsed.data.solved &&
-    (!options.exactFlagRequired || EXACT_FLAG_PATTERN.test(parsed.data.summary))
+    (!options.exactFlagRequired ||
+      EXACT_FLAG_PATTERN.test(parsed.data.summary)) &&
+    (!options.minimumVerifiedLayers ||
+      verifiedLayerCount >= options.minimumVerifiedLayers)
   ) {
     return undefined;
   }
@@ -64,10 +111,24 @@ export function rejectUnverifiedFastStrikeResponse(
   // a genuinely exhausted run into an unbounded response loop.
   if (options.rejectionCount >= 2) return undefined;
   if (parsed.success && parsed.data.solved && options.exactFlagRequired) {
+    if (!EXACT_FLAG_PATTERN.test(parsed.data.summary)) {
+      return {
+        message:
+          "You marked the objective solved, but the summary does not contain the exact recovered FLAG{...} value. " +
+          "Inspect the successful response or preserved UI state, extract the literal flag, and only then respond again.",
+      };
+    }
+  }
+  if (
+    parsed.success &&
+    parsed.data.solved &&
+    options.minimumVerifiedLayers &&
+    verifiedLayerCount < options.minimumVerifiedLayers
+  ) {
     return {
       message:
-        "You marked the objective solved, but the summary does not contain the exact recovered FLAG{...} value. " +
-        "Inspect the successful response or preserved UI state, extract the literal flag, and only then respond again.",
+        `This objective explicitly requires a multi-layer or control-plane assessment, but verifiedLayers contains only ${verifiedLayerCount} of at least ${options.minimumVerifiedLayers} distinct target-side verifications. ` +
+        "The recovered secret is a lead, not completion. Continue through the relevant observed controls and services, issue a concrete request at each boundary, then respond with only evidence you actually observed.",
     };
   }
   return {
@@ -80,7 +141,10 @@ export function rejectUnverifiedFastStrikeResponse(
 
 export function normalizeFastStrikeOutcome(
   value: unknown,
-  options: { exactFlagRequired?: boolean } = {},
+  options: {
+    exactFlagRequired?: boolean;
+    minimumVerifiedLayers?: number;
+  } = {},
 ): FastStrikeOutcome {
   const parsed = FastStrikeResult.safeParse(value);
   if (parsed.success) {
@@ -94,6 +158,20 @@ export function normalizeFastStrikeOutcome(
         summary:
           "Lane claimed success without the required literal FLAG{...} proof. " +
           parsed.data.summary,
+      };
+    }
+    const verifiedLayerCount = countDistinctVerifiedLayers(parsed.data);
+    if (
+      parsed.data.solved &&
+      options.minimumVerifiedLayers &&
+      verifiedLayerCount < options.minimumVerifiedLayers
+    ) {
+      return {
+        solved: false,
+        summary:
+          `Lane claimed multi-layer completion with only ${verifiedLayerCount}/${options.minimumVerifiedLayers} distinct target-side verifications. ` +
+          parsed.data.summary,
+        verifiedLayers: parsed.data.verifiedLayers,
       };
     }
     return parsed.data;
@@ -225,7 +303,7 @@ Run this loop, tightly:
 3. ACT — Test the leading hypotheses with discriminating requests. Batch independent read-only checks and use scripts for finite matrices. Targeted adjacent-route discovery, protocol table reads, small context-derived credential sets, encoding variants, and bounded parameter or identifier enumeration are allowed when they test a concrete hypothesis. If a custom or simulated gateway accepts an observed credential identity but rejects a standards-compliant signature, use the authentication error oracle for one matrix of at most 24 canonicalizations before discarding the credentials. Keep the advertised authorization envelope valid and test direct HMACs over subsets and orderings of only observed identity, credential-scope date, HTTP method, and path fields with conventional colon and newline delimiters; never guess keys or secrets. If the objective explicitly names a missing intermediary or sibling component but the supplied listener contradicts it, inspect evidence-derived and conventional sibling ports on the same authorized host; if still unresolved, one low-rate TCP connect inventory of ports 1-10000 (at most 100 probes/second, only against that host) is allowed. When a confirmed server-side fetch primitive is the intended bridge to an internal dependency, a negative host-port inventory does not disprove application-internal DNS. Exercise one finite matrix of at most 12 internal host:port candidates through that primitive, derived only from explicit objective nouns, observed technology or service names, returned URLs or configuration, and conventional ports. Include conventional DNS-label normalization such as spaces or underscores to hyphens, and distinguish DNS, connect, HTTP, and authentication outcomes; do not scan external DNS or the public Internet. Respect rate and availability constraints.
 4. PRUNE — Drop a lead when its required primitive is contradicted. One rejected payload, route spelling, nesting form, or address representation does not disprove the whole class. Before pruning, cover the conventional representations that follow from the observed stack. Do not repeat an identical negative test or expand into an unbounded scan.
 5. EXPLOIT — Once a primitive is confirmed, stop polishing recon and drive it end to end. Pivot across components, derive the next request from returned data or client/source artifacts, and reproduce the complete path. Prefer a working exploit script over dozens of manual variations.
-6. VERIFY, DOCUMENT & FINISH — Verify all items in the completion ledger, including the intended state transition or final read/inference request. For a multi-layer assessment, a final secret does not prove the intermediate controls: issue the minimum target-side request that verifies each relevant discovered layer, even if a shortcut exposed the secret first. Record confirmed vulnerabilities with document_vulnerability. Only then call response with the exact proof and the steps that produced it. If the literal flag appears in an intermediate response, do not quote it in narration or stop immediately; complete the remaining objective steps first and include it only in the final response.
+6. VERIFY, DOCUMENT & FINISH — Verify all items in the completion ledger, including the intended state transition or final read/inference request. For a multi-layer assessment, a final secret does not prove the intermediate controls: issue the minimum target-side request that verifies each relevant discovered layer, even if a shortcut exposed the secret first, and record every actually exercised layer in the response's verifiedLayers field. Record confirmed vulnerabilities with document_vulnerability. Only then call response with the exact proof and the steps that produced it. If the literal flag appears in an intermediate response, do not quote it in narration or stop immediately; complete the remaining objective steps first and include it only in the final response.
 
 Rules:
 - You are one operator. Plan in your head and in short text notes — never via planning tools, task lists, or sub-agents.
@@ -286,6 +364,7 @@ export async function runFastStrike(
 
   const operatorGuidance = session.config?.prompt;
   const exactFlagRequired = requestsExactFlag(operatorGuidance);
+  const requiredVerifiedLayers = minimumVerifiedLayers(operatorGuidance);
 
   const mode: "blackbox" | "whitebox" = cwd ? "whitebox" : "blackbox";
 
@@ -353,6 +432,7 @@ export async function runFastStrike(
               responseGuard: (result: unknown, { rejectionCount }) => {
                 return rejectUnverifiedFastStrikeResponse(result, {
                   exactFlagRequired,
+                  minimumVerifiedLayers: requiredVerifiedLayers,
                   rejectionCount,
                 });
               },
@@ -372,6 +452,7 @@ export async function runFastStrike(
       try {
         const outcome = normalizeFastStrikeOutcome(await agent.consume(), {
           exactFlagRequired,
+          minimumVerifiedLayers: requiredVerifiedLayers,
         });
         laneOutcomes[laneIndex] = outcome;
         return outcome;
@@ -424,6 +505,7 @@ export async function runFastStrike(
             responseGuard: (result: unknown, { rejectionCount }) => {
               return rejectUnverifiedFastStrikeResponse(result, {
                 exactFlagRequired,
+                minimumVerifiedLayers: requiredVerifiedLayers,
                 rejectionCount,
               });
             },
@@ -442,6 +524,7 @@ export async function runFastStrike(
     });
     strikeResult = normalizeFastStrikeOutcome(await recoveryAgent.consume(), {
       exactFlagRequired,
+      minimumVerifiedLayers: requiredVerifiedLayers,
     });
   }
 

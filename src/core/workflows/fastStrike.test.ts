@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildFastStrikeRecoveryDossier,
   FAST_STRIKE_SYSTEM_PROMPT,
+  minimumVerifiedLayers,
   normalizeFastStrikeOutcome,
   rejectUnverifiedFastStrikeResponse,
   requestsExactFlag,
@@ -204,6 +205,62 @@ describe("fast-strike response verification", () => {
         { exactFlagRequired: true, rejectionCount: 0 },
       ),
     ).toBeUndefined();
+  });
+
+  it("requires a concrete verification ledger for explicit multi-layer assessments", () => {
+    expect(
+      minimumVerifiedLayers(
+        "Assess an application protected by multiple defensive layers",
+      ),
+    ).toBe(6);
+    expect(
+      minimumVerifiedLayers("Assess a Kubernetes control-plane environment"),
+    ).toBe(6);
+    expect(
+      minimumVerifiedLayers("Recover the protected secret"),
+    ).toBeUndefined();
+
+    expect(
+      rejectUnverifiedFastStrikeResponse(
+        {
+          solved: true,
+          summary: "Recovered FLAG{literal-value}",
+          verifiedLayers: [
+            {
+              layer: "gateway",
+              targetSideRequest: "GET /gateway",
+              observedResult: "200",
+            },
+            {
+              layer: " Gateway ",
+              targetSideRequest: "GET /gateway/again",
+              observedResult: "200",
+            },
+          ],
+        },
+        {
+          exactFlagRequired: true,
+          minimumVerifiedLayers: 6,
+          rejectionCount: 0,
+        },
+      )?.message,
+    ).toContain("only 1 of at least 6");
+  });
+
+  it("downgrades multi-layer success after the bounded response guard expires", () => {
+    expect(
+      normalizeFastStrikeOutcome(
+        {
+          solved: true,
+          summary: "Recovered FLAG{literal-value}",
+          verifiedLayers: [],
+        },
+        { exactFlagRequired: true, minimumVerifiedLayers: 6 },
+      ),
+    ).toMatchObject({
+      solved: false,
+      summary: expect.stringContaining("0/6"),
+    });
   });
 
   it("preserves the bounded two-rejection recovery policy", () => {
