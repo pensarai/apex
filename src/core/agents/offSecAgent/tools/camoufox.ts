@@ -101,6 +101,24 @@ export async function resolveCamoufoxLaunchOptions(
 let ensurePromise: Promise<void> | null = null;
 
 /**
+ * Check the image-owned Camoufox install without triggering camoufox-js's
+ * asynchronous auto-download path. `launchPath()` alone is not a safe probe:
+ * on a missing install it starts a background GitHub fetch before throwing.
+ */
+export async function hasPreinstalledCamoufox(): Promise<boolean> {
+  try {
+    const { camoufoxPath, launchPath } = await import(
+      "camoufox-js/dist/pkgman.js"
+    );
+    camoufoxPath(false);
+    launchPath();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Ensure the Camoufox browser build is downloaded.
  *
  * `launchOptions()` throws `CamoufoxNotInstalled` rather than downloading
@@ -111,6 +129,10 @@ let ensurePromise: Promise<void> | null = null;
 export function ensureCamoufox(log?: (msg: string) => void): Promise<void> {
   if (!ensurePromise) {
     ensurePromise = (async () => {
+      if (await hasPreinstalledCamoufox()) {
+        log?.("Using preinstalled Camoufox browser build.");
+        return;
+      }
       log?.(
         "Provisioning Camoufox browser (first run downloads ~150MB; cached after)…",
       );

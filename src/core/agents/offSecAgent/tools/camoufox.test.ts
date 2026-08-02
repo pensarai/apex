@@ -1,18 +1,48 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CAMOUFOX_OPTIONS,
+  hasPreinstalledCamoufox,
   MEMORY_FIREFOX_PREFS,
   resolveCamoufoxLaunchOptions,
 } from "./camoufox";
 
 const launchOptionsMock = vi.fn();
+const camoufoxPathMock = vi.fn();
+const launchPathMock = vi.fn();
 
 vi.mock("camoufox-js", () => ({
   launchOptions: (...args: unknown[]) => launchOptionsMock(...args),
 }));
 
+vi.mock("camoufox-js/dist/pkgman.js", () => ({
+  camoufoxPath: (...args: unknown[]) => camoufoxPathMock(...args),
+  launchPath: (...args: unknown[]) => launchPathMock(...args),
+}));
+
 afterEach(() => {
   launchOptionsMock.mockReset();
+  camoufoxPathMock.mockReset();
+  launchPathMock.mockReset();
+});
+
+describe("hasPreinstalledCamoufox", () => {
+  it("uses the non-downloading path probe before checking the executable", async () => {
+    camoufoxPathMock.mockReturnValue("/opt/camoufox");
+    launchPathMock.mockReturnValue("/opt/camoufox/camoufox-bin");
+
+    await expect(hasPreinstalledCamoufox()).resolves.toBe(true);
+    expect(camoufoxPathMock).toHaveBeenCalledWith(false);
+    expect(launchPathMock).toHaveBeenCalledOnce();
+  });
+
+  it("reports a missing or incompatible image install without throwing", async () => {
+    camoufoxPathMock.mockImplementation(() => {
+      throw new Error("Camoufox executable not found");
+    });
+
+    await expect(hasPreinstalledCamoufox()).resolves.toBe(false);
+    expect(launchPathMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("resolveCamoufoxLaunchOptions", () => {
