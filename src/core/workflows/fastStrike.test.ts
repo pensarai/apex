@@ -162,6 +162,17 @@ describe("fast-strike missing-intermediary guidance", () => {
     );
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("minimum target-side request");
   });
+
+  it("bounds custom authentication canonicalization recovery", () => {
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "matrix of at most 24 canonicalizations",
+    );
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "identity, credential-scope date, HTTP method, and path",
+    );
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("colon and newline delimiters");
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("never guess keys or secrets");
+  });
 });
 
 describe("fast-strike response verification", () => {
