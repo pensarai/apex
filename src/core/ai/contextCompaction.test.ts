@@ -155,4 +155,43 @@ describe("context compaction", () => {
     );
     expect(validateLatestCompactionArchive(root)).toBe(false);
   });
+
+  it("hierarchically reduces histories larger than the compaction model window", async () => {
+    generateTextMock.mockResolvedValue({
+      text: JSON.stringify({
+        currentPhase: "recon",
+        confirmedFacts: ["fact"],
+        authState: [],
+        successfulActions: [],
+        exploitChainDependencies: [],
+        failedHypotheses: [],
+        openLeads: [],
+        blockers: [],
+        nextActions: ["continue"],
+        artifacts: [],
+      }),
+      usage: { inputTokens: 10, outputTokens: 5 },
+    });
+    const messages: ModelMessage[] = [
+      { role: "user", content: "objective" },
+      ...Array.from({ length: 8 }, (_, index) =>
+        assistantToolTurn(String(index), "X".repeat(5_000)),
+      ).flat(),
+      ...assistantToolTurn("recent", "recent"),
+    ];
+
+    const result = await compactConversation({
+      messages,
+      contextWindow: 2_000,
+      modelContextWindow: 2_000,
+      model: {} as LanguageModel,
+      modelId: "small-provider-model",
+    });
+
+    expect(result?.metadata.semanticModelSucceeded).toBe(true);
+    expect(generateTextMock.mock.calls.length).toBeGreaterThan(2);
+    expect(result?.usage.inputTokens).toBe(
+      generateTextMock.mock.calls.length * 10,
+    );
+  });
 });
