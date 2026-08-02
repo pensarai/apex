@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  FAST_STRIKE_SYSTEM_PROMPT,
   buildFastStrikeRecoveryDossier,
   normalizeFastStrikeOutcome,
   rejectUnverifiedFastStrikeResponse,
@@ -132,6 +133,15 @@ describe("buildFastStrikeRecoveryDossier", () => {
       { solved: false, summary: "x".repeat(7000) },
     ]);
     expect(dossier.length).toBeLessThan(6100);
+  });
+});
+
+describe("fast-strike missing-intermediary guidance", () => {
+  it("keeps service discovery explicitly bounded and target-local", () => {
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("ports 1-10000");
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("at most 100 probes/second");
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("only against that host");
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("same-host listener");
   });
 });
 
