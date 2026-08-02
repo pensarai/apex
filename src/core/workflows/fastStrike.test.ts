@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  FAST_STRIKE_SYSTEM_PROMPT,
   buildFastStrikeRecoveryDossier,
+  FAST_STRIKE_SYSTEM_PROMPT,
   normalizeFastStrikeOutcome,
   rejectUnverifiedFastStrikeResponse,
   requestsExactFlag,
@@ -142,6 +142,15 @@ describe("fast-strike missing-intermediary guidance", () => {
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("at most 100 probes/second");
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("only against that host");
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("same-host listener");
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "at most 12 internal host:port",
+    );
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "negative host-port inventory does not disprove application-internal DNS",
+    );
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "do not scan external DNS or the public Internet",
+    );
   });
 });
 
