@@ -7,6 +7,7 @@ import {
   normalizeFastStrikeOutcome,
   rejectUnverifiedFastStrikeResponse,
   requestsExactFlag,
+  requiredEdgeVerificationDimensions,
   resolveFastStrikeLaneTimeoutMs,
   runCompetitiveLanes,
 } from "./fastStrike";
@@ -232,6 +233,16 @@ describe("fast-strike response verification", () => {
     expect(
       minimumVerifiedLayers("Recover the protected secret"),
     ).toBeUndefined();
+    expect(
+      requiredEdgeVerificationDimensions(
+        "Assess an application protected by multiple defensive layers",
+      ),
+    ).toEqual(["forwarding-identity", "transport-framing", "protocol-version"]);
+    expect(
+      requiredEdgeVerificationDimensions(
+        "Assess a Kubernetes control-plane environment",
+      ),
+    ).toBeUndefined();
 
     expect(
       rejectUnverifiedFastStrikeResponse(
@@ -240,11 +251,13 @@ describe("fast-strike response verification", () => {
           summary: "Recovered FLAG{literal-value}",
           verifiedLayers: [
             {
+              dimension: "application",
               layer: "gateway",
               targetSideRequest: "GET /gateway",
               observedResult: "200",
             },
             {
+              dimension: "application",
               layer: " Gateway ",
               targetSideRequest: "GET /gateway/again",
               observedResult: "200",
@@ -258,6 +271,74 @@ describe("fast-strike response verification", () => {
         },
       )?.message,
     ).toContain("only 1 of at least 6");
+  });
+
+  it("requires edge-parser diversity for explicit layered defenses", () => {
+    const verifiedLayers = Array.from({ length: 6 }, (_, index) => ({
+      dimension: "application" as const,
+      layer: `application control ${index}`,
+      targetSideRequest: `GET /control/${index}`,
+      observedResult: "HTTP 200",
+    }));
+    const requiredDimensions = [
+      "forwarding-identity",
+      "transport-framing",
+      "protocol-version",
+    ] as const;
+
+    expect(
+      rejectUnverifiedFastStrikeResponse(
+        {
+          solved: true,
+          summary: "Recovered FLAG{literal-value}",
+          verifiedLayers,
+        },
+        {
+          exactFlagRequired: true,
+          minimumVerifiedLayers: 6,
+          requiredDimensions,
+          rejectionCount: 0,
+        },
+      )?.message,
+    ).toContain("forwarding-identity, transport-framing, protocol-version");
+
+    expect(
+      normalizeFastStrikeOutcome(
+        {
+          solved: true,
+          summary: "Recovered FLAG{literal-value}",
+          verifiedLayers,
+        },
+        {
+          exactFlagRequired: true,
+          minimumVerifiedLayers: 6,
+          requiredDimensions,
+        },
+      ),
+    ).toMatchObject({
+      solved: false,
+      summary: expect.stringContaining("transport-framing"),
+    });
+
+    const completeLedger = verifiedLayers.map((entry, index) => ({
+      ...entry,
+      dimension: requiredDimensions[index] ?? entry.dimension,
+    }));
+    expect(
+      rejectUnverifiedFastStrikeResponse(
+        {
+          solved: true,
+          summary: "Recovered FLAG{literal-value}",
+          verifiedLayers: completeLedger,
+        },
+        {
+          exactFlagRequired: true,
+          minimumVerifiedLayers: 6,
+          requiredDimensions,
+          rejectionCount: 0,
+        },
+      ),
+    ).toBeUndefined();
   });
 
   it("downgrades multi-layer success after the bounded response guard expires", () => {

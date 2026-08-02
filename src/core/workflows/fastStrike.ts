@@ -13,6 +13,20 @@ import {
 import { createThreatModelPrompt } from "../utils/prompt";
 import type { PentestWorkflowInput, PentestWorkflowResult } from "./pentest";
 
+const VerificationDimension = z.enum([
+  "application",
+  "authentication",
+  "authorization",
+  "forwarding-identity",
+  "transport-framing",
+  "protocol-version",
+  "service-boundary",
+  "storage",
+  "telemetry",
+  "out-of-band",
+]);
+type VerificationDimension = z.infer<typeof VerificationDimension>;
+
 const FastStrikeResult = z.object({
   solved: z
     .boolean()
@@ -27,6 +41,9 @@ const FastStrikeResult = z.object({
   verifiedLayers: z
     .array(
       z.object({
+        dimension: VerificationDimension.describe(
+          "Primary security dimension exercised by this request",
+        ),
         layer: z
           .string()
           .describe("Distinct control, service, or trust boundary"),
@@ -77,6 +94,15 @@ export function minimumVerifiedLayers(
     : undefined;
 }
 
+export function requiredEdgeVerificationDimensions(
+  guidance: string | undefined,
+): VerificationDimension[] | undefined {
+  if (!guidance || !/multiple\s+defensive\s+layers/i.test(guidance)) {
+    return undefined;
+  }
+  return ["forwarding-identity", "transport-framing", "protocol-version"];
+}
+
 function countDistinctVerifiedLayers(result: FastStrikeOutcome): number {
   return new Set(
     (result.verifiedLayers ?? [])
@@ -85,11 +111,23 @@ function countDistinctVerifiedLayers(result: FastStrikeOutcome): number {
   ).size;
 }
 
+function missingVerificationDimensions(
+  result: FastStrikeOutcome,
+  requiredDimensions: readonly VerificationDimension[] | undefined,
+): VerificationDimension[] {
+  if (!requiredDimensions?.length) return [];
+  const observed = new Set(
+    (result.verifiedLayers ?? []).map(({ dimension }) => dimension),
+  );
+  return requiredDimensions.filter((dimension) => !observed.has(dimension));
+}
+
 export function rejectUnverifiedFastStrikeResponse(
   result: unknown,
   options: {
     exactFlagRequired: boolean;
     minimumVerifiedLayers?: number;
+    requiredDimensions?: readonly VerificationDimension[];
     rejectionCount: number;
   },
 ): { message: string } | undefined {
@@ -97,13 +135,17 @@ export function rejectUnverifiedFastStrikeResponse(
   const verifiedLayerCount = parsed.success
     ? countDistinctVerifiedLayers(parsed.data)
     : 0;
+  const missingDimensions = parsed.success
+    ? missingVerificationDimensions(parsed.data, options.requiredDimensions)
+    : [];
   if (
     parsed.success &&
     parsed.data.solved &&
     (!options.exactFlagRequired ||
       EXACT_FLAG_PATTERN.test(parsed.data.summary)) &&
     (!options.minimumVerifiedLayers ||
-      verifiedLayerCount >= options.minimumVerifiedLayers)
+      verifiedLayerCount >= options.minimumVerifiedLayers) &&
+    missingDimensions.length === 0
   ) {
     return undefined;
   }
@@ -131,6 +173,13 @@ export function rejectUnverifiedFastStrikeResponse(
         "The recovered secret is a lead, not completion. Continue through the relevant observed controls and services, issue a concrete request at each boundary, then respond with only evidence you actually observed.",
     };
   }
+  if (parsed.success && parsed.data.solved && missingDimensions.length > 0) {
+    return {
+      message:
+        `This objective explicitly requires multiple defensive layers, but verifiedLayers is missing target-side evidence for these conventional edge dimensions: ${missingDimensions.join(", ")}. ` +
+        "A normal application request does not verify edge parser behavior. Use safe equivalent canaries to exercise forwarded client identity, non-default transfer framing, and an alternate HTTP protocol version; record only wire variants you actually sent and observed.",
+    };
+  }
   return {
     message:
       "The objective is still unsolved, so this run is not complete. " +
@@ -144,6 +193,7 @@ export function normalizeFastStrikeOutcome(
   options: {
     exactFlagRequired?: boolean;
     minimumVerifiedLayers?: number;
+    requiredDimensions?: readonly VerificationDimension[];
   } = {},
 ): FastStrikeOutcome {
   const parsed = FastStrikeResult.safeParse(value);
@@ -170,6 +220,19 @@ export function normalizeFastStrikeOutcome(
         solved: false,
         summary:
           `Lane claimed multi-layer completion with only ${verifiedLayerCount}/${options.minimumVerifiedLayers} distinct target-side verifications. ` +
+          parsed.data.summary,
+        verifiedLayers: parsed.data.verifiedLayers,
+      };
+    }
+    const missingDimensions = missingVerificationDimensions(
+      parsed.data,
+      options.requiredDimensions,
+    );
+    if (parsed.data.solved && missingDimensions.length > 0) {
+      return {
+        solved: false,
+        summary:
+          `Lane claimed layered-defense completion without ${missingDimensions.join(", ")} verification. ` +
           parsed.data.summary,
         verifiedLayers: parsed.data.verifiedLayers,
       };
@@ -300,7 +363,7 @@ Run this loop, tightly:
 0. DECOMPOSE — Turn the supplied objective into a private completion ledger: every required action, state transition, proof, and safety constraint. Objective verbs are requirements, not flavor text. When the objective asks you to assess a chain, control plane, or multi-layer environment, promote each named or subsequently observed relevant layer and trust transition to a ledger item. A flag or secret observed before the required transition or exploit chain is a lead, not completion; finish and verify every explicit clause before reporting it.
 1. OBSERVE — Read every response for signal before you act. Note the stack, headers, cookies, tokens, form fields, error messages, redirects, disabled controls, ID patterns, client code, schemas, and named technologies. Verify whether the supplied listener is the objective's intended edge or merely an origin, collector, gateway, or sibling service. Keep narration short so execution receives the budget.
 2. HYPOTHESIZE — Rank a small set of plausible vulnerability classes by objective fit and observed signal. Challenge text that names a technology, control, or attack class is actionable context: exercise its canonical exploit workflow instead of waiting for a second hint.
-3. ACT — Test the leading hypotheses with discriminating requests. Batch independent read-only checks and use scripts for finite matrices. Targeted adjacent-route discovery, protocol table reads, small context-derived credential sets, encoding variants, and bounded parameter or identifier enumeration are allowed when they test a concrete hypothesis. If a custom or simulated gateway accepts an observed credential identity but rejects a standards-compliant signature, use the authentication error oracle for one matrix of at most 24 canonicalizations before discarding the credentials. Keep the advertised authorization envelope valid and test direct HMACs over subsets and orderings of only observed identity, credential-scope date, HTTP method, and path fields with conventional colon and newline delimiters; never guess keys or secrets. If the objective explicitly names a missing intermediary or sibling component but the supplied listener contradicts it, inspect evidence-derived and conventional sibling ports on the same authorized host; if still unresolved, one low-rate TCP connect inventory of ports 1-10000 (at most 100 probes/second, only against that host) is allowed. When a confirmed server-side fetch primitive is the intended bridge to an internal dependency, a negative host-port inventory does not disprove application-internal DNS. Exercise one finite matrix of at most 12 internal host:port candidates through that primitive, derived only from explicit objective nouns, observed technology or service names, returned URLs or configuration, and conventional ports. Include conventional DNS-label normalization such as spaces or underscores to hyphens, and distinguish DNS, connect, HTTP, and authentication outcomes; do not scan external DNS or the public Internet. Respect rate and availability constraints.
+3. ACT — Test the leading hypotheses with discriminating requests. Batch independent read-only checks and use scripts for finite matrices. Targeted adjacent-route discovery, protocol table reads, small context-derived credential sets, encoding variants, and bounded parameter or identifier enumeration are allowed when they test a concrete hypothesis. For an objective that explicitly says multiple defensive layers, exercise the conventional safe edge-differential matrix before completion: a forwarded-client-identity variant, a semantically equivalent request using non-default transfer framing, and an alternate HTTP protocol version. Use a raw client when the high-level client normalizes framing or protocol details, keep payloads bounded, and compare each variant with an ordinary baseline. If a custom or simulated gateway accepts an observed credential identity but rejects a standards-compliant signature, use the authentication error oracle for one matrix of at most 24 canonicalizations before discarding the credentials. Keep the advertised authorization envelope valid and test direct HMACs over subsets and orderings of only observed identity, credential-scope date, HTTP method, and path fields with conventional colon and newline delimiters; never guess keys or secrets. If the objective explicitly names a missing intermediary or sibling component but the supplied listener contradicts it, inspect evidence-derived and conventional sibling ports on the same authorized host; if still unresolved, one low-rate TCP connect inventory of ports 1-10000 (at most 100 probes/second, only against that host) is allowed. When a confirmed server-side fetch primitive is the intended bridge to an internal dependency, a negative host-port inventory does not disprove application-internal DNS. Exercise one finite matrix of at most 12 internal host:port candidates through that primitive, derived only from explicit objective nouns, observed technology or service names, returned URLs or configuration, and conventional ports. Include conventional DNS-label normalization such as spaces or underscores to hyphens, and distinguish DNS, connect, HTTP, and authentication outcomes; do not scan external DNS or the public Internet. Respect rate and availability constraints.
 4. PRUNE — Drop a lead when its required primitive is contradicted. One rejected payload, route spelling, nesting form, or address representation does not disprove the whole class. Before pruning, cover the conventional representations that follow from the observed stack. Do not repeat an identical negative test or expand into an unbounded scan.
 5. EXPLOIT — Once a primitive is confirmed, stop polishing recon and drive it end to end. Pivot across components, derive the next request from returned data or client/source artifacts, and reproduce the complete path. Prefer a working exploit script over dozens of manual variations.
 6. VERIFY, DOCUMENT & FINISH — Verify all items in the completion ledger, including the intended state transition or final read/inference request. For a multi-layer assessment, a final secret does not prove the intermediate controls: issue the minimum target-side request that verifies each relevant discovered layer, even if a shortcut exposed the secret first, and record every actually exercised layer in the response's verifiedLayers field. Record confirmed vulnerabilities with document_vulnerability. Only then call response with the exact proof and the steps that produced it. If the literal flag appears in an intermediate response, do not quote it in narration or stop immediately; complete the remaining objective steps first and include it only in the final response.
@@ -365,6 +428,8 @@ export async function runFastStrike(
   const operatorGuidance = session.config?.prompt;
   const exactFlagRequired = requestsExactFlag(operatorGuidance);
   const requiredVerifiedLayers = minimumVerifiedLayers(operatorGuidance);
+  const requiredDimensions =
+    requiredEdgeVerificationDimensions(operatorGuidance);
 
   const mode: "blackbox" | "whitebox" = cwd ? "whitebox" : "blackbox";
 
@@ -433,6 +498,7 @@ export async function runFastStrike(
                 return rejectUnverifiedFastStrikeResponse(result, {
                   exactFlagRequired,
                   minimumVerifiedLayers: requiredVerifiedLayers,
+                  requiredDimensions,
                   rejectionCount,
                 });
               },
@@ -453,6 +519,7 @@ export async function runFastStrike(
         const outcome = normalizeFastStrikeOutcome(await agent.consume(), {
           exactFlagRequired,
           minimumVerifiedLayers: requiredVerifiedLayers,
+          requiredDimensions,
         });
         laneOutcomes[laneIndex] = outcome;
         return outcome;
@@ -506,6 +573,7 @@ export async function runFastStrike(
               return rejectUnverifiedFastStrikeResponse(result, {
                 exactFlagRequired,
                 minimumVerifiedLayers: requiredVerifiedLayers,
+                requiredDimensions,
                 rejectionCount,
               });
             },
@@ -525,6 +593,7 @@ export async function runFastStrike(
     strikeResult = normalizeFastStrikeOutcome(await recoveryAgent.consume(), {
       exactFlagRequired,
       minimumVerifiedLayers: requiredVerifiedLayers,
+      requiredDimensions,
     });
   }
 
