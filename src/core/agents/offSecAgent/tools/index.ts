@@ -466,6 +466,12 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "spawn_coding_agent",
   "run_pentest_workflow",
   "delegate_to_auth_subagent",
+  // Attack-surface documentation is intentionally omitted here. In
+  // particular, document_endpoint launches a full threat-model generator for
+  // every recorded route, which defeats the bounded single-operator contract
+  // of fast-strike. Confirmed vulnerabilities remain directly documentable.
+  "document_app",
+  "document_endpoint",
   // Whitebox jobs
   "run_whitebox_scan",
   "create_whitebox_candidate",

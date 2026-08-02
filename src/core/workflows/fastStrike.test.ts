@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { FAST_STRIKE_EXCLUDED_TOOL_NAMES } from "../agents/offSecAgent/tools";
 import {
   buildFastStrikeRecoveryDossier,
   FAST_STRIKE_SYSTEM_PROMPT,
@@ -181,6 +182,18 @@ describe("fast-strike missing-intermediary guidance", () => {
     );
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("colon and newline delimiters");
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("never guess keys or secrets");
+  });
+});
+
+describe("fast-strike tool envelope", () => {
+  it("omits endpoint-analysis fanout while preserving operational contracts", () => {
+    expect(FAST_STRIKE_EXCLUDED_TOOL_NAMES).toContain("document_app");
+    expect(FAST_STRIKE_EXCLUDED_TOOL_NAMES).toContain("document_endpoint");
+    expect(FAST_STRIKE_EXCLUDED_TOOL_NAMES).not.toContain(
+      "document_vulnerability",
+    );
+    expect(FAST_STRIKE_EXCLUDED_TOOL_NAMES).not.toContain("checkpoint_state");
+    expect(FAST_STRIKE_EXCLUDED_TOOL_NAMES).not.toContain("browser_screenshot");
   });
 });
 
