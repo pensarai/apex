@@ -204,6 +204,9 @@ describe("fast-strike missing-intermediary guidance", () => {
     );
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("serverless event adapters");
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "working directory, arguments, nearby application configuration",
+    );
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
       "correlation-labeled concurrency",
     );
   });
