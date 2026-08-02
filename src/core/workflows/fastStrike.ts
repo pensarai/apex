@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { OffensiveSecurityAgent } from "../agents/offSecAgent";
@@ -27,6 +27,109 @@ const FastStrikeResult = z.object({
 });
 
 type FastStrikeOutcome = z.infer<typeof FastStrikeResult>;
+
+export function normalizeFastStrikeOutcome(value: unknown): FastStrikeOutcome {
+  const parsed = FastStrikeResult.safeParse(value);
+  if (parsed.success) return parsed.data;
+  return {
+    solved: false,
+    summary:
+      "Lane ended without a valid accepted response; sibling lanes may continue.",
+  };
+}
+
+type CompetitiveSettlement<T> =
+  | { index: number; status: "fulfilled"; value: T }
+  | { index: number; status: "rejected"; error: unknown };
+
+/** Run independent bounded lanes and cancel siblings after the first success. */
+export async function runCompetitiveLanes<T>(
+  factories: Array<(signal: AbortSignal) => Promise<T>>,
+  isSuccessful: (value: T) => boolean,
+  parentSignal?: AbortSignal,
+): Promise<T> {
+  if (factories.length === 0) {
+    throw new Error("At least one competitive lane is required");
+  }
+
+  const controllers = factories.map(() => new AbortController());
+  const settlements = factories.map(async (factory, index) => {
+    const controller = controllers[index];
+    if (!controller) throw new Error(`Missing controller for lane ${index}`);
+    const signal = parentSignal
+      ? AbortSignal.any([parentSignal, controller.signal])
+      : controller.signal;
+    try {
+      return {
+        index,
+        status: "fulfilled" as const,
+        value: await factory(signal),
+      };
+    } catch (error) {
+      return { index, status: "rejected" as const, error };
+    }
+  });
+
+  const pending = new Map(
+    settlements.map((settlement, index) => [index, settlement] as const),
+  );
+  const completed: CompetitiveSettlement<T>[] = [];
+
+  while (pending.size > 0) {
+    const settlement = await Promise.race(pending.values());
+    pending.delete(settlement.index);
+    completed.push(settlement);
+    if (settlement.status === "fulfilled" && isSuccessful(settlement.value)) {
+      for (const [index] of pending) controllers[index]?.abort();
+      await Promise.all(pending.values());
+      return settlement.value;
+    }
+  }
+
+  const completedValue = completed.find(
+    (
+      settlement,
+    ): settlement is Extract<
+      CompetitiveSettlement<T>,
+      { status: "fulfilled" }
+    > => settlement.status === "fulfilled",
+  );
+  if (completedValue) return completedValue.value;
+
+  if (parentSignal?.aborted) {
+    throw parentSignal.reason ?? new DOMException("Aborted", "AbortError");
+  }
+  throw new AggregateError(
+    completed
+      .filter(
+        (
+          settlement,
+        ): settlement is Extract<
+          CompetitiveSettlement<T>,
+          { status: "rejected" }
+        > => settlement.status === "rejected",
+      )
+      .map((settlement) => settlement.error),
+    "Every fast-strike lane failed",
+  );
+}
+
+const FAST_STRIKE_LANE_GUIDANCE = [
+  `Operate as the primary evidence-first lane. Follow the strongest observed signal, minimize speculative breadth, and close the shortest verified path to impact. Before mutating shared or global state, capture a baseline, use correlation-labeled values, and restore only state you introduced. Foreign correlated artifacts prove the target is shared; they do not by themselves invalidate a reproducible exploit path.`,
+  `Operate as an independent challenger lane. Do not assume the obvious first hypothesis is correct. Look for a materially different trust boundary, protocol representation, state transition, parser behavior, or authorization path supported by observable evidence. When an adapter maps input into a framework request, event, claims, or context object, test evidence-supported envelope collisions, override or merge fields, and alternate nesting before guessing credentials or routes. Prefer discriminating controls over payload variations, and never brute-force an unbounded space.`,
+  `Operate as an independent systems lane. Reconstruct the target's data flow from inputs through transformations to privileged sinks. Prioritize cross-component mismatches, alternate encodings, and multi-step composition, while retiring any path whose required primitive is contradicted by evidence.`,
+] as const;
+
+function ensureSessionConfig(
+  session: PentestWorkflowInput["session"],
+): NonNullable<PentestWorkflowInput["session"]["config"]> {
+  if (!session.config) {
+    (session as { config: Record<string, unknown> }).config = {};
+  }
+  return session.config as NonNullable<
+    PentestWorkflowInput["session"]["config"]
+  >;
+}
 
 const FAST_STRIKE_SYSTEM_PROMPT = `You are an elite offensive security operator running a fast strike against a single target. You work ALONE and finish the job yourself — there is no team to hand off to, no swarm to spawn, no plan to file. Your edge is discipline and observation, not volume.
 
@@ -66,10 +169,7 @@ export async function runFastStrike(
   } = input;
 
   if (cwd) {
-    if (!session.config) {
-      (session as { config: Record<string, unknown> }).config = {};
-    }
-    session.config!.codebasePath ??= cwd;
+    ensureSessionConfig(session).codebasePath ??= cwd;
   }
 
   // Merge prompt/threatModel into session.config.prompt, mirroring the full
@@ -81,11 +181,9 @@ export async function runFastStrike(
     if (prompt) parts.push(prompt);
     const combined = parts.join("\n\n");
 
-    if (!session.config) {
-      (session as { config: Record<string, unknown> }).config = {};
-    }
-    session.config!.prompt = session.config?.prompt
-      ? `${session.config?.prompt}\n\n${combined}`
+    const sessionConfig = ensureSessionConfig(session);
+    sessionConfig.prompt = sessionConfig.prompt
+      ? `${sessionConfig.prompt}\n\n${combined}`
       : combined;
   }
 
@@ -110,27 +208,70 @@ export async function runFastStrike(
     "Run the fast strike: find and exploit the vulnerability, complete the objective, and report what worked.",
   );
 
-  const agent = new OffensiveSecurityAgent<FastStrikeOutcome>({
-    system: FAST_STRIKE_SYSTEM_PROMPT,
-    prompt: promptParts.join("\n\n"),
-    model,
-    session,
-    target,
-    mode: "fast-strike",
-    toolProtocol,
-    activeTools: [],
-    responseSchema: FastStrikeResult,
-    findingsRegistry,
-    subagentId: "fast-strike",
-    authConfig,
-    abortSignal,
-    eventBus,
-    onStepFinish,
-    enableThinking,
-    openAIReasoningEffort,
+  const laneCount = session.config?.fastStrikeLanes ?? 2;
+  const laneFactories = Array.from({ length: laneCount }, (_, laneIndex) => {
+    const laneId = `fast-strike-${laneIndex + 1}`;
+    const laneWorkspace = join(
+      session.rootPath,
+      "subagents",
+      laneId,
+      "workspace",
+    );
+    mkdirSync(laneWorkspace, { recursive: true });
+
+    return async (laneSignal: AbortSignal) => {
+      const agent = new OffensiveSecurityAgent<FastStrikeOutcome>({
+        system: FAST_STRIKE_SYSTEM_PROMPT,
+        prompt: [
+          ...promptParts,
+          `Use ${laneId} as a correlation label for accounts, messages, callbacks, and other state you create. Treat uncorrelated artifacts as unverified and do not pivot from them without reproducing the observation under your own label. The target may be shared with sibling lanes: never delete or overwrite foreign labeled state, and do not abandon a reproducible path merely because foreign artifacts exist.`,
+          FAST_STRIKE_LANE_GUIDANCE[laneIndex] ??
+            FAST_STRIKE_LANE_GUIDANCE[FAST_STRIKE_LANE_GUIDANCE.length - 1],
+        ].join("\n\n"),
+        model,
+        session,
+        target,
+        mode: "fast-strike",
+        toolProtocol,
+        activeTools: [],
+        responseSchema: FastStrikeResult,
+        ...(session.config?.requireSuccessfulResponse
+          ? {
+              responseGuard: (result: unknown, { rejectionCount }) => {
+                const parsed = FastStrikeResult.safeParse(result);
+                if (parsed.success && parsed.data.solved) return undefined;
+                // Two recovery opportunities are enough to redirect a
+                // premature finish without turning completion into a loop.
+                if (rejectionCount >= 2) return undefined;
+                return {
+                  message:
+                    "The objective is still unsolved, so this run is not complete. " +
+                    "Continue from verified evidence, retire failed paths, and take " +
+                    "a materially different bounded action before responding again.",
+                };
+              },
+            }
+          : {}),
+        findingsRegistry,
+        subagentId: laneId,
+        subagentName: `Fast Strike Lane ${laneIndex + 1}`,
+        agentCwd: laneWorkspace,
+        authConfig,
+        abortSignal: laneSignal,
+        eventBus,
+        onStepFinish,
+        enableThinking,
+        openAIReasoningEffort,
+      });
+      return normalizeFastStrikeOutcome(await agent.consume());
+    };
   });
 
-  const strikeResult = await agent.consume();
+  const strikeResult = await runCompetitiveLanes(
+    laneFactories,
+    (result) => result.solved,
+    abortSignal,
+  );
 
   if (abortSignal?.aborted) {
     throw new DOMException("Pentest aborted by user", "AbortError");

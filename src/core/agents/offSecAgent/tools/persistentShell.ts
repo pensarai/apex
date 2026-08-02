@@ -140,6 +140,24 @@ export function readSandboxAgentEnv(): Record<string, string> {
   }
 }
 
+const CANONICAL_CALLBACK_ENV = [
+  "APEX_CALLBACK_URL",
+  "APEX_CALLBACK_PORT",
+  "APEX_CALLBACK_EVENTS_PATH",
+  "APEX_OAST_HTTP_BASE_URL",
+  "APEX_OAST_HTTP_PORT",
+] as const;
+
+/** Forward platform-provisioned OAST routing without exposing other secrets. */
+export function readCanonicalCallbackEnv(): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const name of CANONICAL_CALLBACK_ENV) {
+    const value = process.env[name];
+    if (value) values[name] = value;
+  }
+  return values;
+}
+
 let stdbufAvailable: boolean | null = null;
 function hasStdbuf(): boolean {
   if (stdbufAvailable !== null) return stdbufAvailable;
@@ -264,6 +282,7 @@ export class PersistentShell {
         // curated essentials below and explicit per-agent `extraEnv` always
         // win — a workspace var can never clobber PATH/HOME or shell controls.
         ...readSandboxAgentEnv(),
+        ...readCanonicalCallbackEnv(),
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
         USER: process.env.USER ?? "",

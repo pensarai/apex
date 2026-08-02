@@ -11,7 +11,6 @@ import type {
   ToolResultPart,
   ToolSet,
 } from "ai";
-import { hasToolCall } from "ai";
 import { resolveModelRuntimeProfile, streamResponse } from "../../ai";
 import { validateLatestCompactionArchive } from "../../ai/contextCompaction";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
@@ -294,7 +293,10 @@ export class OffensiveSecurityAgent<TResult = void> {
     const sandbox = this.sandboxSecurity?.sandbox ?? input.sandbox;
 
     // -- Resolve agent working directory ----------------------------------------
-    const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
+    const agentCwd =
+      input.agentCwd ??
+      input.session.config?.agentCwd ??
+      input.session.rootPath;
     const executionPolicy = resolveExecutionPolicy(input.session);
     const executionPolicyEnv = {
       APEX_EXECUTION_POLICY_JSON: JSON.stringify(executionPolicy),
@@ -479,6 +481,7 @@ export class OffensiveSecurityAgent<TResult = void> {
             this._capturedResponse = result as TResult;
             this._resolveResponseCaptured(result as TResult);
           },
+          input.responseGuard,
         ),
       };
     }
@@ -494,9 +497,10 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     let stopWhen = input.stopWhen;
     if (input.responseSchema) {
-      const responseStop = hasToolCall(
-        RESPONSE_TOOL_NAME,
-      ) as StopCondition<ToolSet>;
+      // A guarded response still executes as a tool call. Stop only after its
+      // callback accepted and captured a terminal result.
+      const responseStop = (() =>
+        this._responseToolFired) as StopCondition<ToolSet>;
       if (!stopWhen) {
         stopWhen = responseStop;
       } else if (Array.isArray(stopWhen)) {
@@ -655,7 +659,8 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.system ??
       detectOSAndEnhancePrompt(
         buildBaseSystemPrompt({
-          sandboxMode: agentCwd === input.session.rootPath,
+          sandboxMode:
+            input.agentCwd !== undefined || agentCwd === input.session.rootPath,
         }),
       );
     const effectiveBaseSystemPrompt =
@@ -665,7 +670,12 @@ export class OffensiveSecurityAgent<TResult = void> {
       buildSandboxSecurityPrompt(input.session);
     const systemPrompt =
       effectiveBaseSystemPrompt +
-      buildSessionWorkspaceSection(input.session, agentCwd, activeTools);
+      buildSessionWorkspaceSection(
+        input.session,
+        agentCwd,
+        activeTools,
+        input.agentCwd !== undefined ? "isolated" : undefined,
+      );
 
     traceWriter.writeInit({
       model: input.model,
@@ -811,6 +821,18 @@ export class OffensiveSecurityAgent<TResult = void> {
             cacheWriteTokens: metrics.cacheCreationInputTokens,
           };
           input.onCacheMetrics?.(metrics);
+        },
+        strategyDirector:
+          input.mode === "fast-strike"
+            ? { intervalSteps: 16, maxReviews: 6 }
+            : undefined,
+        onAuxiliaryUsage: (event) => {
+          traceWriter.recordAuxiliary(event.kind, event.summary, {
+            inputTokens: event.inputTokens,
+            outputTokens: event.outputTokens,
+            cacheReadTokens: event.cacheReadTokens,
+            cacheWriteTokens: event.cacheWriteTokens,
+          });
         },
         enableThinking: input.enableThinking,
         thinkingEffort: input.thinkingEffort,

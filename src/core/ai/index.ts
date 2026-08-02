@@ -8,13 +8,6 @@ export type {
   StreamResponseOpts,
   ThinkingEffort,
 } from "./ai";
-export type {
-  ContextCompactionConfig,
-  ContextCompactionMetadata,
-  ContextCompactionResult,
-  ContextCompactionState,
-  SemanticCapsule,
-} from "./contextCompaction";
 export {
   buildReasoningProviderOptions,
   DEFAULT_OPENAI_REASONING_EFFORT,
@@ -26,6 +19,13 @@ export {
   normalizeOpenAIReasoningEffort,
   streamResponse,
 } from "./ai";
+export type {
+  ContextCompactionConfig,
+  ContextCompactionMetadata,
+  ContextCompactionResult,
+  ContextCompactionState,
+  SemanticCapsule,
+} from "./contextCompaction";
 export type {
   AgentToolProtocol,
   AgentToolProtocolPreference,

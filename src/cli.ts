@@ -11,6 +11,7 @@ import packageJson from "../package.json";
 import { type AIModel, buildAuthConfig } from "./core/ai";
 import { resolveCliLogLevel } from "./core/cli/logLevelArgs";
 import { resolvePentestMode } from "./core/cli/pentestMode";
+import { parseReasoningEffort } from "./core/cli/reasoningEffort";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
 import { logger } from "./core/logger";
@@ -235,9 +236,17 @@ pentest options:
   --mode <mode>            Pentest mode: exfil (pivoting & flag extraction)
   --model <model>          AI model (default: auto-selected from configured provider)
   --extended-thinking       Enable extended thinking for supported models
+  --reasoning-effort <e>    Explicit reasoning effort: none|low|medium|high|xhigh|max|ultra
   --task-driven             Enable task-driven architecture (experimental)
   --fast-strike            Single-operator fast strike: skip attack-surface/swarm
                            phases, one tight recon→exploit loop against the target
+  --fast-strike-lanes <n>  Independent fast-strike operators (1-3, default: 2)
+  --allow-destructive-actions
+                           Explicitly authorize destructive target operations
+                           (default: blocked)
+  --require-successful-response
+                           Keep objective-driven fast strike running after an
+                           unsolved structured response (bounded to two retries)
   --prompt <text|@file>    Guidance for the pentest agent (inline text or @filepath)
   --threat-model <text|@file>  Threat model to guide the pentest (inline or @filepath)
   --header "Name: Value"   Custom HTTP header (repeatable)
@@ -286,8 +295,27 @@ async function runPentest() {
   const promptRaw = getArg("--prompt");
   const threatModelRaw = getArg("--threat-model");
   const enableThinking = hasFlag("--extended-thinking");
+  const reasoningEffort = parseReasoningEffort(getArg("--reasoning-effort"));
   const taskDriven = hasFlag("--task-driven");
   const fastStrike = hasFlag("--fast-strike");
+  const fastStrikeLanesRaw = getArg("--fast-strike-lanes");
+  const fastStrikeLanes = fastStrikeLanesRaw
+    ? Number(fastStrikeLanesRaw)
+    : undefined;
+  const allowDestructiveActions = hasFlag("--allow-destructive-actions");
+  const requireSuccessfulResponse = hasFlag("--require-successful-response");
+
+  if (
+    fastStrikeLanes !== undefined &&
+    (!Number.isInteger(fastStrikeLanes) ||
+      fastStrikeLanes < 1 ||
+      fastStrikeLanes > 3)
+  ) {
+    throw new Error("--fast-strike-lanes must be an integer from 1 to 3");
+  }
+  if (fastStrikeLanes !== undefined && !fastStrike) {
+    throw new Error("--fast-strike-lanes requires --fast-strike");
+  }
 
   // Resolve and combine threat model + prompt
   const resolvedTm = threatModelRaw
@@ -316,7 +344,7 @@ async function runPentest() {
 PENTEST ORCHESTRATION
 ${sep}
 Target:  ${target}${cwd ? `\nCwd:     ${cwd} (whitebox)` : ""}${exfilMode ? "\nMode:    exfil" : ""}
-Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\nTask-driven: enabled" : ""}${fastStrike ? "\nFast strike: enabled" : ""}${headers ? `\nHeaders: ${Object.keys(headers).length} configured` : ""}
+Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${reasoningEffort ? `\nReasoning effort: ${reasoningEffort}` : ""}${taskDriven ? "\nTask-driven: enabled" : ""}${fastStrike ? `\nFast strike: enabled\nFast strike lanes: ${fastStrikeLanes ?? 2}` : ""}${allowDestructiveActions ? "\nDestructive target actions: authorized" : ""}${requireSuccessfulResponse ? "\nSuccessful response required" : ""}${headers ? `\nHeaders: ${Object.keys(headers).length} configured` : ""}
 `);
 
   const session = await sessions.create({
@@ -327,6 +355,9 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
       ...(exfilMode ? { exfilMode: true } : {}),
       ...(prompt ? { prompt } : {}),
       ...(taskDriven ? { taskDriven: true } : {}),
+      ...(allowDestructiveActions ? { allowDestructiveActions: true } : {}),
+      ...(requireSuccessfulResponse ? { requireSuccessfulResponse: true } : {}),
+      ...(fastStrikeLanes !== undefined ? { fastStrikeLanes } : {}),
       ...(headers !== undefined ? { headers } : {}),
     },
   });
@@ -343,6 +374,7 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
         session,
         model,
         enableThinking,
+        openAIReasoningEffort: reasoningEffort,
         ...(fastStrike ? { fastStrike: true } : {}),
         surfaceIntegrationEnabled: pensarConfig.surfaceIntegrationEnabled,
         authConfig: buildAuthConfig(pensarConfig),

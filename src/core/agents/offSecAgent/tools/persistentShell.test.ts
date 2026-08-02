@@ -6,6 +6,7 @@ import {
   extractFallbackStdout,
   getApexTmpRoot,
   PersistentShell,
+  readCanonicalCallbackEnv,
   readSandboxAgentEnv,
 } from "./persistentShell";
 
@@ -642,6 +643,40 @@ describe("readSandboxAgentEnv", () => {
 
     process.env.PENSAR_AGENT_ENV_VARS = JSON.stringify(["a", "b"]);
     expect(readSandboxAgentEnv()).toEqual({});
+  });
+});
+
+describe("readCanonicalCallbackEnv", () => {
+  const names = [
+    "APEX_CALLBACK_URL",
+    "APEX_CALLBACK_PORT",
+    "APEX_CALLBACK_EVENTS_PATH",
+    "APEX_OAST_HTTP_BASE_URL",
+    "APEX_OAST_HTTP_PORT",
+  ] as const;
+  const original = Object.fromEntries(
+    names.map((name) => [name, process.env[name]]),
+  );
+
+  afterEach(() => {
+    for (const name of names) {
+      const value = original[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    delete process.env.DAYTONA_API_KEY;
+  });
+
+  it("forwards only canonical OAST routing values", () => {
+    process.env.APEX_OAST_HTTP_BASE_URL = "https://callbacks.example/opaque";
+    process.env.APEX_OAST_HTTP_PORT = "4000";
+    process.env.DAYTONA_API_KEY = "must-not-leak";
+
+    expect(readCanonicalCallbackEnv()).toEqual({
+      APEX_OAST_HTTP_BASE_URL: "https://callbacks.example/opaque",
+      APEX_OAST_HTTP_PORT: "4000",
+    });
+    expect(readCanonicalCallbackEnv()).not.toHaveProperty("DAYTONA_API_KEY");
   });
 });
 

@@ -298,7 +298,10 @@ export function createSandboxSessionSecurity(
 
 export function buildSandboxSecurityPrompt(session: SessionInfo): string {
   const config = session.config?.networkSecurity;
-  if (!config?.oast?.enabled) return "";
+  const externallyProvisioned = Boolean(
+    process.env[OAST_URL_ENV] ?? process.env[CALLBACK_URL_ENV],
+  );
+  if (!config?.oast?.enabled && !externallyProvisioned) return "";
   return `
 
 ## Session callback routing

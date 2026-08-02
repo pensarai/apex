@@ -269,6 +269,10 @@ const SessionConfigObject = z.object({
   smtpConfig: SmtpConfigObject.optional(),
   /** Enable exfiltration mode — allows internal pivoting and flag extraction through confirmed vulnerabilities */
   exfilMode: z.boolean().optional(),
+  /** Keep objective-driven fast strike alive after a structured unsolved response. */
+  requireSuccessfulResponse: z.boolean().optional(),
+  /** Independent fast-strike operators; first verified success cancels the rest. */
+  fastStrikeLanes: z.number().int().min(1).max(3).optional(),
   /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
   agentCwd: z.string().optional(),
   /** Operator-provided guidance injected into the orchestrator/agent system prompts */

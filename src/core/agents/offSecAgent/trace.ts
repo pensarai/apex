@@ -121,6 +121,19 @@ export interface StepRecord {
   summarized: boolean;
 }
 
+/** Harness-owned advisory call recorded separately from operator steps. */
+export interface AuxiliaryRecord {
+  type: "auxiliary";
+  kind: "strategy_director";
+  stepIndex: number;
+  timestamp: string;
+  agentId: string | null;
+  summary: string;
+  usage: StepRecord["usage"];
+  cumulativeUsage: StepRecord["cumulativeUsage"];
+  elapsedMs: number;
+}
+
 // ---------------------------------------------------------------------------
 // StateCheckpoint — agent state snapshot in trace.jsonl
 // ---------------------------------------------------------------------------
@@ -249,6 +262,7 @@ export type TaskRecordInput = Omit<
 export type TraceRecord =
   | InitRecord
   | StepRecord
+  | AuxiliaryRecord
   | StateCheckpoint
   | TaskRecord;
 
@@ -521,6 +535,37 @@ export class StepTraceWriter {
     this.stepIndex++;
     this.lastStepTime = now;
     this.summarized = false;
+  }
+
+  recordAuxiliary(
+    kind: AuxiliaryRecord["kind"],
+    summary: string,
+    usage: StepRecord["usage"],
+  ): void {
+    const inputTokens = usage.inputTokens ?? 0;
+    const outputTokens = usage.outputTokens ?? 0;
+    this.cumulativeUsage.inputTokens += inputTokens;
+    this.cumulativeUsage.outputTokens += outputTokens;
+    if (usage.cacheReadTokens != null) {
+      this.cumulativeUsage.cacheReadTokens =
+        (this.cumulativeUsage.cacheReadTokens ?? 0) + usage.cacheReadTokens;
+    }
+    if (usage.cacheWriteTokens != null) {
+      this.cumulativeUsage.cacheWriteTokens =
+        (this.cumulativeUsage.cacheWriteTokens ?? 0) + usage.cacheWriteTokens;
+    }
+
+    this.appendRecord({
+      type: "auxiliary",
+      kind,
+      stepIndex: this.stepIndex,
+      timestamp: new Date().toISOString(),
+      agentId: this.agentId,
+      summary: preview(summary, OUTPUT_PREVIEW_LIMIT),
+      usage,
+      cumulativeUsage: { ...this.cumulativeUsage },
+      elapsedMs: Date.now() - this.agentStartTime,
+    });
   }
 
   // ---------------------------------------------------------------------------

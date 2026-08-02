@@ -135,6 +135,31 @@ describe("buildReasoningProviderOptions", () => {
     ).toEqual({ openai: { reasoningEffort: "max" } });
   });
 
+  it("requests explicit high-effort reasoning for Kimi K3 on OpenRouter", () => {
+    expect(
+      buildReasoningProviderOptions("moonshotai/kimi-k3", {
+        enableThinking: true,
+        openAIReasoningEffort: "high",
+      }),
+    ).toEqual({
+      openrouter: {
+        reasoning: { enabled: true, exclude: false, effort: "high" },
+      },
+    });
+  });
+
+  it("requests high-effort reasoning by default for GLM-5.2 when extended thinking is enabled", () => {
+    expect(
+      buildReasoningProviderOptions("z-ai/glm-5.2", {
+        enableThinking: true,
+      }),
+    ).toEqual({
+      openrouter: {
+        reasoning: { enabled: true, exclude: false, effort: "high" },
+      },
+    });
+  });
+
   it("carries the adaptive-thinking effort hint on both anthropic and bedrock for a 4.6 model", () => {
     const result = buildReasoningProviderOptions(
       "global.anthropic.claude-opus-4-6-v1",
