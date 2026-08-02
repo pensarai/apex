@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildFastStrikeRecoveryDossier,
   normalizeFastStrikeOutcome,
   rejectUnverifiedFastStrikeResponse,
   requestsExactFlag,
@@ -79,6 +80,33 @@ describe("normalizeFastStrikeOutcome", () => {
         summary: "captured evidence",
       }),
     ).toEqual({ solved: true, summary: "captured evidence" });
+  });
+});
+
+describe("buildFastStrikeRecoveryDossier", () => {
+  it("preserves every settled lane handoff in lane order", () => {
+    expect(
+      buildFastStrikeRecoveryDossier([
+        { solved: false, summary: "confirmed SSRF" },
+        undefined,
+        { solved: false, summary: "found a signed callback" },
+      ]),
+    ).toBe(
+      "Lane 1 (solved=false):\nconfirmed SSRF\n\n---\n\nLane 3 (solved=false):\nfound a signed callback",
+    );
+  });
+
+  it("provides a fresh-observation fallback without structured handoffs", () => {
+    expect(buildFastStrikeRecoveryDossier([undefined])).toContain(
+      "fresh observations",
+    );
+  });
+
+  it("bounds each handoff before injecting it into recovery context", () => {
+    const dossier = buildFastStrikeRecoveryDossier([
+      { solved: false, summary: "x".repeat(7000) },
+    ]);
+    expect(dossier.length).toBeLessThan(6100);
   });
 });
 
