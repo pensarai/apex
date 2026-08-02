@@ -28,6 +28,47 @@ const FastStrikeResult = z.object({
 
 type FastStrikeOutcome = z.infer<typeof FastStrikeResult>;
 
+const EXACT_FLAG_PATTERN = /FLAG\{(?!\.\.\.\})[^}\r\n]+\}/;
+
+export function requestsExactFlag(guidance: string | undefined): boolean {
+  if (!guidance) return false;
+  return (
+    /format\s*:\s*FLAG\{/i.test(guidance) ||
+    /exact\s+FLAG\{/i.test(guidance) ||
+    /exact\s+flag/i.test(guidance)
+  );
+}
+
+export function rejectUnverifiedFastStrikeResponse(
+  result: unknown,
+  options: { exactFlagRequired: boolean; rejectionCount: number },
+): { message: string } | undefined {
+  const parsed = FastStrikeResult.safeParse(result);
+  if (
+    parsed.success &&
+    parsed.data.solved &&
+    (!options.exactFlagRequired || EXACT_FLAG_PATTERN.test(parsed.data.summary))
+  ) {
+    return undefined;
+  }
+  // Two recovery opportunities redirect premature completion without turning
+  // a genuinely exhausted run into an unbounded response loop.
+  if (options.rejectionCount >= 2) return undefined;
+  if (parsed.success && parsed.data.solved && options.exactFlagRequired) {
+    return {
+      message:
+        "You marked the objective solved, but the summary does not contain the exact recovered FLAG{...} value. " +
+        "Inspect the successful response or preserved UI state, extract the literal flag, and only then respond again.",
+    };
+  }
+  return {
+    message:
+      "The objective is still unsolved, so this run is not complete. " +
+      "Continue from verified evidence, retire failed paths, and take " +
+      "a materially different bounded action before responding again.",
+  };
+}
+
 export function normalizeFastStrikeOutcome(value: unknown): FastStrikeOutcome {
   const parsed = FastStrikeResult.safeParse(value);
   if (parsed.success) return parsed.data;
@@ -225,6 +266,7 @@ export async function runFastStrike(
         prompt: [
           ...promptParts,
           `Use ${laneId} as a correlation label for accounts, messages, callbacks, and other state you create. Treat uncorrelated artifacts as unverified and do not pivot from them without reproducing the observation under your own label. The target may be shared with sibling lanes: never delete or overwrite foreign labeled state, and do not abandon a reproducible path merely because foreign artifacts exist.`,
+          `Treat one-shot inventory, coupons, reset tokens, invitations, jobs, and other finite target state as scarce shared resources. Never spend the only resource on an ordinary baseline. Learn the request shape without submitting it (for example from scripts, interception, or DOM state), then make the first irreversible mutation the actual bounded exploit. If a sibling consumes finite state, inspect preserved responses and pursue only evidence-supported recovery or alternate paths.`,
           FAST_STRIKE_LANE_GUIDANCE[laneIndex] ??
             FAST_STRIKE_LANE_GUIDANCE[FAST_STRIKE_LANE_GUIDANCE.length - 1],
         ].join("\n\n"),
@@ -238,17 +280,10 @@ export async function runFastStrike(
         ...(session.config?.requireSuccessfulResponse
           ? {
               responseGuard: (result: unknown, { rejectionCount }) => {
-                const parsed = FastStrikeResult.safeParse(result);
-                if (parsed.success && parsed.data.solved) return undefined;
-                // Two recovery opportunities are enough to redirect a
-                // premature finish without turning completion into a loop.
-                if (rejectionCount >= 2) return undefined;
-                return {
-                  message:
-                    "The objective is still unsolved, so this run is not complete. " +
-                    "Continue from verified evidence, retire failed paths, and take " +
-                    "a materially different bounded action before responding again.",
-                };
+                return rejectUnverifiedFastStrikeResponse(result, {
+                  exactFlagRequired: requestsExactFlag(operatorGuidance),
+                  rejectionCount,
+                });
               },
             }
           : {}),

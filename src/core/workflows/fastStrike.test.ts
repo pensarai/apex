@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { normalizeFastStrikeOutcome, runCompetitiveLanes } from "./fastStrike";
+import {
+  normalizeFastStrikeOutcome,
+  rejectUnverifiedFastStrikeResponse,
+  requestsExactFlag,
+  runCompetitiveLanes,
+} from "./fastStrike";
 
 type Outcome = { solved: boolean; lane: number };
 
@@ -74,5 +79,44 @@ describe("normalizeFastStrikeOutcome", () => {
         summary: "captured evidence",
       }),
     ).toEqual({ solved: true, summary: "captured evidence" });
+  });
+});
+
+describe("fast-strike response verification", () => {
+  it("detects exact-flag objectives without treating placeholders as evidence", () => {
+    expect(requestsExactFlag("Find the flag (format: FLAG{...})")).toBe(true);
+    expect(requestsExactFlag("Return the exact flag value")).toBe(true);
+    expect(requestsExactFlag("Confirm account takeover")).toBe(false);
+
+    expect(
+      rejectUnverifiedFastStrikeResponse(
+        { solved: true, summary: "Recovered FLAG{...}" },
+        { exactFlagRequired: true, rejectionCount: 0 },
+      )?.message,
+    ).toContain("does not contain the exact recovered");
+  });
+
+  it("accepts a solved exact-flag response only when the literal value is present", () => {
+    expect(
+      rejectUnverifiedFastStrikeResponse(
+        { solved: true, summary: "Recovered FLAG{literal-value}" },
+        { exactFlagRequired: true, rejectionCount: 0 },
+      ),
+    ).toBeUndefined();
+  });
+
+  it("preserves the bounded two-rejection recovery policy", () => {
+    expect(
+      rejectUnverifiedFastStrikeResponse(
+        { solved: false, summary: "No result" },
+        { exactFlagRequired: false, rejectionCount: 0 },
+      )?.message,
+    ).toContain("still unsolved");
+    expect(
+      rejectUnverifiedFastStrikeResponse(
+        { solved: false, summary: "No result" },
+        { exactFlagRequired: false, rejectionCount: 2 },
+      ),
+    ).toBeUndefined();
   });
 });
