@@ -81,6 +81,31 @@ describe("normalizeFastStrikeOutcome", () => {
       }),
     ).toEqual({ solved: true, summary: "captured evidence" });
   });
+
+  it("downgrades an unverified exact-flag success before lane settlement", () => {
+    expect(
+      normalizeFastStrikeOutcome(
+        { solved: true, summary: "Reached the secrets service" },
+        { exactFlagRequired: true },
+      ),
+    ).toEqual({
+      solved: false,
+      summary:
+        "Lane claimed success without the required literal FLAG{...} proof. Reached the secrets service",
+    });
+  });
+
+  it("preserves a solved outcome with literal exact-flag proof", () => {
+    expect(
+      normalizeFastStrikeOutcome(
+        { solved: true, summary: "Recovered FLAG{literal-proof}" },
+        { exactFlagRequired: true },
+      ),
+    ).toEqual({
+      solved: true,
+      summary: "Recovered FLAG{literal-proof}",
+    });
+  });
 });
 
 describe("buildFastStrikeRecoveryDossier", () => {

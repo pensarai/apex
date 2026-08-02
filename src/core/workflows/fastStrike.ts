@@ -69,9 +69,26 @@ export function rejectUnverifiedFastStrikeResponse(
   };
 }
 
-export function normalizeFastStrikeOutcome(value: unknown): FastStrikeOutcome {
+export function normalizeFastStrikeOutcome(
+  value: unknown,
+  options: { exactFlagRequired?: boolean } = {},
+): FastStrikeOutcome {
   const parsed = FastStrikeResult.safeParse(value);
-  if (parsed.success) return parsed.data;
+  if (parsed.success) {
+    if (
+      parsed.data.solved &&
+      options.exactFlagRequired &&
+      !EXACT_FLAG_PATTERN.test(parsed.data.summary)
+    ) {
+      return {
+        solved: false,
+        summary:
+          "Lane claimed success without the required literal FLAG{...} proof. " +
+          parsed.data.summary,
+      };
+    }
+    return parsed.data;
+  }
   return {
     solved: false,
     summary:
@@ -257,6 +274,7 @@ export async function runFastStrike(
   }
 
   const operatorGuidance = session.config?.prompt;
+  const exactFlagRequired = requestsExactFlag(operatorGuidance);
 
   const mode: "blackbox" | "whitebox" = cwd ? "whitebox" : "blackbox";
 
@@ -313,7 +331,7 @@ export async function runFastStrike(
           ? {
               responseGuard: (result: unknown, { rejectionCount }) => {
                 return rejectUnverifiedFastStrikeResponse(result, {
-                  exactFlagRequired: requestsExactFlag(operatorGuidance),
+                  exactFlagRequired,
                   rejectionCount,
                 });
               },
@@ -330,7 +348,9 @@ export async function runFastStrike(
         enableThinking,
         openAIReasoningEffort,
       });
-      const outcome = normalizeFastStrikeOutcome(await agent.consume());
+      const outcome = normalizeFastStrikeOutcome(await agent.consume(), {
+        exactFlagRequired,
+      });
       laneOutcomes[laneIndex] = outcome;
       return outcome;
     };
@@ -370,7 +390,7 @@ export async function runFastStrike(
         ? {
             responseGuard: (result: unknown, { rejectionCount }) => {
               return rejectUnverifiedFastStrikeResponse(result, {
-                exactFlagRequired: requestsExactFlag(operatorGuidance),
+                exactFlagRequired,
                 rejectionCount,
               });
             },
@@ -387,7 +407,9 @@ export async function runFastStrike(
       enableThinking,
       openAIReasoningEffort,
     });
-    strikeResult = normalizeFastStrikeOutcome(await recoveryAgent.consume());
+    strikeResult = normalizeFastStrikeOutcome(await recoveryAgent.consume(), {
+      exactFlagRequired,
+    });
   }
 
   if (abortSignal?.aborted) {
