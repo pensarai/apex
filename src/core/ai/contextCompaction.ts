@@ -282,6 +282,10 @@ async function compactEvents(
       system: COMPACTION_SYSTEM,
       prompt: chunk.join("\n"),
       providerOptions,
+      maxOutputTokens: Math.max(
+        512,
+        Math.min(4_096, Math.floor(chunkTokens / 2)),
+      ),
       abortSignal,
     });
     inputTokens += result.usage.inputTokens ?? 0;
@@ -289,24 +293,64 @@ async function compactEvents(
     partials.push(parseSemanticCapsule(result.text));
   }
 
-  if (partials.length === 1) {
+  if (partials.length <= 1) {
     return {
       semantic: partials[0] ?? emptySemanticCapsule(),
       usage: { inputTokens, outputTokens },
     };
   }
 
-  const reduced = await generateText({
-    model,
-    system: COMPACTION_SYSTEM,
-    prompt: `Merge these partial continuation capsules without dropping distinct facts:\n${JSON.stringify(partials)}`,
-    providerOptions,
-    abortSignal,
-  });
-  inputTokens += reduced.usage.inputTokens ?? 0;
-  outputTokens += reduced.usage.outputTokens ?? 0;
+  let level = partials;
+  while (level.length > 1) {
+    const batches: SemanticCapsule[][] = [];
+    let batch: SemanticCapsule[] = [];
+    let batchTokens = 0;
+    for (const capsule of level) {
+      const tokens = Math.ceil(JSON.stringify(capsule).length / 4);
+      if (batch.length > 0 && batchTokens + tokens > chunkTokens) {
+        batches.push(batch);
+        batch = [];
+        batchTokens = 0;
+      }
+      batch.push(capsule);
+      batchTokens += tokens;
+    }
+    if (batch.length > 0) batches.push(batch);
+
+    // Ensure each level shrinks even when individual model outputs are larger
+    // than the nominal reduction budget.
+    if (batches.length === level.length) {
+      batches.length = 0;
+      for (let i = 0; i < level.length; i += 2) {
+        batches.push(level.slice(i, i + 2));
+      }
+    }
+
+    const next: SemanticCapsule[] = [];
+    for (const group of batches) {
+      if (group.length === 1) {
+        next.push(group[0] ?? emptySemanticCapsule());
+        continue;
+      }
+      const reduced = await generateText({
+        model,
+        system: COMPACTION_SYSTEM,
+        prompt: `Merge these partial continuation capsules without dropping distinct facts:\n${JSON.stringify(group)}`,
+        providerOptions,
+        maxOutputTokens: Math.max(
+          512,
+          Math.min(4_096, Math.floor(chunkTokens / 2)),
+        ),
+        abortSignal,
+      });
+      inputTokens += reduced.usage.inputTokens ?? 0;
+      outputTokens += reduced.usage.outputTokens ?? 0;
+      next.push(parseSemanticCapsule(reduced.text));
+    }
+    level = next;
+  }
   return {
-    semantic: parseSemanticCapsule(reduced.text),
+    semantic: level[0] ?? emptySemanticCapsule(),
     usage: { inputTokens, outputTokens },
   };
 }
