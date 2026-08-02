@@ -280,99 +280,103 @@ COMMON TESTING PATTERNS:
         };
       }
 
-      // Sandbox mode: build a curl command and run it inside the sandbox
-      if (ctx.sandbox) {
-        return executeSandboxHttpRequest(
-          ctx,
-          {
-            url,
-            method,
-            headers,
-            body: resolvedBody,
-            followRedirects,
-            timeout,
-          },
-          library,
-        );
-      }
-
-      // Local mode: use native fetch
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
       try {
-        const timeoutController = new AbortController();
-        timeoutId = setTimeout(() => timeoutController.abort(), timeout);
-
-        const combinedSignal = ctx.abortSignal
-          ? AbortSignal.any([ctx.abortSignal, timeoutController.signal])
-          : timeoutController.signal;
-
-        const response = await targetFetch(resolverSessionFromCtx(ctx), url, {
-          method,
-          headers,
-          body: resolvedBody || undefined,
-          redirect: followRedirects ? "follow" : "manual",
-          signal: combinedSignal,
-        });
-
-        clearTimeout(timeoutId);
-
-        const responseHeaders: Record<string, string> = {};
-        response.headers.forEach((value, key) => {
-          responseHeaders[key] = value;
-        });
-
-        let responseBody = "";
-        try {
-          responseBody = await response.text();
-        } catch {
-          responseBody = "(unable to read response body)";
+        // Sandbox mode: build a curl command and run it inside the sandbox
+        if (ctx.sandbox) {
+          return executeSandboxHttpRequest(
+            ctx,
+            {
+              url,
+              method,
+              headers,
+              body: resolvedBody,
+              followRedirects,
+              timeout,
+            },
+            library,
+          );
         }
 
-        const redactedBody = redactPromptInjectionPayloads(
-          responseBody,
-          library,
-        );
-        const redactedHeaders = Object.fromEntries(
-          Object.entries(responseHeaders).map(([key, value]) => [
-            key,
-            redactPromptInjectionPayloads(value, library),
-          ]),
-        );
-        const { text: truncatedBody } = maybeSaveBody(redactedBody, ctx);
+        // Local mode: use native fetch
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-        return {
-          success: true,
-          status: response.status,
-          statusText: response.statusText,
-          headers: redactedHeaders,
-          body: truncatedBody,
-          url: response.url,
-          redirected: response.redirected,
-        };
-      } catch (error: unknown) {
-        if (timeoutId) clearTimeout(timeoutId);
+        try {
+          const timeoutController = new AbortController();
+          timeoutId = setTimeout(() => timeoutController.abort(), timeout);
 
-        const isAbort = error instanceof Error && error.name === "AbortError";
-        const errorMsg = isAbort
-          ? ctx.abortSignal?.aborted
-            ? "Request aborted by user"
-            : `Request timeout after ${timeout}ms`
-          : error instanceof Error
-            ? error.message
-            : String(error);
+          const combinedSignal = ctx.abortSignal
+            ? AbortSignal.any([ctx.abortSignal, timeoutController.signal])
+            : timeoutController.signal;
 
-        return {
-          success: false,
-          error: errorMsg,
-          url,
-          method,
-          status: 0,
-          statusText: "",
-          headers: {},
-          body: "",
-          redirected: false,
-        };
+          const response = await targetFetch(resolverSessionFromCtx(ctx), url, {
+            method,
+            headers,
+            body: resolvedBody || undefined,
+            redirect: followRedirects ? "follow" : "manual",
+            signal: combinedSignal,
+          });
+
+          clearTimeout(timeoutId);
+
+          const responseHeaders: Record<string, string> = {};
+          response.headers.forEach((value, key) => {
+            responseHeaders[key] = value;
+          });
+
+          let responseBody = "";
+          try {
+            responseBody = await response.text();
+          } catch {
+            responseBody = "(unable to read response body)";
+          }
+
+          const redactedBody = redactPromptInjectionPayloads(
+            responseBody,
+            library,
+          );
+          const redactedHeaders = Object.fromEntries(
+            Object.entries(responseHeaders).map(([key, value]) => [
+              key,
+              redactPromptInjectionPayloads(value, library),
+            ]),
+          );
+          const { text: truncatedBody } = maybeSaveBody(redactedBody, ctx);
+
+          return {
+            success: true,
+            status: response.status,
+            statusText: response.statusText,
+            headers: redactedHeaders,
+            body: truncatedBody,
+            url: response.url,
+            redirected: response.redirected,
+          };
+        } catch (error: unknown) {
+          if (timeoutId) clearTimeout(timeoutId);
+
+          const isAbort = error instanceof Error && error.name === "AbortError";
+          const errorMsg = isAbort
+            ? ctx.abortSignal?.aborted
+              ? "Request aborted by user"
+              : `Request timeout after ${timeout}ms`
+            : error instanceof Error
+              ? error.message
+              : String(error);
+
+          return {
+            success: false,
+            error: errorMsg,
+            url,
+            method,
+            status: 0,
+            statusText: "",
+            headers: {},
+            body: "",
+            redirected: false,
+          };
+        }
+      } finally {
+        if (slotAcquired) ctx.session._rateLimiter?.releaseSlot();
       }
     },
   });

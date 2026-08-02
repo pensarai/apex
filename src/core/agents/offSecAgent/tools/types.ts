@@ -13,6 +13,7 @@ import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { StepTraceWriter } from "../trace";
+import type { OffensiveExecutionPolicy } from "./executionPolicy";
 import type { PersistentShell } from "./persistentShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
 import type { UnifiedSandbox } from "./sandbox";
@@ -27,6 +28,9 @@ import type { UnifiedSandbox } from "./sandbox";
 export type ToolContext = {
   /** Session providing paths for findings, POCs, logs, scratchpad, etc. */
   session: SessionInfo;
+
+  /** Immutable engagement policy shared by tools, scripts, and browser code. */
+  executionPolicy?: OffensiveExecutionPolicy;
 
   /** The agent's operational working directory. Defaults to session.rootPath. */
   agentCwd: string;

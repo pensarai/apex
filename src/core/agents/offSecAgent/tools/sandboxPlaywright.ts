@@ -28,16 +28,23 @@ import {
   stripBrowserManagedHeaders,
 } from "../../../http/targetHeaders";
 import { CAMOUFOX_OPTIONS, MEMORY_FIREFOX_PREFS } from "./camoufox";
+import { assertCommandActionAllowed } from "./destructiveGuard";
 import type {
   BrowserClickResult,
   BrowserConsoleResult,
   BrowserEvaluateResult,
   BrowserFillResult,
   BrowserNavigateResult,
+  BrowserRunCodeResult,
   BrowserScreenshotResult,
 } from "./playwrightMcp";
 import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
-import { resolverSessionFromCtx } from "./scopeGuard";
+import {
+  assertCommandInScope,
+  assertUrlInScope,
+  resolverSessionFromCtx,
+} from "./scopeGuard";
+import { assertTrafficActionAllowed } from "./trafficGuard";
 import type { ToolContext } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -592,6 +599,7 @@ Target base URL: ${targetUrl}`,
     inputSchema: BrowserNavigateInput,
     execute: async ({ url }): Promise<BrowserNavigateResult> => {
       try {
+        assertUrlInScope(url, ctx);
         await setup();
         const result = (await runScript(
           `
@@ -608,6 +616,47 @@ Target base URL: ${targetUrl}`,
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return { success: false, url, error: message };
+      }
+    },
+  });
+
+  // ------- browser_run_code -------------------------------------------------
+
+  const browser_run_code = tool({
+    description:
+      "Run an async Playwright function against Apex's managed Camoufox page and context. Use browser_screenshot separately for durable evidence.",
+    inputSchema: z.object({
+      code: z
+        .string()
+        .min(1)
+        .describe(
+          "Async function accepting (page), returning JSON-serializable data",
+        ),
+      toolCallDescription: z.string(),
+    }),
+    execute: async ({ code }): Promise<BrowserRunCodeResult> => {
+      try {
+        assertCommandInScope(code, ctx);
+        assertCommandActionAllowed(code, ctx);
+        assertTrafficActionAllowed(code, ctx);
+        for (const match of code.matchAll(/https?:\/\/[^\s"'`)]+/gi)) {
+          assertUrlInScope(match[0], ctx);
+        }
+        await setup();
+        const result = await runScript(
+          `
+    const program = (${code});
+    if (typeof program !== 'function') throw new Error('browser_run_code requires a function');
+    const value = await program(page, context);
+    require('fs').writeFileSync('${SANDBOX_URL_FILE}', page.url());
+    resolve({ success: true, result: value });
+          `,
+          120,
+        );
+        return { success: true, code, result };
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { success: false, code, error: message };
       }
     },
   });
@@ -1100,6 +1149,7 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
     browser_screenshot,
     browser_click,
     browser_fill,
+    browser_run_code,
     browser_evaluate,
     browser_console,
     browser_get_cookies,

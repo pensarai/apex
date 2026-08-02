@@ -104,14 +104,16 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   mode?: AgentMode;
 
   /**
-   * Model-facing tool protocol. `auto` selects native code mode for GPT-5.6
-   * Sol, schema code mode for Opus 4.8 on Bedrock and GLM-5.2 on OpenRouter,
-   * and direct tools for other models in fast-strike mode. Other modes default
-   * to direct tools unless this option is set explicitly.
+   * Model-facing tool protocol. `auto` selects the provider's freeform custom
+   * tool transport when available and otherwise uses the portable schema-based
+   * code interface. Model names do not affect selection.
    *
    * @default "auto"
    */
   toolProtocol?: AgentToolProtocolPreference;
+
+  /** Additional workflow-specific tools that must remain directly model-visible in code mode. */
+  directTools?: (ToolName | (string & {}))[];
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;

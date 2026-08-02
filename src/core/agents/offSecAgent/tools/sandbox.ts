@@ -44,6 +44,14 @@ export type SandboxSessionSecurityRequest = {
   defaultDeny: boolean;
   allowDns: boolean;
   allowedDestinations: SandboxAllowedDestination[];
+  executionPolicy: {
+    destructiveAllowed: boolean;
+    rateLimitTestingAllowed: boolean;
+    availabilityImpactAllowed: false;
+    requestsPerSecond: number;
+    burst: number;
+    maxConcurrency: number;
+  };
   oast?: SandboxOastRequest;
 };
 

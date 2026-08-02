@@ -10,20 +10,28 @@ The Console contract is semantic, not a requirement that every capability be a t
 
 Apex separates canonical capabilities from their model-facing presentation.
 
-Fast-strike resolves a provider profile by default:
+Every `OffensiveSecurityAgent` resolves a provider-capability profile:
 
-- GPT-5.6 Sol on OpenAI uses the provider's native freeform custom `exec` tool.
-- Claude Opus 4.8 on Bedrock and GLM-5.2 on OpenRouter use a schema-based `exec({ code })` tool.
-- Unknown models retain the direct tool registry until deliberately profiled.
-- Operators can override the protocol with `toolProtocol`.
+- OpenAI Responses uses the provider's native freeform custom `exec` tool.
+- Providers exposing ordinary function tools use `exec({ code })`.
+- Operators and development harnesses can override the protocol with
+  `toolProtocol` or `APEX_CODE_MODE`.
+- Model names never select the architecture.
 
-Code profiles expose `exec`, `wait`, `response`, `document_vulnerability`, and `checkpoint_state`. The isolated JavaScript runtime can invoke a small allowlist of canonical shell and browser capabilities. Nested invocations pass through the original schema validation, approval wrappers, implementations, and AgentEventBus lifecycle. Console therefore continues to observe canonical tool names and results regardless of the model protocol.
+Code profiles expose `exec`, `wait`, and the active workflow's lifecycle,
+persistence, interaction, and evidence contracts. This includes responses,
+findings, checkpoints, recon records, questions, errors, workflow submissions,
+and browser screenshots. All other active capabilities are invoked inside the
+isolated runtime. Nested invocations pass through the original validation,
+approval wrappers, policy guards, implementations, and AgentEventBus lifecycle.
 
 The JavaScript runtime uses QuickJS with a memory ceiling, deadline interrupt, abort propagation, bounded output, and no direct filesystem, process, or network globals. It exposes only explicit host bridges. The persistent shell, browser, and Console contract capabilities are stateful single-lane resources; overlapping calls fail fast with actionable guidance. Models implement request-level concurrency inside one reusable sandbox program rather than queuing parallel calls against those resources.
 
 Code mode also exposes bounded concurrency helpers for capabilities that are explicitly safe to invoke concurrently and reports per-cell execution metrics. The capability bridge conservatively detects repeated one-call cells, sequential batches, and identical calls that repeatedly return the same result. It returns advisory process guidance with the completed cell. Code-mode shell calls default to a 120-second timeout, and explicit command timeouts include queue wait, so one blocked command cannot monopolize the shell or silently multiply the deadline of every queued caller.
 
-Non-fast-strike modes remain on direct tools by default. This limits the initial behavioral change to the benchmarked workflow while allowing explicit experiments elsewhere.
+Rollout is controlled independently from model identity through the developer
+flag and protocol override; the runtime itself applies to every specialized
+offensive-security role.
 
 ## Rationale
 
@@ -50,6 +58,5 @@ Non-fast-strike modes remain on direct tools by default. This limits the initial
 - ✅ Observable code-mode efficiency and advisory stagnation feedback without benchmark-specific knowledge
 - ✅ Direct host filesystem and network access are absent from guest JavaScript
 - ⚠️ QuickJS is a new runtime dependency and requires lifecycle and memory-leak tests
-- ⚠️ Provider profiles require benchmark calibration as model behavior changes
-- ⚠️ `execute_command` still inherits Apex's existing command-string scope limitation for destinations embedded in scripts. Production sandboxes should enforce egress at the process/network boundary; code mode does not broaden command authority, but it does not solve that infrastructure limitation
-- ⚠️ Session-scoped OAST routing remains infrastructure work. When added, it should expose a callback URL/port to the sandbox rather than another model-facing tool
+- ⚠️ Provider transports require compatibility tests as provider behavior changes
+- ⚠️ Source classification is defense in depth; strict production sessions still require an externally-attested process-tree egress boundary

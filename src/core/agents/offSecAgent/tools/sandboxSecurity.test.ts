@@ -42,6 +42,14 @@ describe("sandbox session security", () => {
         callbackPort: 4000,
         eventsPath: "/tmp/session-security-test/oast/requests.jsonl",
       },
+      executionPolicy: {
+        destructiveAllowed: false,
+        rateLimitTestingAllowed: false,
+        availabilityImpactAllowed: false,
+        requestsPerSecond: 50,
+        burst: 1,
+        maxConcurrency: 4,
+      },
     });
     expect(request?.policyId).toMatch(/^[0-9a-f]{24}$/);
     expect(request?.allowedDestinations).toEqual([
@@ -120,6 +128,8 @@ describe("sandbox session security", () => {
         APEX_CALLBACK_PORT: "4000",
         APEX_CALLBACK_EVENTS_PATH:
           "/tmp/session-security-test/oast/requests.jsonl",
+        APEX_OAST_HTTP_BASE_URL: "https://oast.example/callback/opaque",
+        APEX_OAST_HTTP_PORT: "4000",
       },
     });
     await security?.dispose();
