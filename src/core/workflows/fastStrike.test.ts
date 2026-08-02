@@ -173,6 +173,15 @@ describe("fast-strike missing-intermediary guidance", () => {
       "a final secret does not prove the intermediate controls",
     );
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("minimum target-side request");
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "process environment, injected-shell output, debug output",
+    );
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "protocol-native final read against the named sink",
+    );
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "a before/after state read proving the safety constraint",
+    );
   });
 
   it("bounds custom authentication canonicalization recovery", () => {
