@@ -22,6 +22,14 @@ describe("HarnessSandboxSecurityController", () => {
       policyId: "policy-controller-test",
       defaultDeny: true,
       allowDns: true,
+      executionPolicy: {
+        destructiveAllowed: false,
+        rateLimitTestingAllowed: false,
+        availabilityImpactAllowed: false,
+        requestsPerSecond: 50,
+        burst: 1,
+        maxConcurrency: 4,
+      },
       allowedDestinations: [
         {
           host: "example.com",
@@ -106,6 +114,14 @@ describe("HarnessSandboxSecurityController", () => {
         defaultDeny: false,
         allowDns: true,
         allowedDestinations: [],
+        executionPolicy: {
+          destructiveAllowed: false,
+          rateLimitTestingAllowed: false,
+          availabilityImpactAllowed: false,
+          requestsPerSecond: 50,
+          burst: 1,
+          maxConcurrency: 4,
+        },
         oast: {
           callbackPort: 4000,
           eventsPath: "/tmp/missing-mapping.jsonl",
