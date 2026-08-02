@@ -36,6 +36,11 @@ export interface Config {
   transparentBackground?: boolean;
   // Model preference
   selectedModelId?: string | null;
+  /** Optional dedicated provider/model id for context compaction. */
+  contextCompactionModel?: string | null;
+  /** Defaults to true. Set PENSAR_CONTEXT_COMPACTION=legacy for the old summarizer. */
+  contextCompactionEnabled?: boolean;
+  contextCompactionThresholdRatio?: number;
   // Extended thinking / reasoning
   reasoningEnabled?: boolean;
   openAIReasoningEffort?:
@@ -126,6 +131,19 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
       parsedConfig.openRouterAPIKey ?? process.env.OPENROUTER_API_KEY,
     concentrateAPIKey:
       parsedConfig.concentrateAPIKey ?? process.env.CONCENTRATE_API_KEY,
+    contextCompactionModel:
+      parsedConfig.contextCompactionModel ??
+      process.env.PENSAR_CONTEXT_COMPACTION_MODEL,
+    contextCompactionEnabled:
+      parsedConfig.contextCompactionEnabled ??
+      (process.env.PENSAR_CONTEXT_COMPACTION?.toLowerCase() === "legacy"
+        ? false
+        : undefined),
+    contextCompactionThresholdRatio:
+      parsedConfig.contextCompactionThresholdRatio ??
+      (process.env.PENSAR_CONTEXT_COMPACTION_THRESHOLD
+         ? Number(process.env.PENSAR_CONTEXT_COMPACTION_THRESHOLD)
+         : undefined),
     inceptionAPIKey:
       parsedConfig.inceptionAPIKey ?? process.env.INCEPTION_API_KEY,
     bedrockAPIKey: parsedConfig.bedrockAPIKey ?? process.env.BEDROCK_API_KEY,

@@ -20,7 +20,14 @@ import { ensureValidToken } from "../auth";
 import { config } from "../config";
 import { createLogger } from "../logger/structured";
 import { scopedLogger } from "../util/lazyLogger";
-import { type AIModel, type StreamResponseOpts, streamResponse } from "./ai";
+import {
+  type AIModel,
+  buildReasoningProviderOptions,
+  reportAuxiliaryUsage,
+  type StreamResponseOpts,
+  streamResponse,
+} from "./ai";
+import { compactConversation } from "./contextCompaction";
 import {
   extractTaskSummaryFromMessages,
   truncateWithMarker,
@@ -336,7 +343,7 @@ export function getProviderModel(
   return providerModel;
 }
 
-async function summarizeConversation(
+async function summarizeConversationLegacy(
   messages: ModelMessage[],
   opts: StreamResponseOpts,
   model: LanguageModel,
@@ -501,6 +508,59 @@ async function summarizeConversation(
   return resumed;
 }
 
+async function compactConversationAndResume(
+  messages: ModelMessage[],
+  opts: StreamResponseOpts,
+  activeModel: LanguageModel,
+): Promise<StreamTextResult<ToolSet, never>> {
+  const config = opts.contextCompaction;
+  const modelId = config?.model ?? opts.model;
+  const compactionModel =
+    modelId === opts.model
+      ? activeModel
+      : getProviderModel(modelId, opts.authConfig);
+  const state = await opts.getContextCompactionState?.();
+  const providerOptions = buildReasoningProviderOptions(modelId, {
+    enableThinking: config?.enableThinking ?? true,
+    thinkingEffort: config?.thinkingEffort ?? "high",
+    openAIReasoningEffort: config?.openAIReasoningEffort ?? "high",
+  });
+  const result = await compactConversation({
+    messages,
+    contextWindow: getModelInfo(opts.model).contextLength ?? 200_000,
+    model: compactionModel,
+    modelId,
+    modelContextWindow: getModelInfo(modelId).contextLength ?? 200_000,
+    providerOptions,
+    sessionPath: opts.sessionPath,
+    state,
+    secretValues: opts.secretValues,
+    abortSignal: opts.abortSignal,
+  });
+
+  if (!result) return summarizeConversationLegacy(messages, opts, activeModel);
+
+  if (result.usage.inputTokens > 0 || result.usage.outputTokens > 0) {
+    reportAuxiliaryUsage(
+      modelId,
+      result.usage.inputTokens,
+      result.usage.outputTokens,
+      "context-compaction",
+      opts.sessionId,
+    );
+  }
+  await opts.onCompacted?.(result);
+  if (!opts.onCompacted) opts.onSummarized?.(JSON.stringify(result.capsule));
+
+  const resumed = streamResponse({
+    ...opts,
+    model: opts.model,
+    messages: result.messages,
+    _restartDepth: (opts._restartDepth ?? 0) + 1,
+  });
+  return resumed;
+}
+
 // Helper function to check if an error is related to context length
 export function checkIfContextLengthError(error: unknown): boolean {
   const errObj =
@@ -540,8 +600,13 @@ export function createSummarizationStream(
   // We need to handle this asynchronously but return synchronously
   // Create a promise that will hold the resumed stream
   // Start the summarization process
+  const useLegacy =
+    process.env.PENSAR_CONTEXT_COMPACTION?.toLowerCase() === "legacy" ||
+    opts.contextCompaction?.enabled === false;
   const resumedStreamPromise: Promise<StreamTextResult<ToolSet, never>> =
-    summarizeConversation(messages, opts, model);
+    useLegacy
+      ? summarizeConversationLegacy(messages, opts, model)
+      : compactConversationAndResume(messages, opts, model);
 
   // Create a custom async generator that wraps the resumed stream
   const wrappedFullStream = (async function* () {
@@ -549,9 +614,9 @@ export function createSummarizationStream(
     const toolCallEvent = {
       type: "tool-call" as const,
       toolCallId,
-      toolName: "summarize_conversation",
+      toolName: "compact_context",
       input: JSON.stringify({
-        reason: "Context length exceeded, summarizing conversation to continue",
+        reason: "Context budget reached, compacting continuation state",
         messageCount: messages.length,
       }),
     } as unknown as TextStreamPart<ToolSet>;
@@ -564,13 +629,13 @@ export function createSummarizationStream(
     const toolResultEvent = {
       type: "tool-result" as const,
       toolCallId,
-      toolName: "summarize_conversation",
+      toolName: "compact_context",
       input: JSON.stringify({
-        reason: "Context length exceeded, summarizing conversation to continue",
+        reason: "Context budget reached, compacting continuation state",
         messageCount: messages.length,
       }),
       result:
-        "Conversation summarized successfully. Resuming with condensed context...",
+        "Context compacted successfully. Resuming with a continuation capsule and verbatim recent turns...",
     } as unknown as TextStreamPart<ToolSet>;
     yield toolResultEvent;
 

@@ -25,7 +25,18 @@ import {
   withCachedLastMessage,
   withCachedSystemPrompt,
 } from "./caching";
-import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
+import {
+  type ContextCompactionConfig,
+  type ContextCompactionResult,
+  type ContextCompactionState,
+  partitionForCompaction,
+} from "./contextCompaction";
+import {
+  estimateTokens,
+  estimateToolsOverheadTokens,
+  fitMessagesToContext,
+  truncateWithMarker,
+} from "./contextManagement";
 import {
   getMaxOutputTokens,
   getModelInfo,
@@ -92,6 +103,7 @@ const OPENAI_REASONING_MODEL_IDS = new Set([
 export interface UsageStepContext {
   sessionId?: string;
   stepSeq?: number;
+  operation?: "agent-step" | "context-compaction";
 }
 
 /** Callback for reporting token usage from AI operations */
@@ -138,7 +150,17 @@ export function takeStepContext(): UsageStepContext | undefined {
   if (!store) return undefined;
   const stepSeq = store.next;
   store.next += 1;
-  return { sessionId: store.sessionId, stepSeq };
+  return { sessionId: store.sessionId, stepSeq, operation: "agent-step" };
+}
+
+export function reportAuxiliaryUsage(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  operation: "context-compaction",
+  sessionId?: string,
+): void {
+  _usageCallback?.(model, inputTokens, outputTokens, { sessionId, operation });
 }
 
 export type AIModelProvider =
@@ -902,6 +924,16 @@ export interface StreamResponseOpts {
    * new messages (not the full pre-summarization history).
    */
   onSummarized?: (summary: string) => void;
+  /** Harness-owned provider-neutral context compaction. Enabled by default. */
+  contextCompaction?: ContextCompactionConfig;
+  /** Canonical state overlaid on model-generated continuation state. */
+  getContextCompactionState?: () =>
+    | ContextCompactionState
+    | Promise<ContextCompactionState>;
+  /** Called only after the append-only archive is durably committed. */
+  onCompacted?: (result: ContextCompactionResult) => void | Promise<void>;
+  /** Known runtime secrets removed from compaction model input and capsules. */
+  secretValues?: string[];
   /** Called when Anthropic cache metrics are present in a step's providerMetadata */
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+) */
@@ -991,6 +1023,7 @@ export function streamResponse(
   // below is a safety net for tokenizer drift the estimate doesn't catch.
   let fittedMessages = messages;
   let proactiveFitFailed = false;
+  let proactiveCompactionDue = false;
   if (messages && messages.length > 0) {
     const fitted = fitMessagesToContext(messages, {
       contextWindow: getContextWindow(model),
@@ -1001,6 +1034,21 @@ export function streamResponse(
     });
     fittedMessages = fitted.messages;
     proactiveFitFailed = !fitted.fitsBudget;
+    const thresholdRatio = Math.min(
+      0.95,
+      Math.max(0.5, opts.contextCompaction?.thresholdRatio ?? 0.7),
+    );
+    const estimatedTotalTokens =
+      fitted.estimatedInputTokens +
+      estimateTokens(systemWithToolPolicy ?? "") +
+      estimateToolsOverheadTokens(tools) +
+      1_000;
+    proactiveCompactionDue =
+      process.env.PENSAR_CONTEXT_COMPACTION?.toLowerCase() !== "legacy" &&
+      opts.contextCompaction?.enabled !== false &&
+      estimatedTotalTokens >= getContextWindow(model) * thresholdRatio &&
+      partitionForCompaction(fitted.messages, getContextWindow(model)).archived
+        .length > 0;
     if (fitted.modified && !silent) {
       log.warn(
         `Proactive context fit: compacted messages to ~${fitted.estimatedInputTokens} tokens (fits=${fitted.fitsBudget})`,
@@ -1016,10 +1064,10 @@ export function streamResponse(
   // Wrap with the same error handler the streamText path uses, otherwise
   // an overflow inside the summarization call itself escapes uncaught while
   // the equivalent post-streamText path (line ~880) recovers.
-  if (proactiveFitFailed && fittedMessages) {
+  if ((proactiveFitFailed || proactiveCompactionDue) && fittedMessages) {
     if (!silent) {
       log.warn(
-        `Proactive context fit returned fitsBudget=false on ${fittedMessages.length} messages — escalating to summarization before send`,
+        `Proactive context management compacting ${fittedMessages.length} messages (fits=${!proactiveFitFailed}, threshold=${proactiveCompactionDue})`,
       );
     }
     // Pass `opts` through unchanged. The slot for this escalation is
@@ -1030,8 +1078,14 @@ export function streamResponse(
     // no-retry fall-through). With the post-bump, all three escalation
     // entry points (proactive, outer-catch, reactive Layer 3) consume
     // exactly one depth slot per summarization attempt — symmetric.
+    const useLegacyCompaction =
+      process.env.PENSAR_CONTEXT_COMPACTION?.toLowerCase() === "legacy" ||
+      opts.contextCompaction?.enabled === false;
+    const compactionSource = useLegacyCompaction
+      ? fittedMessages
+      : (messages ?? fittedMessages);
     return wrapStreamWithErrorHandler(
-      createSummarizationStream(fittedMessages, opts, providerModel),
+      createSummarizationStream(compactionSource, opts, providerModel),
       messagesContainer,
       opts,
       providerModel,
