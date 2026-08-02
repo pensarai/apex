@@ -34,6 +34,11 @@ export {
 } from "./email";
 // Core pentest tools
 export { executeCommand } from "./executeCommand";
+export {
+  buildExecutionPolicyPrompt,
+  type OffensiveExecutionPolicy,
+  resolveExecutionPolicy,
+} from "./executionPolicy";
 export { extractJsEndpoints } from "./extractJsEndpoints";
 export { getMemory } from "./getMemory";
 export { getPage } from "./getPage";
@@ -157,6 +162,12 @@ export { spawnPentestAgent } from "./spawnPentestAgent";
 export { spawnPentestSwarm } from "./spawnPentestSwarm";
 export { submitPlan } from "./submitPlan";
 export { testEndpointVariations } from "./testEndpointVariations";
+export {
+  assertTrafficActionAllowed,
+  classifyTrafficAction,
+  inspectReferencedPrograms,
+  TrafficPolicyError,
+} from "./trafficGuard";
 export type { ToolContext } from "./types";
 export { updateFile } from "./updateFile";
 export { updateTask } from "./updateTask";
@@ -432,6 +443,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "browser_screenshot",
   "browser_click",
   "browser_fill",
+  "browser_run_code",
   "browser_evaluate",
   "browser_console",
   "browser_get_cookies",
@@ -550,6 +562,7 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "browser_screenshot",
   "browser_click",
   "browser_fill",
+  "browser_run_code",
   "browser_evaluate",
   "browser_console",
   "browser_get_cookies",

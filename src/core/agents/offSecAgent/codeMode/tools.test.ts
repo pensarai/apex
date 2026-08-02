@@ -18,30 +18,43 @@ const canonicalTools: ToolSet = {
     inputSchema: z.object({ title: z.string() }),
   }),
   checkpoint_state: tool({ inputSchema: z.object({ assessment: z.string() }) }),
+  browser_screenshot: tool({ inputSchema: z.object({ filename: z.string() }) }),
   execute_command: tool({ inputSchema: z.object({ command: z.string() }) }),
 };
 
 describe("createCodeModeTools", () => {
   test("native mode uses freeform exec and preserves Console contract tools", () => {
-    const tools = createCodeModeTools("native-code", runtime, canonicalTools);
+    const tools = createCodeModeTools("native-code", runtime, canonicalTools, [
+      "response",
+      "document_vulnerability",
+      "checkpoint_state",
+      "browser_screenshot",
+    ]);
     expect(Object.keys(tools)).toEqual([
       "exec",
       "wait",
       "response",
       "document_vulnerability",
       "checkpoint_state",
+      "browser_screenshot",
     ]);
     expect(tools.exec.type).toBe("provider");
   });
 
   test("schema mode preserves top-level Console contract tools", () => {
-    const tools = createCodeModeTools("schema-code", runtime, canonicalTools);
+    const tools = createCodeModeTools("schema-code", runtime, canonicalTools, [
+      "response",
+      "document_vulnerability",
+      "checkpoint_state",
+      "browser_screenshot",
+    ]);
     expect(Object.keys(tools)).toEqual([
       "exec",
       "wait",
       "response",
       "document_vulnerability",
       "checkpoint_state",
+      "browser_screenshot",
     ]);
     expect(tools.response).toBe(canonicalTools.response);
   });

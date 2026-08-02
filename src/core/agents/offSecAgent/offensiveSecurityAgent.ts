@@ -28,13 +28,14 @@ import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import {
   buildCodeModeInstructions,
   CanonicalCapabilityInvoker,
-  CODE_MODE_NESTED_TOOL_NAMES,
+  CODE_MODE_DIRECT_TOOL_NAMES,
   CodeModeRuntime,
   createCodeModeTools,
 } from "./codeMode";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
+  buildExecutionPolicyPrompt,
   createAllTools,
   createResponseTool,
   EMAIL_TOOL_NAMES_ACTIVE,
@@ -43,6 +44,7 @@ import {
   PLAN_MODE_TOOL_NAMES,
   PlaywrightMcpSession,
   RESPONSE_TOOL_NAME,
+  resolveExecutionPolicy,
   SEND_EMAIL_TOOL_NAME,
   WORKSPACE_TOOL_NAMES,
   WORKSPACE_WRITE_TOOL_NAMES,
@@ -400,6 +402,10 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     // -- Resolve agent working directory ----------------------------------------
     const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
+    const executionPolicy = resolveExecutionPolicy(input.session);
+    const executionPolicyEnv = {
+      APEX_EXECUTION_POLICY_JSON: JSON.stringify(executionPolicy),
+    };
 
     // -- Persistent shell (local mode only) -----------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
@@ -407,7 +413,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     if (!sandbox) {
       this.persistentShell = new PersistentShell({
         cwd: agentCwd,
-        env: input.environmentVariables,
+        env: { ...input.environmentVariables, ...executionPolicyEnv },
       });
       if (input.commandCancelHandle) {
         const shell = this.persistentShell;
@@ -491,6 +497,7 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     const builtinTools = createAllTools({
       session: input.session,
+      executionPolicy,
       agentCwd,
       target: input.target,
       grpc: input.grpc,
@@ -607,37 +614,6 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
-    // -- Model-facing tool protocol -------------------------------------------
-    // Canonical tools and their event identities remain stable. Only the
-    // presentation to the model changes: direct schemas, schema-based exec, or
-    // OpenAI's native freeform custom tool.
-    const runtimeProfile = resolveModelRuntimeProfile(
-      input.model,
-      input.toolProtocol ?? (input.mode === "fast-strike" ? "auto" : "direct"),
-    );
-    let codeModeInstructions = "";
-    if (runtimeProfile.protocol !== "direct") {
-      const canonicalTools = tools;
-      const allowedTools = CODE_MODE_NESTED_TOOL_NAMES.filter(
-        (name) => canonicalTools[name] !== undefined,
-      );
-      const invoker = new CanonicalCapabilityInvoker({
-        tools: canonicalTools,
-        allowedTools,
-        eventBus: this.eventBus,
-        sessionId: this.busSessionId,
-        subagentId: this.subagentId,
-        getMessageId: () => this.currentMessageId ?? undefined,
-      });
-      this.codeModeRuntime = new CodeModeRuntime(invoker);
-      tools = createCodeModeTools(
-        runtimeProfile.protocol,
-        this.codeModeRuntime,
-        canonicalTools,
-      );
-      codeModeInstructions = buildCodeModeInstructions(runtimeProfile.protocol);
-    }
-
     // -- Filter email tools when no inboxes / SMTP are configured -----------
     const hasEmail =
       (input.session.config?.emailIntegration?.inboxes?.length ?? 0) > 0;
@@ -649,6 +625,18 @@ export class OffensiveSecurityAgent<TResult = void> {
       if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
       return hasEmail;
     });
+
+    // Response and checkpoint are harness contracts, not workflow-selected
+    // conveniences. Keep them reachable whenever their implementations exist.
+    for (const contractName of [
+      RESPONSE_TOOL_NAME,
+      "checkpoint_state",
+      ...Object.keys(input.extraTools ?? {}),
+    ]) {
+      if (tools[contractName] && !activeTools.includes(contractName)) {
+        activeTools.push(contractName);
+      }
+    }
 
     // -- Plan mode: restrict to read-only tools -----------------------------
     if (input.mode === "plan") {
@@ -670,6 +658,61 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.prompt,
       input.approvalGate !== undefined,
     );
+
+    // A code-mode browser stage operates against the same managed Camoufox
+    // context as the ordinary browser tools. Make it available whenever this
+    // workflow selected any browser capability.
+    if (
+      activeTools.some((name) => name.startsWith("browser_")) &&
+      tools.browser_run_code &&
+      !activeTools.includes("browser_run_code")
+    ) {
+      activeTools.push("browser_run_code");
+    }
+
+    // -- Model-facing tool protocol -------------------------------------------
+    // Canonical tools and their event identities remain stable. Only their
+    // presentation changes. Provider capabilities choose freeform vs schema
+    // exec; model names and agent roles do not choose the architecture.
+    const runtimeProfile = resolveModelRuntimeProfile(
+      input.model,
+      input.toolProtocol ?? "auto",
+    );
+    let codeModeInstructions = "";
+    if (runtimeProfile.protocol !== "direct") {
+      const canonicalTools = tools;
+      const canonicalActiveTools = activeTools.filter(
+        (name) => canonicalTools[name] !== undefined,
+      );
+      const directToolNames = new Set<string>([
+        ...CODE_MODE_DIRECT_TOOL_NAMES,
+        ...(input.directTools ?? []),
+        ...Object.keys(input.extraTools ?? {}),
+      ]);
+      const presentedDirectTools = canonicalActiveTools.filter((name) =>
+        directToolNames.has(name),
+      );
+      const allowedTools = canonicalActiveTools.filter(
+        (name) => !directToolNames.has(name),
+      );
+      const invoker = new CanonicalCapabilityInvoker({
+        tools: canonicalTools,
+        allowedTools,
+        eventBus: this.eventBus,
+        sessionId: this.busSessionId,
+        subagentId: this.subagentId,
+        getMessageId: () => this.currentMessageId ?? undefined,
+      });
+      this.codeModeRuntime = new CodeModeRuntime(invoker, allowedTools);
+      tools = createCodeModeTools(
+        runtimeProfile.protocol,
+        this.codeModeRuntime,
+        canonicalTools,
+        presentedDirectTools,
+      );
+      activeTools = Object.keys(tools);
+      codeModeInstructions = buildCodeModeInstructions(runtimeProfile.protocol);
+    }
 
     // -- Messages persistence -------------------------------------------------
     if (!existsSync(messagesDir)) {
@@ -729,6 +772,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     const effectiveBaseSystemPrompt =
       baseSystemPrompt +
       codeModeInstructions +
+      buildExecutionPolicyPrompt(executionPolicy) +
       buildSandboxSecurityPrompt(input.session);
     const systemPrompt =
       effectiveBaseSystemPrompt +

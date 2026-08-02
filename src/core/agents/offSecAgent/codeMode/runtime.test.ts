@@ -214,7 +214,7 @@ describe("CodeModeRuntime", () => {
 
     const result = await runtime.execute(
       `
-        await tools.response.submit({ solved: true });
+        await tools.call("response", { result: { solved: true } });
         await tools.call("execute_command", { command: "id" });
       `,
       context,

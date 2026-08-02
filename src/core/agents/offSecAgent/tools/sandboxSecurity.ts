@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { parseTargetUrl } from "../../../../util/url";
 import type { SessionInfo } from "../../../session";
+import { resolveExecutionPolicy } from "./executionPolicy";
 import type {
   SandboxAllowedDestination,
   SandboxExecuteOptions,
@@ -15,6 +16,8 @@ import { getRegistrableDomain } from "./scopeGuard";
 const CALLBACK_URL_ENV = "APEX_CALLBACK_URL";
 const CALLBACK_PORT_ENV = "APEX_CALLBACK_PORT";
 const CALLBACK_EVENTS_ENV = "APEX_CALLBACK_EVENTS_PATH";
+const OAST_URL_ENV = "APEX_OAST_HTTP_BASE_URL";
+const OAST_PORT_ENV = "APEX_OAST_HTTP_PORT";
 
 function inferTargetPort(target: string, explicitPort?: number): number {
   if (explicitPort) return explicitPort;
@@ -96,6 +99,17 @@ export function buildSandboxSessionSecurityRequest(
     defaultDeny: strict,
     allowDns: config?.allowDns ?? true,
     allowedDestinations: deriveAllowedDestinations(session, target),
+    executionPolicy: (() => {
+      const policy = resolveExecutionPolicy(session);
+      return {
+        destructiveAllowed: policy.destructive.allowed,
+        rateLimitTestingAllowed: policy.traffic.rateLimitTestingAllowed,
+        availabilityImpactAllowed: policy.traffic.availabilityImpactAllowed,
+        requestsPerSecond: policy.traffic.requestsPerSecond,
+        burst: policy.traffic.burst,
+        maxConcurrency: policy.traffic.maxConcurrency,
+      };
+    })(),
     ...(oastEnabled
       ? {
           oast: {
@@ -157,6 +171,8 @@ function environmentForLease(
           [CALLBACK_URL_ENV]: lease.oast.callbackUrl,
           [CALLBACK_PORT_ENV]: String(lease.oast.callbackPort),
           [CALLBACK_EVENTS_ENV]: lease.oast.eventsPath,
+          [OAST_URL_ENV]: lease.oast.callbackUrl,
+          [OAST_PORT_ENV]: String(lease.oast.callbackPort),
         }
       : {}),
   };

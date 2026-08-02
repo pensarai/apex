@@ -14,6 +14,11 @@ Apex owns one security policy and callback lease per sandbox session. The sessio
 - `networkSecurity.allowDns` for controller-owned DNS resolution;
 - `networkSecurity.oast` for an opaque callback route and reserved listener port.
 
+The request also carries the normalized destructive and traffic policy:
+bounded rate-test authorization, request ceiling, burst, concurrency, and the
+always-false availability-impact permission. Programs receive a read-only
+summary, but only the controller enforces the effective boundary.
+
 Apex derives allowed destinations from session targets and explicit scope constraints, hashes the complete request into a policy ID, and provisions it through a trusted `SandboxSecurityController`. The controller must apply policy outside the privilege domain of model-authored commands—for example at a container network, VM firewall, network namespace, host firewall, or transparent enforcement proxy.
 
 Strict mode fails closed when no sandbox/controller exists or when the controller cannot attest all of the following:

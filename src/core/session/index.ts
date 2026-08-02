@@ -236,7 +236,9 @@ const SessionConfigObject = z.object({
     .union([AuthCredentialsObject, z.array(AuthCredentialsObject)])
     .optional(),
   authenticationInstructions: z.string().optional(),
-  requestsPerSecond: z.number().optional(),
+  requestsPerSecond: z.number().positive().max(1000).optional(),
+  /** Authorize bounded anti-automation bursts up to requestsPerSecond. */
+  allowRateLimitTesting: z.boolean().optional(),
   /**
    * Opt-in: the client has authorized destructive testing (DB deletes/drops,
    * API write-deletes, catastrophic host operations). Defaults to off — when
@@ -543,8 +545,17 @@ export async function create(input: CreateInputProps) {
   const logsPath = path.join(rootPath, "logs");
   const pocsPath = path.join(rootPath, "pocs");
 
+  const requestsPerSecond = Math.min(
+    1000,
+    Math.max(1, Math.round(normalizedConfig?.requestsPerSecond ?? 50)),
+  );
+  const rateTestingAllowed = normalizedConfig?.allowRateLimitTesting === true;
   const rateLimiter = new RateLimiter({
-    requestsPerSecond: normalizedConfig?.requestsPerSecond,
+    requestsPerSecond,
+    burst: rateTestingAllowed ? requestsPerSecond : 1,
+    maxConcurrency: rateTestingAllowed
+      ? Math.min(requestsPerSecond, 32)
+      : Math.min(requestsPerSecond, 4),
   });
 
   // Auto-create CredentialManager when authCredentials are provided.
@@ -636,9 +647,18 @@ export const get = async (id: string) => {
 
   // Reconstruct RateLimiter instance (it gets serialized as plain object)
   // This ensures the session has a proper RateLimiter with methods
-  if (read.config?.requestsPerSecond) {
+  if (read.config) {
+    const requestsPerSecond = Math.min(
+      1000,
+      Math.max(1, Math.round(read.config.requestsPerSecond ?? 50)),
+    );
+    const rateTestingAllowed = read.config.allowRateLimitTesting === true;
     read._rateLimiter = new RateLimiter({
-      requestsPerSecond: read.config.requestsPerSecond,
+      requestsPerSecond,
+      burst: rateTestingAllowed ? requestsPerSecond : 1,
+      maxConcurrency: rateTestingAllowed
+        ? Math.min(requestsPerSecond, 32)
+        : Math.min(requestsPerSecond, 4),
     });
   } else {
     // Remove any stale serialized _rateLimiter data (plain object without methods)

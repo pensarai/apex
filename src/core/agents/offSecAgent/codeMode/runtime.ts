@@ -59,9 +59,6 @@ const GUEST_PRELUDE = `
   const laneFor = (name) => {
     if (name === "execute_command") return "shell";
     if (name.startsWith("browser_")) return "browser";
-    if (["document_vulnerability", "checkpoint_state", "response"].includes(name)) {
-      return "contract";
-    }
     return undefined;
   };
   const activeLanes = new Set();
@@ -70,9 +67,7 @@ const GUEST_PRELUDE = `
     if (lane && activeLanes.has(lane)) {
       const hint = lane === "shell"
         ? "tools.shell is single-lane. Do not call it with Promise.all or mapLimit; put concurrent work inside one script and invoke that script once."
-        : lane === "browser"
-          ? "Browser operations are single-lane and stateful; await each mutation before starting the next."
-          : "Console contract tools are single-lane; await the active call before invoking another.";
+        : "Browser operations are single-lane and stateful; await each mutation before starting the next.";
       const error = new Error(hint);
       error.toJSON = () => ({ name: "Error", message: hint });
       throw error;
@@ -90,9 +85,9 @@ const GUEST_PRELUDE = `
   };
   const shell = (input) => invoke("execute_command", input);
   const browser = Object.freeze({
+    runCode: (input) => invoke("browser_run_code", input),
     navigate: (input) => invoke("browser_navigate", input),
     snapshot: (input) => invoke("browser_snapshot", input),
-    screenshot: (input) => invoke("browser_screenshot", input),
     click: (input) => invoke("browser_click", input),
     fill: (input) => invoke("browser_fill", input),
     evaluate: (input) => invoke("browser_evaluate", input),
@@ -103,31 +98,9 @@ const GUEST_PRELUDE = `
     call: invoke,
     shell,
     process: Object.freeze({ exec: shell }),
-    findings: Object.freeze({
-      document: (input) => invoke("document_vulnerability", input),
-    }),
-    checkpoint: Object.freeze({
-      record: (input) => invoke("checkpoint_state", input),
-    }),
-    response: Object.freeze({
-      submit: (result) => invoke("response", { result }),
-    }),
     browser,
   });
-  globalThis.ALL_TOOLS = Object.freeze([
-    "execute_command",
-    "document_vulnerability",
-    "checkpoint_state",
-    "response",
-    "browser_navigate",
-    "browser_snapshot",
-    "browser_screenshot",
-    "browser_click",
-    "browser_fill",
-    "browser_evaluate",
-    "browser_console",
-    "browser_get_cookies",
-  ]);
+  globalThis.ALL_TOOLS = Object.freeze(__APEX_ALL_TOOLS__);
   globalThis.text = (value) => __apexText(JSON.stringify(value));
   globalThis.store = (key, value) => __apexStore(key, JSON.stringify(value));
   globalThis.load = (key) => {
@@ -177,7 +150,17 @@ export class CodeModeRuntime {
   private readonly cells = new Map<string, Cell>();
   private readonly storedValues = new Map<string, string>();
 
-  constructor(private readonly invoker: CanonicalCapabilityInvoker) {}
+  private readonly guestPrelude: string;
+
+  constructor(
+    private readonly invoker: CanonicalCapabilityInvoker,
+    availableTools: Iterable<string> = [],
+  ) {
+    this.guestPrelude = GUEST_PRELUDE.replace(
+      "__APEX_ALL_TOOLS__",
+      JSON.stringify([...availableTools]),
+    );
+  }
 
   async execute(
     code: string,
@@ -344,7 +327,7 @@ export class CodeModeRuntime {
     try {
       cpuDeadline = Date.now() + MAX_CPU_SLICE_MS;
       vm.unwrapResult(
-        vm.evalCode(GUEST_PRELUDE, "apex-code-mode.js"),
+        vm.evalCode(this.guestPrelude, "apex-code-mode.js"),
       ).dispose();
       cpuDeadline = Date.now() + MAX_CPU_SLICE_MS;
       const evaluated = vm.evalCode(

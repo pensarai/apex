@@ -13,12 +13,18 @@ import {
   assertCommandActionAllowed,
   DestructiveActionError,
 } from "./destructiveGuard";
+import { resolveExecutionPolicy } from "./executionPolicy";
 import {
   assertCommandInScope,
   extractHostsFromCommand,
   resolverSessionFromCtx,
   ScopeViolationError,
 } from "./scopeGuard";
+import {
+  assertTrafficActionAllowed,
+  inspectReferencedPrograms,
+  TrafficPolicyError,
+} from "./trafficGuard";
 import type { ToolContext } from "./types";
 
 const MAX_INLINE = 50_000;
@@ -346,10 +352,26 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
+      const policySubject = inspectReferencedPrograms(command, ctx.agentCwd);
       try {
-        assertCommandInScope(command, ctx);
+        assertCommandInScope(policySubject, ctx);
       } catch (e) {
         if (e instanceof ScopeViolationError) {
+          return {
+            success: false,
+            error: e.message,
+            stdout: "",
+            stderr: e.message,
+            command,
+          };
+        }
+        throw e;
+      }
+
+      try {
+        assertTrafficActionAllowed(policySubject, ctx);
+      } catch (e) {
+        if (e instanceof TrafficPolicyError) {
           return {
             success: false,
             error: e.message,
@@ -393,7 +415,10 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       // referenced by env var below — never inlined into the command string —
       // so their content is out of scope for this string classifier.)
       try {
-        assertCommandActionAllowed(commandWithHeaders, ctx);
+        assertCommandActionAllowed(
+          `${commandWithHeaders}\n${policySubject}`,
+          ctx,
+        );
       } catch (e) {
         if (e instanceof DestructiveActionError) {
           return {
@@ -448,7 +473,13 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           const ssmOpts: {
             timeout?: number;
             envVars?: Record<string, string>;
-          } = {};
+          } = {
+            envVars: {
+              APEX_EXECUTION_POLICY_JSON: JSON.stringify(
+                ctx.executionPolicy ?? resolveExecutionPolicy(ctx.session),
+              ),
+            },
+          };
           const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
           if (normalizedTimeout != null) {
             ssmOpts.timeout = normalizedTimeout;
@@ -485,10 +516,14 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
             // Update env vars to point to the sandbox temp file
             ssmOpts.envVars = {
+              ...ssmOpts.envVars,
               [envVarName]: sandboxTempFile,
             };
           } else if (promptInjectionEnvVars) {
-            ssmOpts.envVars = promptInjectionEnvVars;
+            ssmOpts.envVars = {
+              ...ssmOpts.envVars,
+              ...promptInjectionEnvVars,
+            };
           }
 
           const result = await ctx.sandbox.execute(commandWithHeaders, ssmOpts);

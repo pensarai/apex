@@ -4,25 +4,21 @@ import { z } from "zod";
 import type { AgentToolProtocol } from "../../../ai";
 import type { CodeCellResult, CodeModeRuntime } from "./runtime";
 
-export const CODE_MODE_NESTED_TOOL_NAMES = [
-  "execute_command",
-  "document_vulnerability",
-  "checkpoint_state",
+/** Built-in lifecycle, persistence, interaction, and evidence contracts. */
+export const CODE_MODE_DIRECT_TOOL_NAMES = [
   "response",
-  "browser_navigate",
-  "browser_snapshot",
+  "document_vulnerability",
+  "document_app",
+  "document_endpoint",
+  "checkpoint_state",
   "browser_screenshot",
-  "browser_click",
-  "browser_fill",
-  "browser_evaluate",
-  "browser_console",
-  "browser_get_cookies",
-] as const;
-
-const CODE_MODE_CONTRACT_TOOL_NAMES = [
-  "response",
-  "document_vulnerability",
-  "checkpoint_state",
+  "ask_user_questions",
+  "report_error",
+  "complete_authentication",
+  "create_attack_surface_report",
+  "provide_comparison_results",
+  "submit_results",
+  "submit_plan",
 ] as const;
 
 const EXEC_DESCRIPTION = `Execute JavaScript in Apex's isolated orchestration runtime. Treat each exec as a bounded stage. The shell and browser are stateful, single-lane capabilities: never call them with Promise.all or mapLimit. For concurrent requests or scans, write one Python, JavaScript, or shell program in the persistent session workspace and invoke it once with tools.shell. Shell calls default to a 120-second timeout; set an explicit timeout only when chosen work needs longer. Use mapLimit only for independent, concurrency-safe capabilities. The runtime has no direct filesystem or network access, so effects go through the global tools object. Use text(value) to return selected evidence, and store/load for compact state across cells. Long-running cells return a cellId for wait.`;
@@ -61,6 +57,7 @@ export function createCodeModeTools(
   protocol: Exclude<AgentToolProtocol, "direct">,
   runtime: CodeModeRuntime,
   canonicalTools: ToolSet,
+  directToolNames: Iterable<string>,
 ): ToolSet {
   const schemaExec = tool({
     description: EXEC_DESCRIPTION,
@@ -111,7 +108,7 @@ export function createCodeModeTools(
   // their exact schemas visible to the model and preserves stop conditions,
   // audit events, and UI rendering while still collapsing the broad action
   // surface behind exec.
-  for (const name of CODE_MODE_CONTRACT_TOOL_NAMES) {
+  for (const name of directToolNames) {
     if (canonicalTools[name]) presented[name] = canonicalTools[name];
   }
 
@@ -131,14 +128,13 @@ Available globals inside exec:
 - tools.shell({ toolCallDescription, command, timeout?, allow_unprotected? })
 - tools.call(name, input) for any allowed capability listed in ALL_TOOLS
 - tools.browser.navigate({ url, toolCallDescription })
+- tools.browser.runCode({ code, toolCallDescription }) for multi-step async (page) => { ... } Playwright programs on the managed Camoufox page
 - tools.browser.snapshot({ toolCallDescription })
-- tools.browser.screenshot({ filename, toolCallDescription })
 - tools.browser.click({ element, ref?, toolCallDescription })
 - tools.browser.fill({ element, ref?, value, toolCallDescription })
 - tools.browser.evaluate({ script, toolCallDescription })
 - tools.browser.console({ toolCallDescription })
 - tools.browser.getCookies({ urls?, toolCallDescription })
-- tools.findings.document(input), tools.checkpoint.record(input), tools.response.submit(result)
 - text(value) to return intermediate output; store(key, value) and load(key) across cells
 - mapLimit(items, concurrency, worker) for bounded fail-fast concurrency across concurrency-safe capabilities
 - mapLimitSettled(items, concurrency, worker) for bounded concurrency across concurrency-safe capabilities when partial results are useful
@@ -156,9 +152,9 @@ declare const tools: {
   shell(input: ShellInput): Promise<unknown>;
   call(name: string, input: unknown): Promise<unknown>;
   browser: {
+    runCode(input: { code: string; toolCallDescription: string }): Promise<unknown>;
     navigate(input: { url: string; toolCallDescription: string }): Promise<unknown>;
     snapshot(input: { toolCallDescription: string }): Promise<unknown>;
-    screenshot(input: { filename: string; toolCallDescription: string }): Promise<unknown>;
     click(input: { element: string; ref?: string; toolCallDescription: string }): Promise<unknown>;
     fill(input: { element: string; ref?: string; value: string; toolCallDescription: string }): Promise<unknown>;
     evaluate(input: { script: string; toolCallDescription: string }): Promise<unknown>;
@@ -173,9 +169,11 @@ declare function mapLimitSettled<T, R>(items: T[], concurrency: number, worker: 
 Program-first execution policy:
 1. \`tools.shell\` and \`execute_command\` share one persistent, single-lane shell. Call them at most once at a time and never wrap them in Promise.all, mapLimit, or mapLimitSettled. Omitted timeouts default to 120 seconds so one command cannot monopolize the shell.
 2. Put concurrent HTTP requests, scans, payload generation, and result filtering inside one Python, JavaScript, or shell program in the persistent session workspace, then run that program with one shell call. Reuse the program as the exploit evolves.
+   Every program inherits APEX_EXECUTION_POLICY_JSON. Parse it, declare an explicit concurrency, and apply its requests-per-second, burst, concurrency, destructive-action, and availability-impact limits before issuing target traffic. Preflight enforcement inspects referenced Bun, Python, and shell source before launch.
 3. Browser operations and Console contract tools are stateful and single-lane. Await them sequentially.
 4. Persist tokens, identifiers, attempted hypotheses, and useful artifacts once. Do not paste or reconstruct the same state in later cells.
 5. Use mapLimit only for independent capabilities that are explicitly safe to invoke concurrently. Parallelism is for executing a chosen experiment faster, not for expanding reconnaissance scope.
+6. When APEX_OAST_HTTP_BASE_URL and APEX_OAST_HTTP_PORT are present in the shell environment, they are the engagement's isolated HTTP callback ingress. Write your own correlated listener on 0.0.0.0:$APEX_OAST_HTTP_PORT and use the base URL in payloads. Do not send target data or synthetic flags to third-party callback services.
 
 Example program-first stage:
 
@@ -190,5 +188,5 @@ text(result);
 
 Use wait when exec returns status "running". Inspect the metrics and any guidance returned with each completed cell. Guidance is process feedback from the harness, not target evidence. A submitted response is terminal.
 
-Use the top-level response, document_vulnerability, and checkpoint_state tools for their normal Console contract and exact schemas. Do not simulate those calls in prose. The nested aliases remain available when composition inside exec is necessary.`;
+Use the top-level lifecycle, finding, checkpoint, interaction, and evidence tools for their normal Console contracts and exact schemas. Do not simulate those calls in prose. Prefer Bun for JavaScript/TypeScript programs and \`uv run\` or \`uvx\` for Python dependencies. Use \`browser_run_code\` inside exec for multi-step browser automation against Apex's managed Camoufox session; use the top-level \`browser_screenshot\` tool for durable Console evidence.`;
 }

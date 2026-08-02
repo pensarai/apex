@@ -36,15 +36,20 @@ export class RateLimiter {
   private lastRefillTime: number;
   private readonly rps: number | undefined;
   private readonly bucketSize: number;
+  private readonly maxConcurrency: number | undefined;
   private readonly msPerToken: number | undefined;
   private queue: Promise<void>;
+  private activeRequests = 0;
+  private capacityWaiters: Array<() => void> = [];
 
   constructor(config?: RateLimiterConfig) {
     this.rps = config?.requestsPerSecond;
-    // Bucket size = 1 for strict rate limiting (no bursts)
-    // Note: Setting bucketSize = this.rps would allow bursts (e.g., 5 immediate requests for RPS=5)
-    // which violates rate limiting in security testing contexts
-    this.bucketSize = this.rps ? 1 : 0;
+    this.bucketSize = this.rps
+      ? Math.max(1, Math.floor(config?.burst ?? 1))
+      : 0;
+    this.maxConcurrency = config?.maxConcurrency
+      ? Math.max(1, Math.floor(config.maxConcurrency))
+      : undefined;
     this.tokens = this.bucketSize;
     this.lastRefillTime = performance.now();
     // Precompute msPerToken once in constructor
@@ -107,6 +112,21 @@ export class RateLimiter {
         return false;
       }
 
+      while (
+        this.maxConcurrency !== undefined &&
+        this.activeRequests >= this.maxConcurrency
+      ) {
+        await new Promise<void>((resolve) => {
+          const wake = () => {
+            signal?.removeEventListener("abort", wake);
+            resolve();
+          };
+          this.capacityWaiters.push(wake);
+          signal?.addEventListener("abort", wake, { once: true });
+        });
+        if (signal?.aborted) return false;
+      }
+
       // Cache now for this call to avoid multiple time calls
       const now = performance.now();
       this.refill(now);
@@ -120,6 +140,7 @@ export class RateLimiter {
       }
 
       this.tokens -= 1;
+      this.activeRequests += 1;
       acquired = true;
       return true;
     } finally {
@@ -146,7 +167,8 @@ export class RateLimiter {
 
   releaseSlot(): void {
     if (!this.rps) return;
-    this.tokens = Math.min(this.bucketSize, this.tokens + 1);
+    this.activeRequests = Math.max(0, this.activeRequests - 1);
+    this.capacityWaiters.shift()?.();
   }
 
   isEnabled(): boolean {
