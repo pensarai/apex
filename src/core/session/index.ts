@@ -84,6 +84,18 @@ const NetworkSecurityConfigObject = z.object({
 
 export type NetworkSecurityConfig = z.infer<typeof NetworkSecurityConfigObject>;
 
+const ContextCompactionConfigObject = z.object({
+  enabled: z.boolean().optional(),
+  model: z.string().min(1).optional(),
+  thresholdRatio: z.number().min(0.5).max(0.95).optional(),
+  enableThinking: z.boolean().optional(),
+  thinkingEffort: z.enum(["low", "medium", "high"]).nullable().optional(),
+  openAIReasoningEffort: z
+    .enum(["none", "low", "medium", "high", "xhigh", "max", "ultra"])
+    .nullable()
+    .optional(),
+});
+
 // The header map IS the state — empty record means "send no custom headers".
 const SessionHeadersRecord = z.record(z.string(), z.string());
 
@@ -232,6 +244,8 @@ const SessionConfigObject = z.object({
   scopeConstraints: ScopeConstraintsObject.optional(),
   /** Sandbox control-plane policy. Strict mode fails closed without attestation. */
   networkSecurity: NetworkSecurityConfigObject.optional(),
+  /** Provider-neutral continuation capsules. Enabled by default. */
+  contextCompaction: ContextCompactionConfigObject.optional(),
   authCredentials: z
     .union([AuthCredentialsObject, z.array(AuthCredentialsObject)])
     .optional(),
@@ -565,16 +579,22 @@ export async function create(input: CreateInputProps) {
 
   // Caller `headers` wins verbatim; otherwise snapshot the current global
   // defaultHeaders so the session is locked at create time.
+  const { config: appConfig } = await import("../config");
+  const globalConfig = await appConfig.get();
   let snapshotHeaders: Record<string, string>;
   if (normalizedConfig?.headers !== undefined) {
     snapshotHeaders = { ...normalizedConfig.headers };
   } else {
-    const { config: appConfig } = await import("../config");
-    const cfg = await appConfig.get();
-    snapshotHeaders = cfg.defaultHeaders
-      ? { ...cfg.defaultHeaders }
+    snapshotHeaders = globalConfig.defaultHeaders
+      ? { ...globalConfig.defaultHeaders }
       : { ...DEFAULT_HEADER_RECORD };
   }
+
+  const contextCompaction = normalizedConfig?.contextCompaction ?? {
+    enabled: globalConfig.contextCompactionEnabled ?? true,
+    model: globalConfig.contextCompactionModel ?? undefined,
+    thresholdRatio: globalConfig.contextCompactionThresholdRatio ?? 0.7,
+  };
 
   const result: SessionInfo = {
     id: id,
@@ -589,6 +609,7 @@ export async function create(input: CreateInputProps) {
       ...normalizedConfig,
       mode: normalizedConfig?.mode || "auto",
       headers: snapshotHeaders,
+      contextCompaction,
       outcomeGuidance:
         normalizedConfig?.outcomeGuidance ||
         (normalizedConfig?.exfilMode
