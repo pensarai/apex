@@ -9,7 +9,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import { generateText, type LanguageModel, type ModelMessage } from "ai";
 import { estimateMessageTokens } from "./contextManagement";
 
@@ -252,7 +251,7 @@ async function compactEvents(
   events: string[],
   model: LanguageModel,
   chunkTokens: number,
-  providerOptions?: ProviderOptions,
+  providerOptions?: unknown,
   abortSignal?: AbortSignal,
 ): Promise<{
   semantic: SemanticCapsule;
@@ -281,7 +280,7 @@ async function compactEvents(
       model,
       system: COMPACTION_SYSTEM,
       prompt: chunk.join("\n"),
-      providerOptions,
+      providerOptions: providerOptions as never,
       maxOutputTokens: Math.max(
         512,
         Math.min(4_096, Math.floor(chunkTokens / 2)),
@@ -336,7 +335,7 @@ async function compactEvents(
         model,
         system: COMPACTION_SYSTEM,
         prompt: `Merge these partial continuation capsules without dropping distinct facts:\n${JSON.stringify(group)}`,
-        providerOptions,
+        providerOptions: providerOptions as never,
         maxOutputTokens: Math.max(
           512,
           Math.min(4_096, Math.floor(chunkTokens / 2)),
@@ -406,7 +405,7 @@ export async function compactConversation(input: {
   model: LanguageModel;
   modelId: string;
   modelContextWindow?: number;
-  providerOptions?: ProviderOptions;
+  providerOptions?: unknown;
   sessionPath?: string;
   state?: ContextCompactionState;
   secretValues?: string[];
