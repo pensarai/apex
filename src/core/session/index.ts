@@ -88,12 +88,7 @@ const ContextCompactionConfigObject = z.object({
   enabled: z.boolean().optional(),
   model: z.string().min(1).optional(),
   thresholdRatio: z.number().min(0.5).max(0.95).optional(),
-  enableThinking: z.boolean().optional(),
-  thinkingEffort: z.enum(["low", "medium", "high"]).nullable().optional(),
-  openAIReasoningEffort: z
-    .enum(["none", "low", "medium", "high", "xhigh", "max", "ultra"])
-    .nullable()
-    .optional(),
+  reasoning: z.enum(["off", "low", "medium", "high"]).optional(),
 });
 
 // The header map IS the state — empty record means "send no custom headers".

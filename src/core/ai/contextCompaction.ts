@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { generateText, type LanguageModel, type ModelMessage } from "ai";
+import type { ModelMessage } from "ai";
 import { estimateMessageTokens } from "./contextManagement";
 
 const CAPSULE_VERSION = 1;
@@ -21,17 +21,7 @@ export interface ContextCompactionConfig {
   enabled?: boolean;
   model?: string;
   thresholdRatio?: number;
-  enableThinking?: boolean;
-  thinkingEffort?: "low" | "medium" | "high" | null;
-  openAIReasoningEffort?:
-    | "none"
-    | "low"
-    | "medium"
-    | "high"
-    | "xhigh"
-    | "max"
-    | "ultra"
-    | null;
+  reasoning?: "off" | "low" | "medium" | "high";
 }
 
 export interface ContextCompactionState {
@@ -90,6 +80,11 @@ interface MessageGroup {
   messages: ModelMessage[];
   tokens: number;
 }
+
+export type ContextCompactionGenerator = (prompt: string) => Promise<{
+  text: string;
+  usage: { inputTokens?: number; outputTokens?: number };
+}>;
 
 function redactString(value: string, secrets: readonly string[]): string {
   let redacted = value;
@@ -249,10 +244,8 @@ Return JSON only with keys: currentPhase (string), confirmedFacts, authState, su
 
 async function compactEvents(
   events: string[],
-  model: LanguageModel,
   chunkTokens: number,
-  providerOptions?: unknown,
-  abortSignal?: AbortSignal,
+  generateSemantic: ContextCompactionGenerator,
 ): Promise<{
   semantic: SemanticCapsule;
   usage: { inputTokens: number; outputTokens: number };
@@ -276,17 +269,9 @@ async function compactEvents(
   let outputTokens = 0;
   const partials: SemanticCapsule[] = [];
   for (const chunk of chunks) {
-    const result = await generateText({
-      model,
-      system: COMPACTION_SYSTEM,
-      prompt: chunk.join("\n"),
-      providerOptions: providerOptions as never,
-      maxOutputTokens: Math.max(
-        512,
-        Math.min(4_096, Math.floor(chunkTokens / 2)),
-      ),
-      abortSignal,
-    });
+    const result = await generateSemantic(
+      `${COMPACTION_SYSTEM}\n\nTranscript events:\n${chunk.join("\n")}`,
+    );
     inputTokens += result.usage.inputTokens ?? 0;
     outputTokens += result.usage.outputTokens ?? 0;
     partials.push(parseSemanticCapsule(result.text));
@@ -331,17 +316,9 @@ async function compactEvents(
         next.push(group[0] ?? emptySemanticCapsule());
         continue;
       }
-      const reduced = await generateText({
-        model,
-        system: COMPACTION_SYSTEM,
-        prompt: `Merge these partial continuation capsules without dropping distinct facts:\n${JSON.stringify(group)}`,
-        providerOptions: providerOptions as never,
-        maxOutputTokens: Math.max(
-          512,
-          Math.min(4_096, Math.floor(chunkTokens / 2)),
-        ),
-        abortSignal,
-      });
+      const reduced = await generateSemantic(
+        `${COMPACTION_SYSTEM}\n\nMerge these partial continuation capsules without dropping distinct facts:\n${JSON.stringify(group)}`,
+      );
       inputTokens += reduced.usage.inputTokens ?? 0;
       outputTokens += reduced.usage.outputTokens ?? 0;
       next.push(parseSemanticCapsule(reduced.text));
@@ -402,10 +379,9 @@ function renderCapsule(capsule: unknown): ModelMessage {
 export async function compactConversation(input: {
   messages: ModelMessage[];
   contextWindow: number;
-  model: LanguageModel;
   modelId: string;
   modelContextWindow?: number;
-  providerOptions?: unknown;
+  generateSemantic: ContextCompactionGenerator;
   sessionPath?: string;
   state?: ContextCompactionState;
   secretValues?: string[];
@@ -435,7 +411,6 @@ export async function compactConversation(input: {
       archived.map((message, index) =>
         normalizeMessage(message, index, secrets),
       ),
-      input.model,
       Math.max(
         1_000,
         Math.min(
@@ -443,8 +418,7 @@ export async function compactConversation(input: {
           Math.floor((input.modelContextWindow ?? 200_000) * 0.5),
         ),
       ),
-      input.providerOptions,
-      input.abortSignal,
+      input.generateSemantic,
     );
     semantic = result.semantic;
     usage = result.usage;
