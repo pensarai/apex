@@ -56,6 +56,75 @@ function combineSignals(local: AbortSignal, parent?: AbortSignal): AbortSignal {
 
 const GUEST_PRELUDE = `
 (() => {
+  const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const bytesToBase64 = (bytes) => {
+    let output = "";
+    for (let i = 0; i < bytes.length; i += 3) {
+      const a = bytes[i];
+      const b = i + 1 < bytes.length ? bytes[i + 1] : 0;
+      const c = i + 2 < bytes.length ? bytes[i + 2] : 0;
+      output += BASE64[a >> 2];
+      output += BASE64[((a & 3) << 4) | (b >> 4)];
+      output += i + 1 < bytes.length ? BASE64[((b & 15) << 2) | (c >> 6)] : "=";
+      output += i + 2 < bytes.length ? BASE64[c & 63] : "=";
+    }
+    return output;
+  };
+  const base64ToBytes = (value) => {
+    const clean = String(value).replace(/\\s+/g, "").replace(/=+$/, "");
+    const bytes = [];
+    let bits = 0;
+    let bitCount = 0;
+    for (const char of clean) {
+      const index = BASE64.indexOf(char);
+      if (index < 0) throw new TypeError("Invalid base64 input");
+      bits = (bits << 6) | index;
+      bitCount += 6;
+      if (bitCount >= 8) {
+        bitCount -= 8;
+        bytes.push((bits >> bitCount) & 255);
+      }
+    }
+    return bytes;
+  };
+  const utf8ToBytes = (value) => {
+    const encoded = unescape(encodeURIComponent(String(value)));
+    return Array.from(encoded, (char) => char.charCodeAt(0));
+  };
+  const bytesToUtf8 = (bytes) => {
+    const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+    return decodeURIComponent(escape(binary));
+  };
+  class ApexBuffer extends Uint8Array {
+    static from(value, encoding = "utf8") {
+      if (value instanceof Uint8Array || Array.isArray(value)) return new ApexBuffer(value);
+      const normalized = String(encoding).toLowerCase();
+      if (normalized === "base64") return new ApexBuffer(base64ToBytes(value));
+      if (normalized === "hex") {
+        const input = String(value);
+        if (!/^(?:[0-9a-f]{2})*$/i.test(input)) throw new TypeError("Invalid hex input");
+        return new ApexBuffer(input.match(/../g)?.map((part) => parseInt(part, 16)) || []);
+      }
+      return new ApexBuffer(utf8ToBytes(value));
+    }
+    toString(encoding = "utf8") {
+      const normalized = String(encoding).toLowerCase();
+      if (normalized === "base64") return bytesToBase64(this);
+      if (normalized === "hex") return Array.from(this, (byte) => byte.toString(16).padStart(2, "0")).join("");
+      return bytesToUtf8(this);
+    }
+  }
+  const sleep = (ms) => __apexSleep(ms);
+  globalThis.Buffer = ApexBuffer;
+  globalThis.btoa = (value) => bytesToBase64(Array.from(String(value), (char) => char.charCodeAt(0) & 255));
+  globalThis.atob = (value) => Array.from(base64ToBytes(value), (byte) => String.fromCharCode(byte)).join("");
+  globalThis.sleep = sleep;
+  globalThis.setTimeout = (callback, ms, ...args) => sleep(ms).then(() => callback(...args));
+  globalThis.require = (name) => {
+    if (name === "buffer") return { Buffer: ApexBuffer };
+    if (name === "timers/promises") return { setTimeout: sleep };
+    throw new Error("require(" + JSON.stringify(name) + ") is unavailable in the isolated runtime; use tools.shell to run a Bun or uv program");
+  };
   const laneFor = (name) => {
     if (name === "execute_command") return "shell";
     if (name.startsWith("browser_")) return "browser";
@@ -298,6 +367,27 @@ export class CodeModeRuntime {
     );
     vm.setProp(vm.global, "__apexInvoke", invokeHandle);
     invokeHandle.dispose();
+
+    const sleepHandle = vm.newFunction("__apexSleep", (durationHandle) => {
+      const durationMs = Math.min(
+        30_000,
+        Math.max(0, Math.floor(vm.getNumber(durationHandle))),
+      );
+      const deferred = vm.newPromise();
+      let bridgedCall: Promise<void>;
+      bridgedCall = new Promise<void>((resolve) => {
+        setTimeout(resolve, durationMs);
+      })
+        .then(() => deferred.resolve(vm.undefined))
+        .finally(async () => {
+          hostCalls.delete(bridgedCall);
+          await pumpJobs();
+        });
+      hostCalls.add(bridgedCall);
+      return deferred.handle;
+    });
+    vm.setProp(vm.global, "__apexSleep", sleepHandle);
+    sleepHandle.dispose();
 
     const textHandle = vm.newFunction("__apexText", (valueHandle) => {
       const value = JSON.parse(vm.getString(valueHandle)) as unknown;

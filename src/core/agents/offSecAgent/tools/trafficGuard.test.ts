@@ -84,6 +84,30 @@ describe("traffic policy", () => {
     ).toThrow("availability-impact");
   });
 
+  it("does not infer traffic intent from read-only log inspection", () => {
+    for (const command of [
+      "tail -n 100 logs/rate-limit-flood-http.log",
+      "rg 'rate limit|ddos|cpu exhaustion' logs",
+      "find logs -name '*slowloris*'",
+      "cat scratchpad/flood-results.txt",
+    ]) {
+      expect(classifyTrafficAction(command).category).toBe("ordinary");
+      expect(() =>
+        assertTrafficActionAllowed(command, ctx(false)),
+      ).not.toThrow();
+    }
+  });
+
+  it("keeps executable read-only-looking commands on the conservative path", () => {
+    expect(
+      classifyTrafficAction("find . -name target -exec wrk -c20 {} \\;")
+        .category,
+    ).toBe("bounded-rate-test");
+    expect(
+      classifyTrafficAction("rg slowloris logs | xargs -P 20 curl").category,
+    ).toBe("availability-impact");
+  });
+
   it("inspects referenced Bun and uv programs before launch", () => {
     const dir = mkdtempSync(join(tmpdir(), "apex-policy-"));
     dirs.push(dir);

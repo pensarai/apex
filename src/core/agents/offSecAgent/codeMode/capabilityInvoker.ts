@@ -44,6 +44,35 @@ type Repetition = {
   count: number;
 };
 
+type StatefulLane = "shell" | "browser" | "workspace" | "contract";
+
+function statefulLaneFor(toolName: string): StatefulLane | undefined {
+  if (toolName === "execute_command") return "shell";
+  if (toolName === "create_file") return "workspace";
+  if (toolName.startsWith("browser_")) return "browser";
+  if (
+    ["document_vulnerability", "checkpoint_state", "response"].includes(
+      toolName,
+    )
+  ) {
+    return "contract";
+  }
+  return undefined;
+}
+
+function laneConflictMessage(lane: StatefulLane): string {
+  if (lane === "shell") {
+    return "tools.shell is single-lane across exec cells. Await the active shell call and put request-level concurrency inside one reusable program.";
+  }
+  if (lane === "browser") {
+    return "Browser operations are single-lane across exec cells; await the active browser operation.";
+  }
+  if (lane === "workspace") {
+    return "Workspace writes are single-lane across exec cells; await the active write.";
+  }
+  return "Console contract tools are single-lane across exec cells; await the active contract call.";
+}
+
 function stableSerialize(value: unknown): string {
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value) ?? String(value);
@@ -87,6 +116,7 @@ export class CanonicalCapabilityInvoker {
   private nextCallIndex = 0;
   private consecutiveSingleCallCells = 0;
   private terminal = false;
+  private readonly activeLanes = new Map<StatefulLane, string>();
 
   constructor(private readonly options: CapabilityInvokerOptions) {
     this.allowedTools = new Set(options.allowedTools);
@@ -202,6 +232,11 @@ export class CanonicalCapabilityInvoker {
       );
     }
 
+    const statefulLane = statefulLaneFor(toolName);
+    if (statefulLane && this.activeLanes.has(statefulLane)) {
+      throw new Error(laneConflictMessage(statefulLane));
+    }
+
     const cell = this.cells.get(options.parentToolCallId) ?? {
       activeCalls: 0,
       maxConcurrency: 0,
@@ -245,6 +280,9 @@ export class CanonicalCapabilityInvoker {
       args: validation.value,
     });
 
+    if (statefulLane) {
+      this.activeLanes.set(statefulLane, options.parentToolCallId);
+    }
     try {
       const execution = tool.execute(validation.value, {
         toolCallId,
@@ -279,6 +317,12 @@ export class CanonicalCapabilityInvoker {
       throw error;
     } finally {
       cell.activeCalls = Math.max(0, cell.activeCalls - 1);
+      if (
+        statefulLane &&
+        this.activeLanes.get(statefulLane) === options.parentToolCallId
+      ) {
+        this.activeLanes.delete(statefulLane);
+      }
     }
   }
 }
