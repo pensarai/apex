@@ -7,6 +7,7 @@ import type {
   StreamTextResult,
   TextStreamPart,
   ToolCallPart,
+  ToolChoice,
   ToolResultPart,
   ToolSet,
 } from "ai";
@@ -196,6 +197,24 @@ const STREAM_STALL_DEBUG =
 const STREAM_STALL_TICK_MS = 15_000;
 const STREAM_STALL_WARN_MS = 20_000;
 const STREAM_GAP_RECOVERED_MS = 10_000;
+
+function envEnabled(value: string | undefined): boolean {
+  return value === "1" || value?.toLowerCase() === "true";
+}
+
+export function resolveAgentToolChoice(
+  requested: ToolChoice<ToolSet> | undefined,
+  hasResponseTool: boolean,
+): ToolChoice<ToolSet> {
+  if (requested && requested !== "auto") return requested;
+  if (
+    hasResponseTool &&
+    envEnabled(process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE)
+  ) {
+    return "required";
+  }
+  return requested ?? "auto";
+}
 
 function responseArgBytes(input: unknown): number {
   if (input == null) return 0;
@@ -804,6 +823,10 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     // Deferred so the AI SDK telemetry binds to this agent's span (entered in
     // consume()) rather than the construction-time context. See `streamResult`.
+    const resolvedToolChoice = resolveAgentToolChoice(
+      input.toolChoice,
+      tools[RESPONSE_TOOL_NAME] !== undefined,
+    );
     this.createStream = () =>
       streamResponse({
         prompt: input.prompt,
@@ -813,7 +836,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         tools,
         activeTools,
         stopWhen,
-        toolChoice: "auto",
+        toolChoice: resolvedToolChoice,
         // Per-subagent so the overflow tool-result dumps land next to this
         // agent's messages.json (`subagents/{id}/tool-results/`) and a host
         // can reclaim them when the subagent finishes, instead of piling up
@@ -851,7 +874,9 @@ export class OffensiveSecurityAgent<TResult = void> {
           }
           const tempPath = `${messagesPath}.compacting-${process.pid}`;
           try {
-            await writeFile(tempPath, JSON.stringify(messages), { mode: 0o600 });
+            await writeFile(tempPath, JSON.stringify(messages), {
+              mode: 0o600,
+            });
             await rename(tempPath, messagesPath);
           } finally {
             await unlink(tempPath).catch(() => {});

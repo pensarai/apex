@@ -136,6 +136,7 @@ Available globals inside exec:
 - tools.browser.console({ toolCallDescription })
 - tools.browser.getCookies({ urls?, toolCallDescription })
 - text(value) to return intermediate output; store(key, value) and load(key) across cells
+- Buffer, btoa/atob, sleep(ms), and setTimeout for bounded encoding and delays; require supports only "buffer" and "timers/promises"
 - mapLimit(items, concurrency, worker) for bounded fail-fast concurrency across concurrency-safe capabilities
 - mapLimitSettled(items, concurrency, worker) for bounded concurrency across concurrency-safe capabilities when partial results are useful
 
@@ -164,6 +165,15 @@ declare const tools: {
 };
 declare function mapLimit<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]>;
 declare function mapLimitSettled<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>): Promise<PromiseSettledResult<R>[]>;
+declare const Buffer: {
+  from(value: string | number[] | Uint8Array, encoding?: "utf8" | "base64" | "hex"): Uint8Array & { toString(encoding?: "utf8" | "base64" | "hex"): string };
+};
+declare function btoa(value: string): string;
+declare function atob(value: string): string;
+declare function sleep(ms: number): Promise<void>;
+declare function setTimeout(callback: (...args: unknown[]) => void, ms: number, ...args: unknown[]): Promise<void>;
+declare function require(name: "buffer"): { Buffer: typeof Buffer };
+declare function require(name: "timers/promises"): { setTimeout: typeof sleep };
 \`\`\`
 
 Program-first execution policy:

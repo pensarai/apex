@@ -167,6 +167,24 @@ describe("PersistentShell — long-running stability", () => {
     expect(echo.stdout).toContain("hello");
   });
 
+  it("rejects an unterminated heredoc without poisoning the shell", async () => {
+    const shell = make();
+    const valid = await shell.execute("cat <<'EOF'\nvalid heredoc\nEOF", 5);
+    expect(valid.exitCode).toBe(0);
+    expect(valid.stdout).toContain("valid heredoc");
+
+    const malformed = await shell.execute(
+      "cat <<'EOF'\nunterminated heredoc",
+      2,
+    );
+    expect(malformed.exitCode).toBe(2);
+    expect(malformed.stderr).toContain("unterminated here-document");
+
+    const after = await shell.execute("echo healthy", 5);
+    expect(after.exitCode).toBe(0);
+    expect(after.stdout).toContain("healthy");
+  });
+
   it.concurrent("reports exit code 124 on timeout and kills descendants", async () => {
     const shell = make();
     const r = await shell.execute("sleep 30", 1);
@@ -175,6 +193,24 @@ describe("PersistentShell — long-running stability", () => {
     const after = await shell.execute("echo ok", 5);
     expect(after.exitCode).toBe(0);
     expect(after.stdout).toContain("ok");
+  }, 10_000);
+
+  it("replaces the shell after a timeout instead of retaining parser state", async () => {
+    const shell = make();
+    expect(
+      (await shell.execute("export APEX_BEFORE_TIMEOUT=present", 5)).exitCode,
+    ).toBe(0);
+
+    const timedOut = await shell.execute("sleep 30", 1);
+    expect(timedOut.exitCode).toBe(124);
+    expect(timedOut.stderr).toContain("persistent shell restarted");
+
+    const after = await shell.execute(
+      'printf "%s" "$' + '{APEX_BEFORE_TIMEOUT-unset}"',
+      5,
+    );
+    expect(after.exitCode).toBe(0);
+    expect(after.stdout).toContain("unset");
   }, 10_000);
 
   it.concurrent("does not leak nonce markers on timeout", async () => {

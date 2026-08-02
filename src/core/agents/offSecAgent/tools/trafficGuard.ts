@@ -23,6 +23,26 @@ const RATE_TEST_TOOL =
 const CONCURRENT_REQUEST_CODE =
   /Promise\.(?:all|allSettled)\s*\([\s\S]{0,300}(?:fetch|axios|request)|(?:fetch|axios|request)[\s\S]{0,300}Promise\.(?:all|allSettled)|(?:ThreadPoolExecutor|asyncio\.gather|xargs\s+-P)\b/i;
 
+const READ_ONLY_INSPECTION_COMMAND =
+  /^\s*(?:find|ls|tail|head|cat|grep|rg|sed|jq)\b/i;
+const SHELL_EXECUTION_OPERATOR = /(?:[;&|]|`|\$\()/;
+
+function isReadOnlyInspectionCommand(input: string): boolean {
+  if (!READ_ONLY_INSPECTION_COMMAND.test(input)) return false;
+  const quotedSegments =
+    input.match(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g) ?? [];
+  if (quotedSegments.some((segment) => /`|\$\(/.test(segment))) return false;
+  const shellStructure = input.replace(
+    /'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g,
+    "",
+  );
+  if (SHELL_EXECUTION_OPERATOR.test(shellStructure)) return false;
+  if (/\bfind\b[\s\S]*-(?:exec|execdir|delete|ok|okdir)\b/i.test(input)) {
+    return false;
+  }
+  return true;
+}
+
 function largestNumber(input: string, patterns: RegExp[]): number | undefined {
   let largest: number | undefined;
   for (const pattern of patterns) {
@@ -38,6 +58,14 @@ export function classifyTrafficAction(
   input: string,
   limits?: { requestsPerSecond: number; maxConcurrency: number },
 ): TrafficClassification {
+  // Read-only log/source inspection must not inherit policy meaning from a
+  // filename or search needle such as "rate-limit", "flood", or "ddos".
+  // Pipelines, substitutions, and mutating/executing find modes stay on the
+  // normal conservative classifier path.
+  if (isReadOnlyInspectionCommand(input)) {
+    return { category: "ordinary" };
+  }
+
   if (AVAILABILITY_IMPACT.test(input)) {
     return {
       category: "availability-impact",

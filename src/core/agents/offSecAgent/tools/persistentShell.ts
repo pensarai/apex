@@ -152,6 +152,36 @@ function hasStdbuf(): boolean {
   return stdbufAvailable;
 }
 
+function validateShellSyntax(command: string): string | null {
+  if (process.platform === "win32") return null;
+  const check = (input: string) =>
+    spawnSync("bash", ["--norc", "--noprofile", "-n"], {
+      input,
+      encoding: "utf8",
+      maxBuffer: 1_000_000,
+    });
+  const result = check(command);
+  if (result.error) {
+    return `Shell syntax check failed: ${result.error.message}`;
+  }
+  if (result.status !== 0) {
+    return (result.stderr || result.stdout || "invalid shell syntax").trim();
+  }
+
+  // Bash accepts an unterminated heredoc at EOF with status 0. Append invalid
+  // syntax: a valid command must now fail parsing, while an open heredoc
+  // consumes the sentinel as data and still reports success.
+  if (/<<[-~]?\s*/.test(command)) {
+    const heredocProbe = check(
+      `${command}\n__APEX_UNCLOSED_HEREDOC_SENTINEL__(\n`,
+    );
+    if (!heredocProbe.error && heredocProbe.status === 0) {
+      return "unterminated here-document";
+    }
+  }
+  return null;
+}
+
 /**
  * Strip cutover/exit markers from a buffer for the timeout/abort/close/cancel
  * fallback paths. The happy-path parser strips inline; if a fallback resolver
@@ -223,7 +253,7 @@ export class PersistentShell {
     const shell = process.platform === "win32" ? "cmd" : "bash";
     const args = process.platform === "win32" ? [] : ["--norc", "--noprofile"];
 
-    this.proc = spawn(shell, args, {
+    const proc = spawn(shell, args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: this.cwd,
       // New session so children have no controlling terminal — keeps
@@ -246,13 +276,19 @@ export class PersistentShell {
         NO_COLOR: "1",
       } as Record<string, string | undefined> as NodeJS.ProcessEnv,
     });
+    this.proc = proc;
 
     this.alive = true;
 
-    this.proc.stdout?.on("data", (data: Buffer) => this.onStdoutData(data));
-    this.proc.stderr?.on("data", (data: Buffer) => this.onStderrData(data));
+    proc.stdout?.on("data", (data: Buffer) => {
+      if (this.proc === proc) this.onStdoutData(data);
+    });
+    proc.stderr?.on("data", (data: Buffer) => {
+      if (this.proc === proc) this.onStderrData(data);
+    });
 
-    this.proc.on("close", () => {
+    proc.on("close", () => {
+      if (this.proc !== proc) return;
       this.alive = false;
       this.proc = null;
       // If a command was pending, fail it fast rather than letting it wait
@@ -274,10 +310,34 @@ export class PersistentShell {
       }
     });
 
-    this.proc.on("error", () => {
+    proc.on("error", () => {
+      if (this.proc !== proc) return;
       this.alive = false;
       this.proc = null;
     });
+  }
+
+  private restartAfterInterruptedCommand(pending: PendingCommand): void {
+    if (this.current !== pending) return;
+    this.current = null;
+    this.pendingCancel = null;
+
+    const proc = this.proc;
+    this.proc = null;
+    this.alive = false;
+    const pid = proc?.pid;
+    if (pid && process.platform !== "win32") {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        // already gone
+      }
+    }
+    try {
+      proc?.kill("SIGKILL");
+    } catch {
+      // already gone
+    }
   }
 
   private ensureAlive(): void {
@@ -466,6 +526,15 @@ export class PersistentShell {
         };
       }
 
+      const syntaxError = validateShellSyntax(command);
+      if (syntaxError) {
+        return {
+          stdout: "",
+          stderr: `Shell syntax check failed before execution: ${syntaxError}`,
+          exitCode: 2,
+        };
+      }
+
       this.ensureAlive();
 
       const proc = this.proc;
@@ -528,6 +597,7 @@ export class PersistentShell {
               proc.pid,
               pending,
               130,
+              () => this.restartAfterInterruptedCommand(pending),
             );
           };
           abortSignal.addEventListener("abort", onAbort, { once: true });
@@ -543,6 +613,7 @@ export class PersistentShell {
               proc.pid,
               pending,
               124,
+              () => this.restartAfterInterruptedCommand(pending),
             );
           }, remainingTimeoutMs);
         }
@@ -653,7 +724,7 @@ export class PersistentShell {
   }
 
   /**
-   * Cancel the currently running command without killing the shell.
+   * Cancel the currently running command and replace the shell.
    * Returns true if a command was running and was cancelled.
    */
   cancelCurrentCommand(): boolean {
@@ -666,12 +737,18 @@ export class PersistentShell {
       : "(cancelled by user)";
 
     if (this.proc.pid && process.platform !== "win32") {
-      cmd.killEscalationTimer = scheduleSalvageKill(this.proc.pid, cmd, 130);
+      cmd.killEscalationTimer = scheduleSalvageKill(
+        this.proc.pid,
+        cmd,
+        130,
+        () => this.restartAfterInterruptedCommand(cmd),
+      );
     } else {
       // Windows: no descendant signalling support, but we still own
       // tempfile cleanup.
       unlinkSafe(cmd.outPath);
       unlinkSafe(cmd.errPath);
+      this.restartAfterInterruptedCommand(cmd);
       cmd.resolve({
         stdout: extractFallbackStdout(cmd),
         stderr: (cmd.stderr || "") + (cmd.forcedStderrSuffix ?? ""),
@@ -796,6 +873,7 @@ function scheduleSalvageKill(
   rootPid: number | undefined,
   pending: PendingCommand,
   exitCode: number,
+  onInterrupted: () => void,
 ): ReturnType<typeof setTimeout> {
   // Two kill paths can fire within the grace window (timeout then cancel);
   // clear any predecessor so its callback can't run stale side effects
@@ -821,12 +899,14 @@ function scheduleSalvageKill(
     // post-cmd helpers (cat, sleep 0.1) may still be running; we don't
     // care about their output anymore.
     signalPids(pids, "SIGKILL");
+    onInterrupted();
 
     pending.resolve({
       stdout: diskStdout || extractFallbackStdout(pending) || "(no output)",
       stderr:
         (diskStderr || pending.stderr || "") +
-        (pending.forcedStderrSuffix ?? ""),
+        (pending.forcedStderrSuffix ?? "") +
+        "\n(persistent shell restarted after interrupted command; shell-local cd/export state was cleared)",
       exitCode,
     });
   }, SALVAGE_GRACE_MS);

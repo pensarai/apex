@@ -116,6 +116,46 @@ describe("CodeModeRuntime", () => {
     await runtime.dispose();
   });
 
+  test("rejects overlapping shell calls across concurrent exec cells", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const runtime = createRuntime({
+      execute_command: tool({
+        inputSchema: z.object({ command: z.string() }),
+        execute: async () => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          active -= 1;
+          return { stdout: "ok" };
+        },
+      }),
+    });
+
+    const [first, second] = await Promise.all([
+      runtime.execute(
+        `text(await tools.shell({ command: "first" }));`,
+        context,
+        5_000,
+      ),
+      runtime.execute(
+        `text(await tools.shell({ command: "second" }));`,
+        { ...context, parentToolCallId: "exec_2" },
+        5_000,
+      ),
+    ]);
+
+    expect([first.status, second.status].sort()).toEqual([
+      "completed",
+      "failed",
+    ]);
+    expect(`${first.output}\n${second.output}`).toContain(
+      "single-lane across exec cells",
+    );
+    expect(maxActive).toBe(1);
+    await runtime.dispose();
+  });
+
   test("keeps the VM alive until an in-flight host call settles after Promise.all rejects", async () => {
     let firstCompleted = false;
     const runtime = createRuntime({
@@ -227,6 +267,30 @@ describe("CodeModeRuntime", () => {
 
     expect(first.output).toBe("undefined\nundefined");
     expect(second.output).toBe('{"value":42}');
+    await runtime.dispose();
+  });
+
+  test("provides bounded base64, Buffer, require, and timer compatibility", async () => {
+    const runtime = createRuntime({});
+    const result = await runtime.execute(
+      `
+        const { Buffer: RequiredBuffer } = require("buffer");
+        text(Buffer.from("hello").toString("base64"));
+        text(RequiredBuffer.from("aGVsbG8=", "base64").toString("utf8"));
+        text(btoa("Apex"));
+        text(atob("QXBleA=="));
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        await require("timers/promises").setTimeout(5);
+        text("timer-complete");
+      `,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toBe(
+      "aGVsbG8=\nhello\nQXBleA==\nApex\ntimer-complete",
+    );
     await runtime.dispose();
   });
 
