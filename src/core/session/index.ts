@@ -786,34 +786,33 @@ export function hasOperatorState(session: SessionInfo): boolean {
 }
 
 /**
- * Maximum number of model messages to pass to the AI when resuming a session.
+ * Target number of model messages to pass to the AI when resuming a session.
  *
  * Keeps enough context for the agent to continue effectively without hitting
  * the model's context window and triggering an immediate summarization cycle.
- * The value is conservative; tool-heavy conversations can produce many messages
- * per logical "turn" (assistant → tool × N), so 200 messages ≈ 20–50 turns.
+ * This is a replay-size target, not a token or turn budget. A single tool-heavy
+ * turn can exceed it.
  */
-const MAX_RESUME_MESSAGES = 200;
+const RESUME_MESSAGE_WINDOW = 200;
 
 /**
  * Return the tail subset of model messages suitable for resuming an agent.
  *
  * The full message array may be very long after an extended session. Feeding
  * it all back to the model on resume would immediately exceed the context
- * window and force an expensive summarization pass. Instead we keep only the
- * most recent messages, cutting at a clean "user" message boundary so that no
- * tool-call / tool-result pairs are orphaned.
+ * window and force an expensive summarization pass. Instead we prefer the most
+ * recent messages, cutting at a clean "user" message boundary so that no
+ * tool-call / tool-result pairs are orphaned. When the latest turn is larger
+ * than the target window, preserving the complete turn takes precedence.
  */
 export function getResumeMessages(
   messages: ModelMessage[],
-  limit: number = MAX_RESUME_MESSAGES,
+  limit: number = RESUME_MESSAGE_WINDOW,
 ): ModelMessage[] {
   if (messages.length <= limit) return messages;
 
-  // Walk backward from `limit` positions before the end to find the nearest
-  // "user" message — that is a safe boundary because every tool-call /
-  // tool-result exchange that follows it will be complete.
-  let cutIndex = messages.length - limit;
+  const roughCutIndex = messages.length - limit;
+  let cutIndex = roughCutIndex;
 
   // Search forward from the rough cut point for the next user message.
   // This guarantees we don't start mid-turn (e.g. on an orphaned tool
@@ -823,9 +822,13 @@ export function getResumeMessages(
     cutIndex++;
   }
 
-  // If we couldn't find a user message (unlikely), fall back to the raw cut.
+  // A single autonomous turn can exceed the target window. In that case,
+  // include the preceding user message rather than splitting the turn.
   if (cutIndex >= messages.length) {
-    cutIndex = messages.length - limit;
+    cutIndex = roughCutIndex;
+    while (cutIndex > 0 && messages[cutIndex].role !== "user") {
+      cutIndex--;
+    }
   }
 
   return messages.slice(cutIndex);
