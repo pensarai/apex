@@ -61,7 +61,10 @@ export interface PensarModelConfig {
    * If provided, this is called instead of using `apiKey` directly,
    * allowing transparent token refresh for WorkOS auth.
    */
-  getToken?: () => Promise<{ token: string; type: "workos" | "legacy" } | null>;
+  getToken?: (options?: {
+    forceRefresh?: boolean;
+    rejectedToken?: string;
+  }) => Promise<{ token: string; type: "workos" | "legacy" } | null>;
 }
 
 /**
@@ -88,13 +91,16 @@ export function createPensarModel(
   /**
    * Build request headers, resolving the token via getToken() if available.
    */
-  async function buildHeaders(): Promise<Record<string, string>> {
+  async function buildHeaders(options?: {
+    forceRefresh?: boolean;
+    rejectedToken?: string;
+  }): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
 
     if (config.getToken) {
-      const result = await config.getToken();
+      const result = await config.getToken(options);
       if (!result) {
         logError("buildHeaders: getToken() returned null — auth failed");
         throw new Error(
@@ -264,31 +270,47 @@ export function createPensarModel(
         modelId: bedrockModelId,
         body,
       });
-      const headers = await buildHeaders();
-
-      if (config.signingKey) {
-        const sig = signGatewayRequest(
-          config.signingKey,
-          bedrockModelId,
-          serializedBody,
-        );
-        headers["X-Pensar-Signature"] = sig.signature;
-        headers["X-Pensar-Timestamp"] = sig.timestamp;
-        headers["X-Pensar-Nonce"] = sig.nonce;
-      }
-
-      log(`  headers: ${Object.keys(headers).join(", ")}`);
-
       const fetchSignal = buildStreamingFetchSignal(options.abortSignal);
 
-      let response: Response;
-      try {
-        response = await fetch(url, {
+      const sendRequest = async (authOptions?: {
+        forceRefresh?: boolean;
+        rejectedToken?: string;
+      }) => {
+        const headers = await buildHeaders(authOptions);
+        if (config.signingKey) {
+          const sig = signGatewayRequest(
+            config.signingKey,
+            bedrockModelId,
+            serializedBody,
+          );
+          headers["X-Pensar-Signature"] = sig.signature;
+          headers["X-Pensar-Timestamp"] = sig.timestamp;
+          headers["X-Pensar-Nonce"] = sig.nonce;
+        }
+        log(`  headers: ${Object.keys(headers).join(", ")}`);
+
+        const response = await fetch(url, {
           method: "POST",
           headers,
           signal: fetchSignal,
           body: serializedBody,
         });
+        return { headers, response };
+      };
+
+      let requestResult: Awaited<ReturnType<typeof sendRequest>>;
+      try {
+        requestResult = await sendRequest();
+        if (requestResult.response.status === 401 && config.getToken) {
+          const rejectedToken = requestResult.headers.Authorization?.replace(
+            /^Bearer\s+/,
+            "",
+          );
+          requestResult = await sendRequest({
+            forceRefresh: true,
+            rejectedToken,
+          });
+        }
       } catch (err) {
         logError(`  SSE fetch failed (${Date.now() - startTime}ms):`, err);
         throw new Error(
@@ -296,6 +318,7 @@ export function createPensarModel(
           { cause: err },
         );
       }
+      const { response } = requestResult;
 
       const contentType = response.headers.get("content-type") ?? "unknown";
       const transferEncoding =

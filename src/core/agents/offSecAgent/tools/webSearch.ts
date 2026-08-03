@@ -135,7 +135,7 @@ COMMON SEARCH PATTERNS:
         const body = JSON.stringify({ query });
 
         // API key mode: authenticate directly without token exchange or signing
-        if (cfg.pensarAPIKey && !cfg.accessToken) {
+        if (cfg.pensarAPIKey && !cfg.workosSession) {
           // biome-ignore lint/style/noRestrictedGlobals: Pensar Console (not the pentest target); must not pass through targetFetch.
           const response = await fetch(`${apiUrl}/agents/web_search`, {
             method: "POST",
@@ -149,10 +149,12 @@ COMMON SEARCH PATTERNS:
           return handleSearchResponse(response);
         }
 
-        const tokenResult = await ensureValidToken({
+        let tokenResult = await ensureValidToken({
           accessToken: cfg.accessToken,
           refreshToken: cfg.refreshToken,
           pensarAPIKey: cfg.pensarAPIKey,
+          workosSession: cfg.workosSession,
+          credentialBackend: cfg.credentialBackend,
         });
 
         if (!tokenResult) {
@@ -182,25 +184,47 @@ COMMON SEARCH PATTERNS:
           };
         }
 
-        const { signature, timestamp, nonce } = signGatewayRequest(
-          cfg.gatewaySigningKey,
-          "web_search",
-          body,
-        );
+        const workspaceId = cfg.workspaceId;
+        const gatewaySigningKey = cfg.gatewaySigningKey;
 
-        // biome-ignore lint/style/noRestrictedGlobals: Pensar Console (not the pentest target); must not pass through targetFetch.
-        const response = await fetch(`${apiUrl}/agents/web_search`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${tokenResult.token}`,
-            "X-Workspace-Id": cfg.workspaceId,
-            "X-Pensar-Timestamp": timestamp,
-            "X-Pensar-Nonce": nonce,
-            "X-Pensar-Signature": signature,
-          },
-          body,
-        });
+        const sendRequest = (token: string) => {
+          const { signature, timestamp, nonce } = signGatewayRequest(
+            gatewaySigningKey,
+            "web_search",
+            body,
+          );
+          // biome-ignore lint/style/noRestrictedGlobals: Pensar Console (not the pentest target); must not pass through targetFetch.
+          return fetch(`${apiUrl}/agents/web_search`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+              "X-Workspace-Id": workspaceId,
+              "X-Pensar-Timestamp": timestamp,
+              "X-Pensar-Nonce": nonce,
+              "X-Pensar-Signature": signature,
+            },
+            body,
+          });
+        };
+
+        let response = await sendRequest(tokenResult.token);
+        if (response.status === 401 && tokenResult.type === "workos") {
+          const refreshed = await ensureValidToken(
+            {
+              accessToken: cfg.accessToken,
+              refreshToken: cfg.refreshToken,
+              pensarAPIKey: cfg.pensarAPIKey,
+              workosSession: cfg.workosSession,
+              credentialBackend: cfg.credentialBackend,
+            },
+            { forceRefresh: true, rejectedToken: tokenResult.token },
+          );
+          if (refreshed) {
+            tokenResult = refreshed;
+            response = await sendRequest(tokenResult.token);
+          }
+        }
 
         return handleSearchResponse(response);
       } catch (error: unknown) {

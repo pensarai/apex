@@ -287,27 +287,30 @@ function AppContent({
       },
     );
 
-    // Check if auth token needs refresh
+    // Restore WorkOS auth in the background. Successful refreshes stay hidden;
+    // only a genuinely expired/revoked session asks the user to reconnect.
     const checkAuthToken = async () => {
-      const { isTokenExpired, isConnected } = await import("../core/auth");
-      // Only show toast if access token is expired AND there's no recovery path.
-      // ensureValidToken() can recover via refresh token OR fall back to pensarAPIKey,
-      // so we only warn when both are unavailable.
-      if (
-        isConnected(config.data) &&
-        config.data.accessToken &&
-        isTokenExpired(config.data.accessToken, 60) &&
-        !config.data.refreshToken &&
-        !config.data.pensarAPIKey
-      ) {
-        toast(
-          "Your Pensar Console session has expired. Run /login to refresh.",
-          "warn",
-          8000,
-        );
+      const { AuthSessionExpiredError, ensureValidToken } = await import(
+        "../core/auth"
+      );
+      const hasWorkOSSession = Boolean(
+        config.data.workosSession ||
+          config.data.refreshToken ||
+          config.data.accessToken,
+      );
+      if (!hasWorkOSSession) return;
+
+      try {
+        await ensureValidToken(config.data);
+        await config.reload();
+      } catch (error) {
+        if (error instanceof AuthSessionExpiredError) {
+          await config.reload();
+          toast(error.message, "warn", 8000);
+        }
       }
     };
-    checkAuthToken();
+    void checkAuthToken();
   }, []);
 
   useEffect(() => {

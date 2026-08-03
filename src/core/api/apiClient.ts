@@ -9,14 +9,26 @@ import { ensureValidToken } from "../auth";
 import { config } from "../config";
 import { getPensarApiUrl } from "./constants";
 
-async function getAuthHeaders(): Promise<Record<string, string>> {
+async function getAuthHeaders(options?: {
+  forceRefresh?: boolean;
+  rejectedToken?: string;
+}): Promise<{
+  headers: Record<string, string>;
+  token: string;
+  type: "workos" | "legacy";
+}> {
   const cfg = await config.get();
 
-  const validToken = await ensureValidToken({
-    accessToken: cfg.accessToken,
-    refreshToken: cfg.refreshToken,
-    pensarAPIKey: cfg.pensarAPIKey,
-  });
+  const validToken = await ensureValidToken(
+    {
+      accessToken: cfg.accessToken,
+      refreshToken: cfg.refreshToken,
+      pensarAPIKey: cfg.pensarAPIKey,
+      workosSession: cfg.workosSession,
+      credentialBackend: cfg.credentialBackend,
+    },
+    options,
+  );
 
   if (!validToken) {
     throw new Error(
@@ -33,7 +45,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     headers["X-Workspace-Id"] = cfg.workspaceId;
   }
 
-  return headers;
+  return { headers, token: validToken.token, type: validToken.type };
 }
 
 export async function apiRequest<T>(
@@ -42,15 +54,22 @@ export async function apiRequest<T>(
   body?: unknown,
 ): Promise<T> {
   const baseUrl = getPensarApiUrl();
-  const headers = await getAuthHeaders();
+  let auth = await getAuthHeaders();
   const url = `${baseUrl}${path}`;
 
-  const init: RequestInit = { method, headers };
+  const init: RequestInit = { method, headers: auth.headers };
   if (body !== undefined) {
     init.body = JSON.stringify(body);
   }
 
-  const response = await fetch(url, init);
+  let response = await fetch(url, init);
+  if (response.status === 401 && auth.type === "workos") {
+    auth = await getAuthHeaders({
+      forceRefresh: true,
+      rejectedToken: auth.token,
+    });
+    response = await fetch(url, { ...init, headers: auth.headers });
+  }
 
   if (!response.ok) {
     const text = await response.text();
