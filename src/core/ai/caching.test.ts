@@ -36,6 +36,10 @@ describe("cacheBreakpointFor", () => {
     "us.amazon.nova-lite-v1:0",
     "amazon.titan-text-express-v1",
     "anthropic.claude-v2",
+    "anthropic.claude-v2:1",
+    "anthropic.claude-instant-v1",
+    "global.anthropic.claude-3-opus-20240229-v1:0",
+    "us.anthropic.claude-3-haiku-20240307-v1:0",
   ])("returns undefined for Bedrock model %s", (model) => {
     // Bedrock rejects a cache point outright on models that don't support
     // prompt caching, so these must stay uncached rather than 400.
@@ -116,6 +120,25 @@ describe("withCachedLastMessage", () => {
     expect(result[0].providerOptions).toEqual({
       anthropic: { signature: "abc" },
       ...BEDROCK_BREAKPOINT,
+    });
+  });
+
+  it("keeps sibling options within the same provider namespace", () => {
+    const result = withCachedLastMessage(
+      [
+        {
+          role: "user",
+          content: "hi",
+          providerOptions: { bedrock: { citations: { enabled: true } } },
+        },
+      ],
+      BEDROCK_BREAKPOINT,
+    );
+    expect(result[0].providerOptions).toEqual({
+      bedrock: {
+        citations: { enabled: true },
+        cachePoint: { type: "default" },
+      },
     });
   });
 

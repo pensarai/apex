@@ -20,14 +20,24 @@ const BEDROCK_CACHE_POINT: CacheBreakpoint = {
 };
 
 /**
+ * Legacy Claude on Bedrock — v2, instant, and the Claude 3 line — predates
+ * prompt caching; 3.5 onward supports it. Kept as a deny-list so a new Claude
+ * generation picks caching up the moment `generate:models` adds it, rather than
+ * silently losing it again, which is the failure this whole fix is about.
+ */
+const BEDROCK_UNCACHEABLE_CLAUDE =
+  /^claude-(?:v2|instant|3-(?:opus|sonnet|haiku))/;
+
+/**
  * Bedrock *rejects* a cache point on models that don't support prompt caching
  * ("You invoked an unsupported model or your request did not allow prompt
- * caching" — observed on `us.deepseek.r1-v1:0`), so this is an allowlist rather
- * than best-effort. Models outside it keep running uncached instead of failing.
+ * caching" — observed on `us.deepseek.r1-v1:0`), so this gate is load-bearing:
+ * non-Claude Bedrock models must stay uncached rather than fail.
  */
 function bedrockSupportsCachePoint(modelId: string): boolean {
+  // Strip the cross-region inference-profile prefix (`global.`, `us.`, `eu.`, …).
   const base = modelId.replace(/^(?:[a-z]{2,6}\.)?anthropic\./, "");
-  return /^claude-(?:3-7-sonnet|sonnet-4|opus-4|haiku-4)/.test(base);
+  return base.startsWith("claude-") && !BEDROCK_UNCACHEABLE_CLAUDE.test(base);
 }
 
 /**
@@ -89,13 +99,13 @@ export function withCachedLastMessage(
 
   return messages.map((msg, i) => {
     if (i === messages.length - 1) {
-      return {
-        ...msg,
-        providerOptions: {
-          ...msg.providerOptions,
-          ...breakpoint,
-        },
-      };
+      // Merge inside the provider's namespace — a top-level spread would drop
+      // any sibling options the message already carries for that provider.
+      const merged = { ...msg.providerOptions };
+      for (const [provider, options] of Object.entries(breakpoint)) {
+        merged[provider] = { ...merged[provider], ...options };
+      }
+      return { ...msg, providerOptions: merged };
     }
     return msg;
   });
