@@ -445,6 +445,22 @@ export interface SpecializedAgentInput {
   /** In-memory credential store for secret-free agent prompts */
   credentialManager?: CredentialManager;
 
+  /**
+   * When set, tools route execution through this sandbox instead of running
+   * locally. Shared by every specialized agent so the runtime can forward it
+   * uniformly — individual agents no longer re-declare it.
+   */
+  sandbox?: UnifiedSandbox;
+
+  /** Provider middleware applied only to this agent's model calls. Forwarded to the runtime. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+
+  /** Per-run usage recorder. Forwarded to the runtime. */
+  usageRecorder?: UsageRecorder;
+
+  /** Factory for streamed message/part ids. Forwarded to the runtime. */
+  streamIdFactory?: StreamIdFactory;
+
   /** Override the default stop condition */
   stopWhen?: StopCondition<ToolSet>;
 

@@ -7,7 +7,7 @@ import type {
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { AgentEventBus } from "../../../eventBus";
 import type { SessionInfo } from "../../../session";
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
+import { AgentRuntime, defineAgent } from "../../offSecAgent";
 import type { UnifiedSandbox } from "../../offSecAgent/tools";
 import { detectOSAndEnhancePrompt } from "../utils";
 import {
@@ -49,29 +49,27 @@ const FINDING_JUDGE_ACTIVE_TOOLS = [
   "response",
 ] as const;
 
-export class FindingJudgeAgent extends OffensiveSecurityAgent<FindingJudgeAgentOutput> {
+const FINDING_JUDGE_DEFINITION = defineAgent<FindingJudgeAgentOutput>({
+  type: "finding-judge",
+  systemPrompt: () => detectOSAndEnhancePrompt(FINDING_JUDGE_SYSTEM_PROMPT),
+  activeTools: [...FINDING_JUDGE_ACTIVE_TOOLS],
+  resultSchema: FindingJudgeOutputSchema,
+  stopWhen: stepCountIs(60),
+});
+
+export class FindingJudgeAgent extends AgentRuntime<FindingJudgeAgentOutput> {
   constructor(opts: FindingJudgeAgentInput) {
-    const target =
-      opts.finding.target ?? opts.target ?? opts.session.targets[0];
+    const { finding, target: targetOpt, subagentId, subagentName, ...base } =
+      opts;
+    const target = finding.target ?? targetOpt ?? base.session.targets[0];
 
     super({
-      system: detectOSAndEnhancePrompt(FINDING_JUDGE_SYSTEM_PROMPT),
-      prompt: buildFindingJudgePrompt({ ...opts.finding, target }),
-      model: opts.model,
-      session: opts.session,
+      ...base,
+      definition: FINDING_JUDGE_DEFINITION,
       target,
-      authConfig: opts.authConfig,
-      abortSignal: opts.abortSignal,
-      eventBus: opts.eventBus,
-      sandbox: opts.sandbox,
-      enableThinking: opts.enableThinking,
-      thinkingEffort: opts.thinkingEffort,
-      openAIReasoningEffort: opts.openAIReasoningEffort,
-      subagentId: opts.subagentId ?? "finding-judge",
-      subagentName: opts.subagentName ?? "Finding Judge",
-      activeTools: [...FINDING_JUDGE_ACTIVE_TOOLS],
-      responseSchema: FindingJudgeOutputSchema,
-      stopWhen: stepCountIs(60),
+      prompt: buildFindingJudgePrompt({ ...finding, target }),
+      subagentId: subagentId ?? "finding-judge",
+      subagentName: subagentName ?? "Finding Judge",
     });
   }
 }

@@ -8,6 +8,14 @@ export type { AgentEventMap } from "../../eventBus";
 // ---------------------------------------------------------------------------
 export { AgentEventBus } from "../../eventBus";
 export { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
+export {
+  type AgentDefinition,
+  type AgentDefinitionContext,
+  type Contextual,
+  defineAgent,
+  resolveContextual,
+} from "./defineAgent";
+export { AgentRuntime, type AgentRuntimeInput } from "./agentRuntime";
 // ---------------------------------------------------------------------------
 // System prompts
 // ---------------------------------------------------------------------------

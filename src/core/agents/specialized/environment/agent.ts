@@ -1,4 +1,4 @@
-import { OffensiveSecurityAgent } from "../../offSecAgent";
+import { AgentRuntime, defineAgent } from "../../offSecAgent";
 import {
   buildEnvironmentPrompt,
   buildEnvironmentSystemPrompt,
@@ -8,6 +8,24 @@ import {
   type EnvironmentResult,
   EnvironmentResultSchema,
 } from "./types";
+
+const ENVIRONMENT_DEFINITION = defineAgent<EnvironmentResult>({
+  type: "environment",
+  systemPrompt: () => buildEnvironmentSystemPrompt(),
+  activeTools: [
+    "read_file",
+    "list_files",
+    "grep",
+    "create_file",
+    "update_file",
+    "execute_command",
+    "response",
+    // Web search tools — look up tool installation, environment configuration docs
+    "web_search",
+    "get_page",
+  ],
+  resultSchema: EnvironmentResultSchema,
+});
 
 /**
  * A dev-environment setup agent that starts and validates development
@@ -41,53 +59,14 @@ import {
  * // result.url, result.status, result.stepsTaken, result.authenticationDetails
  * ```
  */
-export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> {
+export class EnvironmentAgent extends AgentRuntime<EnvironmentResult> {
   constructor(opts: EnvironmentAgentInput) {
-    const {
-      model,
-      cwd,
-      config,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      subagentId,
-      sandbox,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-    } = opts;
+    const { cwd, config, ...base } = opts;
 
     super({
-      system: buildEnvironmentSystemPrompt(),
+      ...base,
+      definition: ENVIRONMENT_DEFINITION,
       prompt: buildEnvironmentPrompt(cwd, config),
-      model,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      subagentId,
-      sandbox,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-
-      activeTools: [
-        "read_file",
-        "list_files",
-        "grep",
-        "create_file",
-        "update_file",
-        "execute_command",
-        "response",
-        // Web search tools — look up tool installation, environment configuration docs
-        "web_search",
-        "get_page",
-      ],
-
-      responseSchema: EnvironmentResultSchema,
     });
   }
 }

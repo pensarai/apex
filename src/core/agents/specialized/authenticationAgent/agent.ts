@@ -12,7 +12,7 @@ import type { AgentEventBus } from "../../../eventBus";
 import { createLogger } from "../../../logger/structured";
 import type { SessionInfo } from "../../../session";
 import { scopedLogger } from "../../../util/lazyLogger";
-import { OffensiveSecurityAgent } from "../../offSecAgent";
+import { AgentRuntime, defineAgent } from "../../offSecAgent";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import type { AuthBarrier } from "./types";
@@ -143,85 +143,59 @@ export interface AuthenticationResult {
  * });
  * ```
  */
-export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationResult> {
-  constructor(opts: AuthenticationAgentInput) {
-    const {
-      model,
-      target,
-      session,
-      authHints,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      subagentId,
-      context,
-      environmentVariables,
-      secretValues,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-    } = opts;
+const AUTHENTICATION_DEFINITION = defineAgent<AuthenticationResult>({
+  type: "authentication",
+  systemPrompt: () => detectOSAndEnhancePrompt(AUTH_SUBAGENT_SYSTEM_PROMPT),
+  activeTools: [
+    // Auth flow tools
+    "execute_command",
+    "complete_authentication",
+    // Browser automation for login forms, OAuth, SPA auth
+    "browser_navigate",
+    "browser_snapshot",
+    "browser_screenshot",
+    "browser_click",
+    "browser_fill",
+    "browser_evaluate",
+    "browser_console",
+    "browser_get_cookies",
+    // Email tools (filtered out by base class when no inboxes configured)
+    "email_list_inboxes",
+    "email_list_messages",
+    "email_search_messages",
+    "email_get_message",
+    // Send email (filtered out by base class when no SMTP configured)
+    "send_email",
+    // Mobile OTP list (filtered out by base class when no sms-passwordless cred)
+    "sms_list_messages",
+    // Web search tools — look up auth bypass techniques, default credentials
+    "web_search",
+    "get_page",
+  ],
+  stopWhen: hasToolCall("complete_authentication"),
+  resolveResult: (_streamResult, ctx) =>
+    loadAuthResult(join(ctx.session.rootPath, "auth", "auth-data.json")),
+});
 
-    const cm = session.credentialManager;
+export class AuthenticationAgent extends AgentRuntime<AuthenticationResult> {
+  constructor(opts: AuthenticationAgentInput) {
+    const { target, authHints, context, ...base } = opts;
+
+    const cm = base.session.credentialManager;
 
     super({
-      system: detectOSAndEnhancePrompt(AUTH_SUBAGENT_SYSTEM_PROMPT),
+      ...base,
+      definition: AUTHENTICATION_DEFINITION,
+      target,
       prompt: buildAuthPrompt(
         target,
         authHints,
         cm,
         context,
-        environmentVariables ? Object.keys(environmentVariables) : undefined,
+        base.environmentVariables
+          ? Object.keys(base.environmentVariables)
+          : undefined,
       ),
-      model,
-      session,
-      target,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      subagentId,
-      subagentName: opts.subagentName,
-      environmentVariables,
-      secretValues,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-      toolChoice: "auto",
-      activeTools: [
-        // Auth flow tools
-        "execute_command",
-        "complete_authentication",
-        // Browser automation for login forms, OAuth, SPA auth
-        "browser_navigate",
-        "browser_snapshot",
-        "browser_screenshot",
-        "browser_click",
-        "browser_fill",
-        "browser_evaluate",
-        "browser_console",
-        "browser_get_cookies",
-        // Email tools (filtered out by base class when no inboxes configured)
-        "email_list_inboxes",
-        "email_list_messages",
-        "email_search_messages",
-        "email_get_message",
-        // Send email (filtered out by base class when no SMTP configured)
-        "send_email",
-        // Mobile OTP list (filtered out by base class when no sms-passwordless cred)
-        "sms_list_messages",
-        // Web search tools — look up auth bypass techniques, default credentials
-        "web_search",
-        "get_page",
-      ],
-
-      stopWhen: hasToolCall("complete_authentication"),
-
-      resolveResult: () => {
-        const authDataPath = join(session.rootPath, "auth", "auth-data.json");
-        return loadAuthResult(authDataPath);
-      },
     });
   }
 }

@@ -1,6 +1,7 @@
 import { hasToolCall, tool } from "ai";
 import {
-  OffensiveSecurityAgent,
+  AgentRuntime,
+  defineAgent,
   type SpecializedAgentInput,
 } from "../../offSecAgent";
 import { WHITEBOX_ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
@@ -8,6 +9,51 @@ import {
   type WhiteboxAttackSurfaceResult,
   WhiteboxAttackSurfaceResultSchema,
 } from "./types";
+
+const WHITEBOX_FALLBACK_RESULT: WhiteboxAttackSurfaceResult = {
+  repoType: "unknown",
+  packageManager: "unknown",
+  apps: [],
+  summary: {
+    totalApps: 0,
+    totalPages: 0,
+    totalApiEndpoints: 0,
+    totalPentestObjectives: 0,
+  },
+};
+
+const WHITEBOX_DEFINITION = defineAgent<WhiteboxAttackSurfaceResult>({
+  type: "whitebox-attack-surface",
+  systemPrompt: WHITEBOX_ATTACK_SURFACE_SYSTEM_PROMPT,
+  activeTools: [
+    // Filesystem tools — for Phase 1 repo identification
+    "read_file",
+    "list_files",
+    "grep",
+    "document_app",
+    "document_endpoint",
+    // Orchestration — for Phase 2 app analysis
+    "spawn_coding_agent",
+    // Response tool (injected via extraTools)
+    "submit_results",
+  ],
+  stopWhen: hasToolCall("submit_results"),
+  extraTools: (ctx) => ({
+    submit_results: tool({
+      description: `Submit the final whitebox attack surface analysis results.
+
+Call this ONCE at the end with your complete structured findings.
+This ends the agent run — make sure all data is included.`,
+      inputSchema: WhiteboxAttackSurfaceResultSchema,
+      execute: async (results) => {
+        ctx.capturedResult.current = results;
+        return { success: true, message: "Results submitted." };
+      },
+    }),
+  }),
+  resolveResult: (_streamResult, ctx) =>
+    ctx.capturedResult.current ?? WHITEBOX_FALLBACK_RESULT,
+});
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,91 +97,14 @@ export interface WhiteboxAttackSurfaceAgentInput extends SpecializedAgentInput {
  * console.log(`Found ${result.summary.totalApiEndpoints} API endpoints`);
  * ```
  */
-export class WhiteboxAttackSurfaceAgent extends OffensiveSecurityAgent<WhiteboxAttackSurfaceResult> {
+export class WhiteboxAttackSurfaceAgent extends AgentRuntime<WhiteboxAttackSurfaceResult> {
   constructor(opts: WhiteboxAttackSurfaceAgentInput) {
-    const {
-      model,
-      codebasePath,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      subagentId,
-      attackSurfaceRegistry,
-      domains,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-    } = opts;
-
-    // Closure variable that the response tool writes to
-    let capturedResult: WhiteboxAttackSurfaceResult | null = null;
-
-    // Build the structured response tool
-    const submitResultsTool = tool({
-      description: `Submit the final whitebox attack surface analysis results.
-
-Call this ONCE at the end with your complete structured findings.
-This ends the agent run — make sure all data is included.`,
-      inputSchema: WhiteboxAttackSurfaceResultSchema,
-      execute: async (results) => {
-        capturedResult = results;
-        return { success: true, message: "Results submitted." };
-      },
-    });
+    const { codebasePath, domains, ...base } = opts;
 
     super({
-      system: WHITEBOX_ATTACK_SURFACE_SYSTEM_PROMPT,
-      prompt: buildPrompt(codebasePath, domains, session.config?.prompt),
-      model,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      subagentId,
-      subagentName: opts.subagentName,
-      attackSurfaceRegistry,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-      activeTools: [
-        // Filesystem tools — for Phase 1 repo identification
-        "read_file",
-        "list_files",
-        "grep",
-        "document_app",
-        "document_endpoint",
-        // Orchestration — for Phase 2 app analysis
-        "spawn_coding_agent",
-        // Response tool (injected via extraTools)
-        "submit_results",
-      ],
-
-      extraTools: {
-        submit_results: submitResultsTool,
-      },
-
-      stopWhen: hasToolCall("submit_results"),
-
-      resolveResult: () => {
-        if (capturedResult) {
-          return capturedResult;
-        }
-        // Fallback if the agent didn't call submit_results
-        return {
-          repoType: "unknown",
-          packageManager: "unknown",
-          apps: [],
-          summary: {
-            totalApps: 0,
-            totalPages: 0,
-            totalApiEndpoints: 0,
-            totalPentestObjectives: 0,
-          },
-        };
-      },
+      ...base,
+      definition: WHITEBOX_DEFINITION,
+      prompt: buildPrompt(codebasePath, domains, base.session.config?.prompt),
     });
   }
 }

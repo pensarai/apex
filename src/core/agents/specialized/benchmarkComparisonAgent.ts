@@ -9,7 +9,7 @@ import type {
   ThinkingEffort,
 } from "../../ai";
 import type { SessionInfo } from "../../session";
-import { OffensiveSecurityAgent } from "../offSecAgent";
+import { AgentRuntime, defineAgent } from "../offSecAgent";
 import type { ComparisonResult } from "./benchmark";
 
 // ---------------------------------------------------------------------------
@@ -66,54 +66,38 @@ export interface BenchmarkComparisonResult {
  *
  * `consume()` returns a {@link BenchmarkComparisonResult}.
  */
-export class BenchmarkComparisonAgent extends OffensiveSecurityAgent<BenchmarkComparisonResult> {
+const BENCHMARK_COMPARISON_DEFINITION = defineAgent<BenchmarkComparisonResult>({
+  type: "benchmark-comparison",
+  systemPrompt: () => COMPARISON_SYSTEM_PROMPT,
+  activeTools: ["provide_comparison_results"],
+  stopWhen: [hasToolCall("provide_comparison_results"), stepCountIs(10000)],
+  resolveResult: (_streamResult, ctx) => {
+    const resultsPath = join(ctx.session.rootPath, "comparison-results.json");
+    let comparison: ComparisonResult | null = null;
+    if (existsSync(resultsPath)) {
+      try {
+        comparison = JSON.parse(
+          readFileSync(resultsPath, "utf-8"),
+        ) as ComparisonResult;
+      } catch {
+        // May not have been written
+      }
+    }
+    return { comparison, resultsPath };
+  },
+});
+
+export class BenchmarkComparisonAgent extends AgentRuntime<BenchmarkComparisonResult> {
   constructor(opts: BenchmarkComparisonAgentInput) {
-    const {
-      model,
-      repoPath,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-    } = opts;
+    const { repoPath, ...base } = opts;
 
     const expectedResults = loadExpectedResults(repoPath);
-    const actualFindings = loadActualFindings(session.rootPath);
-    const resultsPath = join(session.rootPath, "comparison-results.json");
+    const actualFindings = loadActualFindings(base.session.rootPath);
 
     super({
-      system: COMPARISON_SYSTEM_PROMPT,
+      ...base,
+      definition: BENCHMARK_COMPARISON_DEFINITION,
       prompt: buildComparisonPrompt(expectedResults, actualFindings),
-      model,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-
-      activeTools: ["provide_comparison_results"],
-
-      stopWhen: [hasToolCall("provide_comparison_results"), stepCountIs(10000)],
-      toolChoice: "auto",
-
-      resolveResult: () => {
-        let comparison: ComparisonResult | null = null;
-        if (existsSync(resultsPath)) {
-          try {
-            comparison = JSON.parse(
-              readFileSync(resultsPath, "utf-8"),
-            ) as ComparisonResult;
-          } catch {
-            // May not have been written
-          }
-        }
-        return { comparison, resultsPath };
-      },
     });
   }
 }

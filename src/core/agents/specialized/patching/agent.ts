@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { OffensiveSecurityAgent } from "../../offSecAgent";
+import { AgentRuntime, defineAgent } from "../../offSecAgent";
 import { buildPatchingPrompt, buildSystemPrompt } from "./prompts";
 import {
   type PatchingAgentInput,
@@ -94,42 +94,23 @@ export function readAgentsMd(cwd: string): string | undefined {
  * });
  * ```
  */
-export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
+const PATCHING_DEFINITION = defineAgent<PatchResult>({
+  type: "patching",
+  systemPrompt: () => buildSystemPrompt(),
+  activeTools: [...PATCHING_ACTIVE_TOOLS],
+  resultSchema: PatchResultSchema,
+});
+
+export class PatchingAgent extends AgentRuntime<PatchResult> {
   constructor(opts: PatchingAgentInput) {
-    const {
-      model,
-      cwd,
-      vulnerability,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      sandbox,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-    } = opts;
+    const { cwd, vulnerability, ...base } = opts;
 
     const agentsMd = readAgentsMd(cwd);
 
     super({
-      system: buildSystemPrompt(),
+      ...base,
+      definition: PATCHING_DEFINITION,
       prompt: buildPatchingPrompt(vulnerability, cwd, agentsMd),
-      model,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      sandbox,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-
-      activeTools: [...PATCHING_ACTIVE_TOOLS],
-
-      responseSchema: PatchResultSchema,
     });
   }
 }

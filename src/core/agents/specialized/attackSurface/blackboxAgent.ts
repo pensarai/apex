@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { hasToolCall, stepCountIs } from "ai";
 import type { SessionInfo } from "../../../session";
 import {
-  OffensiveSecurityAgent,
+  AgentRuntime,
+  defineAgent,
   type SpecializedAgentInput,
 } from "../../offSecAgent";
 import { detectOSAndEnhancePrompt } from "../utils";
@@ -77,44 +78,85 @@ export interface AttackSurfaceResult {
  * console.log(`Identified ${targets.length} targets for deep testing`);
  * ```
  */
-export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSurfaceResult> {
+const BLACKBOX_DEFINITION = defineAgent<AttackSurfaceResult>({
+  type: "blackbox-attack-surface",
+  systemPrompt: () => detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
+  activeTools: [
+    // Core recon tools
+    "execute_command",
+    "document_app",
+    "document_endpoint",
+    "create_attack_surface_report",
+    // Browser automation for SPAs, JS-heavy apps, and auth flows
+    "browser_navigate",
+    "browser_snapshot",
+    "browser_screenshot",
+    "browser_click",
+    "browser_fill",
+    "browser_evaluate",
+    "browser_console",
+    "browser_get_cookies",
+    // Email tools (filtered out by base class when no inboxes configured)
+    "email_list_inboxes",
+    "email_list_messages",
+    "email_search_messages",
+    "email_get_message",
+    // Send email (filtered out by base class when no SMTP configured)
+    "send_email",
+    // Mobile OTP list (filtered out by base class when no sms-passwordless cred)
+    "sms_list_messages",
+    // Web search tools — research target technologies, find known vulnerabilities
+    "web_search",
+    "get_page",
+  ],
+  stopWhen: [hasToolCall("create_attack_surface_report"), stepCountIs(10_000)],
+  resolveResult: (_streamResult, ctx) => {
+    const resultsPath = join(
+      ctx.session.rootPath,
+      "attack-surface-results.json",
+    );
+    const assetsPath = join(ctx.session.rootPath, "assets");
+    let results: AttackSurfaceAnalysisResults | null = null;
+    let targets: PentestTarget[] = [];
+
+    if (existsSync(resultsPath)) {
+      try {
+        results = loadAttackSurfaceResults(resultsPath);
+        targets = results.targets || [];
+      } catch {
+        // Report may not have been written yet
+      }
+    }
+
+    return { results, targets, resultsPath, assetsPath };
+  },
+});
+
+export class BlackboxAttackSurfaceAgent extends AgentRuntime<AttackSurfaceResult> {
   constructor(opts: AttackSurfaceAgentInput) {
     const {
-      model,
-      session,
-      authConfig,
+      target: targetOpt,
+      cwd,
+      surfaceIntegrationEnabled: _surfaceIntegrationEnabled,
       onStepFinish,
-      onCacheMetrics,
-      abortSignal,
-      attackSurfaceRegistry,
-      eventBus,
-      subagentId,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
+      ...base
     } = opts;
-    const target = opts.target ?? opts.cwd!;
-
-    const resultsPath = join(session.rootPath, "attack-surface-results.json");
-    const assetsPath = join(session.rootPath, "assets");
+    const target = targetOpt ?? cwd!;
 
     const subagentFolder = join(
-      session.rootPath,
+      base.session.rootPath,
       "subagents",
       "attack-surface-agent",
     );
-
     if (!existsSync(subagentFolder)) {
       mkdirSync(subagentFolder, { recursive: true });
     }
 
     super({
-      system: detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
-      prompt: buildPrompt(target, session),
-      model,
-      session,
+      ...base,
+      definition: BLACKBOX_DEFINITION,
       target,
-      authConfig,
+      prompt: buildPrompt(target, base.session),
       onStepFinish: (e) => {
         onStepFinish?.(e);
         const messages = e.response.messages;
@@ -124,65 +166,6 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
             JSON.stringify(messages, null, 2),
           );
         }
-      },
-      onCacheMetrics,
-      abortSignal,
-      attackSurfaceRegistry,
-      eventBus,
-      subagentId,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-      messages: opts.messages,
-      activeTools: [
-        // Core recon tools
-        "execute_command",
-        "document_app",
-        "document_endpoint",
-        "create_attack_surface_report",
-        // Browser automation for SPAs, JS-heavy apps, and auth flows
-        "browser_navigate",
-        "browser_snapshot",
-        "browser_screenshot",
-        "browser_click",
-        "browser_fill",
-        "browser_evaluate",
-        "browser_console",
-        "browser_get_cookies",
-        // Email tools (filtered out by base class when no inboxes configured)
-        "email_list_inboxes",
-        "email_list_messages",
-        "email_search_messages",
-        "email_get_message",
-        // Send email (filtered out by base class when no SMTP configured)
-        "send_email",
-        // Mobile OTP list (filtered out by base class when no sms-passwordless cred)
-        "sms_list_messages",
-        // Web search tools — research target technologies, find known vulnerabilities
-        "web_search",
-        "get_page",
-      ],
-
-      stopWhen: [
-        hasToolCall("create_attack_surface_report"),
-        stepCountIs(10_000),
-      ],
-      toolChoice: "auto",
-
-      resolveResult: () => {
-        let results: AttackSurfaceAnalysisResults | null = null;
-        let targets: PentestTarget[] = [];
-
-        if (existsSync(resultsPath)) {
-          try {
-            results = loadAttackSurfaceResults(resultsPath);
-            targets = results.targets || [];
-          } catch {
-            // Report may not have been written yet
-          }
-        }
-
-        return { results, targets, resultsPath, assetsPath };
       },
     });
   }
