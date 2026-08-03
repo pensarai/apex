@@ -468,6 +468,15 @@ export interface SpecializedAgentInput {
   /** Factory for streamed message/part ids. Forwarded to the runtime. */
   streamIdFactory?: StreamIdFactory;
 
+  /**
+   * Seam through which this agent's orchestration tools spawn sub-agents.
+   * Forwarded (via AgentRuntime → OffensiveSecurityAgent) into the ToolContext;
+   * unset → the in-process spawner, so behavior is unchanged. A durable runtime
+   * injects a child-workflow spawner here so a specialized agent's fan-out (e.g.
+   * spawn_coding_agent) becomes durable child workflows.
+   */
+  subagentSpawner?: SubagentSpawner;
+
   /** Override the default stop condition */
   stopWhen?: StopCondition<ToolSet>;
 
