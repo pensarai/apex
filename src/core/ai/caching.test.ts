@@ -5,6 +5,7 @@ import {
   withCachedLastMessage,
   withCachedSystemPrompt,
 } from "./caching";
+import { AVAILABLE_MODELS } from "./models";
 
 const BEDROCK_BREAKPOINT = { bedrock: { cachePoint: { type: "default" } } };
 const ANTHROPIC_BREAKPOINT = {
@@ -16,10 +17,7 @@ describe("cacheBreakpointFor", () => {
     "global.anthropic.claude-opus-4-6-v1",
     "global.anthropic.claude-opus-4-8",
     "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-    "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
     "anthropic.claude-sonnet-4-6-v1",
-    "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-    "us.anthropic.claude-3-5-haiku-20241022-v1:0",
   ])("uses the bedrock cachePoint namespace for %s", (model) => {
     expect(cacheBreakpointFor(model)).toEqual(BEDROCK_BREAKPOINT);
   });
@@ -45,10 +43,33 @@ describe("cacheBreakpointFor", () => {
     "anthropic.claude-3-5-sonnet-20240620-v1:0",
     "us.anthropic.claude-3-5-sonnet-20240620-v1:0",
     "global.anthropic.claude-3-5-sonnet-20240620-v1:0",
+    // Rest of the claude-3 line: cache support was uneven and all of it is
+    // end-of-life on Bedrock, so none of it may carry a cache point.
+    "global.anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+    "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
   ])("returns undefined for Bedrock model %s", (model) => {
     // Bedrock rejects a cache point outright on models that don't support
     // prompt caching, so these must stay uncached rather than 400.
     expect(cacheBreakpointFor(model)).toBeUndefined();
+  });
+
+  it("caches every Claude 4+ id in the registry and no earlier one", () => {
+    // Guards the generation boundary wholesale rather than by sampled id:
+    // 3.x put the generation first (claude-3-5-sonnet-…), 4.x puts the tier
+    // first (claude-sonnet-4-…), and only the latter may carry a cache point.
+    const bedrockClaude = AVAILABLE_MODELS.filter(
+      (m) => m.provider === "bedrock" && m.id.includes("anthropic.claude"),
+    );
+    expect(bedrockClaude.length).toBeGreaterThan(0);
+    for (const { id } of bedrockClaude) {
+      const base = id.replace(/^(?:[a-z]{2,6}\.)?anthropic\./, "");
+      const isGen4Plus = /^claude-(?:opus|sonnet|haiku)-\d/.test(base);
+      expect({ id, cached: cacheBreakpointFor(id) !== undefined }).toEqual({
+        id,
+        cached: isGen4Plus,
+      });
+    }
   });
 
   it("uses the anthropic namespace for direct Anthropic models", () => {
