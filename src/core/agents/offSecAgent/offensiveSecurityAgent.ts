@@ -52,6 +52,7 @@ import type {
   AgentMode,
   CreateAgentInput,
   OffensiveSecurityAgentInput,
+  StreamIdFactory,
 } from "./types";
 
 const log = scopedLogger(() => createLogger("approval-gate"));
@@ -266,6 +267,11 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** The current open assistant message id (`msg_…`); minted on `start-step` in {@link consume}, `null` between steps. */
   private currentMessageId: string | null = null;
 
+  /** Per-run stream counters for deterministic id derivation via {@link streamIdFactory}. */
+  private streamStepIndex = -1;
+
+  private streamTextPartIndex = 0;
+
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
 
@@ -306,6 +312,8 @@ export class OffensiveSecurityAgent<TResult = void> {
   private shellDisposed = false;
 
   private readonly abortSignal?: AbortSignal;
+
+  private readonly streamIdFactory?: StreamIdFactory;
 
   /** The user-facing prompt passed to the model. */
   public readonly userPrompt: string;
@@ -365,6 +373,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.subagentName = input.subagentName;
     this.agentMode = input.mode ?? "default";
     this.abortSignal = input.abortSignal;
+    this.streamIdFactory = input.streamIdFactory;
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
 
@@ -697,6 +706,8 @@ export class OffensiveSecurityAgent<TResult = void> {
         activeTools,
         stopWhen,
         toolChoice: "auto",
+        languageModelMiddleware: input.languageModelMiddleware,
+        usageRecorder: input.usageRecorder,
         // Per-subagent so the overflow tool-result dumps land next to this
         // agent's messages.json (`subagents/{id}/tool-results/`) and a host
         // can reclaim them when the subagent finishes, instead of piling up
@@ -818,6 +829,9 @@ export class OffensiveSecurityAgent<TResult = void> {
     const bus = this.eventBus;
 
     const runConsume = async (): Promise<TResult> => {
+      // Reset per-run stream counters so a replayed run derives the same ids.
+      this.streamStepIndex = -1;
+      this.streamTextPartIndex = 0;
       // Tool-call part ids are minted once and reused for the WHOLE session, never reset per step.
       const toolParts = new Map<string, string>();
       const ids: StreamIdContext = {
@@ -830,7 +844,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         toolPartId: (toolCallId: string) => {
           let p = toolParts.get(toolCallId);
           if (!p) {
-            p = newPartId();
+            p =
+              this.streamIdFactory?.({ kind: "tool-part", toolCallId }) ??
+              newPartId();
             toolParts.set(toolCallId, p);
           }
           return p;
@@ -1000,12 +1016,24 @@ export class OffensiveSecurityAgent<TResult = void> {
     const bus = this.eventBus;
     switch (chunk.type) {
       case "start-step":
-        ids.messageId = newMessageId();
+        this.streamStepIndex++;
+        this.streamTextPartIndex = 0;
+        ids.messageId =
+          this.streamIdFactory?.({
+            kind: "message",
+            stepIndex: this.streamStepIndex,
+          }) ?? newMessageId();
         this.currentMessageId = ids.messageId;
         ids.textPartId = undefined;
         break;
       case "text-start":
-        ids.textPartId = newPartId();
+        ids.textPartId =
+          this.streamIdFactory?.({
+            kind: "text-part",
+            stepIndex: this.streamStepIndex,
+            textPartIndex: this.streamTextPartIndex,
+          }) ?? newPartId();
+        this.streamTextPartIndex++;
         break;
       case "text-end":
         ids.textPartId = undefined;
