@@ -8,6 +8,7 @@
  * - "operator": User-driven operator mode - SPA reconnaissance, authenticated flows, attack surface mapping
  */
 
+import { randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -355,6 +356,43 @@ export function collectDescendantPids(rootPid: number): number[] {
   return descendants;
 }
 
+/**
+ * Per-launch UUID inherited by the node child, Camoufox, and its content
+ * processes. Lets teardown find the tree by identity rather than ancestry,
+ * which breaks the moment the node dies and its browser reparents to init.
+ */
+const BROWSER_LAUNCH_ENV = "PENSAR_BROWSER_LAUNCH_ID";
+
+/** Live pids stamped with `key=value`; `/proc/<pid>/environ` is fixed at exec. */
+export function collectPidsByEnvMarker(key: string, value: string): number[] {
+  let entries: string[];
+  try {
+    entries = readdirSync("/proc");
+  } catch {
+    return [];
+  }
+
+  const needle = `${key}=${value}`;
+  const pids: number[] = [];
+  for (const name of entries) {
+    if (!/^\d+$/.test(name)) continue;
+    const pid = Number(name);
+    if (pid === process.pid) continue;
+    try {
+      if (
+        readFileSync(`/proc/${pid}/environ`, "utf8")
+          .split("\0")
+          .includes(needle)
+      ) {
+        pids.push(pid);
+      }
+    } catch {
+      // exited, or not ours to inspect
+    }
+  }
+  return pids;
+}
+
 // ---------------------------------------------------------------------------
 // Module-level defaults (used when not explicitly provided)
 // ---------------------------------------------------------------------------
@@ -459,6 +497,11 @@ export class PlaywrightMcpSession {
   private mcpConfigPath: string | null = null;
   /** Cached Camoufox launch options — resolved once, reused on reconnect. */
   private cachedCamouOptions: CamoufoxLaunchOptions | null = null;
+  /**
+   * Deliberately NOT cleared by `resetState()` — `disconnect()` resets before
+   * it kills, so clearing there would blind the sweep. A new launch overwrites.
+   */
+  private currentLaunchId: string | null = null;
 
   /**
    * Each option is three-state: `undefined` → module default, value → use it,
@@ -534,42 +577,62 @@ export class PlaywrightMcpSession {
    */
   private forceKillProcess(
     proc: import("child_process").ChildProcess | null = this.mcpProcess,
+    // Bind the sweep to a specific launch. `onclose` passes its own generation
+    // so a relaunch that has already overwritten `currentLaunchId` can never
+    // have its fresh browser killed by the previous generation's teardown.
+    launchId: string | null = this.currentLaunchId,
   ): void {
-    if (!proc || proc.exitCode !== null) return;
+    // Was an early `return`, which skipped the sweep below in exactly the case
+    // that needs it — a node that already exited.
+    if (proc && proc.exitCode === null) {
+      // Snapshot descendants BEFORE the node dies; afterwards they reparent to
+      // init. The group-kill misses them because the node isn't a group leader.
+      const rootPid = proc.pid ?? null;
+      const descendants = rootPid != null ? collectDescendantPids(rootPid) : [];
+      // Snapshot starttimes before kill so we refuse PID-reuse kills after reparent.
+      const descendantStarts = new Map<number, number | null>();
+      for (const pid of descendants) {
+        descendantStarts.set(pid, readProcStartTime(pid));
+      }
 
-    // Snapshot the descendant tree (Chromium browser + renderers) BEFORE the
-    // node dies — afterwards they reparent to init and can't be found via its
-    // pid. The group-kill below misses them because the MCP node isn't spawned
-    // as a process-group leader, which orphaned Chromium and leaked memory
-    // across endpoints until the sandbox OOM'd.
-    const rootPid = proc.pid ?? null;
-    const descendants = rootPid != null ? collectDescendantPids(rootPid) : [];
-    // Snapshot starttimes before kill so we refuse PID-reuse kills after reparent.
-    const descendantStarts = new Map<number, number | null>();
-    for (const pid of descendants) {
-      descendantStarts.set(pid, readProcStartTime(pid));
-    }
-
-    try {
-      if (rootPid != null) {
-        try {
-          process.kill(-rootPid, "SIGKILL");
-        } catch {
+      try {
+        if (rootPid != null) {
+          try {
+            process.kill(-rootPid, "SIGKILL");
+          } catch {
+            proc.kill("SIGKILL");
+          }
+        } else {
           proc.kill("SIGKILL");
         }
-      } else {
-        proc.kill("SIGKILL");
+      } catch {
+        // Already dead — fine
       }
-    } catch {
-      // Already dead — fine
+
+      for (const pid of descendants) {
+        // An unverifiable starttime can't rule out PID reuse, so decline the
+        // kill; the marker sweep below covers anything skipped here.
+        const expected = descendantStarts.get(pid);
+        const now = readProcStartTime(pid);
+        if (expected == null || now == null || now !== expected) continue;
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Already gone — fine
+        }
+      }
     }
 
-    for (const pid of descendants) {
-      const expected = descendantStarts.get(pid);
-      if (expected != null) {
-        const now = readProcStartTime(pid);
-        if (now == null || now !== expected) continue;
-      }
+    this.reapLaunchedProcesses(launchId);
+  }
+
+  /**
+   * SIGKILL anything still carrying the given launch's marker. Idempotent, and
+   * can only ever target processes this session launched.
+   */
+  private reapLaunchedProcesses(launchId: string | null): void {
+    if (!launchId) return;
+    for (const pid of collectPidsByEnvMarker(BROWSER_LAUNCH_ENV, launchId)) {
       try {
         process.kill(pid, "SIGKILL");
       } catch {
@@ -649,6 +712,11 @@ export class PlaywrightMcpSession {
         // UA / viewport / fingerprint — a hand-set Chrome UA on Firefox would
         // itself be a detection tell.
 
+        // Stamped before the process exists so a failure inside connect() can
+        // still sweep the tree.
+        const launchId = randomUUID();
+        this.currentLaunchId = launchId;
+
         const transport = new StdioClientTransport({
           command: "node",
           args,
@@ -666,6 +734,7 @@ export class PlaywrightMcpSession {
               Object.entries(camou.env).map(([k, v]) => [k, String(v)]),
             ),
             ...(this.display ? { DISPLAY: this.display } : {}),
+            [BROWSER_LAUNCH_ENV]: launchId,
           },
         });
 
@@ -697,6 +766,9 @@ export class PlaywrightMcpSession {
 
         client.onclose = () => {
           if (this.mcpClient === client) {
+            // Must run before resetState() nulls the handle. This path used to
+            // drop it without killing anything, stranding one Camoufox each time.
+            this.forceKillProcess(this.mcpProcess, launchId);
             this.resetState();
           }
         };
