@@ -434,6 +434,44 @@ describe("collectPidsByEnvMarker — orphan reaping", () => {
     },
   );
 
+  // A relaunch overwrites currentLaunchId. If teardown swept "whatever is
+  // current" rather than its own generation, a late onclose from the previous
+  // generation would kill the freshly launched browser.
+  (hasProc ? it : it.skip)(
+    "sweeps only the generation it was given, leaving a newer launch alone",
+    async () => {
+      const oldMarker = `gen1-${process.pid}-${Date.now()}`;
+      const newMarker = `gen2-${process.pid}-${Date.now()}`;
+      const oldPid = await spawnOrphan(oldMarker);
+      const newPid = await spawnOrphan(newMarker);
+      try {
+        const session = new PlaywrightMcpSession();
+        Object.assign(session as unknown as Record<string, unknown>, {
+          mcpProcess: null,
+          currentLaunchId: newMarker, // a relaunch already moved this on
+        });
+        (
+          session as unknown as {
+            forceKillProcess: (p: unknown, l: string) => void;
+          }
+        ).forceKillProcess(null, oldMarker);
+
+        await new Promise((r) => setTimeout(r, 400));
+        expect(collectPidsByEnvMarker(ENV_KEY, oldMarker)).toEqual([]);
+        expect(
+          collectPidsByEnvMarker(ENV_KEY, newMarker).length,
+        ).toBeGreaterThanOrEqual(1);
+      } finally {
+        killPids([
+          oldPid,
+          newPid,
+          ...collectPidsByEnvMarker(ENV_KEY, oldMarker),
+          ...collectPidsByEnvMarker(ENV_KEY, newMarker),
+        ]);
+      }
+    },
+  );
+
   (hasProc ? it : it.skip)("does not match an unrelated marker value", () => {
     expect(collectPidsByEnvMarker(ENV_KEY, `absent-${Date.now()}`)).toEqual([]);
   });

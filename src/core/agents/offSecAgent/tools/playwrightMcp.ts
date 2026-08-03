@@ -577,6 +577,10 @@ export class PlaywrightMcpSession {
    */
   private forceKillProcess(
     proc: import("child_process").ChildProcess | null = this.mcpProcess,
+    // Bind the sweep to a specific launch. `onclose` passes its own generation
+    // so a relaunch that has already overwritten `currentLaunchId` can never
+    // have its fresh browser killed by the previous generation's teardown.
+    launchId: string | null = this.currentLaunchId,
   ): void {
     // Was an early `return`, which skipped the sweep below in exactly the case
     // that needs it — a node that already exited.
@@ -619,15 +623,14 @@ export class PlaywrightMcpSession {
       }
     }
 
-    this.reapLaunchedProcesses();
+    this.reapLaunchedProcesses(launchId);
   }
 
   /**
-   * SIGKILL anything still carrying this launch's marker. Idempotent, and can
-   * only ever target processes this session launched.
+   * SIGKILL anything still carrying the given launch's marker. Idempotent, and
+   * can only ever target processes this session launched.
    */
-  private reapLaunchedProcesses(): void {
-    const launchId = this.currentLaunchId;
+  private reapLaunchedProcesses(launchId: string | null): void {
     if (!launchId) return;
     for (const pid of collectPidsByEnvMarker(BROWSER_LAUNCH_ENV, launchId)) {
       try {
@@ -765,7 +768,7 @@ export class PlaywrightMcpSession {
           if (this.mcpClient === client) {
             // Must run before resetState() nulls the handle. This path used to
             // drop it without killing anything, stranding one Camoufox each time.
-            this.forceKillProcess();
+            this.forceKillProcess(this.mcpProcess, launchId);
             this.resetState();
           }
         };
