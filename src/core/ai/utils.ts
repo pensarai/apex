@@ -32,8 +32,13 @@ import { createPensarModel } from "./providers/pensar";
 const log = scopedLogger(() => createLogger("ai:utils"));
 
 /**
- * Check if a model uses an Anthropic-compatible provider that supports prompt caching.
- * Direct Anthropic, AWS Bedrock (Claude), and Pensar gateway (routes to Bedrock) all support cache_control.
+ * Check if a model is served by a provider that speaks Anthropic's thinking
+ * options — direct Anthropic, AWS Bedrock, and the Pensar gateway (which routes
+ * to Bedrock). Callers pair this with a model-level capability check, since the
+ * Bedrock provider also serves non-Claude models.
+ *
+ * Not a prompt-caching check: cache breakpoints are namespaced per provider and
+ * live in `cacheBreakpointFor` (see caching.ts).
  */
 export function isAnthropicProvider(model: AIModel): boolean {
   const { provider } = getModelInfo(model);
