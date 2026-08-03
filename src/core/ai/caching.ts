@@ -20,13 +20,14 @@ const BEDROCK_CACHE_POINT: CacheBreakpoint = {
 };
 
 /**
- * Legacy Claude on Bedrock — v2, instant, and the Claude 3 line — predates
- * prompt caching; 3.5 onward supports it. Kept as a deny-list so a new Claude
- * generation picks caching up the moment `generate:models` adds it, rather than
- * silently losing it again, which is the failure this whole fix is about.
+ * Legacy Claude on Bedrock — v2, instant, the Claude 3 line, and 3.5 Sonnet v1
+ * (`20240620`) — predates prompt caching; 3.5 Sonnet v2, 3.5 Haiku, and 3.7
+ * onward support it. Kept as a deny-list so a new Claude generation picks
+ * caching up the moment `generate:models` adds it, rather than silently losing
+ * it again, which is the failure this whole fix is about.
  */
 const BEDROCK_UNCACHEABLE_CLAUDE =
-  /^claude-(?:v2|instant|3-(?:opus|sonnet|haiku))/;
+  /^claude-(?:v2|instant|3-(?:opus|sonnet|haiku)|3-5-sonnet-20240620)/;
 
 /**
  * Bedrock *rejects* a cache point on models that don't support prompt caching
