@@ -477,6 +477,14 @@ export interface SpecializedAgentInput {
    */
   subagentSpawner?: SubagentSpawner;
 
+  /**
+   * Additional tools merged on top of the built-in toolset (same-named tools
+   * override the built-ins). Forwarded (via AgentRuntime → OffensiveSecurityAgent)
+   * so a durable runtime can swap `read_file`/`list_files`/`grep` for
+   * sandbox-backed versions without touching the shared tool registry.
+   */
+  extraTools?: ToolSet;
+
   /** Override the default stop condition */
   stopWhen?: StopCondition<ToolSet>;
 

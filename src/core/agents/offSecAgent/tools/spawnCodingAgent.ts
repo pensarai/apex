@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import type { AssetRecord } from "../../../findings/attackSurfaceRegistry";
 import {
   inProcessSubagentSpawner,
   type SubagentSpawner,
@@ -169,6 +170,12 @@ Returns an array of results with the text output from each agent.`,
 // Internal: run a single CodeAgent
 // ---------------------------------------------------------------------------
 
+/** The slice of a durable CodeAgent child's returned value the parent folds. */
+interface CodingChildResult {
+  surface?: AssetRecord[];
+  text?: string;
+}
+
 async function runSingleCodingAgent(
   ctx: ToolContext,
   spawner: SubagentSpawner,
@@ -179,7 +186,7 @@ async function runSingleCodingAgent(
 ): Promise<string> {
   let textOutput = "";
 
-  await spawner.spawn<void>({
+  const result = await spawner.spawn<CodingChildResult | undefined>({
     spec: { type: "code", codebasePath, objective },
     // Mirrors the prior construction — no sandbox/display were forwarded here.
     runtime: {
@@ -207,5 +214,13 @@ async function runSingleCodingAgent(
     },
   });
 
-  return textOutput;
+  // Durable children return their surface by value (in-process children return
+  // void); fold it into the parent registry so dedup-in-parent closes.
+  if (result?.surface?.length && ctx.attackSurfaceRegistry) {
+    for (const asset of result.surface) {
+      await ctx.attackSurfaceRegistry.register(asset);
+    }
+  }
+
+  return result?.text ?? textOutput;
 }
