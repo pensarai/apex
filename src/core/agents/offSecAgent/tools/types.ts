@@ -1,10 +1,15 @@
-import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
+import type {
+  LanguageModelMiddleware,
+  StreamTextOnStepFinishCallback,
+  ToolSet,
+} from "ai";
 import type {
   AIAuthConfig,
   AIModel,
   CacheMetrics,
   OpenAIReasoningEffort,
   ThinkingEffort,
+  UsageRecorder,
 } from "../../../ai";
 import type { CredentialManager } from "../../../credentials";
 import type { AgentEventBus } from "../../../eventBus";
@@ -14,6 +19,8 @@ import type { PromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
+import type { SubagentSpawner } from "../subagentSpawner";
+import type { StreamIdFactory } from "../types";
 import type { StepTraceWriter } from "../trace";
 import type { SystemPentestScope } from "../types";
 import type { PersistentShell } from "./persistentShell";
@@ -196,4 +203,21 @@ export type ToolContext = {
    * virtual desktop instead of falling back to the process-wide `DISPLAY`.
    */
   display?: string;
+
+  /**
+   * Seam through which orchestration tools spawn sub-agents. Defaults to the
+   * in-process spawner; a durable runtime injects one that spawns child
+   * workflows instead. The three durable hooks below are inherited by every
+   * child the spawner constructs.
+   */
+  subagentSpawner?: SubagentSpawner;
+
+  /** Provider middleware inherited by spawned children. Unset → raw model. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+
+  /** Usage recorder inherited by spawned children. Unset → process-global callback. */
+  usageRecorder?: UsageRecorder;
+
+  /** Streamed-id factory inherited by spawned children. Unset → random ULIDs. */
+  streamIdFactory?: StreamIdFactory;
 };

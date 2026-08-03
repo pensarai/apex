@@ -510,6 +510,11 @@ export class OffensiveSecurityAgent<TResult = void> {
       // virtual desktop (their browsers belong to the same endpoint's stream),
       // rather than falling back to the process-wide DISPLAY (:0).
       display: input.display,
+      // Spawn seam + durable hooks inherited by any sub-agent this agent spawns.
+      subagentSpawner: input.subagentSpawner,
+      languageModelMiddleware: input.languageModelMiddleware,
+      usageRecorder: input.usageRecorder,
+      streamIdFactory: input.streamIdFactory,
     });
 
     let tools: ToolSet = input.extraTools

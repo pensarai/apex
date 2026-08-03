@@ -1,8 +1,9 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { AgentEventBus } from "../../../eventBus";
-import { newSessionId } from "../../../id/id";
-import { runWithBoundedConcurrency } from "../../../utils/concurrency";
+import {
+  inProcessSubagentSpawner,
+  type SubagentSpawner,
+} from "../subagentSpawner";
 import {
   resolvePathWithinCodebaseRoot,
   resolveWhiteboxCodebaseRoot,
@@ -99,15 +100,18 @@ Returns an array of results with the text output from each agent.`,
 
       const total = validatedTasks.length;
 
-      // Shared primitive so each sub-agent inherits the OTel context. Errors
-      // are caught per task and returned inline, so results never contain null.
-      const settled = await runWithBoundedConcurrency(
+      const spawner = ctx.subagentSpawner ?? inProcessSubagentSpawner;
+
+      // Bounded fan-out via the spawner so each sub-agent inherits the OTel
+      // context. Errors are caught per task and returned inline, so results
+      // never contain null.
+      const settled = await spawner.spawnMany(
         validatedTasks,
-        DEFAULT_CONCURRENCY,
         async (item, i) => {
           try {
             const output = await runSingleCodingAgent(
               ctx,
+              spawner,
               item.codebasePath,
               item.objective,
               i + 1,
@@ -127,6 +131,7 @@ Returns an array of results with the text output from each agent.`,
             };
           }
         },
+        { concurrency: DEFAULT_CONCURRENCY },
       );
 
       const results = settled.filter(
@@ -166,70 +171,41 @@ Returns an array of results with the text output from each agent.`,
 
 async function runSingleCodingAgent(
   ctx: ToolContext,
+  spawner: SubagentSpawner,
   codebasePath: string,
   objective: string,
-  agentIndex: number,
+  _agentIndex: number,
   name: string,
 ): Promise<string> {
-  // Dynamic import to break circular dependency:
-  // codeAgent → offensiveSecurityAgent → tools/index → spawnCodingAgent → codeAgent
-  const { CodeAgent } = await import("../../specialized/codeAgent/agent");
+  let textOutput = "";
 
-  // The subagent IS a session; its id doubles as the bus identity (mirrors spawnPentestAgent).
-  const childSessionId = newSessionId();
-  const subagentId = childSessionId as string;
-
-  ctx.eventBus?.emit("subagent-spawn", {
-    subagentId,
-    sessionId: childSessionId,
-    name,
-    input: { codebasePath, objective },
+  await spawner.spawn<void>({
+    spec: { type: "code", codebasePath, objective },
+    // Mirrors the prior construction — no sandbox/display were forwarded here.
+    runtime: {
+      session: ctx.session,
+      model: ctx.model!,
+      authConfig: ctx.authConfig,
+      abortSignal: ctx.abortSignal,
+      enableThinking: ctx.enableThinking,
+      thinkingEffort: ctx.thinkingEffort,
+      openAIReasoningEffort: ctx.openAIReasoningEffort,
+      languageModelMiddleware: ctx.languageModelMiddleware,
+      usageRecorder: ctx.usageRecorder,
+      streamIdFactory: ctx.streamIdFactory,
+    },
+    parentBus: ctx.eventBus,
+    subagentName: name,
+    lifecycleInput: { codebasePath, objective },
     parentSubagentId: ctx.subagentId,
     parentSessionId: ctx.subagentId ?? ctx.session.id,
+    stampChildSessionId: true,
+    beforeConsume: (childBus) => {
+      childBus.on("text-delta", (d) => {
+        textOutput += d.text;
+      });
+    },
   });
 
-  const localBus = new AgentEventBus();
-  let textOutput = "";
-  AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
-  localBus.on("text-delta", (d) => {
-    textOutput += d.text;
-  });
-
-  const agent = new CodeAgent({
-    codebasePath,
-    objective,
-    model: ctx.model!,
-    session: ctx.session,
-    authConfig: ctx.authConfig,
-    abortSignal: ctx.abortSignal,
-    eventBus: localBus,
-    subagentId,
-    subagentName: name,
-    enableThinking: ctx.enableThinking,
-    thinkingEffort: ctx.thinkingEffort,
-    openAIReasoningEffort: ctx.openAIReasoningEffort,
-  });
-
-  try {
-    await agent.consume();
-
-    ctx.eventBus?.emit("subagent-complete", {
-      subagentId,
-      sessionId: childSessionId,
-      status: "completed",
-      parentSubagentId: ctx.subagentId,
-      parentSessionId: ctx.subagentId ?? ctx.session.id,
-    });
-
-    return textOutput;
-  } catch (error) {
-    ctx.eventBus?.emit("subagent-complete", {
-      subagentId,
-      sessionId: childSessionId,
-      status: "failed",
-      parentSubagentId: ctx.subagentId,
-      parentSessionId: ctx.subagentId ?? ctx.session.id,
-    });
-    throw error;
-  }
+  return textOutput;
 }

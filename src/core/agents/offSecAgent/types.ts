@@ -32,6 +32,7 @@ import type { PromptInjectionLibrary } from "../../prompt-injections";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
+import type { SubagentSpawner } from "./subagentSpawner";
 import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
@@ -205,6 +206,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * route execution through this sandbox instead of running locally.
    */
   sandbox?: UnifiedSandbox;
+
+  /**
+   * Seam through which orchestration tools spawn sub-agents. Forwarded into the
+   * {@link ToolContext}; unset → tools use the in-process spawner.
+   */
+  subagentSpawner?: SubagentSpawner;
 
   /**
    * Shared findings registry for cross-agent dedup.

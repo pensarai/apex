@@ -1,8 +1,6 @@
 import { stepCountIs } from "ai";
 import pLimit from "p-limit";
 import { z } from "zod";
-import { AgentEventBus } from "../../../eventBus";
-import { newSessionId } from "../../../id/id";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import type {
@@ -10,6 +8,7 @@ import type {
   GrpcEndpointMetadata,
 } from "../../specialized/attackSurface/grpcSchema";
 import type { RiskScore } from "../../specialized/whiteboxAttackSurface";
+import { inProcessSubagentSpawner } from "../subagentSpawner";
 import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("threat-model-generator"));
@@ -25,13 +24,6 @@ const THREAT_MODEL_MAX_STEPS = 100;
 
 // Cap the post-abort drain wait so a wedged drain can't pin a p-limit slot.
 const DRAIN_GRACE_MS = 30_000;
-const waitDrainBounded = (drained: Promise<void>): Promise<void> =>
-  Promise.race([
-    drained,
-    new Promise<void>((resolve) => {
-      setTimeout(resolve, DRAIN_GRACE_MS).unref?.();
-    }),
-  ]);
 
 // ---------------------------------------------------------------------------
 // Response schema
@@ -328,21 +320,7 @@ export async function generateThreatModelForEndpoint(
   return threatModelLimiter(async () => {
     if (ctx.abortSignal?.aborted) return null;
 
-    const { CodeAgent } = await import("../../specialized/codeAgent/agent");
-
-    const subagentId = newSessionId();
     const subagentName = `Threat Model: ${input.routePath}`;
-
-    ctx.eventBus?.emit("subagent-spawn", {
-      subagentId,
-      name: subagentName,
-      input: { app: input.appName, endpoint: input.routePath },
-      parentSubagentId: ctx.subagentId,
-    });
-
-    const localBus = new AgentEventBus();
-    AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
-
     const prompt = buildThreatModelPrompt(input, ctx.projectThreatModel);
 
     // Child-scoped abort so a failure cancels only this threat model, not the shared parent `ctx.abortSignal` (which still propagates down).
@@ -354,22 +332,6 @@ export async function generateThreatModelForEndpoint(
           once: true,
         });
     }
-
-    const agent = new CodeAgent<ThreatModelResult>({
-      codebasePath: ctx.agentCwd,
-      objective: prompt,
-      system: THREAT_MODEL_SYSTEM_PROMPT,
-      model,
-      session: ctx.session,
-      authConfig: ctx.authConfig,
-      abortSignal: childAbort.signal,
-      eventBus: localBus,
-      subagentId,
-      subagentName,
-      responseSchema: ThreatModelResultSchema,
-      stopWhen: stepCountIs(THREAT_MODEL_MAX_STEPS),
-      excludeTools: ["document_endpoint", "document_app"],
-    });
 
     const buildOutput = (result: ThreatModelResult): ThreatModelOutput => {
       const totalScore =
@@ -396,26 +358,40 @@ export async function generateThreatModelForEndpoint(
       };
     };
 
+    const spawner = ctx.subagentSpawner ?? inProcessSubagentSpawner;
     try {
-      // Abort right after consume() resolves so the background drain doesn't keep resume-regenerating a discarded response and OOM the sandbox.
-      const result = await agent.consume();
-      childAbort.abort();
-      // Close in-flight tools before marking complete (bounded, can't pin the slot).
-      await waitDrainBounded(agent.drained);
-      ctx.eventBus?.emit("subagent-complete", {
-        subagentId,
-        status: "completed",
+      // onConsumed aborts the child right after consume() resolves so the
+      // background drain doesn't keep resume-regenerating a discarded response
+      // and OOM the sandbox; drainGraceMs bounds the drain wait.
+      const result = await spawner.spawn<ThreatModelResult>({
+        spec: {
+          type: "code",
+          codebasePath: ctx.agentCwd,
+          objective: prompt,
+          system: THREAT_MODEL_SYSTEM_PROMPT,
+          responseSchema: ThreatModelResultSchema,
+          stopWhen: stepCountIs(THREAT_MODEL_MAX_STEPS),
+          excludeTools: ["document_endpoint", "document_app"],
+        },
+        runtime: {
+          session: ctx.session,
+          model,
+          authConfig: ctx.authConfig,
+          abortSignal: childAbort.signal,
+          languageModelMiddleware: ctx.languageModelMiddleware,
+          usageRecorder: ctx.usageRecorder,
+          streamIdFactory: ctx.streamIdFactory,
+        },
+        parentBus: ctx.eventBus,
+        subagentName,
+        lifecycleInput: { app: input.appName, endpoint: input.routePath },
         parentSubagentId: ctx.subagentId,
+        drainGraceMs: DRAIN_GRACE_MS,
+        onConsumed: () => childAbort.abort(),
+        onError: () => childAbort.abort(),
       });
       return result ? buildOutput(result) : null;
     } catch (error) {
-      childAbort.abort();
-      await waitDrainBounded(agent.drained);
-      ctx.eventBus?.emit("subagent-complete", {
-        subagentId,
-        status: "failed",
-        parentSubagentId: ctx.subagentId,
-      });
       log.warn(
         `Threat model generation failed for ${input.routePath}: ${error instanceof Error ? error.message : String(error)}`,
       );
