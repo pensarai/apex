@@ -247,8 +247,8 @@ pentest options:
                            Explicitly authorize destructive target operations
                            (default: blocked)
   --require-successful-response
-                           Keep objective-driven fast strike running after an
-                           unsolved structured response (bounded to two retries)
+                           Allow bounded correction when fast strike claims
+                           impact without the objective's required proof
   --prompt <text|@file>    Guidance for the pentest agent (inline text or @filepath)
   --threat-model <text|@file>  Threat model to guide the pentest (inline or @filepath)
   --header "Name: Value"   Custom HTTP header (repeatable)

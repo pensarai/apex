@@ -14,6 +14,8 @@ We use a three-tier hierarchy:
 2. **Specialized agents** (`TargetedPentestAgent`, `AttackSurfaceAgent`, `AuthenticationAgent`, `CodeAgent`, etc.) — each has a tight, expert-level prompt scoped to a single mission.
 3. **Orchestration tools** (`spawn_pentest_swarm`, `run_attack_surface`, `spawn_coding_agent`) — tools the base agent can call that spin up fleets of specialized agents with bounded concurrency.
 
+Fast strike is a reusable objective executor within this hierarchy. A user can select it directly with a custom target, scope, and goal, or a pentest orchestrator can select `executionMode: "fast-strike"` for one concrete exploit-impact objective. Its terminal status (`impact-proven`, `exhausted`, or `blocked`) applies only to that assigned objective; it never marks the wider engagement complete.
+
 ## Rationale
 
 **Context window fidelity and recall.** A single agent running a full engagement accumulates noise — recon output, failed attempts, intermediate artifacts — that degrades the quality of later reasoning. Specialized agents start every run with a clean, focused context. When targeting specific objectives or testing a specific hypothesis, a scoped agent has dramatically higher recall and precision than a general-purpose agent with thousands of tokens of unrelated history.
