@@ -4,6 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createXai } from "@ai-sdk/xai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   generateText,
@@ -130,6 +131,16 @@ export function getProviderModel(
   model: AIModel,
   authConfig?: AIAuthConfig,
 ): LanguageModel {
+  if (/^grok-4\.5(?:$|-)/.test(model)) {
+    const xaiApiKey = process.env.GROK_API_KEY || process.env.XAI_API_KEY;
+    if (!xaiApiKey) {
+      throw new Error(
+        "GROK_API_KEY (or XAI_API_KEY) is required for direct xAI models.",
+      );
+    }
+    return createXai({ apiKey: xaiApiKey }).responses(model);
+  }
+
   const { provider } = getModelInfo(model);
 
   const openAiAPIKey = authConfig?.openAiAPIKey || process.env.OPENAI_API_KEY;

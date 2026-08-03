@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
+import type { XaiResponsesProviderOptions } from "@ai-sdk/xai";
 import type { OpenRouterProviderOptions } from "@openrouter/ai-sdk-provider";
 import {
   generateText,
@@ -183,6 +184,7 @@ export type AIModelProvider =
 
 /** Conservative default when `getModelInfo` doesn't have a `contextLength`. */
 function getContextWindow(modelId: string): number {
+  if (/^grok-4\.5(?:$|-)/.test(modelId)) return 500_000;
   return getModelInfo(modelId).contextLength ?? 200_000;
 }
 
@@ -973,6 +975,7 @@ export function modelSupportsAdaptiveThinking(modelId: string): boolean {
 }
 
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
+  if (/^grok-4\.5(?:$|-)/.test(modelId)) return true;
   const { provider } = getModelInfo(modelId);
   if (provider !== "openai") return false;
   return (
@@ -1016,6 +1019,7 @@ export function normalizeOpenAIReasoningEffort(
  *     requested when this key is present. `display: 'summarized'` makes the
  *     model actually return reasoning text (adaptive can otherwise omit it).
  *   - `openai.reasoningEffort` — OpenAI/o-series reasoning models.
+ *   - `xai.reasoningEffort` — xAI Grok reasoning models.
  *   - `openrouter.reasoning.effort` — OpenRouter reasoning models such as
  *     Kimi K3 and GLM-5.2.
  */
@@ -1036,6 +1040,7 @@ export type ReasoningProviderOptions = {
     };
   };
   openai?: OpenAIResponsesProviderOptions;
+  xai?: XaiResponsesProviderOptions;
   openrouter?: OpenRouterProviderOptions;
 };
 
@@ -1070,6 +1075,7 @@ export function buildReasoningProviderOptions(
     model,
     opts.openAIReasoningEffort,
   );
+  const useXaiReasoning = /^grok-4\.5(?:$|-)/.test(model);
   const useOpenRouterReasoning =
     !!opts.enableThinking && getModelInfo(model).provider === "openrouter";
   const requestedOpenRouterEffort =
@@ -1102,7 +1108,16 @@ export function buildReasoningProviderOptions(
         }
       : {}),
     ...(normalizedOpenAIEffort
-      ? { openai: { reasoningEffort: normalizedOpenAIEffort } }
+      ? useXaiReasoning
+        ? {
+            xai: {
+              reasoningEffort: normalizedOpenAIEffort as
+                | "low"
+                | "medium"
+                | "high",
+            },
+          }
+        : { openai: { reasoningEffort: normalizedOpenAIEffort } }
       : {}),
     ...(useOpenRouterReasoning
       ? {

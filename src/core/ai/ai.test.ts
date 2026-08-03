@@ -127,6 +127,14 @@ describe("buildReasoningProviderOptions", () => {
     expect(result?.bedrock).toBeUndefined();
   });
 
+  it("sets xai.reasoningEffort for Grok 4.5 via native xAI Responses", () => {
+    expect(
+      buildReasoningProviderOptions("grok-4.5", {
+        openAIReasoningEffort: "high",
+      }),
+    ).toEqual({ xai: { reasoningEffort: "high" } });
+  });
+
   it("sends GPT-5.6 ultra effort as the API-supported max value", () => {
     expect(
       buildReasoningProviderOptions("gpt-5.6-sol", {
