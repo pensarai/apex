@@ -14,6 +14,14 @@ import { join } from "node:path";
 
 const MAX_BUFFER = 5_000_000;
 
+// Hard ceiling on how long a single command may hold the shell. Commands are
+// serialized through one mutex (see `writeChain`), so a command that never
+// resolves — a no-timeout network probe against a black-holed host — would hold
+// the mutex forever and starve every later command, freezing the whole agent.
+// An always-armed ceiling guarantees the mutex is always released. 600s sits
+// well under the sandbox's 3600s budget; tune via the constructor option.
+export const DEFAULT_MAX_EXECUTE_TIMEOUT_SECONDS = 600;
+
 // Node-owned per-PID tempfile root. Paths are substituted into the wrapper
 // (not `mktemp` inside bash) so kill paths can fs.readFileSync directly —
 // Bun's child_process pipe drops bytes written after a descendant signal.
@@ -198,6 +206,7 @@ export class PersistentShell {
   private disposed = false;
   private readonly cwd?: string;
   private readonly extraEnv?: Record<string, string>;
+  private readonly maxExecuteTimeoutSeconds: number;
 
   private current: PendingCommand | null = null;
   private pendingCancel: ((result: ShellExecuteResult) => void) | null = null;
@@ -207,9 +216,19 @@ export class PersistentShell {
   // `this.current` and cross-contaminate output.
   private writeChain: Promise<void> = Promise.resolve();
 
-  constructor(opts?: { cwd?: string; env?: Record<string, string> }) {
+  constructor(opts?: {
+    cwd?: string;
+    env?: Record<string, string>;
+    // Hard ceiling (seconds) a single command may run before it is force-killed
+    // and its turn released. Defaults to DEFAULT_MAX_EXECUTE_TIMEOUT_SECONDS.
+    maxExecuteTimeoutSeconds?: number;
+  }) {
     this.cwd = opts?.cwd;
     this.extraEnv = opts?.env;
+    this.maxExecuteTimeoutSeconds =
+      opts?.maxExecuteTimeoutSeconds && opts.maxExecuteTimeoutSeconds > 0
+        ? opts.maxExecuteTimeoutSeconds
+        : DEFAULT_MAX_EXECUTE_TIMEOUT_SECONDS;
   }
 
   private spawn(): void {
@@ -504,17 +523,26 @@ export class PersistentShell {
             abortSignal.removeEventListener("abort", onAbort);
         }
 
-        if (timeoutSeconds != null && timeoutSeconds > 0) {
-          timeoutTimer = setTimeout(() => {
-            if (resolved) return;
-            pending.forcedExitCode = 124;
-            pending.killEscalationTimer = scheduleSalvageKill(
-              proc.pid,
-              pending,
-              124,
-            );
-          }, timeoutSeconds * 1_000);
-        }
+        // Always arm a timeout, clamped to the hard ceiling. A missing/invalid
+        // per-command timeout falls back to the ceiling rather than running
+        // unbounded — an unbounded command holds the shell mutex forever and
+        // starves every later command (frozen agent). An explicit timeout above
+        // the ceiling is clamped down.
+        const effectiveTimeoutSeconds = Math.min(
+          timeoutSeconds != null && timeoutSeconds > 0
+            ? timeoutSeconds
+            : this.maxExecuteTimeoutSeconds,
+          this.maxExecuteTimeoutSeconds,
+        );
+        timeoutTimer = setTimeout(() => {
+          if (resolved) return;
+          pending.forcedExitCode = 124;
+          pending.killEscalationTimer = scheduleSalvageKill(
+            proc.pid,
+            pending,
+            124,
+          );
+        }, effectiveTimeoutSeconds * 1_000);
 
         // Wrap command:
         //   - brace group `{ ...; }` (NOT a subshell) so cd/export/aliases persist;

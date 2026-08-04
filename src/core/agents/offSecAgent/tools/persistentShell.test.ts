@@ -3,6 +3,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_MAX_EXECUTE_TIMEOUT_SECONDS,
   extractFallbackStdout,
   getApexTmpRoot,
   PersistentShell,
@@ -481,6 +482,60 @@ describe("PersistentShell — long-running stability", () => {
     expect(final.stdout).toContain("final");
     expect(elapsed).toBeLessThan(3_000);
   }, 60_000);
+
+  // Regression: a command with no explicit timeout must not run unbounded.
+  // Before the ceiling, `execute(cmd)` with no timeout armed no timer, so a
+  // hung command held the shell mutex forever and froze the agent.
+  it("force-kills a no-timeout command at the ceiling", async () => {
+    const shell = new PersistentShell({ maxExecuteTimeoutSeconds: 2 });
+    shells.push(shell);
+
+    const start = Date.now();
+    const result = await shell.execute("sleep 30"); // no timeout arg
+    const elapsed = Date.now() - start;
+
+    expect(result.exitCode).toBe(124); // timed out at the ceiling
+    expect(elapsed).toBeLessThan(6_000); // ~2s + salvage grace, not 30s
+  }, 15_000);
+
+  // Regression for the production freeze: a no-timeout hang must not starve the
+  // next queued command. Before the fix, cmd2 (no timeout) held the mutex
+  // forever and cmd3 never ran, even though cmd3 had its own timeout — a queued
+  // command can't arm its timer until it acquires the turn.
+  it("a no-timeout hang does not permanently starve the next command", async () => {
+    const shell = new PersistentShell({ maxExecuteTimeoutSeconds: 2 });
+    shells.push(shell);
+
+    const start = Date.now();
+    const [hung, next] = await Promise.all([
+      shell.execute("sleep 30"), // no timeout -> ceiling-killed
+      shell.execute("echo after-hang", 10),
+    ]);
+    const elapsed = Date.now() - start;
+
+    expect(hung.exitCode).toBe(124);
+    expect(next.exitCode).toBe(0);
+    expect(next.stdout).toContain("after-hang");
+    expect(elapsed).toBeLessThan(8_000); // both done shortly after the ceiling
+  }, 20_000);
+
+  // An explicit timeout above the ceiling is clamped down to it.
+  it("clamps an explicit timeout above the ceiling", async () => {
+    const shell = new PersistentShell({ maxExecuteTimeoutSeconds: 2 });
+    shells.push(shell);
+
+    const start = Date.now();
+    const result = await shell.execute("sleep 30", 60); // asks 60s, capped at 2s
+    const elapsed = Date.now() - start;
+
+    expect(result.exitCode).toBe(124);
+    expect(elapsed).toBeLessThan(6_000);
+  }, 15_000);
+
+  it("exposes a finite, positive default ceiling", () => {
+    expect(Number.isFinite(DEFAULT_MAX_EXECUTE_TIMEOUT_SECONDS)).toBe(true);
+    expect(DEFAULT_MAX_EXECUTE_TIMEOUT_SECONDS).toBeGreaterThan(0);
+  });
 });
 
 describe("extractFallbackStdout", () => {

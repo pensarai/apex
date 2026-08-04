@@ -73,7 +73,7 @@ const executeCommandInputSchema = z.object({
     .number()
     .optional()
     .describe(
-      "Timeout in seconds. If omitted, the command runs until completion or abort.",
+      "Timeout in seconds. If omitted, a hard maximum is applied so a hung command cannot stall the session; set an explicit, conservative value for long scans.",
     ),
   allow_unprotected: z
     .boolean()
