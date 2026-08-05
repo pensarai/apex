@@ -615,6 +615,14 @@ describe("buildOperatorSystemPrompt", () => {
     expect(prompt).toContain("OBSERVE");
     expect(prompt).toContain("HYPOTHESIZE");
     expect(prompt).toContain("Do not delegate");
+    expect(prompt).toContain(
+      "editable script in the session scratchpad directory",
+    );
+    expect(prompt).toContain(
+      "Never create a scratchpad/ directory inside the target repository",
+    );
+    expect(prompt).toContain("extending a working script");
+    expect(prompt).toContain("account for each viable primitive");
   });
 
   it("does not include Strike Mode instructions in the standard mode", () => {

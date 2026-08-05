@@ -906,18 +906,19 @@ describe("getResumeMessages", () => {
     expect(result.length).toBe(2);
   });
 
-  it("handles conversations with no user messages after cut point", () => {
-    // All assistant messages except the first
-    const msgs: ModelMessage[] = [
-      makeMsg("user", "go"),
-      ...Array.from({ length: 20 }, (_, i) =>
-        makeMsg("assistant", `step-${i}`),
-      ),
-    ];
+  it("keeps a complete tool-heavy turn when it exceeds the target window", () => {
+    const msgs: ModelMessage[] = [makeMsg("user", "start")];
+    for (let i = 0; i < 101; i++) {
+      const toolName = `tool-${i}`;
+      msgs.push(
+        makeMsg("assistant", [makeToolCallPart(toolName, {})]),
+        makeMsg("tool", [makeToolResultPart(toolName, "ok")]),
+      );
+    }
+    msgs.push(makeMsg("assistant", "done"));
 
-    // Limit 5 → rough cut at index 16, no user message after that → fallback
-    const result = getResumeMessages(msgs, 5);
-    expect(result.length).toBe(5);
+    const result = getResumeMessages(msgs, 200);
+    expect(result).toEqual(msgs);
   });
 
   it("returns empty array for empty input", () => {

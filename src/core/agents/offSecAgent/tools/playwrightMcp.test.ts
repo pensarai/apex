@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   collectDescendantPids,
+  collectPidsByEnvMarker,
   createBrowserTools,
   PlaywrightMcpSession,
   parseStorageStateResult,
@@ -356,6 +357,132 @@ describe("collectDescendantPids", () => {
   (hasProc ? it : it.skip)("returns [] for a leaf pid with no children", () => {
     // A made-up high pid that almost certainly has no children.
     expect(collectDescendantPids(2_147_483_646)).toEqual([]);
+  });
+});
+
+// Regression: when the MCP node exits unexpectedly its Camoufox reparents to
+// init, so no ancestry lookup can reach it — ~1.5 GiB stranded per occurrence
+// until the sandbox OOM'd. The env marker survives reparenting.
+describe("collectPidsByEnvMarker — orphan reaping", () => {
+  const hasProc = existsSync("/proc/self");
+  const ENV_KEY = "PENSAR_BROWSER_LAUNCH_ID";
+
+  const killPids = (pids: number[]) => {
+    for (const pid of pids) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* already gone */
+      }
+    }
+  };
+
+  /** `sh` backgrounds a sleep then exits, orphaning it as a dying node orphans
+   *  Camoufox. Returns the (now dead) parent pid. */
+  const spawnOrphan = async (marker: string): Promise<number> => {
+    const parent = spawn("sh", ["-c", "sleep 30 &"], {
+      stdio: "ignore",
+      env: { ...process.env, [ENV_KEY]: marker },
+    });
+    await new Promise((r) => setTimeout(r, 500));
+    return parent.pid!;
+  };
+
+  (hasProc ? it : it.skip)(
+    "finds an orphan by marker after its parent is gone, where ancestry finds nothing",
+    async () => {
+      const marker = `test-${process.pid}-${Date.now()}`;
+      const parentPid = await spawnOrphan(marker);
+      try {
+        // The parent exited, so the ancestry walk is blind to the orphan...
+        expect(collectDescendantPids(parentPid)).toEqual([]);
+        // ...but it still carries the launch marker.
+        expect(
+          collectPidsByEnvMarker(ENV_KEY, marker).length,
+        ).toBeGreaterThanOrEqual(1);
+      } finally {
+        killPids([parentPid, ...collectPidsByEnvMarker(ENV_KEY, marker)]);
+      }
+    },
+  );
+
+  (hasProc ? it : it.skip)(
+    "forceKillProcess still reaps when the child handle is already dead (the early-return bug)",
+    async () => {
+      const marker = `test-dead-handle-${process.pid}-${Date.now()}`;
+      const parentPid = await spawnOrphan(marker);
+      try {
+        expect(
+          collectPidsByEnvMarker(ENV_KEY, marker).length,
+        ).toBeGreaterThanOrEqual(1);
+
+        const session = new PlaywrightMcpSession();
+        Object.assign(session as unknown as Record<string, unknown>, {
+          // A non-null exitCode used to short-circuit the whole method.
+          mcpProcess: { exitCode: 0, pid: parentPid, kill: () => {} },
+          currentLaunchId: marker,
+        });
+        (
+          session as unknown as { forceKillProcess: () => void }
+        ).forceKillProcess();
+
+        await new Promise((r) => setTimeout(r, 400));
+        expect(collectPidsByEnvMarker(ENV_KEY, marker)).toEqual([]);
+      } finally {
+        killPids([parentPid, ...collectPidsByEnvMarker(ENV_KEY, marker)]);
+      }
+    },
+  );
+
+  // A relaunch overwrites currentLaunchId. If teardown swept "whatever is
+  // current" rather than its own generation, a late onclose from the previous
+  // generation would kill the freshly launched browser.
+  (hasProc ? it : it.skip)(
+    "sweeps only the generation it was given, leaving a newer launch alone",
+    async () => {
+      const oldMarker = `gen1-${process.pid}-${Date.now()}`;
+      const newMarker = `gen2-${process.pid}-${Date.now()}`;
+      const oldPid = await spawnOrphan(oldMarker);
+      const newPid = await spawnOrphan(newMarker);
+      try {
+        const session = new PlaywrightMcpSession();
+        Object.assign(session as unknown as Record<string, unknown>, {
+          mcpProcess: null,
+          currentLaunchId: newMarker, // a relaunch already moved this on
+        });
+        (
+          session as unknown as {
+            forceKillProcess: (p: unknown, l: string) => void;
+          }
+        ).forceKillProcess(null, oldMarker);
+
+        await new Promise((r) => setTimeout(r, 400));
+        expect(collectPidsByEnvMarker(ENV_KEY, oldMarker)).toEqual([]);
+        expect(
+          collectPidsByEnvMarker(ENV_KEY, newMarker).length,
+        ).toBeGreaterThanOrEqual(1);
+      } finally {
+        killPids([
+          oldPid,
+          newPid,
+          ...collectPidsByEnvMarker(ENV_KEY, oldMarker),
+          ...collectPidsByEnvMarker(ENV_KEY, newMarker),
+        ]);
+      }
+    },
+  );
+
+  (hasProc ? it : it.skip)("does not match an unrelated marker value", () => {
+    expect(collectPidsByEnvMarker(ENV_KEY, `absent-${Date.now()}`)).toEqual([]);
+  });
+
+  it("is a no-op when the session has no launch marker yet", () => {
+    const session = new PlaywrightMcpSession();
+    expect(() =>
+      (
+        session as unknown as { forceKillProcess: () => void }
+      ).forceKillProcess(),
+    ).not.toThrow();
   });
 });
 
