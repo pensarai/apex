@@ -269,6 +269,45 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     });
   });
 
+  describe("display-tier viewport defaults", () => {
+    const originalDisplay = process.env.DISPLAY;
+    afterEach(() => {
+      if (originalDisplay === undefined) delete process.env.DISPLAY;
+      else process.env.DISPLAY = originalDisplay;
+      setViewportSize("1920,1080");
+    });
+
+    it("defaults endpoint-tier displays (:10+) to 1280x720", () => {
+      delete process.env.DISPLAY;
+      const session = new PlaywrightMcpSession({
+        display: ":11",
+      }) as unknown as InternalShape;
+      expect(session.viewportSize).toBe("1280,720");
+    });
+
+    it("defaults computer-use displays (:0–:9) to 1920x1080", () => {
+      delete process.env.DISPLAY;
+      const session = new PlaywrightMcpSession({
+        display: ":0",
+      }) as unknown as InternalShape;
+      expect(session.viewportSize).toBe("1920,1080");
+    });
+
+    it("uses process.env.DISPLAY for the tier when no explicit display is given", () => {
+      process.env.DISPLAY = ":12";
+      const session = new PlaywrightMcpSession() as unknown as InternalShape;
+      expect(session.viewportSize).toBe("1280,720");
+    });
+
+    it("lets an explicit viewportSize win over the display-tier default", () => {
+      const session = new PlaywrightMcpSession({
+        display: ":11",
+        viewportSize: "800,600",
+      }) as unknown as InternalShape;
+      expect(session.viewportSize).toBe("800,600");
+    });
+  });
+
   it("falls back to a hardcoded 1920x1080 floor for viewport even if the module default was cleared (regression: don't ship a Chromium-tiny viewport just because someone called setViewportSize(undefined))", () => {
     const original = "1920,1080";
     try {

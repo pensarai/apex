@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CAMOUFOX_OPTIONS,
+  COMPUTER_USE_VIEWPORT_SIZE,
+  camoufoxWindowOptions,
+  ENDPOINT_DISPLAY_BASE,
+  ENDPOINT_VIEWPORT_SIZE,
   MEMORY_FIREFOX_PREFS,
+  parseDisplayNumber,
+  parseViewportSize,
   resolveCamoufoxLaunchOptions,
+  viewportSizeForDisplay,
 } from "./camoufox";
 
 const launchOptionsMock = vi.fn();
@@ -13,6 +20,44 @@ vi.mock("camoufox-js", () => ({
 
 afterEach(() => {
   launchOptionsMock.mockReset();
+});
+
+describe("display-tier viewport helpers", () => {
+  it("parses WIDTH,HEIGHT viewport strings", () => {
+    expect(parseViewportSize("1280,720")).toEqual([1280, 720]);
+    expect(parseViewportSize(" 1920,1080 ")).toEqual([1920, 1080]);
+    expect(parseViewportSize("bad")).toBeUndefined();
+    expect(parseViewportSize("0,720")).toBeUndefined();
+  });
+
+  it("parses :N display strings", () => {
+    expect(parseDisplayNumber(":0")).toBe(0);
+    expect(parseDisplayNumber(":11")).toBe(11);
+    expect(parseDisplayNumber(":10.0")).toBe(10);
+    expect(parseDisplayNumber(undefined)).toBeUndefined();
+    expect(parseDisplayNumber("DISPLAY")).toBeUndefined();
+  });
+
+  it("maps endpoint-tier displays to 720p and everything else to 1080p", () => {
+    expect(ENDPOINT_DISPLAY_BASE).toBe(10);
+    expect(viewportSizeForDisplay(":11")).toBe(ENDPOINT_VIEWPORT_SIZE);
+    expect(viewportSizeForDisplay(":10")).toBe(ENDPOINT_VIEWPORT_SIZE);
+    expect(viewportSizeForDisplay(":0")).toBe(COMPUTER_USE_VIEWPORT_SIZE);
+    expect(viewportSizeForDisplay(":9")).toBe(COMPUTER_USE_VIEWPORT_SIZE);
+    expect(viewportSizeForDisplay(undefined)).toBe(COMPUTER_USE_VIEWPORT_SIZE);
+  });
+
+  it("builds fingerprint-coherent window + screen constraints", () => {
+    expect(camoufoxWindowOptions([1280, 720])).toEqual({
+      window: [1280, 720],
+      screen: {
+        minWidth: 1280,
+        maxWidth: 1280,
+        minHeight: 720,
+        maxHeight: 720,
+      },
+    });
+  });
 });
 
 describe("resolveCamoufoxLaunchOptions", () => {
@@ -67,6 +112,30 @@ describe("resolveCamoufoxLaunchOptions", () => {
     expect(launchOptionsMock).toHaveBeenCalledWith({
       ...CAMOUFOX_OPTIONS,
       headless: true,
+    });
+  });
+
+  it("forwards a fixed window and matching screen constraints when provided", async () => {
+    launchOptionsMock.mockResolvedValue({
+      executablePath: "/opt/camoufox/camoufox-bin",
+      args: [],
+      env: {},
+      firefoxUserPrefs: {},
+      headless: false,
+    });
+
+    await resolveCamoufoxLaunchOptions(false, { window: [1280, 720] });
+
+    expect(launchOptionsMock).toHaveBeenCalledWith({
+      ...CAMOUFOX_OPTIONS,
+      headless: false,
+      window: [1280, 720],
+      screen: {
+        minWidth: 1280,
+        maxWidth: 1280,
+        minHeight: 720,
+        maxHeight: 720,
+      },
     });
   });
 });
