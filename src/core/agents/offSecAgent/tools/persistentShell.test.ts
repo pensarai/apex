@@ -6,6 +6,7 @@ import {
   extractFallbackStdout,
   getApexTmpRoot,
   PersistentShell,
+  readCanonicalCallbackEnv,
   readSandboxAgentEnv,
 } from "./persistentShell";
 
@@ -172,6 +173,24 @@ describe("PersistentShell — long-running stability", () => {
     expect(echo.stdout).toContain("hello");
   });
 
+  it("rejects an unterminated heredoc without poisoning the shell", async () => {
+    const shell = make();
+    const valid = await shell.execute("cat <<'EOF'\nvalid heredoc\nEOF", 5);
+    expect(valid.exitCode).toBe(0);
+    expect(valid.stdout).toContain("valid heredoc");
+
+    const malformed = await shell.execute(
+      "cat <<'EOF'\nunterminated heredoc",
+      2,
+    );
+    expect(malformed.exitCode).toBe(2);
+    expect(malformed.stderr).toContain("unterminated here-document");
+
+    const after = await shell.execute("echo healthy", 5);
+    expect(after.exitCode).toBe(0);
+    expect(after.stdout).toContain("healthy");
+  });
+
   it("reports exit code 124 on timeout and kills descendants", async () => {
     const shell = make();
     const r = await shell.execute("sleep 30", 1);
@@ -180,6 +199,24 @@ describe("PersistentShell — long-running stability", () => {
     const after = await shell.execute("echo ok", 5);
     expect(after.exitCode).toBe(0);
     expect(after.stdout).toContain("ok");
+  }, 10_000);
+
+  it("replaces the shell after a timeout instead of retaining parser state", async () => {
+    const shell = make();
+    expect(
+      (await shell.execute("export APEX_BEFORE_TIMEOUT=present", 5)).exitCode,
+    ).toBe(0);
+
+    const timedOut = await shell.execute("sleep 30", 1);
+    expect(timedOut.exitCode).toBe(124);
+    expect(timedOut.stderr).toContain("persistent shell restarted");
+
+    const after = await shell.execute(
+      'printf "%s" "$' + '{APEX_BEFORE_TIMEOUT-unset}"',
+      5,
+    );
+    expect(after.exitCode).toBe(0);
+    expect(after.stdout).toContain("unset");
   }, 10_000);
 
   it("does not leak nonce markers on timeout", async () => {
@@ -429,11 +466,29 @@ describe("PersistentShell — long-running stability", () => {
     for (const r of results) expect(r.exitCode).toBe(0);
   }, 15_000);
 
+  it("includes queue wait in each command timeout", async () => {
+    const shell = make();
+    const first = shell.execute("sleep 1", 5);
+
+    const startedAt = Date.now();
+    const queued = await shell.execute("echo should-not-run", 0.2);
+
+    expect(queued.exitCode).toBe(124);
+    expect(queued.stderr).toContain("waiting for the persistent shell");
+    expect(queued.stdout).not.toContain("should-not-run");
+    expect(Date.now() - startedAt).toBeLessThan(800);
+
+    expect((await first).exitCode).toBe(0);
+    const recovered = await shell.execute("echo recovered", 5);
+    expect(recovered.exitCode).toBe(0);
+    expect(recovered.stdout).toContain("recovered");
+  }, 10_000);
+
   it("aborts a queued execute() without running its bash command", async () => {
     const shell = make();
     const ac = new AbortController();
 
-    const first = shell.execute("sleep 1", 10);
+    const first = shell.execute("sleep 2", 10);
     // Fire the second call synchronously so it queues, then abort before
     // its turn arrives.
     const queued = shell.execute("sleep 5", 10, undefined, ac.signal);
@@ -445,8 +500,8 @@ describe("PersistentShell — long-running stability", () => {
 
     expect(queuedResult.exitCode).toBe(130);
     expect(queuedResult.stderr).toContain("aborted");
-    // Must not have run its own 5s sleep — aborted calls bail on turn arrival.
-    expect(elapsed).toBeLessThan(3_000);
+    // Must not wait for the active command or run its own 5s sleep.
+    expect(elapsed).toBeLessThan(1_000);
 
     const firstResult = await first;
     expect(firstResult.exitCode).toBe(0);
@@ -588,6 +643,40 @@ describe("readSandboxAgentEnv", () => {
 
     process.env.PENSAR_AGENT_ENV_VARS = JSON.stringify(["a", "b"]);
     expect(readSandboxAgentEnv()).toEqual({});
+  });
+});
+
+describe("readCanonicalCallbackEnv", () => {
+  const names = [
+    "APEX_CALLBACK_URL",
+    "APEX_CALLBACK_PORT",
+    "APEX_CALLBACK_EVENTS_PATH",
+    "APEX_OAST_HTTP_BASE_URL",
+    "APEX_OAST_HTTP_PORT",
+  ] as const;
+  const original = Object.fromEntries(
+    names.map((name) => [name, process.env[name]]),
+  );
+
+  afterEach(() => {
+    for (const name of names) {
+      const value = original[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    delete process.env.DAYTONA_API_KEY;
+  });
+
+  it("forwards only canonical OAST routing values", () => {
+    process.env.APEX_OAST_HTTP_BASE_URL = "https://callbacks.example/opaque";
+    process.env.APEX_OAST_HTTP_PORT = "4000";
+    process.env.DAYTONA_API_KEY = "must-not-leak";
+
+    expect(readCanonicalCallbackEnv()).toEqual({
+      APEX_OAST_HTTP_BASE_URL: "https://callbacks.example/opaque",
+      APEX_OAST_HTTP_PORT: "4000",
+    });
+    expect(readCanonicalCallbackEnv()).not.toHaveProperty("DAYTONA_API_KEY");
   });
 });
 

@@ -14,6 +14,7 @@ import {
 } from "../../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
 import type {
+  AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
   CacheMetrics,
@@ -30,6 +31,7 @@ import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
+import type { ResponseGuard } from "./tools/response";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -101,6 +103,18 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * @default "default"
    */
   mode?: AgentMode;
+
+  /**
+   * Model-facing tool protocol. `auto` selects the provider's freeform custom
+   * tool transport when available and otherwise uses the portable schema-based
+   * code interface. Model names do not affect selection.
+   *
+   * @default "auto"
+   */
+  toolProtocol?: AgentToolProtocolPreference;
+
+  /** Additional workflow-specific tools that must remain directly model-visible in code mode. */
+  directTools?: (ToolName | (string & {}))[];
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;
@@ -203,6 +217,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** Display label for the OTel span name / `gen_ai.agent.name`. */
   subagentName?: string;
 
+  /** Trusted per-agent workspace override (defaults to the session workspace). */
+  agentCwd?: string;
+
   /**
    * Override the auto-computed task directory. When set, takes precedence
    * over the directory derived from `subagentId`. Use this when a plan
@@ -245,6 +262,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * `activeTools` to get typed structured output from `consume()`.
    */
   responseSchema?: z.ZodSchema;
+
+  /** Reject an incomplete terminal response while keeping the agent running. */
+  responseGuard?: ResponseGuard;
 
   /**
    * Skills registry for on-demand skill loading.

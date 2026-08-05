@@ -14,6 +14,10 @@ import {
 } from "./index";
 
 describe("getMaxOutputTokens", () => {
+  it("reserves a reasoning-capable response budget for Grok 4.5", () => {
+    expect(getMaxOutputTokens("grok-4.5")).toBe(32_768);
+  });
+
   it("returns a positive value for every model in AVAILABLE_MODELS", () => {
     for (const model of AVAILABLE_MODELS) {
       const max = getMaxOutputTokens(model.id);
@@ -216,6 +220,16 @@ describe("prefersSequentialToolCalls", () => {
 });
 
 describe("OpenAI reasoning effort support", () => {
+  it("supports high reasoning for direct xAI Grok 4.5", () => {
+    expect(modelSupportsOpenAIReasoning("grok-4.5")).toBe(true);
+    expect(getOpenAIReasoningEfforts("grok-4.5")).toEqual([
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(normalizeOpenAIReasoningEffort("grok-4.5", "high")).toBe("high");
+  });
+
   it("supports the requested GPT-5.6 effort levels", () => {
     expect(getOpenAIReasoningEfforts("gpt-5.6-sol")).toEqual([
       "low",

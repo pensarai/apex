@@ -5,6 +5,7 @@ import type { ModelMessage } from "ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentEventBus } from "../../eventBus";
 import {
+  type AuxiliaryRecord,
   type InitRecord,
   type StateCheckpoint,
   type StepRecord,
@@ -537,6 +538,27 @@ describe("StepTraceWriter", () => {
 
     const [record] = readStepRecords(tracePath);
     expect(record.text).toBe("Simple string response");
+  });
+
+  it("records strategy-director usage without advancing operator steps", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: "fast-strike-1" });
+
+    writer.recordAuxiliary("strategy_director", "Retire the stale path.", {
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadTokens: 10,
+    });
+
+    const [record] = readTraceRecords(tracePath) as AuxiliaryRecord[];
+    expect(record.type).toBe("auxiliary");
+    expect(record.stepIndex).toBe(0);
+    expect(record.cumulativeUsage).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadTokens: 10,
+    });
+    expect(writer.currentStepIndex).toBe(0);
   });
 
   // -------------------------------------------------------------------------

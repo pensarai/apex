@@ -68,6 +68,29 @@ const ScopeConstraintsObject = z.object({
 
 type ScopeConstraints = z.infer<typeof ScopeConstraintsObject>;
 
+const NetworkSecurityConfigObject = z.object({
+  /** `strict` requires externally-attested default-deny process egress. */
+  egress: z.enum(["unrestricted", "strict"]).optional(),
+  /** Permit DNS through a controller-owned resolver. Defaults to true. */
+  allowDns: z.boolean().optional(),
+  /** Allocate an opaque session callback route and reserved listener port. */
+  oast: z
+    .object({
+      enabled: z.boolean().default(true),
+      callbackPort: z.number().int().min(1024).max(65535).default(4000),
+    })
+    .optional(),
+});
+
+export type NetworkSecurityConfig = z.infer<typeof NetworkSecurityConfigObject>;
+
+const ContextCompactionConfigObject = z.object({
+  enabled: z.boolean().optional(),
+  model: z.string().min(1).optional(),
+  thresholdRatio: z.number().min(0.5).max(0.95).optional(),
+  reasoning: z.enum(["off", "low", "medium", "high"]).optional(),
+});
+
 // The header map IS the state — empty record means "send no custom headers".
 const SessionHeadersRecord = z.record(z.string(), z.string());
 
@@ -214,11 +237,17 @@ const SessionConfigObject = z.object({
   mode: z.enum(["auto", "driver", "operator"]).optional(),
   outcomeGuidance: z.string().optional(),
   scopeConstraints: ScopeConstraintsObject.optional(),
+  /** Sandbox control-plane policy. Strict mode fails closed without attestation. */
+  networkSecurity: NetworkSecurityConfigObject.optional(),
+  /** Provider-neutral continuation capsules. Enabled by default. */
+  contextCompaction: ContextCompactionConfigObject.optional(),
   authCredentials: z
     .union([AuthCredentialsObject, z.array(AuthCredentialsObject)])
     .optional(),
   authenticationInstructions: z.string().optional(),
-  requestsPerSecond: z.number().optional(),
+  requestsPerSecond: z.number().positive().max(1000).optional(),
+  /** Authorize bounded anti-automation bursts up to requestsPerSecond. */
+  allowRateLimitTesting: z.boolean().optional(),
   /**
    * Opt-in: the client has authorized destructive testing (DB deletes/drops,
    * API write-deletes, catastrophic host operations). Defaults to off — when
@@ -240,6 +269,17 @@ const SessionConfigObject = z.object({
   smtpConfig: SmtpConfigObject.optional(),
   /** Enable exfiltration mode — allows internal pivoting and flag extraction through confirmed vulnerabilities */
   exfilMode: z.boolean().optional(),
+  /** Allow bounded correction of an invalid impact-proven fast-strike response. */
+  requireSuccessfulResponse: z.boolean().optional(),
+  /** Independent fast-strike operators; first verified success cancels the rest. */
+  fastStrikeLanes: z.number().int().min(1).max(3).optional(),
+  /** Per-lane deadline in competitive fast strike; reserves budget for recovery. */
+  fastStrikeLaneTimeoutMs: z
+    .number()
+    .int()
+    .min(60_000)
+    .max(3_600_000)
+    .optional(),
   /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
   agentCwd: z.string().optional(),
   /** Operator-provided guidance injected into the orchestrator/agent system prompts */
@@ -515,8 +555,17 @@ export async function create(input: CreateInputProps) {
   const logsPath = path.join(rootPath, "logs");
   const pocsPath = path.join(rootPath, "pocs");
 
+  const requestsPerSecond = Math.min(
+    1000,
+    Math.max(1, Math.round(normalizedConfig?.requestsPerSecond ?? 50)),
+  );
+  const rateTestingAllowed = normalizedConfig?.allowRateLimitTesting === true;
   const rateLimiter = new RateLimiter({
-    requestsPerSecond: normalizedConfig?.requestsPerSecond,
+    requestsPerSecond,
+    burst: rateTestingAllowed ? requestsPerSecond : 1,
+    maxConcurrency: rateTestingAllowed
+      ? Math.min(requestsPerSecond, 32)
+      : Math.min(requestsPerSecond, 4),
   });
 
   // Auto-create CredentialManager when authCredentials are provided.
@@ -536,16 +585,22 @@ export async function create(input: CreateInputProps) {
 
   // Caller `headers` wins verbatim; otherwise snapshot the current global
   // defaultHeaders so the session is locked at create time.
+  const { config: appConfig } = await import("../config");
+  const globalConfig = await appConfig.get();
   let snapshotHeaders: Record<string, string>;
   if (normalizedConfig?.headers !== undefined) {
     snapshotHeaders = { ...normalizedConfig.headers };
   } else {
-    const { config: appConfig } = await import("../config");
-    const cfg = await appConfig.get();
-    snapshotHeaders = cfg.defaultHeaders
-      ? { ...cfg.defaultHeaders }
+    snapshotHeaders = globalConfig.defaultHeaders
+      ? { ...globalConfig.defaultHeaders }
       : { ...DEFAULT_HEADER_RECORD };
   }
+
+  const contextCompaction = normalizedConfig?.contextCompaction ?? {
+    enabled: globalConfig.contextCompactionEnabled ?? true,
+    model: globalConfig.contextCompactionModel ?? undefined,
+    thresholdRatio: globalConfig.contextCompactionThresholdRatio ?? 0.7,
+  };
 
   const result: SessionInfo = {
     id: id,
@@ -560,6 +615,7 @@ export async function create(input: CreateInputProps) {
       ...normalizedConfig,
       mode: normalizedConfig?.mode || "auto",
       headers: snapshotHeaders,
+      contextCompaction,
       outcomeGuidance:
         normalizedConfig?.outcomeGuidance ||
         (normalizedConfig?.exfilMode
@@ -608,9 +664,18 @@ export const get = async (id: string) => {
 
   // Reconstruct RateLimiter instance (it gets serialized as plain object)
   // This ensures the session has a proper RateLimiter with methods
-  if (read.config?.requestsPerSecond) {
+  if (read.config) {
+    const requestsPerSecond = Math.min(
+      1000,
+      Math.max(1, Math.round(read.config.requestsPerSecond ?? 50)),
+    );
+    const rateTestingAllowed = read.config.allowRateLimitTesting === true;
     read._rateLimiter = new RateLimiter({
-      requestsPerSecond: read.config.requestsPerSecond,
+      requestsPerSecond,
+      burst: rateTestingAllowed ? requestsPerSecond : 1,
+      maxConcurrency: rateTestingAllowed
+        ? Math.min(requestsPerSecond, 32)
+        : Math.min(requestsPerSecond, 4),
     });
   } else {
     // Remove any stale serialized _rateLimiter data (plain object without methods)

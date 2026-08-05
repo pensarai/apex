@@ -75,6 +75,13 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   // digit.digit sequences to dashes so all Claude patterns match both forms.
   const n = modelId.replace(/(\d)\.(\d)/g, "$1-$2");
 
+  // xAI Grok 4.5 uses reasoning tokens from the response budget. Keep enough
+  // room for high-effort reasoning plus a tool call without allowing a single
+  // step to consume an unbounded share of a long-running benchmark.
+  if (/^grok-4\.5(?:$|-)/.test(modelId)) {
+    return 32_768;
+  }
+
   // Latest-tier Claude (4.6, 4.7, 4.8) ship 128K output. Match these BEFORE
   // the generic `claude-opus-4-` / `claude-sonnet-4-` catch-alls below —
   // those exist only as a 32K/64K floor for older 4.x revisions and would

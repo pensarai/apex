@@ -127,12 +127,45 @@ describe("buildReasoningProviderOptions", () => {
     expect(result?.bedrock).toBeUndefined();
   });
 
+  it("sets xai.reasoningEffort for Grok 4.5 via native xAI Responses", () => {
+    expect(
+      buildReasoningProviderOptions("grok-4.5", {
+        openAIReasoningEffort: "high",
+      }),
+    ).toEqual({ xai: { reasoningEffort: "high" } });
+  });
+
   it("sends GPT-5.6 ultra effort as the API-supported max value", () => {
     expect(
       buildReasoningProviderOptions("gpt-5.6-sol", {
         openAIReasoningEffort: "ultra",
       }),
     ).toEqual({ openai: { reasoningEffort: "max" } });
+  });
+
+  it("requests explicit high-effort reasoning for Kimi K3 on OpenRouter", () => {
+    expect(
+      buildReasoningProviderOptions("moonshotai/kimi-k3", {
+        enableThinking: true,
+        openAIReasoningEffort: "high",
+      }),
+    ).toEqual({
+      openrouter: {
+        reasoning: { enabled: true, exclude: false, effort: "high" },
+      },
+    });
+  });
+
+  it("requests high-effort reasoning by default for GLM-5.2 when extended thinking is enabled", () => {
+    expect(
+      buildReasoningProviderOptions("z-ai/glm-5.2", {
+        enableThinking: true,
+      }),
+    ).toEqual({
+      openrouter: {
+        reasoning: { enabled: true, exclude: false, effort: "high" },
+      },
+    });
   });
 
   it("carries the adaptive-thinking effort hint on both anthropic and bedrock for a 4.6 model", () => {

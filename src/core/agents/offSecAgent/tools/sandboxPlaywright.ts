@@ -18,6 +18,7 @@
  * because the Chromium process stays alive between connections.
  */
 
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tool } from "ai";
@@ -27,16 +28,23 @@ import {
   stripBrowserManagedHeaders,
 } from "../../../http/targetHeaders";
 import { CAMOUFOX_OPTIONS, MEMORY_FIREFOX_PREFS } from "./camoufox";
+import { assertCommandActionAllowed } from "./destructiveGuard";
 import type {
   BrowserClickResult,
   BrowserConsoleResult,
   BrowserEvaluateResult,
   BrowserFillResult,
   BrowserNavigateResult,
+  BrowserRunCodeResult,
   BrowserScreenshotResult,
 } from "./playwrightMcp";
 import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
-import { resolverSessionFromCtx } from "./scopeGuard";
+import {
+  assertCommandInScope,
+  assertUrlInScope,
+  resolverSessionFromCtx,
+} from "./scopeGuard";
+import { assertTrafficActionAllowed } from "./trafficGuard";
 import type { ToolContext } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -70,6 +78,29 @@ const installationCache = new WeakMap<UnifiedSandbox, Promise<void>>();
  * a parent orchestrator and its spawned workers.
  */
 const browserSetupCache = new WeakMap<UnifiedSandbox, Promise<void>>();
+
+/**
+ * Browser actions share one persistent Firefox profile per sandbox. Tool
+ * factories are created independently for parent and worker agents, so the
+ * queue must be keyed by sandbox rather than captured by one factory.
+ */
+const browserActionQueues = new WeakMap<UnifiedSandbox, Promise<void>>();
+
+export function serializeSandboxBrowserAction<T>(
+  sandbox: UnifiedSandbox,
+  action: () => Promise<T>,
+): Promise<T> {
+  const previous = browserActionQueues.get(sandbox) ?? Promise.resolve();
+  const current = previous.catch(() => {}).then(action);
+  browserActionQueues.set(
+    sandbox,
+    current.then(
+      () => {},
+      () => {},
+    ),
+  );
+  return current;
+}
 
 /**
  * Check whether camoufox-js, playwright-core, **and** the Camoufox browser
@@ -402,8 +433,9 @@ const fs = require('fs');
 `;
 
   const b64 = Buffer.from(script).toString("base64");
+  const scriptPath = `${SANDBOX_PW_DIR}/pw_action_${randomUUID()}.js`;
   const result = await sandbox.execute(
-    `echo "${b64}" | base64 -d > ${SANDBOX_PW_DIR}/pw_action.js && node ${SANDBOX_PW_DIR}/pw_action.js`,
+    `echo "${b64}" | base64 -d > ${scriptPath} && node ${scriptPath}; __apex_status=$?; rm -f ${scriptPath}; exit $__apex_status`,
     { timeout },
   );
 
@@ -545,23 +577,14 @@ export function createSandboxBrowserTools(ctx: ToolContext) {
     return setupPromise;
   }
 
-  // Serialise sandbox script execution so concurrent tool calls don't race on
-  // the shared Camoufox fingerprint cache or the persistent browser profile dir.
-  let scriptQueue: Promise<unknown> = Promise.resolve();
-
   function runScript(body: string, timeout = 60): Promise<unknown> {
     const resolved = targetUrl
       ? resolveEffectiveHeaders(resolverSessionFromCtx(ctx), targetUrl)
       : ctx.session.config?.headers;
     const headers = stripBrowserManagedHeaders(resolved);
-    const next = scriptQueue.then(() =>
+    return serializeSandboxBrowserAction(sandbox, () =>
       runPlaywrightScript(sandbox, body, timeout, headers),
     );
-    scriptQueue = next.then(
-      () => {},
-      () => {},
-    );
-    return next;
   }
 
   // ------- browser_navigate -------------------------------------------------
@@ -576,6 +599,7 @@ Target base URL: ${targetUrl}`,
     inputSchema: BrowserNavigateInput,
     execute: async ({ url }): Promise<BrowserNavigateResult> => {
       try {
+        assertUrlInScope(url, ctx);
         await setup();
         const result = (await runScript(
           `
@@ -592,6 +616,47 @@ Target base URL: ${targetUrl}`,
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return { success: false, url, error: message };
+      }
+    },
+  });
+
+  // ------- browser_run_code -------------------------------------------------
+
+  const browser_run_code = tool({
+    description:
+      "Run an async Playwright function against Apex's managed Camoufox page and context. Use browser_screenshot separately for durable evidence.",
+    inputSchema: z.object({
+      code: z
+        .string()
+        .min(1)
+        .describe(
+          "Async function accepting (page), returning JSON-serializable data",
+        ),
+      toolCallDescription: z.string(),
+    }),
+    execute: async ({ code }): Promise<BrowserRunCodeResult> => {
+      try {
+        assertCommandInScope(code, ctx);
+        assertCommandActionAllowed(code, ctx);
+        assertTrafficActionAllowed(code, ctx);
+        for (const match of code.matchAll(/https?:\/\/[^\s"'`)]+/gi)) {
+          assertUrlInScope(match[0], ctx);
+        }
+        await setup();
+        const result = await runScript(
+          `
+    const program = (${code});
+    if (typeof program !== 'function') throw new Error('browser_run_code requires a function');
+    const value = await program(page, context);
+    require('fs').writeFileSync('${SANDBOX_URL_FILE}', page.url());
+    resolve({ success: true, result: value });
+          `,
+          120,
+        );
+        return { success: true, code, result };
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { success: false, code, error: message };
       }
     },
   });
@@ -1084,6 +1149,7 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
     browser_screenshot,
     browser_click,
     browser_fill,
+    browser_run_code,
     browser_evaluate,
     browser_console,
     browser_get_cookies,

@@ -88,6 +88,13 @@ export interface BrowserEvaluateResult {
   error?: string;
 }
 
+export interface BrowserRunCodeResult {
+  success: boolean;
+  code?: string;
+  result?: unknown;
+  error?: string;
+}
+
 export interface BrowserConsoleResult {
   success: boolean;
   messages?: Array<{ type: string; text: string }>;
@@ -156,6 +163,18 @@ const BrowserEvaluateInput = z.object({
   toolCallDescription: z
     .string()
     .describe("What you are testing with this script"),
+});
+
+const BrowserRunCodeInput = z.object({
+  code: z
+    .string()
+    .min(1)
+    .describe(
+      "An async Playwright function body using the managed page, for example: async (page) => { await page.goto(url); return await page.title(); }",
+    ),
+  toolCallDescription: z
+    .string()
+    .describe("What the managed browser program is testing"),
 });
 
 const BrowserConsoleInput = z.object({
@@ -1244,6 +1263,8 @@ export function createBrowserTools(
   viewportSize?: string | null,
   existingSession?: PlaywrightMcpSession,
   extraHttpHeaders?: Record<string, string> | null,
+  validateNavigation?: (url: string) => void,
+  validateProgram?: (code: string) => void,
 ) {
   let session: PlaywrightMcpSession;
 
@@ -1289,6 +1310,7 @@ export function createBrowserTools(
       toolCallDescription,
     }): Promise<BrowserNavigateResult> => {
       try {
+        validateNavigation?.(url);
         const result = await session.callTool(
           "browser_navigate",
           { url },
@@ -1500,6 +1522,33 @@ Example workflow:
     },
   });
 
+  const browser_run_code = tool({
+    description: `Run a bounded Playwright program against Apex's managed Camoufox page.
+
+Use this for multi-step, stateful browser work: navigation, DOM extraction, form workflows, request observation, and exploit validation. The code runs against the same authenticated page/context as the other browser capabilities and is torn down with the agent. Prefer this over launching a separate browser from the shell.
+
+Top-level navigation URLs appearing in code are scope-checked before execution. Use browser_screenshot separately for durable Console evidence.`,
+    inputSchema: BrowserRunCodeInput,
+    execute: async ({ code }): Promise<BrowserRunCodeResult> => {
+      try {
+        validateProgram?.(code);
+        for (const match of code.matchAll(/https?:\/\/[^\s"'`)]+/gi)) {
+          validateNavigation?.(match[0]);
+        }
+        const result = await session.callTool(
+          "browser_run_code",
+          { code },
+          abortSignal,
+        );
+        return { success: true, code, result };
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger?.error(`browser_run_code failed: ${message}`);
+        return { success: false, code, error: message };
+      }
+    },
+  });
+
   const browser_console = tool({
     description: descriptions.console,
     inputSchema: BrowserConsoleInput,
@@ -1640,6 +1689,7 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
     browser_screenshot,
     browser_click,
     browser_fill,
+    browser_run_code,
     browser_evaluate,
     browser_console,
     browser_get_cookies,

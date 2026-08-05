@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
+import type { XaiResponsesProviderOptions } from "@ai-sdk/xai";
+import type { OpenRouterProviderOptions } from "@openrouter/ai-sdk-provider";
 import {
   generateText,
   type LanguageModel,
@@ -21,12 +23,33 @@ import { createLogger } from "../logger/structured";
 import { shouldRecordAiPayloads } from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
 import { withCachedLastMessage, withCachedSystemPrompt } from "./caching";
-import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
+import {
+  type ContextCompactionConfig,
+  type ContextCompactionResult,
+  type ContextCompactionState,
+  partitionForCompaction,
+} from "./contextCompaction";
+import {
+  estimateTokens,
+  estimateToolsOverheadTokens,
+  fitMessagesToContext,
+  truncateWithMarker,
+} from "./contextManagement";
 import {
   getMaxOutputTokens,
   getModelInfo,
   prefersSequentialToolCalls,
 } from "./models";
+import {
+  buildStrategyMessage,
+  latestResponseRejectionCount,
+  runStrategyReview,
+  type StrategyDirectorConfig,
+  type StrategyDirectorState,
+  type StrategyReviewUsage,
+  shouldRunStrategyDirector,
+  strategyFallback,
+} from "./strategyDirector";
 import { STREAM_DEBUG } from "./streamTelemetry";
 import {
   type AIAuthConfig,
@@ -88,6 +111,7 @@ const OPENAI_REASONING_MODEL_IDS = new Set([
 export interface UsageStepContext {
   sessionId?: string;
   stepSeq?: number;
+  operation?: "agent-step" | "context-compaction";
 }
 
 /** Callback for reporting token usage from AI operations */
@@ -134,7 +158,17 @@ export function takeStepContext(): UsageStepContext | undefined {
   if (!store) return undefined;
   const stepSeq = store.next;
   store.next += 1;
-  return { sessionId: store.sessionId, stepSeq };
+  return { sessionId: store.sessionId, stepSeq, operation: "agent-step" };
+}
+
+export function reportAuxiliaryUsage(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  operation: "context-compaction",
+  sessionId?: string,
+): void {
+  _usageCallback?.(model, inputTokens, outputTokens, { sessionId, operation });
 }
 
 export type AIModelProvider =
@@ -150,63 +184,86 @@ export type AIModelProvider =
 
 /** Conservative default when `getModelInfo` doesn't have a `contextLength`. */
 function getContextWindow(modelId: string): number {
+  if (/^grok-4\.5(?:$|-)/.test(modelId)) return 500_000;
   return getModelInfo(modelId).contextLength ?? 200_000;
 }
 
-function checkIfRateLimitError(error: unknown): boolean {
-  const errObj =
-    typeof error === "object" && error !== null
-      ? (error as Record<string, unknown>)
-      : {};
+function checkIfRetryableProviderError(error: unknown): boolean {
+  const retryableStatuses = new Set([408, 429, 500, 502, 503, 504, 529]);
+  const retryableCodes = new Set([
+    "econnreset",
+    "etimedout",
+    "epipe",
+    "rate_limit_exceeded",
+    "request_timeout",
+    "service_unavailable",
+    "throttling",
+    "timeout",
+    "und_err_socket",
+  ]);
+  const retryableText = [
+    "rate limit",
+    "request rate",
+    "service unavailable",
+    "temporarily unavailable",
+    "throttl",
+    "too many requests",
+    "too many tokens",
+    "overloaded",
+    "please wait",
+  ];
+  const seen = new Set<object>();
+  const queue: unknown[] = [error];
 
-  // Check message — works for both Error instances and plain objects
-  // (Bedrock streaming errors are plain { message: "..." } records)
-  const errorMessage = (
-    typeof errObj.message === "string" ? errObj.message : ""
-  ).toLowerCase();
-  const errorCode = String(
-    typeof errObj.code === "string" ? errObj.code : "",
-  ).toLowerCase();
-  // AWS SDK errors surface the exception type via .name
-  const errorName = (
-    typeof errObj.name === "string" ? errObj.name : ""
-  ).toLowerCase();
-  // Bedrock HTTP-level errors include $metadata.httpStatusCode
-  const httpStatus =
-    typeof errObj.$metadata === "object" && errObj.$metadata !== null
-      ? (errObj.$metadata as Record<string, unknown>).httpStatusCode
-      : undefined;
-  // Stringified fallback for opaque error objects (e.g. Bedrock stream records)
-  const errorString =
-    errorMessage || errorName ? "" : String(error).toLowerCase();
+  for (let depth = 0; depth < 5 && queue.length > 0; depth++) {
+    const currentLevel = queue.splice(0);
+    for (const value of currentLevel) {
+      if (typeof value === "string") {
+        const normalized = value.toLowerCase();
+        if (retryableCodes.has(normalized)) return true;
+        if (retryableText.some((signal) => normalized.includes(signal))) {
+          return true;
+        }
+        continue;
+      }
+      if (typeof value === "number") {
+        if (retryableStatuses.has(value)) return true;
+        continue;
+      }
+      if (typeof value !== "object" || value === null || seen.has(value)) {
+        continue;
+      }
 
-  return (
-    // Message-based detection
-    errorMessage.includes("too many tokens") ||
-    errorMessage.includes("rate limit") ||
-    errorMessage.includes("request rate") ||
-    errorMessage.includes("throttl") ||
-    errorMessage.includes("overloaded") ||
-    errorMessage.includes("too many requests") ||
-    errorMessage.includes("please wait") ||
-    errorMessage.includes("service unavailable") ||
-    // AWS SDK exception names (ThrottlingException, TooManyRequestsException)
-    errorName.includes("throttl") ||
-    errorName.includes("toomanyrequests") ||
-    errorName.includes("serviceunavailable") ||
-    // Error codes
-    errorCode === "rate_limit_exceeded" ||
-    errorCode === "throttling" ||
-    errorCode === "429" ||
-    // HTTP status from AWS SDK $metadata
-    httpStatus === 429 ||
-    httpStatus === 529 ||
-    httpStatus === 503 ||
-    // Fallback: stringified error for opaque Bedrock stream records
-    errorString.includes("throttl") ||
-    errorString.includes("too many") ||
-    errorString.includes("request rate")
-  );
+      seen.add(value);
+      const record = value as Record<string, unknown>;
+      for (const key of [
+        "code",
+        "error_type",
+        "message",
+        "name",
+        "status",
+        "statusCode",
+        "httpStatusCode",
+        "type",
+      ]) {
+        const signal = record[key];
+        if (signal !== undefined) queue.push(signal);
+      }
+      for (const key of [
+        "$metadata",
+        "cause",
+        "data",
+        "error",
+        "metadata",
+        "response",
+      ]) {
+        const nested = record[key];
+        if (nested !== undefined) queue.push(nested);
+      }
+    }
+  }
+
+  return false;
 }
 
 // Injected into the system prompt for models that mis-parse parallel tool
@@ -239,7 +296,13 @@ function applySequentialToolCallPolicy(
 
 const MAX_RATE_LIMIT_RETRIES = 20;
 const MAX_IDLE_RESUME_RETRIES = 3;
+const MAX_OUTPUT_LIMIT_RESUMES = 3;
+const MAX_MISSING_RESPONSE_RESUMES = 3;
 const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const OUTPUT_LIMIT_CONTINUATION_PROMPT =
+  "The previous model turn hit its output-token limit and did not complete the task. Continue from the available state. Keep reasoning concise and invoke the next concrete tool. If work is complete, use the response tool.";
+const MISSING_RESPONSE_CONTINUATION_PROMPT =
+  'The previous model turn ended without invoking the required "response" completion tool. Continue from verified state. If complete, invoke response now. Otherwise take one materially distinct, bounded action; do not repeat failed probes.';
 
 class StreamIdleTimeoutError extends Error {
   constructor(idleMs: number) {
@@ -367,6 +430,75 @@ function createToolExecutionGate(): {
   };
 }
 
+function buildSafeContinuationMessages(
+  baseMessages: ModelMessage[],
+  responseMessages: ModelMessage[],
+  continuationPrompt: string,
+): ModelMessage[] {
+  const messages = [...baseMessages];
+  const lastAssistant = [...responseMessages]
+    .reverse()
+    .find((message) => message.role === "assistant");
+
+  if (lastAssistant) {
+    if (typeof lastAssistant.content === "string") {
+      if (lastAssistant.content.length > 0) messages.push(lastAssistant);
+    } else {
+      // A truncated tool call may contain incomplete JSON. Preserve prose and
+      // reasoning only so the resumed provider request has valid tool pairs.
+      const safeContent = lastAssistant.content.filter(
+        (part) =>
+          part.type === "text" ||
+          part.type === "reasoning" ||
+          part.type === "file",
+      );
+      if (safeContent.length > 0) {
+        messages.push({ ...lastAssistant, content: safeContent });
+      }
+    }
+  }
+  messages.push({ role: "user", content: continuationPrompt });
+  return messages;
+}
+
+export function buildOutputLimitContinuationMessages(
+  baseMessages: ModelMessage[],
+  responseMessages: ModelMessage[],
+): ModelMessage[] {
+  return buildSafeContinuationMessages(
+    baseMessages,
+    responseMessages,
+    OUTPUT_LIMIT_CONTINUATION_PROMPT,
+  );
+}
+
+export function buildMissingResponseContinuationMessages(
+  baseMessages: ModelMessage[],
+  responseMessages: ModelMessage[],
+): ModelMessage[] {
+  return buildSafeContinuationMessages(
+    baseMessages,
+    responseMessages,
+    MISSING_RESPONSE_CONTINUATION_PROMPT,
+  );
+}
+
+export function shouldResumeMissingResponse(input: {
+  endedAtOutputLimit: boolean;
+  responseToolAvailable: boolean;
+  responseToolCalled: boolean;
+  resumeCount: number;
+  aborted: boolean;
+}): boolean {
+  return (
+    !input.endedAtOutputLimit &&
+    input.responseToolAvailable &&
+    !input.responseToolCalled &&
+    input.resumeCount < MAX_MISSING_RESPONSE_RESUMES &&
+    !input.aborted
+  );
+}
+
 // Helper function to wrap a stream with error handling for async errors
 function wrapStreamWithErrorHandler(
   originalStream: StreamTextResult<ToolSet, never>,
@@ -394,6 +526,8 @@ function wrapStreamWithErrorHandler(
           const toolGate = createToolExecutionGate();
 
           wrappedStream = (async function* () {
+            let endedAtOutputLimit = false;
+            let sawRequiredResponseTool = false;
             try {
               for await (const chunk of withIdleTimeout(
                 originalStream.fullStream,
@@ -433,7 +567,101 @@ function wrapStreamWithErrorHandler(
                   throw (chunk as unknown as { error: unknown }).error;
                 }
 
+                if (chunk.type === "finish-step") {
+                  endedAtOutputLimit = chunk.finishReason === "length";
+                } else if (
+                  chunk.type === "tool-result" &&
+                  chunk.toolName === RESPONSE_TOOL_NAME
+                ) {
+                  const output = (chunk as unknown as { output?: unknown })
+                    .output;
+                  const value =
+                    typeof output === "object" &&
+                    output !== null &&
+                    "value" in output
+                      ? (output as { value: unknown }).value
+                      : output;
+                  sawRequiredResponseTool =
+                    typeof value === "object" &&
+                    value !== null &&
+                    (value as { success?: unknown }).success === true;
+                }
+
                 yield chunk;
+              }
+
+              const outputLimitResumeCount = opts._outputLimitResumeCount ?? 0;
+              if (
+                endedAtOutputLimit &&
+                opts.tools &&
+                Object.keys(opts.tools).length > 0 &&
+                outputLimitResumeCount < MAX_OUTPUT_LIMIT_RESUMES &&
+                !opts.abortSignal?.aborted
+              ) {
+                let responseMessages: ModelMessage[] = [];
+                try {
+                  const response = await originalStream.response;
+                  responseMessages = response.messages as ModelMessage[];
+                } catch {
+                  // Last prepared state plus the continuation remains valid.
+                }
+                const continuationMessages =
+                  buildOutputLimitContinuationMessages(
+                    messagesContainer.current,
+                    responseMessages,
+                  );
+                messagesContainer.current = continuationMessages;
+                const nextResumeCount = outputLimitResumeCount + 1;
+                if (!silent || STREAM_DEBUG) {
+                  log.warn(
+                    `Model output truncated (resume ${nextResumeCount}/${MAX_OUTPUT_LIMIT_RESUMES}); continuing from ${continuationMessages.length} messages`,
+                  );
+                }
+                const continued = streamResponse({
+                  ...opts,
+                  messages: continuationMessages,
+                  _outputLimitResumeCount: nextResumeCount,
+                });
+                for await (const chunk of continued.fullStream) yield chunk;
+                return;
+              }
+
+              const missingResponseResumeCount =
+                opts._missingResponseResumeCount ?? 0;
+              if (
+                shouldResumeMissingResponse({
+                  endedAtOutputLimit,
+                  responseToolAvailable:
+                    opts.tools?.[RESPONSE_TOOL_NAME] !== undefined,
+                  responseToolCalled: sawRequiredResponseTool,
+                  resumeCount: missingResponseResumeCount,
+                  aborted: opts.abortSignal?.aborted === true,
+                })
+              ) {
+                let responseMessages: ModelMessage[] = [];
+                try {
+                  const response = await originalStream.response;
+                  responseMessages = response.messages as ModelMessage[];
+                } catch {
+                  // Last prepared state plus the continuation remains valid.
+                }
+                const continuationMessages =
+                  buildMissingResponseContinuationMessages(
+                    messagesContainer.current,
+                    responseMessages,
+                  );
+                messagesContainer.current = continuationMessages;
+                const nextResumeCount = missingResponseResumeCount + 1;
+                log.warn(
+                  `Model stream ended without required response tool (resume ${nextResumeCount}/${MAX_MISSING_RESPONSE_RESUMES}); continuing from ${continuationMessages.length} messages`,
+                );
+                const continued = streamResponse({
+                  ...opts,
+                  messages: continuationMessages,
+                  _missingResponseResumeCount: nextResumeCount,
+                });
+                for await (const chunk of continued.fullStream) yield chunk;
+                return;
               }
             } catch (error) {
               const errorMessage =
@@ -482,7 +710,7 @@ function wrapStreamWithErrorHandler(
               // Handle rate limit errors with exponential backoff retry
               if (
                 !isCtxError &&
-                checkIfRateLimitError(error) &&
+                checkIfRetryableProviderError(error) &&
                 rateLimitRetryCount < MAX_RATE_LIMIT_RETRIES
               ) {
                 const nextRetryCount = rateLimitRetryCount + 1;
@@ -747,6 +975,7 @@ export function modelSupportsAdaptiveThinking(modelId: string): boolean {
 }
 
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
+  if (/^grok-4\.5(?:$|-)/.test(modelId)) return true;
   const { provider } = getModelInfo(modelId);
   if (provider !== "openai") return false;
   return (
@@ -790,6 +1019,9 @@ export function normalizeOpenAIReasoningEffort(
  *     requested when this key is present. `display: 'summarized'` makes the
  *     model actually return reasoning text (adaptive can otherwise omit it).
  *   - `openai.reasoningEffort` — OpenAI/o-series reasoning models.
+ *   - `xai.reasoningEffort` — xAI Grok reasoning models.
+ *   - `openrouter.reasoning.effort` — OpenRouter reasoning models such as
+ *     Kimi K3 and GLM-5.2.
  */
 export type ReasoningProviderOptions = {
   anthropic?: {
@@ -808,6 +1040,8 @@ export type ReasoningProviderOptions = {
     };
   };
   openai?: OpenAIResponsesProviderOptions;
+  xai?: XaiResponsesProviderOptions;
+  openrouter?: OpenRouterProviderOptions;
 };
 
 /**
@@ -841,10 +1075,21 @@ export function buildReasoningProviderOptions(
     model,
     opts.openAIReasoningEffort,
   );
+  const useXaiReasoning = /^grok-4\.5(?:$|-)/.test(model);
+  const useOpenRouterReasoning =
+    !!opts.enableThinking && getModelInfo(model).provider === "openrouter";
+  const requestedOpenRouterEffort =
+    opts.openAIReasoningEffort ?? opts.thinkingEffort ?? "high";
+  const openRouterEffort =
+    requestedOpenRouterEffort === "ultra" || requestedOpenRouterEffort === "max"
+      ? "xhigh"
+      : requestedOpenRouterEffort;
   // The effort hint only rides along when adaptive thinking is actually used.
   const effort = useThinking ? (opts.thinkingEffort ?? undefined) : undefined;
 
-  if (!useThinking && !normalizedOpenAIEffort) return undefined;
+  if (!useThinking && !normalizedOpenAIEffort && !useOpenRouterReasoning) {
+    return undefined;
+  }
 
   return {
     ...(useThinking
@@ -863,7 +1108,27 @@ export function buildReasoningProviderOptions(
         }
       : {}),
     ...(normalizedOpenAIEffort
-      ? { openai: { reasoningEffort: normalizedOpenAIEffort } }
+      ? useXaiReasoning
+        ? {
+            xai: {
+              reasoningEffort: normalizedOpenAIEffort as
+                | "low"
+                | "medium"
+                | "high",
+            },
+          }
+        : { openai: { reasoningEffort: normalizedOpenAIEffort } }
+      : {}),
+    ...(useOpenRouterReasoning
+      ? {
+          openrouter: {
+            reasoning: {
+              enabled: true,
+              exclude: false,
+              effort: openRouterEffort,
+            },
+          },
+        }
       : {}),
   };
 }
@@ -872,6 +1137,11 @@ export function buildReasoningProviderOptions(
 export interface CacheMetrics {
   cacheReadInputTokens: number;
   cacheCreationInputTokens: number;
+}
+
+export interface AuxiliaryUsageEvent extends StrategyReviewUsage {
+  kind: "strategy_director";
+  summary: string;
 }
 
 export interface StreamResponseOpts {
@@ -897,8 +1167,22 @@ export interface StreamResponseOpts {
    * new messages (not the full pre-summarization history).
    */
   onSummarized?: (summary: string) => void;
+  /** Harness-owned provider-neutral context compaction. Enabled by default. */
+  contextCompaction?: ContextCompactionConfig;
+  /** Canonical state overlaid on model-generated continuation state. */
+  getContextCompactionState?: () =>
+    | ContextCompactionState
+    | Promise<ContextCompactionState>;
+  /** Called only after the append-only archive is durably committed. */
+  onCompacted?: (result: ContextCompactionResult) => void | Promise<void>;
+  /** Known runtime secrets removed from compaction model input and capsules. */
+  secretValues?: string[];
   /** Called when Anthropic cache metrics are present in a step's providerMetadata */
   onCacheMetrics?: (metrics: CacheMetrics) => void;
+  /** Bounded same-model review cadence for long-running operator loops. */
+  strategyDirector?: StrategyDirectorConfig;
+  /** Usage and guidance emitted by advisory control-plane calls. */
+  onAuxiliaryUsage?: (event: AuxiliaryUsageEvent) => void;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+) */
   enableThinking?: boolean;
   /**
@@ -917,6 +1201,12 @@ export interface StreamResponseOpts {
    * boundary; throws `ContextLengthExhaustedError` past `MAX_RESTART_DEPTH`.
    */
   _restartDepth?: number;
+  /** Bounds automatic continuation after a truncated provider turn. */
+  _outputLimitResumeCount?: number;
+  /** Bounds continuation when the model omits the response contract. */
+  _missingResponseResumeCount?: number;
+  /** Shared review cadence across provider/context recovery boundaries. */
+  _strategyDirectorState?: StrategyDirectorState;
 }
 
 export function streamResponse(
@@ -930,6 +1220,13 @@ export function streamResponse(
       restartDepth,
     );
   }
+  const strategyDirectorState = opts._strategyDirectorState ?? {
+    nextStepNumber: 0,
+    reviewCount: 0,
+    lastReviewedStep: -1,
+  };
+  opts._strategyDirectorState = strategyDirectorState;
+  const strategySegmentStart = strategyDirectorState.nextStepNumber;
 
   const {
     prompt,
@@ -946,6 +1243,8 @@ export function streamResponse(
     authConfig,
     onFinish,
     onCacheMetrics,
+    strategyDirector,
+    onAuxiliaryUsage,
     enableThinking,
     thinkingEffort,
     openAIReasoningEffort,
@@ -984,6 +1283,7 @@ export function streamResponse(
   // below is a safety net for tokenizer drift the estimate doesn't catch.
   let fittedMessages = messages;
   let proactiveFitFailed = false;
+  let proactiveCompactionDue = false;
   if (messages && messages.length > 0) {
     const fitted = fitMessagesToContext(messages, {
       contextWindow: getContextWindow(model),
@@ -994,6 +1294,21 @@ export function streamResponse(
     });
     fittedMessages = fitted.messages;
     proactiveFitFailed = !fitted.fitsBudget;
+    const thresholdRatio = Math.min(
+      0.95,
+      Math.max(0.5, opts.contextCompaction?.thresholdRatio ?? 0.7),
+    );
+    const estimatedTotalTokens =
+      fitted.estimatedInputTokens +
+      estimateTokens(systemWithToolPolicy ?? "") +
+      estimateToolsOverheadTokens(tools) +
+      1_000;
+    proactiveCompactionDue =
+      process.env.PENSAR_CONTEXT_COMPACTION?.toLowerCase() !== "legacy" &&
+      opts.contextCompaction?.enabled !== false &&
+      estimatedTotalTokens >= getContextWindow(model) * thresholdRatio &&
+      partitionForCompaction(fitted.messages, getContextWindow(model)).archived
+        .length > 0;
     if (fitted.modified && !silent) {
       log.warn(
         `Proactive context fit: compacted messages to ~${fitted.estimatedInputTokens} tokens (fits=${fitted.fitsBudget})`,
@@ -1009,10 +1324,10 @@ export function streamResponse(
   // Wrap with the same error handler the streamText path uses, otherwise
   // an overflow inside the summarization call itself escapes uncaught while
   // the equivalent post-streamText path (line ~880) recovers.
-  if (proactiveFitFailed && fittedMessages) {
+  if ((proactiveFitFailed || proactiveCompactionDue) && fittedMessages) {
     if (!silent) {
       log.warn(
-        `Proactive context fit returned fitsBudget=false on ${fittedMessages.length} messages — escalating to summarization before send`,
+        `Proactive context management compacting ${fittedMessages.length} messages (fits=${!proactiveFitFailed}, threshold=${proactiveCompactionDue})`,
       );
     }
     // Pass `opts` through unchanged. The slot for this escalation is
@@ -1023,8 +1338,14 @@ export function streamResponse(
     // no-retry fall-through). With the post-bump, all three escalation
     // entry points (proactive, outer-catch, reactive Layer 3) consume
     // exactly one depth slot per summarization attempt — symmetric.
+    const useLegacyCompaction =
+      process.env.PENSAR_CONTEXT_COMPACTION?.toLowerCase() === "legacy" ||
+      opts.contextCompaction?.enabled === false;
+    const compactionSource = useLegacyCompaction
+      ? fittedMessages
+      : (messages ?? fittedMessages);
     return wrapStreamWithErrorHandler(
-      createSummarizationStream(fittedMessages, opts, providerModel),
+      createSummarizationStream(compactionSource, opts, providerModel),
       messagesContainer,
       opts,
       providerModel,
@@ -1060,6 +1381,9 @@ export function streamResponse(
   });
 
   let rateLimitRetryCount = 0;
+  let cachedStrategyReview:
+    | { stepNumber: number; message: ModelMessage }
+    | undefined;
 
   try {
     // Create the appropriate provider instance
@@ -1086,14 +1410,90 @@ export function streamResponse(
       // 16K output but our messages were sized assuming a smaller
       // reservation. Making the value explicit closes that drift class.
       maxOutputTokens: getMaxOutputTokens(model),
-      prepareStep: (opts) => {
+      prepareStep: async (step) => {
+        let preparedMessages = step.messages;
+        const totalStepNumber = strategySegmentStart + step.stepNumber;
+        strategyDirectorState.nextStepNumber = Math.max(
+          strategyDirectorState.nextStepNumber,
+          totalStepNumber + 1,
+        );
+        const rejectionCount = latestResponseRejectionCount(preparedMessages);
+        const rejectedNeedsReview =
+          rejectionCount !== undefined &&
+          rejectionCount !==
+            strategyDirectorState.lastHandledResponseRejection &&
+          strategyDirectorState.reviewCount <
+            (strategyDirector?.maxReviews ?? 0);
+        if (
+          rejectedNeedsReview ||
+          shouldRunStrategyDirector({
+            stepNumber: totalStepNumber,
+            state: strategyDirectorState,
+            config: strategyDirector,
+          })
+        ) {
+          strategyDirectorState.lastReviewedStep = totalStepNumber;
+          strategyDirectorState.reviewCount += 1;
+          if (rejectedNeedsReview) {
+            strategyDirectorState.lastHandledResponseRejection = rejectionCount;
+          }
+          let advice = strategyFallback(strategyDirectorState.previousAdvice);
+          try {
+            const review = await runStrategyReview({
+              model: providerModel,
+              modelId: model,
+              messages: step.messages,
+              previousAdvice: strategyDirectorState.previousAdvice,
+              abortSignal,
+            });
+            advice = review.advice;
+            onAuxiliaryUsage?.({
+              kind: "strategy_director",
+              ...review.usage,
+              summary: advice,
+            });
+            if (
+              _usageCallback &&
+              (review.usage.inputTokens > 0 || review.usage.outputTokens > 0)
+            ) {
+              _usageCallback(
+                model,
+                review.usage.inputTokens,
+                review.usage.outputTokens,
+                takeStepContext(),
+              );
+            }
+          } catch (error) {
+            if (abortSignal?.aborted) throw error;
+            log.warn("Strategy director failed; using durable fallback", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+          strategyDirectorState.previousAdvice = truncateWithMarker(
+            advice,
+            4_000,
+          );
+          cachedStrategyReview = {
+            stepNumber: totalStepNumber,
+            message: buildStrategyMessage(advice),
+          };
+        }
+
+        if (cachedStrategyReview?.stepNumber === totalStepNumber) {
+          preparedMessages = [
+            ...preparedMessages,
+            cachedStrategyReview.message,
+          ];
+        }
         // Update the container with the latest messages
-        messagesContainer.current = opts.messages;
+        messagesContainer.current = preparedMessages;
         // For Anthropic, add cache_control to the last message for incremental caching
         if (useAnthropicCaching) {
-          return { messages: withCachedLastMessage(opts.messages) };
+          return { messages: withCachedLastMessage(preparedMessages) };
         }
-        return undefined;
+        return preparedMessages === step.messages
+          ? undefined
+          : { messages: preparedMessages };
       },
       onError: async ({ error }: { error: unknown }) => {
         const errorMessage =
@@ -1436,7 +1836,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
       }
 
       if (
-        checkIfRateLimitError(error) &&
+        checkIfRetryableProviderError(error) &&
         attempt < MAX_OBJECT_RATE_LIMIT_RETRIES
       ) {
         const delayMs = Math.min(1000 * 2 ** attempt, 60_000);
@@ -1481,6 +1881,7 @@ const MINIMAL_RESTART_PROMPT =
 
 export {
   applySequentialToolCallPolicy,
+  checkIfRetryableProviderError,
   createToolExecutionGate,
   SEQUENTIAL_TOOL_CALL_INSTRUCTION,
   StreamIdleTimeoutError,

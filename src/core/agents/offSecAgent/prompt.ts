@@ -70,8 +70,10 @@ export function buildSessionWorkspaceSection(
   session: SessionPaths,
   agentCwd: string,
   activeTools?: readonly string[],
+  workspaceMode?: "isolated",
 ): string {
-  const sandboxMode = agentCwd === session.rootPath;
+  const sandboxMode =
+    agentCwd === session.rootPath || workspaceMode === "isolated";
   const providedFilesSection = buildProvidedFilesSection(session.rootPath);
   const sourceAssessmentSection = buildSourceAssessmentSection(
     session,
@@ -79,6 +81,24 @@ export function buildSessionWorkspaceSection(
     sandboxMode,
     activeTools,
   );
+
+  if (workspaceMode === "isolated") {
+    return `
+
+# Isolated Operator Workspace
+
+Your shell starts in an isolated workspace at ${agentCwd}. Keep this lane's scripts, notes, downloads, and temporary files here so concurrent operators cannot overwrite one another. Do not treat workspace contents as target source code unless a separate configured codebase path is explicitly listed.
+
+Shared session artifacts are stored at ${session.rootPath}:
+- **findings/** — written by \`document_vulnerability\`
+- **pocs/** — written by \`document_vulnerability\`
+- **scratchpad/** — shared scratch space; prefer your isolated workspace for intermediate files
+- **logs/** — execution logs
+- **evidence/** — screenshots and evidence
+- **provided_files/** — user-uploaded files
+
+Console contract tools write shared artifacts to the correct session directories automatically.${providedFilesSection}${sourceAssessmentSection}`;
+  }
 
   if (sandboxMode) {
     return `

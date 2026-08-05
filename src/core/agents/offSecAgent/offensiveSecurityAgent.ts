@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   ModelMessage,
@@ -7,11 +7,12 @@ import type {
   StreamTextResult,
   TextStreamPart,
   ToolCallPart,
+  ToolChoice,
   ToolResultPart,
   ToolSet,
 } from "ai";
-import { hasToolCall } from "ai";
-import { streamResponse } from "../../ai";
+import { resolveModelRuntimeProfile, streamResponse } from "../../ai";
+import { validateLatestCompactionArchive } from "../../ai/contextCompaction";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
 import {
   resolveEffectiveHeaders,
@@ -23,11 +24,20 @@ import { getApexTracer, withSubagentSessionBaggage } from "../../observability";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
+import { listTasks } from "../../tasks";
 import { scopedLogger } from "../../util/lazyLogger";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
+import {
+  buildCodeModeInstructions,
+  CanonicalCapabilityInvoker,
+  CODE_MODE_DIRECT_TOOL_NAMES,
+  CodeModeRuntime,
+  createCodeModeTools,
+} from "./codeMode";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
+  buildExecutionPolicyPrompt,
   createAllTools,
   createResponseTool,
   EMAIL_TOOL_NAMES_ACTIVE,
@@ -36,8 +46,14 @@ import {
   PLAN_MODE_TOOL_NAMES,
   PlaywrightMcpSession,
   RESPONSE_TOOL_NAME,
+  resolveExecutionPolicy,
   SEND_EMAIL_TOOL_NAME,
 } from "./tools";
+import {
+  buildSandboxSecurityPrompt,
+  createSandboxSessionSecurity,
+  type SandboxSessionSecurity,
+} from "./tools/sandboxSecurity";
 import { StepTraceWriter } from "./trace";
 import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
 
@@ -55,6 +71,24 @@ const STREAM_STALL_DEBUG =
 const STREAM_STALL_TICK_MS = 15_000;
 const STREAM_STALL_WARN_MS = 20_000;
 const STREAM_GAP_RECOVERED_MS = 10_000;
+
+function envEnabled(value: string | undefined): boolean {
+  return value === "1" || value?.toLowerCase() === "true";
+}
+
+export function resolveAgentToolChoice(
+  requested: ToolChoice<ToolSet> | undefined,
+  hasResponseTool: boolean,
+): ToolChoice<ToolSet> {
+  if (requested && requested !== "auto") return requested;
+  if (
+    hasResponseTool &&
+    envEnabled(process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE)
+  ) {
+    return "required";
+  }
+  return requested ?? "auto";
+}
 
 function responseArgBytes(input: unknown): number {
   if (input == null) return 0;
@@ -148,6 +182,12 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** Persistent shell for local-mode command execution; disposed on consume() completion. */
   private readonly persistentShell?: PersistentShell;
+
+  /** Isolated JavaScript orchestration runtime used by compact code-mode profiles. */
+  private codeModeRuntime?: CodeModeRuntime;
+
+  /** Ref-counted externally-enforced egress and callback lease. */
+  private readonly sandboxSecurity?: SandboxSessionSecurity;
 
   /**
    * This agent's Playwright MCP browser session. Either constructed fresh
@@ -245,16 +285,30 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
 
+    this.sandboxSecurity = createSandboxSessionSecurity(
+      input.sandbox,
+      input.session,
+      input.target,
+    );
+    const sandbox = this.sandboxSecurity?.sandbox ?? input.sandbox;
+
     // -- Resolve agent working directory ----------------------------------------
-    const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
+    const agentCwd =
+      input.agentCwd ??
+      input.session.config?.agentCwd ??
+      input.session.rootPath;
+    const executionPolicy = resolveExecutionPolicy(input.session);
+    const executionPolicyEnv = {
+      APEX_EXECUTION_POLICY_JSON: JSON.stringify(executionPolicy),
+    };
 
     // -- Persistent shell (local mode only) -----------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
     // stream ends, or when the agent is fully killed.
-    if (!input.sandbox) {
+    if (!sandbox) {
       this.persistentShell = new PersistentShell({
         cwd: agentCwd,
-        env: input.environmentVariables,
+        env: { ...input.environmentVariables, ...executionPolicyEnv },
       });
       if (input.commandCancelHandle) {
         const shell = this.persistentShell;
@@ -270,7 +324,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     // for agents that never use browser tools. Sandbox-mode agents already
     // share browser state via the sandbox's per-sandbox Playwright user-data
     // dir, so they don't need a session object on the host.
-    if (!input.sandbox) {
+    if (!sandbox) {
       // Snapshot resolved headers into the browser session. Later mutations
       // require a browser restart to take effect.
       const sessionHeaders = input.target
@@ -338,6 +392,7 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     const builtinTools = createAllTools({
       session: input.session,
+      executionPolicy,
       agentCwd,
       target: input.target,
       grpc: input.grpc,
@@ -345,7 +400,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       model: input.model,
       authConfig: input.authConfig,
       eventBus: this.eventBus,
-      sandbox: input.sandbox,
+      sandbox,
       findingsRegistry: input.findingsRegistry,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
@@ -426,6 +481,7 @@ export class OffensiveSecurityAgent<TResult = void> {
             this._capturedResponse = result as TResult;
             this._resolveResponseCaptured(result as TResult);
           },
+          input.responseGuard,
         ),
       };
     }
@@ -441,9 +497,10 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     let stopWhen = input.stopWhen;
     if (input.responseSchema) {
-      const responseStop = hasToolCall(
-        RESPONSE_TOOL_NAME,
-      ) as StopCondition<ToolSet>;
+      // A guarded response still executes as a tool call. Stop only after its
+      // callback accepted and captured a terminal result.
+      const responseStop = (() =>
+        this._responseToolFired) as StopCondition<ToolSet>;
       if (!stopWhen) {
         stopWhen = responseStop;
       } else if (Array.isArray(stopWhen)) {
@@ -465,6 +522,18 @@ export class OffensiveSecurityAgent<TResult = void> {
       return hasEmail;
     });
 
+    // Response and checkpoint are harness contracts, not workflow-selected
+    // conveniences. Keep them reachable whenever their implementations exist.
+    for (const contractName of [
+      RESPONSE_TOOL_NAME,
+      "checkpoint_state",
+      ...Object.keys(input.extraTools ?? {}),
+    ]) {
+      if (tools[contractName] && !activeTools.includes(contractName)) {
+        activeTools.push(contractName);
+      }
+    }
+
     // -- Plan mode: restrict to read-only tools -----------------------------
     if (input.mode === "plan") {
       const planSet = new Set<string>(PLAN_MODE_TOOL_NAMES);
@@ -480,12 +549,72 @@ export class OffensiveSecurityAgent<TResult = void> {
       });
     }
 
+    // A code-mode browser stage operates against the same managed Camoufox
+    // context as the ordinary browser tools. Make it available whenever this
+    // workflow selected any browser capability.
+    if (
+      activeTools.some((name) => name.startsWith("browser_")) &&
+      tools.browser_run_code &&
+      !activeTools.includes("browser_run_code")
+    ) {
+      activeTools.push("browser_run_code");
+    }
+
+    // -- Model-facing tool protocol -------------------------------------------
+    // Canonical tools and their event identities remain stable. Only their
+    // presentation changes. Provider capabilities choose freeform vs schema
+    // exec; model names and agent roles do not choose the architecture.
+    const runtimeProfile = resolveModelRuntimeProfile(
+      input.model,
+      input.toolProtocol ?? "auto",
+    );
+    let codeModeInstructions = "";
+    if (runtimeProfile.protocol !== "direct") {
+      const canonicalTools = tools;
+      const canonicalActiveTools = activeTools.filter(
+        (name) => canonicalTools[name] !== undefined,
+      );
+      const directToolNames = new Set<string>([
+        ...CODE_MODE_DIRECT_TOOL_NAMES,
+        ...(input.directTools ?? []),
+        ...Object.keys(input.extraTools ?? {}),
+      ]);
+      const presentedDirectTools = canonicalActiveTools.filter((name) =>
+        directToolNames.has(name),
+      );
+      const allowedTools = canonicalActiveTools.filter(
+        (name) => !directToolNames.has(name),
+      );
+      const invoker = new CanonicalCapabilityInvoker({
+        tools: canonicalTools,
+        allowedTools,
+        eventBus: this.eventBus,
+        sessionId: this.busSessionId,
+        subagentId: this.subagentId,
+        getMessageId: () => this.currentMessageId ?? undefined,
+      });
+      this.codeModeRuntime = new CodeModeRuntime(invoker, allowedTools);
+      tools = createCodeModeTools(
+        runtimeProfile.protocol,
+        this.codeModeRuntime,
+        canonicalTools,
+        presentedDirectTools,
+      );
+      activeTools = Object.keys(tools);
+      codeModeInstructions = buildCodeModeInstructions(runtimeProfile.protocol);
+    }
+
     // -- Messages persistence -------------------------------------------------
     if (!existsSync(messagesDir)) {
       mkdirSync(messagesDir, { recursive: true });
     }
     this.messagesPath = join(messagesDir, "messages.json");
     const messagesPath = this.messagesPath;
+    if (!validateLatestCompactionArchive(messagesDir)) {
+      log.warn(
+        `Latest context compaction archive failed hash validation: ${messagesDir}`,
+      );
+    }
 
     // Mutable so that summarization can clear stale history.
     const initialMessagesRef: { current: ModelMessage[] } = {
@@ -530,16 +659,27 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.system ??
       detectOSAndEnhancePrompt(
         buildBaseSystemPrompt({
-          sandboxMode: agentCwd === input.session.rootPath,
+          sandboxMode:
+            input.agentCwd !== undefined || agentCwd === input.session.rootPath,
         }),
       );
-    const systemPrompt =
+    const effectiveBaseSystemPrompt =
       baseSystemPrompt +
-      buildSessionWorkspaceSection(input.session, agentCwd, activeTools);
+      codeModeInstructions +
+      buildExecutionPolicyPrompt(executionPolicy) +
+      buildSandboxSecurityPrompt(input.session);
+    const systemPrompt =
+      effectiveBaseSystemPrompt +
+      buildSessionWorkspaceSection(
+        input.session,
+        agentCwd,
+        activeTools,
+        input.agentCwd !== undefined ? "isolated" : undefined,
+      );
 
     traceWriter.writeInit({
       model: input.model,
-      systemPrompt: baseSystemPrompt,
+      systemPrompt: effectiveBaseSystemPrompt,
       activeTools,
       sessionId: input.session.id,
       target: input.target,
@@ -555,6 +695,10 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     // Deferred so the AI SDK telemetry binds to this agent's span (entered in
     // consume()) rather than the construction-time context. See `streamResult`.
+    const resolvedToolChoice = resolveAgentToolChoice(
+      input.toolChoice,
+      tools[RESPONSE_TOOL_NAME] !== undefined,
+    );
     this.createStream = () =>
       streamResponse({
         prompt: input.prompt,
@@ -564,7 +708,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         tools,
         activeTools,
         stopWhen,
-        toolChoice: "auto",
+        toolChoice: resolvedToolChoice,
         // Per-subagent so the overflow tool-result dumps land next to this
         // agent's messages.json (`subagents/{id}/tool-results/`) and a host
         // can reclaim them when the subagent finishes, instead of piling up
@@ -572,6 +716,58 @@ export class OffensiveSecurityAgent<TResult = void> {
         // to the session root for the root/operator agent.
         sessionPath: messagesDir,
         sessionId: this.busSessionId,
+        contextCompaction: input.session.config?.contextCompaction,
+        secretValues: input.secretValues,
+        getContextCompactionState: () => ({
+          objective: input.prompt,
+          currentPhase: input.mode ?? "auto",
+          confirmedFindings: input.findingsRegistry
+            ?.getFindings()
+            .map((finding) => ({
+              title: finding.title,
+              severity: finding.severity,
+              endpoint: finding.endpoint,
+              description: finding.description,
+            })),
+          tasks: tasksDir ? listTasks(tasksDir) : undefined,
+          latestCheckpoint: traceWriter.latestCheckpoint ?? undefined,
+          scope: input.session.config?.scopeConstraints,
+          executionPolicy,
+          artifacts: [
+            input.session.findingsPath,
+            input.session.pocsPath,
+            input.session.scratchpadPath,
+          ],
+        }),
+        onCompacted: async ({ messages, metadata }) => {
+          if (persistTimer) {
+            clearTimeout(persistTimer);
+            persistTimer = null;
+          }
+          const tempPath = `${messagesPath}.compacting-${process.pid}`;
+          try {
+            await writeFile(tempPath, JSON.stringify(messages), {
+              mode: 0o600,
+            });
+            await rename(tempPath, messagesPath);
+          } finally {
+            await unlink(tempPath).catch(() => {});
+          }
+          initialMessagesRef.current = messages;
+          this.latestMessages = messages;
+          traceWriter.markSummarized();
+          this.eventBus.emit("context-compacted", {
+            sequence: metadata.sequence,
+            archivedMessageCount: metadata.archivedMessageCount,
+            retainedMessageCount: metadata.retainedMessageCount,
+            beforeTokens: metadata.beforeTokens,
+            afterTokens: metadata.afterTokens,
+            compactionModel: metadata.compactionModel,
+            semanticModelSucceeded: metadata.semanticModelSucceeded,
+            subagentId: this.subagentId,
+            sessionId: this.busSessionId,
+          });
+        },
         onStepFinish: async (event) => {
           this.latestMessages = [
             ...initialMessagesRef.current,
@@ -625,6 +821,18 @@ export class OffensiveSecurityAgent<TResult = void> {
             cacheWriteTokens: metrics.cacheCreationInputTokens,
           };
           input.onCacheMetrics?.(metrics);
+        },
+        strategyDirector:
+          input.mode === "fast-strike"
+            ? { intervalSteps: 16, maxReviews: 6 }
+            : undefined,
+        onAuxiliaryUsage: (event) => {
+          traceWriter.recordAuxiliary(event.kind, event.summary, {
+            inputTokens: event.inputTokens,
+            outputTokens: event.outputTokens,
+            cacheReadTokens: event.cacheReadTokens,
+            cacheWriteTokens: event.cacheWriteTokens,
+          });
         },
         enableThinking: input.enableThinking,
         thinkingEffort: input.thinkingEffort,
@@ -981,8 +1189,11 @@ export class OffensiveSecurityAgent<TResult = void> {
       } finally {
         // Stop the stall watchdog so it never leaks past stream end / throw.
         if (stallTimer) clearInterval(stallTimer);
-        // Dispose first — don't block on persistence I/O.
+        // Dispose first; code-mode teardown is bounded so persistence cannot
+        // be held indefinitely by an unresponsive nested capability.
         this.persistentShell?.dispose();
+        await this.codeModeRuntime?.dispose();
+        await this.sandboxSecurity?.dispose();
         // Flush tool-errors that never reached a finish-step into the snapshot.
         for (const [toolCallId, info] of toolErrors) {
           const result = {

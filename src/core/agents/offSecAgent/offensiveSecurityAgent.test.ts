@@ -9,7 +9,7 @@
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Module stubs — prevent the full tool/AI/zod import chain from loading.
@@ -61,7 +61,10 @@ vi.mock("../../operator", () => ({
 vi.mock("ai", () => ({ hasToolCall: () => () => false }));
 
 import { AgentEventBus } from "../../eventBus";
-import { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
+import {
+  OffensiveSecurityAgent,
+  resolveAgentToolChoice,
+} from "./offensiveSecurityAgent";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -864,5 +867,29 @@ describe("OffensiveSecurityAgent.consume()", () => {
       await expect(agent.consume()).rejects.toThrow("stream broke");
       expect(dispose).toHaveBeenCalledOnce();
     });
+  });
+});
+
+describe("resolveAgentToolChoice", () => {
+  const original = process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE;
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE;
+    } else {
+      process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE = original;
+    }
+  });
+
+  it("requires a tool call when the response contract is mandatory", () => {
+    process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE = "1";
+    expect(resolveAgentToolChoice(undefined, true)).toBe("required");
+    expect(resolveAgentToolChoice("auto", true)).toBe("required");
+  });
+
+  it("preserves explicit caller choices and agents without response tools", () => {
+    process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE = "true";
+    expect(resolveAgentToolChoice("none", true)).toBe("none");
+    expect(resolveAgentToolChoice(undefined, false)).toBe("auto");
   });
 });

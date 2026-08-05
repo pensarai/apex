@@ -34,6 +34,11 @@ export {
 } from "./email";
 // Core pentest tools
 export { executeCommand } from "./executeCommand";
+export {
+  buildExecutionPolicyPrompt,
+  type OffensiveExecutionPolicy,
+  resolveExecutionPolicy,
+} from "./executionPolicy";
 export { extractJsEndpoints } from "./extractJsEndpoints";
 export { getMemory } from "./getMemory";
 export { getPage } from "./getPage";
@@ -41,11 +46,27 @@ export { gitDiff } from "./gitDiff";
 export { gitStatus } from "./gitStatus";
 export { globFiles } from "./glob";
 export { grep } from "./grep";
+export {
+  HarnessSandboxSecurityController,
+  type ProcessEgressEnforcementLease,
+  type ProcessEgressEnforcer,
+} from "./harnessSandboxSecurityController";
 export { httpRequest } from "./httpRequest";
 export { listFiles } from "./listFiles";
 export { listMemories } from "./listMemories";
 export { listPromptInjections } from "./listPromptInjections";
 export { listTasksTool } from "./listTasks";
+export {
+  createHttpOastForwarder,
+  type OastForwarder,
+  type OastForwardRequest,
+  type OastForwardResponse,
+  type OastIngressRequest,
+  type RegisteredOastSession,
+  type RegisterOastSessionInput,
+  SessionOastRouter,
+  type SessionOastRouterOptions,
+} from "./oastRouter";
 // Persistent shell — long-lived shell session shared across tool calls.
 export {
   extractFallbackStdout,
@@ -99,8 +120,15 @@ export { runCodeQuery } from "./runCodeQuery";
 export { runPentestWorkflow } from "./runPentestWorkflow";
 export { runWhiteboxScan } from "./runWhiteboxScan";
 export type {
+  SandboxAllowedDestination,
   SandboxExecuteOptions,
   SandboxExecutionResult,
+  SandboxOastLease,
+  SandboxOastRequest,
+  SandboxSecurityAttestation,
+  SandboxSecurityController,
+  SandboxSessionSecurityLease,
+  SandboxSessionSecurityRequest,
   SandboxType,
   UnifiedSandbox,
 } from "./sandbox";
@@ -112,6 +140,12 @@ export {
   ensureSandboxPlaywright,
   installSandboxPlaywright,
 } from "./sandboxPlaywright";
+export {
+  buildSandboxSecurityPrompt,
+  buildSandboxSessionSecurityRequest,
+  createSandboxSessionSecurity,
+  SandboxSessionSecurity,
+} from "./sandboxSecurity";
 // Scope guard utilities
 export {
   assertCommandInScope,
@@ -128,6 +162,12 @@ export { spawnPentestAgent } from "./spawnPentestAgent";
 export { spawnPentestSwarm } from "./spawnPentestSwarm";
 export { submitPlan } from "./submitPlan";
 export { testEndpointVariations } from "./testEndpointVariations";
+export {
+  assertTrafficActionAllowed,
+  classifyTrafficAction,
+  inspectReferencedPrograms,
+  TrafficPolicyError,
+} from "./trafficGuard";
 export type { ToolContext } from "./types";
 export { updateFile } from "./updateFile";
 export { updateTask } from "./updateTask";
@@ -346,6 +386,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "browser_screenshot",
   "browser_click",
   "browser_fill",
+  "browser_run_code",
   "browser_evaluate",
   "browser_console",
   "browser_get_cookies",
@@ -425,6 +466,12 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "spawn_coding_agent",
   "run_pentest_workflow",
   "delegate_to_auth_subagent",
+  // Attack-surface documentation is intentionally omitted here. In
+  // particular, document_endpoint launches a full threat-model generator for
+  // every recorded route, which defeats the bounded single-operator contract
+  // of fast-strike. Confirmed vulnerabilities remain directly documentable.
+  "document_app",
+  "document_endpoint",
   // Whitebox jobs
   "run_whitebox_scan",
   "create_whitebox_candidate",
@@ -461,6 +508,7 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "browser_screenshot",
   "browser_click",
   "browser_fill",
+  "browser_run_code",
   "browser_evaluate",
   "browser_console",
   "browser_get_cookies",
