@@ -141,6 +141,11 @@ export async function runFastStrike(
     throw new DOMException("Pentest aborted by user", "AbortError");
   }
 
+  eventBus?.emit("subagent-complete", {
+    subagentId: "fast-strike",
+    status: "completed",
+  });
+
   await findingsRegistry.groupByRootCause();
   const findings = [...findingsRegistry.getFindings()];
 

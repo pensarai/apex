@@ -1227,6 +1227,11 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
 
   const agentResult = await agent.consume();
 
+  eventBus?.emit("subagent-complete", {
+    subagentId: incrementalSubagentId,
+    status: "completed",
+  });
+
   log.info(
     `Incremental agent finished: ${agentResult?.summary ?? "no summary"}`,
   );
