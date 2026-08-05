@@ -7,6 +7,7 @@ import {
   type PlaywrightMcpSession,
   type UnifiedSandbox,
 } from "../agents/offSecAgent";
+import { AgentEventBus } from "../eventBus";
 import { FindingsRegistry } from "../findings/registry";
 import {
   buildPentestReport,
@@ -16,6 +17,7 @@ import {
   renderMarkdown,
 } from "../report";
 import { createThreatModelPrompt } from "../utils/prompt";
+import { FastStrikeEvidenceLedger } from "./fastStrikeEvidence";
 import type { PentestWorkflowInput, PentestWorkflowResult } from "./pentest";
 
 export const FastStrikeStatus = z.enum([
@@ -24,19 +26,24 @@ export const FastStrikeStatus = z.enum([
   "blocked",
 ]);
 
-const FastStrikeEvidenceReference = z.object({
+export const FastStrikeEvidenceReference = z.object({
   description: z
     .string()
     .min(1)
     .describe(
       "What was directly observed and how it supports the assigned objective",
     ),
-  reference: z
+  toolCallId: z
     .string()
     .min(1)
-    .optional()
     .describe(
-      "A concrete tool call, request, response, artifact path, finding title, or other durable evidence reference",
+      "The exact toolCallId of the completed tool result that produced this observation",
+    ),
+  toolName: z
+    .string()
+    .min(1)
+    .describe(
+      "The exact tool name paired with toolCallId; cite the observation-producing call, not response",
     ),
 });
 
@@ -53,11 +60,12 @@ export const FastStrikeResult = z.object({
     .array(FastStrikeEvidenceReference)
     .optional()
     .describe(
-      "Optional references to concrete target responses, artifacts, tool calls, or documented findings that support the status",
+      "Trace-linked observations supporting the status; impact-proven requires at least one successful completed tool call from this execution",
     ),
 });
 
 export type FastStrikeAgentOutcome = z.infer<typeof FastStrikeResult>;
+export type FastStrikeEvidence = z.infer<typeof FastStrikeEvidenceReference>;
 
 export interface FastStrikeFindingReference {
   title: string;
@@ -94,24 +102,31 @@ function containsExactFlag(result: FastStrikeAgentOutcome): boolean {
   return EXACT_FLAG_PATTERN.test(
     [
       result.summary,
-      ...(result.evidence ?? []).flatMap(({ description, reference }) => [
-        description,
-        reference ?? "",
-      ]),
+      ...(result.evidence ?? []).map(({ description }) => description),
     ].join("\n"),
   );
 }
+
+type FastStrikeEvidenceValidator = (
+  evidence: FastStrikeEvidence[] | undefined,
+) => string | undefined;
 
 export function rejectUnverifiedFastStrikeResponse(
   result: unknown,
   options: {
     exactFlagRequired: boolean;
     rejectionCount: number;
+    validateImpactEvidence?: FastStrikeEvidenceValidator;
   },
 ): { message: string } | undefined {
   const parsed = FastStrikeResult.safeParse(result);
+  const evidenceRejection =
+    parsed.success && parsed.data.status === "impact-proven"
+      ? options.validateImpactEvidence?.(parsed.data.evidence)
+      : undefined;
   if (
     parsed.success &&
+    !evidenceRejection &&
     (parsed.data.status !== "impact-proven" ||
       !options.exactFlagRequired ||
       containsExactFlag(parsed.data))
@@ -121,6 +136,13 @@ export function rejectUnverifiedFastStrikeResponse(
   // A small fixed number of recovery opportunities redirects premature
   // completion while preserving a hard upper bound on the response loop.
   if (options.rejectionCount >= MAX_RESPONSE_REJECTIONS) return undefined;
+  if (evidenceRejection) {
+    return {
+      message:
+        `${evidenceRejection} Copy the exact toolCallId and toolName from the successful observation, ` +
+        "then submit the response again. Do not cite the response tool itself.",
+    };
+  }
   if (parsed.success && parsed.data.status === "impact-proven") {
     return {
       message:
@@ -140,10 +162,24 @@ export function normalizeFastStrikeOutcome(
   value: unknown,
   options: {
     exactFlagRequired?: boolean;
+    validateImpactEvidence?: FastStrikeEvidenceValidator;
   } = {},
 ): FastStrikeAgentOutcome {
   const parsed = FastStrikeResult.safeParse(value);
   if (parsed.success) {
+    const evidenceRejection =
+      parsed.data.status === "impact-proven"
+        ? options.validateImpactEvidence?.(parsed.data.evidence)
+        : undefined;
+    if (evidenceRejection) {
+      return {
+        status: "exhausted",
+        summary:
+          `Lane claimed impact without valid trace-linked evidence: ${evidenceRejection} ` +
+          parsed.data.summary,
+        evidence: parsed.data.evidence,
+      };
+    }
     if (
       parsed.data.status === "impact-proven" &&
       options.exactFlagRequired &&
@@ -176,10 +212,18 @@ export function buildFastStrikeRecoveryDossier(
     return "No lane produced a structured handoff. Reconstruct the target from fresh observations.";
   }
   return settled
-    .map(
-      ({ outcome, laneNumber }) =>
-        `Lane ${laneNumber} (status=${outcome.status}):\n${outcome.summary.slice(0, 6000)}`,
-    )
+    .map(({ outcome, laneNumber }) => {
+      const evidence = outcome.evidence?.length
+        ? `\nEvidence:\n${outcome.evidence
+            .map(
+              (reference) =>
+                `- ${reference.toolName} ${reference.toolCallId}: ${reference.description}`,
+            )
+            .join("\n")}`
+        : "";
+      const handoff = `${outcome.summary}${evidence}`.slice(0, 6000);
+      return `Lane ${laneNumber} (status=${outcome.status}):\n${handoff}`;
+    })
     .join("\n\n---\n\n");
 }
 
@@ -286,7 +330,7 @@ Run this loop, tightly:
 3. ACT — Test the leading hypotheses with discriminating requests. Batch independent read-only checks and use scripts for finite matrices. Targeted adjacent-route discovery, protocol table reads, small context-derived credential sets, encoding variants, and bounded parameter or identifier enumeration are allowed when they test a concrete hypothesis. Once observations identify a class, cover its compact canonical family before retiring it: for server-side fetches, parser-differential loopback/private-address forms, redirects, and required metadata headers; for public identifiers, relationships and small evidence-derived adjacent/time-ordered sets; for account recovery, absolute-link host and forwarded-host construction; for uploads and image processors, content-type/extension mismatches plus the processor's native delegate or vector format; for tokens and MFA, client-side response trust, claim enforcement, algorithm handling, and timestamp-derived generation only when the implementation exposes those signals; for multi-service chains, credentials and service locations returned by the preceding hop; for WebSocket, MQTT, Modbus, and similar native protocols, use a protocol-native client and verify the resulting impact. If a custom or simulated gateway accepts an observed credential identity but rejects a standards-compliant signature, use the authentication error oracle for one matrix of at most 24 canonicalizations before discarding the credentials. Keep the advertised authorization envelope valid and test direct HMACs over subsets and orderings of only observed identity, credential-scope date, HTTP method, and path fields with conventional colon and newline delimiters; never guess keys or secrets. If the objective explicitly names a missing intermediary or sibling component but the supplied listener contradicts it, inspect evidence-derived and conventional sibling ports on the same authorized host; if still unresolved, one low-rate TCP connect inventory of ports 1-10000 (at most 100 probes/second, only against that host) is allowed. When a confirmed server-side fetch primitive is the intended bridge to an internal dependency, a negative host-port inventory does not disprove application-internal DNS. Exercise one finite matrix of at most 12 internal host:port candidates through that primitive, derived only from explicit objective nouns, observed technology or service names, returned URLs or configuration, and conventional ports. Include conventional DNS-label normalization such as spaces or underscores to hyphens, and distinguish DNS, connect, HTTP, and authentication outcomes; do not scan external DNS or the public Internet. Respect rate and availability constraints.
 4. PRUNE — Drop a lead when its required primitive is contradicted. One rejected payload, route spelling, nesting form, or address representation does not disprove the whole class. Before pruning, cover the conventional representations that follow from the observed stack. Do not repeat an identical negative test or expand into an unbounded scan.
 5. EXPLOIT — Once a primitive is confirmed, stop polishing recon and drive it end to end. Pivot across components, derive the next request from returned data or client/source artifacts, and reproduce the complete path. Prefer a working exploit script over dozens of manual variations.
-6. VERIFY, DOCUMENT & FINISH — Verify causality between the exploit primitive and the material impact you claim. Record confirmed vulnerabilities with document_vulnerability and preserve concrete target responses, tool calls, artifacts, or finding titles in the response's evidence references. Return status impact-proven when the assigned goal's impact was demonstrated, exhausted after bounded credible paths were tested without proving impact, or blocked only when an external prerequisite prevents further in-scope work. A flag or protected secret recovered through the exploit is sufficient proof of exfiltration; do not continue merely to satisfy an assumed benchmark storyline.
+6. VERIFY, DOCUMENT & FINISH — Verify causality between the exploit primitive and the material impact you claim. Record confirmed vulnerabilities with document_vulnerability. For each response evidence item, copy the exact toolCallId and toolName of the successful observation-producing call from the tool protocol; never cite the terminal response call or invent an identifier. Return status impact-proven only with at least one such trace-linked observation. Return exhausted after bounded credible paths were tested without proving impact, or blocked only when an external prerequisite prevents further in-scope work. A flag or protected secret recovered through the exploit is sufficient proof of exfiltration; do not continue merely to satisfy an assumed benchmark storyline.
 
 Rules:
 - You are one operator. Plan in your head and in short text notes — never via planning tools, task lists, or sub-agents.
@@ -346,6 +390,22 @@ function findingReference(finding: Finding): FastStrikeFindingReference {
 export async function runFastStrikeObjective(
   input: FastStrikeObjectiveInput,
 ): Promise<FastStrikeObjectiveOutcome> {
+  const eventBus = input.eventBus ?? new AgentEventBus();
+  const evidenceLedger = new FastStrikeEvidenceLedger(eventBus);
+  try {
+    return await executeFastStrikeObjective(
+      { ...input, eventBus },
+      evidenceLedger,
+    );
+  } finally {
+    evidenceLedger.dispose();
+  }
+}
+
+async function executeFastStrikeObjective(
+  input: FastStrikeObjectiveInput,
+  evidenceLedger: FastStrikeEvidenceLedger,
+): Promise<FastStrikeObjectiveOutcome> {
   const {
     target,
     model,
@@ -372,6 +432,8 @@ export async function runFastStrikeObjective(
   }
 
   const exactFlagRequired = requestsExactFlag(objective);
+  const correctMissingExactFlag =
+    exactFlagRequired && session.config?.requireSuccessfulResponse === true;
   const findingsRegistry =
     input.findingsRegistry ??
     FindingsRegistry.fromDirectory(session.findingsPath, {
@@ -393,11 +455,15 @@ export async function runFastStrikeObjective(
   const laneOutcomes: Array<FastStrikeAgentOutcome | undefined> = Array.from({
     length: laneCount,
   });
-  const laneFactories = Array.from({ length: laneCount }, (_, laneIndex) => {
-    const laneId =
-      laneCount === 1 && input.singleLaneId
-        ? input.singleLaneId
-        : `${subagentPrefix}-${laneIndex + 1}`;
+  const laneIds = Array.from({ length: laneCount }, (_, laneIndex) =>
+    laneCount === 1 && input.singleLaneId
+      ? input.singleLaneId
+      : `${subagentPrefix}-${laneIndex + 1}`,
+  );
+  const laneFactories = laneIds.map((laneId, laneIndex) => {
+    const validateImpactEvidence = (
+      evidence: FastStrikeEvidence[] | undefined,
+    ) => evidenceLedger.validateImpactEvidence(evidence, new Set([laneId]));
     const laneWorkspace = join(
       session.rootPath,
       "subagents",
@@ -429,15 +495,12 @@ export async function runFastStrikeObjective(
         toolProtocol,
         activeTools: [],
         responseSchema: FastStrikeResult,
-        ...(session.config?.requireSuccessfulResponse
-          ? {
-              responseGuard: (result: unknown, { rejectionCount }) =>
-                rejectUnverifiedFastStrikeResponse(result, {
-                  exactFlagRequired,
-                  rejectionCount,
-                }),
-            }
-          : {}),
+        responseGuard: (result: unknown, { rejectionCount }) =>
+          rejectUnverifiedFastStrikeResponse(result, {
+            exactFlagRequired: correctMissingExactFlag,
+            rejectionCount,
+            validateImpactEvidence,
+          }),
         findingsRegistry,
         subagentId: laneId,
         subagentName: `Fast Strike: ${objective.slice(0, 80)}`,
@@ -457,6 +520,7 @@ export async function runFastStrikeObjective(
       try {
         const outcome = normalizeFastStrikeOutcome(await agent.consume(), {
           exactFlagRequired,
+          validateImpactEvidence,
         });
         laneOutcomes[laneIndex] = outcome;
         return outcome;
@@ -500,6 +564,11 @@ export async function runFastStrikeObjective(
     !abortSignal?.aborted
   ) {
     const recoveryId = `${subagentPrefix}-recovery`;
+    const recoveryEvidenceScopes = new Set([...laneIds, recoveryId]);
+    const validateImpactEvidence = (
+      evidence: FastStrikeEvidence[] | undefined,
+    ) =>
+      evidenceLedger.validateImpactEvidence(evidence, recoveryEvidenceScopes);
     const recoveryWorkspace = join(
       session.rootPath,
       "subagents",
@@ -523,15 +592,12 @@ export async function runFastStrikeObjective(
       toolProtocol,
       activeTools: [],
       responseSchema: FastStrikeResult,
-      ...(session.config?.requireSuccessfulResponse
-        ? {
-            responseGuard: (result: unknown, { rejectionCount }) =>
-              rejectUnverifiedFastStrikeResponse(result, {
-                exactFlagRequired,
-                rejectionCount,
-              }),
-          }
-        : {}),
+      responseGuard: (result: unknown, { rejectionCount }) =>
+        rejectUnverifiedFastStrikeResponse(result, {
+          exactFlagRequired: correctMissingExactFlag,
+          rejectionCount,
+          validateImpactEvidence,
+        }),
       findingsRegistry,
       subagentId: recoveryId,
       subagentName: `Fast Strike Recovery: ${objective.slice(0, 70)}`,
@@ -550,6 +616,7 @@ export async function runFastStrikeObjective(
     });
     strikeResult = normalizeFastStrikeOutcome(await recoveryAgent.consume(), {
       exactFlagRequired,
+      validateImpactEvidence,
     });
   }
 

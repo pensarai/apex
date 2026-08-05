@@ -75,7 +75,8 @@ describe("fast-strike objective result", () => {
         evidence: [
           {
             description: "Protected profile returned after session takeover",
-            reference: "GET /account -> 200",
+            toolCallId: "call-account-42",
+            toolName: "http_request",
           },
         ],
       }).success,
@@ -134,7 +135,8 @@ describe("fast-strike objective result", () => {
           evidence: [
             {
               description: "Protected response contained FLAG{literal-proof}",
-              reference: "tool call request-42",
+              toolCallId: "request-42",
+              toolName: "http_request",
             },
           ],
         },
@@ -163,6 +165,26 @@ describe("buildFastStrikeRecoveryDossier", () => {
     ]);
     expect(dossier.length).toBeLessThan(6100);
   });
+
+  it("passes trace-linked lane evidence to recovery", () => {
+    const dossier = buildFastStrikeRecoveryDossier([
+      {
+        status: "exhausted",
+        summary: "Confirmed the primitive but not the final pivot",
+        evidence: [
+          {
+            description: "Internal service returned a discriminating response",
+            toolCallId: "call-internal-7",
+            toolName: "http_request",
+          },
+        ],
+      },
+    ]);
+
+    expect(dossier).toContain(
+      "http_request call-internal-7: Internal service returned",
+    );
+  });
 });
 
 describe("fast-strike capability and scope guidance", () => {
@@ -175,6 +197,9 @@ describe("fast-strike capability and scope guidance", () => {
     );
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
       "Verify causality between the exploit primitive and the material impact",
+    );
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "copy the exact toolCallId and toolName",
     );
     expect(FAST_STRIKE_SYSTEM_PROMPT).not.toContain("verifiedLayers");
     expect(FAST_STRIKE_SYSTEM_PROMPT).not.toContain(
@@ -238,6 +263,78 @@ describe("fast-strike response verification", () => {
         { exactFlagRequired: true, rejectionCount: 0 },
       ),
     ).toBeUndefined();
+  });
+
+  it("requires impact evidence to resolve to a completed observation", () => {
+    const validateImpactEvidence = vi.fn((evidence: unknown[] | undefined) =>
+      evidence?.some(
+        (item) =>
+          typeof item === "object" &&
+          item !== null &&
+          "toolCallId" in item &&
+          item.toolCallId === "real-call",
+      )
+        ? undefined
+        : "Evidence was not observed in this execution scope.",
+    );
+
+    expect(
+      rejectUnverifiedFastStrikeResponse(
+        {
+          status: "impact-proven",
+          summary: "Recovered protected records",
+          evidence: [
+            {
+              description: "Claimed response",
+              toolCallId: "invented-call",
+              toolName: "http_request",
+            },
+          ],
+        },
+        {
+          exactFlagRequired: false,
+          rejectionCount: 0,
+          validateImpactEvidence,
+        },
+      )?.message,
+    ).toContain("not observed");
+
+    expect(
+      rejectUnverifiedFastStrikeResponse(
+        {
+          status: "impact-proven",
+          summary: "Recovered protected records",
+          evidence: [
+            {
+              description: "Protected records returned",
+              toolCallId: "real-call",
+              toolName: "http_request",
+            },
+          ],
+        },
+        {
+          exactFlagRequired: false,
+          rejectionCount: 0,
+          validateImpactEvidence,
+        },
+      ),
+    ).toBeUndefined();
+  });
+
+  it("downgrades an unverified claim after bounded response correction", () => {
+    const outcome = normalizeFastStrikeOutcome(
+      {
+        status: "impact-proven",
+        summary: "Claimed an uncited takeover",
+      },
+      {
+        validateImpactEvidence: () =>
+          "An impact-proven result requires trace-linked evidence.",
+      },
+    );
+
+    expect(outcome.status).toBe("exhausted");
+    expect(outcome.summary).toContain("without valid trace-linked evidence");
   });
 
   it("accepts honest exhausted and blocked outcomes", () => {
