@@ -1198,6 +1198,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     input.environments,
   );
 
+  const incrementalSubagentId = newSessionId();
   const agent = new CodeAgent<IncrementalResult>({
     codebasePath,
     objective,
@@ -1208,7 +1209,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     abortSignal,
     attackSurfaceRegistry,
     eventBus,
-    subagentId: newSessionId(),
+    subagentId: incrementalSubagentId,
     subagentName: "Incremental Recon",
     onStepFinish: (event) => onStepFinish?.(event),
     openAIReasoningEffort: input.openAIReasoningEffort,
@@ -1216,6 +1217,12 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     thinkingEffort: input.thinkingEffort,
     responseSchema: IncrementalResultSchema,
     projectThreatModel,
+  });
+
+  eventBus?.emit("subagent-spawn", {
+    subagentId: incrementalSubagentId,
+    name: "Incremental Recon",
+    input: { codebasePath },
   });
 
   const agentResult = await agent.consume();

@@ -129,6 +129,12 @@ export async function runFastStrike(
     openAIReasoningEffort,
   });
 
+  eventBus?.emit("subagent-spawn", {
+    subagentId: "fast-strike",
+    name: "Fast Strike",
+    input: { target },
+  });
+
   const strikeResult = await agent.consume();
 
   if (abortSignal?.aborted) {
