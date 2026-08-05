@@ -1225,12 +1225,20 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     input: { codebasePath },
   });
 
-  const agentResult = await agent.consume();
-
-  eventBus?.emit("subagent-complete", {
-    subagentId: incrementalSubagentId,
-    status: "completed",
-  });
+  let agentResult: IncrementalResult;
+  try {
+    agentResult = await agent.consume();
+    eventBus?.emit("subagent-complete", {
+      subagentId: incrementalSubagentId,
+      status: "completed",
+    });
+  } catch (e) {
+    eventBus?.emit("subagent-complete", {
+      subagentId: incrementalSubagentId,
+      status: "failed",
+    });
+    throw e;
+  }
 
   log.info(
     `Incremental agent finished: ${agentResult?.summary ?? "no summary"}`,
