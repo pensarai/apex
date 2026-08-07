@@ -12,6 +12,7 @@ const PROVIDER_PREFERENCE_ORDER: ProviderType[] = [
   "openai",
   "google",
   "openrouter",
+  "concentrate",
   "bedrock",
 ];
 
@@ -21,6 +22,7 @@ const PREFERRED_MODEL_BY_PROVIDER: Record<string, string> = {
   openai: "gpt-5.6-sol",
   google: "gemini-3.1-pro-preview",
   openrouter: "anthropic/claude-opus-4.6",
+  concentrate: "concentrate:claude-opus-4-6",
   bedrock: "anthropic.claude-opus-4-6-v1",
 };
 
@@ -48,6 +50,8 @@ function isProviderConfigured(
       return !!config.googleAPIKey;
     case "openrouter":
       return !!config.openRouterAPIKey;
+    case "concentrate":
+      return !!config.concentrateAPIKey;
     case "inception":
       return !!config.inceptionAPIKey;
     case "bedrock":
@@ -71,6 +75,7 @@ export function hasAnyProviderConfigured(config: Config): boolean {
     !!config.openAiAPIKey ||
     !!config.googleAPIKey ||
     !!config.openRouterAPIKey ||
+    !!config.concentrateAPIKey ||
     !!config.inceptionAPIKey ||
     !!config.bedrockAPIKey ||
     !!config.localModelUrl ||
@@ -104,7 +109,7 @@ export function getAvailableModels(config: Config): ModelInfo[] {
 /**
  * Dynamically select the best default model based on which providers are
  * configured.  Priority order: Pensar → Anthropic → OpenAI → Google →
- * OpenRouter → Bedrock.  Within each provider the preferred model is an
+ * OpenRouter → Concentrate → Bedrock. Within each provider the preferred model is an
  * opus-class / flagship model; falls back to the first available model for
  * that provider if the preferred one isn't found.
  */

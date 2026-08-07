@@ -4,6 +4,7 @@ import type { AIModel, ModelInfo } from "../ai";
 // Re-generate after bumping SDK packages: bun run generate:models
 import { ANTHROPIC_MODELS } from "./anthropic";
 import { BEDROCK_MODELS } from "./bedrock";
+import { CONCENTRATE_MODELS } from "./concentrate";
 import { GOOGLE_MODELS } from "./google";
 import { INCEPTION_MODELS } from "./inception";
 // Bedrock Mantle (OpenAI Responses API) — curated manually.
@@ -20,6 +21,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   ...BEDROCK_MODELS,
   ...MANTLE_MODELS,
   ...OPENROUTER_MODELS,
+  ...CONCENTRATE_MODELS,
   ...PENSAR_MODELS,
   ...INCEPTION_MODELS,
 ];

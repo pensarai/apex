@@ -25,6 +25,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   openai: "OpenAI",
   google: "Google",
   openrouter: "OpenRouter",
+  concentrate: "Concentrate",
   bedrock: "Bedrock",
   pensar: "Pensar",
   inception: "Inception",
