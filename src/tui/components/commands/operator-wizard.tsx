@@ -28,9 +28,16 @@ const providerNames: Record<string, string> = {
   anthropic: "Claude",
   openai: "OpenAI",
   openrouter: "OpenRouter",
+  concentrate: "Concentrate",
   bedrock: "Bedrock",
 };
-const providerOrder = ["anthropic", "openai", "openrouter", "bedrock"];
+const providerOrder = [
+  "anthropic",
+  "openai",
+  "openrouter",
+  "concentrate",
+  "bedrock",
+];
 
 export default function HITLWizard(props: HITLWizardProps) {
   const { colors } = useTheme();

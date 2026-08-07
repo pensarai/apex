@@ -185,6 +185,7 @@ async function resolveCliModel(): Promise<AIModel> {
         "  ANTHROPIC_API_KEY  — Anthropic direct\n" +
         "  OPENAI_API_KEY     — OpenAI\n" +
         "  OPENROUTER_API_KEY — OpenRouter\n" +
+        "  CONCENTRATE_API_KEY — Concentrate\n" +
         "\nOr run 'pensar login' to connect to Pensar Console.",
     );
     process.exit(1);

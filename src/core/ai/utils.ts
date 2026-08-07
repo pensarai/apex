@@ -60,6 +60,7 @@ export type AIAuthConfig = {
   anthropicAPIKey?: string;
   googleAPIKey?: string;
   openRouterAPIKey?: string;
+  concentrateAPIKey?: string;
   inceptionAPIKey?: string;
   pensarAPIKey?: string;
   // WorkOS CLI auth
@@ -92,6 +93,7 @@ export function buildAuthConfig(cfg: {
   openAiAPIKey?: string | null;
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
+  concentrateAPIKey?: string | null;
   inceptionAPIKey?: string | null;
   pensarAPIKey?: string | null;
   accessToken?: string | null;
@@ -107,6 +109,7 @@ export function buildAuthConfig(cfg: {
     openAiAPIKey: cfg.openAiAPIKey ?? undefined,
     googleAPIKey: cfg.googleAPIKey ?? undefined,
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
+    concentrateAPIKey: cfg.concentrateAPIKey ?? undefined,
     inceptionAPIKey: cfg.inceptionAPIKey ?? undefined,
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
     accessToken: cfg.accessToken ?? undefined,
@@ -132,6 +135,8 @@ export function getProviderModel(
     authConfig?.googleAPIKey || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   const openRouterAPIKey =
     authConfig?.openRouterAPIKey || process.env.OPENROUTER_API_KEY;
+  const concentrateAPIKey =
+    authConfig?.concentrateAPIKey || process.env.CONCENTRATE_API_KEY;
   const bedrockApiKey =
     authConfig?.bedrock?.apiKey || process.env.BEDROCK_API_KEY;
   const bedrockAccessKeyId =
@@ -164,6 +169,16 @@ export function getProviderModel(
         apiKey: openRouterAPIKey,
       });
       providerModel = openrouter(model);
+      break;
+    }
+
+    case "concentrate": {
+      const concentrate = createOpenAICompatible({
+        name: "concentrate",
+        apiKey: concentrateAPIKey,
+        baseURL: "https://api.concentrate.ai/v1",
+      });
+      providerModel = concentrate(model.replace(/^concentrate:/, ""));
       break;
     }
 
