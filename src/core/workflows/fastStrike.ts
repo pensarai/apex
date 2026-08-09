@@ -129,7 +129,26 @@ export async function runFastStrike(
     openAIReasoningEffort,
   });
 
-  const strikeResult = await agent.consume();
+  eventBus?.emit("subagent-spawn", {
+    subagentId: "fast-strike",
+    name: "Fast Strike",
+    input: { target },
+  });
+
+  let strikeResult: FastStrikeOutcome;
+  try {
+    strikeResult = await agent.consume();
+    eventBus?.emit("subagent-complete", {
+      subagentId: "fast-strike",
+      status: "completed",
+    });
+  } catch (e) {
+    eventBus?.emit("subagent-complete", {
+      subagentId: "fast-strike",
+      status: "failed",
+    });
+    throw e;
+  }
 
   if (abortSignal?.aborted) {
     throw new DOMException("Pentest aborted by user", "AbortError");

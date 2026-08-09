@@ -47,7 +47,7 @@ const RESPONSE_DEBUG =
   process.env.RESPONSE_DEBUG === "1" || process.env.RESPONSE_DEBUG === "true";
 const RESPONSE_TOOL_NAME = "response";
 
-export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
+export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For gateway and Bedrock model IDs
 
 export type OpenAIReasoningEffort =
   | "none"
@@ -146,6 +146,7 @@ export type AIModelProvider =
   | "openai"
   | "google"
   | "openrouter"
+  | "concentrate"
   | "bedrock"
   | "bedrock-mantle"
   | "pensar"

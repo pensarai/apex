@@ -25,7 +25,12 @@ import { z } from "zod";
 import type { Logger } from "../../../logger";
 import {
   type CamoufoxLaunchOptions,
+  COMPUTER_USE_VIEWPORT_SIZE,
+  ENDPOINT_DISPLAY_BASE,
+  ENDPOINT_VIEWPORT_SIZE,
   ensureCamoufox,
+  parseDisplayNumber,
+  parseViewportSize,
   resolveCamoufoxLaunchOptions,
 } from "./camoufox";
 
@@ -413,19 +418,20 @@ let defaultUserAgent: string | undefined =
 
 /**
  * Hard floor for viewport size — used when both the explicit constructor
- * arg and the module-level default are `undefined`. Guarantees that
- * `new PlaywrightMcpSession()` always launches Chromium at a real desktop
- * resolution and never silently falls back to Chromium's tiny built-in
- * default just because someone called `setViewportSize(undefined)`.
+ * arg and the module-level default are `undefined`, and the session is not
+ * on an endpoint-tier display. Guarantees that `new PlaywrightMcpSession()`
+ * always launches at a real desktop resolution and never silently falls
+ * back to Chromium's tiny built-in just because someone called
+ * `setViewportSize(undefined)`. Must match computer-use Xvfb (Console shim).
  *
  * The only way to opt out is to pass `null` explicitly to the constructor.
  */
-const HARDCODED_VIEWPORT_FALLBACK = "1920,1080";
+const HARDCODED_VIEWPORT_FALLBACK = COMPUTER_USE_VIEWPORT_SIZE;
 
 /**
  * Default viewport size (format: `WIDTH,HEIGHT`) for new browser sessions.
- * 1920x1080 matches a standard desktop resolution and avoids the small
- * default viewport that some SPAs use as a mobile/bot signal.
+ * 1920x1080 matches computer-use desktops; endpoint displays (`:10+`) override
+ * to 1280x720 in the constructor so Camoufox fills the streamed Xvfb.
  */
 let defaultViewportSize: string | undefined = HARDCODED_VIEWPORT_FALLBACK;
 
@@ -527,10 +533,23 @@ export class PlaywrightMcpSession {
     this.headless = headless ?? (this.display ? false : defaultHeadless);
     this.userAgent =
       userAgent === null ? undefined : (userAgent ?? defaultUserAgent);
-    this.viewportSize =
-      viewportSize === null
-        ? undefined
-        : (viewportSize ?? defaultViewportSize ?? HARDCODED_VIEWPORT_FALLBACK);
+    // Viewport resolution:
+    //   1. explicit `viewportSize` / `null` opt-out
+    //   2. endpoint-tier display (`:10+`) → 1280x720 (matches Console Xvfb)
+    //   3. module default / 1920x1080 floor (matches computer-use `:0`–`:9`)
+    // `ENDPOINT_DISPLAY_BASE` must stay aligned with Console desktopSession.ts
+    // and the agent-image Xvfb shim.
+    if (viewportSize === null) {
+      this.viewportSize = undefined;
+    } else if (viewportSize !== undefined) {
+      this.viewportSize = viewportSize;
+    } else {
+      const displayNum = parseDisplayNumber(this.display);
+      this.viewportSize =
+        displayNum !== undefined && displayNum >= ENDPOINT_DISPLAY_BASE
+          ? ENDPOINT_VIEWPORT_SIZE
+          : (defaultViewportSize ?? HARDCODED_VIEWPORT_FALLBACK);
+    }
 
     // Snapshot headers so post-construction mutations don't leak in.
     const headerSource =
@@ -675,8 +694,15 @@ export class PlaywrightMcpSession {
         // Resolve once per session lifetime so reconnects keep the same fingerprint.
         await ensureCamoufox();
         if (!this.cachedCamouOptions) {
+          // Apply viewportSize as Camoufox `window` so the headed browser fills
+          // the bound Xvfb desktop (previously stored but never forwarded —
+          // Camoufox randomised the window and overflowed 720p endpoint streams).
+          const window = this.viewportSize
+            ? parseViewportSize(this.viewportSize)
+            : undefined;
           this.cachedCamouOptions = await resolveCamoufoxLaunchOptions(
             this.headless,
+            window ? { window } : undefined,
           );
         }
         const camou = this.cachedCamouOptions;

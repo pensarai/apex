@@ -1198,6 +1198,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     input.environments,
   );
 
+  const incrementalSubagentId = newSessionId();
   const agent = new CodeAgent<IncrementalResult>({
     codebasePath,
     objective,
@@ -1208,7 +1209,7 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     abortSignal,
     attackSurfaceRegistry,
     eventBus,
-    subagentId: newSessionId(),
+    subagentId: incrementalSubagentId,
     subagentName: "Incremental Recon",
     onStepFinish: (event) => onStepFinish?.(event),
     openAIReasoningEffort: input.openAIReasoningEffort,
@@ -1218,7 +1219,26 @@ export async function runIncrementalWhiteboxAttackSurfaceWorkflow(
     projectThreatModel,
   });
 
-  const agentResult = await agent.consume();
+  eventBus?.emit("subagent-spawn", {
+    subagentId: incrementalSubagentId,
+    name: "Incremental Recon",
+    input: { codebasePath },
+  });
+
+  let agentResult: IncrementalResult;
+  try {
+    agentResult = await agent.consume();
+    eventBus?.emit("subagent-complete", {
+      subagentId: incrementalSubagentId,
+      status: "completed",
+    });
+  } catch (e) {
+    eventBus?.emit("subagent-complete", {
+      subagentId: incrementalSubagentId,
+      status: "failed",
+    });
+    throw e;
+  }
 
   log.info(
     `Incremental agent finished: ${agentResult?.summary ?? "no summary"}`,
