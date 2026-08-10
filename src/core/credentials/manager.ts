@@ -256,7 +256,7 @@ export class CredentialManager {
       }
       if (ref.additionalFieldKeys?.length) {
         parts.push(
-          `  Extra secret fields: ${ref.additionalFieldKeys.join(", ")}`,
+          `  Additional secret fields: ${ref.additionalFieldKeys.join(", ")}`,
         );
       }
       if (ref.context) parts.push(`  Context: ${ref.context}`);
@@ -266,7 +266,7 @@ export class CredentialManager {
     return `<available_credentials>
 The following credentials are available. To use a credential, pass its ID to the appropriate tool.
 Do NOT ask the user for passwords or secrets — they are resolved automatically from the credential ID.
-"Extra secret fields" are operator-supplied named secrets: pass the name as "credentialField"
+"Additional secret fields" are operator-supplied named secrets: pass the name as "credentialField"
 to browser_fill, or read the matching environment variable in execute_command. Their values are
 never shown to you and are redacted from command output.
 

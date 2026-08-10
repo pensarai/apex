@@ -361,7 +361,7 @@ describe("CredentialManager", () => {
       expect(prompt).not.toContain("secret-value-123");
     });
 
-    it("includes extra secret field names but not values", () => {
+    it("includes additional secret field names but not values", () => {
       cm.add({
         id: "cred-mfa",
         username: "pentest@agents.pensar.dev",
@@ -376,7 +376,7 @@ describe("CredentialManager", () => {
     });
   });
 
-  describe("extra secret fields", () => {
+  describe("additional secret fields", () => {
     it("exposes only the field names on the reference", () => {
       const id = cm.add({
         username: "admin",
@@ -397,7 +397,7 @@ describe("CredentialManager", () => {
       expect(cm.getReference(id)!.additionalFieldKeys).toBeUndefined();
     });
 
-    it("keeps credentials that differ only by extra fields distinct", () => {
+    it("keeps credentials that differ only by additional fields distinct", () => {
       const a = cm.addFromAuthCredentials({
         username: "admin",
         password: "pw",
