@@ -360,6 +360,56 @@ describe("CredentialManager", () => {
       expect(prompt).toContain("X-API-Key");
       expect(prompt).not.toContain("secret-value-123");
     });
+
+    it("includes extra secret field names but not values", () => {
+      cm.add({
+        id: "cred-mfa",
+        username: "pentest@agents.pensar.dev",
+        password: "pw_secret_1",
+        role: "github",
+        additionalFields: { TOTP_SEED: "JBSWY3DPEHPK3PXP" },
+      });
+
+      const prompt = cm.formatForPrompt();
+      expect(prompt).toContain("TOTP_SEED");
+      expect(prompt).not.toContain("JBSWY3DPEHPK3PXP");
+    });
+  });
+
+  describe("extra secret fields", () => {
+    it("exposes only the field names on the reference", () => {
+      const id = cm.add({
+        username: "admin",
+        password: "pw",
+        additionalFields: { TOTP_SEED: "JBSWY3DPEHPK3PXP", PIN: "4821" },
+      });
+
+      const ref = cm.getReference(id)!;
+      expect(ref.additionalFieldKeys).toEqual(["TOTP_SEED", "PIN"]);
+      expect(JSON.stringify(ref)).not.toContain("JBSWY3DPEHPK3PXP");
+      expect(cm.resolve(id)!.additionalFields!.TOTP_SEED).toBe(
+        "JBSWY3DPEHPK3PXP",
+      );
+    });
+
+    it("omits the key list when there are no extra fields", () => {
+      const id = cm.add({ username: "admin", password: "pw" });
+      expect(cm.getReference(id)!.additionalFieldKeys).toBeUndefined();
+    });
+
+    it("keeps credentials that differ only by extra fields distinct", () => {
+      const a = cm.addFromAuthCredentials({
+        username: "admin",
+        password: "pw",
+        additionalFields: { TOTP_SEED: "SEED_A" },
+      });
+      const b = cm.addFromAuthCredentials({
+        username: "admin",
+        password: "pw",
+        additionalFields: { TOTP_SEED: "SEED_B" },
+      });
+      expect(a).not.toBe(b);
+    });
   });
 
   // =========================================================================

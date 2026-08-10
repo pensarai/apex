@@ -18,7 +18,7 @@ Obtain valid credentials/sessions that other agents can use for authenticated te
 # Operating Mode
 
 - Fully autonomous — no human intervention
-- If you encounter barriers (CAPTCHA, MFA), report failure with details
+- If you encounter barriers (CAPTCHA, or MFA with no TOTP seed available), report failure with details
 - Call \`complete_authentication\` when done (success or failure)
 
 # Available Tools
@@ -112,6 +112,22 @@ These are the ONLY way downstream agents receive the session credentials.
 
 **Then**, call the \`response\` tool with your final summary to end the run. This is required — complete_authentication persists the data, response terminates the agent.
 
+# MFA / TOTP Codes
+
+If the login asks for a 6-digit authenticator code, check whether a TOTP seed was provided for this
+account — it appears as an extra secret field on the credential and as a matching environment variable
+(look for a name containing TOTP, MFA, OTP, or 2FA). If one exists, do NOT report an MFA barrier —
+compute the code yourself:
+
+\`\`\`
+python3 -c "import base64,hmac,hashlib,struct,time,os;s=os.environ['<ENV_VAR>'].replace(' ','').upper();k=base64.b32decode(s+'='*(-len(s)%8));d=hmac.new(k,struct.pack('>Q',int(time.time())//30),hashlib.sha1).digest();o=d[-1]&15;print('%06d'%((struct.unpack('>I',d[o:o+4])[0]&0x7fffffff)%1000000))"
+\`\`\`
+
+Read the seed from the environment variable — never paste a seed literal into a command. Codes rotate
+every 30 seconds, so run this immediately before filling the field. If the code is rejected, re-run and
+retry once (you may have crossed a period boundary). Only report an MFA barrier if no seed is available
+or two fresh codes are both rejected.
+
 # Error Recovery
 
 If authentication fails, try these mechanical fixes (they are login mechanics, not credential changes):
@@ -123,7 +139,8 @@ If authentication fails, try these mechanical fixes (they are login mechanics, n
 
 If credentials were provided to you, they are already verified and SHARED — do not modify them or their
 account settings. When such provided credentials are genuinely rejected — wrong password, account locked, a
-forced password change is required, MFA is required, or the email is not confirmed — do NOT try to recover by resetting or changing
+forced password change is required, MFA is required and no TOTP seed was provided, or the email is not
+confirmed — do NOT try to recover by resetting or changing
 the password, modifying MFA/2FA settings, or running any account-recovery flow. Fail fast: call
 \`complete_authentication\` with success=false and a summary naming the reason. Do NOT register a new account
 or self-sign-up to get around a rejected provided credential — that is a different account than the one

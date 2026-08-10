@@ -61,6 +61,10 @@ function toReference(stored: StoredCredential): CredentialReference {
   if (stored.tokens?.customHeaders) {
     ref.customHeaderKeys = Object.keys(stored.tokens.customHeaders);
   }
+  if (stored.additionalFields) {
+    const keys = Object.keys(stored.additionalFields);
+    if (keys.length > 0) ref.additionalFieldKeys = keys;
+  }
   const ctx = stored.metadata?.context;
   if (typeof ctx === "string" && ctx) ref.context = ctx;
   return ref;
@@ -90,7 +94,9 @@ export class CredentialManager {
         existing.tokens?.cookies === candidate.tokens?.cookies &&
         existing.tokens?.sessionToken === candidate.tokens?.sessionToken &&
         JSON.stringify(existing.tokens?.customHeaders) ===
-          JSON.stringify(candidate.tokens?.customHeaders)
+          JSON.stringify(candidate.tokens?.customHeaders) &&
+        JSON.stringify(existing.additionalFields) ===
+          JSON.stringify(candidate.additionalFields)
       ) {
         return id;
       }
@@ -248,6 +254,11 @@ export class CredentialManager {
       if (ref.customHeaderKeys?.length) {
         parts.push(`  Header keys: ${ref.customHeaderKeys.join(", ")}`);
       }
+      if (ref.additionalFieldKeys?.length) {
+        parts.push(
+          `  Extra secret fields: ${ref.additionalFieldKeys.join(", ")}`,
+        );
+      }
       if (ref.context) parts.push(`  Context: ${ref.context}`);
       return parts.join("\n");
     });
@@ -255,6 +266,9 @@ export class CredentialManager {
     return `<available_credentials>
 The following credentials are available. To use a credential, pass its ID to the appropriate tool.
 Do NOT ask the user for passwords or secrets — they are resolved automatically from the credential ID.
+"Extra secret fields" are operator-supplied named secrets: pass the name as "credentialField"
+to browser_fill, or read the matching environment variable in execute_command. Their values are
+never shown to you and are redacted from command output.
 
 ${lines.join("\n\n")}
 </available_credentials>`;

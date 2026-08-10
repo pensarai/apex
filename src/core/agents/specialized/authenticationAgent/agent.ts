@@ -167,7 +167,13 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
 
     super({
       system: detectOSAndEnhancePrompt(AUTH_SUBAGENT_SYSTEM_PROMPT),
-      prompt: buildAuthPrompt(target, authHints, cm, context),
+      prompt: buildAuthPrompt(
+        target,
+        authHints,
+        cm,
+        context,
+        environmentVariables ? Object.keys(environmentVariables) : undefined,
+      ),
       model,
       session,
       target,
@@ -267,6 +273,7 @@ function buildAuthPrompt(
   authHints?: AuthenticationAgentInput["authHints"],
   credentialManager?: import("../../../credentials").CredentialManager,
   context?: string,
+  envVarNames?: string[],
 ): string {
   const parts: string[] = [`TARGET: ${target}\n`];
 
@@ -287,6 +294,15 @@ function buildAuthPrompt(
     parts.push(
       "No credentials provided. Probe the target to discover auth requirements.\n",
     );
+  }
+
+  if (envVarNames?.length) {
+    parts.push("ENVIRONMENT VARIABLES:");
+    parts.push(
+      `These are pre-loaded in your shell and available in every execute_command call. Reference them (e.g. $${envVarNames[0]}) — their values are hidden from you and redacted from command output, so never try to print one.`,
+    );
+    parts.push(envVarNames.map((n) => `- ${n}`).join("\n"));
+    parts.push("");
   }
 
   if (authHints) {

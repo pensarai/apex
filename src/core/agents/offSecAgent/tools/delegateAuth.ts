@@ -309,6 +309,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
           eventBus: localBus,
           subagentId,
           subagentName,
+          environmentVariables: ctx.environmentVariables,
           secretValues: ctx.secretValues,
         });
 

@@ -138,17 +138,12 @@ export function createBrowserToolset(ctx: ToolContext) {
         "ID of a stored credential. When provided with credentialField, the secret is resolved automatically.",
       );
     shape.credentialField = z
-      .enum([
-        "password",
-        "username",
-        "apiKey",
-        "bearerToken",
-        "cookies",
-        "sessionToken",
-      ])
+      .string()
       .optional()
       .describe(
-        "Which field to extract from the credential (e.g. 'password'). Required when credentialId is set.",
+        "Which field to extract from the credential. One of: password, username, apiKey, " +
+          "bearerToken, cookies, sessionToken — or the name of one of the credential's " +
+          "extra secret fields. Required when credentialId is set.",
       );
   }
 
@@ -186,13 +181,7 @@ export function createBrowserToolset(ctx: ToolContext) {
         toolCallDescription: string;
         promptInjection?: { id?: string };
         credentialId?: string;
-        credentialField?:
-          | "password"
-          | "username"
-          | "apiKey"
-          | "bearerToken"
-          | "cookies"
-          | "sessionToken";
+        credentialField?: string;
       };
       const { element, ref, toolCallDescription } = params;
       let value = params.value;
@@ -252,8 +241,14 @@ export function createBrowserToolset(ctx: ToolContext) {
           credentialField === "sessionToken"
         ) {
           value = stored.tokens?.[credentialField] ?? "";
-        } else {
+        } else if (
+          credentialField === "password" ||
+          credentialField === "username" ||
+          credentialField === "apiKey"
+        ) {
           value = stored[credentialField] ?? "";
+        } else {
+          value = stored.additionalFields?.[credentialField] ?? "";
         }
         if (!value) {
           return {
