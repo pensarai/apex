@@ -333,8 +333,9 @@ The credentials above were provided to you and have already been verified — th
 do not modify them or their account settings. NEVER change the password, complete a password reset /
 forced-password-change / account-recovery flow, or modify MFA/2FA settings (enrolling, disabling, or
 resetting a second factor) for this account. If they do not authenticate (rejected, locked out, forced
-password change required, MFA required, email not confirmed), call complete_authentication with
-success=false and a clear summary of why — do not attempt to recover, reset, or rotate them. Do NOT
+password change required, email not confirmed, or an MFA prompt with no TOTP seed available), call
+complete_authentication with success=false and a clear summary of why — do not attempt to recover, reset,
+or rotate them. When a TOTP seed IS available, generate the code and continue; that is not a barrier. Do NOT
 register a new account or self-sign-up to work around a failed login: that is not the credential under test
 and only pollutes results — fail fast with success=false instead.`);
   } else {

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { mergeAuthCredentials } from "../core/agents/offSecAgent/tools/delegateAuth";
 import { CredentialManager } from "../core/credentials";
 
@@ -34,14 +34,15 @@ describe("mergeAuthCredentials", () => {
       additionalFields: { TOTP_SEED: "JBSWY3DPEHPK3PXP" },
     });
 
-    const stored = cm.resolve(original)!;
+    const stored = cm.resolve(original);
     const rebuilt = mergeAuthCredentials(undefined, {
-      username: stored.username,
-      password: stored.password,
-      additionalFields: stored.additionalFields,
+      username: stored?.username,
+      password: stored?.password,
+      additionalFields: stored?.additionalFields,
     });
+    expect(rebuilt).toBeDefined();
 
-    expect(cm.addFromAuthCredentials(rebuilt!)).toBe(original);
+    expect(cm.addFromAuthCredentials(rebuilt ?? {})).toBe(original);
     expect(cm.size).toBe(1);
   });
 });
