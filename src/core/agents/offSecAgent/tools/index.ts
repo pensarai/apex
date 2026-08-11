@@ -362,6 +362,16 @@ export const WORKSPACE_TOOL_NAMES: readonly ToolName[] = [
   "create_workspace_endpoint",
 ];
 
+/**
+ * Subset of {@link WORKSPACE_TOOL_NAMES} that mutate the connected Console
+ * workspace. Gated more strictly than the read-only `list_*` tools: only an
+ * explicit creation request may expose them (see `filterWorkspaceToolsForRun`).
+ */
+export const WORKSPACE_WRITE_TOOL_NAMES: readonly ToolName[] = [
+  "create_workspace_app",
+  "create_workspace_endpoint",
+];
+
 /** All tool names as a runtime array (useful for "give me everything"). */
 export const ALL_TOOL_NAMES: ToolName[] = [
   // Browser automation

@@ -38,6 +38,7 @@ import {
   RESPONSE_TOOL_NAME,
   SEND_EMAIL_TOOL_NAME,
   WORKSPACE_TOOL_NAMES,
+  WORKSPACE_WRITE_TOOL_NAMES,
 } from "./tools";
 import { StepTraceWriter } from "./trace";
 import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
@@ -50,29 +51,56 @@ const RESPONSE_DEBUG =
 const rlog = scopedLogger(() => createLogger("response-debug"));
 
 const WORKSPACE_TOOL_NAME_SET = new Set<string>(WORKSPACE_TOOL_NAMES);
+const WORKSPACE_WRITE_TOOL_NAME_SET = new Set<string>(
+  WORKSPACE_WRITE_TOOL_NAMES,
+);
+
+const WORKSPACE_TARGET_RE = /\b(?:console|workspace)\b/i;
+const WORKSPACE_NOUN_RE =
+  /\b(?:apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
+const WORKSPACE_READ_VERB_RE = /\b(?:list|show|find|search)\b/i;
+const WORKSPACE_WRITE_VERB_RE = /\b(?:add|create|register|import)\b/i;
+const WORKSPACE_BREAK_DOWN_RE = /\bbreak\s+down\b/i;
 
 // ponytail: current-message opt-in avoids persistent workspace capability state.
+//
+// Read (`list_*`) and write (`create_*`) tools are gated separately: recon
+// phrasing (find/search/show/list an app or endpoint on the "console"/
+// "workspace") is common in ordinary Operator pentests, so it must never
+// expose the mutation tools. The `create_*` tools require an explicit creation
+// request — a creation verb, a "break down …" import, or a direct mention of a
+// create tool by name.
 export function filterWorkspaceToolsForRun(
   activeTools: string[],
   prompt: string,
   hasInteractiveApprovalGate: boolean,
 ): string[] {
-  const explicitlyRequested =
-    hasInteractiveApprovalGate &&
-    !prompt.trimStart().startsWith("<skill ") &&
-    (WORKSPACE_TOOL_NAMES.some((name) => prompt.includes(name)) ||
-      (/\b(?:console|workspace)\b/i.test(prompt) &&
-        (/\b(?:add|create|register|import|list|show|find|search)\b/i.test(
-          prompt,
-        ) ||
-          /\bbreak\s+down\b/i.test(prompt)) &&
-        /\b(?:apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i.test(
-          prompt,
-        )));
+  const gated =
+    hasInteractiveApprovalGate && !prompt.trimStart().startsWith("<skill ");
 
-  return explicitlyRequested
-    ? activeTools
-    : activeTools.filter((name) => !WORKSPACE_TOOL_NAME_SET.has(name));
+  if (!gated) {
+    return activeTools.filter((name) => !WORKSPACE_TOOL_NAME_SET.has(name));
+  }
+
+  const targetsWorkspace =
+    WORKSPACE_TARGET_RE.test(prompt) && WORKSPACE_NOUN_RE.test(prompt);
+
+  const writeRequested =
+    WORKSPACE_WRITE_TOOL_NAMES.some((name) => prompt.includes(name)) ||
+    (targetsWorkspace &&
+      (WORKSPACE_WRITE_VERB_RE.test(prompt) ||
+        WORKSPACE_BREAK_DOWN_RE.test(prompt)));
+
+  const readRequested =
+    writeRequested ||
+    WORKSPACE_TOOL_NAMES.some((name) => prompt.includes(name)) ||
+    (targetsWorkspace && WORKSPACE_READ_VERB_RE.test(prompt));
+
+  return activeTools.filter((name) => {
+    if (WORKSPACE_WRITE_TOOL_NAME_SET.has(name)) return writeRequested;
+    if (WORKSPACE_TOOL_NAME_SET.has(name)) return readRequested;
+    return true;
+  });
 }
 
 // Opt-in stall watchdog (STREAM_STALL_DEBUG=1): warns when fullStream goes byte-silent, catching a Bedrock wedge.

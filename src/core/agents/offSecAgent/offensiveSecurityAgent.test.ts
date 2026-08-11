@@ -45,6 +45,10 @@ vi.mock("./tools", () => ({
     "list_workspace_endpoints",
     "create_workspace_endpoint",
   ],
+  WORKSPACE_WRITE_TOOL_NAMES: [
+    "create_workspace_app",
+    "create_workspace_endpoint",
+  ],
   PersistentShell: class {},
 }));
 vi.mock("../../ai", () => ({ streamResponse: () => {} }));
@@ -201,6 +205,70 @@ describe("workspace tool access", () => {
         true,
       ),
     ).toEqual(["execute_command"]);
+  });
+
+  it("exposes read-only listing tools but never mutations for recon phrasing", () => {
+    const tools = [
+      "execute_command",
+      "list_workspace_apps",
+      "create_workspace_app",
+      "list_workspace_endpoints",
+      "create_workspace_endpoint",
+    ];
+
+    // Recon verbs (find/search/show/list) targeting the console/workspace must
+    // only unlock the read-only `list_*` tools, never the `create_*` mutations.
+    for (const request of [
+      "Find all endpoints on the console workspace and pentest them",
+      "Search the console workspace for apps in scope",
+      "Show me the endpoints registered in the workspace",
+      "List the apps in my console workspace",
+    ]) {
+      expect(filterWorkspaceToolsForRun(tools, request, true)).toEqual([
+        "execute_command",
+        "list_workspace_apps",
+        "list_workspace_endpoints",
+      ]);
+    }
+  });
+
+  it("exposes mutation tools only for explicit creation requests", () => {
+    const tools = [
+      "execute_command",
+      "list_workspace_apps",
+      "create_workspace_app",
+      "list_workspace_endpoints",
+      "create_workspace_endpoint",
+    ];
+
+    // Creation verbs and "break down <threat model>" imports open all four.
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Register a new app called Billing in the console workspace",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Break down this threat model into apps and endpoints in the workspace",
+        true,
+      ),
+    ).toEqual(tools);
+
+    // A direct mention of a read tool never unlocks the mutation tools.
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Use list_workspace_apps for this record",
+        true,
+      ),
+    ).toEqual([
+      "execute_command",
+      "list_workspace_apps",
+      "list_workspace_endpoints",
+    ]);
   });
 });
 
