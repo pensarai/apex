@@ -39,6 +39,12 @@ vi.mock("./tools", () => ({
   createResponseTool: () => {},
   RESPONSE_TOOL_NAME: "response",
   ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
+  WORKSPACE_TOOL_NAMES: [
+    "list_workspace_apps",
+    "create_workspace_app",
+    "list_workspace_endpoints",
+    "create_workspace_endpoint",
+  ],
   PersistentShell: class {},
 }));
 vi.mock("../../ai", () => ({ streamResponse: () => {} }));
@@ -61,7 +67,10 @@ vi.mock("../../operator", () => ({
 vi.mock("ai", () => ({ hasToolCall: () => () => false }));
 
 import { AgentEventBus } from "../../eventBus";
-import { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
+import {
+  filterWorkspaceToolsForRun,
+  OffensiveSecurityAgent,
+} from "./offensiveSecurityAgent";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -154,6 +163,46 @@ async function* yieldThenThrow(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("workspace tool access", () => {
+  it("requires both an interactive operator and an explicit current request", () => {
+    const tools = [
+      "execute_command",
+      "list_workspace_apps",
+      "create_workspace_app",
+      "list_workspace_endpoints",
+      "create_workspace_endpoint",
+    ];
+    const request =
+      "Can you add a new app called Test App with the endpoint health to console pls";
+
+    expect(filterWorkspaceToolsForRun(tools, request, true)).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Use create_workspace_app for this record",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(filterWorkspaceToolsForRun(tools, request, false)).toEqual([
+      "execute_command",
+    ]);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Pentest the console app and enumerate its endpoints",
+        true,
+      ),
+    ).toEqual(["execute_command"]);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        `<skill name="pentest">${request}</skill>`,
+        true,
+      ),
+    ).toEqual(["execute_command"]);
+  });
+});
 
 describe("OffensiveSecurityAgent.consume()", () => {
   const textDelta = { type: "text-delta", text: "hi" };

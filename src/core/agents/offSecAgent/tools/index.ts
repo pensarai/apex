@@ -355,6 +355,13 @@ export function createAllTools(ctx: ToolContext) {
 /** Union of all available tool names. */
 export type ToolName = keyof ReturnType<typeof createAllTools>;
 
+export const WORKSPACE_TOOL_NAMES: readonly ToolName[] = [
+  "list_workspace_apps",
+  "create_workspace_app",
+  "list_workspace_endpoints",
+  "create_workspace_endpoint",
+];
+
 /** All tool names as a runtime array (useful for "give me everything"). */
 export const ALL_TOOL_NAMES: ToolName[] = [
   // Browser automation
@@ -386,10 +393,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "git_diff",
   "document_app",
   "document_endpoint",
-  "list_workspace_apps",
-  "create_workspace_app",
-  "list_workspace_endpoints",
-  "create_workspace_endpoint",
+  ...WORKSPACE_TOOL_NAMES,
   "delegate_to_auth_subagent",
   "create_attack_surface_report",
   "complete_authentication",

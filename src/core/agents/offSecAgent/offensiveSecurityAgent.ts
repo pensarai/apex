@@ -37,6 +37,7 @@ import {
   PlaywrightMcpSession,
   RESPONSE_TOOL_NAME,
   SEND_EMAIL_TOOL_NAME,
+  WORKSPACE_TOOL_NAMES,
 } from "./tools";
 import { StepTraceWriter } from "./trace";
 import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
@@ -47,6 +48,32 @@ const log = scopedLogger(() => createLogger("approval-gate"));
 const RESPONSE_DEBUG =
   process.env.RESPONSE_DEBUG === "1" || process.env.RESPONSE_DEBUG === "true";
 const rlog = scopedLogger(() => createLogger("response-debug"));
+
+const WORKSPACE_TOOL_NAME_SET = new Set<string>(WORKSPACE_TOOL_NAMES);
+
+// ponytail: current-message opt-in avoids persistent workspace capability state.
+export function filterWorkspaceToolsForRun(
+  activeTools: string[],
+  prompt: string,
+  hasInteractiveApprovalGate: boolean,
+): string[] {
+  const explicitlyRequested =
+    hasInteractiveApprovalGate &&
+    !prompt.trimStart().startsWith("<skill ") &&
+    (WORKSPACE_TOOL_NAMES.some((name) => prompt.includes(name)) ||
+      (/\b(?:console|workspace)\b/i.test(prompt) &&
+        (/\b(?:add|create|register|import|list|show|find|search)\b/i.test(
+          prompt,
+        ) ||
+          /\bbreak\s+down\b/i.test(prompt)) &&
+        /\b(?:apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i.test(
+          prompt,
+        )));
+
+  return explicitlyRequested
+    ? activeTools
+    : activeTools.filter((name) => !WORKSPACE_TOOL_NAME_SET.has(name));
+}
 
 // Opt-in stall watchdog (STREAM_STALL_DEBUG=1): warns when fullStream goes byte-silent, catching a Bedrock wedge.
 const STREAM_STALL_DEBUG =
@@ -480,6 +507,12 @@ export class OffensiveSecurityAgent<TResult = void> {
         return hasEmail;
       });
     }
+
+    activeTools = filterWorkspaceToolsForRun(
+      activeTools,
+      input.prompt,
+      input.approvalGate !== undefined,
+    );
 
     // -- Messages persistence -------------------------------------------------
     if (!existsSync(messagesDir)) {
