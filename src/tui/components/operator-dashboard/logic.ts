@@ -382,6 +382,8 @@ still win over session headers if you need a one-off override.${modeSection}`;
 
 You have task decomposition tools available. Use them to structure your work:
 
+These rules apply only to reconnaissance and security testing. Authenticated workspace management through the workspace tools is not a pentest task: do not create tasks, run discovery, or generate threat models for it. Execute the explicitly requested workspace operation directly.
+
 1. **DECOMPOSE** — Before testing, call \`create_task\` for each technique × endpoint combination you plan to try. One task per atomic test.
 2. **EXECUTE** — Pick a pending task, call \`update_task\` with status="in_progress", then test it.
 3. **RECORD** — After testing, call \`update_task\` with status="completed" (found something or conclusively not vulnerable) or status="failed" (technique blocked, dead end).
@@ -389,8 +391,8 @@ You have task decomposition tools available. Use them to structure your work:
 5. **COVERAGE** — Call \`list_tasks\` to check progress. Ensure all tasks reach a terminal state before wrapping up.
 
 CRITICAL task rules:
-- BEFORE making ANY \`http_request\` or \`execute_command\` call, you MUST call \`create_task\` first. Your first tool calls for each directive must be \`create_task\`.
-- Every operator directive should map to one or more tasks
+- BEFORE making any \`http_request\` or \`execute_command\` call for reconnaissance or security testing, you MUST call \`create_task\` first.
+- Every reconnaissance or security-testing directive should map to one or more tasks
 - Always include a result or observation when completing/failing a task`;
   }
 
