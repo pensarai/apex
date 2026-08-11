@@ -350,6 +350,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
       secretValues: input.secretValues,
+      environmentVariables: input.environmentVariables,
       persistentShell: this.persistentShell,
       skillsRegistry: input.skillsRegistry,
       promptInjectionLibrary: input.promptInjectionLibrary,

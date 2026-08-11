@@ -167,7 +167,13 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
 
     super({
       system: detectOSAndEnhancePrompt(AUTH_SUBAGENT_SYSTEM_PROMPT),
-      prompt: buildAuthPrompt(target, authHints, cm, context),
+      prompt: buildAuthPrompt(
+        target,
+        authHints,
+        cm,
+        context,
+        environmentVariables ? Object.keys(environmentVariables) : undefined,
+      ),
       model,
       session,
       target,
@@ -267,6 +273,7 @@ function buildAuthPrompt(
   authHints?: AuthenticationAgentInput["authHints"],
   credentialManager?: import("../../../credentials").CredentialManager,
   context?: string,
+  envVarNames?: string[],
 ): string {
   const parts: string[] = [`TARGET: ${target}\n`];
 
@@ -287,6 +294,15 @@ function buildAuthPrompt(
     parts.push(
       "No credentials provided. Probe the target to discover auth requirements.\n",
     );
+  }
+
+  if (envVarNames?.length) {
+    parts.push("ENVIRONMENT VARIABLES:");
+    parts.push(
+      `These are pre-loaded in your shell and available in every execute_command call. Reference them (e.g. $${envVarNames[0]}) — their values are hidden from you and redacted from command output, so never try to print one.`,
+    );
+    parts.push(envVarNames.map((n) => `- ${n}`).join("\n"));
+    parts.push("");
   }
 
   if (authHints) {
@@ -317,8 +333,9 @@ The credentials above were provided to you and have already been verified — th
 do not modify them or their account settings. NEVER change the password, complete a password reset /
 forced-password-change / account-recovery flow, or modify MFA/2FA settings (enrolling, disabling, or
 resetting a second factor) for this account. If they do not authenticate (rejected, locked out, forced
-password change required, MFA required, email not confirmed), call complete_authentication with
-success=false and a clear summary of why — do not attempt to recover, reset, or rotate them. Do NOT
+password change required, email not confirmed, or an MFA prompt with no TOTP seed available), call
+complete_authentication with success=false and a clear summary of why — do not attempt to recover, reset,
+or rotate them. When a TOTP seed IS available, generate the code and continue; that is not a barrier. Do NOT
 register a new account or self-sign-up to work around a failed login: that is not the credential under test
 and only pollutes results — fail fast with success=false instead.`);
   } else {

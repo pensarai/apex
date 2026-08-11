@@ -81,6 +81,13 @@ export type ToolContext = {
   secretValues?: string[];
 
   /**
+   * Shell env this agent runs with. Tools that spawn a sub-agent forward it so
+   * the child's shell resolves the same variables (credential secrets among
+   * them) as the parent's.
+   */
+  environmentVariables?: Record<string, string>;
+
+  /**
    * Long-lived bash process shared across execute_command calls.
    * Environment variables, working directory, and background processes
    * persist between invocations. Only used in local (non-sandbox) mode.
