@@ -20,7 +20,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 
   if (!validToken) {
     throw new Error(
-      "Not authenticated. Run `pensar login` to connect to Pensar Console.",
+      "Not authenticated. Run `/login` in Apex or `pensar login` to reconnect to Pensar Console.",
     );
   }
 

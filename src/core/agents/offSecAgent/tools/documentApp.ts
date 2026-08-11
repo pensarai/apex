@@ -74,6 +74,8 @@ export function documentApp(ctx: ToolContext) {
   return tool({
     description: `Document a discovered application during attack surface analysis.
 
+This stores a session-local reconnaissance artifact only. It does NOT create or update an application in the user's authenticated Pensar workspace. Use \`create_workspace_app\` for that mutation.
+
 Applications are top-level entities discovered during reconnaissance — web applications, APIs, admin panels, or services. Each application groups related endpoints.
 
 Use this tool to document:
