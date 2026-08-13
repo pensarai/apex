@@ -39,6 +39,16 @@ vi.mock("./tools", () => ({
   createResponseTool: () => {},
   RESPONSE_TOOL_NAME: "response",
   ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
+  WORKSPACE_TOOL_NAMES: [
+    "list_workspace_apps",
+    "create_workspace_app",
+    "list_workspace_endpoints",
+    "create_workspace_endpoint",
+  ],
+  WORKSPACE_WRITE_TOOL_NAMES: [
+    "create_workspace_app",
+    "create_workspace_endpoint",
+  ],
   PersistentShell: class {},
 }));
 vi.mock("../../ai", () => ({ streamResponse: () => {} }));
@@ -61,7 +71,10 @@ vi.mock("../../operator", () => ({
 vi.mock("ai", () => ({ hasToolCall: () => () => false }));
 
 import { AgentEventBus } from "../../eventBus";
-import { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
+import {
+  filterWorkspaceToolsForRun,
+  OffensiveSecurityAgent,
+} from "./offensiveSecurityAgent";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -154,6 +167,110 @@ async function* yieldThenThrow(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("workspace tool access", () => {
+  it("requires both an interactive operator and an explicit current request", () => {
+    const tools = [
+      "execute_command",
+      "list_workspace_apps",
+      "create_workspace_app",
+      "list_workspace_endpoints",
+      "create_workspace_endpoint",
+    ];
+    const request =
+      "Can you add a new app called Test App with the endpoint health to console pls";
+
+    expect(filterWorkspaceToolsForRun(tools, request, true)).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Use create_workspace_app for this record",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(filterWorkspaceToolsForRun(tools, request, false)).toEqual([
+      "execute_command",
+    ]);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Pentest the console app and enumerate its endpoints",
+        true,
+      ),
+    ).toEqual(["execute_command"]);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        `<skill name="pentest">${request}</skill>`,
+        true,
+      ),
+    ).toEqual(["execute_command"]);
+  });
+
+  it("exposes read-only listing tools but never mutations for recon phrasing", () => {
+    const tools = [
+      "execute_command",
+      "list_workspace_apps",
+      "create_workspace_app",
+      "list_workspace_endpoints",
+      "create_workspace_endpoint",
+    ];
+
+    // Recon verbs (find/search/show/list) targeting the console/workspace must
+    // only unlock the read-only `list_*` tools, never the `create_*` mutations.
+    for (const request of [
+      "Find all endpoints on the console workspace and pentest them",
+      "Search the console workspace for apps in scope",
+      "Show me the endpoints registered in the workspace",
+      "List the apps in my console workspace",
+    ]) {
+      expect(filterWorkspaceToolsForRun(tools, request, true)).toEqual([
+        "execute_command",
+        "list_workspace_apps",
+        "list_workspace_endpoints",
+      ]);
+    }
+  });
+
+  it("exposes mutation tools only for explicit creation requests", () => {
+    const tools = [
+      "execute_command",
+      "list_workspace_apps",
+      "create_workspace_app",
+      "list_workspace_endpoints",
+      "create_workspace_endpoint",
+    ];
+
+    // Creation verbs and "break down <threat model>" imports open all four.
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Register a new app called Billing in the console workspace",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Break down this threat model into apps and endpoints in the workspace",
+        true,
+      ),
+    ).toEqual(tools);
+
+    // A direct mention of a read tool never unlocks the mutation tools.
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Use list_workspace_apps for this record",
+        true,
+      ),
+    ).toEqual([
+      "execute_command",
+      "list_workspace_apps",
+      "list_workspace_endpoints",
+    ]);
+  });
+});
 
 describe("OffensiveSecurityAgent.consume()", () => {
   const textDelta = { type: "text-delta", text: "hi" };

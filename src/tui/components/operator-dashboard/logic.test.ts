@@ -644,6 +644,15 @@ describe("buildOperatorSystemPrompt", () => {
     expect(prompt).toContain("# Task-Driven Testing");
   });
 
+  it("exempts authenticated workspace management from pentest task decomposition", () => {
+    const prompt = buildOperatorSystemPrompt(target, state, "default", {
+      taskDriven: true,
+    });
+    expect(prompt).toContain(
+      "Authenticated workspace management through the workspace tools is not a pentest task",
+    );
+  });
+
   it("includes approved plan content when provided outside plan mode", () => {
     const prompt = buildOperatorSystemPrompt(target, state, "default", {
       approvedPlanContent: "Test plan content",

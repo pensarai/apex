@@ -124,6 +124,8 @@ export function documentEndpoint(ctx: ToolContext) {
   return tool({
     description: `Document a discovered endpoint during attack surface analysis.
 
+This stores a session-local reconnaissance artifact and runs endpoint threat-model enrichment. It does NOT create or update an endpoint in the user's authenticated Pensar workspace. Use \`create_workspace_endpoint\` for that mutation.
+
 Endpoints are individual API routes, web pages, or functional paths within an application. Each endpoint belongs to an application (specified by appName).
 
 Use this tool to document:
