@@ -227,6 +227,16 @@ const SessionConfigObject = z.object({
    * `agents/offSecAgent/tools/destructiveGuard.ts`.
    */
   allowDestructiveActions: z.boolean().optional(),
+  /**
+   * Opt-in: the client has authorized rate-limit / anti-automation / volumetric
+   * (light-DoS) testing — request bursts to probe for missing throttling.
+   * Defaults to off — when absent or false, the pentest system prompt tells the
+   * agent that burst/volumetric testing is out of scope. Independent of this
+   * flag, endpoints with real-world side effects (email/SMS, notifications,
+   * contact forms, payments) are never looped — see the side-effect safety
+   * section in `agents/specialized/pentest/agent.ts`.
+   */
+  allowRateLimitTesting: z.boolean().optional(),
   operatorSettings: OperatorSettingsObject.optional(),
   /** Toolset state for controlling which tools are available */
   toolsetState: ToolsetStateSchema.optional(),
