@@ -1740,11 +1740,12 @@ describe("OffensiveSecurityAgent.consume() streamIdFactory", () => {
       streamIdFactory,
     });
     const emitted: Array<{ messageId?: string; textPartId?: string }> = [];
-    vi.spyOn(agent.eventBus, "emitStreamPart").mockImplementation(
-      ((_chunk: unknown, ids: { messageId?: string; textPartId?: string }) => {
-        emitted.push({ messageId: ids.messageId, textPartId: ids.textPartId });
-      }) as unknown as AgentEventBus["emitStreamPart"],
-    );
+    vi.spyOn(agent.eventBus, "emitStreamPart").mockImplementation(((
+      _chunk: unknown,
+      ids: { messageId?: string; textPartId?: string },
+    ) => {
+      emitted.push({ messageId: ids.messageId, textPartId: ids.textPartId });
+    }) as unknown as AgentEventBus["emitStreamPart"]);
 
     await agent.consume();
 
@@ -1767,11 +1768,12 @@ describe("OffensiveSecurityAgent.consume() streamIdFactory", () => {
       fullStream: yieldChunks([startStep, textStart, textDelta]),
     });
     const emitted: Array<{ messageId?: string }> = [];
-    vi.spyOn(agent.eventBus, "emitStreamPart").mockImplementation(
-      ((_chunk: unknown, ids: { messageId?: string }) => {
-        emitted.push({ messageId: ids.messageId });
-      }) as unknown as AgentEventBus["emitStreamPart"],
-    );
+    vi.spyOn(agent.eventBus, "emitStreamPart").mockImplementation(((
+      _chunk: unknown,
+      ids: { messageId?: string },
+    ) => {
+      emitted.push({ messageId: ids.messageId });
+    }) as unknown as AgentEventBus["emitStreamPart"]);
 
     await agent.consume();
 

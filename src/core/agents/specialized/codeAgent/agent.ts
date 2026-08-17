@@ -95,8 +95,14 @@ export interface CodeAgentInput<TResult = void> extends SpecializedAgentInput {
  */
 export class CodeAgent<TResult = void> extends AgentRuntime<TResult> {
   constructor(opts: CodeAgentInput<TResult>) {
-    const { codebasePath, objective, system, responseSchema, excludeTools, ...base } =
-      opts;
+    const {
+      codebasePath,
+      objective,
+      system,
+      responseSchema,
+      excludeTools,
+      ...base
+    } = opts;
 
     let activeTools = [...CODE_AGENT_TOOLS];
     if (excludeTools?.length) {

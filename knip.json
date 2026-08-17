@@ -26,6 +26,7 @@
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
   "ignoreDependencies": ["@playwright/mcp"],
   "ignoreExportsUsedInFile": { "type": true },
+  "tags": ["-public"],
   "include": [
     "files",
     "dependencies",

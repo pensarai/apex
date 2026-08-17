@@ -51,7 +51,11 @@ function emptyStreamResult() {
 
 function step(inputTokens: number, outputTokens: number) {
   return {
-    usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens },
+    usage: {
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens,
+    },
     providerMetadata: undefined,
   } as unknown as Parameters<StreamTextOnStepFinishCallback<ToolSet>>[0];
 }
@@ -87,7 +91,9 @@ describe("streamResponse durability hooks", () => {
     });
 
     it("wraps the model with the middleware when set", () => {
-      const middleware: LanguageModelMiddleware = { specificationVersion: "v3" };
+      const middleware: LanguageModelMiddleware = {
+        specificationVersion: "v3",
+      };
       streamResponse({
         model: "test-model",
         prompt: "hi",
@@ -119,7 +125,12 @@ describe("streamResponse durability hooks", () => {
       streamResponse({ model: "test-model", prompt: "hi", usageRecorder });
       await streamCall(0).onStepFinish(step(11, 7));
       expect(usageRecorder).toHaveBeenCalledOnce();
-      expect(usageRecorder).toHaveBeenCalledWith("test-model", 11, 7, undefined);
+      expect(usageRecorder).toHaveBeenCalledWith(
+        "test-model",
+        11,
+        7,
+        undefined,
+      );
       expect(globalUsage).not.toHaveBeenCalled();
     });
 
@@ -146,8 +157,16 @@ describe("streamResponse durability hooks", () => {
     it("keeps concurrent recorders scoped to their own model loops", async () => {
       const recorderA = vi.fn();
       const recorderB = vi.fn();
-      streamResponse({ model: "model-a", prompt: "a", usageRecorder: recorderA });
-      streamResponse({ model: "model-b", prompt: "b", usageRecorder: recorderB });
+      streamResponse({
+        model: "model-a",
+        prompt: "a",
+        usageRecorder: recorderA,
+      });
+      streamResponse({
+        model: "model-b",
+        prompt: "b",
+        usageRecorder: recorderB,
+      });
       await Promise.all([
         streamCall(0).onStepFinish(step(3, 5)),
         streamCall(1).onStepFinish(step(13, 17)),

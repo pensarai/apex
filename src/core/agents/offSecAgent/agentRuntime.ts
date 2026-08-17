@@ -81,7 +81,10 @@ export class AgentRuntime<
       stopWhen: base.stopWhen ?? definition.stopWhen,
       extraTools,
       resolveResult,
-      onStepFinish: composeStepFinish(base.onStepFinish, definition.onStepFinish),
+      onStepFinish: composeStepFinish(
+        base.onStepFinish,
+        definition.onStepFinish,
+      ),
     });
   }
 }

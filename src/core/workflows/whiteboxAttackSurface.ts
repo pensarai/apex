@@ -12,6 +12,10 @@ import { join } from "node:path";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import pLimit from "p-limit";
 import { z } from "zod";
+import {
+  inProcessSubagentSpawner,
+  type SubagentSpawner,
+} from "../agents/offSecAgent/subagentSpawner";
 import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
@@ -27,10 +31,6 @@ import {
   WHITEBOX_DISCOVERY_SYSTEM_PROMPT,
   type WhiteboxAttackSurfaceResult,
 } from "../agents/specialized/whiteboxAttackSurface";
-import {
-  inProcessSubagentSpawner,
-  type SubagentSpawner,
-} from "../agents/offSecAgent/subagentSpawner";
 import { runAppEndpointDocumentation } from "../agents/specialized/whiteboxAttackSurface/endpointDocumentationAgent";
 import type {
   AIAuthConfig,

@@ -59,8 +59,13 @@ const FINDING_JUDGE_DEFINITION = defineAgent<FindingJudgeAgentOutput>({
 
 export class FindingJudgeAgent extends AgentRuntime<FindingJudgeAgentOutput> {
   constructor(opts: FindingJudgeAgentInput) {
-    const { finding, target: targetOpt, subagentId, subagentName, ...base } =
-      opts;
+    const {
+      finding,
+      target: targetOpt,
+      subagentId,
+      subagentName,
+      ...base
+    } = opts;
     const target = finding.target ?? targetOpt ?? base.session.targets[0];
 
     super({

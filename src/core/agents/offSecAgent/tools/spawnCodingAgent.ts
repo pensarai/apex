@@ -2,13 +2,13 @@ import { tool } from "ai";
 import { z } from "zod";
 import type { AssetRecord } from "../../../findings/attackSurfaceRegistry";
 import {
-  inProcessSubagentSpawner,
-  type SubagentSpawner,
-} from "../subagentSpawner";
-import {
   resolvePathWithinCodebaseRoot,
   resolveWhiteboxCodebaseRoot,
 } from "../../../whitebox";
+import {
+  inProcessSubagentSpawner,
+  type SubagentSpawner,
+} from "../subagentSpawner";
 import type { ToolContext } from "./types";
 
 /** Default max concurrent coding agents */

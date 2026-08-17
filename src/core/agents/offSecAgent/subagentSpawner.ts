@@ -18,8 +18,8 @@ import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema
 import type { SystemPentestScope } from "./types";
 import type { AuthenticationAgentInput } from "../specialized/authenticationAgent/agent";
 import type { FindingJudgeInput } from "../specialized/findingJudge";
-import type { StreamIdFactory } from "./types";
 import type { PlaywrightMcpSession, UnifiedSandbox } from "./tools";
+import type { StreamIdFactory } from "./types";
 
 /** Registry key selecting which child agent {@link SubagentSpawner.spawn} builds. */
 export type SubagentType =
@@ -77,6 +77,7 @@ export type SubagentSpec =
  * Harness the parent runtime injects into every child. The durable hooks and
  * `sandbox` are inherited from the parent so a spawned child is subject to the
  * same middleware / usage recording / id minting / execution sandbox.
+ * @public Consumed by Console's durable subagent runtime.
  */
 export interface SpawnRuntime {
   session: SessionInfo;
@@ -96,6 +97,7 @@ export interface SpawnRuntime {
   streamIdFactory?: StreamIdFactory;
 }
 
+/** @public Consumed by Console's durable subagent runtime. */
 export interface SpawnOptions<TResult = unknown> {
   /** Type-specific construction fields + the registry discriminator. */
   spec: SubagentSpec;
@@ -373,10 +375,12 @@ function drainBounded(
  * faithful extraction of the hand-rolled `newSessionId → new AgentEventBus →
  * attachChild → new Agent → consume` pattern the tools used before.
  */
-export class InProcessSubagentSpawner implements SubagentSpawner {
+class InProcessSubagentSpawner implements SubagentSpawner {
   constructor(private readonly idFactory: () => string = newSessionId) {}
 
-  async spawn<TResult = unknown>(opts: SpawnOptions<TResult>): Promise<TResult> {
+  async spawn<TResult = unknown>(
+    opts: SpawnOptions<TResult>,
+  ): Promise<TResult> {
     const childId = opts.subagentId ?? this.idFactory();
     opts.onSpawned?.(childId);
 
