@@ -273,6 +273,10 @@ describe("workspace tool access", () => {
       "What domains are in my workspace?",
       "Get the workspace endpoints",
       "Which of the workspace apps are registered?",
+      "Show me a list of all workspace endpoints",
+      "What are the domains in my workspace?",
+      "Which of our workspace apps are available?",
+      "Get a list of the workspace endpoints",
     ]) {
       expect(filterWorkspaceToolsForRun(tools, request, true)).toEqual([
         "execute_command",
@@ -388,6 +392,20 @@ describe("workspace tool access", () => {
       filterWorkspaceToolsForRun(
         tools,
         "Link this workspace domain to the Payments application; do not create any endpoints",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Don't create any workspace endpoints, but link this workspace domain to the Payments application",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Don't create any workspace endpoints and link this workspace domain to the Payments application",
         true,
       ),
     ).toEqual(tools);
