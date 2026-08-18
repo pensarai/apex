@@ -9,6 +9,8 @@ const api = vi.hoisted(() => ({
   listEndpoints: vi.fn(),
   searchApps: vi.fn(),
   searchEndpoints: vi.fn(),
+  updateApp: vi.fn(),
+  updateEndpoint: vi.fn(),
 }));
 
 vi.mock("../../../api/apps", () => api);
@@ -18,6 +20,8 @@ import {
   createWorkspaceEndpoint,
   listWorkspaceApps,
   listWorkspaceEndpoints,
+  updateWorkspaceApp,
+  updateWorkspaceEndpoint,
 } from "./workspaceApps";
 
 function makeCtx(): ToolContext {
@@ -119,6 +123,31 @@ describe("authenticated workspace tools", () => {
     });
   });
 
+  it("links an existing application to a workspace domain", async () => {
+    api.updateApp.mockResolvedValue({
+      id: "app-1",
+      domainId: "domain-1",
+      domainUrl: "https://example.com",
+    });
+
+    const result = await updateWorkspaceApp(makeCtx()).execute?.(
+      {
+        applicationId: "app-1",
+        domainId: "domain-1",
+        toolCallDescription: "Link the API application to example.com",
+      },
+      executionOptions,
+    );
+
+    expect(api.updateApp).toHaveBeenCalledWith("app-1", {
+      domainId: "domain-1",
+    });
+    expect(result).toMatchObject({
+      success: true,
+      application: { id: "app-1", domainId: "domain-1" },
+    });
+  });
+
   it("lists endpoints under the requested application", async () => {
     api.listEndpoints.mockResolvedValue({
       endpoints: [],
@@ -155,6 +184,7 @@ describe("authenticated workspace tools", () => {
         endpoint: "/users",
         description: "User API",
         type: "api-endpoint",
+        transport: "grpc",
         authenticationRequired: { required: true },
         toolCallDescription: "Create the users endpoint",
       },
@@ -165,11 +195,36 @@ describe("authenticated workspace tools", () => {
       endpoint: "/users",
       description: "User API",
       type: "api-endpoint",
+      transport: "grpc",
       authenticationRequired: { required: true },
     });
     expect(result).toEqual({
       success: true,
       endpoint: { id: "endpoint-1" },
+    });
+  });
+
+  it("repairs an existing endpoint transport", async () => {
+    api.updateEndpoint.mockResolvedValue({
+      id: "endpoint-1",
+      transport: "connect",
+    });
+
+    const result = await updateWorkspaceEndpoint(makeCtx()).execute?.(
+      {
+        endpointId: "endpoint-1",
+        transport: "connect",
+        toolCallDescription: "Correct the endpoint transport",
+      },
+      executionOptions,
+    );
+
+    expect(api.updateEndpoint).toHaveBeenCalledWith("endpoint-1", {
+      transport: "connect",
+    });
+    expect(result).toEqual({
+      success: true,
+      endpoint: { id: "endpoint-1", transport: "connect" },
     });
   });
 

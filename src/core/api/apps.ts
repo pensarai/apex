@@ -43,6 +43,15 @@ export type EndpointType =
   | "file-storage"
   | "asset";
 
+export const ENDPOINT_TRANSPORTS = [
+  "http",
+  "grpc",
+  "grpc_web",
+  "connect",
+] as const;
+
+export type EndpointTransport = (typeof ENDPOINT_TRANSPORTS)[number];
+
 // ── Types ────────────────────────────────────────────────────────────
 
 export interface AppSummary {
@@ -52,6 +61,7 @@ export interface AppSummary {
   framework: string | null;
   workspaceId: string;
   domainId: string | null;
+  domainUrl: string | null;
   createdAt: string;
 }
 
@@ -70,6 +80,7 @@ export interface AppDetail extends AppSummary {
 export interface EndpointSummary {
   id: string;
   endpoint: string;
+  transport: EndpointTransport | null;
   type: string | null;
   applicationId: string;
   location: string | null;
@@ -138,6 +149,7 @@ export interface CreateEndpointInput {
   endpoint: string;
   description: string;
   type?: EndpointType;
+  transport?: EndpointTransport;
   location?: string;
   startLineNumber?: number;
   endLineNumber?: number;
@@ -156,6 +168,7 @@ export interface UpdateEndpointInput {
   endpoint?: string;
   description?: string;
   type?: EndpointType | null;
+  transport?: EndpointTransport;
   location?: string | null;
   startLineNumber?: number | null;
   endLineNumber?: number | null;

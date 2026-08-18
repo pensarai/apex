@@ -57,19 +57,21 @@ const WORKSPACE_WRITE_TOOL_NAME_SET = new Set<string>(
 
 const WORKSPACE_TARGET_RE = /\b(?:console|workspace)\b/i;
 const WORKSPACE_NOUN_RE =
-  /\b(?:apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
-const WORKSPACE_READ_VERB_RE = /\b(?:list|show|find|search)\b/i;
-const WORKSPACE_WRITE_VERB_RE = /\b(?:add|create|register|import)\b/i;
+  /\b(?:domains?|apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
+const WORKSPACE_READ_VERB_RE = /\b(?:list|show|find|search|get|what|which)\b/i;
+const WORKSPACE_WRITE_REQUEST_RE =
+  /\b(?:add|create|register|import|update|edit|change|set|link|unlink|move|correct|repair)\s+(?:(?:the|this|that|a|an|my|our|existing|new|current|connected|authenticated|console|workspace|attached|provided)\s+){0,4}(?:domains?|apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
+const WORKSPACE_DOMAIN_HOST_WRITE_RE =
+  /\b(?:add|create|register|import)\s+(?:https?:\/\/)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}(?::\d+)?(?:\/\S*)?\s+(?:to|in|under)\s+(?:(?:the|my|our|connected|authenticated)\s+)?(?:console|workspace)\b/i;
 const WORKSPACE_BREAK_DOWN_RE = /\bbreak\s+down\b/i;
 
 // ponytail: current-message opt-in avoids persistent workspace capability state.
 //
-// Read (`list_*`) and write (`create_*`) tools are gated separately: recon
-// phrasing (find/search/show/list an app or endpoint on the "console"/
+// Read (`list_*`) and write (`create_*` / `update_*`) tools are gated
+// separately: recon phrasing (find/search/show/list a domain, app, or endpoint on the "console"/
 // "workspace") is common in ordinary Operator pentests, so it must never
-// expose the mutation tools. The `create_*` tools require an explicit creation
-// request — a creation verb, a "break down …" import, or a direct mention of a
-// create tool by name.
+// expose mutation tools. Write tools require an explicit mutation request —
+// a write verb, a "break down …" import, or a direct tool-name mention.
 export function filterWorkspaceToolsForRun(
   activeTools: string[],
   prompt: string,
@@ -87,8 +89,9 @@ export function filterWorkspaceToolsForRun(
 
   const writeRequested =
     WORKSPACE_WRITE_TOOL_NAMES.some((name) => prompt.includes(name)) ||
+    WORKSPACE_DOMAIN_HOST_WRITE_RE.test(prompt) ||
     (targetsWorkspace &&
-      (WORKSPACE_WRITE_VERB_RE.test(prompt) ||
+      (WORKSPACE_WRITE_REQUEST_RE.test(prompt) ||
         WORKSPACE_BREAK_DOWN_RE.test(prompt)));
 
   const readRequested =

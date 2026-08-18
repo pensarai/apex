@@ -5,8 +5,11 @@ describe("buildBaseSystemPrompt workspace management", () => {
   const prompt = buildBaseSystemPrompt();
 
   it("routes explicit authenticated workspace mutations to in-process tools", () => {
+    expect(prompt).toContain("**create_workspace_domain**");
     expect(prompt).toContain("**create_workspace_app**");
+    expect(prompt).toContain("**update_workspace_app**");
     expect(prompt).toContain("**create_workspace_endpoint**");
+    expect(prompt).toContain("**update_workspace_endpoint**");
     expect(prompt).toContain(
       "do not invoke a separate `pensar apps` binary through the shell",
     );
@@ -18,6 +21,9 @@ describe("buildBaseSystemPrompt workspace management", () => {
     );
     expect(prompt).toContain(
       "run `/login` in Apex or the local checkout's `bun src/cli.ts login`",
+    );
+    expect(prompt).toContain(
+      "A non-HTTP transport classification does not add RPC metadata or make an endpoint scan-ready",
     );
   });
 
