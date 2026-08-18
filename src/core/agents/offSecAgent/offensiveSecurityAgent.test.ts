@@ -228,6 +228,8 @@ describe("workspace tool access", () => {
       "Is it possible to link this workspace domain to the Payments app?",
       "Tell me whether I should link this workspace domain to the Payments app",
       "Please don't link the workspace app to its domain",
+      "Please do not create a workspace domain",
+      "Never create a workspace app without asking first",
       "Can I create a workspace app for Billing?",
       "How do I update the workspace endpoint transport to grpc?",
       "Can I link example.com to my workspace?",
@@ -355,6 +357,37 @@ describe("workspace tool access", () => {
       filterWorkspaceToolsForRun(
         tools,
         "I need you to link this workspace domain to the Payments application",
+        true,
+      ),
+    ).toEqual(tools);
+    // "I'd like to …" / "I would like to …" without an explicit "you" must
+    // expose writes, matching the "I want to …" / "I need to …" branch.
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "I'd like to link this workspace domain to the Payments application",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "I would like to link this workspace domain to the Payments application",
+        true,
+      ),
+    ).toEqual(tools);
+    // A separate prohibition in another clause must not veto an explicit write.
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Please link this workspace domain to the Payments application, but do not create any new endpoints",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Link this workspace domain to the Payments application; do not create any endpoints",
         true,
       ),
     ).toEqual(tools);

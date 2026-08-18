@@ -62,13 +62,31 @@ const WORKSPACE_READ_REQUEST_RE =
   /(?:\b(?:list|show|find|search|get)\s+(?:(?:me|the|my|our|all|for|in|within|registered|existing|console|workspace)\s+){0,5}(?:domains?|apps?|applications?|endpoints?)\b|\b(?:what|which)\s+(?:(?:of\s+the|console|workspace)\s+){0,2}(?:domains?|apps?|applications?|endpoints?)\b)/i;
 const WORKSPACE_WRITE_ACTION = String.raw`(?:add|create|register|import|update|edit|change|set|correct|repair|link|unlink|rename|break\s+down)`;
 const WORKSPACE_EXPLICIT_WRITE_REQUEST_RE = new RegExp(
-  String.raw`(?:^\s*|[.?!;\n]\s*|\b(?:please|kindly)\s+|\b(?:can|could|would|will)\s+you\s+|\b(?:i|we)\s+(?:want|need)\s+(?:you\s+)?to\s+|\bi(?:'d| would)\s+like\s+you\s+to\s+|\blet['’]s\s+|\bgo\s+ahead\s+and\s+)${WORKSPACE_WRITE_ACTION}\b`,
+  String.raw`(?:^\s*|[.?!;\n]\s*|\b(?:please|kindly)\s+|\b(?:can|could|would|will)\s+you\s+|\b(?:i|we)\s+(?:want|need)\s+(?:you\s+)?to\s+|\bi(?:['’]d| would)\s+like\s+(?:you\s+)?to\s+|\blet['’]s\s+|\bgo\s+ahead\s+and\s+)${WORKSPACE_WRITE_ACTION}\b`,
   "i",
 );
 const WORKSPACE_NEGATED_WRITE_REQUEST_RE = new RegExp(
   String.raw`\b(?:do\s+not|don't|never|avoid)\b[^.?!;\n]{0,40}\b${WORKSPACE_WRITE_ACTION}\b`,
   "i",
 );
+// Clause boundaries so a prohibition in one clause ("…but do not create
+// endpoints") does not veto an explicit write in another ("please link the
+// domain…"). Sentence terminators, commas, and "but" each start a new clause.
+const WORKSPACE_CLAUSE_SPLIT_RE = /[.?!;\n]+|,|\bbut\b/i;
+
+// An explicit write is requested when at least one clause carries a directive
+// write verb and that same clause is not negated. Scoping the negation to the
+// clause avoids a global veto killing a genuine mutation paired with a
+// separate prohibition.
+function hasUnnegatedExplicitWriteRequest(prompt: string): boolean {
+  return prompt
+    .split(WORKSPACE_CLAUSE_SPLIT_RE)
+    .some(
+      (clause) =>
+        WORKSPACE_EXPLICIT_WRITE_REQUEST_RE.test(clause) &&
+        !WORKSPACE_NEGATED_WRITE_REQUEST_RE.test(clause),
+    );
+}
 const WORKSPACE_CREATE_REQUEST_RE =
   /\b(?:add|create|register|import)\s+(?:(?:the|this|that|a|an|my|our|existing|new|current|connected|authenticated|console|workspace|attached|provided)\s+){0,4}(?:domains?|apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
 const WORKSPACE_DOMAIN_HOST_WRITE_RE =
@@ -110,9 +128,7 @@ export function filterWorkspaceToolsForRun(
 
   const targetsWorkspace =
     WORKSPACE_TARGET_RE.test(prompt) && WORKSPACE_NOUN_RE.test(prompt);
-  const explicitWriteRequested =
-    WORKSPACE_EXPLICIT_WRITE_REQUEST_RE.test(prompt) &&
-    !WORKSPACE_NEGATED_WRITE_REQUEST_RE.test(prompt);
+  const explicitWriteRequested = hasUnnegatedExplicitWriteRequest(prompt);
 
   const writeRequested =
     WORKSPACE_WRITE_TOOL_NAMES.some((name) => prompt.includes(name)) ||
