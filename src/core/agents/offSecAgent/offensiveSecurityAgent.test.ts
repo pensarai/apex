@@ -40,14 +40,21 @@ vi.mock("./tools", () => ({
   RESPONSE_TOOL_NAME: "response",
   ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
   WORKSPACE_TOOL_NAMES: [
+    "list_workspace_domains",
+    "create_workspace_domain",
     "list_workspace_apps",
     "create_workspace_app",
+    "update_workspace_app",
     "list_workspace_endpoints",
     "create_workspace_endpoint",
+    "update_workspace_endpoint",
   ],
   WORKSPACE_WRITE_TOOL_NAMES: [
+    "create_workspace_domain",
     "create_workspace_app",
+    "update_workspace_app",
     "create_workspace_endpoint",
+    "update_workspace_endpoint",
   ],
   PersistentShell: class {},
 }));
@@ -172,10 +179,14 @@ describe("workspace tool access", () => {
   it("requires both an interactive operator and an explicit current request", () => {
     const tools = [
       "execute_command",
+      "list_workspace_domains",
+      "create_workspace_domain",
       "list_workspace_apps",
       "create_workspace_app",
+      "update_workspace_app",
       "list_workspace_endpoints",
       "create_workspace_endpoint",
+      "update_workspace_endpoint",
     ];
     const request =
       "Can you add a new app called Test App with the endpoint health to console pls";
@@ -198,6 +209,43 @@ describe("workspace tool access", () => {
         true,
       ),
     ).toEqual(["execute_command"]);
+    for (const request of [
+      "Set up a pentest against the endpoints in the console workspace",
+      "Move on to the console app's admin endpoints",
+      "Change your approach and fuzz the console app endpoints",
+      "Set the scope to the console application and its endpoints",
+      "Update me on progress against the workspace endpoints",
+      "Correct me if I'm wrong but the console app has 3 endpoints",
+      "Change the workspace app testing strategy and continue",
+      "Set the workspace endpoint scan scope to /api",
+      "Move the console endpoint fuzzing to a new phase",
+      "Update the workspace application pentest plan",
+      "Correct the console endpoint test assumptions",
+      "Repair the workspace app vulnerability",
+      "Test whether the workspace app can link to an external domain",
+      "Check whether the workspace domain can link to the app during the test",
+      "Can I link this workspace domain to the Payments app?",
+      "Is it possible to link this workspace domain to the Payments app?",
+      "Tell me whether I should link this workspace domain to the Payments app",
+      "Please don't link the workspace app to its domain",
+      "Please do not create a workspace domain",
+      "Never create a workspace app without asking first",
+      "Can I create a workspace app for Billing?",
+      "How do I update the workspace endpoint transport to grpc?",
+      "Can I link example.com to my workspace?",
+      "How can I link this workspace domain to the Payments app?",
+      "How would we update the workspace application description?",
+      "Get started on the console workspace endpoints",
+      "What if we move on to the workspace apps next?",
+      // A coordinated write verb after `and`/`but` must not escape the leading
+      // interrogative — the whole capability question stays read-only.
+      "How do I enumerate the workspace apps and link this workspace domain to the Payments application?",
+      "Is it possible to review the workspace apps but create a workspace domain?",
+    ]) {
+      expect(filterWorkspaceToolsForRun(tools, request, true)).toEqual([
+        "execute_command",
+      ]);
+    }
     expect(
       filterWorkspaceToolsForRun(
         tools,
@@ -210,38 +258,59 @@ describe("workspace tool access", () => {
   it("exposes read-only listing tools but never mutations for recon phrasing", () => {
     const tools = [
       "execute_command",
+      "list_workspace_domains",
+      "create_workspace_domain",
       "list_workspace_apps",
       "create_workspace_app",
+      "update_workspace_app",
       "list_workspace_endpoints",
       "create_workspace_endpoint",
+      "update_workspace_endpoint",
     ];
 
     // Recon verbs (find/search/show/list) targeting the console/workspace must
-    // only unlock the read-only `list_*` tools, never the `create_*` mutations.
+    // only unlock the read-only `list_*` tools, never mutations.
     for (const request of [
       "Find all endpoints on the console workspace and pentest them",
       "Search the console workspace for apps in scope",
       "Show me the endpoints registered in the workspace",
       "List the apps in my console workspace",
+      "Show the domains in my console workspace",
+      "What domains are in my workspace?",
+      "Get the workspace endpoints",
+      "Which of the workspace apps are registered?",
+      "Show me a list of all workspace endpoints",
+      "What are the domains in my workspace?",
+      "Which of our workspace apps are available?",
+      "Get a list of the workspace endpoints",
+      // A coordinated write verb ("create") after `and` must not escape the
+      // leading capability question: the read verb still exposes `list_*`, but
+      // the mutation tools stay gated.
+      "Can I list the workspace endpoints and create a workspace endpoint?",
     ]) {
       expect(filterWorkspaceToolsForRun(tools, request, true)).toEqual([
         "execute_command",
+        "list_workspace_domains",
         "list_workspace_apps",
         "list_workspace_endpoints",
       ]);
     }
   });
 
-  it("exposes mutation tools only for explicit creation requests", () => {
+  it("exposes mutation tools only for explicit write requests", () => {
     const tools = [
       "execute_command",
+      "list_workspace_domains",
+      "create_workspace_domain",
       "list_workspace_apps",
       "create_workspace_app",
+      "update_workspace_app",
       "list_workspace_endpoints",
       "create_workspace_endpoint",
+      "update_workspace_endpoint",
     ];
 
-    // Creation verbs and "break down <threat model>" imports open all four.
+    // Write verbs and "break down <threat model>" imports open the mutation set.
     expect(
       filterWorkspaceToolsForRun(
         tools,
@@ -256,6 +325,163 @@ describe("workspace tool access", () => {
         true,
       ),
     ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Change the workspace endpoint transport to grpc",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Link the console application to this domain",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Unlink the workspace app from its domain",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Link this workspace domain to the Payments application",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Can you link this workspace domain to the Payments application?",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "How can you link this workspace domain to the Payments application?",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "How would you update the workspace application description to Primary API?",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Please unlink the workspace app from its domain",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "I need you to link this workspace domain to the Payments application",
+        true,
+      ),
+    ).toEqual(tools);
+    // "I'd like to …" / "I would like to …" without an explicit "you" must
+    // expose writes, matching the "I want to …" / "I need to …" branch.
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "I'd like to link this workspace domain to the Payments application",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "I would like to link this workspace domain to the Payments application",
+        true,
+      ),
+    ).toEqual(tools);
+    // A separate prohibition in another clause must not veto an explicit write.
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Please link this workspace domain to the Payments application, but do not create any new endpoints",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Link this workspace domain to the Payments application; do not create any endpoints",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Don't create any workspace endpoints, but link this workspace domain to the Payments application",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Don't create any workspace endpoints and link this workspace domain to the Payments application",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Link example.com to the Payments application in my workspace",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Unlink example.com from the Payments app in my workspace",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Update the workspace application description to Primary API",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Rename the console app to Payments",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Set the workspace endpoint parent application to app-2",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Add example.com to my console workspace",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Can you link example.com to my workspace?",
+        true,
+      ),
+    ).toEqual(tools);
 
     // A direct mention of a read tool never unlocks the mutation tools.
     expect(
@@ -266,6 +492,7 @@ describe("workspace tool access", () => {
       ),
     ).toEqual([
       "execute_command",
+      "list_workspace_domains",
       "list_workspace_apps",
       "list_workspace_endpoints",
     ]);

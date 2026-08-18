@@ -16,6 +16,7 @@ export type {
   DeleteResult,
   EndpointDetail,
   EndpointSummary,
+  EndpointTransport,
   EndpointType,
   ListAppsOptions,
   ListAppsPage,
@@ -33,6 +34,7 @@ export {
   createEndpoint,
   deleteApp,
   deleteEndpoint,
+  ENDPOINT_TRANSPORTS,
   getApp,
   getEndpoint,
   listApps,
@@ -57,6 +59,12 @@ export {
   PENSAR_API_BASE_URL,
   PENSAR_CONSOLE_BASE_URL,
 } from "./constants";
+export type {
+  CreateDomainInput,
+  DomainSummary,
+  ListDomainsResult,
+} from "./domains";
+export { createDomain, listDomains } from "./domains";
 export type { EnvironmentAgentInput, EnvironmentResult } from "./environment";
 export { runEnvironmentAgent } from "./environment";
 export type {
