@@ -156,6 +156,33 @@ function responseArgBytes(input: unknown): number {
  * for await (const chunk of agent.fullStream) { ... }
  * ```
  */
+
+/** Close/throw message when the abort signal fires. Prefer the signal's reason (timeout, pause) over a generic user-abort label. */
+export function abortCloseReason(signal: AbortSignal | undefined): string {
+  return usefulAbortMessage(signal?.reason) ?? "Agent aborted by user";
+}
+
+function usefulAbortMessage(reason: unknown): string | undefined {
+  if (typeof reason === "string" && reason.trim().length > 0) {
+    return reason;
+  }
+  if (!(reason instanceof Error) || !reason.message) {
+    return undefined;
+  }
+  const genericAbort =
+    reason.name === "AbortError" &&
+    (reason.message === "This operation was aborted" ||
+      reason.message === "The operation was aborted." ||
+      reason.message === "Aborted");
+  if (!genericAbort) {
+    return reason.message;
+  }
+  if ("cause" in reason) {
+    return usefulAbortMessage(reason.cause);
+  }
+  return undefined;
+}
+
 export class OffensiveSecurityAgent<TResult = void> {
   /** Cached stream result, populated on first {@link streamResult} access. */
   private _streamResult: StreamTextResult<ToolSet, never> | null = null;
@@ -1071,7 +1098,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         // Snapshot unpersisted step state: open tools get synthetic closes, completed/errored results get written.
         if (inFlightTools.size > 0 || completedResults.length > 0) {
           const reason = this.abortSignal?.aborted
-            ? "Agent aborted by user"
+            ? abortCloseReason(this.abortSignal)
             : streamError instanceof Error && streamError.message
               ? streamError.message
               : "Stream terminated unexpectedly";
@@ -1101,7 +1128,10 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
 
       if (this.abortSignal?.aborted) {
-        throw new DOMException("Agent aborted by user", "AbortError");
+        throw new DOMException(
+          abortCloseReason(this.abortSignal),
+          "AbortError",
+        );
       }
 
       if (this.resolveResult) {

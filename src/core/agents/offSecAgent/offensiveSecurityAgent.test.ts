@@ -72,6 +72,7 @@ vi.mock("ai", () => ({ hasToolCall: () => () => false }));
 
 import { AgentEventBus } from "../../eventBus";
 import {
+  abortCloseReason,
   filterWorkspaceToolsForRun,
   OffensiveSecurityAgent,
 } from "./offensiveSecurityAgent";
@@ -272,6 +273,37 @@ describe("workspace tool access", () => {
   });
 });
 
+describe("abortCloseReason", () => {
+  it("falls back to 'Agent aborted by user' for a bare abort", () => {
+    const controller = new AbortController();
+    controller.abort();
+    expect(abortCloseReason(controller.signal)).toBe("Agent aborted by user");
+  });
+
+  it("surfaces a timeout error message from the signal reason", () => {
+    const controller = new AbortController();
+    controller.abort(new Error("Agent timed out after 120 minutes"));
+    expect(abortCloseReason(controller.signal)).toBe(
+      "Agent timed out after 120 minutes",
+    );
+  });
+
+  it("unwraps a generic AbortError whose cause carries the timeout", () => {
+    const wrapped = new DOMException(
+      "This operation was aborted",
+      "AbortError",
+    );
+    Object.defineProperty(wrapped, "cause", {
+      value: new Error("Agent timed out after 120 minutes"),
+    });
+    const controller = new AbortController();
+    controller.abort(wrapped);
+    expect(abortCloseReason(controller.signal)).toBe(
+      "Agent timed out after 120 minutes",
+    );
+  });
+});
+
 describe("OffensiveSecurityAgent.consume()", () => {
   const textDelta = { type: "text-delta", text: "hi" };
 
@@ -435,6 +467,20 @@ describe("OffensiveSecurityAgent.consume()", () => {
       await expect(agent.consume()).rejects.toThrow("Agent aborted by user");
       expect(dispose).toHaveBeenCalledOnce();
     });
+
+    it("throws the timeout reason instead of 'aborted by user'", async () => {
+      const controller = new AbortController();
+      controller.abort(new Error("Agent timed out after 120 minutes"));
+
+      const agent = buildStubAgent({
+        fullStream: yieldChunks([textDelta]),
+        abortSignal: controller.signal,
+      });
+
+      await expect(agent.consume()).rejects.toThrow(
+        "Agent timed out after 120 minutes",
+      );
+    });
   });
 
   describe("synthetic tool-result on stream abort/error", () => {
@@ -565,6 +611,31 @@ describe("OffensiveSecurityAgent.consume()", () => {
       expect(emittedResults[0].result).toMatchObject({
         type: "error-text",
         value: expect.stringContaining("aborted by user"),
+      });
+    });
+
+    it("uses the abort signal reason when the agent times out", async () => {
+      const controller = new AbortController();
+      controller.abort(new Error("Agent timed out after 120 minutes"));
+
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow(
+          [toolCallChunk],
+          new DOMException("Aborted", "AbortError"),
+        ),
+        abortSignal: controller.signal,
+      });
+
+      const emittedResults: Array<{ result: unknown }> = [];
+      agent.eventBus.on("tool-result", (e) =>
+        emittedResults.push({ result: e.result }),
+      );
+
+      await expect(agent.consume()).rejects.toBeInstanceOf(DOMException);
+
+      expect(emittedResults[0].result).toMatchObject({
+        type: "error-text",
+        value: "Tool execution aborted: Agent timed out after 120 minutes",
       });
     });
 
