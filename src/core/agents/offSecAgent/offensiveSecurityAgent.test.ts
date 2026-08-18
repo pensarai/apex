@@ -233,6 +233,8 @@ describe("workspace tool access", () => {
       "Can I create a workspace app for Billing?",
       "How do I update the workspace endpoint transport to grpc?",
       "Can I link example.com to my workspace?",
+      "How can I link this workspace domain to the Payments app?",
+      "How would we update the workspace application description?",
       "Get started on the console workspace endpoints",
       "What if we move on to the workspace apps next?",
       // A coordinated write verb after `and`/`but` must not escape the leading
@@ -355,6 +357,20 @@ describe("workspace tool access", () => {
       filterWorkspaceToolsForRun(
         tools,
         "Can you link this workspace domain to the Payments application?",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "How can you link this workspace domain to the Payments application?",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "How would you update the workspace application description to Primary API?",
         true,
       ),
     ).toEqual(tools);

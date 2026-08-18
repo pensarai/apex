@@ -83,7 +83,7 @@ const WORKSPACE_SENTENCE_BOUNDARY_RE = /(?:[.!?;]+(?=\s|$)\s*|\n+)/;
 // Requests aimed at the agent ("Can you …", "Please …", "I'd like to …") are
 // not questions and are handled by WORKSPACE_EXPLICIT_WRITE_REQUEST_RE.
 const WORKSPACE_CAPABILITY_QUESTION_RE =
-  /^\s*(?:(?:so|and|also|then|ok|okay|well|hey|hi|actually|but)[,\s]+)*(?:is\s+it\s+possible\b|what\s+if\b|how\s+(?:do|can|could|should|would|shall|might)\b|(?:can|could|should|would|may|will|do|does|did|am|are|is|shall|have|has)\s+(?:i|we)\b)/i;
+  /^\s*(?:(?:so|and|also|then|ok|okay|well|hey|hi|actually|but)[,\s]+)*(?:is\s+it\s+possible\b|what\s+if\b|how\s+(?:do|can|could|should|would|shall|might)\s+(?:i|we)\b|(?:can|could|should|would|may|will|do|does|did|am|are|is|shall|have|has)\s+(?:i|we)\b)/i;
 const WORKSPACE_CREATE_REQUEST_RE =
   /\b(?:add|create|register|import)\s+(?:(?:the|this|that|a|an|my|our|existing|new|current|connected|authenticated|console|workspace|attached|provided)\s+){0,4}(?:domains?|apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
 const WORKSPACE_DOMAIN_HOST_WRITE_RE =
