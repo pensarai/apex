@@ -216,6 +216,12 @@ describe("workspace tool access", () => {
       "Set the scope to the console application and its endpoints",
       "Update me on progress against the workspace endpoints",
       "Correct me if I'm wrong but the console app has 3 endpoints",
+      "Change the workspace app testing strategy and continue",
+      "Set the workspace endpoint scan scope to /api",
+      "Move the console endpoint fuzzing to a new phase",
+      "Update the workspace application pentest plan",
+      "Correct the console endpoint test assumptions",
+      "Repair the workspace app vulnerability",
     ]) {
       expect(filterWorkspaceToolsForRun(tools, request, true)).toEqual([
         "execute_command",
@@ -301,6 +307,27 @@ describe("workspace tool access", () => {
       filterWorkspaceToolsForRun(
         tools,
         "Link the console application to this domain",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Update the workspace application description to Primary API",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Rename the console app to Payments",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Set the workspace endpoint parent application to app-2",
         true,
       ),
     ).toEqual(tools);

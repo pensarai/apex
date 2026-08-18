@@ -59,11 +59,20 @@ const WORKSPACE_TARGET_RE = /\b(?:console|workspace)\b/i;
 const WORKSPACE_NOUN_RE =
   /\b(?:domains?|apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
 const WORKSPACE_READ_VERB_RE = /\b(?:list|show|find|search|get|what|which)\b/i;
-const WORKSPACE_WRITE_REQUEST_RE =
-  /\b(?:add|create|register|import|update|edit|change|set|link|unlink|move|correct|repair)\s+(?:(?:the|this|that|a|an|my|our|existing|new|current|connected|authenticated|console|workspace|attached|provided)\s+){0,4}(?:domains?|apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
+const WORKSPACE_CREATE_REQUEST_RE =
+  /\b(?:add|create|register|import)\s+(?:(?:the|this|that|a|an|my|our|existing|new|current|connected|authenticated|console|workspace|attached|provided)\s+){0,4}(?:domains?|apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
 const WORKSPACE_DOMAIN_HOST_WRITE_RE =
   /\b(?:add|create|register|import)\s+(?:https?:\/\/)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}(?::\d+)?(?:\/\S*)?\s+(?:to|in|under)\s+(?:(?:the|my|our|connected|authenticated)\s+)?(?:console|workspace)\b/i;
-const WORKSPACE_BREAK_DOWN_RE = /\bbreak\s+down\b/i;
+const WORKSPACE_APP_FIELD_UPDATE_RE =
+  /\b(?:update|edit|change|set|correct|repair)\s+(?:(?:the|this|that|my|our|existing|current|connected|authenticated|console|workspace)\s+){0,4}(?:apps?|applications?)(?:['’]s)?\s+(?:name|description|type|framework|domain|disallowed\s+actions?)\s+(?:(?:to|as|with|from)\b|[:=])/i;
+const WORKSPACE_ENDPOINT_FIELD_UPDATE_RE =
+  /\b(?:update|edit|change|set|correct|repair)\s+(?:(?:the|this|that|my|our|existing|current|connected|authenticated|console|workspace)\s+){0,4}endpoints?(?:['’]s)?\s+(?:path|route|url|description|type|transport|location|source(?:\s+location)?|start\s+line|end\s+line|line\s+numbers?|objectives?|authentication(?:\s+requirements?)?|business\s+logic|threat\s+model|parent\s+application)\s+(?:(?:to|as|with|from)\b|[:=])/i;
+const WORKSPACE_APP_DOMAIN_LINK_RE =
+  /\b(?:link|unlink)\s+(?:(?:the|this|that|my|our|existing|current|connected|authenticated|console|workspace)\s+){0,4}(?:apps?|applications?)\b[^.?!;\n]{0,80}\b(?:to|from)\s+(?:(?:the|this|that|a|an|my|our|existing)\s+){0,3}(?:domains?|(?:https?:\/\/)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,})\b/i;
+const WORKSPACE_APP_RENAME_RE =
+  /\brename\s+(?:(?:the|this|that|my|our|existing|current|connected|authenticated|console|workspace)\s+){0,4}(?:apps?|applications?)\b[^.?!;\n]{0,60}\b(?:to|as)\b/i;
+const WORKSPACE_BREAK_DOWN_IMPORT_RE =
+  /\bbreak\s+down\b[^.?!;\n]{0,100}\b(?:threat\s+models?|attack\s+surfaces?)\b[^.?!;\n]{0,100}\b(?:into|as)\b[^.?!;\n]{0,40}\b(?:apps?|applications?|endpoints?)\b/i;
 
 // ponytail: current-message opt-in avoids persistent workspace capability state.
 //
@@ -91,8 +100,12 @@ export function filterWorkspaceToolsForRun(
     WORKSPACE_WRITE_TOOL_NAMES.some((name) => prompt.includes(name)) ||
     WORKSPACE_DOMAIN_HOST_WRITE_RE.test(prompt) ||
     (targetsWorkspace &&
-      (WORKSPACE_WRITE_REQUEST_RE.test(prompt) ||
-        WORKSPACE_BREAK_DOWN_RE.test(prompt)));
+      (WORKSPACE_CREATE_REQUEST_RE.test(prompt) ||
+        WORKSPACE_APP_FIELD_UPDATE_RE.test(prompt) ||
+        WORKSPACE_ENDPOINT_FIELD_UPDATE_RE.test(prompt) ||
+        WORKSPACE_APP_DOMAIN_LINK_RE.test(prompt) ||
+        WORKSPACE_APP_RENAME_RE.test(prompt) ||
+        WORKSPACE_BREAK_DOWN_IMPORT_RE.test(prompt)));
 
   const readRequested =
     writeRequested ||
