@@ -230,6 +230,9 @@ describe("workspace tool access", () => {
       "Please don't link the workspace app to its domain",
       "Can I create a workspace app for Billing?",
       "How do I update the workspace endpoint transport to grpc?",
+      "Can I link example.com to my workspace?",
+      "Get started on the console workspace endpoints",
+      "What if we move on to the workspace apps next?",
     ]) {
       expect(filterWorkspaceToolsForRun(tools, request, true)).toEqual([
         "execute_command",
@@ -266,6 +269,8 @@ describe("workspace tool access", () => {
       "List the apps in my console workspace",
       "Show the domains in my console workspace",
       "What domains are in my workspace?",
+      "Get the workspace endpoints",
+      "Which of the workspace apps are registered?",
     ]) {
       expect(filterWorkspaceToolsForRun(tools, request, true)).toEqual([
         "execute_command",
@@ -392,6 +397,13 @@ describe("workspace tool access", () => {
       filterWorkspaceToolsForRun(
         tools,
         "Add example.com to my console workspace",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Can you link example.com to my workspace?",
         true,
       ),
     ).toEqual(tools);
