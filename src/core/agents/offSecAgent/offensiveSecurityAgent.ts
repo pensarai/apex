@@ -67,8 +67,13 @@ const WORKSPACE_APP_FIELD_UPDATE_RE =
   /\b(?:update|edit|change|set|correct|repair)\s+(?:(?:the|this|that|my|our|existing|current|connected|authenticated|console|workspace)\s+){0,4}(?:apps?|applications?)(?:['’]s)?\s+(?:name|description|type|framework|domain|disallowed\s+actions?)\s+(?:(?:to|as|with|from)\b|[:=])/i;
 const WORKSPACE_ENDPOINT_FIELD_UPDATE_RE =
   /\b(?:update|edit|change|set|correct|repair)\s+(?:(?:the|this|that|my|our|existing|current|connected|authenticated|console|workspace)\s+){0,4}endpoints?(?:['’]s)?\s+(?:path|route|url|description|type|transport|location|source(?:\s+location)?|start\s+line|end\s+line|line\s+numbers?|objectives?|authentication(?:\s+requirements?)?|business\s+logic|threat\s+model|parent\s+application)\s+(?:(?:to|as|with|from)\b|[:=])/i;
-const WORKSPACE_APP_DOMAIN_LINK_RE =
-  /\b(?:link|unlink)\s+(?:(?:the|this|that|my|our|existing|current|connected|authenticated|console|workspace)\s+){0,4}(?:apps?|applications?)\b[^.?!;\n]{0,80}\b(?:to|from)\s+(?:(?:the|this|that|a|an|my|our|existing)\s+){0,3}(?:domains?|(?:https?:\/\/)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,})\b/i;
+const WORKSPACE_LINK_CLAUSE_GAP = String.raw`[^.?!;\n]{0,80}`;
+const WORKSPACE_APP_RESOURCE = String.raw`\b(?:apps?|applications?)\b`;
+const WORKSPACE_DOMAIN_RESOURCE = String.raw`\b(?:domains?|(?:https?:\/\/)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,})\b`;
+const WORKSPACE_APP_DOMAIN_LINK_RE = new RegExp(
+  String.raw`(?:\blink\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_APP_RESOURCE}${WORKSPACE_LINK_CLAUSE_GAP}\bto\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_DOMAIN_RESOURCE}|\blink\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_DOMAIN_RESOURCE}${WORKSPACE_LINK_CLAUSE_GAP}\bto\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_APP_RESOURCE}|\bunlink\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_APP_RESOURCE}${WORKSPACE_LINK_CLAUSE_GAP}\bfrom\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_DOMAIN_RESOURCE}|\bunlink\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_DOMAIN_RESOURCE}${WORKSPACE_LINK_CLAUSE_GAP}\bfrom\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_APP_RESOURCE})`,
+  "i",
+);
 const WORKSPACE_APP_RENAME_RE =
   /\brename\s+(?:(?:the|this|that|my|our|existing|current|connected|authenticated|console|workspace)\s+){0,4}(?:apps?|applications?)\b[^.?!;\n]{0,60}\b(?:to|as)\b/i;
 const WORKSPACE_BREAK_DOWN_IMPORT_RE =
