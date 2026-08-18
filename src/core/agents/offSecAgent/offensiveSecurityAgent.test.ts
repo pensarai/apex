@@ -235,6 +235,10 @@ describe("workspace tool access", () => {
       "Can I link example.com to my workspace?",
       "Get started on the console workspace endpoints",
       "What if we move on to the workspace apps next?",
+      // A coordinated write verb after `and`/`but` must not escape the leading
+      // interrogative — the whole capability question stays read-only.
+      "How do I enumerate the workspace apps and link this workspace domain to the Payments application?",
+      "Is it possible to review the workspace apps but create a workspace domain?",
     ]) {
       expect(filterWorkspaceToolsForRun(tools, request, true)).toEqual([
         "execute_command",
@@ -277,6 +281,10 @@ describe("workspace tool access", () => {
       "What are the domains in my workspace?",
       "Which of our workspace apps are available?",
       "Get a list of the workspace endpoints",
+      // A coordinated write verb ("create") after `and` must not escape the
+      // leading capability question: the read verb still exposes `list_*`, but
+      // the mutation tools stay gated.
+      "Can I list the workspace endpoints and create a workspace endpoint?",
     ]) {
       expect(filterWorkspaceToolsForRun(tools, request, true)).toEqual([
         "execute_command",

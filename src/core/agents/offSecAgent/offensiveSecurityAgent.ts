@@ -73,6 +73,17 @@ const WORKSPACE_CLAUSE_BOUNDARY_RE = new RegExp(
   String.raw`(?:[.!?;]+(?=\s|$)\s*|\n+|\s+(?:but|however)\s+|\s+and\s+(?=(?:(?:do\s+not|don't|never|avoid)\s+)?${WORKSPACE_WRITE_ACTION}\b))`,
   "i",
 );
+// Sentence delimiters only (never splits `example.com`), so a leading
+// capability question can be scoped to the whole sentence before the
+// clause-level `and`/`but` split runs.
+const WORKSPACE_SENTENCE_BOUNDARY_RE = /(?:[.!?;]+(?=\s|$)\s*|\n+)/;
+// Capability/permission questions ("Can I … and create …", "How do I …")
+// stay read-only: the interrogative governs every coordinated clause, so the
+// clause split must not let a trailing bare write verb pass as an imperative.
+// Requests aimed at the agent ("Can you …", "Please …", "I'd like to …") are
+// not questions and are handled by WORKSPACE_EXPLICIT_WRITE_REQUEST_RE.
+const WORKSPACE_CAPABILITY_QUESTION_RE =
+  /^\s*(?:(?:so|and|also|then|ok|okay|well|hey|hi|actually|but)[,\s]+)*(?:is\s+it\s+possible\b|what\s+if\b|how\s+(?:do|can|could|should|would|shall|might)\b|(?:can|could|should|would|may|will|do|does|did|am|are|is|shall|have|has)\s+(?:i|we)\b)/i;
 const WORKSPACE_CREATE_REQUEST_RE =
   /\b(?:add|create|register|import)\s+(?:(?:the|this|that|a|an|my|our|existing|new|current|connected|authenticated|console|workspace|attached|provided)\s+){0,4}(?:domains?|apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
 const WORKSPACE_DOMAIN_HOST_WRITE_RE =
@@ -97,24 +108,30 @@ function hasExplicitWorkspaceWriteRequest(
   prompt: string,
   targetsWorkspace: boolean,
 ): boolean {
-  return prompt.split(WORKSPACE_CLAUSE_BOUNDARY_RE).some((clause) => {
-    if (
-      !WORKSPACE_EXPLICIT_WRITE_REQUEST_RE.test(clause) ||
-      WORKSPACE_NEGATED_WRITE_REQUEST_RE.test(clause)
-    ) {
-      return false;
-    }
+  return prompt.split(WORKSPACE_SENTENCE_BOUNDARY_RE).some((sentence) => {
+    // A capability question governs its whole sentence, so its clauses stay
+    // read-only even when `and`/`but` splits a bare write verb off the front.
+    if (WORKSPACE_CAPABILITY_QUESTION_RE.test(sentence)) return false;
 
-    return (
-      WORKSPACE_DOMAIN_HOST_WRITE_RE.test(clause) ||
-      (targetsWorkspace &&
-        (WORKSPACE_CREATE_REQUEST_RE.test(clause) ||
-          WORKSPACE_APP_FIELD_UPDATE_RE.test(clause) ||
-          WORKSPACE_ENDPOINT_FIELD_UPDATE_RE.test(clause) ||
-          WORKSPACE_APP_DOMAIN_LINK_RE.test(clause) ||
-          WORKSPACE_APP_RENAME_RE.test(clause) ||
-          WORKSPACE_BREAK_DOWN_IMPORT_RE.test(clause)))
-    );
+    return sentence.split(WORKSPACE_CLAUSE_BOUNDARY_RE).some((clause) => {
+      if (
+        !WORKSPACE_EXPLICIT_WRITE_REQUEST_RE.test(clause) ||
+        WORKSPACE_NEGATED_WRITE_REQUEST_RE.test(clause)
+      ) {
+        return false;
+      }
+
+      return (
+        WORKSPACE_DOMAIN_HOST_WRITE_RE.test(clause) ||
+        (targetsWorkspace &&
+          (WORKSPACE_CREATE_REQUEST_RE.test(clause) ||
+            WORKSPACE_APP_FIELD_UPDATE_RE.test(clause) ||
+            WORKSPACE_ENDPOINT_FIELD_UPDATE_RE.test(clause) ||
+            WORKSPACE_APP_DOMAIN_LINK_RE.test(clause) ||
+            WORKSPACE_APP_RENAME_RE.test(clause) ||
+            WORKSPACE_BREAK_DOWN_IMPORT_RE.test(clause)))
+      );
+    });
   });
 }
 
