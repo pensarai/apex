@@ -59,6 +59,15 @@ const WORKSPACE_TARGET_RE = /\b(?:console|workspace)\b/i;
 const WORKSPACE_NOUN_RE =
   /\b(?:domains?|apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
 const WORKSPACE_READ_VERB_RE = /\b(?:list|show|find|search|get|what|which)\b/i;
+const WORKSPACE_WRITE_ACTION = String.raw`(?:add|create|register|import|update|edit|change|set|correct|repair|link|unlink|rename|break\s+down)`;
+const WORKSPACE_EXPLICIT_WRITE_REQUEST_RE = new RegExp(
+  String.raw`(?:^\s*|[.?!;\n]\s*|\b(?:please|kindly)\s+|\b(?:can|could|would|will)\s+you\s+|\b(?:i|we)\s+(?:want|need)\s+(?:you\s+)?to\s+|\bi(?:'d| would)\s+like\s+you\s+to\s+|\blet['’]s\s+|\bgo\s+ahead\s+and\s+)${WORKSPACE_WRITE_ACTION}\b`,
+  "i",
+);
+const WORKSPACE_NEGATED_WRITE_REQUEST_RE = new RegExp(
+  String.raw`\b(?:do\s+not|don't|never|avoid)\b[^.?!;\n]{0,40}\b${WORKSPACE_WRITE_ACTION}\b`,
+  "i",
+);
 const WORKSPACE_CREATE_REQUEST_RE =
   /\b(?:add|create|register|import)\s+(?:(?:the|this|that|a|an|my|our|existing|new|current|connected|authenticated|console|workspace|attached|provided)\s+){0,4}(?:domains?|apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
 const WORKSPACE_DOMAIN_HOST_WRITE_RE =
@@ -100,17 +109,21 @@ export function filterWorkspaceToolsForRun(
 
   const targetsWorkspace =
     WORKSPACE_TARGET_RE.test(prompt) && WORKSPACE_NOUN_RE.test(prompt);
+  const explicitWriteRequested =
+    WORKSPACE_EXPLICIT_WRITE_REQUEST_RE.test(prompt) &&
+    !WORKSPACE_NEGATED_WRITE_REQUEST_RE.test(prompt);
 
   const writeRequested =
     WORKSPACE_WRITE_TOOL_NAMES.some((name) => prompt.includes(name)) ||
-    WORKSPACE_DOMAIN_HOST_WRITE_RE.test(prompt) ||
-    (targetsWorkspace &&
-      (WORKSPACE_CREATE_REQUEST_RE.test(prompt) ||
-        WORKSPACE_APP_FIELD_UPDATE_RE.test(prompt) ||
-        WORKSPACE_ENDPOINT_FIELD_UPDATE_RE.test(prompt) ||
-        WORKSPACE_APP_DOMAIN_LINK_RE.test(prompt) ||
-        WORKSPACE_APP_RENAME_RE.test(prompt) ||
-        WORKSPACE_BREAK_DOWN_IMPORT_RE.test(prompt)));
+    (explicitWriteRequested &&
+      (WORKSPACE_DOMAIN_HOST_WRITE_RE.test(prompt) ||
+        (targetsWorkspace &&
+          (WORKSPACE_CREATE_REQUEST_RE.test(prompt) ||
+            WORKSPACE_APP_FIELD_UPDATE_RE.test(prompt) ||
+            WORKSPACE_ENDPOINT_FIELD_UPDATE_RE.test(prompt) ||
+            WORKSPACE_APP_DOMAIN_LINK_RE.test(prompt) ||
+            WORKSPACE_APP_RENAME_RE.test(prompt) ||
+            WORKSPACE_BREAK_DOWN_IMPORT_RE.test(prompt)))));
 
   const readRequested =
     writeRequested ||

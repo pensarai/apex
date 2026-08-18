@@ -224,6 +224,12 @@ describe("workspace tool access", () => {
       "Repair the workspace app vulnerability",
       "Test whether the workspace app can link to an external domain",
       "Check whether the workspace domain can link to the app during the test",
+      "Can I link this workspace domain to the Payments app?",
+      "Is it possible to link this workspace domain to the Payments app?",
+      "Tell me whether I should link this workspace domain to the Payments app",
+      "Please don't link the workspace app to its domain",
+      "Can I create a workspace app for Billing?",
+      "How do I update the workspace endpoint transport to grpc?",
     ]) {
       expect(filterWorkspaceToolsForRun(tools, request, true)).toEqual([
         "execute_command",
@@ -323,6 +329,27 @@ describe("workspace tool access", () => {
       filterWorkspaceToolsForRun(
         tools,
         "Link this workspace domain to the Payments application",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Can you link this workspace domain to the Payments application?",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "Please unlink the workspace app from its domain",
+        true,
+      ),
+    ).toEqual(tools);
+    expect(
+      filterWorkspaceToolsForRun(
+        tools,
+        "I need you to link this workspace domain to the Payments application",
         true,
       ),
     ).toEqual(tools);
