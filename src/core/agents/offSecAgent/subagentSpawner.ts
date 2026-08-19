@@ -184,7 +184,7 @@ type ChildRuntime = SpawnRuntime & {
 interface AgentHandle<TResult> {
   run: () => Promise<TResult>;
   /** Background stream drain, when the child exposes one. */
-  drained?: Promise<void>;
+  drained?: () => Promise<void>;
 }
 
 type SubagentRunner<T extends SubagentType> = (
@@ -226,7 +226,7 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
     usageRecorder: ctx.usageRecorder,
     streamIdFactory: ctx.streamIdFactory,
   });
-  return { run: () => agent.consume(), drained: agent.drained };
+  return { run: () => agent.consume(), drained: () => agent.drained };
 };
 
 const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
@@ -254,7 +254,7 @@ const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
     usageRecorder: ctx.usageRecorder,
     streamIdFactory: ctx.streamIdFactory,
   });
-  return { run: () => agent.consume(), drained: agent.drained };
+  return { run: () => agent.consume(), drained: () => agent.drained };
 };
 
 const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
@@ -279,7 +279,7 @@ const runWhiteboxChild: SubagentRunner<"whitebox-attack-surface"> = async (
     usageRecorder: ctx.usageRecorder,
     streamIdFactory: ctx.streamIdFactory,
   });
-  return { run: () => agent.consume(), drained: agent.drained };
+  return { run: () => agent.consume(), drained: () => agent.drained };
 };
 
 const runBlackboxChild: SubagentRunner<"blackbox-attack-surface"> = async (
@@ -303,7 +303,7 @@ const runBlackboxChild: SubagentRunner<"blackbox-attack-surface"> = async (
     usageRecorder: ctx.usageRecorder,
     streamIdFactory: ctx.streamIdFactory,
   });
-  return { run: () => agent.consume(), drained: agent.drained };
+  return { run: () => agent.consume(), drained: () => agent.drained };
 };
 
 const runAuthChild: SubagentRunner<"authentication"> = async (spec, ctx) => {
@@ -401,24 +401,25 @@ class InProcessSubagentSpawner implements SubagentSpawner {
       input: opts.lifecycleInput,
     });
 
-    const childBus = new AgentEventBus();
-    AgentEventBus.attachChild(childBus, opts.parentBus, childId);
-
-    const runner = RUNNERS[opts.spec.type] as unknown as AnyRunner;
-    const handle = await runner(opts.spec, {
-      ...opts.runtime,
-      eventBus: childBus,
-      subagentId: childId,
-      subagentName: opts.subagentName,
-    });
-
-    opts.beforeConsume?.(childBus);
-
+    let handle: AgentHandle<unknown> | undefined;
     try {
+      const childBus = new AgentEventBus();
+      AgentEventBus.attachChild(childBus, opts.parentBus, childId);
+
+      const runner = RUNNERS[opts.spec.type] as unknown as AnyRunner;
+      handle = await runner(opts.spec, {
+        ...opts.runtime,
+        eventBus: childBus,
+        subagentId: childId,
+        subagentName: opts.subagentName,
+      });
+
+      opts.beforeConsume?.(childBus);
+
       const result = (await handle.run()) as TResult;
       await opts.onConsumed?.(result);
       if (opts.drainGraceMs != null) {
-        await drainBounded(handle.drained, opts.drainGraceMs);
+        await drainBounded(handle.drained?.(), opts.drainGraceMs);
       }
       opts.parentBus?.emit("subagent-complete", {
         ...lifecycleBase,
@@ -426,14 +427,17 @@ class InProcessSubagentSpawner implements SubagentSpawner {
       });
       return result;
     } catch (error) {
-      await opts.onError?.(error);
-      if (opts.drainGraceMs != null) {
-        await drainBounded(handle.drained, opts.drainGraceMs);
+      try {
+        await opts.onError?.(error);
+        if (opts.drainGraceMs != null) {
+          await drainBounded(handle?.drained?.(), opts.drainGraceMs);
+        }
+      } finally {
+        opts.parentBus?.emit("subagent-complete", {
+          ...lifecycleBase,
+          status: "failed",
+        });
       }
-      opts.parentBus?.emit("subagent-complete", {
-        ...lifecycleBase,
-        status: "failed",
-      });
       throw error;
     }
   }
