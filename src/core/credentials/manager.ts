@@ -28,6 +28,7 @@ function inferType(
   const hasPwd = !!cred.password;
   const hasApiKey = !!cred.apiKey;
   const hasBearer = !!cred.tokens?.bearerToken;
+  const hasCanary = !!cred.canary;
   const hasHeaders =
     !!cred.tokens?.customHeaders &&
     Object.keys(cred.tokens.customHeaders).length > 0;
@@ -37,6 +38,7 @@ function inferType(
     (hasPwd ? 1 : 0) +
     (hasApiKey ? 1 : 0) +
     (hasBearer ? 1 : 0) +
+    (hasCanary ? 1 : 0) +
     (hasHeaders ? 1 : 0) +
     (hasCookies ? 1 : 0);
 
@@ -44,6 +46,7 @@ function inferType(
   if (hasPwd) return "username-password";
   if (hasApiKey) return "api-key";
   if (hasBearer) return "bearer-token";
+  if (hasCanary) return "red-team-canary";
   if (hasHeaders) return "custom-headers";
   if (hasCookies) return "cookies";
   return "username-password";
@@ -89,6 +92,7 @@ export class CredentialManager {
         existing.username === candidate.username &&
         existing.password === candidate.password &&
         existing.apiKey === candidate.apiKey &&
+        existing.canary === candidate.canary &&
         existing.loginUrl === candidate.loginUrl &&
         existing.tokens?.bearerToken === candidate.tokens?.bearerToken &&
         existing.tokens?.cookies === candidate.tokens?.cookies &&

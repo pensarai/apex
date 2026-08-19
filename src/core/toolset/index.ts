@@ -132,6 +132,42 @@ const ALL_TOOLS: ToolDefinition[] = [
     defaultEnabled: true,
   },
   {
+    id: "run_agent_redteam_workflow",
+    name: "Agent Red Team Workflow",
+    description: "Generate agent attack plan",
+    detail:
+      "Generate Apex-native agent red-team attempts, coverage, abuse chains, mutation carriers, and prompt-injection library seed references for interactive testing of LLM-backed applications and agents.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "evaluate_agent_redteam_attempt",
+    name: "Evaluate Agent Red-Team Attempt",
+    description: "Score a delivered agent test",
+    detail:
+      "Record target artifacts, compare attack and control behavior, and apply deterministic or semantic agent red-team oracles.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "document_agent_redteam_finding",
+    name: "Document Agent Red-Team Finding",
+    description: "Persist a verified agent finding",
+    detail:
+      "Persist an agent red-team finding only after the campaign evaluator confirms target-grounded evidence and sufficient confidence.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
+    id: "finalize_agent_redteam_campaign",
+    name: "Finalize Agent Red-Team Campaign",
+    description: "Summarize observed coverage",
+    detail:
+      "Summarize resilient, vulnerable, inconclusive, blocked, invalid, and unobserved campaign cases from persisted evaluations.",
+    category: "exploitation",
+    defaultEnabled: true,
+  },
+  {
     id: "fuzz_endpoint",
     name: "Fuzz Endpoint",
     description: "Fuzz with payloads",

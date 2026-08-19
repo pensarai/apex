@@ -198,5 +198,15 @@ describe("SkillsRegistry", () => {
       expect(catalog).toContain("A test built-in skill");
       expect(catalog).toContain("(test)");
     });
+
+    it("includes the built-in agent red-team skill", async () => {
+      await registry.load({ projectRoot: tmpRoot });
+
+      const entry = registry.get("agent-redteam");
+
+      expect(entry?.source).toBe("builtin");
+      expect(entry?.manifest.name).toBe("Agent Red Team");
+      expect(registry.buildCatalog()).toContain("agent-redteam");
+    });
   });
 });

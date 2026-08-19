@@ -22,6 +22,7 @@ export { createTask } from "./createTask";
 export { delegateAuth } from "./delegateAuth";
 export { deleteFile } from "./deleteFile";
 export { detectAuthScheme } from "./detectAuthScheme";
+export { documentAgentRedTeamFinding } from "./documentAgentRedTeamFinding";
 // Attack surface / recon tools
 export { documentApp } from "./documentApp";
 export { documentEndpoint } from "./documentEndpoint";
@@ -32,9 +33,11 @@ export {
   EMAIL_TOOL_NAMES,
   SEND_EMAIL_TOOL_NAME,
 } from "./email";
+export { evaluateAgentRedTeamAttempt } from "./evaluateAgentRedTeamAttempt";
 // Core pentest tools
 export { executeCommand } from "./executeCommand";
 export { extractJsEndpoints } from "./extractJsEndpoints";
+export { finalizeAgentRedTeamCampaign } from "./finalizeAgentRedTeamCampaign";
 export { getMemory } from "./getMemory";
 export { getPage } from "./getPage";
 export { gitDiff } from "./gitDiff";
@@ -93,6 +96,7 @@ export {
 // Response (structured final-output) tool — used by sub-agents that emit
 // validated result objects.
 export { createResponseTool, RESPONSE_TOOL_NAME } from "./response";
+export { runAgentRedTeamWorkflow } from "./runAgentRedTeamWorkflow";
 // Orchestration tools
 export { runAttackSurface } from "./runAttackSurface";
 export { runCodeQuery } from "./runCodeQuery";
@@ -181,6 +185,7 @@ import { createTask } from "./createTask";
 import { delegateAuth } from "./delegateAuth";
 import { deleteFile } from "./deleteFile";
 import { detectAuthScheme } from "./detectAuthScheme";
+import { documentAgentRedTeamFinding } from "./documentAgentRedTeamFinding";
 import { documentApp } from "./documentApp";
 import { documentEndpoint } from "./documentEndpoint";
 import { documentVulnerability } from "./documentFinding";
@@ -191,8 +196,10 @@ import {
   emailListMessages,
   emailSearchMessages,
 } from "./email";
+import { evaluateAgentRedTeamAttempt } from "./evaluateAgentRedTeamAttempt";
 import { executeCommand } from "./executeCommand";
 import { extractJsEndpoints } from "./extractJsEndpoints";
+import { finalizeAgentRedTeamCampaign } from "./finalizeAgentRedTeamCampaign";
 import { getMemory } from "./getMemory";
 import { getPage } from "./getPage";
 import { gitDiff } from "./gitDiff";
@@ -211,6 +218,7 @@ import { provideComparisonResults } from "./provideComparisonResults";
 import { queryWhiteboxCatalog } from "./queryWhiteboxCatalog";
 import { readFile } from "./readFile";
 import { readSkill } from "./readSkill";
+import { runAgentRedTeamWorkflow } from "./runAgentRedTeamWorkflow";
 import { runAttackSurface } from "./runAttackSurface";
 import { runCodeQuery } from "./runCodeQuery";
 import { runPentestWorkflow } from "./runPentestWorkflow";
@@ -309,6 +317,10 @@ export function createAllTools(ctx: ToolContext) {
 
     // Orchestration tools
     run_attack_surface: runAttackSurface(ctx),
+    run_agent_redteam_workflow: runAgentRedTeamWorkflow(ctx),
+    evaluate_agent_redteam_attempt: evaluateAgentRedTeamAttempt(ctx),
+    document_agent_redteam_finding: documentAgentRedTeamFinding(ctx),
+    finalize_agent_redteam_campaign: finalizeAgentRedTeamCampaign(ctx),
     spawn_pentest_swarm: spawnPentestSwarm(ctx),
     spawn_pentest_agent: spawnPentestAgent(ctx),
     spawn_coding_agent: spawnCodingAgent(ctx),
@@ -431,6 +443,10 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "create_attack_surface_report",
   "complete_authentication",
   "run_attack_surface",
+  "run_agent_redteam_workflow",
+  "evaluate_agent_redteam_attempt",
+  "document_agent_redteam_finding",
+  "finalize_agent_redteam_campaign",
   "spawn_pentest_swarm",
   "spawn_pentest_agent",
   "spawn_coding_agent",
@@ -478,6 +494,10 @@ export const ALL_TOOL_NAMES: ToolName[] = [
 export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   // Sub-agents / workflow
   "run_attack_surface",
+  "run_agent_redteam_workflow",
+  "evaluate_agent_redteam_attempt",
+  "document_agent_redteam_finding",
+  "finalize_agent_redteam_campaign",
   "spawn_pentest_swarm",
   "spawn_pentest_agent",
   "spawn_coding_agent",

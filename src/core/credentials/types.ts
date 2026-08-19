@@ -17,6 +17,7 @@ export type CredentialType =
   | "bearer-token"
   | "custom-headers"
   | "cookies"
+  | "red-team-canary"
   | "composite";
 
 /**
@@ -49,6 +50,9 @@ export interface StoredCredential {
 
   /** API key */
   apiKey?: string;
+
+  /** Protected agent-red-team canary. Resolved only inside evaluation tools. */
+  canary?: string;
 
   /** Pre-existing tokens */
   tokens?: {

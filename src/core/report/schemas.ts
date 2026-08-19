@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CweEntrySchema, ValidatedCweEntrySchema } from "../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../lib/evidence/types";
+import { AgentRedTeamFindingMetadataSchema } from "../agent-redteam/finding-metadata";
 
 export const PentestReportFindingSchema = z.object({
   title: z.string(),
@@ -17,6 +18,7 @@ export const PentestReportFindingSchema = z.object({
   relatedFindings: z.array(z.string()).optional(),
   rootCauseLead: z.boolean().optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
+  agentRedTeam: AgentRedTeamFindingMetadataSchema.optional(),
 });
 
 export const PentestReportSchema = z.object({
