@@ -20,6 +20,7 @@
  *   DELETE /endpoints/:endpointId
  */
 
+import type { EndpointTransport } from "@pensar/surface";
 import { apiRequest } from "./apiClient";
 
 // ── Enums ────────────────────────────────────────────────────────────
@@ -39,9 +40,12 @@ export type EndpointType =
   | "api-endpoint"
   | "web-endpoint"
   | "auth-endpoint"
+  | "server-action"
   | "database"
   | "file-storage"
   | "asset";
+
+export type { EndpointTransport };
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -70,7 +74,8 @@ export interface AppDetail extends AppSummary {
 export interface EndpointSummary {
   id: string;
   endpoint: string;
-  type: string | null;
+  type: EndpointType | null;
+  transport: EndpointTransport | null;
   applicationId: string;
   location: string | null;
   riskScore: number | null;
@@ -138,6 +143,7 @@ export interface CreateEndpointInput {
   endpoint: string;
   description: string;
   type?: EndpointType;
+  transport?: EndpointTransport;
   location?: string;
   startLineNumber?: number;
   endLineNumber?: number;
@@ -156,6 +162,7 @@ export interface UpdateEndpointInput {
   endpoint?: string;
   description?: string;
   type?: EndpointType | null;
+  transport?: EndpointTransport;
   location?: string | null;
   startLineNumber?: number | null;
   endLineNumber?: number | null;
