@@ -26,7 +26,14 @@ import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../../http/targetHeaders";
-import { CAMOUFOX_OPTIONS, MEMORY_FIREFOX_PREFS } from "./camoufox";
+import {
+  CAMOUFOX_OPTIONS,
+  COMPUTER_USE_VIEWPORT_SIZE,
+  ENDPOINT_DISPLAY_BASE,
+  ENDPOINT_VIEWPORT_SIZE,
+  MEMORY_FIREFOX_PREFS,
+  parseViewportSize,
+} from "./camoufox";
 import type {
   BrowserClickResult,
   BrowserConsoleResult,
@@ -305,13 +312,35 @@ const fs = require('fs');
   // detectable headful. Falls back to plain headless, which is still fully
   // fingerprint-spoofed (just a weaker stealth posture, never vanilla Chromium).
   const __headless = process.env.DISPLAY ? false : true;
+  // Match Camoufox window to the bound Xvfb tier (Console desktopSession /
+  // Xvfb shim: :0–:9 → 1920x1080, :10+ → 1280x720). Constants are inlined
+  // from ./camoufox so host + sandbox stay lockstep.
+  const __ENDPOINT_DISPLAY_BASE = ${ENDPOINT_DISPLAY_BASE};
+  const __endpointWindow = ${JSON.stringify(parseViewportSize(ENDPOINT_VIEWPORT_SIZE))};
+  const __computerUseWindow = ${JSON.stringify(parseViewportSize(COMPUTER_USE_VIEWPORT_SIZE))};
+  const __displayMatch = /^:(\\d+)/.exec(process.env.DISPLAY || '');
+  const __displayNum = __displayMatch ? Number(__displayMatch[1]) : undefined;
+  const __window =
+    __displayNum !== undefined && __displayNum >= __ENDPOINT_DISPLAY_BASE
+      ? __endpointWindow
+      : __computerUseWindow;
   // Resolve Camoufox options once per sandbox session and cache to disk so
   // every tool call presents the same fingerprint on the shared profile dir.
   let __camou;
   try {
     __camou = JSON.parse(fs.readFileSync('${SANDBOX_CAMOU_CACHE}', 'utf-8'));
   } catch {
-    __camou = await launchOptions({ ...${JSON.stringify(CAMOUFOX_OPTIONS)}, headless: __headless });
+    __camou = await launchOptions({
+      ...${JSON.stringify(CAMOUFOX_OPTIONS)},
+      headless: __headless,
+      window: __window,
+      screen: {
+        minWidth: __window[0],
+        maxWidth: __window[0],
+        minHeight: __window[1],
+        maxHeight: __window[1],
+      },
+    });
     fs.writeFileSync('${SANDBOX_CAMOU_CACHE}', JSON.stringify(__camou));
   }
 

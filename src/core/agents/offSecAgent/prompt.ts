@@ -69,6 +69,7 @@ Read these with \`read_file\` and list directory contents with \`list_files prov
 export function buildSessionWorkspaceSection(
   session: SessionPaths,
   agentCwd: string,
+  activeTools?: readonly string[],
 ): string {
   const sandboxMode = agentCwd === session.rootPath;
   const providedFilesSection = buildProvidedFilesSection(session.rootPath);
@@ -76,6 +77,7 @@ export function buildSessionWorkspaceSection(
     session,
     agentCwd,
     sandboxMode,
+    activeTools,
   );
 
   if (sandboxMode) {
@@ -114,20 +116,60 @@ Session artifacts are stored separately at ${session.rootPath}:
 Tools like \`document_vulnerability\` and browser evidence capture write to the session directory automatically.${providedFilesSection}${sourceAssessmentSection}`;
 }
 
+/**
+ * Tools the source-assessment guidance reaches for. An agent holding none of
+ * them cannot act on any of this, so the section is omitted entirely.
+ */
+const SOURCE_ASSESSMENT_TOOL_NAMES = [
+  "profile_codebase",
+  "query_whitebox_catalog",
+  "run_code_query",
+  "run_whitebox_scan",
+] as const;
+
+/**
+ * Tools that exist to rewrite the target repository. An agent holding one was
+ * dispatched to edit the repo (the patching agent, say), so the assessment
+ * default of "do not modify the target repo" contradicts its task and is
+ * dropped for it.
+ */
+const REPO_MUTATION_TOOL_NAMES = [
+  "update_file",
+  "apply_patch",
+  "create_file",
+  "delete_file",
+] as const;
+
 function buildSourceAssessmentSection(
   session: SessionPaths,
   agentCwd: string,
   sandboxMode: boolean,
+  activeTools?: readonly string[],
 ): string {
   const codebasePath = session.config?.codebasePath;
   const hasSourceAccess = Boolean(codebasePath) || !sandboxMode;
   if (!hasSourceAccess) return "";
+
+  if (
+    activeTools &&
+    !SOURCE_ASSESSMENT_TOOL_NAMES.some((name) => activeTools.includes(name))
+  ) {
+    return "";
+  }
 
   const sourceRoot = codebasePath ?? agentCwd;
   const alignmentNote =
     codebasePath && codebasePath !== agentCwd
       ? `\nThe configured codebase path is ${codebasePath}, while your shell starts in ${agentCwd}. Use the configured codebase path for source analysis unless the user says otherwise.`
       : "";
+
+  const mayEditRepo =
+    activeTools?.some((name) =>
+      (REPO_MUTATION_TOOL_NAMES as readonly string[]).includes(name),
+    ) ?? false;
+  const repoEditBullet = mayEditRepo
+    ? `\n- Keep harnesses, generated inputs, and scratch scripts under the session scratchpad. Limit repo edits to the change you were dispatched to make.`
+    : `\n- Do not modify the target repo by default. Put harnesses, generated inputs, and scratch scripts under the session scratchpad unless the operator approves repo edits.`;
 
   return `
 
@@ -141,8 +183,7 @@ Use source access as a force multiplier, not as a rigid workflow:
 - Prefer sink-first analysis: find dangerous operations, then trace backward to attacker-controlled entry points and trust boundaries.
 - Use \`run_code_query\` for batched source searches, \`run_whitebox_scan\` for installed scanners, and \`spawn_coding_agent\` for independent deep dives.
 - Track unverified hypotheses with whitebox candidates. Only call \`document_vulnerability\` after a PoC, crash reproducer, or dynamic check confirms exploitability.
-- Run builds, local servers, sanitizer runs, and microfuzzers through bounded whitebox jobs so logs and crashes are preserved as artifacts.
-- Do not modify the target repo by default. Put harnesses, generated inputs, and scratch scripts under the session scratchpad unless the operator approves repo edits.`;
+- Run builds, local servers, sanitizer runs, and microfuzzers through bounded whitebox jobs so logs and crashes are preserved as artifacts.${repoEditBullet}`;
 }
 
 /** Options for building the base system prompt. */
@@ -202,13 +243,25 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 - **probe_auth_endpoints** — Probe common auth paths (/login, /token, /api/auth, etc.) to discover where and how to authenticate.
 
 ## Reconnaissance & Asset Discovery
-- **document_app** — Record a discovered application (web app, API, admin panel, subdomain service). Use this for application-level entities.
-- **document_endpoint** — Record a discovered endpoint within an application (API route, web page, auth endpoint). Must specify the parent app name.
+- **document_app** — Record a discovered application in this session's reconnaissance artifacts. This does not update the authenticated Pensar workspace.
+- **document_endpoint** — Record a discovered endpoint in this session and enrich it through endpoint threat modeling. This does not update the authenticated Pensar workspace. Must specify the parent app name.
 - **extract_js_endpoints** — Pull endpoint URLs out of JavaScript bundles on a page.
 - **crawl_authenticated_area** — Recursively crawl an authenticated area, extracting forms and JS endpoints on each page.
 - **test_endpoint_variations** — Probe multiple endpoint URLs for accessibility and status codes.
 - **validate_discovery_completeness** — Evaluate your recon coverage and identify gaps.
 - **create_attack_surface_report** — Produce the final structured attack surface report with targets and pentest objectives.
+
+## Authenticated Pensar Workspace
+- **list_workspace_domains** — List domains in the connected Console workspace and resolve domain IDs.
+- **create_workspace_domain** — Add or resolve a canonical domain without verifying it or starting recon.
+- **list_workspace_apps** — List or search applications in the connected Console workspace.
+- **create_workspace_app** — Add one application to the connected Console workspace.
+- **update_workspace_app** — Change an existing application, including linking or unlinking its domain.
+- **list_workspace_endpoints** — List or search endpoints under a workspace application.
+- **create_workspace_endpoint** — Add one endpoint under a workspace application, with optional HTTP/gRPC/gRPC-Web/Connect transport.
+- **update_workspace_endpoint** — Change or repair an existing endpoint, including its wire transport.
+
+These tools use the authenticated API client in the running Apex process. Use them for workspace imports and mutations even when Apex was launched locally with \`bun run dev\`; do not invoke a separate \`pensar apps\` binary through the shell for these operations. A non-HTTP transport classification does not add RPC metadata or make an endpoint scan-ready.
 
 ## Findings & PoCs
 - **document_vulnerability** — Create, execute, and validate a proof-of-concept script, then document the confirmed vulnerability with CVSS 4.0 scoring. Provide your POC script inline via pocContent. The tool handles execution, validation, scoring, and persistence.
@@ -218,16 +271,19 @@ You can perform the full lifecycle of a penetration test and support a wide rang
 - **spawn_pentest_swarm** — Fan out targeted pentest agents in parallel across multiple endpoints/objectives.
 - **spawn_coding_agent** — Spawn parallel code analysis agents for source-code tasks.
 
-## Pensar CLI (workspace & attack surface)
+## Pensar CLI (other Console operations)
 
-You run inside Pensar Apex, and the \`pensar\` CLI is available on this machine. Invoke it through \`execute_command\` to perform Console/workspace operations your other tools don't cover — most importantly managing the **attack surface** and triaging results. These commands act on the workspace the user connected with \`pensar login\` and print JSON to stdout, so you can parse and chain them.
+You run inside Pensar Apex, and the \`pensar\` CLI may also be available on this machine. Invoke it through \`execute_command\` only for Console operations the typed workspace tools do not cover. The shell binary may be a different installed Apex version, so never use it to list, create, or update workspace domains, applications, or endpoints.
 
-- **Attack surface (apps & endpoints)** — \`pensar apps\` (list), \`apps get <appId>\`, \`apps create\`, \`apps update <appId>\`, \`apps delete <appId>\`; endpoints via \`apps endpoints <appId>\`, \`apps endpoint <endpointId>\`, \`apps endpoint-create <appId>\`, \`apps endpoint-update <endpointId>\`, \`apps endpoint-delete <endpointId>\`; and \`apps search <query>\` / \`apps search-endpoints <query>\`.
 - **Issues & fixes** — \`pensar issues [--status --severity --scan --branch]\`, \`issues get <id>\`, \`issues update <id>\`, \`issues retest <id>\`; \`pensar fixes <issueId>\`, \`fixes get <fixId>\`.
 - **Scans** — \`pensar pentests\`, \`pentests get <id>\`, \`pentests dispatch [--branch --level]\`.
 - **Agent logs** — \`pensar logs <issueId>\`, \`logs search <issueId> <query>\`.
 
-Run \`pensar --help\` or \`pensar <command> --help\` for exact flags — the CLI is the source of truth. These commands require the user to be logged in; if one reports it is not authenticated, tell the user to run \`pensar login\` rather than attempting the device flow yourself. Confirm with the user before any mutating command (\`create\`/\`update\`/\`delete\`, \`endpoint-*\`, \`pentests dispatch\`, \`issues update\`, \`issues retest\`). Do NOT launch nested engagements from here (\`pensar pentest\`, \`pensar targeted-pentest\`, \`pensar operator\`, or \`pensar -p\`) — use your own tools for testing.
+**Destination rule:** When the user explicitly asks to manage domains, applications, or endpoints in their connected/authenticated/Console workspace, use the typed workspace tools above. Do not substitute \`document_app\`, \`document_endpoint\`, shell-based \`pensar apps\` commands, attack-surface discovery, or threat-model generation; those are either session analysis workflows or may resolve a different installed Apex version. If the user supplies a threat model to import or break down into workspace records, treat it as source data rather than a request to generate another threat model.
+
+An explicit request for a specific workspace mutation is confirmation for that mutation; do not ask for a second conversational confirmation. The configured approval gate still applies. Ask only when required fields are missing or when you would need to make additional mutations beyond the request. Verify each mutation from the tool's structured result and list the relevant records again when practical.
+
+Run \`pensar --help\` or \`pensar <command> --help\` for exact flags — the CLI is the source of truth. These commands require the user to be logged in; if one reports it is not authenticated, tell the user to run \`/login\` in Apex or the local checkout's \`bun src/cli.ts login\` rather than attempting the device flow yourself. Confirm before any CLI mutation the user has not explicitly requested (\`pentests dispatch\`, \`issues update\`, \`issues retest\`). Do NOT launch nested engagements from here (\`pensar pentest\`, \`pensar targeted-pentest\`, \`pensar operator\`, or \`pensar -p\`) — use your own tools for testing.
 
 # How to Work
 
@@ -236,7 +292,7 @@ Run \`pensar --help\` or \`pensar <command> --help\` for exact flags — the CLI
 3. **Be thorough within the ask.** When given a task, see it through completely. Don't do half the work and ask whether to continue — finish the job, then report back.
 4. **Use the right level of automation.** For large tasks (e.g., "pentest this entire application"), use orchestration tools like \`run_attack_surface\` and \`spawn_pentest_swarm\` to parallelize the work. For focused tasks (e.g., "check if this parameter is vulnerable to XSS"), work directly with \`http_request\`, \`execute_command\`, or the browser tools.
 5. **Authenticate when needed.** If the user provides credentials or auth instructions, use them. Hand the login off to \`delegate_to_auth_subagent\`, which handles both simple (form/JSON/Basic) and complex flows (OAuth, SAML, CSRF-protected SPAs).
-6. **Document as you go.** Call \`document_app\` when you discover applications and \`document_endpoint\` for individual endpoints. Call \`document_vulnerability\` with your POC script inline when you confirm vulnerabilities. Don't defer documentation to the end.
+6. **Document security work as you go.** During reconnaissance or pentesting, call \`document_app\` for discovered applications and \`document_endpoint\` for individual endpoints. For authenticated workspace additions, use the typed workspace tools instead. Call \`document_vulnerability\` with your POC script inline when you confirm vulnerabilities. Don't defer documentation to the end.
 7. **Consult memories first.** When you begin testing a specific application, framework, or path, call \`list_memories\` to check for saved knowledge from previous sessions — past findings, useful payloads, endpoint patterns, or target-specific notes. Use relevant memories to inform your approach before starting from scratch.
 
 # Command Execution

@@ -18,8 +18,12 @@ const log = scopedLogger(() => createLogger("delegate_auth"));
 /**
  * Merge session-level credentials with explicitly passed credentials.
  * Explicit values take precedence over session defaults.
+ *
+ * Every secret-bearing field must be carried through: the merged result is
+ * re-added to the credential manager, which dedupes on those fields, so a
+ * dropped one produces a twin credential rather than a match.
  */
-function mergeAuthCredentials(
+export function mergeAuthCredentials(
   sessionCreds: AuthCredentials | undefined,
   explicit: {
     username?: string;
@@ -32,6 +36,7 @@ function mergeAuthCredentials(
       sessionToken?: string;
       customHeaders?: Record<string, string>;
     };
+    additionalFields?: Record<string, string>;
   },
 ): AuthCredentials | undefined {
   const hasExplicit =
@@ -55,6 +60,7 @@ function mergeAuthCredentials(
     password: sessionCreds?.password,
     apiKey: sessionCreds?.apiKey,
     loginUrl: sessionCreds?.loginUrl,
+    additionalFields: sessionCreds?.additionalFields,
     tokens: sessionCreds?.tokens
       ? {
           bearerToken: sessionCreds.tokens.bearerToken,
@@ -67,6 +73,9 @@ function mergeAuthCredentials(
     ...(explicit.password && { password: explicit.password }),
     ...(explicit.apiKey && { apiKey: explicit.apiKey }),
     ...(explicit.loginUrl && { loginUrl: explicit.loginUrl }),
+    ...(explicit.additionalFields && {
+      additionalFields: explicit.additionalFields,
+    }),
     ...(explicit.tokens && {
       tokens: {
         bearerToken: explicit.tokens.bearerToken,
@@ -186,6 +195,8 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
       authHints,
       reason,
     }) => {
+      // Resolved from a stored credential only — agents never pass raw secrets.
+      let additionalFields: Record<string, string> | undefined;
       // Outside the try so the failure-path subagent-complete reuses this id.
       const subagentId = newSessionId();
       const subagentName = "Authentication Agent";
@@ -213,6 +224,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
           password = stored.password ?? password;
           apiKey = stored.apiKey ?? apiKey;
           loginUrl = stored.loginUrl ?? loginUrl;
+          additionalFields = stored.additionalFields;
           if (stored.tokens && !tokens) {
             tokens = { ...stored.tokens };
           }
@@ -276,6 +288,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
           apiKey,
           loginUrl,
           tokens,
+          additionalFields,
         });
 
         // Ensure the session has a credential manager with the resolved credentials.
@@ -309,6 +322,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
           eventBus: localBus,
           subagentId,
           subagentName,
+          environmentVariables: ctx.environmentVariables,
           secretValues: ctx.secretValues,
         });
 

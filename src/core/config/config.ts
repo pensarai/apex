@@ -15,6 +15,7 @@ export interface Config {
   anthropicAPIKey?: string | null;
   googleAPIKey?: string | null;
   openRouterAPIKey?: string | null;
+  concentrateAPIKey?: string | null;
   inceptionAPIKey?: string | null;
   bedrockAPIKey?: string | null;
   pensarAPIKey?: string | null;
@@ -123,6 +124,8 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
       parsedConfig.googleAPIKey ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY,
     openRouterAPIKey:
       parsedConfig.openRouterAPIKey ?? process.env.OPENROUTER_API_KEY,
+    concentrateAPIKey:
+      parsedConfig.concentrateAPIKey ?? process.env.CONCENTRATE_API_KEY,
     inceptionAPIKey:
       parsedConfig.inceptionAPIKey ?? process.env.INCEPTION_API_KEY,
     bedrockAPIKey: parsedConfig.bedrockAPIKey ?? process.env.BEDROCK_API_KEY,

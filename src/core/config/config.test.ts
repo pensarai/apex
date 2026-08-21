@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { get, init, update } from "./config";
 
 let homeDirectory: string;
+const originalConcentrateAPIKey = process.env.CONCENTRATE_API_KEY;
 
 beforeEach(() => {
   homeDirectory = mkdtempSync(path.join(os.tmpdir(), "apex-config-test-"));
@@ -19,7 +20,22 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  if (originalConcentrateAPIKey === undefined) {
+    delete process.env.CONCENTRATE_API_KEY;
+  } else {
+    process.env.CONCENTRATE_API_KEY = originalConcentrateAPIKey;
+  }
   rmSync(homeDirectory, { recursive: true, force: true });
+});
+
+describe("provider environment fallbacks", () => {
+  it("loads a Concentrate API key from the environment", async () => {
+    process.env.CONCENTRATE_API_KEY = "sk-cn-env";
+
+    const config = await get();
+
+    expect(config.concentrateAPIKey).toBe("sk-cn-env");
+  });
 });
 
 describe("Strike Mode config", () => {

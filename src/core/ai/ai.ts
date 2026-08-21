@@ -20,7 +20,11 @@ import type { z } from "zod";
 import { createLogger } from "../logger/structured";
 import { shouldRecordAiPayloads } from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
-import { withCachedLastMessage, withCachedSystemPrompt } from "./caching";
+import {
+  cacheBreakpointFor,
+  withCachedLastMessage,
+  withCachedSystemPrompt,
+} from "./caching";
 import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
 import {
   getMaxOutputTokens,
@@ -43,7 +47,7 @@ const RESPONSE_DEBUG =
   process.env.RESPONSE_DEBUG === "1" || process.env.RESPONSE_DEBUG === "true";
 const RESPONSE_TOOL_NAME = "response";
 
-export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For OpenRouter and Bedrock models
+export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For gateway and Bedrock model IDs
 
 export type OpenAIReasoningEffort =
   | "none"
@@ -142,6 +146,7 @@ export type AIModelProvider =
   | "openai"
   | "google"
   | "openrouter"
+  | "concentrate"
   | "bedrock"
   | "bedrock-mantle"
   | "pensar"
@@ -966,7 +971,9 @@ export function streamResponse(
     }
   };
   const providerModel = getProviderModel(model, authConfig);
-  const useAnthropicCaching = isAnthropicProvider(model);
+  // Undefined when the model has no cache breakpoint we can express (non-Claude
+  // Bedrock models, OpenAI/Google/OpenRouter) — those run uncached.
+  const cacheBreakpoint = cacheBreakpointFor(model);
 
   // Models that mis-parse multiple tool calls per turn (DeepSeek V3.1 on
   // Bedrock) are constrained to one tool call per turn via system prompt —
@@ -1032,25 +1039,27 @@ export function streamResponse(
     );
   }
 
-  // For Anthropic models, move the system prompt into messages with cache_control.
-  // This caches tools + system prompt across multi-turn conversations (~90% cost reduction on cache hits).
+  // For cacheable models, move the system prompt into messages behind a cache
+  // breakpoint. This caches tools + system prompt across multi-turn
+  // conversations (~90% cost reduction on cache hits).
   let effectiveSystem: string | undefined = systemWithToolPolicy;
   let effectiveMessages: ModelMessage[] | undefined = fittedMessages;
 
-  if (useAnthropicCaching && systemWithToolPolicy) {
+  if (cacheBreakpoint && systemWithToolPolicy) {
     const baseMessages: ModelMessage[] = fittedMessages ?? [
       { role: "user" as const, content: prompt },
     ];
     effectiveMessages = withCachedSystemPrompt(
       systemWithToolPolicy,
       baseMessages,
+      cacheBreakpoint,
     );
     effectiveSystem = undefined;
   }
 
   // Build providerOptions for extended thinking when enabled on a supported model.
-  // Caching uses message-level cache_control (withCachedSystemPrompt / withCachedLastMessage),
-  // not providerOptions, so there is no collision.
+  // Caching uses message-level breakpoints (withCachedSystemPrompt / withCachedLastMessage),
+  // not top-level providerOptions, so there is no collision.
   // Note: when thinking is enabled, temperature must not be set (Anthropic rejects it);
   // this path never sets temperature, so there is nothing to clear.
   const providerOptions = buildReasoningProviderOptions(model, {
@@ -1089,9 +1098,11 @@ export function streamResponse(
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
-        // For Anthropic, add cache_control to the last message for incremental caching
-        if (useAnthropicCaching) {
-          return { messages: withCachedLastMessage(opts.messages) };
+        // Mark the last message so the growing conversation caches incrementally
+        if (cacheBreakpoint) {
+          return {
+            messages: withCachedLastMessage(opts.messages, cacheBreakpoint),
+          };
         }
         return undefined;
       },

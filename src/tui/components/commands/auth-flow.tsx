@@ -19,6 +19,7 @@ import { useToast } from "../../context/toast";
 import { useTheme } from "../../theme";
 import { openUrlInBrowser } from "../../utils/open-url";
 import DialogLayout, { type FooterAction } from "../dialog-layout";
+import { resolveStoredAuth } from "./auth-flow-logic";
 
 interface AuthFlowProps {
   onClose: () => void;
@@ -40,13 +41,10 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
   const appConfig = useConfig();
   const { toast } = useToast();
 
-  const alreadyConnected = isConnected(appConfig.data);
-  const hasWorkspace = !!appConfig.data.workspaceId;
-  const needsWorkspace =
-    alreadyConnected && !hasWorkspace && !!appConfig.data.accessToken;
+  const hasStoredCredentials = isConnected(appConfig.data);
 
   const [step, setStep] = useState<AuthStep>(
-    needsWorkspace ? "requesting" : alreadyConnected ? "success" : "start",
+    hasStoredCredentials ? "requesting" : "start",
   );
   const [error, setError] = useState<string | null>(null);
   const [flowInfo, setFlowInfo] = useState<DeviceFlowInfo | null>(null);
@@ -347,13 +345,48 @@ export default function AuthFlow({ onClose, hideEsc }: AuthFlowProps) {
     }
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional mount-only effect — fires once to kick off the workspace-fetch flow when the component mounts in the "needs workspace" state.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional mount-only effect — validates stored credentials once when the dialog opens.
   useEffect(() => {
-    if (!needsWorkspace) return;
+    if (!hasStoredCredentials) return;
+
     const ac = new AbortController();
     abortRef.current = ac;
-    const apiUrl = getPensarApiUrl();
-    handleFetchWorkspaces(apiUrl, appConfig.data.accessToken!, ac);
+
+    const validateStoredAuth = async () => {
+      try {
+        const resolution = await resolveStoredAuth(appConfig.data);
+        if (ac.signal.aborted) return;
+
+        if (resolution.status === "reauthenticate") {
+          setStep("start");
+          return;
+        }
+
+        await appConfig.reload();
+        if (ac.signal.aborted) return;
+
+        if (resolution.status === "select-workspace") {
+          await handleFetchWorkspaces(
+            getPensarApiUrl(),
+            resolution.accessToken,
+            ac,
+          );
+          return;
+        }
+
+        setStep("success");
+      } catch (err) {
+        if (ac.signal.aborted) return;
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to validate the saved Console session",
+        );
+        setStep("error");
+      }
+    };
+
+    validateStoredAuth();
   }, []);
 
   // ── Disconnect ──────────────────────────────────────────────────────

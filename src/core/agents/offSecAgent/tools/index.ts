@@ -145,6 +145,19 @@ export {
   startWhiteboxJob,
   stopWhiteboxJob,
 } from "./whiteboxJobs";
+// Authenticated Pensar workspace tools
+export {
+  createWorkspaceApp,
+  createWorkspaceEndpoint,
+  listWorkspaceApps,
+  listWorkspaceEndpoints,
+  updateWorkspaceApp,
+  updateWorkspaceEndpoint,
+} from "./workspaceApps";
+export {
+  createWorkspaceDomain,
+  listWorkspaceDomains,
+} from "./workspaceDomains";
 // Plan mode tools
 export { writePlan } from "./writePlan";
 
@@ -223,6 +236,18 @@ import {
   startWhiteboxJob,
   stopWhiteboxJob,
 } from "./whiteboxJobs";
+import {
+  createWorkspaceApp,
+  createWorkspaceEndpoint,
+  listWorkspaceApps,
+  listWorkspaceEndpoints,
+  updateWorkspaceApp,
+  updateWorkspaceEndpoint,
+} from "./workspaceApps";
+import {
+  createWorkspaceDomain,
+  listWorkspaceDomains,
+} from "./workspaceDomains";
 import { writePlan } from "./writePlan";
 
 export { ASK_USER_QUESTIONS_TOOL_NAME } from "./askUserQuestions";
@@ -262,6 +287,14 @@ export function createAllTools(ctx: ToolContext) {
     // Attack surface / recon tools
     document_app: documentApp(ctx),
     document_endpoint: documentEndpoint(ctx),
+    list_workspace_domains: listWorkspaceDomains(ctx),
+    create_workspace_domain: createWorkspaceDomain(ctx),
+    list_workspace_apps: listWorkspaceApps(ctx),
+    create_workspace_app: createWorkspaceApp(ctx),
+    update_workspace_app: updateWorkspaceApp(ctx),
+    list_workspace_endpoints: listWorkspaceEndpoints(ctx),
+    create_workspace_endpoint: createWorkspaceEndpoint(ctx),
+    update_workspace_endpoint: updateWorkspaceEndpoint(ctx),
     delegate_to_auth_subagent: delegateAuth(ctx),
     extract_js_endpoints: extractJsEndpoints(ctx),
     crawl_authenticated_area: crawlAuthenticated(ctx),
@@ -338,6 +371,30 @@ export function createAllTools(ctx: ToolContext) {
 /** Union of all available tool names. */
 export type ToolName = keyof ReturnType<typeof createAllTools>;
 
+export const WORKSPACE_TOOL_NAMES: readonly ToolName[] = [
+  "list_workspace_domains",
+  "create_workspace_domain",
+  "list_workspace_apps",
+  "create_workspace_app",
+  "update_workspace_app",
+  "list_workspace_endpoints",
+  "create_workspace_endpoint",
+  "update_workspace_endpoint",
+];
+
+/**
+ * Subset of {@link WORKSPACE_TOOL_NAMES} that mutate the connected Console
+ * workspace. Gated more strictly than the read-only `list_*` tools: only an
+ * explicit mutation request may expose them (see `filterWorkspaceToolsForRun`).
+ */
+export const WORKSPACE_WRITE_TOOL_NAMES: readonly ToolName[] = [
+  "create_workspace_domain",
+  "create_workspace_app",
+  "update_workspace_app",
+  "create_workspace_endpoint",
+  "update_workspace_endpoint",
+];
+
 /** All tool names as a runtime array (useful for "give me everything"). */
 export const ALL_TOOL_NAMES: ToolName[] = [
   // Browser automation
@@ -369,6 +426,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "git_diff",
   "document_app",
   "document_endpoint",
+  ...WORKSPACE_TOOL_NAMES,
   "delegate_to_auth_subagent",
   "create_attack_surface_report",
   "complete_authentication",
@@ -450,7 +508,9 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
  * Tool names available in plan mode (read-only / non-mutating).
  *
  * Excludes: create_file, update_file, document_vulnerability,
- * document_app, document_endpoint, profile_codebase, run_code_query,
+ * document_app, document_endpoint, create_workspace_domain,
+ * create_workspace_app, update_workspace_app, create_workspace_endpoint,
+ * update_workspace_endpoint, profile_codebase, run_code_query,
  * run_whitebox_scan (they persist session artifacts). These should not be available
  * when the operator is in plan (read-only) mode.
  */

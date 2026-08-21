@@ -59,6 +59,84 @@ export const MEMORY_FIREFOX_PREFS: Record<string, unknown> = {
   "browser.sessionhistory.max_total_viewers": 0, // disable bfcache page retention
 };
 
+/**
+ * Display-tier viewport geometry for headed Camoufox.
+ *
+ * Console's per-endpoint desktops (`packages/agents/desktopSession.ts`) and the
+ * agent-image Xvfb shim (`packages/cluster-services/gen-purpose/desktop/Xvfb`)
+ * use `DISPLAY_BASE = 10`: displays `:0`–`:9` are the shared computer-use
+ * desktop at 1920x1080; `:10+` are per-endpoint desktops at 1280x720 (memory
+ * cap under concurrency). Keep these in sync — a mismatch makes the browser
+ * overflow/letterbox on the streamed desktop.
+ */
+export const ENDPOINT_DISPLAY_BASE = 10;
+export const COMPUTER_USE_VIEWPORT_SIZE = "1920,1080";
+export const ENDPOINT_VIEWPORT_SIZE = "1280,720";
+
+/** Parse `"WIDTH,HEIGHT"` into a Camoufox `window` tuple; undefined if invalid. */
+export function parseViewportSize(
+  viewportSize: string,
+): [number, number] | undefined {
+  const match = /^(\d+),(\d+)$/.exec(viewportSize.trim());
+  if (!match) return undefined;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return undefined;
+  }
+  return [width, height];
+}
+
+/** Parse `":N"` / `":N.0"` display strings into N; undefined if unparseable. */
+export function parseDisplayNumber(
+  display: string | undefined,
+): number | undefined {
+  if (!display) return undefined;
+  const match = /^:(\d+)/.exec(display.trim());
+  if (!match) return undefined;
+  const num = Number(match[1]);
+  return Number.isFinite(num) ? num : undefined;
+}
+
+/**
+ * Default viewport for a bound X display. Endpoint desktops (`:10+`) are 720p;
+ * everything else (including no display / headless) stays at 1080p.
+ */
+export function viewportSizeForDisplay(display: string | undefined): string {
+  const num = parseDisplayNumber(display);
+  if (num !== undefined && num >= ENDPOINT_DISPLAY_BASE) {
+    return ENDPOINT_VIEWPORT_SIZE;
+  }
+  return COMPUTER_USE_VIEWPORT_SIZE;
+}
+
+/** Camoufox `window` + matching `screen` constraints (fingerprint-coherent). */
+export function camoufoxWindowOptions(window: [number, number]): {
+  window: [number, number];
+  screen: {
+    minWidth: number;
+    maxWidth: number;
+    minHeight: number;
+    maxHeight: number;
+  };
+} {
+  const [width, height] = window;
+  return {
+    window: [width, height],
+    screen: {
+      minWidth: width,
+      maxWidth: width,
+      minHeight: height,
+      maxHeight: height,
+    },
+  };
+}
+
 /** What camoufox-js `launchOptions()` returns: Playwright-firefox launch opts. */
 export interface CamoufoxLaunchOptions {
   executablePath: string;
@@ -74,6 +152,11 @@ export interface CamoufoxLaunchOptions {
   };
 }
 
+export interface ResolveCamoufoxLaunchOptionsOpts {
+  /** Fixed browser window size — must match the Xvfb geometry when headed. */
+  readonly window?: [number, number];
+}
+
 /**
  * Resolve Playwright-firefox launch options for the host (MCP) path.
  * `headless` is a plain boolean here — the host runtime has no virtual display,
@@ -81,21 +164,24 @@ export interface CamoufoxLaunchOptions {
  */
 export async function resolveCamoufoxLaunchOptions(
   headless: boolean,
+  opts?: ResolveCamoufoxLaunchOptionsOpts,
 ): Promise<CamoufoxLaunchOptions> {
   // Loaded lazily (and kept external from the bundle) so the CLI's startup
   // commands (--version/--help) don't pull camoufox-js + its data-file deps
   // (fingerprint-generator/territoryInfo.xml) at module load.
   const { launchOptions: camoufoxLaunchOptions } = await import("camoufox-js");
-  const opts = (await camoufoxLaunchOptions({
+  const windowOpts = opts?.window ? camoufoxWindowOptions(opts.window) : {};
+  const resolved = (await camoufoxLaunchOptions({
     ...CAMOUFOX_OPTIONS,
     headless,
+    ...windowOpts,
   })) as CamoufoxLaunchOptions;
   // Layer our memory prefs over Camoufox's fingerprint prefs (ours win).
-  opts.firefoxUserPrefs = {
-    ...opts.firefoxUserPrefs,
+  resolved.firefoxUserPrefs = {
+    ...resolved.firefoxUserPrefs,
     ...MEMORY_FIREFOX_PREFS,
   };
-  return opts;
+  return resolved;
 }
 
 let ensurePromise: Promise<void> | null = null;

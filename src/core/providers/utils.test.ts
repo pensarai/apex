@@ -75,6 +75,20 @@ describe("getDefaultModelForConfig", () => {
     expect(model?.id).toBe("anthropic/claude-opus-4.6");
   });
 
+  it("returns Concentrate models when only Concentrate is configured", () => {
+    const config = makeConfig({ concentrateAPIKey: "sk-cn-123" });
+    const model = getDefaultModelForConfig(config);
+    const available = getAvailableModels(config);
+
+    expect(model).not.toBeNull();
+    expect(model?.provider).toBe("concentrate");
+    expect(model?.id).toBe("concentrate:claude-opus-4-6");
+    expect(available.length).toBeGreaterThan(1);
+    expect(available.every((item) => item.provider === "concentrate")).toBe(
+      true,
+    );
+  });
+
   it("prefers Anthropic over OpenAI when both are configured", () => {
     const config = makeConfig({
       anthropicAPIKey: "sk-ant-123",

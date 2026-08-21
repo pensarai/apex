@@ -19,6 +19,7 @@ import { getPensarApiUrl, getPensarConsoleUrl } from "../core/api";
 import {
   createWorkspaceSelection,
   disconnect,
+  ensureValidToken,
   fetchWorkspaces,
   isConnected,
   pollForWorkspaceCreation,
@@ -94,8 +95,16 @@ async function selectWorkspaceInBrowser(
 
 async function login(): Promise<void> {
   const appConfig = await config.get();
+  const hasStoredCredentials = isConnected(appConfig);
+  const validToken = hasStoredCredentials
+    ? await ensureValidToken({
+        accessToken: appConfig.accessToken,
+        refreshToken: appConfig.refreshToken,
+        pensarAPIKey: appConfig.pensarAPIKey,
+      })
+    : null;
 
-  if (isConnected(appConfig)) {
+  if (validToken) {
     console.log("Already connected to Pensar Console.");
     if (appConfig.workspaceSlug) {
       console.log(`  Workspace: ${appConfig.workspaceSlug}`);
@@ -104,6 +113,8 @@ async function login(): Promise<void> {
     if (answer.toLowerCase() !== "y") {
       return;
     }
+  } else if (hasStoredCredentials) {
+    console.log("Your saved Pensar Console session has expired. Reconnecting.");
   }
 
   console.log(
@@ -262,6 +273,18 @@ async function status(): Promise<void> {
   if (!isConnected(appConfig)) {
     console.log(
       "Not connected to Pensar Console.\n\nRun `pensar login` to connect.",
+    );
+    return;
+  }
+
+  const validToken = await ensureValidToken({
+    accessToken: appConfig.accessToken,
+    refreshToken: appConfig.refreshToken,
+    pensarAPIKey: appConfig.pensarAPIKey,
+  });
+  if (!validToken) {
+    console.log(
+      "Your Pensar Console session has expired.\n\nRun `pensar login` to reconnect.",
     );
     return;
   }

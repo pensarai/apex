@@ -172,6 +172,34 @@ function hasCacheControl(part: Record<string, unknown>): boolean {
   return !!opts?.anthropic?.cacheControl;
 }
 
+/**
+ * Anthropic carries the breakpoint on a content block, so mirror the part's
+ * cache_control onto the last block emitted for it. Without this the
+ * incremental breakpoint `withCachedLastMessage` sets is dropped on every
+ * assistant and tool-result turn — i.e. most of an agent loop.
+ */
+function applyCacheControl(message: {
+  role: string;
+  content: string | Array<Record<string, unknown>>;
+}): void {
+  if (typeof message.content === "string") {
+    // An empty text block is rejected outright; leave it alone.
+    if (message.content === "") return;
+    message.content = [
+      {
+        type: "text",
+        text: message.content,
+        cache_control: EPHEMERAL_CACHE_CONTROL,
+      },
+    ];
+    return;
+  }
+  const last = message.content[message.content.length - 1];
+  // cache_control is not accepted on thinking blocks.
+  if (!last || last.type === "thinking") return;
+  last.cache_control = EPHEMERAL_CACHE_CONTROL;
+}
+
 function convertToAnthropicFormat(
   modelId: string,
   options: LanguageModelV3CallOptions,
@@ -192,9 +220,6 @@ function convertToAnthropicFormat(
           part as unknown as Record<string, unknown>,
         );
       } else if (part.role === "user") {
-        const partHasCache = hasCacheControl(
-          part as unknown as Record<string, unknown>,
-        );
         const text = (part.content as Array<LanguageModelV3TextPart>)
           .map((c: LanguageModelV3TextPart) => {
             if (c.type === "text") return c.text;
@@ -202,16 +227,7 @@ function convertToAnthropicFormat(
             return "";
           })
           .join("");
-        if (partHasCache) {
-          messages.push({
-            role: "user",
-            content: [
-              { type: "text", text, cache_control: EPHEMERAL_CACHE_CONTROL },
-            ],
-          });
-        } else {
-          messages.push({ role: "user", content: text });
-        }
+        messages.push({ role: "user", content: text });
       } else if (part.role === "assistant") {
         const assistantContent = part.content as unknown as Array<
           Record<string, unknown>
@@ -281,6 +297,15 @@ function convertToAnthropicFormat(
           };
         });
         messages.push({ role: "user", content: toolResults });
+      }
+
+      const pushed = messages[messages.length - 1];
+      if (
+        part.role !== "system" &&
+        pushed &&
+        hasCacheControl(part as unknown as Record<string, unknown>)
+      ) {
+        applyCacheControl(pushed);
       }
     }
   }

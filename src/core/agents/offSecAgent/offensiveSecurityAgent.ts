@@ -37,6 +37,8 @@ import {
   PlaywrightMcpSession,
   RESPONSE_TOOL_NAME,
   SEND_EMAIL_TOOL_NAME,
+  WORKSPACE_TOOL_NAMES,
+  WORKSPACE_WRITE_TOOL_NAMES,
 } from "./tools";
 import { StepTraceWriter } from "./trace";
 import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
@@ -47,6 +49,129 @@ const log = scopedLogger(() => createLogger("approval-gate"));
 const RESPONSE_DEBUG =
   process.env.RESPONSE_DEBUG === "1" || process.env.RESPONSE_DEBUG === "true";
 const rlog = scopedLogger(() => createLogger("response-debug"));
+
+const WORKSPACE_TOOL_NAME_SET = new Set<string>(WORKSPACE_TOOL_NAMES);
+const WORKSPACE_WRITE_TOOL_NAME_SET = new Set<string>(
+  WORKSPACE_WRITE_TOOL_NAMES,
+);
+
+const WORKSPACE_TARGET_RE = /\b(?:console|workspace)\b/i;
+const WORKSPACE_NOUN_RE =
+  /\b(?:domains?|apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
+const WORKSPACE_READ_REQUEST_RE =
+  /(?:\b(?:list|show|find|search|get)\s+(?:(?:me|a|an|the|my|our|all|any|list|of|for|in|within|registered|existing|available|console|workspace|which)\s+){0,8}(?:domains?|apps?|applications?|endpoints?)\b|\b(?:what|which)\s+(?:(?:of|a|an|the|my|our|all|any|are|is|do|does|we|i|have|has|there|registered|existing|available|console|workspace)\s+){0,8}(?:domains?|apps?|applications?|endpoints?)\b)/i;
+const WORKSPACE_WRITE_ACTION = String.raw`(?:add|create|register|import|update|edit|change|set|correct|repair|link|unlink|rename|break\s+down)`;
+const WORKSPACE_EXPLICIT_WRITE_REQUEST_RE = new RegExp(
+  String.raw`(?:^\s*|[.?!;\n]\s*|\b(?:please|kindly)\s+|\b(?:can|could|would|will)\s+you\s+|\b(?:i|we)\s+(?:want|need)\s+(?:you\s+)?to\s+|\bi(?:['’]d| would)\s+like\s+(?:you\s+)?to\s+|\blet['’]s\s+|\bgo\s+ahead\s+and\s+)${WORKSPACE_WRITE_ACTION}\b`,
+  "i",
+);
+const WORKSPACE_NEGATED_WRITE_REQUEST_RE = new RegExp(
+  String.raw`\b(?:do\s+not|don't|never|avoid)\b[^.?!;\n]{0,40}\b${WORKSPACE_WRITE_ACTION}\b`,
+  "i",
+);
+const WORKSPACE_CLAUSE_BOUNDARY_RE = new RegExp(
+  String.raw`(?:[.!?;]+(?=\s|$)\s*|\n+|\s+(?:but|however)\s+|\s+and\s+(?=(?:(?:do\s+not|don't|never|avoid)\s+)?${WORKSPACE_WRITE_ACTION}\b))`,
+  "i",
+);
+// Sentence delimiters only (never splits `example.com`), so a leading
+// capability question can be scoped to the whole sentence before the
+// clause-level `and`/`but` split runs.
+const WORKSPACE_SENTENCE_BOUNDARY_RE = /(?:[.!?;]+(?=\s|$)\s*|\n+)/;
+// Capability/permission questions ("Can I … and create …", "How do I …")
+// stay read-only: the interrogative governs every coordinated clause, so the
+// clause split must not let a trailing bare write verb pass as an imperative.
+// Requests aimed at the agent ("Can you …", "Please …", "I'd like to …") are
+// not questions and are handled by WORKSPACE_EXPLICIT_WRITE_REQUEST_RE.
+const WORKSPACE_CAPABILITY_QUESTION_RE =
+  /^\s*(?:(?:so|and|also|then|ok|okay|well|hey|hi|actually|but)[,\s]+)*(?:is\s+it\s+possible\b|what\s+if\b|how\s+(?:do|can|could|should|would|shall|might)\s+(?:i|we)\b|(?:can|could|should|would|may|will|do|does|did|am|are|is|shall|have|has)\s+(?:i|we)\b)/i;
+const WORKSPACE_CREATE_REQUEST_RE =
+  /\b(?:add|create|register|import)\s+(?:(?:the|this|that|a|an|my|our|existing|new|current|connected|authenticated|console|workspace|attached|provided)\s+){0,4}(?:domains?|apps?|applications?|endpoints?|threat\s+models?|attack\s+surfaces?)\b/i;
+const WORKSPACE_DOMAIN_HOST_WRITE_RE =
+  /\b(?:add|create|register|import|link)\s+(?:https?:\/\/)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}(?::\d+)?(?:\/\S*)?\s+(?:to|in|under)\s+(?:(?:the|my|our|connected|authenticated)\s+)?(?:console|workspace)\b/i;
+const WORKSPACE_APP_FIELD_UPDATE_RE =
+  /\b(?:update|edit|change|set|correct|repair)\s+(?:(?:the|this|that|my|our|existing|current|connected|authenticated|console|workspace)\s+){0,4}(?:apps?|applications?)(?:['’]s)?\s+(?:name|description|type|framework|domain|disallowed\s+actions?)\s+(?:(?:to|as|with|from)\b|[:=])/i;
+const WORKSPACE_ENDPOINT_FIELD_UPDATE_RE =
+  /\b(?:update|edit|change|set|correct|repair)\s+(?:(?:the|this|that|my|our|existing|current|connected|authenticated|console|workspace)\s+){0,4}endpoints?(?:['’]s)?\s+(?:path|route|url|description|type|transport|location|source(?:\s+location)?|start\s+line|end\s+line|line\s+numbers?|objectives?|authentication(?:\s+requirements?)?|business\s+logic|threat\s+model|parent\s+application)\s+(?:(?:to|as|with|from)\b|[:=])/i;
+const WORKSPACE_LINK_CLAUSE_GAP = String.raw`[^.?!;\n]{0,80}`;
+const WORKSPACE_APP_RESOURCE = String.raw`\b(?:apps?|applications?)\b`;
+const WORKSPACE_DOMAIN_RESOURCE = String.raw`\b(?:domains?|(?:https?:\/\/)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,})\b`;
+const WORKSPACE_APP_DOMAIN_LINK_RE = new RegExp(
+  String.raw`(?:\blink\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_APP_RESOURCE}${WORKSPACE_LINK_CLAUSE_GAP}\bto\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_DOMAIN_RESOURCE}|\blink\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_DOMAIN_RESOURCE}${WORKSPACE_LINK_CLAUSE_GAP}\bto\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_APP_RESOURCE}|\bunlink\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_APP_RESOURCE}${WORKSPACE_LINK_CLAUSE_GAP}\bfrom\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_DOMAIN_RESOURCE}|\bunlink\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_DOMAIN_RESOURCE}${WORKSPACE_LINK_CLAUSE_GAP}\bfrom\b${WORKSPACE_LINK_CLAUSE_GAP}${WORKSPACE_APP_RESOURCE})`,
+  "i",
+);
+const WORKSPACE_APP_RENAME_RE =
+  /\brename\s+(?:(?:the|this|that|my|our|existing|current|connected|authenticated|console|workspace)\s+){0,4}(?:apps?|applications?)\b[^.?!;\n]{0,60}\b(?:to|as)\b/i;
+const WORKSPACE_BREAK_DOWN_IMPORT_RE =
+  /\bbreak\s+down\b[^.?!;\n]{0,100}\b(?:threat\s+models?|attack\s+surfaces?)\b[^.?!;\n]{0,100}\b(?:into|as)\b[^.?!;\n]{0,40}\b(?:apps?|applications?|endpoints?)\b/i;
+
+function hasExplicitWorkspaceWriteRequest(
+  prompt: string,
+  targetsWorkspace: boolean,
+): boolean {
+  return prompt.split(WORKSPACE_SENTENCE_BOUNDARY_RE).some((sentence) => {
+    // A capability question governs its whole sentence, so its clauses stay
+    // read-only even when `and`/`but` splits a bare write verb off the front.
+    if (WORKSPACE_CAPABILITY_QUESTION_RE.test(sentence)) return false;
+
+    return sentence.split(WORKSPACE_CLAUSE_BOUNDARY_RE).some((clause) => {
+      if (
+        !WORKSPACE_EXPLICIT_WRITE_REQUEST_RE.test(clause) ||
+        WORKSPACE_NEGATED_WRITE_REQUEST_RE.test(clause)
+      ) {
+        return false;
+      }
+
+      return (
+        WORKSPACE_DOMAIN_HOST_WRITE_RE.test(clause) ||
+        (targetsWorkspace &&
+          (WORKSPACE_CREATE_REQUEST_RE.test(clause) ||
+            WORKSPACE_APP_FIELD_UPDATE_RE.test(clause) ||
+            WORKSPACE_ENDPOINT_FIELD_UPDATE_RE.test(clause) ||
+            WORKSPACE_APP_DOMAIN_LINK_RE.test(clause) ||
+            WORKSPACE_APP_RENAME_RE.test(clause) ||
+            WORKSPACE_BREAK_DOWN_IMPORT_RE.test(clause)))
+      );
+    });
+  });
+}
+
+// ponytail: current-message opt-in avoids persistent workspace capability state.
+//
+// Read (`list_*`) and write (`create_*` / `update_*`) tools are gated
+// separately: recon phrasing (find/search/show/list a domain, app, or endpoint on the "console"/
+// "workspace") is common in ordinary Operator pentests, so it must never
+// expose mutation tools. Write tools require an explicit mutation request —
+// a write verb, a "break down …" import, or a direct tool-name mention.
+export function filterWorkspaceToolsForRun(
+  activeTools: string[],
+  prompt: string,
+  hasInteractiveApprovalGate: boolean,
+): string[] {
+  const gated =
+    hasInteractiveApprovalGate && !prompt.trimStart().startsWith("<skill ");
+
+  if (!gated) {
+    return activeTools.filter((name) => !WORKSPACE_TOOL_NAME_SET.has(name));
+  }
+
+  const targetsWorkspace =
+    WORKSPACE_TARGET_RE.test(prompt) && WORKSPACE_NOUN_RE.test(prompt);
+
+  const writeRequested =
+    WORKSPACE_WRITE_TOOL_NAMES.some((name) => prompt.includes(name)) ||
+    hasExplicitWorkspaceWriteRequest(prompt, targetsWorkspace);
+
+  const readRequested =
+    writeRequested ||
+    WORKSPACE_TOOL_NAMES.some((name) => prompt.includes(name)) ||
+    (targetsWorkspace && WORKSPACE_READ_REQUEST_RE.test(prompt));
+
+  return activeTools.filter((name) => {
+    if (WORKSPACE_WRITE_TOOL_NAME_SET.has(name)) return writeRequested;
+    if (WORKSPACE_TOOL_NAME_SET.has(name)) return readRequested;
+    return true;
+  });
+}
 
 // Opt-in stall watchdog (STREAM_STALL_DEBUG=1): warns when fullStream goes byte-silent, catching a Bedrock wedge.
 const STREAM_STALL_DEBUG =
@@ -350,6 +475,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
       secretValues: input.secretValues,
+      environmentVariables: input.environmentVariables,
       persistentShell: this.persistentShell,
       skillsRegistry: input.skillsRegistry,
       promptInjectionLibrary: input.promptInjectionLibrary,
@@ -480,6 +606,12 @@ export class OffensiveSecurityAgent<TResult = void> {
       });
     }
 
+    activeTools = filterWorkspaceToolsForRun(
+      activeTools,
+      input.prompt,
+      input.approvalGate !== undefined,
+    );
+
     // -- Messages persistence -------------------------------------------------
     if (!existsSync(messagesDir)) {
       mkdirSync(messagesDir, { recursive: true });
@@ -534,7 +666,8 @@ export class OffensiveSecurityAgent<TResult = void> {
         }),
       );
     const systemPrompt =
-      baseSystemPrompt + buildSessionWorkspaceSection(input.session, agentCwd);
+      baseSystemPrompt +
+      buildSessionWorkspaceSection(input.session, agentCwd, activeTools);
 
     traceWriter.writeInit({
       model: input.model,

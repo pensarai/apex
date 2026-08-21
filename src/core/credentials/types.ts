@@ -92,6 +92,9 @@ export interface CredentialReference {
   /** Names of custom header keys (values redacted) */
   customHeaderKeys?: string[];
 
+  /** Names of operator-defined extra secret fields (values redacted) */
+  additionalFieldKeys?: string[];
+
   /** Usage context / notes about when and how to use this credential */
   context?: string;
 }

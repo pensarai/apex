@@ -165,6 +165,13 @@ export async function verifyApiKey(
       return verifyGoogle(apiKey);
     case "openrouter":
       return verifyOpenRouter(apiKey);
+    case "concentrate":
+      return apiKey.startsWith("sk-cn")
+        ? { valid: true }
+        : {
+            valid: false,
+            error: "Concentrate API keys start with sk-cn",
+          };
     case "inception":
       return verifyInception(apiKey);
     case "bedrock":
