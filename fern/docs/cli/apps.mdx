@@ -5,7 +5,7 @@ description: "Manage the workspace attack surface — apps and endpoints — via
 
 ## Overview
 
-The `pensar apps` command lets you manage your **attack surface** — the applications and endpoints Pensar knows about — through the Pensar Console API. You can list, view, create, update, and delete apps, and do the same for the endpoints that belong to them.
+The `pensar apps` command lets you manage your **attack surface** — the applications and endpoints Pensar knows about — through the Pensar Console API. You can list, view, create, update, and delete apps, and do the same for the endpoints that belong to them. It also exposes the workspace's domains, so you can resolve the domain an app links to without leaving the terminal.
 
 All commands operate on the **selected workspace**, which is chosen when you connect with [`pensar login`](/apex/cli-commands/pensar-login). Apps and endpoints are scoped to that workspace — there is no project argument.
 
@@ -17,6 +17,8 @@ pensar apps get <appId>                        # Show app details
 pensar apps create [options]                   # Create an app
 pensar apps update <appId> [options]           # Update an app
 pensar apps delete <appId>                     # Delete an app
+pensar apps domains                            # List workspace domains
+pensar apps domain-create <domain>             # Create/resolve a domain
 pensar apps endpoints <appId> [filters]        # List an app's endpoints
 pensar apps endpoint <endpointId>              # Show endpoint details
 pensar apps endpoint-create <appId> [options]  # Create an endpoint
@@ -69,7 +71,7 @@ Creates a new app in the workspace. `--name` and `--description` are required.
 | `--description <text>`        | Application description (**required**)       |
 | `--type <type>`               | Application type (see [App types](#app-types)) |
 | `--framework <text>`          | Framework / runtime hint                     |
-| `--domain <id>`               | Linked domain UUID                           |
+| `--domain <id>`               | Linked domain UUID (see [Domain Subcommands](#domain-subcommands)) |
 | `--disallowed-actions <text>` | Free-form disallowed-actions notes           |
 
 ### Update an App
@@ -86,7 +88,7 @@ Updates one or more fields on an existing app. Only the flags you pass are chang
 | `--description <text>`        | New description                              |
 | `--type <type>`               | New application type                         |
 | `--framework <text>`          | New framework / runtime hint                 |
-| `--domain <id>`               | New linked domain UUID                       |
+| `--domain <id>`               | New linked domain UUID (see [Domain Subcommands](#domain-subcommands)) |
 | `--disallowed-actions <text>` | New disallowed-actions notes                 |
 
 ### Delete an App
@@ -96,6 +98,30 @@ pensar apps delete <appId>
 ```
 
 Deletes an app from the workspace. Returns `{ success, appId }`.
+
+## Domain Subcommands
+
+Apps link to a domain by UUID via `--domain`. These two subcommands are how you find or mint that UUID.
+
+### List Domains
+
+```bash
+pensar apps domains
+```
+
+Lists the domains in the selected workspace as `{ domains }`, where each entry is `{ id, url, verified }`. Use the `id` as the `--domain` value on `apps create` or `apps update`.
+
+### Create a Domain
+
+```bash
+pensar apps domain-create <domain>
+```
+
+Creates a domain in the workspace and returns `{ id, url, verified }`.
+
+<Note>
+Domains created through the API are canonicalized and created idempotently — passing a domain that already exists returns the existing record rather than failing. They stay **unverified** and do not start reconnaissance. Verification happens in Console.
+</Note>
 
 ## Endpoint Subcommands
 
@@ -135,6 +161,7 @@ Creates an endpoint under the given app. `--endpoint` and `--description` are re
 | `--endpoint <text>`     | Endpoint path / URL / route (**required**)          |
 | `--description <text>`  | Endpoint description (**required**)                  |
 | `--type <type>`         | Endpoint type (see [Endpoint types](#endpoint-types)) |
+| `--transport <transport>` | Wire transport (see [Endpoint transports](#endpoint-transports)); defaults to `http` |
 | `--location <text>`     | Source file (whitebox)                              |
 | `--start-line <n>`      | Start line number                                   |
 | `--end-line <n>`        | End line number                                     |
@@ -153,7 +180,13 @@ Pass `--objective` more than once to attach multiple objectives. `--auth-require
 pensar apps endpoint-update <endpointId> [options]
 ```
 
-Updates one or more fields on an existing endpoint. Only the flags you pass are changed; the same field flags as `endpoint-create` are accepted (all optional here).
+Updates one or more fields on an existing endpoint. Only the flags you pass are changed; every field flag from `endpoint-create` is accepted here (all optional), plus one that is update-only:
+
+| Flag           | Description                                                          |
+| -------------- | -------------------------------------------------------------------- |
+| `--app <id>`   | **Update only.** Move the endpoint to a different app in the workspace |
+
+`--app` is not a valid flag on `endpoint-create` — the parent app is the positional `<appId>` argument there.
 
 ### Delete an Endpoint
 
@@ -203,6 +236,10 @@ pensar apps search-endpoints <query> [options]
 
 `--type` on an endpoint accepts one of: `api-endpoint`, `web-endpoint`, `auth-endpoint`, `database`, `file-storage`, `asset`.
 
+## Endpoint transports
+
+`--transport` on an endpoint accepts one of: `http`, `grpc`, `grpc_web`, `connect`. Endpoints created without it default to `http`.
+
 ## Examples
 
 ```bash
@@ -229,6 +266,24 @@ pensar apps endpoint-create app_abc123 \
   --auth-required \
   --objective "Test for IDOR on invoice id" \
   --objective "Check auth bypass"
+
+# Create a gRPC endpoint
+pensar apps endpoint-create app_abc123 \
+  --endpoint "orders.v1.OrderService/GetOrder" \
+  --description "Fetch an order over gRPC" \
+  --type api-endpoint \
+  --transport grpc
+
+# Correct an endpoint's transport after the fact
+pensar apps endpoint-update endpoint_xyz789 --transport grpc_web
+
+# Move an endpoint to a different app
+pensar apps endpoint-update endpoint_xyz789 --app app_def456
+
+# Resolve a domain, then link a new app to it
+pensar apps domains
+pensar apps domain-create billing.example.com
+pensar apps create --name "Billing API" --description "Customer billing service" --domain <domainId>
 
 # Search endpoints across the workspace for "login"
 pensar apps search-endpoints login --auth-required
