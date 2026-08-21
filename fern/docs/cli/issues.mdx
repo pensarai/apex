@@ -1,11 +1,11 @@
 ---
 title: "pensar issues"
-description: "List, view, update, and retest security issues via the Pensar Console API"
+description: "List, view, update, retest, and link pull requests to security issues via the Pensar Console API"
 ---
 
 ## Overview
 
-The `pensar issues` command lets you manage security issues discovered by pentests. You can list issues with filters, view detailed information, update issue statuses, and queue retests.
+The `pensar issues` command lets you manage security issues discovered by pentests. You can list issues with filters, view detailed information, update issue statuses, queue retests, and link the pull requests that fix them.
 
 All commands operate on the **selected workspace**, which is chosen when you connect with [`pensar login`](/apex/cli-commands/pensar-login). There is no longer a project argument.
 
@@ -16,7 +16,13 @@ pensar issues [filters]                        # List issues in the workspace (a
 pensar issues get <issueId>                    # Get issue details
 pensar issues update <issueId> [options]       # Update an issue
 pensar issues retest <issueId>                 # Queue an issue retest
+pensar issues link-pr <issueId> --url <url>    # Link a pull request to an issue
+pensar issues prs <issueId>                    # List pull requests linked to an issue
 ```
+
+<Note>
+`<issueId>` accepts either the issue UUID or its label — e.g. `VULN-000123`.
+</Note>
 
 ## Prerequisites
 
@@ -69,6 +75,28 @@ pensar issues retest <issueId>
 
 Queues an asynchronous retest of the issue against its original target. The JSON response includes the agent session ID for the queued run.
 
+### Link a Pull Request
+
+```bash
+pensar issues link-pr <issueId> --url <prUrl>
+```
+
+Links a pull request to the issue. `--url` is required.
+
+| Option        | Description                                          |
+| ------------- | ---------------------------------------------------- |
+| `--url <url>` | URL of the pull request to link (**required**)       |
+
+Returns `{ success, created, pullRequest, issue }`. `created` distinguishes a newly linked PR from one that was already attached, so re-running the command is safe.
+
+### List Linked Pull Requests
+
+```bash
+pensar issues prs <issueId>
+```
+
+Returns the pull requests linked to the issue as an array of `{ id, url, status, createMethod, createdAt }`. `createMethod` tells you whether the link came from an agent or from a person.
+
 ## Examples
 
 ```bash
@@ -86,6 +114,13 @@ pensar issues update issue_ghi789 --false-positive --fp-reason "Test environment
 
 # Retest an issue after deploying a fix
 pensar issues retest issue_ghi789
+
+# Reference an issue by its label instead of its UUID
+pensar issues get VULN-000123
+
+# Link the PR that fixes an issue, then confirm the link
+pensar issues link-pr VULN-000123 --url https://github.com/acme/api/pull/42
+pensar issues prs VULN-000123
 ```
 
 ## Related Commands

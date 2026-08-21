@@ -1,0 +1,89 @@
+---
+title: "pensar targets"
+description: "List pentest targets and query their agent execution logs via the Pensar Console API"
+---
+
+## Overview
+
+A **target** is a single attack-surface endpoint exercised during a pentest. Pentest execution logs are persisted against the target rather than against the issues it produced, so `pensar targets` is how you query the full activity for an endpoint — **including runs that found nothing**.
+
+That distinction matters: [`pensar logs`](/apex/cli-commands/pensar-logs) is keyed by issue, so it can only show you work that ended in a finding. If you want to know what the agent tried against an endpoint that came back clean, you need the target.
+
+All commands operate on the **selected workspace**, which is chosen when you connect with [`pensar login`](/apex/cli-commands/pensar-login).
+
+## Usage
+
+```bash
+pensar targets <pentestId>                       # List targets for a pentest
+pensar targets logs <targetId> [filters]         # List agent logs for a target
+pensar targets search <targetId> <query> [opts]  # Search agent logs for a target
+```
+
+## Prerequisites
+
+You must be connected to Pensar Console via [`pensar login`](/apex/cli-commands/pensar-login) before using this command.
+
+## Subcommands
+
+### List Targets
+
+```bash
+pensar targets <pentestId>
+```
+
+Lists every target exercised by the given pentest. Use the returned target IDs with the `logs` and `search` subcommands.
+
+### List Target Logs
+
+```bash
+pensar targets logs <targetId> [filters]
+```
+
+Lists agent execution logs recorded against a target.
+
+| Filter            | Description                                                          |
+| ----------------- | -------------------------------------------------------------------- |
+| `--level <level>` | Filter by: `debug`, `info`, `warn`, `error`                          |
+| `--role <role>`   | Filter by: `assistant`, `user`, `system`, `tool-call`, `tool-result` |
+| `--limit <n>`     | Max entries to return (default: 100, max: 500)                       |
+
+### Search Target Logs
+
+```bash
+pensar targets search <targetId> <query> [options]
+```
+
+Searches a target's log entries for a query string.
+
+| Option            | Description                                                          |
+| ----------------- | -------------------------------------------------------------------- |
+| `--level <level>` | Filter by: `debug`, `info`, `warn`, `error`                          |
+| `--role <role>`   | Filter by: `assistant`, `user`, `system`, `tool-call`, `tool-result` |
+| `--context <n>`   | Context lines around matches (default: 3)                            |
+
+## Examples
+
+```bash
+# List the targets a pentest exercised
+pensar targets scan_abc123
+
+# Everything the agent did against one target
+pensar targets logs target_def456
+
+# Just the tool calls, capped at 50
+pensar targets logs target_def456 --role tool-call --limit 50
+
+# Find where the agent tried SQL injection against this target
+pensar targets search target_def456 "sqlmap" --context 5
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="pensar pentests" icon="shield" href="/apex/cli-commands/pensar-pentests">
+    List the pentests these targets belong to
+  </Card>
+  <Card title="pensar logs" icon="file-lines" href="/apex/cli-commands/pensar-logs">
+    Agent logs keyed by issue instead of by target
+  </Card>
+</CardGroup>
