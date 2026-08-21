@@ -1,9 +1,4 @@
-import {
-  type RGBA,
-  SyntaxStyle,
-  type KeyBinding as TextareaKeyBinding,
-  type TextareaRenderable,
-} from "@opentui/core";
+import { type RGBA, SyntaxStyle, type TextareaRenderable } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import {
   forwardRef,
@@ -36,6 +31,7 @@ import {
   type InlineSlashContext,
   shouldResetHistory,
 } from "./prompt-input-logic";
+import { chatKeyBindings } from "./text-input-keybindings";
 import { usePasteExtmarks } from "./use-paste-extmarks";
 
 /** Word-wrap text and return at most `maxLines` lines, adding ellipsis if truncated. */
@@ -90,20 +86,6 @@ export interface AutocompleteOption {
   label: string;
   description?: string;
 }
-
-/**
- * Chat-style keybindings: Enter submits, Shift+Enter / Ctrl+J inserts newline.
- * Overrides @opentui defaults (return=newline, Cmd+return=submit).
- *
- * Both "return" (\r) and "linefeed" (\n) need shift variants because
- * @opentui matches modifiers exactly (Kitty protocol reports shift explicitly).
- */
-const chatKeyBindings: TextareaKeyBinding[] = [
-  { name: "return", action: "submit" },
-  { name: "linefeed", action: "newline" },
-  { name: "return", shift: true, action: "newline" },
-  { name: "linefeed", shift: true, action: "newline" },
-];
 
 // Highlight ref ID for slash command highlighting (stable across renders)
 const SLASH_HL_REF = 99;

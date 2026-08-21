@@ -25,12 +25,13 @@ export {
   getStableMessageKey,
   tryParsePartialJson,
 } from "./message-utils";
-// Input components
 export {
   type AutocompleteOption,
   PromptInput,
   type PromptInputRef,
 } from "./prompt-input";
+// Input components
+export { chatKeyBindings, redirectKeyBindings } from "./text-input-keybindings";
 // Registries
 export {
   getArgsPreview,
