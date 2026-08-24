@@ -1,3 +1,4 @@
+import type { ModelMessage } from "ai";
 import {
   type AgentMode,
   buildBaseSystemPrompt,
@@ -7,6 +8,7 @@ import type {
   OperatorMode,
   OperatorSessionState,
 } from "../../../core/operator";
+import type { DisplayMessage } from "../agent-display";
 import type { AutocompleteOption } from "../shared";
 
 // ---------------------------------------------------------------------------
@@ -268,6 +270,65 @@ export function resolveAbortAction(
     return { type: "cancel-command" };
   }
   return { type: "kill-agent" };
+}
+
+export function recoverAbortedConversation(
+  conversation: readonly ModelMessage[],
+  partialText: string,
+  displayMessages: readonly DisplayMessage[],
+): ModelMessage[] | null {
+  if (conversation.at(-1)?.role !== "user") return null;
+
+  const pendingTools = displayMessages.filter(
+    (
+      message,
+    ): message is DisplayMessage & {
+      toolCallId: string;
+      toolName: string;
+      status: "pending" | "streaming";
+    } =>
+      message.role === "tool" &&
+      typeof message.toolCallId === "string" &&
+      typeof message.toolName === "string" &&
+      (message.status === "pending" || message.status === "streaming"),
+  );
+  const assistantContent: Array<Record<string, unknown>> = [
+    {
+      type: "text" as const,
+      text: partialText.trim() || "[Response interrupted by user.]",
+    },
+    ...pendingTools.map((tool) => ({
+      type: "tool-call" as const,
+      toolCallId: tool.toolCallId,
+      toolName: tool.toolName,
+      input: tool.args ?? {},
+    })),
+  ];
+  const recovered: ModelMessage[] = [
+    ...conversation,
+    {
+      role: "assistant",
+      content: assistantContent,
+    } as ModelMessage,
+  ];
+
+  if (pendingTools.length === 0) return recovered;
+
+  return [
+    ...recovered,
+    {
+      role: "tool",
+      content: pendingTools.map((tool) => ({
+        type: "tool-result" as const,
+        toolCallId: tool.toolCallId,
+        toolName: tool.toolName ?? "unknown",
+        output: {
+          type: "text" as const,
+          value: "Cancelled by user.",
+        },
+      })),
+    } as unknown as ModelMessage,
+  ];
 }
 
 // ---------------------------------------------------------------------------
