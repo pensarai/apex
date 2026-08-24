@@ -135,6 +135,14 @@ import {
   loadSubagentSessionsFromDisk,
 } from "./subagent-state";
 import { SubagentStatusBar } from "./subagent-status-bar";
+import {
+  applyWorkflowPhaseComplete,
+  applyWorkflowPhaseStart,
+  applyWorkflowSubagentComplete,
+  applyWorkflowSubagentSpawn,
+  isPentestAgent,
+  updateWorkflowDataMessage,
+} from "./workflow-data";
 
 function markInFlightToolsErrored(
   messages: DisplayMessage[],
@@ -808,39 +816,11 @@ export default function OperatorDashboard({
 
       const eventBus = new AgentEventBus();
 
-      // Only pentest swarm agents (pentest-agent-*) get entries in
-      // WorkflowData.pentesting.subagents. All others (discovery, risk
-      // scorers, whitebox analyzers) are excluded.
-      const isPentestAgent = (id?: string) =>
-        id !== undefined && /^pentest-agent-\d+$/.test(id);
-
       // Patch the workflowData on the active run_pentest_workflow tool message.
       const updateWorkflowData = (
         updater: (wd: WorkflowData) => WorkflowData,
       ) => {
-        setMessages((prev) => {
-          const idx = prev.findLastIndex(
-            (m) =>
-              isToolMessage(m) &&
-              m.toolName === "run_pentest_workflow" &&
-              (m.status === "pending" || m.status === "streaming"),
-          );
-          if (idx === -1) return prev;
-          const msg = prev[idx];
-          const wd = msg.workflowData ?? {
-            currentPhase: "discovery" as const,
-            discovery: { label: "", status: "pending" as const, logs: [] },
-            pentesting: {
-              label: "",
-              status: "idle" as const,
-              subagents: {},
-            },
-            reporting: { label: "", status: "idle" as const },
-          };
-          const updated = [...prev];
-          updated[idx] = { ...msg, workflowData: updater(wd) };
-          return updated;
-        });
+        setMessages((prev) => updateWorkflowDataMessage(prev, updater));
       };
 
       eventBus.on("text-delta", (d) => {
@@ -978,20 +958,9 @@ export default function OperatorDashboard({
         subagentHelpers.spawnSession(subagentId, name);
         if (!isPentestAgent(subagentId)) return;
         // Pentest swarm agents → workflowData.pentesting.subagents
-        updateWorkflowData((wd) => ({
-          ...wd,
-          pentesting: {
-            ...wd.pentesting,
-            subagents: {
-              ...wd.pentesting.subagents,
-              [subagentId]: {
-                name,
-                status: "pending" as const,
-                logs: [],
-              },
-            },
-          },
-        }));
+        updateWorkflowData((wd) =>
+          applyWorkflowSubagentSpawn(wd, subagentId, name),
+        );
       });
 
       eventBus.on("subagent-complete", ({ subagentId, status }) => {
@@ -1002,20 +971,9 @@ export default function OperatorDashboard({
         subagentHelpers.completeSession(subagentId, status);
         if (!isPentestAgent(subagentId)) return;
         // Update workflowData swarm status
-        updateWorkflowData((wd) => {
-          const entry = wd.pentesting.subagents[subagentId];
-          if (!entry) return wd;
-          return {
-            ...wd,
-            pentesting: {
-              ...wd.pentesting,
-              subagents: {
-                ...wd.pentesting.subagents,
-                [subagentId]: { ...entry, status },
-              },
-            },
-          };
-        });
+        updateWorkflowData((wd) =>
+          applyWorkflowSubagentComplete(wd, subagentId, status),
+        );
       });
 
       // Workflow phase events → update workflowData on the tool message
@@ -1027,67 +985,25 @@ export default function OperatorDashboard({
         if (d.phase === "discovery") {
           subagentStore.setState(new Map());
         }
-        updateWorkflowData((wd) => {
-          const next = {
-            ...wd,
-            currentPhase: d.phase as WorkflowData["currentPhase"],
-          };
-          if (d.phase === "discovery") {
-            next.discovery = {
-              ...wd.discovery,
-              label: d.label,
-              status: "pending",
-              logs: [],
-            };
-          } else if (d.phase === "pentesting") {
-            next.pentesting = {
-              ...wd.pentesting,
-              label: d.label,
-              status: "pending",
-            };
-          } else if (d.phase === "reporting") {
-            next.reporting = {
-              ...wd.reporting,
-              label: d.label,
-              status: "pending",
-            };
-          }
-          return next;
-        });
+        updateWorkflowData((wd) =>
+          applyWorkflowPhaseStart(
+            wd,
+            d.phase as WorkflowData["currentPhase"],
+            d.label,
+          ),
+        );
       });
 
       eventBus.on("workflow-phase-complete", (d) => {
         if (gen !== generationRef.current) return;
         textRef.current = "";
-        updateWorkflowData((wd) => {
-          const next = { ...wd };
-          if (d.phase === "discovery") {
-            const targets = (d.summary.targets ?? []) as {
-              target: string;
-              objectives: string[];
-            }[];
-            next.discovery = {
-              ...wd.discovery,
-              status: "complete",
-              targets,
-              cached: d.summary.cached as boolean | undefined,
-            };
-          } else if (d.phase === "pentesting") {
-            next.pentesting = { ...wd.pentesting, status: "complete" };
-          } else if (d.phase === "reporting") {
-            next.reporting = {
-              ...wd.reporting,
-              status: "complete",
-              findingsCount: d.summary.findingsCount as number | undefined,
-              findingsBySeverity: d.summary.findingsBySeverity as
-                | Record<string, number>
-                | undefined,
-              reportPath: d.summary.reportPath as string | undefined,
-            };
-            next.currentPhase = "complete";
-          }
-          return next;
-        });
+        updateWorkflowData((wd) =>
+          applyWorkflowPhaseComplete(
+            wd,
+            d.phase as WorkflowData["currentPhase"],
+            d.summary,
+          ),
+        );
       });
 
       const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
