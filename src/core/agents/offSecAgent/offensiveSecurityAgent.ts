@@ -322,7 +322,10 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   private messagesPath: string | null = null;
 
-  /** Cancels the debounced persist timer so abort writes don't race it. */
+  /** Serializes agent-owned messages.json writes in enqueue order. */
+  private persistenceTail: Promise<void> = Promise.resolve();
+
+  /** Cancels a pending debounce; already-started writes remain in persistenceTail. */
   private cancelPersistTimer: (() => void) | null = null;
 
   private syntheticsPersisted = false;
@@ -617,7 +620,6 @@ export class OffensiveSecurityAgent<TResult = void> {
       mkdirSync(messagesDir, { recursive: true });
     }
     this.messagesPath = join(messagesDir, "messages.json");
-    const messagesPath = this.messagesPath;
 
     // Mutable so that summarization can clear stale history.
     const initialMessagesRef: { current: ModelMessage[] } = {
@@ -642,8 +644,11 @@ export class OffensiveSecurityAgent<TResult = void> {
         persistTimer = null;
         if (this.latestMessages) {
           const toWrite = this.latestMessages;
-          this.latestMessages = null;
-          writeFile(messagesPath, JSON.stringify(toWrite)).catch(() => {});
+          void this.enqueueMessagesWrite(toWrite)
+            .then(() => {
+              if (this.latestMessages === toWrite) this.latestMessages = null;
+            })
+            .catch(() => {});
         }
       }, PERSIST_INTERVAL_MS);
     };
@@ -743,9 +748,8 @@ export class OffensiveSecurityAgent<TResult = void> {
               ...initialMessagesRef.current,
               ...event.response.messages,
             ];
-            await writeFile(messagesPath, JSON.stringify(finalMessages)).catch(
-              () => {},
-            );
+            this.latestMessages = finalMessages;
+            await this.enqueueMessagesWrite(finalMessages).catch(() => {});
           }
           await input.onFinish?.(event);
         },
@@ -1113,57 +1117,82 @@ export class OffensiveSecurityAgent<TResult = void> {
       } finally {
         // Stop the stall watchdog so it never leaks past stream end / throw.
         if (stallTimer) clearInterval(stallTimer);
-        // Dispose first — don't block on persistence I/O.
-        this.persistentShell?.dispose();
-        // Flush tool-errors that never reached a finish-step into the snapshot.
-        for (const [toolCallId, info] of toolErrors) {
-          const result = {
-            type: "error-text" as const,
-            value: `Tool call failed: ${info.message}`,
-          };
-          bus.emit("tool-result", {
-            toolCallId,
-            toolName: info.toolName,
-            result,
-            sessionId: this.busSessionId,
-            subagentId: sid,
-            partId: ids.toolPartId?.(toolCallId),
-            messageId: ids.messageId,
-          });
-          completedResults.push({
-            type: "tool-result",
-            toolCallId,
-            toolName: info.toolName,
-            output: result,
-          });
-        }
-        toolErrors.clear();
-        // Snapshot unpersisted step state: open tools get synthetic closes, completed/errored results get written.
-        if (inFlightTools.size > 0 || completedResults.length > 0) {
-          const reason = this.abortSignal?.aborted
-            ? "Agent aborted by user"
-            : streamError instanceof Error && streamError.message
-              ? streamError.message
-              : "Stream terminated unexpectedly";
+        let finalizationError: unknown;
+        let hasFinalizationError = false;
+        const recordFinalizationError = (error: unknown) => {
+          if (hasFinalizationError) return;
+          finalizationError = error;
+          hasFinalizationError = true;
+        };
+
+        try {
+          // Dispose first — don't block on persistence I/O.
           try {
-            await this.emitSyntheticToolResults(
-              inFlightTools,
-              completedResults,
-              reason,
-              ids.toolPartId,
-              ids.messageId,
-              streamedArgText,
-            );
-          } catch {
-            // Never mask the original streamError with a listener error.
+            this.persistentShell?.dispose();
+          } catch (error) {
+            recordFinalizationError(error);
           }
+          // Flush tool-errors that never reached a finish-step into the snapshot.
+          for (const [toolCallId, info] of toolErrors) {
+            const result = {
+              type: "error-text" as const,
+              value: `Tool call failed: ${info.message}`,
+            };
+            completedResults.push({
+              type: "tool-result",
+              toolCallId,
+              toolName: info.toolName,
+              output: result,
+            });
+            try {
+              bus.emit("tool-result", {
+                toolCallId,
+                toolName: info.toolName,
+                result,
+                sessionId: this.busSessionId,
+                subagentId: sid,
+                partId: ids.toolPartId?.(toolCallId),
+                messageId: ids.messageId,
+              });
+            } catch (error) {
+              recordFinalizationError(error);
+            }
+          }
+          toolErrors.clear();
+          // Snapshot unpersisted step state: open tools get synthetic closes, completed/errored results get written.
+          if (inFlightTools.size > 0 || completedResults.length > 0) {
+            const reason = this.abortSignal?.aborted
+              ? "Agent aborted by user"
+              : streamError instanceof Error && streamError.message
+                ? streamError.message
+                : "Stream terminated unexpectedly";
+            try {
+              await this.emitSyntheticToolResults(
+                inFlightTools,
+                completedResults,
+                reason,
+                ids.toolPartId,
+                ids.messageId,
+                streamedArgText,
+              );
+            } catch (error) {
+              recordFinalizationError(error);
+            }
+          }
+        } catch (error) {
+          recordFinalizationError(error);
+        } finally {
+          // Tear down the Chromium child process we own. Without this, a
+          // naturally-finishing agent leaks its Playwright MCP browser — over a
+          // long single-process scan (many endpoints) the leaked Chromium
+          // processes exhaust memory and OOM the run. disconnect() force-kills
+          // and never hangs, so awaiting here is safe.
+          await this.disconnectOwnedBrowser();
         }
-        // Tear down the Chromium child process we own. Without this, a
-        // naturally-finishing agent leaks its Playwright MCP browser — over a
-        // long single-process scan (many endpoints) the leaked Chromium
-        // processes exhaust memory and OOM the run. disconnect() force-kills
-        // and never hangs, so awaiting here is safe.
-        await this.disconnectOwnedBrowser();
+        // Teardown failures must not replace the provider/stream failure.
+        if (streamError === null && hasFinalizationError) {
+          streamError = finalizationError;
+        }
       }
 
       if (streamError) {
@@ -1253,6 +1282,26 @@ export class OffensiveSecurityAgent<TResult = void> {
     await this.browserSession.disconnect().catch(() => {});
   }
 
+  private async enqueueMessagesWrite(messages: ModelMessage[]): Promise<void> {
+    const messagesPath = this.messagesPath;
+    if (!messagesPath) return;
+
+    const contents = JSON.stringify(messages);
+    const write = this.persistenceTail.then(() =>
+      writeFile(messagesPath, contents),
+    );
+    this.persistenceTail = write.catch(() => {});
+    await write;
+  }
+
+  private async waitForPendingMessagesWrites(): Promise<void> {
+    let pending: Promise<void>;
+    do {
+      pending = this.persistenceTail;
+      await pending;
+    } while (pending !== this.persistenceTail);
+  }
+
   /**
    * Idempotent teardown for hosts that abort before `consume()` settles
    * (Console `settleOnAbort` on timeout/pause). Force-disconnects the owned
@@ -1286,6 +1335,8 @@ export class OffensiveSecurityAgent<TResult = void> {
       value: `Tool execution aborted: ${reason}`,
     };
     const syntheticParts: ToolResultPart[] = [];
+    let emissionError: unknown;
+    let hasEmissionError = false;
 
     if (RESPONSE_DEBUG) {
       const responseInFlight = [...inFlightTools.entries()].filter(
@@ -1306,28 +1357,39 @@ export class OffensiveSecurityAgent<TResult = void> {
         toolName === RESPONSE_TOOL_NAME && this._responseToolFired
           ? { type: "text" as const, value: "Response submitted." }
           : output;
-      this.eventBus.emit("tool-result", {
-        toolCallId,
-        toolName,
-        result,
-        // Canonical session id, not just the legacy subagentId alias, so the translator routes to THIS subagent's session.
-        sessionId: this.busSessionId,
-        subagentId: sid,
-        partId: partIdFor?.(toolCallId),
-        messageId,
-      });
       syntheticParts.push({
         type: "tool-result",
         toolCallId,
         toolName,
         output: result,
       });
+      try {
+        this.eventBus.emit("tool-result", {
+          toolCallId,
+          toolName,
+          result,
+          // Canonical session id, not just the legacy subagentId alias, so the translator routes to THIS subagent's session.
+          sessionId: this.busSessionId,
+          subagentId: sid,
+          partId: partIdFor?.(toolCallId),
+          messageId,
+        });
+      } catch (error) {
+        if (!hasEmissionError) {
+          emissionError = error;
+          hasEmissionError = true;
+        }
+      }
     }
 
-    if (!this.messagesPath) return;
+    if (!this.messagesPath) {
+      if (hasEmissionError) throw emissionError;
+      return;
+    }
 
-    // Cancel the debounced timer so its writeFile can't race the write below.
+    // Cancel an unfired debounce and drain writes that already started.
     this.cancelPersistTimer?.();
+    await this.waitForPendingMessagesWrites();
 
     // Fall back to the on-disk snapshot once the debounced timer has flushed latestMessages, so we don't overwrite history.
     let base: ModelMessage[] = this.latestMessages ?? [];
@@ -1401,12 +1463,14 @@ export class OffensiveSecurityAgent<TResult = void> {
     const next: ModelMessage[] = [...base, ...appended];
     this.latestMessages = next;
     try {
-      await writeFile(this.messagesPath, JSON.stringify(next));
+      await this.enqueueMessagesWrite(next);
       // Only suppress onFinish's write once the snapshot is safely on disk.
       this.syntheticsPersisted = true;
     } catch {
       // Write failed — leave the flag false so onFinish still attempts a write.
     }
+
+    if (hasEmissionError) throw emissionError;
   }
 
   private baseContainsToolCalls(
