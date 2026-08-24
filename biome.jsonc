@@ -12,6 +12,7 @@
       "!dist",
       "!bin",
       "!node_modules",
+      "!.apex/bug-bounty/vendor",
       "!benchmarks",
       "!sst-env.d.ts",
       "!*.tgz"

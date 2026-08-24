@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { buildMaterialClaims } from "./claimVerifier";
 import { deriveDecision, mapToHackerOneState } from "./decisionLogic";
 import type {
   BountyReport,
+  ClaimVerificationResult,
   CvssSummary,
   DupCheckResult,
   LiveVerificationResult,
@@ -59,14 +61,95 @@ const NOT_REPRODUCED: LiveVerificationResult = {
 const CVSS_HIGH: CvssSummary = {
   score: 8.2,
   severity: "HIGH",
-  vectorString: "CVSS:4.0/AV:N/AC:L/...",
+  vectorString: "CVSS:3.0/AV:N/AC:L/...",
   reasoning: "remote, unauth, exfil",
 };
 const CVSS_NONE: CvssSummary = {
   score: 0,
   severity: "NONE",
-  vectorString: "CVSS:4.0/AV:N/AC:L/...",
+  vectorString: "CVSS:3.0/AV:N/AC:L/...",
   reasoning: "no demonstrated impact",
+};
+
+const VERIFIED_CLAIMS: ClaimVerificationResult = {
+  summary: "All required material claims were verified.",
+  claims: [
+    {
+      id: "vulnerability-class",
+      claim: "The behavior is a Reflected XSS vulnerability.",
+      required: true,
+      status: "verified",
+      evidence: "payload reflected in executable context",
+    },
+    {
+      id: "affected-location",
+      claim: "The affected location is https://staging.example.com/search.",
+      required: true,
+      status: "verified",
+      evidence: "request targeted /search",
+    },
+    {
+      id: "attacker-model",
+      claim: "The issue is exploitable by unauthenticated.",
+      required: true,
+      status: "verified",
+      evidence: "no credentials were used",
+    },
+    {
+      id: "security-impact",
+      claim: "The demonstrated security impact is: Session theft",
+      required: true,
+      status: "verified",
+      evidence: "script execution allows session theft",
+    },
+  ],
+};
+
+const PARTIAL_CLAIMS: ClaimVerificationResult = {
+  summary: "The redirect was observed, but impact was not fully verified.",
+  claims: [
+    {
+      ...VERIFIED_CLAIMS.claims[0],
+      status: "partial",
+      evidence: "evidence shows a redirect, but not the claimed impact",
+    },
+  ],
+};
+
+const VERIFIED_WITH_OPTIONAL_PARTIAL_CLAIMS: ClaimVerificationResult = {
+  summary:
+    "The core vulnerability is verified; one downstream impact detail is partial.",
+  claims: [
+    ...VERIFIED_CLAIMS.claims,
+    {
+      id: "claimed-impact-details",
+      claim:
+        "The evidence supports every downstream impact detail in the report.",
+      required: false,
+      status: "partial",
+      evidence:
+        "The core email disclosure is verified, but the regulatory impact is not proven.",
+    },
+    {
+      id: "poc-steps",
+      claim: "Every PoC variant in the report was reproduced.",
+      required: false,
+      status: "partial",
+      evidence:
+        "The primary PoC reproduced, but not every listed variant was retested.",
+    },
+  ],
+};
+
+const CONTRADICTED_CLAIMS: ClaimVerificationResult = {
+  summary: "The affected location claim is contradicted.",
+  claims: [
+    {
+      ...VERIFIED_CLAIMS.claims[1],
+      status: "contradicted",
+      evidence: "the endpoint returned 404 and no redirect/reflection occurred",
+    },
+  ],
 };
 
 const TM_ACCEPTED: ThreatModelAlignment = {
@@ -139,6 +222,7 @@ describe("deriveDecision", () => {
       scope: SCOPE_PASS,
       duplicate: NO_DUP,
       verification: REPRODUCED,
+      claimVerification: VERIFIED_CLAIMS,
       cvss: CVSS_HIGH,
       threatModelAlignment: TM_ACCEPTED,
     });
@@ -151,6 +235,7 @@ describe("deriveDecision", () => {
       scope: SCOPE_PASS,
       duplicate: NO_DUP,
       verification: REPRODUCED,
+      claimVerification: VERIFIED_CLAIMS,
       cvss: CVSS_NONE,
       threatModelAlignment: TM_NEUTRAL,
     });
@@ -163,6 +248,7 @@ describe("deriveDecision", () => {
       scope: SCOPE_PASS,
       duplicate: NO_DUP,
       verification: REPRODUCED,
+      claimVerification: VERIFIED_CLAIMS,
       cvss: CVSS_HIGH,
       threatModelAlignment: TM_NEUTRAL,
     });
@@ -171,16 +257,159 @@ describe("deriveDecision", () => {
     expect(decision.rationale).toContain("HIGH");
   });
 
-  it("accepts even when threat-model alignment is missing", () => {
+  it("needs info when reproduced but material claims were not verified", () => {
     const decision = deriveDecision({
       scope: SCOPE_PASS,
       duplicate: NO_DUP,
       verification: REPRODUCED,
+      claimVerification: null,
+      cvss: CVSS_HIGH,
+      threatModelAlignment: null,
+    });
+    expect(decision.outcome).toBe("needs-info");
+    expect(decision.reason).toBe("missing-info");
+    expect(decision.rationale).toContain("material report claims");
+  });
+
+  it("rejects as informational noise when a required claim is only partially verified", () => {
+    const decision = deriveDecision({
+      scope: SCOPE_PASS,
+      duplicate: NO_DUP,
+      verification: REPRODUCED,
+      claimVerification: PARTIAL_CLAIMS,
+      cvss: CVSS_HIGH,
+      threatModelAlignment: null,
+    });
+    expect(decision.outcome).toBe("reject");
+    expect(decision.reason).toBe("informational");
+    expect(decision.rationale).toContain("noise/informational");
+    expect(decision.rationale).toContain("vulnerability-class=partial");
+  });
+
+  it("does not reject verified findings because optional downstream claims are partial", () => {
+    const decision = deriveDecision({
+      scope: SCOPE_PASS,
+      duplicate: NO_DUP,
+      verification: REPRODUCED,
+      claimVerification: VERIFIED_WITH_OPTIONAL_PARTIAL_CLAIMS,
       cvss: CVSS_HIGH,
       threatModelAlignment: null,
     });
     expect(decision.outcome).toBe("accept");
     expect(decision.reason).toBe("confirmed");
+  });
+
+  it("rejects generic metadata disclosure without demonstrated attacker harm", () => {
+    const decision = deriveDecision({
+      scope: SCOPE_PASS,
+      duplicate: NO_DUP,
+      verification: {
+        reproduced: true,
+        evidence:
+          "HTTP 400 S3 InvalidArgument echoes an Authorization header containing an ASIA access key ID, signed headers, internal header names, and a request signature. The secret access key and session token value are not disclosed.",
+        observations:
+          "This provides reconnaissance value but no direct AWS access was demonstrated.",
+      },
+      claimVerification: VERIFIED_CLAIMS,
+      cvss: CVSS_HIGH,
+      threatModelAlignment: null,
+      report: {
+        ...SAMPLE_REPORT,
+        title: "STS Access Key ID disclosed via S3 InvalidArgument",
+        vulnerabilityClass:
+          "Information Disclosure / Error Message Containing Sensitive Information",
+        affectedUrl: "https://www.example.com/.well-known/security.txt",
+        affectedComponent: "S3 error response",
+        description:
+          "The S3 error response exposes an access key ID, signed headers, internal headers, and AWS metadata.",
+        impact:
+          "The access key ID and internal header names provide infrastructure reconnaissance value.",
+      },
+    });
+
+    expect(decision.outcome).toBe("reject");
+    expect(decision.reason).toBe("informational");
+    expect(decision.rationale).toContain("generic information disclosure");
+    expect(decision.rationale).toContain("concrete harm");
+  });
+
+  it("does not reject information disclosure when secret abuse is demonstrated", () => {
+    const decision = deriveDecision({
+      scope: SCOPE_PASS,
+      duplicate: NO_DUP,
+      verification: {
+        reproduced: true,
+        evidence:
+          "The response exposed an auth token. The auth token was used to access another user's private profile data.",
+        observations:
+          "Unauthorized data access was confirmed with the leaked token.",
+      },
+      claimVerification: VERIFIED_CLAIMS,
+      cvss: CVSS_HIGH,
+      threatModelAlignment: null,
+      report: {
+        ...SAMPLE_REPORT,
+        title: "Auth token exposed in error response",
+        vulnerabilityClass: "Information Disclosure",
+        description:
+          "Verbose error response returned an auth token and private user data.",
+        impact:
+          "The disclosed auth token was used for unauthorized data access.",
+      },
+    });
+
+    expect(decision.outcome).toBe("accept");
+    expect(decision.reason).toBe("confirmed");
+  });
+
+  it("rejects reproduced reports when a required claim is contradicted", () => {
+    const decision = deriveDecision({
+      scope: SCOPE_PASS,
+      duplicate: NO_DUP,
+      verification: REPRODUCED,
+      claimVerification: CONTRADICTED_CLAIMS,
+      cvss: CVSS_HIGH,
+      threatModelAlignment: null,
+    });
+    expect(decision.outcome).toBe("reject");
+    expect(decision.reason).toBe("unreproducible");
+    expect(decision.rationale).toContain("affected-location=contradicted");
+  });
+
+  it("accepts even when threat-model alignment is missing", () => {
+    const decision = deriveDecision({
+      scope: SCOPE_PASS,
+      duplicate: NO_DUP,
+      verification: REPRODUCED,
+      claimVerification: VERIFIED_CLAIMS,
+      cvss: CVSS_HIGH,
+      threatModelAlignment: null,
+    });
+    expect(decision.outcome).toBe("accept");
+    expect(decision.reason).toBe("confirmed");
+  });
+});
+
+describe("buildMaterialClaims", () => {
+  it("requires only the minimum viable vulnerability and keeps downstream details optional", () => {
+    const claims = buildMaterialClaims({
+      ...SAMPLE_REPORT,
+      affectedComponent: "search parameter",
+      pocSteps: ["Send q=<script>alert(1)</script>"],
+    });
+
+    expect(
+      claims.find((claim) => claim.id === "security-impact")?.required,
+    ).toBe(true);
+    expect(
+      claims.find((claim) => claim.id === "claimed-impact-details")?.required,
+    ).toBe(false);
+    expect(
+      claims.find((claim) => claim.id === "affected-component")?.required,
+    ).toBe(false);
+    expect(claims.find((claim) => claim.id === "poc-steps")?.required).toBe(
+      false,
+    );
   });
 });
 
@@ -202,6 +431,7 @@ describe("deriveDecision — H1 state + draft reply", () => {
       scope: SCOPE_PASS,
       duplicate: NO_DUP,
       verification: REPRODUCED,
+      claimVerification: VERIFIED_CLAIMS,
       cvss: CVSS_HIGH,
       threatModelAlignment: TM_NEUTRAL,
       report: SAMPLE_REPORT,
@@ -257,6 +487,7 @@ describe("deriveDecision — H1 state + draft reply", () => {
       scope: SCOPE_PASS,
       duplicate: NO_DUP,
       verification: REPRODUCED,
+      claimVerification: VERIFIED_CLAIMS,
       cvss: CVSS_NONE,
       threatModelAlignment: TM_NEUTRAL,
       report: SAMPLE_REPORT,
@@ -269,6 +500,7 @@ describe("deriveDecision — H1 state + draft reply", () => {
       scope: SCOPE_PASS,
       duplicate: NO_DUP,
       verification: REPRODUCED,
+      claimVerification: VERIFIED_CLAIMS,
       cvss: CVSS_HIGH,
       threatModelAlignment: TM_ACCEPTED,
       report: SAMPLE_REPORT,
@@ -295,6 +527,7 @@ describe("deriveDecision — H1 state + draft reply", () => {
       scope: SCOPE_PASS,
       duplicate: NO_DUP,
       verification: REPRODUCED,
+      claimVerification: VERIFIED_CLAIMS,
       cvss: CVSS_HIGH,
       threatModelAlignment: null,
       report: { ...SAMPLE_REPORT, reporterHandle: undefined },

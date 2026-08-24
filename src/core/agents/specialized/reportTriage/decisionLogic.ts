@@ -1,5 +1,6 @@
 import type {
   BountyReport,
+  ClaimVerificationResult,
   CvssSummary,
   DupCheckResult,
   HackerOneState,
@@ -24,6 +25,7 @@ export function deriveDecision(opts: {
   scope: ScopeCheckResult;
   duplicate: DupCheckResult;
   verification: LiveVerificationResult | null;
+  claimVerification?: ClaimVerificationResult | null;
   cvss: CvssSummary | null;
   threatModelAlignment: ThreatModelAlignment | null;
   report?: BountyReport;
@@ -47,8 +49,10 @@ function decideCore(opts: {
   scope: ScopeCheckResult;
   duplicate: DupCheckResult;
   verification: LiveVerificationResult | null;
+  claimVerification?: ClaimVerificationResult | null;
   cvss: CvssSummary | null;
   threatModelAlignment: ThreatModelAlignment | null;
+  report?: BountyReport;
 }): Pick<TriageDecision, "outcome" | "reason" | "rationale"> {
   // 1. Out of scope — short-circuit.
   if (!opts.scope.inScope) {
@@ -91,7 +95,18 @@ function decideCore(opts: {
     };
   }
 
-  // 5. Reproduced but threat model marks this as an accepted business risk — reject.
+  // 5. Reproduced is necessary but not sufficient. Every required material
+  //    report claim must be verified before we can confirm the report.
+  const claimGate = evaluateClaimGate(opts.claimVerification);
+  if (claimGate) return claimGate;
+
+  // 6. Generic information-disclosure/configuration metadata is not enough.
+  //    Keep this deterministic so triage does not accept reports that only show
+  //    reconnaissance value or theoretical follow-on risk.
+  const metadataOnlyGate = evaluateMetadataOnlyDisclosureGate(opts);
+  if (metadataOnlyGate) return metadataOnlyGate;
+
+  // 7. Reproduced but threat model marks this as an accepted business risk — reject.
   if (opts.threatModelAlignment?.businessAcceptedRisk) {
     return {
       outcome: "reject",
@@ -100,7 +115,7 @@ function decideCore(opts: {
     };
   }
 
-  // 6. Reproduced but CVSS came back as "NONE" / score 0 — informational.
+  // 8. Reproduced but CVSS came back as "NONE" / score 0 — informational.
   if (opts.cvss && (opts.cvss.score === 0 || opts.cvss.severity === "NONE")) {
     return {
       outcome: "reject",
@@ -109,13 +124,157 @@ function decideCore(opts: {
     };
   }
 
-  // 7. Reproduced, in scope, not a dup, has impact → accept.
+  // 9. Reproduced, material claims verified, in scope, not a dup, has impact → accept.
   const severity = opts.cvss?.severity ?? "unspecified";
   return {
     outcome: "accept",
     reason: "confirmed",
     rationale: `Reproduced against the live target; CVSS severity ${severity}.`,
   };
+}
+
+function evaluateClaimGate(
+  claimVerification: ClaimVerificationResult | null | undefined,
+): Pick<TriageDecision, "outcome" | "reason" | "rationale"> | null {
+  if (!claimVerification) {
+    return {
+      outcome: "needs-info",
+      reason: "missing-info",
+      rationale:
+        "Live reproduction succeeded, but material report claims were not independently verified.",
+    };
+  }
+
+  const requiredClaims = claimVerification.claims.filter(
+    (claim) => claim.required,
+  );
+  const contradicted = requiredClaims.filter(
+    (claim) => claim.status === "contradicted",
+  );
+  if (contradicted.length > 0) {
+    return {
+      outcome: "reject",
+      reason: "unreproducible",
+      rationale: `Live evidence contradicts required report claim(s): ${formatClaimStatuses(contradicted)}.`,
+    };
+  }
+
+  const incomplete = requiredClaims.filter(
+    (claim) => claim.status === "partial" || claim.status === "untested",
+  );
+  if (incomplete.length > 0) {
+    return {
+      outcome: "reject",
+      reason: "informational",
+      rationale: `Live evidence only supports a weaker or untested version of required report claim(s), so this is treated as noise/informational until concrete security impact is demonstrated: ${formatClaimStatuses(incomplete)}.`,
+    };
+  }
+
+  return null;
+}
+
+function evaluateMetadataOnlyDisclosureGate(opts: {
+  report?: BountyReport;
+  verification: LiveVerificationResult | null;
+}): Pick<TriageDecision, "outcome" | "reason" | "rationale"> | null {
+  if (!opts.report || !opts.verification) return null;
+
+  const text = [
+    opts.report.title,
+    opts.report.vulnerabilityClass,
+    opts.report.description,
+    opts.report.impact,
+    opts.report.affectedComponent ?? "",
+    opts.verification.evidence,
+    opts.verification.observations,
+  ]
+    .join("\n")
+    .toLowerCase();
+
+  if (!looksLikeGenericMetadataDisclosure(text)) return null;
+  if (demonstratesConcreteAttackerHarm(text)) return null;
+
+  return {
+    outcome: "reject",
+    reason: "informational",
+    rationale:
+      "Live evidence shows only generic information disclosure or configuration metadata. This is treated as Informative unless the report actually demonstrates how an attacker can use the behavior to cause concrete harm (for example unauthorized data access, secret/token abuse, account/session impact, auth bypass, protected action execution, exploitable cache poisoning against a normally valid page, or payment/booking/donation impact).",
+  };
+}
+
+function looksLikeGenericMetadataDisclosure(text: string): boolean {
+  const indicators = [
+    "access key id",
+    "account id",
+    "authorization header",
+    "aws",
+    "bucket",
+    "cdn metadata",
+    "cloudfront",
+    "dependency version",
+    "error disclosure",
+    "framework version",
+    "hsts",
+    "iam role arn",
+    "implementation detail",
+    "internal header",
+    "internal path",
+    "kubernetes pod",
+    "missing https redirect",
+    "package version",
+    "public client",
+    "region disclosure",
+    "s3",
+    "server header",
+    "signed headers",
+    "source map",
+    "stack trace",
+    "verbose error",
+  ];
+
+  return indicators.some((indicator) => text.includes(indicator));
+}
+
+function demonstratesConcreteAttackerHarm(text: string): boolean {
+  const demonstrableText = removeNegatedSensitiveMaterialClaims(text);
+  const harmPatterns = [
+    /\b(account takeover|session hijack|session fixation)\b/,
+    /\b(auth(?:entication|orization)? bypass|privilege escalation)\b/,
+    /\b(booking|payment|donation)\b.*\b(created|modified|deleted|submitted|executed|completed)\b/,
+    /\b(exfiltrat(?:e|ed|ion)|unauthorized (?:access|read|write|data access))\b/,
+    /\b(secret access key|session token|auth token|api secret|password|private key)\b.*\b(disclosed|exposed|leaked|returned|usable|used)\b/,
+    /\b(successfully|confirmed)\b.*\b(accessed|modified|deleted|created|executed|submitted)\b/,
+    /\bvalid page\b.*\b(cache poisoning|poisoned|served to victim)\b/,
+    /\bprotected action\b.*\b(executed|performed|changed|created|deleted)\b/,
+  ];
+
+  return harmPatterns.some((pattern) => pattern.test(demonstrableText));
+}
+
+function removeNegatedSensitiveMaterialClaims(text: string): string {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => {
+      const mentionsSensitiveMaterial =
+        /\b(secret access key|session token|auth token|api secret|password|private key)\b/.test(
+          sentence,
+        );
+      const negatesDisclosure =
+        /\b(not|no|without|does not|did not|is not|are not|isn't|aren't)\b/.test(
+          sentence,
+        );
+
+      return !(mentionsSensitiveMaterial && negatesDisclosure);
+    })
+    .join(" ");
+}
+
+function formatClaimStatuses(
+  claims: ClaimVerificationResult["claims"],
+): string {
+  return claims
+    .map((claim) => `${claim.id}=${claim.status} (${claim.evidence})`)
+    .join("; ");
 }
 
 /**

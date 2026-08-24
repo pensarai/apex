@@ -18,7 +18,10 @@ function makeResult(overrides: Partial<TriageResult> = {}): TriageResult {
       description: "Reflected XSS",
       impact: "Session theft",
       pocSteps: ["GET /search?q=<x>"],
-      references: [],
+      references: [
+        "CWE-79: Improper Neutralization of Input During Web Page Generation",
+        "OWASP Testing Guide: Cross Site Scripting",
+      ],
     },
     scope: {
       inScope: true,
@@ -33,10 +36,29 @@ function makeResult(overrides: Partial<TriageResult> = {}): TriageResult {
       evidence: "200 OK; payload reflected",
       observations: "first attempt succeeded",
     },
+    claimVerification: {
+      summary: "All required material claims were verified.",
+      claims: [
+        {
+          id: "vulnerability-class",
+          claim: "The behavior is a Reflected XSS vulnerability.",
+          required: true,
+          status: "verified",
+          evidence: "payload reflected",
+        },
+        {
+          id: "security-impact",
+          claim: "The demonstrated security impact is: Session theft",
+          required: true,
+          status: "verified",
+          evidence: "payload executes in browser context",
+        },
+      ],
+    },
     cvss: {
       score: 8.2,
       severity: "HIGH",
-      vectorString: "CVSS:4.0/AV:N/AC:L",
+      vectorString: "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N",
       reasoning: "remote unauth",
     },
     threatModelAlignment: null,
@@ -105,6 +127,7 @@ describe("renderTriageMarkdown", () => {
     const md = renderTriageMarkdown(
       makeResult({
         verification: null,
+        claimVerification: null,
         cvss: null,
         decision: {
           outcome: "reject",
@@ -117,11 +140,37 @@ describe("renderTriageMarkdown", () => {
       }),
     );
     expect(md).toContain("_Verification was skipped._");
+    expect(md).toContain("_Claim verification was skipped._");
     expect(md).toContain("_CVSS scoring was skipped");
+  });
+
+  it("renders claim verification statuses", () => {
+    const md = renderTriageMarkdown(makeResult());
+    expect(md).toContain("## Claim verification");
+    expect(md).toContain("All required material claims were verified.");
+    expect(md).toContain("`verified`");
+    expect(md).toContain("payload reflected");
+  });
+
+  it("renders black-box remediation guidance without files changed", () => {
+    const md = renderTriageMarkdown(
+      makeResult({
+        remediation: {
+          filesChanged: [],
+          prTitle: "Remediation guidance: Reflected XSS in search",
+          prDescription: "Encode reflected output and add regression coverage.",
+        },
+      }),
+    );
+    expect(md).toContain("Remediation guidance: Reflected XSS in search");
+    expect(md).toContain("No source files were changed");
+    expect(md).not.toContain("### Files changed");
   });
 
   it("renders the suggested HackerOne action section with state + draft reply", () => {
     const md = renderTriageMarkdown(makeResult());
+    expect(md).toContain("## Submission readiness");
+    expect(md).toContain("Status: **Potentially submission-ready**");
     expect(md).toContain("## Suggested HackerOne action");
     expect(md).toContain("Transition to: **Triaged**");
     expect(md).toContain("### Draft reply to reporter");
@@ -131,5 +180,68 @@ describe("renderTriageMarkdown", () => {
   it("renders the host scope source under scope check", () => {
     const md = renderTriageMarkdown(makeResult());
     expect(md).toContain("Host scope source: `session-allowed-hosts`");
+  });
+
+  it("renders report references and CWEs when present", () => {
+    const md = renderTriageMarkdown(makeResult());
+    expect(md).toContain("### CWE / References");
+    expect(md).toContain(
+      "CWE-79: Improper Neutralization of Input During Web Page Generation",
+    );
+    expect(md).toContain("OWASP Testing Guide: Cross Site Scripting");
+  });
+
+  it("warns that generic information disclosure needs concrete impact", () => {
+    const md = renderTriageMarkdown(
+      makeResult({
+        report: {
+          ...makeResult().report,
+          title: "Verbose stack trace disclosure",
+          vulnerabilityClass: "Information Disclosure",
+          description:
+            "The endpoint returns a stack trace with internal paths and package versions.",
+          impact: "Reconnaissance value for attackers.",
+          references: [
+            "CWE-209: Generation of Error Message Containing Sensitive Information",
+          ],
+        },
+        verification: {
+          reproduced: true,
+          evidence:
+            "HTTP 500 includes /usr/src/app and express package version details.",
+          observations: "Stack trace confirmed.",
+        },
+        cvss: {
+          score: 5.3,
+          severity: "MEDIUM",
+          vectorString: "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+          reasoning: "Implementation metadata disclosure.",
+        },
+      }),
+    );
+
+    expect(md).toContain(
+      "Status: **Caution — submit only with a concrete impact chain**",
+    );
+    expect(md).toContain("generic information disclosure");
+    expect(md).toContain("Do not rely on stack traces");
+  });
+
+  it("marks rejected reports as not submission-ready", () => {
+    const md = renderTriageMarkdown(
+      makeResult({
+        decision: {
+          outcome: "reject",
+          reason: "informational",
+          rationale: "No concrete security impact.",
+          suggestedHackerOneState: "Informative",
+          draftReplyMessage: "Thanks, but this is informational.",
+        },
+        remediation: null,
+      }),
+    );
+
+    expect(md).toContain("Status: **Not submission-ready**");
+    expect(md).toContain("triage outcome is `reject` / `informational`");
   });
 });

@@ -9,7 +9,9 @@ import { PatchResultSchema } from "../patching/types";
 export const StructuredScopeAssetSchema = z.object({
   assetIdentifier: z
     .string()
-    .describe("Asset value — e.g. '*.example.com', 'com.acme.app', '127.0.0.1/32'"),
+    .describe(
+      "Asset value — e.g. '*.example.com', 'com.acme.app', '127.0.0.1/32'",
+    ),
   assetType: z
     .string()
     .describe("HackerOne asset type — e.g. 'URL', 'DOMAIN', 'CIDR', 'OTHER'"),
@@ -151,6 +153,45 @@ export type LiveVerificationResult = z.infer<
   typeof LiveVerificationResultSchema
 >;
 
+export const ClaimVerificationStatusSchema = z.enum([
+  "verified",
+  "contradicted",
+  "partial",
+  "untested",
+]);
+export type ClaimVerificationStatus = z.infer<
+  typeof ClaimVerificationStatusSchema
+>;
+
+export const MaterialClaimSchema = z.object({
+  id: z.string().describe("Stable identifier for this material claim"),
+  claim: z.string().describe("The concrete report claim being verified"),
+  required: z
+    .boolean()
+    .describe("Whether this claim must be verified before accepting"),
+});
+export type MaterialClaim = z.infer<typeof MaterialClaimSchema>;
+
+export const ClaimVerificationEntrySchema = MaterialClaimSchema.extend({
+  status: ClaimVerificationStatusSchema,
+  evidence: z
+    .string()
+    .describe(
+      "Concrete evidence supporting the status, or what was missing/contradicted",
+    ),
+});
+export type ClaimVerificationEntry = z.infer<
+  typeof ClaimVerificationEntrySchema
+>;
+
+export const ClaimVerificationResultSchema = z.object({
+  claims: z.array(ClaimVerificationEntrySchema),
+  summary: z.string().describe("Short rollup of the claim verification result"),
+});
+export type ClaimVerificationResult = z.infer<
+  typeof ClaimVerificationResultSchema
+>;
+
 export const ThreatModelAlignmentSchema = z.object({
   aligned: z
     .boolean()
@@ -241,6 +282,7 @@ export const TriageResultSchema = z.object({
   scope: ScopeCheckResultSchema,
   duplicate: DupCheckResultSchema,
   verification: LiveVerificationResultSchema.nullable(),
+  claimVerification: ClaimVerificationResultSchema.nullable(),
   cvss: CvssSummarySchema.nullable(),
   threatModelAlignment: ThreatModelAlignmentSchema.nullable(),
   decision: TriageDecisionSchema,

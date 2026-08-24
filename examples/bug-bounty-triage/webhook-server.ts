@@ -66,7 +66,10 @@ if (!SECRET) {
 // digest of the raw request body.
 // ---------------------------------------------------------------------------
 
-function verifyHackerOneSignature(rawBody: string, header: string | null): boolean {
+function verifyHackerOneSignature(
+  rawBody: string,
+  header: string | null,
+): boolean {
   if (!header || !SECRET) return false;
 
   const [algo, signature] = header.split("=", 2);
@@ -148,15 +151,16 @@ async function triageOne(rawPayload: string): Promise<void> {
   const pensarConfig = await appConfig.get();
 
   try {
-    const { result, triageMarkdownPath, decisionJsonPath } = await runTriageWorkflow({
-      reportPath: payloadPath,
-      target: TARGET,
-      cwd: process.cwd(),
-      output: outDir,
-      source: "hackerone",
-      eventBus: bus,
-      authConfig: buildAuthConfig(pensarConfig),
-    });
+    const { result, triageMarkdownPath, decisionJsonPath } =
+      await runTriageWorkflow({
+        reportPath: payloadPath,
+        target: TARGET,
+        cwd: process.cwd(),
+        output: outDir,
+        source: "hackerone",
+        eventBus: bus,
+        authConfig: buildAuthConfig(pensarConfig),
+      });
 
     console.log(
       `[triage-job] report=${reportId} done — ${result.decision.outcome} (${result.decision.reason}) → ${result.decision.suggestedHackerOneState ?? "no H1 state"}`,

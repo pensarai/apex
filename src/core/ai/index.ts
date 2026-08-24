@@ -8,6 +8,7 @@ export type {
   StreamResponseOpts,
 } from "./ai";
 export {
+  checkIfRateLimitError,
   DEFAULT_OPENAI_REASONING_EFFORT,
   generateObjectResponse,
   getOpenAIReasoningEfforts,

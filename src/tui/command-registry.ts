@@ -357,6 +357,11 @@ export const commands: CommandConfig[] = [
         valueHint: "<model>",
         description: "AI model to use",
       },
+      {
+        name: "--allow-source-remediation",
+        description:
+          "Allow source-code patch drafting when the cwd is a real source checkout",
+      },
     ],
     handler: async (args, ctx) => {
       let reportPath: string | undefined;
@@ -364,10 +369,15 @@ export const commands: CommandConfig[] = [
       let source: string | undefined;
       let outputDir: string | undefined;
       let model: string | undefined;
+      let allowSourceRemediation = false;
 
       for (let i = 0; i < args.length; i++) {
         const a = args[i];
         const next = args[i + 1];
+        if (a === "--allow-source-remediation") {
+          allowSourceRemediation = true;
+          continue;
+        }
         if (!next) continue;
         if (a === "--report" || a === "-r") reportPath = next;
         else if (a === "--target" || a === "-t") target = next;
@@ -398,6 +408,8 @@ export const commands: CommandConfig[] = [
       if (source) skillArgs.source = source;
       if (outputDir) skillArgs.output = outputDir;
       if (model) skillArgs.model = model;
+      if (allowSourceRemediation)
+        skillArgs["allow-source-remediation"] = "true";
 
       ctx.navigate({
         type: "operator",

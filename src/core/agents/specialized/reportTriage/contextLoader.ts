@@ -72,9 +72,7 @@ async function findLatestMarkdown(dir: string): Promise<string | null> {
  * is expected to degrade gracefully (e.g. skip threat-model alignment when
  * no threat model is present).
  */
-export async function loadProgramContext(
-  cwd: string,
-): Promise<ProgramContext> {
+export async function loadProgramContext(cwd: string): Promise<ProgramContext> {
   const bountyDir = join(cwd, BUG_BOUNTY_DIR);
   const threatDir = join(cwd, THREAT_MODELS_DIR);
 
@@ -86,7 +84,9 @@ export async function loadProgramContext(
       findLatestMarkdown(threatDir),
     ]);
 
-  const threatModel = threatModelPath ? await readOptional(threatModelPath) : null;
+  const threatModel = threatModelPath
+    ? await readOptional(threatModelPath)
+    : null;
 
   return {
     scope,

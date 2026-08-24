@@ -19,7 +19,8 @@ const CANONICAL_REPORT: BountyReport = {
     "GET /search?q=<script>alert(1)</script>",
     "Observe unencoded reflection",
   ],
-  pocCurl: "curl 'https://staging.example.com/search?q=<script>alert(1)</script>'",
+  pocCurl:
+    "curl 'https://staging.example.com/search?q=<script>alert(1)</script>'",
   references: [],
 };
 

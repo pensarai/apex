@@ -39,9 +39,8 @@ describe("reportToFindingShape", () => {
       reportToFindingShape(makeReport({ claimedSeverity: "UNKNOWN" })).severity,
     ).toBe("LOW");
     expect(
-      reportToFindingShape(
-        makeReport({ claimedSeverity: "INFORMATIONAL" }),
-      ).severity,
+      reportToFindingShape(makeReport({ claimedSeverity: "INFORMATIONAL" }))
+        .severity,
     ).toBe("LOW");
   });
 

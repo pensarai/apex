@@ -236,6 +236,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       target: input.target,
       abortSignal: input.abortSignal,
       model: input.model,
+      fallbackModels: input.fallbackModels,
       authConfig: input.authConfig,
       eventBus: this.eventBus,
       sandbox: input.sandbox,
@@ -393,6 +394,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       prompt: input.prompt,
       system: systemPrompt,
       model: input.model,
+      fallbackModels: input.fallbackModels,
       messages: input.messages,
       tools,
       activeTools,
@@ -503,6 +505,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     } finally {
       this.persistentShell?.dispose();
+      await this.browserSession?.disconnect().catch(() => {});
     }
 
     if (this.abortSignal?.aborted) {

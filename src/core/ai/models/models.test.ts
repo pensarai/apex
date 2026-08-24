@@ -105,6 +105,7 @@ describe("getMaxOutputTokens", () => {
     expect(getMaxOutputTokens("gpt-5")).toBe(128_000);
     expect(getMaxOutputTokens("gpt-5.5")).toBe(128_000);
     expect(getMaxOutputTokens("gpt-5.5-2026-04-23")).toBe(128_000);
+    expect(getMaxOutputTokens("gpt-5.6-sol")).toBe(128_000);
     expect(getMaxOutputTokens("gpt-5-mini")).toBe(128_000);
     expect(getMaxOutputTokens("gpt-4.1")).toBe(32_000);
     expect(getMaxOutputTokens("gpt-4o")).toBe(16_000);
@@ -121,6 +122,12 @@ describe("getMaxOutputTokens", () => {
   it("pins GPT-5.5 context metadata", () => {
     expect(getModelInfo("gpt-5.5").contextLength).toBe(1_050_000);
     expect(getModelInfo("gpt-5.5-2026-04-23").contextLength).toBe(1_050_000);
+  });
+
+  it("routes GPT-5.6 Sol to OpenAI", () => {
+    expect(getModelInfo("gpt-5.6-sol").provider).toBe("openai");
+    expect(getModelInfo("gpt-5.6-sol").contextLength).toBe(1_100_000);
+    expect(getModelInfo("gpt-5.6").provider).toBe("openai");
   });
 
   it("recognizes Google Gemini family budgets", () => {
@@ -146,6 +153,7 @@ describe("OpenAI reasoning effort support", () => {
   it("supports GPT-5.5 and o-series reasoning models", () => {
     expect(modelSupportsOpenAIReasoning("gpt-5.5")).toBe(true);
     expect(modelSupportsOpenAIReasoning("gpt-5.5-2026-04-23")).toBe(true);
+    expect(modelSupportsOpenAIReasoning("gpt-5.6-sol")).toBe(true);
     expect(modelSupportsOpenAIReasoning("o3-mini")).toBe(true);
   });
 

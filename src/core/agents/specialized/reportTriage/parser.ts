@@ -71,7 +71,9 @@ export async function parseReport(opts: {
   // 1. HackerOne fast-path.
   const tryHackerOne =
     source === "hackerone" ||
-    (source === "auto" && (ext === ".json" || isLikelyJson(raw)) && looksLikeHackerOnePayload(raw));
+    (source === "auto" &&
+      (ext === ".json" || isLikelyJson(raw)) &&
+      looksLikeHackerOnePayload(raw));
 
   if (tryHackerOne) {
     const h1 = parseHackerOneJson(raw);

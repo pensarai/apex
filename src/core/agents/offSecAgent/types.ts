@@ -82,6 +82,13 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   model: AIModel;
 
   /**
+   * Models to try after `model` is exhausted on a retryable
+   * provider-unavailable / capacity error. Forwarded to
+   * {@link streamResponse} and inherited by spawned workers.
+   */
+  fallbackModels?: AIModel[];
+
+  /**
    * Operating mode that controls which tools are available.
    *
    * - `"default"` — all tools in `activeTools` are available (default)
@@ -320,6 +327,12 @@ export type CommandCancelHandle = {
 export interface SpecializedAgentInput {
   /** AI model to drive the agent */
   model: AIModel;
+
+  /**
+   * Models to try after `model` is exhausted on a retryable
+   * provider-unavailable / capacity error. Inherited by spawned workers.
+   */
+  fallbackModels?: AIModel[];
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;

@@ -100,10 +100,7 @@ const WEBHOOK_ENVELOPE = {
       report: { data: { id: "12345", type: "report" } },
     },
   },
-  included: [
-    REPORT_API_PAYLOAD.data,
-    ...REPORT_API_PAYLOAD.included,
-  ],
+  included: [REPORT_API_PAYLOAD.data, ...REPORT_API_PAYLOAD.included],
 };
 
 describe("parseHackerOneJson", () => {

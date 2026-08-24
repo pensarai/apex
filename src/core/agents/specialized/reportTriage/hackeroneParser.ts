@@ -1,7 +1,4 @@
-import type {
-  BountyReport,
-  StructuredScopeAsset,
-} from "./types";
+import type { BountyReport, StructuredScopeAsset } from "./types";
 
 /**
  * Deterministic parser for HackerOne JSON payloads. Handles both:
@@ -49,7 +46,10 @@ export function parseHackerOneJson(raw: string): BountyReport | null {
     const relReportData = getField(relReport, "data");
     if (isReportResource(relReportData)) {
       reportResource = relReportData;
-    } else if (isJsonObject(relReportData) && typeof relReportData.id === "string") {
+    } else if (
+      isJsonObject(relReportData) &&
+      typeof relReportData.id === "string"
+    ) {
       // Webhook envelopes typically reference the report by id with the full
       // object in `included` — resolve via the JSON:API lookup table.
       const id = relReportData.id;
@@ -115,7 +115,9 @@ function mapReportResource(
   included: IncludedTable,
 ): BountyReport {
   const attrs = (resource.attributes as JsonObject) ?? {};
-  const rels = isJsonObject(resource.relationships) ? resource.relationships : {};
+  const rels = isJsonObject(resource.relationships)
+    ? resource.relationships
+    : {};
 
   const title = stringField(attrs.title) ?? "(untitled report)";
   const id = typeof resource.id === "string" ? resource.id : undefined;
@@ -154,7 +156,12 @@ function stringField(v: unknown): string | undefined {
 function mapSeverity(raw: string | undefined): BountyReport["claimedSeverity"] {
   if (!raw) return "UNKNOWN";
   const upper = raw.toUpperCase();
-  if (upper === "CRITICAL" || upper === "HIGH" || upper === "MEDIUM" || upper === "LOW") {
+  if (
+    upper === "CRITICAL" ||
+    upper === "HIGH" ||
+    upper === "MEDIUM" ||
+    upper === "LOW"
+  ) {
     return upper;
   }
   if (upper === "NONE") return "INFORMATIONAL";
@@ -225,7 +232,10 @@ interface ExtractedBody {
 
 const SECTION_HEADER = /^#{1,6}\s+(.+?)\s*$/;
 
-const SECTION_ALIASES: Record<string, "summary" | "steps" | "impact" | "url" | "attacker"> = {
+const SECTION_ALIASES: Record<
+  string,
+  "summary" | "steps" | "impact" | "url" | "attacker"
+> = {
   summary: "summary",
   description: "summary",
   details: "summary",
@@ -258,7 +268,8 @@ function extractFromVulnerabilityInformation(body: string): ExtractedBody {
 
   const sections = splitBySection(body);
 
-  const description = sections.summary ?? body.split(/\n#{1,6}\s/)[0]?.trim() ?? body;
+  const description =
+    sections.summary ?? body.split(/\n#{1,6}\s/)[0]?.trim() ?? body;
   const stepsBlock = sections.steps;
   const pocSteps = stepsBlock ? extractOrderedSteps(stepsBlock) : [];
   const pocCurl = extractFirstCodeBlock(stepsBlock ?? body);
@@ -274,9 +285,15 @@ function extractFromVulnerabilityInformation(body: string): ExtractedBody {
   };
 }
 
-function splitBySection(body: string): Partial<Record<"summary" | "steps" | "impact" | "url" | "attacker", string>> {
+function splitBySection(
+  body: string,
+): Partial<
+  Record<"summary" | "steps" | "impact" | "url" | "attacker", string>
+> {
   const lines = body.split(/\r?\n/);
-  const result: Partial<Record<"summary" | "steps" | "impact" | "url" | "attacker", string>> = {};
+  const result: Partial<
+    Record<"summary" | "steps" | "impact" | "url" | "attacker", string>
+  > = {};
 
   let currentKey: keyof typeof result | null = null;
   let buffer: string[] = [];
@@ -293,7 +310,9 @@ function splitBySection(body: string): Partial<Record<"summary" | "steps" | "imp
     const headerMatch = SECTION_HEADER.exec(line);
     if (headerMatch) {
       const normalized = headerMatch[1]!.toLowerCase().trim();
-      const key = SECTION_ALIASES[normalized] ?? SECTION_ALIASES[normalized.replace(/[^a-z]+/g, "")];
+      const key =
+        SECTION_ALIASES[normalized] ??
+        SECTION_ALIASES[normalized.replace(/[^a-z]+/g, "")];
       flush();
       currentKey = key ?? null;
       continue;
@@ -344,12 +363,14 @@ function inferClassFromTitle(title: string): string {
   // Last-resort fallback when weakness relationship is absent. Match a few
   // very common vuln-class keywords; otherwise return the raw title.
   const lower = title.toLowerCase();
-  if (/\bxss\b|cross[\s-]?site\s*scripting/.test(lower)) return "Cross-Site Scripting (XSS)";
+  if (/\bxss\b|cross[\s-]?site\s*scripting/.test(lower))
+    return "Cross-Site Scripting (XSS)";
   if (/sql\s*injection|sqli/.test(lower)) return "SQL Injection";
   if (/\bidor\b/.test(lower)) return "Insecure Direct Object Reference";
   if (/\bssrf\b/.test(lower)) return "Server-Side Request Forgery";
   if (/\brce\b|remote\s*code/.test(lower)) return "Remote Code Execution";
   if (/csrf/.test(lower)) return "Cross-Site Request Forgery";
-  if (/path\s*traversal|directory\s*traversal/.test(lower)) return "Path Traversal";
+  if (/path\s*traversal|directory\s*traversal/.test(lower))
+    return "Path Traversal";
   return title;
 }

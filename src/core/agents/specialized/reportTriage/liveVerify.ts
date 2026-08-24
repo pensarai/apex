@@ -27,9 +27,7 @@ function buildVerifyPrompt(opts: {
   target: string;
 }): string {
   const { report, target } = opts;
-  const steps = report.pocSteps
-    .map((s, i) => `${i + 1}. ${s}`)
-    .join("\n");
+  const steps = report.pocSteps.map((s, i) => `${i + 1}. ${s}`).join("\n");
 
   const curlSection = report.pocCurl
     ? `\n\n## Raw PoC request\n\`\`\`\n${report.pocCurl}\n\`\`\``

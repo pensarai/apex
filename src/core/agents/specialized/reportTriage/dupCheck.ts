@@ -1,5 +1,5 @@
-import type { Finding } from "../../offSecAgent";
 import type { FindingsRegistry } from "../../../findings/registry";
+import type { Finding } from "../../offSecAgent";
 import type { BountyReport, DupCheckResult } from "./types";
 
 function reportClaimedSeverityToFindingSeverity(

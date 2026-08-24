@@ -190,6 +190,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 131072,
   },
   {
+    id: "x-ai/grok-4.6",
+    name: "Grok 4.6",
+    provider: "openrouter",
+    contextLength: 500000,
+  },
+  {
     id: "x-ai/grok-4.1-fast:free",
     name: "Grok 4.1 Fast (Free)",
     provider: "openrouter",

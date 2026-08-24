@@ -1,12 +1,15 @@
 import { resolve as resolvePath } from "path";
-import type { AIAuthConfig, AIModel } from "../ai";
-import { ReportTriageAgent, defaultOutputDir } from "../agents/specialized/reportTriage";
+import { extractHostname } from "../agents/offSecAgent/tools/scopeGuard";
 import type {
   ReportSource,
   ReportTriageAgentRunResult,
   TriageResult,
 } from "../agents/specialized/reportTriage";
-import { extractHostname } from "../agents/offSecAgent/tools/scopeGuard";
+import {
+  defaultOutputDir,
+  ReportTriageAgent,
+} from "../agents/specialized/reportTriage";
+import type { AIAuthConfig, AIModel } from "../ai";
 import type { AgentEventBus } from "../eventBus";
 import type { SessionInfo } from "../session";
 import { sessions } from "../session";
@@ -42,6 +45,9 @@ export interface TriageWorkflowInput {
 
   /** Optional pre-existing findings directory to dedupe against. */
   findingsDir?: string;
+
+  /** Allow source-code patch generation instead of black-box remediation text. */
+  allowSourceRemediation?: boolean;
 }
 
 export interface TriageWorkflowResult {
@@ -101,6 +107,7 @@ export async function runTriageWorkflow(
     eventBus: input.eventBus,
     abortSignal: input.abortSignal,
     findingsDir: input.findingsDir,
+    allowSourceRemediation: input.allowSourceRemediation,
   });
 
   const runResult: ReportTriageAgentRunResult = await agent.run();

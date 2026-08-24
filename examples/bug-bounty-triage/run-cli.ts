@@ -29,7 +29,8 @@ const OUTPUT_DIR = join(HERE, "out");
 
 async function main() {
   const argv = process.argv.slice(2);
-  const target = getArg(argv, "--target") ?? "https://staging.acme-shop.example.com";
+  const target =
+    getArg(argv, "--target") ?? "https://staging.acme-shop.example.com";
 
   console.log("─".repeat(60));
   console.log("Bug Bounty Triage — programmatic example");
@@ -47,20 +48,23 @@ async function main() {
 
   const pensarConfig = await appConfig.get();
 
-  const { result, triageMarkdownPath, decisionJsonPath } = await runTriageWorkflow({
-    reportPath: FIXTURE_REPORT,
-    target,
-    // The fixtures directory contains .apex/bug-bounty/{scope,engagement,business-context}.md
-    // — `runTriageWorkflow` reads them from `cwd`.
-    cwd: FIXTURE_CWD,
-    output: OUTPUT_DIR,
-    source: "hackerone",
-    eventBus: bus,
-    authConfig: buildAuthConfig(pensarConfig),
-  });
+  const { result, triageMarkdownPath, decisionJsonPath } =
+    await runTriageWorkflow({
+      reportPath: FIXTURE_REPORT,
+      target,
+      // The fixtures directory contains .apex/bug-bounty/{scope,engagement,business-context}.md
+      // — `runTriageWorkflow` reads them from `cwd`.
+      cwd: FIXTURE_CWD,
+      output: OUTPUT_DIR,
+      source: "hackerone",
+      eventBus: bus,
+      authConfig: buildAuthConfig(pensarConfig),
+    });
 
   console.log(`\n${"─".repeat(60)}`);
-  console.log(`Decision:    ${result.decision.outcome} (${result.decision.reason})`);
+  console.log(
+    `Decision:    ${result.decision.outcome} (${result.decision.reason})`,
+  );
   if (result.decision.suggestedHackerOneState) {
     console.log(`H1 state:    ${result.decision.suggestedHackerOneState}`);
   }

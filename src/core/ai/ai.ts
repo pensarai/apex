@@ -83,7 +83,16 @@ function getContextWindow(modelId: string): number {
   return getModelInfo(modelId).contextLength ?? 200_000;
 }
 
-function checkIfRateLimitError(error: unknown): boolean {
+/**
+ * True for transient provider capacity / rate-limit failures that should
+ * be retried instead of killing the run.
+ *
+ * Reads both Bedrock (`$metadata.httpStatusCode`) and Vercel AI SDK
+ * `AI_APICallError` (`statusCode`, `data.error.type`, `responseBody`)
+ * so xAI/OpenRouter 502 `"at capacity"` / `provider_unavailable` is
+ * retryable — not just 429/503/"overloaded".
+ */
+export function checkIfRateLimitError(error: unknown): boolean {
   const errObj =
     typeof error === "object" && error !== null
       ? (error as Record<string, unknown>)
@@ -102,24 +111,56 @@ function checkIfRateLimitError(error: unknown): boolean {
     typeof errObj.name === "string" ? errObj.name : ""
   ).toLowerCase();
   // Bedrock HTTP-level errors include $metadata.httpStatusCode
-  const httpStatus =
+  const metadataStatus =
     typeof errObj.$metadata === "object" && errObj.$metadata !== null
       ? (errObj.$metadata as Record<string, unknown>).httpStatusCode
       : undefined;
+  // Vercel AI SDK AI_APICallError exposes statusCode / status
+  const statusCode =
+    typeof errObj.statusCode === "number"
+      ? errObj.statusCode
+      : typeof errObj.status === "number"
+        ? errObj.status
+        : undefined;
+  const httpStatus = metadataStatus ?? statusCode;
+
+  const data =
+    typeof errObj.data === "object" && errObj.data !== null
+      ? (errObj.data as Record<string, unknown>)
+      : undefined;
+  const nestedError =
+    data && typeof data.error === "object" && data.error !== null
+      ? (data.error as Record<string, unknown>)
+      : undefined;
+  const errorType = String(
+    nestedError?.type ?? data?.type ?? errObj.type ?? "",
+  ).toLowerCase();
+
+  const responseBody = (
+    typeof errObj.responseBody === "string" ? errObj.responseBody : ""
+  ).toLowerCase();
+
   // Stringified fallback for opaque error objects (e.g. Bedrock stream records)
   const errorString =
     errorMessage || errorName ? "" : String(error).toLowerCase();
 
+  const haystack = `${errorMessage} ${responseBody} ${errorString}`;
+
   return (
     // Message-based detection
-    errorMessage.includes("too many tokens") ||
-    errorMessage.includes("rate limit") ||
-    errorMessage.includes("request rate") ||
-    errorMessage.includes("throttl") ||
-    errorMessage.includes("overloaded") ||
-    errorMessage.includes("too many requests") ||
-    errorMessage.includes("please wait") ||
-    errorMessage.includes("service unavailable") ||
+    haystack.includes("too many tokens") ||
+    haystack.includes("rate limit") ||
+    haystack.includes("request rate") ||
+    haystack.includes("throttl") ||
+    haystack.includes("overloaded") ||
+    haystack.includes("too many requests") ||
+    haystack.includes("please wait") ||
+    haystack.includes("service unavailable") ||
+    haystack.includes("at capacity") ||
+    haystack.includes("provider_unavailable") ||
+    // Nested OpenRouter / xAI error type
+    errorType === "provider_unavailable" ||
+    errorType === "capacity" ||
     // AWS SDK exception names (ThrottlingException, TooManyRequestsException)
     errorName.includes("throttl") ||
     errorName.includes("toomanyrequests") ||
@@ -128,14 +169,12 @@ function checkIfRateLimitError(error: unknown): boolean {
     errorCode === "rate_limit_exceeded" ||
     errorCode === "throttling" ||
     errorCode === "429" ||
-    // HTTP status from AWS SDK $metadata
+    errorCode === "provider_unavailable" ||
+    // HTTP status: Bedrock $metadata and AI_APICallError.statusCode
     httpStatus === 429 ||
+    httpStatus === 502 ||
     httpStatus === 529 ||
-    httpStatus === 503 ||
-    // Fallback: stringified error for opaque Bedrock stream records
-    errorString.includes("throttl") ||
-    errorString.includes("too many") ||
-    errorString.includes("request rate")
+    httpStatus === 503
   );
 }
 
@@ -379,6 +418,46 @@ function wrapStreamWithErrorHandler(
                 return;
               }
 
+              // Same-model retries exhausted — try the next fallback model.
+              if (
+                !isCtxError &&
+                checkIfRateLimitError(error) &&
+                opts.fallbackModels &&
+                opts.fallbackModels.length > 0
+              ) {
+                const [nextModel, ...rest] = opts.fallbackModels;
+                if (!silent) {
+                  console.warn(
+                    `Provider unavailable after ${rateLimitRetryCount} retries on ${opts.model}; switching to fallback model ${nextModel}`,
+                  );
+                }
+
+                const fallbackOpts = {
+                  ...opts,
+                  model: nextModel,
+                  fallbackModels: rest,
+                  messages:
+                    messagesContainer.current.length > 0
+                      ? messagesContainer.current
+                      : undefined,
+                };
+                const fallbackStream = streamResponse(fallbackOpts);
+                const wrappedFallback = wrapStreamWithErrorHandler(
+                  fallbackStream,
+                  messagesContainer,
+                  fallbackOpts,
+                  getProviderModel(nextModel, opts.authConfig),
+                  silent,
+                  0,
+                  idleResumeCount,
+                );
+
+                for await (const chunk of wrappedFallback.fullStream) {
+                  yield chunk;
+                }
+                return;
+              }
+
               if (isCtxError) {
                 let currentMessages: ModelMessage[] = messagesContainer.current;
                 try {
@@ -589,7 +668,9 @@ export function modelSupportsOpenAIReasoning(modelId: string): boolean {
   const { provider } = getModelInfo(modelId);
   if (provider !== "openai") return false;
   return (
-    OPENAI_REASONING_MODEL_IDS.has(modelId) || /^o[134](?:\b|-)/.test(modelId)
+    OPENAI_REASONING_MODEL_IDS.has(modelId) ||
+    /^o[134](?:\b|-)/.test(modelId) ||
+    /^gpt-5\.6(?:\b|-)/.test(modelId)
   );
 }
 
@@ -597,7 +678,7 @@ export function getOpenAIReasoningEfforts(
   modelId: string,
 ): OpenAIReasoningEffort[] {
   if (!modelSupportsOpenAIReasoning(modelId)) return [];
-  if (/^gpt-5\.5(?:\b|-)/.test(modelId)) {
+  if (/^gpt-5\.(?:5|6)(?:\b|-)/.test(modelId)) {
     return ["none", "low", "medium", "high", "xhigh"];
   }
   return ["low", "medium", "high"];
@@ -650,6 +731,12 @@ export interface StreamResponseOpts {
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
   /** Session root path — used by context management layers to persist truncated tool results */
   sessionPath?: string;
+  /**
+   * Models to try after `model` is exhausted on a retryable
+   * provider-unavailable / capacity error. Each switch resets the
+   * per-model retry budget. Workers inherit this list.
+   */
+  fallbackModels?: AIModel[];
   /**
    * Internal: recovery-recursion depth. Bumped at each summarize → resume
    * boundary; throws `ContextLengthExhaustedError` past `MAX_RESTART_DEPTH`.
@@ -839,12 +926,7 @@ export function streamResponse(
         return undefined;
       },
       onError: async ({ error }: { error: unknown }) => {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        if (
-          errorMessage.toLowerCase().includes("too many tokens") ||
-          errorMessage.toLowerCase().includes("overloaded")
-        ) {
+        if (checkIfRateLimitError(error)) {
           rateLimitRetryCount++;
           await new Promise((resolve) =>
             setTimeout(resolve, 1000 * rateLimitRetryCount),

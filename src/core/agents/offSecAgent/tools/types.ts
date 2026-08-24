@@ -33,6 +33,12 @@ export type ToolContext = {
   /** AI model — needed by tools that delegate to sub-agents */
   model?: AIModel;
 
+  /**
+   * Fallback models inherited by spawned workers when the primary
+   * model is at capacity.
+   */
+  fallbackModels?: AIModel[];
+
   /** Per-provider API key overrides — needed by tools that spawn sub-agents */
   authConfig?: AIAuthConfig;
 

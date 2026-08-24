@@ -4,7 +4,10 @@ import {
   type AIModel,
   generateObjectResponse,
 } from "../../../ai";
-import { extractHostname, isHostAllowed } from "../../offSecAgent/tools/scopeGuard";
+import {
+  extractHostname,
+  isHostAllowed,
+} from "../../offSecAgent/tools/scopeGuard";
 import type {
   BountyReport,
   ProgramContext,
@@ -118,7 +121,9 @@ function checkHostScope(opts: {
   // Prefer H1-declared structured scopes when present — they came from the
   // program's official scope list and are authoritative.
   if (opts.structuredScopes && opts.structuredScopes.length > 0) {
-    const allowed = deriveAllowedHostsFromStructuredScopes(opts.structuredScopes);
+    const allowed = deriveAllowedHostsFromStructuredScopes(
+      opts.structuredScopes,
+    );
     if (allowed.length === 0) {
       // The program has structured_scopes but none of them are URL-typed
       // assets. Fall back to session.allowedHosts in this case.

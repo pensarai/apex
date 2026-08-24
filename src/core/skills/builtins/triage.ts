@@ -31,7 +31,7 @@ export const triageSkill: BuiltInSkill = {
   manifest: {
     name: "Bug Bounty Triage",
     description:
-      "Triage an inbound bug bounty report — scope, dedup, live PoC re-verification, CVSS recalibration, and a remediation draft",
+      "Triage an inbound bug bounty report — scope, dedup, live PoC re-verification, claim verification, CVSS recalibration, and remediation guidance",
     tags: ["security", "appsec", "bug-bounty", "triage"],
     inputs: [
       {
@@ -58,7 +58,14 @@ export const triageSkill: BuiltInSkill = {
       },
       {
         name: "cwd",
-        description: "Repository root for program-context files and remediation drafting (default: process cwd)",
+        description:
+          "Repository root for program-context files and remediation drafting (default: process cwd)",
+        required: false,
+      },
+      {
+        name: "allow-source-remediation",
+        description:
+          "Set to true only when cwd is the real application source checkout and source patch drafting is explicitly desired",
         required: false,
       },
     ],
@@ -78,21 +85,24 @@ Your job is to run the triage workflow end-to-end. The workflow performs, in ord
 3. **Scope check** — host-level against the session's allowedHosts, then policy-level against scope.md and engagement.md.
 4. **Duplicate check** — against the configured findings registry. Returns a duplicate match-type (\`exact\`, \`application-wide\`, or \`none\`).
 5. **Live PoC re-verification** — attempt the reporter's PoC against the live target using only HTTP and shell commands. All traffic is bounded by the session's scope constraints.
-6. **CVSS recalibration** — score the reproduced finding with CVSS 4.0.
-7. **Threat-model alignment** — map the reproduced finding onto the threat model and detect any explicit accepted-risk declaration.
-8. **Decide** — accept / reject / needs-info with one of the canonical reasons (\`confirmed\`, \`out-of-scope\`, \`duplicate\`, \`unreproducible\`, \`informational\`, \`business-accepted-risk\`, \`missing-info\`).
-9. **Remediation draft** (only when accepted) — produce a PR title, PR description, and a list of files-to-change via the patching agent.
-10. **Write outputs** — \`triage.md\` (human-readable, with the remediation draft embedded as a section) and \`decision.json\` (schema-validated TriageResult).
+6. **Claim verification** — verify each material report claim against the live evidence with claim-level statuses (\`verified\`, \`contradicted\`, \`partial\`, \`untested\`).
+7. **CVSS recalibration** — score the reproduced finding only after required material claims are verified, then emit HackerOne-compatible CVSS 3.0.
+8. **Threat-model alignment** — map the reproduced finding onto the threat model and detect any explicit accepted-risk declaration.
+9. **Decide** — accept / reject / needs-info with one of the canonical reasons (\`confirmed\`, \`out-of-scope\`, \`duplicate\`, \`unreproducible\`, \`informational\`, \`business-accepted-risk\`, \`missing-info\`).
+10. **Remediation guidance** (only when accepted) — produce textual remediation guidance by default. Do not synthesize code patches for black-box targets.
+11. **Write outputs** — \`triage.md\` (human-readable, with the remediation guidance embedded as a section) and \`decision.json\` (schema-validated TriageResult).
 
 # Output expectations
 
 - The triage markdown is the human-readable artifact. The decision JSON is the machine-readable one.
 - Do not write any other files in the output directory.
-- The remediation draft must live inside \`triage.md\` as a "Suggested remediation" section — do NOT write a separate diff or patch file.
+- The remediation guidance must live inside \`triage.md\` as a "Suggested remediation" section — do NOT write a separate diff or patch file.
 
 # Rules
 
 - Never declare \`accept\` without reproduction evidence. If verification did not reproduce, the only valid outcomes are \`reject:unreproducible\` or \`needs-info\`.
+- Never declare \`accept\` unless every required material report claim is \`verified\`. Contradicted claims should reject; partial or untested required claims should request more information.
+- Do not generate source-code remediation unless \`allow-source-remediation\` is explicitly true and \`cwd\` is the actual target source checkout. Black-box triage should produce textual remediation guidance only.
 - Quote the failing policy line verbatim when rejecting as out-of-scope.
 - Do not silently degrade: if a step fails for an infrastructure reason (e.g. target unreachable), surface that in the decision rationale rather than producing a confident \`reject\`.
 `,

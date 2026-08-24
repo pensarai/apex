@@ -3,27 +3,32 @@ export {
   type ReportTriageAgentInput,
   type ReportTriageAgentRunResult,
 } from "./agent";
+export { buildMaterialClaims, verifyReportClaims } from "./claimVerifier";
 export { loadProgramContext } from "./contextLoader";
 export { deriveDecision } from "./decisionLogic";
 export { checkDuplicate, reportToFindingShape } from "./dupCheck";
+export { parseHackerOneJson } from "./hackeroneParser";
 export { runLiveVerification } from "./liveVerify";
 export { parseReport, type ReportSource } from "./parser";
-export { parseHackerOneJson } from "./hackeroneParser";
 export {
   defaultOutputDir,
   renderTriageMarkdown,
-  writeTriageOutputs,
   type WriteOutputsInput,
   type WriteOutputsResult,
+  writeTriageOutputs,
 } from "./reportWriter";
 export { checkScope } from "./scopeCheck";
 export { alignWithThreatModel } from "./threatModelAlign";
 export type {
   BountyReport,
+  ClaimVerificationEntry,
+  ClaimVerificationResult,
+  ClaimVerificationStatus,
   CvssSummary,
   DupCheckResult,
   HackerOneState,
   LiveVerificationResult,
+  MaterialClaim,
   ProgramContext,
   ScopeCheckResult,
   StructuredScopeAsset,
@@ -35,6 +40,9 @@ export type {
 } from "./types";
 export {
   BountyReportSchema,
+  ClaimVerificationEntrySchema,
+  ClaimVerificationResultSchema,
+  ClaimVerificationStatusSchema,
   CvssSummarySchema,
   DupCheckResultSchema,
   LiveVerificationResultSchema,

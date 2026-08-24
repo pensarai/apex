@@ -3,23 +3,26 @@ import type { AIAuthConfig, AIModel } from "../../../ai";
 import type { AgentEventBus } from "../../../eventBus";
 import { FindingsRegistry } from "../../../findings/registry";
 import type { SessionInfo } from "../../../session";
+import { scoreFindingWithCVSS } from "../cvssScorer";
 import { PatchingAgent } from "../patching/agent";
 import type { PatchResult, VulnerabilityDetails } from "../patching/types";
-import { scoreFindingWithCVSS } from "../cvssScorer";
+import { verifyReportClaims } from "./claimVerifier";
 import { loadProgramContext } from "./contextLoader";
-import { checkDuplicate } from "./dupCheck";
+import { convertCvss4ToHackerOneCvss3 } from "./cvss3";
 import { deriveDecision } from "./decisionLogic";
+import { checkDuplicate } from "./dupCheck";
 import { runLiveVerification } from "./liveVerify";
 import { parseReport, type ReportSource } from "./parser";
 import {
   defaultOutputDir,
-  writeTriageOutputs,
   type WriteOutputsResult,
+  writeTriageOutputs,
 } from "./reportWriter";
 import { checkScope } from "./scopeCheck";
 import { alignWithThreatModel } from "./threatModelAlign";
 import type {
   BountyReport,
+  ClaimVerificationResult,
   CvssSummary,
   LiveVerificationResult,
   ThreatModelAlignment,
@@ -66,6 +69,13 @@ export interface ReportTriageAgentInput {
   authConfig?: AIAuthConfig;
   eventBus?: AgentEventBus;
   abortSignal?: AbortSignal;
+
+  /**
+   * When true, accepted triage findings may invoke the source-patching agent.
+   * Defaults to false because bug-bounty triage commonly runs against a
+   * black-box target where the local cwd is program context, not app source.
+   */
+  allowSourceRemediation?: boolean;
 }
 
 export interface ReportTriageAgentRunResult {
@@ -85,11 +95,12 @@ export interface ReportTriageAgentRunResult {
  *   3. Scope check           (scopeCheck.ts) — short-circuit on fail
  *   4. Duplicate check       (dupCheck.ts)   — short-circuit on dup
  *   5. Live verification     (liveVerify.ts → OffensiveSecurityAgent sub-run)
- *   6. CVSS recalibration    (cvssScorer)
- *   7. Threat-model alignment (threatModelAlign.ts)
- *   8. Decision              (decisionLogic.ts)
- *   9. Remediation draft     (PatchingAgent) — only when decision = accept
- *  10. Write outputs         (reportWriter.ts)
+ *   6. Claim verification    (claimVerifier.ts)
+ *   7. CVSS recalibration    (cvssScorer)
+ *   8. Threat-model alignment (threatModelAlign.ts)
+ *   9. Decision              (decisionLogic.ts)
+ *  10. Remediation draft     (textual by default; patching only when enabled)
+ *  11. Write outputs         (reportWriter.ts)
  */
 export class ReportTriageAgent {
   constructor(private readonly input: ReportTriageAgentInput) {}
@@ -132,6 +143,7 @@ export class ReportTriageAgent {
         scope,
         duplicate: { duplicate: false, matchType: "none" },
         verification: null,
+        claimVerification: null,
         cvss: null,
         threatModelAlignment: null,
         remediation: null,
@@ -150,6 +162,7 @@ export class ReportTriageAgent {
         scope,
         duplicate,
         verification: null,
+        claimVerification: null,
         cvss: null,
         threatModelAlignment: null,
         remediation: null,
@@ -167,10 +180,24 @@ export class ReportTriageAgent {
       abortSignal: input.abortSignal,
     });
 
-    // 6 + 7 run in parallel — neither depends on the other.
+    // 6. Claim verification — reproduced=true is only a coarse signal. The
+    // final decision gates on the status of each required material claim.
+    const claimVerification = verification.reproduced
+      ? await verifyReportClaims({
+          report,
+          verification,
+          model: input.model,
+          authConfig: input.authConfig,
+          abortSignal: input.abortSignal,
+        })
+      : null;
+
+    // 7 + 8 run in parallel — neither depends on the other. Skip them until
+    // the material claim gate is satisfied.
+    const claimsVerified = requiredClaimsVerified(claimVerification);
     const [cvss, threatModelAlignment] = await Promise.all([
-      this.scoreIfReproduced(report, verification),
-      verification.reproduced
+      claimsVerified ? this.scoreIfReproduced(report, verification) : null,
+      claimsVerified
         ? alignWithThreatModel({
             report,
             verification,
@@ -187,6 +214,7 @@ export class ReportTriageAgent {
       scope,
       duplicate,
       verification,
+      claimVerification,
       report,
       cvss,
       threatModelAlignment,
@@ -209,6 +237,7 @@ export class ReportTriageAgent {
       scope,
       duplicate,
       verification,
+      claimVerification,
       cvss,
       threatModelAlignment,
       remediation,
@@ -250,12 +279,7 @@ export class ReportTriageAgent {
       this.input.abortSignal,
     );
 
-    return {
-      score: scorerResult.score,
-      severity: scorerResult.severity,
-      vectorString: scorerResult.vectorString,
-      reasoning: scorerResult.reasoning,
-    };
+    return convertCvss4ToHackerOneCvss3(scorerResult);
   }
 
   private async draftRemediation(opts: {
@@ -263,6 +287,10 @@ export class ReportTriageAgent {
     verification: LiveVerificationResult;
     cvss: CvssSummary | null;
   }): Promise<PatchResult> {
+    if (!this.input.allowSourceRemediation) {
+      return this.draftTextRemediation(opts);
+    }
+
     const vuln: VulnerabilityDetails = {
       name: opts.report.title,
       severity: opts.cvss?.severity ?? opts.report.claimedSeverity,
@@ -286,6 +314,36 @@ export class ReportTriageAgent {
     return patching.consume();
   }
 
+  private draftTextRemediation(opts: {
+    report: BountyReport;
+    verification: LiveVerificationResult;
+    cvss: CvssSummary | null;
+  }): PatchResult {
+    const severity = opts.cvss?.severity ?? opts.report.claimedSeverity;
+
+    return {
+      filesChanged: [],
+      prTitle: `Remediation guidance: ${opts.report.title}`,
+      prDescription: [
+        `Recommended remediation for ${severity} ${opts.report.vulnerabilityClass}:`,
+        "",
+        `- Review the affected location: ${opts.report.affectedUrl}`,
+        opts.report.affectedComponent
+          ? `- Review the affected component: ${opts.report.affectedComponent}`
+          : null,
+        `- Implement the appropriate server-side control for this vulnerability class rather than relying on client-side validation or URL parsing assumptions.`,
+        `- Add regression coverage that exercises the reproduced PoC and verifies the vulnerable behavior is blocked.`,
+        "",
+        "No source patch was generated because triage is running in black-box mode without an explicitly enabled source checkout.",
+        "",
+        "Reproduction evidence:",
+        opts.verification.evidence,
+      ]
+        .filter((line): line is string => line !== null)
+        .join("\n"),
+    };
+  }
+
   private async finalize(opts: {
     report: BountyReport;
     reportPath: string;
@@ -293,6 +351,7 @@ export class ReportTriageAgent {
     scope: TriageResult["scope"];
     duplicate: TriageResult["duplicate"];
     verification: LiveVerificationResult | null;
+    claimVerification: ClaimVerificationResult | null;
     cvss: CvssSummary | null;
     threatModelAlignment: ThreatModelAlignment | null;
     remediation: PatchResult | null;
@@ -301,6 +360,7 @@ export class ReportTriageAgent {
       scope: opts.scope,
       duplicate: opts.duplicate,
       verification: opts.verification,
+      claimVerification: opts.claimVerification,
       cvss: opts.cvss,
       threatModelAlignment: opts.threatModelAlignment,
       report: opts.report,
@@ -315,6 +375,7 @@ export class ReportTriageAgent {
       scope: opts.scope,
       duplicate: opts.duplicate,
       verification: opts.verification,
+      claimVerification: opts.claimVerification,
       cvss: opts.cvss,
       threatModelAlignment: opts.threatModelAlignment,
       decision,
@@ -328,4 +389,13 @@ export class ReportTriageAgent {
 
     return { result, outputs };
   }
+}
+
+function requiredClaimsVerified(
+  claimVerification: ClaimVerificationResult | null,
+): boolean {
+  if (!claimVerification) return false;
+  return claimVerification.claims
+    .filter((claim) => claim.required)
+    .every((claim) => claim.status === "verified");
 }

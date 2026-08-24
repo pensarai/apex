@@ -11,8 +11,25 @@ import { OPENAI_MODELS } from "./openai";
 import { OPENROUTER_MODELS } from "./openrouter";
 import { PENSAR_MODELS } from "./pensar";
 
+/** Not yet in the generated `@ai-sdk/openai` union. Keep ahead of `generate:models`. */
+const CURATED_OPENAI_MODELS: ModelInfo[] = [
+  {
+    id: "gpt-5.6-sol",
+    name: "GPT-5.6 Sol",
+    provider: "openai",
+    contextLength: 1_100_000,
+  },
+  {
+    id: "gpt-5.6",
+    name: "GPT-5.6",
+    provider: "openai",
+    contextLength: 1_100_000,
+  },
+];
+
 export const AVAILABLE_MODELS: ModelInfo[] = [
   ...ANTHROPIC_MODELS,
+  ...CURATED_OPENAI_MODELS,
   ...OPENAI_MODELS,
   ...GOOGLE_MODELS,
   ...BEDROCK_MODELS,
@@ -133,6 +150,9 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   }
   if (modelId.includes("gemini-2.5")) {
     return 65_000;
+  }
+  if (modelId.includes("grok-4.6") || modelId.includes("grok-4-6")) {
+    return 32_000;
   }
   // Version-less `*-latest` aliases (registered with 1M context) point to
   // current top-tier Gemini, NOT the legacy 2.0/1.5 generations. Match

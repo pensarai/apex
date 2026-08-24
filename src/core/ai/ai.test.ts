@@ -1,7 +1,87 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { streamResponse } from "./ai";
+import { checkIfRateLimitError, streamResponse } from "./ai";
 import { consumeStream } from "./utils";
+
+describe("checkIfRateLimitError", () => {
+  it("retries xAI 502 provider_unavailable with at-capacity body", () => {
+    expect(
+      checkIfRateLimitError({
+        name: "AI_APICallError",
+        message: "The model is currently at capacity due to high demand",
+        statusCode: 502,
+        data: {
+          error: {
+            message: "The model is currently at capacity due to high demand",
+            type: "provider_unavailable",
+          },
+        },
+        responseBody:
+          '{"error":{"message":"The model is currently at capacity due to high demand","type":"provider_unavailable"}}',
+      }),
+    ).toBe(true);
+  });
+
+  it("retries statusCode 502 even without a capacity message", () => {
+    expect(
+      checkIfRateLimitError({
+        name: "AI_APICallError",
+        message: "Bad Gateway",
+        statusCode: 502,
+      }),
+    ).toBe(true);
+  });
+
+  it("retries nested data.error.type provider_unavailable without statusCode", () => {
+    expect(
+      checkIfRateLimitError({
+        message: "upstream failed",
+        data: { error: { type: "provider_unavailable" } },
+      }),
+    ).toBe(true);
+  });
+
+  it("retries when only responseBody mentions at capacity", () => {
+    expect(
+      checkIfRateLimitError({
+        message: "Request failed",
+        responseBody: "the model is at capacity",
+      }),
+    ).toBe(true);
+  });
+
+  it("still retries classic 429 / 503 / overloaded shapes", () => {
+    expect(checkIfRateLimitError({ message: "Rate limit exceeded" })).toBe(
+      true,
+    );
+    expect(checkIfRateLimitError({ message: "overloaded" })).toBe(true);
+    expect(checkIfRateLimitError({ $metadata: { httpStatusCode: 429 } })).toBe(
+      true,
+    );
+    expect(checkIfRateLimitError({ $metadata: { httpStatusCode: 503 } })).toBe(
+      true,
+    );
+    expect(checkIfRateLimitError({ statusCode: 429 })).toBe(true);
+  });
+
+  it("does not retry auth or not-found errors", () => {
+    expect(
+      checkIfRateLimitError({
+        name: "AI_APICallError",
+        message: "Unauthorized",
+        statusCode: 401,
+      }),
+    ).toBe(false);
+    expect(
+      checkIfRateLimitError({
+        name: "AI_APICallError",
+        message: "Not found",
+        statusCode: 404,
+      }),
+    ).toBe(false);
+    expect(checkIfRateLimitError(new Error("invalid api key"))).toBe(false);
+  });
+});
 
 // Skip tests if API keys are not available (e.g., in CI)
 const hasApiKeys = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;

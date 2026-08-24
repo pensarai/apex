@@ -12,7 +12,7 @@ import { type AIModel, buildAuthConfig } from "./core/ai";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
-import type { SessionInfo } from "./core/session";
+import type { SessionConfig, SessionInfo } from "./core/session";
 import {
   combinePromptParts,
   resolveFlagValue,
@@ -222,11 +222,14 @@ pentest options:
 
 targeted-pentest options:
   --target <url>          (required) Target URL / domain / IP
-  --objective <text>      (required, repeatable) Testing objective
+  --objective <text>      (required, repeatable) Testing objective. Prefix with @ to load a file
   --model <model>         AI model (default: auto-selected from configured provider)
+  --fallback-model <id>   Fallback model if the primary is at capacity (repeatable)
+  --cwd <path>            Agent working directory (default: process cwd)
   --header "Name: Value"  Custom HTTP header (repeatable)
   --headers-from <file>   Load headers from a JSON object or Name:Value file
   --no-global-headers     Skip the global defaultHeaders snapshot
+  --allow-host <host>     Extra in-scope host (repeatable; not eTLD-expanded)
 
 threat-model options:
   --output, -o <path>  Output file path (default: ./threat-model.md)
@@ -240,6 +243,7 @@ triage options:
   --findings <dir>     Existing findings directory to dedupe against
   --cwd <path>         Repository root (default: process cwd)
   --model <model>      AI model (default: auto-selected from configured provider)
+  --allow-source-remediation  Allow source patch drafting when cwd is real app source
 
 Global options:
   -h, --help         Show this help message
@@ -337,6 +341,7 @@ POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}`);
 async function runTargetedPentest() {
   const { config } = await import("dotenv");
   config();
+  config({ path: ".env.local" });
 
   const { runTargetedPentestAgent } = await import(
     "./core/api/targetedPentest"
@@ -345,7 +350,10 @@ async function runTargetedPentest() {
   const { config: appConfig } = await import("./core/config");
 
   const target = getArgRequired("--target");
-  const objectives = getAllArgs("--objective");
+  const objectives = getAllArgs("--objective").map(resolveFlagValue);
+  const allowHosts = getAllArgs("--allow-host");
+  const cwd = getArg("--cwd") ?? process.cwd();
+  const fallbackModels = getAllArgs("--fallback-model") as AIModel[];
 
   const pensarConfig = await appConfig.get();
   const model = await resolveCliModel();
@@ -359,20 +367,30 @@ async function runTargetedPentest() {
   const objectivesList = objectives
     .map((o, i) => `  ${i + 1}. ${o}`)
     .join("\n");
+  const allowHostsLine =
+    allowHosts.length > 0 ? `\nAllow hosts: ${allowHosts.join(", ")}` : "";
+  const fallbackLine =
+    fallbackModels.length > 0 ? `\nFallback: ${fallbackModels.join(", ")}` : "";
   console.log(`${sep}
 TARGETED PENTEST
 ${sep}
-Target:  ${target}
-Model:   ${model}
+Target:  ${target}${allowHostsLine}
+Cwd:     ${cwd}
+Model:   ${model}${fallbackLine}
 Objectives:
 ${objectivesList}
 `);
 
   const headers = await resolveCliHeaders();
+  const sessionConfig: SessionConfig = { agentCwd: cwd };
+  if (headers !== undefined) sessionConfig.headers = headers;
+  if (allowHosts.length > 0) {
+    sessionConfig.scopeConstraints = { allowedHosts: allowHosts };
+  }
   const session = await sessions.create({
     name: "Targeted Pentest",
     targets: [target],
-    ...(headers !== undefined ? { config: { headers } } : {}),
+    config: sessionConfig,
   });
 
   const { bus: targetedBus, cleanup: wandbCleanup } =
@@ -384,6 +402,7 @@ ${objectivesList}
       objectives,
       session,
       model,
+      ...(fallbackModels.length > 0 ? { fallbackModels } : {}),
       authConfig: buildAuthConfig(pensarConfig),
       eventBus: targetedBus,
     });
@@ -469,8 +488,11 @@ async function runTriage() {
   const outputArg = getArg("--output") ?? getArg("-o");
   const findingsDir = getArg("--findings");
   const cwdArg = getArg("--cwd") ?? process.cwd();
+  const allowSourceRemediation = hasFlag("--allow-source-remediation");
 
-  const cwd = path.isAbsolute(cwdArg) ? cwdArg : path.resolve(process.cwd(), cwdArg);
+  const cwd = path.isAbsolute(cwdArg)
+    ? cwdArg
+    : path.resolve(process.cwd(), cwdArg);
   const reportPath = path.isAbsolute(reportArg)
     ? reportArg
     : path.resolve(process.cwd(), reportArg);
@@ -493,8 +515,8 @@ Model:    ${model}
   const bus = new AgentEventBus();
   attachCliAgentStreamListeners(bus);
 
-  const { result, triageMarkdownPath, decisionJsonPath } = await runTriageWorkflow(
-    {
+  const { result, triageMarkdownPath, decisionJsonPath } =
+    await runTriageWorkflow({
       reportPath,
       target,
       cwd,
@@ -504,8 +526,8 @@ Model:    ${model}
       authConfig: buildAuthConfig(pensarConfig),
       eventBus: bus,
       findingsDir,
-    },
-  );
+      allowSourceRemediation,
+    });
 
   console.log(`\n${sep}
 COMPLETE

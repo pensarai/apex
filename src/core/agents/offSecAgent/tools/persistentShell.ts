@@ -565,7 +565,8 @@ export class PersistentShell {
 
       const p = this.proc;
       const pid = p.pid;
-      setTimeout(() => {
+      p.unref?.();
+      const termTimer = setTimeout(() => {
         // Kill the whole process group so detached children die too.
         if (pid && process.platform !== "win32") {
           try {
@@ -579,7 +580,7 @@ export class PersistentShell {
         } catch {
           // already dead
         }
-        setTimeout(() => {
+        const killTimer = setTimeout(() => {
           if (pid && process.platform !== "win32") {
             try {
               process.kill(-pid, "SIGKILL");
@@ -593,7 +594,9 @@ export class PersistentShell {
             // already dead
           }
         }, 2_000);
+        killTimer.unref();
       }, 1_000);
+      termTimer.unref();
     }
 
     this.alive = false;

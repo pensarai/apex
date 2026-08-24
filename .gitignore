@@ -58,6 +58,7 @@ build
 .benchmark-logs
 
 .apex-cache
+.apex/bug-bounty/local/
 # SST auto-generated env types
 sst-env.d.ts
 
