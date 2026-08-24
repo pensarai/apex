@@ -1,6 +1,6 @@
 # Whitebox hypotheses — `@vercel/sandbox` 3.1.0
 
-Source: vendored npm dist at [vendor/vercel-sandbox/](vendor/vercel-sandbox/). Client-only defects are out of scope; each hypothesis is a **server** behavior to prove or kill with one live probe.
+Source: npm `@vercel/sandbox@3.1.0` (repo [vendor/vercel-sandbox/](vendor/vercel-sandbox/) is package metadata only; `dist/` is not committed). Client-only defects are out of scope; each hypothesis is a **server** behavior to prove or kill with one live probe. **KILLED means the tested input failed closed**, not that the current SDK host/route is closed. See [post-op-2026-08-24.md](post-op-2026-08-24.md).
 
 Method: one hypothesis per run. First 1–2 probes that confirm fail-closed **stop the objective**. Do not reopen Targets #1/#3/#4/#5/#6/#7/#9/#10 authz matrices.
 
@@ -77,4 +77,4 @@ Apex `ses_fcb343767ffeLSbS5v0CzoWnv2` (one worker). `h3-src-a` `sudo:true` `/usr
 
 ## Next run
 
-Listed H1–H7 and H9 are fail-closed. **H8** stays open (Hobby snapshot-storage 402). Retry H8 only after freeing leftover snaps (not keep-list), or hold for the next post-op. Stay on Grok until that evaluation; do not switch to GPT-5.6 Sol yet.
+Listed H1–H7 and H9 are fail-closed **on the input that was sent**. They are not current-SDK-surface closes (`vercel.com/api`, `/v3` create, `/v2` fork/snapshot). **H8** stays open (Hobby snapshot-storage 402). Do **not** delete keep-list names from the narrative. Retry H8 only after the retain/delete manifest in the post-op, or hold. Next probe is the current-SDK host/route differential. Stay on Grok until that evaluation; do not switch to GPT-5.6 Sol yet.

@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vercel Sandbox Hunt Post-Op — 24 Aug 2026</title>
+  <style>
+    :root {
+      --bg: #0f1216;
+      --bg-2: #171b21;
+      --bg-3: #1e242c;
+      --line: #2c3440;
+      --text: #e8edf4;
+      --muted: #93a0b0;
+      --accent: #7dd3fc;
+      --good: #4ade80;
+      --warn: #fbbf24;
+      --bad: #f87171;
+      --blocked: #fb923c;
+      --dup: #c4b5fd;
+      --none: #64748b;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; }
+    a { color: var(--accent); }
+    header {
+      position: sticky; top: 0; z-index: 5;
+      background: rgba(15,18,22,.92); backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--line); padding: 14px 20px 10px;
+    }
+    header h1 { margin: 0 0 4px; font-size: 18px; letter-spacing: .02em; }
+    header p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+    nav { display: flex; flex-wrap: wrap; gap: 6px; }
+    nav button {
+      background: var(--bg-3); color: var(--text); border: 1px solid var(--line);
+      border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 12px;
+    }
+    nav button.active { background: #163044; border-color: var(--accent); color: var(--accent); }
+    main { max-width: 1180px; margin: 0 auto; padding: 20px; display: grid; gap: 18px; }
+    section { background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+    section h2 { margin: 0 0 10px; font-size: 16px; }
+    .verdict {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+    }
+    .card { background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+    .card strong { display: block; font-size: 22px; }
+    .card span { color: var(--muted); font-size: 12px; }
+    .bad { color: var(--bad); }
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .blocked { color: var(--blocked); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; cursor: pointer; }
+    .pill {
+      display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px;
+      border: 1px solid var(--line); background: var(--bg);
+    }
+    .pill.fail { color: var(--good); }
+    .pill.blocked { color: var(--blocked); }
+    .pill.infra { color: var(--bad); }
+    .pill.lost { color: var(--none); }
+    .pill.dup { color: var(--dup); }
+    .pill.partial { color: var(--warn); }
+    .pill.zero { color: var(--none); }
+    .filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+    .filters button, .tree button {
+      background: var(--bg); color: var(--text); border: 1px solid var(--line);
+      border-radius: 8px; padding: 5px 8px; cursor: pointer; font-size: 12px;
+    }
+    .filters button.on { border-color: var(--accent); color: var(--accent); }
+    .bars { display: grid; gap: 8px; }
+    .bar-row { display: grid; grid-template-columns: 170px 1fr 36px; gap: 8px; align-items: center; font-size: 13px; }
+    .bar { height: 10px; background: var(--bg); border-radius: 99px; overflow: hidden; }
+    .bar > i { display: block; height: 100%; }
+    .tree { display: grid; gap: 10px; }
+    .node {
+      border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--bg-3);
+    }
+    .node h3 { margin: 0 0 6px; font-size: 14px; }
+    .node p { margin: 0; color: var(--muted); font-size: 13px; }
+    .hidden { display: none; }
+    .decision { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); color: var(--text); }
+    footer { color: var(--muted); font-size: 12px; padding: 0 20px 24px; max-width: 1180px; margin: 0 auto; }
+    .matrix td.g0 { background: #1a1f18; color: var(--good); }
+    .matrix td.g1 { background: #2a2314; color: var(--warn); }
+    .matrix td.g2 { background: #2a1518; color: var(--bad); }
+    .matrix td.g3 { background: #16181c; color: var(--none); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Vercel Sandbox hunt post-op</h1>
+    <p>24 August 2026 · no live mutations · source of truth: <code>post-op-2026-08-24.md</code></p>
+    <nav id="nav"></nav>
+  </header>
+  <main>
+    <section id="verdict">
+      <h2>Verdict</h2>
+      <div class="verdict">
+        <div class="card"><strong class="bad">0 reportable</strong><span>No boundary break, no PoC zip, no fresh-sandbox reproduction</span></div>
+        <div class="card"><strong class="warn">884 / 0</strong><span>HackerOne received / resolved (24 Aug live capture). Local note said 124</span></div>
+        <div class="card"><strong class="blocked">Stay</strong><span>Rank 1 current-SDK host/route, then H8. Keep Grok. Sol later</span></div>
+      </div>
+    </section>
+
+    <section id="timeline">
+      <h2>Run timeline</h2>
+      <table>
+        <thead><tr><th>When</th><th>What</th><th>Method</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>18 Aug</td><td>Program opens. Policy published. $1M / $50k</td><td>—</td><td>Window through 1 Sep</td></tr>
+          <tr><td>~19 Aug</td><td>Target #1 control-plane IDOR (first struggle + two-account)</td><td>5–6 worker Apex on api.vercel.com</td><td>403/404 oracle. No session ID retained</td></tr>
+          <tr><td>~19–20 Aug</td><td>Target #3 firewall</td><td>Apex <code>ses_fe432ca99ffe…</code></td><td>Enforcement closed; L7 dialect miss</td></tr>
+          <tr><td>~20 Aug</td><td>Targets #4 #5 #6 #7 #8 #9 #10</td><td>Apex + hybrid. Two Apex false-starts</td><td>Fail-closed or blocked. ~1,800 tool calls, 0 findings</td></tr>
+          <tr><td>24 Aug</td><td>H1–H3 hybrid; H4–H9 one-worker Apex</td><td>Source-first, one hypothesis</td><td>H1–H7/H9 fail-closed inputs. H8 402 quota</td></tr>
+          <tr><td>24 Aug</td><td>This post-op</td><td>Docs + SDK 3.1.0 + prior live H1 stats</td><td>Nothing reportable. Queue reranked</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="ledger">
+      <h2>Canonical ledger</h2>
+      <p style="color:var(--muted);margin:0 0 10px;font-size:13px">
+        20-row reconstruction. Raw <code>~/.pensar/sessions</code> was not on this analysis host.
+        Target #2 is missing. Click a class to filter.
+      </p>
+      <div class="filters" id="filters"></div>
+      <table>
+        <thead>
+          <tr>
+            <th data-k="id">#</th><th data-k="name">Run</th><th data-k="hunt">Hunt</th>
+            <th data-k="klass">Class</th><th data-k="gate">Kill-gate</th><th data-k="evidence">Evidence</th>
+          </tr>
+        </thead>
+        <tbody id="ledger-body"></tbody>
+      </table>
+    </section>
+
+    <section id="blockers">
+      <h2>Blocker breakdown</h2>
+      <div class="bars" id="bars"></div>
+    </section>
+
+    <section id="evidence">
+      <h2>Evidence matrix</h2>
+      <p style="color:var(--muted);margin:0 0 10px;font-size:13px">
+        Green = independently auditable. Amber = narrative with a named session. Red = missing / not tested. Grey = not applicable.
+      </p>
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th>Claim</th>
+            <th>Raw req/res</th>
+            <th>Principal labelled</th>
+            <th>Live canary</th>
+            <th>Current SDK host</th>
+            <th>Current SDK route</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>#1 BOLA 403/404</td><td class="g1">narrative</td><td class="g1">auto-A risk</td><td class="g3">n/a</td><td class="g2">api.vercel.com only</td><td class="g1">/v2 yes</td></tr>
+          <tr><td>#3 firewall enforce</td><td class="g1">narrative</td><td class="g1">auto-A risk</td><td class="g1">claimed</td><td class="g2">api.vercel.com only</td><td class="g1">session POST</td></tr>
+          <tr><td>#4 inbound</td><td class="g1">ses named</td><td class="g1">auto-A risk</td><td class="g1">claimed</td><td class="g3">edge, not API host</td><td class="g1">owned *.vercel.run</td></tr>
+          <tr><td>#6 OIDC</td><td class="g1">hybrid notes</td><td class="g1">auto-A risk</td><td class="g0">payload claimed</td><td class="g2">api.vercel.com only</td><td class="g0">SDK allow-map</td></tr>
+          <tr><td>#7 lineage</td><td class="g1">hybrid notes</td><td class="g1">auto-A risk</td><td class="g0">bytes claimed</td><td class="g2">api.vercel.com only</td><td class="g2">/v4 create, /v3 fork</td></tr>
+          <tr><td>#8 Drives</td><td class="g1">narrative</td><td class="g1">both tokens</td><td class="g3">n/a</td><td class="g2">api.vercel.com only</td><td class="g1">/v2 403 beta</td></tr>
+          <tr><td>H4–H7, H9</td><td class="g1">ses named</td><td class="g1">auto-A risk</td><td class="g1">claimed</td><td class="g2">api.vercel.com only</td><td class="g1">tested input</td></tr>
+          <tr><td>H8 eviction</td><td class="g1">ses named</td><td class="g3">never ran</td><td class="g2">never ran</td><td class="g1">/v3 create sent</td><td class="g2">402 before field test</td></tr>
+          <tr><td>Target #2</td><td class="g2">none</td><td class="g2">none</td><td class="g2">none</td><td class="g2">unknown</td><td class="g2">unknown</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="queue">
+      <h2>Ranked hypothesis queue</h2>
+      <table>
+        <thead><tr><th>Rank</th><th>Hypothesis</th><th>Stop if</th><th>Tier if hit</th><th>When to run</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Current SDK host/route (<code>vercel.com/api</code>, /v3 create, /v2 fork/snap)</td><td>1–2 probes 403/404</td><td>Critical if content</td><td>Now. No cleanup required</td></tr>
+          <tr><td>2</td><td>H8 eviction / expiration / replica</td><td>400 field, 402 quota, or sequential fail-closed</td><td>Critical if B restores evicted A</td><td>After retain/delete manifest + non-402 create</td></tr>
+          <tr><td>3</td><td>Drives foreign mount</td><td>Still 403 beta</td><td>Critical</td><td>Pro + waitlist only</td></tr>
+          <tr><td>4</td><td>Real OIDC stale team/project pair</td><td>Cannot mint OIDC, or 403/404</td><td>Critical</td><td>Only with a real OIDC bearer</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="decision">
+      <h2>Next-step decision tree</h2>
+      <div class="tree">
+        <div class="node">
+          <h3>Start here — do not delete anything yet</h3>
+          <p>Probe rank 1 on <code>https://vercel.com/api</code> with one worker. Two owned accounts. Sanitized raw kept.</p>
+          <div>
+            <button data-next="r1-closed">Fail-closed 403/404</button>
+            <button data-next="r1-hit">200 + foreign canary</button>
+          </div>
+          <div id="r1-closed" class="decision hidden">
+            Rank 1 is fail-closed on the current front door. Do not expand the authz matrix.
+            Next: LIST sandboxes (retain table). If an ephemeral create is still 402, do not delete retain-table names — upgrade or wait.
+            <div style="margin-top:8px">
+              <button data-next="h8-free">Create no longer 402</button>
+              <button data-next="h8-still">Create still 402</button>
+            </div>
+          </div>
+          <div id="r1-hit" class="decision hidden">
+            Stop at confirmation. Do not enumerate. Write the report against the §8 gate: fresh IDs, two-account confirm, PoC zip, current host/route, one root cause.
+            This is the only path that is reportable from rank 1.
+          </div>
+        </div>
+        <div id="h8-free" class="node hidden">
+          <h3>H8 sequential eviction</h3>
+          <p>Create throwaway only. snap1 → snap2. A GET snap1 expect 404. B GET/restore expect 403/404 and no A canary.</p>
+          <button data-next="h8-dead">Fail-closed / 400 field</button>
+          <button data-next="h8-hit">B reads/restores A content</button>
+        </div>
+        <div id="h8-still" class="node hidden">
+          <h3>Quota still blocks H8</h3>
+          <p>Do not delete <code>victim-base</code>, <code>fw-*</code>, <code>h3-*</code>, <code>lineage-*</code>, inbound, host-probe from the narrative. Obtain Pro, or leave H8 blocked and skip to Drives only if Pro also unlocks the waitlist. Otherwise stop and wait for the Sol evaluation — still no report.</p>
+        </div>
+        <div id="h8-dead" class="node hidden">
+          <h3>H8 killed on sequential eviction</h3>
+          <p>Stop. Do not start a concurrent race. Drives only after Pro + waitlist. OIDC pair only with a real bearer. If none of those are available, the hunt is waiting — not reporting.</p>
+        </div>
+        <div id="h8-hit" class="node hidden">
+          <h3>H8 is the report</h3>
+          <p>Stop. Do not dump. Fresh create, two-account confirm, canary bytes, current route, PoC zip. Critical if content crossed tenants.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer>
+    Redacted. No tokens, no raw JWTs, no customer data. Keep-list sandboxes are retain-until-LIST, not delete-from-this-page.
+  </footer>
+  <script>
+    const rows = [
+      {id:1, name:"ses_fe432ca99ffe…", hunt:"#3 firewall", klass:"partial", klassLabel:"Partial evidence", gate:"L7 missed", evidence:"Conclusion only"},
+      {id:2, name:"ses_fe3fc74f7ffe…", hunt:"#4 inbound", klass:"fail", klassLabel:"Fail-closed input", gate:"Yes", evidence:"Conclusion only"},
+      {id:3, name:"ses_fe0754fd6ffe…", hunt:"#6 Apex", klass:"infra", klassLabel:"False start / CWD", gate:"No", evidence:"No artifact"},
+      {id:4, name:"ses_fe06feb4affe…", hunt:"#10 Apex", klass:"infra", klassLabel:"Capacity death", gate:"No", evidence:"No artifact"},
+      {id:5, name:"ses_fcbf6230bffe…", hunt:"H4 headerNames", klass:"fail", klassLabel:"Fail-closed input", gate:"Yes", evidence:"Conclusion only"},
+      {id:6, name:"ses_fcbec42d7ffe…", hunt:"H5 OIDC aud", klass:"fail", klassLabel:"Fail-closed input", gate:"Yes", evidence:"Conclusion only"},
+      {id:7, name:"ses_fcbe0bcacffe…", hunt:"H6 match.regex", klass:"fail", klassLabel:"Fail-closed input", gate:"Yes", evidence:"Conclusion only"},
+      {id:8, name:"ses_fcbd22106ffe…", hunt:"H7 __ params", klass:"fail", klassLabel:"Fail-closed input", gate:"Yes", evidence:"Conclusion only"},
+      {id:9, name:"ses_fcb61e0b0ffe…", hunt:"H8 eviction", klass:"blocked", klassLabel:"Blocked 402", gate:"No", evidence:"Conclusion only"},
+      {id:10, name:"ses_fcb343767ffe…", hunt:"H9 sudo/env", klass:"dup", klassLabel:"Fail-closed / dup #5", gate:"Yes", evidence:"Conclusion only"},
+      {id:11, name:"(no ses_*)", hunt:"#1 first Apex", klass:"lost", klassLabel:"Lost / infra", gate:"Partial", evidence:"Lost"},
+      {id:12, name:"(no ses_*)", hunt:"#1 two-account", klass:"fail", klassLabel:"Fail-closed input", gate:"Yes", evidence:"Conclusion only"},
+      {id:13, name:"(missing)", hunt:"#2", klass:"lost", klassLabel:"Lost evidence", gate:"Unknown", evidence:"None"},
+      {id:14, name:"(no ses_*)", hunt:"#5 host/VMM", klass:"fail", klassLabel:"Fail-closed input", gate:"Observational", evidence:"Conclusion only"},
+      {id:15, name:"hybrid 20 Aug", hunt:"#6 OIDC", klass:"fail", klassLabel:"Fail-closed input", gate:"Yes", evidence:"Canary claimed"},
+      {id:16, name:"hybrid 20 Aug", hunt:"#7 lineage", klass:"fail", klassLabel:"Fail-closed input", gate:"Yes; wrong route", evidence:"Canary claimed"},
+      {id:17, name:"hybrid 20 Aug", hunt:"#8 Drives", klass:"blocked", klassLabel:"Blocked beta", gate:"Access only", evidence:"Conclusion only"},
+      {id:18, name:"hybrid 20 Aug", hunt:"#9 pairs", klass:"dup", klassLabel:"Dup of #1", gate:"Yes", evidence:"Conclusion only"},
+      {id:19, name:"hybrid 20 Aug", hunt:"#10 inject", klass:"fail", klassLabel:"Fail-closed input", gate:"Yes", evidence:"Canary claimed"},
+      {id:20, name:"hybrid 24 Aug", hunt:"H1–H3", klass:"fail", klassLabel:"Fail-closed input", gate:"Yes", evidence:"Conclusion only"},
+    ];
+
+    const filters = [
+      ["all","All"],
+      ["fail","Fail-closed"],
+      ["blocked","Blocked"],
+      ["infra","Infra / false start"],
+      ["dup","Duplicated"],
+      ["partial","Partial"],
+      ["lost","Lost"],
+    ];
+
+    const bars = [
+      ["Fail-closed tested input", 11, "var(--good)"],
+      ["Blocked (quota / beta)", 2, "var(--blocked)"],
+      ["Infrastructure / false start", 3, "var(--bad)"],
+      ["Duplicated overlap", 4, "var(--dup)"],
+      ["Lost / missing", 2, "var(--none)"],
+      ["Reportable", 0, "var(--accent)"],
+    ];
+
+    const nav = [
+      ["verdict","Verdict"],
+      ["timeline","Timeline"],
+      ["ledger","Ledger"],
+      ["blockers","Blockers"],
+      ["evidence","Evidence"],
+      ["queue","Queue"],
+      ["decision","Decision tree"],
+    ];
+
+    const navEl = document.getElementById("nav");
+    nav.forEach(([id, label], i) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      if (i === 0) b.classList.add("active");
+      b.onclick = () => {
+        document.getElementById(id).scrollIntoView({behavior:"smooth", block:"start"});
+        [...navEl.children].forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+      };
+      navEl.appendChild(b);
+    });
+
+    const filterEl = document.getElementById("filters");
+    let active = "all";
+    filters.forEach(([k, label]) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      if (k === "all") b.classList.add("on");
+      b.onclick = () => {
+        active = k;
+        [...filterEl.children].forEach((x) => x.classList.remove("on"));
+        b.classList.add("on");
+        renderLedger();
+      };
+      filterEl.appendChild(b);
+    });
+
+    function renderLedger() {
+      const body = document.getElementById("ledger-body");
+      body.innerHTML = "";
+      rows.filter((r) => active === "all" || r.klass === active).forEach((r) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${r.id}</td><td><code>${r.name}</code></td><td>${r.hunt}</td>
+          <td><span class="pill ${r.klass}">${r.klassLabel}</span></td>
+          <td>${r.gate}</td><td>${r.evidence}</td>`;
+        body.appendChild(tr);
+      });
+    }
+    renderLedger();
+
+    const barRoot = document.getElementById("bars");
+    bars.forEach(([label, n, color]) => {
+      const row = document.createElement("div");
+      row.className = "bar-row";
+      row.innerHTML = `<span>${label}</span><div class="bar"><i style="width:${(n/20)*100}%;background:${color}"></i></div><span>${n}</span>`;
+      barRoot.appendChild(row);
+    });
+
+    document.querySelectorAll("[data-next]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const id = b.getAttribute("data-next");
+        document.querySelectorAll(".decision, .node.hidden").forEach((n) => {
+          if (n.id && ["r1-closed","r1-hit","h8-free","h8-still","h8-dead","h8-hit"].includes(n.id)) {
+            n.classList.add("hidden");
+          }
+        });
+        const el = document.getElementById(id);
+        if (el) el.classList.remove("hidden");
+        el?.scrollIntoView({behavior:"smooth", block:"nearest"});
+      });
+    });
+  </script>
+</body>
+</html>

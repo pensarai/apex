@@ -26,11 +26,13 @@ A finding is in scope when it does one of:
 
 ## Current hunt: whitebox logic bugs (not another authz sweep)
 
-Targets #1, #3, #4, #5, #6, #7, #9, and #10 are **fail-closed** with live PoCs. Target #8 (Drives) is **retired** on Hobby (403 private beta; Pro + waitlist required).
+Targets #1, #3, #4, #5, #6, #7, #9, and #10 are **fail-closed on the tested input** (see post-op: not current-SDK-surface closes). Target #8 (Drives) is **retired** on Hobby (403 private beta; Pro + waitlist required).
 
-**Decision (24 Aug 2026 post-op):** stay on this program and escalate to **whitebox-anchored logic bugs** on the remaining `@vercel/sandbox` surface. Do **not** reallocate to another program while H1–H8 in [whitebox-hypotheses.md](whitebox-hypotheses.md) are untested. Do **not** spend another 5-worker breadth sweep re-proving 403/404.
+**Decision (24 Aug 2026 post-op):** stay on this program. Durable analysis: [post-op-2026-08-24.md](post-op-2026-08-24.md). Do **not** reallocate. Do **not** spend another 5-worker breadth sweep re-proving 403/404.
 
-Method: one falsifiable hypothesis per run; first 1–2 fail-closed probes **stop the objective**. Source of truth for wire shape is the vendored SDK at [vendor/vercel-sandbox/](vendor/vercel-sandbox/) (`@vercel/sandbox@3.1.0`). H1–H7 and H9 are **fail-closed** 24 Aug 2026. H8 is **blocked** on Hobby snapshot-storage 402 (not killed). Next: retry H8 after freeing leftover snaps, or the next post-op.
+**Wire card (SDK 3.1.0 — pin this):** default host `https://vercel.com/api` (not `api.vercel.com`). Create `POST /v3/sandboxes` (or `/v2` if `runtime` is set). Fork `POST /v2/sandboxes/{name}/fork`. Snapshot `POST /v2/sandboxes/sessions/{id}/snapshot`. **No `/v4/` in the SDK.** A fail-closed result on `api.vercel.com` + `/v4` does not close this surface.
+
+Method: one falsifiable hypothesis per run; first 1–2 fail-closed probes **stop the objective**. Source of truth for wire shape is npm `@vercel/sandbox@3.1.0` (repo vendor folder is package metadata only — `dist/` is not committed). H1–H7 and H9 are **fail-closed on the tested input** 24 Aug 2026, not current-SDK-surface closes. H8 is **blocked** on Hobby snapshot-storage 402 (not killed). Next: current-SDK host/route, then H8 only after the retain/delete manifest.
 
 Do **not** reopen:
 

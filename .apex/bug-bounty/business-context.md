@@ -37,8 +37,8 @@ Reports that only reproduce these should be closed Informative or Duplicate:
 
 ## Duplicate / race notes
 
-As of 19 August 2026 the program had 124 reports received and 0 resolved. Internal duplicates (not listed on the policy page) still close as Duplicate. Prefer two-account confirmation of a **new** authorization miss over rediscovering listed guest primitives.
+As of 24 August 2026 the program had **884 reports received and 0 resolved** (live capture; the earlier “124 as of 19 Aug” note is stale). Internal duplicates still close as Duplicate. Prefer two-account confirmation of a **new** authorization miss over rediscovering listed guest primitives. See [post-op-2026-08-24.md](post-op-2026-08-24.md).
 
 Closed on this engagement (do not reopen as “new”): Targets #1, #3, #4, #5, #6, #7, #9, #10 fail-closed; #8 Drives untestable on Hobby. See `scope.md` closed-hunt table.
 
-24 Aug 2026 post-op: black-box breadth is exhausted. H1–H7 and H9 fail-closed the same day. H8 blocked on Hobby snapshot-storage 402 (not killed). Remaining: retry H8 after freeing leftover snaps, then the next post-op (still Grok; GPT-5.6 Sol later). See `whitebox-hypotheses.md`. Do not default back to 5-worker sweeps.
+24 Aug 2026 post-op: black-box breadth is exhausted **on the routes that were sent** (`api.vercel.com`, mixed `/v3`/`/v4`). H1–H7 and H9 fail-closed those inputs; they are not current-SDK-surface closes. H8 blocked on Hobby snapshot-storage 402 (not killed). Remaining: current-SDK host/route first, then H8 only after the retain/delete manifest. Still Grok; GPT-5.6 Sol later. See [post-op-2026-08-24.md](post-op-2026-08-24.md). Do not default back to 5-worker sweeps. Do not delete keep-list sandboxes from the narrative.

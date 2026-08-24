@@ -1,6 +1,6 @@
 # Rules of Engagement — Vercel Sandbox
 
-Source: HackerOne program policy, last reviewed 19 August 2026.
+Source: HackerOne program policy, last reviewed 24 August 2026. Durable hunt analysis: [post-op-2026-08-24.md](post-op-2026-08-24.md).
 
 ## Accounts
 
@@ -76,11 +76,11 @@ Target #10 (`injectionRules` / transform): extra injection of an operator-config
 
 Black-box 5–6-worker authz sweeps on this program are exhausted (0 findings / ~1,800 tool calls confirming documented fail-closed). Going forward:
 
-1. **Source first.** Read the vendored `@vercel/sandbox` 3.1.0 dist ([vendor/vercel-sandbox/](vendor/vercel-sandbox/)) and [whitebox-hypotheses.md](whitebox-hypotheses.md) before launching Apex. A wrong wire shape costs a whole target (see Target #3 `forwardURL` miss).
+1. **Source first.** Read npm `@vercel/sandbox@3.1.0` (repo vendor folder is metadata only; `dist/` is not committed), the wire card in [scope.md](scope.md), and [whitebox-hypotheses.md](whitebox-hypotheses.md) before launching Apex. A wrong wire shape costs a whole target (see Target #3 `forwardURL` miss).
 2. **One hypothesis per run.** One worker, one falsifiable claim, one kill-gate. No exploratory “chain & explore” worker unless the hypothesis hits.
 3. **Triage gate.** If the first 1–2 live probes confirm fail-closed, stop. Do not spend 300–500 tool calls re-confirming 403/404.
 4. **Hybrid is fine.** Manual Python against the control plane for the kill-gate; Apex only if the hypothesis is still open after the first probe.
 5. **CLI.** `pensar targeted-pentest` now defaults `--cwd` to the repo root (so `.apex/bug-bounty/…` resolves) and accepts `@file` on `--objective` plus `--fallback-model`.
 6. **Model.** Stay on `x-ai/grok-4.6` (fallback `claude-sonnet-4-5`) until the next major post-op. GPT-5.6 Sol is registered and the OpenAI key is saved; **do not switch hunts to it yet**.
 
-Decision: stay on Vercel Sandbox; escalate to H1–H9. Reallocate only after those are killed or Drives beta lands. H1–H7 and H9 killed 24 Aug 2026. H8 blocked on Hobby snapshot quota (see [whitebox-hypotheses.md](whitebox-hypotheses.md)). Next: H8 retry after freeing leftover snaps, or the next post-op. Stay on Grok until that evaluation.
+Decision: stay on Vercel Sandbox. **Killed means the tested input failed closed**, not that the current SDK surface is closed. Next probes, in order: (1) current-SDK host/route on `https://vercel.com/api` (`/v3` create, `/v2` fork, `/v2` snapshot); (2) H8 only after the retain/delete manifest in the post-op — do not delete keep-list names from the narrative; (3) Drives only after Pro + waitlist; (4) real OIDC pair only with a real bearer. Stay on Grok until that evaluation. Do not switch hunts to GPT-5.6 Sol yet. Nothing in this hunt is reportable.
