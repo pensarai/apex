@@ -92,10 +92,17 @@ import { QuestionsForm } from "../chat/questions-form";
 import { collectScreenshotPaths, ScreenshotModal } from "../screenshot-modal";
 import {
   deriveApprovedActionLabel,
-  extractStreamableContent,
   isToolMessage,
   tryParsePartialJson,
 } from "../shared";
+import {
+  appendStreamedText,
+  applyToolCall,
+  applyToolCallDelta,
+  applyToolResult,
+  mergeCommandOutput,
+  startStreamingToolCall,
+} from "./display-state";
 import {
   accumulateTokenUsage,
   buildOperatorSystemPrompt,
@@ -586,18 +593,7 @@ export default function OperatorDashboard({
   const appendText = useCallback((text: string) => {
     textRef.current += text;
     const accumulated = textRef.current;
-    setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (last && last.role === "assistant") {
-        const updated = [...prev];
-        updated[updated.length - 1] = { ...last, content: accumulated };
-        return updated;
-      }
-      return [
-        ...prev,
-        { role: "assistant", content: accumulated, createdAt: new Date() },
-      ];
-    });
+    setMessages((prev) => appendStreamedText(prev, accumulated));
   }, []);
 
   // Ref to accumulate partial tool args JSON per toolCallId
@@ -612,18 +608,7 @@ export default function OperatorDashboard({
         toolName,
         accumulated: "",
       });
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "tool" as const,
-          content: "",
-          createdAt: new Date(),
-          toolCallId,
-          toolName,
-          args: {},
-          status: "streaming" as const,
-        },
-      ]);
+      setMessages((prev) => startStreamingToolCall(prev, toolCallId, toolName));
     },
     [],
   );
@@ -640,18 +625,7 @@ export default function OperatorDashboard({
       const parsed = tryParsePartialJson(accumulated);
       if (!parsed) return;
 
-      const contentText = extractStreamableContent(parsed);
-      const logs = contentText ? contentText.split("\n") : undefined;
-
-      setMessages((msgs) => {
-        const idx = msgs.findIndex(
-          (m) => isToolMessage(m) && m.toolCallId === toolCallId,
-        );
-        if (idx === -1) return msgs;
-        const updated = [...msgs];
-        updated[idx] = { ...updated[idx], args: parsed, ...(logs && { logs }) };
-        return updated;
-      });
+      setMessages((msgs) => applyToolCallDelta(msgs, toolCallId, parsed));
     },
     [],
   );
@@ -660,33 +634,7 @@ export default function OperatorDashboard({
     (toolCallId: string, toolName: string, args?: Record<string, unknown>) => {
       textRef.current = "";
       toolArgsDeltaRef.current.delete(toolCallId);
-      setMessages((prev) => {
-        const idx = prev.findIndex(
-          (m) => isToolMessage(m) && m.toolCallId === toolCallId,
-        );
-        if (idx !== -1) {
-          const updated = [...prev];
-          updated[idx] = {
-            ...updated[idx],
-            args,
-            logs: undefined,
-            status: "pending" as const,
-          };
-          return updated;
-        }
-        return [
-          ...prev,
-          {
-            role: "tool" as const,
-            content: "",
-            createdAt: new Date(),
-            toolCallId,
-            toolName,
-            args,
-            status: "pending" as const,
-          },
-        ];
-      });
+      setMessages((prev) => applyToolCall(prev, toolCallId, toolName, args));
     },
     [],
   );
@@ -694,15 +642,7 @@ export default function OperatorDashboard({
   const updateToolResult = useCallback(
     (toolCallId: string, _toolName: string, result?: unknown) => {
       textRef.current = "";
-      setMessages((prev) => {
-        const idx = prev.findIndex(
-          (m) => isToolMessage(m) && m.toolCallId === toolCallId,
-        );
-        if (idx === -1) return prev;
-        const updated = [...prev];
-        updated[idx] = { ...updated[idx], status: "completed", result };
-        return updated;
-      });
+      setMessages((prev) => applyToolResult(prev, toolCallId, result));
     },
     [],
   );
@@ -713,42 +653,13 @@ export default function OperatorDashboard({
 
   const cmdOutputBufRef = useRef("");
   const cmdFlushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const MAX_LOG_LINES = 200;
 
   const flushCommandOutput = useCallback(() => {
     const buf = cmdOutputBufRef.current;
     if (!buf) return;
     cmdOutputBufRef.current = "";
 
-    setMessages((prev) => {
-      const idx = prev.findLastIndex(
-        (m) =>
-          isToolMessage(m) &&
-          (m.status === "pending" || m.status === "streaming"),
-      );
-      if (idx === -1) return prev;
-
-      const msg = prev[idx];
-      const existing = msg.logs ?? [];
-      const incoming = buf.split("\n");
-      // If last existing line was partial (no trailing newline), merge it
-      let merged: string[];
-      if (existing.length > 0 && !buf.startsWith("\n")) {
-        merged = [...existing];
-        merged[merged.length - 1] += incoming[0];
-        merged.push(...incoming.slice(1));
-      } else {
-        merged = [...existing, ...incoming];
-      }
-      // Cap to last MAX_LOG_LINES
-      if (merged.length > MAX_LOG_LINES) {
-        merged = merged.slice(-MAX_LOG_LINES);
-      }
-
-      const updated = [...prev];
-      updated[idx] = { ...msg, logs: merged };
-      return updated;
-    });
+    setMessages((prev) => mergeCommandOutput(prev, buf));
   }, []);
 
   const onCommandOutput = useCallback(
