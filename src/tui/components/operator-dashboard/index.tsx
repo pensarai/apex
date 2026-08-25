@@ -101,6 +101,7 @@ import {
   buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
+  recoverAbortedConversation,
   resolveAbortAction,
   resolveInputFocused,
   resolveKeyboardShortcut,
@@ -1929,70 +1930,16 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           }
         }
 
-        // If the conversation now ends with a user message it means the agent
-        // was aborted before completing its first inference step (onStepFinish
-        // never fired, so no assistant turn was persisted).  Reconstruct the
-        // partial assistant response — including any in-flight tool calls — so
-        // the context survives abort and session resume.
-        const last =
-          conversationRef.current[conversationRef.current.length - 1];
-        if (last?.role === "user") {
-          const partial = textRef.current.trim();
-
-          // Collect pending/streaming tool calls from the UI messages.
-          const pendingTools = displayMessagesRef.current.filter(
-            (m) =>
-              isToolMessage(m) &&
-              (m.status === "pending" || m.status === "streaming"),
-          );
-
-          // Build assistant content parts: text + tool-call entries.
-          const assistantContent: Array<Record<string, unknown>> = [
-            {
-              type: "text" as const,
-              text: partial || "[Response interrupted by user.]",
-            },
-          ];
-          for (const t of pendingTools) {
-            assistantContent.push({
-              type: "tool-call" as const,
-              toolCallId: t.toolCallId,
-              toolName: t.toolName,
-              input: t.args ?? {},
-            });
-          }
-
-          conversationRef.current = [
-            ...conversationRef.current,
-            {
-              role: "assistant" as const,
-              content: assistantContent,
-            } as ModelMessage,
-          ];
-
-          // For each tool call, add a tool-result so the conversation stays
-          // valid (every tool-call must be paired with a tool-result).
-          if (pendingTools.length > 0) {
-            conversationRef.current = [
-              ...conversationRef.current,
-              {
-                role: "tool" as const,
-                content: pendingTools.map((t) => ({
-                  type: "tool-result" as const,
-                  toolCallId: t.toolCallId,
-                  toolName: t.toolName ?? "unknown",
-                  output: {
-                    type: "text" as const,
-                    value: "Cancelled by user.",
-                  },
-                })),
-              } as unknown as ModelMessage,
-            ];
-          }
-
+        const recovered = recoverAbortedConversation(
+          conversationRef.current,
+          textRef.current,
+          displayMessagesRef.current,
+        );
+        if (recovered) {
+          conversationRef.current = recovered;
           // Persist so session resume also sees the corrected state.
           writeFileSync(
-            join(activeSession.rootPath, "messages.json"),
+            messagesPath,
             JSON.stringify(conversationRef.current, null, 2),
           );
         }

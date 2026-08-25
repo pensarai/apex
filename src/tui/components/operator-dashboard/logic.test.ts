@@ -1,11 +1,14 @@
+import type { ModelMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import type { OperatorSessionState } from "../../../core/operator";
+import type { DisplayMessage } from "../agent-display";
 import type { AutocompleteOption } from "../shared";
 import {
   accumulateTokenUsage,
   buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
+  recoverAbortedConversation,
   resolveAbortAction,
   resolveInputFocused,
   resolveKeyboardShortcut,
@@ -525,6 +528,150 @@ describe("resolveAbortAction", () => {
   it("returns kill-agent when cancel returns false (no command running)", () => {
     const result = resolveAbortAction(false, () => false);
     expect(result).toEqual({ type: "kill-agent" });
+  });
+});
+
+describe("recoverAbortedConversation", () => {
+  const userConversation: ModelMessage[] = [
+    {
+      role: "user",
+      content: [{ type: "text", text: "scan the target" }],
+    },
+  ];
+
+  it("does not recover a conversation that already has an assistant response", () => {
+    const conversation: ModelMessage[] = [
+      ...userConversation,
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Scan complete" }],
+      },
+    ];
+    const original = structuredClone(conversation);
+
+    expect(recoverAbortedConversation(conversation, "partial", [])).toBeNull();
+    expect(conversation).toEqual(original);
+  });
+
+  it("appends the interruption placeholder when no response was streamed", () => {
+    const recovered = recoverAbortedConversation(userConversation, "  \n ", []);
+
+    expect(recovered).toEqual([
+      ...userConversation,
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "[Response interrupted by user.]" }],
+      },
+    ]);
+  });
+
+  it("trims and preserves a partial assistant response", () => {
+    const recovered = recoverAbortedConversation(
+      userConversation,
+      "  partial response\n",
+      [],
+    );
+
+    expect(recovered?.at(-1)).toEqual({
+      role: "assistant",
+      content: [{ type: "text", text: "partial response" }],
+    });
+  });
+
+  it("pairs pending tools and ignores settled display messages", () => {
+    const createdAt = new Date("2026-08-24T00:00:00Z");
+    const displayMessages: DisplayMessage[] = [
+      {
+        role: "assistant",
+        content: "Working",
+        createdAt,
+      },
+      {
+        role: "tool",
+        content: "",
+        createdAt,
+        toolCallId: "pending-tool",
+        toolName: "execute_command",
+        args: { command: "nmap example.com" },
+        status: "pending",
+      },
+      {
+        role: "tool",
+        content: "",
+        createdAt,
+        toolCallId: "streaming-tool",
+        toolName: "http_request",
+        status: "streaming",
+      },
+      {
+        role: "tool",
+        content: "",
+        createdAt,
+        toolCallId: "completed-tool",
+        toolName: "read_file",
+        args: { path: "notes.txt" },
+        status: "completed",
+      },
+      {
+        role: "tool",
+        content: "",
+        createdAt,
+        toolCallId: "failed-tool",
+        toolName: "glob",
+        args: { pattern: "*.ts" },
+        status: "error",
+      },
+    ];
+    const originalConversation = structuredClone(userConversation);
+    const originalDisplayMessages = structuredClone(displayMessages);
+
+    const recovered = recoverAbortedConversation(
+      userConversation,
+      "Checking tools",
+      displayMessages,
+    );
+
+    expect(recovered).toEqual([
+      ...userConversation,
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "Checking tools" },
+          {
+            type: "tool-call",
+            toolCallId: "pending-tool",
+            toolName: "execute_command",
+            input: { command: "nmap example.com" },
+          },
+          {
+            type: "tool-call",
+            toolCallId: "streaming-tool",
+            toolName: "http_request",
+            input: {},
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "pending-tool",
+            toolName: "execute_command",
+            output: { type: "text", value: "Cancelled by user." },
+          },
+          {
+            type: "tool-result",
+            toolCallId: "streaming-tool",
+            toolName: "http_request",
+            output: { type: "text", value: "Cancelled by user." },
+          },
+        ],
+      },
+    ]);
+    expect(recovered).not.toBe(userConversation);
+    expect(userConversation).toEqual(originalConversation);
+    expect(displayMessages).toEqual(originalDisplayMessages);
   });
 });
 
