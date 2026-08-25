@@ -11,7 +11,6 @@ import type {
   ToolResultPart,
   ToolSet,
 } from "ai";
-import { hasToolCall } from "ai";
 import { resolveModelRuntimeProfile, streamResponse } from "../../ai";
 import { validateLatestCompactionArchive } from "../../ai/contextCompaction";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
@@ -422,7 +421,10 @@ export class OffensiveSecurityAgent<TResult = void> {
     const sandbox = this.sandboxSecurity?.sandbox ?? input.sandbox;
 
     // -- Resolve agent working directory ----------------------------------------
-    const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
+    const agentCwd =
+      input.agentCwd ??
+      input.session.config?.agentCwd ??
+      input.session.rootPath;
     const executionPolicy = resolveExecutionPolicy(input.session);
     const executionPolicyEnv = {
       APEX_EXECUTION_POLICY_JSON: JSON.stringify(executionPolicy),
@@ -608,6 +610,7 @@ export class OffensiveSecurityAgent<TResult = void> {
             this._capturedResponse = result as TResult;
             this._resolveResponseCaptured(result as TResult);
           },
+          input.responseGuard,
         ),
       };
     }
@@ -623,9 +626,8 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     let stopWhen = input.stopWhen;
     if (input.responseSchema) {
-      const responseStop = hasToolCall(
-        RESPONSE_TOOL_NAME,
-      ) as StopCondition<ToolSet>;
+      const responseStop = (() =>
+        this._responseToolFired) as StopCondition<ToolSet>;
       if (!stopWhen) {
         stopWhen = responseStop;
       } else if (Array.isArray(stopWhen)) {
