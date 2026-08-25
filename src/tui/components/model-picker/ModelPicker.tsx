@@ -28,6 +28,7 @@ import {
   retainAvailableProviders,
 } from "./model-navigation";
 import { filterModels, getProviderDisplayName } from "./model-search";
+import { getVisiblePickerModels } from "./model-visibility";
 
 const providerOrder: AIModelProvider[] = [
   "pensar",
@@ -153,7 +154,7 @@ export function ModelPicker({
       return;
     }
 
-    setAvailableModels(getAvailableModels(config));
+    setAvailableModels(getVisiblePickerModels(getAvailableModels(config)));
   }, [config]);
 
   useEffect(() => {
