@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 
 import {
   extractFallbackStdout,
@@ -21,22 +21,17 @@ const HAS_STDBUF =
 describe("PersistentShell — long-running stability", () => {
   const shells: PersistentShell[] = [];
   const make = () => {
-    const s = new PersistentShell();
-    shells.push(s);
-    return s;
+    const shell = new PersistentShell();
+    shells.push(shell);
+    return shell;
   };
 
-  afterEach(() => {
-    while (shells.length) {
-      try {
-        shells.pop()?.dispose();
-      } catch {
-        // ignore
-      }
-    }
+  // Process-group cleanup can race sibling shells, so wait for concurrent cases.
+  afterAll(() => {
+    for (const shell of shells) shell.dispose();
   });
 
-  it("basic smoke: sequential commands return quickly", async () => {
+  it.concurrent("basic smoke: sequential commands return quickly", async () => {
     const shell = make();
     const r1 = await shell.execute("echo one", 5);
     expect(r1.exitCode).toBe(0);
@@ -47,7 +42,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(r2.stdout).toContain("two");
   });
 
-  it("captures short stdout (no-stdbuf safe)", async () => {
+  it.concurrent("captures short stdout (no-stdbuf safe)", async () => {
     const shell = make();
     const r = await shell.execute("printf 'hello\\nworld\\n'", 5);
     expect(r.exitCode).toBe(0);
@@ -55,7 +50,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(r.stdout).toContain("world");
   });
 
-  it("captures trivial stdout even when tail block-buffers", async () => {
+  it.concurrent("captures trivial stdout even when tail block-buffers", async () => {
     const shell = make();
     const echo = await shell.execute("echo hello", 5);
     expect(echo.exitCode).toBe(0);
@@ -70,7 +65,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(seq.stdout.trim()).toBe("1\n2\n3\n4\n5");
   });
 
-  it("captures output across the 8 KiB block-buffer boundary", async () => {
+  it.concurrent("captures output across the 8 KiB block-buffer boundary", async () => {
     const shell = make();
     // 9000 > 8192 to exceed tail's default block-buffer.
     const r = await shell.execute(
@@ -81,7 +76,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(r.stdout.replace(/\n$/, "").length).toBe(9000);
   });
 
-  it("stays responsive after a command that normally reads stdin", async () => {
+  it.concurrent("stays responsive after a command that normally reads stdin", async () => {
     const shell = make();
 
     const warm = await shell.execute("echo warm", 5);
@@ -99,7 +94,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(after.stdout).toContain("after-cat");
   }, 20_000);
 
-  it("cleans up pipeline grandchildren when a command times out", async () => {
+  it.concurrent("cleans up pipeline grandchildren when a command times out", async () => {
     const shell = make();
     await shell.execute("echo prime", 5);
     const bashPid = (shell as unknown as { proc: { pid: number } }).proc.pid;
@@ -124,7 +119,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(remaining.find((l) => l.includes("sleep"))).toBeUndefined();
   }, 20_000);
 
-  it("does not leak background-process output into the next command's stdout", async () => {
+  it.concurrent("does not leak background-process output into the next command's stdout", async () => {
     const shell = make();
 
     // Background a generator whose fd 1 is NOT redirected (`nmap -v &`).
@@ -147,7 +142,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(quick.stdout.includes("spam-")).toBe(false);
   }, 20_000);
 
-  it("persists cd and export across commands (documented contract)", async () => {
+  it.concurrent("persists cd and export across commands (documented contract)", async () => {
     const shell = make();
     const mk = await shell.execute(
       "mkdir -p /tmp/apex-persistent-shell-test-2ef1",
@@ -172,7 +167,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(echo.stdout).toContain("hello");
   });
 
-  it("reports exit code 124 on timeout and kills descendants", async () => {
+  it.concurrent("reports exit code 124 on timeout and kills descendants", async () => {
     const shell = make();
     const r = await shell.execute("sleep 30", 1);
     expect(r.exitCode).toBe(124);
@@ -182,14 +177,14 @@ describe("PersistentShell — long-running stability", () => {
     expect(after.stdout).toContain("ok");
   }, 10_000);
 
-  it("does not leak nonce markers on timeout", async () => {
+  it.concurrent("does not leak nonce markers on timeout", async () => {
     const shell = make();
     const r = await shell.execute(`printf 'hello\\n'; sleep 10`, 1);
     expect(r.exitCode).toBe(124);
     expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
   }, 10_000);
 
-  it("does not leak nonce markers on abort", async () => {
+  it.concurrent("does not leak nonce markers on abort", async () => {
     const shell = make();
     const ac = new AbortController();
     setTimeout(() => ac.abort(), 200);
@@ -213,7 +208,7 @@ describe("PersistentShell — long-running stability", () => {
    * bash's children and killed `cat` mid-flush, dropping partial output
    * to `(no output)`.
    */
-  it("preserves partial stdout when a command is killed by timeout", async () => {
+  it.concurrent("preserves partial stdout when a command is killed by timeout", async () => {
     const shell = make();
     const r = await shell.execute(
       `printf 'hit-1\\n'; printf 'hit-2\\n'; sleep 30`,
@@ -230,7 +225,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(after.stdout).toContain("ok");
   }, 15_000);
 
-  it("preserves partial stdout when a command is aborted", async () => {
+  it.concurrent("preserves partial stdout when a command is aborted", async () => {
     const shell = make();
     const ac = new AbortController();
     setTimeout(() => ac.abort(), 200);
@@ -252,7 +247,7 @@ describe("PersistentShell — long-running stability", () => {
    * so anything the tool had already written reaches the agent — and
    * SIGKILL reliably ends it afterward.
    */
-  it("salvages stdout from a SIGTERM-resistant command", async () => {
+  it.concurrent("salvages stdout from a SIGTERM-resistant command", async () => {
     const shell = make();
     const r = await shell.execute(
       `bash -c "trap '' TERM; printf hit-trapped; sleep 30"`,
@@ -268,7 +263,7 @@ describe("PersistentShell — long-running stability", () => {
    * The pre-fix in-pipe approach would block `cat` once the pipe filled and
    * SIGKILL would truncate. Disk reads are unaffected by pipe state.
    */
-  it("salvages large partial output (>64 KB) on timeout", async () => {
+  it.concurrent("salvages large partial output (>64 KB) on timeout", async () => {
     const shell = make();
     const r = await shell.execute(
       `for i in $(seq 1 4000); do printf 'line-%05d\\n' $i; done; sleep 30`,
@@ -280,7 +275,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(r.stdout).not.toMatch(/__APEX_[0-9a-f]+__/);
   }, 15_000);
 
-  it("returns (no output) when an empty-output command times out", async () => {
+  it.concurrent("returns (no output) when an empty-output command times out", async () => {
     const shell = make();
     const r = await shell.execute("sleep 30", 1);
     expect(r.exitCode).toBe(124);
@@ -365,7 +360,7 @@ describe("PersistentShell — long-running stability", () => {
     },
   );
 
-  it("does not cross-contaminate stdout across parallel execute() calls", async () => {
+  it.concurrent("does not cross-contaminate stdout across parallel execute() calls", async () => {
     const shell = make();
     const [a, b] = await Promise.all([
       shell.execute("echo apex-call-a-output", 5),
@@ -382,7 +377,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(b.stdout).not.toMatch(/__APEX_[0-9a-f]+___(CUTOVER|EXIT_)/);
   }, 15_000);
 
-  it("does not cross-contaminate stderr across parallel execute() calls", async () => {
+  it.concurrent("does not cross-contaminate stderr across parallel execute() calls", async () => {
     const shell = make();
     const [a, b] = await Promise.all([
       shell.execute(">&2 echo apex-call-a-stderr", 5),
@@ -396,7 +391,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(b.stdout).toContain("apex-call-b-stdout");
   }, 15_000);
 
-  it("isolates parallel-call timeouts (no marker or kill-message leakage)", async () => {
+  it.concurrent("isolates parallel-call timeouts (no marker or kill-message leakage)", async () => {
     const shell = make();
     const [timedOut, ok] = await Promise.all([
       shell.execute("sleep 30", 1),
@@ -415,7 +410,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(ok.stderr).not.toMatch(/Terminated|Killed/);
   }, 15_000);
 
-  it("preserves FIFO ordering for parallel execute() calls", async () => {
+  it.concurrent("preserves FIFO ordering for parallel execute() calls", async () => {
     const shell = make();
     const results = await Promise.all([
       shell.execute("echo 1", 5),
@@ -429,7 +424,7 @@ describe("PersistentShell — long-running stability", () => {
     for (const r of results) expect(r.exitCode).toBe(0);
   }, 15_000);
 
-  it("aborts a queued execute() without running its bash command", async () => {
+  it.concurrent("aborts a queued execute() without running its bash command", async () => {
     const shell = make();
     const ac = new AbortController();
 
@@ -452,7 +447,7 @@ describe("PersistentShell — long-running stability", () => {
     expect(firstResult.exitCode).toBe(0);
   }, 15_000);
 
-  it("stays responsive after a mixed workload of 30 commands", async () => {
+  it.concurrent("stays responsive after a mixed workload of 30 commands", async () => {
     const shell = make();
 
     for (let i = 0; i < 10; i++) {

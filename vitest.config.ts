@@ -11,5 +11,9 @@ export default defineConfig({
     testTimeout: 120000, // 2 minutes for API calls
     hookTimeout: 120000,
     pool: "forks",
+    // Agent imports make each fork expensive; cap aggregate heap usage.
+    maxWorkers: 4,
+    minWorkers: 1,
+    maxConcurrency: 4,
   },
 });
