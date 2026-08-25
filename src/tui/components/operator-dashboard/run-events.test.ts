@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentEventBus, AgentEventMap } from "../../../core/eventBus";
 import { AgentEventBus as Bus } from "../../../core/eventBus";
-import type { DisplayMessage } from "../agent-display";
+import type { DisplayMessage, WorkflowData } from "../agent-display";
 import {
   bindOperatorRunEvents,
   createDisplayEventHandlers,
+  createRunEventProjections,
   type OperatorRunEventHandlers,
+  type SubagentEventSink,
 } from "./run-events";
+import { initialWorkflowData } from "./workflow-data";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -429,5 +432,275 @@ describe("createDisplayEventHandlers", () => {
     expect(updates).toBe(0);
 
     display.dispose();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createRunEventProjections — subagent routing, questions, workflow phases
+// ---------------------------------------------------------------------------
+
+describe("createRunEventProjections", () => {
+  function setup(current = true) {
+    let messages: DisplayMessage[] = [];
+    const display = createDisplayEventHandlers({
+      updateMessages: (u) => {
+        messages = u(messages);
+      },
+      setThinking: () => {},
+      setError: () => {},
+    });
+    const subagents: SubagentEventSink = {
+      appendText: vi.fn(),
+      addStreamingToolCall: vi.fn(),
+      appendToolCallDelta: vi.fn(),
+      addToolCall: vi.fn(),
+      updateToolResult: vi.fn(),
+      spawnSession: vi.fn(),
+      completeSession: vi.fn(),
+    };
+    const workflowUpdaters: Array<(wd: WorkflowData) => WorkflowData> = [];
+    const clearSubagentSessions = vi.fn();
+    const onAsked = vi.fn();
+    const onCleared = vi.fn();
+    const onRootToolCallStarted = vi.fn();
+    const onPlanSubmitted = vi.fn();
+    const projections = createRunEventProjections({
+      display,
+      subagents,
+      updateWorkflowData: (u) => workflowUpdaters.push(u),
+      clearSubagentSessions,
+      questions: { onAsked, onCleared },
+      onRootToolCallStarted,
+      onPlanSubmitted,
+    });
+    const bus = new Bus();
+    const unbind = bindOperatorRunEvents(bus, {
+      isCurrent: () => current,
+      handlers: projections.handlers,
+    });
+    return {
+      display,
+      subagents,
+      workflowUpdaters,
+      clearSubagentSessions,
+      onAsked,
+      onCleared,
+      onRootToolCallStarted,
+      onPlanSubmitted,
+      bus,
+      unbind,
+      getMessages: () => messages,
+    };
+  }
+
+  it("routes root events to the display and subagent events to the sink", () => {
+    const s = setup();
+
+    s.bus.emit("text-delta", { text: "root text" });
+    s.bus.emit("text-delta", { text: " sub", subagentId: "pentest-agent-1" });
+    expect(s.getMessages()).toHaveLength(1);
+    expect(s.getMessages()[0]).toMatchObject({
+      role: "assistant",
+      content: "root text",
+    });
+    expect(s.subagents.appendText).toHaveBeenCalledWith(
+      "pentest-agent-1",
+      " sub",
+    );
+
+    s.bus.emit("tool-call-start", {
+      toolCallId: "tc-sub",
+      toolName: "t",
+      subagentId: "pentest-agent-1",
+    });
+    expect(s.subagents.addStreamingToolCall).toHaveBeenCalledWith(
+      "pentest-agent-1",
+      "tc-sub",
+      "t",
+    );
+    expect(s.getMessages()).toHaveLength(1);
+
+    // Subagent command output is dropped entirely.
+    s.bus.emit("command-output", { data: "x", subagentId: "pentest-agent-1" });
+    expect(s.getMessages()).toHaveLength(1);
+
+    s.bus.emit("error", {
+      error: new Error("sub fail"),
+      subagentId: "pentest-agent-1",
+    });
+    expect(s.subagents.appendText).toHaveBeenCalledWith(
+      "pentest-agent-1",
+      expect.stringContaining("sub fail"),
+    );
+    expect(s.getMessages()).toHaveLength(1);
+
+    // Subagent tool-call-complete falls back to {} args.
+    s.bus.emit("tool-call-complete", {
+      toolCallId: "tc-sub",
+      toolName: "t",
+      args: undefined,
+      subagentId: "pentest-agent-1",
+    });
+    expect(s.subagents.addToolCall).toHaveBeenCalledWith(
+      "pentest-agent-1",
+      "tc-sub",
+      "t",
+      {},
+    );
+    s.unbind();
+  });
+
+  it("drops every projection for stale generations", () => {
+    const s = setup(false);
+
+    s.bus.emit("text-delta", { text: "stale" });
+    s.bus.emit("subagent-spawn", {
+      subagentId: "pentest-agent-1",
+      input: {},
+    });
+    s.bus.emit("workflow-phase-start", { phase: "discovery", label: "Recon" });
+
+    expect(s.getMessages()).toHaveLength(0);
+    expect(s.subagents.spawnSession).not.toHaveBeenCalled();
+    expect(s.clearSubagentSessions).not.toHaveBeenCalled();
+    expect(s.workflowUpdaters).toHaveLength(0);
+    s.unbind();
+  });
+
+  it("intercepts ask_user_questions and fires root tool-call hooks", () => {
+    const s = setup();
+
+    s.bus.emit("tool-call-complete", {
+      toolCallId: "q1",
+      toolName: "ask_user_questions",
+      args: { questions: [{ id: "x", question: "which?" }] },
+    });
+    expect(s.onAsked).toHaveBeenCalledWith("q1", [
+      { id: "x", question: "which?" },
+    ]);
+    expect(s.onRootToolCallStarted).toHaveBeenCalledTimes(1);
+
+    // Empty questions batch — no interception.
+    s.bus.emit("tool-call-complete", {
+      toolCallId: "q2",
+      toolName: "ask_user_questions",
+      args: { questions: [] },
+    });
+    expect(s.onAsked).toHaveBeenCalledTimes(1);
+
+    // Non-question tool — no interception, hook still fires.
+    s.bus.emit("tool-call-complete", {
+      toolCallId: "tc-1",
+      toolName: "execute_command",
+      args: { command: "ls" },
+    });
+    expect(s.onAsked).toHaveBeenCalledTimes(1);
+    // Three root tool-call-completes total (q1, empty q2, tc-1).
+    expect(s.onRootToolCallStarted).toHaveBeenCalledTimes(3);
+    s.unbind();
+  });
+
+  it("clears questions on root error and tracks submit_plan success", () => {
+    const s = setup();
+
+    s.bus.emit("error", { error: new Error("boom") });
+    expect(s.onCleared).toHaveBeenCalledTimes(1);
+
+    s.bus.emit("tool-result", {
+      toolCallId: "p1",
+      toolName: "submit_plan",
+      result: { success: true },
+    });
+    expect(s.onPlanSubmitted).toHaveBeenCalledTimes(1);
+
+    // Unsuccessful submit_plan — no gating flip.
+    s.bus.emit("tool-result", {
+      toolCallId: "p2",
+      toolName: "submit_plan",
+      result: { success: false },
+    });
+    expect(s.onPlanSubmitted).toHaveBeenCalledTimes(1);
+    s.unbind();
+  });
+
+  it("projects workflow phases and the subagent swarm", () => {
+    const s = setup();
+
+    s.bus.emit("text-delta", { text: "partial" });
+    s.bus.emit("workflow-phase-start", { phase: "discovery", label: "Recon" });
+    expect(s.display.getPartialText()).toBe("");
+    expect(s.clearSubagentSessions).toHaveBeenCalledTimes(1);
+    const discovery = s.workflowUpdaters[0](initialWorkflowData());
+    expect(discovery.currentPhase).toBe("discovery");
+    expect(discovery.discovery.label).toBe("Recon");
+
+    // Non-discovery phase start does not clear sessions again.
+    s.bus.emit("workflow-phase-start", {
+      phase: "pentesting",
+      label: "Exploit",
+    });
+    expect(s.clearSubagentSessions).toHaveBeenCalledTimes(1);
+
+    // Synthetic app: nodes are dropped before any bookkeeping.
+    s.bus.emit("subagent-spawn", { subagentId: "app:foo", input: {} });
+    expect(s.subagents.spawnSession).not.toHaveBeenCalled();
+
+    // Swarm agents register in the workflow; other subagents do not.
+    s.bus.emit("subagent-spawn", {
+      subagentId: "pentest-agent-1",
+      name: "A1",
+      input: {},
+    });
+    expect(s.subagents.spawnSession).toHaveBeenCalledWith(
+      "pentest-agent-1",
+      "A1",
+    );
+    const spawned = s.workflowUpdaters.at(-1)?.(initialWorkflowData());
+    expect(spawned?.pentesting.subagents["pentest-agent-1"]).toMatchObject({
+      name: "A1",
+      status: "pending",
+    });
+
+    s.bus.emit("subagent-spawn", { subagentId: "discovery-agent", input: {} });
+    expect(s.subagents.spawnSession).toHaveBeenCalledWith(
+      "discovery-agent",
+      undefined,
+    );
+    expect(s.workflowUpdaters).toHaveLength(3);
+
+    s.bus.emit("subagent-complete", {
+      subagentId: "pentest-agent-1",
+      status: "completed",
+    });
+    expect(s.subagents.completeSession).toHaveBeenCalledWith(
+      "pentest-agent-1",
+      "completed",
+    );
+    const completed = s.workflowUpdaters.at(-1)?.(spawned as WorkflowData);
+    expect(completed?.pentesting.subagents["pentest-agent-1"].status).toBe(
+      "completed",
+    );
+
+    s.bus.emit("workflow-phase-complete", {
+      phase: "reporting",
+      summary: { findingsCount: 2 },
+    });
+    const reported = s.workflowUpdaters.at(-1)?.(completed as WorkflowData);
+    expect(reported?.currentPhase).toBe("complete");
+    expect(reported?.reporting.findingsCount).toBe(2);
+    s.unbind();
+  });
+
+  it("cleanup stops all forwarding", () => {
+    const s = setup();
+    s.unbind();
+
+    s.bus.emit("text-delta", { text: "after" });
+    s.bus.emit("subagent-spawn", { subagentId: "pentest-agent-1", input: {} });
+    s.bus.emit("workflow-phase-start", { phase: "discovery", label: "R" });
+
+    expect(s.getMessages()).toHaveLength(0);
+    expect(s.subagents.spawnSession).not.toHaveBeenCalled();
+    expect(s.workflowUpdaters).toHaveLength(0);
   });
 });

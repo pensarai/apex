@@ -119,6 +119,7 @@ import { QueuedMessages } from "./queued-messages";
 import {
   bindOperatorRunEvents,
   createDisplayEventHandlers,
+  createRunEventProjections,
 } from "./run-events";
 import { RunTraceSession } from "./run-tracing";
 import SubagentDialog from "./subagent-dialog";
@@ -129,14 +130,7 @@ import {
   markSubagentsInterrupted,
 } from "./subagent-state";
 import { SubagentStatusBar } from "./subagent-status-bar";
-import {
-  applyWorkflowPhaseComplete,
-  applyWorkflowPhaseStart,
-  applyWorkflowSubagentComplete,
-  applyWorkflowSubagentSpawn,
-  isPentestAgent,
-  updateWorkflowDataMessage,
-} from "./workflow-data";
+import { updateWorkflowDataMessage } from "./workflow-data";
 
 /**
  * Operator Dashboard - interactive chat interface with the offensive security agent
@@ -603,6 +597,47 @@ export default function OperatorDashboard({
   }, [displayEvents]);
 
   // ---------------------------------------------------------------------------
+  // Run event projections — subagent routing, questions interception, and
+  // workflow phases layered over the display projections. Component state
+  // changes stay behind the injected callbacks.
+  // ---------------------------------------------------------------------------
+
+  const updateWorkflowData = useCallback(
+    (updater: (wd: WorkflowData) => WorkflowData) => {
+      setMessages((prev) => updateWorkflowDataMessage(prev, updater));
+    },
+    [],
+  );
+
+  const runEventProjections = useMemo(
+    () =>
+      createRunEventProjections({
+        display: displayEvents,
+        subagents: subagentHelpers,
+        updateWorkflowData,
+        clearSubagentSessions: () => subagentStore.setState(new Map()),
+        questions: {
+          onAsked: (toolCallId, questions) => {
+            pendingToolCallIdRef.current = toolCallId;
+            setPendingQuestions(questions);
+          },
+          onCleared: () => {
+            pendingToolCallIdRef.current = null;
+            setPendingQuestions(null);
+          },
+        },
+        onRootToolCallStarted: () => {
+          commandCancelledRef.current = false;
+        },
+        onPlanSubmitted: () => {
+          planSubmittedRef.current = true;
+          planGateBypassedOnResumeRef.current = false;
+        },
+      }),
+    [displayEvents, subagentHelpers, updateWorkflowData, subagentStore],
+  );
+
+  // ---------------------------------------------------------------------------
   // Approval handlers
   // ---------------------------------------------------------------------------
 
@@ -731,165 +766,9 @@ export default function OperatorDashboard({
         recordTokenUsage,
       });
 
-      // Patch the workflowData on the active run_pentest_workflow tool message.
-      const updateWorkflowData = (
-        updater: (wd: WorkflowData) => WorkflowData,
-      ) => {
-        setMessages((prev) => updateWorkflowDataMessage(prev, updater));
-      };
-
       const unbindRunEvents = bindOperatorRunEvents(eventBus, {
         isCurrent: () => gen === generationRef.current,
-        handlers: {
-          onTextDelta: (d) => {
-            if (d.subagentId) {
-              subagentHelpers.appendText(d.subagentId, d.text);
-              return;
-            }
-            displayEvents.onTextDelta(d);
-          },
-          onToolCallStart: (d) => {
-            if (d.subagentId) {
-              subagentHelpers.addStreamingToolCall(
-                d.subagentId,
-                d.toolCallId,
-                d.toolName,
-              );
-              return;
-            }
-            displayEvents.onToolCallStart(d);
-          },
-          onToolCallDelta: (d) => {
-            if (d.subagentId) {
-              subagentHelpers.appendToolCallDelta(
-                d.subagentId,
-                d.toolCallId,
-                d.argsTextDelta,
-              );
-              return;
-            }
-            displayEvents.onToolCallDelta(d);
-          },
-          onToolCallComplete: (d) => {
-            if (d.subagentId) {
-              const args =
-                d.args &&
-                typeof d.args === "object" &&
-                !Array.isArray(d.args) &&
-                d.args !== null
-                  ? (d.args as Record<string, unknown>)
-                  : {};
-              subagentHelpers.addToolCall(
-                d.subagentId,
-                d.toolCallId,
-                d.toolName,
-                args,
-              );
-              return;
-            }
-            displayEvents.onToolCallComplete(d);
-            commandCancelledRef.current = false;
-
-            if (d.toolName === ASK_USER_QUESTIONS_TOOL_NAME) {
-              const args =
-                d.args &&
-                typeof d.args === "object" &&
-                !Array.isArray(d.args) &&
-                d.args !== null
-                  ? (d.args as Record<string, unknown>)
-                  : undefined;
-              const rawQuestions = args?.questions;
-              if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
-                pendingToolCallIdRef.current = d.toolCallId;
-                setPendingQuestions(rawQuestions as AskUserQuestion[]);
-              }
-            }
-          },
-          onToolResult: (d) => {
-            if (d.subagentId) {
-              subagentHelpers.updateToolResult(
-                d.subagentId,
-                d.toolCallId,
-                d.result,
-              );
-              return;
-            }
-            displayEvents.onToolResult(d);
-
-            // Track submit_plan success — review triggers after the run completes
-            if (
-              d.toolName === "submit_plan" &&
-              (d.result as Record<string, unknown> | null)?.success === true
-            ) {
-              planSubmittedRef.current = true;
-              planGateBypassedOnResumeRef.current = false;
-            }
-          },
-          onCommandOutput: (d) => {
-            if (d.subagentId) return;
-            displayEvents.onCommandOutput(d);
-          },
-          onError: (d) => {
-            if (d.subagentId) {
-              const errMsg =
-                d.error instanceof Error ? d.error.message : "Unknown error";
-              subagentHelpers.appendText(d.subagentId, `\nError: ${errMsg}\n`);
-              return;
-            }
-            displayEvents.onError(d);
-            // Clear pending-questions state so an error after the tool-call event
-            // doesn't leave the questions form stuck over a failed conversation.
-            pendingToolCallIdRef.current = null;
-            setPendingQuestions(null);
-          },
-          onSubagentSpawn: ({ subagentId, name }) => {
-            // Hide whitebox per-app synthetic grouping nodes until #744 lands a hierarchical view.
-            if (subagentId.startsWith("app:")) return;
-            subagentHelpers.spawnSession(subagentId, name);
-            if (!isPentestAgent(subagentId)) return;
-            // Pentest swarm agents → workflowData.pentesting.subagents
-            updateWorkflowData((wd) =>
-              applyWorkflowSubagentSpawn(wd, subagentId, name),
-            );
-          },
-          onSubagentComplete: ({ subagentId, status }) => {
-            // Mirror the spawn-handler filter: synthetic per-app grouping nodes
-            // were never registered as sessions, so don't try to complete them.
-            if (subagentId.startsWith("app:")) return;
-            subagentHelpers.completeSession(subagentId, status);
-            if (!isPentestAgent(subagentId)) return;
-            // Update workflowData swarm status
-            updateWorkflowData((wd) =>
-              applyWorkflowSubagentComplete(wd, subagentId, status),
-            );
-          },
-          // Workflow phase events → update workflowData on the tool message
-          onWorkflowPhaseStart: (d) => {
-            displayEvents.resetPartialText();
-            // New workflow run — clear old subagent sessions so the hub
-            // shows only the current batch.
-            if (d.phase === "discovery") {
-              subagentStore.setState(new Map());
-            }
-            updateWorkflowData((wd) =>
-              applyWorkflowPhaseStart(
-                wd,
-                d.phase as WorkflowData["currentPhase"],
-                d.label,
-              ),
-            );
-          },
-          onWorkflowPhaseComplete: (d) => {
-            displayEvents.resetPartialText();
-            updateWorkflowData((wd) =>
-              applyWorkflowPhaseComplete(
-                wd,
-                d.phase as WorkflowData["currentPhase"],
-                d.summary,
-              ),
-            );
-          },
-        },
+        handlers: runEventProjections.handlers,
       });
 
       const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
@@ -1113,7 +992,7 @@ export default function OperatorDashboard({
       agentMode,
       addTokenUsage,
       displayEvents,
-      subagentHelpers,
+      runEventProjections,
       setThinking,
       setIsExecuting,
       addCacheUsage,
@@ -1125,7 +1004,6 @@ export default function OperatorDashboard({
       strikeMode,
       route.data,
       setSessionCwd,
-      subagentStore.setState,
       skillsRegistry.buildCatalog,
       requireApproval,
       skillsRegistry,

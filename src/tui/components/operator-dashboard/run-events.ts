@@ -1,5 +1,9 @@
+import {
+  ASK_USER_QUESTIONS_TOOL_NAME,
+  type AskUserQuestion,
+} from "../../../core/agents/offSecAgent";
 import type { AgentEventBus, AgentEventMap } from "../../../core/eventBus";
-import type { DisplayMessage } from "../agent-display";
+import type { DisplayMessage, WorkflowData } from "../agent-display";
 import { tryParsePartialJson } from "../shared/message-utils";
 import {
   appendStreamedText,
@@ -10,6 +14,13 @@ import {
   mergeCommandOutput,
   startStreamingToolCall,
 } from "./display-state";
+import {
+  applyWorkflowPhaseComplete,
+  applyWorkflowPhaseStart,
+  applyWorkflowSubagentComplete,
+  applyWorkflowSubagentSpawn,
+  isPentestAgent,
+} from "./workflow-data";
 
 // ---------------------------------------------------------------------------
 // Run event subscription lifecycle — owns subscription, generation filtering,
@@ -246,5 +257,206 @@ export function createDisplayEventHandlers(
     flushCommandOutput,
     stopCommandOutputFlush,
     dispose: stopCommandOutputFlush,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Run event projections — the full handler set: root-vs-subagent routing,
+// questions interception, workflow phases, and subagent swarm bookkeeping,
+// layered over the display projections. Component-specific state changes
+// (questions state, command-cancel flag, plan-review gating) stay behind
+// injected callbacks.
+// ---------------------------------------------------------------------------
+
+/** Structural subset of createSubagentSessionHelpers used by the projections. */
+export interface SubagentEventSink {
+  appendText(id: string, text: string): void;
+  addStreamingToolCall(id: string, toolCallId: string, toolName: string): void;
+  appendToolCallDelta(
+    id: string,
+    toolCallId: string,
+    argsTextDelta: string,
+  ): void;
+  addToolCall(
+    id: string,
+    toolCallId: string,
+    toolName: string,
+    args?: Record<string, unknown>,
+  ): void;
+  updateToolResult(id: string, toolCallId: string, result: unknown): void;
+  spawnSession(id: string, name?: string, input?: unknown): void;
+  completeSession(id: string, status: "completed" | "failed"): void;
+}
+
+export interface RunEventProjectionDeps {
+  display: DisplayEventAdapter;
+  subagents: SubagentEventSink;
+  /** Patch the active run_pentest_workflow tool message's workflowData. */
+  updateWorkflowData: (updater: (wd: WorkflowData) => WorkflowData) => void;
+  /** Clear all subagent sessions (new discovery phase). */
+  clearSubagentSessions: () => void;
+  /** Ask-user-questions lifecycle, wired to component state. */
+  questions: {
+    onAsked: (toolCallId: string, questions: AskUserQuestion[]) => void;
+    onCleared: () => void;
+  };
+  /** A root tool call began executing (resets the command-cancel flag). */
+  onRootToolCallStarted?: () => void;
+  /** A submit_plan tool result reported success (plan-review gating). */
+  onPlanSubmitted?: () => void;
+}
+
+function toRecordArgs(args: unknown): Record<string, unknown> | undefined {
+  return args &&
+    typeof args === "object" &&
+    !Array.isArray(args) &&
+    args !== null
+    ? (args as Record<string, unknown>)
+    : undefined;
+}
+
+/**
+ * The complete run-event handler set for {@link bindOperatorRunEvents}.
+ * Routing: events carrying a `subagentId` project into that subagent's
+ * session; root events project into the display. Generation filtering and
+ * cleanup are owned by the binding, not the projections.
+ */
+export function createRunEventProjections(deps: RunEventProjectionDeps): {
+  handlers: OperatorRunEventHandlers;
+} {
+  const { display, subagents, updateWorkflowData } = deps;
+
+  return {
+    handlers: {
+      onTextDelta: (d) => {
+        if (d.subagentId) {
+          subagents.appendText(d.subagentId, d.text);
+          return;
+        }
+        display.onTextDelta(d);
+      },
+      onToolCallStart: (d) => {
+        if (d.subagentId) {
+          subagents.addStreamingToolCall(
+            d.subagentId,
+            d.toolCallId,
+            d.toolName,
+          );
+          return;
+        }
+        display.onToolCallStart(d);
+      },
+      onToolCallDelta: (d) => {
+        if (d.subagentId) {
+          subagents.appendToolCallDelta(
+            d.subagentId,
+            d.toolCallId,
+            d.argsTextDelta,
+          );
+          return;
+        }
+        display.onToolCallDelta(d);
+      },
+      onToolCallComplete: (d) => {
+        if (d.subagentId) {
+          subagents.addToolCall(
+            d.subagentId,
+            d.toolCallId,
+            d.toolName,
+            toRecordArgs(d.args) ?? {},
+          );
+          return;
+        }
+        display.onToolCallComplete(d);
+        deps.onRootToolCallStarted?.();
+
+        if (d.toolName === ASK_USER_QUESTIONS_TOOL_NAME) {
+          const rawQuestions = toRecordArgs(d.args)?.questions;
+          if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
+            deps.questions.onAsked(
+              d.toolCallId,
+              rawQuestions as AskUserQuestion[],
+            );
+          }
+        }
+      },
+      onToolResult: (d) => {
+        if (d.subagentId) {
+          subagents.updateToolResult(d.subagentId, d.toolCallId, d.result);
+          return;
+        }
+        display.onToolResult(d);
+
+        if (
+          d.toolName === "submit_plan" &&
+          (d.result as Record<string, unknown> | null)?.success === true
+        ) {
+          deps.onPlanSubmitted?.();
+        }
+      },
+      onCommandOutput: (d) => {
+        if (d.subagentId) return;
+        display.onCommandOutput(d);
+      },
+      onError: (d) => {
+        if (d.subagentId) {
+          const errMsg =
+            d.error instanceof Error ? d.error.message : "Unknown error";
+          subagents.appendText(d.subagentId, `\nError: ${errMsg}\n`);
+          return;
+        }
+        display.onError(d);
+        // Clear pending-questions state so an error after the tool-call event
+        // doesn't leave the questions form stuck over a failed conversation.
+        deps.questions.onCleared();
+      },
+      onSubagentSpawn: ({ subagentId, name }) => {
+        // Hide whitebox per-app synthetic grouping nodes until #744 lands a hierarchical view.
+        if (subagentId.startsWith("app:")) return;
+        subagents.spawnSession(subagentId, name);
+        if (!isPentestAgent(subagentId)) return;
+        // Pentest swarm agents → workflowData.pentesting.subagents
+        updateWorkflowData((wd) =>
+          applyWorkflowSubagentSpawn(wd, subagentId, name),
+        );
+      },
+      onSubagentComplete: ({ subagentId, status }) => {
+        // Mirror the spawn-handler filter: synthetic per-app grouping nodes
+        // were never registered as sessions, so don't try to complete them.
+        if (subagentId.startsWith("app:")) return;
+        subagents.completeSession(subagentId, status);
+        if (!isPentestAgent(subagentId)) return;
+        // Update workflowData swarm status
+        updateWorkflowData((wd) =>
+          applyWorkflowSubagentComplete(wd, subagentId, status),
+        );
+      },
+      // Workflow phase events → update workflowData on the tool message
+      onWorkflowPhaseStart: (d) => {
+        display.resetPartialText();
+        // New workflow run — clear old subagent sessions so the hub
+        // shows only the current batch.
+        if (d.phase === "discovery") {
+          deps.clearSubagentSessions();
+        }
+        updateWorkflowData((wd) =>
+          applyWorkflowPhaseStart(
+            wd,
+            d.phase as WorkflowData["currentPhase"],
+            d.label,
+          ),
+        );
+      },
+      onWorkflowPhaseComplete: (d) => {
+        display.resetPartialText();
+        updateWorkflowData((wd) =>
+          applyWorkflowPhaseComplete(
+            wd,
+            d.phase as WorkflowData["currentPhase"],
+            d.summary,
+          ),
+        );
+      },
+    },
   };
 }
