@@ -5,6 +5,8 @@ type NavigationItem = {
   model?: Pick<ModelInfo, "id">;
 };
 
+type ModelIdentity = Pick<ModelInfo, "id" | "provider">;
+
 export function findSelectedModelIndex(
   navigationItems: readonly NavigationItem[],
   selectedModelId: string,
@@ -29,4 +31,24 @@ export function retainAvailableProviders(
   return retainedProviders.size === expandedProviders.size
     ? expandedProviders
     : retainedProviders;
+}
+
+export function getSelectedModelRevealKey({
+  availableModels,
+  selectedModel,
+  lastRevealedSelectedModelKey,
+}: {
+  availableModels: readonly ModelIdentity[];
+  selectedModel: ModelIdentity;
+  lastRevealedSelectedModelKey: string | null;
+}): string | null {
+  const selectedModelKey = `${selectedModel.provider}:${selectedModel.id}`;
+  if (lastRevealedSelectedModelKey === selectedModelKey) return null;
+
+  const selectedModelIsAvailable = availableModels.some(
+    (model) =>
+      model.id === selectedModel.id &&
+      model.provider === selectedModel.provider,
+  );
+  return selectedModelIsAvailable ? selectedModelKey : null;
 }

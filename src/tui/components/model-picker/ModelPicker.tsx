@@ -24,6 +24,7 @@ import { getPasteText } from "../../utils/paste";
 import { scrollToChild } from "../../utils/scroll";
 import {
   findSelectedModelIndex,
+  getSelectedModelRevealKey,
   retainAvailableProviders,
 } from "./model-navigation";
 import { filterModels, getProviderDisplayName } from "./model-search";
@@ -168,8 +169,16 @@ export function ModelPicker({
 
   // A genuine model change should reveal its provider exactly once.
   useEffect(() => {
-    const selectedModelKey = `${selectedModel.provider}:${selectedModel.id}`;
-    if (lastRevealedSelectedModelRef.current === selectedModelKey) return;
+    const selectedModelKey = getSelectedModelRevealKey({
+      availableModels,
+      selectedModel: {
+        id: selectedModel.id,
+        provider: selectedModel.provider,
+      },
+      lastRevealedSelectedModelKey: lastRevealedSelectedModelRef.current,
+    });
+    if (!selectedModelKey) return;
+
     lastRevealedSelectedModelRef.current = selectedModelKey;
 
     setExpandedProviders((prev) =>
@@ -177,7 +186,7 @@ export function ModelPicker({
         ? prev
         : new Set([...prev, selectedModel.provider]),
     );
-  }, [selectedModel.id, selectedModel.provider]);
+  }, [availableModels, selectedModel.id, selectedModel.provider]);
 
   const filteredModels = useMemo(
     () => filterModels(availableModels, searchQuery),

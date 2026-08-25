@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AIModelProvider } from "../../../core/ai";
 import {
   findSelectedModelIndex,
+  getSelectedModelRevealKey,
   retainAvailableProviders,
 } from "./model-navigation";
 
@@ -65,5 +66,37 @@ describe("retainAvailableProviders", () => {
         new Set<AIModelProvider>(["openai"]),
       ),
     ).toEqual(new Set<AIModelProvider>(["openai"]));
+  });
+});
+
+describe("getSelectedModelRevealKey", () => {
+  it("waits for availability and reveals each selection only once", () => {
+    const selectedModel = {
+      id: "model-b" as const,
+      provider: "anthropic" as const,
+    };
+
+    expect(
+      getSelectedModelRevealKey({
+        availableModels: [],
+        selectedModel,
+        lastRevealedSelectedModelKey: null,
+      }),
+    ).toBeNull();
+
+    const selectedModelKey = getSelectedModelRevealKey({
+      availableModels: [selectedModel],
+      selectedModel,
+      lastRevealedSelectedModelKey: null,
+    });
+    expect(selectedModelKey).toBe("anthropic:model-b");
+
+    expect(
+      getSelectedModelRevealKey({
+        availableModels: [{ ...selectedModel }],
+        selectedModel,
+        lastRevealedSelectedModelKey: selectedModelKey,
+      }),
+    ).toBeNull();
   });
 });
