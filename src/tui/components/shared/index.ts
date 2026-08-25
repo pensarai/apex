@@ -20,7 +20,7 @@ export {
 } from "./markdown-viewer";
 export { MessageRenderer } from "./message-renderer";
 // Message utilities
-export { getStableMessageKey, tryParsePartialJson } from "./message-utils";
+export { getStableMessageKey } from "./message-utils";
 // Input components
 export {
   type AutocompleteOption,
