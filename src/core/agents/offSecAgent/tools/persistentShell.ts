@@ -409,6 +409,7 @@ export class PersistentShell {
           : Number.isNaN(naturalExitCode)
             ? 1
             : naturalExitCode;
+      const wasInterrupted = cmd.forcedExitCode != null;
       const effectiveStderr = cmd.forcedStderrSuffix
         ? (cmd.stderr || "") + cmd.forcedStderrSuffix
         : cmd.stderr || "";
@@ -418,11 +419,15 @@ export class PersistentShell {
       unlinkSafe(cmd.errPath);
 
       const resolve = cmd.resolve;
-      this.current = null;
-      this.pendingCancel = null;
+      if (wasInterrupted) {
+        this.restartAfterInterruptedCommand(cmd);
+      } else {
+        this.current = null;
+        this.pendingCancel = null;
+      }
       resolve({
         stdout: commandOutput || "(no output)",
-        stderr: effectiveStderr,
+        stderr: effectiveStderr + (wasInterrupted ? SHELL_RESTART_NOTICE : ""),
         exitCode: effectiveExit,
       });
       return;
@@ -868,6 +873,8 @@ function signalPids(pids: number[], signal: NodeJS.Signals): void {
  * SIGTERM — and by then we've already read, so it wouldn't matter anyway.
  */
 const SALVAGE_GRACE_MS = 200;
+const SHELL_RESTART_NOTICE =
+  "\n(persistent shell restarted after interrupted command; shell-local cd/export state was cleared)";
 
 function scheduleSalvageKill(
   rootPid: number | undefined,
@@ -906,7 +913,7 @@ function scheduleSalvageKill(
       stderr:
         (diskStderr || pending.stderr || "") +
         (pending.forcedStderrSuffix ?? "") +
-        "\n(persistent shell restarted after interrupted command; shell-local cd/export state was cleared)",
+        SHELL_RESTART_NOTICE,
       exitCode,
     });
   }, SALVAGE_GRACE_MS);
