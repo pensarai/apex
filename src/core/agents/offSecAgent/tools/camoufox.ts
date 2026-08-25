@@ -115,25 +115,21 @@ export function viewportSizeForDisplay(display: string | undefined): string {
   return COMPUTER_USE_VIEWPORT_SIZE;
 }
 
-/** Camoufox `window` + matching `screen` constraints (fingerprint-coherent). */
+/**
+ * Camoufox `window` + a `screen` floor (min only, never an exact pin).
+ *
+ * browserforge has no Firefox fingerprint at 720px height, so exact-pinning the
+ * 720p endpoint tier made header generation throw for every browser call. A
+ * min-only floor keeps `screen >= window` while staying in a covered bucket.
+ */
 export function camoufoxWindowOptions(window: [number, number]): {
   window: [number, number];
-  screen: {
-    minWidth: number;
-    maxWidth: number;
-    minHeight: number;
-    maxHeight: number;
-  };
+  screen: { minWidth: number; minHeight: number };
 } {
   const [width, height] = window;
   return {
     window: [width, height],
-    screen: {
-      minWidth: width,
-      maxWidth: width,
-      minHeight: height,
-      maxHeight: height,
-    },
+    screen: { minWidth: width, minHeight: height },
   };
 }
 
