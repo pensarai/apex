@@ -127,6 +127,7 @@ import {
   selectionAfterRemove,
 } from "./queue";
 import { QueuedMessages } from "./queued-messages";
+import { bindOperatorRunEvents } from "./run-events";
 import { RunTraceSession } from "./run-tracing";
 import SubagentDialog from "./subagent-dialog";
 import {
@@ -833,187 +834,171 @@ export default function OperatorDashboard({
         setMessages((prev) => updateWorkflowDataMessage(prev, updater));
       };
 
-      eventBus.on("text-delta", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) {
-          subagentHelpers.appendText(d.subagentId, d.text);
-          return;
-        }
-        setThinking(false);
-        appendText(d.text);
-      });
+      const unbindRunEvents = bindOperatorRunEvents(eventBus, {
+        isCurrent: () => gen === generationRef.current,
+        handlers: {
+          onTextDelta: (d) => {
+            if (d.subagentId) {
+              subagentHelpers.appendText(d.subagentId, d.text);
+              return;
+            }
+            setThinking(false);
+            appendText(d.text);
+          },
+          onToolCallStart: (d) => {
+            if (d.subagentId) {
+              subagentHelpers.addStreamingToolCall(
+                d.subagentId,
+                d.toolCallId,
+                d.toolName,
+              );
+              return;
+            }
+            setThinking(false);
+            addStreamingToolCall(d.toolCallId, d.toolName);
+          },
+          onToolCallDelta: (d) => {
+            if (d.subagentId) {
+              subagentHelpers.appendToolCallDelta(
+                d.subagentId,
+                d.toolCallId,
+                d.argsTextDelta,
+              );
+              return;
+            }
+            appendToolCallDelta(d.toolCallId, d.argsTextDelta);
+          },
+          onToolCallComplete: (d) => {
+            if (d.subagentId) {
+              const args =
+                d.args &&
+                typeof d.args === "object" &&
+                !Array.isArray(d.args) &&
+                d.args !== null
+                  ? (d.args as Record<string, unknown>)
+                  : {};
+              subagentHelpers.addToolCall(
+                d.subagentId,
+                d.toolCallId,
+                d.toolName,
+                args,
+              );
+              return;
+            }
+            setThinking(false);
+            commandCancelledRef.current = false;
+            const args =
+              d.args &&
+              typeof d.args === "object" &&
+              !Array.isArray(d.args) &&
+              d.args !== null
+                ? (d.args as Record<string, unknown>)
+                : undefined;
+            addToolCall(d.toolCallId, d.toolName, args);
 
-      eventBus.on("tool-call-start", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) {
-          subagentHelpers.addStreamingToolCall(
-            d.subagentId,
-            d.toolCallId,
-            d.toolName,
-          );
-          return;
-        }
-        setThinking(false);
-        addStreamingToolCall(d.toolCallId, d.toolName);
-      });
+            if (d.toolName === ASK_USER_QUESTIONS_TOOL_NAME && args) {
+              const rawQuestions = args.questions;
+              if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
+                pendingToolCallIdRef.current = d.toolCallId;
+                setPendingQuestions(rawQuestions as AskUserQuestion[]);
+              }
+            }
+          },
+          onToolResult: (d) => {
+            if (d.subagentId) {
+              subagentHelpers.updateToolResult(
+                d.subagentId,
+                d.toolCallId,
+                d.result,
+              );
+              return;
+            }
+            flushCommandOutput();
+            if (cmdFlushTimerRef.current) {
+              clearInterval(cmdFlushTimerRef.current);
+              cmdFlushTimerRef.current = null;
+            }
+            setThinking(true);
+            updateToolResult(d.toolCallId, d.toolName, d.result);
 
-      eventBus.on("tool-call-delta", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) {
-          subagentHelpers.appendToolCallDelta(
-            d.subagentId,
-            d.toolCallId,
-            d.argsTextDelta,
-          );
-          return;
-        }
-        appendToolCallDelta(d.toolCallId, d.argsTextDelta);
-      });
-
-      eventBus.on("tool-call-complete", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) {
-          const args =
-            d.args &&
-            typeof d.args === "object" &&
-            !Array.isArray(d.args) &&
-            d.args !== null
-              ? (d.args as Record<string, unknown>)
-              : {};
-          subagentHelpers.addToolCall(
-            d.subagentId,
-            d.toolCallId,
-            d.toolName,
-            args,
-          );
-          return;
-        }
-        setThinking(false);
-        commandCancelledRef.current = false;
-        const args =
-          d.args &&
-          typeof d.args === "object" &&
-          !Array.isArray(d.args) &&
-          d.args !== null
-            ? (d.args as Record<string, unknown>)
-            : undefined;
-        addToolCall(d.toolCallId, d.toolName, args);
-
-        if (d.toolName === ASK_USER_QUESTIONS_TOOL_NAME && args) {
-          const rawQuestions = args.questions;
-          if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
-            pendingToolCallIdRef.current = d.toolCallId;
-            setPendingQuestions(rawQuestions as AskUserQuestion[]);
-          }
-        }
-      });
-
-      eventBus.on("tool-result", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) {
-          subagentHelpers.updateToolResult(
-            d.subagentId,
-            d.toolCallId,
-            d.result,
-          );
-          return;
-        }
-        flushCommandOutput();
-        if (cmdFlushTimerRef.current) {
-          clearInterval(cmdFlushTimerRef.current);
-          cmdFlushTimerRef.current = null;
-        }
-        setThinking(true);
-        updateToolResult(d.toolCallId, d.toolName, d.result);
-
-        // Track submit_plan success — review triggers after the run completes
-        if (
-          d.toolName === "submit_plan" &&
-          (d.result as Record<string, unknown> | null)?.success === true
-        ) {
-          planSubmittedRef.current = true;
-          planGateBypassedOnResumeRef.current = false;
-        }
-      });
-
-      eventBus.on("command-output", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) return;
-        onCommandOutput(d.data);
-      });
-
-      eventBus.on("error", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) {
-          const errMsg =
-            d.error instanceof Error ? d.error.message : "Unknown error";
-          subagentHelpers.appendText(d.subagentId, `\nError: ${errMsg}\n`);
-          return;
-        }
-        console.error("Agent error:", d.error);
-        // Clear pending-questions state so an error after the tool-call event
-        // doesn't leave the questions form stuck over a failed conversation.
-        pendingToolCallIdRef.current = null;
-        setPendingQuestions(null);
-        const errorMessage =
-          d.error instanceof Error ? d.error.message : "Unknown error";
-        setError(errorMessage);
-        setMessages((prev) => markInFlightToolsErrored(prev, errorMessage));
-      });
-
-      eventBus.on("subagent-spawn", ({ subagentId, name }) => {
-        if (gen !== generationRef.current) return;
-        // Hide whitebox per-app synthetic grouping nodes until #744 lands a hierarchical view.
-        if (subagentId.startsWith("app:")) return;
-        subagentHelpers.spawnSession(subagentId, name);
-        if (!isPentestAgent(subagentId)) return;
-        // Pentest swarm agents → workflowData.pentesting.subagents
-        updateWorkflowData((wd) =>
-          applyWorkflowSubagentSpawn(wd, subagentId, name),
-        );
-      });
-
-      eventBus.on("subagent-complete", ({ subagentId, status }) => {
-        if (gen !== generationRef.current) return;
-        // Mirror the spawn-handler filter: synthetic per-app grouping nodes
-        // were never registered as sessions, so don't try to complete them.
-        if (subagentId.startsWith("app:")) return;
-        subagentHelpers.completeSession(subagentId, status);
-        if (!isPentestAgent(subagentId)) return;
-        // Update workflowData swarm status
-        updateWorkflowData((wd) =>
-          applyWorkflowSubagentComplete(wd, subagentId, status),
-        );
-      });
-
-      // Workflow phase events → update workflowData on the tool message
-      eventBus.on("workflow-phase-start", (d) => {
-        if (gen !== generationRef.current) return;
-        textRef.current = "";
-        // New workflow run — clear old subagent sessions so the hub
-        // shows only the current batch.
-        if (d.phase === "discovery") {
-          subagentStore.setState(new Map());
-        }
-        updateWorkflowData((wd) =>
-          applyWorkflowPhaseStart(
-            wd,
-            d.phase as WorkflowData["currentPhase"],
-            d.label,
-          ),
-        );
-      });
-
-      eventBus.on("workflow-phase-complete", (d) => {
-        if (gen !== generationRef.current) return;
-        textRef.current = "";
-        updateWorkflowData((wd) =>
-          applyWorkflowPhaseComplete(
-            wd,
-            d.phase as WorkflowData["currentPhase"],
-            d.summary,
-          ),
-        );
+            // Track submit_plan success — review triggers after the run completes
+            if (
+              d.toolName === "submit_plan" &&
+              (d.result as Record<string, unknown> | null)?.success === true
+            ) {
+              planSubmittedRef.current = true;
+              planGateBypassedOnResumeRef.current = false;
+            }
+          },
+          onCommandOutput: (d) => {
+            if (d.subagentId) return;
+            onCommandOutput(d.data);
+          },
+          onError: (d) => {
+            if (d.subagentId) {
+              const errMsg =
+                d.error instanceof Error ? d.error.message : "Unknown error";
+              subagentHelpers.appendText(d.subagentId, `\nError: ${errMsg}\n`);
+              return;
+            }
+            console.error("Agent error:", d.error);
+            // Clear pending-questions state so an error after the tool-call event
+            // doesn't leave the questions form stuck over a failed conversation.
+            pendingToolCallIdRef.current = null;
+            setPendingQuestions(null);
+            const errorMessage =
+              d.error instanceof Error ? d.error.message : "Unknown error";
+            setError(errorMessage);
+            setMessages((prev) => markInFlightToolsErrored(prev, errorMessage));
+          },
+          onSubagentSpawn: ({ subagentId, name }) => {
+            // Hide whitebox per-app synthetic grouping nodes until #744 lands a hierarchical view.
+            if (subagentId.startsWith("app:")) return;
+            subagentHelpers.spawnSession(subagentId, name);
+            if (!isPentestAgent(subagentId)) return;
+            // Pentest swarm agents → workflowData.pentesting.subagents
+            updateWorkflowData((wd) =>
+              applyWorkflowSubagentSpawn(wd, subagentId, name),
+            );
+          },
+          onSubagentComplete: ({ subagentId, status }) => {
+            // Mirror the spawn-handler filter: synthetic per-app grouping nodes
+            // were never registered as sessions, so don't try to complete them.
+            if (subagentId.startsWith("app:")) return;
+            subagentHelpers.completeSession(subagentId, status);
+            if (!isPentestAgent(subagentId)) return;
+            // Update workflowData swarm status
+            updateWorkflowData((wd) =>
+              applyWorkflowSubagentComplete(wd, subagentId, status),
+            );
+          },
+          // Workflow phase events → update workflowData on the tool message
+          onWorkflowPhaseStart: (d) => {
+            textRef.current = "";
+            // New workflow run — clear old subagent sessions so the hub
+            // shows only the current batch.
+            if (d.phase === "discovery") {
+              subagentStore.setState(new Map());
+            }
+            updateWorkflowData((wd) =>
+              applyWorkflowPhaseStart(
+                wd,
+                d.phase as WorkflowData["currentPhase"],
+                d.label,
+              ),
+            );
+          },
+          onWorkflowPhaseComplete: (d) => {
+            textRef.current = "";
+            updateWorkflowData((wd) =>
+              applyWorkflowPhaseComplete(
+                wd,
+                d.phase as WorkflowData["currentPhase"],
+                d.summary,
+              ),
+            );
+          },
+        },
       });
 
       const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
@@ -1208,6 +1193,9 @@ export default function OperatorDashboard({
           ]);
         }
       } finally {
+        // Detach run-event listeners on all paths (abort, error, success) —
+        // post-run stragglers must not mutate display state.
+        unbindRunEvents();
         // Detach trace listeners and flush the uploader on all paths
         // (abort, error, success).
         await runTrace.cleanupRun();
