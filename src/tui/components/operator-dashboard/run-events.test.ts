@@ -202,4 +202,39 @@ describe("bindOperatorRunEvents", () => {
     // The raw sibling listener is unaffected by our unbind — 3 emissions, 3 calls.
     expect(sibling).toHaveBeenCalledTimes(3);
   });
+
+  it("a straggler error emitted after unbind does not crash the process", () => {
+    // Node's EventEmitter throws when `error` is emitted with no listeners.
+    // Unbinding must leave a no-op error listener so a late emission (e.g.
+    // forwarded from a subagent bus that outlived the run) is dropped.
+    const bus = new Bus();
+    const onError = vi.fn();
+    const unbind = bindOperatorRunEvents(bus, {
+      isCurrent: () => true,
+      handlers: { onError },
+    });
+
+    unbind();
+
+    expect(() =>
+      bus.emit("error", { error: new Error("straggler") }),
+    ).not.toThrow();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("unbind does not add an error listener when none was bound", () => {
+    const bus = new Bus();
+    const unbind = bindOperatorRunEvents(bus, {
+      isCurrent: () => true,
+      handlers: { onTextDelta: vi.fn() },
+    });
+
+    unbind();
+
+    // The binding only manages the listeners it subscribed — no error
+    // handler was bound, so unbind must not leave a no-op behind. Node
+    // still throws on a listenerless error emission, which is exactly
+    // what happens if this contract is violated.
+    expect(() => bus.emit("error", { error: new Error("x") })).toThrow();
+  });
 });

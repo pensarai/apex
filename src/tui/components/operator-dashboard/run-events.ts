@@ -35,6 +35,10 @@ export interface BindOperatorRunEventsOptions {
  * emission nor affects later events or cleanup.
  *
  * Returns an unbind function that detaches every listener; idempotent.
+ * Unbinding swaps the error listener for a no-op rather than removing it —
+ * Node's EventEmitter throws on an `error` emission with no listeners, and a
+ * straggler error (e.g. forwarded from a subagent bus that outlived the run)
+ * must be dropped like any other post-run event, not crash the process.
  */
 export function bindOperatorRunEvents(
   bus: AgentEventBus,
@@ -42,12 +46,14 @@ export function bindOperatorRunEvents(
 ): () => void {
   const { isCurrent, handlers } = options;
   const offs: Array<() => void> = [];
+  let boundError = false;
 
   const bind = <K extends keyof AgentEventMap>(
     event: K,
     handler: ((e: AgentEventMap[K]) => void) | undefined,
   ): void => {
     if (!handler) return;
+    if (event === "error") boundError = true;
     const wrapped = (e: AgentEventMap[K]): void => {
       if (!isCurrent()) return;
       try {
@@ -78,5 +84,10 @@ export function bindOperatorRunEvents(
     unbound = true;
     for (const off of offs) off();
     offs.length = 0;
+    // Node's EventEmitter throws on an `error` emission with no listeners.
+    // Leave a no-op behind so a straggler error on this bus is dropped like
+    // any other post-run event instead of crashing the process. The bus is
+    // per-run and unreferenced after the run, so the listener dies with it.
+    if (boundError) bus.on("error", () => {});
   };
 }
