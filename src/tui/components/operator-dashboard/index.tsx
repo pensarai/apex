@@ -46,7 +46,6 @@ import {
   isSensitiveHeaderName,
   renderHeaderValue,
 } from "../../../core/http/types";
-import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
   ApprovalGate,
@@ -128,6 +127,7 @@ import {
   selectionAfterRemove,
 } from "./queue";
 import { QueuedMessages } from "./queued-messages";
+import { RunTraceSession } from "./run-tracing";
 import SubagentDialog from "./subagent-dialog";
 import {
   createSubagentSessionHelpers,
@@ -816,6 +816,15 @@ export default function OperatorDashboard({
 
       const eventBus = new AgentEventBus();
 
+      // W&B trace upload — buffer early records so none are lost for new sessions.
+      // For resumed sessions, we attach before the agent starts.
+      // For new sessions, onSessionReady fires mid-construction; we replay
+      // any buffered records once the handler attaches.
+      const runTrace = new RunTraceSession(eventBus, {
+        isCurrent: () => gen === generationRef.current,
+        recordTokenUsage,
+      });
+
       // Patch the workflowData on the active run_pentest_workflow tool message.
       const updateWorkflowData = (
         updater: (wd: WorkflowData) => WorkflowData,
@@ -1049,71 +1058,13 @@ export default function OperatorDashboard({
           setSessionCwd(s.rootPath);
           sessionRef.current = s;
           setSession((prev) => prev ?? s);
-          tryAttachWandb(s);
+          runTrace.tryAttach(s);
         },
-      };
-
-      // W&B trace upload — buffer early records so none are lost for new sessions.
-      // For resumed sessions, we attach before the agent starts.
-      // For new sessions, onSessionReady fires mid-construction; we replay
-      // any buffered records once the handler attaches.
-      type TraceEvent = {
-        record: import("../../../core/agents/offSecAgent").TraceRecord;
-        subagentId?: string;
-      };
-      let wandbCleanup: (() => Promise<void>) | null = null;
-      let earlyBuffer: TraceEvent[] | null = [];
-
-      const earlyBufferHandler = (e: TraceEvent) => {
-        earlyBuffer?.push(e);
-      };
-      eventBus.on("trace-record", earlyBufferHandler);
-
-      // Subagent steps (orchestrator ones lack subagentId, counted above).
-      // Key dedupes the W&B early-buffer replay.
-      const countedSubagentSteps = new Set<string>();
-      eventBus.on("trace-record", ({ record, subagentId }) => {
-        if (gen !== generationRef.current) return;
-        if (!subagentId || record.type !== "step") return;
-        const key = `${subagentId}:${record.stepIndex}:${record.timestamp}`;
-        if (countedSubagentSteps.has(key)) return;
-        countedSubagentSteps.add(key);
-        recordTokenUsage(
-          record.usage.inputTokens,
-          record.usage.outputTokens,
-          record.usage.cacheReadTokens ?? 0,
-          record.usage.cacheWriteTokens ?? 0,
-        );
-      });
-
-      const tryAttachWandb = async (s: SessionInfo) => {
-        if (wandbCleanup) return;
-        const cleanup = await attachWandbToEventBus(s, eventBus).catch(
-          (e: unknown) => {
-            console.error("[wandb] Attach failed:", e);
-            return null;
-          },
-        );
-        if (cleanup) {
-          wandbCleanup = cleanup;
-          // Replay any records captured before the handler attached
-          const buffered = earlyBuffer;
-          earlyBuffer = null;
-          eventBus.off("trace-record", earlyBufferHandler);
-          if (buffered) {
-            for (const e of buffered) {
-              eventBus.emit("trace-record", e);
-            }
-          }
-        } else {
-          earlyBuffer = null;
-          eventBus.off("trace-record", earlyBufferHandler);
-        }
       };
 
       const wandbSession = session ?? sessionRef.current;
       if (wandbSession) {
-        await tryAttachWandb(wandbSession);
+        await runTrace.tryAttach(wandbSession);
       }
 
       try {
@@ -1256,16 +1207,9 @@ export default function OperatorDashboard({
           ]);
         }
       } finally {
-        // Clean up early buffer listener on all paths (abort, error, success)
-        earlyBuffer = null;
-        eventBus.off("trace-record", earlyBufferHandler);
-
-        if (wandbCleanup) {
-          const fn = wandbCleanup as () => Promise<void>;
-          await fn().catch((e: unknown) =>
-            console.error("[wandb] Flush failed:", e),
-          );
-        }
+        // Detach trace listeners and flush the uploader on all paths
+        // (abort, error, success).
+        await runTrace.cleanupRun();
         if (gen === generationRef.current) {
           setStatus(pendingToolCallIdRef.current ? "waiting" : "idle");
           setThinking(false);
