@@ -209,6 +209,8 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         "email_get_message",
         // Send email (filtered out by base class when no SMTP configured)
         "send_email",
+        // Mobile OTP wait (filtered out by base class when no sms-passwordless cred)
+        "sms_wait_for_code",
         // Web search tools — look up auth bypass techniques, default credentials
         "web_search",
         "get_page",
@@ -321,6 +323,16 @@ function buildAuthPrompt(
   }
 
   if (credBlock) {
+    const hasSmsPasswordless = credentialManager
+      ?.listReferences()
+      .some((ref) => ref.additionalFieldKeys?.includes("phoneNumber"));
+    const smsInstructions = hasSmsPasswordless
+      ? `
+If a credential has a phoneNumber additional field (Mobile OTP / sms-passwordless), phone is the login
+identifier — not MFA-after-password. browser_fill credentialField="phoneNumber", click send-code, call
+sms_wait_for_code with sinceMs = Date.now() at that click, then browser_fill the OTP. Do NOT report
+phone_verification as a barrier for this flow. TOTP-via-env for authenticator MFA is unchanged.`
+      : "";
     parts.push(`INSTRUCTIONS:
 You have credentials available via credential IDs — authenticate immediately.
 1. For API/form logins, use execute_command (curl) to submit credentials and capture the Set-Cookie / token response
@@ -328,7 +340,7 @@ You have credentials available via credential IDs — authenticate immediately.
    pass credentialId + credentialField (e.g. credentialField="password") instead of the raw value —
    the secret is resolved securely at execution time. NEVER type a password directly.
 3. Call complete_authentication with exported cookies/headers to persist credentials and end the run
-
+${smsInstructions}
 The credentials above were provided to you and have already been verified — they are SHARED across runs, so
 do not modify them or their account settings. NEVER change the password, complete a password reset /
 forced-password-change / account-recovery flow, or modify MFA/2FA settings (enrolling, disabling, or

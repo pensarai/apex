@@ -37,6 +37,8 @@ import {
   PlaywrightMcpSession,
   RESPONSE_TOOL_NAME,
   SEND_EMAIL_TOOL_NAME,
+  SMS_TOOL_NAMES_ACTIVE,
+  sessionHasSmsPasswordless,
   WORKSPACE_TOOL_NAMES,
   WORKSPACE_WRITE_TOOL_NAMES,
 } from "./tools";
@@ -588,7 +590,10 @@ export class OffensiveSecurityAgent<TResult = void> {
     const hasSmtp = !!input.session.config?.smtpConfig;
 
     const emailToolSet = new Set<string>(EMAIL_TOOL_NAMES_ACTIVE);
+    const smsToolSet = new Set<string>(SMS_TOOL_NAMES_ACTIVE);
+    const hasSms = sessionHasSmsPasswordless(input.session);
     let activeTools = (input.activeTools as string[]).filter((t) => {
+      if (smsToolSet.has(t)) return hasSms;
       if (!emailToolSet.has(t)) return true;
       if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
       return hasEmail;
@@ -603,6 +608,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       const excluded = new Set<string>(FAST_STRIKE_EXCLUDED_TOOL_NAMES);
       activeTools = Object.keys(tools).filter((t) => {
         if (excluded.has(t)) return false;
+        if (smsToolSet.has(t)) return hasSms;
         if (!emailToolSet.has(t)) return true;
         if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
         return hasEmail;
