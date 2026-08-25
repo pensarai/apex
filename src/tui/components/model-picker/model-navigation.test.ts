@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { findSelectedModelIndex } from "./model-navigation";
+import type { AIModelProvider } from "../../../core/ai";
+import {
+  findSelectedModelIndex,
+  retainAvailableProviders,
+} from "./model-navigation";
 
 describe("findSelectedModelIndex", () => {
   it("focuses the selected recent model instead of the first recent model", () => {
@@ -39,5 +43,27 @@ describe("findSelectedModelIndex", () => {
         "model-b",
       ),
     ).toBe(-1);
+  });
+});
+
+describe("retainAvailableProviders", () => {
+  it("keeps an available provider collapsed after a model refresh", () => {
+    const collapsedProviders = new Set<AIModelProvider>();
+
+    expect(
+      retainAvailableProviders(
+        collapsedProviders,
+        new Set<AIModelProvider>(["anthropic"]),
+      ),
+    ).toBe(collapsedProviders);
+  });
+
+  it("removes providers that are no longer available", () => {
+    expect(
+      retainAvailableProviders(
+        new Set<AIModelProvider>(["anthropic", "openai"]),
+        new Set<AIModelProvider>(["openai"]),
+      ),
+    ).toEqual(new Set<AIModelProvider>(["openai"]));
   });
 });

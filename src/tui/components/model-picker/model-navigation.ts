@@ -1,4 +1,4 @@
-import type { ModelInfo } from "../../../core/ai";
+import type { AIModelProvider, ModelInfo } from "../../../core/ai";
 
 type NavigationItem = {
   type: string;
@@ -14,4 +14,19 @@ export function findSelectedModelIndex(
       (item.type === "model" || item.type === "recent-model") &&
       item.model?.id === selectedModelId,
   );
+}
+
+export function retainAvailableProviders(
+  expandedProviders: Set<AIModelProvider>,
+  availableProviders: ReadonlySet<AIModelProvider>,
+): Set<AIModelProvider> {
+  const retainedProviders = new Set(
+    [...expandedProviders].filter((provider) =>
+      availableProviders.has(provider),
+    ),
+  );
+
+  return retainedProviders.size === expandedProviders.size
+    ? expandedProviders
+    : retainedProviders;
 }

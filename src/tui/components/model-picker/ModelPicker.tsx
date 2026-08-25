@@ -22,7 +22,10 @@ import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
 import { getPasteText } from "../../utils/paste";
 import { scrollToChild } from "../../utils/scroll";
-import { findSelectedModelIndex } from "./model-navigation";
+import {
+  findSelectedModelIndex,
+  retainAvailableProviders,
+} from "./model-navigation";
 import { filterModels, getProviderDisplayName } from "./model-search";
 
 const providerOrder: AIModelProvider[] = [
@@ -37,10 +40,6 @@ const providerOrder: AIModelProvider[] = [
   "inception",
   "local",
 ];
-
-function setsAreEqual<T>(a: Set<T>, b: Set<T>) {
-  return a.size === b.size && [...a].every((value) => b.has(value));
-}
 
 function PickerRow({
   children,
@@ -131,6 +130,7 @@ export function ModelPicker({
     Set<AIModelProvider>
   >(new Set([selectedModel.provider]));
   const [focusedIndex, setFocusedIndex] = useState(0);
+  const lastRevealedSelectedModelRef = useRef<string | null>(null);
   const lastFocusedSelectedModelIdRef = useRef<string | null>(null);
 
   const [localUrl, setLocalUrl] = useState(config?.localModelUrl ?? "");
@@ -160,37 +160,24 @@ export function ModelPicker({
       availableModels.map((model) => model.provider),
     );
 
-    setExpandedProviders((prev) => {
-      if (availableProviders.size === 0) {
-        return prev.size === 0 ? prev : new Set();
-      }
+    // Config refreshes may prune expansions, but must not reopen a provider.
+    setExpandedProviders((prev) =>
+      retainAvailableProviders(prev, availableProviders),
+    );
+  }, [availableModels]);
 
-      const preservedProviders = new Set(
-        [...prev].filter((provider) => availableProviders.has(provider)),
-      );
-      if (availableProviders.has(selectedModel.provider)) {
-        preservedProviders.add(selectedModel.provider);
-      }
+  // A genuine model change should reveal its provider exactly once.
+  useEffect(() => {
+    const selectedModelKey = `${selectedModel.provider}:${selectedModel.id}`;
+    if (lastRevealedSelectedModelRef.current === selectedModelKey) return;
+    lastRevealedSelectedModelRef.current = selectedModelKey;
 
-      if (preservedProviders.size > 0) {
-        return setsAreEqual(prev, preservedProviders)
-          ? prev
-          : preservedProviders;
-      }
-
-      const fallbackProvider = availableProviders.has(selectedModel.provider)
-        ? selectedModel.provider
-        : availableModels[0]?.provider;
-
-      if (!fallbackProvider) {
-        return prev.size === 0 ? prev : new Set();
-      }
-
-      return prev.size === 1 && prev.has(fallbackProvider)
+    setExpandedProviders((prev) =>
+      prev.has(selectedModel.provider)
         ? prev
-        : new Set([fallbackProvider]);
-    });
-  }, [availableModels, selectedModel.provider]);
+        : new Set([...prev, selectedModel.provider]),
+    );
+  }, [selectedModel.id, selectedModel.provider]);
 
   const filteredModels = useMemo(
     () => filterModels(availableModels, searchQuery),
