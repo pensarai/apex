@@ -1,6 +1,7 @@
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useMemo,
   useState,
@@ -24,22 +25,26 @@ type ConfigProviderProps = {
 export function ConfigProvider({ children, config }: ConfigProviderProps) {
   const [appConfig, setAppConfig] = useState<Config>(config);
 
+  const update = useCallback(async (newConfig: Partial<Config>) => {
+    await _config.update(newConfig);
+    setAppConfig((current) => ({
+      ...current,
+      ...newConfig,
+    }));
+  }, []);
+
+  const reload = useCallback(async () => {
+    const freshConfig = await _config.get();
+    setAppConfig(freshConfig);
+  }, []);
+
   const value = useMemo(
     () => ({
       data: appConfig,
-      update: async (newConfig: Partial<Config>) => {
-        await _config.update(newConfig);
-        setAppConfig({
-          ...appConfig,
-          ...newConfig,
-        });
-      },
-      reload: async () => {
-        const freshConfig = await _config.get();
-        setAppConfig(freshConfig);
-      },
+      update,
+      reload,
     }),
-    [appConfig],
+    [appConfig, reload, update],
   );
 
   return <ctx.Provider value={value}>{children}</ctx.Provider>;

@@ -1,4 +1,4 @@
-import type { ScrollBoxRenderable } from "@opentui/core";
+import type { RGBA, ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import {
   type ReactNode,
@@ -9,7 +9,9 @@ import {
   useState,
 } from "react";
 import {
+  type AIModelProvider,
   getOpenAIReasoningEfforts,
+  getRecentModels,
   type ModelInfo,
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,
@@ -20,19 +22,9 @@ import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
 import { getPasteText } from "../../utils/paste";
 import { scrollToChild } from "../../utils/scroll";
+import { filterModels, getProviderDisplayName } from "./model-search";
 
-const providerNames: Record<string, string> = {
-  anthropic: "Claude",
-  openai: "OpenAI",
-  google: "Gemini",
-  openrouter: "OpenRouter",
-  concentrate: "Concentrate",
-  bedrock: "Bedrock",
-  pensar: "Pensar",
-  local: "Local LLM",
-};
-
-const providerOrder = [
+const providerOrder: AIModelProvider[] = [
   "pensar",
   "anthropic",
   "openai",
@@ -40,10 +32,12 @@ const providerOrder = [
   "openrouter",
   "concentrate",
   "bedrock",
+  "bedrock-mantle",
+  "inception",
   "local",
 ];
 
-function setsAreEqual(a: Set<string>, b: Set<string>) {
+function setsAreEqual<T>(a: Set<T>, b: Set<T>) {
   return a.size === b.size && [...a].every((value) => b.has(value));
 }
 
@@ -60,7 +54,7 @@ function PickerRow({
   id?: string;
   paddingLeft?: number;
   paddingRight?: number;
-  backgroundColor?: string;
+  backgroundColor?: string | RGBA;
   flexDirection?: "row" | "column";
   gap?: number;
 }) {
@@ -81,8 +75,9 @@ function PickerRow({
 }
 
 type NavigationItem =
-  | { type: "provider"; provider: string }
+  | { type: "provider"; provider: AIModelProvider }
   | { type: "model"; model: ModelInfo }
+  | { type: "recent-model"; model: ModelInfo }
   | { type: "local-input"; field: LocalInputField }
   | { type: "reasoning" }
   | { type: "openai-reasoning" };
@@ -92,6 +87,7 @@ type LocalInputField = "url" | "model";
 function getNavItemId(item: NavigationItem): string {
   if (item.type === "provider") return `provider-${item.provider}`;
   if (item.type === "model") return `model-${item.model.id}`;
+  if (item.type === "recent-model") return `recent-model-${item.model.id}`;
   if (item.type === "reasoning") return "reasoning-toggle";
   if (item.type === "openai-reasoning") return "openai-reasoning-effort";
   return `local-input-${item.field}`;
@@ -130,9 +126,9 @@ export function ModelPicker({
   const scrollBoxRef = useRef<ScrollBoxRenderable | null>(null);
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
-    new Set(["anthropic"]),
-  );
+  const [expandedProviders, setExpandedProviders] = useState<
+    Set<AIModelProvider>
+  >(new Set(["anthropic"]));
   const [focusedIndex, setFocusedIndex] = useState(0);
 
   const [localUrl, setLocalUrl] = useState(config?.localModelUrl ?? "");
@@ -158,7 +154,7 @@ export function ModelPicker({
   }, [config]);
 
   useEffect(() => {
-    const availableProviders = new Set<string>(
+    const availableProviders = new Set<AIModelProvider>(
       availableModels.map((model) => model.provider),
     );
 
@@ -191,59 +187,73 @@ export function ModelPicker({
     });
   }, [availableModels, selectedModel.provider]);
 
-  // Group models by provider and filter by search
+  const filteredModels = useMemo(
+    () => filterModels(availableModels, searchQuery),
+    [availableModels, searchQuery],
+  );
+  const isSearching = searchQuery.trim().length > 0;
+  const recentModels = useMemo(
+    () => getRecentModels(availableModels, config?.recentModelIds ?? []),
+    [availableModels, config?.recentModelIds],
+  );
+
+  // Group models by provider for the unfiltered browsing view.
   const groupedModels = useMemo(() => {
     const groups: Record<string, ModelInfo[]> = {};
-    const query = searchQuery.toLowerCase().trim();
-
     for (const m of availableModels) {
-      // Fuzzy match: check if query matches model name or id
-      if (
-        query &&
-        !m.name.toLowerCase().includes(query) &&
-        !m.id.toLowerCase().includes(query)
-      ) {
-        continue;
-      }
       if (!groups[m.provider]) {
         groups[m.provider] = [];
       }
       groups[m.provider].push(m);
     }
     return groups;
-  }, [availableModels, searchQuery]);
+  }, [availableModels]);
 
   // Flat navigation list: provider headers + expanded models
   const navigationItems = useMemo(() => {
     const items: NavigationItem[] = [];
-    for (const provider of providerOrder) {
-      if (provider === "local") {
-        items.push({ type: "provider", provider: "local" });
-        if (expandedProviders.has("local")) {
-          items.push({ type: "local-input", field: "url" });
-          items.push({ type: "local-input", field: "model" });
-          const localModels = groupedModels.local;
-          if (localModels) {
-            for (const m of localModels) {
-              items.push({ type: "model", model: m });
+    if (isSearching) {
+      for (const model of filteredModels) {
+        items.push({ type: "model", model });
+      }
+    } else {
+      for (const model of recentModels) {
+        items.push({ type: "recent-model", model });
+      }
+      for (const provider of providerOrder) {
+        if (provider === "local") {
+          items.push({ type: "provider", provider: "local" });
+          if (expandedProviders.has("local")) {
+            items.push({ type: "local-input", field: "url" });
+            items.push({ type: "local-input", field: "model" });
+            const localModels = groupedModels.local;
+            if (localModels) {
+              for (const m of localModels) {
+                items.push({ type: "model", model: m });
+              }
             }
           }
+          continue;
         }
-        continue;
-      }
-      const models = groupedModels[provider];
-      if (!models || models.length === 0) continue;
-      items.push({ type: "provider", provider });
-      if (expandedProviders.has(provider)) {
-        for (const m of models) {
-          items.push({ type: "model", model: m });
+        const models = groupedModels[provider];
+        if (!models || models.length === 0) continue;
+        items.push({ type: "provider", provider });
+        if (expandedProviders.has(provider)) {
+          for (const m of models) {
+            items.push({ type: "model", model: m });
+          }
         }
       }
     }
-    if (onReasoningToggle && modelSupportsThinking(selectedModel.id)) {
+    if (
+      !isSearching &&
+      onReasoningToggle &&
+      modelSupportsThinking(selectedModel.id)
+    ) {
       items.push({ type: "reasoning" });
     }
     if (
+      !isSearching &&
       onOpenAIReasoningEffortChange &&
       modelSupportsOpenAIReasoning(selectedModel.id)
     ) {
@@ -252,21 +262,14 @@ export function ModelPicker({
     return items;
   }, [
     groupedModels,
+    filteredModels,
+    recentModels,
+    isSearching,
     expandedProviders,
     onReasoningToggle,
     onOpenAIReasoningEffortChange,
     selectedModel.id,
   ]);
-
-  // Sync focusedIndex when selected model changes (e.g. on initial load)
-  useEffect(() => {
-    const idx = navigationItems.findIndex(
-      (item) => item.type === "model" && item.model.id === selectedModel.id,
-    );
-    if (idx !== -1) {
-      setFocusedIndex(idx);
-    }
-  }, [selectedModel.id, navigationItems]);
 
   // Clamp focusedIndex when navigation items change
   useEffect(() => {
@@ -343,25 +346,14 @@ export function ModelPicker({
         return false;
       }
 
-      if (navigationItems.length === 0) return false;
-
       // Up/Down - navigate through items
       if (key.name === "up" || key.name === "down") {
+        if (navigationItems.length === 0) return false;
+        const direction = key.name === "up" ? -1 : 1;
         const newIndex =
-          key.name === "up"
-            ? Math.max(0, focusedIndex - 1)
-            : Math.min(navigationItems.length - 1, focusedIndex + 1);
+          (focusedIndex + direction + navigationItems.length) %
+          navigationItems.length;
         setFocusedIndex(newIndex);
-        const item = navigationItems[newIndex];
-        if (item && item.type === "model") {
-          onSelectModel(item.model);
-        }
-        return true;
-      }
-
-      // Backspace - remove last char from search
-      if (key.name === "backspace") {
-        setSearchQuery((prev) => prev.slice(0, -1));
         return true;
       }
 
@@ -369,6 +361,7 @@ export function ModelPicker({
       if (key.name === "escape") {
         if (searchQuery) {
           setSearchQuery("");
+          setFocusedIndex(0);
           return true;
         }
         if (onCancel) {
@@ -378,13 +371,20 @@ export function ModelPicker({
         return false;
       }
 
-      // Space - toggle reasoning checkbox from any row
-      if (key.name === "space" && onReasoningToggle && thinkingSupported) {
+      const currentItem = navigationItems[focusedIndex];
+
+      if (
+        key.name === "space" &&
+        currentItem?.type === "reasoning" &&
+        onReasoningToggle &&
+        thinkingSupported
+      ) {
         onReasoningToggle(!reasoningEnabled);
         return true;
       }
       if (
         key.name === "space" &&
+        currentItem?.type === "openai-reasoning" &&
         onOpenAIReasoningEffortChange &&
         openAIReasoningSupported
       ) {
@@ -394,7 +394,6 @@ export function ModelPicker({
 
       // Enter - confirm model selection, toggle provider, or start editing local input
       if (key.name === "return") {
-        const currentItem = navigationItems[focusedIndex];
         if (!currentItem) return false;
 
         if (currentItem.type === "local-input") {
@@ -417,7 +416,11 @@ export function ModelPicker({
             }
             return next;
           });
-        } else {
+        } else if (
+          currentItem.type === "model" ||
+          currentItem.type === "recent-model"
+        ) {
+          onSelectModel(currentItem.model);
           onConfirm?.();
         }
         return true;
@@ -425,9 +428,11 @@ export function ModelPicker({
 
       // Left/Right - collapse/expand provider
       if (key.name === "left" || key.name === "right") {
+        if (isSearching) return false;
         const currentItem = navigationItems[focusedIndex];
         if (
           !currentItem ||
+          currentItem.type === "recent-model" ||
           currentItem.type === "reasoning" ||
           currentItem.type === "openai-reasoning"
         ) {
@@ -460,19 +465,6 @@ export function ModelPicker({
         return true;
       }
 
-      // Printable character - add to search
-      if (
-        key.sequence &&
-        key.sequence.length === 1 &&
-        /[a-zA-Z0-9\-_.]/.test(key.sequence)
-      ) {
-        setSearchQuery((prev) => prev + key.sequence);
-        if (!searchQuery) {
-          setExpandedProviders(new Set(providerOrder));
-        }
-        return true;
-      }
-
       return false;
     },
     [
@@ -491,6 +483,7 @@ export function ModelPicker({
       onOpenAIReasoningEffortChange,
       openAIReasoningSupported,
       cycleOpenAIReasoningEffort,
+      isSearching,
     ],
   );
 
@@ -505,16 +498,16 @@ export function ModelPicker({
   });
 
   // Helper to check if a navigation item at focusedIndex matches a provider
-  const isProviderFocused = (provider: string) =>
+  const isProviderFocused = (provider: AIModelProvider) =>
     navigationItems[focusedIndex]?.type === "provider" &&
-    (navigationItems[focusedIndex] as { type: "provider"; provider: string })
-      .provider === provider;
+    navigationItems[focusedIndex].provider === provider;
 
   // Helper to check if a model is focused
-  const isModelFocused = (modelId: string) =>
-    navigationItems[focusedIndex]?.type === "model" &&
-    (navigationItems[focusedIndex] as { type: "model"; model: ModelInfo }).model
-      .id === modelId;
+  const isModelFocused = (modelId: string, recent = false) => {
+    const item = navigationItems[focusedIndex];
+    const expectedType = recent ? "recent-model" : "model";
+    return item?.type === expectedType && item.model.id === modelId;
+  };
 
   // Helper to check if a local input field is focused
   const isLocalFieldFocused = (field: LocalInputField) =>
@@ -534,41 +527,121 @@ export function ModelPicker({
       flexShrink={1}
       overflow="hidden"
     >
-      {/* Search indicator */}
-      <box flexShrink={0}>
-        {searchQuery ? (
+      {/* Search input */}
+      <box flexShrink={0} marginBottom={1}>
+        <PickerRow>
+          <text fg={colors.primary}>Search </text>
+          <input
+            flexGrow={1}
+            value={searchQuery}
+            onInput={(value) => {
+              setSearchQuery(value);
+              setFocusedIndex(0);
+            }}
+            focused={focused && editingLocalField === null}
+            placeholder="family, model name, or provider..."
+            textColor={colors.text}
+            focusedTextColor={colors.text}
+            backgroundColor="transparent"
+            cursorColor={colors.textMuted}
+          />
+        </PickerRow>
+        {isSearching && (
           <PickerRow>
-            <text fg={colors.text}>Search: {searchQuery}</text>
-          </PickerRow>
-        ) : (
-          <PickerRow>
-            <text fg={colors.textMuted}>Type to search models...</text>
+            <text fg={colors.primary}>Results ({filteredModels.length})</text>
           </PickerRow>
         )}
       </box>
 
-      {/* Scrollable provider/model list */}
+      {/* Remount when the list shape changes to reset OpenTUI's cached geometry. */}
       <scrollbox
+        key={isSearching ? "search-results" : "model-browser"}
         ref={scrollBoxRef}
         style={{
           rootOptions: {
             flexShrink: 1,
             width: "100%",
             overflow: "hidden",
-            maxHeight: navigationItems.length,
+            maxHeight: Math.max(
+              1,
+              navigationItems.length +
+                (!isSearching && recentModels.length > 0 ? 1 : 0),
+            ),
           },
           contentOptions: {
             flexDirection: "column",
           },
           scrollbarOptions: {
-            visible: false,
+            trackOptions: {
+              foregroundColor: colors.textMuted,
+              backgroundColor: colors.backgroundElement,
+            },
           },
         }}
         stickyScroll={false}
       >
+        {!isSearching && recentModels.length > 0 && (
+          <>
+            <PickerRow>
+              <text fg={colors.primary}>Recent</text>
+            </PickerRow>
+            {recentModels.map((model) => {
+              const isSelected = model.id === selectedModel.id;
+              const isFocused = isModelFocused(model.id, true);
+              return (
+                <PickerRow
+                  key={`recent-${model.id}`}
+                  id={`recent-model-${model.id}`}
+                  backgroundColor={
+                    isFocused ? colors.backgroundSelected : undefined
+                  }
+                >
+                  <text>
+                    <span fg={isFocused ? colors.primary : colors.text}>
+                      {isSelected ? "●" : "○"} {model.name}
+                    </span>
+                    <span fg={colors.textMuted}>
+                      {`  ${getProviderDisplayName(model.provider)}`}
+                    </span>
+                  </text>
+                </PickerRow>
+              );
+            })}
+          </>
+        )}
+        {isSearching &&
+          (filteredModels.length === 0 ? (
+            <PickerRow>
+              <text fg={colors.textMuted}>No matching models</text>
+            </PickerRow>
+          ) : (
+            filteredModels.map((model) => {
+              const isSelected = model.id === selectedModel.id;
+              const isFocused = isModelFocused(model.id);
+              return (
+                <PickerRow
+                  key={model.id}
+                  id={`model-${model.id}`}
+                  backgroundColor={
+                    isFocused ? colors.backgroundSelected : undefined
+                  }
+                >
+                  <text>
+                    <span fg={isFocused ? colors.primary : colors.text}>
+                      {isSelected ? "●" : "○"} {model.name}
+                    </span>
+                    <span fg={colors.textMuted}>
+                      {`  ${getProviderDisplayName(model.provider)}`}
+                    </span>
+                  </text>
+                </PickerRow>
+              );
+            })
+          ))}
         {providerOrder.flatMap((provider) => {
+          if (isSearching) return [];
           const isExpanded = expandedProviders.has(provider);
-          const providerName = providerNames[provider] || provider;
+          const providerName = getProviderDisplayName(provider);
           const isFocused = isProviderFocused(provider);
 
           if (provider === "local") {
@@ -754,7 +827,7 @@ export function ModelPicker({
       </scrollbox>
 
       {/* Reasoning toggle */}
-      {onReasoningToggle && thinkingSupported && (
+      {!isSearching && onReasoningToggle && thinkingSupported && (
         <box flexShrink={0} paddingTop={1}>
           <PickerRow id="reasoning-toggle">
             <text fg={isReasoningFocused ? colors.primary : colors.text}>
@@ -765,18 +838,22 @@ export function ModelPicker({
         </box>
       )}
 
-      {onOpenAIReasoningEffortChange && openAIReasoningSupported && (
-        <box flexShrink={0} paddingTop={1}>
-          <PickerRow id="openai-reasoning-effort">
-            <text fg={isOpenAIReasoningFocused ? colors.primary : colors.text}>
-              Reasoning Effort:{" "}
-              {openAIReasoningEffort === "xhigh"
-                ? "extra high"
-                : openAIReasoningEffort}
-            </text>
-          </PickerRow>
-        </box>
-      )}
+      {!isSearching &&
+        onOpenAIReasoningEffortChange &&
+        openAIReasoningSupported && (
+          <box flexShrink={0} paddingTop={1}>
+            <PickerRow id="openai-reasoning-effort">
+              <text
+                fg={isOpenAIReasoningFocused ? colors.primary : colors.text}
+              >
+                Reasoning Effort:{" "}
+                {openAIReasoningEffort === "xhigh"
+                  ? "extra high"
+                  : openAIReasoningEffort}
+              </text>
+            </PickerRow>
+          </box>
+        )}
 
       {/* Help text for inline editing only — general controls are in ModelPickerDialog */}
       {editingLocalField && (

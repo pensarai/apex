@@ -19,6 +19,11 @@ export {
   normalizeOpenAIReasoningEffort,
   streamResponse,
 } from "./ai";
+export {
+  addRecentModelId,
+  getRecentModels,
+  MAX_RECENT_MODELS,
+} from "./model-history";
 export { AVAILABLE_MODELS } from "./models";
 export type { AIAuthConfig } from "./utils";
 export { buildAuthConfig } from "./utils";
