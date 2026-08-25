@@ -507,6 +507,52 @@ export interface CreateInputProps {
   onNameGenerated?: (name: string) => void;
 }
 
+// ============================================================================
+// Runtime → persisted conversion
+// ============================================================================
+
+/** Persisted session config: SessionConfig minus raw auth credentials. */
+export type PersistedSessionConfig = Omit<SessionConfig, "authCredentials">;
+
+/** Persisted session metadata: SessionInfo minus runtime-only fields. */
+export type PersistedSessionInfo = Omit<
+  SessionInfo,
+  "_rateLimiter" | "credentialManager"
+> & {
+  config?: PersistedSessionConfig;
+};
+
+/**
+ * Convert a runtime session into its persisted shape. Raw auth credentials
+ * and the class instances built from them (`credentialManager`) plus the
+ * `_rateLimiter` live only in memory. `tokensIn`/`tokensOut` are kept —
+ * execution-metrics deliberately persists them for the benchmark tooling.
+ */
+export function toPersistedSession(session: SessionInfo): PersistedSessionInfo {
+  const { _rateLimiter, credentialManager: _cm, ...rest } = session;
+  if (!rest.config) return rest;
+  const { authCredentials: _ac, ...config } = rest.config;
+  return { ...rest, config };
+}
+
+/**
+ * Build the in-memory credential store from session auth credentials.
+ * Shared by create() and the legacy-session migration in get().
+ */
+function hydrateCredentialManager(
+  authCredentials: SessionConfig["authCredentials"],
+): CredentialManager | undefined {
+  if (!authCredentials) return undefined;
+  const manager = new CredentialManager();
+  const creds = Array.isArray(authCredentials)
+    ? authCredentials
+    : [authCredentials];
+  for (const cred of creds) {
+    manager.addFromAuthCredentials(cred);
+  }
+  return manager;
+}
+
 export async function create(input: CreateInputProps) {
   const name = input.name ?? generateRandomName();
 
@@ -531,16 +577,9 @@ export async function create(input: CreateInputProps) {
 
   // Auto-create CredentialManager when authCredentials are provided.
   // Secrets live only in memory — they are never serialized to disk.
-  let credentialManager: CredentialManager | undefined;
-  if (normalizedConfig?.authCredentials) {
-    credentialManager = new CredentialManager();
-    const creds = Array.isArray(normalizedConfig.authCredentials)
-      ? normalizedConfig.authCredentials
-      : [normalizedConfig.authCredentials];
-    for (const cred of creds) {
-      credentialManager.addFromAuthCredentials(cred);
-    }
-  }
+  const credentialManager = hydrateCredentialManager(
+    normalizedConfig?.authCredentials,
+  );
 
   const smtpConfig = resolveSmtpConfig(normalizedConfig?.smtpConfig);
 
@@ -586,10 +625,11 @@ export async function create(input: CreateInputProps) {
     findingsPath,
   };
 
-  // Exclude non-serializable fields (class instances with methods)
-  const { _rateLimiter, credentialManager: _cm, ...sessionData } = result;
   await createSessionDirs({ session: result });
-  await Storage.write(["sessions", result.id, "session"], sessionData);
+  await Storage.write(
+    ["sessions", result.id, "session"],
+    toPersistedSession(result),
+  );
 
   // Fire-and-forget AI name generation — updates persisted session in the background
   if (!input.name && input.model) {
@@ -627,6 +667,19 @@ export const get = async (id: string) => {
     delete read._rateLimiter;
   }
 
+  // Legacy sessions may carry raw auth credentials on disk. Hydrate the
+  // in-memory CredentialManager from them; the next update() write strips
+  // them from session.json. A stale serialized `credentialManager` plain
+  // object is discarded rather than treated as a live instance.
+  if (!(read.credentialManager instanceof CredentialManager)) {
+    const hydrated = hydrateCredentialManager(read.config?.authCredentials);
+    if (hydrated) {
+      read.credentialManager = hydrated;
+    } else {
+      delete read.credentialManager;
+    }
+  }
+
   return read;
 };
 
@@ -638,6 +691,12 @@ async function update(id: string, editor: (session: SessionInfo) => void) {
     (draft) => {
       editor(draft);
       draft.time.updated = Date.now();
+      // Storage.update writes the draft object itself, so mirror
+      // toPersistedSession in place. Also strips raw credentials left on
+      // disk by legacy sessions on their next write.
+      delete draft._rateLimiter;
+      delete draft.credentialManager;
+      if (draft.config) delete draft.config.authCredentials;
     },
   );
   return result;
