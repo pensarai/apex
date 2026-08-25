@@ -102,6 +102,7 @@ function buildStubAgent(overrides: {
   ownsBrowserSession?: boolean;
   messagesPath?: string | null;
   latestMessages?: unknown[] | null;
+  persistenceTail?: Promise<void>;
   responseCaptured?: Promise<unknown>;
 }): OffensiveSecurityAgent<unknown> {
   const agent = Object.create(
@@ -152,6 +153,10 @@ function buildStubAgent(overrides: {
   });
   Object.defineProperty(agent, "cancelPersistTimer", {
     value: () => {},
+  });
+  Object.defineProperty(agent, "persistenceTail", {
+    value: overrides.persistenceTail ?? Promise.resolve(),
+    writable: true,
   });
 
   return agent;
@@ -941,6 +946,59 @@ describe("OffensiveSecurityAgent.consume()", () => {
       rmSync(tmpDir, { recursive: true, force: true });
     });
 
+    it("waits for an in-flight persist before writing the abort snapshot", async () => {
+      const tmpDir = join("/tmp", `pensar-test-${Date.now()}-persist-race`);
+      mkdirSync(tmpDir, { recursive: true });
+      const messagesPath = join(tmpDir, "messages.json");
+
+      const staleMessages = [
+        { role: "user", content: [{ type: "text", text: "scan target" }] },
+      ];
+      const persistedMessages = [
+        ...staleMessages,
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Starting scan" }],
+        },
+      ];
+      writeFileSync(messagesPath, JSON.stringify(staleMessages));
+
+      let finishPersist!: () => void;
+      const persistenceTail = new Promise<void>((resolve) => {
+        finishPersist = () => {
+          writeFileSync(messagesPath, JSON.stringify(persistedMessages));
+          resolve();
+        };
+      });
+
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow([toolCallChunk], new Error("timeout")),
+        messagesPath,
+        latestMessages: null,
+        persistenceTail,
+      });
+
+      const consume = agent.consume().catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      finishPersist();
+      await consume;
+
+      const written = JSON.parse(readFileSync(messagesPath, "utf-8"));
+      expect(written.slice(0, persistedMessages.length)).toEqual(
+        persistedMessages,
+      );
+      expect(written.at(-2)).toMatchObject({
+        role: "assistant",
+        content: [{ type: "tool-call", toolCallId: "tc1" }],
+      });
+      expect(written.at(-1)).toMatchObject({
+        role: "tool",
+        content: [{ type: "tool-result", toolCallId: "tc1" }],
+      });
+
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
     it("does not add assistant tool-call msg when base already contains them", async () => {
       const tmpDir = join("/tmp", `pensar-test-${Date.now()}-nodup`);
       mkdirSync(tmpDir, { recursive: true });
@@ -1207,6 +1265,58 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       await expect(agent.consume()).rejects.toThrow("stream broke");
       expect(dispose).toHaveBeenCalledOnce();
+    });
+
+    it("preserves the stream error and disposes resources when deferred emission throws", async () => {
+      const tmpDir = join("/tmp", `pensar-test-${Date.now()}-listener-error`);
+      mkdirSync(tmpDir, { recursive: true });
+      const messagesPath = join(tmpDir, "messages.json");
+      const existingMessages = [
+        { role: "user", content: [{ type: "text", text: "scan" }] },
+      ];
+      writeFileSync(messagesPath, JSON.stringify(existingMessages));
+
+      const streamError = new Error("original stream error");
+      const dispose = vi.fn();
+      const disconnect = vi.fn().mockResolvedValue(undefined);
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow(
+          [
+            {
+              type: "tool-error",
+              toolCallId: "tc1",
+              toolName: "execute_command",
+              error: new Error("tool validation failed"),
+            },
+          ],
+          streamError,
+        ),
+        persistentShell: { dispose },
+        browserSession: { disconnect },
+        ownsBrowserSession: true,
+        messagesPath,
+        latestMessages: existingMessages,
+      });
+
+      agent.eventBus.on("tool-result", () => {
+        throw new Error("listener explosion");
+      });
+
+      await expect(agent.consume()).rejects.toBe(streamError);
+      expect(dispose).toHaveBeenCalledOnce();
+      expect(disconnect).toHaveBeenCalledOnce();
+
+      const written = JSON.parse(readFileSync(messagesPath, "utf-8"));
+      expect(written.at(-2)).toMatchObject({
+        role: "assistant",
+        content: [{ type: "tool-call", toolCallId: "tc1" }],
+      });
+      expect(written.at(-1)).toMatchObject({
+        role: "tool",
+        content: [{ type: "tool-result", toolCallId: "tc1" }],
+      });
+
+      rmSync(tmpDir, { recursive: true, force: true });
     });
   });
 });
