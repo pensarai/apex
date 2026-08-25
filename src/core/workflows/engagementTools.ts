@@ -180,6 +180,9 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           laneCount: 1,
           singleLaneId: options.workerId,
           subagentPrefix: options.workerId,
+          sandbox: input.sandbox,
+          secretValues: input.secretValues,
+          display: input.display,
         });
         summary = outcome.summary;
         result = {
@@ -219,6 +222,10 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           enableThinking: input.enableThinking,
           thinkingEffort: input.thinkingEffort,
           openAIReasoningEffort: input.openAIReasoningEffort,
+          environmentVariables: input.environmentVariables,
+          secretValues: input.secretValues,
+          sandbox: input.sandbox,
+          display: input.display,
           role: "worker",
         });
         const outcome = await agent.consume();

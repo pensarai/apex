@@ -65,6 +65,8 @@ export type {
   ListDomainsResult,
 } from "./domains";
 export { createDomain, listDomains } from "./domains";
+export type { EngagementPentestInput } from "./engagementPentest";
+export { runEngagementPentestAgent } from "./engagementPentest";
 export type { EnvironmentAgentInput, EnvironmentResult } from "./environment";
 export { runEnvironmentAgent } from "./environment";
 export type {

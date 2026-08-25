@@ -152,6 +152,10 @@ export async function runEngagementLead(input: {
     thinkingEffort: input.workflow.thinkingEffort,
     openAIReasoningEffort: input.workflow.openAIReasoningEffort,
     toolProtocol: input.workflow.toolProtocol,
+    environmentVariables: input.workflow.environmentVariables,
+    secretValues: input.workflow.secretValues,
+    sandbox: input.workflow.sandbox,
+    display: input.workflow.display,
   });
 
   try {

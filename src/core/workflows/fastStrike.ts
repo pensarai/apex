@@ -267,6 +267,7 @@ export interface FastStrikeObjectiveInput
   singleLaneId?: string;
   sandbox?: UnifiedSandbox;
   browserSession?: PlaywrightMcpSession;
+  environmentVariables?: Record<string, string>;
   secretValues?: string[];
   display?: string;
 }
@@ -386,6 +387,7 @@ async function executeFastStrikeObjective(
         openAIReasoningEffort: input.openAIReasoningEffort,
         sandbox: input.sandbox,
         browserSession: input.browserSession,
+        environmentVariables: input.environmentVariables,
         secretValues: input.secretValues,
         display: input.display,
       });
