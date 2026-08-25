@@ -231,4 +231,10 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     provider: "openrouter",
     contextLength: 1000000,
   },
+  {
+    id: "stealth/ox-alpha",
+    name: "Ox Alpha",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
 ];
