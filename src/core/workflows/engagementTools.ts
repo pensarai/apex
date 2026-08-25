@@ -117,6 +117,10 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
   const { input, store, findingsRegistry, eventBus, leadAgentId } = runtime;
   const mailbox = new AgentMailbox(input.session.rootPath);
   const activeWorkers = new Set<string>();
+  const withCheckpoint = <T extends Record<string, unknown>>(result: T) => ({
+    checkpoint: store.checkpoint(),
+    ...result,
+  });
 
   const runWorker = async (options: {
     workerId: string;
@@ -290,7 +294,11 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         parentSubagentId: leadAgentId,
         parentSessionId: leadAgentId,
       });
-      return { success: true, workerId: options.workerId, ...result };
+      return withCheckpoint({
+        success: true,
+        workerId: options.workerId,
+        ...result,
+      });
     } catch (error) {
       const summary = error instanceof Error ? error.message : String(error);
       store.completeWorker(options.workerId, "failed", summary);
@@ -309,7 +317,11 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         parentSubagentId: leadAgentId,
         parentSessionId: leadAgentId,
       });
-      return { success: false, workerId: options.workerId, message: summary };
+      return withCheckpoint({
+        success: false,
+        workerId: options.workerId,
+        message: summary,
+      });
     } finally {
       activeWorkers.delete(options.workerId);
     }
@@ -453,7 +465,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
               "Objective coverage requires objectiveId, serviceId, and objectiveStatus",
             );
           }
-          return {
+          return withCheckpoint({
             success: true,
             coverage: store.markObjectiveCoverage({
               objectiveId: update.objectiveId,
@@ -463,7 +475,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
               evidence: update.evidence,
             }),
             completion: store.completion(),
-          };
+          });
         }
         if (update.kind === "service") {
           if (!update.serviceId || !update.serviceStatus) {
@@ -471,7 +483,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
               "Service coverage requires serviceId and serviceStatus",
             );
           }
-          return {
+          return withCheckpoint({
             success: true,
             service: store.markServiceBaseline(
               update.serviceId,
@@ -479,12 +491,12 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
               update.summary,
             ),
             completion: store.completion(),
-          };
+          });
         }
         if (!update.chainStatus) {
           throw new Error("Chain coverage requires chainStatus");
         }
-        return {
+        return withCheckpoint({
           success: true,
           chainExplore: store.setChainExplore(
             update.chainStatus,
@@ -492,7 +504,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             update.evidence,
           ),
           completion: store.completion(),
-        };
+        });
       },
     }),
 
@@ -510,11 +522,12 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         nextSteps: z.array(z.string()).default([]),
         toolCallDescription: z.string(),
       }),
-      execute: async (capability) => ({
-        success: true,
-        capability: store.upsertCapability(capability),
-        completion: store.completion(),
-      }),
+      execute: async (capability) =>
+        withCheckpoint({
+          success: true,
+          capability: store.upsertCapability(capability),
+          completion: store.completion(),
+        }),
     }),
 
     record_impact_proof: tool({
@@ -530,10 +543,11 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         observationRefs: z.array(z.string()).default([]),
         toolCallDescription: z.string(),
       }),
-      execute: async (proof) => ({
-        success: true,
-        proof: store.addImpactProof(proof),
-      }),
+      execute: async (proof) =>
+        withCheckpoint({
+          success: true,
+          proof: store.addImpactProof(proof),
+        }),
     }),
   };
 }

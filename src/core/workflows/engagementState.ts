@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import type { ModelMessage } from "ai";
 import type { SwarmTarget } from "../session/persistence";
 
 export type CoverageStatus =
@@ -112,6 +113,18 @@ export interface EngagementCompletion {
   missingServiceIds: string[];
   unresolvedCapabilityIds: string[];
   chainExplorePending: boolean;
+}
+
+/** Compact durable state embedded in coordination tool results for host resume. */
+export interface EngagementCheckpoint {
+  version: 1;
+  services: Array<Pick<EngagementService, "id" | "baselineStatus" | "summary">>;
+  coverage: ObjectiveCoverage[];
+  capabilities: EngagementCapability[];
+  impactProofs: ImpactProof[];
+  workers: EngagementWorkerRecord[];
+  chainExplore: EngagementState["chainExplore"];
+  updatedAt: string;
 }
 
 export type AgentMailboxMessageType = "MESSAGE" | "FINAL_ANSWER";
@@ -226,6 +239,95 @@ export function buildEngagementState(
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseToolOutput(output: unknown): unknown {
+  if (isRecord(output) && "value" in output)
+    return parseToolOutput(output.value);
+  if (typeof output !== "string") return output;
+  try {
+    return JSON.parse(output) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function isEngagementCheckpoint(value: unknown): value is EngagementCheckpoint {
+  return (
+    isRecord(value) &&
+    value.version === 1 &&
+    Array.isArray(value.services) &&
+    Array.isArray(value.coverage) &&
+    Array.isArray(value.capabilities) &&
+    Array.isArray(value.impactProofs) &&
+    Array.isArray(value.workers) &&
+    isRecord(value.chainExplore) &&
+    typeof value.updatedAt === "string"
+  );
+}
+
+function isEngagementState(value: unknown): value is EngagementState {
+  const record = value as Record<string, unknown>;
+  return (
+    isEngagementCheckpoint(value) &&
+    typeof record.rootTarget === "string" &&
+    Array.isArray(record.objectives)
+  );
+}
+
+function applyCheckpoint(
+  seed: EngagementState,
+  checkpoint: EngagementCheckpoint,
+): EngagementState {
+  const serviceUpdates = new Map(
+    checkpoint.services.map((service) => [service.id, service]),
+  );
+  return {
+    ...structuredClone(seed),
+    services: seed.services.map((service) => ({
+      ...service,
+      ...serviceUpdates.get(service.id),
+    })),
+    coverage: structuredClone(checkpoint.coverage),
+    capabilities: structuredClone(checkpoint.capabilities),
+    impactProofs: structuredClone(checkpoint.impactProofs),
+    workers: structuredClone(checkpoint.workers),
+    chainExplore: structuredClone(checkpoint.chainExplore),
+    updatedAt: checkpoint.updatedAt,
+  };
+}
+
+/** Restore the newest Console-persisted coordination checkpoint, if present. */
+export function restoreEngagementState(
+  seed: EngagementState,
+  messages: readonly ModelMessage[] | undefined,
+): EngagementState {
+  if (!messages) return seed;
+  for (
+    let messageIndex = messages.length - 1;
+    messageIndex >= 0;
+    messageIndex--
+  ) {
+    const content = messages[messageIndex]?.content;
+    if (!Array.isArray(content)) continue;
+    for (let partIndex = content.length - 1; partIndex >= 0; partIndex--) {
+      const part = content[partIndex] as Record<string, unknown>;
+      if (part.type !== "tool-result") continue;
+      const result = parseToolOutput(part.output);
+      if (!isRecord(result)) continue;
+      if (isEngagementCheckpoint(result.checkpoint)) {
+        return applyCheckpoint(seed, result.checkpoint);
+      }
+      if (isEngagementState(result.state)) {
+        return structuredClone(result.state);
+      }
+    }
+  }
+  return seed;
+}
+
 /** Single-writer, persisted engagement graph and coverage contract. */
 export class EngagementStore {
   private readonly statePath: string;
@@ -253,6 +355,23 @@ export class EngagementStore {
 
   snapshot(): EngagementState {
     return structuredClone(this.state);
+  }
+
+  checkpoint(): EngagementCheckpoint {
+    return structuredClone({
+      version: 1,
+      services: this.state.services.map(({ id, baselineStatus, summary }) => ({
+        id,
+        baselineStatus,
+        summary,
+      })),
+      coverage: this.state.coverage,
+      capabilities: this.state.capabilities,
+      impactProofs: this.state.impactProofs,
+      workers: this.state.workers,
+      chainExplore: this.state.chainExplore,
+      updatedAt: this.state.updatedAt,
+    });
   }
 
   getService(id: string): EngagementService {

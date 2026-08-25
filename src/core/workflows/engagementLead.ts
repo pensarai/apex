@@ -7,6 +7,7 @@ import {
   buildEngagementState,
   type EngagementCompletion,
   EngagementStore,
+  restoreEngagementState,
 } from "./engagementState";
 import {
   createEngagementTools,
@@ -80,11 +81,14 @@ export async function runEngagementLead(input: {
   eventBus?: AgentEventBus;
 }): Promise<EngagementLeadOutcome> {
   const eventBus = input.eventBus ?? new AgentEventBus();
-  const leadAgentId = "engagement-lead";
-  const seed = buildEngagementState(
-    input.workflow.target,
-    input.targets,
-    input.workflow.session.config?.prompt,
+  const leadAgentId = input.workflow.session.id;
+  const seed = restoreEngagementState(
+    buildEngagementState(
+      input.workflow.target,
+      input.targets,
+      input.workflow.session.config?.prompt,
+    ),
+    input.workflow.messages,
   );
   const store = EngagementStore.open(input.workflow.session.rootPath, seed);
   const engagementTools = createEngagementTools({
@@ -111,16 +115,6 @@ export async function runEngagementLead(input: {
     "Begin by orienting across the full surface. Establish service baselines, execute each objective against a relevant service, preserve promising primitives, then run chain-and-explore toward crown-jewel impact.",
   ].join("\n\n");
 
-  eventBus.emit("subagent-spawn", {
-    subagentId: leadAgentId,
-    sessionId: leadAgentId,
-    name: "Engagement Lead",
-    input: {
-      rootTarget: input.workflow.target,
-      serviceIds: state.services.map((service) => service.id),
-      objectiveIds: state.objectives.map((objective) => objective.id),
-    },
-  });
   const agent = new OffensiveSecurityAgent<EngagementLeadOutcome>({
     system: ENGAGEMENT_LEAD_SYSTEM_PROMPT,
     prompt,
@@ -141,8 +135,7 @@ export async function runEngagementLead(input: {
       return undefined;
     },
     findingsRegistry: input.findingsRegistry,
-    subagentId: leadAgentId,
-    subagentName: "Engagement Lead",
+    messages: input.workflow.messages,
     authConfig: input.workflow.authConfig,
     abortSignal: input.workflow.abortSignal,
     eventBus,
@@ -158,20 +151,5 @@ export async function runEngagementLead(input: {
     display: input.workflow.display,
   });
 
-  try {
-    const outcome = await agent.consume();
-    eventBus.emit("subagent-complete", {
-      subagentId: leadAgentId,
-      sessionId: leadAgentId,
-      status: "completed",
-    });
-    return outcome;
-  } catch (error) {
-    eventBus.emit("subagent-complete", {
-      subagentId: leadAgentId,
-      sessionId: leadAgentId,
-      status: "failed",
-    });
-    throw error;
-  }
+  return agent.consume();
 }

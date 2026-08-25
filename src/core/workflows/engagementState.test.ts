@@ -1,12 +1,14 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ModelMessage } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SwarmTarget } from "../session/persistence";
 import {
   AgentMailbox,
   buildEngagementState,
   EngagementStore,
+  restoreEngagementState,
 } from "./engagementState";
 
 const directories: string[] = [];
@@ -110,6 +112,47 @@ describe("EngagementStore", () => {
     expect(readFileSync(statePath, "utf8")).toContain("finding-1");
     writeFileSync(statePath, "not-json", "utf8");
     expect(() => EngagementStore.open(directory, seed)).toThrow();
+  });
+});
+
+describe("restoreEngagementState", () => {
+  it("restores a compact checkpoint from a Console text tool result", () => {
+    const directory = temporaryDirectory();
+    const original = buildEngagementState("https://app.example.test", targets);
+    const store = EngagementStore.open(directory, original);
+    const serviceId = original.services[0]?.id as string;
+    store.markServiceBaseline(serviceId, "explored", "Baseline complete");
+    const checkpoint = store.checkpoint();
+    const messages: ModelMessage[] = [
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-1",
+            toolName: "update_engagement_coverage",
+            output: {
+              type: "text",
+              value: JSON.stringify({ checkpoint, success: true }),
+            },
+          },
+        ],
+      },
+    ];
+    const resumedSeed = buildEngagementState(
+      "https://new-host.example.test",
+      targets,
+    );
+
+    const restored = restoreEngagementState(resumedSeed, messages);
+
+    expect(restored.rootTarget).toBe("https://new-host.example.test");
+    expect(
+      restored.services.find((service) => service.id === serviceId),
+    ).toMatchObject({
+      baselineStatus: "explored",
+      summary: "Baseline complete",
+    });
   });
 });
 
