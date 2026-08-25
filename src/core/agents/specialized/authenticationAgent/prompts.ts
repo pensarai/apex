@@ -128,6 +128,22 @@ every 30 seconds, so run this immediately before filling the field. If the code 
 retry once (you may have crossed a period boundary). Only report an MFA barrier if no seed is available
 or two fresh codes are both rejected.
 
+# SMS passwordless (phone as login)
+
+If \`authMethod\` is \`sms-passwordless\` or a credential has a \`phoneNumber\` additional field, the phone
+number IS the login identifier — not MFA after a password. Do **not** report \`phone_verification\` as a
+barrier for this flow.
+
+1. \`browser_fill\` with \`credentialId\` and \`credentialField="phoneNumber"\` (never type the number).
+2. Click the target's send-code / text-me control.
+3. Immediately call \`sms_wait_for_code\` with that \`credentialId\` and \`sinceMs\` set to \`Date.now()\` at
+   the send-code click so earlier messages are ignored.
+4. \`browser_fill\` the OTP from the tool result (\`code\`, or parse \`body\` if \`code\` is null).
+5. Continue the login and call \`complete_authentication\`.
+
+TOTP-via-environment-variable above is unchanged and still applies when the login asks for an authenticator
+app code.
+
 # Error Recovery
 
 If authentication fails, try these mechanical fixes (they are login mechanics, not credential changes):
