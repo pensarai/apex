@@ -56,6 +56,10 @@ describe("getMaxOutputTokens", () => {
     expect(getMaxOutputTokens("zai.glm-5")).toBe(131_072);
   });
 
+  it("recognizes Ox Alpha's 131.1K max-output window", () => {
+    expect(getMaxOutputTokens("stealth/ox-alpha")).toBe(131_072);
+  });
+
   it("recognizes the new Bedrock DeepSeek / Qwen output budgets", () => {
     // These three were silently inheriting the 4,096 catch-all, capping
     // replies far below each model's documented Bedrock limit.

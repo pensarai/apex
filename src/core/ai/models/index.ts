@@ -190,6 +190,13 @@ function lookupOutputBudgetByPattern(modelId: string): number {
     return 131_072;
   }
 
+  // Ox Alpha (stealth) ships a ~131K (128Ki) max-output window over its 1M
+  // context — reasoning tokens share this budget, so don't let it fall to the
+  // 4,096 catch-all.
+  if (modelId.includes("ox-alpha")) {
+    return 131_072;
+  }
+
   // DeepSeek (V3.1, R1, chat). Bedrock documents an 8K output window for
   // DeepSeek V3.1; the rest of the family is no larger, so this is a safe floor
   // that keeps new `deepseek.*` ids off the 4,096 catch-all.
