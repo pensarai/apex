@@ -22,6 +22,7 @@ import { getAvailableModels } from "../../../core/providers/utils";
 import { useTheme } from "../../theme";
 import { getPasteText } from "../../utils/paste";
 import { scrollToChild } from "../../utils/scroll";
+import { findSelectedModelIndex } from "./model-navigation";
 import { filterModels, getProviderDisplayName } from "./model-search";
 
 const providerOrder: AIModelProvider[] = [
@@ -128,8 +129,9 @@ export function ModelPicker({
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedProviders, setExpandedProviders] = useState<
     Set<AIModelProvider>
-  >(new Set(["anthropic"]));
+  >(new Set([selectedModel.provider]));
   const [focusedIndex, setFocusedIndex] = useState(0);
+  const lastFocusedSelectedModelIdRef = useRef<string | null>(null);
 
   const [localUrl, setLocalUrl] = useState(config?.localModelUrl ?? "");
   const [localModelName, setLocalModelName] = useState(
@@ -166,6 +168,9 @@ export function ModelPicker({
       const preservedProviders = new Set(
         [...prev].filter((provider) => availableProviders.has(provider)),
       );
+      if (availableProviders.has(selectedModel.provider)) {
+        preservedProviders.add(selectedModel.provider);
+      }
 
       if (preservedProviders.size > 0) {
         return setsAreEqual(prev, preservedProviders)
@@ -270,6 +275,21 @@ export function ModelPicker({
     onOpenAIReasoningEffortChange,
     selectedModel.id,
   ]);
+
+  useEffect(() => {
+    if (
+      isSearching ||
+      lastFocusedSelectedModelIdRef.current === selectedModel.id
+    ) {
+      return;
+    }
+
+    const index = findSelectedModelIndex(navigationItems, selectedModel.id);
+    if (index === -1) return;
+
+    lastFocusedSelectedModelIdRef.current = selectedModel.id;
+    setFocusedIndex(index);
+  }, [isSearching, navigationItems, selectedModel.id]);
 
   // Clamp focusedIndex when navigation items change
   useEffect(() => {
