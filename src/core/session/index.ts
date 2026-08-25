@@ -246,8 +246,6 @@ const SessionConfigObject = z.object({
     .optional(),
   authenticationInstructions: z.string().optional(),
   requestsPerSecond: z.number().positive().max(1000).optional(),
-  /** Authorize bounded anti-automation bursts up to requestsPerSecond. */
-  allowRateLimitTesting: z.boolean().optional(),
   /**
    * Opt-in: the client has authorized destructive testing (DB deletes/drops,
    * API write-deletes, catastrophic host operations). Defaults to off — when
