@@ -288,6 +288,8 @@ const SessionConfigObject = z.object({
     .min(60_000)
     .max(3_600_000)
     .optional(),
+  /** Use one durable scan-level lead over the complete discovered surface. */
+  engagementLead: z.boolean().optional(),
   /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
   agentCwd: z.string().optional(),
   /** Operator-provided guidance injected into the orchestrator/agent system prompts */

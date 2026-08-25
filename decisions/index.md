@@ -29,6 +29,7 @@ Apex serves three audiences:
 | [PDR-007](./PDR-007-multi-provider.md)              | Multi-provider AI model support                                              |
 | [PDR-008](./PDR-008-model-agnostic-code-runtime.md) | Model-agnostic code-oriented agent runtime                                   |
 | [PDR-009](./PDR-009-session-network-security.md)    | Harness-owned session network security and OAST routing                      |
+| [PDR-010](./PDR-010-engagement-lead.md)             | Durable engagement lead with verified objective workers                      |
 
 ---
 

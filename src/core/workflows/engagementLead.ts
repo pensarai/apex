@@ -1,0 +1,173 @@
+import { z } from "zod";
+import { OffensiveSecurityAgent } from "../agents/offSecAgent";
+import { AgentEventBus } from "../eventBus";
+import type { FindingsRegistry } from "../findings/registry";
+import type { SwarmTarget } from "../session/persistence";
+import {
+  buildEngagementState,
+  type EngagementCompletion,
+  EngagementStore,
+} from "./engagementState";
+import {
+  createEngagementTools,
+  ENGAGEMENT_TOOL_NAMES,
+} from "./engagementTools";
+import type { PentestWorkflowInput } from "./pentest";
+
+export const EngagementLeadResult = z.object({
+  summary: z.string(),
+  coverageComplete: z.boolean(),
+  chainExploreSummary: z.string(),
+});
+
+export type EngagementLeadOutcome = z.infer<typeof EngagementLeadResult>;
+
+export const ENGAGEMENT_LEAD_SYSTEM_PROMPT = `You are the durable lead penetration tester for one authorized engagement. You own the complete attack surface, threat-model objectives, coverage ledger, finding quality, and final chain-and-explore pass.
+
+Work directly and delegate selectively. You have the same exploitation tools as workers and should personally test high-value hypotheses, interpret cross-service evidence, and maintain continuity. Spawn focused workers when independent context windows improve coverage or speed. Run independent assignments concurrently when safe; resume the same worker for stateful follow-ups. Fast Strike workers prove one concrete impact objective—they never decide that the engagement is complete.
+
+Use read_engagement_state as the source of truth. Ensure every objective is terminal on at least one relevant service and every in-scope service receives baseline exploration. Coverage is service-based, not a Cartesian endpoint checklist. Discover net-new vulnerabilities and attack paths beyond the supplied objectives. Record reusable primitives as capabilities and resolve every supported next step by consuming it in a chain or marking it blocked with evidence.
+
+You may call document_vulnerability directly. Findings still pass through the shared finding judge: document only reproducible exploitable vulnerabilities with material impact. Record material impact separately with record_impact_proof, referencing accepted findings, capabilities, artifacts, or trace observations.
+
+Before finishing, perform chain-and-explore: combine confirmed primitives across services and attempt to reach crown-jewel impact. Update the chain coverage status honestly. The response tool is accepted only when the deterministic coverage gate is complete.`;
+
+const LEAD_TOOL_NAMES = [
+  "execute_command",
+  "http_request",
+  "document_vulnerability",
+  "browser_navigate",
+  "browser_snapshot",
+  "browser_screenshot",
+  "browser_click",
+  "browser_fill",
+  "browser_get_cookies",
+  "read_file",
+  "list_files",
+  "glob",
+  "grep",
+  "profile_codebase",
+  "query_whitebox_catalog",
+  "run_code_query",
+  "web_search",
+  "get_page",
+  "checkpoint_state",
+  ...ENGAGEMENT_TOOL_NAMES,
+  "response",
+] as const;
+
+function completionMessage(completion: EngagementCompletion): string {
+  return [
+    completion.missingObjectiveIds.length > 0
+      ? `Objectives without terminal relevant-service coverage: ${completion.missingObjectiveIds.join(", ")}`
+      : "",
+    completion.missingServiceIds.length > 0
+      ? `Services without baseline exploration: ${completion.missingServiceIds.join(", ")}`
+      : "",
+    completion.unresolvedCapabilityIds.length > 0
+      ? `Capabilities with supported open edges: ${completion.unresolvedCapabilityIds.join(", ")}`
+      : "",
+    completion.chainExplorePending ? "Chain-and-explore is not terminal." : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+export async function runEngagementLead(input: {
+  workflow: PentestWorkflowInput;
+  targets: SwarmTarget[];
+  findingsRegistry: FindingsRegistry;
+  eventBus?: AgentEventBus;
+}): Promise<EngagementLeadOutcome> {
+  const eventBus = input.eventBus ?? new AgentEventBus();
+  const leadAgentId = "engagement-lead";
+  const seed = buildEngagementState(
+    input.workflow.target,
+    input.targets,
+    input.workflow.session.config?.prompt,
+  );
+  const store = EngagementStore.open(input.workflow.session.rootPath, seed);
+  const engagementTools = createEngagementTools({
+    input: input.workflow,
+    store,
+    findingsRegistry: input.findingsRegistry,
+    eventBus,
+    leadAgentId,
+  });
+  const state = store.snapshot();
+  const prompt = [
+    `Root target: ${input.workflow.target}`,
+    "The persisted engagement contract follows. Use IDs exactly when calling coordination tools.",
+    JSON.stringify(
+      {
+        services: state.services,
+        objectives: state.objectives,
+        coverage: state.coverage,
+        operatorContext: state.operatorContext,
+      },
+      null,
+      2,
+    ),
+    "Begin by orienting across the full surface. Establish service baselines, execute each objective against a relevant service, preserve promising primitives, then run chain-and-explore toward crown-jewel impact.",
+  ].join("\n\n");
+
+  eventBus.emit("subagent-spawn", {
+    subagentId: leadAgentId,
+    sessionId: leadAgentId,
+    name: "Engagement Lead",
+    input: {
+      rootTarget: input.workflow.target,
+      serviceIds: state.services.map((service) => service.id),
+      objectiveIds: state.objectives.map((objective) => objective.id),
+    },
+  });
+  const agent = new OffensiveSecurityAgent<EngagementLeadOutcome>({
+    system: ENGAGEMENT_LEAD_SYSTEM_PROMPT,
+    prompt,
+    model: input.workflow.model,
+    session: input.workflow.session,
+    target: input.workflow.target,
+    activeTools: [...LEAD_TOOL_NAMES],
+    directTools: [...ENGAGEMENT_TOOL_NAMES],
+    extraTools: engagementTools,
+    responseSchema: EngagementLeadResult,
+    responseGuard: (result) => {
+      const completion = store.completion();
+      if (!completion.complete) return completionMessage(completion);
+      const parsed = EngagementLeadResult.safeParse(result);
+      if (!parsed.success || !parsed.data.coverageComplete) {
+        return "The response must acknowledge that deterministic engagement coverage is complete.";
+      }
+      return undefined;
+    },
+    findingsRegistry: input.findingsRegistry,
+    subagentId: leadAgentId,
+    subagentName: "Engagement Lead",
+    authConfig: input.workflow.authConfig,
+    abortSignal: input.workflow.abortSignal,
+    eventBus,
+    onStepFinish: input.workflow.onStepFinish,
+    onCacheMetrics: input.workflow.onCacheMetrics,
+    enableThinking: input.workflow.enableThinking,
+    thinkingEffort: input.workflow.thinkingEffort,
+    openAIReasoningEffort: input.workflow.openAIReasoningEffort,
+    toolProtocol: input.workflow.toolProtocol,
+  });
+
+  try {
+    const outcome = await agent.consume();
+    eventBus.emit("subagent-complete", {
+      subagentId: leadAgentId,
+      sessionId: leadAgentId,
+      status: "completed",
+    });
+    return outcome;
+  } catch (error) {
+    eventBus.emit("subagent-complete", {
+      subagentId: leadAgentId,
+      sessionId: leadAgentId,
+      status: "failed",
+    });
+    throw error;
+  }
+}
