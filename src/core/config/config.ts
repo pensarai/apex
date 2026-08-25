@@ -142,8 +142,8 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
     contextCompactionThresholdRatio:
       parsedConfig.contextCompactionThresholdRatio ??
       (process.env.PENSAR_CONTEXT_COMPACTION_THRESHOLD
-         ? Number(process.env.PENSAR_CONTEXT_COMPACTION_THRESHOLD)
-         : undefined),
+        ? Number(process.env.PENSAR_CONTEXT_COMPACTION_THRESHOLD)
+        : undefined),
     inceptionAPIKey:
       parsedConfig.inceptionAPIKey ?? process.env.INCEPTION_API_KEY,
     bedrockAPIKey: parsedConfig.bedrockAPIKey ?? process.env.BEDROCK_API_KEY,
