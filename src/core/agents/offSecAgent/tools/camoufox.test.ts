@@ -47,15 +47,11 @@ describe("display-tier viewport helpers", () => {
     expect(viewportSizeForDisplay(undefined)).toBe(COMPUTER_USE_VIEWPORT_SIZE);
   });
 
-  it("builds fingerprint-coherent window + screen constraints", () => {
+  it("floors the screen at the window without an exact pin", () => {
+    // Guard: an exact (min==max) pin wedged the 720p tier in browserforge.
     expect(camoufoxWindowOptions([1280, 720])).toEqual({
       window: [1280, 720],
-      screen: {
-        minWidth: 1280,
-        maxWidth: 1280,
-        minHeight: 720,
-        maxHeight: 720,
-      },
+      screen: { minWidth: 1280, minHeight: 720 },
     });
   });
 });
@@ -115,7 +111,7 @@ describe("resolveCamoufoxLaunchOptions", () => {
     });
   });
 
-  it("forwards a fixed window and matching screen constraints when provided", async () => {
+  it("forwards a fixed window and a screen floor when provided", async () => {
     launchOptionsMock.mockResolvedValue({
       executablePath: "/opt/camoufox/camoufox-bin",
       args: [],
@@ -130,12 +126,7 @@ describe("resolveCamoufoxLaunchOptions", () => {
       ...CAMOUFOX_OPTIONS,
       headless: false,
       window: [1280, 720],
-      screen: {
-        minWidth: 1280,
-        maxWidth: 1280,
-        minHeight: 720,
-        maxHeight: 720,
-      },
+      screen: { minWidth: 1280, minHeight: 720 },
     });
   });
 });
