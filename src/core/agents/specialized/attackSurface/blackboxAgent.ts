@@ -156,8 +156,8 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
         "email_get_message",
         // Send email (filtered out by base class when no SMTP configured)
         "send_email",
-        // Mobile OTP wait (filtered out by base class when no sms-passwordless cred)
-        "sms_wait_for_code",
+        // Mobile OTP list (filtered out by base class when no sms-passwordless cred)
+        "sms_list_messages",
         // Web search tools — research target technologies, find known vulnerabilities
         "web_search",
         "get_page",
@@ -220,7 +220,7 @@ function buildPrompt(target: string, session: SessionInfo): string {
 Your FIRST tool call must be: browser_navigate to ${loginTarget}
 Then use browser tools to authenticate. Pass the credentialId to delegate_to_auth_subagent — secrets are resolved automatically.
 For browser_fill on password/secret fields, use credentialId + credentialField instead of raw values.
-When a credential has a phoneNumber additional field (Mobile OTP / sms-passwordless), phone is the login identifier — not MFA-after-password. Fill credentialField="phoneNumber", click send-code, call sms_wait_for_code with sinceMs from that click, then fill the OTP. Do not report phone_verification as a barrier. TOTP-via-env for authenticator MFA is unchanged.
+When a credential has a phoneNumber additional field (Mobile OTP / sms-passwordless), phone is the login identifier — not MFA-after-password. Fill credentialField="phoneNumber", click send-code, sleep with execute_command, then sms_list_messages with sinceMs from that click (claim=true once a message is present). If the list stays empty, stop and report — do not hang. Do not report phone_verification as a barrier. TOTP-via-env for authenticator MFA is unchanged.
 
 Do NOT run curl, nmap, dig, or any other command before completing login.
 Include authentication information with EVERY target that requires it in your final report.

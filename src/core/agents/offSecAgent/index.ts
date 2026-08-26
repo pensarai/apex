@@ -116,7 +116,7 @@ export {
   SKILL_TOOL_NAMES,
   SMS_TOOL_NAMES,
   SMS_TOOL_NAMES_ACTIVE,
-  SMS_WAIT_FOR_CODE_TOOL_NAME,
+  SMS_LIST_MESSAGES_TOOL_NAME,
   sessionHasSmsPasswordless,
   setHeadlessMode,
   setUserAgent,

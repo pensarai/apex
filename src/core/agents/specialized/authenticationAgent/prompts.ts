@@ -135,10 +135,12 @@ number IS the login identifier — not MFA after a password. Do **not** report \
 barrier for this flow.
 
 1. \`browser_fill\` with \`credentialId\` and \`credentialField="phoneNumber"\` (never type the number).
-2. Click the target's send-code / text-me control.
-3. Immediately call \`sms_wait_for_code\` with that \`credentialId\` and \`sinceMs\` set to \`Date.now()\` at
-   the send-code click so earlier messages are ignored.
-4. \`browser_fill\` the OTP from the tool result (\`code\`, or parse \`body\` if \`code\` is null).
+2. Click the target's send-code / text-me control. Note \`Date.now()\` at that click as \`sinceMs\`.
+3. \`execute_command\` \`sleep 5\`, then call \`sms_list_messages\` with that \`credentialId\` and \`sinceMs\`.
+   If the list is empty, sleep and list again a few times. If it stays empty or returns an error, stop
+   and report what you observed — do not hang in a wait loop. Set \`claim=true\` once a message is present
+   so other runs cannot reuse the OTP.
+4. \`browser_fill\` the OTP from the claimed/listed result (\`code\`, or parse \`body\` if \`code\` is null).
 5. Continue the login and call \`complete_authentication\`.
 
 TOTP-via-environment-variable above is unchanged and still applies when the login asks for an authenticator
