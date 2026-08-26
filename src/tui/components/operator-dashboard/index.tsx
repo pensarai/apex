@@ -95,7 +95,7 @@ import {
   tryParsePartialJson,
 } from "../shared";
 import {
-  recoverAbortedConversation,
+  recoverAbortedTranscript,
   rewriteToolResultOutput,
 } from "./conversation";
 import {
@@ -1664,39 +1664,17 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     subagentStore.setState(markSubagentsInterrupted);
 
     // Read back persisted messages so the next run has full context.
-    // Only keep a recent subset to avoid blowing the context window.
     // Use sessionRef (not the `session` state) so we see the session even
     // when it was just created via onSessionReady but React hasn't
     // re-rendered yet (e.g. aborting on the very first message).
     const activeSession = sessionRef.current;
     if (activeSession) {
-      try {
-        const messagesPath = join(activeSession.rootPath, "messages.json");
-        if (existsSync(messagesPath)) {
-          const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
-          if (Array.isArray(raw) && raw.length > 0) {
-            conversationRef.current = normalizeMessages(
-              sessions.getResumeMessages(raw as ModelMessage[]),
-            );
-          }
-        }
-
-        const recovered = recoverAbortedConversation(
-          conversationRef.current,
-          textRef.current,
-          displayMessagesRef.current,
-        );
-        if (recovered) {
-          conversationRef.current = recovered;
-          // Persist so session resume also sees the corrected state.
-          writeFileSync(
-            messagesPath,
-            JSON.stringify(conversationRef.current, null, 2),
-          );
-        }
-      } catch {
-        // Best-effort — keep whatever conversationRef already has
-      }
+      conversationRef.current = recoverAbortedTranscript({
+        rootPath: activeSession.rootPath,
+        conversation: conversationRef.current,
+        partialText: textRef.current,
+        displayMessages: displayMessagesRef.current,
+      });
     }
 
     setMessages((prev) => {
