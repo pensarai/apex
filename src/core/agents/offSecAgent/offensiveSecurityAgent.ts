@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   ModelMessage,
@@ -28,6 +27,7 @@ import {
   buildInterruptedStepMessages,
   buildSyntheticToolResults,
 } from "./interruptedStepMessages";
+import { AgentMessageWriter } from "./messagePersistence";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
 import { ToolLifecycleTracker } from "./toolLifecycle";
@@ -304,19 +304,12 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** The session this agent is operating within. */
   private readonly _session: SessionInfo;
 
-  /** Latest accumulated messages, shared with `consume()` for abort persistence. */
-  private latestMessages: ModelMessage[] | null = null;
+  /** Agent-local message persistence (debounce + serialized writes). */
+  private readonly writer!: AgentMessageWriter;
 
   private messagesPath: string | null = null;
 
   /** Serializes agent-owned messages.json writes in enqueue order. */
-  private persistenceTail: Promise<void> = Promise.resolve();
-
-  /** Cancels a pending debounce; already-started writes remain in persistenceTail. */
-  private cancelPersistTimer: (() => void) | null = null;
-
-  private syntheticsPersisted = false;
-
   /**
    * Async factory that creates a session when one is not provided,
    * then constructs the agent. Use this instead of `new` when you
@@ -620,32 +613,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           ],
     };
 
-    // Debounced persistence: avoid blocking the event loop with
-    // JSON.stringify on every step when many agents run concurrently.
-    const PERSIST_INTERVAL_MS = 15_000;
-    let persistTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const schedulePersist = () => {
-      if (persistTimer) return;
-      persistTimer = setTimeout(() => {
-        persistTimer = null;
-        if (this.latestMessages) {
-          const toWrite = this.latestMessages;
-          void this.enqueueMessagesWrite(toWrite)
-            .then(() => {
-              if (this.latestMessages === toWrite) this.latestMessages = null;
-            })
-            .catch(() => {});
-        }
-      }, PERSIST_INTERVAL_MS);
-    };
-
-    this.cancelPersistTimer = () => {
-      if (persistTimer) {
-        clearTimeout(persistTimer);
-        persistTimer = null;
-      }
-    };
+    // Agent-local persistence: debounce, latest snapshot, and the
+    // serialized write queue live in the writer (see ./messagePersistence).
+    this.writer = new AgentMessageWriter({ messagesPath: this.messagesPath });
+    const schedulePersist = () => this.writer.schedulePersist();
 
     // -- Init record (trace.jsonl first line) ---------------------------------
     // Hash only the base system prompt (excluding session workspace paths)
@@ -697,10 +668,10 @@ export class OffensiveSecurityAgent<TResult = void> {
         sessionPath: messagesDir,
         sessionId: this.busSessionId,
         onStepFinish: async (event) => {
-          this.latestMessages = [
+          this.writer.setLatest([
             ...initialMessagesRef.current,
             ...event.response.messages,
-          ];
+          ]);
           schedulePersist();
           traceWriter.recordStep(event.response.messages as ModelMessage[], {
             inputTokens: event.usage.inputTokens ?? 0,
@@ -725,18 +696,15 @@ export class OffensiveSecurityAgent<TResult = void> {
         },
         onFinish: async (event) => {
           // Flush any pending persistence before finishing
-          if (persistTimer) {
-            clearTimeout(persistTimer);
-            persistTimer = null;
-          }
+          this.writer.cancelTimer();
           // Skip if emitSyntheticToolResults already wrote the abort snapshot.
-          if (!this.syntheticsPersisted) {
-            const finalMessages = this.latestMessages ?? [
+          if (!this.writer.syntheticsPersisted) {
+            const finalMessages = this.writer.latest ?? [
               ...initialMessagesRef.current,
               ...event.response.messages,
             ];
-            this.latestMessages = finalMessages;
-            await this.enqueueMessagesWrite(finalMessages).catch(() => {});
+            this.writer.setLatest(finalMessages);
+            await this.writer.enqueueWrite(finalMessages).catch(() => {});
           }
           await input.onFinish?.(event);
         },
@@ -1098,26 +1066,6 @@ export class OffensiveSecurityAgent<TResult = void> {
     await this.browserSession.disconnect().catch(() => {});
   }
 
-  private async enqueueMessagesWrite(messages: ModelMessage[]): Promise<void> {
-    const messagesPath = this.messagesPath;
-    if (!messagesPath) return;
-
-    const contents = JSON.stringify(messages);
-    const write = this.persistenceTail.then(() =>
-      writeFile(messagesPath, contents),
-    );
-    this.persistenceTail = write.catch(() => {});
-    await write;
-  }
-
-  private async waitForPendingMessagesWrites(): Promise<void> {
-    let pending: Promise<void>;
-    do {
-      pending = this.persistenceTail;
-      await pending;
-    } while (pending !== this.persistenceTail);
-  }
-
   /**
    * Idempotent teardown for hosts that abort before `consume()` settles
    * (Console `settleOnAbort` on timeout/pause). Force-disconnects the owned
@@ -1194,11 +1142,11 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
 
     // Cancel an unfired debounce and drain writes that already started.
-    this.cancelPersistTimer?.();
-    await this.waitForPendingMessagesWrites();
+    this.writer.cancelTimer();
+    await this.writer.waitForPendingWrites();
 
-    // Fall back to the on-disk snapshot once the debounced timer has flushed latestMessages, so we don't overwrite history.
-    let base: ModelMessage[] = this.latestMessages ?? [];
+    // Fall back to the on-disk snapshot once the debounced timer has flushed the latest snapshot, so we don't overwrite history.
+    let base: ModelMessage[] = this.writer.latest ?? [];
     if (base.length === 0 && existsSync(this.messagesPath)) {
       try {
         base = JSON.parse(readFileSync(this.messagesPath, "utf-8"));
@@ -1236,11 +1184,11 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
 
     const next: ModelMessage[] = [...base, ...appended];
-    this.latestMessages = next;
+    this.writer.setLatest(next);
     try {
-      await this.enqueueMessagesWrite(next);
+      await this.writer.enqueueWrite(next);
       // Only suppress onFinish's write once the snapshot is safely on disk.
-      this.syntheticsPersisted = true;
+      this.writer.markSyntheticsPersisted();
     } catch {
       // Write failed — leave the flag false so onFinish still attempts a write.
     }

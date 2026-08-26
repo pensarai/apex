@@ -78,6 +78,7 @@ vi.mock("../../operator", () => ({
 vi.mock("ai", () => ({ hasToolCall: () => () => false }));
 
 import { AgentEventBus } from "../../eventBus";
+import { AgentMessageWriter } from "./messagePersistence";
 import {
   filterWorkspaceToolsForRun,
   OffensiveSecurityAgent,
@@ -102,7 +103,7 @@ function buildStubAgent(overrides: {
   ownsBrowserSession?: boolean;
   messagesPath?: string | null;
   latestMessages?: unknown[] | null;
-  persistenceTail?: Promise<void>;
+  writeImpl?: (messagesPath: string, contents: string) => Promise<void>;
   responseCaptured?: Promise<unknown>;
 }): OffensiveSecurityAgent<unknown> {
   const agent = Object.create(
@@ -144,20 +145,17 @@ function buildStubAgent(overrides: {
   Object.defineProperty(agent, "ownsBrowserSession", {
     value: overrides.ownsBrowserSession ?? false,
   });
-  Object.defineProperty(agent, "latestMessages", {
-    value: overrides.latestMessages ?? null,
-    writable: true,
-  });
   Object.defineProperty(agent, "messagesPath", {
     value: overrides.messagesPath ?? null,
   });
-  Object.defineProperty(agent, "cancelPersistTimer", {
-    value: () => {},
+  const writer = new AgentMessageWriter({
+    messagesPath: overrides.messagesPath ?? null,
+    ...(overrides.writeImpl ? { writeImpl: overrides.writeImpl } : {}),
   });
-  Object.defineProperty(agent, "persistenceTail", {
-    value: overrides.persistenceTail ?? Promise.resolve(),
-    writable: true,
-  });
+  if (overrides.latestMessages) {
+    writer.setLatest(overrides.latestMessages as never[]);
+  }
+  Object.defineProperty(agent, "writer", { value: writer });
 
   return agent;
 }
@@ -963,24 +961,37 @@ describe("OffensiveSecurityAgent.consume()", () => {
       ];
       writeFileSync(messagesPath, JSON.stringify(staleMessages));
 
-      let finishPersist!: () => void;
-      const persistenceTail = new Promise<void>((resolve) => {
-        finishPersist = () => {
-          writeFileSync(messagesPath, JSON.stringify(persistedMessages));
-          resolve();
-        };
+      // Gate the writer's write sink so an in-flight persist can be held
+      // while the stream throws and the abort snapshot waits its turn.
+      let releasePersist!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        releasePersist = resolve;
       });
+      const writeImpl = async (path: string, contents: string) => {
+        await gate;
+        writeFileSync(path, contents);
+      };
 
       const agent = buildStubAgent({
         fullStream: yieldThenThrow([toolCallChunk], new Error("timeout")),
         messagesPath,
         latestMessages: null,
-        persistenceTail,
+        writeImpl,
       });
+
+      // Start the in-flight persist against the gated sink.
+      const writer = (agent as unknown as { writer: AgentMessageWriter })
+        .writer;
+      const inFlight = writer
+        .enqueueWrite(persistedMessages as never[])
+        .catch(() => {});
 
       const consume = agent.consume().catch(() => {});
       await new Promise((resolve) => setTimeout(resolve, 50));
-      finishPersist();
+      // The gated persist is still in flight — the abort snapshot must be
+      // queued behind it, not interleaved.
+      releasePersist();
+      await inFlight;
       await consume;
 
       const written = JSON.parse(readFileSync(messagesPath, "utf-8"));
@@ -1223,8 +1234,11 @@ describe("OffensiveSecurityAgent.consume()", () => {
       await new Promise((r) => setTimeout(r, 50));
 
       expect(
-        (agent as unknown as { syntheticsPersisted?: boolean })
-          .syntheticsPersisted,
+        (
+          agent as unknown as {
+            writer: { syntheticsPersisted: boolean };
+          }
+        ).writer.syntheticsPersisted,
       ).toBeFalsy();
     });
   });
