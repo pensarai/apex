@@ -27,6 +27,7 @@ import { scopedLogger } from "../../util/lazyLogger";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
+import { ToolLifecycleTracker } from "./toolLifecycle";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
   createAllTools,
@@ -828,24 +829,17 @@ export class OffensiveSecurityAgent<TResult = void> {
         },
       };
 
-      // inFlightTools = calls awaiting a result; completedResults = streamed but not yet persisted by onStepFinish (PR #779).
-      const inFlightTools = new Map<string, string>();
-      const completedResults: ToolResultPart[] = [];
+      // Tool lifecycle state: in-flight calls awaiting a result, completed but
+      // unpersisted results (PR #779), streamed arg text, and deferred tool
+      // errors — all owned by the tracker (see ./toolLifecycle).
+      const tracker = new ToolLifecycleTracker();
       let streamError: unknown = null;
-
-      // Raw streamed arg text per tool-call id, kept so a `tool-error` can persist the real (possibly truncated) payload instead of `{}`.
-      const streamedArgText = new Map<string, string>();
-      // Tool errors observed mid-stream, surfaced at finish-step (where finishReason is known) instead of a generic "did not complete".
-      const toolErrors = new Map<
-        string,
-        { message: string; input: unknown; toolName: string }
-      >();
 
       // Opt-in stall watchdog + response-tool tracer (see ./streamDiagnostics).
       const diagnostics = new StreamDiagnostics({
         sessionId: this._session.id,
         subagentId: sid,
-        inFlightTools: () => inFlightTools,
+        inFlightTools: () => tracker.inFlightTools,
         responseToolFired: () => this._responseToolFired,
         responseToolName: RESPONSE_TOOL_NAME,
       });
@@ -866,86 +860,20 @@ export class OffensiveSecurityAgent<TResult = void> {
             case "text-end":
               ids.textPartId = undefined;
               break;
-            case "tool-input-start":
-              // Track from the start so a truncated call still gets closed instead of left "running".
-              inFlightTools.set(chunk.id, chunk.toolName);
-              streamedArgText.set(chunk.id, "");
-              break;
-            case "tool-input-delta": {
-              const d = chunk as { id: string; delta?: string };
-              streamedArgText.set(
-                d.id,
-                (streamedArgText.get(d.id) ?? "") + (d.delta ?? ""),
-              );
-              break;
-            }
-            case "tool-call":
-              inFlightTools.set(chunk.toolCallId, chunk.toolName);
-              break;
-            case "tool-error": {
-              // `execute` never runs for an errored call, so it must be cleared here or finish-step would fabricate a bogus "did not complete".
-              const te = chunk as {
-                toolCallId: string;
-                toolName: string;
-                input?: unknown;
-                error?: unknown;
-              };
-              inFlightTools.delete(te.toolCallId);
-              const errMsg =
-                te.error instanceof Error
-                  ? te.error.message
-                  : typeof te.error === "string"
-                    ? te.error
-                    : (() => {
-                        try {
-                          return JSON.stringify(te.error);
-                        } catch {
-                          return String(te.error);
-                        }
-                      })();
-              const partialArgs =
-                te.input !== undefined &&
-                te.input !== null &&
-                responseArgBytes(te.input) > 2
-                  ? te.input
-                  : (streamedArgText.get(te.toolCallId) ?? "");
-              toolErrors.set(te.toolCallId, {
-                message: errMsg,
-                input: partialArgs,
-                toolName: te.toolName,
-              });
-              break;
-            }
-            case "tool-result": {
-              const tc = chunk as {
-                toolCallId: string;
-                toolName: string;
-                result?: unknown;
-                output?: unknown;
-              };
-              inFlightTools.delete(tc.toolCallId);
-              completedResults.push({
-                type: "tool-result",
-                toolCallId: tc.toolCallId,
-                toolName: tc.toolName,
-                output: (tc.result ?? tc.output) as ToolResultPart["output"],
-              });
-              break;
-            }
             case "finish-step": {
-              // onStepFinish has persisted this step; drop its results so a later abort doesn't re-append them.
-              completedResults.length = 0;
+              tracker.onStepPersisted();
               const finishReason = (chunk as { finishReason?: string })
                 .finishReason;
               const truncated = finishReason === "length";
 
-              for (const [toolCallId, info] of toolErrors) {
+              for (const [toolCallId, info] of tracker.toolErrors) {
                 diagnostics.logSurfacedToolError({
                   toolCallId,
                   toolName: info.toolName,
                   message: info.message,
-                  streamedArgChars: (streamedArgText.get(toolCallId) ?? "")
-                    .length,
+                  streamedArgChars: (
+                    tracker.streamedArgText.get(toolCallId) ?? ""
+                  ).length,
                   finishReason,
                   truncated,
                 });
@@ -964,10 +892,10 @@ export class OffensiveSecurityAgent<TResult = void> {
                   messageId: ids.messageId,
                 });
               }
-              toolErrors.clear();
+              tracker.clearToolErrors();
 
               // Close any call still in flight (args never finalized) so it doesn't render stuck "running".
-              for (const [toolCallId, toolName] of inFlightTools) {
+              for (const [toolCallId, toolName] of tracker.inFlightTools) {
                 diagnostics.logClosingInFlightTool({
                   toolCallId,
                   toolName,
@@ -994,9 +922,12 @@ export class OffensiveSecurityAgent<TResult = void> {
                   messageId: ids.messageId,
                 });
               }
-              inFlightTools.clear();
+              tracker.clearInFlight();
               break;
             }
+            default:
+              // Tool-input/delta, tool-call, tool-error, tool-result → tracker.
+              tracker.observePart(chunk);
           }
           bus.emitStreamPart(chunk, ids);
         }
@@ -1022,17 +953,11 @@ export class OffensiveSecurityAgent<TResult = void> {
             recordFinalizationError(error);
           }
           // Flush tool-errors that never reached a finish-step into the snapshot.
-          for (const [toolCallId, info] of toolErrors) {
+          for (const [toolCallId, info] of tracker.flushToolErrorsToResults()) {
             const result = {
               type: "error-text" as const,
               value: `Tool call failed: ${info.message}`,
             };
-            completedResults.push({
-              type: "tool-result",
-              toolCallId,
-              toolName: info.toolName,
-              output: result,
-            });
             try {
               bus.emit("tool-result", {
                 toolCallId,
@@ -1047,9 +972,8 @@ export class OffensiveSecurityAgent<TResult = void> {
               recordFinalizationError(error);
             }
           }
-          toolErrors.clear();
           // Snapshot unpersisted step state: open tools get synthetic closes, completed/errored results get written.
-          if (inFlightTools.size > 0 || completedResults.length > 0) {
+          if (tracker.hasUnpersistedState()) {
             const reason = this.abortSignal?.aborted
               ? "Agent aborted by user"
               : streamError instanceof Error && streamError.message
@@ -1057,12 +981,12 @@ export class OffensiveSecurityAgent<TResult = void> {
                 : "Stream terminated unexpectedly";
             try {
               await this.emitSyntheticToolResults(
-                inFlightTools,
-                completedResults,
+                tracker.inFlightTools,
+                [...tracker.completedResults],
                 reason,
                 ids.toolPartId,
                 ids.messageId,
-                streamedArgText,
+                tracker.streamedArgText,
               );
             } catch (error) {
               recordFinalizationError(error);
@@ -1211,12 +1135,12 @@ export class OffensiveSecurityAgent<TResult = void> {
   }
 
   private async emitSyntheticToolResults(
-    inFlightTools: Map<string, string>,
-    completedResults: ToolResultPart[],
+    inFlightTools: ReadonlyMap<string, string>,
+    completedResults: readonly ToolResultPart[],
     reason: string,
     partIdFor?: (toolCallId: string) => string,
     messageId?: string,
-    streamedArgText?: Map<string, string>,
+    streamedArgText?: ReadonlyMap<string, string>,
   ): Promise<void> {
     const sid = this.subagentId;
     const output = {
