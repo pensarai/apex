@@ -1375,7 +1375,7 @@ describe("owned-resource disposal", () => {
     expect(() => agent.disposeOwnedShell()).not.toThrow();
   });
 
-  it("disconnectOwnedBrowser is idempotent across repeated teardown paths", async () => {
+  it("browser disconnect is idempotent across consume finalization and later teardown", async () => {
     const disconnect = vi.fn().mockResolvedValue(undefined);
     const agent = buildStubAgent({
       fullStream: yieldThenThrow([toolCallChunk], new Error("stream broke")),
@@ -1383,11 +1383,12 @@ describe("owned-resource disposal", () => {
       ownsBrowserSession: true,
     });
 
+    // consume()'s finalization disconnects; later host teardown must not repeat it.
     try {
       await agent.consume();
     } catch {}
-    await agent.disconnectOwnedBrowser();
-    await agent.disconnectOwnedBrowser();
+    await agent.abortAndDrain();
+    await agent.abortAndDrain();
 
     expect(disconnect).toHaveBeenCalledOnce();
   });

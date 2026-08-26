@@ -1086,7 +1086,7 @@ export class OffensiveSecurityAgent<TResult = void> {
   }
 
   /** Force-kills the owned Chromium child process exactly once; safe to call from multiple teardown paths. */
-  async disconnectOwnedBrowser(): Promise<void> {
+  private async disconnectOwnedBrowser(): Promise<void> {
     if (this.browserDisconnected) return;
     if (!this.ownsBrowserSession || !this.browserSession) return;
     this.browserDisconnected = true;
