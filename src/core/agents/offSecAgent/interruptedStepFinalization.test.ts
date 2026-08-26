@@ -178,7 +178,10 @@ describe("createInterruptedStepFinalizer", () => {
   it("multiple interrupted tools: errors flushed, completed kept, all paired", async () => {
     const { finalize } = setup();
 
-    const snapshot = snapshotFrom([
+    // The interrupted path flushes deferred errors into completed results
+    // before finalization (consume() does this via the tracker).
+    const tracker = new ToolLifecycleTracker();
+    for (const part of [
       // One open call with streamed args.
       { type: "tool-input-start", id: "tc-open", toolName: "nmap_tool" },
       { type: "tool-input-delta", id: "tc-open", delta: '{"target":"x"}' },
@@ -191,24 +194,6 @@ describe("createInterruptedStepFinalizer", () => {
         output: { ok: true },
       },
       // One deferred tool error.
-      {
-        type: "tool-error",
-        toolCallId: "tc-err",
-        toolName: "browser_tool",
-        error: "crashed",
-      },
-    ]);
-    // The interrupted path flushes deferred errors into completed results
-    // before finalization (consume() does this via the tracker).
-    const tracker = new ToolLifecycleTracker();
-    for (const part of [
-      { type: "tool-call", toolCallId: "tc-open", toolName: "nmap_tool" },
-      {
-        type: "tool-result",
-        toolCallId: "tc-done",
-        toolName: "http_tool",
-        output: { ok: true },
-      },
       {
         type: "tool-error",
         toolCallId: "tc-err",
@@ -231,6 +216,9 @@ describe("createInterruptedStepFinalizer", () => {
     const resultIds = tool.content.map((p) => p.toolCallId);
     expect(callIds).toEqual(["tc-open", "tc-done", "tc-err"]);
     expect(new Set(resultIds)).toEqual(new Set(callIds));
+    expect(
+      assistant.content.find((p) => p.toolCallId === "tc-open")?.input,
+    ).toEqual({ target: "x" });
     // The flushed error result reads as error-text.
     expect(
       tool.content.find((p) => p.toolCallId === "tc-err")?.output,
