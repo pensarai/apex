@@ -78,6 +78,7 @@ vi.mock("../../operator", () => ({
 vi.mock("ai", () => ({ hasToolCall: () => () => false }));
 
 import { AgentEventBus } from "../../eventBus";
+import { createInterruptedStepFinalizer } from "./interruptedStepFinalization";
 import { AgentMessageWriter } from "./messagePersistence";
 import {
   filterWorkspaceToolsForRun,
@@ -156,6 +157,15 @@ function buildStubAgent(overrides: {
     writer.setLatest(overrides.latestMessages as never[]);
   }
   Object.defineProperty(agent, "writer", { value: writer });
+  Object.defineProperty(agent, "finalizeInterruptedStep", {
+    value: createInterruptedStepFinalizer({
+      eventBus: bus,
+      sessionId: "ses_stub",
+      writer,
+      responseToolName: "response",
+      responseToolFired: () => false,
+    }),
+  });
 
   return agent;
 }
