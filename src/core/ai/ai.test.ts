@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   applySequentialToolCallPolicy,
   buildReasoningProviderOptions,
+  isRepairFailClosedTool,
   SEQUENTIAL_TOOL_CALL_INSTRUCTION,
   streamResponse,
 } from "./ai";
@@ -50,6 +51,18 @@ describe("applySequentialToolCallPolicy", () => {
     expect(
       applySequentialToolCallPolicy("Base.", tools, "claude-haiku-4-5"),
     ).toBe("Base.");
+  });
+});
+
+describe("isRepairFailClosedTool", () => {
+  it("fails closed for spawn_pentest_agent so repair cannot fabricate a target", () => {
+    expect(isRepairFailClosedTool("spawn_pentest_agent")).toBe(true);
+  });
+
+  it("leaves ordinary tools eligible for repair", () => {
+    expect(isRepairFailClosedTool("response")).toBe(false);
+    expect(isRepairFailClosedTool("document_vulnerability")).toBe(false);
+    expect(isRepairFailClosedTool("http_request")).toBe(false);
   });
 });
 
