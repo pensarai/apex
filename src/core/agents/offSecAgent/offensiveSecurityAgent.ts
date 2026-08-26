@@ -294,6 +294,7 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** Guards against double force-kill across the drain-finally and result-capture paths. */
   private browserDisconnected = false;
+  private shellDisposed = false;
 
   private readonly abortSignal?: AbortSignal;
 
@@ -934,7 +935,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         try {
           // Dispose first — don't block on persistence I/O.
           try {
-            this.persistentShell?.dispose();
+            this.disposeOwnedShell();
           } catch (error) {
             recordFinalizationError(error);
           }
@@ -1069,6 +1070,19 @@ export class OffensiveSecurityAgent<TResult = void> {
     // Free the browser on result capture; the drain can wedge and leak camoufox.
     await this.disconnectOwnedBrowser();
     return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Owned-resource disposal — explicit idempotent operations; the
+  // finalization path and host teardown (abortAndDrain) coordinate them
+  // without knowing the shell/browser implementations.
+  // ---------------------------------------------------------------------------
+
+  /** Disposes the owned persistent shell exactly once; safe to call from multiple teardown paths. */
+  disposeOwnedShell(): void {
+    if (this.shellDisposed) return;
+    this.shellDisposed = true;
+    this.persistentShell?.dispose();
   }
 
   /** Force-kills the owned Chromium child process exactly once; safe to call from multiple teardown paths. */

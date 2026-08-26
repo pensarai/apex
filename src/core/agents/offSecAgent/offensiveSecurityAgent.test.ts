@@ -1344,3 +1344,110 @@ describe("OffensiveSecurityAgent.consume()", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Owned-resource disposal — explicit idempotent operations (A6)
+// ---------------------------------------------------------------------------
+
+describe("owned-resource disposal", () => {
+  const toolCallChunk = {
+    type: "tool-call",
+    toolCallId: "tc1",
+    toolName: "execute_command",
+  };
+
+  it("disposeOwnedShell is idempotent across repeated calls", () => {
+    const dispose = vi.fn();
+    const agent = buildStubAgent({
+      fullStream: yieldChunks([]),
+      persistentShell: { dispose },
+    });
+
+    agent.disposeOwnedShell();
+    agent.disposeOwnedShell();
+    agent.disposeOwnedShell();
+
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("disposeOwnedShell is a no-op with no shell (construction without one)", () => {
+    const agent = buildStubAgent({ fullStream: yieldChunks([]) });
+    expect(() => agent.disposeOwnedShell()).not.toThrow();
+  });
+
+  it("browser disconnect is idempotent across consume finalization and later teardown", async () => {
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    const agent = buildStubAgent({
+      fullStream: yieldThenThrow([toolCallChunk], new Error("stream broke")),
+      browserSession: { disconnect },
+      ownsBrowserSession: true,
+    });
+
+    // consume()'s finalization disconnects; later host teardown must not repeat it.
+    try {
+      await agent.consume();
+    } catch {}
+    await agent.abortAndDrain();
+    await agent.abortAndDrain();
+
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("abortAndDrain disconnects the browser exactly once", async () => {
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    const agent = buildStubAgent({
+      fullStream: yieldThenThrow([toolCallChunk], new Error("aborted")),
+      browserSession: { disconnect },
+      ownsBrowserSession: true,
+    });
+
+    const consume = agent.consume().catch(() => {});
+    await agent.abortAndDrain();
+    await agent.abortAndDrain();
+    await consume;
+
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("browser disconnect failure is swallowed and the run still settles", async () => {
+    const disconnect = vi.fn().mockRejectedValue(new Error("disconnect boom"));
+    const agent = buildStubAgent({
+      fullStream: yieldThenThrow([toolCallChunk], new Error("stream broke")),
+      browserSession: { disconnect },
+      ownsBrowserSession: true,
+    });
+
+    // The stream error propagates; the disconnect failure does not replace it
+    // and does not reject the teardown await.
+    await expect(agent.consume()).rejects.toThrow("stream broke");
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("early result capture disconnects the browser without waiting for the drain", async () => {
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    // Stream that never ends on its own — only result capture unblocks consume.
+    async function* endless(): AsyncGenerator<unknown, void, undefined> {
+      yield toolCallChunk;
+      await new Promise(() => {});
+    }
+    const agent = buildStubAgent({
+      fullStream: endless(),
+      browserSession: { disconnect },
+      ownsBrowserSession: true,
+      responseCaptured: Promise.resolve("captured"),
+    });
+    Object.defineProperty(agent, "resolveResult", {
+      value: undefined,
+    });
+
+    const result = await Promise.race([
+      agent.consume(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("capture path stalled")), 1000),
+      ),
+    ]);
+
+    expect(result).toBe("captured");
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+});
