@@ -133,6 +133,7 @@ import {
   createSubagentSessionHelpers,
   createSubagentStore,
   loadSubagentSessionsFromDisk,
+  markSubagentsInterrupted,
 } from "./subagent-state";
 import { SubagentStatusBar } from "./subagent-status-bar";
 import {
@@ -1660,31 +1661,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     setMessages((prev) => markInFlightToolsErrored(prev, "Interrupted"));
 
     // Mark any in-flight subagent tool messages as interrupted too
-    subagentStore.setState((prev) => {
-      let changed = false;
-      const next = new Map(prev);
-      for (const [id, session] of next) {
-        const hasInFlight = session.messages.some(
-          (m) =>
-            m.role === "tool" &&
-            (m.status === "pending" || m.status === "streaming"),
-        );
-        if (hasInFlight || session.status === "running") {
-          changed = true;
-          next.set(id, {
-            ...session,
-            status: session.status === "running" ? "cancelled" : session.status,
-            messages: session.messages.map((m) =>
-              m.role === "tool" &&
-              (m.status === "pending" || m.status === "streaming")
-                ? { ...m, status: "error" as const, result: "Interrupted" }
-                : m,
-            ),
-          });
-        }
-      }
-      return changed ? next : prev;
-    });
+    subagentStore.setState(markSubagentsInterrupted);
 
     // Read back persisted messages so the next run has full context.
     // Only keep a recent subset to avoid blowing the context window.
