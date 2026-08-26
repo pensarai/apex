@@ -28,6 +28,7 @@ import {
   retainAvailableProviders,
 } from "./model-navigation";
 import { filterModels, getProviderDisplayName } from "./model-search";
+import { getVisiblePickerModels } from "./model-visibility";
 
 const providerOrder: AIModelProvider[] = [
   "pensar",
@@ -146,15 +147,21 @@ export function ModelPicker({
     setLocalModelName(config?.localModelName ?? "");
   }, [config?.localModelUrl, config?.localModelName]);
 
-  // Load models when config changes
+  // Load models when config changes. The selected model stays visible even
+  // when lifecycle-hidden, so an existing config's selection can be seen.
   useEffect(() => {
     if (!config) {
       setAvailableModels([]);
       return;
     }
 
-    setAvailableModels(getAvailableModels(config));
-  }, [config]);
+    setAvailableModels(
+      getVisiblePickerModels(getAvailableModels(config), {
+        id: selectedModel.id,
+        provider: selectedModel.provider,
+      }),
+    );
+  }, [config, selectedModel.id, selectedModel.provider]);
 
   useEffect(() => {
     const availableProviders = new Set<AIModelProvider>(
