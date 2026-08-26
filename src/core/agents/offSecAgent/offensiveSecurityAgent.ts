@@ -1,11 +1,10 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type {
   ModelMessage,
   StopCondition,
   StreamTextResult,
   TextStreamPart,
-  ToolResultPart,
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
@@ -24,9 +23,9 @@ import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import {
-  buildInterruptedStepMessages,
-  buildSyntheticToolResults,
-} from "./interruptedStepMessages";
+  createInterruptedStepFinalizer,
+  type FinalizeInterruptedStepInput,
+} from "./interruptedStepFinalization";
 import { AgentMessageWriter } from "./messagePersistence";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
@@ -306,6 +305,11 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** Agent-local message persistence (debounce + serialized writes). */
   private readonly writer!: AgentMessageWriter;
+
+  /** Closes an interrupted step: synthetic results, reconstruction, write. */
+  private readonly finalizeInterruptedStep!: (
+    input: FinalizeInterruptedStepInput,
+  ) => Promise<void>;
 
   private messagesPath: string | null = null;
 
@@ -616,6 +620,17 @@ export class OffensiveSecurityAgent<TResult = void> {
     // Agent-local persistence: debounce, latest snapshot, and the
     // serialized write queue live in the writer (see ./messagePersistence).
     this.writer = new AgentMessageWriter({ messagesPath: this.messagesPath });
+    this.finalizeInterruptedStep = createInterruptedStepFinalizer({
+      eventBus: this.eventBus,
+      sessionId: this.busSessionId,
+      subagentId: this.subagentId,
+      writer: this.writer,
+      responseToolName: RESPONSE_TOOL_NAME,
+      responseToolFired: () => this._responseToolFired,
+      ...(RESPONSE_DEBUG
+        ? { debugLog: (message: string) => rlog.warn(message) }
+        : {}),
+    });
     const schedulePersist = () => this.writer.schedulePersist();
 
     // -- Init record (trace.jsonl first line) ---------------------------------
@@ -697,7 +712,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         onFinish: async (event) => {
           // Flush any pending persistence before finishing
           this.writer.cancelTimer();
-          // Skip if emitSyntheticToolResults already wrote the abort snapshot.
+          // Skip if the interrupted-step finalizer already wrote the abort snapshot.
           if (!this.writer.syntheticsPersisted) {
             const finalMessages = this.writer.latest ?? [
               ...initialMessagesRef.current,
@@ -951,14 +966,12 @@ export class OffensiveSecurityAgent<TResult = void> {
                 ? streamError.message
                 : "Stream terminated unexpectedly";
             try {
-              await this.emitSyntheticToolResults(
-                tracker.inFlightTools,
-                [...tracker.completedResults],
+              await this.finalizeInterruptedStep({
+                snapshot: tracker.snapshot(),
                 reason,
-                ids.toolPartId,
-                ids.messageId,
-                tracker.streamedArgText,
-              );
+                partIdFor: ids.toolPartId,
+                messageId: ids.messageId,
+              });
             } catch (error) {
               recordFinalizationError(error);
             }
@@ -1083,117 +1096,6 @@ export class OffensiveSecurityAgent<TResult = void> {
    */
   get response() {
     return this.streamResult.response;
-  }
-
-  private async emitSyntheticToolResults(
-    inFlightTools: ReadonlyMap<string, string>,
-    completedResults: readonly ToolResultPart[],
-    reason: string,
-    partIdFor?: (toolCallId: string) => string,
-    messageId?: string,
-    streamedArgText?: ReadonlyMap<string, string>,
-  ): Promise<void> {
-    const sid = this.subagentId;
-    const syntheticParts = buildSyntheticToolResults({
-      inFlightTools,
-      reason,
-      responseToolName: RESPONSE_TOOL_NAME,
-      responseSubmitted: this._responseToolFired,
-    });
-    let emissionError: unknown;
-    let hasEmissionError = false;
-
-    if (RESPONSE_DEBUG) {
-      const responseInFlight = [...inFlightTools.entries()].filter(
-        ([, n]) => n === RESPONSE_TOOL_NAME,
-      );
-      if (responseInFlight.length > 0) {
-        rlog.warn(
-          `[response-debug] emitSyntheticToolResults closing ${responseInFlight.length} response call(s) ` +
-            `ids=${responseInFlight.map(([id]) => id).join(",")} reason="${reason}" ` +
-            `aborted=${this.abortSignal?.aborted === true} responseToolFired=${this._responseToolFired}`,
-        );
-      }
-    }
-
-    for (const part of syntheticParts) {
-      try {
-        this.eventBus.emit("tool-result", {
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          result: part.output,
-          // Canonical session id, not just the legacy subagentId alias, so the translator routes to THIS subagent's session.
-          sessionId: this.busSessionId,
-          subagentId: sid,
-          partId: partIdFor?.(part.toolCallId),
-          messageId,
-        });
-      } catch (error) {
-        if (!hasEmissionError) {
-          emissionError = error;
-          hasEmissionError = true;
-        }
-      }
-    }
-
-    if (!this.messagesPath) {
-      if (hasEmissionError) throw emissionError;
-      return;
-    }
-
-    // Cancel an unfired debounce and drain writes that already started.
-    this.writer.cancelTimer();
-    await this.writer.waitForPendingWrites();
-
-    // Fall back to the on-disk snapshot once the debounced timer has flushed the latest snapshot, so we don't overwrite history.
-    let base: ModelMessage[] = this.writer.latest ?? [];
-    if (base.length === 0 && existsSync(this.messagesPath)) {
-      try {
-        base = JSON.parse(readFileSync(this.messagesPath, "utf-8"));
-      } catch {
-        // Corrupt file → proceed with empty base.
-      }
-    }
-
-    // When onStepFinish hasn't fired, this step's messages aren't in base yet;
-    // reconstruct so resumed sessions see valid pairs (see
-    // ./interruptedStepMessages).
-    const { appended, needsStepReconstruction } = buildInterruptedStepMessages({
-      base,
-      inFlightTools,
-      completedResults,
-      syntheticParts,
-      streamedArgText,
-    });
-    if (needsStepReconstruction && RESPONSE_DEBUG) {
-      const responseReconstructed = [
-        ...inFlightTools,
-        ...completedResults.map((r) => [r.toolCallId, r.toolName] as const),
-      ]
-        .filter(([, n]) => n === RESPONSE_TOOL_NAME)
-        .map(([id]) => id);
-      if (responseReconstructed.length > 0) {
-        rlog.warn(
-          `[response-debug] step-reconstruction for response call(s) ` +
-            `ids=${responseReconstructed.join(",")} ` +
-            `preservedArgChars=${responseReconstructed
-              .map((id) => streamedArgText?.get(id)?.length ?? 0)
-              .join(",")}`,
-        );
-      }
-    }
-
-    const next: ModelMessage[] = [...base, ...appended];
-    this.writer.setLatest(next);
-    try {
-      await this.writer.enqueueWrite(next);
-      // Only suppress onFinish's write once the snapshot is safely on disk.
-      this.writer.markSyntheticsPersisted();
-    } catch {
-      // Write failed — leave the flag false so onFinish still attempts a write.
-    }
-
-    if (hasEmissionError) throw emissionError;
   }
 }
 
