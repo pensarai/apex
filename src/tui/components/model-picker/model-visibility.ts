@@ -24,6 +24,7 @@ const HIDDEN_MODEL_IDS: Partial<Record<AIModelProvider, ReadonlySet<string>>> =
       "gpt-5-codex",
       "gpt-4.1-nano",
       "gpt-4.1-nano-2025-04-14",
+      "gpt-4o-2024-05-13",
       "gpt-3.5-turbo",
       "gpt-3.5-turbo-0125",
       "gpt-3.5-turbo-1106",
@@ -47,8 +48,12 @@ const HIDDEN_MODEL_IDS: Partial<Record<AIModelProvider, ReadonlySet<string>>> =
 
 export function getVisiblePickerModels(
   models: readonly ModelInfo[],
+  selectedModel?: Pick<ModelInfo, "id" | "provider">,
 ): ModelInfo[] {
   return models.filter(
-    (model) => !HIDDEN_MODEL_IDS[model.provider]?.has(model.id),
+    (model) =>
+      !HIDDEN_MODEL_IDS[model.provider]?.has(model.id) ||
+      (model.id === selectedModel?.id &&
+        model.provider === selectedModel.provider),
   );
 }
