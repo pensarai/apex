@@ -6,7 +6,6 @@ import type {
   StopCondition,
   StreamTextResult,
   TextStreamPart,
-  ToolCallPart,
   ToolResultPart,
   ToolSet,
 } from "ai";
@@ -25,6 +24,10 @@ import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
+import {
+  buildInterruptedStepMessages,
+  buildSyntheticToolResults,
+} from "./interruptedStepMessages";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
 import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
 import { ToolLifecycleTracker } from "./toolLifecycle";
@@ -1143,11 +1146,12 @@ export class OffensiveSecurityAgent<TResult = void> {
     streamedArgText?: ReadonlyMap<string, string>,
   ): Promise<void> {
     const sid = this.subagentId;
-    const output = {
-      type: "error-text" as const,
-      value: `Tool execution aborted: ${reason}`,
-    };
-    const syntheticParts: ToolResultPart[] = [];
+    const syntheticParts = buildSyntheticToolResults({
+      inFlightTools,
+      reason,
+      responseToolName: RESPONSE_TOOL_NAME,
+      responseSubmitted: this._responseToolFired,
+    });
     let emissionError: unknown;
     let hasEmissionError = false;
 
@@ -1164,27 +1168,16 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
-    for (const [toolCallId, toolName] of inFlightTools) {
-      // The `response` tool reaching here after a successful capture didn't fail — mark it completed, not aborted.
-      const result =
-        toolName === RESPONSE_TOOL_NAME && this._responseToolFired
-          ? { type: "text" as const, value: "Response submitted." }
-          : output;
-      syntheticParts.push({
-        type: "tool-result",
-        toolCallId,
-        toolName,
-        output: result,
-      });
+    for (const part of syntheticParts) {
       try {
         this.eventBus.emit("tool-result", {
-          toolCallId,
-          toolName,
-          result,
+          toolCallId: part.toolCallId,
+          toolName: part.toolName,
+          result: part.output,
           // Canonical session id, not just the legacy subagentId alias, so the translator routes to THIS subagent's session.
           sessionId: this.busSessionId,
           subagentId: sid,
-          partId: partIdFor?.(toolCallId),
+          partId: partIdFor?.(part.toolCallId),
           messageId,
         });
       } catch (error) {
@@ -1214,64 +1207,33 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
-    // When onStepFinish hasn't fired, this step's messages aren't in base yet; reconstruct so resumed sessions see valid pairs.
-    const allToolCallIds = new Set([
-      ...inFlightTools.keys(),
-      ...completedResults.map((r) => r.toolCallId),
-    ]);
-    const lastMsg = base[base.length - 1];
-    const needsStepReconstruction =
-      !lastMsg ||
-      lastMsg.role !== "assistant" ||
-      !this.baseContainsToolCalls(lastMsg, allToolCallIds);
-
-    const appended: ModelMessage[] = [];
-    if (needsStepReconstruction) {
-      const stepTools: Array<[string, string]> = [
-        ...inFlightTools,
-        ...completedResults.map((r): [string, string] => [
-          r.toolCallId,
-          r.toolName,
-        ]),
-      ];
-      // Preserve whatever args the model actually streamed instead of writing an empty `{}`.
-      const reconstructInput = (toolCallId: string): unknown => {
-        const raw = streamedArgText?.get(toolCallId);
-        if (!raw) return {};
-        try {
-          return JSON.parse(raw);
-        } catch {
-          return { _partial: raw };
-        }
-      };
-      if (RESPONSE_DEBUG) {
-        const responseReconstructed = stepTools
-          .filter(([, n]) => n === RESPONSE_TOOL_NAME)
-          .map(([id]) => id);
-        if (responseReconstructed.length > 0) {
-          rlog.warn(
-            `[response-debug] step-reconstruction for response call(s) ` +
-              `ids=${responseReconstructed.join(",")} ` +
-              `preservedArgChars=${responseReconstructed
-                .map((id) => streamedArgText?.get(id)?.length ?? 0)
-                .join(",")}`,
-          );
-        }
-      }
-      const toolCalls: ToolCallPart[] = stepTools.map(
-        ([toolCallId, toolName]) => ({
-          type: "tool-call" as const,
-          toolCallId,
-          toolName,
-          input: reconstructInput(toolCallId),
-        }),
-      );
-      appended.push({ role: "assistant", content: toolCalls });
-    }
-    appended.push({
-      role: "tool",
-      content: [...completedResults, ...syntheticParts],
+    // When onStepFinish hasn't fired, this step's messages aren't in base yet;
+    // reconstruct so resumed sessions see valid pairs (see
+    // ./interruptedStepMessages).
+    const { appended, needsStepReconstruction } = buildInterruptedStepMessages({
+      base,
+      inFlightTools,
+      completedResults,
+      syntheticParts,
+      streamedArgText,
     });
+    if (needsStepReconstruction && RESPONSE_DEBUG) {
+      const responseReconstructed = [
+        ...inFlightTools,
+        ...completedResults.map((r) => [r.toolCallId, r.toolName] as const),
+      ]
+        .filter(([, n]) => n === RESPONSE_TOOL_NAME)
+        .map(([id]) => id);
+      if (responseReconstructed.length > 0) {
+        rlog.warn(
+          `[response-debug] step-reconstruction for response call(s) ` +
+            `ids=${responseReconstructed.join(",")} ` +
+            `preservedArgChars=${responseReconstructed
+              .map((id) => streamedArgText?.get(id)?.length ?? 0)
+              .join(",")}`,
+        );
+      }
+    }
 
     const next: ModelMessage[] = [...base, ...appended];
     this.latestMessages = next;
@@ -1284,19 +1246,6 @@ export class OffensiveSecurityAgent<TResult = void> {
     }
 
     if (hasEmissionError) throw emissionError;
-  }
-
-  private baseContainsToolCalls(
-    msg: ModelMessage,
-    toolCallIds: Set<string>,
-  ): boolean {
-    if (!Array.isArray(msg.content)) return false;
-    const contentToolIds = new Set(
-      (msg.content as Array<{ type: string; toolCallId?: string }>)
-        .filter((p) => p.type === "tool-call" && p.toolCallId)
-        .map((p) => p.toolCallId),
-    );
-    return [...toolCallIds].every((id) => contentToolIds.has(id));
   }
 }
 
