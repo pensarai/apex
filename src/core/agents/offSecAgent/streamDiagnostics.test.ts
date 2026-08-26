@@ -178,8 +178,8 @@ describe("StreamDiagnostics response-tool tracer", () => {
       delta: '"x"}',
     });
     diagnostics.observeChunk({ type: "tool-input-end", id: "tc-r" });
-    expect(warns.some((w) => w.includes("tool-input-start id=tc-r"))).toBe(
-      true,
+    expect(warns).toContain(
+      "[response-debug] tool-input-start id=tc-r session=sub_1",
     );
     expect(
       warns.some((w) => w.includes("tool-input-end id=tc-r argChars=15")),

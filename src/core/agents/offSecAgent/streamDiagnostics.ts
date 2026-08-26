@@ -190,7 +190,7 @@ export class StreamDiagnostics {
       case "tool-input-start":
         this.responseArgChars.set(idForChunk, 0);
         this.warn(
-          `[response-debug] tool-input-start id=${idForChunk} session=${this.opts.sessionId}`,
+          `[response-debug] tool-input-start id=${idForChunk} session=${this.opts.subagentId ?? this.opts.sessionId}`,
         );
         break;
       case "tool-input-delta":
