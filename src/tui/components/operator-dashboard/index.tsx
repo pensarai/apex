@@ -89,23 +89,12 @@ import { InputArea } from "../chat/input-area";
 import { MessageList } from "../chat/message-list";
 import { QuestionsForm } from "../chat/questions-form";
 import { collectScreenshotPaths, ScreenshotModal } from "../screenshot-modal";
-import {
-  deriveApprovedActionLabel,
-  isToolMessage,
-  tryParsePartialJson,
-} from "../shared";
+import { deriveApprovedActionLabel, isToolMessage } from "../shared";
 import {
   recoverAbortedTranscript,
   rewriteToolResultOutput,
 } from "./conversation";
-import {
-  appendStreamedText,
-  applyToolCall,
-  applyToolCallDelta,
-  applyToolResult,
-  mergeCommandOutput,
-  startStreamingToolCall,
-} from "./display-state";
+import { markInFlightToolsErrored } from "./display-state";
 import {
   accumulateTokenUsage,
   buildOperatorSystemPrompt,
@@ -127,7 +116,10 @@ import {
   selectionAfterRemove,
 } from "./queue";
 import { QueuedMessages } from "./queued-messages";
-import { bindOperatorRunEvents } from "./run-events";
+import {
+  bindOperatorRunEvents,
+  createDisplayEventHandlers,
+} from "./run-events";
 import { RunTraceSession } from "./run-tracing";
 import SubagentDialog from "./subagent-dialog";
 import {
@@ -145,17 +137,6 @@ import {
   isPentestAgent,
   updateWorkflowDataMessage,
 } from "./workflow-data";
-
-function markInFlightToolsErrored(
-  messages: DisplayMessage[],
-  result: string,
-): DisplayMessage[] {
-  return messages.map((m) =>
-    isToolMessage(m) && (m.status === "pending" || m.status === "streaming")
-      ? { ...m, status: "error" as const, result }
-      : m,
-  );
-}
 
 /**
  * Operator Dashboard - interactive chat interface with the offensive security agent
@@ -317,7 +298,6 @@ export default function OperatorDashboard({
   // without a ref).
   const displayMessagesRef = useRef<DisplayMessage[]>([]);
   displayMessagesRef.current = messages;
-  const textRef = useRef("");
   // AI SDK conversation history for multi-turn continuity
   const conversationRef = useRef<ModelMessage[]>([]);
   // Input state
@@ -600,103 +580,27 @@ export default function OperatorDashboard({
   }, [session, sessionId, addTokenUsage, resetTokenUsage]);
 
   // ---------------------------------------------------------------------------
-  // Message helpers — same pattern as pentest component
+  // Display event adapter — root display projections (partial text, tool-arg
+  // deltas, throttled command output) behind the run-event binding. React
+  // setters stay behind the narrow sink.
   // ---------------------------------------------------------------------------
 
-  const appendText = useCallback((text: string) => {
-    textRef.current += text;
-    const accumulated = textRef.current;
-    setMessages((prev) => appendStreamedText(prev, accumulated));
-  }, []);
-
-  // Ref to accumulate partial tool args JSON per toolCallId
-  const toolArgsDeltaRef = useRef<
-    Map<string, { toolName: string; accumulated: string }>
-  >(new Map());
-
-  const addStreamingToolCall = useCallback(
-    (toolCallId: string, toolName: string) => {
-      textRef.current = "";
-      toolArgsDeltaRef.current.set(toolCallId, {
-        toolName,
-        accumulated: "",
-      });
-      setMessages((prev) => startStreamingToolCall(prev, toolCallId, toolName));
-    },
-    [],
+  const displayEvents = useMemo(
+    () =>
+      createDisplayEventHandlers({
+        updateMessages: setMessages,
+        setThinking,
+        setError,
+      }),
+    [setThinking],
   );
 
-  const appendToolCallDelta = useCallback(
-    (toolCallId: string, argsTextDelta: string) => {
-      const entry = toolArgsDeltaRef.current.get(toolCallId);
-      const accumulated = (entry?.accumulated ?? "") + argsTextDelta;
-      toolArgsDeltaRef.current.set(toolCallId, {
-        toolName: entry?.toolName ?? "",
-        accumulated,
-      });
-
-      const parsed = tryParsePartialJson(accumulated);
-      if (!parsed) return;
-
-      setMessages((msgs) => applyToolCallDelta(msgs, toolCallId, parsed));
-    },
-    [],
-  );
-
-  const addToolCall = useCallback(
-    (toolCallId: string, toolName: string, args?: Record<string, unknown>) => {
-      textRef.current = "";
-      toolArgsDeltaRef.current.delete(toolCallId);
-      setMessages((prev) => applyToolCall(prev, toolCallId, toolName, args));
-    },
-    [],
-  );
-
-  const updateToolResult = useCallback(
-    (toolCallId: string, _toolName: string, result?: unknown) => {
-      textRef.current = "";
-      setMessages((prev) => applyToolResult(prev, toolCallId, result));
-    },
-    [],
-  );
-
-  // ---------------------------------------------------------------------------
-  // Streaming command output — throttled to avoid excessive re-renders
-  // ---------------------------------------------------------------------------
-
-  const cmdOutputBufRef = useRef("");
-  const cmdFlushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const flushCommandOutput = useCallback(() => {
-    const buf = cmdOutputBufRef.current;
-    if (!buf) return;
-    cmdOutputBufRef.current = "";
-
-    setMessages((prev) => mergeCommandOutput(prev, buf));
-  }, []);
-
-  const onCommandOutput = useCallback(
-    (data: string) => {
-      cmdOutputBufRef.current += data;
-
-      if (!cmdFlushTimerRef.current) {
-        cmdFlushTimerRef.current = setInterval(() => {
-          flushCommandOutput();
-        }, 150);
-      }
-    },
-    [flushCommandOutput],
-  );
-
-  // Clean up the flush timer when the component unmounts or agent stops
+  // Clean up the command-output flush timer when the component unmounts
   useEffect(() => {
     return () => {
-      if (cmdFlushTimerRef.current) {
-        clearInterval(cmdFlushTimerRef.current);
-        cmdFlushTimerRef.current = null;
-      }
+      displayEvents.dispose();
     };
-  }, []);
+  }, [displayEvents]);
 
   // ---------------------------------------------------------------------------
   // Approval handlers
@@ -744,7 +648,7 @@ export default function OperatorDashboard({
       setThinking(true);
       setIsExecuting(true);
       setError(null);
-      textRef.current = "";
+      displayEvents.resetPartialText();
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -842,8 +746,7 @@ export default function OperatorDashboard({
               subagentHelpers.appendText(d.subagentId, d.text);
               return;
             }
-            setThinking(false);
-            appendText(d.text);
+            displayEvents.onTextDelta(d);
           },
           onToolCallStart: (d) => {
             if (d.subagentId) {
@@ -854,8 +757,7 @@ export default function OperatorDashboard({
               );
               return;
             }
-            setThinking(false);
-            addStreamingToolCall(d.toolCallId, d.toolName);
+            displayEvents.onToolCallStart(d);
           },
           onToolCallDelta: (d) => {
             if (d.subagentId) {
@@ -866,7 +768,7 @@ export default function OperatorDashboard({
               );
               return;
             }
-            appendToolCallDelta(d.toolCallId, d.argsTextDelta);
+            displayEvents.onToolCallDelta(d);
           },
           onToolCallComplete: (d) => {
             if (d.subagentId) {
@@ -885,19 +787,18 @@ export default function OperatorDashboard({
               );
               return;
             }
-            setThinking(false);
+            displayEvents.onToolCallComplete(d);
             commandCancelledRef.current = false;
-            const args =
-              d.args &&
-              typeof d.args === "object" &&
-              !Array.isArray(d.args) &&
-              d.args !== null
-                ? (d.args as Record<string, unknown>)
-                : undefined;
-            addToolCall(d.toolCallId, d.toolName, args);
 
-            if (d.toolName === ASK_USER_QUESTIONS_TOOL_NAME && args) {
-              const rawQuestions = args.questions;
+            if (d.toolName === ASK_USER_QUESTIONS_TOOL_NAME) {
+              const args =
+                d.args &&
+                typeof d.args === "object" &&
+                !Array.isArray(d.args) &&
+                d.args !== null
+                  ? (d.args as Record<string, unknown>)
+                  : undefined;
+              const rawQuestions = args?.questions;
               if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
                 pendingToolCallIdRef.current = d.toolCallId;
                 setPendingQuestions(rawQuestions as AskUserQuestion[]);
@@ -913,13 +814,7 @@ export default function OperatorDashboard({
               );
               return;
             }
-            flushCommandOutput();
-            if (cmdFlushTimerRef.current) {
-              clearInterval(cmdFlushTimerRef.current);
-              cmdFlushTimerRef.current = null;
-            }
-            setThinking(true);
-            updateToolResult(d.toolCallId, d.toolName, d.result);
+            displayEvents.onToolResult(d);
 
             // Track submit_plan success — review triggers after the run completes
             if (
@@ -932,7 +827,7 @@ export default function OperatorDashboard({
           },
           onCommandOutput: (d) => {
             if (d.subagentId) return;
-            onCommandOutput(d.data);
+            displayEvents.onCommandOutput(d);
           },
           onError: (d) => {
             if (d.subagentId) {
@@ -941,15 +836,11 @@ export default function OperatorDashboard({
               subagentHelpers.appendText(d.subagentId, `\nError: ${errMsg}\n`);
               return;
             }
-            console.error("Agent error:", d.error);
+            displayEvents.onError(d);
             // Clear pending-questions state so an error after the tool-call event
             // doesn't leave the questions form stuck over a failed conversation.
             pendingToolCallIdRef.current = null;
             setPendingQuestions(null);
-            const errorMessage =
-              d.error instanceof Error ? d.error.message : "Unknown error";
-            setError(errorMessage);
-            setMessages((prev) => markInFlightToolsErrored(prev, errorMessage));
           },
           onSubagentSpawn: ({ subagentId, name }) => {
             // Hide whitebox per-app synthetic grouping nodes until #744 lands a hierarchical view.
@@ -974,7 +865,7 @@ export default function OperatorDashboard({
           },
           // Workflow phase events → update workflowData on the tool message
           onWorkflowPhaseStart: (d) => {
-            textRef.current = "";
+            displayEvents.resetPartialText();
             // New workflow run — clear old subagent sessions so the hub
             // shows only the current batch.
             if (d.phase === "discovery") {
@@ -989,7 +880,7 @@ export default function OperatorDashboard({
             );
           },
           onWorkflowPhaseComplete: (d) => {
-            textRef.current = "";
+            displayEvents.resetPartialText();
             updateWorkflowData((wd) =>
               applyWorkflowPhaseComplete(
                 wd,
@@ -1221,13 +1112,7 @@ export default function OperatorDashboard({
       operatorMode,
       agentMode,
       addTokenUsage,
-      appendText,
-      addStreamingToolCall,
-      appendToolCallDelta,
-      addToolCall,
-      updateToolResult,
-      flushCommandOutput,
-      onCommandOutput,
+      displayEvents,
       subagentHelpers,
       setThinking,
       setIsExecuting,
@@ -1660,7 +1545,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       conversationRef.current = recoverAbortedTranscript({
         rootPath: activeSession.rootPath,
         conversation: conversationRef.current,
-        partialText: textRef.current,
+        partialText: displayEvents.getPartialText(),
         displayMessages: displayMessagesRef.current,
       });
     }
@@ -1680,7 +1565,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         },
       ];
     });
-  }, [setThinking, setIsExecuting, subagentStore.setState]);
+  }, [setThinking, setIsExecuting, subagentStore.setState, displayEvents]);
 
   const resumeWithQuestionResult = useCallback(
     (result: AskUserQuestionsResult) => {
@@ -1816,11 +1701,8 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           setQueuedMessages((prev) => prev.filter((_, i) => i !== removeIdx));
           setSelectedQueueIndex(-1);
 
-          flushCommandOutput();
-          if (cmdFlushTimerRef.current) {
-            clearInterval(cmdFlushTimerRef.current);
-            cmdFlushTimerRef.current = null;
-          }
+          displayEvents.flushCommandOutput();
+          displayEvents.stopCommandOutputFlush();
           setMessages((prev) =>
             prev.map((m) =>
               isToolMessage(m) && m.status === "pending"

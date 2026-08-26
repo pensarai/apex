@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentEventBus, AgentEventMap } from "../../../core/eventBus";
 import { AgentEventBus as Bus } from "../../../core/eventBus";
+import type { DisplayMessage } from "../agent-display";
 import {
   bindOperatorRunEvents,
+  createDisplayEventHandlers,
   type OperatorRunEventHandlers,
 } from "./run-events";
 
@@ -236,5 +238,196 @@ describe("bindOperatorRunEvents", () => {
     // still throws on a listenerless error emission, which is exactly
     // what happens if this contract is violated.
     expect(() => bus.emit("error", { error: new Error("x") })).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createDisplayEventHandlers — display projections
+// ---------------------------------------------------------------------------
+
+describe("createDisplayEventHandlers", () => {
+  function createRecordingSink() {
+    let messages: DisplayMessage[] = [];
+    const thinking: boolean[] = [];
+    const errors: string[] = [];
+    const sink = {
+      updateMessages: (updater: (m: typeof messages) => typeof messages) => {
+        messages = updater(messages);
+      },
+      setThinking: (v: boolean) => thinking.push(v),
+      setError: (m: string) => errors.push(m),
+    };
+    return {
+      sink,
+      getMessages: () => messages,
+      getThinking: () => thinking,
+      getErrors: () => errors,
+    };
+  }
+
+  it("replays a full streaming trace: text → tool-input → tool-call → command-output → tool-result", () => {
+    const recording = createRecordingSink();
+    const display = createDisplayEventHandlers(recording.sink);
+    const bus = new Bus();
+    bindOperatorRunEvents(bus, {
+      isCurrent: () => true,
+      handlers: {
+        onTextDelta: display.onTextDelta,
+        onToolCallStart: display.onToolCallStart,
+        onToolCallDelta: display.onToolCallDelta,
+        onToolCallComplete: display.onToolCallComplete,
+        onCommandOutput: display.onCommandOutput,
+        onToolResult: display.onToolResult,
+      },
+    });
+
+    // Partial assistant text streams in.
+    bus.emit("text-delta", { text: "Let me " });
+    bus.emit("text-delta", { text: "run a scan." });
+    expect(display.getPartialText()).toBe("Let me run a scan.");
+
+    // Tool input starts streaming.
+    bus.emit("tool-call-start", {
+      toolCallId: "tc-1",
+      toolName: "execute_command",
+    });
+    expect(display.getPartialText()).toBe("");
+
+    // Args JSON arrives in fragments; only complete parses project.
+    bus.emit("tool-call-delta", {
+      toolCallId: "tc-1",
+      argsTextDelta: '{"command":"nmap -p 443 ',
+    });
+    bus.emit("tool-call-delta", {
+      toolCallId: "tc-1",
+      argsTextDelta: 'example.com"}',
+    });
+
+    // The call completes with final args.
+    bus.emit("tool-call-complete", {
+      toolCallId: "tc-1",
+      toolName: "execute_command",
+      args: { command: "nmap -p 443 example.com" },
+    });
+
+    // Command output streams (buffered, throttled).
+    bus.emit("command-output", { data: "Starting Nmap 7.94\n" });
+
+    // The tool produces its result — output flushes first, then completion.
+    bus.emit("tool-result", {
+      toolCallId: "tc-1",
+      toolName: "execute_command",
+      result: { exitCode: 0 },
+    });
+
+    const messages = recording.getMessages();
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({
+      role: "assistant",
+      content: "Let me run a scan.",
+    });
+    expect(messages[1]).toMatchObject({
+      role: "tool",
+      toolCallId: "tc-1",
+      toolName: "execute_command",
+      status: "completed",
+      args: { command: "nmap -p 443 example.com" },
+      result: { exitCode: 0 },
+    });
+    expect(messages[1].logs).toEqual(["Starting Nmap 7.94", ""]);
+    // Thinking toggles: text/tool events clear it; a tool result restores it.
+    // (Two text deltas → two false entries.)
+    expect(recording.getThinking()).toEqual([false, false, false, false, true]);
+    // Partial text is reset by the tool lifecycle.
+    expect(display.getPartialText()).toBe("");
+    display.dispose();
+  });
+
+  it("buffers command output and flushes on the 150ms throttle timer", () => {
+    vi.useFakeTimers();
+    try {
+      const recording = createRecordingSink();
+      const display = createDisplayEventHandlers(recording.sink);
+      display.onToolCallStart({ toolCallId: "tc-1", toolName: "t" });
+
+      display.onCommandOutput({ data: "line-1\n" });
+      display.onCommandOutput({ data: "line-2\n" });
+      expect(recording.getMessages()).toHaveLength(1);
+
+      vi.advanceTimersByTime(150);
+      const messages = recording.getMessages();
+      expect(messages).toHaveLength(1);
+      expect(messages[0].logs).toEqual(["line-1", "line-2", ""]);
+
+      // Buffer drained — a later timer tick flushes nothing new.
+      vi.advanceTimersByTime(150);
+      expect(recording.getMessages()).toHaveLength(1);
+
+      display.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stopCommandOutputFlush halts the throttle; dispose clears the timer", () => {
+    vi.useFakeTimers();
+    try {
+      const recording = createRecordingSink();
+      const display = createDisplayEventHandlers(recording.sink);
+      display.onToolCallStart({ toolCallId: "tc-1", toolName: "t" });
+
+      display.onCommandOutput({ data: "buffered\n" });
+      display.stopCommandOutputFlush();
+      vi.advanceTimersByTime(1000);
+      // Timer stopped — nothing flushed into the active tool's logs.
+      expect(recording.getMessages()[0].logs).toBeUndefined();
+
+      // Explicit flush still drains the buffer.
+      display.flushCommandOutput();
+      expect(recording.getMessages()[0].logs).toEqual(["buffered", ""]);
+
+      // dispose clears an active timer without flushing.
+      display.onCommandOutput({ data: "more\n" });
+      display.dispose();
+      vi.advanceTimersByTime(1000);
+      expect(recording.getMessages()[0].logs).toEqual(["buffered", ""]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("error projection sets the error and marks in-flight tools errored", () => {
+    const recording = createRecordingSink();
+    const display = createDisplayEventHandlers(recording.sink);
+    display.onToolCallStart({ toolCallId: "tc-1", toolName: "t" });
+
+    display.onError({ error: new Error("stream died") });
+
+    expect(recording.getErrors()).toEqual(["stream died"]);
+    const messages = recording.getMessages();
+    expect(messages[0]).toMatchObject({
+      status: "error",
+      result: "stream died",
+    });
+    display.dispose();
+  });
+
+  it("unparseable args deltas do not touch the display", () => {
+    const recording = createRecordingSink();
+    const display = createDisplayEventHandlers(recording.sink);
+    let updates = 0;
+    const countingSink = {
+      ...recording.sink,
+      updateMessages: (u: (m: DisplayMessage[]) => DisplayMessage[]) => {
+        updates++;
+        recording.sink.updateMessages(u);
+      },
+    };
+    const display2 = createDisplayEventHandlers(countingSink);
+
+    display2.onToolCallDelta({ toolCallId: "tc-1", argsTextDelta: '{"comm' });
+    expect(updates).toBe(0);
+
+    display.dispose();
   });
 });
