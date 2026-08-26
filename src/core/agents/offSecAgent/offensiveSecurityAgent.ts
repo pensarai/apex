@@ -26,6 +26,7 @@ import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
   createAllTools,
@@ -171,24 +172,6 @@ export function filterWorkspaceToolsForRun(
     if (WORKSPACE_TOOL_NAME_SET.has(name)) return readRequested;
     return true;
   });
-}
-
-// Opt-in stall watchdog (STREAM_STALL_DEBUG=1): warns when fullStream goes byte-silent, catching a Bedrock wedge.
-const STREAM_STALL_DEBUG =
-  process.env.STREAM_STALL_DEBUG === "1" ||
-  process.env.STREAM_STALL_DEBUG === "true";
-const STREAM_STALL_TICK_MS = 15_000;
-const STREAM_STALL_WARN_MS = 20_000;
-const STREAM_GAP_RECOVERED_MS = 10_000;
-
-function responseArgBytes(input: unknown): number {
-  if (input == null) return 0;
-  if (typeof input === "string") return input.length;
-  try {
-    return JSON.stringify(input).length;
-  } catch {
-    return -1;
-  }
 }
 
 /**
@@ -850,9 +833,6 @@ export class OffensiveSecurityAgent<TResult = void> {
       const completedResults: ToolResultPart[] = [];
       let streamError: unknown = null;
 
-      const responseArgChars = new Map<string, number>();
-      const responseSawTerminal = new Map<string, string>();
-
       // Raw streamed arg text per tool-call id, kept so a `tool-error` can persist the real (possibly truncated) payload instead of `{}`.
       const streamedArgText = new Map<string, string>();
       // Tool errors observed mid-stream, surfaced at finish-step (where finishReason is known) instead of a generic "did not complete".
@@ -861,108 +841,19 @@ export class OffensiveSecurityAgent<TResult = void> {
         { message: string; input: unknown; toolName: string }
       >();
 
-      let lastChunkAt = Date.now();
-      let lastChunkType = "none";
-      let stallStepIndex = -1;
-      let stallTimer: ReturnType<typeof setInterval> | undefined;
-      if (STREAM_STALL_DEBUG) {
-        const label = this._session.id;
-        stallTimer = setInterval(() => {
-          const gap = Date.now() - lastChunkAt;
-          if (gap > STREAM_STALL_WARN_MS) {
-            rlog.warn(
-              `[stream-stall] no chunk for ${Math.round(gap / 1000)}s ` +
-                `session=${label} subagent=${sid ?? "-"} step=${stallStepIndex} ` +
-                `lastChunkType=${lastChunkType} ` +
-                `inFlightTools=${[...inFlightTools.values()].join(",")} ` +
-                `responseToolFired=${this._responseToolFired}`,
-            );
-          }
-        }, STREAM_STALL_TICK_MS);
-      }
+      // Opt-in stall watchdog + response-tool tracer (see ./streamDiagnostics).
+      const diagnostics = new StreamDiagnostics({
+        sessionId: this._session.id,
+        subagentId: sid,
+        inFlightTools: () => inFlightTools,
+        responseToolFired: () => this._responseToolFired,
+        responseToolName: RESPONSE_TOOL_NAME,
+      });
+      diagnostics.start();
 
       try {
         for await (const chunk of this.streamResult.fullStream) {
-          if (STREAM_STALL_DEBUG) {
-            const now = Date.now();
-            const gap = now - lastChunkAt;
-            lastChunkAt = now;
-            lastChunkType = chunk.type;
-            if (chunk.type === "start-step") stallStepIndex++;
-            if (gap > STREAM_GAP_RECOVERED_MS) {
-              rlog.warn(
-                `[stream-gap] recovered after ${Math.round(gap / 1000)}s ` +
-                  `session=${this._session.id} chunkType=${chunk.type}`,
-              );
-            }
-          }
-          if (RESPONSE_DEBUG) {
-            const c = chunk as {
-              type: string;
-              id?: string;
-              toolCallId?: string;
-              toolName?: string;
-              delta?: string;
-              input?: unknown;
-              args?: unknown;
-              error?: unknown;
-            };
-            const idForChunk = c.toolCallId ?? c.id;
-            const nameForChunk =
-              c.toolName ??
-              (idForChunk ? inFlightTools.get(idForChunk) : undefined);
-            if (nameForChunk === RESPONSE_TOOL_NAME && idForChunk) {
-              if (chunk.type === "tool-input-start") {
-                responseArgChars.set(idForChunk, 0);
-                rlog.warn(
-                  `[response-debug] tool-input-start id=${idForChunk} session=${this.busSessionId}`,
-                );
-              } else if (chunk.type === "tool-input-delta") {
-                responseArgChars.set(
-                  idForChunk,
-                  (responseArgChars.get(idForChunk) ?? 0) +
-                    (c.delta?.length ?? 0),
-                );
-              } else if (chunk.type === "tool-input-end") {
-                rlog.warn(
-                  `[response-debug] tool-input-end id=${idForChunk} argChars=${responseArgChars.get(idForChunk) ?? 0}`,
-                );
-              } else if (chunk.type === "tool-call") {
-                responseSawTerminal.set(idForChunk, "tool-call");
-                const inputBytes = responseArgBytes(c.input ?? c.args);
-                const invalid = (c as { invalid?: boolean }).invalid === true;
-                rlog.warn(
-                  `[response-debug] tool-call id=${idForChunk} streamedArgChars=${responseArgChars.get(idForChunk) ?? 0} parsedInputBytes=${inputBytes} invalid=${invalid}`,
-                );
-              } else if (chunk.type === "tool-error") {
-                responseSawTerminal.set(idForChunk, "tool-error");
-                const errMsg =
-                  c.error instanceof Error
-                    ? c.error.message
-                    : typeof c.error === "string"
-                      ? c.error
-                      : JSON.stringify(c.error)?.slice(0, 300);
-                rlog.warn(
-                  `[response-debug] tool-error id=${idForChunk} streamedArgChars=${responseArgChars.get(idForChunk) ?? 0} stillInFlight=${inFlightTools.has(idForChunk)} error=${errMsg}`,
-                );
-              } else if (chunk.type === "tool-result") {
-                responseSawTerminal.set(idForChunk, "tool-result");
-                rlog.warn(
-                  `[response-debug] tool-result id=${idForChunk} streamedArgChars=${responseArgChars.get(idForChunk) ?? 0}`,
-                );
-              } else if (chunk.type === "finish-step") {
-                const fr = (c as { finishReason?: string }).finishReason;
-                rlog.warn(
-                  `[response-debug] finish-step finishReason=${fr} responseInFlight=${[
-                    ...inFlightTools.entries(),
-                  ]
-                    .filter(([, n]) => n === RESPONSE_TOOL_NAME)
-                    .map(([id]) => id)
-                    .join(",")} responseToolFired=${this._responseToolFired}`,
-                );
-              }
-            }
-          }
+          diagnostics.observeChunk(chunk);
           switch (chunk.type) {
             case "start-step":
               ids.messageId = newMessageId();
@@ -1049,14 +940,15 @@ export class OffensiveSecurityAgent<TResult = void> {
               const truncated = finishReason === "length";
 
               for (const [toolCallId, info] of toolErrors) {
-                if (RESPONSE_DEBUG && info.toolName === RESPONSE_TOOL_NAME) {
-                  rlog.warn(
-                    `[response-debug] tool-error SURFACED id=${toolCallId} ` +
-                      `streamedArgChars=${(streamedArgText.get(toolCallId) ?? "").length} ` +
-                      `finishReason=${finishReason ?? "unknown"} ` +
-                      `outputTokenTruncated=${truncated} error=${info.message.slice(0, 300)}`,
-                  );
-                }
+                diagnostics.logSurfacedToolError({
+                  toolCallId,
+                  toolName: info.toolName,
+                  message: info.message,
+                  streamedArgChars: (streamedArgText.get(toolCallId) ?? "")
+                    .length,
+                  finishReason,
+                  truncated,
+                });
                 bus.emit("tool-result", {
                   toolCallId,
                   toolName: info.toolName,
@@ -1076,15 +968,12 @@ export class OffensiveSecurityAgent<TResult = void> {
 
               // Close any call still in flight (args never finalized) so it doesn't render stuck "running".
               for (const [toolCallId, toolName] of inFlightTools) {
-                if (RESPONSE_DEBUG && toolName === RESPONSE_TOOL_NAME) {
-                  rlog.warn(
-                    `[response-debug] CLOSING response as "did not complete" id=${toolCallId} ` +
-                      `streamedArgChars=${responseArgChars.get(toolCallId) ?? 0} ` +
-                      `sawTerminalChunk=${responseSawTerminal.get(toolCallId) ?? "none"} ` +
-                      `finishReason=${finishReason ?? "unknown"} outputTokenTruncated=${truncated} ` +
-                      `responseToolFired=${this._responseToolFired}`,
-                  );
-                }
+                diagnostics.logClosingInFlightTool({
+                  toolCallId,
+                  toolName,
+                  finishReason,
+                  truncated,
+                });
                 // Already-fired response: mark submitted, not "did not complete".
                 const result =
                   toolName === RESPONSE_TOOL_NAME && this._responseToolFired
@@ -1116,7 +1005,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         streamError = err;
       } finally {
         // Stop the stall watchdog so it never leaks past stream end / throw.
-        if (stallTimer) clearInterval(stallTimer);
+        diagnostics.stop();
         let finalizationError: unknown;
         let hasFinalizationError = false;
         const recordFinalizationError = (error: unknown) => {
