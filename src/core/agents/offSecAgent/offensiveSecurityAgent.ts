@@ -833,163 +833,29 @@ export class OffensiveSecurityAgent<TResult = void> {
       diagnostics.start();
 
       try {
+        // 1–3. Iterate the stream: observe diagnostics, apply the part (id
+        // bookkeeping, tracker updates, step-close emissions), forward it.
         for await (const chunk of this.streamResult.fullStream) {
           diagnostics.observeChunk(chunk);
-          switch (chunk.type) {
-            case "start-step":
-              ids.messageId = newMessageId();
-              this.currentMessageId = ids.messageId;
-              ids.textPartId = undefined;
-              break;
-            case "text-start":
-              ids.textPartId = newPartId();
-              break;
-            case "text-end":
-              ids.textPartId = undefined;
-              break;
-            case "finish-step": {
-              tracker.onStepPersisted();
-              const finishReason = (chunk as { finishReason?: string })
-                .finishReason;
-              const truncated = finishReason === "length";
-
-              for (const [toolCallId, info] of tracker.toolErrors) {
-                diagnostics.logSurfacedToolError({
-                  toolCallId,
-                  toolName: info.toolName,
-                  message: info.message,
-                  streamedArgChars: (
-                    tracker.streamedArgText.get(toolCallId) ?? ""
-                  ).length,
-                  finishReason,
-                  truncated,
-                });
-                bus.emit("tool-result", {
-                  toolCallId,
-                  toolName: info.toolName,
-                  result: {
-                    type: "error-text",
-                    value: truncated
-                      ? `Tool call failed: the model's output was truncated at its max output tokens before the "${info.toolName}" arguments were complete. ${info.message}`
-                      : `Tool call failed: ${info.message}`,
-                  },
-                  sessionId: this.busSessionId,
-                  subagentId: sid,
-                  partId: ids.toolPartId?.(toolCallId),
-                  messageId: ids.messageId,
-                });
-              }
-              tracker.clearToolErrors();
-
-              // Close any call still in flight (args never finalized) so it doesn't render stuck "running".
-              for (const [toolCallId, toolName] of tracker.inFlightTools) {
-                diagnostics.logClosingInFlightTool({
-                  toolCallId,
-                  toolName,
-                  finishReason,
-                  truncated,
-                });
-                // Already-fired response: mark submitted, not "did not complete".
-                const result =
-                  toolName === RESPONSE_TOOL_NAME && this._responseToolFired
-                    ? { type: "text" as const, value: "Response submitted." }
-                    : {
-                        type: "error-text" as const,
-                        value: truncated
-                          ? "Tool call did not complete: the model's output was truncated at its max output tokens before the arguments were finalized."
-                          : "Tool call did not complete",
-                      };
-                bus.emit("tool-result", {
-                  toolCallId,
-                  toolName,
-                  result,
-                  sessionId: this.busSessionId,
-                  subagentId: sid,
-                  partId: ids.toolPartId?.(toolCallId),
-                  messageId: ids.messageId,
-                });
-              }
-              tracker.clearInFlight();
-              break;
-            }
-            default:
-              // Tool-input/delta, tool-call, tool-error, tool-result → tracker.
-              tracker.observePart(chunk);
-          }
+          this.applyStreamPart(chunk, { ids, tracker, diagnostics });
           bus.emitStreamPart(chunk, ids);
         }
-        // Keep completedResults: an abort with no trailing finish-step needs them for the finally snapshot.
+        // The tracker keeps completed results: an abort with no trailing
+        // finish-step needs them for the finalization snapshot.
       } catch (err) {
+        // 4. Capture the error; finalization below still runs.
         streamError = err;
       } finally {
-        // Stop the stall watchdog so it never leaks past stream end / throw.
-        diagnostics.stop();
-        let finalizationError: unknown;
-        let hasFinalizationError = false;
-        const recordFinalizationError = (error: unknown) => {
-          if (hasFinalizationError) return;
-          finalizationError = error;
-          hasFinalizationError = true;
-        };
-
-        try {
-          // Dispose first — don't block on persistence I/O.
-          try {
-            this.disposeOwnedShell();
-          } catch (error) {
-            recordFinalizationError(error);
-          }
-          // Flush tool-errors that never reached a finish-step into the snapshot.
-          for (const [toolCallId, info] of tracker.flushToolErrorsToResults()) {
-            const result = {
-              type: "error-text" as const,
-              value: `Tool call failed: ${info.message}`,
-            };
-            try {
-              bus.emit("tool-result", {
-                toolCallId,
-                toolName: info.toolName,
-                result,
-                sessionId: this.busSessionId,
-                subagentId: sid,
-                partId: ids.toolPartId?.(toolCallId),
-                messageId: ids.messageId,
-              });
-            } catch (error) {
-              recordFinalizationError(error);
-            }
-          }
-          // Snapshot unpersisted step state: open tools get synthetic closes, completed/errored results get written.
-          if (tracker.hasUnpersistedState()) {
-            const reason = this.abortSignal?.aborted
-              ? "Agent aborted by user"
-              : streamError instanceof Error && streamError.message
-                ? streamError.message
-                : "Stream terminated unexpectedly";
-            try {
-              await this.finalizeInterruptedStep({
-                snapshot: tracker.snapshot(),
-                reason,
-                partIdFor: ids.toolPartId,
-                messageId: ids.messageId,
-              });
-            } catch (error) {
-              recordFinalizationError(error);
-            }
-          }
-        } catch (error) {
-          recordFinalizationError(error);
-        } finally {
-          // Tear down the Chromium child process we own. Without this, a
-          // naturally-finishing agent leaks its Playwright MCP browser — over a
-          // long single-process scan (many endpoints) the leaked Chromium
-          // processes exhaust memory and OOM the run. disconnect() force-kills
-          // and never hangs, so awaiting here is safe.
-          await this.disconnectOwnedBrowser();
-        }
+        // 5–7. Close the interrupted step, dispose owned resources, settle.
+        const finalizeError = await this.finalizeRun({
+          tracker,
+          diagnostics,
+          ids,
+          streamError,
+        });
         // Teardown failures must not replace the provider/stream failure.
-        if (streamError === null && hasFinalizationError) {
-          streamError = finalizationError;
+        if (streamError === null && finalizeError !== null) {
+          streamError = finalizeError;
         }
       }
 
@@ -1070,6 +936,189 @@ export class OffensiveSecurityAgent<TResult = void> {
     // Free the browser on result capture; the drain can wedge and leak camoufox.
     await this.disconnectOwnedBrowser();
     return result;
+  }
+
+  /**
+   * Apply one stream part: part-id bookkeeping, lifecycle-tracker updates,
+   * and the finish-step close-out emissions. Pure projection of the part
+   * onto run state; forwarding to the bus is the caller's job.
+   */
+  private applyStreamPart(
+    chunk: TextStreamPart<ToolSet>,
+    ctx: {
+      ids: StreamIdContext;
+      tracker: ToolLifecycleTracker;
+      diagnostics: StreamDiagnostics;
+    },
+  ): void {
+    const { ids, tracker, diagnostics } = ctx;
+    const sid = this.subagentId;
+    const bus = this.eventBus;
+    switch (chunk.type) {
+      case "start-step":
+        ids.messageId = newMessageId();
+        this.currentMessageId = ids.messageId;
+        ids.textPartId = undefined;
+        break;
+      case "text-start":
+        ids.textPartId = newPartId();
+        break;
+      case "text-end":
+        ids.textPartId = undefined;
+        break;
+      case "finish-step": {
+        tracker.onStepPersisted();
+        const finishReason = (chunk as { finishReason?: string }).finishReason;
+        const truncated = finishReason === "length";
+
+        for (const [toolCallId, info] of tracker.toolErrors) {
+          diagnostics.logSurfacedToolError({
+            toolCallId,
+            toolName: info.toolName,
+            message: info.message,
+            streamedArgChars: (tracker.streamedArgText.get(toolCallId) ?? "")
+              .length,
+            finishReason,
+            truncated,
+          });
+          bus.emit("tool-result", {
+            toolCallId,
+            toolName: info.toolName,
+            result: {
+              type: "error-text",
+              value: truncated
+                ? `Tool call failed: the model's output was truncated at its max output tokens before the "${info.toolName}" arguments were complete. ${info.message}`
+                : `Tool call failed: ${info.message}`,
+            },
+            sessionId: this.busSessionId,
+            subagentId: sid,
+            partId: ids.toolPartId?.(toolCallId),
+            messageId: ids.messageId,
+          });
+        }
+        tracker.clearToolErrors();
+
+        // Close any call still in flight (args never finalized) so it doesn't render stuck "running".
+        for (const [toolCallId, toolName] of tracker.inFlightTools) {
+          diagnostics.logClosingInFlightTool({
+            toolCallId,
+            toolName,
+            finishReason,
+            truncated,
+          });
+          // Already-fired response: mark submitted, not "did not complete".
+          const result =
+            toolName === RESPONSE_TOOL_NAME && this._responseToolFired
+              ? { type: "text" as const, value: "Response submitted." }
+              : {
+                  type: "error-text" as const,
+                  value: truncated
+                    ? "Tool call did not complete: the model's output was truncated at its max output tokens before the arguments were finalized."
+                    : "Tool call did not complete",
+                };
+          bus.emit("tool-result", {
+            toolCallId,
+            toolName,
+            result,
+            sessionId: this.busSessionId,
+            subagentId: sid,
+            partId: ids.toolPartId?.(toolCallId),
+            messageId: ids.messageId,
+          });
+        }
+        tracker.clearInFlight();
+        break;
+      }
+      default:
+        // Tool-input/delta, tool-call, tool-error, tool-result → tracker.
+        tracker.observePart(chunk);
+    }
+  }
+
+  /**
+   * Finalize a finished (or failed) run: stop diagnostics, dispose the owned
+   * shell, surface deferred tool errors, close the interrupted step, and
+   * disconnect the owned browser on every path. Returns the first
+   * finalization error (or null) — the caller keeps the stream error
+   * primary.
+   */
+  private async finalizeRun(input: {
+    tracker: ToolLifecycleTracker;
+    diagnostics: StreamDiagnostics;
+    ids: StreamIdContext;
+    streamError: unknown;
+  }): Promise<unknown> {
+    const { tracker, diagnostics, ids, streamError } = input;
+    const sid = this.subagentId;
+    const bus = this.eventBus;
+
+    // Stop the stall watchdog so it never leaks past stream end / throw.
+    diagnostics.stop();
+    let finalizationError: unknown;
+    let hasFinalizationError = false;
+    const recordFinalizationError = (error: unknown) => {
+      if (hasFinalizationError) return;
+      finalizationError = error;
+      hasFinalizationError = true;
+    };
+
+    try {
+      // Dispose first — don't block on persistence I/O.
+      try {
+        this.disposeOwnedShell();
+      } catch (error) {
+        recordFinalizationError(error);
+      }
+      // Flush tool-errors that never reached a finish-step into the snapshot.
+      for (const [toolCallId, info] of tracker.flushToolErrorsToResults()) {
+        const result = {
+          type: "error-text" as const,
+          value: `Tool call failed: ${info.message}`,
+        };
+        try {
+          bus.emit("tool-result", {
+            toolCallId,
+            toolName: info.toolName,
+            result,
+            sessionId: this.busSessionId,
+            subagentId: sid,
+            partId: ids.toolPartId?.(toolCallId),
+            messageId: ids.messageId,
+          });
+        } catch (error) {
+          recordFinalizationError(error);
+        }
+      }
+      // Snapshot unpersisted step state: open tools get synthetic closes,
+      // completed/errored results get written.
+      if (tracker.hasUnpersistedState()) {
+        const reason = this.abortSignal?.aborted
+          ? "Agent aborted by user"
+          : streamError instanceof Error && streamError.message
+            ? streamError.message
+            : "Stream terminated unexpectedly";
+        try {
+          await this.finalizeInterruptedStep({
+            snapshot: tracker.snapshot(),
+            reason,
+            partIdFor: ids.toolPartId,
+            messageId: ids.messageId,
+          });
+        } catch (error) {
+          recordFinalizationError(error);
+        }
+      }
+    } catch (error) {
+      recordFinalizationError(error);
+    } finally {
+      // Tear down the Chromium child process we own. Without this, a
+      // naturally-finishing agent leaks its Playwright MCP browser — over a
+      // long single-process scan (many endpoints) the leaked Chromium
+      // processes exhaust memory and OOM the run. disconnect() force-kills
+      // and never hangs, so awaiting here is safe.
+      await this.disconnectOwnedBrowser();
+    }
+    return hasFinalizationError ? finalizationError : null;
   }
 
   // ---------------------------------------------------------------------------
