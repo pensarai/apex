@@ -153,6 +153,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** Called when Anthropic cache metrics are present in a step's providerMetadata */
   onCacheMetrics?: (metrics: CacheMetrics) => void;
 
+  /**
+   * Forward usage callbacks through tools that spawn agents. Enable only when
+   * the caller does not already account for subagents from trace events.
+   */
+  forwardUsageCallbacksToSpawnedAgents?: boolean;
+
   /** AbortSignal to cancel the agent mid-run */
   abortSignal?: AbortSignal;
 

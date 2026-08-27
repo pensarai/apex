@@ -458,8 +458,12 @@ export class OffensiveSecurityAgent<TResult = void> {
       model: input.model,
       authConfig: input.authConfig,
       eventBus: this.eventBus,
-      onStepFinish: input.onStepFinish,
-      onCacheMetrics: input.onCacheMetrics,
+      onStepFinish: input.forwardUsageCallbacksToSpawnedAgents
+        ? input.onStepFinish
+        : undefined,
+      onCacheMetrics: input.forwardUsageCallbacksToSpawnedAgents
+        ? input.onCacheMetrics
+        : undefined,
       sandbox: input.sandbox,
       findingsRegistry: input.findingsRegistry,
       attackSurfaceRegistry: input.attackSurfaceRegistry,

@@ -112,6 +112,9 @@ describe("pentest usage callback forwarding", () => {
       cacheReadInputTokens: 8,
       cacheCreationInputTokens: 2,
     });
+    expect(mocks.targetedInputs[0]?.forwardUsageCallbacksToSpawnedAgents).toBe(
+      true,
+    );
   });
 
   it("forwards step and cache usage through fast strike", async () => {
