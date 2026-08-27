@@ -27,6 +27,10 @@ import {
   judgeFinding,
 } from "../../specialized/findingJudge";
 import type { Finding } from "../types";
+import {
+  assertFindingEndpointInScope,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("document-finding"));
@@ -182,6 +186,22 @@ CRITICAL RULES — READ BEFORE CALLING:
 - If you could not exploit a vulnerability, do NOT call this tool — mention it in your final response summary instead`,
     inputSchema: documentVulnerabilityInputSchema,
     execute: async (input) => {
+      // Defense in depth: reject findings whose endpoint host is outside the
+      // immutable engagement scope so a routing error can't write
+      // infrastructure findings into the shared customer registry.
+      try {
+        assertFindingEndpointInScope(input.endpoint, ctx);
+      } catch (error) {
+        if (error instanceof ScopeViolationError) {
+          return {
+            success: false,
+            error: error.message,
+            message: `Finding endpoint rejected — out of scope: ${error.message}`,
+          };
+        }
+        throw error;
+      }
+
       try {
         // Early dedup check — avoid POC execution + LLM calls for known vulns
         const materializedEvidence = formatMateriality(input);

@@ -10,13 +10,13 @@ import {
 } from "react";
 import {
   AVAILABLE_MODELS,
+  addRecentModelId,
   DEFAULT_OPENAI_REASONING_EFFORT,
   getOpenAIReasoningEfforts,
   type ModelInfo,
   modelSupportsThinking,
   type OpenAIReasoningEffort,
 } from "../../core/ai";
-import { update as updateConfig } from "../../core/config/config";
 import { writeErrorLog } from "../../core/logger";
 import {
   getAvailableModels,
@@ -107,45 +107,64 @@ export function AgentProvider({ children }: AgentProviderProps) {
   reasoningEnabledRef.current = reasoningEnabled;
   const openAIReasoningEffortRef = useRef(openAIReasoningEffort);
   openAIReasoningEffortRef.current = openAIReasoningEffort;
+  const recentModelIdsRef = useRef(appConfig.data.recentModelIds ?? []);
+  const updateConfig = appConfig.update;
 
   // Wrapper that marks model as user-selected and persists to config.
   // Pass `persist = false` for programmatic/initialization calls so the
   // user's previously saved preference is not silently overwritten.
-  const setModel = useCallback((newModel: ModelInfo, persist = true) => {
-    setModelInternal(newModel);
-    if (persist) {
-      setIsModelUserSelected(true);
-      const configUpdate: {
-        selectedModelId: string;
-        reasoningEnabled?: boolean;
-        openAIReasoningEffort?: OpenAIReasoningEffort;
-      } = {
-        selectedModelId: newModel.id,
-      };
-      if (reasoningEnabledRef.current && !modelSupportsThinking(newModel.id)) {
-        configUpdate.reasoningEnabled = false;
-        setReasoningEnabledInternal(false);
+  const setModel = useCallback(
+    (newModel: ModelInfo, persist = true) => {
+      setModelInternal(newModel);
+      if (persist) {
+        setIsModelUserSelected(true);
+        const nextRecentModelIds = addRecentModelId(
+          recentModelIdsRef.current,
+          newModel.id,
+        );
+        recentModelIdsRef.current = nextRecentModelIds;
+
+        const configUpdate: {
+          selectedModelId: string;
+          recentModelIds: string[];
+          reasoningEnabled?: boolean;
+          openAIReasoningEffort?: OpenAIReasoningEffort;
+        } = {
+          selectedModelId: newModel.id,
+          recentModelIds: nextRecentModelIds,
+        };
+        if (
+          reasoningEnabledRef.current &&
+          !modelSupportsThinking(newModel.id)
+        ) {
+          configUpdate.reasoningEnabled = false;
+          setReasoningEnabledInternal(false);
+        }
+        const supportedOpenAIEfforts = getOpenAIReasoningEfforts(newModel.id);
+        if (
+          supportedOpenAIEfforts.length > 0 &&
+          !supportedOpenAIEfforts.includes(openAIReasoningEffortRef.current)
+        ) {
+          configUpdate.openAIReasoningEffort = DEFAULT_OPENAI_REASONING_EFFORT;
+          setOpenAIReasoningEffortInternal(DEFAULT_OPENAI_REASONING_EFFORT);
+        }
+        updateConfig(configUpdate).catch((err) => {
+          writeErrorLog(err, "AGENT_CONTEXT");
+        });
       }
-      const supportedOpenAIEfforts = getOpenAIReasoningEfforts(newModel.id);
-      if (
-        supportedOpenAIEfforts.length > 0 &&
-        !supportedOpenAIEfforts.includes(openAIReasoningEffortRef.current)
-      ) {
-        configUpdate.openAIReasoningEffort = DEFAULT_OPENAI_REASONING_EFFORT;
-        setOpenAIReasoningEffortInternal(DEFAULT_OPENAI_REASONING_EFFORT);
-      }
-      updateConfig(configUpdate).catch((err) => {
+    },
+    [updateConfig],
+  );
+
+  const setReasoningEnabled = useCallback(
+    (enabled: boolean) => {
+      setReasoningEnabledInternal(enabled);
+      updateConfig({ reasoningEnabled: enabled }).catch((err) => {
         writeErrorLog(err, "AGENT_CONTEXT");
       });
-    }
-  }, []);
-
-  const setReasoningEnabled = useCallback((enabled: boolean) => {
-    setReasoningEnabledInternal(enabled);
-    updateConfig({ reasoningEnabled: enabled }).catch((err) => {
-      writeErrorLog(err, "AGENT_CONTEXT");
-    });
-  }, []);
+    },
+    [updateConfig],
+  );
 
   const setOpenAIReasoningEffort = useCallback(
     (effort: OpenAIReasoningEffort) => {
@@ -154,8 +173,12 @@ export function AgentProvider({ children }: AgentProviderProps) {
         writeErrorLog(err, "AGENT_CONTEXT");
       });
     },
-    [],
+    [updateConfig],
   );
+
+  useEffect(() => {
+    recentModelIdsRef.current = appConfig.data.recentModelIds ?? [];
+  }, [appConfig.data.recentModelIds]);
 
   // Sync reasoningEnabled when config loads asynchronously
   useEffect(() => {

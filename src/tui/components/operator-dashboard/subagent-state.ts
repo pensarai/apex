@@ -113,6 +113,39 @@ export function createSubagentStore(): SubagentStore {
 }
 
 /**
+ * Abort-path transition: mark running subagent sessions cancelled and any
+ * in-flight subagent tool messages interrupted. Settled sessions without
+ * in-flight tools pass through untouched. Returns the input reference when
+ * nothing needed changing.
+ */
+export function markSubagentsInterrupted(
+  prev: Map<string, SubagentSession>,
+): Map<string, SubagentSession> {
+  let changed = false;
+  const next = new Map(prev);
+  for (const [id, session] of next) {
+    const hasInFlight = session.messages.some(
+      (m) =>
+        m.role === "tool" &&
+        (m.status === "pending" || m.status === "streaming"),
+    );
+    if (!hasInFlight && session.status !== "running") continue;
+    changed = true;
+    next.set(id, {
+      ...session,
+      status: session.status === "running" ? "cancelled" : session.status,
+      messages: session.messages.map((m) =>
+        m.role === "tool" &&
+        (m.status === "pending" || m.status === "streaming")
+          ? { ...m, status: "error" as const, result: "Interrupted" }
+          : m,
+      ),
+    });
+  }
+  return changed ? next : prev;
+}
+
+/**
  * Creates helper functions for managing per-subagent session state.
  *
  * All helpers follow the React `setState(prev => ...)` pattern with

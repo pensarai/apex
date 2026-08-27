@@ -156,6 +156,23 @@ describe("documentVulnerability judge handling", () => {
     );
   });
 
+  it("rejects an out-of-scope endpoint before POC/judge run (keeps infra findings out of the registry)", async () => {
+    const ctx = makeToolContext(rootPath);
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute?.(
+      { ...makeDocumentInput(), endpoint: "http://127.0.0.1:9000/metrics" },
+      { toolCallId: "test", messages: [] },
+    )) as DocumentToolResult & { error?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Scope violation");
+    // Fail closed before any judge/POC work.
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
+    expect(existsSync(join(ctx.session.pocsPath, "poc_admin_data.sh"))).toBe(
+      false,
+    );
+  });
+
   it("preserves a PoC-backed finding when the judge returns degraded unverified status", async () => {
     mockedJudgeFinding.mockResolvedValue({
       valid: true,

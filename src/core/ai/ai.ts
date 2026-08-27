@@ -47,6 +47,26 @@ const RESPONSE_DEBUG =
   process.env.RESPONSE_DEBUG === "1" || process.env.RESPONSE_DEBUG === "true";
 const RESPONSE_TOOL_NAME = "response";
 
+/**
+ * Tools whose arguments carry a security-authorization boundary the model must
+ * never have re-synthesized by tool-call repair. Repair asks a model to invent
+ * schema-valid arguments from a failed call; for these tools a fabricated value
+ * (e.g. a default/localhost `target`) would silently bypass deterministic scope
+ * enforcement. Repair therefore FAILS CLOSED for them — it returns `null` and
+ * the original invalid call is never executed.
+ */
+const REPAIR_FAIL_CLOSED_TOOLS: ReadonlySet<string> = new Set([
+  "spawn_pentest_agent",
+]);
+
+/**
+ * Whether tool-call repair must fail closed (no argument synthesis) for a tool.
+ * Exported for regression tests covering the repaired-invalid-call path.
+ */
+export function isRepairFailClosedTool(toolName: string): boolean {
+  return REPAIR_FAIL_CLOSED_TOOLS.has(toolName);
+}
+
 export type AIModel = AnthropicMessagesModelId | OpenAIChatModelId | string; // For gateway and Bedrock model IDs
 
 export type OpenAIReasoningEffort =
@@ -1169,6 +1189,19 @@ export function streamResponse(
               `rawInputChars=${rawLen} error=${(error.message || String(error)).slice(0, 200)}`,
           );
         }
+
+        // Fail closed for security-sensitive tools: never let repair invent or
+        // replace arguments (e.g. a spawn `target`). Returning null drops the
+        // invalid call instead of executing a model-synthesized one.
+        if (isRepairFailClosedTool(toolCall.toolName)) {
+          if (!silent) {
+            log.warn(
+              `Tool-call repair disabled for security-sensitive tool "${toolCall.toolName}" — failing closed (no argument synthesis).`,
+            );
+          }
+          return null;
+        }
+
         try {
           if (!silent) {
             log.debug(`Repairing tool call: ${toolCall.toolName}`, {
