@@ -38,6 +38,24 @@ pensar issues [filters]
 
 Lists security issues in the selected workspace. Returns a JSON array. Use filters to narrow the results.
 
+Each entry carries both identifiers plus a direct link:
+
+```json
+{
+  "id": "11111111-2222-3333-4444-555555555555",
+  "issueLabel": "VULN-000123",
+  "title": "SQL Injection in login handler",
+  "severity": "critical",
+  "status": "open",
+  "location": "src/auth/login.ts",
+  "url": "https://console.pensar.dev/acme/VULN-000123"
+}
+```
+
+`issueLabel` is the human-facing reference (`null` only for issues predating
+labels) and `url` opens the issue directly. Either identifier can be passed
+back to any command taking an `<issueId>`.
+
 | Filter              | Description                                                |
 | ------------------- | ---------------------------------------------------------- |
 | `--status <status>` | Filter by: `open`, `closed`, `false-positive`, `in-review` |
@@ -51,7 +69,9 @@ Lists security issues in the selected workspace. Returns a JSON array. Use filte
 pensar issues get <issueId>
 ```
 
-Returns detailed information about a specific issue, including vulnerability description, reproduction steps, and severity.
+Returns detailed information about a specific issue, including vulnerability description, reproduction steps, and severity. The response carries the same `issueLabel` and `url` as the list shape, plus description, line range, CWE, branch, and proof-of-concept.
+
+A reference that is neither a UUID nor a `VULN-…` label is rejected with a 400; a well-formed reference that matches no issue returns a 404.
 
 ### Update an Issue
 
@@ -104,16 +124,16 @@ Returns the pull requests linked to the issue as an array of `{ id, url, status,
 pensar issues --status open --severity critical
 
 # Get details for a specific issue
-pensar issues get issue_ghi789
+pensar issues get VULN-000123
 
 # Close an issue with a reason
-pensar issues update issue_ghi789 --status closed --closed-reason "Patched in v2.1"
+pensar issues update VULN-000123 --status closed --closed-reason "Patched in v2.1"
 
 # Flag as false positive
-pensar issues update issue_ghi789 --false-positive --fp-reason "Test environment only"
+pensar issues update VULN-000123 --false-positive --fp-reason "Test environment only"
 
 # Retest an issue after deploying a fix
-pensar issues retest issue_ghi789
+pensar issues retest VULN-000123
 
 # Reference an issue by its label instead of its UUID
 pensar issues get VULN-000123

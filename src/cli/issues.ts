@@ -43,6 +43,9 @@ Usage:
 
 <issueId> accepts the issue UUID or its label (e.g. VULN-000123).
 
+Issue responses include "issueLabel" (e.g. VULN-000123, null for issues created
+before labels existed) and "url", a deep link to the issue in the Console.
+
 List filters:
   --status <status>     Filter: open, closed, false-positive, in-review
   --severity <sev>      Filter: critical, high, medium, low
@@ -67,7 +70,9 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const sub = args[0];
 
-  if (sub === "--help" || sub === "-h" || sub === "help") {
+  // `--help` anywhere wins, so `pensar issues update --help` prints usage
+  // instead of forwarding "--help" through as an issue id.
+  if (sub === "help" || args.includes("--help") || args.includes("-h")) {
     showHelp();
     return;
   }

@@ -30,10 +30,14 @@ export interface ScanDetail extends ScanSummary {
 
 export interface IssueSummary {
   id: string;
+  /** Human-facing label, e.g. `VULN-000123`. Null for issues created before labels existed. */
+  issueLabel: string | null;
   title: string;
   severity: string;
   status: string;
   location: string;
+  /** Console deep link for the issue. */
+  url: string;
 }
 
 export interface IssueDetail extends IssueSummary {
