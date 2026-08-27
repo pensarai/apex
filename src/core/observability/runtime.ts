@@ -250,6 +250,16 @@ export function installObservabilityExitHandlers(
   let exitPromise: Promise<void> | null = null;
   let exitCode = 0;
   let fatalSeen = false;
+  const reportError = (
+    error: unknown,
+    source: "uncaughtException" | "unhandledRejection",
+  ) => {
+    try {
+      opts?.onError?.(error, source);
+    } catch {
+      // Error reporting must not block the process exit path.
+    }
+  };
   const exitWith = (
     code: number,
     error?: unknown,
@@ -258,12 +268,20 @@ export function installObservabilityExitHandlers(
     if (error !== undefined && !fatalSeen) {
       fatalSeen = true;
       exitCode = 1;
-      opts?.onError?.(error, source ?? "uncaughtException");
+      reportError(error, source ?? "uncaughtException");
     } else if (!fatalSeen && exitCode === 0) {
       exitCode = code;
     }
     if (exitPromise) return exitPromise;
-    opts?.cleanup?.(code);
+    try {
+      opts?.cleanup?.(code);
+    } catch (cleanupError) {
+      if (!fatalSeen) {
+        fatalSeen = true;
+        exitCode = 1;
+        reportError(cleanupError, "uncaughtException");
+      }
+    }
     exitPromise = runtime
       .shutdown()
       .catch(() => {})

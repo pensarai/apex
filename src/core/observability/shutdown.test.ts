@@ -221,6 +221,23 @@ describe("installObservabilityExitHandlers", () => {
     expect(exitCalls).toEqual([130]);
   });
 
+  it("still shuts down and exits when entrypoint cleanup throws", async () => {
+    const runtime = startWithProcessors([new HungProcessor()], 50);
+    const cleanupError = new Error("renderer already closed");
+    installObservabilityExitHandlers(runtime, {
+      cleanup: () => {
+        throw cleanupError;
+      },
+      onError: (error) => errors.push(error),
+    });
+
+    process.emit("SIGTERM", "SIGTERM");
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(errors).toEqual([cleanupError]);
+    expect(exitCalls).toEqual([1]);
+  });
+
   it("fatal errors are preserved after flushing (reported, exit code 1)", async () => {
     const runtime = startWithProcessors([new HungProcessor()], 50);
     install(runtime);
