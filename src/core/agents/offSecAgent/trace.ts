@@ -37,6 +37,9 @@ export interface StepRecord {
   /** Discriminator — distinguishes from StateCheckpoint in trace.jsonl */
   type: "step";
 
+  /** OTel correlation (active span at write time). */
+  correlation?: TraceCorrelation;
+
   /** Monotonically increasing within this agent, starting at 0 */
   stepIndex: number;
 

@@ -8,7 +8,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { StepTraceWriter } from "../agents/offSecAgent/trace";
+import { type StepRecord, StepTraceWriter } from "../agents/offSecAgent/trace";
 import { AgentEventBus } from "../eventBus";
 import { createLogger, setLogSink } from "../logger/structured";
 import { getApexTracer } from "../observability";
@@ -180,10 +180,7 @@ describe("trace record correlation", () => {
     const lines = readFileSync(tracePath, "utf-8").trim().split("\n");
     expect(lines).toHaveLength(2);
     const [rootRecord, childRecord] = lines.map(
-      (l) =>
-        JSON.parse(l) as {
-          correlation?: { traceId?: string; spanId?: string };
-        },
+      (line) => JSON.parse(line) as StepRecord,
     );
 
     const rootSpan = requireSpan(otel.getFinishedSpans(), "root");
