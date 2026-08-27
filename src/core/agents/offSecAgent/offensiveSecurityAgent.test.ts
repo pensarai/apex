@@ -58,7 +58,10 @@ vi.mock("./tools", () => ({
   ],
   PersistentShell: class {},
 }));
-vi.mock("../../ai", () => ({ streamResponse: () => {} }));
+vi.mock("../../ai", () => ({
+  requiresAutoToolChoice: (model: string) => /^z-ai\//i.test(model),
+  streamResponse: () => {},
+}));
 vi.mock("../../session", () => ({ create: () => {} }));
 vi.mock("../specialized/utils", () => ({
   detectOSAndEnhancePrompt: (p: string) => p,
@@ -1343,5 +1346,15 @@ describe("resolveAgentToolChoice", () => {
     process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE = "true";
     expect(resolveAgentToolChoice("none", true)).toBe("none");
     expect(resolveAgentToolChoice(undefined, false)).toBe("auto");
+  });
+
+  it("uses auto for Z.AI OpenRouter models even when response is mandatory", () => {
+    process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE = "1";
+    expect(resolveAgentToolChoice(undefined, true, "z-ai/glm-5.3")).toBe(
+      "auto",
+    );
+    expect(resolveAgentToolChoice("required", true, "z-ai/glm-5.2")).toBe(
+      "auto",
+    );
   });
 });
