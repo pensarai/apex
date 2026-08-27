@@ -211,7 +211,7 @@ describe("existing trace contract: model spans", () => {
       streamText.spanContext().spanId,
     );
     expect(doStream.attributes["gen_ai.request.model"]).toBe(MODEL);
-    expect(streamText.status.code).not.toBe("ERROR");
+    expect(streamText.status.code).not.toBe(SpanStatusCode.ERROR);
     expect(streamText.spanContext().traceId).toBe(
       doStream.spanContext().traceId,
     );
