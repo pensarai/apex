@@ -569,6 +569,7 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "email_get_message",
   "email_search_messages",
   "email_get_attachments",
+  "sms_list_messages",
   // Web search
   "web_search",
   "get_page",

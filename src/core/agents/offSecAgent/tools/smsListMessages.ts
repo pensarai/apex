@@ -22,11 +22,7 @@ export function sessionHasSmsPasswordless(session: SessionInfo): boolean {
   }
   const creds = session.config?.authCredentials;
   const list = creds ? (Array.isArray(creds) ? creds : [creds]) : [];
-  return list.some(
-    (cred) =>
-      Boolean(cred.additionalFields?.phoneNumber) ||
-      cred.additionalFields?.authMethod === "sms-passwordless",
-  );
+  return list.some((cred) => Boolean(cred.additionalFields?.phoneNumber));
 }
 
 function requireAgentApi(): { base: string; token: string } {

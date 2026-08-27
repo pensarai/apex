@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CredentialManager } from "../../../credentials";
 import type { SessionInfo } from "../../../session";
+import { PLAN_MODE_TOOL_NAMES } from "./index";
 import {
   SMS_LIST_MESSAGES_TOOL_NAME,
   sessionHasSmsPasswordless,
@@ -81,7 +82,19 @@ describe("sessionHasSmsPasswordless", () => {
     ).toBe(true);
   });
 
-  it("detects authMethod sms-passwordless on session authCredentials", () => {
+  it("detects a phoneNumber on session authCredentials", () => {
+    expect(
+      sessionHasSmsPasswordless({
+        config: {
+          authCredentials: {
+            additionalFields: { phoneNumber: "test-phone-number" },
+          },
+        },
+      } as unknown as SessionInfo),
+    ).toBe(true);
+  });
+
+  it("requires a phoneNumber for sms-passwordless credentials", () => {
     expect(
       sessionHasSmsPasswordless({
         config: {
@@ -89,8 +102,8 @@ describe("sessionHasSmsPasswordless", () => {
             additionalFields: { authMethod: "sms-passwordless" },
           },
         },
-      } as SessionInfo),
-    ).toBe(true);
+      } as unknown as SessionInfo),
+    ).toBe(false);
   });
 
   it("returns false when the session has no Mobile OTP credential", () => {
@@ -106,6 +119,10 @@ describe("smsListMessages", () => {
 
   it("uses the stable tool name", () => {
     expect(SMS_LIST_MESSAGES_TOOL_NAME).toBe("sms_list_messages");
+  });
+
+  it("is available in plan mode", () => {
+    expect(PLAN_MODE_TOOL_NAMES).toContain(SMS_LIST_MESSAGES_TOOL_NAME);
   });
 
   it("fails loud when AGENT_API_URL is unset", async () => {

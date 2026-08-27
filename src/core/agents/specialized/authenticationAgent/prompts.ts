@@ -130,9 +130,8 @@ or two fresh codes are both rejected.
 
 # SMS passwordless (phone as login)
 
-If \`authMethod\` is \`sms-passwordless\` or a credential has a \`phoneNumber\` additional field, the phone
-number IS the login identifier — not MFA after a password. Do **not** report \`phone_verification\` as a
-barrier for this flow.
+If a credential has a \`phoneNumber\` additional field, the phone number IS the login identifier — not MFA
+after a password. Do **not** report \`phone_verification\` as a barrier for this flow.
 
 1. \`browser_fill\` with \`credentialId\` and \`credentialField="phoneNumber"\` (never type the number).
 2. Click the target's send-code / text-me control. Note \`Date.now()\` at that click as \`sinceMs\`.
