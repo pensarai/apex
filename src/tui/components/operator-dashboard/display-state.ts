@@ -135,3 +135,15 @@ export function mergeCommandOutput(
   updated[idx] = { ...msg, logs: merged };
   return updated;
 }
+
+/** Mark every in-flight tool message errored with the given result label. */
+export function markInFlightToolsErrored(
+  messages: readonly DisplayMessage[],
+  result: string,
+): DisplayMessage[] {
+  return messages.map((m) =>
+    isToolMessage(m) && (m.status === "pending" || m.status === "streaming")
+      ? { ...m, status: "error" as const, result }
+      : m,
+  );
+}

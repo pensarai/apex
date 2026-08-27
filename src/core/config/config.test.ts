@@ -73,3 +73,16 @@ describe("Strike Mode config", () => {
     expect(persisted.strikeMode).toBe(true);
   });
 });
+
+describe("recent model config", () => {
+  it("persists model history across a fresh config load", async () => {
+    await init();
+    await update({ recentModelIds: ["model-b", "model-a"] });
+
+    vi.resetModules();
+    const { get: getReloadedConfig } = await import("./config");
+    const reloaded = await getReloadedConfig();
+
+    expect(reloaded.recentModelIds).toEqual(["model-b", "model-a"]);
+  });
+});

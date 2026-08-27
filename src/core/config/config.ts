@@ -36,6 +36,7 @@ export interface Config {
   transparentBackground?: boolean;
   // Model preference
   selectedModelId?: string | null;
+  recentModelIds?: string[];
   // Extended thinking / reasoning
   reasoningEnabled?: boolean;
   openAIReasoningEffort?:

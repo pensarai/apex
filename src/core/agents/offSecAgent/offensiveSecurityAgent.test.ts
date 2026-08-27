@@ -78,6 +78,8 @@ vi.mock("../../operator", () => ({
 vi.mock("ai", () => ({ hasToolCall: () => () => false }));
 
 import { AgentEventBus } from "../../eventBus";
+import { createInterruptedStepFinalizer } from "./interruptedStepFinalization";
+import { AgentMessageWriter } from "./messagePersistence";
 import {
   filterWorkspaceToolsForRun,
   OffensiveSecurityAgent,
@@ -102,7 +104,7 @@ function buildStubAgent(overrides: {
   ownsBrowserSession?: boolean;
   messagesPath?: string | null;
   latestMessages?: unknown[] | null;
-  persistenceTail?: Promise<void>;
+  writeImpl?: (messagesPath: string, contents: string) => Promise<void>;
   responseCaptured?: Promise<unknown>;
 }): OffensiveSecurityAgent<unknown> {
   const agent = Object.create(
@@ -144,19 +146,25 @@ function buildStubAgent(overrides: {
   Object.defineProperty(agent, "ownsBrowserSession", {
     value: overrides.ownsBrowserSession ?? false,
   });
-  Object.defineProperty(agent, "latestMessages", {
-    value: overrides.latestMessages ?? null,
-    writable: true,
-  });
   Object.defineProperty(agent, "messagesPath", {
     value: overrides.messagesPath ?? null,
   });
-  Object.defineProperty(agent, "cancelPersistTimer", {
-    value: () => {},
+  const writer = new AgentMessageWriter({
+    messagesPath: overrides.messagesPath ?? null,
+    ...(overrides.writeImpl ? { writeImpl: overrides.writeImpl } : {}),
   });
-  Object.defineProperty(agent, "persistenceTail", {
-    value: overrides.persistenceTail ?? Promise.resolve(),
-    writable: true,
+  if (overrides.latestMessages) {
+    writer.setLatest(overrides.latestMessages as never[]);
+  }
+  Object.defineProperty(agent, "writer", { value: writer });
+  Object.defineProperty(agent, "finalizeInterruptedStep", {
+    value: createInterruptedStepFinalizer({
+      eventBus: bus,
+      sessionId: "ses_stub",
+      writer,
+      responseToolName: "response",
+      responseToolFired: () => false,
+    }),
   });
 
   return agent;
@@ -963,24 +971,37 @@ describe("OffensiveSecurityAgent.consume()", () => {
       ];
       writeFileSync(messagesPath, JSON.stringify(staleMessages));
 
-      let finishPersist!: () => void;
-      const persistenceTail = new Promise<void>((resolve) => {
-        finishPersist = () => {
-          writeFileSync(messagesPath, JSON.stringify(persistedMessages));
-          resolve();
-        };
+      // Gate the writer's write sink so an in-flight persist can be held
+      // while the stream throws and the abort snapshot waits its turn.
+      let releasePersist!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        releasePersist = resolve;
       });
+      const writeImpl = async (path: string, contents: string) => {
+        await gate;
+        writeFileSync(path, contents);
+      };
 
       const agent = buildStubAgent({
         fullStream: yieldThenThrow([toolCallChunk], new Error("timeout")),
         messagesPath,
         latestMessages: null,
-        persistenceTail,
+        writeImpl,
       });
+
+      // Start the in-flight persist against the gated sink.
+      const writer = (agent as unknown as { writer: AgentMessageWriter })
+        .writer;
+      const inFlight = writer
+        .enqueueWrite(persistedMessages as never[])
+        .catch(() => {});
 
       const consume = agent.consume().catch(() => {});
       await new Promise((resolve) => setTimeout(resolve, 50));
-      finishPersist();
+      // The gated persist is still in flight — the abort snapshot must be
+      // queued behind it, not interleaved.
+      releasePersist();
+      await inFlight;
       await consume;
 
       const written = JSON.parse(readFileSync(messagesPath, "utf-8"));
@@ -1223,8 +1244,11 @@ describe("OffensiveSecurityAgent.consume()", () => {
       await new Promise((r) => setTimeout(r, 50));
 
       expect(
-        (agent as unknown as { syntheticsPersisted?: boolean })
-          .syntheticsPersisted,
+        (
+          agent as unknown as {
+            writer: { syntheticsPersisted: boolean };
+          }
+        ).writer.syntheticsPersisted,
       ).toBeFalsy();
     });
   });
@@ -1318,5 +1342,112 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       rmSync(tmpDir, { recursive: true, force: true });
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Owned-resource disposal — explicit idempotent operations (A6)
+// ---------------------------------------------------------------------------
+
+describe("owned-resource disposal", () => {
+  const toolCallChunk = {
+    type: "tool-call",
+    toolCallId: "tc1",
+    toolName: "execute_command",
+  };
+
+  it("disposeOwnedShell is idempotent across repeated calls", () => {
+    const dispose = vi.fn();
+    const agent = buildStubAgent({
+      fullStream: yieldChunks([]),
+      persistentShell: { dispose },
+    });
+
+    agent.disposeOwnedShell();
+    agent.disposeOwnedShell();
+    agent.disposeOwnedShell();
+
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it("disposeOwnedShell is a no-op with no shell (construction without one)", () => {
+    const agent = buildStubAgent({ fullStream: yieldChunks([]) });
+    expect(() => agent.disposeOwnedShell()).not.toThrow();
+  });
+
+  it("browser disconnect is idempotent across consume finalization and later teardown", async () => {
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    const agent = buildStubAgent({
+      fullStream: yieldThenThrow([toolCallChunk], new Error("stream broke")),
+      browserSession: { disconnect },
+      ownsBrowserSession: true,
+    });
+
+    // consume()'s finalization disconnects; later host teardown must not repeat it.
+    try {
+      await agent.consume();
+    } catch {}
+    await agent.abortAndDrain();
+    await agent.abortAndDrain();
+
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("abortAndDrain disconnects the browser exactly once", async () => {
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    const agent = buildStubAgent({
+      fullStream: yieldThenThrow([toolCallChunk], new Error("aborted")),
+      browserSession: { disconnect },
+      ownsBrowserSession: true,
+    });
+
+    const consume = agent.consume().catch(() => {});
+    await agent.abortAndDrain();
+    await agent.abortAndDrain();
+    await consume;
+
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("browser disconnect failure is swallowed and the run still settles", async () => {
+    const disconnect = vi.fn().mockRejectedValue(new Error("disconnect boom"));
+    const agent = buildStubAgent({
+      fullStream: yieldThenThrow([toolCallChunk], new Error("stream broke")),
+      browserSession: { disconnect },
+      ownsBrowserSession: true,
+    });
+
+    // The stream error propagates; the disconnect failure does not replace it
+    // and does not reject the teardown await.
+    await expect(agent.consume()).rejects.toThrow("stream broke");
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("early result capture disconnects the browser without waiting for the drain", async () => {
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    // Stream that never ends on its own — only result capture unblocks consume.
+    async function* endless(): AsyncGenerator<unknown, void, undefined> {
+      yield toolCallChunk;
+      await new Promise(() => {});
+    }
+    const agent = buildStubAgent({
+      fullStream: endless(),
+      browserSession: { disconnect },
+      ownsBrowserSession: true,
+      responseCaptured: Promise.resolve("captured"),
+    });
+    Object.defineProperty(agent, "resolveResult", {
+      value: undefined,
+    });
+
+    const result = await Promise.race([
+      agent.consume(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("capture path stalled")), 1000),
+      ),
+    ]);
+
+    expect(result).toBe("captured");
+    expect(disconnect).toHaveBeenCalledOnce();
   });
 });
