@@ -102,6 +102,19 @@ describe("buildUsageFooterLabels wide", () => {
     });
     expect(labels.contextLabel).toBe("context 99% / 200k");
   });
+
+  it("caps the context percentage at one hundred", () => {
+    const labels = buildUsageFooterLabels({
+      tokenUsage: usage,
+      contextUsage: {
+        usedTokens: 300_000,
+        contextLimit: 200_000,
+        modelId: "m",
+      },
+      width: 120,
+    });
+    expect(labels.contextLabel).toBe("context 100% / 200k");
+  });
 });
 
 // ---------------------------------------------------------------------------

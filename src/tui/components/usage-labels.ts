@@ -1,4 +1,8 @@
-import type { ContextUsage, SessionTokenUsage } from "../../core/session/usage";
+import {
+  type ContextUsage,
+  contextPercentage,
+  type SessionTokenUsage,
+} from "../../core/session/usage";
 
 // ---------------------------------------------------------------------------
 // Usage footer labels — pure formatting for the token/context display:
@@ -66,8 +70,9 @@ function contextLabel(
   context: ContextUsage | null,
   wide: boolean,
 ): string | null {
-  if (!context || context.contextLimit <= 0) return null;
-  const pct = Math.floor((context.usedTokens / context.contextLimit) * 100);
+  const percentage = contextPercentage(context);
+  if (percentage === null || !context) return null;
+  const pct = Math.floor(percentage);
   const limit = formatTokenCount(context.contextLimit);
   return wide ? `context ${pct}% / ${limit}` : `${pct}% / ${limit}`;
 }
