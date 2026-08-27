@@ -35,6 +35,20 @@ function oneStepTextModel(): MockLanguageModelV3 {
   return new MockLanguageModelV3({
     provider: "mock-anthropic",
     modelId: MODEL,
+    doGenerate: async () => ({
+      content: [{ type: "text", text: "summary" }],
+      finishReason: { unified: "stop", raw: "stop" },
+      warnings: [],
+      usage: {
+        inputTokens: {
+          total: 500,
+          noCache: 500,
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+        outputTokens: { total: 20, text: 20, reasoning: undefined },
+      },
+    }),
     doStream: async () => ({
       stream: simulateReadableStream({
         chunks: [
@@ -320,9 +334,7 @@ describe("model-call helpers", () => {
       },
       mockState.model,
     );
-    // Drain only the summarization's generateText — the resumed stream would
-    // call back into the mock; we only need the summary span to exist.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await drain(stream);
 
     const span = requireSpan(
       otel.getFinishedSpans(),
@@ -332,7 +344,6 @@ describe("model-call helpers", () => {
       "apex.context.summarize",
     );
     expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe("ses_sum");
-    void stream;
   });
 
   it("tool repair runs its model call with the repair id", async () => {
