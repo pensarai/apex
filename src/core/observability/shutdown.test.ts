@@ -244,6 +244,20 @@ describe("installObservabilityExitHandlers", () => {
     expect(exitCalls).toEqual([1]);
   });
 
+  it("a signal keeps its exit code when normal shutdown completes", async () => {
+    const runtime = startWithProcessors([new HungProcessor()], 50);
+    const exitWith = install(runtime);
+
+    const normalShutdown = runtime.shutdown();
+    process.emit("SIGINT", "SIGINT");
+    await normalShutdown;
+    void exitWith(0);
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(cleanups).toEqual(["cleanup:130"]);
+    expect(exitCalls).toEqual([130]);
+  });
+
   it("embedded mode (no runtime) never shuts down the host SDK", async () => {
     // The host (Console) registered its own SDK…
     const { startOtelTestHarness } = await import("./testkit");

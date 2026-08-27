@@ -603,15 +603,15 @@ const observabilityRuntime = startObservabilityRuntime();
 // Signals and fatal errors flush traces (bounded) before exiting — headless
 // commands only; the TUI installs its own handlers alongside renderer
 // teardown.
-if (args.length !== 0) {
-  installObservabilityExitHandlers(observabilityRuntime, {
-    onError: (error) => {
-      console.error("Uncaught exception:", error);
-    },
-  });
-}
+const exitAfterObservabilityShutdown =
+  args.length !== 0
+    ? installObservabilityExitHandlers(observabilityRuntime, {
+        onError: (error) => {
+          console.error("Uncaught exception:", error);
+        },
+      })
+    : null;
 
-let commandFailed = false;
 try {
   if (hasFlag("-p") || command === "--prompt") {
     await runOperator();
@@ -677,25 +677,26 @@ try {
     process.exit(1);
   }
 } catch (error) {
-  commandFailed = true;
+  if (exitAfterObservabilityShutdown !== null) {
+    await exitAfterObservabilityShutdown(1, error, "uncaughtException");
+  }
   throw error;
 } finally {
-  // Preserve command failures while still making process-boundary flushing
-  // best-effort. The TUI owns its runtime lifecycle after import.
-  if (args.length !== 0) {
+  // The TUI owns its runtime lifecycle after import.
+  if (exitAfterObservabilityShutdown !== null) {
     const shutdownResult = await observabilityRuntime
       .shutdown()
       .catch(() => "completed" as const);
-    // A timed-out exporter can still own live HTTP handles. Preserve a
-    // pending command failure; otherwise terminate instead of hanging.
-    if (shutdownResult === "timed-out" && !commandFailed) {
-      process.exit(typeof process.exitCode === "number" ? process.exitCode : 0);
+    // A timed-out exporter can still own live HTTP handles, and pentest tool
+    // subsystems can leave handles open after completion.
+    if (
+      shutdownResult === "timed-out" ||
+      command === "pentest" ||
+      command === "targeted-pentest"
+    ) {
+      await exitAfterObservabilityShutdown(
+        typeof process.exitCode === "number" ? process.exitCode : 0,
+      );
     }
   }
-}
-
-// Some pentest tool subsystems can leave handles open after completion. Keep
-// the explicit exit, but only after the final OTLP batch has been flushed.
-if (command === "pentest" || command === "targeted-pentest") {
-  process.exit(0);
 }
