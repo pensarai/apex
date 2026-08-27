@@ -732,12 +732,18 @@ async function main() {
   const { copyToClipboard } = createClipboardManager(renderer);
   setupAutoCopy(renderer, copyToClipboard);
 
-  const cleanup = async () => {
-    cleanupTerminalFocusMode();
-    renderer.destroy();
-    // Flush traces before the process dies; exit waits for the bounded flush.
-    await observabilityRuntime.shutdown().catch(() => {});
-    process.exit(0);
+  let cleanupPromise: Promise<void> | null = null;
+  const cleanup = () => {
+    if (!cleanupPromise) {
+      cleanupPromise = (async () => {
+        cleanupTerminalFocusMode();
+        renderer.destroy();
+        // Flush traces before the process dies; exit waits for the bounded flush.
+        await observabilityRuntime.shutdown().catch(() => {});
+        process.exit(0);
+      })();
+    }
+    return cleanupPromise;
   };
   process.on("SIGINT", cleanup);
   process.on("SIGTERM", cleanup);
