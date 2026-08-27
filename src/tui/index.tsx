@@ -125,6 +125,7 @@ function App({ appConfig, onExit }: AppProps) {
               <DialogProvider>
                 <AgentProvider>
                   <CommandProvider
+                    onExit={onExit}
                     onOpenSessionsDialog={() => setShowSessionsDialog(true)}
                     onOpenThemeDialog={() => setShowThemeDialog(true)}
                     onOpenAdvancedDialog={() => setShowAdvancedDialog(true)}
