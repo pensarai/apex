@@ -35,11 +35,20 @@ export class SessionUsageStore {
    * steps can fire before `onSessionReady` mints the session). Merged into
    * the first session entered, mirroring the old app-global accumulator.
    */
-  private provisionalUsage: SessionTokenUsage = EMPTY_SESSION_TOKEN_USAGE;
+  private provisionalState: SessionUsageState = EMPTY_STATE;
 
   /** The session usage is currently displayed for. */
   get activeSessionId(): string | null {
     return this.activeId;
+  }
+
+  /** Start a brand-new session before it has an id. */
+  beginNewSession(): void {
+    const changed =
+      this.activeId !== null || this.provisionalState !== EMPTY_STATE;
+    this.activeId = null;
+    this.provisionalState = EMPTY_STATE;
+    if (changed) this.emitActive();
   }
 
   /**
@@ -56,10 +65,10 @@ export class SessionUsageStore {
   ): void {
     if (!this.sessions.has(sessionId)) {
       this.sessions.set(sessionId, {
-        tokenUsage: seed?.tokenUsage ?? this.provisionalUsage,
+        tokenUsage: seed?.tokenUsage ?? this.provisionalState.tokenUsage,
         contextUsage: seed?.contextUsage ?? null,
       });
-      this.provisionalUsage = EMPTY_SESSION_TOKEN_USAGE;
+      this.provisionalState = EMPTY_STATE;
     }
     if (this.activeId !== sessionId) {
       this.activeId = sessionId;
@@ -109,10 +118,13 @@ export class SessionUsageStore {
     },
   ): void {
     if (sessionId === null) {
-      const next = accumulateSessionTokens(this.provisionalUsage, step);
-      if (next !== this.provisionalUsage) {
-        this.provisionalUsage = next;
-        this.emitActive();
+      const next = accumulateSessionTokens(
+        this.provisionalState.tokenUsage,
+        step,
+      );
+      if (next !== this.provisionalState.tokenUsage) {
+        this.provisionalState = { tokenUsage: next, contextUsage: null };
+        if (this.activeId === null) this.emitActive();
       }
       return;
     }
@@ -148,9 +160,11 @@ export class SessionUsageStore {
     this.emit(sessionId);
   }
 
-  /** Stable snapshot of whatever session is active (empty when none). */
+  /** Stable snapshot of the active session or the not-yet-minted one. */
   getActiveSnapshot(): SessionUsageState {
-    return this.getSnapshot(this.activeId);
+    return this.activeId === null
+      ? this.provisionalState
+      : this.getSnapshot(this.activeId);
   }
 
   /** Subscribe to changes affecting the active-session view. */

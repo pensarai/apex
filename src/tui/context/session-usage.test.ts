@@ -177,6 +177,23 @@ describe("SessionUsageStore", () => {
 // ---------------------------------------------------------------------------
 
 describe("SessionUsageStore provisional + active view", () => {
+  it("detaches a new session from the prior active session", () => {
+    const store = new SessionUsageStore();
+    store.enterSession("ses_old");
+    store.addSessionTokens("ses_old", { inputTokens: 100 });
+
+    store.beginNewSession();
+    expect(store.activeSessionId).toBeNull();
+    expect(store.getActiveSnapshot().tokenUsage.inputTokens).toBe(0);
+
+    store.addSessionTokens(store.activeSessionId, { inputTokens: 5 });
+    expect(store.getSnapshot("ses_old").tokenUsage.inputTokens).toBe(100);
+    expect(store.getActiveSnapshot().tokenUsage.inputTokens).toBe(5);
+
+    store.enterSession("ses_new");
+    expect(store.getSnapshot("ses_new").tokenUsage.inputTokens).toBe(5);
+  });
+
   it("tokens recorded before a session exists seed the first entered session", () => {
     const store = new SessionUsageStore();
     // Brand-new session: first steps fire before onSessionReady mints the id.
@@ -234,8 +251,12 @@ describe("SessionUsageStore provisional + active view", () => {
     store.addSessionTokens("ses_a", { inputTokens: 1 });
     expect(listener).toHaveBeenCalledTimes(2); // switch fired once
 
-    // Provisional updates fire the active view (it displays the bucket).
-    store.addSessionTokens(null, { inputTokens: 1 });
+    store.beginNewSession();
     expect(listener).toHaveBeenCalledTimes(3);
+
+    // Provisional updates fire the active view while it displays the bucket.
+    store.addSessionTokens(null, { inputTokens: 1 });
+    expect(listener).toHaveBeenCalledTimes(4);
+    expect(store.getActiveSnapshot().tokenUsage.inputTokens).toBe(1);
   });
 });
