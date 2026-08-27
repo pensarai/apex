@@ -51,7 +51,7 @@ function useTick(): number {
   return tick;
 }
 
-export function withAlpha(base: RGBA, alpha: number): RGBA {
+function withAlpha(base: RGBA, alpha: number): RGBA {
   return RGBA.fromInts(
     Math.round(base.r * 255),
     Math.round(base.g * 255),

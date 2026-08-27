@@ -162,7 +162,6 @@ export default function OperatorDashboard({
     isModelUserSelected,
     setThinking,
     setIsExecuting,
-    tokenUsage,
     usageStore,
     markExecuted,
     setSessionCwd,
