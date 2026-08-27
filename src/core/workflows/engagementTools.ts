@@ -135,6 +135,29 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
       throw new Error(`Worker ${options.workerId} is already running`);
     }
     activeWorkers.add(options.workerId);
+    if (options.followUp) {
+      store.restartWorker(options.workerId);
+      if (options.mode === "explore") {
+        for (const serviceId of options.serviceIds) {
+          store.markServiceBaseline(serviceId, "running", options.mission);
+        }
+      } else {
+        for (const objectiveId of options.objectiveIds) {
+          const objective = store.getObjective(objectiveId);
+          for (const serviceId of objective.relevantServiceIds.filter((id) =>
+            options.serviceIds.includes(id),
+          )) {
+            store.markObjectiveCoverage({
+              objectiveId,
+              serviceId,
+              status: "running",
+              workerId: options.workerId,
+              summary: options.mission,
+            });
+          }
+        }
+      }
+    }
     const services = options.serviceIds.map((id) => store.getService(id));
     const objectives = options.objectiveIds.map((id) => store.getObjective(id));
     const target = services[0]?.targets[0] ?? input.target;
@@ -179,8 +202,10 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           ...input,
           target,
           objective: `${objective.text}\n\n${context}`,
+          messages: options.messages,
           findingsRegistry,
           eventBus: childBus,
+          onStepFinish: handleStepFinish,
           laneCount: 1,
           singleLaneId: options.workerId,
           subagentPrefix: options.workerId,

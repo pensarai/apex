@@ -524,6 +524,62 @@ export class EngagementStore {
     return structuredClone(worker);
   }
 
+  restartWorker(workerId: string): EngagementWorkerRecord {
+    const worker = this.state.workers.find(
+      (candidate) => candidate.id === workerId,
+    );
+    if (!worker) throw new Error(`Unknown engagement worker: ${workerId}`);
+    worker.status = "running";
+    worker.summary = undefined;
+    worker.startedAt = new Date().toISOString();
+    worker.completedAt = undefined;
+    this.persist();
+    return structuredClone(worker);
+  }
+
+  /**
+   * Convert workers left running by a terminated host into resumable failed
+   * records and reopen the coverage they owned. This is called once when a
+   * lead process starts, before it can spawn any new in-process workers.
+   */
+  reconcileInterruptedWorkers(): string[] {
+    const interrupted = this.state.workers.filter(
+      (worker) => worker.status === "running",
+    );
+    if (interrupted.length === 0) return [];
+
+    const interruptedIds = new Set(interrupted.map((worker) => worker.id));
+    const interruptedAt = new Date().toISOString();
+    for (const worker of interrupted) {
+      worker.status = "failed";
+      worker.summary =
+        "Interrupted before completion; any preserved conversation is available for follow-up.";
+      worker.completedAt = interruptedAt;
+    }
+    for (const coverage of this.state.coverage) {
+      if (
+        coverage.status === "running" &&
+        coverage.workerId &&
+        interruptedIds.has(coverage.workerId)
+      ) {
+        coverage.status = "pending";
+        coverage.summary = "Previous worker was interrupted before completion.";
+      }
+    }
+    for (const service of this.state.services) {
+      const interruptedExplorer = interrupted.some(
+        (worker) =>
+          worker.mode === "explore" && worker.serviceIds.includes(service.id),
+      );
+      if (service.baselineStatus === "running" && interruptedExplorer) {
+        service.baselineStatus = "pending";
+        service.summary = "Previous exploration worker was interrupted.";
+      }
+    }
+    this.persist();
+    return [...interruptedIds];
+  }
+
   completion(): EngagementCompletion {
     const missingObjectiveIds = this.state.objectives
       .filter(

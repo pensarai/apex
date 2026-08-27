@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const constructorCalls: Array<Record<string, unknown>> = [];
+const fastStrikeCalls: Array<Record<string, unknown>> = [];
 
 vi.mock("../agents/specialized/pentest/agent", () => ({
   TargetedPentestAgent: class {
@@ -25,6 +26,34 @@ vi.mock("../agents/specialized/pentest/agent", () => ({
   },
 }));
 
+vi.mock("./fastStrike", () => ({
+  runFastStrikeObjective: async (input: Record<string, unknown>) => {
+    fastStrikeCalls.push(input);
+    const messages = [
+      ...((input.messages as Array<Record<string, unknown>> | undefined) ?? [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Initial fast-strike mission" }],
+        },
+      ]),
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Bounded paths tested" }],
+      },
+    ];
+    const onStepFinish = input.onStepFinish as
+      | ((event: { response: { messages: unknown[] } }) => void)
+      | undefined;
+    onStepFinish?.({ response: { messages } });
+    return {
+      status: "exhausted",
+      summary: "Bounded paths tested",
+      evidence: [],
+      findings: [],
+    };
+  },
+}));
+
 import type { AIModel } from "../ai";
 import { AgentEventBus } from "../eventBus";
 import type { FindingsRegistry } from "../findings/registry";
@@ -36,6 +65,7 @@ const directories: string[] = [];
 
 afterEach(() => {
   constructorCalls.length = 0;
+  fastStrikeCalls.length = 0;
   for (const directory of directories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -122,5 +152,42 @@ describe("engagement worker tools", () => {
     expect(
       store.snapshot().workers.filter((worker) => worker.id === workerId),
     ).toHaveLength(1);
+  });
+
+  it("passes the preserved conversation into fast-strike follow-ups", async () => {
+    const { tools, store, seed } = makeRuntime();
+    const serviceId = seed.services[0]?.id as string;
+    const objectiveId = seed.objectives[0]?.id as string;
+    const spawned = await executeTool(tools.spawn_engagement_worker, {
+      mission: "Prove the concrete authorization impact",
+      serviceIds: [serviceId],
+      objectiveIds: [objectiveId],
+      mode: "fast-strike",
+      toolCallDescription: "spawn impact worker",
+    });
+    const workerId = spawned.workerId as string;
+
+    await executeTool(tools.follow_up_engagement_worker, {
+      workerId,
+      message: "Reuse the first attempt and try the sibling account.",
+      toolCallDescription: "resume impact worker",
+    });
+
+    expect(fastStrikeCalls).toHaveLength(2);
+    const resumedMessages = fastStrikeCalls[1]?.messages as Array<{
+      role: string;
+      content: Array<{ type: string; text: string }>;
+    }>;
+    expect(
+      resumedMessages.some((message) =>
+        message.content.some((part) => part.text === "Bounded paths tested"),
+      ),
+    ).toBe(true);
+    expect(resumedMessages.at(-1)?.content[0]?.text).toContain(
+      "sibling account",
+    );
+    expect(store.snapshot().workers).toMatchObject([
+      { id: workerId, status: "completed" },
+    ]);
   });
 });

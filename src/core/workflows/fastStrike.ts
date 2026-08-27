@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ModelMessage } from "ai";
 import { z } from "zod";
 import {
   type Finding,
@@ -260,6 +261,8 @@ export interface FastStrikeObjectiveInput
     | "toolProtocol"
   > {
   objective: string;
+  /** Existing lane conversation when resuming a durable worker. */
+  messages?: ModelMessage[];
   findingsRegistry?: FindingsRegistry;
   laneCount?: number;
   laneTimeoutMs?: number;
@@ -375,6 +378,7 @@ async function executeFastStrikeObjective(
             validateImpactEvidence,
           }),
         findingsRegistry,
+        messages: input.messages,
         subagentId: laneId,
         subagentName: `Fast Strike: ${input.objective.slice(0, 80)}`,
         agentCwd: workspace,

@@ -91,6 +91,7 @@ export async function runEngagementLead(input: {
     input.workflow.messages,
   );
   const store = EngagementStore.open(input.workflow.session.rootPath, seed);
+  store.reconcileInterruptedWorkers();
   const engagementTools = createEngagementTools({
     input: input.workflow,
     store,

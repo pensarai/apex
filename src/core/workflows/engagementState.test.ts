@@ -113,6 +113,63 @@ describe("EngagementStore", () => {
     writeFileSync(statePath, "not-json", "utf8");
     expect(() => EngagementStore.open(directory, seed)).toThrow();
   });
+
+  it("reopens coverage owned by workers interrupted across host restarts", () => {
+    const directory = temporaryDirectory();
+    const seed = buildEngagementState("https://app.example.test", targets);
+    const store = EngagementStore.open(directory, seed);
+    const serviceId = seed.services[0]?.id as string;
+    const objectiveId = seed.objectives[0]?.id as string;
+    store.registerWorker({
+      id: "worker-objective",
+      mission: "Test authorization",
+      mode: "fast-strike",
+      serviceIds: [serviceId],
+      objectiveIds: [objectiveId],
+    });
+    store.markObjectiveCoverage({
+      objectiveId,
+      serviceId,
+      status: "running",
+      workerId: "worker-objective",
+      summary: "Testing",
+    });
+    store.registerWorker({
+      id: "worker-explore",
+      mission: "Explore service",
+      mode: "explore",
+      serviceIds: [serviceId],
+      objectiveIds: [],
+    });
+    store.markServiceBaseline(serviceId, "running", "Exploring");
+
+    expect(store.reconcileInterruptedWorkers()).toEqual([
+      "worker-objective",
+      "worker-explore",
+    ]);
+    expect(store.snapshot()).toMatchObject({
+      services: expect.arrayContaining([
+        expect.objectContaining({ id: serviceId, baselineStatus: "pending" }),
+      ]),
+      coverage: expect.arrayContaining([
+        expect.objectContaining({
+          objectiveId,
+          serviceId,
+          status: "pending",
+        }),
+      ]),
+      workers: expect.arrayContaining([
+        expect.objectContaining({ id: "worker-objective", status: "failed" }),
+        expect.objectContaining({ id: "worker-explore", status: "failed" }),
+      ]),
+    });
+
+    expect(store.restartWorker("worker-objective")).toMatchObject({
+      id: "worker-objective",
+      status: "running",
+      completedAt: undefined,
+    });
+  });
 });
 
 describe("restoreEngagementState", () => {
