@@ -23,6 +23,7 @@ import {
   getDefaultModelForConfig,
 } from "../../core/providers/utils";
 import { useConfig } from "./config";
+import { SessionUsageStore, useActiveSessionUsage } from "./session-usage";
 
 interface TokenUsage {
   inputTokens: number;
@@ -42,9 +43,10 @@ interface AgentContextValue {
   setModel: (model: ModelInfo, persist?: boolean) => void;
   isModelUserSelected: boolean;
   tokenUsage: TokenUsage;
-  addTokenUsage: (input: number, output: number) => void;
-  addCacheUsage: (cacheRead: number, cacheWrite: number) => void;
-  resetTokenUsage: () => void;
+  /** Session-scoped usage ownership (T2): per-session totals + context sample. */
+  usageStore: SessionUsageStore;
+  /** Marks that an agent step has executed (drives the footer status). */
+  markExecuted: () => void;
   hasExecuted: boolean;
   thinking: boolean;
   setThinking: (thinking: boolean) => void;
@@ -82,13 +84,20 @@ export function AgentProvider({ children }: AgentProviderProps) {
   });
   const [isModelUserSelected, setIsModelUserSelected] =
     useState<boolean>(false);
-  const [tokenUsage, setTokenUsage] = useState<TokenUsage>({
-    inputTokens: 0,
-    outputTokens: 0,
-    totalTokens: 0,
-    cachedTokens: 0,
-    cacheWriteTokens: 0,
-  });
+  const usageStore = useMemo(() => new SessionUsageStore(), []);
+  const activeUsage = useActiveSessionUsage(usageStore);
+  const tokenUsage: TokenUsage = useMemo(
+    () => ({
+      inputTokens: activeUsage.tokenUsage.inputTokens,
+      outputTokens: activeUsage.tokenUsage.outputTokens,
+      totalTokens:
+        activeUsage.tokenUsage.inputTokens +
+        activeUsage.tokenUsage.outputTokens,
+      cachedTokens: activeUsage.tokenUsage.cacheReadTokens,
+      cacheWriteTokens: activeUsage.tokenUsage.cacheWriteTokens,
+    }),
+    [activeUsage],
+  );
   const [hasExecuted, setHasExecuted] = useState<boolean>(false);
   const [thinking, setThinking] = useState<boolean>(false);
   const [reasoningEnabled, setReasoningEnabledInternal] = useState<boolean>(
@@ -219,34 +228,7 @@ export function AgentProvider({ children }: AgentProviderProps) {
     }
   }, [appConfig.data, isModelUserSelected]);
 
-  const addTokenUsage = useCallback((input: number, output: number) => {
-    setHasExecuted(true);
-    setTokenUsage((prev) => ({
-      ...prev,
-      inputTokens: prev.inputTokens + input,
-      outputTokens: prev.outputTokens + output,
-      totalTokens: prev.totalTokens + input + output,
-    }));
-  }, []);
-
-  const addCacheUsage = useCallback((cacheRead: number, cacheWrite: number) => {
-    setTokenUsage((prev) => ({
-      ...prev,
-      cachedTokens: prev.cachedTokens + cacheRead,
-      cacheWriteTokens: prev.cacheWriteTokens + cacheWrite,
-    }));
-  }, []);
-
-  const resetTokenUsage = useCallback(() => {
-    setHasExecuted(false);
-    setTokenUsage({
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      cachedTokens: 0,
-      cacheWriteTokens: 0,
-    });
-  }, []);
+  const markExecuted = useCallback(() => setHasExecuted(true), []);
 
   const contextValue = useMemo(
     () => ({
@@ -254,9 +236,8 @@ export function AgentProvider({ children }: AgentProviderProps) {
       setModel,
       isModelUserSelected,
       tokenUsage,
-      addTokenUsage,
-      addCacheUsage,
-      resetTokenUsage,
+      usageStore,
+      markExecuted,
       hasExecuted,
       thinking,
       setThinking,
@@ -281,9 +262,8 @@ export function AgentProvider({ children }: AgentProviderProps) {
       openAIReasoningEffort,
       isExecuting,
       sessionCwd,
-      addTokenUsage,
-      addCacheUsage,
-      resetTokenUsage,
+      usageStore,
+      markExecuted,
       setOpenAIReasoningEffort,
     ],
   );
