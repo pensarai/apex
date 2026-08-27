@@ -527,17 +527,16 @@ export default function OperatorDashboard({
   }, [loading, refocusPrompt]);
 
   useEffect(() => {
-    if (!sessionId) {
-      usageStore.beginNewSession();
-      return;
-    }
+    if (sessionId === undefined) usageStore.beginNewSession();
+  }, [sessionId, usageStore]);
 
+  useEffect(() => {
     // Enter the resumed session in the usage store: seeds its totals from
     // persisted metrics when first tracked, and never resets live totals on
     // re-entry (another run in the same session accumulates). Brand-new
     // sessions enter via onSessionReady once the session is minted, carrying
     // the provisional bucket with them.
-    if (!session) return;
+    if (!session || !sessionId) return;
 
     const metrics = readExecutionMetrics(session.rootPath);
     const persisted = metrics?.tokenUsage;
