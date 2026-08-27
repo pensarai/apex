@@ -434,3 +434,146 @@ describe("existing trace contract: subagent spans", () => {
     expect(parentIds.size).toBe(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// O3: root agent-run tree — one coherent trace per top-level execution
+// ---------------------------------------------------------------------------
+
+describe("root agent-run tree", () => {
+  it("model and tool spans belong to the root trace; nested subagents too", async () => {
+    mockState.model = toolCallingModel();
+
+    // Subagent invocation nested inside the orchestrator's tool execution —
+    // exactly where a spawned agent runs in production.
+    const probeTool = () => ({
+      description: "spawns a subagent",
+      inputSchema: z.object({ q: z.string() }),
+      execute: async (input: { q: string }) => {
+        const subModel = oneStepTextModel();
+        const saved = mockState.model;
+        mockState.model = subModel;
+        try {
+          await subagentInvoke("ses_tree_sub", "recon-sub", async () => {
+            await drain(
+              streamResponse({ prompt: input.q, model: MODEL, silent: true }),
+            );
+          });
+        } finally {
+          mockState.model = saved;
+        }
+        return "subagent done";
+      },
+    });
+
+    // Root span with the agent's production attribute shape.
+    const rootAttributes = {
+      "gen_ai.operation.name": "invoke_agent",
+      "gen_ai.agent.name": "default",
+      "gen_ai.conversation.id": "ses_root",
+      "pensar.session.id": "ses_root",
+      "pensar.run.id": "run_test123",
+      "pensar.agent.mode": "default",
+    };
+
+    await getApexTracer().startActiveSpan(
+      "invoke_agent default",
+      { attributes: rootAttributes },
+      async (rootSpan) => {
+        try {
+          await drain(
+            streamResponse({
+              prompt: "hi",
+              model: MODEL,
+              silent: true,
+              tools: { probe: probeTool() },
+              stopWhen: stepCountIs(2),
+            }),
+          );
+        } finally {
+          rootSpan.end();
+        }
+      },
+    );
+
+    const spans = otel.getFinishedSpans();
+    const root = requireSpan(spans, "invoke_agent default");
+    const rootStreamText = requireSpan(spans, "ai.streamText");
+    const doStream = requireSpan(spans, "ai.streamText.doStream");
+    const toolSpan = requireSpan(spans, "ai.toolCall");
+    const subInvoke = requireSpan(spans, "invoke_agent recon-sub");
+    const subStreamTexts = spans.filter(
+      (s) => s.name === "ai.streamText" && s !== rootStreamText,
+    );
+
+    // The expected tree, one trace:
+    //   invoke_agent root → ai.streamText → doStream → ai.toolCall
+    //     → invoke_agent subagent → ai.streamText → doStream
+    const rootTraceId = root.spanContext().traceId;
+    for (const span of [rootStreamText, doStream, toolSpan, subInvoke]) {
+      expect(span.spanContext().traceId, span.name).toBe(rootTraceId);
+    }
+    expect(subStreamTexts).toHaveLength(1);
+    expect(subStreamTexts[0]?.spanContext().traceId).toBe(rootTraceId);
+    // The subagent span nests under the tool span.
+    expect(parentOf(spans, subInvoke)?.spanContext().spanId).toBe(
+      toolSpan.spanContext().spanId,
+    );
+    // Root attributes survive.
+    expect(root.attributes["pensar.run.id"]).toBe("run_test123");
+    expect(root.attributes["pensar.agent.mode"]).toBe("default");
+  });
+
+  it("concurrent subagents under one root keep their own parents and trace", async () => {
+    mockState.model = oneStepTextModel();
+
+    await getApexTracer().startActiveSpan(
+      "invoke_agent default",
+      {
+        attributes: {
+          "gen_ai.operation.name": "invoke_agent",
+          "gen_ai.agent.name": "default",
+          "gen_ai.conversation.id": "ses_root",
+          "pensar.session.id": "ses_root",
+          "pensar.run.id": "run_conc",
+          "pensar.agent.mode": "default",
+        },
+      },
+      async (rootSpan) => {
+        try {
+          await Promise.all([
+            subagentInvoke("ses_c1", "agent-a", async () => {
+              await drain(
+                streamResponse({ prompt: "a", model: MODEL, silent: true }),
+              );
+            }),
+            subagentInvoke("ses_c2", "agent-b", async () => {
+              await drain(
+                streamResponse({ prompt: "b", model: MODEL, silent: true }),
+              );
+            }),
+          ]);
+        } finally {
+          rootSpan.end();
+        }
+      },
+    );
+
+    const spans = otel.getFinishedSpans();
+    const root = requireSpan(spans, "invoke_agent default");
+    const subInvokes = spans.filter((s) => s.name.startsWith("invoke_agent "));
+    const streamTexts = spans.filter((s) => s.name === "ai.streamText");
+
+    expect(subInvokes).toHaveLength(3); // root + two subagents
+    expect(streamTexts).toHaveLength(2);
+    // Everything shares the root trace…
+    for (const span of [...subInvokes, ...streamTexts]) {
+      expect(span.spanContext().traceId).toBe(root.spanContext().traceId);
+    }
+    // …and each model span parents its own subagent span.
+    for (const streamText of streamTexts) {
+      const parent = parentOf(spans, streamText);
+      expect(parent?.name.startsWith("invoke_agent ")).toBe(true);
+      expect(parent).not.toBe(root);
+    }
+  });
+});
