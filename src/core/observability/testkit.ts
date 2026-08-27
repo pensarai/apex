@@ -22,6 +22,9 @@ export interface OtelTestHarness {
 }
 
 export function startOtelTestHarness(): OtelTestHarness {
+  trace.disable();
+  context.disable();
+
   const exporter = new InMemorySpanExporter();
   const provider = new BasicTracerProvider({
     spanProcessors: [new SimpleSpanProcessor(exporter)],
@@ -31,8 +34,17 @@ export function startOtelTestHarness(): OtelTestHarness {
 
   // BasicTracerProvider has no register() (that's NodeTracerProvider) —
   // wire the globals directly.
-  trace.setGlobalTracerProvider(provider);
-  context.setGlobalContextManager(contextManager);
+  if (!trace.setGlobalTracerProvider(provider)) {
+    contextManager.disable();
+    void provider.shutdown();
+    throw new Error("failed to register the OTel test tracer provider");
+  }
+  if (!context.setGlobalContextManager(contextManager)) {
+    trace.disable();
+    contextManager.disable();
+    void provider.shutdown();
+    throw new Error("failed to register the OTel test context manager");
+  }
 
   return {
     exporter,
