@@ -264,3 +264,34 @@ describe("execution-metrics single-writer merge", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// T4: runtime-only writes never clobber usage
+// ---------------------------------------------------------------------------
+
+describe("execution-metrics runtime-only writes", () => {
+  it("a write with no tokenUsage retains the persisted totals (workflow path)", () => {
+    writeExecutionMetrics({
+      sessionRootPath: rootPath(),
+      tokenUsage: {
+        inputTokens: 500,
+        outputTokens: 60,
+        cacheReadTokens: 400,
+        cacheWriteTokens: 10,
+      },
+      contextUsage: { usedTokens: 500, contextLimit: 200_000, modelId: "m" },
+    });
+
+    // The pentest workflow's finally block writes only runtime now.
+    writeExecutionMetrics({
+      sessionRootPath: rootPath(),
+      runtime: "0h10m0s",
+    });
+
+    const metrics = readExecutionMetrics(rootPath());
+    expect(metrics?.tokenUsage.inputTokens).toBe(500);
+    expect(metrics?.tokenUsage.cacheReadTokens).toBe(400);
+    expect(metrics?.contextUsage?.usedTokens).toBe(500);
+    expect(metrics?.runtime).toBe("0h10m0s");
+  });
+});

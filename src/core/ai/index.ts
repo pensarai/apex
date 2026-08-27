@@ -12,6 +12,7 @@ export {
   buildReasoningProviderOptions,
   DEFAULT_OPENAI_REASONING_EFFORT,
   generateObjectResponse,
+  getContextWindow,
   getOpenAIReasoningEfforts,
   modelSupportsAdaptiveThinking,
   modelSupportsOpenAIReasoning,

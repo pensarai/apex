@@ -260,3 +260,36 @@ describe("SessionUsageStore provisional + active view", () => {
     expect(store.getActiveSnapshot().tokenUsage.inputTokens).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// T4: single ingestion path
+// ---------------------------------------------------------------------------
+
+describe("SessionUsageStore context-sample routing", () => {
+  it("drops a context sample with no owning session (pre-mint root step)", () => {
+    const store = new SessionUsageStore();
+    // A root step fires before onSessionReady mints the id.
+    store.setRootContext(null, {
+      modelId: "m",
+      usedTokens: 10,
+      contextLimit: 100,
+    });
+    // The provisional bucket carries tokens only — no context sample leaked
+    // into the first entered session.
+    store.enterSession("ses_new");
+    expect(store.getSnapshot("ses_new").contextUsage).toBeNull();
+  });
+
+  it("late subagent tokens route to the run's session, not the active one", () => {
+    const store = new SessionUsageStore();
+    store.enterSession("ses_run");
+    store.addSessionTokens("ses_run", { inputTokens: 100 });
+
+    // Operator switches sessions while the run's straggler event arrives.
+    store.enterSession("ses_other");
+    store.addSessionTokens("ses_run", { inputTokens: 50 });
+
+    expect(store.getSnapshot("ses_run").tokenUsage.inputTokens).toBe(150);
+    expect(store.getSnapshot("ses_other").tokenUsage.inputTokens).toBe(0);
+  });
+});

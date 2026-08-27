@@ -134,8 +134,14 @@ export class SessionUsageStore {
     }));
   }
 
-  /** Replace the latest root context sample. Subagent calls never touch it. */
-  setRootContext(sessionId: string, sample: ContextUsage): void {
+  /**
+   * Replace the latest root context sample. Subagent calls never touch it.
+   * A null session id (session not yet minted) is dropped — there is no
+   * owner to attach the sample to yet, and the first root step of the
+   * entered session will supply a fresh one.
+   */
+  setRootContext(sessionId: string | null, sample: ContextUsage): void {
+    if (sessionId === null) return;
     this.update(sessionId, (state) => ({
       ...state,
       contextUsage: sample,

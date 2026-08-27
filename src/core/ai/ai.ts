@@ -174,7 +174,7 @@ export type AIModelProvider =
   | "local";
 
 /** Conservative default when `getModelInfo` doesn't have a `contextLength`. */
-function getContextWindow(modelId: string): number {
+export function getContextWindow(modelId: string): number {
   return getModelInfo(modelId).contextLength ?? 200_000;
 }
 
