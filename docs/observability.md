@@ -40,16 +40,16 @@ Notes:
 
 ## Environment variables
 
-| Variable | Effect |
-|---|---|
-| `OTEL_SDK_DISABLED=true` | Runtime is a no-op; nothing registers |
-| `OTEL_SERVICE_NAME` | Resource `service.name` (default `apex`) |
-| `OTEL_RESOURCE_ATTRIBUTES` | Merged onto the resource (`k=v,k2=v2`) |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Trace URL, verbatim (wins) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Generic URL; `v1/traces` appended |
-| `OTEL_EXPORTER_OTLP_HEADERS` / `..._TRACES_HEADERS` | Export headers (specific wins, combined) |
-| `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` / `..._OTLP_PROTOCOL` | `http/json` (default) or `http/protobuf` |
-| `AI_TRACE_RECORD_PAYLOADS=true` | Full payload capture (sensitive — see above) |
+| Variable                                                   | Effect                                       |
+| ---------------------------------------------------------- | -------------------------------------------- |
+| `OTEL_SDK_DISABLED=true`                                   | Runtime is a no-op; nothing registers        |
+| `OTEL_SERVICE_NAME`                                        | Resource `service.name` (default `apex`)     |
+| `OTEL_RESOURCE_ATTRIBUTES`                                 | Merged onto the resource (`k=v,k2=v2`)       |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`                       | Trace URL, verbatim (wins)                   |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                              | Generic URL; `v1/traces` appended            |
+| `OTEL_EXPORTER_OTLP_HEADERS` / `..._TRACES_HEADERS`        | Export headers (specific wins, combined)     |
+| `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` / `..._OTLP_PROTOCOL` | `http/json` (default) or `http/protobuf`     |
+| `AI_TRACE_RECORD_PAYLOADS=true`                            | Full payload capture (sensitive — see above) |
 
 ## What you get
 
