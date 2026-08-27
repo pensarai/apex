@@ -732,36 +732,33 @@ async function main() {
   const { copyToClipboard } = createClipboardManager(renderer);
   setupAutoCopy(renderer, copyToClipboard);
 
-  let cleanupPromise: Promise<void> | null = null;
-  const cleanup = () => {
-    if (!cleanupPromise) {
-      cleanupPromise = (async () => {
-        cleanupTerminalFocusMode();
-        renderer.destroy();
-        // Flush traces before the process dies; exit waits for the bounded flush.
-        await observabilityRuntime.shutdown().catch(() => {});
-        process.exit(0);
-      })();
+  const teardownAndExit = (code: number, error?: unknown, label?: string) => {
+    cleanupTerminalFocusMode();
+    renderer.destroy();
+    if (error !== undefined && label) {
+      console.error(label, error);
+      writeErrorLog(
+        error,
+        label === "Uncaught exception:" ? "UNCAUGHT" : "UNHANDLED_REJECTION",
+      );
     }
-    return cleanupPromise;
+    // Bounded flush (ends in-flight root runs, flushes, shuts down) before
+    // the process dies — never exit while a flush could still complete.
+    observabilityRuntime
+      .shutdown()
+      .catch(() => {})
+      .then(() => process.exit(code));
   };
+  const cleanup = () => teardownAndExit(0);
   process.on("SIGINT", cleanup);
   process.on("SIGTERM", cleanup);
 
   process.on("uncaughtException", (err) => {
-    cleanupTerminalFocusMode();
-    renderer.destroy();
-    console.error("Uncaught exception:", err);
-    writeErrorLog(err, "UNCAUGHT");
-    process.exit(1);
+    teardownAndExit(1, err, "Uncaught exception:");
   });
 
   process.on("unhandledRejection", (reason) => {
-    cleanupTerminalFocusMode();
-    renderer.destroy();
-    console.error("Unhandled rejection:", reason);
-    writeErrorLog(reason, "UNHANDLED_REJECTION");
-    process.exit(1);
+    teardownAndExit(1, reason, "Unhandled rejection:");
   });
 
   const obfuscateEnabled = process.env.PENSAR_OBFUSCATE === "1";

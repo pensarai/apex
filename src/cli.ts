@@ -15,7 +15,10 @@ import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
 import { logger } from "./core/logger";
-import { startObservabilityRuntime } from "./core/observability/runtime";
+import {
+  installObservabilityExitHandlers,
+  startObservabilityRuntime,
+} from "./core/observability/runtime";
 import type { SessionInfo } from "./core/session";
 import {
   combinePromptParts,
@@ -597,6 +600,16 @@ async function runUpgrade() {
 // OTLP endpoint is configured; the TUI branch below takes over the process
 // and manages the runtime's lifecycle in its own exit path.
 const observabilityRuntime = startObservabilityRuntime();
+// Signals and fatal errors flush traces (bounded) before exiting — headless
+// commands only; the TUI installs its own handlers alongside renderer
+// teardown.
+if (args.length !== 0) {
+  installObservabilityExitHandlers(observabilityRuntime, {
+    onError: (error) => {
+      console.error("Uncaught exception:", error);
+    },
+  });
+}
 
 try {
   if (hasFlag("-p") || command === "--prompt") {

@@ -16,6 +16,10 @@ export function shouldRecordAiPayloads(): boolean {
 }
 
 export {
+  registerActiveRootSpan,
+  unregisterActiveRootSpan,
+} from "./active-root-spans";
+export {
   type AiTelemetryOperation,
   type AiTelemetrySettings,
   type CreateAiTelemetryInput,
