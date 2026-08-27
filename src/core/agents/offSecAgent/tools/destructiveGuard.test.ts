@@ -9,9 +9,11 @@ import {
   isDestructiveTestingAllowed,
 } from "./destructiveGuard";
 import type { ToolContext } from "./types";
+import { inProcessSubagentSpawner } from "../subagentSpawner";
 
 function makeCtx(config: Partial<SessionConfig> = {}): ToolContext {
   return {
+    subagentSpawner: inProcessSubagentSpawner,
     session: {
       id: "ses_test",
       version: "1.0.0",

@@ -24,7 +24,6 @@ import type {
   FindingJudgeInput,
   FindingJudgeResult,
 } from "../../specialized/findingJudge";
-import { inProcessSubagentSpawner } from "../subagentSpawner";
 import type { Finding } from "../types";
 import {
   assertFindingEndpointInScope,
@@ -267,7 +266,7 @@ CRITICAL RULES — READ BEFORE CALLING:
         // that invoked document_vulnerability. `error` is only set by the
         // infrastructure-failure fallback, so a judge that completed and
         // rejected the finding still counts as "completed".
-        const spawner = ctx.subagentSpawner ?? inProcessSubagentSpawner;
+        const spawner = ctx.subagentSpawner;
         const judgeResult: FindingJudgeResult =
           await spawner.spawn<FindingJudgeResult>({
             spec: { type: "finding-judge", judgeInput, target: ctx.target },

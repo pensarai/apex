@@ -7,7 +7,6 @@ import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import type { AuthenticationResult } from "../../specialized/authenticationAgent/agent";
 import type { AuthCredentials } from "../../specialized/authenticationAgent/types";
-import { inProcessSubagentSpawner } from "../subagentSpawner";
 import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("delegate_auth"));
@@ -198,7 +197,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
       // Resolved from a stored credential only — agents never pass raw secrets.
       let additionalFields: Record<string, string> | undefined;
       const subagentName = "Authentication Agent";
-      const spawner = ctx.subagentSpawner ?? inProcessSubagentSpawner;
+      const spawner = ctx.subagentSpawner;
       try {
         if (!ctx.model) {
           return {

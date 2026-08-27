@@ -5,10 +5,7 @@ import {
   resolvePathWithinCodebaseRoot,
   resolveWhiteboxCodebaseRoot,
 } from "../../../whitebox";
-import {
-  inProcessSubagentSpawner,
-  type SubagentSpawner,
-} from "../subagentSpawner";
+import { type SubagentSpawner } from "../subagentSpawner";
 import type { ToolContext } from "./types";
 
 /** Default max concurrent coding agents */
@@ -101,7 +98,7 @@ Returns an array of results with the text output from each agent.`,
 
       const total = validatedTasks.length;
 
-      const spawner = ctx.subagentSpawner ?? inProcessSubagentSpawner;
+      const spawner = ctx.subagentSpawner;
 
       // Bounded fan-out via the spawner so each sub-agent inherits the OTel
       // context. Errors are caught per task and returned inline, so results

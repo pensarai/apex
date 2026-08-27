@@ -204,12 +204,14 @@ export type ToolContext = {
   display?: string;
 
   /**
-   * Seam through which orchestration tools spawn sub-agents. Defaults to the
-   * in-process spawner; a durable runtime injects one that spawns child
-   * workflows instead. The three durable hooks below are inherited by every
-   * child the spawner constructs.
+   * Seam through which orchestration tools spawn sub-agents. Resolved once when
+   * the agent builds its tools (`OffensiveSecurityAgentInput.subagentSpawner` ??
+   * the in-process spawner), so it is always present here and tools never
+   * re-default it; a durable runtime injects one that spawns child workflows
+   * instead. The three durable hooks below are inherited by every child the
+   * spawner constructs.
    */
-  subagentSpawner?: SubagentSpawner;
+  subagentSpawner: SubagentSpawner;
 
   /** Provider middleware inherited by spawned children. Unset → raw model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];

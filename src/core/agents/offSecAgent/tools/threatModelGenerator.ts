@@ -8,7 +8,6 @@ import type {
   GrpcEndpointMetadata,
 } from "../../specialized/attackSurface/grpcSchema";
 import type { RiskScore } from "../../specialized/whiteboxAttackSurface";
-import { inProcessSubagentSpawner } from "../subagentSpawner";
 import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("threat-model-generator"));
@@ -358,7 +357,7 @@ export async function generateThreatModelForEndpoint(
       };
     };
 
-    const spawner = ctx.subagentSpawner ?? inProcessSubagentSpawner;
+    const spawner = ctx.subagentSpawner;
     try {
       // onConsumed aborts the child right after consume() resolves so the
       // background drain doesn't keep resume-regenerating a discarded response

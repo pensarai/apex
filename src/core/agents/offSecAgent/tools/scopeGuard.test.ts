@@ -14,9 +14,11 @@ import {
   ScopeViolationError,
 } from "./scopeGuard";
 import type { ToolContext } from "./types";
+import { inProcessSubagentSpawner } from "../subagentSpawner";
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
+    subagentSpawner: inProcessSubagentSpawner,
     session: {
       id: "ses_test",
       version: "1.0.0",

@@ -28,6 +28,7 @@ import {
   ensureSandboxPlaywright,
 } from "../src/core/agents/offSecAgent/tools/sandboxPlaywright";
 import type { ToolContext } from "../src/core/agents/offSecAgent/tools/types";
+import { inProcessSubagentSpawner } from "../src/core/agents/offSecAgent/subagentSpawner";
 import { sessions } from "../src/core/session";
 
 function arg(flag: string): string | undefined {
@@ -144,6 +145,7 @@ try {
     targets: [target],
   });
   const ctx: ToolContext = {
+    subagentSpawner: inProcessSubagentSpawner,
     session,
     agentCwd: session.rootPath,
     target,

@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../../../session";
 import { agentLogsDir } from "./agentScratch";
 import type { ToolContext } from "./types";
+import { inProcessSubagentSpawner } from "../subagentSpawner";
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
+    subagentSpawner: inProcessSubagentSpawner,
     session: {
       id: "ses_test",
       version: "1.0.0",

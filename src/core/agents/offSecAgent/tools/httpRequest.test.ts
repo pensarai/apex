@@ -7,6 +7,7 @@ import { RateLimiter } from "../../../services/rateLimiter";
 import type { SessionInfo } from "../../../session";
 import { type HttpRequestResult, httpRequest } from "./httpRequest";
 import type { ToolContext } from "./types";
+import { inProcessSubagentSpawner } from "../subagentSpawner";
 
 const TEST_LIBRARY = new StaticPromptInjectionLibrary([
   {
@@ -23,6 +24,7 @@ const TEST_LIBRARY = new StaticPromptInjectionLibrary([
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
+    subagentSpawner: inProcessSubagentSpawner,
     session: {
       id: "ses_test",
       version: "1.0.0",

@@ -8,7 +8,6 @@ import {
   toGrpcPentestContext,
 } from "../../specialized/attackSurface/grpcSchema";
 import type { WhiteboxAttackSurfaceResult } from "../../specialized/whiteboxAttackSurface";
-import { inProcessSubagentSpawner } from "../subagentSpawner";
 import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("run_attack_surface"));
@@ -61,7 +60,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       }
 
       const subagentName = "Attack Surface";
-      const spawner = ctx.subagentSpawner ?? inProcessSubagentSpawner;
+      const spawner = ctx.subagentSpawner;
 
       // -----------------------------------------------------------------------
       // Whitebox mode — analyze source code (cwd is the indicator)

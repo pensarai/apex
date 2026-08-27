@@ -47,6 +47,7 @@ import {
   WORKSPACE_TOOL_NAMES,
   WORKSPACE_WRITE_TOOL_NAMES,
 } from "./tools";
+import { inProcessSubagentSpawner } from "./subagentSpawner";
 import { StepTraceWriter } from "./trace";
 import type {
   AgentMode,
@@ -511,7 +512,8 @@ export class OffensiveSecurityAgent<TResult = void> {
       // rather than falling back to the process-wide DISPLAY (:0).
       display: input.display,
       // Spawn seam + durable hooks inherited by any sub-agent this agent spawns.
-      subagentSpawner: input.subagentSpawner,
+      // Resolve the default once here so every tool sees a guaranteed spawner.
+      subagentSpawner: input.subagentSpawner ?? inProcessSubagentSpawner,
       languageModelMiddleware: input.languageModelMiddleware,
       usageRecorder: input.usageRecorder,
       streamIdFactory: input.streamIdFactory,

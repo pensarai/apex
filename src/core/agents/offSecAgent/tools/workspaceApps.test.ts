@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../../../session";
 import type { ToolContext } from "./types";
+import { inProcessSubagentSpawner } from "../subagentSpawner";
 
 const api = vi.hoisted(() => ({
   createApp: vi.fn(),
@@ -26,6 +27,7 @@ import {
 
 function makeCtx(): ToolContext {
   return {
+    subagentSpawner: inProcessSubagentSpawner,
     session: {
       id: "ses_test",
       version: "1.0.0",
