@@ -7,6 +7,7 @@
  * All modules are statically imported so Bun can bundle them.
  */
 
+import { config as loadEnv } from "dotenv";
 import packageJson from "../package.json";
 import { type AIModel, buildAuthConfig } from "./core/ai";
 import { resolveCliLogLevel } from "./core/cli/logLevelArgs";
@@ -24,6 +25,8 @@ import {
 
 const args = process.argv.slice(2);
 const version = packageJson.version;
+
+loadEnv();
 
 // Detect global --obfuscate flag and propagate to the TUI via env so the
 // flag works regardless of where it appears in argv. The flag is stripped
@@ -275,9 +278,6 @@ Global options:
 // ---------------------------------------------------------------------------
 
 async function runPentest() {
-  const { config } = await import("dotenv");
-  config();
-
   const { runPentestAgent } = await import("./core/api/blackboxPentest");
   const { sessions } = await import("./core/session");
   const { config: appConfig } = await import("./core/config");
@@ -361,18 +361,9 @@ POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}`);
   } finally {
     await wandbCleanup();
   }
-
-  // Some tool subsystems (browser/MCP/session watchers) can leave handles open
-  // after the pentest workflow has printed its final results. For CLI use the
-  // command is complete here, so exit explicitly instead of letting harnesses
-  // misclassify a completed run as a timeout.
-  process.exit(0);
 }
 
 async function runTargetedPentest() {
-  const { config } = await import("dotenv");
-  config();
-
   const { runTargetedPentestAgent } = await import(
     "./core/api/targetedPentest"
   );
@@ -434,14 +425,9 @@ POCs:      ${pocsPath}`);
   } finally {
     await wandbCleanup();
   }
-
-  process.exit(0);
 }
 
 async function runThreatModel() {
-  const { config } = await import("dotenv");
-  config();
-
   const { runThreatModelWorkflow } = await import("./core/api/threatModel");
   const { config: appConfig } = await import("./core/config");
   const path = await import("node:path");
@@ -483,9 +469,6 @@ Model:    ${model}
 }
 
 async function runOperator() {
-  const { config } = await import("dotenv");
-  config();
-
   const { runOffensiveSecurityAgent } = await import("./core/api/offesecAgent");
   const { sessions, normalizeMessages, getResumeMessages } = await import(
     "./core/session"
@@ -684,4 +667,10 @@ if (hasFlag("-p") || command === "--prompt") {
 // down when the renderer exits.
 if (args.length !== 0) {
   await observabilityRuntime.shutdown();
+}
+
+// Some pentest tool subsystems can leave handles open after completion. Keep
+// the explicit exit, but only after the final OTLP batch has been flushed.
+if (command === "pentest" || command === "targeted-pentest") {
+  process.exit(0);
 }
