@@ -714,9 +714,13 @@ export default function OperatorDashboard({
         const activeSession = sessionRef.current;
         if (activeSession) {
           try {
+            const usage = usageStore.getSnapshot(activeSession.id);
             writeExecutionMetrics({
               sessionRootPath: activeSession.rootPath,
-              tokenUsage: usageStore.getSnapshot(activeSession.id).tokenUsage,
+              tokenUsage: usage.tokenUsage,
+              ...(usage.contextUsage
+                ? { contextUsage: usage.contextUsage }
+                : {}),
             });
           } catch {
             // Best effort: token metrics should not interrupt operator runs.
@@ -732,7 +736,6 @@ export default function OperatorDashboard({
         inputTokens?: number;
         outputTokens?: number;
       }) => {
-        recordTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
         const inputTokens = usage.inputTokens ?? 0;
         if (inputTokens > 0) {
           usageStore.setRootContext(runSessionIdRef.current, {
@@ -741,6 +744,7 @@ export default function OperatorDashboard({
             modelId: runModelId,
           });
         }
+        recordTokenUsage(inputTokens, usage.outputTokens ?? 0);
       };
 
       const onStepFinish = (event: {
