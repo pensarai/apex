@@ -207,6 +207,20 @@ describe("installObservabilityExitHandlers", () => {
     expect(exitCalls).toEqual([130]);
   });
 
+  it("keeps signal handlers installed during an in-flight shutdown", async () => {
+    const runtime = startWithProcessors([new HungProcessor()], 50);
+    install(runtime);
+
+    process.emit("SIGINT", "SIGINT");
+    expect(process.listenerCount("SIGINT")).toBe(1);
+
+    process.emit("SIGINT", "SIGINT");
+    expect(cleanups).toEqual(["cleanup:130"]);
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(exitCalls).toEqual([130]);
+  });
+
   it("fatal errors are preserved after flushing (reported, exit code 1)", async () => {
     const runtime = startWithProcessors([new HungProcessor()], 50);
     install(runtime);

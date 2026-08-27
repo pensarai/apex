@@ -271,8 +271,8 @@ export function installObservabilityExitHandlers(
     return exitPromise;
   };
 
-  process.once("SIGINT", () => void exitWith(130));
-  process.once("SIGTERM", () => void exitWith(143));
+  process.on("SIGINT", () => void exitWith(130));
+  process.on("SIGTERM", () => void exitWith(143));
   process.on(
     "uncaughtException",
     (error) => void exitWith(1, error, "uncaughtException"),
