@@ -48,3 +48,16 @@ export function withSubagentSessionBaggage<T>(
   ).setEntry(SESSION_BAGGAGE_KEY, { value: sessionId });
   return context.with(propagation.setBaggage(context.active(), baggage), fn);
 }
+
+/**
+ * The active span's correlation ids, when a valid recording span is active.
+ * Null outside spans (or under a no-op SDK) — callers skip the fields.
+ */
+export function getActiveTraceCorrelation(): {
+  traceId: string;
+  spanId: string;
+} | null {
+  const spanContext = trace.getSpan(context.active())?.spanContext();
+  if (!spanContext || !trace.isSpanContextValid(spanContext)) return null;
+  return { traceId: spanContext.traceId, spanId: spanContext.spanId };
+}
