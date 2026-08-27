@@ -1681,8 +1681,8 @@ describe("root agent-run spans", () => {
       expect(span).toBeDefined();
       const attrs = span?.attributes as Record<string, string>;
       expect(attrs["gen_ai.agent.name"]).toBe("recon-sub");
-      expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
-      expect(attrs["pensar.session.id"]).toBe("ses_stub");
+      expect(attrs["gen_ai.conversation.id"]).toBe("ses_sub_1");
+      expect(attrs["pensar.session.id"]).toBe("ses_sub_1");
       expect(attrs["pensar.run.id"]).toBeUndefined();
       expect(attrs["pensar.agent.mode"]).toBeUndefined();
     } finally {

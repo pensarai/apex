@@ -901,8 +901,8 @@ export class OffensiveSecurityAgent<TResult = void> {
     const runSpanAttributes: Record<string, string> = {
       "gen_ai.operation.name": "invoke_agent",
       "gen_ai.agent.name": spanLabel,
-      "gen_ai.conversation.id": this._session.id,
-      "pensar.session.id": this._session.id,
+      "gen_ai.conversation.id": this.busSessionId,
+      "pensar.session.id": this.busSessionId,
       ...(isSubagent
         ? {}
         : {
