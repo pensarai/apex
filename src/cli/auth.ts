@@ -30,6 +30,7 @@ import {
   startDeviceFlow,
 } from "../core/auth";
 import { config } from "../core/config";
+import { markCommandFailed } from "./command-exit";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -361,13 +362,13 @@ async function main(): Promise<void> {
     } else {
       console.error(`Unknown auth subcommand: ${subcommand}`);
       console.error("Run 'pensar login --help' for usage information");
-      process.exit(1);
+      return markCommandFailed();
     }
   } catch (err) {
     console.error(
       `\nError: ${err instanceof Error ? err.message : String(err)}`,
     );
-    process.exit(1);
+    return markCommandFailed();
   }
 }
 

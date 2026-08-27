@@ -22,6 +22,7 @@ import {
   retestIssue,
   updateIssue,
 } from "../core/api";
+import { markCommandFailed } from "./command-exit";
 
 function getFlag(flag: string, argv: string[]): string | undefined {
   const idx = argv.indexOf(flag);
@@ -83,7 +84,7 @@ async function main(): Promise<void> {
       if (!issueId) {
         console.error("Error: issue ID is required");
         console.error("Usage: pensar issues get <issueId>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const issue = await getIssue(issueId);
       console.log(JSON.stringify(issue, null, 2));
@@ -94,7 +95,7 @@ async function main(): Promise<void> {
         console.error(
           "Usage: pensar issues update <issueId> [--status <status>] ...",
         );
-        process.exit(1);
+        return markCommandFailed();
       }
       const status = getFlag("--status", args) as
         | "open"
@@ -122,7 +123,7 @@ async function main(): Promise<void> {
       if (!issueId) {
         console.error("Error: issue ID is required");
         console.error("Usage: pensar issues retest <issueId>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const result = await retestIssue(issueId);
       console.log(JSON.stringify(result, null, 2));
@@ -132,7 +133,7 @@ async function main(): Promise<void> {
       if (!issueId || issueId.startsWith("--") || !url) {
         console.error("Error: issue ID and --url are required");
         console.error("Usage: pensar issues link-pr <issueId> --url <prUrl>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const result = await linkPullRequest(issueId, url);
       console.log(JSON.stringify(result, null, 2));
@@ -141,7 +142,7 @@ async function main(): Promise<void> {
       if (!issueId) {
         console.error("Error: issue ID is required");
         console.error("Usage: pensar issues prs <issueId>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const result = await listIssuePullRequests(issueId);
       console.log(JSON.stringify(result, null, 2));
@@ -156,13 +157,13 @@ async function main(): Promise<void> {
     } else {
       console.error(`Error: Unknown subcommand "${sub}"`);
       showHelp();
-      process.exit(1);
+      return markCommandFailed();
     }
   } catch (err) {
     console.error(
       `\nError: ${err instanceof Error ? err.message : String(err)}`,
     );
-    process.exit(1);
+    return markCommandFailed();
   }
 }
 

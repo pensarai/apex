@@ -9,6 +9,7 @@
  */
 
 import { getFix, listFixes } from "../core/api";
+import { markCommandFailed } from "./command-exit";
 
 function showHelp(): void {
   console.log(`pensar fixes — View security fixes via the Pensar API
@@ -36,7 +37,7 @@ async function main(): Promise<void> {
       if (!fixId) {
         console.error("Error: fix ID is required");
         console.error("Usage: pensar fixes get <fixId>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const fix = await getFix(fixId);
       console.log(JSON.stringify(fix, null, 2));
@@ -48,7 +49,7 @@ async function main(): Promise<void> {
     console.error(
       `\nError: ${err instanceof Error ? err.message : String(err)}`,
     );
-    process.exit(1);
+    return markCommandFailed();
   }
 }
 

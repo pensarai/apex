@@ -21,6 +21,7 @@ import {
   listTargetLogs,
   searchTargetLogs,
 } from "../core/api";
+import { markCommandFailed } from "./command-exit";
 
 function getFlag(flag: string, argv: string[]): string | undefined {
   const idx = argv.indexOf(flag);
@@ -74,7 +75,7 @@ async function main(): Promise<void> {
         console.error(
           "Usage: pensar targets logs <targetId> [--level <level>] [--role <role>] [--limit <n>]",
         );
-        process.exit(1);
+        return markCommandFailed();
       }
       const level = getFlag("--level", args) as LogLevel | undefined;
       const role = getFlag("--role", args) as LogRole | undefined;
@@ -91,7 +92,7 @@ async function main(): Promise<void> {
         console.error(
           "Usage: pensar targets search <targetId> <query> [--level <level>] [--role <role>] [--context <n>]",
         );
-        process.exit(1);
+        return markCommandFailed();
       }
       const level = getFlag("--level", args) as LogLevel | undefined;
       const role = getFlag("--role", args) as LogRole | undefined;
@@ -107,7 +108,7 @@ async function main(): Promise<void> {
     } else if (sub.startsWith("--")) {
       console.error("Error: pentest ID is required");
       console.error("Usage: pensar targets <pentestId>");
-      process.exit(1);
+      return markCommandFailed();
     } else {
       const pentestId = sub;
       const targets = await listPentestTargets(pentestId);
@@ -117,7 +118,7 @@ async function main(): Promise<void> {
     console.error(
       `\nError: ${err instanceof Error ? err.message : String(err)}`,
     );
-    process.exit(1);
+    return markCommandFailed();
   }
 }
 

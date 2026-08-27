@@ -44,6 +44,7 @@ import {
   updateApp,
   updateEndpoint,
 } from "../core/api";
+import { markCommandFailed } from "./command-exit";
 
 const APPLICATION_TYPES: ApplicationType[] = [
   "ui",
@@ -352,7 +353,7 @@ async function main(): Promise<void> {
       if (!appId) {
         console.error("Error: app ID is required");
         console.error("Usage: pensar apps get <appId>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const app = await getApp(appId);
       console.log(JSON.stringify(app, null, 2));
@@ -365,7 +366,7 @@ async function main(): Promise<void> {
       if (!appId) {
         console.error("Error: app ID is required");
         console.error("Usage: pensar apps update <appId> [options]");
-        process.exit(1);
+        return markCommandFailed();
       }
       const opts = parseAppUpdateOptions(args);
       const result = await updateApp(appId, opts);
@@ -375,7 +376,7 @@ async function main(): Promise<void> {
       if (!appId) {
         console.error("Error: app ID is required");
         console.error("Usage: pensar apps delete <appId>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const result = await deleteApp(appId);
       console.log(JSON.stringify(result, null, 2));
@@ -387,7 +388,7 @@ async function main(): Promise<void> {
       if (!url) {
         console.error("Error: domain is required");
         console.error("Usage: pensar apps domain-create <domain>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const result = await createDomain({ url });
       console.log(JSON.stringify(result, null, 2));
@@ -396,7 +397,7 @@ async function main(): Promise<void> {
       if (!appId) {
         console.error("Error: app ID is required");
         console.error("Usage: pensar apps endpoints <appId> [filters]");
-        process.exit(1);
+        return markCommandFailed();
       }
       const type = parseEndpointType(getFlag("--type", args));
       const minRiskScore = parseNumber(
@@ -418,7 +419,7 @@ async function main(): Promise<void> {
       if (!endpointId) {
         console.error("Error: endpoint ID is required");
         console.error("Usage: pensar apps endpoint <endpointId>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const result = await getEndpoint(endpointId);
       console.log(JSON.stringify(result, null, 2));
@@ -429,7 +430,7 @@ async function main(): Promise<void> {
         console.error(
           "Usage: pensar apps endpoint-create <appId> --endpoint E --description D",
         );
-        process.exit(1);
+        return markCommandFailed();
       }
       const opts = parseEndpointCreateOptions(args);
       const result = await createEndpoint(appId, opts);
@@ -441,7 +442,7 @@ async function main(): Promise<void> {
         console.error(
           "Usage: pensar apps endpoint-update <endpointId> [options]",
         );
-        process.exit(1);
+        return markCommandFailed();
       }
       const opts = parseEndpointUpdateOptions(args);
       const result = await updateEndpoint(endpointId, opts);
@@ -451,7 +452,7 @@ async function main(): Promise<void> {
       if (!endpointId) {
         console.error("Error: endpoint ID is required");
         console.error("Usage: pensar apps endpoint-delete <endpointId>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const result = await deleteEndpoint(endpointId);
       console.log(JSON.stringify(result, null, 2));
@@ -460,7 +461,7 @@ async function main(): Promise<void> {
       if (!query || query.startsWith("--")) {
         console.error("Error: search query is required");
         console.error("Usage: pensar apps search <query> [options]");
-        process.exit(1);
+        return markCommandFailed();
       }
       const type = parseAppType(getFlag("--type", args));
       const limit = parseInteger("--limit", getFlag("--limit", args));
@@ -476,7 +477,7 @@ async function main(): Promise<void> {
       if (!query || query.startsWith("--")) {
         console.error("Error: search query is required");
         console.error("Usage: pensar apps search-endpoints <query> [options]");
-        process.exit(1);
+        return markCommandFailed();
       }
       const applicationId = getFlag("--app", args);
       const type = parseEndpointType(getFlag("--type", args));
@@ -512,13 +513,13 @@ async function main(): Promise<void> {
     } else {
       console.error(`Error: Unknown subcommand "${sub}"`);
       showHelp();
-      process.exit(1);
+      return markCommandFailed();
     }
   } catch (err) {
     console.error(
       `\nError: ${err instanceof Error ? err.message : String(err)}`,
     );
-    process.exit(1);
+    return markCommandFailed();
   }
 }
 

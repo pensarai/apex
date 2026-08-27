@@ -21,6 +21,7 @@ import {
   detectInstallMethod,
   type InstallMethod,
 } from "../core/installation/index";
+import { markCommandFailed } from "./command-exit";
 
 const PRESERVED_DIRS = new Set(["sessions", "memories", "skills"]);
 
@@ -294,7 +295,7 @@ async function main(): Promise<void> {
     console.error(
       `\nError: ${err instanceof Error ? err.message : String(err)}`,
     );
-    process.exit(1);
+    return markCommandFailed();
   }
 }
 

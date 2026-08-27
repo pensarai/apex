@@ -15,6 +15,7 @@ import {
   isSensitiveHeaderName,
   renderHeaderValue,
 } from "../core/http/types";
+import { markCommandFailed } from "./command-exit";
 
 function showHelp(): void {
   console.log(`pensar config headers — Manage global default HTTP headers
@@ -73,12 +74,12 @@ async function cmdAdd(args: string[], allowOverwrite: boolean): Promise<void> {
   const value = args[0];
   if (!value) {
     console.error('Error: expected "Name: Value" argument');
-    process.exit(1);
+    return markCommandFailed();
   }
   const parsed = parseHeaderLine(value);
   if (!parsed.ok) {
     console.error(`Invalid header:\n${formatParseError(parsed.error)}`);
-    process.exit(1);
+    return markCommandFailed();
   }
   const headers = await loadDefaults();
   const canonical = Object.keys(headers).find(
@@ -88,7 +89,7 @@ async function cmdAdd(args: string[], allowOverwrite: boolean): Promise<void> {
     console.error(
       `Header "${canonical}" already exists. Use \`pensar config headers set\` to overwrite.`,
     );
-    process.exit(1);
+    return markCommandFailed();
   }
   if (canonical && canonical !== parsed.value.name) {
     delete headers[canonical];
@@ -102,7 +103,7 @@ async function cmdRemove(args: string[]): Promise<void> {
   const name = args[0];
   if (!name) {
     console.error("Error: expected <Name> argument");
-    process.exit(1);
+    return markCommandFailed();
   }
   const headers = await loadDefaults();
   const canonical = Object.keys(headers).find(
@@ -110,7 +111,7 @@ async function cmdRemove(args: string[]): Promise<void> {
   );
   if (!canonical) {
     console.error(`No default header named "${name}".`);
-    process.exit(1);
+    return markCommandFailed();
   }
   delete headers[canonical];
   await saveDefaults(headers);
@@ -123,7 +124,7 @@ async function cmdClear(args: string[]): Promise<void> {
     console.error(
       "Refusing to clear without confirmation. Pass --yes to proceed.",
     );
-    process.exit(1);
+    return markCommandFailed();
   }
   await saveDefaults({});
   console.log("Cleared all default headers.");
@@ -133,14 +134,14 @@ async function cmdImport(args: string[]): Promise<void> {
   const file = args[0];
   if (!file) {
     console.error("Error: expected <file> argument");
-    process.exit(1);
+    return markCommandFailed();
   }
   const parsed = await parseHeadersFromFile(file);
   if (!parsed.ok) {
     for (const err of parsed.error) {
       console.error(`Import error:\n${formatParseError(err)}`);
     }
-    process.exit(1);
+    return markCommandFailed();
   }
   const next: HeaderRecord = {};
   for (const entry of parsed.value) {
@@ -164,7 +165,7 @@ async function main(): Promise<void> {
   if (sub !== "headers") {
     console.error(`Unknown 'pensar config' subcommand: ${sub}`);
     console.error("Only 'headers' is supported today.");
-    process.exit(1);
+    return markCommandFailed();
   }
 
   const op = args[1];
@@ -199,11 +200,11 @@ async function main(): Promise<void> {
     default:
       console.error(`Unknown headers operation: ${op}`);
       showHelp();
-      process.exit(1);
+      return markCommandFailed();
   }
 }
 
 await main().catch((err) => {
   console.error(`\nError: ${err instanceof Error ? err.message : String(err)}`);
-  process.exit(1);
+  return markCommandFailed();
 });

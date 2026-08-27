@@ -9,6 +9,7 @@
  */
 
 import { listAgentLogs, searchAgentLogs } from "../core/api";
+import { markCommandFailed } from "./command-exit";
 
 function getFlag(flag: string, argv: string[]): string | undefined {
   const idx = argv.indexOf(flag);
@@ -54,7 +55,7 @@ async function main(): Promise<void> {
         console.error(
           "Usage: pensar logs search <issueId> <query> [--level <level>] [--role <role>] [--context <n>]",
         );
-        process.exit(1);
+        return markCommandFailed();
       }
       const level = getFlag("--level", args) as
         | "debug"
@@ -103,7 +104,7 @@ async function main(): Promise<void> {
     console.error(
       `\nError: ${err instanceof Error ? err.message : String(err)}`,
     );
-    process.exit(1);
+    return markCommandFailed();
   }
 }
 
