@@ -14,6 +14,7 @@ import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
 import { logger } from "./core/logger";
+import { startObservabilityRuntime } from "./core/observability/runtime";
 import type { SessionInfo } from "./core/session";
 import {
   combinePromptParts,
@@ -609,6 +610,11 @@ async function runUpgrade() {
 // Router
 // ---------------------------------------------------------------------------
 
+// Standalone CLI entrypoint: own the optional OTel runtime. No-op unless an
+// OTLP endpoint is configured; the TUI branch below takes over the process
+// and manages the runtime's lifecycle in its own exit path.
+const observabilityRuntime = startObservabilityRuntime();
+
 if (hasFlag("-p") || command === "--prompt") {
   await runOperator();
 } else if (
@@ -671,4 +677,11 @@ if (hasFlag("-p") || command === "--prompt") {
   console.error();
   console.error("Run 'pensar --help' for usage information");
   process.exit(1);
+}
+
+// Normal-path flush for completed headless commands. The TUI branch
+// (args.length === 0) never reaches here — it owns the runtime and shuts it
+// down when the renderer exits.
+if (args.length !== 0) {
+  await observabilityRuntime.shutdown();
 }

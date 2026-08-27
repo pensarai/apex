@@ -5,6 +5,7 @@ import { config } from "../core/config";
 import type { Config } from "../core/config/config";
 import { checkForUpdate } from "../core/installation";
 import { routeLogsToErrorFile, writeErrorLog } from "../core/logger";
+import { startObservabilityRuntime } from "../core/observability/runtime";
 import { hasAnyProviderConfigured } from "../core/providers";
 import type { SessionConfig } from "../core/session";
 import { setupAutoCopy } from "./auto-copy";
@@ -714,6 +715,11 @@ async function main() {
   );
   overlayThemeRef.current = themeColors;
 
+  // Standalone TUI entrypoint: own the optional OTel runtime (returns the
+  // CLI-started instance when invoked via `pensar`, a fresh one otherwise;
+  // no-op without an OTLP endpoint).
+  const observabilityRuntime = startObservabilityRuntime();
+
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
     consoleOptions: buildConsoleOptions(themeColors),
@@ -727,7 +733,11 @@ async function main() {
   const cleanup = () => {
     cleanupTerminalFocusMode();
     renderer.destroy();
-    process.exit(0);
+    // Flush traces before the process dies; exit waits for the bounded flush.
+    observabilityRuntime
+      .shutdown()
+      .catch(() => {})
+      .finally(() => process.exit(0));
   };
   process.on("SIGINT", cleanup);
   process.on("SIGTERM", cleanup);
