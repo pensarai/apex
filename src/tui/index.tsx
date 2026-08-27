@@ -5,7 +5,10 @@ import { config } from "../core/config";
 import type { Config } from "../core/config/config";
 import { checkForUpdate } from "../core/installation";
 import { routeLogsToErrorFile, writeErrorLog } from "../core/logger";
-import { startObservabilityRuntime } from "../core/observability/runtime";
+import {
+  installObservabilityExitHandlers,
+  startObservabilityRuntime,
+} from "../core/observability/runtime";
 import { hasAnyProviderConfigured } from "../core/providers";
 import type { SessionConfig } from "../core/session";
 import { setupAutoCopy } from "./auto-copy";
@@ -732,34 +735,19 @@ async function main() {
   const { copyToClipboard } = createClipboardManager(renderer);
   setupAutoCopy(renderer, copyToClipboard);
 
-  const teardownAndExit = (code: number, error?: unknown, label?: string) => {
-    cleanupTerminalFocusMode();
-    renderer.destroy();
-    if (error !== undefined && label) {
+  const exitWith = installObservabilityExitHandlers(observabilityRuntime, {
+    cleanup: () => {
+      cleanupTerminalFocusMode();
+      renderer.destroy();
+    },
+    onError: (error, source) => {
+      const uncaught = source === "uncaughtException";
+      const label = uncaught ? "Uncaught exception:" : "Unhandled rejection:";
       console.error(label, error);
-      writeErrorLog(
-        error,
-        label === "Uncaught exception:" ? "UNCAUGHT" : "UNHANDLED_REJECTION",
-      );
-    }
-    // Bounded flush (ends in-flight root runs, flushes, shuts down) before
-    // the process dies — never exit while a flush could still complete.
-    observabilityRuntime
-      .shutdown()
-      .catch(() => {})
-      .then(() => process.exit(code));
-  };
-  const cleanup = () => teardownAndExit(0);
-  process.on("SIGINT", cleanup);
-  process.on("SIGTERM", cleanup);
-
-  process.on("uncaughtException", (err) => {
-    teardownAndExit(1, err, "Uncaught exception:");
+      writeErrorLog(error, uncaught ? "UNCAUGHT" : "UNHANDLED_REJECTION");
+    },
   });
-
-  process.on("unhandledRejection", (reason) => {
-    teardownAndExit(1, reason, "Unhandled rejection:");
-  });
+  const cleanup = () => exitWith(0);
 
   const obfuscateEnabled = process.env.PENSAR_OBFUSCATE === "1";
 

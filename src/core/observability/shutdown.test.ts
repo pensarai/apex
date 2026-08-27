@@ -134,7 +134,7 @@ describe("shutdown semantics", () => {
     const runtime = startWithProcessors([new HungProcessor()], 50);
 
     const started = Date.now();
-    await runtime.shutdown(); // bounded — resolves despite the hung processor
+    await expect(runtime.shutdown()).resolves.toBe("timed-out");
     expect(Date.now() - started).toBeLessThan(2000);
   });
 
@@ -188,7 +188,7 @@ describe("installObservabilityExitHandlers", () => {
   });
 
   function install(runtime: ReturnType<typeof startWithProcessors>) {
-    installObservabilityExitHandlers(runtime, {
+    return installObservabilityExitHandlers(runtime, {
       cleanup: (code) => cleanups.push(`cleanup:${code}`),
       onError: (error) => errors.push(error),
     });
@@ -227,6 +227,19 @@ describe("installObservabilityExitHandlers", () => {
     process.emit("unhandledRejection", new Error("second"));
 
     await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(errors).toHaveLength(1);
+    expect(exitCalls).toEqual([1]);
+  });
+
+  it("a fatal error upgrades an in-flight normal exit without double teardown", async () => {
+    const runtime = startWithProcessors([new HungProcessor()], 50);
+    const exitWith = install(runtime);
+
+    void exitWith(0);
+    process.emit("uncaughtException", new Error("late failure"));
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(cleanups).toEqual(["cleanup:0"]);
     expect(errors).toHaveLength(1);
     expect(exitCalls).toEqual([1]);
   });

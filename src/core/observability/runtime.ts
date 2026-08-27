@@ -29,10 +29,12 @@ import { endAllActiveRootSpans } from "./active-root-spans";
  * SDK and must not have Apex install a competing global provider.
  */
 
+export type ObservabilityShutdownResult = "completed" | "timed-out";
+
 export interface ObservabilityRuntime {
   forceFlush(): Promise<void>;
   /** Idempotent and bounded: ends active root spans, flushes, shuts down. */
-  shutdown(): Promise<void>;
+  shutdown(): Promise<ObservabilityShutdownResult>;
 }
 
 /** Options for {@link startObservabilityRuntime}. */
@@ -45,21 +47,31 @@ export interface StartObservabilityRuntimeOptions {
 
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000;
 
-function withTimeout(promise: Promise<void>, timeoutMs: number): Promise<void> {
-  return new Promise<void>((resolve) => {
-    const timer = setTimeout(() => resolve(), timeoutMs);
-    promise
-      .catch(() => {})
-      .then(() => {
-        clearTimeout(timer);
-        resolve();
-      });
+function withTimeout(
+  promise: Promise<void>,
+  timeoutMs: number,
+): Promise<ObservabilityShutdownResult> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (result: ObservabilityShutdownResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => settle("timed-out"), timeoutMs);
+    promise.then(
+      () => settle("completed"),
+      () => settle("completed"),
+    );
   });
 }
 
 const NOOP_RUNTIME: ObservabilityRuntime = {
   async forceFlush() {},
-  async shutdown() {},
+  async shutdown() {
+    return "completed";
+  },
 };
 
 type Env = Record<string, string | undefined>;
@@ -175,7 +187,7 @@ export function startObservabilityRuntime(
   trace.setGlobalTracerProvider(provider);
   context.setGlobalContextManager(contextManager);
 
-  let shutdownPromise: Promise<void> | null = null;
+  let shutdownPromise: Promise<ObservabilityShutdownResult> | null = null;
   const runtime: ObservabilityRuntime = {
     async forceFlush() {
       await provider.forceFlush();
@@ -183,22 +195,27 @@ export function startObservabilityRuntime(
     shutdown() {
       // Idempotent: every caller awaits the same bounded shutdown.
       if (!shutdownPromise) {
-        shutdownPromise = withTimeout(
-          (async () => {
-            // End in-flight root runs first so their spans still export…
-            endAllActiveRootSpans();
-            // …then flush explicitly before processor/exporter teardown.
+        const shutdownWork = (async () => {
+          // End in-flight root runs first so their spans still export…
+          endAllActiveRootSpans();
+          // …then flush explicitly before processor/exporter teardown.
+          try {
             await provider.forceFlush();
+          } finally {
             await provider.shutdown();
+          }
+        })();
+        shutdownPromise = withTimeout(shutdownWork, shutdownTimeoutMs)
+          .then((result) => {
             contextManager.disable();
             // Reset globals so a later start (or the host's own SDK) begins clean.
             trace.disable();
             context.disable();
-          })(),
-          shutdownTimeoutMs,
-        ).finally(() => {
-          activeRuntime = null;
-        });
+            return result;
+          })
+          .finally(() => {
+            activeRuntime = null;
+          });
       }
       return shutdownPromise;
     },
@@ -220,25 +237,51 @@ export function installObservabilityExitHandlers(
     /** Synchronous entrypoint teardown before the flush. */
     cleanup?: (code: number) => void;
     /** Report a fatal error (entrypoints own their logging). */
-    onError?: (error: unknown) => void;
+    onError?: (
+      error: unknown,
+      source: "uncaughtException" | "unhandledRejection",
+    ) => void;
   },
-): void {
-  let exiting = false;
-  const exitWith = (code: number, error?: unknown) => {
-    if (exiting) return;
-    exiting = true;
-    if (error !== undefined) opts?.onError?.(error);
+): (
+  code: number,
+  error?: unknown,
+  source?: "uncaughtException" | "unhandledRejection",
+) => Promise<void> {
+  let exitPromise: Promise<void> | null = null;
+  let exitCode = 0;
+  let fatalSeen = false;
+  const exitWith = (
+    code: number,
+    error?: unknown,
+    source?: "uncaughtException" | "unhandledRejection",
+  ) => {
+    if (error !== undefined && !fatalSeen) {
+      fatalSeen = true;
+      exitCode = 1;
+      opts?.onError?.(error, source ?? "uncaughtException");
+    } else if (!fatalSeen && exitCode === 0) {
+      exitCode = code;
+    }
+    if (exitPromise) return exitPromise;
     opts?.cleanup?.(code);
-    void runtime
+    exitPromise = runtime
       .shutdown()
       .catch(() => {})
-      .then(() => process.exit(code));
+      .then(() => process.exit(exitCode));
+    return exitPromise;
   };
 
-  process.once("SIGINT", () => exitWith(130));
-  process.once("SIGTERM", () => exitWith(143));
-  process.on("uncaughtException", (error) => exitWith(1, error));
-  process.on("unhandledRejection", (reason) => exitWith(1, reason));
+  process.once("SIGINT", () => void exitWith(130));
+  process.once("SIGTERM", () => void exitWith(143));
+  process.on(
+    "uncaughtException",
+    (error) => void exitWith(1, error, "uncaughtException"),
+  );
+  process.on(
+    "unhandledRejection",
+    (reason) => void exitWith(1, reason, "unhandledRejection"),
+  );
+  return exitWith;
 }
 
 /** Test/teardown hook: stop any active runtime and reset the singleton. */

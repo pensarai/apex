@@ -611,6 +611,7 @@ if (args.length !== 0) {
   });
 }
 
+let commandFailed = false;
 try {
   if (hasFlag("-p") || command === "--prompt") {
     await runOperator();
@@ -675,11 +676,21 @@ try {
     console.error("Run 'pensar --help' for usage information");
     process.exit(1);
   }
+} catch (error) {
+  commandFailed = true;
+  throw error;
 } finally {
   // Preserve command failures while still making process-boundary flushing
   // best-effort. The TUI owns its runtime lifecycle after import.
   if (args.length !== 0) {
-    await observabilityRuntime.shutdown().catch(() => {});
+    const shutdownResult = await observabilityRuntime
+      .shutdown()
+      .catch(() => "completed" as const);
+    // A timed-out exporter can still own live HTTP handles. Preserve a
+    // pending command failure; otherwise terminate instead of hanging.
+    if (shutdownResult === "timed-out" && !commandFailed) {
+      process.exit(typeof process.exitCode === "number" ? process.exitCode : 0);
+    }
   }
 }
 
