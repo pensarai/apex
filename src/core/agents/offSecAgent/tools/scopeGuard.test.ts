@@ -3,6 +3,7 @@ import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
 import type { SessionInfo } from "../../../session";
 import {
   assertCommandInScope,
+  assertFindingEndpointInScope,
   assertUrlInScope,
   extractHostname,
   extractHostsFromCommand,
@@ -321,6 +322,43 @@ describe("assertUrlInScope", () => {
     );
     expect(() =>
       assertUrlInScope("https://diracinc.com.evil.com", ctx),
+    ).toThrow(ScopeViolationError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// assertFindingEndpointInScope
+// ---------------------------------------------------------------------------
+
+describe("assertFindingEndpointInScope", () => {
+  it("is a no-op when no scope is configured", () => {
+    expect(() =>
+      assertFindingEndpointInScope("http://127.0.0.1/status", makeCtx()),
+    ).not.toThrow();
+  });
+
+  it("allows an in-scope absolute endpoint", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    expect(() =>
+      assertFindingEndpointInScope("https://api.example.com/v1/users", ctx),
+    ).not.toThrow();
+  });
+
+  it("allows bare paths (implicitly the in-scope target host)", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    expect(() =>
+      assertFindingEndpointInScope("/api/users/{id}", ctx),
+    ).not.toThrow();
+    expect(() => assertFindingEndpointInScope("", ctx)).not.toThrow();
+  });
+
+  it("blocks an out-of-scope absolute endpoint (infrastructure host)", () => {
+    const ctx = makeCtx({ target: "https://example.com" });
+    expect(() =>
+      assertFindingEndpointInScope("http://127.0.0.1:9000/metrics", ctx),
+    ).toThrow(ScopeViolationError);
+    expect(() =>
+      assertFindingEndpointInScope("https://evil.example.net/x", ctx),
     ).toThrow(ScopeViolationError);
   });
 });
