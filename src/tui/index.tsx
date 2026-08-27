@@ -83,9 +83,10 @@ declare module "@opentui/react" {
 
 interface AppProps {
   appConfig: Config;
+  onExit: () => Promise<void>;
 }
 
-function App({ appConfig }: AppProps) {
+function App({ appConfig, onExit }: AppProps) {
   const [focusIndex, setFocusIndex] = useState(0);
   const [cwd, setCwd] = useState(process.cwd());
   const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
@@ -148,6 +149,7 @@ function App({ appConfig }: AppProps) {
                         setShowShortcutsDialog,
                         setFocusIndex,
                         navigableItems,
+                        onExit,
                       }}
                     >
                       <AppContent
@@ -730,14 +732,12 @@ async function main() {
   const { copyToClipboard } = createClipboardManager(renderer);
   setupAutoCopy(renderer, copyToClipboard);
 
-  const cleanup = () => {
+  const cleanup = async () => {
     cleanupTerminalFocusMode();
     renderer.destroy();
     // Flush traces before the process dies; exit waits for the bounded flush.
-    observabilityRuntime
-      .shutdown()
-      .catch(() => {})
-      .finally(() => process.exit(0));
+    await observabilityRuntime.shutdown().catch(() => {});
+    process.exit(0);
   };
   process.on("SIGINT", cleanup);
   process.on("SIGTERM", cleanup);
@@ -771,7 +771,7 @@ async function main() {
         <TerminalDimensionsProvider>
           <ToastProvider>
             <ErrorBoundary>
-              <App appConfig={appConfig} />
+              <App appConfig={appConfig} onExit={cleanup} />
             </ErrorBoundary>
             <ToastContainer />
           </ToastProvider>

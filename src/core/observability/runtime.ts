@@ -85,11 +85,15 @@ export function parseResourceAttributes(env: Env): Record<string, string> {
 
 /** Service resource: name, version, per-process runtime instance, user attrs. */
 export function buildResource(env: Env) {
+  const resourceAttributes = parseResourceAttributes(env);
   return resourceFromAttributes({
-    "service.name": env.OTEL_SERVICE_NAME?.trim() || "apex",
     "service.version": apexVersion,
     "service.instance.id": randomUUID(),
-    ...parseResourceAttributes(env),
+    ...resourceAttributes,
+    "service.name":
+      env.OTEL_SERVICE_NAME?.trim() ||
+      resourceAttributes["service.name"] ||
+      "apex",
   });
 }
 

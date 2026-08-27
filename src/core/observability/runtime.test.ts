@@ -184,7 +184,8 @@ describe("resource helpers", () => {
   it("buildResource carries name, version, instance, and user attributes", () => {
     const resource = buildResource({
       OTEL_SERVICE_NAME: "apex-standalone",
-      OTEL_RESOURCE_ATTRIBUTES: "deployment.env=prod",
+      OTEL_RESOURCE_ATTRIBUTES:
+        "service.name=resource-name,deployment.env=prod",
     });
     const attrs = resource.attributes as Record<string, unknown>;
     expect(attrs["service.name"]).toBe("apex-standalone");
@@ -193,6 +194,11 @@ describe("resource helpers", () => {
     // Runtime instance id is unique per start.
     expect(typeof attrs["service.instance.id"]).toBe("string");
     expect(attrs["deployment.env"]).toBe("prod");
+
+    const resourceOnly = buildResource({
+      OTEL_RESOURCE_ATTRIBUTES: "service.name=resource-only",
+    }).attributes as Record<string, unknown>;
+    expect(resourceOnly["service.name"]).toBe("resource-only");
 
     const second = buildResource({}).attributes as Record<string, unknown>;
     expect(second["service.name"]).toBe("apex"); // default
