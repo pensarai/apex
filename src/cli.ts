@@ -598,75 +598,76 @@ async function runUpgrade() {
 // and manages the runtime's lifecycle in its own exit path.
 const observabilityRuntime = startObservabilityRuntime();
 
-if (hasFlag("-p") || command === "--prompt") {
-  await runOperator();
-} else if (
-  command === "version" ||
-  command === "--version" ||
-  command === "-v"
-) {
-  console.log(`v${version}`);
-} else if (command === "help" || command === "--help" || command === "-h") {
-  showHelp();
-} else if (command === "upgrade" || command === "update") {
-  await runUpgrade();
-} else if (command === "pentest") {
-  await runPentest();
-} else if (command === "targeted-pentest") {
-  await runTargetedPentest();
-} else if (command === "login" || command === "auth") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/auth");
-} else if (command === "uninstall") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/uninstall");
-} else if (command === "apps") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/apps");
-} else if (command === "pentests") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/pentests");
-} else if (command === "targets") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/targets");
-} else if (command === "issues") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/issues");
-} else if (command === "fixes") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/fixes");
-} else if (command === "logs") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/logs");
-} else if (command === "config") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/config");
-} else if (command === "threat-model") {
-  await runThreatModel();
-} else if (command === "doctor") {
-  const { runDoctor } = await import("./core/doctor");
-  await runDoctor();
-} else if (args.length === 0) {
-  if (process.env.PENSAR_NO_TUI === "1") {
-    console.error(
-      "TUI mode requires Bun. Install Bun (https://bun.sh) or use a standalone binary release for interactive mode.",
-    );
-    console.error("All other commands work with Node — run 'pensar --help'.");
+try {
+  if (hasFlag("-p") || command === "--prompt") {
+    await runOperator();
+  } else if (
+    command === "version" ||
+    command === "--version" ||
+    command === "-v"
+  ) {
+    console.log(`v${version}`);
+  } else if (command === "help" || command === "--help" || command === "-h") {
+    showHelp();
+  } else if (command === "upgrade" || command === "update") {
+    await runUpgrade();
+  } else if (command === "pentest") {
+    await runPentest();
+  } else if (command === "targeted-pentest") {
+    await runTargetedPentest();
+  } else if (command === "login" || command === "auth") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/auth");
+  } else if (command === "uninstall") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/uninstall");
+  } else if (command === "apps") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/apps");
+  } else if (command === "pentests") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/pentests");
+  } else if (command === "targets") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/targets");
+  } else if (command === "issues") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/issues");
+  } else if (command === "fixes") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/fixes");
+  } else if (command === "logs") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/logs");
+  } else if (command === "config") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/config");
+  } else if (command === "threat-model") {
+    await runThreatModel();
+  } else if (command === "doctor") {
+    const { runDoctor } = await import("./core/doctor");
+    await runDoctor();
+  } else if (args.length === 0) {
+    if (process.env.PENSAR_NO_TUI === "1") {
+      console.error(
+        "TUI mode requires Bun. Install Bun (https://bun.sh) or use a standalone binary release for interactive mode.",
+      );
+      console.error("All other commands work with Node — run 'pensar --help'.");
+      process.exit(1);
+    }
+    await import("./tui/index.tsx");
+  } else {
+    console.error(`Error: Unknown command '${command}'`);
+    console.error();
+    console.error("Run 'pensar --help' for usage information");
     process.exit(1);
   }
-  await import("./tui/index.tsx");
-} else {
-  console.error(`Error: Unknown command '${command}'`);
-  console.error();
-  console.error("Run 'pensar --help' for usage information");
-  process.exit(1);
-}
-
-// Normal-path flush for completed headless commands. The TUI branch
-// (args.length === 0) never reaches here — it owns the runtime and shuts it
-// down when the renderer exits.
-if (args.length !== 0) {
-  await observabilityRuntime.shutdown();
+} finally {
+  // Preserve command failures while still making process-boundary flushing
+  // best-effort. The TUI owns its runtime lifecycle after import.
+  if (args.length !== 0) {
+    await observabilityRuntime.shutdown().catch(() => {});
+  }
 }
 
 // Some pentest tool subsystems can leave handles open after completion. Keep
