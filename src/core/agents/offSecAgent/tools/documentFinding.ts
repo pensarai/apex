@@ -76,6 +76,20 @@ export const documentVulnerabilityInputSchema = z.object({
   pocType: z.enum(["bash", "python", "javascript"]).describe("Script language"),
   pocContent: z.string().describe("The full POC script content"),
   pocDescription: z.string().describe("What this POC demonstrates"),
+  attackPath: z
+    .array(
+      z.object({
+        applicationId: z.string().optional(),
+        applicationName: z.string().optional(),
+        host: z.string().optional(),
+        relationshipType: z.string().optional(),
+        notes: z.string().optional(),
+      }),
+    )
+    .optional()
+    .describe(
+      "Ordered multi-application hop chain when the finding spans System members",
+    ),
 });
 
 export type DocumentVulnerabilityInput = z.infer<
@@ -446,6 +460,8 @@ CRITICAL RULES — READ BEFORE CALLING:
           }),
           severity: severity as Finding["severity"],
           ...(evidenceFiles.length > 0 && { evidenceFiles }),
+          ...(input.attackPath &&
+            input.attackPath.length > 0 && { attackPath: input.attackPath }),
         };
 
         if (isVulnerability && ctx.findingsRegistry) {

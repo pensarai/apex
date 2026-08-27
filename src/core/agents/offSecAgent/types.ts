@@ -61,6 +61,17 @@ export const ApexFindingObject = z.object({
   /** True for the single lead finding of a root-cause group (the one that should anchor the consolidated write-up). */
   rootCauseLead: z.boolean().optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
+  attackPath: z
+    .array(
+      z.object({
+        applicationId: z.string().optional(),
+        applicationName: z.string().optional(),
+        host: z.string().optional(),
+        relationshipType: z.string().optional(),
+        notes: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 export type Finding = z.infer<typeof ApexFindingObject>;
