@@ -5,10 +5,6 @@
  * Used from both home page and operator mode.
  */
 
-import {
-  modelSupportsOpenAIReasoning,
-  modelSupportsThinking,
-} from "../../../core/ai";
 import { useAgent } from "../../context/agent";
 import { useConfig } from "../../context/config";
 import { Dialog } from "../../context/dialog";
@@ -34,18 +30,9 @@ export default function ModelPickerDialog({ onClose }: ModelPickerDialogProps) {
     setOpenAIReasoningEffort,
   } = useAgent();
 
-  const thinkingSupported = modelSupportsThinking(model.id);
-  const openAIReasoningSupported = modelSupportsOpenAIReasoning(model.id);
-
   const footerActions: FooterAction[] = [
     { key: "Enter", label: "confirm", variant: "primary" },
   ];
-  if (thinkingSupported) {
-    footerActions.push({ key: "Space", label: "Extended Thinking" });
-  }
-  if (openAIReasoningSupported) {
-    footerActions.push({ key: "Space", label: "Reasoning Effort" });
-  }
 
   const title = (
     <text>
