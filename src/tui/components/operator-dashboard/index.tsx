@@ -539,18 +539,9 @@ export default function OperatorDashboard({
     if (!session || !sessionId) return;
 
     const metrics = readExecutionMetrics(session.rootPath);
-    const persisted = metrics?.tokenUsage;
     usageStore.enterSession(session.id, {
-      ...(persisted
-        ? {
-            tokenUsage: {
-              inputTokens: persisted.inputTokens,
-              outputTokens: persisted.outputTokens,
-              cacheReadTokens: 0,
-              cacheWriteTokens: 0,
-            },
-          }
-        : {}),
+      ...(metrics?.tokenUsage ? { tokenUsage: metrics.tokenUsage } : {}),
+      ...(metrics?.contextUsage ? { contextUsage: metrics.contextUsage } : {}),
     });
   }, [session, sessionId, usageStore]);
 
