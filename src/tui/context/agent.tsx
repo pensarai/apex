@@ -23,15 +23,7 @@ import {
   getDefaultModelForConfig,
 } from "../../core/providers/utils";
 import { useConfig } from "./config";
-import { SessionUsageStore, useActiveSessionUsage } from "./session-usage";
-
-interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  cachedTokens: number;
-  cacheWriteTokens: number;
-}
+import { SessionUsageStore } from "./session-usage";
 
 interface AgentContextValue {
   model: ModelInfo;
@@ -42,8 +34,7 @@ interface AgentContextValue {
    */
   setModel: (model: ModelInfo, persist?: boolean) => void;
   isModelUserSelected: boolean;
-  tokenUsage: TokenUsage;
-  /** Session-scoped usage ownership (T2): per-session totals + context sample. */
+  /** Session-scoped usage ownership: per-session totals + context sample. */
   usageStore: SessionUsageStore;
   /** Marks that an agent step has executed (drives the footer status). */
   markExecuted: () => void;
@@ -85,19 +76,6 @@ export function AgentProvider({ children }: AgentProviderProps) {
   const [isModelUserSelected, setIsModelUserSelected] =
     useState<boolean>(false);
   const usageStore = useMemo(() => new SessionUsageStore(), []);
-  const activeUsage = useActiveSessionUsage(usageStore);
-  const tokenUsage: TokenUsage = useMemo(
-    () => ({
-      inputTokens: activeUsage.tokenUsage.inputTokens,
-      outputTokens: activeUsage.tokenUsage.outputTokens,
-      totalTokens:
-        activeUsage.tokenUsage.inputTokens +
-        activeUsage.tokenUsage.outputTokens,
-      cachedTokens: activeUsage.tokenUsage.cacheReadTokens,
-      cacheWriteTokens: activeUsage.tokenUsage.cacheWriteTokens,
-    }),
-    [activeUsage],
-  );
   const [hasExecuted, setHasExecuted] = useState<boolean>(false);
   const [thinking, setThinking] = useState<boolean>(false);
   const [reasoningEnabled, setReasoningEnabledInternal] = useState<boolean>(
@@ -235,7 +213,6 @@ export function AgentProvider({ children }: AgentProviderProps) {
       model,
       setModel,
       isModelUserSelected,
-      tokenUsage,
       usageStore,
       markExecuted,
       hasExecuted,
@@ -254,7 +231,6 @@ export function AgentProvider({ children }: AgentProviderProps) {
       model,
       setModel,
       isModelUserSelected,
-      tokenUsage,
       hasExecuted,
       thinking,
       reasoningEnabled,
