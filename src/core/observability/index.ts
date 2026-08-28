@@ -5,7 +5,7 @@
  */
 
 import { context, propagation, type Tracer, trace } from "@opentelemetry/api";
-import { isSessionId } from "./id/id";
+import { isSessionId } from "../id/id";
 
 export function getApexTracer(): Tracer {
   return trace.getTracer("apex");
