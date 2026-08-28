@@ -5,6 +5,7 @@ import { config } from "../core/config";
 import type { Config } from "../core/config/config";
 import { checkForUpdate } from "../core/installation";
 import { routeLogsToErrorFile, writeErrorLog } from "../core/logger";
+import { startObservabilityRuntime } from "../core/observability/runtime";
 import { hasAnyProviderConfigured } from "../core/providers";
 import type { SessionConfig } from "../core/session";
 import { setupAutoCopy } from "./auto-copy";
@@ -82,9 +83,10 @@ declare module "@opentui/react" {
 
 interface AppProps {
   appConfig: Config;
+  onExit: () => Promise<void>;
 }
 
-function App({ appConfig }: AppProps) {
+function App({ appConfig, onExit }: AppProps) {
   const [focusIndex, setFocusIndex] = useState(0);
   const [cwd, setCwd] = useState(process.cwd());
   const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
@@ -147,6 +149,7 @@ function App({ appConfig }: AppProps) {
                         setShowShortcutsDialog,
                         setFocusIndex,
                         navigableItems,
+                        onExit,
                       }}
                     >
                       <AppContent
@@ -714,6 +717,11 @@ async function main() {
   );
   overlayThemeRef.current = themeColors;
 
+  // Standalone TUI entrypoint: own the optional OTel runtime (returns the
+  // CLI-started instance when invoked via `pensar`, a fresh one otherwise;
+  // no-op without an OTLP endpoint).
+  const observabilityRuntime = startObservabilityRuntime();
+
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
     consoleOptions: buildConsoleOptions(themeColors),
@@ -724,10 +732,18 @@ async function main() {
   const { copyToClipboard } = createClipboardManager(renderer);
   setupAutoCopy(renderer, copyToClipboard);
 
+  let cleanupPromise: Promise<void> | null = null;
   const cleanup = () => {
-    cleanupTerminalFocusMode();
-    renderer.destroy();
-    process.exit(0);
+    if (!cleanupPromise) {
+      cleanupPromise = (async () => {
+        cleanupTerminalFocusMode();
+        renderer.destroy();
+        // Flush traces before the process dies; exit waits for the bounded flush.
+        await observabilityRuntime.shutdown().catch(() => {});
+        process.exit(0);
+      })();
+    }
+    return cleanupPromise;
   };
   process.on("SIGINT", cleanup);
   process.on("SIGTERM", cleanup);
@@ -761,7 +777,7 @@ async function main() {
         <TerminalDimensionsProvider>
           <ToastProvider>
             <ErrorBoundary>
-              <App appConfig={appConfig} />
+              <App appConfig={appConfig} onExit={cleanup} />
             </ErrorBoundary>
             <ToastContainer />
           </ToastProvider>

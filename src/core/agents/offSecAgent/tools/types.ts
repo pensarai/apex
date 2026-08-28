@@ -1,6 +1,8 @@
+import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import type {
   AIAuthConfig,
   AIModel,
+  CacheMetrics,
   OpenAIReasoningEffort,
   ThinkingEffort,
 } from "../../../ai";
@@ -52,6 +54,10 @@ export type ToolContext = {
 
   /** Event bus for streaming agent output and subagent lifecycle events */
   eventBus?: AgentEventBus;
+
+  /** Usage callbacks forwarded to sub-agents spawned by tools. */
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
 
   /**
    * When set, tools like execute_command / http_request / document_vulnerability

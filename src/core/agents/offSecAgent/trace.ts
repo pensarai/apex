@@ -14,6 +14,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ModelMessage } from "ai";
 import type { AgentEventBus } from "../../eventBus";
+import { getActiveTraceCorrelation } from "../../observability";
 
 // ---------------------------------------------------------------------------
 // Shared type aliases
@@ -35,6 +36,9 @@ export type ToolOutputType =
 export interface StepRecord {
   /** Discriminator — distinguishes from StateCheckpoint in trace.jsonl */
   type: "step";
+
+  /** OTel correlation (active span at write time). */
+  correlation?: TraceCorrelation;
 
   /** Monotonically increasing within this agent, starting at 0 */
   stepIndex: number;
@@ -129,6 +133,9 @@ export interface StateCheckpoint {
   /** Discriminator — distinguishes from StepRecord in trace.jsonl */
   type: "checkpoint";
 
+  /** OTel correlation (active span at write time). */
+  correlation?: TraceCorrelation;
+
   /** Step index at which the checkpoint was emitted */
   stepIndex: number;
 
@@ -177,6 +184,9 @@ export interface InitRecord {
 
   timestamp: string;
 
+  /** OTel correlation (active span at write time). */
+  correlation?: TraceCorrelation;
+
   agentId: string | null;
 
   /** AI model identifier used for this agent */
@@ -213,6 +223,9 @@ export interface TaskRecord {
   /** Discriminator — distinguishes from other record types in trace.jsonl */
   type: "task";
 
+  /** OTel correlation (active span at write time). */
+  correlation?: TraceCorrelation;
+
   /** ISO 8601 timestamp when the task event occurred */
   timestamp: string;
 
@@ -245,12 +258,24 @@ export type TaskRecordInput = Omit<
   "type" | "timestamp" | "agentId" | "stepIndex"
 >;
 
+/**
+ * OTel correlation for a trace record, populated when the writer runs
+ * inside an active span. Absent on legacy records.
+ */
+export interface TraceCorrelation {
+  traceId?: string;
+  spanId?: string;
+}
+
 /** Discriminated union of all trace record types. */
 export type TraceRecord =
   | InitRecord
   | StepRecord
   | StateCheckpoint
   | TaskRecord;
+
+/** Every record may carry OTel correlation (absent on legacy records). */
+export type CorrelatedRecord = TraceRecord & { correlation?: TraceCorrelation };
 
 // ---------------------------------------------------------------------------
 // Extraction helpers
@@ -577,14 +602,20 @@ export class StepTraceWriter {
 
   /** Sync append — ~1-3KB per line, sub-ms. Sync ensures crash safety. */
   private appendRecord(record: TraceRecord): void {
+    // Correlate with the active OTel span when valid — W&B and JSONL
+    // consumers receive it through this same record, no extra wiring.
+    const correlation = getActiveTraceCorrelation();
+    const enriched: CorrelatedRecord = correlation
+      ? { ...record, correlation }
+      : record;
     try {
-      appendFileSync(this.tracePath, `${JSON.stringify(record)}\n`);
+      appendFileSync(this.tracePath, `${JSON.stringify(enriched)}\n`);
     } catch {
       // Trace is non-critical observability — never crash the agent for it.
     }
     try {
       this.eventBus?.emit("trace-record", {
-        record,
+        record: enriched,
         subagentId: this.agentId ?? undefined,
       });
     } catch {

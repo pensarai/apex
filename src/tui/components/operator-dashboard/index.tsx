@@ -34,6 +34,7 @@ import {
 import {
   buildAuthConfig,
   type CacheMetrics,
+  getContextWindow,
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,
 } from "../../../core/ai";
@@ -96,7 +97,6 @@ import {
 } from "./conversation";
 import { markInFlightToolsErrored } from "./display-state";
 import {
-  accumulateTokenUsage,
   buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
@@ -162,10 +162,8 @@ export default function OperatorDashboard({
     isModelUserSelected,
     setThinking,
     setIsExecuting,
-    tokenUsage,
-    addTokenUsage,
-    addCacheUsage,
-    resetTokenUsage,
+    usageStore,
+    markExecuted,
     setSessionCwd,
     reasoningEnabled,
     openAIReasoningEffort,
@@ -364,11 +362,6 @@ export default function OperatorDashboard({
   useEffect(() => {
     approvedPlanRef.current = approvedPlanContent;
   }, [approvedPlanContent]);
-  const tokenUsageRef = useRef(tokenUsage);
-
-  useEffect(() => {
-    tokenUsageRef.current = tokenUsage;
-  }, [tokenUsage]);
 
   // Subscribe to approval gate events
   useEffect(() => {
@@ -534,50 +527,34 @@ export default function OperatorDashboard({
   }, [loading, refocusPrompt]);
 
   useEffect(() => {
-    // Only run the reset / hydrate cycle for *resumed* sessions (those
-    // with a `sessionId` prop). Brand-new sessions reach this effect after
-    // their first agent step has already accumulated tokens via
-    // `addTokenUsage`, and a reset here would wipe that initial usage.
+    if (sessionId === undefined) usageStore.beginNewSession();
+  }, [sessionId, usageStore]);
+
+  useEffect(() => {
+    // Enter the resumed session in the usage store: seeds its totals from
+    // persisted metrics when first tracked, and never resets live totals on
+    // re-entry (another run in the same session accumulates). Brand-new
+    // sessions enter via onSessionReady once the session is minted, carrying
+    // the provisional bucket with them.
     if (!session || !sessionId) return;
 
-    resetTokenUsage();
-    tokenUsageRef.current = {
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      cachedTokens: 0,
-      cacheWriteTokens: 0,
-    };
-
     const metrics = readExecutionMetrics(session.rootPath);
-    const persisted = metrics?.tokenUsage;
-    if (
-      persisted &&
-      (persisted.inputTokens > 0 || persisted.outputTokens > 0)
-    ) {
-      addTokenUsage(persisted.inputTokens, persisted.outputTokens);
-      tokenUsageRef.current = {
-        ...persisted,
-        cachedTokens: 0,
-        cacheWriteTokens: 0,
-      };
-    }
-
-    try {
-      writeExecutionMetrics({
-        sessionRootPath: session.rootPath,
-        tokenUsage: tokenUsageRef.current,
-      });
-    } catch {
-      // Best effort hydration write.
-    }
-  }, [session, sessionId, addTokenUsage, resetTokenUsage]);
+    usageStore.enterSession(session.id, {
+      ...(metrics?.tokenUsage ? { tokenUsage: metrics.tokenUsage } : {}),
+      ...(metrics?.contextUsage ? { contextUsage: metrics.contextUsage } : {}),
+    });
+  }, [session, sessionId, usageStore]);
 
   // ---------------------------------------------------------------------------
   // Display event adapter — root display projections (partial text, tool-arg
   // deltas, throttled command output) behind the run-event binding. React
   // setters stay behind the narrow sink.
   // ---------------------------------------------------------------------------
+
+  // The session id the CURRENT run belongs to. Usage events route here (not
+  // to whichever session is active) so late stragglers from a finishing run
+  // never leak into a different session's totals.
+  const runSessionIdRef = useRef<string | null>(null);
 
   const displayEvents = useMemo(
     () =>
@@ -678,6 +655,7 @@ export default function OperatorDashboard({
       }
 
       const gen = ++generationRef.current;
+      runSessionIdRef.current = sessionRef.current?.id ?? session?.id ?? null;
 
       setStatus("running");
       setThinking(true);
@@ -715,44 +693,63 @@ export default function OperatorDashboard({
         nextMessages = conversationRef.current;
       }
 
-      // Shared sink for orchestrator + subagent token usage.
+      // THE accounting path: every step (root via onStepFinish, subagents via
+      // trace records) funnels through here exactly once. Routes into the
+      // run's owning session; metrics write that session's snapshot.
       const recordTokenUsage = (
         inputTokens: number,
         outputTokens: number,
         cacheReadTokens = 0,
         cacheWriteTokens = 0,
       ) => {
-        const nextUsage = accumulateTokenUsage(
-          tokenUsageRef.current,
+        if (inputTokens > 0 || outputTokens > 0) markExecuted();
+        const runSessionId = runSessionIdRef.current;
+        usageStore.addSessionTokens(runSessionId, {
           inputTokens,
           outputTokens,
-        );
-        if (nextUsage) {
-          tokenUsageRef.current = nextUsage;
-          addTokenUsage(inputTokens, outputTokens);
-          if (session) {
-            try {
-              writeExecutionMetrics({
-                sessionRootPath: session.rootPath,
-                tokenUsage: nextUsage,
-              });
-            } catch {
-              // Best effort: token metrics should not interrupt operator runs.
-            }
+          cacheReadTokens,
+          cacheWriteTokens,
+        });
+        const activeSession = sessionRef.current;
+        if (activeSession) {
+          try {
+            const usage = usageStore.getSnapshot(activeSession.id);
+            writeExecutionMetrics({
+              sessionRootPath: activeSession.rootPath,
+              tokenUsage: usage.tokenUsage,
+              ...(usage.contextUsage
+                ? { contextUsage: usage.contextUsage }
+                : {}),
+            });
+          } catch {
+            // Best effort: token metrics should not interrupt operator runs.
           }
         }
-        if (cacheReadTokens > 0 || cacheWriteTokens > 0) {
-          addCacheUsage(cacheReadTokens, cacheWriteTokens);
+      };
+
+      // Root steps also replace the context sample: the step's input is the
+      // whole conversation as the model saw it, and the denominator comes
+      // from the model this run actually used.
+      const runModelId = model.id;
+      const recordRootStepUsage = (usage: {
+        inputTokens?: number;
+        outputTokens?: number;
+      }) => {
+        const inputTokens = usage.inputTokens ?? 0;
+        if (inputTokens > 0) {
+          usageStore.setRootContext(runSessionIdRef.current, {
+            usedTokens: inputTokens,
+            contextLimit: getContextWindow(runModelId),
+            modelId: runModelId,
+          });
         }
+        recordTokenUsage(inputTokens, usage.outputTokens ?? 0);
       };
 
       const onStepFinish = (event: {
         usage?: { inputTokens?: number; outputTokens?: number };
       }) => {
-        recordTokenUsage(
-          event.usage?.inputTokens ?? 0,
-          event.usage?.outputTokens ?? 0,
-        );
+        recordRootStepUsage(event.usage ?? {});
       };
 
       const eventBus = new AgentEventBus();
@@ -804,16 +801,18 @@ export default function OperatorDashboard({
             : undefined),
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {
-          addCacheUsage(
-            metrics.cacheReadInputTokens,
-            metrics.cacheCreationInputTokens,
-          );
+          usageStore.addSessionTokens(runSessionIdRef.current, {
+            cacheReadTokens: metrics.cacheReadInputTokens,
+            cacheWriteTokens: metrics.cacheCreationInputTokens,
+          });
         },
         eventBus,
         onSessionReady: (s: SessionInfo) => {
           setSessionCwd(s.rootPath);
           sessionRef.current = s;
           setSession((prev) => prev ?? s);
+          runSessionIdRef.current = s.id;
+          usageStore.enterSession(s.id);
           runTrace.tryAttach(s);
         },
       };
@@ -990,12 +989,10 @@ export default function OperatorDashboard({
       operatorState,
       operatorMode,
       agentMode,
-      addTokenUsage,
       displayEvents,
       runEventProjections,
       setThinking,
       setIsExecuting,
-      addCacheUsage,
       initialConfig?.sandbox,
       initialConfig?.taskDriven,
       initialConfig?.target,
@@ -1009,6 +1006,8 @@ export default function OperatorDashboard({
       skillsRegistry,
       reasoningEnabled,
       openAIReasoningEffort,
+      usageStore,
+      markExecuted,
     ],
   );
 
