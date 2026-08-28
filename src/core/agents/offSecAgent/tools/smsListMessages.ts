@@ -15,14 +15,21 @@ export const SMS_LIST_MESSAGES_TOOL_NAME = "sms_list_messages" as const;
 
 export const SMS_TOOL_NAMES = [SMS_LIST_MESSAGES_TOOL_NAME] as const;
 
+function phoneFromAuthCredentials(session: SessionInfo): string | undefined {
+  const creds = session.config?.authCredentials;
+  const list = creds ? (Array.isArray(creds) ? creds : [creds]) : [];
+  for (const cred of list) {
+    const phone = cred.additionalFields?.phoneNumber;
+    if (phone) return phone;
+  }
+}
+
 export function sessionHasSmsPasswordless(session: SessionInfo): boolean {
   const refs = session.credentialManager?.listReferences() ?? [];
   if (refs.some((ref) => ref.additionalFieldKeys?.includes("phoneNumber"))) {
     return true;
   }
-  const creds = session.config?.authCredentials;
-  const list = creds ? (Array.isArray(creds) ? creds : [creds]) : [];
-  return list.some((cred) => Boolean(cred.additionalFields?.phoneNumber));
+  return Boolean(phoneFromAuthCredentials(session));
 }
 
 function requireAgentApi(): { base: string; token: string } {
@@ -58,19 +65,18 @@ function resolvePhoneNumber(
   const smsRef = refs.find((ref) =>
     ref.additionalFieldKeys?.includes("phoneNumber"),
   );
-  if (!smsRef) {
-    throw new Error(
-      "No sms-passwordless credential with a phoneNumber field is available",
-    );
+  if (smsRef) {
+    const stored = cm?.resolve(smsRef.id);
+    const phone = stored?.additionalFields?.phoneNumber;
+    if (phone) return phone;
   }
-  const stored = cm?.resolve(smsRef.id);
-  const phone = stored?.additionalFields?.phoneNumber;
-  if (!phone) {
-    throw new Error(
-      `Credential ${smsRef.id} has no phoneNumber additional field`,
-    );
-  }
-  return phone;
+
+  const fromAuth = phoneFromAuthCredentials(ctx.session);
+  if (fromAuth) return fromAuth;
+
+  throw new Error(
+    "No sms-passwordless credential with a phoneNumber field is available",
+  );
 }
 
 type SmsWireMessage = {

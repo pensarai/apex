@@ -241,6 +241,58 @@ describe("smsListMessages", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("lists from session authCredentials when no credential manager phone is present", async () => {
+    vi.stubEnv("AGENT_API_URL", "https://api.example.com");
+    vi.stubEnv("AGENT_API_TOKEN", "token");
+
+    const fetchMock = vi.fn().mockResolvedValue(listedResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tool = smsListMessages({
+      session: {
+        config: {
+          authCredentials: {
+            additionalFields: { phoneNumber: "+15551234567" },
+          },
+        },
+      } as unknown as SessionInfo,
+      agentCwd: "/tmp",
+    });
+    const result = await tool.execute?.(
+      {
+        sinceMs: 1,
+        toolCallDescription: "list",
+      },
+      executeOpts,
+    );
+
+    expect(result).toMatchObject({ success: true });
+    const url = String(fetchMock.mock.calls[0]?.[0]);
+    expect(url).toContain("toPhoneNumber=%2B15551234567");
+  });
+
+  it("fails the credentialId path when the stored credential has no phoneNumber", async () => {
+    vi.stubEnv("AGENT_API_URL", "https://api.example.com");
+    vi.stubEnv("AGENT_API_TOKEN", "token");
+    const cm = new CredentialManager();
+    cm.add({
+      id: "cred-1",
+      additionalFields: { authMethod: "sms-passwordless" },
+      loginUrl: "https://app.example.com/login",
+    });
+    const tool = smsListMessages(makeCtx(cm));
+    await expect(
+      tool.execute?.(
+        {
+          credentialId: "cred-1",
+          sinceMs: 1,
+          toolCallDescription: "list",
+        },
+        executeOpts,
+      ),
+    ).rejects.toThrow("has no phoneNumber additional field");
+  });
+
   it("returns already-consumed without polling", async () => {
     vi.stubEnv("AGENT_API_URL", "https://api.example.com");
     vi.stubEnv("AGENT_API_TOKEN", "token");

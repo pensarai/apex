@@ -563,7 +563,7 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "get_memory",
   // Prompt-injection testing (safe metadata only)
   "list_prompt_injections",
-  // Email (read-only)
+  // Email / SMS (read-only)
   "email_list_inboxes",
   "email_list_messages",
   "email_get_message",
