@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { OperatorSessionState } from "../../../core/operator";
 import type { AutocompleteOption } from "../shared";
 import {
-  accumulateTokenUsage,
   buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
@@ -747,66 +746,3 @@ describe("resolveInputFocused", () => {
 });
 
 // ---------------------------------------------------------------------------
-// accumulateTokenUsage
-// ---------------------------------------------------------------------------
-
-describe("accumulateTokenUsage", () => {
-  const base = {
-    inputTokens: 100,
-    outputTokens: 50,
-    totalTokens: 150,
-    cachedTokens: 10,
-    cacheWriteTokens: 5,
-  };
-
-  it("accumulates input and output tokens", () => {
-    const result = accumulateTokenUsage(base, 20, 10);
-    expect(result).toEqual({
-      inputTokens: 120,
-      outputTokens: 60,
-      totalTokens: 180,
-      cachedTokens: 10,
-      cacheWriteTokens: 5,
-    });
-  });
-
-  it("returns null when both step values are zero", () => {
-    expect(accumulateTokenUsage(base, 0, 0)).toBeNull();
-  });
-
-  it("returns null when both step values are negative", () => {
-    expect(accumulateTokenUsage(base, -1, -1)).toBeNull();
-  });
-
-  it("accumulates when only input tokens are provided", () => {
-    const result = accumulateTokenUsage(base, 10, 0);
-    expect(result).not.toBeNull();
-    expect(result?.inputTokens).toBe(110);
-    expect(result?.outputTokens).toBe(50);
-  });
-
-  it("accumulates when only output tokens are provided", () => {
-    const result = accumulateTokenUsage(base, 0, 5);
-    expect(result).not.toBeNull();
-    expect(result?.outputTokens).toBe(55);
-    expect(result?.inputTokens).toBe(100);
-  });
-
-  it("handles zero base", () => {
-    const zero = {
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      cachedTokens: 0,
-      cacheWriteTokens: 0,
-    };
-    const result = accumulateTokenUsage(zero, 10, 5);
-    expect(result).toEqual({
-      inputTokens: 10,
-      outputTokens: 5,
-      totalTokens: 15,
-      cachedTokens: 0,
-      cacheWriteTokens: 0,
-    });
-  });
-});

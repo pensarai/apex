@@ -96,7 +96,6 @@ import {
 } from "./conversation";
 import { markInFlightToolsErrored } from "./display-state";
 import {
-  accumulateTokenUsage,
   buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
@@ -163,9 +162,8 @@ export default function OperatorDashboard({
     setThinking,
     setIsExecuting,
     tokenUsage,
-    addTokenUsage,
-    addCacheUsage,
-    resetTokenUsage,
+    usageStore,
+    markExecuted,
     setSessionCwd,
     reasoningEnabled,
     openAIReasoningEffort,
@@ -364,11 +362,6 @@ export default function OperatorDashboard({
   useEffect(() => {
     approvedPlanRef.current = approvedPlanContent;
   }, [approvedPlanContent]);
-  const tokenUsageRef = useRef(tokenUsage);
-
-  useEffect(() => {
-    tokenUsageRef.current = tokenUsage;
-  }, [tokenUsage]);
 
   // Subscribe to approval gate events
   useEffect(() => {
@@ -534,44 +527,32 @@ export default function OperatorDashboard({
   }, [loading, refocusPrompt]);
 
   useEffect(() => {
-    // Only run the reset / hydrate cycle for *resumed* sessions (those
-    // with a `sessionId` prop). Brand-new sessions reach this effect after
-    // their first agent step has already accumulated tokens via
-    // `addTokenUsage`, and a reset here would wipe that initial usage.
-    if (!session || !sessionId) return;
+    if (sessionId === undefined) usageStore.beginNewSession();
+  }, [sessionId, usageStore]);
 
-    resetTokenUsage();
-    tokenUsageRef.current = {
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      cachedTokens: 0,
-      cacheWriteTokens: 0,
-    };
+  useEffect(() => {
+    // Enter the resumed session in the usage store: seeds its totals from
+    // persisted metrics when first tracked, and never resets live totals on
+    // re-entry (another run in the same session accumulates). Brand-new
+    // sessions enter via onSessionReady once the session is minted, carrying
+    // the provisional bucket with them.
+    if (!session || !sessionId) return;
 
     const metrics = readExecutionMetrics(session.rootPath);
     const persisted = metrics?.tokenUsage;
-    if (
-      persisted &&
-      (persisted.inputTokens > 0 || persisted.outputTokens > 0)
-    ) {
-      addTokenUsage(persisted.inputTokens, persisted.outputTokens);
-      tokenUsageRef.current = {
-        ...persisted,
-        cachedTokens: 0,
-        cacheWriteTokens: 0,
-      };
-    }
-
-    try {
-      writeExecutionMetrics({
-        sessionRootPath: session.rootPath,
-        tokenUsage: tokenUsageRef.current,
-      });
-    } catch {
-      // Best effort hydration write.
-    }
-  }, [session, sessionId, addTokenUsage, resetTokenUsage]);
+    usageStore.enterSession(session.id, {
+      ...(persisted
+        ? {
+            tokenUsage: {
+              inputTokens: persisted.inputTokens,
+              outputTokens: persisted.outputTokens,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+            },
+          }
+        : {}),
+    });
+  }, [session, sessionId, usageStore]);
 
   // ---------------------------------------------------------------------------
   // Display event adapter — root display projections (partial text, tool-arg
@@ -715,34 +696,31 @@ export default function OperatorDashboard({
         nextMessages = conversationRef.current;
       }
 
-      // Shared sink for orchestrator + subagent token usage.
+      // Shared sink for orchestrator + subagent token usage. Routes into the
+      // session-scoped store; metrics write the owning session's snapshot.
       const recordTokenUsage = (
         inputTokens: number,
         outputTokens: number,
         cacheReadTokens = 0,
         cacheWriteTokens = 0,
       ) => {
-        const nextUsage = accumulateTokenUsage(
-          tokenUsageRef.current,
+        if (inputTokens > 0 || outputTokens > 0) markExecuted();
+        usageStore.addSessionTokens(usageStore.activeSessionId, {
           inputTokens,
           outputTokens,
-        );
-        if (nextUsage) {
-          tokenUsageRef.current = nextUsage;
-          addTokenUsage(inputTokens, outputTokens);
-          if (session) {
-            try {
-              writeExecutionMetrics({
-                sessionRootPath: session.rootPath,
-                tokenUsage: nextUsage,
-              });
-            } catch {
-              // Best effort: token metrics should not interrupt operator runs.
-            }
+          cacheReadTokens,
+          cacheWriteTokens,
+        });
+        const activeSession = sessionRef.current;
+        if (activeSession) {
+          try {
+            writeExecutionMetrics({
+              sessionRootPath: activeSession.rootPath,
+              tokenUsage: usageStore.getSnapshot(activeSession.id).tokenUsage,
+            });
+          } catch {
+            // Best effort: token metrics should not interrupt operator runs.
           }
-        }
-        if (cacheReadTokens > 0 || cacheWriteTokens > 0) {
-          addCacheUsage(cacheReadTokens, cacheWriteTokens);
         }
       };
 
@@ -804,16 +782,17 @@ export default function OperatorDashboard({
             : undefined),
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {
-          addCacheUsage(
-            metrics.cacheReadInputTokens,
-            metrics.cacheCreationInputTokens,
-          );
+          usageStore.addSessionTokens(usageStore.activeSessionId, {
+            cacheReadTokens: metrics.cacheReadInputTokens,
+            cacheWriteTokens: metrics.cacheCreationInputTokens,
+          });
         },
         eventBus,
         onSessionReady: (s: SessionInfo) => {
           setSessionCwd(s.rootPath);
           sessionRef.current = s;
           setSession((prev) => prev ?? s);
+          usageStore.enterSession(s.id);
           runTrace.tryAttach(s);
         },
       };
@@ -990,12 +969,10 @@ export default function OperatorDashboard({
       operatorState,
       operatorMode,
       agentMode,
-      addTokenUsage,
       displayEvents,
       runEventProjections,
       setThinking,
       setIsExecuting,
-      addCacheUsage,
       initialConfig?.sandbox,
       initialConfig?.taskDriven,
       initialConfig?.target,
@@ -1009,6 +986,8 @@ export default function OperatorDashboard({
       skillsRegistry,
       reasoningEnabled,
       openAIReasoningEffort,
+      usageStore,
+      markExecuted,
     ],
   );
 
