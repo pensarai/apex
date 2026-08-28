@@ -114,18 +114,86 @@ export interface UsageStepContext {
   stepSeq?: number;
 }
 
-/** Callback for reporting token usage from AI operations */
-type UsageCallback = (
-  model: string,
+/**
+ * Context attached to every usage report. The cache counters are always
+ * present — zero when the provider supplies none — and are already included
+ * in `inputTokens`:
+ * `uncachedInputTokens = inputTokens - cacheReadTokens - cacheWriteTokens`.
+ */
+export interface UsageCallbackContext extends UsageStepContext {
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
+/** Callback for reporting token usage from AI operations. */
+export type UsageCallback = (
+  modelId: string,
   inputTokens: number,
   outputTokens: number,
-  ctx?: UsageStepContext,
-) => void;
+  context: UsageCallbackContext,
+) => void | Promise<void>;
 let _usageCallback: UsageCallback | null = null;
 
-/** Register a callback to receive token usage reports from all AI operations */
+/** Register a callback to receive token usage reports from all AI operations. */
 export function onUsage(cb: UsageCallback | null): void {
   _usageCallback = cb;
+}
+
+/** Normalized per-step usage: input/output plus cache buckets, provider-agnostic. */
+export interface NormalizedStepUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
+/**
+ * Extract normalized usage from one completed model step. A single function
+ * feeds both `onCacheMetrics` and the usage callback so provider metadata is
+ * never parsed twice. Anthropic's `providerMetadata.anthropic` wins; the
+ * SDK's normalized `usage.inputTokenDetails` is the fallback (Pensar
+ * provider). Input stays inclusive of cached tokens.
+ */
+export function normalizeStepUsage(step: {
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    inputTokenDetails?: {
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
+    };
+  };
+  providerMetadata?: unknown;
+}): NormalizedStepUsage {
+  const inputTokens = step.usage?.inputTokens ?? 0;
+  const outputTokens = step.usage?.outputTokens ?? 0;
+
+  // Extract Anthropic cache metrics from providerMetadata (direct Anthropic / Bedrock SDK)
+  const meta = (
+    step.providerMetadata as
+      | { anthropic?: Record<string, unknown> }
+      | null
+      | undefined
+  )?.anthropic;
+  let cacheRead = (meta?.cacheReadInputTokens as number) ?? 0;
+  let cacheWrite = (meta?.cacheCreationInputTokens as number) ?? 0;
+
+  // Pensar provider doesn't populate providerMetadata.anthropic;
+  // fall back to the SDK's normalized usage.inputTokenDetails.
+  const details = step.usage?.inputTokenDetails;
+  if (cacheRead === 0) {
+    cacheRead = details?.cacheReadTokens ?? 0;
+  }
+  if (cacheWrite === 0) {
+    cacheWrite = details?.cacheWriteTokens ?? 0;
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    cacheReadTokens: cacheRead,
+    cacheWriteTokens: cacheWrite,
+  };
 }
 
 // Per-run step counter for billing attribution, scoped via AsyncLocalStorage so
@@ -977,17 +1045,38 @@ export function streamResponse(
     sessionId,
   } = opts;
 
-  // Wrap onStepFinish to fire usage callback for every step.
-  // Must be async so that callers returning a Promise (e.g. persistence /
-  // issue queuing) are fully awaited before the AI SDK starts the next step.
+  // Wrap onStepFinish to fire cache metrics and the usage callback for every
+  // step. Must be async so that callers returning a Promise (persistence,
+  // issue queuing, or the usage callback itself) are fully awaited before
+  // the AI SDK starts the next step. One normalization feeds both sinks —
+  // provider metadata is never parsed twice.
   const onStepFinish: typeof userOnStepFinish = async (step) => {
+    const stepUsage = normalizeStepUsage(step);
+    if (
+      onCacheMetrics &&
+      (stepUsage.cacheReadTokens > 0 || stepUsage.cacheWriteTokens > 0)
+    ) {
+      await onCacheMetrics({
+        cacheReadInputTokens: stepUsage.cacheReadTokens,
+        cacheCreationInputTokens: stepUsage.cacheWriteTokens,
+      });
+    }
     await userOnStepFinish?.(step);
     if (_usageCallback) {
-      const inp = step.usage?.inputTokens ?? 0;
-      const out = step.usage?.outputTokens ?? 0;
       // Advance stepSeq every finished step (even zero-usage) to stay aligned with the AI-SDK step index.
       const stepCtx = takeStepContext();
-      if (inp > 0 || out > 0) _usageCallback(model, inp, out, stepCtx);
+      if (stepUsage.inputTokens > 0 || stepUsage.outputTokens > 0) {
+        await _usageCallback(
+          model,
+          stepUsage.inputTokens,
+          stepUsage.outputTokens,
+          {
+            ...stepCtx,
+            cacheReadTokens: stepUsage.cacheReadTokens,
+            cacheWriteTokens: stepUsage.cacheWriteTokens,
+          },
+        );
+      }
     }
   };
   const providerModel = getProviderModel(model, authConfig);
@@ -1143,34 +1232,7 @@ export function streamResponse(
         }
         throw error;
       },
-      onStepFinish: onCacheMetrics
-        ? (stepResult) => {
-            // Extract Anthropic cache metrics from providerMetadata (direct Anthropic / Bedrock SDK)
-            const meta = stepResult.providerMetadata?.anthropic as
-              | Record<string, unknown>
-              | undefined;
-            let cacheRead = (meta?.cacheReadInputTokens as number) ?? 0;
-            let cacheCreation = (meta?.cacheCreationInputTokens as number) ?? 0;
-
-            // Pensar provider doesn't populate providerMetadata.anthropic;
-            // fall back to the SDK's normalized usage.inputTokenDetails.
-            const { inputTokenDetails } = stepResult.usage;
-            if (cacheRead === 0) {
-              cacheRead = inputTokenDetails?.cacheReadTokens ?? 0;
-            }
-            if (cacheCreation === 0) {
-              cacheCreation = inputTokenDetails?.cacheWriteTokens ?? 0;
-            }
-
-            if (cacheRead > 0 || cacheCreation > 0) {
-              onCacheMetrics({
-                cacheReadInputTokens: cacheRead,
-                cacheCreationInputTokens: cacheCreation,
-              });
-            }
-            onStepFinish?.(stepResult);
-          }
-        : onStepFinish,
+      onStepFinish,
       abortSignal,
       activeTools,
       experimental_repairToolCall: async ({
@@ -1427,7 +1489,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
   for (let attempt = 0; attempt <= MAX_OBJECT_RATE_LIMIT_RETRIES; attempt++) {
     try {
       const recordPayloads = shouldRecordAiPayloads();
-      const { output, usage } = await generateText({
+      const { output, usage, providerMetadata } = await generateText({
         model: providerModel,
         output: Output.object({
           schema,
@@ -1459,10 +1521,20 @@ export async function generateObjectResponse<T extends z.ZodType>(
       }
 
       if (_usageCallback && usage) {
-        const inp = usage.inputTokens ?? 0;
-        const out = usage.outputTokens ?? 0;
+        const stepUsage = normalizeStepUsage({ usage, providerMetadata });
         const stepCtx = takeStepContext();
-        if (inp > 0 || out > 0) _usageCallback(model, inp, out, stepCtx);
+        if (stepUsage.inputTokens > 0 || stepUsage.outputTokens > 0) {
+          await _usageCallback(
+            model,
+            stepUsage.inputTokens,
+            stepUsage.outputTokens,
+            {
+              ...stepCtx,
+              cacheReadTokens: stepUsage.cacheReadTokens,
+              cacheWriteTokens: stepUsage.cacheWriteTokens,
+            },
+          );
+        }
       }
 
       // zod v4: the AI SDK's `Output.object` no longer carries the schema's
