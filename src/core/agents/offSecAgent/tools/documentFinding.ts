@@ -10,6 +10,7 @@ import {
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { AttackPathSchema } from "../../../../lib/attack-path/types";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
 import { AgentEventBus } from "../../../eventBus";
@@ -80,20 +81,9 @@ export const documentVulnerabilityInputSchema = z.object({
   pocType: z.enum(["bash", "python", "javascript"]).describe("Script language"),
   pocContent: z.string().describe("The full POC script content"),
   pocDescription: z.string().describe("What this POC demonstrates"),
-  attackPath: z
-    .array(
-      z.object({
-        applicationId: z.string().optional(),
-        applicationName: z.string().optional(),
-        host: z.string().optional(),
-        relationshipType: z.string().optional(),
-        notes: z.string().optional(),
-      }),
-    )
-    .optional()
-    .describe(
-      "Ordered multi-application hop chain when the finding spans System members",
-    ),
+  attackPath: AttackPathSchema.optional().describe(
+    "Ordered multi-application hop chain when the finding spans System members",
+  ),
 });
 
 export type DocumentVulnerabilityInput = z.infer<
