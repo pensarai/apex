@@ -123,6 +123,29 @@ async function executeTool(
 }
 
 describe("engagement worker tools", () => {
+  it("pages the coordination state while preserving objective coverage", async () => {
+    const { tools, seed } = makeRuntime();
+    const result = await executeTool(tools.read_engagement_state, {
+      includeInbox: false,
+      limit: 1,
+      offset: 0,
+      toolCallDescription: "read the first coordination page",
+    });
+
+    expect(result.pagination).toEqual({
+      offset: 0,
+      limit: 1,
+      serviceTotal: 1,
+      objectiveTotal: 1,
+    });
+    expect(result.state).toMatchObject({
+      services: seed.services,
+      objectives: seed.objectives,
+      coverage: seed.coverage,
+    });
+    expect(result.inbox).toEqual([]);
+  });
+
   it("persists objective coverage and resumes the same worker thread", async () => {
     const { tools, store, seed } = makeRuntime();
     const serviceId = seed.services[0]?.id as string;

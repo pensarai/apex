@@ -120,12 +120,13 @@ export async function runEngagementLead(input: {
   const state = store.snapshot();
   const prompt = [
     `Root target: ${input.workflow.target}`,
-    "The persisted engagement contract follows. Use IDs exactly when calling coordination tools.",
+    "The engagement summary follows. Use read_engagement_state and the engagement-surface tools to page through the complete contract; use IDs exactly when calling coordination tools.",
     JSON.stringify(
       {
-        services: state.services,
-        objectives: state.objectives,
-        coverage: state.coverage,
+        serviceCount: state.services.length,
+        objectiveCount: state.objectives.length,
+        services: state.services.slice(0, 10),
+        objectives: state.objectives.slice(0, 10),
         operatorContext: state.operatorContext,
       },
       null,

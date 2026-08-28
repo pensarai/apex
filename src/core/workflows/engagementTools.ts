@@ -373,17 +373,37 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     ...surfaceTools,
     read_engagement_state: tool({
       description:
-        "Read the persisted engagement surface, objectives, coverage, capabilities, impact proofs, worker records, completion gate, and unread worker handoffs.",
+        "Read a page of the persisted engagement services, objectives, and coverage plus capabilities, impact proofs, worker records, completion gate, and unread worker handoffs.",
       inputSchema: z.object({
         includeInbox: z.boolean().optional().default(true),
+        limit: z.number().int().min(1).max(100).default(25),
+        offset: z.number().int().min(0).default(0),
         toolCallDescription: z.string(),
       }),
-      execute: async ({ includeInbox }) => ({
-        success: true,
-        state: store.snapshot(),
-        completion: store.completion(),
-        inbox: includeInbox ? mailbox.take(leadAgentId) : [],
-      }),
+      execute: async ({ includeInbox, limit, offset }) => {
+        const state = store.snapshot();
+        const objectives = state.objectives.slice(offset, offset + limit);
+        const objectiveIds = new Set(objectives.map((item) => item.id));
+        return {
+          success: true,
+          state: {
+            ...state,
+            services: state.services.slice(offset, offset + limit),
+            objectives,
+            coverage: state.coverage.filter((item) =>
+              objectiveIds.has(item.objectiveId),
+            ),
+          },
+          pagination: {
+            offset,
+            limit,
+            serviceTotal: state.services.length,
+            objectiveTotal: state.objectives.length,
+          },
+          completion: store.completion(),
+          inbox: includeInbox ? mailbox.take(leadAgentId) : [],
+        };
+      },
     }),
 
     spawn_engagement_worker: tool({
