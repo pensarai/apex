@@ -59,6 +59,7 @@ export async function runFastStrike(
     abortSignal,
     eventBus,
     onStepFinish,
+    onCacheMetrics,
     enableThinking,
     openAIReasoningEffort,
     prompt,
@@ -125,6 +126,7 @@ export async function runFastStrike(
     abortSignal,
     eventBus,
     onStepFinish,
+    onCacheMetrics,
     enableThinking,
     openAIReasoningEffort,
   });

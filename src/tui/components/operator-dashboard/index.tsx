@@ -34,6 +34,7 @@ import {
 import {
   buildAuthConfig,
   type CacheMetrics,
+  getContextWindow,
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,
 } from "../../../core/ai";
@@ -551,6 +552,11 @@ export default function OperatorDashboard({
   // setters stay behind the narrow sink.
   // ---------------------------------------------------------------------------
 
+  // The session id the CURRENT run belongs to. Usage events route here (not
+  // to whichever session is active) so late stragglers from a finishing run
+  // never leak into a different session's totals.
+  const runSessionIdRef = useRef<string | null>(null);
+
   const displayEvents = useMemo(
     () =>
       createDisplayEventHandlers({
@@ -650,6 +656,7 @@ export default function OperatorDashboard({
       }
 
       const gen = ++generationRef.current;
+      runSessionIdRef.current = sessionRef.current?.id ?? session?.id ?? null;
 
       setStatus("running");
       setThinking(true);
@@ -687,8 +694,9 @@ export default function OperatorDashboard({
         nextMessages = conversationRef.current;
       }
 
-      // Shared sink for orchestrator + subagent token usage. Routes into the
-      // session-scoped store; metrics write the owning session's snapshot.
+      // THE accounting path: every step (root via onStepFinish, subagents via
+      // trace records) funnels through here exactly once. Routes into the
+      // run's owning session; metrics write that session's snapshot.
       const recordTokenUsage = (
         inputTokens: number,
         outputTokens: number,
@@ -696,7 +704,8 @@ export default function OperatorDashboard({
         cacheWriteTokens = 0,
       ) => {
         if (inputTokens > 0 || outputTokens > 0) markExecuted();
-        usageStore.addSessionTokens(usageStore.activeSessionId, {
+        const runSessionId = runSessionIdRef.current;
+        usageStore.addSessionTokens(runSessionId, {
           inputTokens,
           outputTokens,
           cacheReadTokens,
@@ -705,9 +714,13 @@ export default function OperatorDashboard({
         const activeSession = sessionRef.current;
         if (activeSession) {
           try {
+            const usage = usageStore.getSnapshot(activeSession.id);
             writeExecutionMetrics({
               sessionRootPath: activeSession.rootPath,
-              tokenUsage: usageStore.getSnapshot(activeSession.id).tokenUsage,
+              tokenUsage: usage.tokenUsage,
+              ...(usage.contextUsage
+                ? { contextUsage: usage.contextUsage }
+                : {}),
             });
           } catch {
             // Best effort: token metrics should not interrupt operator runs.
@@ -715,13 +728,29 @@ export default function OperatorDashboard({
         }
       };
 
+      // Root steps also replace the context sample: the step's input is the
+      // whole conversation as the model saw it, and the denominator comes
+      // from the model this run actually used.
+      const runModelId = model.id;
+      const recordRootStepUsage = (usage: {
+        inputTokens?: number;
+        outputTokens?: number;
+      }) => {
+        const inputTokens = usage.inputTokens ?? 0;
+        if (inputTokens > 0) {
+          usageStore.setRootContext(runSessionIdRef.current, {
+            usedTokens: inputTokens,
+            contextLimit: getContextWindow(runModelId),
+            modelId: runModelId,
+          });
+        }
+        recordTokenUsage(inputTokens, usage.outputTokens ?? 0);
+      };
+
       const onStepFinish = (event: {
         usage?: { inputTokens?: number; outputTokens?: number };
       }) => {
-        recordTokenUsage(
-          event.usage?.inputTokens ?? 0,
-          event.usage?.outputTokens ?? 0,
-        );
+        recordRootStepUsage(event.usage ?? {});
       };
 
       const eventBus = new AgentEventBus();
@@ -773,7 +802,7 @@ export default function OperatorDashboard({
             : undefined),
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {
-          usageStore.addSessionTokens(usageStore.activeSessionId, {
+          usageStore.addSessionTokens(runSessionIdRef.current, {
             cacheReadTokens: metrics.cacheReadInputTokens,
             cacheWriteTokens: metrics.cacheCreationInputTokens,
           });
@@ -783,6 +812,7 @@ export default function OperatorDashboard({
           setSessionCwd(s.rootPath);
           sessionRef.current = s;
           setSession((prev) => prev ?? s);
+          runSessionIdRef.current = s.id;
           usageStore.enterSession(s.id);
           runTrace.tryAttach(s);
         },

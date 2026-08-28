@@ -11,6 +11,8 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+const toolContexts = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+
 // ---------------------------------------------------------------------------
 // Module stubs — prevent the full tool/AI/zod import chain from loading.
 //
@@ -32,7 +34,10 @@ vi.mock("zod", () => {
 });
 
 vi.mock("./tools", () => ({
-  createAllTools: () => ({}),
+  createAllTools: (ctx: Record<string, unknown>) => {
+    toolContexts.push(ctx);
+    return {};
+  },
   EMAIL_TOOL_NAMES_ACTIVE: [],
   SEND_EMAIL_TOOL_NAME: "send_email",
   PLAN_MODE_TOOL_NAMES: [],
@@ -69,6 +74,7 @@ vi.mock("./prompt", () => ({
 }));
 vi.mock("./trace", () => ({
   StepTraceWriter: class {
+    writeInit() {}
     onStepFinish() {}
   },
 }));
@@ -84,6 +90,34 @@ import {
   filterWorkspaceToolsForRun,
   OffensiveSecurityAgent,
 } from "./offensiveSecurityAgent";
+
+describe("spawned-agent usage callbacks", () => {
+  it("requires explicit forwarding when trace events own subagent accounting", () => {
+    toolContexts.length = 0;
+    const onStepFinish = vi.fn();
+    const onCacheMetrics = vi.fn();
+    const input = {
+      prompt: "test",
+      model: "test-model",
+      session: { id: "ses_test", rootPath: "/tmp/apex-usage-test" },
+      activeTools: [],
+      sandbox: {},
+      onStepFinish,
+      onCacheMetrics,
+    };
+
+    new OffensiveSecurityAgent(input as never);
+    new OffensiveSecurityAgent({
+      ...input,
+      forwardUsageCallbacksToSpawnedAgents: true,
+    } as never);
+
+    expect(toolContexts[0]?.onStepFinish).toBeUndefined();
+    expect(toolContexts[0]?.onCacheMetrics).toBeUndefined();
+    expect(toolContexts[1]?.onStepFinish).toBe(onStepFinish);
+    expect(toolContexts[1]?.onCacheMetrics).toBe(onCacheMetrics);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
