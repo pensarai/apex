@@ -462,6 +462,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       agentCwd,
       target: input.target,
       grpc: input.grpc,
+      systemScope: input.systemScope,
       abortSignal: input.abortSignal,
       model: input.model,
       authConfig: input.authConfig,

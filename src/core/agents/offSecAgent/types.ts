@@ -87,6 +87,12 @@ export type Finding = z.infer<typeof ApexFindingObject>;
 /** Agent operating mode that controls which tools are available. */
 export type AgentMode = "default" | "plan" | "fast-strike";
 
+/** Structured authorization envelope for a multi-application System pentest. */
+export type SystemPentestScope = {
+  systemId: string;
+  memberHosts: string[];
+};
+
 export type OffensiveSecurityAgentInput<TResult = void> = {
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
   system?: string;
@@ -125,6 +131,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * can hand it down to spawned workers.
    */
   grpc?: GrpcPentestContext;
+
+  /** Structured multi-application scope forwarded to pentest workers. */
+  systemScope?: SystemPentestScope;
 
   /**
    * Which tools the agent is allowed to use.
