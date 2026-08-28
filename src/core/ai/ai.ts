@@ -18,7 +18,7 @@ import {
 } from "ai";
 import type { z } from "zod";
 import { createLogger } from "../logger/structured";
-import { shouldRecordAiPayloads } from "../observability";
+import { createAiTelemetrySettings } from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
 import {
   cacheBreakpointFor,
@@ -1181,7 +1181,6 @@ export function streamResponse(
 
   try {
     // Create the appropriate provider instance
-    const recordPayloads = shouldRecordAiPayloads();
     const response = streamText({
       model: providerModel,
       system: effectiveSystem,
@@ -1191,13 +1190,10 @@ export function streamResponse(
       tools,
       maxRetries: 3,
       providerOptions,
-      experimental_telemetry: {
-        isEnabled: true,
-        recordInputs: recordPayloads,
-        recordOutputs: recordPayloads,
-        functionId: `apex.stream.${model}`,
-        ...(sessionId ? { metadata: { sessionId } } : {}),
-      },
+      experimental_telemetry: createAiTelemetrySettings({
+        operation: "apex.agent.stream",
+        sessionId,
+      }),
       // Pin actual emission to the same value `fitMessagesToContext`
       // reserved for output. Without this, the SDK applies provider
       // defaults that can exceed our budget — e.g. GPT-4o defaults to
@@ -1328,13 +1324,10 @@ export function streamResponse(
                 "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
               ].join("\n"),
               abortSignal,
-              experimental_telemetry: {
-                isEnabled: true,
-                recordInputs: recordPayloads,
-                recordOutputs: recordPayloads,
-                functionId: "apex.tool_repair",
-                ...(sessionId ? { metadata: { sessionId } } : {}),
-              },
+              experimental_telemetry: createAiTelemetrySettings({
+                operation: "apex.tool.repair",
+                sessionId,
+              }),
             });
 
           // Report tool repair token usage if onStepFinish callback is provided
@@ -1488,7 +1481,6 @@ export async function generateObjectResponse<T extends z.ZodType>(
 
   for (let attempt = 0; attempt <= MAX_OBJECT_RATE_LIMIT_RETRIES; attempt++) {
     try {
-      const recordPayloads = shouldRecordAiPayloads();
       const { output, usage, providerMetadata } = await generateText({
         model: providerModel,
         output: Output.object({
@@ -1507,13 +1499,10 @@ export async function generateObjectResponse<T extends z.ZodType>(
           : undefined,
         maxRetries: 0,
         abortSignal,
-        experimental_telemetry: {
-          isEnabled: true,
-          recordInputs: recordPayloads,
-          recordOutputs: recordPayloads,
-          functionId: "apex.generate_object",
-          ...(sessionId ? { metadata: { sessionId } } : {}),
-        },
+        experimental_telemetry: createAiTelemetrySettings({
+          operation: "apex.structured.generate",
+          sessionId,
+        }),
       });
 
       if (onTokenUsage && usage) {
