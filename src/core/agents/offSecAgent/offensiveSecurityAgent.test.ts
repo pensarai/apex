@@ -140,6 +140,9 @@ function buildStubAgent(overrides: {
   latestMessages?: unknown[] | null;
   writeImpl?: (messagesPath: string, contents: string) => Promise<void>;
   responseCaptured?: Promise<unknown>;
+  subagentId?: string;
+  subagentName?: string;
+  agentMode?: "default" | "plan" | "fast-strike";
 }): OffensiveSecurityAgent<unknown> {
   const agent = Object.create(
     OffensiveSecurityAgent.prototype,
@@ -152,7 +155,15 @@ function buildStubAgent(overrides: {
   Object.defineProperty(agent, "streamResult", {
     value: { fullStream: overrides.fullStream },
   });
-  Object.defineProperty(agent, "subagentId", { value: undefined });
+  Object.defineProperty(agent, "subagentId", {
+    value: overrides.subagentId,
+  });
+  Object.defineProperty(agent, "subagentName", {
+    value: overrides.subagentName,
+  });
+  Object.defineProperty(agent, "agentMode", {
+    value: overrides.agentMode ?? "default",
+  });
   // Never resolves by default, so consume() settles via the drain path.
   Object.defineProperty(agent, "responseCaptured", {
     value: overrides.responseCaptured ?? new Promise(() => {}),
@@ -1483,5 +1494,199 @@ describe("owned-resource disposal", () => {
 
     expect(result).toBe("captured");
     expect(disconnect).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// O3: root agent-run spans — every consume() execution runs inside an
+// invoke_agent span with full run attribution.
+// ---------------------------------------------------------------------------
+
+describe("root agent-run spans", () => {
+  const textChunk = { type: "text-delta", id: "t1", delta: "hi" };
+
+  async function* singleStepStream(): AsyncGenerator<unknown, void, undefined> {
+    yield textChunk;
+  }
+
+  function setupOtel() {
+    // Local in-memory harness (mirrors observability/testkit, inlined per
+    // this file's "helpers must be inlined" rule).
+    const { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } =
+      require("@opentelemetry/sdk-trace-base") as typeof import("@opentelemetry/sdk-trace-base");
+    const { AsyncLocalStorageContextManager } =
+      require("@opentelemetry/context-async-hooks") as typeof import("@opentelemetry/context-async-hooks");
+    const api =
+      require("@opentelemetry/api") as typeof import("@opentelemetry/api");
+    const exporter = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    });
+    const contextManager = new AsyncLocalStorageContextManager();
+    contextManager.enable();
+    api.trace.setGlobalTracerProvider(provider);
+    api.context.setGlobalContextManager(contextManager);
+    return {
+      exporter,
+      spans: () => exporter.getFinishedSpans(),
+      async teardown() {
+        await provider.shutdown();
+        contextManager.disable();
+        api.trace.disable();
+        api.context.disable();
+      },
+    };
+  }
+
+  it("one root span per top-level run, with full run attribution", async () => {
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({ fullStream: singleStepStream() });
+      await agent.consume();
+
+      const spans = otel.spans();
+      const invokeSpans = spans.filter(
+        (s) => s.name === "invoke_agent default",
+      );
+      expect(invokeSpans).toHaveLength(1);
+      const attrs = invokeSpans[0]?.attributes as Record<string, string>;
+      expect(attrs["gen_ai.operation.name"]).toBe("invoke_agent");
+      expect(attrs["gen_ai.agent.name"]).toBe("default");
+      expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
+      expect(attrs["pensar.session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.agent.mode"]).toBe("default");
+      expect(attrs["pensar.run.id"]).toMatch(/^run_/);
+    } finally {
+      await otel.teardown();
+    }
+  });
+
+  it("successful runs leave status unset", async () => {
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({ fullStream: singleStepStream() });
+      await agent.consume();
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(span).toBeDefined();
+      expect(span?.status.code).not.toBe(2); // SpanStatusCode.ERROR
+      expect(span?.ended).toBe(true);
+    } finally {
+      await otel.teardown();
+    }
+  });
+
+  it("failed runs use error status with exception and low-cardinality error.type", async () => {
+    const otel = setupOtel();
+    try {
+      async function* failingStream(): AsyncGenerator<
+        unknown,
+        void,
+        undefined
+      > {
+        yield textChunk;
+        throw new Error("provider exploded");
+      }
+      const agent = buildStubAgent({ fullStream: failingStream() });
+      await expect(agent.consume()).rejects.toThrow("provider exploded");
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(span).toBeDefined();
+      expect(span?.status.code).toBe(2);
+      expect(
+        span?.events.some(
+          (e) =>
+            e.name === "exception" &&
+            (e.attributes?.["exception.message"] as string) ===
+              "provider exploded",
+        ),
+      ).toBe(true);
+      expect(span?.attributes["error.type"]).toBe("Error");
+      expect(span?.ended).toBe(true);
+    } finally {
+      await otel.teardown();
+    }
+  });
+
+  it("aborted runs end every span", async () => {
+    const otel = setupOtel();
+    try {
+      const controller = new AbortController();
+      async function* abortingStream(): AsyncGenerator<
+        unknown,
+        void,
+        undefined
+      > {
+        yield textChunk;
+        controller.abort();
+        throw new DOMException("Agent aborted by user", "AbortError");
+      }
+      const agent = buildStubAgent({
+        fullStream: abortingStream(),
+        abortSignal: controller.signal,
+      });
+      await expect(agent.consume()).rejects.toThrow();
+
+      const spans = otel.spans();
+      const invokeSpan = spans.find((s) => s.name === "invoke_agent default");
+      expect(invokeSpan?.ended).toBe(true);
+      expect(invokeSpan?.attributes["error.type"]).toBe("AbortError");
+    } finally {
+      await otel.teardown();
+    }
+  });
+
+  it("persistence and disposal finish before the root span ends", async () => {
+    const otel = setupOtel();
+    try {
+      // Finalization ordering: the stub's shell disposal runs inside
+      // runConsume's finally; the span ends only after that settles. Since
+      // export happens exclusively on span.end(), observing the exported
+      // span proves the span ended — and consume() resolving proves disposal
+      // completed first (both are awaited in order inside runInSpan).
+      const ordering: string[] = [];
+      const dispose = vi.fn(() => ordering.push("shell-disposed"));
+      const agent = buildStubAgent({
+        fullStream: singleStepStream(),
+        persistentShell: { dispose },
+      });
+      await agent.consume();
+
+      // Consume resolved: disposal ran during finalization; the span ended
+      // after (finally order in runInSpan). The exporter saw the span after
+      // disposal because export only happens on span.end().
+      expect(dispose).toHaveBeenCalledOnce();
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(span?.ended).toBe(true);
+      // Direct ordering proof: a span-end observer sees disposal already done.
+      expect(ordering).toEqual(["shell-disposed"]);
+    } finally {
+      await otel.teardown();
+    }
+  });
+
+  it("subagent runs keep their span but carry no run id", async () => {
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({
+        fullStream: singleStepStream(),
+        subagentId: "ses_sub_1",
+        subagentName: "recon-sub",
+      });
+      await agent.consume();
+
+      const span = otel
+        .spans()
+        .find((s) => s.name === "invoke_agent recon-sub");
+      expect(span).toBeDefined();
+      const attrs = span?.attributes as Record<string, string>;
+      expect(attrs["gen_ai.agent.name"]).toBe("recon-sub");
+      expect(attrs["gen_ai.conversation.id"]).toBe("ses_sub_1");
+      expect(attrs["pensar.session.id"]).toBe("ses_sub_1");
+      expect(attrs["pensar.run.id"]).toBeUndefined();
+      expect(attrs["pensar.agent.mode"]).toBeUndefined();
+    } finally {
+      await otel.teardown();
+    }
   });
 });

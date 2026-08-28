@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { SpanStatusCode } from "@opentelemetry/api";
 import type {
   ModelMessage,
   StopCondition,
@@ -14,7 +15,7 @@ import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../http/targetHeaders";
-import { newMessageId, newPartId } from "../../id/id";
+import { newMessageId, newPartId, newRunId } from "../../id/id";
 import { createLogger } from "../../logger/structured";
 import { getApexTracer, withSubagentSessionBaggage } from "../../observability";
 import type { ApprovalGate } from "../../operator";
@@ -45,7 +46,11 @@ import {
   WORKSPACE_WRITE_TOOL_NAMES,
 } from "./tools";
 import { StepTraceWriter } from "./trace";
-import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
+import type {
+  AgentMode,
+  CreateAgentInput,
+  OffensiveSecurityAgentInput,
+} from "./types";
 
 const log = scopedLogger(() => createLogger("approval-gate"));
 
@@ -253,6 +258,8 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** Display label for span name / `gen_ai.agent.name`; the id stays the join key. */
   private readonly subagentName?: string;
+  /** Operating mode (tools surface); used for run-span attribution. */
+  private readonly agentMode: AgentMode;
 
   /** The current open assistant message id (`msg_…`); minted on `start-step` in {@link consume}, `null` between steps. */
   private currentMessageId: string | null = null;
@@ -354,6 +361,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this._session = input.session;
     this.subagentId = input.subagentId;
     this.subagentName = input.subagentName;
+    this.agentMode = input.mode ?? "default";
     this.abortSignal = input.abortSignal;
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
@@ -882,31 +890,54 @@ export class OffensiveSecurityAgent<TResult = void> {
       return undefined as TResult;
     };
 
-    // Only subagents get a span here; top-level runs are wrapped by the host.
-    const spanLabel = this.subagentName ?? sid;
-    const drain = !sid
-      ? runConsume()
-      : withSubagentSessionBaggage(sid, () =>
-          getApexTracer().startActiveSpan(
-            `invoke_agent ${spanLabel}`,
-            {
-              attributes: {
-                "gen_ai.operation.name": "invoke_agent",
-                "gen_ai.agent.name": spanLabel,
-              },
-            },
-            async (span) => {
-              try {
-                return await runConsume();
-              } catch (err) {
-                span.recordException(err as Error);
-                throw err;
-              } finally {
-                span.end();
-              }
-            },
-          ),
-        );
+    // One invoke_agent span per execution: root runs get the full run
+    // attribution (stable run id, mode); subagent runs nest beneath the root
+    // span via the async context and carry their own execution-session id.
+    const isSubagent = Boolean(sid);
+    const spanLabel = isSubagent
+      ? (this.subagentName ?? sid ?? "subagent")
+      : this.agentMode;
+    const runId = isSubagent ? undefined : newRunId();
+    const runSpanAttributes: Record<string, string> = {
+      "gen_ai.operation.name": "invoke_agent",
+      "gen_ai.agent.name": spanLabel,
+      "gen_ai.conversation.id": this.busSessionId,
+      "pensar.session.id": this.busSessionId,
+      ...(isSubagent
+        ? {}
+        : {
+            "pensar.run.id": runId,
+            "pensar.agent.mode": this.agentMode,
+          }),
+    };
+
+    const runInSpan = () =>
+      getApexTracer().startActiveSpan(
+        `invoke_agent ${spanLabel}`,
+        { attributes: runSpanAttributes },
+        async (span) => {
+          try {
+            return await runConsume();
+          } catch (err) {
+            // Record once, keep the cardinality low, preserve the original.
+            span.recordException(err as Error);
+            span.setStatus({ code: SpanStatusCode.ERROR });
+            span.setAttribute(
+              "error.type",
+              err instanceof Error ? err.name : "Error",
+            );
+            throw err;
+          } finally {
+            // Ends only after runConsume's finalization (persistence +
+            // owned-resource disposal) has settled.
+            span.end();
+          }
+        },
+      );
+
+    const drain = !isSubagent
+      ? runInSpan()
+      : withSubagentSessionBaggage(sid, runInSpan);
 
     // Decouple the result from stream teardown: with a `response` schema, return as soon as it's captured rather than waiting for the stream to close (which can wedge).
     let rejectDrain: ((err: unknown) => void) | undefined;
