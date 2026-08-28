@@ -178,6 +178,31 @@ describe("buildPentestReport", () => {
     expect(report.findings[0].evidenceFiles?.[1].type).toBe("poc-output");
   });
 
+  it("preserves an ordered multi-application attack path", () => {
+    const attackPath = [
+      {
+        applicationId: "app_web",
+        applicationName: "Web App",
+        host: "app.example.com",
+        relationshipType: "calls",
+        notes: "Forwards the user token",
+      },
+      {
+        applicationId: "app_api",
+        applicationName: "Admin API",
+        host: "api.partner.test",
+      },
+    ];
+
+    const report = buildPentestReport(
+      [makeFinding({ attackPath })],
+      defaultContext,
+    );
+
+    expect(PentestReportSchema.safeParse(report).success).toBe(true);
+    expect(report.findings[0].attackPath).toEqual(attackPath);
+  });
+
   it("omits evidenceFiles when not present on finding", () => {
     const findings: Finding[] = [makeFinding()];
     const report = buildPentestReport(findings, defaultContext);

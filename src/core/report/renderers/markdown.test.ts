@@ -321,4 +321,46 @@ describe("renderMarkdown", () => {
 
     expect(output).not.toContain("## Evidence Files");
   });
+
+  it("renders the ordered multi-application attack path", () => {
+    const report = makeSampleReport({
+      findings: [
+        {
+          title: "Cross-application authorization bypass",
+          severity: "HIGH",
+          description: "Desc",
+          impact: "Impact",
+          evidence: "Evidence text",
+          endpoint: "/api",
+          pocPath: "pocs/poc.sh",
+          remediation: "Fix it",
+          attackPath: [
+            {
+              applicationId: "app_web",
+              applicationName: "Web App",
+              host: "app.example.com",
+              relationshipType: "calls",
+              notes: "Forwards the user token",
+            },
+            {
+              applicationName: "Admin API",
+              host: "api.partner.test",
+            },
+          ],
+        },
+      ],
+    });
+
+    const output = renderMarkdown(report);
+
+    expect(output).toContain("## Attack Path");
+    expect(output).toContain(
+      "1. **Web App** (`app_web`) host `app.example.com` via calls — Forwards the user token",
+    );
+    expect(output).toContain("2. **Admin API** host `api.partner.test`");
+  });
+
+  it("omits the Attack Path section when no path was captured", () => {
+    expect(renderMarkdown(makeSampleReport())).not.toContain("## Attack Path");
+  });
 });

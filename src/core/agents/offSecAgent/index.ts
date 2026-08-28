@@ -156,4 +156,5 @@ export {
   type Finding,
   type OffensiveSecurityAgentInput,
   type SpecializedAgentInput,
+  type SystemPentestScope,
 } from "./types";

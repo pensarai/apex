@@ -121,6 +121,27 @@ describe("spawned-agent usage callbacks", () => {
   });
 });
 
+describe("tool context forwarding", () => {
+  it("forwards structured System scope to spawning tools", () => {
+    toolContexts.length = 0;
+    const systemScope = {
+      systemId: "sys_test",
+      memberHosts: ["https://app.example.com", "https://api.partner.test"],
+    };
+
+    new OffensiveSecurityAgent({
+      prompt: "test",
+      model: "test-model",
+      session: { id: "ses_test", rootPath: "/tmp/apex-scope-test" },
+      activeTools: [],
+      sandbox: {},
+      systemScope,
+    } as never);
+
+    expect(toolContexts[0]?.systemScope).toBe(systemScope);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

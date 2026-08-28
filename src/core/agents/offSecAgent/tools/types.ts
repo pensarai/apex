@@ -15,6 +15,7 @@ import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { StepTraceWriter } from "../trace";
+import type { SystemPentestScope } from "../types";
 import type { PersistentShell } from "./persistentShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
 import type { UnifiedSandbox } from "./sandbox";
@@ -42,6 +43,9 @@ export type ToolContext = {
    * which then run the gRPC test battery instead of HTTP-style tests.
    */
   grpc?: GrpcPentestContext;
+
+  /** Structured multi-application scope inherited by spawned pentest workers. */
+  systemScope?: SystemPentestScope;
 
   /** Signal to cancel in-flight operations */
   abortSignal?: AbortSignal;

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AttackPathSchema } from "../../lib/attack-path/types";
 import { CweEntrySchema, ValidatedCweEntrySchema } from "../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../lib/evidence/types";
 
@@ -120,6 +121,9 @@ export const DocumentFindingSchema = z.object({
   references: z.string().optional().describe("CVE, CWE, or related references"),
   cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
+  attackPath: AttackPathSchema.optional().describe(
+    "Ordered multi-application hop chain when the finding spans System members",
+  ),
 });
 
 type DocumentFindingInput = z.infer<typeof DocumentFindingSchema>;
