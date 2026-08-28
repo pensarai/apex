@@ -40,6 +40,8 @@ vi.mock("./tools", () => ({
   },
   EMAIL_TOOL_NAMES_ACTIVE: [],
   SEND_EMAIL_TOOL_NAME: "send_email",
+  SMS_TOOL_NAMES_ACTIVE: [],
+  sessionHasSmsPasswordless: () => false,
   PLAN_MODE_TOOL_NAMES: [],
   createResponseTool: () => {},
   RESPONSE_TOOL_NAME: "response",
