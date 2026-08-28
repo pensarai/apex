@@ -82,7 +82,7 @@ export const documentVulnerabilityInputSchema = z.object({
   pocContent: z.string().describe("The full POC script content"),
   pocDescription: z.string().describe("What this POC demonstrates"),
   attackPath: AttackPathSchema.optional().describe(
-    "Ordered multi-application hop chain when the finding spans System members",
+    "Required ordered member-to-member hop chain when the finding spans multiple System members; do not leave this chain only in narrative fields",
   ),
 });
 
@@ -171,6 +171,7 @@ CRITICAL RULES — READ BEFORE CALLING:
 - POC must exit 0 on success (vulnerability confirmed), non-zero on failure
 - POC must print clear evidence of exploitation to stdout
 - Fill the materiality checklist with the concrete exploit path, material security impact, affected non-public asset or abuse path, and why common false-positive traps do not apply
+- When a finding spans multiple System members, populate attackPath with every hop in order; do not leave the chain only in the description or evidence
 - If the tool returns a POC failure or judge rejection, revise your approach and call again
 - Do NOT use this for: positive observations, informational notes, testing limitations, or anything that is not an exploitable security vulnerability
 - If you could not exploit a vulnerability, do NOT call this tool — mention it in your final response summary instead`,

@@ -127,6 +127,17 @@ describe("documentVulnerability judge handling", () => {
     rmSync(rootPath, { recursive: true, force: true });
   });
 
+  it("requires structured attack paths for multi-member findings", () => {
+    const tool = documentVulnerability(makeToolContext(rootPath));
+
+    expect(tool.description).toContain(
+      "populate attackPath with every hop in order",
+    );
+    expect(tool.description).toContain(
+      "do not leave the chain only in the description or evidence",
+    );
+  });
+
   it("cleans up the POC and returns judgeRejected when a completed judge rejects", async () => {
     mockedJudgeFinding.mockResolvedValue({
       valid: false,
