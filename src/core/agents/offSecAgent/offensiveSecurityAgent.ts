@@ -536,6 +536,9 @@ export class OffensiveSecurityAgent<TResult = void> {
       eventBus: this.eventBus,
       sandbox,
       findingsRegistry: input.findingsRegistry,
+      engagementTargetIds: input.engagementTargetIds
+        ? new Set(input.engagementTargetIds)
+        : undefined,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
       secretValues: input.secretValues,

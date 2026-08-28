@@ -1,4 +1,4 @@
-import type { ModelMessage } from "ai";
+import type { ModelMessage, ToolSet } from "ai";
 import { tool } from "ai";
 import { z } from "zod";
 import { TargetedPentestAgent } from "../agents/specialized/pentest/agent";
@@ -46,6 +46,8 @@ interface EngagementToolRuntime {
   findingsRegistry: FindingsRegistry;
   eventBus: AgentEventBus;
   leadAgentId: string;
+  surfaceTools?: ToolSet;
+  engagementTargetIds?: string[];
 }
 
 function unique(values: readonly string[]): string[] {
@@ -114,7 +116,15 @@ function validateAssignment(
 }
 
 export function createEngagementTools(runtime: EngagementToolRuntime) {
-  const { input, store, findingsRegistry, eventBus, leadAgentId } = runtime;
+  const {
+    input,
+    store,
+    findingsRegistry,
+    eventBus,
+    leadAgentId,
+    surfaceTools,
+    engagementTargetIds = [],
+  } = runtime;
   const mailbox = new AgentMailbox(input.session.rootPath);
   const activeWorkers = new Set<string>();
   const withCheckpoint = <T extends Record<string, unknown>>(result: T) => ({
@@ -212,6 +222,9 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           sandbox: input.sandbox,
           secretValues: input.secretValues,
           display: input.display,
+          extraTools: surfaceTools,
+          directTools: surfaceTools ? Object.keys(surfaceTools) : undefined,
+          engagementTargetIds,
         });
         summary = outcome.summary;
         result = {
@@ -256,6 +269,10 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           sandbox: input.sandbox,
           display: input.display,
           role: "worker",
+          toolProtocol: input.toolProtocol,
+          extraTools: surfaceTools,
+          directTools: surfaceTools ? Object.keys(surfaceTools) : undefined,
+          engagementTargetIds,
         });
         const outcome = await agent.consume();
         summary =
@@ -353,6 +370,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
   };
 
   return {
+    ...surfaceTools,
     read_engagement_state: tool({
       description:
         "Read the persisted engagement surface, objectives, coverage, capabilities, impact proofs, worker records, completion gate, and unread worker handoffs.",

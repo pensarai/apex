@@ -69,6 +69,9 @@ export type ToolContext = {
    */
   findingsRegistry?: FindingsRegistry;
 
+  /** Authorized host-owned target ids for engagement finding provenance. */
+  engagementTargetIds?: ReadonlySet<string>;
+
   /**
    * Shared attack surface registry for cross-agent asset dedup.
    * When present, `document_endpoint` checks for duplicates before writing.

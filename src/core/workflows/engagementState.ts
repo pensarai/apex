@@ -44,6 +44,13 @@ export interface EngagementObjective {
   relevantServiceIds: string[];
 }
 
+export interface EngagementTargetRecord {
+  id: string;
+  target: string;
+  serviceId: string;
+  objectiveIds: string[];
+}
+
 export interface ObjectiveCoverage {
   objectiveId: string;
   serviceId: string;
@@ -93,6 +100,7 @@ export interface EngagementState {
   version: 1;
   rootTarget: string;
   operatorContext?: string;
+  targets: EngagementTargetRecord[];
   services: EngagementService[];
   objectives: EngagementObjective[];
   coverage: ObjectiveCoverage[];
@@ -118,6 +126,7 @@ export interface EngagementCompletion {
 /** Compact durable state embedded in coordination tool results for host resume. */
 export interface EngagementCheckpoint {
   version: 1;
+  targets?: EngagementTargetRecord[];
   services: Array<Pick<EngagementService, "id" | "baselineStatus" | "summary">>;
   coverage: ObjectiveCoverage[];
   capabilities: EngagementCapability[];
@@ -186,6 +195,7 @@ export function buildEngagementState(
 ): EngagementState {
   const serviceByOrigin = new Map<string, EngagementService>();
   const objectiveByText = new Map<string, EngagementObjective>();
+  const targetRecords: EngagementTargetRecord[] = [];
 
   for (const target of targets) {
     const origin = targetOrigin(target.target);
@@ -198,6 +208,7 @@ export function buildEngagementState(
     service.targets = unique([...service.targets, target.target]);
     serviceByOrigin.set(origin, service);
 
+    const objectiveIds: string[] = [];
     for (const text of target.objectives) {
       const normalized = text.trim();
       if (!normalized) continue;
@@ -211,7 +222,14 @@ export function buildEngagementState(
         service.id,
       ]);
       objectiveByText.set(normalized, objective);
+      objectiveIds.push(objective.id);
     }
+    targetRecords.push({
+      id: target.id ?? stableId("target", target.target),
+      target: target.target,
+      serviceId: service.id,
+      objectiveIds: unique(objectiveIds),
+    });
   }
 
   const services = [...serviceByOrigin.values()];
@@ -228,6 +246,7 @@ export function buildEngagementState(
     version: 1,
     rootTarget,
     operatorContext,
+    targets: targetRecords,
     services,
     objectives,
     coverage,
@@ -290,6 +309,9 @@ function applyCheckpoint(
       ...service,
       ...serviceUpdates.get(service.id),
     })),
+    targets: checkpoint.targets
+      ? structuredClone(checkpoint.targets)
+      : structuredClone(seed.targets),
     coverage: structuredClone(checkpoint.coverage),
     capabilities: structuredClone(checkpoint.capabilities),
     impactProofs: structuredClone(checkpoint.impactProofs),
@@ -344,6 +366,7 @@ export class EngagementStore {
         `Unsupported engagement state version: ${parsed.version}`,
       );
     }
+    parsed.targets ??= structuredClone(seed.targets);
     return new EngagementStore(statePath, parsed);
   }
 
@@ -360,6 +383,7 @@ export class EngagementStore {
   checkpoint(): EngagementCheckpoint {
     return structuredClone({
       version: 1,
+      targets: this.state.targets,
       services: this.state.services.map(({ id, baselineStatus, summary }) => ({
         id,
         baselineStatus,

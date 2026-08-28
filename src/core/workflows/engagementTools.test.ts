@@ -101,6 +101,10 @@ function makeRuntime() {
     findingsRegistry,
     eventBus: new AgentEventBus(),
     leadAgentId: "engagement-lead",
+    engagementTargetIds: ["target-1"],
+    surfaceTools: {
+      search_engagement_surface: { execute: vi.fn() } as never,
+    },
   });
   return { tools, store, seed };
 }
@@ -142,6 +146,11 @@ describe("engagement worker tools", () => {
     });
     expect(followedUp.success).toBe(true);
     expect(constructorCalls).toHaveLength(2);
+    expect(constructorCalls[0]).toMatchObject({
+      toolProtocol: undefined,
+      engagementTargetIds: ["target-1"],
+      directTools: ["search_engagement_surface"],
+    });
     const resumedMessages = constructorCalls[1]?.messages as Array<{
       role: string;
       content: Array<{ type: string; text: string }>;

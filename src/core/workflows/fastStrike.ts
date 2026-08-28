@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ModelMessage } from "ai";
+import type { ModelMessage, ToolSet } from "ai";
 import { z } from "zod";
 import {
   type Finding,
@@ -273,6 +273,9 @@ export interface FastStrikeObjectiveInput
   environmentVariables?: Record<string, string>;
   secretValues?: string[];
   display?: string;
+  extraTools?: ToolSet;
+  directTools?: string[];
+  engagementTargetIds?: readonly string[];
 }
 
 function findingReference(finding: Finding): FastStrikeFindingReference {
@@ -369,6 +372,9 @@ async function executeFastStrikeObjective(
         target: input.target,
         mode: "fast-strike",
         toolProtocol: input.toolProtocol,
+        extraTools: input.extraTools,
+        directTools: input.directTools,
+        engagementTargetIds: input.engagementTargetIds,
         activeTools: [],
         responseSchema: FastStrikeResult,
         responseGuard: (result, { rejectionCount }) =>
