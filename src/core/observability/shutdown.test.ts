@@ -250,6 +250,23 @@ describe("installObservabilityExitHandlers", () => {
     expect(exitCalls).toEqual([1]);
   });
 
+  it("reports fatal errors after entrypoint cleanup (terminal restored first)", async () => {
+    const runtime = startWithProcessors([new HungProcessor()], 50);
+    const order: string[] = [];
+    installObservabilityExitHandlers(runtime, {
+      cleanup: () => order.push("cleanup"),
+      onError: () => order.push("onError"),
+    });
+
+    process.emit("uncaughtException", new Error("boom"));
+    // Cleanup (e.g. renderer.destroy() leaving the alternate screen buffer)
+    // must precede the console report or the output is discarded.
+    expect(order).toEqual(["cleanup", "onError"]);
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(exitCalls).toEqual([1]);
+  });
+
   it("the first fatal wins — no double exit", async () => {
     const runtime = startWithProcessors([new HungProcessor()], 50);
     install(runtime);

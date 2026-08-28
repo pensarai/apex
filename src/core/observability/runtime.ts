@@ -229,7 +229,8 @@ export function startObservabilityRuntime(
  * runtime shutdown before exiting — never a direct process.exit() while a
  * flush could still complete. `cleanup` runs synchronously before the flush
  * (entrypoint teardown such as renderer destruction); fatal errors are
- * reported and preserved via exit code 1.
+ * reported after cleanup — so the TUI has left the alternate screen buffer
+ * and the output survives — and preserved via exit code 1.
  */
 export function installObservabilityExitHandlers(
   runtime: ObservabilityRuntime,
@@ -265,23 +266,32 @@ export function installObservabilityExitHandlers(
     error?: unknown,
     source?: "uncaughtException" | "unhandledRejection",
   ) => {
+    let pendingReport: (() => void) | null = null;
     if (error !== undefined && !fatalSeen) {
       fatalSeen = true;
       exitCode = 1;
-      reportError(error, source ?? "uncaughtException");
+      const fatalSource = source ?? "uncaughtException";
+      pendingReport = () => reportError(error, fatalSource);
     } else if (!fatalSeen && exitCode === 0) {
       exitCode = code;
     }
-    if (exitPromise) return exitPromise;
+    if (exitPromise) {
+      // Cleanup already ran (terminal restored) — a late fatal reports now.
+      pendingReport?.();
+      return exitPromise;
+    }
     try {
       opts?.cleanup?.(code);
     } catch (cleanupError) {
       if (!fatalSeen) {
         fatalSeen = true;
         exitCode = 1;
-        reportError(cleanupError, "uncaughtException");
+        pendingReport = () => reportError(cleanupError, "uncaughtException");
       }
     }
+    // Report only after entrypoint teardown: the TUI must leave the
+    // alternate screen buffer first or the console output is discarded.
+    pendingReport?.();
     exitPromise = runtime
       .shutdown()
       .catch(() => {})
