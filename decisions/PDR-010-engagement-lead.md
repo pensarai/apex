@@ -16,8 +16,10 @@ Fast Strike is a bounded objective executor. It returns `impact-proven`, `exhaus
 
 Engagement completion is deterministic:
 
-- every supplied objective is terminal on at least one relevant service;
-- every in-scope service receives baseline exploration;
+- every objective attached to every in-scope target is terminal;
+- target-local cells run automatically in related batches while the lead works;
+- failed or omitted cells retry once as singletons, then require lead resolution;
+- service baselines derive from their terminal target coverage;
 - candidate capabilities and confirmed capabilities with supported next steps are resolved;
 - chain-and-explore reaches a terminal disposition.
 
@@ -36,13 +38,14 @@ Separating the objective executor from the engagement owner lets benchmark impro
 - **Continue one orchestrator per endpoint** — rejected because cross-service context and exploit primitives remain fragmented.
 - **Manager-only lead** — rejected because it spends context translating every observation and cannot directly validate important hypotheses.
 - **Fast Strike as the whole pentest** — rejected because proving one objective does not establish attack-surface or net-new vulnerability coverage.
-- **Per-endpoint Cartesian coverage** — rejected because it creates low-value work; service baselines plus relevant-service objective execution capture the intended contract.
+- **Global Cartesian coverage** — rejected because copying every objective onto unrelated endpoints creates low-value work. Exhaustive coverage applies only to each target's declared objectives.
 
 ## Consequences
 
 - ✅ One durable owner can discover, validate, and compose multi-service attack paths.
 - ✅ Fast Strike results have a small production contract and trace-backed impact claims.
 - ✅ Coverage and completion survive model context compaction and process resume.
+- ✅ Related endpoint checks share bounded workers instead of paying for one session per endpoint.
 - ✅ Existing pentest APIs and the legacy path remain available during rollout.
 - ⚠️ The lead has a larger context and requires careful compaction and budget monitoring.
 - ⚠️ Worker concurrency must respect target state, browser isolation, and mutation safety.

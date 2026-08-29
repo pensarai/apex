@@ -8,15 +8,18 @@ import { newSessionId } from "../id/id";
 import { loadSubagentMessages, saveSubagentData } from "../session/persistence";
 import {
   AgentMailbox,
+  type EngagementCheckpoint,
   type EngagementStore,
   type EngagementWorkerMode,
 } from "./engagementState";
+import { EngagementWorkerPool } from "./engagementWorkerPool";
 import { runFastStrikeObjective } from "./fastStrike";
 import type { PentestWorkflowInput } from "./pentest";
 
 const COVERAGE_STATUSES = [
   "pending",
   "running",
+  "needs-lead",
   "impact-proven",
   "exhausted",
   "blocked",
@@ -29,7 +32,7 @@ const CHAIN_STATUSES = [
   "exhausted",
   "blocked",
 ] as const;
-const WORKER_MODES = ["targeted", "fast-strike", "explore"] as const;
+const WORKER_MODES = ["targeted", "fast-strike", "explore", "chain"] as const;
 
 export const ENGAGEMENT_TOOL_NAMES = [
   "read_engagement_state",
@@ -48,6 +51,8 @@ interface EngagementToolRuntime {
   leadAgentId: string;
   surfaceTools?: ToolSet;
   engagementTargetIds?: string[];
+  workerPool?: EngagementWorkerPool;
+  onCheckpoint?: (checkpoint: EngagementCheckpoint) => void | Promise<void>;
 }
 
 function unique(values: readonly string[]): string[] {
@@ -58,11 +63,15 @@ function buildWorkerContext(
   store: EngagementStore,
   mission: string,
   serviceIds: string[],
+  targetIds: string[],
   objectiveIds: string[],
+  capabilityIds: string[],
 ): string {
   const state = store.snapshot();
   const services = serviceIds.map((id) => store.getService(id));
   const objectives = objectiveIds.map((id) => store.getObjective(id));
+  const targets = targetIds.map((id) => store.getTarget(id));
+  const capabilities = capabilityIds.map((id) => store.getCapability(id));
   return [
     `Mission: ${mission}`,
     state.operatorContext
@@ -74,9 +83,20 @@ function buildWorkerContext(
           `- ${service.id}: ${service.origin}\n  Targets: ${service.targets.join(", ")}`,
       )
       .join("\n")}`,
+    `Assigned targets:\n${targets
+      .map((target) => `- ${target.id}: ${target.target}`)
+      .join("\n")}`,
     objectives.length > 0
       ? `Assigned objective IDs:\n${objectives
           .map((objective) => `- ${objective.id}: ${objective.text}`)
+          .join("\n")}`
+      : "",
+    capabilities.length > 0
+      ? `Assigned capabilities:\n${capabilities
+          .map(
+            (capability) =>
+              `- ${capability.id}: ${capability.label}\n  ${capability.description}\n  Next steps: ${capability.nextSteps.join(", ") || "none"}`,
+          )
           .join("\n")}`
       : "",
     "Preserve concrete observations and reusable primitives in your final summary. Do not treat this assignment as engagement completion.",
@@ -89,11 +109,21 @@ function validateAssignment(
   store: EngagementStore,
   mode: EngagementWorkerMode,
   serviceIds: string[],
+  targetIds: string[],
   objectiveIds: string[],
+  capabilityIds: string[],
 ): void {
   if (serviceIds.length === 0)
     throw new Error("At least one serviceId is required");
   for (const serviceId of serviceIds) store.getService(serviceId);
+  for (const targetId of targetIds) {
+    const target = store.getTarget(targetId);
+    if (!serviceIds.includes(target.serviceId)) {
+      throw new Error(
+        `Target ${targetId} is not part of the selected services`,
+      );
+    }
+  }
   for (const objectiveId of objectiveIds) {
     const objective = store.getObjective(objectiveId);
     if (!objective.relevantServiceIds.some((id) => serviceIds.includes(id))) {
@@ -101,17 +131,39 @@ function validateAssignment(
         `Objective ${objectiveId} is not relevant to the selected services`,
       );
     }
+    if (mode === "targeted" || mode === "fast-strike") {
+      for (const targetId of targetIds) {
+        const coverage = store
+          .snapshot()
+          .coverage.find(
+            (candidate) =>
+              candidate.targetId === targetId &&
+              candidate.objectiveId === objectiveId,
+          );
+        if (coverage?.status === "running") {
+          throw new Error(
+            `Coverage ${targetId}:${objectiveId} is already running`,
+          );
+        }
+      }
+    }
   }
+  for (const capabilityId of capabilityIds) store.getCapability(capabilityId);
   if (
     mode === "fast-strike" &&
-    (serviceIds.length !== 1 || objectiveIds.length !== 1)
+    (serviceIds.length !== 1 ||
+      targetIds.length !== 1 ||
+      objectiveIds.length !== 1)
   ) {
     throw new Error(
-      "Fast Strike workers require exactly one service and objective",
+      "Fast Strike workers require exactly one service, target, and objective",
     );
   }
   if (mode === "targeted" && objectiveIds.length === 0) {
     throw new Error("Targeted workers require at least one objectiveId");
+  }
+  if (mode === "chain" && capabilityIds.length === 0) {
+    throw new Error("Chain workers require at least one capabilityId");
   }
 }
 
@@ -124,20 +176,27 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     leadAgentId,
     surfaceTools,
     engagementTargetIds = [],
+    workerPool = new EngagementWorkerPool(4),
+    onCheckpoint,
   } = runtime;
   const mailbox = new AgentMailbox(input.session.rootPath);
   const activeWorkers = new Set<string>();
-  const withCheckpoint = <T extends Record<string, unknown>>(result: T) => ({
-    checkpoint: store.checkpoint(),
-    ...result,
-  });
+  const withCheckpoint = async <T extends Record<string, unknown>>(
+    result: T,
+  ) => {
+    const checkpoint = store.checkpoint();
+    await onCheckpoint?.(checkpoint);
+    return { checkpoint, ...result };
+  };
 
   const runWorker = async (options: {
     workerId: string;
     mission: string;
     mode: EngagementWorkerMode;
     serviceIds: string[];
+    targetIds: string[];
     objectiveIds: string[];
+    capabilityIds: string[];
     messages?: ModelMessage[];
     followUp?: boolean;
   }) => {
@@ -153,13 +212,13 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         }
       } else {
         for (const objectiveId of options.objectiveIds) {
-          const objective = store.getObjective(objectiveId);
-          for (const serviceId of objective.relevantServiceIds.filter((id) =>
-            options.serviceIds.includes(id),
-          )) {
+          for (const targetId of options.targetIds) {
+            const target = store.getTarget(targetId);
+            if (!target.objectiveIds.includes(objectiveId)) continue;
             store.markObjectiveCoverage({
+              targetId,
               objectiveId,
-              serviceId,
+              serviceId: target.serviceId,
               status: "running",
               workerId: options.workerId,
               summary: options.mission,
@@ -170,12 +229,16 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     }
     const services = options.serviceIds.map((id) => store.getService(id));
     const objectives = options.objectiveIds.map((id) => store.getObjective(id));
-    const target = services[0]?.targets[0] ?? input.target;
+    const targets = options.targetIds.map((id) => store.getTarget(id));
+    const target =
+      targets[0]?.target ?? services[0]?.targets[0] ?? input.target;
     const context = buildWorkerContext(
       store,
       options.mission,
       options.serviceIds,
+      options.targetIds,
       options.objectiveIds,
+      options.capabilityIds,
     );
     const childBus = new AgentEventBus();
     AgentEventBus.attachChild(childBus, eventBus, options.workerId);
@@ -189,7 +252,9 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         mission: options.mission,
         mode: options.mode,
         serviceIds: options.serviceIds,
+        targetIds: options.targetIds,
         objectiveIds: options.objectiveIds,
+        capabilityIds: options.capabilityIds,
       },
       parentSubagentId: leadAgentId,
       parentSessionId: leadAgentId,
@@ -234,6 +299,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           findings: outcome.findings,
         };
         store.markObjectiveCoverage({
+          targetId: targets[0]?.id as string,
           objectiveId: objective.id,
           serviceId: services[0]?.id as string,
           status: outcome.status,
@@ -292,17 +358,18 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           for (const service of services) {
             store.markServiceBaseline(service.id, "explored", summary);
           }
-        } else {
+        } else if (options.mode === "targeted") {
           for (const objective of objectives) {
             const objectiveResult = outcome.objectiveResults?.find(
               (candidate) => candidate.objective === objective.text,
             );
-            for (const serviceId of objective.relevantServiceIds.filter((id) =>
-              options.serviceIds.includes(id),
+            for (const targetRecord of targets.filter((candidate) =>
+              candidate.objectiveIds.includes(objective.id),
             )) {
               store.markObjectiveCoverage({
+                targetId: targetRecord.id,
                 objectiveId: objective.id,
-                serviceId,
+                serviceId: targetRecord.serviceId,
                 status: objectiveResult?.completed ? "exhausted" : "blocked",
                 workerId: options.workerId,
                 summary: objectiveResult?.result ?? summary,
@@ -343,6 +410,21 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
       });
     } catch (error) {
       const summary = error instanceof Error ? error.message : String(error);
+      for (const coverage of store.snapshot().coverage) {
+        if (
+          coverage.workerId === options.workerId &&
+          coverage.status === "running"
+        ) {
+          store.markObjectiveCoverage({
+            targetId: coverage.targetId,
+            objectiveId: coverage.objectiveId,
+            serviceId: coverage.serviceId,
+            status: "needs-lead",
+            workerId: null,
+            summary,
+          });
+        }
+      }
       store.completeWorker(options.workerId, "failed", summary);
       mailbox.send({
         type: "FINAL_ANSWER",
@@ -412,18 +494,31 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
       inputSchema: z.object({
         mission: z.string().min(1),
         serviceIds: z.array(z.string()).min(1),
+        targetIds: z.array(z.string()).min(1),
         objectiveIds: z.array(z.string()).default([]),
+        capabilityIds: z.array(z.string()).default([]),
         mode: z.enum(WORKER_MODES),
         toolCallDescription: z.string(),
       }),
-      execute: async ({ mission, serviceIds, objectiveIds, mode }) => {
+      execute: async ({
+        mission,
+        serviceIds,
+        targetIds,
+        objectiveIds,
+        capabilityIds,
+        mode,
+      }) => {
         const selectedServiceIds = unique(serviceIds);
+        const selectedTargetIds = unique(targetIds);
         const selectedObjectiveIds = unique(objectiveIds);
+        const selectedCapabilityIds = unique(capabilityIds);
         validateAssignment(
           store,
           mode,
           selectedServiceIds,
+          selectedTargetIds,
           selectedObjectiveIds,
+          selectedCapabilityIds,
         );
         const workerId = newSessionId() as string;
         store.registerWorker({
@@ -431,7 +526,9 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           mission,
           mode,
           serviceIds: selectedServiceIds,
+          targetIds: selectedTargetIds,
           objectiveIds: selectedObjectiveIds,
+          capabilityIds: selectedCapabilityIds,
         });
         if (mode === "explore") {
           for (const serviceId of selectedServiceIds) {
@@ -439,13 +536,13 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           }
         } else {
           for (const objectiveId of selectedObjectiveIds) {
-            const objective = store.getObjective(objectiveId);
-            for (const serviceId of objective.relevantServiceIds.filter((id) =>
-              selectedServiceIds.includes(id),
-            )) {
+            for (const targetId of selectedTargetIds) {
+              const target = store.getTarget(targetId);
+              if (!target.objectiveIds.includes(objectiveId)) continue;
               store.markObjectiveCoverage({
+                targetId,
                 objectiveId,
-                serviceId,
+                serviceId: target.serviceId,
                 status: "running",
                 workerId,
                 summary: mission,
@@ -453,13 +550,17 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             }
           }
         }
-        return runWorker({
-          workerId,
-          mission,
-          mode,
-          serviceIds: selectedServiceIds,
-          objectiveIds: selectedObjectiveIds,
-        });
+        return workerPool.run("chain", () =>
+          runWorker({
+            workerId,
+            mission,
+            mode,
+            serviceIds: selectedServiceIds,
+            targetIds: selectedTargetIds,
+            objectiveIds: selectedObjectiveIds,
+            capabilityIds: selectedCapabilityIds,
+          }),
+        );
       },
     }),
 
@@ -491,15 +592,19 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           role: "user",
           content: [{ type: "text", text: message }],
         });
-        return runWorker({
-          workerId,
-          mission: worker.mission,
-          mode: worker.mode,
-          serviceIds: worker.serviceIds,
-          objectiveIds: worker.objectiveIds,
-          messages,
-          followUp: true,
-        });
+        return workerPool.run("chain", () =>
+          runWorker({
+            workerId,
+            mission: worker.mission,
+            mode: worker.mode,
+            serviceIds: worker.serviceIds,
+            targetIds: worker.targetIds,
+            objectiveIds: worker.objectiveIds,
+            capabilityIds: worker.capabilityIds,
+            messages,
+            followUp: true,
+          }),
+        );
       },
     }),
 
@@ -508,6 +613,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         "Update the single-writer coverage ledger after direct lead testing or after reviewing worker evidence. Use objective, service, or chain kind and provide the matching status and IDs.",
       inputSchema: z.object({
         kind: z.enum(["objective", "service", "chain"]),
+        targetId: z.string().optional(),
         objectiveId: z.string().optional(),
         serviceId: z.string().optional(),
         objectiveStatus: z.enum(COVERAGE_STATUSES).optional(),
@@ -520,17 +626,19 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
       execute: async (update) => {
         if (update.kind === "objective") {
           if (
+            !update.targetId ||
             !update.objectiveId ||
             !update.serviceId ||
             !update.objectiveStatus
           ) {
             throw new Error(
-              "Objective coverage requires objectiveId, serviceId, and objectiveStatus",
+              "Objective coverage requires targetId, objectiveId, serviceId, and objectiveStatus",
             );
           }
           return withCheckpoint({
             success: true,
             coverage: store.markObjectiveCoverage({
+              targetId: update.targetId,
               objectiveId: update.objectiveId,
               serviceId: update.serviceId,
               status: update.objectiveStatus,
@@ -580,6 +688,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         description: z.string().min(1),
         status: z.enum(["candidate", "confirmed", "consumed", "blocked"]),
         serviceIds: z.array(z.string()).default([]),
+        targetIds: z.array(z.string()).default([]),
         objectiveIds: z.array(z.string()).default([]),
         evidence: z.array(z.string()).default([]),
         nextSteps: z.array(z.string()).default([]),
@@ -600,6 +709,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         description: z.string().min(1),
         objectiveIds: z.array(z.string()).default([]),
         serviceIds: z.array(z.string()).default([]),
+        targetIds: z.array(z.string()).default([]),
         findingIds: z.array(z.string()).default([]),
         capabilityIds: z.array(z.string()).default([]),
         artifactPaths: z.array(z.string()).default([]),

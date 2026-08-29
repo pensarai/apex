@@ -3,6 +3,7 @@ import { OffensiveSecurityAgent } from "../agents/offSecAgent";
 import { AgentEventBus } from "../eventBus";
 import type { FindingsRegistry } from "../findings/registry";
 import type { SwarmTarget } from "../session/persistence";
+import { runDeterministicEngagementCoverage } from "./engagementCoverage";
 import {
   buildEngagementState,
   type EngagementCheckpoint,
@@ -19,6 +20,7 @@ import {
   createEngagementTools,
   ENGAGEMENT_TOOL_NAMES,
 } from "./engagementTools";
+import { EngagementWorkerPool } from "./engagementWorkerPool";
 import type { PentestWorkflowInput } from "./pentest";
 
 export const EngagementLeadResult = z.object({
@@ -31,11 +33,13 @@ export type EngagementLeadOutcome = z.infer<typeof EngagementLeadResult> & {
   checkpoint: EngagementCheckpoint;
 };
 
+export const DEFAULT_ENGAGEMENT_WORKER_CONCURRENCY = 4;
+
 export const ENGAGEMENT_LEAD_SYSTEM_PROMPT = `You are the durable lead penetration tester for one authorized engagement. You own the complete attack surface, threat-model objectives, coverage ledger, finding quality, and final chain-and-explore pass.
 
-Work directly and delegate selectively. You have the same exploitation tools as workers and should personally test high-value hypotheses, interpret cross-service evidence, and maintain continuity. Spawn focused workers when independent context windows improve coverage or speed. Run independent assignments concurrently when safe; resume the same worker for stateful follow-ups. Fast Strike workers prove one concrete impact objective—they never decide that the engagement is complete.
+Deterministic endpoint-local coverage runs beside you automatically. Work directly and delegate selectively: personally test high-value hypotheses, resolve cells marked needs-lead, interpret cross-service evidence, and maintain continuity. Spawn focused workers when independent context windows improve validation or chaining; do not duplicate pending or running automatic coverage, and resume the same worker for stateful follow-ups. Fast Strike workers prove one concrete impact objective—they never decide that the engagement is complete.
 
-Use read_engagement_state as the source of truth. Ensure every objective is terminal on at least one relevant service and every in-scope service receives baseline exploration. Coverage is service-based, not a Cartesian endpoint checklist. Discover net-new vulnerabilities and attack paths beyond the supplied objectives. Record reusable primitives as capabilities and resolve every supported next step by consuming it in a chain or marking it blocked with evidence.
+Use read_engagement_state as the source of truth: every objective attached to every target must become terminal; objectives are never copied onto unrelated targets. Discover net-new vulnerabilities and attack paths beyond the supplied objectives. Record reusable primitives with their source target IDs as capabilities and resolve every supported next step by consuming it in a chain or marking it blocked with evidence. Give chain and validation workers exact target and capability IDs.
 
 You may call document_vulnerability directly. Findings still pass through the shared finding judge: document only reproducible exploitable vulnerabilities with material impact. Every finding must carry the sourceTargetId returned by the engagement-surface tools. Record material impact separately with record_impact_proof, referencing accepted findings, capabilities, artifacts, or trace observations.
 
@@ -71,6 +75,9 @@ function completionMessage(completion: EngagementCompletion): string {
     completion.missingObjectiveIds.length > 0
       ? `Objectives without terminal relevant-service coverage: ${completion.missingObjectiveIds.join(", ")}`
       : "",
+    completion.missingCoverageCellIds.length > 0
+      ? `Target coverage cells still open: ${completion.missingCoverageCellIds.slice(0, 20).join(", ")}`
+      : "",
     completion.missingServiceIds.length > 0
       ? `Services without baseline exploration: ${completion.missingServiceIds.join(", ")}`
       : "",
@@ -89,8 +96,15 @@ export async function runEngagementLead(input: {
   findingsRegistry: FindingsRegistry;
   eventBus?: AgentEventBus;
   surfaceProvider?: EngagementSurfaceProvider;
+  concurrency?: number;
+  onCheckpoint?: (checkpoint: EngagementCheckpoint) => void | Promise<void>;
 }): Promise<EngagementLeadOutcome> {
   const eventBus = input.eventBus ?? new AgentEventBus();
+  const internalAbort = new AbortController();
+  const abortSignal = input.workflow.abortSignal
+    ? AbortSignal.any([input.workflow.abortSignal, internalAbort.signal])
+    : internalAbort.signal;
+  const workflow = { ...input.workflow, abortSignal };
   const leadAgentId = input.workflow.session.id;
   const seed = restoreEngagementState(
     buildEngagementState(
@@ -108,14 +122,19 @@ export async function runEngagementLead(input: {
   const engagementTargetIds = input.targets
     .map((target) => target.id)
     .filter((id): id is string => Boolean(id));
+  const workerPool = new EngagementWorkerPool(
+    input.concurrency ?? DEFAULT_ENGAGEMENT_WORKER_CONCURRENCY,
+  );
   const engagementTools = createEngagementTools({
-    input: input.workflow,
+    input: workflow,
     store,
     findingsRegistry: input.findingsRegistry,
     eventBus,
     leadAgentId,
     surfaceTools,
     engagementTargetIds,
+    workerPool,
+    onCheckpoint: input.onCheckpoint,
   });
   const state = store.snapshot();
   const prompt = [
@@ -132,7 +151,7 @@ export async function runEngagementLead(input: {
       null,
       2,
     ),
-    "Begin by orienting across the full surface. Establish service baselines, execute each objective against a relevant service, preserve promising primitives, then run chain-and-explore toward crown-jewel impact.",
+    "Automatic endpoint-local coverage is already starting. Orient across the full surface, resolve needs-lead cells, preserve promising primitives, and run chain-and-explore toward threat-model-derived crown-jewel impact.",
   ].join("\n\n");
 
   const agent = new OffensiveSecurityAgent<
@@ -140,9 +159,9 @@ export async function runEngagementLead(input: {
   >({
     system: ENGAGEMENT_LEAD_SYSTEM_PROMPT,
     prompt,
-    model: input.workflow.model,
-    session: input.workflow.session,
-    target: input.workflow.target,
+    model: workflow.model,
+    session: workflow.session,
+    target: workflow.target,
     activeTools: [...LEAD_TOOL_NAMES],
     directTools: [
       ...ENGAGEMENT_TOOL_NAMES,
@@ -162,22 +181,41 @@ export async function runEngagementLead(input: {
       return undefined;
     },
     findingsRegistry: input.findingsRegistry,
-    messages: input.workflow.messages,
-    authConfig: input.workflow.authConfig,
-    abortSignal: input.workflow.abortSignal,
+    messages: workflow.messages,
+    authConfig: workflow.authConfig,
+    abortSignal: workflow.abortSignal,
     eventBus,
-    onStepFinish: input.workflow.onStepFinish,
-    onCacheMetrics: input.workflow.onCacheMetrics,
-    enableThinking: input.workflow.enableThinking,
-    thinkingEffort: input.workflow.thinkingEffort,
-    openAIReasoningEffort: input.workflow.openAIReasoningEffort,
-    toolProtocol: input.workflow.toolProtocol,
-    environmentVariables: input.workflow.environmentVariables,
-    secretValues: input.workflow.secretValues,
-    sandbox: input.workflow.sandbox,
-    display: input.workflow.display,
+    onStepFinish: workflow.onStepFinish,
+    onCacheMetrics: workflow.onCacheMetrics,
+    enableThinking: workflow.enableThinking,
+    thinkingEffort: workflow.thinkingEffort,
+    openAIReasoningEffort: workflow.openAIReasoningEffort,
+    toolProtocol: workflow.toolProtocol,
+    environmentVariables: workflow.environmentVariables,
+    secretValues: workflow.secretValues,
+    sandbox: workflow.sandbox,
+    display: workflow.display,
   });
 
-  const result = await agent.consume();
-  return { ...result, checkpoint: store.checkpoint() };
+  const coverage = runDeterministicEngagementCoverage({
+    workflow,
+    store,
+    pool: workerPool,
+    findingsRegistry: input.findingsRegistry,
+    eventBus,
+    leadAgentId,
+    surfaceTools,
+    engagementTargetIds,
+    onCheckpoint: input.onCheckpoint,
+  });
+  try {
+    const [result] = await Promise.all([agent.consume(), coverage]);
+    const checkpoint = store.checkpoint();
+    await input.onCheckpoint?.(checkpoint);
+    return { ...result, checkpoint };
+  } catch (error) {
+    internalAbort.abort();
+    await agent.abortAndDrain();
+    throw error;
+  }
 }

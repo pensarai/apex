@@ -14,6 +14,7 @@ import type { SwarmTarget } from "../session/persistence";
 export type CoverageStatus =
   | "pending"
   | "running"
+  | "needs-lead"
   | "impact-proven"
   | "exhausted"
   | "blocked";
@@ -28,7 +29,11 @@ export type ChainExploreStatus =
   | "impact-proven"
   | "exhausted"
   | "blocked";
-export type EngagementWorkerMode = "targeted" | "fast-strike" | "explore";
+export type EngagementWorkerMode =
+  | "targeted"
+  | "fast-strike"
+  | "explore"
+  | "chain";
 
 export interface EngagementService {
   id: string;
@@ -52,9 +57,11 @@ export interface EngagementTargetRecord {
 }
 
 export interface ObjectiveCoverage {
+  targetId: string;
   objectiveId: string;
   serviceId: string;
   status: CoverageStatus;
+  attempts: number;
   workerId?: string;
   summary?: string;
   evidence: string[];
@@ -65,6 +72,7 @@ export interface ImpactProof {
   description: string;
   objectiveIds: string[];
   serviceIds: string[];
+  targetIds: string[];
   findingIds: string[];
   capabilityIds: string[];
   artifactPaths: string[];
@@ -78,6 +86,7 @@ export interface EngagementCapability {
   description: string;
   status: "candidate" | "confirmed" | "consumed" | "blocked";
   serviceIds: string[];
+  targetIds: string[];
   objectiveIds: string[];
   evidence: string[];
   nextSteps: string[];
@@ -89,7 +98,9 @@ export interface EngagementWorkerRecord {
   mission: string;
   mode: EngagementWorkerMode;
   serviceIds: string[];
+  targetIds: string[];
   objectiveIds: string[];
+  capabilityIds: string[];
   status: "running" | "completed" | "failed";
   summary?: string;
   startedAt: string;
@@ -97,7 +108,7 @@ export interface EngagementWorkerRecord {
 }
 
 export interface EngagementState {
-  version: 1;
+  version: 2;
   rootTarget: string;
   operatorContext?: string;
   targets: EngagementTargetRecord[];
@@ -118,6 +129,7 @@ export interface EngagementState {
 export interface EngagementCompletion {
   complete: boolean;
   missingObjectiveIds: string[];
+  missingCoverageCellIds: string[];
   missingServiceIds: string[];
   unresolvedCapabilityIds: string[];
   chainExplorePending: boolean;
@@ -125,8 +137,9 @@ export interface EngagementCompletion {
 
 /** Compact durable state embedded in coordination tool results for host resume. */
 export interface EngagementCheckpoint {
-  version: 1;
+  version: 2;
   targets?: EngagementTargetRecord[];
+  objectives: EngagementObjective[];
   services: Array<Pick<EngagementService, "id" | "baselineStatus" | "summary">>;
   coverage: ObjectiveCoverage[];
   capabilities: EngagementCapability[];
@@ -155,6 +168,9 @@ const TERMINAL_COVERAGE = new Set<CoverageStatus>([
   "exhausted",
   "blocked",
 ]);
+
+export const DEFAULT_ENGAGEMENT_BASELINE_OBJECTIVE =
+  "Perform bounded baseline exploration for net-new exploitable vulnerabilities.";
 const TERMINAL_SERVICE = new Set<ServiceCoverageStatus>([
   "explored",
   "blocked",
@@ -171,6 +187,13 @@ function unique(values: readonly string[]): string[] {
 
 function stableId(prefix: string, value: string): string {
   return `${prefix}_${createHash("sha256").update(value).digest("hex").slice(0, 12)}`;
+}
+
+export function engagementCoverageCellId(
+  targetId: string,
+  objectiveId: string,
+): string {
+  return `${targetId}:${objectiveId}`;
 }
 
 function targetOrigin(target: string): string {
@@ -208,8 +231,12 @@ export function buildEngagementState(
     service.targets = unique([...service.targets, target.target]);
     serviceByOrigin.set(origin, service);
 
+    const targetId = target.id ?? stableId("target", target.target);
+    const targetObjectives = target.objectives.some((text) => text.trim())
+      ? target.objectives
+      : [DEFAULT_ENGAGEMENT_BASELINE_OBJECTIVE];
     const objectiveIds: string[] = [];
-    for (const text of target.objectives) {
+    for (const text of targetObjectives) {
       const normalized = text.trim();
       if (!normalized) continue;
       const objective = objectiveByText.get(normalized) ?? {
@@ -225,7 +252,7 @@ export function buildEngagementState(
       objectiveIds.push(objective.id);
     }
     targetRecords.push({
-      id: target.id ?? stableId("target", target.target),
+      id: targetId,
       target: target.target,
       serviceId: service.id,
       objectiveIds: unique(objectiveIds),
@@ -234,16 +261,18 @@ export function buildEngagementState(
 
   const services = [...serviceByOrigin.values()];
   const objectives = [...objectiveByText.values()];
-  const coverage = objectives.flatMap((objective) =>
-    objective.relevantServiceIds.map((serviceId) => ({
-      objectiveId: objective.id,
-      serviceId,
+  const coverage = targetRecords.flatMap((target) =>
+    target.objectiveIds.map((objectiveId) => ({
+      targetId: target.id,
+      objectiveId,
+      serviceId: target.serviceId,
       status: "pending" as const,
+      attempts: 0,
       evidence: [],
     })),
   );
   return {
-    version: 1,
+    version: 2,
     rootTarget,
     operatorContext,
     targets: targetRecords,
@@ -273,10 +302,35 @@ function parseToolOutput(output: unknown): unknown {
   }
 }
 
-function isEngagementCheckpoint(value: unknown): value is EngagementCheckpoint {
+interface LegacyEngagementCheckpoint
+  extends Omit<
+    EngagementCheckpoint,
+    | "version"
+    | "objectives"
+    | "coverage"
+    | "capabilities"
+    | "impactProofs"
+    | "workers"
+  > {
+  version: 1;
+  objectives?: EngagementObjective[];
+  coverage: Array<Omit<ObjectiveCoverage, "targetId" | "attempts">>;
+  capabilities: Array<Omit<EngagementCapability, "targetIds">>;
+  impactProofs: Array<Omit<ImpactProof, "targetIds">>;
+  workers: Array<Omit<EngagementWorkerRecord, "targetIds" | "capabilityIds">>;
+}
+
+type RestorableEngagementCheckpoint =
+  | EngagementCheckpoint
+  | LegacyEngagementCheckpoint;
+
+function isEngagementCheckpoint(
+  value: unknown,
+): value is RestorableEngagementCheckpoint {
   return (
     isRecord(value) &&
-    value.version === 1 &&
+    (value.version === 1 || value.version === 2) &&
+    (value.version === 1 || Array.isArray(value.objectives)) &&
     Array.isArray(value.services) &&
     Array.isArray(value.coverage) &&
     Array.isArray(value.capabilities) &&
@@ -291,6 +345,7 @@ function isEngagementState(value: unknown): value is EngagementState {
   const record = value as Record<string, unknown>;
   return (
     isEngagementCheckpoint(value) &&
+    value.version === 2 &&
     typeof record.rootTarget === "string" &&
     Array.isArray(record.objectives)
   );
@@ -298,24 +353,41 @@ function isEngagementState(value: unknown): value is EngagementState {
 
 function applyCheckpoint(
   seed: EngagementState,
-  checkpoint: EngagementCheckpoint,
+  checkpoint: RestorableEngagementCheckpoint,
 ): EngagementState {
   const serviceUpdates = new Map(
     checkpoint.services.map((service) => [service.id, service]),
   );
+  const isLegacy = checkpoint.version === 1;
   return {
     ...structuredClone(seed),
     services: seed.services.map((service) => ({
       ...service,
       ...serviceUpdates.get(service.id),
     })),
-    targets: checkpoint.targets
-      ? structuredClone(checkpoint.targets)
-      : structuredClone(seed.targets),
-    coverage: structuredClone(checkpoint.coverage),
-    capabilities: structuredClone(checkpoint.capabilities),
-    impactProofs: structuredClone(checkpoint.impactProofs),
-    workers: structuredClone(checkpoint.workers),
+    targets:
+      !isLegacy && checkpoint.targets
+        ? structuredClone(checkpoint.targets)
+        : structuredClone(seed.targets),
+    objectives: checkpoint.objectives
+      ? structuredClone(checkpoint.objectives)
+      : structuredClone(seed.objectives),
+    coverage: isLegacy
+      ? structuredClone(seed.coverage)
+      : structuredClone(checkpoint.coverage),
+    capabilities: checkpoint.capabilities.map((capability) => ({
+      ...structuredClone(capability),
+      targetIds: "targetIds" in capability ? capability.targetIds : [],
+    })),
+    impactProofs: checkpoint.impactProofs.map((proof) => ({
+      ...structuredClone(proof),
+      targetIds: "targetIds" in proof ? proof.targetIds : [],
+    })),
+    workers: checkpoint.workers.map((worker) => ({
+      ...structuredClone(worker),
+      targetIds: "targetIds" in worker ? worker.targetIds : [],
+      capabilityIds: "capabilityIds" in worker ? worker.capabilityIds : [],
+    })),
     chainExplore: structuredClone(checkpoint.chainExplore),
     updatedAt: checkpoint.updatedAt,
   };
@@ -358,16 +430,13 @@ export class EngagementStore {
   static open(sessionRootPath: string, seed: EngagementState): EngagementStore {
     const statePath = join(sessionRootPath, "coordination", "engagement.json");
     if (!existsSync(statePath)) return new EngagementStore(statePath, seed);
-    const parsed = JSON.parse(
-      readFileSync(statePath, "utf8"),
-    ) as EngagementState;
-    if (parsed.version !== 1) {
+    const parsed = JSON.parse(readFileSync(statePath, "utf8")) as unknown;
+    if (!isEngagementCheckpoint(parsed)) {
       throw new Error(
-        `Unsupported engagement state version: ${parsed.version}`,
+        `Unsupported engagement state version: ${isRecord(parsed) ? String(parsed.version) : "unknown"}`,
       );
     }
-    parsed.targets ??= structuredClone(seed.targets);
-    return new EngagementStore(statePath, parsed);
+    return new EngagementStore(statePath, applyCheckpoint(seed, parsed));
   }
 
   private constructor(statePath: string, state: EngagementState) {
@@ -382,8 +451,9 @@ export class EngagementStore {
 
   checkpoint(): EngagementCheckpoint {
     return structuredClone({
-      version: 1,
+      version: 2,
       targets: this.state.targets,
+      objectives: this.state.objectives,
       services: this.state.services.map(({ id, baselineStatus, summary }) => ({
         id,
         baselineStatus,
@@ -414,6 +484,20 @@ export class EngagementStore {
     return structuredClone(objective);
   }
 
+  getTarget(id: string): EngagementTargetRecord {
+    const target = this.state.targets.find((candidate) => candidate.id === id);
+    if (!target) throw new Error(`Unknown engagement target: ${id}`);
+    return structuredClone(target);
+  }
+
+  getCapability(id: string): EngagementCapability {
+    const capability = this.state.capabilities.find(
+      (candidate) => candidate.id === id,
+    );
+    if (!capability) throw new Error(`Unknown engagement capability: ${id}`);
+    return structuredClone(capability);
+  }
+
   markServiceBaseline(
     serviceId: string,
     status: ServiceCoverageStatus,
@@ -430,13 +514,29 @@ export class EngagementStore {
   }
 
   markObjectiveCoverage(input: {
+    targetId: string;
     objectiveId: string;
     serviceId: string;
     status: CoverageStatus;
-    workerId?: string;
+    workerId?: string | null;
     summary?: string;
     evidence?: string[];
   }): ObjectiveCoverage {
+    if (
+      input.status === "impact-proven" &&
+      unique(input.evidence ?? []).length === 0
+    ) {
+      throw new Error("Impact-proven objective coverage requires evidence");
+    }
+    const target = this.getTarget(input.targetId);
+    if (
+      target.serviceId !== input.serviceId ||
+      !target.objectiveIds.includes(input.objectiveId)
+    ) {
+      throw new Error(
+        `Objective ${input.objectiveId} is not assigned to target ${input.targetId}`,
+      );
+    }
     const objective = this.getObjective(input.objectiveId);
     if (!objective.relevantServiceIds.includes(input.serviceId)) {
       throw new Error(
@@ -445,17 +545,74 @@ export class EngagementStore {
     }
     const coverage = this.state.coverage.find(
       (candidate) =>
+        candidate.targetId === input.targetId &&
         candidate.objectiveId === input.objectiveId &&
         candidate.serviceId === input.serviceId,
     );
     if (!coverage) throw new Error("Missing objective coverage entry");
     coverage.status = input.status;
-    coverage.workerId = input.workerId ?? coverage.workerId;
+    if (input.workerId !== undefined) {
+      if (input.workerId === null) delete coverage.workerId;
+      else coverage.workerId = input.workerId;
+    }
     coverage.summary = input.summary?.trim() || coverage.summary;
     coverage.evidence = unique([
       ...coverage.evidence,
       ...(input.evidence ?? []),
     ]);
+    this.refreshServiceBaselines();
+    this.persist();
+    return structuredClone(coverage);
+  }
+
+  claimCoverageCells(input: {
+    workerId: string;
+    cells: Array<{ targetId: string; objectiveId: string }>;
+  }): ObjectiveCoverage[] {
+    const claimed: ObjectiveCoverage[] = [];
+    for (const cell of input.cells) {
+      const coverage = this.state.coverage.find(
+        (candidate) =>
+          candidate.targetId === cell.targetId &&
+          candidate.objectiveId === cell.objectiveId &&
+          candidate.status === "pending",
+      );
+      if (!coverage) continue;
+      coverage.status = "running";
+      coverage.workerId = input.workerId;
+      claimed.push(structuredClone(coverage));
+    }
+    if (claimed.length > 0) {
+      this.refreshServiceBaselines();
+      this.persist();
+    }
+    return claimed;
+  }
+
+  settleCoverageCell(input: {
+    targetId: string;
+    objectiveId: string;
+    workerId: string;
+    status: Exclude<CoverageStatus, "running">;
+    summary: string;
+    evidence?: string[];
+    attempted?: boolean;
+  }): ObjectiveCoverage | null {
+    const coverage = this.state.coverage.find(
+      (candidate) =>
+        candidate.targetId === input.targetId &&
+        candidate.objectiveId === input.objectiveId,
+    );
+    if (!coverage || coverage.workerId !== input.workerId) return null;
+    coverage.status = input.status;
+    coverage.summary = input.summary.trim();
+    coverage.evidence = unique([
+      ...coverage.evidence,
+      ...(input.evidence ?? []),
+    ]);
+    if (input.attempted !== false) coverage.attempts += 1;
+    delete coverage.workerId;
+    this.refreshServiceBaselines();
     this.persist();
     return structuredClone(coverage);
   }
@@ -464,6 +621,7 @@ export class EngagementStore {
     input: Omit<EngagementCapability, "id" | "updatedAt"> & { id?: string },
   ): EngagementCapability {
     for (const serviceId of input.serviceIds) this.getService(serviceId);
+    for (const targetId of input.targetIds) this.getTarget(targetId);
     for (const objectiveId of input.objectiveIds)
       this.getObjective(objectiveId);
     const id =
@@ -472,6 +630,7 @@ export class EngagementStore {
       ...input,
       id,
       serviceIds: unique(input.serviceIds),
+      targetIds: unique(input.targetIds),
       objectiveIds: unique(input.objectiveIds),
       evidence: unique(input.evidence),
       nextSteps: unique(input.nextSteps),
@@ -487,11 +646,28 @@ export class EngagementStore {
   }
 
   addImpactProof(input: Omit<ImpactProof, "id" | "createdAt">): ImpactProof {
+    if (
+      unique([
+        ...input.findingIds,
+        ...input.capabilityIds,
+        ...input.artifactPaths,
+        ...input.observationRefs,
+      ]).length === 0
+    ) {
+      throw new Error("Impact proofs require at least one evidence reference");
+    }
+    for (const serviceId of input.serviceIds) this.getService(serviceId);
+    for (const targetId of input.targetIds) this.getTarget(targetId);
+    for (const objectiveId of input.objectiveIds)
+      this.getObjective(objectiveId);
+    for (const capabilityId of input.capabilityIds)
+      this.getCapability(capabilityId);
     const proof: ImpactProof = {
       ...input,
       id: `proof_${randomUUID().replaceAll("-", "").slice(0, 12)}`,
       objectiveIds: unique(input.objectiveIds),
       serviceIds: unique(input.serviceIds),
+      targetIds: unique(input.targetIds),
       findingIds: unique(input.findingIds),
       capabilityIds: unique(input.capabilityIds),
       artifactPaths: unique(input.artifactPaths),
@@ -508,6 +684,23 @@ export class EngagementStore {
     summary?: string,
     evidence: string[] = [],
   ): EngagementState["chainExplore"] {
+    if (
+      status === "impact-proven" &&
+      unique([...this.state.chainExplore.evidence, ...evidence]).length === 0
+    ) {
+      throw new Error("Impact-proven chain exploration requires evidence");
+    }
+    if (status === "exhausted" || status === "blocked") {
+      const completion = this.completion();
+      if (
+        completion.missingCoverageCellIds.length > 0 ||
+        completion.unresolvedCapabilityIds.length > 0
+      ) {
+        throw new Error(
+          "Chain exploration cannot be closed until target coverage and capability resolution are complete",
+        );
+      }
+    }
     this.state.chainExplore = {
       status,
       summary: summary?.trim() || undefined,
@@ -523,7 +716,9 @@ export class EngagementStore {
     const worker: EngagementWorkerRecord = {
       ...input,
       serviceIds: unique(input.serviceIds),
+      targetIds: unique(input.targetIds),
       objectiveIds: unique(input.objectiveIds),
+      capabilityIds: unique(input.capabilityIds),
       status: "running",
       startedAt: new Date().toISOString(),
     };
@@ -587,9 +782,11 @@ export class EngagementStore {
         interruptedIds.has(coverage.workerId)
       ) {
         coverage.status = "pending";
+        delete coverage.workerId;
         coverage.summary = "Previous worker was interrupted before completion.";
       }
     }
+    this.refreshServiceBaselines();
     for (const service of this.state.services) {
       const interruptedExplorer = interrupted.some(
         (worker) =>
@@ -605,16 +802,15 @@ export class EngagementStore {
   }
 
   completion(): EngagementCompletion {
-    const missingObjectiveIds = this.state.objectives
-      .filter(
-        (objective) =>
-          !this.state.coverage.some(
-            (coverage) =>
-              coverage.objectiveId === objective.id &&
-              TERMINAL_COVERAGE.has(coverage.status),
-          ),
-      )
-      .map((objective) => objective.id);
+    const incompleteCoverage = this.state.coverage.filter(
+      (coverage) => !TERMINAL_COVERAGE.has(coverage.status),
+    );
+    const missingObjectiveIds = unique(
+      incompleteCoverage.map((coverage) => coverage.objectiveId),
+    );
+    const missingCoverageCellIds = incompleteCoverage.map((coverage) =>
+      engagementCoverageCellId(coverage.targetId, coverage.objectiveId),
+    );
     const missingServiceIds = this.state.services
       .filter((service) => !TERMINAL_SERVICE.has(service.baselineStatus))
       .map((service) => service.id);
@@ -632,14 +828,44 @@ export class EngagementStore {
     return {
       complete:
         missingObjectiveIds.length === 0 &&
+        missingCoverageCellIds.length === 0 &&
         missingServiceIds.length === 0 &&
         unresolvedCapabilityIds.length === 0 &&
         !chainExplorePending,
       missingObjectiveIds,
+      missingCoverageCellIds,
       missingServiceIds,
       unresolvedCapabilityIds,
       chainExplorePending,
     };
+  }
+
+  private refreshServiceBaselines(): void {
+    for (const service of this.state.services) {
+      const targetIds = new Set(
+        this.state.targets
+          .filter((target) => target.serviceId === service.id)
+          .map((target) => target.id),
+      );
+      const coverage = this.state.coverage.filter((cell) =>
+        targetIds.has(cell.targetId),
+      );
+      if (coverage.length === 0) continue;
+      if (coverage.every((cell) => TERMINAL_COVERAGE.has(cell.status))) {
+        service.baselineStatus = coverage.every(
+          (cell) => cell.status === "blocked",
+        )
+          ? "blocked"
+          : "explored";
+        service.summary = `Deterministic endpoint coverage completed for ${targetIds.size} target(s).`;
+      } else if (coverage.some((cell) => cell.status === "running")) {
+        service.baselineStatus = "running";
+        service.summary = "Deterministic endpoint coverage is running.";
+      } else {
+        service.baselineStatus = "pending";
+        service.summary = undefined;
+      }
+    }
   }
 
   private persist(): void {

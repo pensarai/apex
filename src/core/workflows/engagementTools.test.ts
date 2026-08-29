@@ -153,7 +153,9 @@ describe("engagement worker tools", () => {
     const spawned = await executeTool(tools.spawn_engagement_worker, {
       mission: "Test the object authorization boundary",
       serviceIds: [serviceId],
+      targetIds: [seed.targets[0]?.id as string],
       objectiveIds: [objectiveId],
+      capabilityIds: [],
       mode: "targeted",
       toolCallDescription: "spawn authorization worker",
     });
@@ -193,7 +195,9 @@ describe("engagement worker tools", () => {
     const spawned = await executeTool(tools.spawn_engagement_worker, {
       mission: "Prove the concrete authorization impact",
       serviceIds: [serviceId],
+      targetIds: [seed.targets[0]?.id as string],
       objectiveIds: [objectiveId],
+      capabilityIds: [],
       mode: "fast-strike",
       toolCallDescription: "spawn impact worker",
     });

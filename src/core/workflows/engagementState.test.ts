@@ -7,6 +7,7 @@ import type { SwarmTarget } from "../session/persistence";
 import {
   AgentMailbox,
   buildEngagementState,
+  DEFAULT_ENGAGEMENT_BASELINE_OBJECTIVE,
   EngagementStore,
   restoreEngagementState,
 } from "./engagementState";
@@ -51,6 +52,35 @@ describe("buildEngagementState", () => {
     expect(authorization?.relevantServiceIds).toHaveLength(2);
     expect(state.coverage).toHaveLength(3);
   });
+
+  it("creates one coverage cell per target-local objective", () => {
+    const state = buildEngagementState("https://app.example.test", [
+      {
+        target: "https://app.example.test/api/users/{id}",
+        objectives: ["Test object authorization"],
+      },
+      {
+        target: "https://app.example.test/api/projects/{id}",
+        objectives: ["Test object authorization"],
+      },
+      {
+        target: "https://app.example.test/health",
+        objectives: [],
+      },
+    ]);
+
+    expect(state.services).toHaveLength(1);
+    expect(state.objectives).toHaveLength(2);
+    expect(state.coverage).toHaveLength(3);
+    expect(
+      state.targets.find((target) => target.target.endsWith("/health"))
+        ?.objectiveIds,
+    ).toEqual([
+      state.objectives.find(
+        (objective) => objective.text === DEFAULT_ENGAGEMENT_BASELINE_OBJECTIVE,
+      )?.id,
+    ]);
+  });
 });
 
 describe("EngagementStore", () => {
@@ -66,10 +96,11 @@ describe("EngagementStore", () => {
     for (const service of state.services) {
       store.markServiceBaseline(service.id, "explored", "Baseline explored");
     }
-    for (const objective of state.objectives) {
+    for (const coverage of state.coverage) {
       store.markObjectiveCoverage({
-        objectiveId: objective.id,
-        serviceId: objective.relevantServiceIds[0] as string,
+        targetId: coverage.targetId,
+        objectiveId: coverage.objectiveId,
+        serviceId: coverage.serviceId,
         status: "exhausted",
         summary: "Bounded paths tested",
       });
@@ -79,17 +110,18 @@ describe("EngagementStore", () => {
       description: "Session accepted by the admin service",
       status: "confirmed",
       serviceIds: [state.services[0]?.id as string],
+      targetIds: [state.targets[0]?.id as string],
       objectiveIds: [],
       evidence: ["call-1"],
       nextSteps: ["Attempt admin pivot"],
     });
-    store.setChainExplore("exhausted", "No chain reached crown jewels");
     expect(store.completion()).toMatchObject({
       complete: false,
       unresolvedCapabilityIds: [capability.id],
     });
 
     store.upsertCapability({ ...capability, status: "blocked", nextSteps: [] });
+    store.setChainExplore("exhausted", "No chain reached crown jewels");
     expect(store.completion().complete).toBe(true);
   });
 
@@ -101,6 +133,7 @@ describe("EngagementStore", () => {
       description: "Protected record returned through IDOR",
       objectiveIds: [seed.objectives[0]?.id as string],
       serviceIds: [seed.services[0]?.id as string],
+      targetIds: [seed.targets[0]?.id as string],
       findingIds: ["finding-1"],
       capabilityIds: [],
       artifactPaths: ["pocs/idor.ts"],
@@ -114,6 +147,39 @@ describe("EngagementStore", () => {
     expect(() => EngagementStore.open(directory, seed)).toThrow();
   });
 
+  it("requires evidence references for impact claims", () => {
+    const directory = temporaryDirectory();
+    const seed = buildEngagementState("https://app.example.test", targets);
+    const store = EngagementStore.open(directory, seed);
+    const coverage = seed.coverage[0];
+    if (!coverage) throw new Error("Expected coverage");
+
+    expect(() =>
+      store.markObjectiveCoverage({
+        targetId: coverage.targetId,
+        objectiveId: coverage.objectiveId,
+        serviceId: coverage.serviceId,
+        status: "impact-proven",
+        summary: "Claim without evidence",
+      }),
+    ).toThrow("requires evidence");
+    expect(() =>
+      store.setChainExplore("impact-proven", "Claim without evidence"),
+    ).toThrow("requires evidence");
+    expect(() =>
+      store.addImpactProof({
+        description: "Claim without evidence",
+        objectiveIds: [],
+        serviceIds: [],
+        targetIds: [],
+        findingIds: [],
+        capabilityIds: [],
+        artifactPaths: [],
+        observationRefs: [],
+      }),
+    ).toThrow("require at least one evidence reference");
+  });
+
   it("reopens coverage owned by workers interrupted across host restarts", () => {
     const directory = temporaryDirectory();
     const seed = buildEngagementState("https://app.example.test", targets);
@@ -125,9 +191,12 @@ describe("EngagementStore", () => {
       mission: "Test authorization",
       mode: "fast-strike",
       serviceIds: [serviceId],
+      targetIds: [seed.targets[0]?.id as string],
       objectiveIds: [objectiveId],
+      capabilityIds: [],
     });
     store.markObjectiveCoverage({
+      targetId: seed.targets[0]?.id as string,
       objectiveId,
       serviceId,
       status: "running",
@@ -139,7 +208,9 @@ describe("EngagementStore", () => {
       mission: "Explore service",
       mode: "explore",
       serviceIds: [serviceId],
+      targetIds: [seed.targets[0]?.id as string],
       objectiveIds: [],
+      capabilityIds: [],
     });
     store.markServiceBaseline(serviceId, "running", "Exploring");
 
@@ -210,6 +281,68 @@ describe("restoreEngagementState", () => {
       baselineStatus: "explored",
       summary: "Baseline complete",
     });
+  });
+
+  it("migrates version-one service coverage by reopening target-local cells", () => {
+    const original = buildEngagementState("https://app.example.test", targets);
+    const checkpoint = EngagementStore.open(
+      temporaryDirectory(),
+      original,
+    ).checkpoint();
+    const legacyCheckpoint = {
+      ...checkpoint,
+      version: 1,
+      objectives: undefined,
+      coverage: checkpoint.coverage.map(
+        ({ targetId: _targetId, attempts: _attempts, ...coverage }) => ({
+          ...coverage,
+          status: "exhausted" as const,
+        }),
+      ),
+      capabilities: checkpoint.capabilities.map(
+        ({ targetIds: _targetIds, ...capability }) => capability,
+      ),
+      impactProofs: checkpoint.impactProofs.map(
+        ({ targetIds: _targetIds, ...proof }) => proof,
+      ),
+      workers: checkpoint.workers.map(
+        ({ targetIds: _targetIds, capabilityIds: _capabilityIds, ...worker }) =>
+          worker,
+      ),
+    };
+    const messages = [
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-legacy",
+            toolName: "update_engagement_coverage",
+            output: {
+              type: "text",
+              value: JSON.stringify({ checkpoint: legacyCheckpoint }),
+            },
+          },
+        ],
+      },
+    ] as ModelMessage[];
+
+    const restored = restoreEngagementState(original, messages);
+
+    expect(restored.version).toBe(2);
+    expect(restored.coverage).toHaveLength(original.coverage.length);
+    expect(restored.coverage).toEqual(
+      expect.arrayContaining(
+        original.coverage.map((coverage) =>
+          expect.objectContaining({
+            targetId: coverage.targetId,
+            objectiveId: coverage.objectiveId,
+            attempts: 0,
+            status: "pending",
+          }),
+        ),
+      ),
+    );
   });
 });
 
