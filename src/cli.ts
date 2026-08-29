@@ -7,6 +7,7 @@
  * All modules are statically imported so Bun can bundle them.
  */
 
+import { config as loadEnv } from "dotenv";
 import packageJson from "../package.json";
 import { type AIModel, buildAuthConfig } from "./core/ai";
 import { resolveCliLogLevel } from "./core/cli/logLevelArgs";
@@ -14,6 +15,7 @@ import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
 import { logger } from "./core/logger";
+import { startObservabilityRuntime } from "./core/observability/runtime";
 import type { SessionInfo } from "./core/session";
 import {
   combinePromptParts,
@@ -23,6 +25,8 @@ import {
 
 const args = process.argv.slice(2);
 const version = packageJson.version;
+
+loadEnv();
 
 // Detect global --obfuscate flag and propagate to the TUI via env so the
 // flag works regardless of where it appears in argv. The flag is stripped
@@ -274,9 +278,6 @@ Global options:
 // ---------------------------------------------------------------------------
 
 async function runPentest() {
-  const { config } = await import("dotenv");
-  config();
-
   const { runPentestAgent } = await import("./core/api/blackboxPentest");
   const { sessions } = await import("./core/session");
   const { config: appConfig } = await import("./core/config");
@@ -360,18 +361,9 @@ POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}`);
   } finally {
     await wandbCleanup();
   }
-
-  // Some tool subsystems (browser/MCP/session watchers) can leave handles open
-  // after the pentest workflow has printed its final results. For CLI use the
-  // command is complete here, so exit explicitly instead of letting harnesses
-  // misclassify a completed run as a timeout.
-  process.exit(0);
 }
 
 async function runTargetedPentest() {
-  const { config } = await import("dotenv");
-  config();
-
   const { runTargetedPentestAgent } = await import(
     "./core/api/targetedPentest"
   );
@@ -433,14 +425,9 @@ POCs:      ${pocsPath}`);
   } finally {
     await wandbCleanup();
   }
-
-  process.exit(0);
 }
 
 async function runThreatModel() {
-  const { config } = await import("dotenv");
-  config();
-
   const { runThreatModelWorkflow } = await import("./core/api/threatModel");
   const { config: appConfig } = await import("./core/config");
   const path = await import("node:path");
@@ -482,9 +469,6 @@ Model:    ${model}
 }
 
 async function runOperator() {
-  const { config } = await import("dotenv");
-  config();
-
   const { runOffensiveSecurityAgent } = await import("./core/api/offesecAgent");
   const { sessions, normalizeMessages, getResumeMessages } = await import(
     "./core/session"
@@ -609,66 +593,85 @@ async function runUpgrade() {
 // Router
 // ---------------------------------------------------------------------------
 
-if (hasFlag("-p") || command === "--prompt") {
-  await runOperator();
-} else if (
-  command === "version" ||
-  command === "--version" ||
-  command === "-v"
-) {
-  console.log(`v${version}`);
-} else if (command === "help" || command === "--help" || command === "-h") {
-  showHelp();
-} else if (command === "upgrade" || command === "update") {
-  await runUpgrade();
-} else if (command === "pentest") {
-  await runPentest();
-} else if (command === "targeted-pentest") {
-  await runTargetedPentest();
-} else if (command === "login" || command === "auth") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/auth");
-} else if (command === "uninstall") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/uninstall");
-} else if (command === "apps") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/apps");
-} else if (command === "pentests") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/pentests");
-} else if (command === "targets") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/targets");
-} else if (command === "issues") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/issues");
-} else if (command === "fixes") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/fixes");
-} else if (command === "logs") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/logs");
-} else if (command === "config") {
-  process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
-  await import("./cli/config");
-} else if (command === "threat-model") {
-  await runThreatModel();
-} else if (command === "doctor") {
-  const { runDoctor } = await import("./core/doctor");
-  await runDoctor();
-} else if (args.length === 0) {
-  if (process.env.PENSAR_NO_TUI === "1") {
-    console.error(
-      "TUI mode requires Bun. Install Bun (https://bun.sh) or use a standalone binary release for interactive mode.",
-    );
-    console.error("All other commands work with Node — run 'pensar --help'.");
+// Standalone CLI entrypoint: own the optional OTel runtime. No-op unless an
+// OTLP endpoint is configured; the TUI branch below takes over the process
+// and manages the runtime's lifecycle in its own exit path.
+const observabilityRuntime = startObservabilityRuntime();
+
+try {
+  if (hasFlag("-p") || command === "--prompt") {
+    await runOperator();
+  } else if (
+    command === "version" ||
+    command === "--version" ||
+    command === "-v"
+  ) {
+    console.log(`v${version}`);
+  } else if (command === "help" || command === "--help" || command === "-h") {
+    showHelp();
+  } else if (command === "upgrade" || command === "update") {
+    await runUpgrade();
+  } else if (command === "pentest") {
+    await runPentest();
+  } else if (command === "targeted-pentest") {
+    await runTargetedPentest();
+  } else if (command === "login" || command === "auth") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/auth");
+  } else if (command === "uninstall") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/uninstall");
+  } else if (command === "apps") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/apps");
+  } else if (command === "pentests") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/pentests");
+  } else if (command === "targets") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/targets");
+  } else if (command === "issues") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/issues");
+  } else if (command === "fixes") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/fixes");
+  } else if (command === "logs") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/logs");
+  } else if (command === "config") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/config");
+  } else if (command === "threat-model") {
+    await runThreatModel();
+  } else if (command === "doctor") {
+    const { runDoctor } = await import("./core/doctor");
+    await runDoctor();
+  } else if (args.length === 0) {
+    if (process.env.PENSAR_NO_TUI === "1") {
+      console.error(
+        "TUI mode requires Bun. Install Bun (https://bun.sh) or use a standalone binary release for interactive mode.",
+      );
+      console.error("All other commands work with Node — run 'pensar --help'.");
+      process.exit(1);
+    }
+    await import("./tui/index.tsx");
+  } else {
+    console.error(`Error: Unknown command '${command}'`);
+    console.error();
+    console.error("Run 'pensar --help' for usage information");
     process.exit(1);
   }
-  await import("./tui/index.tsx");
-} else {
-  console.error(`Error: Unknown command '${command}'`);
-  console.error();
-  console.error("Run 'pensar --help' for usage information");
-  process.exit(1);
+} finally {
+  // Preserve command failures while still making process-boundary flushing
+  // best-effort. The TUI owns its runtime lifecycle after import.
+  if (args.length !== 0) {
+    await observabilityRuntime.shutdown().catch(() => {});
+  }
+}
+
+// Some pentest tool subsystems can leave handles open after completion. Keep
+// the explicit exit, but only after the final OTLP batch has been flushed.
+if (command === "pentest" || command === "targeted-pentest") {
+  process.exit(0);
 }

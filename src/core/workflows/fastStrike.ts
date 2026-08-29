@@ -255,6 +255,7 @@ export interface FastStrikeObjectiveInput
     | "abortSignal"
     | "eventBus"
     | "onStepFinish"
+    | "onCacheMetrics"
     | "enableThinking"
     | "thinkingEffort"
     | "openAIReasoningEffort"
@@ -392,6 +393,7 @@ async function executeFastStrikeObjective(
         abortSignal,
         eventBus: input.eventBus,
         onStepFinish: input.onStepFinish,
+        onCacheMetrics: input.onCacheMetrics,
         enableThinking: input.enableThinking,
         thinkingEffort: input.thinkingEffort,
         openAIReasoningEffort: input.openAIReasoningEffort,

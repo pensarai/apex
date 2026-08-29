@@ -3,7 +3,6 @@ import { useDialog } from "../context/dialog";
 import { useFocus } from "../context/focus";
 import { useInput } from "../context/input";
 import { useRoute } from "../context/route";
-import { cleanupTerminalFocusMode } from "../terminal-focus";
 
 export interface KeybindingEntry {
   combo: string;
@@ -22,6 +21,7 @@ export interface KeybindingDependencies {
   setExternalDialogOpen: (open: boolean) => void;
   setFocusIndex: (fn: (prev: number) => number) => void;
   navigableItems: string[];
+  onExit: () => Promise<void>;
   /** Optional: Toggle tools panel visibility (session context only) */
   setShowToolsPanel?: (show: boolean) => void;
 }
@@ -40,6 +40,7 @@ export function createKeybindings(
     setExternalDialogOpen,
     setFocusIndex,
     navigableItems,
+    onExit,
     setShowToolsPanel,
   } = deps;
 
@@ -58,9 +59,7 @@ export function createKeybindings(
         const lastPress = ctrlCPressTime;
 
         if (lastPress && now - lastPress < 1000) {
-          cleanupTerminalFocusMode();
-          renderer.destroy();
-          process.exit(0);
+          await onExit();
         } else {
           setInputKey((prev) => prev + 1);
           setCtrlCPressTime(now);

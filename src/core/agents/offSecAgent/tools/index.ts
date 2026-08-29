@@ -157,6 +157,12 @@ export {
   resolverSessionFromCtx,
   ScopeViolationError,
 } from "./scopeGuard";
+export {
+  SMS_LIST_MESSAGES_TOOL_NAME,
+  SMS_TOOL_NAMES,
+  sessionHasSmsPasswordless,
+  smsListMessages,
+} from "./smsListMessages";
 export { spawnCodingAgent } from "./spawnCodingAgent";
 export { spawnPentestAgent } from "./spawnPentestAgent";
 export { spawnPentestSwarm } from "./spawnPentestSwarm";
@@ -255,6 +261,7 @@ import { runAttackSurface } from "./runAttackSurface";
 import { runCodeQuery } from "./runCodeQuery";
 import { runPentestWorkflow } from "./runPentestWorkflow";
 import { runWhiteboxScan } from "./runWhiteboxScan";
+import { smsListMessages } from "./smsListMessages";
 import { spawnCodingAgent } from "./spawnCodingAgent";
 import { spawnPentestAgent } from "./spawnPentestAgent";
 import { spawnPentestSwarm } from "./spawnPentestSwarm";
@@ -381,6 +388,9 @@ export function createAllTools(ctx: ToolContext) {
     email_search_messages: emailSearchMessages(ctx),
     email_get_message: emailGetMessage(ctx),
 
+    // Inbound SMS list (gated at activeTools level when no Mobile OTP cred)
+    sms_list_messages: smsListMessages(ctx),
+
     // Web search tools (requires Pensar account)
     web_search: webSearch(ctx),
     get_page: getPage(ctx),
@@ -500,6 +510,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "email_get_attachments",
   "email_mark_read",
   "send_email",
+  "sms_list_messages",
   // Web search (requires Pensar account)
   "web_search",
   "get_page",
@@ -594,12 +605,13 @@ export const PLAN_MODE_TOOL_NAMES: ToolName[] = [
   "get_memory",
   // Prompt-injection testing (safe metadata only)
   "list_prompt_injections",
-  // Email (read-only)
+  // Email / SMS (read-only)
   "email_list_inboxes",
   "email_list_messages",
   "email_get_message",
   "email_search_messages",
   "email_get_attachments",
+  "sms_list_messages",
   // Web search
   "web_search",
   "get_page",
@@ -616,3 +628,6 @@ export const SKILL_TOOL_NAMES = ["read_skill"] as const;
 
 /** Email inbox tool names — filtered out by the base class when no inboxes are configured. */
 export { EMAIL_TOOL_NAMES as EMAIL_TOOL_NAMES_ACTIVE } from "./email";
+
+/** SMS list tool names — filtered out by the base class when no Mobile OTP credential is present. */
+export { SMS_TOOL_NAMES as SMS_TOOL_NAMES_ACTIVE } from "./smsListMessages";

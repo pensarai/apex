@@ -12,6 +12,7 @@ export {
   buildReasoningProviderOptions,
   DEFAULT_OPENAI_REASONING_EFFORT,
   generateObjectResponse,
+  getContextWindow,
   getOpenAIReasoningEfforts,
   modelSupportsAdaptiveThinking,
   modelSupportsOpenAIReasoning,
@@ -26,6 +27,11 @@ export type {
   ContextCompactionState,
   SemanticCapsule,
 } from "./contextCompaction";
+export {
+  addRecentModelId,
+  getRecentModels,
+  MAX_RECENT_MODELS,
+} from "./model-history";
 export type {
   AgentToolProtocol,
   AgentToolProtocolPreference,

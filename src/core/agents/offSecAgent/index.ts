@@ -142,6 +142,10 @@ export {
   SEND_EMAIL_TOOL_NAME,
   SessionOastRouter,
   SKILL_TOOL_NAMES,
+  SMS_LIST_MESSAGES_TOOL_NAME,
+  SMS_TOOL_NAMES,
+  SMS_TOOL_NAMES_ACTIVE,
+  sessionHasSmsPasswordless,
   setHeadlessMode,
   setUserAgent,
   setViewportSize,
@@ -180,4 +184,5 @@ export {
   type Finding,
   type OffensiveSecurityAgentInput,
   type SpecializedAgentInput,
+  type SystemPentestScope,
 } from "./types";

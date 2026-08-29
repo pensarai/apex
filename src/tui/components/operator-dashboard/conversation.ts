@@ -1,8 +1,12 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ModelMessage } from "ai";
+import { getResumeMessages, normalizeMessages } from "../../../core/session";
 import type { DisplayMessage } from "../agent-display";
 
 // ---------------------------------------------------------------------------
-// Conversation transitions over ModelMessage[] — pure, immutable, testable
+// Conversation transitions over ModelMessage[] — pure, immutable, testable —
+// plus the one concrete abort transcript operation that orchestrates them.
 // ---------------------------------------------------------------------------
 
 /**
@@ -113,4 +117,63 @@ export function rewriteToolResultOutput(
   });
 
   return changed ? next : (conversation as ModelMessage[]);
+}
+
+// ---------------------------------------------------------------------------
+// Abort transcript recovery operation
+// ---------------------------------------------------------------------------
+
+export interface RecoverAbortedTranscriptInput {
+  /** Session root — `messages.json` is read from and written here. */
+  rootPath: string;
+  /** In-memory conversation — the base when no usable transcript is on disk. */
+  conversation: readonly ModelMessage[];
+  /** Partial streamed assistant text at abort time. */
+  partialText: string;
+  /** Display messages — the source of pending/streaming tool state. */
+  displayMessages: readonly DisplayMessage[];
+}
+
+/**
+ * The abort-path transcript operation: read the persisted messages, reload the
+ * resumable window into a normalized conversation, recover the aborted turn
+ * via {@link recoverAbortedConversation}, and persist the corrected transcript
+ * when recovery produced one. Best-effort throughout — read and write failures
+ * keep whatever conversation is already available.
+ *
+ * Returns the conversation the caller should hold next: the recovered
+ * transcript when recovery fired, otherwise the (possibly reloaded) input.
+ */
+export function recoverAbortedTranscript(
+  input: RecoverAbortedTranscriptInput,
+): ModelMessage[] {
+  const messagesPath = join(input.rootPath, "messages.json");
+  let conversation = input.conversation as ModelMessage[];
+  let recovered: ModelMessage[] | null = null;
+
+  try {
+    if (existsSync(messagesPath)) {
+      const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
+      if (Array.isArray(raw) && raw.length > 0) {
+        conversation = normalizeMessages(getResumeMessages(raw));
+      }
+    }
+    recovered = recoverAbortedConversation(
+      conversation,
+      input.partialText,
+      input.displayMessages,
+    );
+  } catch {
+    // Best-effort read — keep whatever conversation we already have.
+  }
+
+  if (!recovered) return conversation;
+  conversation = recovered;
+  try {
+    // Persist so session resume also sees the corrected state.
+    writeFileSync(messagesPath, JSON.stringify(recovered, null, 2));
+  } catch {
+    // Best-effort write — the in-memory conversation is still recovered.
+  }
+  return conversation;
 }

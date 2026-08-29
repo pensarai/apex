@@ -151,6 +151,37 @@ export function assertUrlInScope(url: string, ctx: ToolContext): void {
 }
 
 /**
+ * Assert that a finding's `endpoint` is within the engagement scope before it
+ * enters the shared findings registry. Defense in depth: a routing error must
+ * not be able to write infrastructure findings (e.g. against `127.0.0.1`) into
+ * the customer registry.
+ *
+ * Only enforced when the endpoint carries an explicit http(s) authority. Bare
+ * paths (e.g. `/api/users`) have no host — they are implicitly the in-scope
+ * target — so they are allowed. Throws `ScopeViolationError` for an
+ * out-of-scope host. No-op when no scope is configured.
+ */
+export function assertFindingEndpointInScope(
+  endpoint: string,
+  ctx: ToolContext,
+): void {
+  const allowedHosts = getAllowedHosts(ctx);
+  if (allowedHosts.length === 0) return;
+
+  // Only absolute http(s) URLs name their own host; anything else (a path,
+  // "host:port", a scheme-less token) is treated as relative to the in-scope
+  // target and left to the existing deterministic target boundary.
+  if (!/^https?:\/\//i.test(endpoint.trim())) return;
+
+  const hostname = extractHostname(endpoint);
+  if (!hostname) return;
+
+  if (!isHostAllowed(hostname, allowedHosts)) {
+    throw new ScopeViolationError(hostname, allowedHosts);
+  }
+}
+
+/**
  * Extract URLs and hostnames from a shell command string.
  *
  * Looks for:

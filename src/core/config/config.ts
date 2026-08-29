@@ -41,6 +41,7 @@ export interface Config {
   /** Defaults to true. Set PENSAR_CONTEXT_COMPACTION=legacy for the old summarizer. */
   contextCompactionEnabled?: boolean;
   contextCompactionThresholdRatio?: number;
+  recentModelIds?: string[];
   // Extended thinking / reasoning
   reasoningEnabled?: boolean;
   openAIReasoningEffort?:
