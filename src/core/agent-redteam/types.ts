@@ -129,7 +129,8 @@ export type AgentRedTeamSignalKind =
   | "memory-write-from-untrusted-content"
   | "delegation-privilege-boundary-crossed"
   | "resource-exhaustion"
-  | "hidden-instruction-present";
+  | "hidden-instruction-present"
+  | "narration-action-divergence";
 
 export type AgentRedTeamCarrierFeatureKind =
   | "encoded-content"
