@@ -6,6 +6,7 @@ import {
   parseVectorString,
   validateMetrics,
 } from "./calculator";
+import { MACROVECTOR_LOOKUP } from "./macrovector-scores";
 import { getSeverityFromScore } from "./types";
 
 // Expected scores come from the CVSS v4.0 reference implementation FIRST hosts
@@ -132,6 +133,1092 @@ const FIRST_EXAMPLES: Case[] = [
     "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/MAV:N/MAC:H/MAT:N/MPR:L/MUI:N/MVC:H/MVI:H/MVA:H/MSC:H/MSI:S/MSA:H/CR:M/IR:H/AR:M/E:P",
     8.7,
   ],
+];
+
+// One representative per MacroVector, all 270 of them, so every
+// equivalence class the algorithm keys on is pinned. Scores come from
+// RedHatProductSecurity/cvss-v4-calculator, not from this implementation.
+const MACROVECTOR_COVERAGE: Case[] = [
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    10.0,
+  ], // 000000
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M/MSI:S",
+    9.9,
+  ], // 000001
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    9.8,
+  ], // 000010
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M/MSI:S",
+    9.5,
+  ], // 000011
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    9.5,
+  ], // 000020
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M/MSI:S",
+    9.2,
+  ], // 000021
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    10.0,
+  ], // 000100
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M",
+    9.6,
+  ], // 000101
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    9.3,
+  ], // 000110
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M",
+    8.7,
+  ], // 000111
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    9.1,
+  ], // 000120
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M",
+    8.1,
+  ], // 000121
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    9.3,
+  ], // 000200
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:A/CR:M/IR:M/AR:M",
+    9.0,
+  ], // 000201
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    8.9,
+  ], // 000210
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:P/CR:M/IR:M/AR:M",
+    8.0,
+  ], // 000211
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    8.1,
+  ], // 000220
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:U/CR:M/IR:M/AR:M",
+    6.8,
+  ], // 000221
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    9.8,
+  ], // 001000
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M/MSI:S",
+    9.5,
+  ], // 001001
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    9.5,
+  ], // 001010
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M/MSI:S",
+    9.1,
+  ], // 001011
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    9.0,
+  ], // 001020
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M/MSI:S",
+    8.3,
+  ], // 001021
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    9.3,
+  ], // 001100
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M",
+    9.2,
+  ], // 001101
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    8.9,
+  ], // 001110
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M",
+    8.1,
+  ], // 001111
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    8.1,
+  ], // 001120
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M",
+    6.5,
+  ], // 001121
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    8.8,
+  ], // 001200
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:A/CR:M/IR:M/AR:M",
+    8.0,
+  ], // 001201
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    7.8,
+  ], // 001210
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:P/CR:M/IR:M/AR:M",
+    7.0,
+  ], // 001211
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    6.9,
+  ], // 001220
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:U/CR:M/IR:M/AR:M",
+    4.7,
+  ], // 001221
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    9.1,
+  ], // 002001
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    8.1,
+  ], // 002011
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    7.1,
+  ], // 002021
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    7.9,
+  ], // 002101
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    6.9,
+  ], // 002111
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    5.0,
+  ], // 002121
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    6.9,
+  ], // 002201
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    5.5,
+  ], // 002211
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    2.7,
+  ], // 002221
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    9.9,
+  ], // 010000
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M/MSI:S",
+    9.7,
+  ], // 010001
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    9.5,
+  ], // 010010
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M/MSI:S",
+    9.2,
+  ], // 010011
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    9.2,
+  ], // 010020
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M/MSI:S",
+    8.4,
+  ], // 010021
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    9.5,
+  ], // 010100
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M",
+    9.1,
+  ], // 010101
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    9.0,
+  ], // 010110
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M",
+    8.3,
+  ], // 010111
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    8.4,
+  ], // 010120
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M",
+    7.1,
+  ], // 010121
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    9.2,
+  ], // 010200
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:A/CR:M/IR:M/AR:M",
+    8.1,
+  ], // 010201
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    8.2,
+  ], // 010210
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:P/CR:M/IR:M/AR:M",
+    7.1,
+  ], // 010211
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    7.2,
+  ], // 010220
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:U/CR:M/IR:M/AR:M",
+    5.3,
+  ], // 010221
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    9.5,
+  ], // 011000
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M/MSI:S",
+    9.2,
+  ], // 011001
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    9.2,
+  ], // 011010
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M/MSI:S",
+    8.4,
+  ], // 011011
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    8.4,
+  ], // 011020
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M/MSI:S",
+    7.1,
+  ], // 011021
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    9.2,
+  ], // 011100
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M",
+    8.2,
+  ], // 011101
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    8.0,
+  ], // 011110
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M",
+    7.1,
+  ], // 011111
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    7.0,
+  ], // 011120
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M",
+    5.8,
+  ], // 011121
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    8.4,
+  ], // 011200
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:A/CR:M/IR:M/AR:M",
+    7.0,
+  ], // 011201
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    7.1,
+  ], // 011210
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:P/CR:M/IR:M/AR:M",
+    5.1,
+  ], // 011211
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    5.0,
+  ], // 011220
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:U/CR:M/IR:M/AR:M",
+    2.9,
+  ], // 011221
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    8.5,
+  ], // 012001
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    7.4,
+  ], // 012011
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    5.0,
+  ], // 012021
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    7.1,
+  ], // 012101
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    5.2,
+  ], // 012111
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    2.9,
+  ], // 012121
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    6.3,
+  ], // 012201
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    2.9,
+  ], // 012211
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    1.7,
+  ], // 012221
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    9.8,
+  ], // 100000
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M/MSI:S",
+    9.5,
+  ], // 100001
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    9.4,
+  ], // 100010
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M/MSI:S",
+    8.7,
+  ], // 100011
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    9.0,
+  ], // 100020
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M/MSI:S",
+    8.0,
+  ], // 100021
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    9.4,
+  ], // 100100
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M",
+    8.9,
+  ], // 100101
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    8.6,
+  ], // 100110
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M",
+    7.4,
+  ], // 100111
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    7.7,
+  ], // 100120
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M",
+    6.4,
+  ], // 100121
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    8.7,
+  ], // 100200
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:A/CR:M/IR:M/AR:M",
+    7.5,
+  ], // 100201
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    7.4,
+  ], // 100210
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:P/CR:M/IR:M/AR:M",
+    6.3,
+  ], // 100211
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    6.3,
+  ], // 100220
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:U/CR:M/IR:M/AR:M",
+    4.9,
+  ], // 100221
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    9.4,
+  ], // 101000
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M/MSI:S",
+    8.8,
+  ], // 101001
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    8.8,
+  ], // 101010
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M/MSI:S",
+    7.6,
+  ], // 101011
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    7.5,
+  ], // 101020
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M/MSI:S",
+    6.6,
+  ], // 101021
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    8.6,
+  ], // 101100
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M",
+    7.6,
+  ], // 101101
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    7.4,
+  ], // 101110
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M",
+    5.8,
+  ], // 101111
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    5.9,
+  ], // 101120
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M",
+    4.9,
+  ], // 101121
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    7.2,
+  ], // 101200
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:A/CR:M/IR:M/AR:M",
+    5.7,
+  ], // 101201
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    5.7,
+  ], // 101210
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:P/CR:M/IR:M/AR:M",
+    5.1,
+  ], // 101211
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    5.2,
+  ], // 101220
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:U/CR:M/IR:M/AR:M",
+    2.5,
+  ], // 101221
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    8.2,
+  ], // 102001
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    7.0,
+  ], // 102011
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    5.2,
+  ], // 102021
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    6.5,
+  ], // 102101
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    5.8,
+  ], // 102111
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    2.6,
+  ], // 102121
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    5.3,
+  ], // 102201
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    2.1,
+  ], // 102211
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    1.3,
+  ], // 102221
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    9.5,
+  ], // 110000
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M/MSI:S",
+    8.9,
+  ], // 110001
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    8.7,
+  ], // 110010
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M/MSI:S",
+    7.5,
+  ], // 110011
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    7.5,
+  ], // 110020
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M/MSI:S",
+    6.9,
+  ], // 110021
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    9.0,
+  ], // 110100
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M",
+    7.7,
+  ], // 110101
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    7.5,
+  ], // 110110
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M",
+    6.2,
+  ], // 110111
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    6.1,
+  ], // 110120
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M",
+    5.3,
+  ], // 110121
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    7.7,
+  ], // 110200
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:A/CR:M/IR:M/AR:M",
+    6.6,
+  ], // 110201
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    6.8,
+  ], // 110210
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:P/CR:M/IR:M/AR:M",
+    5.9,
+  ], // 110211
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    5.2,
+  ], // 110220
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:U/CR:M/IR:M/AR:M",
+    3.0,
+  ], // 110221
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    8.8,
+  ], // 111000
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M/MSI:S",
+    7.7,
+  ], // 111001
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    7.5,
+  ], // 111010
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M/MSI:S",
+    6.6,
+  ], // 111011
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    6.1,
+  ], // 111020
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M/MSI:S",
+    5.5,
+  ], // 111021
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    7.4,
+  ], // 111100
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M",
+    5.9,
+  ], // 111101
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    5.7,
+  ], // 111110
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M",
+    5.6,
+  ], // 111111
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    4.7,
+  ], // 111120
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M",
+    2.3,
+  ], // 111121
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    6.1,
+  ], // 111200
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:A/CR:M/IR:M/AR:M",
+    5.1,
+  ], // 111201
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    5.7,
+  ], // 111210
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:P/CR:M/IR:M/AR:M",
+    2.8,
+  ], // 111211
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    2.4,
+  ], // 111220
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:U/CR:M/IR:M/AR:M",
+    1.5,
+  ], // 111221
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    7.0,
+  ], // 112001
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    5.7,
+  ], // 112011
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    2.9,
+  ], // 112021
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    5.8,
+  ], // 112101
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    2.6,
+  ], // 112111
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    1.5,
+  ], // 112121
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    2.3,
+  ], // 112201
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    1.3,
+  ], // 112211
+  [
+    "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    0.6,
+  ], // 112221
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    9.3,
+  ], // 200000
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M/MSI:S",
+    8.6,
+  ], // 200001
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    8.6,
+  ], // 200010
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M/MSI:S",
+    7.2,
+  ], // 200011
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    7.4,
+  ], // 200020
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M/MSI:S",
+    5.7,
+  ], // 200021
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    8.6,
+  ], // 200100
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M",
+    7.4,
+  ], // 200101
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    7.4,
+  ], // 200110
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M",
+    6.1,
+  ], // 200111
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    5.6,
+  ], // 200120
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M",
+    3.4,
+  ], // 200121
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    7.0,
+  ], // 200200
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:A/CR:M/IR:M/AR:M",
+    5.4,
+  ], // 200201
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    5.2,
+  ], // 200210
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:P/CR:M/IR:M/AR:M",
+    4.0,
+  ], // 200211
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    4.0,
+  ], // 200220
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:U/CR:M/IR:M/AR:M",
+    2.2,
+  ], // 200221
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    8.4,
+  ], // 201000
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M/MSI:S",
+    7.4,
+  ], // 201001
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    7.3,
+  ], // 201010
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M/MSI:S",
+    5.4,
+  ], // 201011
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    6.1,
+  ], // 201020
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M/MSI:S",
+    4.8,
+  ], // 201021
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    7.2,
+  ], // 201100
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M",
+    5.7,
+  ], // 201101
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    5.5,
+  ], // 201110
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M",
+    4.0,
+  ], // 201111
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    4.6,
+  ], // 201120
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M",
+    1.9,
+  ], // 201121
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    5.3,
+  ], // 201200
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:A/CR:M/IR:M/AR:M",
+    3.6,
+  ], // 201201
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    3.4,
+  ], // 201210
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:P/CR:M/IR:M/AR:M",
+    1.9,
+  ], // 201211
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    1.9,
+  ], // 201220
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:U/CR:M/IR:M/AR:M",
+    0.8,
+  ], // 201221
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    6.3,
+  ], // 202001
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    4.9,
+  ], // 202011
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    1.9,
+  ], // 202021
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    4.7,
+  ], // 202101
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    2.1,
+  ], // 202111
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    1.1,
+  ], // 202121
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    2.4,
+  ], // 202201
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    0.9,
+  ], // 202211
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:N/PR:L/UI:P/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    0.4,
+  ], // 202221
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    8.7,
+  ], // 210000
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M/MSI:S",
+    7.4,
+  ], // 210001
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    7.2,
+  ], // 210010
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M/MSI:S",
+    5.2,
+  ], // 210011
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    5.8,
+  ], // 210020
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M/MSI:S",
+    4.8,
+  ], // 210021
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    7.3,
+  ], // 210100
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M",
+    5.5,
+  ], // 210101
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    5.9,
+  ], // 210110
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M",
+    4.0,
+  ], // 210111
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    4.1,
+  ], // 210120
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M",
+    2.0,
+  ], // 210121
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    5.4,
+  ], // 210200
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:A/CR:M/IR:M/AR:M",
+    4.3,
+  ], // 210201
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    4.5,
+  ], // 210210
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:P/CR:M/IR:M/AR:M",
+    2.2,
+  ], // 210211
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    2.0,
+  ], // 210220
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:L/SI:L/SA:L/E:U/CR:M/IR:M/AR:M",
+    1.1,
+  ], // 210221
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    7.4,
+  ], // 211000
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M/MSI:S",
+    5.5,
+  ], // 211001
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    5.7,
+  ], // 211010
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M/MSI:S",
+    4.3,
+  ], // 211011
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    3.8,
+  ], // 211020
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M/MSI:S",
+    2.0,
+  ], // 211021
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    6.1,
+  ], // 211100
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:A/CR:M/IR:M/AR:M",
+    5.0,
+  ], // 211101
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    4.8,
+  ], // 211110
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:P/CR:M/IR:M/AR:M",
+    1.8,
+  ], // 211111
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    2.0,
+  ], // 211120
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:H/SI:H/SA:H/E:U/CR:M/IR:M/AR:M",
+    0.9,
+  ], // 211121
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    4.6,
+  ], // 211200
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:A/CR:M/IR:M/AR:M",
+    1.8,
+  ], // 211201
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    1.7,
+  ], // 211210
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:P/CR:M/IR:M/AR:M",
+    0.7,
+  ], // 211211
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    0.8,
+  ], // 211220
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:H/VI:L/VA:H/SC:L/SI:L/SA:L/E:U/CR:M/IR:M/AR:M",
+    0.2,
+  ], // 211221
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H/MSI:S",
+    5.1,
+  ], // 212001
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H/MSI:S",
+    2.3,
+  ], // 212011
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H/MSI:S",
+    1.3,
+  ], // 212021
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:A/CR:H/IR:H/AR:H",
+    2.4,
+  ], // 212101
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:P/CR:H/IR:H/AR:H",
+    1.2,
+  ], // 212111
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:L/VI:L/VA:L/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H",
+    0.5,
+  ], // 212121
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:A/CR:H/IR:H/AR:H",
+    1.0,
+  ], // 212201
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:P/CR:H/IR:H/AR:H",
+    0.3,
+  ], // 212211
+  [
+    "CVSS:4.0/AV:A/AC:L/AT:P/PR:L/UI:P/VC:L/VI:L/VA:L/SC:L/SI:L/SA:L/E:U/CR:H/IR:H/AR:H",
+    0.1,
+  ], // 212221
 ];
 
 const SWEEP_SAMPLE: Case[] = [
@@ -721,6 +1808,21 @@ describe("calculateCVSS4Score", () => {
     SWEEP_SAMPLE,
   )("scores the base vector %s as %f", (vector, expected) => {
     expect(score(vector)).toBe(expected);
+  });
+
+  it.each(
+    MACROVECTOR_COVERAGE,
+  )("scores %s as %f, covering its MacroVector", (vector, expected) => {
+    expect(score(vector)).toBe(expected);
+  });
+
+  it("pins every MacroVector in the lookup table", () => {
+    const covered = new Set(
+      MACROVECTOR_COVERAGE.map(([vector]) =>
+        computeMacroVector(parseVectorString(vector)),
+      ),
+    );
+    expect(covered.size).toBe(Object.keys(MACROVECTOR_LOOKUP).length);
   });
 
   it.each(ENVIRONMENTAL_SAMPLE)("scores %s as %f", (vector, expected) => {
