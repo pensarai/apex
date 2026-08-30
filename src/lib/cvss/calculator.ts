@@ -57,6 +57,13 @@ const ENVIRONMENTAL_METRICS = [
 ] as const;
 const SUPPLEMENTAL_METRICS = ["S", "AU", "R", "V", "RE", "U"] as const;
 
+const KNOWN_METRICS: ReadonlySet<string> = new Set([
+  ...BASE_METRICS,
+  ...THREAT_METRICS,
+  ...ENVIRONMENTAL_METRICS,
+  ...SUPPLEMENTAL_METRICS,
+]);
+
 // =============================================================================
 // Vector String Functions
 // =============================================================================
@@ -116,12 +123,23 @@ export function parseVectorString(vectorString: string): CVSS4Metrics {
   const pairs = metricsString.split("/");
 
   const metrics: Partial<CVSS4Metrics> = {};
+  const seen = new Set<string>();
 
   for (const pair of pairs) {
     const [key, value] = pair.split(":");
-    if (key && value) {
-      (metrics as Record<string, string | undefined>)[key] = value;
+    if (!key || !value) {
+      throw new Error(`Malformed metric in CVSS vector: "${pair}"`);
     }
+    if (!KNOWN_METRICS.has(key)) {
+      throw new Error(`Unknown metric in CVSS vector: ${key}`);
+    }
+    // A repeated metric would otherwise last-write-win and yield a plausible
+    // wrong score instead of an error.
+    if (seen.has(key)) {
+      throw new Error(`Duplicate metric in CVSS vector: ${key}`);
+    }
+    seen.add(key);
+    (metrics as Record<string, string | undefined>)[key] = value;
   }
 
   // Validate required base metrics

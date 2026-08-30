@@ -1914,12 +1914,43 @@ describe("severity distance from the MacroVector max", () => {
     ).toBe(8.8);
   });
 
-  it("rounds half up with an epsilon so 9.95 does not fall to 9.9", () => {
+  // The exact value here is 6.1 - 0.45 = 5.65, which IEEE-754 represents just
+  // below the half. Without the epsilon this rounds down to 5.6. The reference
+  // implementation applies the same epsilon for the same reason.
+  it("rounds a value sitting exactly on the half upwards", () => {
     expect(
-      score(
-        "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:A",
+      score("CVSS:4.0/AV:N/AC:H/AT:N/PR:H/UI:A/VC:L/VI:H/VA:N/SC:N/SI:L/SA:N"),
+    ).toBe(5.7);
+  });
+});
+
+describe("parseVectorString rejects malformed vectors", () => {
+  const BASE =
+    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N";
+
+  // A repeated metric used to last-write-win, turning a malformed vector into a
+  // plausible wrong score rather than an error.
+  it("rejects a duplicated metric instead of scoring it", () => {
+    expect(() => parseVectorString(`${BASE}/AV:P`)).toThrow(/Duplicate metric/);
+    expect(() => parseVectorString(`${BASE}/E:A/E:X`)).toThrow(
+      /Duplicate metric/,
+    );
+  });
+
+  it("rejects an unknown metric abbreviation", () => {
+    expect(() => parseVectorString(`${BASE}/ZZ:Q`)).toThrow(/Unknown metric/);
+  });
+
+  it("rejects a malformed metric pair", () => {
+    expect(() => parseVectorString(`${BASE}/AV`)).toThrow(/Malformed metric/);
+  });
+
+  it("still accepts every valid metric group", () => {
+    expect(() =>
+      parseVectorString(
+        `${BASE}/E:A/CR:H/IR:M/AR:L/MAV:N/MSI:S/MSA:S/S:P/AU:Y/R:A/V:D/RE:L/U:Red`,
       ),
-    ).toBe(10);
+    ).not.toThrow();
   });
 });
 
