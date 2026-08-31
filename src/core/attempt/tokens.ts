@@ -46,7 +46,7 @@ export function parseTokenCount(
  * Close the input identity when exactly one of the four input fields is
  * unknown. Does not invent values when two or more fields are missing.
  */
-export function deriveInputTokens(tokens: AttemptTokens): AttemptTokens {
+function deriveInputTokens(tokens: AttemptTokens): AttemptTokens {
   const { inclusiveInput, uncachedInput, cacheRead, cacheWrite, output } =
     tokens;
   const unknownCount = [
@@ -114,7 +114,7 @@ export function deriveInputTokens(tokens: AttemptTokens): AttemptTokens {
   return derived;
 }
 
-export function assertTokenIdentity(tokens: AttemptTokens): void {
+function assertTokenIdentity(tokens: AttemptTokens): void {
   const { inclusiveInput, uncachedInput, cacheRead, cacheWrite } = tokens;
 
   if (

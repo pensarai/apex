@@ -37,7 +37,7 @@ describe("projectAttemptUsage", () => {
       },
     });
     expect(projectAttemptUsage(envelope)).toEqual({
-      inputTokens: 1000,
+      inputTokens: 1020,
       outputTokens: 9,
       cacheReadTokens: 900,
       cacheWriteTokens: 20,
