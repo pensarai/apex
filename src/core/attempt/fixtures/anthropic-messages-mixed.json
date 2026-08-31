@@ -1,0 +1,22 @@
+{
+  "transport": "anthropic-messages",
+  "usage": {
+    "input_tokens": 45,
+    "output_tokens": 125,
+    "cache_read_input_tokens": 24000,
+    "cache_creation_input_tokens": 944
+  },
+  "cacheTtlSeconds": 300,
+  "expected": {
+    "tokens": {
+      "inclusiveInput": 24989,
+      "uncachedInput": 45,
+      "cacheRead": 24000,
+      "cacheWrite": 944,
+      "output": 125
+    },
+    "evidence": {
+      "cacheTtlSeconds": 300
+    }
+  }
+}

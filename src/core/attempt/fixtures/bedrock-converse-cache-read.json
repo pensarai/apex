@@ -1,0 +1,26 @@
+{
+  "transport": "bedrock-converse",
+  "usage": {
+    "inputTokens": 25825,
+    "outputTokens": 40
+  },
+  "providerMetadata": {
+    "bedrock": {
+      "requestId": "bedrock-req-1",
+      "cacheReadInputTokens": 25000,
+      "cacheWriteInputTokens": 0
+    }
+  },
+  "expected": {
+    "tokens": {
+      "inclusiveInput": 25825,
+      "uncachedInput": 825,
+      "cacheRead": 25000,
+      "cacheWrite": 0,
+      "output": 40
+    },
+    "evidence": {
+      "providerRequestId": "bedrock-req-1"
+    }
+  }
+}

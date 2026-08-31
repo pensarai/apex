@@ -150,6 +150,10 @@
               {
                 "group": ["**/tui/keybindings/*", "!**/tui/keybindings/index"],
                 "message": "Import from the tui/keybindings barrel (index), not its internals."
+              },
+              {
+                "group": ["**/core/attempt/*", "!**/core/attempt/index"],
+                "message": "Import from the core/attempt barrel (index), not its internals."
               }
             ]
           }

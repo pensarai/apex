@@ -1,0 +1,9 @@
+{
+  "transport": "anthropic-messages",
+  "usage": {
+    "input_tokens": 10,
+    "output_tokens": 1,
+    "cache_read_input_tokens": -1
+  },
+  "reject": "invalid-token"
+}

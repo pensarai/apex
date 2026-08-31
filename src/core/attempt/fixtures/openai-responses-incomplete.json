@@ -1,0 +1,16 @@
+{
+  "transport": "openai-responses",
+  "usage": {
+    "input_tokens": 1000,
+    "output_tokens": 40
+  },
+  "expected": {
+    "tokens": {
+      "inclusiveInput": 1000,
+      "uncachedInput": null,
+      "cacheRead": null,
+      "cacheWrite": 0,
+      "output": 40
+    }
+  }
+}

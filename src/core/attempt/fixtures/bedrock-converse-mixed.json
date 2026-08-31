@@ -1,0 +1,20 @@
+{
+  "transport": "bedrock-converse",
+  "usage": {
+    "inputTokens": 1000,
+    "outputTokens": 30,
+    "inputTokenDetails": {
+      "cacheReadTokens": 700,
+      "cacheWriteTokens": 50
+    }
+  },
+  "expected": {
+    "tokens": {
+      "inclusiveInput": 1000,
+      "uncachedInput": 250,
+      "cacheRead": 700,
+      "cacheWrite": 50,
+      "output": 30
+    }
+  }
+}
