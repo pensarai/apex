@@ -637,6 +637,15 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.approvalGate !== undefined,
     );
 
+    // The response tool is injected into `tools` whenever a `responseSchema` is
+    // set, but downstream `restrictToolsToActive` makes `activeTools` the
+    // execution allowlist. Keep the injected tool executable even when the
+    // caller forgot to list it, so structured output and the response-tool stop
+    // condition still fire.
+    if (input.responseSchema && !activeTools.includes(RESPONSE_TOOL_NAME)) {
+      activeTools = [...activeTools, RESPONSE_TOOL_NAME];
+    }
+
     // -- Messages persistence -------------------------------------------------
     if (!existsSync(messagesDir)) {
       mkdirSync(messagesDir, { recursive: true });
