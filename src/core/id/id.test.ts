@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  isAttemptId,
+  isIdempotencyKey,
   isMessageId,
   isPartId,
   isSessionId,
+  newAttemptId,
+  newIdempotencyKey,
   newMessageId,
   newPartId,
   newSessionId,
@@ -19,6 +23,8 @@ describe("id minters", () => {
     expect(newSessionId()).toMatch(/^ses_/);
     expect(newMessageId()).toMatch(/^msg_/);
     expect(newPartId()).toMatch(/^prt_/);
+    expect(newAttemptId()).toMatch(/^atm_/);
+    expect(newIdempotencyKey()).toMatch(/^idk_/);
   });
 
   it("produce unique session ids over 100k iterations", () => {
@@ -45,26 +51,38 @@ describe("id guards", () => {
     expect(isSessionId(newSessionId())).toBe(true);
     expect(isMessageId(newMessageId())).toBe(true);
     expect(isPartId(newPartId())).toBe(true);
+    expect(isAttemptId(newAttemptId())).toBe(true);
+    expect(isIdempotencyKey(newIdempotencyKey())).toBe(true);
   });
 
   it("reject other kinds", () => {
     const ses = newSessionId();
     const msg = newMessageId();
     const prt = newPartId();
+    const atm = newAttemptId();
+    const idk = newIdempotencyKey();
 
     expect(isSessionId(msg)).toBe(false);
     expect(isSessionId(prt)).toBe(false);
+    expect(isSessionId(atm)).toBe(false);
 
     expect(isMessageId(ses)).toBe(false);
     expect(isMessageId(prt)).toBe(false);
 
     expect(isPartId(ses)).toBe(false);
     expect(isPartId(msg)).toBe(false);
+
+    expect(isAttemptId(ses)).toBe(false);
+    expect(isAttemptId(idk)).toBe(false);
+    expect(isIdempotencyKey(atm)).toBe(false);
+    expect(isIdempotencyKey(ses)).toBe(false);
   });
 
   it("reject arbitrary strings", () => {
     expect(isSessionId("pentest-agent-1")).toBe(false);
     expect(isMessageId("")).toBe(false);
     expect(isPartId("prt")).toBe(false); // no underscore separator
+    expect(isAttemptId("atm")).toBe(false);
+    expect(isIdempotencyKey("idk")).toBe(false);
   });
 });

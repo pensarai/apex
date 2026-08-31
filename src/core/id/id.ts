@@ -8,6 +8,8 @@ const prefixes = {
   user: "usr",
   part: "prt",
   run: "run",
+  attempt: "atm",
+  idempotency: "idk",
 } as const;
 
 export type IdentifierPrefix = keyof typeof prefixes;
@@ -69,6 +71,10 @@ export type MessageID = string & { readonly __brand: "MessageID" };
 export type PartID = string & { readonly __brand: "PartID" };
 /** An agent-run identifier: `run_<time><random>`. */
 export type RunID = string & { readonly __brand: "RunID" };
+/** A physical inference-attempt identifier: `atm_<time><random>`. */
+export type AttemptID = string & { readonly __brand: "AttemptID" };
+/** An attempt idempotency key: `idk_<time><random>`. */
+export type IdempotencyKey = string & { readonly __brand: "IdempotencyKey" };
 
 /** Mint a fresh, time-descending session id. */
 export const newSessionId = (): SessionID => descending("session") as SessionID;
@@ -78,6 +84,11 @@ export const newMessageId = (): MessageID => descending("message") as MessageID;
 export const newPartId = (): PartID => descending("part") as PartID;
 /** Mint a fresh, time-descending agent-run id. */
 export const newRunId = (): RunID => descending("run") as RunID;
+/** Mint a fresh, time-descending inference-attempt id. */
+export const newAttemptId = (): AttemptID => descending("attempt") as AttemptID;
+/** Mint a fresh, time-descending attempt idempotency key. */
+export const newIdempotencyKey = (): IdempotencyKey =>
+  descending("idempotency") as IdempotencyKey;
 
 /** Runtime guard: is this string a session id? */
 export const isSessionId = (s: string): s is SessionID =>
@@ -88,6 +99,12 @@ export const isMessageId = (s: string): s is MessageID =>
 /** Runtime guard: is this string a part id? */
 export const isPartId = (s: string): s is PartID =>
   s.startsWith(`${prefixes.part}_`);
+/** Runtime guard: is this string an attempt id? */
+export const isAttemptId = (s: string): s is AttemptID =>
+  s.startsWith(`${prefixes.attempt}_`);
+/** Runtime guard: is this string an idempotency key? */
+export const isIdempotencyKey = (s: string): s is IdempotencyKey =>
+  s.startsWith(`${prefixes.idempotency}_`);
 
 function create(
   prefix: IdentifierPrefix,
