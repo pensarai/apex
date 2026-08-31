@@ -69,9 +69,12 @@ export type { EnvironmentAgentInput, EnvironmentResult } from "./environment";
 export { runEnvironmentAgent } from "./environment";
 export type {
   AgentLogEntry,
+  CommentAuthor,
   DispatchPentestResult,
   FixDetail,
   FixSummary,
+  IssueCommentPage,
+  IssueCommentSummary,
   IssueDetail,
   IssueSummary,
   LinkPullRequestResult,
@@ -87,6 +90,7 @@ export type {
   UpdateIssueResult,
 } from "./issues";
 export {
+  createIssueComment,
   dispatchPentest,
   getFix,
   getIssue,
@@ -94,6 +98,7 @@ export {
   linkPullRequest,
   listAgentLogs,
   listFixes,
+  listIssueComments,
   listIssuePullRequests,
   listIssues,
   listPentestTargets,

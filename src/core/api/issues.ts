@@ -52,6 +52,37 @@ export interface IssueDetail extends IssueSummary {
   createdAt: string;
 }
 
+/** Who wrote a comment. Null when the author's user record is gone. */
+export interface CommentAuthor {
+  id: string;
+  name: string | null;
+  email: string;
+  type: "user";
+}
+
+export interface IssueCommentSummary {
+  id: string;
+  issueId: string;
+  /** Comment text as written; `@handle` mentions are left in place. */
+  body: string;
+  author: CommentAuthor | null;
+  createdAt: string;
+  /** Null if the comment has never been edited. */
+  editedAt: string | null;
+  /** Console deep link to the comment. */
+  url: string;
+}
+
+export interface IssueCommentPage {
+  comments: IssueCommentSummary[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalRows: number;
+    totalPages: number;
+  };
+}
+
 export interface UpdateIssueResult {
   success: boolean;
   issue: {
@@ -235,6 +266,36 @@ export async function updateIssue(
   },
 ): Promise<UpdateIssueResult> {
   return apiRequest<UpdateIssueResult>("PATCH", `/issues/${issueId}`, data);
+}
+
+/**
+ * The review thread on an issue, oldest first. Posting requires a user
+ * credential — a workspace API key has no author to attribute a comment to.
+ */
+export async function listIssueComments(
+  issueId: string,
+  options?: { page?: number; pageSize?: number },
+): Promise<IssueCommentPage> {
+  const params = new URLSearchParams();
+  if (options?.page) params.set("page", String(options.page));
+  if (options?.pageSize) params.set("pageSize", String(options.pageSize));
+
+  const qs = params.toString();
+  return apiRequest<IssueCommentPage>(
+    "GET",
+    `/issues/${issueId}/comments${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export async function createIssueComment(
+  issueId: string,
+  body: string,
+): Promise<IssueCommentSummary> {
+  return apiRequest<IssueCommentSummary>(
+    "POST",
+    `/issues/${issueId}/comments`,
+    { body },
+  );
 }
 
 export async function retestIssue(issueId: string): Promise<RetestIssueResult> {
