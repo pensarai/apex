@@ -20,6 +20,7 @@ const readFileInputSchema = z.object({
     .describe("1-based line number to stop reading at (inclusive)"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Reading nginx config file')",
     ),

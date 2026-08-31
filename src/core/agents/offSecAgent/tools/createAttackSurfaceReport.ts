@@ -53,6 +53,7 @@ Call this at the END of your analysis with:
       ),
       toolCallDescription: z
         .string()
+        .optional()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),

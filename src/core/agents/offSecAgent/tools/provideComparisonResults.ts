@@ -57,6 +57,7 @@ Results will be saved to: comparison-results.json in the session directory.`,
         .describe("Actual findings that don't match any expected findings"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("Concise description of this tool call")
         .optional(),
     }),

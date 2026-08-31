@@ -181,6 +181,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
       reason: z.string().describe("Why you are delegating to auth subagent"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("A concise description of what this tool call is doing"),
     }),
     execute: async ({

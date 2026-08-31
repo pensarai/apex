@@ -31,6 +31,7 @@ Returns a confidence score and identifies potential gaps based on:
         .describe("Whether any credentials were discovered"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),

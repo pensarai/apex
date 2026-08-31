@@ -87,6 +87,7 @@ Use this instead of asking for the whole playbook. Examples:
         .describe("Maximum records to return (default 12, max 50)"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("A concise description of the catalog lookup"),
     }),
     execute: async ({ query, kind, tags, limit }) => {

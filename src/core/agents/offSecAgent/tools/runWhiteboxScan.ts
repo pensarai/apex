@@ -50,6 +50,7 @@ calling document_vulnerability.`,
         .describe("Per-scanner timeout in seconds. Defaults to 120, max 3600."),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("A concise description of the scan"),
     }),
     execute: async ({ path, kind, scannerIds, timeoutSeconds = 120 }) => {

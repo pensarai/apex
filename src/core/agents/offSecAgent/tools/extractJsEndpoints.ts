@@ -32,6 +32,7 @@ Returns all discovered endpoint patterns.`,
         .describe("Whether to download and analyze external JS files"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),

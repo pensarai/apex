@@ -48,6 +48,7 @@ execution is not sandboxed.`,
       name: z.string().optional().describe("Short job label for the log file"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("A concise description of the whitebox job"),
     }),
     execute: async ({ command, cwd, timeoutSeconds = 300, name }) => {
@@ -116,7 +117,10 @@ export function pollWhiteboxJob(ctx: ToolContext) {
     description: "Poll a running or completed whitebox job by id.",
     inputSchema: z.object({
       jobId: z.string(),
-      toolCallDescription: z.string().describe("A concise polling description"),
+      toolCallDescription: z
+        .string()
+        .optional()
+        .describe("A concise polling description"),
     }),
     execute: async ({ jobId }) => {
       const record = pollJob(jobId, ctx.session.id);
@@ -151,7 +155,10 @@ export function stopWhiteboxJob(ctx: ToolContext) {
     description: "Stop a running whitebox job by id.",
     inputSchema: z.object({
       jobId: z.string(),
-      toolCallDescription: z.string().describe("A concise stop description"),
+      toolCallDescription: z
+        .string()
+        .optional()
+        .describe("A concise stop description"),
     }),
     execute: async ({ jobId }) => {
       const record = stopJob(jobId, ctx.session.id);
@@ -212,6 +219,7 @@ Prefer \`path\` from tool results (e.g. scan artifacts, code-query output, job l
         .describe("Legacy: read a job log by id when path is unknown"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("A concise description of what you are reading"),
     }),
     execute: async ({ path, jobId }) => {
