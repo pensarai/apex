@@ -41,6 +41,7 @@ Returns message summaries matching the query.`,
         .describe("Pagination token from a previous call"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),

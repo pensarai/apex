@@ -22,6 +22,7 @@ const updateFileInputSchema = z.object({
     ),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Replacing vulnerable SQL query with parameterized version')",
     ),

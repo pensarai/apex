@@ -59,6 +59,7 @@ const httpRequestInputSchema = z.object({
   timeout: z.number().default(10000),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Testing SQL injection on login endpoint')",
     ),

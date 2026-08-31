@@ -71,6 +71,7 @@ export const documentVulnerabilityInputSchema = z.object({
     ),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Documenting SQL injection finding')",
     ),

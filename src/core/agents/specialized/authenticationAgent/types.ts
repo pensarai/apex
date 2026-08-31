@@ -335,6 +335,7 @@ export const DetectAuthSchemeInputSchema = z.object({
     .describe("Target endpoint URL to analyze for auth requirements"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you are detecting auth scheme for this endpoint"),
 });
 
@@ -368,6 +369,7 @@ export const AuthenticateInputSchema = z.object({
   csrfToken: z.string().optional().describe("CSRF token if required"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you are authenticating with these credentials"),
 });
 
@@ -384,6 +386,7 @@ export const ValidateSessionInputSchema = z.object({
     .describe("Expected HTTP status code for valid session"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you are validating the session"),
   // Optional: provide tokens directly to test (instead of using stored auth state)
   providedTokens: z
@@ -416,6 +419,7 @@ export const RefreshSessionInputSchema = z.object({
     ),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you are refreshing the session"),
 });
 
@@ -427,6 +431,7 @@ export type RefreshSessionInput = z.infer<typeof RefreshSessionInputSchema>;
 export const GetAuthStateInputSchema = z.object({
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you need to check the current auth state"),
 });
 
@@ -442,6 +447,7 @@ export const ExportAuthForAgentInputSchema = z.object({
     .describe("Export format for auth information"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you are exporting auth for another agent"),
 });
 
@@ -456,6 +462,7 @@ export const LoadAuthFlowInputSchema = z.object({
   targetHost: z.string().describe("Target host to load auth flow for"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you are loading the documented auth flow"),
 });
 
@@ -552,6 +559,7 @@ export const DocumentAuthFlowInputSchema = z.object({
     .describe("Notes for future runs (rate limits, quirks, etc.)"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you are documenting this auth flow"),
 });
 
@@ -566,6 +574,7 @@ export const ProbeAuthEndpointsInputSchema = z.object({
     .describe("Base URL of the target (e.g., http://localhost:3002)"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you are probing for auth endpoints"),
 });
 
@@ -582,6 +591,7 @@ export const ProbeRegistrationInputSchema = z.object({
     .describe("Base URL of the target (e.g., http://localhost:3002)"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you are probing for registration functionality"),
 });
 
@@ -603,6 +613,7 @@ export const AttemptRegistrationInputSchema = z.object({
     ),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you are attempting registration"),
 });
 

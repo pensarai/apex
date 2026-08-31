@@ -27,6 +27,7 @@ Full structured output is written to the session artifact; inline data is a comp
         ),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("A concise description of the profiling task"),
     }),
     execute: async ({ path }) => {

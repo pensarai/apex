@@ -21,6 +21,7 @@ const listMemoriesInputSchema = z.object({
     .describe("Optional tag to filter memories by (exact match)"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Listing stored recon notes')",
     ),

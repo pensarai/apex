@@ -34,6 +34,7 @@ export function listPromptInjections(ctx: ToolContext) {
         ),
       toolCallDescription: z
         .string()
+        .optional()
         .describe(
           "A concise, human-readable description (one short sentence) of why " +
             "you are listing prompt-injection payloads right now, e.g. " +

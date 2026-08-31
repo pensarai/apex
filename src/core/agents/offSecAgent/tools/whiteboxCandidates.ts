@@ -62,6 +62,7 @@ scanner artifacts, fuzzing logs, and verification status out of official finding
       artifacts: z.array(ArtifactSchema).optional(),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("A concise description of the candidate being created"),
     }),
     execute: async (input) => {
@@ -110,6 +111,7 @@ State machine: hypothesis -> investigating -> repro_attempted -> confirmed (requ
         .optional(),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("A concise description of the candidate update"),
     }),
     execute: async (input) => {
@@ -168,6 +170,7 @@ export function listWhiteboxCandidates(ctx: ToolContext) {
         .describe("Max candidates to return (default 50, max 200)"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("A concise description of the candidate listing"),
     }),
     execute: async ({ state, limit }) => {
