@@ -344,13 +344,19 @@ export class PersistentShell {
           : Number.isNaN(naturalExitCode)
             ? 1
             : naturalExitCode;
-      const effectiveStderr = cmd.forcedStderrSuffix
-        ? (cmd.stderr || "") + cmd.forcedStderrSuffix
-        : cmd.stderr || "";
+      // stdout and stderr are separate pipes with no delivery ordering between
+      // them, so the exit marker on fd1 can arrive before the command's stderr
+      // on fd2 and resolve the call with an empty stderr. The tempfile is
+      // closed before the exit code is captured, so read it instead of racing
+      // the pipe — every other resolve path already prefers the disk read.
+      const diskStderr = readTempfileCapped(cmd.errPath);
 
       // Cleanup is owned by Node now that the wrapper no longer rm's.
       unlinkSafe(cmd.outPath);
       unlinkSafe(cmd.errPath);
+
+      const effectiveStderr =
+        (diskStderr || cmd.stderr || "") + (cmd.forcedStderrSuffix ?? "");
 
       const resolve = cmd.resolve;
       this.current = null;
