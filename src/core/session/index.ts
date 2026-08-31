@@ -258,6 +258,16 @@ const SessionConfigObject = z.object({
   taskDriven: z.boolean().optional(),
   /** When true, pentest agents run a plan phase before execution (default: false) */
   requirePlan: z.boolean().optional(),
+  /**
+   * Opt-out: disable sub-agent orchestration for targeted pentests. When true,
+   * the per-target pentest agent runs SOLO as a single worker — it tests every
+   * objective itself instead of acting as an orchestrator that spawns one
+   * `spawn_pentest_agent` worker per objective. Removes the `spawn_pentest_agent`
+   * tool and swaps the orchestrator system prompt for the worker prompt. Defaults
+   * to off (orchestrated fan-out). Trades depth for lower cost and duration — the
+   * orchestrated path is more thorough but spends a full agent run per objective.
+   */
+  disableSubagents: z.boolean().optional(),
   /** Local filesystem path for prompt-injection payload library */
   promptInjectionLibrarySource: z.string().optional(),
 });
