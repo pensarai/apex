@@ -47,6 +47,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
         ),
       toolCallDescription: z
         .string()
+        .optional()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),
