@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   applySequentialToolCallPolicy,
+  buildOpenRouterProviderOptions,
   buildReasoningProviderOptions,
   isRepairFailClosedTool,
   SEQUENTIAL_TOOL_CALL_INSTRUCTION,
@@ -199,6 +200,25 @@ describe("buildReasoningProviderOptions", () => {
         thinkingEffort: "high",
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("buildOpenRouterProviderOptions", () => {
+  it("pins GLM 5.2 to Z.ai without provider fallbacks", () => {
+    expect(buildOpenRouterProviderOptions("z-ai/glm-5.2")).toEqual({
+      openrouter: {
+        provider: {
+          only: ["z-ai"],
+          allow_fallbacks: false,
+        },
+      },
+    });
+  });
+
+  it("leaves other OpenRouter models unchanged", () => {
+    expect(buildOpenRouterProviderOptions("anthropic/claude-opus-4-6")).toBe(
+      undefined,
+    );
   });
 });
 

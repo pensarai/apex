@@ -903,6 +903,29 @@ export type ReasoningProviderOptions = {
   openai?: OpenAIResponsesProviderOptions;
 };
 
+export type OpenRouterProviderOptions = {
+  openrouter?: {
+    provider: {
+      only: ["z-ai"];
+      allow_fallbacks: false;
+    };
+  };
+};
+
+export function buildOpenRouterProviderOptions(
+  model: AIModel,
+): OpenRouterProviderOptions | undefined {
+  if (model !== "z-ai/glm-5.2") return undefined;
+  return {
+    openrouter: {
+      provider: {
+        only: ["z-ai"],
+        allow_fallbacks: false,
+      },
+    },
+  };
+}
+
 /**
  * Build the `providerOptions` for a request based on the model and reasoning
  * settings. Returns `undefined` when no reasoning/thinking is requested.
@@ -1171,11 +1194,16 @@ export function streamResponse(
   // not top-level providerOptions, so there is no collision.
   // Note: when thinking is enabled, temperature must not be set (Anthropic rejects it);
   // this path never sets temperature, so there is nothing to clear.
-  const providerOptions = buildReasoningProviderOptions(model, {
+  const reasoningProviderOptions = buildReasoningProviderOptions(model, {
     enableThinking,
     thinkingEffort,
     openAIReasoningEffort,
   });
+  const openRouterProviderOptions = buildOpenRouterProviderOptions(model);
+  const providerOptions =
+    reasoningProviderOptions || openRouterProviderOptions
+      ? { ...reasoningProviderOptions, ...openRouterProviderOptions }
+      : undefined;
 
   let rateLimitRetryCount = 0;
 
@@ -1476,6 +1504,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
     model,
     openAIReasoningEffort,
   );
+  const openRouterProviderOptions = buildOpenRouterProviderOptions(model);
 
   let lastError: unknown;
 
@@ -1490,13 +1519,19 @@ export async function generateObjectResponse<T extends z.ZodType>(
         system,
         maxOutputTokens: maxTokens,
         temperature,
-        providerOptions: normalizedOpenAIEffort
-          ? {
-              openai: {
-                reasoningEffort: normalizedOpenAIEffort,
-              },
-            }
-          : undefined,
+        providerOptions:
+          normalizedOpenAIEffort || openRouterProviderOptions
+            ? {
+                ...(normalizedOpenAIEffort
+                  ? {
+                      openai: {
+                        reasoningEffort: normalizedOpenAIEffort,
+                      },
+                    }
+                  : {}),
+                ...openRouterProviderOptions,
+              }
+            : undefined,
         maxRetries: 0,
         abortSignal,
         experimental_telemetry: createAiTelemetrySettings({
