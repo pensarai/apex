@@ -139,13 +139,14 @@ export type UsageCallback = (
  * Per-run usage recorder threaded through {@link StreamResponseOpts}. When set
  * it replaces the process-global {@link onUsage} callback for that stream's
  * steps, so a durable runtime can attribute usage per run instead of relying on
- * a shared singleton. Async work is awaited before the next model step.
+ * a shared singleton. Async work is awaited before the next model step. Cache
+ * tokens are reported separately via {@link StreamResponseOpts.onCacheMetrics}.
  */
 export type UsageRecorder = (
   model: string,
   inputTokens: number,
   outputTokens: number,
-  context: UsageCallbackContext,
+  context?: UsageStepContext,
 ) => void | Promise<void>;
 
 let _usageCallback: UsageCallback | null = null;
@@ -1088,26 +1089,23 @@ export function streamResponse(
       // Advance stepSeq every finished step (even zero-usage) to stay aligned with the AI-SDK step index.
       const stepCtx = takeStepContext();
       if (stepUsage.inputTokens > 0 || stepUsage.outputTokens > 0) {
-        const usageCtx = {
-          ...stepCtx,
-          cacheReadTokens: stepUsage.cacheReadTokens,
-          cacheWriteTokens: stepUsage.cacheWriteTokens,
-        };
-        // A per-run recorder replaces the global singleton for this stream.
+        // A per-run recorder replaces the global singleton for this stream. The
+        // recorder takes the plain run step context (cache tokens are surfaced
+        // separately via onCacheMetrics); the global callback keeps its richer
+        // cache-aware context.
         if (usageRecorder) {
           await usageRecorder(
             model,
             stepUsage.inputTokens,
             stepUsage.outputTokens,
-            usageCtx,
+            stepCtx,
           );
         } else {
-          await _usageCallback?.(
-            model,
-            stepUsage.inputTokens,
-            stepUsage.outputTokens,
-            usageCtx,
-          );
+          await _usageCallback?.(model, stepUsage.inputTokens, stepUsage.outputTokens, {
+            ...stepCtx,
+            cacheReadTokens: stepUsage.cacheReadTokens,
+            cacheWriteTokens: stepUsage.cacheWriteTokens,
+          });
         }
       }
     }

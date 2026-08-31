@@ -1,8 +1,14 @@
-import type { LanguageModelMiddleware, StopCondition, ToolSet } from "ai";
+import type {
+  LanguageModelMiddleware,
+  StopCondition,
+  StreamTextOnStepFinishCallback,
+  ToolSet,
+} from "ai";
 import type { z } from "zod";
 import type {
   AIAuthConfig,
   AIModel,
+  CacheMetrics,
   OpenAIReasoningEffort,
   ThinkingEffort,
   UsageRecorder,
@@ -95,6 +101,13 @@ export interface SpawnRuntime {
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
   usageRecorder?: UsageRecorder;
   streamIdFactory?: StreamIdFactory;
+  /**
+   * Step-usage + cache-metric callbacks forwarded to spawned workers. The inline
+   * spawner path uses these for usage accounting; the durable runtime attributes
+   * usage via {@link usageRecorder} instead and leaves them unset.
+   */
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
 }
 
 /** @public Consumed by Console's durable subagent runtime. */
@@ -212,6 +225,8 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
     session: ctx.session,
     authConfig: ctx.authConfig,
     abortSignal: ctx.abortSignal,
+    onStepFinish: ctx.onStepFinish,
+    onCacheMetrics: ctx.onCacheMetrics,
     eventBus: ctx.eventBus,
     subagentId: ctx.subagentId,
     subagentName: ctx.subagentName,

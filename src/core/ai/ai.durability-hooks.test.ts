@@ -115,7 +115,12 @@ describe("streamResponse durability hooks", () => {
       streamResponse({ model: "test-model", prompt: "hi" });
       await streamCall(0).onStepFinish(step(11, 7));
       expect(globalUsage).toHaveBeenCalledOnce();
-      expect(globalUsage).toHaveBeenCalledWith("test-model", 11, 7, undefined);
+      // The global callback keeps its cache-aware context; only the per-run
+      // usageRecorder gets the plain run step context.
+      expect(globalUsage).toHaveBeenCalledWith("test-model", 11, 7, {
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      });
     });
 
     it("routes usage to the per-run recorder and skips the global when set", async () => {

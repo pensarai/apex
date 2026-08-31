@@ -7,6 +7,7 @@ import {
   sessionHasSmsPasswordless,
   smsListMessages,
 } from "./smsListMessages";
+import { inProcessSubagentSpawner } from "../subagentSpawner";
 import type { ToolContext } from "./types";
 
 const executeOpts = { toolCallId: "call_1", messages: [] };
@@ -17,6 +18,7 @@ function makeCtx(cm?: CredentialManager): ToolContext {
     session: { credentialManager } as SessionInfo,
     agentCwd: "/tmp",
     credentialManager,
+    subagentSpawner: inProcessSubagentSpawner,
   };
 }
 
@@ -257,6 +259,7 @@ describe("smsListMessages", () => {
         },
       } as unknown as SessionInfo,
       agentCwd: "/tmp",
+      subagentSpawner: inProcessSubagentSpawner,
     });
     const result = await tool.execute?.(
       {
