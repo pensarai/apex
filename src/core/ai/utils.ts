@@ -436,7 +436,11 @@ async function summarizeConversation(
     },
   ];
 
-  const { text: summary, usage: summaryUsage } = await generateText({
+  const {
+    text: summary,
+    usage: summaryUsage,
+    providerMetadata: summaryProviderMetadata,
+  } = await generateText({
     model,
     system: `You are a helpful assistant that summarizes conversations to pass to another agent. Review the conversation and system prompt at the end provided by the user.`,
     messages: summarizedMessages,
@@ -448,10 +452,14 @@ async function summarizeConversation(
   });
 
   // Report summarization token usage if onStepFinish callback is provided
-  // This ensures summarization tokens are tracked even though it's not a "step"
+  // This ensures summarization tokens are tracked even though it's not a "step".
+  // Awaited: the callback persists messages and records usage — a detached
+  // invocation would leak unhandled rejections into the resumed stream.
   if (opts.onStepFinish && summaryUsage) {
-    // Create a minimal step finish event for the summarization
-    opts.onStepFinish({
+    // Create a minimal step finish event for the summarization. `messages`
+    // must be a valid array (handlers spread it); cache details and provider
+    // metadata flow through so cache usage stays attributable.
+    await opts.onStepFinish({
       text: "",
       reasoning: undefined,
       reasoningDetails: [],
@@ -464,6 +472,9 @@ async function summarizeConversation(
         inputTokens: summaryUsage.inputTokens ?? 0,
         outputTokens: summaryUsage.outputTokens ?? 0,
         totalTokens: summaryUsage.totalTokens ?? 0,
+        ...(summaryUsage.inputTokenDetails
+          ? { inputTokenDetails: summaryUsage.inputTokenDetails }
+          : {}),
       },
       warnings: [],
       request: {},
@@ -471,8 +482,9 @@ async function summarizeConversation(
         id: "summarization",
         timestamp: new Date(),
         modelId: "",
+        messages: [],
       },
-      providerMetadata: undefined,
+      providerMetadata: summaryProviderMetadata,
       stepType: "initial",
       isContinued: false,
     } as unknown as Parameters<NonNullable<typeof opts.onStepFinish>>[0]);
@@ -588,24 +600,27 @@ export function createSummarizationStream(
     }
   })();
 
-  // Return a minimal StreamTextResult-like object with the wrapped stream
-  // We delegate most properties to the resumed stream once it's available
+  // Convenience fields delegate to the resumed stream once available. A
+  // summarization failure surfaces through `fullStream` (the primary
+  // consumption path); these derived promises must not each reject unhandled —
+  // derive them from a caught base so a failure resolves undefined here.
+  const resumedForFields = resumedStreamPromise.catch(() => undefined);
   return {
     fullStream: wrappedFullStream,
-    text: resumedStreamPromise.then((s) => s.text),
-    content: resumedStreamPromise.then((s) => s.content),
-    reasoning: resumedStreamPromise.then((s) => s.reasoning),
-    reasoningText: resumedStreamPromise.then((s) => s.reasoningText),
-    toolCalls: resumedStreamPromise.then((s) => s.toolCalls),
-    toolResults: resumedStreamPromise.then((s) => s.toolResults),
-    usage: resumedStreamPromise.then((s) => s.usage),
-    finishReason: resumedStreamPromise.then((s) => s.finishReason),
-    warnings: resumedStreamPromise.then((s) => s.warnings),
-    response: resumedStreamPromise.then((s) => s.response),
-    files: resumedStreamPromise.then((s) => s.files),
-    sources: resumedStreamPromise.then((s) => s.sources),
-    staticToolCalls: resumedStreamPromise.then((s) => s.staticToolCalls),
-    dynamicToolCalls: resumedStreamPromise.then((s) => s.dynamicToolCalls),
+    text: resumedForFields.then((s) => s?.text),
+    content: resumedForFields.then((s) => s?.content),
+    reasoning: resumedForFields.then((s) => s?.reasoning),
+    reasoningText: resumedForFields.then((s) => s?.reasoningText),
+    toolCalls: resumedForFields.then((s) => s?.toolCalls),
+    toolResults: resumedForFields.then((s) => s?.toolResults),
+    usage: resumedForFields.then((s) => s?.usage),
+    finishReason: resumedForFields.then((s) => s?.finishReason),
+    warnings: resumedForFields.then((s) => s?.warnings),
+    response: resumedForFields.then((s) => s?.response),
+    files: resumedForFields.then((s) => s?.files),
+    sources: resumedForFields.then((s) => s?.sources),
+    staticToolCalls: resumedForFields.then((s) => s?.staticToolCalls),
+    dynamicToolCalls: resumedForFields.then((s) => s?.dynamicToolCalls),
     pipeTextStreamToResponse: async (response: unknown, init?: unknown) => {
       const stream = await resumedStreamPromise;
       return stream.pipeTextStreamToResponse(

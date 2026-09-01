@@ -1376,34 +1376,41 @@ export function streamResponse(
             "schema",
           );
 
-          const { output: repairedArgs, usage: repairUsage } =
-            await generateText({
-              model: providerModel,
-              output: Output.object({
-                schema: tool.inputSchema, // Use the actual Zod schema from the tool
-              }),
-              prompt: [
-                `The model tried to call the tool "${toolCall.toolName}"` +
-                  ` with the following inputs:`,
-                boundedInput,
-                `The tool accepts the following schema:`,
-                boundedSchema,
-                `Error encountered: ${error}`,
-                "Please fix the inputs to match the schema.",
-                "",
-                "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
-                "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
-              ].join("\n"),
-              abortSignal,
-              experimental_telemetry: createAiTelemetrySettings({
-                operation: "apex.tool.repair",
-                sessionId,
-              }),
-            });
+          const {
+            output: repairedArgs,
+            usage: repairUsage,
+            providerMetadata: repairProviderMetadata,
+          } = await generateText({
+            model: providerModel,
+            output: Output.object({
+              schema: tool.inputSchema, // Use the actual Zod schema from the tool
+            }),
+            prompt: [
+              `The model tried to call the tool "${toolCall.toolName}"` +
+                ` with the following inputs:`,
+              boundedInput,
+              `The tool accepts the following schema:`,
+              boundedSchema,
+              `Error encountered: ${error}`,
+              "Please fix the inputs to match the schema.",
+              "",
+              "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
+              "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
+            ].join("\n"),
+            abortSignal,
+            experimental_telemetry: createAiTelemetrySettings({
+              operation: "apex.tool.repair",
+              sessionId,
+            }),
+          });
 
-          // Report tool repair token usage if onStepFinish callback is provided
+          // Report tool repair token usage if onStepFinish callback is
+          // provided. Awaited: the callback persists messages and records
+          // usage — a detached invocation would leak unhandled rejections
+          // into the tool loop. Provider metadata and cache details flow
+          // through so repair usage stays attributable.
           if (onStepFinish && repairUsage) {
-            onStepFinish({
+            await onStepFinish({
               text: "",
               reasoning: undefined,
               reasoningDetails: [],
@@ -1416,6 +1423,9 @@ export function streamResponse(
                 inputTokens: repairUsage.inputTokens ?? 0,
                 outputTokens: repairUsage.outputTokens ?? 0,
                 totalTokens: repairUsage.totalTokens ?? 0,
+                ...(repairUsage.inputTokenDetails
+                  ? { inputTokenDetails: repairUsage.inputTokenDetails }
+                  : {}),
               },
               warnings: [],
               request: {},
@@ -1425,7 +1435,7 @@ export function streamResponse(
                 modelId: "",
                 messages: [],
               },
-              providerMetadata: undefined,
+              providerMetadata: repairProviderMetadata,
               stepType: "initial",
               isContinued: false,
             } as unknown as Parameters<
