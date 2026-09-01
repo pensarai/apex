@@ -7,7 +7,10 @@
  * Migration from completed-step callbacks (#1002):
  * - `projectAttemptUsage` maps envelope tokens onto
  *   `(inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens)` by
- *   treating `null` as `0` — the shape `onUsage` already emits.
+ *   treating `null` as `0`. If inclusive input is unknown, a known
+ *   uncached total is reconstructed as the #1002 inclusive input
+ *   (`uncached + zero-filled cache`) so omitted cache keys do not
+ *   wipe a reported input count.
  * - `projectAttemptCacheMetrics` maps onto `CacheMetrics` only when a
  *   known cache field is `> 0`, matching `onCacheMetrics`.
  * - `onStepFinish` / `onCacheMetrics` / `onUsage` stay the live sinks

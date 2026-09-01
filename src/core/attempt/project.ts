@@ -24,11 +24,28 @@ export function projectAttemptUsage(
   envelope: ProviderAttemptEnvelope,
 ): ProjectedAttemptUsage {
   return {
-    inputTokens: envelope.tokens.inclusiveInput ?? 0,
+    inputTokens: projectInputTokens(envelope),
     outputTokens: envelope.tokens.output ?? 0,
     cacheReadTokens: envelope.tokens.cacheRead ?? 0,
     cacheWriteTokens: envelope.tokens.cacheWrite ?? 0,
   };
+}
+
+/**
+ * #1002 `inputTokens` is inclusive. When the envelope could not close
+ * inclusive (cache keys omitted), reconstruct it from known uncached
+ * plus zero-filled cache — do not drop a known uncached total to 0.
+ */
+function projectInputTokens(envelope: ProviderAttemptEnvelope): number {
+  const { inclusiveInput, uncachedInput, cacheRead, cacheWrite } =
+    envelope.tokens;
+  if (inclusiveInput !== null) {
+    return inclusiveInput;
+  }
+  if (uncachedInput === null) {
+    return 0;
+  }
+  return uncachedInput + (cacheRead ?? 0) + (cacheWrite ?? 0);
 }
 
 export function projectAttemptCacheMetrics(

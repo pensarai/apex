@@ -48,6 +48,60 @@ describe("projectAttemptUsage", () => {
     });
   });
 
+  it("reconstructs inclusive input from known uncached when cache is omitted", () => {
+    const envelope = handle().complete({
+      transport: "anthropic-messages",
+      usage: {
+        input_tokens: 1000,
+        output_tokens: 50,
+      },
+    });
+    expect(envelope.tokens).toEqual({
+      inclusiveInput: null,
+      uncachedInput: 1000,
+      cacheRead: null,
+      cacheWrite: null,
+      output: 50,
+    });
+    expect(projectAttemptUsage(envelope)).toEqual({
+      inputTokens: 1000,
+      outputTokens: 50,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+  });
+
+  it("adds known cache onto uncached when reconstructing inclusive input", () => {
+    const envelope = handle().complete({
+      tokens: {
+        inclusiveInput: null,
+        uncachedInput: 100,
+        cacheRead: 900,
+        cacheWrite: null,
+        output: 9,
+      },
+    });
+    expect(projectAttemptUsage(envelope).inputTokens).toBe(1000);
+  });
+
+  it("does not invent inclusive input from cache-only counts", () => {
+    const envelope = handle().complete({
+      tokens: {
+        inclusiveInput: null,
+        uncachedInput: null,
+        cacheRead: 800,
+        cacheWrite: null,
+        output: 4,
+      },
+    });
+    expect(projectAttemptUsage(envelope)).toEqual({
+      inputTokens: 0,
+      outputTokens: 4,
+      cacheReadTokens: 800,
+      cacheWriteTokens: 0,
+    });
+  });
+
   it("does not emit CacheMetrics when cache is a reported zero", () => {
     const envelope = handle().complete({
       tokens: {
