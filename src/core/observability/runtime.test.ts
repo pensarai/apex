@@ -216,7 +216,7 @@ describe("startObservabilityRuntime gating", () => {
   it("no endpoint returns a safe no-op runtime", async () => {
     const runtime = startObservabilityRuntime({});
     await expect(runtime.forceFlush()).resolves.toBeUndefined();
-    await expect(runtime.shutdown()).resolves.toBeUndefined();
+    await expect(runtime.shutdown()).resolves.toBe("completed");
     // Nothing registered: spans via the apex tracer are non-recording.
     const span = trace.getTracer("apex").startSpan("probe");
     expect(trace.isSpanContextValid(span.spanContext())).toBe(false);

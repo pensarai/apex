@@ -5,7 +5,10 @@ import { config } from "../core/config";
 import type { Config } from "../core/config/config";
 import { checkForUpdate } from "../core/installation";
 import { routeLogsToErrorFile, writeErrorLog } from "../core/logger";
-import { startObservabilityRuntime } from "../core/observability/runtime";
+import {
+  installObservabilityExitHandlers,
+  startObservabilityRuntime,
+} from "../core/observability/runtime";
 import { hasAnyProviderConfigured } from "../core/providers";
 import type { SessionConfig } from "../core/session";
 import { setupAutoCopy } from "./auto-copy";
@@ -122,6 +125,7 @@ function App({ appConfig, onExit }: AppProps) {
               <DialogProvider>
                 <AgentProvider>
                   <CommandProvider
+                    onExit={onExit}
                     onOpenSessionsDialog={() => setShowSessionsDialog(true)}
                     onOpenThemeDialog={() => setShowThemeDialog(true)}
                     onOpenAdvancedDialog={() => setShowAdvancedDialog(true)}
@@ -732,37 +736,19 @@ async function main() {
   const { copyToClipboard } = createClipboardManager(renderer);
   setupAutoCopy(renderer, copyToClipboard);
 
-  let cleanupPromise: Promise<void> | null = null;
-  const cleanup = () => {
-    if (!cleanupPromise) {
-      cleanupPromise = (async () => {
-        cleanupTerminalFocusMode();
-        renderer.destroy();
-        // Flush traces before the process dies; exit waits for the bounded flush.
-        await observabilityRuntime.shutdown().catch(() => {});
-        process.exit(0);
-      })();
-    }
-    return cleanupPromise;
-  };
-  process.on("SIGINT", cleanup);
-  process.on("SIGTERM", cleanup);
-
-  process.on("uncaughtException", (err) => {
-    cleanupTerminalFocusMode();
-    renderer.destroy();
-    console.error("Uncaught exception:", err);
-    writeErrorLog(err, "UNCAUGHT");
-    process.exit(1);
+  const exitWith = installObservabilityExitHandlers(observabilityRuntime, {
+    cleanup: () => {
+      cleanupTerminalFocusMode();
+      renderer.destroy();
+    },
+    onError: (error, source) => {
+      const uncaught = source === "uncaughtException";
+      const label = uncaught ? "Uncaught exception:" : "Unhandled rejection:";
+      console.error(label, error);
+      writeErrorLog(error, uncaught ? "UNCAUGHT" : "UNHANDLED_REJECTION");
+    },
   });
-
-  process.on("unhandledRejection", (reason) => {
-    cleanupTerminalFocusMode();
-    renderer.destroy();
-    console.error("Unhandled rejection:", reason);
-    writeErrorLog(reason, "UNHANDLED_REJECTION");
-    process.exit(1);
-  });
+  const cleanup = () => exitWith(0);
 
   const obfuscateEnabled = process.env.PENSAR_OBFUSCATE === "1";
 
