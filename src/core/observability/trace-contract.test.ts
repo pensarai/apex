@@ -31,9 +31,11 @@ import type { OtelTestHarness } from "./testkit";
 
 // Imported AFTER vi.mock so streamResponse's closure picks up the stub.
 const { streamResponse } = await import("../ai");
-const { getApexTracer, withSubagentSessionBaggage } = await import(
-  "../observability"
-);
+const {
+  createGenerationSpanTracker,
+  getApexTracer,
+  withSubagentSessionBaggage,
+} = await import("../observability");
 const { parentOf, requireSpan, spansNamed, startOtelTestHarness } =
   await import("./testkit");
 
@@ -330,6 +332,31 @@ describe("existing trace contract: model spans", () => {
     expect(doStream.spanContext().traceId).toBe(
       streamText.spanContext().traceId,
     );
+  });
+
+  it("records details for non-Error provider failures", () => {
+    const tracker = createGenerationSpanTracker();
+    tracker.tracer.startActiveSpan("ai.streamText", (span) => {
+      tracker.markFailed({
+        name: "BedrockServiceError",
+        message: "throttled",
+      });
+      span.end();
+    });
+
+    const span = requireSpan(otel.getFinishedSpans(), "ai.streamText");
+    expect(span.status).toEqual({
+      code: SpanStatusCode.ERROR,
+      message: '{"name":"BedrockServiceError","message":"throttled"}',
+    });
+    expect(
+      span.events.some(
+        (event) =>
+          event.name === "exception" &&
+          event.attributes?.["exception.message"] ===
+            '{"name":"BedrockServiceError","message":"throttled"}',
+      ),
+    ).toBe(true);
   });
 });
 

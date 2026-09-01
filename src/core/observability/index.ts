@@ -44,9 +44,9 @@ export {
   type AiTelemetryOperation,
   type AiTelemetrySettings,
   type CreateAiTelemetryInput,
-  type GenerationSpanTracker,
   createAiTelemetrySettings,
   createGenerationSpanTracker,
+  type GenerationSpanTracker,
 } from "./telemetry";
 
 /**

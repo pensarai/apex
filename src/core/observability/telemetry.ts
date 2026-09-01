@@ -76,6 +76,16 @@ export interface GenerationSpanTracker {
   markFailed(error: unknown): void;
 }
 
+function describeFailure(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error) || String(error);
+  } catch {
+    return String(error);
+  }
+}
+
 export function createGenerationSpanTracker(): GenerationSpanTracker {
   const inner = trace.getTracer("ai");
   let rootSpan: Span | null = null;
@@ -119,12 +129,9 @@ export function createGenerationSpanTracker(): GenerationSpanTracker {
       const span = rootSpan;
       if (!span || marked) return;
       marked = true;
-      if (error instanceof Error) {
-        span.recordException(error);
-        span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
-      } else {
-        span.setStatus({ code: SpanStatusCode.ERROR });
-      }
+      const message = describeFailure(error);
+      span.recordException(error instanceof Error ? error : message);
+      span.setStatus({ code: SpanStatusCode.ERROR, message });
     },
   };
 }
