@@ -10,6 +10,7 @@
 import { config as loadEnv } from "dotenv";
 import packageJson from "../package.json";
 import { type AIModel, buildAuthConfig } from "./core/ai";
+import { setCurrentCommand } from "./core/api/clientIdentity";
 import { resolveCliLogLevel } from "./core/cli/logLevelArgs";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
@@ -611,6 +612,10 @@ const exitAfterObservabilityShutdown =
         },
       })
     : null;
+
+// Tell Console which command is talking to it; one place, so a command added
+// below is covered without another edit.
+setCurrentCommand(command);
 
 try {
   if (hasFlag("-p") || command === "--prompt") {

@@ -29,6 +29,8 @@ describe("pensar issues CLI", () => {
     "retest",
     "link-pr",
     "prs",
+    "comments",
+    "comment",
   ])("prints help for `%s --help` instead of treating it as an issue id", (sub) => {
     const { status, stdout, stderr } = runIssues([sub, "--help"]);
 
@@ -49,5 +51,35 @@ describe("pensar issues CLI", () => {
 
     expect(status).toBe(1);
     expect(stderr).toContain("Usage: pensar issues get <issueId>");
+  });
+
+  it("requires an issue ID to read a thread", () => {
+    const { status, stderr } = runIssues(["comments"]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain("Usage: pensar issues comments <issueId>");
+  });
+
+  // Without this the flag is swallowed as the issue id and the request goes
+  // out with an empty comment.
+  it("requires --body to post a comment", () => {
+    const { status, stderr } = runIssues(["comment", "VULN-000123"]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain("issue ID and --body are required");
+  });
+
+  it("does not mistake a flag for the issue id when posting", () => {
+    const { status, stderr } = runIssues(["comment", "--body", "hi"]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain("issue ID and --body are required");
+  });
+
+  it("says posting needs a user login, not just an API key", () => {
+    const { status, stdout } = runIssues(["--help"]);
+
+    expect(status).toBe(0);
+    expect(stdout).toContain("Posting requires a user login");
   });
 });
