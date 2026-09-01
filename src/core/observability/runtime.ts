@@ -19,6 +19,7 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import { version as apexVersion } from "../../../package.json";
+import { createLogger } from "../logger/structured";
 import { endAllActiveRootSpans } from "./active-root-spans";
 
 /**
@@ -66,6 +67,8 @@ function withTimeout(
     );
   });
 }
+
+const log = createLogger("observability");
 
 const NOOP_RUNTIME: ObservabilityRuntime = {
   async forceFlush() {},
@@ -184,8 +187,32 @@ export function startObservabilityRuntime(
   const contextManager = new AsyncLocalStorageContextManager();
   contextManager.enable();
 
-  trace.setGlobalTracerProvider(provider);
-  context.setGlobalContextManager(contextManager);
+  // Ownership check: registration fails (returns false) when a host already
+  // owns the global. Apex must never disrupt host-owned state — only disable
+  // globals it registered itself.
+  const ownsTracerGlobal = trace.setGlobalTracerProvider(provider);
+  const ownsContextGlobal = context.setGlobalContextManager(contextManager);
+
+  if (!ownsTracerGlobal) {
+    // A host owns the tracer provider: our provider would never receive
+    // spans. Clean up our own components, leave the host untouched, and do
+    // NOT mark an Apex runtime active (embedded mode).
+    log.warn(
+      "OTel tracer provider already registered by the host — Apex stays embedded and will not register its own",
+    );
+    contextManager.disable();
+    void provider
+      .shutdown()
+      .catch((error) =>
+        log.warn("Orphaned provider shutdown failed", { error: String(error) }),
+      );
+    return NOOP_RUNTIME;
+  }
+  if (!ownsContextGlobal) {
+    log.warn(
+      "OTel context manager already registered by the host — Apex reuses it and will not disable it",
+    );
+  }
 
   let shutdownPromise: Promise<ObservabilityShutdownResult> | null = null;
   const runtime: ObservabilityRuntime = {
@@ -195,22 +222,27 @@ export function startObservabilityRuntime(
     shutdown() {
       // Idempotent: every caller awaits the same bounded shutdown.
       if (!shutdownPromise) {
-        const shutdownWork = (async () => {
+        const shutdownWork = async () => {
           // End in-flight root runs first so their spans still export…
           endAllActiveRootSpans();
           // …then flush explicitly before processor/exporter teardown.
           try {
             await provider.forceFlush();
           } finally {
-            await provider.shutdown();
+            await provider.shutdown().catch((error) => {
+              log.warn("OTLP export/shutdown failed", { error: String(error) });
+            });
           }
-        })();
-        shutdownPromise = withTimeout(shutdownWork, shutdownTimeoutMs)
+        };
+        shutdownPromise = withTimeout(shutdownWork(), shutdownTimeoutMs)
           .then((result) => {
-            contextManager.disable();
-            // Reset globals so a later start (or the host's own SDK) begins clean.
+            if (ownsContextGlobal) {
+              contextManager.disable();
+              context.disable();
+            }
+            // Only reset globals Apex owns (the tracer is ours by
+            // construction here — the context may belong to the host).
             trace.disable();
-            context.disable();
             return result;
           })
           .finally(() => {

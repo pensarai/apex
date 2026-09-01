@@ -20,6 +20,7 @@ Langfuse accepts OTLP/**HTTP** — not OTLP/gRPC. Configure:
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://cloud.langfuse.com/api/public/otel/v1/traces
 OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
 OTEL_EXPORTER_OTLP_TRACES_HEADERS=Authorization=Basic <base64 project-key:secret>,x-langfuse-ingestion-version=4
+OTEL_RESOURCE_ATTRIBUTES=langfuse.environment=production,langfuse.release=<git-sha>
 AI_TRACE_RECORD_PAYLOADS=true
 ```
 
