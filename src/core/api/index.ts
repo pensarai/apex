@@ -69,6 +69,7 @@ export type { EnvironmentAgentInput, EnvironmentResult } from "./environment";
 export { runEnvironmentAgent } from "./environment";
 export type {
   AgentLogEntry,
+  ClosedDisposition,
   CommentAuthor,
   DispatchPentestResult,
   FixDetail,
@@ -90,6 +91,7 @@ export type {
   UpdateIssueResult,
 } from "./issues";
 export {
+  CLOSED_DISPOSITIONS,
   createIssueComment,
   dispatchPentest,
   getFix,
