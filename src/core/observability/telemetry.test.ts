@@ -778,9 +778,7 @@ describe("identity metadata propagation", () => {
     );
 
     const span = requireSpan(otel.getFinishedSpans(), "ai.streamText");
-    expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe(
-      "ses_root",
-    );
+    expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe("ses_root");
     expect(span.attributes["ai.telemetry.metadata.runId"]).toBe("run_meta1");
     expect(span.attributes["ai.telemetry.metadata.agentId"]).toBe("ses_exec9");
     expect(span.attributes["ai.telemetry.functionId"]).toBe(
@@ -807,9 +805,7 @@ describe("identity metadata propagation", () => {
     expect(span.attributes["ai.telemetry.functionId"]).toBe(
       "apex.finding.cvss",
     );
-    expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe(
-      "ses_root",
-    );
+    expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe("ses_root");
     expect(span.attributes["ai.telemetry.metadata.runId"]).toBe("run_meta2");
     expect(span.attributes["ai.telemetry.metadata.agentId"]).toBe("ses_exec8");
   });

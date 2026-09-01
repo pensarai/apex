@@ -2028,6 +2028,29 @@ describe("trace identity and root IO", () => {
     }
   });
 
+  it("records the captured response tool result as root output", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({
+        fullStream: oneStep(),
+        responseCaptured: Promise.resolve({ summary: "scan complete" }),
+      });
+      Object.defineProperty(agent, "_responseToolFired", { value: true });
+
+      await agent.consume();
+      await agent.drained;
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        '"summary":"scan complete"',
+      );
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+  });
+
   it("failed runs record the failure as root output under full capture", async () => {
     process.env.AI_TRACE_RECORD_PAYLOADS = "true";
     const otel = setupOtel();

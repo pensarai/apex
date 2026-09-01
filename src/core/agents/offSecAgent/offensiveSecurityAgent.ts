@@ -1002,10 +1002,21 @@ export class OffensiveSecurityAgent<TResult = void> {
           }
           try {
             const result = await runConsume();
-            if (recordRootIO && result !== undefined && result !== null) {
-              span.setAttribute("gen_ai.completion", safePreview(result));
+            const completedResult =
+              result === undefined && this._responseToolFired
+                ? await this.responseCaptured
+                : result;
+            if (
+              recordRootIO &&
+              completedResult !== undefined &&
+              completedResult !== null
+            ) {
+              span.setAttribute(
+                "gen_ai.completion",
+                safePreview(completedResult),
+              );
             }
-            return result;
+            return completedResult;
           } catch (err) {
             // Record once, keep the cardinality low, preserve the original.
             span.recordException(err as Error);
