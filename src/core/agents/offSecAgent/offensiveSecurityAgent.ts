@@ -247,6 +247,9 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Set synchronously when `response` fires, ahead of any async `resolveResult`, to distinguish a clean finish from an abort. */
   private _responseToolFired = false;
 
+  /** Raw structured result submitted to the response tool, retained for root-span output. */
+  private _responseToolResult: unknown;
+
   /** Resolves the instant `response` captures the result, so {@link consume} can return early and drain in the background. */
   private _resolveResponseCaptured!: (result: TResult) => void;
   private _rejectResponseCaptured!: (err: unknown) => void;
@@ -548,6 +551,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           input.responseSchema,
           (result) => {
             this._responseToolFired = true;
+            this._responseToolResult = result;
             if (RESPONSE_DEBUG) {
               rlog.warn(
                 `[response-debug] response tool EXECUTED (captured) session=${this.busSessionId} ` +
@@ -1004,7 +1008,7 @@ export class OffensiveSecurityAgent<TResult = void> {
             const result = await runConsume();
             const completedResult =
               result === undefined && this._responseToolFired
-                ? await this.responseCaptured
+                ? this._responseToolResult
                 : result;
             if (
               recordRootIO &&
@@ -1016,7 +1020,7 @@ export class OffensiveSecurityAgent<TResult = void> {
                 safePreview(completedResult),
               );
             }
-            return completedResult;
+            return result;
           } catch (err) {
             // Record once, keep the cardinality low, preserve the original.
             span.recordException(err as Error);

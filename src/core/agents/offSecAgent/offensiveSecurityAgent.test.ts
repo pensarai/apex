@@ -240,6 +240,7 @@ function buildStubAgent(overrides: {
   latestMessages?: unknown[] | null;
   writeImpl?: (messagesPath: string, contents: string) => Promise<void>;
   responseCaptured?: Promise<unknown>;
+  responseToolResult?: unknown;
   subagentId?: string;
   subagentName?: string;
   agentMode?: "default" | "plan" | "fast-strike";
@@ -268,6 +269,9 @@ function buildStubAgent(overrides: {
   // Never resolves by default, so consume() settles via the drain path.
   Object.defineProperty(agent, "responseCaptured", {
     value: overrides.responseCaptured ?? new Promise(() => {}),
+  });
+  Object.defineProperty(agent, "_responseToolResult", {
+    value: overrides.responseToolResult,
   });
   // Stub bypasses the constructor, so provide a minimal session for busSessionId.
   Object.defineProperty(agent, "_session", {
@@ -2035,6 +2039,7 @@ describe("trace identity and root IO", () => {
       const agent = buildStubAgent({
         fullStream: oneStep(),
         responseCaptured: Promise.resolve({ summary: "scan complete" }),
+        responseToolResult: { summary: "scan complete" },
       });
       Object.defineProperty(agent, "_responseToolFired", { value: true });
 
@@ -2046,6 +2051,54 @@ describe("trace identity and root IO", () => {
         '"summary":"scan complete"',
       );
     } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+  });
+
+  it("does not wait on response resolution before ending a response-tool run", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    let resolveCaptured!: (value: unknown) => void;
+    const responseCaptured = new Promise<unknown>((resolve) => {
+      resolveCaptured = resolve;
+    });
+    try {
+      const agent = buildStubAgent({
+        fullStream: oneStep(),
+        responseCaptured,
+        responseToolResult: { summary: "submitted" },
+      });
+      Object.defineProperty(agent, "_responseToolFired", { value: true });
+
+      const consume = agent.consume();
+      const drainRejection = Reflect.get(
+        agent,
+        "_drainRejection",
+      ) as Promise<never>;
+      void drainRejection.catch(() => {
+        resolveCaptured({ summary: "resolved" });
+      });
+
+      const result = await Promise.race([
+        consume,
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("response resolution stalled")),
+            1000,
+          ),
+        ),
+      ]);
+      await agent.drained;
+
+      expect(result).toEqual({ summary: "resolved" });
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(span?.ended).toBe(true);
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        '"summary":"submitted"',
+      );
+    } finally {
+      resolveCaptured(undefined);
       await otel.teardown();
       process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
     }
