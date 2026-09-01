@@ -3,10 +3,9 @@ import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import { CredentialManager } from "../../../credentials";
-import { AgentEventBus } from "../../../eventBus";
-import { newSessionId } from "../../../id/id";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
+import type { AuthenticationResult } from "../../specialized/authenticationAgent/agent";
 import type { AuthCredentials } from "../../specialized/authenticationAgent/types";
 import type { ToolContext } from "./types";
 
@@ -197,9 +196,8 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
     }) => {
       // Resolved from a stored credential only — agents never pass raw secrets.
       let additionalFields: Record<string, string> | undefined;
-      // Outside the try so the failure-path subagent-complete reuses this id.
-      const subagentId = newSessionId();
       const subagentName = "Authentication Agent";
+      const spawner = ctx.subagentSpawner;
       try {
         if (!ctx.model) {
           return {
@@ -229,13 +227,6 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
             tokens = { ...stored.tokens };
           }
         }
-
-        ctx.eventBus?.emit("subagent-spawn", {
-          subagentId,
-          name: subagentName,
-          input: { target, reason },
-          parentSubagentId: ctx.subagentId,
-        });
 
         log.info("Delegating to authentication subagent", {
           target,
@@ -301,35 +292,21 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
           ctx.session.credentialManager.addFromAuthCredentials(credentials);
         }
 
-        // Dynamic import to break circular dependency:
-        // authAgent → offensiveSecurityAgent → tools/index → delegateAuth → api/authentication → authAgent
-        // Routing through the api barrel would re-introduce the cycle, so we
-        // import the per-feature module directly.
-        const { runAuthenticationAgent } = await import(
-          "../../../api/authentication"
-        );
-
-        const localBus = new AgentEventBus();
-        AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
-
-        const result = await runAuthenticationAgent({
-          target,
-          session: ctx.session,
-          authHints,
-          model: ctx.model,
-          authConfig: ctx.authConfig,
-          abortSignal: ctx.abortSignal,
-          eventBus: localBus,
-          subagentId,
+        const result = await spawner.spawn<AuthenticationResult>({
+          spec: { type: "authentication", target, authHints },
+          runtime: {
+            session: ctx.session,
+            model: ctx.model,
+            authConfig: ctx.authConfig,
+            abortSignal: ctx.abortSignal,
+            environmentVariables: ctx.environmentVariables,
+            secretValues: ctx.secretValues,
+          },
+          parentBus: ctx.eventBus,
           subagentName,
-          environmentVariables: ctx.environmentVariables,
-          secretValues: ctx.secretValues,
-        });
-
-        ctx.eventBus?.emit("subagent-complete", {
-          subagentId,
-          status: result.success ? "completed" : "failed",
+          lifecycleInput: { target, reason },
           parentSubagentId: ctx.subagentId,
+          resolveStatus: (r) => (r.success ? "completed" : "failed"),
         });
 
         if (result.success) {
@@ -393,12 +370,6 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
               }`,
         };
       } catch (error: unknown) {
-        ctx.eventBus?.emit("subagent-complete", {
-          subagentId,
-          status: "failed",
-          parentSubagentId: ctx.subagentId,
-        });
-
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         return {

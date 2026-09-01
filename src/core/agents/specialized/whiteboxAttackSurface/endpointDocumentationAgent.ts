@@ -16,7 +16,10 @@ import type {
 import { createLogger } from "../../../logger/structured";
 import type { SessionInfo } from "../../../session";
 import { scopedLogger } from "../../../util/lazyLogger";
-import { runWithBoundedConcurrency } from "../../../utils/concurrency";
+import {
+  inProcessSubagentSpawner,
+  type SubagentSpawner,
+} from "../../offSecAgent/subagentSpawner";
 import { CodeAgent } from "../codeAgent/agent";
 import { WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT } from "./prompts";
 import {
@@ -74,6 +77,8 @@ interface SharedAgentOptions {
    * workflow. When omitted, agents run ungated (per-app cap only).
    */
   agentLimiter?: AgentConcurrencyLimiter;
+  /** Fan-out spawner. Defaults to the in-process spawner. */
+  subagentSpawner?: SubagentSpawner;
 }
 
 interface EndpointDocumentationInput extends SharedAgentOptions {
@@ -296,14 +301,16 @@ export async function runAppEndpointDocumentation(
   const { endpoints, ...shared } = opts;
   if (endpoints.length === 0) return;
 
+  const spawner = opts.subagentSpawner ?? inProcessSubagentSpawner;
+
   let anyFailed = false;
-  await runWithBoundedConcurrency(
+  await spawner.spawnMany(
     endpoints,
-    ENDPOINT_DOCUMENTATION_CONCURRENCY,
     async (endpoint) => {
       const ok = await runEndpointDocumentationAgent({ ...shared, endpoint });
       if (!ok) anyFailed = true;
     },
+    { concurrency: ENDPOINT_DOCUMENTATION_CONCURRENCY },
   );
 
   // Surface per-endpoint failure to the workflow so per-app status reflects

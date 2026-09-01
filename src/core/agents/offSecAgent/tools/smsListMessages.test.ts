@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CredentialManager } from "../../../credentials";
 import type { SessionInfo } from "../../../session";
+import { inProcessSubagentSpawner } from "../subagentSpawner";
 import { ALL_TOOL_NAMES, PLAN_MODE_TOOL_NAMES } from "./index";
 import {
   SMS_LIST_MESSAGES_TOOL_NAME,
@@ -17,6 +18,7 @@ function makeCtx(cm?: CredentialManager): ToolContext {
     session: { credentialManager } as SessionInfo,
     agentCwd: "/tmp",
     credentialManager,
+    subagentSpawner: inProcessSubagentSpawner,
   };
 }
 

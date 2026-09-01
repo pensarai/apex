@@ -38,6 +38,8 @@ vi.mock("../agents/specialized/pentest/agent", () => ({
 
 vi.mock("../agents/offSecAgent", () => ({
   PLAN_MODE_TOOL_NAMES: [],
+  defineAgent: (def: unknown) => def,
+  AgentRuntime: class {},
   OffensiveSecurityAgent: class {
     constructor(private readonly input: Record<string, unknown>) {
       mocks.fastStrikeInputs.push(input);

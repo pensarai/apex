@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionConfig, SessionInfo } from "../../../session";
+import { inProcessSubagentSpawner } from "../subagentSpawner";
 import {
   assertCommandActionAllowed,
   assertHttpActionAllowed,
@@ -12,6 +13,7 @@ import type { ToolContext } from "./types";
 
 function makeCtx(config: Partial<SessionConfig> = {}): ToolContext {
   return {
+    subagentSpawner: inProcessSubagentSpawner,
     session: {
       id: "ses_test",
       version: "1.0.0",

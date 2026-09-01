@@ -7,6 +7,7 @@ import {
   type FindingJudgeResult,
   judgeFinding,
 } from "../../specialized/findingJudge";
+import { inProcessSubagentSpawner } from "../subagentSpawner";
 import {
   documentVulnerability,
   validatePocPortability,
@@ -112,7 +113,8 @@ function makeToolContext(rootPath: string) {
     agentCwd: rootPath,
     model: "test-model",
     target: "https://example.com",
-  } as Parameters<typeof documentVulnerability>[0];
+    subagentSpawner: inProcessSubagentSpawner,
+  } as unknown as Parameters<typeof documentVulnerability>[0];
 }
 
 describe("documentVulnerability judge handling", () => {

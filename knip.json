@@ -33,7 +33,7 @@
     "**/testkit.ts"
   ],
   "vitest": false,
-  "tags": ["-knipignore"],
+  "tags": ["-knipignore", "-public"],
   "ignoreExportsUsedInFile": true,
   "include": [
     "files",

@@ -96,40 +96,16 @@ export function readAgentsMd(cwd: string): string | undefined {
  */
 export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
   constructor(opts: PatchingAgentInput) {
-    const {
-      model,
-      cwd,
-      vulnerability,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      sandbox,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-    } = opts;
+    const { cwd, vulnerability, ...base } = opts;
 
     const agentsMd = readAgentsMd(cwd);
 
     super({
+      ...base,
       system: buildSystemPrompt(),
-      prompt: buildPatchingPrompt(vulnerability, cwd, agentsMd),
-      model,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      sandbox,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-
       activeTools: [...PATCHING_ACTIVE_TOOLS],
-
       responseSchema: PatchResultSchema,
+      prompt: buildPatchingPrompt(vulnerability, cwd, agentsMd),
     });
   }
 }

@@ -80,60 +80,28 @@ export interface AttackSurfaceResult {
 export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSurfaceResult> {
   constructor(opts: AttackSurfaceAgentInput) {
     const {
-      model,
-      session,
-      authConfig,
+      target: targetOpt,
+      cwd,
+      surfaceIntegrationEnabled: _surfaceIntegrationEnabled,
       onStepFinish,
-      onCacheMetrics,
-      abortSignal,
-      attackSurfaceRegistry,
-      eventBus,
-      subagentId,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
+      ...base
     } = opts;
-    const target = opts.target ?? opts.cwd!;
-
-    const resultsPath = join(session.rootPath, "attack-surface-results.json");
-    const assetsPath = join(session.rootPath, "assets");
+    const target = targetOpt ?? cwd!;
+    const { session } = base;
 
     const subagentFolder = join(
       session.rootPath,
       "subagents",
       "attack-surface-agent",
     );
-
     if (!existsSync(subagentFolder)) {
       mkdirSync(subagentFolder, { recursive: true });
     }
 
     super({
-      system: detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
-      prompt: buildPrompt(target, session),
-      model,
-      session,
+      ...base,
       target,
-      authConfig,
-      onStepFinish: (e) => {
-        onStepFinish?.(e);
-        const messages = e.response.messages;
-        if (messages !== undefined) {
-          writeFileSync(
-            join(subagentFolder, "attack-surface-agent.log"),
-            JSON.stringify(messages, null, 2),
-          );
-        }
-      },
-      onCacheMetrics,
-      abortSignal,
-      attackSurfaceRegistry,
-      eventBus,
-      subagentId,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-      messages: opts.messages,
+      system: detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
       activeTools: [
         // Core recon tools
         "execute_command",
@@ -162,14 +130,16 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
         "web_search",
         "get_page",
       ],
-
       stopWhen: [
         hasToolCall("create_attack_surface_report"),
         stepCountIs(10_000),
       ],
-      toolChoice: "auto",
-
       resolveResult: () => {
+        const resultsPath = join(
+          session.rootPath,
+          "attack-surface-results.json",
+        );
+        const assetsPath = join(session.rootPath, "assets");
         let results: AttackSurfaceAnalysisResults | null = null;
         let targets: PentestTarget[] = [];
 
@@ -183,6 +153,17 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
         }
 
         return { results, targets, resultsPath, assetsPath };
+      },
+      prompt: buildPrompt(target, session),
+      onStepFinish: (e) => {
+        onStepFinish?.(e);
+        const messages = e.response.messages;
+        if (messages !== undefined) {
+          writeFileSync(
+            join(subagentFolder, "attack-surface-agent.log"),
+            JSON.stringify(messages, null, 2),
+          );
+        }
       },
     });
   }

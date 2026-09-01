@@ -166,6 +166,7 @@ function buildStubAgent(overrides: {
   subagentId?: string;
   subagentName?: string;
   agentMode?: "default" | "plan" | "fast-strike";
+  streamIdFactory?: (context: unknown) => string;
 }): OffensiveSecurityAgent<unknown> {
   const agent = Object.create(
     OffensiveSecurityAgent.prototype,
@@ -233,6 +234,9 @@ function buildStubAgent(overrides: {
       responseToolName: "response",
       responseToolFired: () => false,
     }),
+  });
+  Object.defineProperty(agent, "streamIdFactory", {
+    value: overrides.streamIdFactory,
   });
 
   return agent;
@@ -1711,5 +1715,70 @@ describe("root agent-run spans", () => {
     } finally {
       await otel.teardown();
     }
+  });
+});
+
+describe("OffensiveSecurityAgent.consume() streamIdFactory", () => {
+  const startStep = { type: "start-step" };
+  const textStart = { type: "text-start", id: "t0" };
+  const textDelta = { type: "text-delta", id: "t0", text: "hi" };
+
+  it("mints message and text-part ids from the factory with positional context", async () => {
+    const streamIdFactory = vi.fn((context: unknown) => {
+      const ctx = context as {
+        kind: string;
+        stepIndex?: number;
+        textPartIndex?: number;
+      };
+      if (ctx.kind === "message") return `msg-${ctx.stepIndex}`;
+      if (ctx.kind === "text-part")
+        return `part-${ctx.stepIndex}-${ctx.textPartIndex}`;
+      return "tool";
+    });
+    const agent = buildStubAgent({
+      fullStream: yieldChunks([startStep, textStart, textDelta]),
+      streamIdFactory,
+    });
+    const emitted: Array<{ messageId?: string; textPartId?: string }> = [];
+    vi.spyOn(agent.eventBus, "emitStreamPart").mockImplementation(((
+      _chunk: unknown,
+      ids: { messageId?: string; textPartId?: string },
+    ) => {
+      emitted.push({ messageId: ids.messageId, textPartId: ids.textPartId });
+    }) as unknown as AgentEventBus["emitStreamPart"]);
+
+    await agent.consume();
+
+    expect(streamIdFactory).toHaveBeenCalledWith({
+      kind: "message",
+      stepIndex: 0,
+    });
+    expect(streamIdFactory).toHaveBeenCalledWith({
+      kind: "text-part",
+      stepIndex: 0,
+      textPartIndex: 0,
+    });
+    const deltaEmit = emitted.at(-1);
+    expect(deltaEmit?.messageId).toBe("msg-0");
+    expect(deltaEmit?.textPartId).toBe("part-0-0");
+  });
+
+  it("falls back to random ids when no factory is provided", async () => {
+    const agent = buildStubAgent({
+      fullStream: yieldChunks([startStep, textStart, textDelta]),
+    });
+    const emitted: Array<{ messageId?: string }> = [];
+    vi.spyOn(agent.eventBus, "emitStreamPart").mockImplementation(((
+      _chunk: unknown,
+      ids: { messageId?: string },
+    ) => {
+      emitted.push({ messageId: ids.messageId });
+    }) as unknown as AgentEventBus["emitStreamPart"]);
+
+    await agent.consume();
+
+    const deltaEmit = emitted.at(-1);
+    expect(typeof deltaEmit?.messageId).toBe("string");
+    expect(deltaEmit?.messageId).not.toBe("msg-0");
   });
 });
