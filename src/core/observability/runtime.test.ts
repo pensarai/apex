@@ -349,6 +349,33 @@ describe("OTLP export", () => {
 // ---------------------------------------------------------------------------
 
 describe("provider ownership", () => {
+  it("does not register a context manager when the host owns the tracer", async () => {
+    const { AsyncLocalStorageContextManager } = await import(
+      "@opentelemetry/context-async-hooks"
+    );
+    const { BasicTracerProvider } = await import(
+      "@opentelemetry/sdk-trace-base"
+    );
+    const hostProvider = new BasicTracerProvider();
+    const hostContext = new AsyncLocalStorageContextManager();
+    expect(trace.setGlobalTracerProvider(hostProvider)).toBe(true);
+
+    try {
+      process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT =
+        "http://127.0.0.1:4318/v1/traces";
+      const runtime = startObservabilityRuntime();
+
+      hostContext.enable();
+      expect(context.setGlobalContextManager(hostContext)).toBe(true);
+      await runtime.shutdown();
+    } finally {
+      hostContext.disable();
+      context.disable();
+      trace.disable();
+      await hostProvider.shutdown();
+    }
+  });
+
   it("a host-owned tracer keeps Apex embedded: no-op runtime, host untouched", async () => {
     // The host (Console) registered its own SDK first.
     const { startOtelTestHarness } = await import("./testkit");
