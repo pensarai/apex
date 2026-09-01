@@ -7,6 +7,8 @@
  * Inspired by OpenCode's extensible tool display pattern.
  */
 
+import { stripEnvAssignmentPrefix } from "../../../util/shell-command";
+
 type ToolSummaryFn = (args: Record<string, unknown>) => string;
 
 /**
@@ -23,7 +25,11 @@ const TOOL_SUMMARY_MAP: Record<string, ToolSummaryFn> = {
 
   // Shell/Command tools
   execute_command: (args) => {
-    const cmd = String(args.command || "").split("\n")[0];
+    // Strip leading `export PATH=…`/`VAR=…` setup so the operator sees the
+    // real command rather than environment plumbing in the approval prompt.
+    const cmd = stripEnvAssignmentPrefix(String(args.command || "")).split(
+      "\n",
+    )[0];
     return cmd.length > 80 ? `$ ${cmd.slice(0, 80)}…` : `$ ${cmd}`;
   },
 
