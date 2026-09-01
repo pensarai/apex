@@ -24,8 +24,11 @@ import {
   getPromptInjectionLibrary,
   redactPromptInjectionPayloads,
 } from "../../../prompt-injections";
+import { assertCommandActionAllowed } from "./destructiveGuard";
 import { type BrowserFillResult, createBrowserTools } from "./playwrightMcp";
 import { createSandboxBrowserTools } from "./sandboxPlaywright";
+import { assertCommandInScope, assertUrlInScope } from "./scopeGuard";
+import { assertTrafficActionAllowed } from "./trafficGuard";
 import type { ToolContext } from "./types";
 
 /**
@@ -37,6 +40,7 @@ export const BROWSER_TOOL_NAMES = [
   "browser_screenshot",
   "browser_click",
   "browser_fill",
+  "browser_run_code",
   "browser_evaluate",
   "browser_console",
   "browser_get_cookies",
@@ -75,6 +79,13 @@ export function createBrowserToolset(ctx: ToolContext) {
         undefined,
         undefined,
         ctx.browserSession,
+        undefined,
+        (url) => assertUrlInScope(url, ctx),
+        (code) => {
+          assertCommandInScope(code, ctx);
+          assertCommandActionAllowed(code, ctx);
+          assertTrafficActionAllowed(code, ctx);
+        },
       );
 
   const cm = ctx.credentialManager;

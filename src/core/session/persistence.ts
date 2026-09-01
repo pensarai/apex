@@ -245,6 +245,8 @@ export function readAgentManifest(session: SessionInfo): AgentManifestEntry[] {
 
 /** A normalized target for the pentest swarm */
 export interface SwarmTarget {
+  /** Stable host-owned scope identifier (for example, a Console pentest target id). */
+  id?: string;
   name?: string;
   target: string;
   objectives: string[];

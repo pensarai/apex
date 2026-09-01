@@ -15,6 +15,7 @@ import {
 } from "../../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
 import type {
+  AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
   CacheMetrics,
@@ -31,6 +32,7 @@ import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
+import type { ResponseGuard } from "./tools/response";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -52,6 +54,8 @@ export const ApexFindingObject = z.object({
   impact: z.string(),
   evidence: z.string(),
   endpoint: z.string(),
+  /** Host-owned scope target that produced this finding. */
+  sourceTargetId: z.string().optional(),
   pocPath: z.string(),
   remediation: z.string(),
   references: z.string().optional(),
@@ -109,6 +113,18 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * @default "default"
    */
   mode?: AgentMode;
+
+  /**
+   * Model-facing tool protocol. `auto` selects the provider's freeform custom
+   * tool transport when available and otherwise uses the portable schema-based
+   * code interface. Model names do not affect selection.
+   *
+   * @default "auto"
+   */
+  toolProtocol?: AgentToolProtocolPreference;
+
+  /** Additional workflow-specific tools that must remain directly model-visible in code mode. */
+  directTools?: (ToolName | (string & {}))[];
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;
@@ -188,6 +204,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    */
   findingsRegistry?: FindingsRegistry;
 
+  /** When present, findings must identify one of these host-owned scope targets. */
+  engagementTargetIds?: readonly string[];
+
   /**
    * Shared attack surface registry for cross-agent asset dedup.
    * When present, `document_endpoint` checks for duplicates before writing.
@@ -219,6 +238,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Display label for the OTel span name / `gen_ai.agent.name`. */
   subagentName?: string;
+
+  /** Trusted per-agent workspace override. */
+  agentCwd?: string;
 
   /**
    * Override the auto-computed task directory. When set, takes precedence
@@ -262,6 +284,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * `activeTools` to get typed structured output from `consume()`.
    */
   responseSchema?: z.ZodSchema;
+
+  /** Reject an incomplete terminal response while keeping the agent running. */
+  responseGuard?: ResponseGuard;
 
   /**
    * Skills registry for on-demand skill loading.
@@ -471,6 +496,18 @@ export interface SpecializedAgentInput {
    * pentests can each run headed on their own virtual desktop.
    */
   display?: string;
+
+  /** Model-facing tool protocol inherited by specialized workers. */
+  toolProtocol?: AgentToolProtocolPreference;
+
+  /** Workflow-specific tools inherited by specialized workers. */
+  extraTools?: ToolSet;
+
+  /** Workflow tools that stay directly visible when code mode is active. */
+  directTools?: string[];
+
+  /** When present, findings must identify one of these host-owned scope targets. */
+  engagementTargetIds?: readonly string[];
 }
 
 /**

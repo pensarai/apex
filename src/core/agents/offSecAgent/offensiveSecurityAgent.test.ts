@@ -9,7 +9,7 @@
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const toolContexts = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 
@@ -34,6 +34,7 @@ vi.mock("zod", () => {
 });
 
 vi.mock("./tools", () => ({
+  buildExecutionPolicyPrompt: () => "",
   createAllTools: (ctx: Record<string, unknown>) => {
     toolContexts.push(ctx);
     return {};
@@ -43,6 +44,7 @@ vi.mock("./tools", () => ({
   SMS_TOOL_NAMES_ACTIVE: [],
   sessionHasSmsPasswordless: () => false,
   PLAN_MODE_TOOL_NAMES: [],
+  resolveExecutionPolicy: () => ({}),
   createResponseTool: () => {},
   RESPONSE_TOOL_NAME: "response",
   ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
@@ -65,7 +67,15 @@ vi.mock("./tools", () => ({
   ],
   PersistentShell: class {},
 }));
-vi.mock("../../ai", () => ({ streamResponse: () => {} }));
+vi.mock("../../ai", () => ({
+  requiresAutoToolChoice: (model: string) => /^z-ai\//i.test(model),
+  resolveModelRuntimeProfile: () => ({
+    protocol: "direct",
+    provider: "anthropic",
+    supportsParallelNestedCalls: false,
+  }),
+  streamResponse: () => {},
+}));
 vi.mock("../../session", () => ({ create: () => {} }));
 vi.mock("../specialized/utils", () => ({
   detectOSAndEnhancePrompt: (p: string) => p,
@@ -91,6 +101,7 @@ import { AgentMessageWriter } from "./messagePersistence";
 import {
   filterWorkspaceToolsForRun,
   OffensiveSecurityAgent,
+  resolveAgentToolChoice,
 } from "./offensiveSecurityAgent";
 
 describe("spawned-agent usage callbacks", () => {
@@ -1410,6 +1421,40 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       rmSync(tmpDir, { recursive: true, force: true });
     });
+  });
+});
+
+describe("resolveAgentToolChoice", () => {
+  const original = process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE;
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE;
+    } else {
+      process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE = original;
+    }
+  });
+
+  it("requires a tool call when the response contract is mandatory", () => {
+    process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE = "1";
+    expect(resolveAgentToolChoice(undefined, true)).toBe("required");
+    expect(resolveAgentToolChoice("auto", true)).toBe("required");
+  });
+
+  it("preserves explicit caller choices and agents without response tools", () => {
+    process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE = "true";
+    expect(resolveAgentToolChoice("none", true)).toBe("none");
+    expect(resolveAgentToolChoice(undefined, false)).toBe("auto");
+  });
+
+  it("uses auto for Z.AI OpenRouter models even when response is mandatory", () => {
+    process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE = "1";
+    expect(resolveAgentToolChoice(undefined, true, "z-ai/glm-5.3")).toBe(
+      "auto",
+    );
+    expect(resolveAgentToolChoice("required", true, "z-ai/glm-5.2")).toBe(
+      "auto",
+    );
   });
 });
 

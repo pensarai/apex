@@ -379,6 +379,7 @@ export class StepTraceWriter {
   private lastStepTime: number;
   private readonly agentStartTime: number;
   private summarized = false;
+  private latestCheckpointValue: StateCheckpoint | null = null;
   private previousMessageCount = 0;
 
   constructor(opts: StepTraceWriterOpts) {
@@ -575,7 +576,12 @@ export class StepTraceWriter {
       agentId: this.agentId,
       ...data,
     };
+    this.latestCheckpointValue = record;
     this.appendRecord(record);
+  }
+
+  get latestCheckpoint(): StateCheckpoint | null {
+    return this.latestCheckpointValue;
   }
 
   // ---------------------------------------------------------------------------

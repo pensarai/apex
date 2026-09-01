@@ -20,11 +20,24 @@ export {
   normalizeOpenAIReasoningEffort,
   streamResponse,
 } from "./ai";
+export type {
+  ContextCompactionConfig,
+  ContextCompactionMetadata,
+  ContextCompactionResult,
+  ContextCompactionState,
+  SemanticCapsule,
+} from "./contextCompaction";
 export {
   addRecentModelId,
   getRecentModels,
   MAX_RECENT_MODELS,
 } from "./model-history";
-export { AVAILABLE_MODELS } from "./models";
+export type {
+  AgentToolProtocol,
+  AgentToolProtocolPreference,
+  ModelRuntimeProfile,
+} from "./modelRuntime";
+export { resolveModelRuntimeProfile } from "./modelRuntime";
+export { AVAILABLE_MODELS, requiresAutoToolChoice } from "./models";
 export type { AIAuthConfig } from "./utils";
 export { buildAuthConfig } from "./utils";

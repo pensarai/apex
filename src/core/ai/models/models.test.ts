@@ -11,6 +11,7 @@ import {
   getMaxOutputTokens,
   getModelInfo,
   prefersSequentialToolCalls,
+  requiresAutoToolChoice,
 } from "./index";
 
 describe("getMaxOutputTokens", () => {
@@ -51,9 +52,17 @@ describe("getMaxOutputTokens", () => {
     expect(getMaxOutputTokens("minimax/minimax-m3")).toBe(128_000);
   });
 
-  it("recognizes GLM 5 / 5.2's 131.1K max-output window", () => {
+  it("recognizes GLM 5 / 5.2 / 5.3's 131.1K max-output window", () => {
     expect(getMaxOutputTokens("z-ai/glm-5.2")).toBe(131_072);
+    expect(getMaxOutputTokens("z-ai/glm-5.3")).toBe(131_072);
     expect(getMaxOutputTokens("zai.glm-5")).toBe(131_072);
+  });
+
+  it("registers GLM 5.3 on OpenRouter with its full context window", () => {
+    expect(getModelInfo("z-ai/glm-5.3")).toMatchObject({
+      provider: "openrouter",
+      contextLength: 1_048_576,
+    });
   });
 
   it("recognizes the new Bedrock DeepSeek / Qwen output budgets", () => {
@@ -212,6 +221,15 @@ describe("prefersSequentialToolCalls", () => {
     expect(prefersSequentialToolCalls("qwen.qwen3-coder-480b-a35b-v1:0")).toBe(
       false,
     );
+  });
+});
+
+describe("requiresAutoToolChoice", () => {
+  it("scopes the restriction to Z.AI models through OpenRouter", () => {
+    expect(requiresAutoToolChoice("z-ai/glm-5.3")).toBe(true);
+    expect(requiresAutoToolChoice("z-ai/glm-5.2")).toBe(true);
+    expect(requiresAutoToolChoice("zai.glm-5")).toBe(false);
+    expect(requiresAutoToolChoice("openai/gpt-5.6")).toBe(false);
   });
 });
 
