@@ -164,7 +164,9 @@ Enforced via the `import-x/no-internal-modules` ESLint rule in `eslint.config.js
 
 ### Skills
 
-Team-shared agent skills live at `.agents/skills/<name>/`. Use `/create-skill` to add a new one.
+Team-shared development-agent skills live at `.agents/skills/<name>/`. Use `/create-skill` to add a new one. The PR workflow below is developer-only and intentionally remains there: Apex scans `.claude/skills`, `.skills`, `skills`, `~/.agents/skills`, and `~/.pensar/skills` as runtime skill sources.
+
+Before pull-request or merge-request work, read and follow `.agents/skills/pr/SKILL.md` (`/pr` in coding agents that discover repo `.agents` skills). It covers creating or updating PRs, preserving stack topology and formatting, babysitting CI, handling review or Bugbot findings, resolving conflicts, and performing explicitly authorized merges. The skill is the source of truth for the workflow; verify live GitHub state and operate on the latest head SHA.
 
 ### Gotchas
 

@@ -65,6 +65,7 @@ sst-env.d.ts
 .agents/skills/*
 !.agents/skills/.gitkeep
 !.agents/skills/create-skill/
+!.agents/skills/pr/
 .claude/skills/*
 !.claude/skills/.gitkeep
 !.claude/skills/create-skill
