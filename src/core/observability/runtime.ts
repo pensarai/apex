@@ -191,12 +191,13 @@ export function startObservabilityRuntime(
   // owns the global. Apex must never disrupt host-owned state — only disable
   // globals it registered itself.
   const ownsTracerGlobal = trace.setGlobalTracerProvider(provider);
-  const ownsContextGlobal = context.setGlobalContextManager(contextManager);
 
   if (!ownsTracerGlobal) {
     // A host owns the tracer provider: our provider would never receive
     // spans. Clean up our own components, leave the host untouched, and do
-    // NOT mark an Apex runtime active (embedded mode).
+    // NOT mark an Apex runtime active (embedded mode). The context global
+    // was never touched — it is only registered after tracer ownership is
+    // confirmed.
     log.warn(
       "OTel tracer provider already registered by the host — Apex stays embedded and will not register its own",
     );
@@ -208,6 +209,7 @@ export function startObservabilityRuntime(
       );
     return NOOP_RUNTIME;
   }
+  const ownsContextGlobal = context.setGlobalContextManager(contextManager);
   if (!ownsContextGlobal) {
     log.warn(
       "OTel context manager already registered by the host — Apex reuses it and will not disable it",
