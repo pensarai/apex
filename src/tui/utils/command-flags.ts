@@ -314,10 +314,12 @@ export function parseWebFlags(args: string[]): WebCommandFlags {
     for (const h of raw.header) {
       const parsed = parseHeaderLine(h);
       if (!parsed.ok) {
-        console.error(
+        // Throw instead of exiting: the TUI's exit handler still runs
+        // (renderer teardown + bounded trace flush) before the process
+        // exits — a direct exit would discard both.
+        throw new Error(
           `--header "${h}" rejected:\n${formatParseError(parsed.error)}`,
         );
-        process.exit(1);
       }
       flags.customHeaders[parsed.value.name] = parsed.value.value;
     }
