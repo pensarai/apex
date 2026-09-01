@@ -102,7 +102,7 @@ export async function runFastStrike(
 
   const findingsRegistry = FindingsRegistry.fromDirectory(
     session.findingsPath,
-    { model, authConfig, abortSignal },
+    { model, authConfig, abortSignal, sessionId: session.id },
   );
 
   const promptParts: string[] = [`Target: ${target}`];

@@ -20,6 +20,7 @@ import { createLogger } from "../../logger/structured";
 import {
   getApexTracer,
   registerActiveRootSpan,
+  shouldRecordAiPayloads,
   unregisterActiveRootSpan,
   withSubagentSessionBaggage,
 } from "../../observability";
@@ -269,6 +270,8 @@ export class OffensiveSecurityAgent<TResult = void> {
   private readonly subagentName?: string;
   /** Operating mode (tools surface); used for run-span attribution. */
   private readonly agentMode: AgentMode;
+  /** Run id minted by consume() for the in-flight execution (root runs). */
+  private currentRunId?: string;
 
   /** The current open assistant message id (`msg_…`); minted on `start-step` in {@link consume}, `null` between steps. */
   private currentMessageId: string | null = null;
@@ -727,6 +730,11 @@ export class OffensiveSecurityAgent<TResult = void> {
         // to the session root for the root/operator agent.
         sessionPath: messagesDir,
         sessionId: this.busSessionId,
+        // Run/execution attribution for AI-span metadata — the run id is
+        // minted in consume() before the stream starts (the getter deferral
+        // above guarantees ordering); subagents add their execution id.
+        ...(this.currentRunId ? { runId: this.currentRunId } : {}),
+        ...(this.subagentId ? { agentId: this.subagentId } : {}),
         onStepFinish: async (event) => {
           const auxiliaryModelEvent =
             event.response.id === "summarization" ||
@@ -958,15 +966,22 @@ export class OffensiveSecurityAgent<TResult = void> {
       ? (this.subagentName ?? sid ?? "subagent")
       : this.agentMode;
     const runId = isSubagent ? undefined : newRunId();
+    this.currentRunId = runId;
+    // One stable conversation/session id for the whole trace: every agent in
+    // the run shares the session object (`_session.id` = the root session),
+    // while a subagent's own id is its EXECUTION id — never the conversation
+    // id (busSessionId is the routing id, which for subagents IS their own).
+    const traceSessionId = this._session.id;
     const runSpanAttributes: Record<string, string> = {
       "gen_ai.operation.name": "invoke_agent",
       "gen_ai.agent.name": spanLabel,
-      "gen_ai.conversation.id": this.busSessionId,
-      "pensar.session.id": this.busSessionId,
+      "gen_ai.conversation.id": traceSessionId,
+      "session.id": traceSessionId,
+      "pensar.session.id": traceSessionId,
       ...(isSubagent
-        ? {}
+        ? { "pensar.agent.execution.id": sid as string }
         : {
-            "pensar.run.id": runId,
+            "pensar.run.id": runId as string,
             "pensar.agent.mode": this.agentMode,
           }),
     };
@@ -979,8 +994,18 @@ export class OffensiveSecurityAgent<TResult = void> {
           // Root runs register so process-exit shutdown can end an
           // in-flight run's span before the final flush.
           if (!isSubagent) registerActiveRootSpan(span);
+          // Root-level input/output for trace previews — ONLY under full
+          // payload capture (sensitive: objectives can name internal hosts).
+          const recordRootIO = !isSubagent && shouldRecordAiPayloads();
+          if (recordRootIO && this.userPrompt) {
+            span.setAttribute("gen_ai.prompt", this.userPrompt);
+          }
           try {
-            return await runConsume();
+            const result = await runConsume();
+            if (recordRootIO && result !== undefined && result !== null) {
+              span.setAttribute("gen_ai.completion", safePreview(result));
+            }
+            return result;
           } catch (err) {
             // Record once, keep the cardinality low, preserve the original.
             span.recordException(err as Error);
@@ -989,6 +1014,12 @@ export class OffensiveSecurityAgent<TResult = void> {
               "error.type",
               err instanceof Error ? err.name : "Error",
             );
+            if (recordRootIO) {
+              span.setAttribute(
+                "gen_ai.completion",
+                `Failure: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
             throw err;
           } finally {
             unregisterActiveRootSpan(span);
@@ -1330,4 +1361,14 @@ function wrapToolsWithApprovalGate(
   }
 
   return wrapped;
+}
+
+/** Bounded, crash-safe JSON preview of a run result for span output. */
+function safePreview(value: unknown): string {
+  try {
+    const text = JSON.stringify(value);
+    return text === undefined ? String(value) : text.slice(0, 2000);
+  } catch {
+    return "[unserializable result]";
+  }
 }

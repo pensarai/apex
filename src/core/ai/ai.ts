@@ -21,6 +21,7 @@ import {
 import type { z } from "zod";
 import { createLogger } from "../logger/structured";
 import {
+  type AiTelemetryOperation,
   createAiTelemetrySettings,
   createGenerationSpanTracker,
   type GenerationSpanTracker,
@@ -1087,6 +1088,10 @@ export interface StreamResponseOpts {
   sessionPath?: string;
   /** Session id (`ses_…`) of the agent making this call; stamped onto AI-span telemetry so traces are filterable by session. */
   sessionId?: string;
+  /** Agent-run id (`run_…`) — attribution metadata on AI spans. */
+  runId?: string;
+  /** Agent execution id (subagent `ses_…`) — attribution metadata. */
+  agentId?: string;
   /**
    * Internal: recovery-recursion depth. Bumped at each summarize → resume
    * boundary; throws `ContextLengthExhaustedError` past `MAX_RESTART_DEPTH`.
@@ -1307,6 +1312,8 @@ export function streamResponse(
         ...createAiTelemetrySettings({
           operation: "apex.agent.stream",
           sessionId,
+          ...(opts.runId ? { runId: opts.runId } : {}),
+          ...(opts.agentId ? { agentId: opts.agentId } : {}),
         }),
         tracer: generationSpans.tracer,
       },
@@ -1589,6 +1596,12 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
   /** Session id (`ses_…`) of the caller — stamped onto AI-span telemetry. */
   sessionId?: string;
+  /** Stable operation id; defaults to `apex.structured.generate`. */
+  operation?: AiTelemetryOperation;
+  /** Agent-run id (`run_…`) — attribution metadata. */
+  runId?: string;
+  /** Agent execution id (subagent `ses_…`) — attribution metadata. */
+  agentId?: string;
 }
 
 const MAX_OBJECT_RATE_LIMIT_RETRIES = 8;
@@ -1646,8 +1659,10 @@ export async function generateObjectResponse<T extends z.ZodType>(
         maxRetries: 0,
         abortSignal,
         experimental_telemetry: createAiTelemetrySettings({
-          operation: "apex.structured.generate",
+          operation: opts.operation ?? "apex.structured.generate",
           sessionId,
+          ...(opts.runId ? { runId: opts.runId } : {}),
+          ...(opts.agentId ? { agentId: opts.agentId } : {}),
         }),
       });
 

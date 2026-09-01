@@ -758,3 +758,59 @@ describe("auxiliary model lifecycle", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// PR4: runId/agentId metadata propagation + structured operation ids
+// ---------------------------------------------------------------------------
+
+describe("identity metadata propagation", () => {
+  it("streamResponse stamps runId/agentId onto AI-span telemetry", async () => {
+    mockState.model = oneStepTextModel();
+    await drain(
+      streamResponse({
+        prompt: "hi",
+        model: MODEL,
+        silent: true,
+        sessionId: "ses_root",
+        runId: "run_meta1",
+        agentId: "ses_exec9",
+      }),
+    );
+
+    const span = requireSpan(otel.getFinishedSpans(), "ai.streamText");
+    expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe(
+      "ses_root",
+    );
+    expect(span.attributes["ai.telemetry.metadata.runId"]).toBe("run_meta1");
+    expect(span.attributes["ai.telemetry.metadata.agentId"]).toBe("ses_exec9");
+    expect(span.attributes["ai.telemetry.functionId"]).toBe(
+      "apex.agent.stream",
+    );
+  });
+
+  it("generateObjectResponse honors caller operation ids and identity", async () => {
+    mockState.model = generateModel();
+    await generateObjectResponse({
+      model: MODEL,
+      schema: z.object({ result: z.string() }),
+      prompt: "hi",
+      sessionId: "ses_root",
+      operation: "apex.finding.cvss",
+      runId: "run_meta2",
+      agentId: "ses_exec8",
+    });
+
+    const span = requireSpan(
+      otel.getFinishedSpans(),
+      "ai.generateText.doGenerate",
+    );
+    expect(span.attributes["ai.telemetry.functionId"]).toBe(
+      "apex.finding.cvss",
+    );
+    expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe(
+      "ses_root",
+    );
+    expect(span.attributes["ai.telemetry.metadata.runId"]).toBe("run_meta2");
+    expect(span.attributes["ai.telemetry.metadata.agentId"]).toBe("ses_exec8");
+  });
+});

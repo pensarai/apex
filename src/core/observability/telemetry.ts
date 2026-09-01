@@ -24,7 +24,11 @@ export type AiTelemetryOperation =
   | "apex.agent.stream"
   | "apex.structured.generate"
   | "apex.context.summarize"
-  | "apex.tool.repair";
+  | "apex.tool.repair"
+  | "apex.finding.cvss"
+  | "apex.finding.deduplicate"
+  | "apex.finding.root-cause"
+  | "apex.session.name";
 
 export interface CreateAiTelemetryInput {
   operation: AiTelemetryOperation;

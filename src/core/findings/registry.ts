@@ -326,6 +326,8 @@ export interface FindingsRegistryOptions {
   authConfig?: AIAuthConfig;
   /** Signal to cancel in-flight LLM calls (Tier 3 semantic dedup). */
   abortSignal?: AbortSignal;
+  /** Session id — stamps the registry's LLM calls with session attribution. */
+  sessionId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +355,7 @@ export class FindingsRegistry {
   private model?: AIModel;
   private authConfig?: AIAuthConfig;
   private abortSignal?: AbortSignal;
+  private sessionId?: string;
 
   // Simple async mutex: a chain of promises. Each register() call
   // appends to the chain so concurrent callers serialise naturally.
@@ -362,6 +365,7 @@ export class FindingsRegistry {
     this.model = opts?.model;
     this.authConfig = opts?.authConfig;
     this.abortSignal = opts?.abortSignal;
+    this.sessionId = opts?.sessionId;
   }
 
   /** How many findings are tracked. */
@@ -580,6 +584,8 @@ export class FindingsRegistry {
       system: SEMANTIC_DEDUP_SYSTEM,
       authConfig: this.authConfig,
       abortSignal: this.abortSignal,
+      sessionId: this.sessionId,
+      operation: "apex.finding.deduplicate",
     });
 
     if (result.isDuplicate && result.matchedIndex != null) {
@@ -649,6 +655,8 @@ export class FindingsRegistry {
         system: ROOT_CAUSE_GROUPING_SYSTEM,
         authConfig: this.authConfig,
         abortSignal: this.abortSignal,
+        sessionId: this.sessionId,
+        operation: "apex.finding.root-cause",
       });
     } catch {
       log.warn("groupByRootCause: LLM error — skipping root-cause grouping");

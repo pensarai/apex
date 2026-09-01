@@ -1785,8 +1785,11 @@ describe("root agent-run spans", () => {
       expect(span).toBeDefined();
       const attrs = span?.attributes as Record<string, string>;
       expect(attrs["gen_ai.agent.name"]).toBe("recon-sub");
-      expect(attrs["gen_ai.conversation.id"]).toBe("ses_sub_1");
-      expect(attrs["pensar.session.id"]).toBe("ses_sub_1");
+      // PR4 identity contract: the shared session id is the conversation id;
+      // the subagent's own id is the separate execution id.
+      expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
+      expect(attrs["pensar.session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.agent.execution.id"]).toBe("ses_sub_1");
       expect(attrs["pensar.run.id"]).toBeUndefined();
       expect(attrs["pensar.agent.mode"]).toBeUndefined();
     } finally {
@@ -1909,6 +1912,140 @@ describe("error-part span completion", () => {
       contextManager.disable();
       api.trace.disable();
       api.context.disable();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR4: root IO + consistent trace identity
+// ---------------------------------------------------------------------------
+
+describe("trace identity and root IO", () => {
+  const textChunk = { type: "text-delta", id: "t1", delta: "hi" };
+  async function* oneStep(): AsyncGenerator<unknown, void, undefined> {
+    yield textChunk;
+  }
+
+  function setupOtel() {
+    const { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } =
+      require("@opentelemetry/sdk-trace-base") as typeof import("@opentelemetry/sdk-trace-base");
+    const { AsyncLocalStorageContextManager } =
+      require("@opentelemetry/context-async-hooks") as typeof import("@opentelemetry/context-async-hooks");
+    const api =
+      require("@opentelemetry/api") as typeof import("@opentelemetry/api");
+    const exporter = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    });
+    const contextManager = new AsyncLocalStorageContextManager();
+    contextManager.enable();
+    api.trace.setGlobalTracerProvider(provider);
+    api.context.setGlobalContextManager(contextManager);
+    return {
+      spans: () => exporter.getFinishedSpans(),
+      async teardown() {
+        await provider.shutdown();
+        contextManager.disable();
+        api.trace.disable();
+        api.context.disable();
+      },
+    };
+  }
+
+  it("root spans mirror session.id and carry the run id", async () => {
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({ fullStream: oneStep() });
+      await agent.consume();
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      const attrs = span?.attributes as Record<string, string>;
+      expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
+      expect(attrs["session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.run.id"]).toMatch(/^run_/);
+      expect(attrs["pensar.agent.execution.id"]).toBeUndefined();
+    } finally {
+      await otel.teardown();
+    }
+  });
+
+  it("subagent spans carry their execution id, never as the conversation id", async () => {
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({
+        fullStream: oneStep(),
+        subagentId: "ses_exec_1",
+        subagentName: "recon-sub",
+      });
+      await agent.consume();
+
+      const span = otel
+        .spans()
+        .find((s) => s.name === "invoke_agent recon-sub");
+      const attrs = span?.attributes as Record<string, string>;
+      // Identity: the shared (root) session is the conversation/session id;
+      // the subagent's own id stays a separate execution attribute.
+      expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
+      expect(attrs["session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.agent.execution.id"]).toBe("ses_exec_1");
+      expect(attrs["pensar.run.id"]).toBeUndefined();
+    } finally {
+      await otel.teardown();
+    }
+  });
+
+  it("root span IO appears only under full payload capture", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({ fullStream: oneStep() });
+      Object.defineProperty(agent, "userPrompt", {
+        value: "pentest the acme api",
+      });
+      await agent.consume();
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(span?.attributes["gen_ai.prompt"]).toBe("pentest the acme api");
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+
+    // Default mode: metadata only — no prompt or result payload.
+    const otel2 = setupOtel();
+    try {
+      const agent = buildStubAgent({ fullStream: oneStep() });
+      Object.defineProperty(agent, "userPrompt", {
+        value: "pentest the acme api",
+      });
+      await agent.consume();
+      const span = otel2.spans().find((s) => s.name === "invoke_agent default");
+      expect(span?.attributes["gen_ai.prompt"]).toBeUndefined();
+      expect(span?.attributes["gen_ai.completion"]).toBeUndefined();
+    } finally {
+      await otel2.teardown();
+    }
+  });
+
+  it("failed runs record the failure as root output under full capture", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    try {
+      async function* failing(): AsyncGenerator<unknown, void, undefined> {
+        yield textChunk;
+        throw new Error("final failure");
+      }
+      const agent = buildStubAgent({ fullStream: failing() });
+      await expect(agent.consume()).rejects.toThrow("final failure");
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        "Failure: final failure",
+      );
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
     }
   });
 });
