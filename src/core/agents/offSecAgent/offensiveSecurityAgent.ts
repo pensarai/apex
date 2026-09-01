@@ -733,11 +733,21 @@ export class OffensiveSecurityAgent<TResult = void> {
             event.response.id === "tool-repair";
 
           if (auxiliaryModelEvent) {
-            traceWriter.recordStep([], {
-              inputTokens: event.usage.inputTokens ?? 0,
-              outputTokens: event.usage.outputTokens ?? 0,
-              ...lastCacheMetrics,
-            });
+            const cacheDetails = event.usage.inputTokenDetails;
+            traceWriter.recordStep(
+              [],
+              {
+                inputTokens: event.usage.inputTokens ?? 0,
+                outputTokens: event.usage.outputTokens ?? 0,
+                cacheReadTokens:
+                  lastCacheMetrics?.cacheReadTokens ??
+                  cacheDetails?.cacheReadTokens,
+                cacheWriteTokens:
+                  lastCacheMetrics?.cacheWriteTokens ??
+                  cacheDetails?.cacheWriteTokens,
+              },
+              { usageOnly: true },
+            );
             lastCacheMetrics = null;
             await input.onStepFinish?.(event);
             return;

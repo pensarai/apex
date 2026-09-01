@@ -15,6 +15,7 @@ const toolContexts = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 const streamResponseCalls = vi.hoisted(
   () => [] as Array<Record<string, unknown>>,
 );
+const traceRecordStepCalls = vi.hoisted(() => [] as unknown[][]);
 
 // ---------------------------------------------------------------------------
 // Module stubs — prevent the full tool/AI/zod import chain from loading.
@@ -85,7 +86,9 @@ vi.mock("./prompt", () => ({
 vi.mock("./trace", () => ({
   StepTraceWriter: class {
     writeInit() {}
-    recordStep() {}
+    recordStep(...args: unknown[]) {
+      traceRecordStepCalls.push(args);
+    }
     markSummarized() {}
   },
 }));
@@ -133,6 +136,7 @@ describe("spawned-agent usage callbacks", () => {
 describe("auxiliary model events", () => {
   it("keeps the last complete message snapshot while forwarding usage", async () => {
     streamResponseCalls.length = 0;
+    traceRecordStepCalls.length = 0;
     const rootPath = join(
       "/tmp",
       `apex-auxiliary-model-event-${Date.now()}-${Math.random()}`,
@@ -171,11 +175,22 @@ describe("auxiliary model events", () => {
 
       await call.onStepFinish({
         response: { id: "summarization", messages: [] },
-        usage: { inputTokens: 5, outputTokens: 1 },
+        usage: {
+          inputTokens: 5,
+          outputTokens: 1,
+          inputTokenDetails: { cacheReadTokens: 4, cacheWriteTokens: 1 },
+        },
       });
 
       expect(writer.latest).toEqual([...initialMessages, ...completedMessages]);
       expect(onStepFinish).toHaveBeenCalledTimes(2);
+      expect(traceRecordStepCalls.at(-1)?.[1]).toEqual({
+        inputTokens: 5,
+        outputTokens: 1,
+        cacheReadTokens: 4,
+        cacheWriteTokens: 1,
+      });
+      expect(traceRecordStepCalls.at(-1)?.[2]).toEqual({ usageOnly: true });
       writer.cancelTimer();
     } finally {
       rmSync(rootPath, { recursive: true, force: true });
