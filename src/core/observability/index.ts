@@ -5,7 +5,7 @@
  */
 
 import { context, propagation, type Tracer, trace } from "@opentelemetry/api";
-import { isSessionId } from "./id/id";
+import { isSessionId } from "../id/id";
 
 export function getApexTracer(): Tracer {
   return trace.getTracer("apex");
@@ -14,6 +14,17 @@ export function getApexTracer(): Tracer {
 export function shouldRecordAiPayloads(): boolean {
   return process.env.AI_TRACE_RECORD_PAYLOADS === "true";
 }
+
+export {
+  registerActiveRootSpan,
+  unregisterActiveRootSpan,
+} from "./active-root-spans";
+export {
+  type AiTelemetryOperation,
+  type AiTelemetrySettings,
+  type CreateAiTelemetryInput,
+  createAiTelemetrySettings,
+} from "./telemetry";
 
 /**
  * OTel baggage key for the execution-session id. Console's SpanProcessor copies
@@ -40,4 +51,17 @@ export function withSubagentSessionBaggage<T>(
     propagation.getActiveBaggage() ?? propagation.createBaggage()
   ).setEntry(SESSION_BAGGAGE_KEY, { value: sessionId });
   return context.with(propagation.setBaggage(context.active(), baggage), fn);
+}
+
+/**
+ * The active span's correlation ids, when a valid recording span is active.
+ * Null outside spans (or under a no-op SDK) — callers skip the fields.
+ */
+export function getActiveTraceCorrelation(): {
+  traceId: string;
+  spanId: string;
+} | null {
+  const spanContext = trace.getSpan(context.active())?.spanContext();
+  if (!spanContext || !trace.isSpanContextValid(spanContext)) return null;
+  return { traceId: spanContext.traceId, spanId: spanContext.spanId };
 }

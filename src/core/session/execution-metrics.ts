@@ -6,11 +6,24 @@ const EXECUTION_METRICS_FILENAME = "execution-metrics.json";
 interface TokenUsageTotals {
   inputTokens: number;
   outputTokens: number;
+  /** Cache-read tokens. Already included in inputTokens. */
+  cacheReadTokens: number;
+  /** Cache-write tokens (Anthropic prompt caching). */
+  cacheWriteTokens: number;
   totalTokens: number;
+}
+
+interface ContextUsageMetrics {
+  usedTokens: number;
+  contextLimit: number;
+  /** The model the sampled root call ran on. */
+  modelId: string;
 }
 
 export interface ExecutionMetrics {
   tokenUsage: TokenUsageTotals;
+  /** Latest root-call context sample; absent in legacy files. */
+  contextUsage?: ContextUsageMetrics;
   runtime?: string;
   /** Accumulated wall-clock seconds the pentest has been actively running. */
   elapsedSeconds?: number;
@@ -19,7 +32,10 @@ export interface ExecutionMetrics {
 
 interface WriteExecutionMetricsInput {
   sessionRootPath: string;
+  /** Authoritative cumulative snapshot from the owning session. */
   tokenUsage?: Partial<TokenUsageTotals>;
+  /** Replaces the context sample when provided; retained otherwise. */
+  contextUsage?: ContextUsageMetrics;
   runtime?: string;
   elapsedSeconds?: number;
 }
@@ -40,7 +56,24 @@ function normalizeTokenUsage(
   return {
     inputTokens,
     outputTokens,
+    // Legacy files lack cache fields — they hydrate as zero.
+    cacheReadTokens: toNonNegativeInteger(value?.cacheReadTokens),
+    cacheWriteTokens: toNonNegativeInteger(value?.cacheWriteTokens),
+    // Cache reads are already inside inputTokens; total stays in + out.
     totalTokens: explicitTotal > 0 ? explicitTotal : derivedTotal,
+  };
+}
+
+function normalizeContextUsage(
+  value: unknown,
+): ContextUsageMetrics | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const v = value as Partial<ContextUsageMetrics>;
+  if (typeof v.modelId !== "string" || v.modelId.length === 0) return undefined;
+  return {
+    modelId: v.modelId,
+    usedTokens: toNonNegativeInteger(v.usedTokens),
+    contextLimit: toNonNegativeInteger(v.contextLimit),
   };
 }
 
@@ -61,6 +94,7 @@ export function readExecutionMetrics(
   try {
     const parsed = JSON.parse(readFileSync(path, "utf-8")) as Partial<{
       tokenUsage: Partial<TokenUsageTotals>;
+      contextUsage?: unknown;
       runtime: string;
       elapsedSeconds: number;
       updatedAt: string;
@@ -68,6 +102,7 @@ export function readExecutionMetrics(
 
     return {
       tokenUsage: normalizeTokenUsage(parsed.tokenUsage),
+      contextUsage: normalizeContextUsage(parsed.contextUsage),
       runtime: typeof parsed.runtime === "string" ? parsed.runtime : undefined,
       elapsedSeconds: toNonNegativeInteger(parsed.elapsedSeconds) || undefined,
       updatedAt:
@@ -109,11 +144,14 @@ export function writeExecutionMetrics(
     : (existing?.tokenUsage ?? {
         inputTokens: 0,
         outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
         totalTokens: 0,
       });
 
   const next: ExecutionMetrics = {
     tokenUsage: nextTokenUsage,
+    contextUsage: input.contextUsage ?? existing?.contextUsage,
     runtime: input.runtime ?? existing?.runtime,
     elapsedSeconds: input.elapsedSeconds ?? existing?.elapsedSeconds,
     updatedAt: new Date().toISOString(),

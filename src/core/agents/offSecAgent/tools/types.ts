@@ -1,6 +1,8 @@
+import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import type {
   AIAuthConfig,
   AIModel,
+  CacheMetrics,
   OpenAIReasoningEffort,
   ThinkingEffort,
 } from "../../../ai";
@@ -13,6 +15,7 @@ import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { StepTraceWriter } from "../trace";
+import type { SystemPentestScope } from "../types";
 import type { PersistentShell } from "./persistentShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
 import type { UnifiedSandbox } from "./sandbox";
@@ -41,6 +44,9 @@ export type ToolContext = {
    */
   grpc?: GrpcPentestContext;
 
+  /** Structured multi-application scope inherited by spawned pentest workers. */
+  systemScope?: SystemPentestScope;
+
   /** Signal to cancel in-flight operations */
   abortSignal?: AbortSignal;
 
@@ -52,6 +58,10 @@ export type ToolContext = {
 
   /** Event bus for streaming agent output and subagent lifecycle events */
   eventBus?: AgentEventBus;
+
+  /** Usage callbacks forwarded to sub-agents spawned by tools. */
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
 
   /**
    * When set, tools like execute_command / http_request / document_vulnerability

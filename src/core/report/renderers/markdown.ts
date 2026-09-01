@@ -1,3 +1,4 @@
+import type { AttackPath } from "../../../lib/attack-path/types";
 import { hasCanonicalName } from "../../../lib/cwe/types";
 import type { PentestReport, PentestReportFinding } from "../schemas";
 
@@ -52,6 +53,14 @@ function renderFinding(
     "",
     finding.impact,
     "",
+    ...(finding.attackPath?.length
+      ? [
+          "## Attack Path",
+          "",
+          ...finding.attackPath.map(renderAttackPathHop),
+          "",
+        ]
+      : []),
     "## Evidence",
     "",
     "```",
@@ -111,4 +120,14 @@ function renderFinding(
     "",
   ];
   return lines.join("\n");
+}
+
+function renderAttackPathHop(hop: AttackPath[number], index: number): string {
+  const parts: string[] = [];
+  if (hop.applicationName) parts.push(`**${hop.applicationName}**`);
+  if (hop.applicationId) parts.push(`(\`${hop.applicationId}\`)`);
+  if (hop.host) parts.push(`host \`${hop.host}\``);
+  if (hop.relationshipType) parts.push(`via ${hop.relationshipType}`);
+  if (hop.notes) parts.push(`— ${hop.notes}`);
+  return `${index + 1}. ${parts.join(" ") || "Unspecified system member"}`;
 }

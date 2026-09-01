@@ -69,6 +69,28 @@ describe("ApexFindingObject", () => {
     }
   });
 
+  it("accepts finding with an ordered attackPath", () => {
+    const attackPath = [
+      {
+        applicationId: "app_web",
+        applicationName: "Web App",
+        host: "app.example.com",
+        relationshipType: "calls",
+      },
+      {
+        applicationName: "Admin API",
+        host: "api.partner.test",
+      },
+    ];
+    const result = PentestReportFindingSchema.safeParse({
+      ...baseFinding,
+      attackPath,
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.attackPath).toEqual(attackPath);
+  });
+
   it("rejects finding with invalid evidence file type", () => {
     const result = ApexFindingObject.safeParse({
       ...baseFinding,

@@ -37,6 +37,16 @@ describe("advanced settings command", () => {
   });
 });
 
+describe("exit command", () => {
+  it("uses the graceful application exit path", async () => {
+    const exitApplication = vi.fn(async () => {});
+
+    await getCommand("exit").handler([], createContext({ exitApplication }));
+
+    expect(exitApplication).toHaveBeenCalledOnce();
+  });
+});
+
 describe("autonomous workflow Strike Mode overrides", () => {
   it("keeps direct /pentest launches in standard mode", async () => {
     const navigate = vi.fn();

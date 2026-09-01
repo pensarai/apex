@@ -458,26 +458,3 @@ export function resolveInputFocused(
 // ---------------------------------------------------------------------------
 // Token usage accumulation
 // ---------------------------------------------------------------------------
-
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  cachedTokens: number;
-  cacheWriteTokens: number;
-}
-
-export function accumulateTokenUsage(
-  current: TokenUsage,
-  stepInputTokens: number,
-  stepOutputTokens: number,
-): TokenUsage | null {
-  if (stepInputTokens <= 0 && stepOutputTokens <= 0) return null;
-  return {
-    inputTokens: current.inputTokens + stepInputTokens,
-    outputTokens: current.outputTokens + stepOutputTokens,
-    totalTokens: current.totalTokens + stepInputTokens + stepOutputTokens,
-    cachedTokens: current.cachedTokens,
-    cacheWriteTokens: current.cacheWriteTokens,
-  };
-}

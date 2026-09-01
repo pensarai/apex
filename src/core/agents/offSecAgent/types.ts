@@ -8,6 +8,7 @@ import type {
   ToolSet,
 } from "ai";
 import { z } from "zod";
+import { AttackPathSchema } from "../../../lib/attack-path/types";
 import {
   CweEntrySchema,
   ValidatedCweEntrySchema,
@@ -61,6 +62,7 @@ export const ApexFindingObject = z.object({
   /** True for the single lead finding of a root-cause group (the one that should anchor the consolidated write-up). */
   rootCauseLead: z.boolean().optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
+  attackPath: AttackPathSchema.optional(),
 });
 
 export type Finding = z.infer<typeof ApexFindingObject>;
@@ -75,6 +77,12 @@ export type Finding = z.infer<typeof ApexFindingObject>;
  */
 /** Agent operating mode that controls which tools are available. */
 export type AgentMode = "default" | "plan" | "fast-strike";
+
+/** Structured authorization envelope for a multi-application System pentest. */
+export type SystemPentestScope = {
+  systemId: string;
+  memberHosts: string[];
+};
 
 export type OffensiveSecurityAgentInput<TResult = void> = {
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
@@ -115,6 +123,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    */
   grpc?: GrpcPentestContext;
 
+  /** Structured multi-application scope forwarded to pentest workers. */
+  systemScope?: SystemPentestScope;
+
   /**
    * Which tools the agent is allowed to use.
    *
@@ -152,6 +163,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Called when Anthropic cache metrics are present in a step's providerMetadata */
   onCacheMetrics?: (metrics: CacheMetrics) => void;
+
+  /**
+   * Forward usage callbacks through tools that spawn agents. Enable only when
+   * the caller does not already account for subagents from trace events.
+   */
+  forwardUsageCallbacksToSpawnedAgents?: boolean;
 
   /** AbortSignal to cancel the agent mid-run */
   abortSignal?: AbortSignal;

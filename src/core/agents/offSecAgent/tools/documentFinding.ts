@@ -10,6 +10,7 @@ import {
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { AttackPathSchema } from "../../../../lib/attack-path/types";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
 import { AgentEventBus } from "../../../eventBus";
@@ -27,6 +28,10 @@ import {
   judgeFinding,
 } from "../../specialized/findingJudge";
 import type { Finding } from "../types";
+import {
+  assertFindingEndpointInScope,
+  ScopeViolationError,
+} from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 const log = scopedLogger(() => createLogger("document-finding"));
@@ -76,6 +81,9 @@ export const documentVulnerabilityInputSchema = z.object({
   pocType: z.enum(["bash", "python", "javascript"]).describe("Script language"),
   pocContent: z.string().describe("The full POC script content"),
   pocDescription: z.string().describe("What this POC demonstrates"),
+  attackPath: AttackPathSchema.optional().describe(
+    "Required ordered member-to-member hop chain when the finding spans multiple System members; do not leave this chain only in narrative fields",
+  ),
 });
 
 export type DocumentVulnerabilityInput = z.infer<
@@ -163,11 +171,28 @@ CRITICAL RULES — READ BEFORE CALLING:
 - POC must exit 0 on success (vulnerability confirmed), non-zero on failure
 - POC must print clear evidence of exploitation to stdout
 - Fill the materiality checklist with the concrete exploit path, material security impact, affected non-public asset or abuse path, and why common false-positive traps do not apply
+- When a finding spans multiple System members, populate attackPath with every hop in order; do not leave the chain only in the description or evidence
 - If the tool returns a POC failure or judge rejection, revise your approach and call again
 - Do NOT use this for: positive observations, informational notes, testing limitations, or anything that is not an exploitable security vulnerability
 - If you could not exploit a vulnerability, do NOT call this tool — mention it in your final response summary instead`,
     inputSchema: documentVulnerabilityInputSchema,
     execute: async (input) => {
+      // Defense in depth: reject findings whose endpoint host is outside the
+      // immutable engagement scope so a routing error can't write
+      // infrastructure findings into the shared customer registry.
+      try {
+        assertFindingEndpointInScope(input.endpoint, ctx);
+      } catch (error) {
+        if (error instanceof ScopeViolationError) {
+          return {
+            success: false,
+            error: error.message,
+            message: `Finding endpoint rejected — out of scope: ${error.message}`,
+          };
+        }
+        throw error;
+      }
+
       try {
         // Early dedup check — avoid POC execution + LLM calls for known vulns
         const materializedEvidence = formatMateriality(input);
@@ -446,6 +471,8 @@ CRITICAL RULES — READ BEFORE CALLING:
           }),
           severity: severity as Finding["severity"],
           ...(evidenceFiles.length > 0 && { evidenceFiles }),
+          ...(input.attackPath &&
+            input.attackPath.length > 0 && { attackPath: input.attackPath }),
         };
 
         if (isVulnerability && ctx.findingsRegistry) {

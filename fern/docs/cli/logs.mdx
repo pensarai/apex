@@ -14,6 +14,10 @@ pensar logs <issueId> [filters]                 # List agent logs
 pensar logs search <issueId> <query> [options]  # Search agent logs
 ```
 
+<Note>
+`<issueId>` accepts either the issue UUID or its label — e.g. `VULN-000123`.
+</Note>
+
 ## Prerequisites
 
 You must be connected to Pensar Console via [`pensar login`](/apex/cli-commands/pensar-login) before using this command.
@@ -52,19 +56,19 @@ Searches log entries for a given query string.
 
 ```bash
 # List all logs for an issue
-pensar logs issue_ghi789
+pensar logs VULN-000123
 
 # List only error-level logs
-pensar logs issue_ghi789 --level error
+pensar logs VULN-000123 --level error
 
 # List tool call logs with a limit
-pensar logs issue_ghi789 --role tool-call --limit 50
+pensar logs VULN-000123 --role tool-call --limit 50
 
 # Search logs for a specific term
-pensar logs search issue_ghi789 "SQL injection"
+pensar logs search VULN-000123 "SQL injection"
 
 # Search with filters
-pensar logs search issue_ghi789 "timeout" --level warn --context 5
+pensar logs search VULN-000123 "timeout" --level warn --context 5
 ```
 
 ## Related Commands

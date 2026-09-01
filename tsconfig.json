@@ -7,13 +7,15 @@
     "moduleDetection": "force",
     "jsx": "react-jsx",
     "jsxImportSource": "@opentui/react",
-    "allowJs": true,
+    "allowJs": false,
 
     // Bundler mode
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": ".cache/tsc.tsbuildinfo",
 
     // Best practices
     "strict": true,
@@ -26,5 +28,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  "include": ["src", "scripts", "*.ts", "*.tsx"],
+  "exclude": ["build", "dist", "node_modules", "coverage"]
 }

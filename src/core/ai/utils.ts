@@ -19,6 +19,7 @@ import { getPensarGatewayUrl } from "../api/constants";
 import { ensureValidToken } from "../auth";
 import { config } from "../config";
 import { createLogger } from "../logger/structured";
+import { createAiTelemetrySettings } from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
 import { type AIModel, type StreamResponseOpts, streamResponse } from "./ai";
 import {
@@ -439,6 +440,10 @@ async function summarizeConversation(
     system: `You are a helpful assistant that summarizes conversations to pass to another agent. Review the conversation and system prompt at the end provided by the user.`,
     messages: summarizedMessages,
     abortSignal: opts.abortSignal,
+    experimental_telemetry: createAiTelemetrySettings({
+      operation: "apex.context.summarize",
+      sessionId: opts.sessionId,
+    }),
   });
 
   // Report summarization token usage if onStepFinish callback is provided

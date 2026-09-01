@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AttackPathSchema } from "../../lib/attack-path/types";
 import { CweEntrySchema, ValidatedCweEntrySchema } from "../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../lib/evidence/types";
 
@@ -17,6 +18,7 @@ export const PentestReportFindingSchema = z.object({
   relatedFindings: z.array(z.string()).optional(),
   rootCauseLead: z.boolean().optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
+  attackPath: AttackPathSchema.optional(),
 });
 
 export const PentestReportSchema = z.object({

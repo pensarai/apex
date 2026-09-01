@@ -10,27 +10,20 @@ import {
 } from "react";
 import {
   AVAILABLE_MODELS,
+  addRecentModelId,
   DEFAULT_OPENAI_REASONING_EFFORT,
   getOpenAIReasoningEfforts,
   type ModelInfo,
   modelSupportsThinking,
   type OpenAIReasoningEffort,
 } from "../../core/ai";
-import { update as updateConfig } from "../../core/config/config";
 import { writeErrorLog } from "../../core/logger";
 import {
   getAvailableModels,
   getDefaultModelForConfig,
 } from "../../core/providers/utils";
 import { useConfig } from "./config";
-
-interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  cachedTokens: number;
-  cacheWriteTokens: number;
-}
+import { SessionUsageStore } from "./session-usage";
 
 interface AgentContextValue {
   model: ModelInfo;
@@ -41,10 +34,10 @@ interface AgentContextValue {
    */
   setModel: (model: ModelInfo, persist?: boolean) => void;
   isModelUserSelected: boolean;
-  tokenUsage: TokenUsage;
-  addTokenUsage: (input: number, output: number) => void;
-  addCacheUsage: (cacheRead: number, cacheWrite: number) => void;
-  resetTokenUsage: () => void;
+  /** Session-scoped usage ownership: per-session totals + context sample. */
+  usageStore: SessionUsageStore;
+  /** Marks that an agent step has executed (drives the footer status). */
+  markExecuted: () => void;
   hasExecuted: boolean;
   thinking: boolean;
   setThinking: (thinking: boolean) => void;
@@ -82,13 +75,7 @@ export function AgentProvider({ children }: AgentProviderProps) {
   });
   const [isModelUserSelected, setIsModelUserSelected] =
     useState<boolean>(false);
-  const [tokenUsage, setTokenUsage] = useState<TokenUsage>({
-    inputTokens: 0,
-    outputTokens: 0,
-    totalTokens: 0,
-    cachedTokens: 0,
-    cacheWriteTokens: 0,
-  });
+  const usageStore = useMemo(() => new SessionUsageStore(), []);
   const [hasExecuted, setHasExecuted] = useState<boolean>(false);
   const [thinking, setThinking] = useState<boolean>(false);
   const [reasoningEnabled, setReasoningEnabledInternal] = useState<boolean>(
@@ -107,45 +94,64 @@ export function AgentProvider({ children }: AgentProviderProps) {
   reasoningEnabledRef.current = reasoningEnabled;
   const openAIReasoningEffortRef = useRef(openAIReasoningEffort);
   openAIReasoningEffortRef.current = openAIReasoningEffort;
+  const recentModelIdsRef = useRef(appConfig.data.recentModelIds ?? []);
+  const updateConfig = appConfig.update;
 
   // Wrapper that marks model as user-selected and persists to config.
   // Pass `persist = false` for programmatic/initialization calls so the
   // user's previously saved preference is not silently overwritten.
-  const setModel = useCallback((newModel: ModelInfo, persist = true) => {
-    setModelInternal(newModel);
-    if (persist) {
-      setIsModelUserSelected(true);
-      const configUpdate: {
-        selectedModelId: string;
-        reasoningEnabled?: boolean;
-        openAIReasoningEffort?: OpenAIReasoningEffort;
-      } = {
-        selectedModelId: newModel.id,
-      };
-      if (reasoningEnabledRef.current && !modelSupportsThinking(newModel.id)) {
-        configUpdate.reasoningEnabled = false;
-        setReasoningEnabledInternal(false);
+  const setModel = useCallback(
+    (newModel: ModelInfo, persist = true) => {
+      setModelInternal(newModel);
+      if (persist) {
+        setIsModelUserSelected(true);
+        const nextRecentModelIds = addRecentModelId(
+          recentModelIdsRef.current,
+          newModel.id,
+        );
+        recentModelIdsRef.current = nextRecentModelIds;
+
+        const configUpdate: {
+          selectedModelId: string;
+          recentModelIds: string[];
+          reasoningEnabled?: boolean;
+          openAIReasoningEffort?: OpenAIReasoningEffort;
+        } = {
+          selectedModelId: newModel.id,
+          recentModelIds: nextRecentModelIds,
+        };
+        if (
+          reasoningEnabledRef.current &&
+          !modelSupportsThinking(newModel.id)
+        ) {
+          configUpdate.reasoningEnabled = false;
+          setReasoningEnabledInternal(false);
+        }
+        const supportedOpenAIEfforts = getOpenAIReasoningEfforts(newModel.id);
+        if (
+          supportedOpenAIEfforts.length > 0 &&
+          !supportedOpenAIEfforts.includes(openAIReasoningEffortRef.current)
+        ) {
+          configUpdate.openAIReasoningEffort = DEFAULT_OPENAI_REASONING_EFFORT;
+          setOpenAIReasoningEffortInternal(DEFAULT_OPENAI_REASONING_EFFORT);
+        }
+        updateConfig(configUpdate).catch((err) => {
+          writeErrorLog(err, "AGENT_CONTEXT");
+        });
       }
-      const supportedOpenAIEfforts = getOpenAIReasoningEfforts(newModel.id);
-      if (
-        supportedOpenAIEfforts.length > 0 &&
-        !supportedOpenAIEfforts.includes(openAIReasoningEffortRef.current)
-      ) {
-        configUpdate.openAIReasoningEffort = DEFAULT_OPENAI_REASONING_EFFORT;
-        setOpenAIReasoningEffortInternal(DEFAULT_OPENAI_REASONING_EFFORT);
-      }
-      updateConfig(configUpdate).catch((err) => {
+    },
+    [updateConfig],
+  );
+
+  const setReasoningEnabled = useCallback(
+    (enabled: boolean) => {
+      setReasoningEnabledInternal(enabled);
+      updateConfig({ reasoningEnabled: enabled }).catch((err) => {
         writeErrorLog(err, "AGENT_CONTEXT");
       });
-    }
-  }, []);
-
-  const setReasoningEnabled = useCallback((enabled: boolean) => {
-    setReasoningEnabledInternal(enabled);
-    updateConfig({ reasoningEnabled: enabled }).catch((err) => {
-      writeErrorLog(err, "AGENT_CONTEXT");
-    });
-  }, []);
+    },
+    [updateConfig],
+  );
 
   const setOpenAIReasoningEffort = useCallback(
     (effort: OpenAIReasoningEffort) => {
@@ -154,8 +160,12 @@ export function AgentProvider({ children }: AgentProviderProps) {
         writeErrorLog(err, "AGENT_CONTEXT");
       });
     },
-    [],
+    [updateConfig],
   );
+
+  useEffect(() => {
+    recentModelIdsRef.current = appConfig.data.recentModelIds ?? [];
+  }, [appConfig.data.recentModelIds]);
 
   // Sync reasoningEnabled when config loads asynchronously
   useEffect(() => {
@@ -196,44 +206,15 @@ export function AgentProvider({ children }: AgentProviderProps) {
     }
   }, [appConfig.data, isModelUserSelected]);
 
-  const addTokenUsage = useCallback((input: number, output: number) => {
-    setHasExecuted(true);
-    setTokenUsage((prev) => ({
-      ...prev,
-      inputTokens: prev.inputTokens + input,
-      outputTokens: prev.outputTokens + output,
-      totalTokens: prev.totalTokens + input + output,
-    }));
-  }, []);
-
-  const addCacheUsage = useCallback((cacheRead: number, cacheWrite: number) => {
-    setTokenUsage((prev) => ({
-      ...prev,
-      cachedTokens: prev.cachedTokens + cacheRead,
-      cacheWriteTokens: prev.cacheWriteTokens + cacheWrite,
-    }));
-  }, []);
-
-  const resetTokenUsage = useCallback(() => {
-    setHasExecuted(false);
-    setTokenUsage({
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      cachedTokens: 0,
-      cacheWriteTokens: 0,
-    });
-  }, []);
+  const markExecuted = useCallback(() => setHasExecuted(true), []);
 
   const contextValue = useMemo(
     () => ({
       model,
       setModel,
       isModelUserSelected,
-      tokenUsage,
-      addTokenUsage,
-      addCacheUsage,
-      resetTokenUsage,
+      usageStore,
+      markExecuted,
       hasExecuted,
       thinking,
       setThinking,
@@ -250,7 +231,6 @@ export function AgentProvider({ children }: AgentProviderProps) {
       model,
       setModel,
       isModelUserSelected,
-      tokenUsage,
       hasExecuted,
       thinking,
       reasoningEnabled,
@@ -258,9 +238,8 @@ export function AgentProvider({ children }: AgentProviderProps) {
       openAIReasoningEffort,
       isExecuting,
       sessionCwd,
-      addTokenUsage,
-      addCacheUsage,
-      resetTokenUsage,
+      usageStore,
+      markExecuted,
       setOpenAIReasoningEffort,
     ],
   );

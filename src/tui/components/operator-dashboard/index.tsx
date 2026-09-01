@@ -34,6 +34,7 @@ import {
 import {
   buildAuthConfig,
   type CacheMetrics,
+  getContextWindow,
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,
 } from "../../../core/ai";
@@ -46,7 +47,6 @@ import {
   isSensitiveHeaderName,
   renderHeaderValue,
 } from "../../../core/http/types";
-import { attachWandbToEventBus } from "../../../core/integrations/wandb/upload";
 import type { OperatorMode, PendingApproval } from "../../../core/operator";
 import {
   ApprovalGate,
@@ -90,14 +90,13 @@ import { InputArea } from "../chat/input-area";
 import { MessageList } from "../chat/message-list";
 import { QuestionsForm } from "../chat/questions-form";
 import { collectScreenshotPaths, ScreenshotModal } from "../screenshot-modal";
+import { deriveApprovedActionLabel, isToolMessage } from "../shared";
 import {
-  deriveApprovedActionLabel,
-  extractStreamableContent,
-  isToolMessage,
-  tryParsePartialJson,
-} from "../shared";
+  recoverAbortedTranscript,
+  rewriteToolResultOutput,
+} from "./conversation";
+import { markInFlightToolsErrored } from "./display-state";
 import {
-  accumulateTokenUsage,
   buildOperatorSystemPrompt,
   type DashboardStatus,
   filterOperatorAutocomplete,
@@ -117,24 +116,21 @@ import {
   selectionAfterRemove,
 } from "./queue";
 import { QueuedMessages } from "./queued-messages";
+import {
+  bindOperatorRunEvents,
+  createDisplayEventHandlers,
+  createRunEventProjections,
+} from "./run-events";
+import { RunTraceSession } from "./run-tracing";
 import SubagentDialog from "./subagent-dialog";
 import {
   createSubagentSessionHelpers,
   createSubagentStore,
   loadSubagentSessionsFromDisk,
+  markSubagentsInterrupted,
 } from "./subagent-state";
 import { SubagentStatusBar } from "./subagent-status-bar";
-
-function markInFlightToolsErrored(
-  messages: DisplayMessage[],
-  result: string,
-): DisplayMessage[] {
-  return messages.map((m) =>
-    isToolMessage(m) && (m.status === "pending" || m.status === "streaming")
-      ? { ...m, status: "error" as const, result }
-      : m,
-  );
-}
+import { updateWorkflowDataMessage } from "./workflow-data";
 
 /**
  * Operator Dashboard - interactive chat interface with the offensive security agent
@@ -166,10 +162,8 @@ export default function OperatorDashboard({
     isModelUserSelected,
     setThinking,
     setIsExecuting,
-    tokenUsage,
-    addTokenUsage,
-    addCacheUsage,
-    resetTokenUsage,
+    usageStore,
+    markExecuted,
     setSessionCwd,
     reasoningEnabled,
     openAIReasoningEffort,
@@ -296,7 +290,6 @@ export default function OperatorDashboard({
   // without a ref).
   const displayMessagesRef = useRef<DisplayMessage[]>([]);
   displayMessagesRef.current = messages;
-  const textRef = useRef("");
   // AI SDK conversation history for multi-turn continuity
   const conversationRef = useRef<ModelMessage[]>([]);
   // Input state
@@ -369,11 +362,6 @@ export default function OperatorDashboard({
   useEffect(() => {
     approvedPlanRef.current = approvedPlanContent;
   }, [approvedPlanContent]);
-  const tokenUsageRef = useRef(tokenUsage);
-
-  useEffect(() => {
-    tokenUsageRef.current = tokenUsage;
-  }, [tokenUsage]);
 
   // Subscribe to approval gate events
   useEffect(() => {
@@ -539,239 +527,92 @@ export default function OperatorDashboard({
   }, [loading, refocusPrompt]);
 
   useEffect(() => {
-    // Only run the reset / hydrate cycle for *resumed* sessions (those
-    // with a `sessionId` prop). Brand-new sessions reach this effect after
-    // their first agent step has already accumulated tokens via
-    // `addTokenUsage`, and a reset here would wipe that initial usage.
+    if (sessionId === undefined) usageStore.beginNewSession();
+  }, [sessionId, usageStore]);
+
+  useEffect(() => {
+    // Enter the resumed session in the usage store: seeds its totals from
+    // persisted metrics when first tracked, and never resets live totals on
+    // re-entry (another run in the same session accumulates). Brand-new
+    // sessions enter via onSessionReady once the session is minted, carrying
+    // the provisional bucket with them.
     if (!session || !sessionId) return;
 
-    resetTokenUsage();
-    tokenUsageRef.current = {
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      cachedTokens: 0,
-      cacheWriteTokens: 0,
-    };
-
     const metrics = readExecutionMetrics(session.rootPath);
-    const persisted = metrics?.tokenUsage;
-    if (
-      persisted &&
-      (persisted.inputTokens > 0 || persisted.outputTokens > 0)
-    ) {
-      addTokenUsage(persisted.inputTokens, persisted.outputTokens);
-      tokenUsageRef.current = {
-        ...persisted,
-        cachedTokens: 0,
-        cacheWriteTokens: 0,
-      };
-    }
-
-    try {
-      writeExecutionMetrics({
-        sessionRootPath: session.rootPath,
-        tokenUsage: tokenUsageRef.current,
-      });
-    } catch {
-      // Best effort hydration write.
-    }
-  }, [session, sessionId, addTokenUsage, resetTokenUsage]);
-
-  // ---------------------------------------------------------------------------
-  // Message helpers — same pattern as pentest component
-  // ---------------------------------------------------------------------------
-
-  const appendText = useCallback((text: string) => {
-    textRef.current += text;
-    const accumulated = textRef.current;
-    setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (last && last.role === "assistant") {
-        const updated = [...prev];
-        updated[updated.length - 1] = { ...last, content: accumulated };
-        return updated;
-      }
-      return [
-        ...prev,
-        { role: "assistant", content: accumulated, createdAt: new Date() },
-      ];
+    usageStore.enterSession(session.id, {
+      ...(metrics?.tokenUsage ? { tokenUsage: metrics.tokenUsage } : {}),
+      ...(metrics?.contextUsage ? { contextUsage: metrics.contextUsage } : {}),
     });
-  }, []);
-
-  // Ref to accumulate partial tool args JSON per toolCallId
-  const toolArgsDeltaRef = useRef<
-    Map<string, { toolName: string; accumulated: string }>
-  >(new Map());
-
-  const addStreamingToolCall = useCallback(
-    (toolCallId: string, toolName: string) => {
-      textRef.current = "";
-      toolArgsDeltaRef.current.set(toolCallId, {
-        toolName,
-        accumulated: "",
-      });
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "tool" as const,
-          content: "",
-          createdAt: new Date(),
-          toolCallId,
-          toolName,
-          args: {},
-          status: "streaming" as const,
-        },
-      ]);
-    },
-    [],
-  );
-
-  const appendToolCallDelta = useCallback(
-    (toolCallId: string, argsTextDelta: string) => {
-      const entry = toolArgsDeltaRef.current.get(toolCallId);
-      const accumulated = (entry?.accumulated ?? "") + argsTextDelta;
-      toolArgsDeltaRef.current.set(toolCallId, {
-        toolName: entry?.toolName ?? "",
-        accumulated,
-      });
-
-      const parsed = tryParsePartialJson(accumulated);
-      if (!parsed) return;
-
-      const contentText = extractStreamableContent(parsed);
-      const logs = contentText ? contentText.split("\n") : undefined;
-
-      setMessages((msgs) => {
-        const idx = msgs.findIndex(
-          (m) => isToolMessage(m) && m.toolCallId === toolCallId,
-        );
-        if (idx === -1) return msgs;
-        const updated = [...msgs];
-        updated[idx] = { ...updated[idx], args: parsed, ...(logs && { logs }) };
-        return updated;
-      });
-    },
-    [],
-  );
-
-  const addToolCall = useCallback(
-    (toolCallId: string, toolName: string, args?: Record<string, unknown>) => {
-      textRef.current = "";
-      toolArgsDeltaRef.current.delete(toolCallId);
-      setMessages((prev) => {
-        const idx = prev.findIndex(
-          (m) => isToolMessage(m) && m.toolCallId === toolCallId,
-        );
-        if (idx !== -1) {
-          const updated = [...prev];
-          updated[idx] = {
-            ...updated[idx],
-            args,
-            logs: undefined,
-            status: "pending" as const,
-          };
-          return updated;
-        }
-        return [
-          ...prev,
-          {
-            role: "tool" as const,
-            content: "",
-            createdAt: new Date(),
-            toolCallId,
-            toolName,
-            args,
-            status: "pending" as const,
-          },
-        ];
-      });
-    },
-    [],
-  );
-
-  const updateToolResult = useCallback(
-    (toolCallId: string, _toolName: string, result?: unknown) => {
-      textRef.current = "";
-      setMessages((prev) => {
-        const idx = prev.findIndex(
-          (m) => isToolMessage(m) && m.toolCallId === toolCallId,
-        );
-        if (idx === -1) return prev;
-        const updated = [...prev];
-        updated[idx] = { ...updated[idx], status: "completed", result };
-        return updated;
-      });
-    },
-    [],
-  );
+  }, [session, sessionId, usageStore]);
 
   // ---------------------------------------------------------------------------
-  // Streaming command output — throttled to avoid excessive re-renders
+  // Display event adapter — root display projections (partial text, tool-arg
+  // deltas, throttled command output) behind the run-event binding. React
+  // setters stay behind the narrow sink.
   // ---------------------------------------------------------------------------
 
-  const cmdOutputBufRef = useRef("");
-  const cmdFlushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const MAX_LOG_LINES = 200;
+  // The session id the CURRENT run belongs to. Usage events route here (not
+  // to whichever session is active) so late stragglers from a finishing run
+  // never leak into a different session's totals.
+  const runSessionIdRef = useRef<string | null>(null);
 
-  const flushCommandOutput = useCallback(() => {
-    const buf = cmdOutputBufRef.current;
-    if (!buf) return;
-    cmdOutputBufRef.current = "";
-
-    setMessages((prev) => {
-      const idx = prev.findLastIndex(
-        (m) =>
-          isToolMessage(m) &&
-          (m.status === "pending" || m.status === "streaming"),
-      );
-      if (idx === -1) return prev;
-
-      const msg = prev[idx];
-      const existing = msg.logs ?? [];
-      const incoming = buf.split("\n");
-      // If last existing line was partial (no trailing newline), merge it
-      let merged: string[];
-      if (existing.length > 0 && !buf.startsWith("\n")) {
-        merged = [...existing];
-        merged[merged.length - 1] += incoming[0];
-        merged.push(...incoming.slice(1));
-      } else {
-        merged = [...existing, ...incoming];
-      }
-      // Cap to last MAX_LOG_LINES
-      if (merged.length > MAX_LOG_LINES) {
-        merged = merged.slice(-MAX_LOG_LINES);
-      }
-
-      const updated = [...prev];
-      updated[idx] = { ...msg, logs: merged };
-      return updated;
-    });
-  }, []);
-
-  const onCommandOutput = useCallback(
-    (data: string) => {
-      cmdOutputBufRef.current += data;
-
-      if (!cmdFlushTimerRef.current) {
-        cmdFlushTimerRef.current = setInterval(() => {
-          flushCommandOutput();
-        }, 150);
-      }
-    },
-    [flushCommandOutput],
+  const displayEvents = useMemo(
+    () =>
+      createDisplayEventHandlers({
+        updateMessages: setMessages,
+        setThinking,
+        setError,
+      }),
+    [setThinking],
   );
 
-  // Clean up the flush timer when the component unmounts or agent stops
+  // Clean up the command-output flush timer when the component unmounts
   useEffect(() => {
     return () => {
-      if (cmdFlushTimerRef.current) {
-        clearInterval(cmdFlushTimerRef.current);
-        cmdFlushTimerRef.current = null;
-      }
+      displayEvents.dispose();
     };
-  }, []);
+  }, [displayEvents]);
+
+  // ---------------------------------------------------------------------------
+  // Run event projections — subagent routing, questions interception, and
+  // workflow phases layered over the display projections. Component state
+  // changes stay behind the injected callbacks.
+  // ---------------------------------------------------------------------------
+
+  const updateWorkflowData = useCallback(
+    (updater: (wd: WorkflowData) => WorkflowData) => {
+      setMessages((prev) => updateWorkflowDataMessage(prev, updater));
+    },
+    [],
+  );
+
+  const runEventProjections = useMemo(
+    () =>
+      createRunEventProjections({
+        display: displayEvents,
+        subagents: subagentHelpers,
+        updateWorkflowData,
+        clearSubagentSessions: () => subagentStore.setState(new Map()),
+        questions: {
+          onAsked: (toolCallId, questions) => {
+            pendingToolCallIdRef.current = toolCallId;
+            setPendingQuestions(questions);
+          },
+          onCleared: () => {
+            pendingToolCallIdRef.current = null;
+            setPendingQuestions(null);
+          },
+        },
+        onRootToolCallStarted: () => {
+          commandCancelledRef.current = false;
+        },
+        onPlanSubmitted: () => {
+          planSubmittedRef.current = true;
+          planGateBypassedOnResumeRef.current = false;
+        },
+      }),
+    [displayEvents, subagentHelpers, updateWorkflowData, subagentStore],
+  );
 
   // ---------------------------------------------------------------------------
   // Approval handlers
@@ -814,12 +655,13 @@ export default function OperatorDashboard({
       }
 
       const gen = ++generationRef.current;
+      runSessionIdRef.current = sessionRef.current?.id ?? session?.id ?? null;
 
       setStatus("running");
       setThinking(true);
       setIsExecuting(true);
       setError(null);
-      textRef.current = "";
+      displayEvents.resetPartialText();
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -851,328 +693,79 @@ export default function OperatorDashboard({
         nextMessages = conversationRef.current;
       }
 
-      // Shared sink for orchestrator + subagent token usage.
+      // THE accounting path: every step (root via onStepFinish, subagents via
+      // trace records) funnels through here exactly once. Routes into the
+      // run's owning session; metrics write that session's snapshot.
       const recordTokenUsage = (
         inputTokens: number,
         outputTokens: number,
         cacheReadTokens = 0,
         cacheWriteTokens = 0,
       ) => {
-        const nextUsage = accumulateTokenUsage(
-          tokenUsageRef.current,
+        if (inputTokens > 0 || outputTokens > 0) markExecuted();
+        const runSessionId = runSessionIdRef.current;
+        usageStore.addSessionTokens(runSessionId, {
           inputTokens,
           outputTokens,
-        );
-        if (nextUsage) {
-          tokenUsageRef.current = nextUsage;
-          addTokenUsage(inputTokens, outputTokens);
-          if (session) {
-            try {
-              writeExecutionMetrics({
-                sessionRootPath: session.rootPath,
-                tokenUsage: nextUsage,
-              });
-            } catch {
-              // Best effort: token metrics should not interrupt operator runs.
-            }
+          cacheReadTokens,
+          cacheWriteTokens,
+        });
+        const activeSession = sessionRef.current;
+        if (activeSession) {
+          try {
+            const usage = usageStore.getSnapshot(activeSession.id);
+            writeExecutionMetrics({
+              sessionRootPath: activeSession.rootPath,
+              tokenUsage: usage.tokenUsage,
+              ...(usage.contextUsage
+                ? { contextUsage: usage.contextUsage }
+                : {}),
+            });
+          } catch {
+            // Best effort: token metrics should not interrupt operator runs.
           }
         }
-        if (cacheReadTokens > 0 || cacheWriteTokens > 0) {
-          addCacheUsage(cacheReadTokens, cacheWriteTokens);
+      };
+
+      // Root steps also replace the context sample: the step's input is the
+      // whole conversation as the model saw it, and the denominator comes
+      // from the model this run actually used.
+      const runModelId = model.id;
+      const recordRootStepUsage = (usage: {
+        inputTokens?: number;
+        outputTokens?: number;
+      }) => {
+        const inputTokens = usage.inputTokens ?? 0;
+        if (inputTokens > 0) {
+          usageStore.setRootContext(runSessionIdRef.current, {
+            usedTokens: inputTokens,
+            contextLimit: getContextWindow(runModelId),
+            modelId: runModelId,
+          });
         }
+        recordTokenUsage(inputTokens, usage.outputTokens ?? 0);
       };
 
       const onStepFinish = (event: {
         usage?: { inputTokens?: number; outputTokens?: number };
       }) => {
-        recordTokenUsage(
-          event.usage?.inputTokens ?? 0,
-          event.usage?.outputTokens ?? 0,
-        );
+        recordRootStepUsage(event.usage ?? {});
       };
 
       const eventBus = new AgentEventBus();
 
-      // Only pentest swarm agents (pentest-agent-*) get entries in
-      // WorkflowData.pentesting.subagents. All others (discovery, risk
-      // scorers, whitebox analyzers) are excluded.
-      const isPentestAgent = (id?: string) =>
-        id !== undefined && /^pentest-agent-\d+$/.test(id);
-
-      // Patch the workflowData on the active run_pentest_workflow tool message.
-      const updateWorkflowData = (
-        updater: (wd: WorkflowData) => WorkflowData,
-      ) => {
-        setMessages((prev) => {
-          const idx = prev.findLastIndex(
-            (m) =>
-              isToolMessage(m) &&
-              m.toolName === "run_pentest_workflow" &&
-              (m.status === "pending" || m.status === "streaming"),
-          );
-          if (idx === -1) return prev;
-          const msg = prev[idx];
-          const wd = msg.workflowData ?? {
-            currentPhase: "discovery" as const,
-            discovery: { label: "", status: "pending" as const, logs: [] },
-            pentesting: {
-              label: "",
-              status: "idle" as const,
-              subagents: {},
-            },
-            reporting: { label: "", status: "idle" as const },
-          };
-          const updated = [...prev];
-          updated[idx] = { ...msg, workflowData: updater(wd) };
-          return updated;
-        });
-      };
-
-      eventBus.on("text-delta", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) {
-          subagentHelpers.appendText(d.subagentId, d.text);
-          return;
-        }
-        setThinking(false);
-        appendText(d.text);
+      // W&B trace upload — buffer early records so none are lost for new sessions.
+      // For resumed sessions, we attach before the agent starts.
+      // For new sessions, onSessionReady fires mid-construction; we replay
+      // any buffered records once the handler attaches.
+      const runTrace = new RunTraceSession(eventBus, {
+        isCurrent: () => gen === generationRef.current,
+        recordTokenUsage,
       });
 
-      eventBus.on("tool-call-start", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) {
-          subagentHelpers.addStreamingToolCall(
-            d.subagentId,
-            d.toolCallId,
-            d.toolName,
-          );
-          return;
-        }
-        setThinking(false);
-        addStreamingToolCall(d.toolCallId, d.toolName);
-      });
-
-      eventBus.on("tool-call-delta", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) {
-          subagentHelpers.appendToolCallDelta(
-            d.subagentId,
-            d.toolCallId,
-            d.argsTextDelta,
-          );
-          return;
-        }
-        appendToolCallDelta(d.toolCallId, d.argsTextDelta);
-      });
-
-      eventBus.on("tool-call-complete", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) {
-          const args =
-            d.args &&
-            typeof d.args === "object" &&
-            !Array.isArray(d.args) &&
-            d.args !== null
-              ? (d.args as Record<string, unknown>)
-              : {};
-          subagentHelpers.addToolCall(
-            d.subagentId,
-            d.toolCallId,
-            d.toolName,
-            args,
-          );
-          return;
-        }
-        setThinking(false);
-        commandCancelledRef.current = false;
-        const args =
-          d.args &&
-          typeof d.args === "object" &&
-          !Array.isArray(d.args) &&
-          d.args !== null
-            ? (d.args as Record<string, unknown>)
-            : undefined;
-        addToolCall(d.toolCallId, d.toolName, args);
-
-        if (d.toolName === ASK_USER_QUESTIONS_TOOL_NAME && args) {
-          const rawQuestions = args.questions;
-          if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
-            pendingToolCallIdRef.current = d.toolCallId;
-            setPendingQuestions(rawQuestions as AskUserQuestion[]);
-          }
-        }
-      });
-
-      eventBus.on("tool-result", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) {
-          subagentHelpers.updateToolResult(
-            d.subagentId,
-            d.toolCallId,
-            d.result,
-          );
-          return;
-        }
-        flushCommandOutput();
-        if (cmdFlushTimerRef.current) {
-          clearInterval(cmdFlushTimerRef.current);
-          cmdFlushTimerRef.current = null;
-        }
-        setThinking(true);
-        updateToolResult(d.toolCallId, d.toolName, d.result);
-
-        // Track submit_plan success — review triggers after the run completes
-        if (
-          d.toolName === "submit_plan" &&
-          (d.result as Record<string, unknown> | null)?.success === true
-        ) {
-          planSubmittedRef.current = true;
-          planGateBypassedOnResumeRef.current = false;
-        }
-      });
-
-      eventBus.on("command-output", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) return;
-        onCommandOutput(d.data);
-      });
-
-      eventBus.on("error", (d) => {
-        if (gen !== generationRef.current) return;
-        if (d.subagentId) {
-          const errMsg =
-            d.error instanceof Error ? d.error.message : "Unknown error";
-          subagentHelpers.appendText(d.subagentId, `\nError: ${errMsg}\n`);
-          return;
-        }
-        console.error("Agent error:", d.error);
-        // Clear pending-questions state so an error after the tool-call event
-        // doesn't leave the questions form stuck over a failed conversation.
-        pendingToolCallIdRef.current = null;
-        setPendingQuestions(null);
-        const errorMessage =
-          d.error instanceof Error ? d.error.message : "Unknown error";
-        setError(errorMessage);
-        setMessages((prev) => markInFlightToolsErrored(prev, errorMessage));
-      });
-
-      eventBus.on("subagent-spawn", ({ subagentId, name }) => {
-        if (gen !== generationRef.current) return;
-        // Hide whitebox per-app synthetic grouping nodes until #744 lands a hierarchical view.
-        if (subagentId.startsWith("app:")) return;
-        subagentHelpers.spawnSession(subagentId, name);
-        if (!isPentestAgent(subagentId)) return;
-        // Pentest swarm agents → workflowData.pentesting.subagents
-        updateWorkflowData((wd) => ({
-          ...wd,
-          pentesting: {
-            ...wd.pentesting,
-            subagents: {
-              ...wd.pentesting.subagents,
-              [subagentId]: {
-                name,
-                status: "pending" as const,
-                logs: [],
-              },
-            },
-          },
-        }));
-      });
-
-      eventBus.on("subagent-complete", ({ subagentId, status }) => {
-        if (gen !== generationRef.current) return;
-        // Mirror the spawn-handler filter: synthetic per-app grouping nodes
-        // were never registered as sessions, so don't try to complete them.
-        if (subagentId.startsWith("app:")) return;
-        subagentHelpers.completeSession(subagentId, status);
-        if (!isPentestAgent(subagentId)) return;
-        // Update workflowData swarm status
-        updateWorkflowData((wd) => {
-          const entry = wd.pentesting.subagents[subagentId];
-          if (!entry) return wd;
-          return {
-            ...wd,
-            pentesting: {
-              ...wd.pentesting,
-              subagents: {
-                ...wd.pentesting.subagents,
-                [subagentId]: { ...entry, status },
-              },
-            },
-          };
-        });
-      });
-
-      // Workflow phase events → update workflowData on the tool message
-      eventBus.on("workflow-phase-start", (d) => {
-        if (gen !== generationRef.current) return;
-        textRef.current = "";
-        // New workflow run — clear old subagent sessions so the hub
-        // shows only the current batch.
-        if (d.phase === "discovery") {
-          subagentStore.setState(new Map());
-        }
-        updateWorkflowData((wd) => {
-          const next = {
-            ...wd,
-            currentPhase: d.phase as WorkflowData["currentPhase"],
-          };
-          if (d.phase === "discovery") {
-            next.discovery = {
-              ...wd.discovery,
-              label: d.label,
-              status: "pending",
-              logs: [],
-            };
-          } else if (d.phase === "pentesting") {
-            next.pentesting = {
-              ...wd.pentesting,
-              label: d.label,
-              status: "pending",
-            };
-          } else if (d.phase === "reporting") {
-            next.reporting = {
-              ...wd.reporting,
-              label: d.label,
-              status: "pending",
-            };
-          }
-          return next;
-        });
-      });
-
-      eventBus.on("workflow-phase-complete", (d) => {
-        if (gen !== generationRef.current) return;
-        textRef.current = "";
-        updateWorkflowData((wd) => {
-          const next = { ...wd };
-          if (d.phase === "discovery") {
-            const targets = (d.summary.targets ?? []) as {
-              target: string;
-              objectives: string[];
-            }[];
-            next.discovery = {
-              ...wd.discovery,
-              status: "complete",
-              targets,
-              cached: d.summary.cached as boolean | undefined,
-            };
-          } else if (d.phase === "pentesting") {
-            next.pentesting = { ...wd.pentesting, status: "complete" };
-          } else if (d.phase === "reporting") {
-            next.reporting = {
-              ...wd.reporting,
-              status: "complete",
-              findingsCount: d.summary.findingsCount as number | undefined,
-              findingsBySeverity: d.summary.findingsBySeverity as
-                | Record<string, number>
-                | undefined,
-              reportPath: d.summary.reportPath as string | undefined,
-            };
-            next.currentPhase = "complete";
-          }
-          return next;
-        });
+      const unbindRunEvents = bindOperatorRunEvents(eventBus, {
+        isCurrent: () => gen === generationRef.current,
+        handlers: runEventProjections.handlers,
       });
 
       const skillsCatalog = skillsRegistry.buildCatalog() || undefined;
@@ -1208,81 +801,25 @@ export default function OperatorDashboard({
             : undefined),
         onStepFinish,
         onCacheMetrics: (metrics: CacheMetrics) => {
-          addCacheUsage(
-            metrics.cacheReadInputTokens,
-            metrics.cacheCreationInputTokens,
-          );
+          usageStore.addSessionTokens(runSessionIdRef.current, {
+            cacheReadTokens: metrics.cacheReadInputTokens,
+            cacheWriteTokens: metrics.cacheCreationInputTokens,
+          });
         },
         eventBus,
         onSessionReady: (s: SessionInfo) => {
           setSessionCwd(s.rootPath);
           sessionRef.current = s;
           setSession((prev) => prev ?? s);
-          tryAttachWandb(s);
+          runSessionIdRef.current = s.id;
+          usageStore.enterSession(s.id);
+          runTrace.tryAttach(s);
         },
-      };
-
-      // W&B trace upload — buffer early records so none are lost for new sessions.
-      // For resumed sessions, we attach before the agent starts.
-      // For new sessions, onSessionReady fires mid-construction; we replay
-      // any buffered records once the handler attaches.
-      type TraceEvent = {
-        record: import("../../../core/agents/offSecAgent").TraceRecord;
-        subagentId?: string;
-      };
-      let wandbCleanup: (() => Promise<void>) | null = null;
-      let earlyBuffer: TraceEvent[] | null = [];
-
-      const earlyBufferHandler = (e: TraceEvent) => {
-        earlyBuffer?.push(e);
-      };
-      eventBus.on("trace-record", earlyBufferHandler);
-
-      // Subagent steps (orchestrator ones lack subagentId, counted above).
-      // Key dedupes the W&B early-buffer replay.
-      const countedSubagentSteps = new Set<string>();
-      eventBus.on("trace-record", ({ record, subagentId }) => {
-        if (gen !== generationRef.current) return;
-        if (!subagentId || record.type !== "step") return;
-        const key = `${subagentId}:${record.stepIndex}:${record.timestamp}`;
-        if (countedSubagentSteps.has(key)) return;
-        countedSubagentSteps.add(key);
-        recordTokenUsage(
-          record.usage.inputTokens,
-          record.usage.outputTokens,
-          record.usage.cacheReadTokens ?? 0,
-          record.usage.cacheWriteTokens ?? 0,
-        );
-      });
-
-      const tryAttachWandb = async (s: SessionInfo) => {
-        if (wandbCleanup) return;
-        const cleanup = await attachWandbToEventBus(s, eventBus).catch(
-          (e: unknown) => {
-            console.error("[wandb] Attach failed:", e);
-            return null;
-          },
-        );
-        if (cleanup) {
-          wandbCleanup = cleanup;
-          // Replay any records captured before the handler attached
-          const buffered = earlyBuffer;
-          earlyBuffer = null;
-          eventBus.off("trace-record", earlyBufferHandler);
-          if (buffered) {
-            for (const e of buffered) {
-              eventBus.emit("trace-record", e);
-            }
-          }
-        } else {
-          earlyBuffer = null;
-          eventBus.off("trace-record", earlyBufferHandler);
-        }
       };
 
       const wandbSession = session ?? sessionRef.current;
       if (wandbSession) {
-        await tryAttachWandb(wandbSession);
+        await runTrace.tryAttach(wandbSession);
       }
 
       try {
@@ -1425,16 +962,12 @@ export default function OperatorDashboard({
           ]);
         }
       } finally {
-        // Clean up early buffer listener on all paths (abort, error, success)
-        earlyBuffer = null;
-        eventBus.off("trace-record", earlyBufferHandler);
-
-        if (wandbCleanup) {
-          const fn = wandbCleanup as () => Promise<void>;
-          await fn().catch((e: unknown) =>
-            console.error("[wandb] Flush failed:", e),
-          );
-        }
+        // Detach run-event listeners on all paths (abort, error, success) —
+        // post-run stragglers must not mutate display state.
+        unbindRunEvents();
+        // Detach trace listeners and flush the uploader on all paths
+        // (abort, error, success).
+        await runTrace.cleanupRun();
         if (gen === generationRef.current) {
           setStatus(pendingToolCallIdRef.current ? "waiting" : "idle");
           setThinking(false);
@@ -1456,18 +989,10 @@ export default function OperatorDashboard({
       operatorState,
       operatorMode,
       agentMode,
-      addTokenUsage,
-      appendText,
-      addStreamingToolCall,
-      appendToolCallDelta,
-      addToolCall,
-      updateToolResult,
-      flushCommandOutput,
-      onCommandOutput,
-      subagentHelpers,
+      displayEvents,
+      runEventProjections,
       setThinking,
       setIsExecuting,
-      addCacheUsage,
       initialConfig?.sandbox,
       initialConfig?.taskDriven,
       initialConfig?.target,
@@ -1476,12 +1001,13 @@ export default function OperatorDashboard({
       strikeMode,
       route.data,
       setSessionCwd,
-      subagentStore.setState,
       skillsRegistry.buildCatalog,
       requireApproval,
       skillsRegistry,
       reasoningEnabled,
       openAIReasoningEffort,
+      usageStore,
+      markExecuted,
     ],
   );
 
@@ -1885,120 +1411,20 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     setMessages((prev) => markInFlightToolsErrored(prev, "Interrupted"));
 
     // Mark any in-flight subagent tool messages as interrupted too
-    subagentStore.setState((prev) => {
-      let changed = false;
-      const next = new Map(prev);
-      for (const [id, session] of next) {
-        const hasInFlight = session.messages.some(
-          (m) =>
-            m.role === "tool" &&
-            (m.status === "pending" || m.status === "streaming"),
-        );
-        if (hasInFlight || session.status === "running") {
-          changed = true;
-          next.set(id, {
-            ...session,
-            status: session.status === "running" ? "cancelled" : session.status,
-            messages: session.messages.map((m) =>
-              m.role === "tool" &&
-              (m.status === "pending" || m.status === "streaming")
-                ? { ...m, status: "error" as const, result: "Interrupted" }
-                : m,
-            ),
-          });
-        }
-      }
-      return changed ? next : prev;
-    });
+    subagentStore.setState(markSubagentsInterrupted);
 
     // Read back persisted messages so the next run has full context.
-    // Only keep a recent subset to avoid blowing the context window.
     // Use sessionRef (not the `session` state) so we see the session even
     // when it was just created via onSessionReady but React hasn't
     // re-rendered yet (e.g. aborting on the very first message).
     const activeSession = sessionRef.current;
     if (activeSession) {
-      try {
-        const messagesPath = join(activeSession.rootPath, "messages.json");
-        if (existsSync(messagesPath)) {
-          const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
-          if (Array.isArray(raw) && raw.length > 0) {
-            conversationRef.current = normalizeMessages(
-              sessions.getResumeMessages(raw as ModelMessage[]),
-            );
-          }
-        }
-
-        // If the conversation now ends with a user message it means the agent
-        // was aborted before completing its first inference step (onStepFinish
-        // never fired, so no assistant turn was persisted).  Reconstruct the
-        // partial assistant response — including any in-flight tool calls — so
-        // the context survives abort and session resume.
-        const last =
-          conversationRef.current[conversationRef.current.length - 1];
-        if (last?.role === "user") {
-          const partial = textRef.current.trim();
-
-          // Collect pending/streaming tool calls from the UI messages.
-          const pendingTools = displayMessagesRef.current.filter(
-            (m) =>
-              isToolMessage(m) &&
-              (m.status === "pending" || m.status === "streaming"),
-          );
-
-          // Build assistant content parts: text + tool-call entries.
-          const assistantContent: Array<Record<string, unknown>> = [
-            {
-              type: "text" as const,
-              text: partial || "[Response interrupted by user.]",
-            },
-          ];
-          for (const t of pendingTools) {
-            assistantContent.push({
-              type: "tool-call" as const,
-              toolCallId: t.toolCallId,
-              toolName: t.toolName,
-              input: t.args ?? {},
-            });
-          }
-
-          conversationRef.current = [
-            ...conversationRef.current,
-            {
-              role: "assistant" as const,
-              content: assistantContent,
-            } as ModelMessage,
-          ];
-
-          // For each tool call, add a tool-result so the conversation stays
-          // valid (every tool-call must be paired with a tool-result).
-          if (pendingTools.length > 0) {
-            conversationRef.current = [
-              ...conversationRef.current,
-              {
-                role: "tool" as const,
-                content: pendingTools.map((t) => ({
-                  type: "tool-result" as const,
-                  toolCallId: t.toolCallId,
-                  toolName: t.toolName ?? "unknown",
-                  output: {
-                    type: "text" as const,
-                    value: "Cancelled by user.",
-                  },
-                })),
-              } as unknown as ModelMessage,
-            ];
-          }
-
-          // Persist so session resume also sees the corrected state.
-          writeFileSync(
-            join(activeSession.rootPath, "messages.json"),
-            JSON.stringify(conversationRef.current, null, 2),
-          );
-        }
-      } catch {
-        // Best-effort — keep whatever conversationRef already has
-      }
+      conversationRef.current = recoverAbortedTranscript({
+        rootPath: activeSession.rootPath,
+        conversation: conversationRef.current,
+        partialText: displayEvents.getPartialText(),
+        displayMessages: displayMessagesRef.current,
+      });
     }
 
     setMessages((prev) => {
@@ -2016,43 +1442,20 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         },
       ];
     });
-  }, [setThinking, setIsExecuting, subagentStore.setState]);
+  }, [setThinking, setIsExecuting, subagentStore.setState, displayEvents]);
 
   const resumeWithQuestionResult = useCallback(
     (result: AskUserQuestionsResult) => {
       const toolCallId = pendingToolCallIdRef.current;
       if (!toolCallId) return;
 
-      // Bedrock Converse / Anthropic requires { type: 'json', value: ... } wrapper.
-      const wrappedOutput = {
-        type: "json" as const,
-        value: result as unknown as Record<string, unknown>,
-      };
-
-      const updated: ModelMessage[] = conversationRef.current.map((msg) => {
-        if (msg.role !== "tool") return msg;
-        if (!Array.isArray(msg.content)) return msg;
-        let mutated = false;
-        const nextContent = msg.content.map((part) => {
-          if (
-            part &&
-            typeof part === "object" &&
-            "type" in part &&
-            (part as { type?: unknown }).type === "tool-result" &&
-            (part as { toolCallId?: unknown }).toolCallId === toolCallId
-          ) {
-            mutated = true;
-            return {
-              ...(part as Record<string, unknown>),
-              output: wrappedOutput,
-            };
-          }
-          return part;
-        });
-        return mutated
-          ? ({ ...msg, content: nextContent } as ModelMessage)
-          : msg;
-      });
+      // Bedrock Converse / Anthropic requires the { type: 'json', value }
+      // wrapper around the answers payload.
+      const updated = rewriteToolResultOutput(
+        conversationRef.current,
+        toolCallId,
+        result as unknown as Record<string, unknown>,
+      );
 
       conversationRef.current = updated;
 
@@ -2175,11 +1578,8 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           setQueuedMessages((prev) => prev.filter((_, i) => i !== removeIdx));
           setSelectedQueueIndex(-1);
 
-          flushCommandOutput();
-          if (cmdFlushTimerRef.current) {
-            clearInterval(cmdFlushTimerRef.current);
-            cmdFlushTimerRef.current = null;
-          }
+          displayEvents.flushCommandOutput();
+          displayEvents.stopCommandOutputFlush();
           setMessages((prev) =>
             prev.map((m) =>
               isToolMessage(m) && m.status === "pending"
@@ -2242,37 +1642,15 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       key.preventDefault?.();
       const toolCallId = pendingToolCallIdRef.current;
       if (toolCallId) {
-        const abortedResult = {
-          type: "json" as const,
-          value: {
+        conversationRef.current = rewriteToolResultOutput(
+          conversationRef.current,
+          toolCallId,
+          {
             answers: [],
             skipped: true,
             aborted: true,
           } as unknown as Record<string, unknown>,
-        };
-        conversationRef.current = conversationRef.current.map((msg) => {
-          if (msg.role !== "tool" || !Array.isArray(msg.content)) return msg;
-          let mutated = false;
-          const nextContent = msg.content.map((part) => {
-            if (
-              part &&
-              typeof part === "object" &&
-              "type" in part &&
-              (part as { type?: unknown }).type === "tool-result" &&
-              (part as { toolCallId?: unknown }).toolCallId === toolCallId
-            ) {
-              mutated = true;
-              return {
-                ...(part as Record<string, unknown>),
-                output: abortedResult,
-              };
-            }
-            return part;
-          });
-          return mutated
-            ? ({ ...msg, content: nextContent } as ModelMessage)
-            : msg;
-        });
+        );
         const activeSession = sessionRef.current;
         if (activeSession) {
           try {

@@ -2,13 +2,20 @@
  * CVSS 4.0 Score Calculator
  *
  * Implements the MacroVector-based scoring algorithm from the FIRST specification.
+ * The spec leaves the interpolation constants to the reference implementation, so
+ * this tracks RedHatProductSecurity/cvss-v4-calculator `cvss40.js` - the calculator
+ * FIRST hosts - which `calculator.test.ts` pins it to.
+ *
  * Reference: https://www.first.org/cvss/v4-0/specification-document
  */
 
 import {
+  EPSILON,
   MACROVECTOR_LOOKUP,
+  MAX_COMPOSED,
   MAX_SEVERITY,
   METRIC_LEVELS,
+  NO_IMPACT_METRICS,
   STEP,
 } from "./macrovector-scores";
 import type { CVSS4Metrics, CVSS4Score, CVSS4ScoreType } from "./types";
@@ -49,6 +56,13 @@ const ENVIRONMENTAL_METRICS = [
   "MSA",
 ] as const;
 const SUPPLEMENTAL_METRICS = ["S", "AU", "R", "V", "RE", "U"] as const;
+
+const KNOWN_METRICS: ReadonlySet<string> = new Set([
+  ...BASE_METRICS,
+  ...THREAT_METRICS,
+  ...ENVIRONMENTAL_METRICS,
+  ...SUPPLEMENTAL_METRICS,
+]);
 
 // =============================================================================
 // Vector String Functions
@@ -109,12 +123,23 @@ export function parseVectorString(vectorString: string): CVSS4Metrics {
   const pairs = metricsString.split("/");
 
   const metrics: Partial<CVSS4Metrics> = {};
+  const seen = new Set<string>();
 
   for (const pair of pairs) {
     const [key, value] = pair.split(":");
-    if (key && value) {
-      (metrics as Record<string, string | undefined>)[key] = value;
+    if (!key || !value) {
+      throw new Error(`Malformed metric in CVSS vector: "${pair}"`);
     }
+    if (!KNOWN_METRICS.has(key)) {
+      throw new Error(`Unknown metric in CVSS vector: ${key}`);
+    }
+    // A repeated metric would otherwise last-write-win and yield a plausible
+    // wrong score instead of an error.
+    if (seen.has(key)) {
+      throw new Error(`Duplicate metric in CVSS vector: ${key}`);
+    }
+    seen.add(key);
+    (metrics as Record<string, string | undefined>)[key] = value;
   }
 
   // Validate required base metrics
@@ -131,25 +156,33 @@ export function parseVectorString(vectorString: string): CVSS4Metrics {
 // Equivalence Class Computation
 // =============================================================================
 
+/** Metrics whose Not Defined value resolves to a worst-case assumption */
+const WORST_CASE_DEFAULTS: Record<string, string> = {
+  E: "A",
+  CR: "H",
+  IR: "H",
+  AR: "H",
+};
+
 /**
- * Get effective metric value (use modified if set, otherwise base)
+ * Get effective metric value: the modified metric when set, otherwise the base
+ * metric, with `X` resolved to its worst-case default where one is defined.
  */
-function getEffectiveValue(
-  metrics: CVSS4Metrics,
-  baseMetric: string,
-  modifiedMetric?: string,
-): string {
-  if (modifiedMetric) {
-    const modValue = (metrics as unknown as Record<string, string | undefined>)[
-      modifiedMetric
-    ];
-    if (modValue && modValue !== "X") {
-      return modValue;
-    }
+function getEffectiveValue(metrics: CVSS4Metrics, metric: string): string {
+  const record = metrics as unknown as Record<string, string | undefined>;
+  const selected = record[metric] ?? "X";
+
+  const worstCase = WORST_CASE_DEFAULTS[metric];
+  if (worstCase !== undefined && selected === "X") {
+    return worstCase;
   }
-  return (
-    (metrics as unknown as Record<string, string | undefined>)[baseMetric] ?? ""
-  );
+
+  const modified = record[`M${metric}`];
+  if (modified !== undefined && modified !== "X") {
+    return modified;
+  }
+
+  return selected;
 }
 
 /**
@@ -157,21 +190,21 @@ function getEffectiveValue(
  * Based on AV, PR, UI
  */
 function computeEQ1(metrics: CVSS4Metrics): number {
-  const av = getEffectiveValue(metrics, "AV", "MAV");
-  const pr = getEffectiveValue(metrics, "PR", "MPR");
-  const ui = getEffectiveValue(metrics, "UI", "MUI");
+  const av = getEffectiveValue(metrics, "AV");
+  const pr = getEffectiveValue(metrics, "PR");
+  const ui = getEffectiveValue(metrics, "UI");
 
   // EQ1 = 0: AV:N AND PR:N AND UI:N
   if (av === "N" && pr === "N" && ui === "N") {
     return 0;
   }
 
-  // EQ1 = 1: Not (AV:N AND PR:N AND UI:N) AND NOT (AV:P OR PR:H OR UI:A)
-  if (!(av === "P" || pr === "H" || ui === "A")) {
+  // EQ1 = 1: (AV:N OR PR:N OR UI:N) AND NOT (AV:N AND PR:N AND UI:N) AND AV != P
+  if ((av === "N" || pr === "N" || ui === "N") && av !== "P") {
     return 1;
   }
 
-  // EQ1 = 2: AV:P OR PR:H OR UI:A
+  // EQ1 = 2: AV:P OR NOT (AV:N OR PR:N OR UI:N)
   return 2;
 }
 
@@ -180,8 +213,8 @@ function computeEQ1(metrics: CVSS4Metrics): number {
  * Based on AC, AT
  */
 function computeEQ2(metrics: CVSS4Metrics): number {
-  const ac = getEffectiveValue(metrics, "AC", "MAC");
-  const at = getEffectiveValue(metrics, "AT", "MAT");
+  const ac = getEffectiveValue(metrics, "AC");
+  const at = getEffectiveValue(metrics, "AT");
 
   // EQ2 = 0: AC:L AND AT:N
   if (ac === "L" && at === "N") {
@@ -197,9 +230,9 @@ function computeEQ2(metrics: CVSS4Metrics): number {
  * Based on VC, VI, VA
  */
 function computeEQ3(metrics: CVSS4Metrics): number {
-  const vc = getEffectiveValue(metrics, "VC", "MVC");
-  const vi = getEffectiveValue(metrics, "VI", "MVI");
-  const va = getEffectiveValue(metrics, "VA", "MVA");
+  const vc = getEffectiveValue(metrics, "VC");
+  const vi = getEffectiveValue(metrics, "VI");
+  const va = getEffectiveValue(metrics, "VA");
 
   // EQ3 = 0: VC:H AND VI:H
   if (vc === "H" && vi === "H") {
@@ -220,11 +253,11 @@ function computeEQ3(metrics: CVSS4Metrics): number {
  * Based on SC, SI, SA (using modified values if set)
  */
 function computeEQ4(metrics: CVSS4Metrics): number {
-  const msi = metrics.MSI || "X";
-  const msa = metrics.MSA || "X";
-  const sc = getEffectiveValue(metrics, "SC", "MSC");
-  const si = msi !== "X" ? msi : metrics.SI;
-  const sa = msa !== "X" ? msa : metrics.SA;
+  const msi = getEffectiveValue(metrics, "MSI");
+  const msa = getEffectiveValue(metrics, "MSA");
+  const sc = getEffectiveValue(metrics, "SC");
+  const si = getEffectiveValue(metrics, "SI");
+  const sa = getEffectiveValue(metrics, "SA");
 
   // EQ4 = 0: MSI:S OR MSA:S
   if (msi === "S" || msa === "S") {
@@ -245,10 +278,9 @@ function computeEQ4(metrics: CVSS4Metrics): number {
  * Based on E
  */
 function computeEQ5(metrics: CVSS4Metrics): number {
-  // Default to 'A' (Attacked) if not defined - worst case assumption
-  const e = metrics.E || "A";
+  const e = getEffectiveValue(metrics, "E");
 
-  if (e === "A" || e === "X") {
+  if (e === "A") {
     return 0;
   }
   if (e === "P") {
@@ -263,14 +295,13 @@ function computeEQ5(metrics: CVSS4Metrics): number {
  * Based on CR, IR, AR and VC, VI, VA
  */
 function computeEQ6(metrics: CVSS4Metrics): number {
-  // Default security requirements to High if not defined
-  const cr = metrics.CR || "H";
-  const ir = metrics.IR || "H";
-  const ar = metrics.AR || "H";
+  const cr = getEffectiveValue(metrics, "CR");
+  const ir = getEffectiveValue(metrics, "IR");
+  const ar = getEffectiveValue(metrics, "AR");
 
-  const vc = getEffectiveValue(metrics, "VC", "MVC");
-  const vi = getEffectiveValue(metrics, "VI", "MVI");
-  const va = getEffectiveValue(metrics, "VA", "MVA");
+  const vc = getEffectiveValue(metrics, "VC");
+  const vi = getEffectiveValue(metrics, "VI");
+  const va = getEffectiveValue(metrics, "VA");
 
   // EQ6 = 0: (CR:H AND VC:H) OR (IR:H AND VI:H) OR (AR:H AND VA:H)
   if (
@@ -307,72 +338,129 @@ export function computeMacroVector(metrics: CVSS4Metrics): string {
  * Check if all impact metrics are None (score should be 0)
  */
 function hasNoImpact(metrics: CVSS4Metrics): boolean {
-  const vc = getEffectiveValue(metrics, "VC", "MVC");
-  const vi = getEffectiveValue(metrics, "VI", "MVI");
-  const va = getEffectiveValue(metrics, "VA", "MVA");
-  const sc = getEffectiveValue(metrics, "SC", "MSC");
-  const si = metrics.MSI !== "X" && metrics.MSI ? metrics.MSI : metrics.SI;
-  const sa = metrics.MSA !== "X" && metrics.MSA ? metrics.MSA : metrics.SA;
-
-  return (
-    vc === "N" &&
-    vi === "N" &&
-    va === "N" &&
-    sc === "N" &&
-    si === "N" &&
-    sa === "N"
+  return NO_IMPACT_METRICS.every(
+    (metric) => getEffectiveValue(metrics, metric) === "N",
   );
 }
 
-/**
- * Get the severity distance for a specific metric
- */
-function getMetricDistance(metrics: CVSS4Metrics, metric: string): number {
-  const levels = METRIC_LEVELS[metric];
-  if (!levels) return 0;
+interface MacroVectorParts {
+  eq1: number;
+  eq2: number;
+  eq3: number;
+  eq4: number;
+  eq5: number;
+  eq6: number;
+}
 
-  let value: string;
-
-  // Handle modified metrics
-  const modifiedMetric = `M${metric}`;
-  const metricsRecord = metrics as unknown as Record<
-    string,
-    string | undefined
-  >;
-  if (metricsRecord[modifiedMetric] && metricsRecord[modifiedMetric] !== "X") {
-    value = metricsRecord[modifiedMetric] ?? "";
-  } else {
-    value = metricsRecord[metric] ?? "";
-  }
-
-  // Handle special case for E metric default
-  if (metric === "E" && (!value || value === "X")) {
-    value = "A";
-  }
-
-  // Handle security requirements default
-  if (
-    (metric === "CR" || metric === "IR" || metric === "AR") &&
-    (!value || value === "X")
-  ) {
-    value = "H";
-  }
-
-  return levels[value] || 0;
+function parseMacroVector(macroVector: string): MacroVectorParts {
+  return {
+    eq1: Number(macroVector[0]),
+    eq2: Number(macroVector[1]),
+    eq3: Number(macroVector[2]),
+    eq4: Number(macroVector[3]),
+    eq5: Number(macroVector[4]),
+    eq6: Number(macroVector[5]),
+  };
 }
 
 /**
- * Get the next lower MacroVector score for interpolation
+ * Score of the MacroVector one step below on the given equivalence classes,
+ * or undefined when no such MacroVector exists.
  */
-function getNextLowerScore(
-  macroVector: string,
-  position: number,
-): number | null {
-  const digits = macroVector.split("").map(Number);
-  digits[position]++;
-  const nextMacroVector = digits.join("");
+function lowerMacroVectorScore(
+  eq: MacroVectorParts,
+  step: Partial<MacroVectorParts>,
+): number | undefined {
+  const stepped = { ...eq, ...step };
+  return MACROVECTOR_LOOKUP[
+    `${stepped.eq1}${stepped.eq2}${stepped.eq3}${stepped.eq4}${stepped.eq5}${stepped.eq6}`
+  ];
+}
 
-  return MACROVECTOR_LOOKUP[nextMacroVector] ?? null;
+/**
+ * EQ3 and EQ6 are not independent, so stepping down means stepping EQ3, EQ6,
+ * or - when both are 0 - whichever of the two single steps scores higher.
+ */
+function lowerEq3Eq6Score(eq: MacroVectorParts): number | undefined {
+  if (eq.eq3 === 0 && eq.eq6 === 0) {
+    const viaEq6 = lowerMacroVectorScore(eq, { eq6: eq.eq6 + 1 });
+    const viaEq3 = lowerMacroVectorScore(eq, { eq3: eq.eq3 + 1 });
+    if (viaEq6 === undefined || viaEq3 === undefined) {
+      return undefined;
+    }
+    return Math.max(viaEq6, viaEq3);
+  }
+  if (eq.eq3 === 1 && eq.eq6 === 0) {
+    return lowerMacroVectorScore(eq, { eq6: eq.eq6 + 1 });
+  }
+  if (eq.eq3 < 2) {
+    return lowerMacroVectorScore(eq, { eq3: eq.eq3 + 1 });
+  }
+  return lowerMacroVectorScore(eq, { eq3: eq.eq3 + 1, eq6: eq.eq6 + 1 });
+}
+
+/**
+ * Every highest-severity vector of this MacroVector, as the cross product of
+ * the per-equivalence-class maxima. EQ3's set is also indexed by EQ6.
+ */
+function composeMaxVectors(eq: MacroVectorParts): string[] {
+  const eq3Maxima = MAX_COMPOSED.eq3[eq.eq3]?.[eq.eq6];
+  if (eq3Maxima === undefined) {
+    throw new Error(`No max severity vector for eq3=${eq.eq3}, eq6=${eq.eq6}`);
+  }
+
+  const vectors: string[] = [];
+  for (const eq1Max of MAX_COMPOSED.eq1[eq.eq1]) {
+    for (const eq2Max of MAX_COMPOSED.eq2[eq.eq2]) {
+      for (const eq3Max of eq3Maxima) {
+        for (const eq4Max of MAX_COMPOSED.eq4[eq.eq4]) {
+          for (const eq5Max of MAX_COMPOSED.eq5[eq.eq5]) {
+            vectors.push(eq1Max + eq2Max + eq3Max + eq4Max + eq5Max);
+          }
+        }
+      }
+    }
+  }
+  return vectors;
+}
+
+/**
+ * Read a metric's value out of a composed max-severity vector
+ */
+function extractMaxVectorValue(metric: string, maxVector: string): string {
+  const start = maxVector.indexOf(`${metric}:`);
+  if (start < 0) {
+    throw new Error(`Metric ${metric} missing from max vector ${maxVector}`);
+  }
+  const rest = maxVector.slice(start + metric.length + 1);
+  const end = rest.indexOf("/");
+  return end > 0 ? rest.slice(0, end) : rest;
+}
+
+/**
+ * Per-metric severity distance between the scored vector and a max vector
+ */
+function severityDistances(
+  metrics: CVSS4Metrics,
+  maxVector: string,
+): Record<string, number> {
+  const distances: Record<string, number> = {};
+
+  for (const [metric, levels] of Object.entries(METRIC_LEVELS)) {
+    const value = getEffectiveValue(metrics, metric);
+    const maxValue = extractMaxVectorValue(metric, maxVector);
+    const level = levels[value];
+    const maxLevel = levels[maxValue];
+    if (level === undefined) {
+      throw new Error(`Unknown value ${metric}:${value}`);
+    }
+    if (maxLevel === undefined) {
+      throw new Error(`Unknown value ${metric}:${maxValue} in ${maxVector}`);
+    }
+    distances[metric] = level - maxLevel;
+  }
+
+  return distances;
 }
 
 /**
@@ -381,103 +469,73 @@ function getNextLowerScore(
 function interpolateScore(
   metrics: CVSS4Metrics,
   macroVector: string,
-  baseScore: number,
+  macroScore: number,
 ): number {
-  const eq1 = parseInt(macroVector[0], 10);
-  const eq2 = parseInt(macroVector[1], 10);
-  const eq3 = parseInt(macroVector[2], 10);
-  const eq4 = parseInt(macroVector[3], 10);
-  const eq5 = parseInt(macroVector[4], 10);
-  const eq6 = parseInt(macroVector[5], 10);
+  const eq = parseMacroVector(macroVector);
 
-  // Calculate severity distances for each EQ
-  let meanDistance = 0;
-  let eqCount = 0;
-
-  // EQ1 distance
-  const eq1NextLower = getNextLowerScore(macroVector, 0);
-  if (eq1NextLower !== null) {
-    const msd = baseScore - eq1NextLower;
-    const maxDepth = (MAX_SEVERITY.eq1 as Record<number, number>)[eq1] || 1;
-    const avDist = getMetricDistance(metrics, "AV");
-    const prDist = getMetricDistance(metrics, "PR");
-    const uiDist = getMetricDistance(metrics, "UI");
-    const severityDist = avDist + prDist + uiDist;
-    const normalizedDist = severityDist / (maxDepth * STEP);
-    meanDistance += msd * normalizedDist;
-    eqCount++;
-  }
-
-  // EQ2 distance
-  const eq2NextLower = getNextLowerScore(macroVector, 1);
-  if (eq2NextLower !== null) {
-    const msd = baseScore - eq2NextLower;
-    const maxDepth = (MAX_SEVERITY.eq2 as Record<number, number>)[eq2] || 1;
-    const acDist = getMetricDistance(metrics, "AC");
-    const atDist = getMetricDistance(metrics, "AT");
-    const severityDist = acDist + atDist;
-    const normalizedDist = severityDist / (maxDepth * STEP);
-    meanDistance += msd * normalizedDist;
-    eqCount++;
-  }
-
-  // EQ3+EQ6 combined distance
-  const eq3eq6MaxSeverity = MAX_SEVERITY.eq3eq6 as Record<
-    number,
-    Record<number, number>
-  >;
-  if (eq3eq6MaxSeverity[eq3] && eq3eq6MaxSeverity[eq3][eq6] !== undefined) {
-    const eq3NextLower = getNextLowerScore(macroVector, 2);
-    if (eq3NextLower !== null) {
-      const msd = baseScore - eq3NextLower;
-      const maxDepth = eq3eq6MaxSeverity[eq3][eq6] || 1;
-      const vcDist = getMetricDistance(metrics, "VC");
-      const viDist = getMetricDistance(metrics, "VI");
-      const vaDist = getMetricDistance(metrics, "VA");
-      const crDist = getMetricDistance(metrics, "CR");
-      const irDist = getMetricDistance(metrics, "IR");
-      const arDist = getMetricDistance(metrics, "AR");
-      const severityDist = vcDist + viDist + vaDist + crDist + irDist + arDist;
-      const normalizedDist = severityDist / (maxDepth * STEP);
-      meanDistance += msd * normalizedDist;
-      eqCount++;
+  // The max vector is the first highest-severity vector of this MacroVector
+  // that the scored vector does not exceed on any metric.
+  let distances: Record<string, number> | undefined;
+  for (const maxVector of composeMaxVectors(eq)) {
+    distances = severityDistances(metrics, maxVector);
+    if (Object.values(distances).every((distance) => distance >= 0)) {
+      break;
     }
   }
-
-  // EQ4 distance
-  const eq4NextLower = getNextLowerScore(macroVector, 3);
-  if (eq4NextLower !== null) {
-    const msd = baseScore - eq4NextLower;
-    const maxDepth = (MAX_SEVERITY.eq4 as Record<number, number>)[eq4] || 1;
-    const scDist = getMetricDistance(metrics, "SC");
-    const siDist = getMetricDistance(metrics, "SI");
-    const saDist = getMetricDistance(metrics, "SA");
-    const severityDist = scDist + siDist + saDist;
-    const normalizedDist = severityDist / (maxDepth * STEP);
-    meanDistance += msd * normalizedDist;
-    eqCount++;
+  if (distances === undefined) {
+    throw new Error(`No max vectors composed for MacroVector ${macroVector}`);
   }
 
-  // EQ5 distance
-  const eq5NextLower = getNextLowerScore(macroVector, 4);
-  if (eq5NextLower !== null) {
-    const msd = baseScore - eq5NextLower;
-    const maxDepth = (MAX_SEVERITY.eq5 as Record<number, number>)[eq5] || 1;
-    const eDist = getMetricDistance(metrics, "E");
-    const normalizedDist = eDist / (maxDepth * STEP);
-    meanDistance += msd * normalizedDist;
-    eqCount++;
+  const severityDistance = {
+    eq1: distances.AV + distances.PR + distances.UI,
+    eq2: distances.AC + distances.AT,
+    eq3eq6:
+      distances.VC +
+      distances.VI +
+      distances.VA +
+      distances.CR +
+      distances.IR +
+      distances.AR,
+    eq4: distances.SC + distances.SI + distances.SA,
+  };
+
+  const lowerScore = {
+    eq1: lowerMacroVectorScore(eq, { eq1: eq.eq1 + 1 }),
+    eq2: lowerMacroVectorScore(eq, { eq2: eq.eq2 + 1 }),
+    eq3eq6: lowerEq3Eq6Score(eq),
+    eq4: lowerMacroVectorScore(eq, { eq4: eq.eq4 + 1 }),
+  };
+
+  const macroVectorDepth = {
+    eq1: MAX_SEVERITY.eq1[eq.eq1] * STEP,
+    eq2: MAX_SEVERITY.eq2[eq.eq2] * STEP,
+    eq3eq6: MAX_SEVERITY.eq3eq6[eq.eq3][eq.eq6] * STEP,
+    eq4: MAX_SEVERITY.eq4[eq.eq4] * STEP,
+  };
+
+  let existingLowerCount = 0;
+  let proportionalDistance = 0;
+
+  for (const key of ["eq1", "eq2", "eq3eq6", "eq4"] as const) {
+    const lower = lowerScore[key];
+    if (lower === undefined) {
+      continue;
+    }
+    existingLowerCount++;
+    proportionalDistance +=
+      (macroScore - lower) * (severityDistance[key] / macroVectorDepth[key]);
   }
 
-  // Calculate final score
-  const avgDistance = eqCount > 0 ? meanDistance / eqCount : 0;
-  let finalScore = baseScore - avgDistance;
+  // EQ5's proportion is always 0, so it only widens the mean.
+  if (lowerMacroVectorScore(eq, { eq5: eq.eq5 + 1 }) !== undefined) {
+    existingLowerCount++;
+  }
 
-  // Clamp to 0-10 and round to 1 decimal place
-  finalScore = Math.max(0, Math.min(10, finalScore));
-  finalScore = Math.round(finalScore * 10) / 10;
+  const meanDistance =
+    existingLowerCount === 0 ? 0 : proportionalDistance / existingLowerCount;
 
-  return finalScore;
+  const score = Math.max(0, Math.min(10, macroScore - meanDistance));
+  return Math.round((score + EPSILON) * 10) / 10;
 }
 
 // =============================================================================

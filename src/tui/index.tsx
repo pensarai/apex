@@ -5,6 +5,10 @@ import { config } from "../core/config";
 import type { Config } from "../core/config/config";
 import { checkForUpdate } from "../core/installation";
 import { routeLogsToErrorFile, writeErrorLog } from "../core/logger";
+import {
+  installObservabilityExitHandlers,
+  startObservabilityRuntime,
+} from "../core/observability/runtime";
 import { hasAnyProviderConfigured } from "../core/providers";
 import type { SessionConfig } from "../core/session";
 import { setupAutoCopy } from "./auto-copy";
@@ -82,9 +86,10 @@ declare module "@opentui/react" {
 
 interface AppProps {
   appConfig: Config;
+  onExit: () => Promise<void>;
 }
 
-function App({ appConfig }: AppProps) {
+function App({ appConfig, onExit }: AppProps) {
   const [focusIndex, setFocusIndex] = useState(0);
   const [cwd, setCwd] = useState(process.cwd());
   const [ctrlCPressTime, setCtrlCPressTime] = useState<number | null>(null);
@@ -120,6 +125,7 @@ function App({ appConfig }: AppProps) {
               <DialogProvider>
                 <AgentProvider>
                   <CommandProvider
+                    onExit={onExit}
                     onOpenSessionsDialog={() => setShowSessionsDialog(true)}
                     onOpenThemeDialog={() => setShowThemeDialog(true)}
                     onOpenAdvancedDialog={() => setShowAdvancedDialog(true)}
@@ -147,6 +153,7 @@ function App({ appConfig }: AppProps) {
                         setShowShortcutsDialog,
                         setFocusIndex,
                         navigableItems,
+                        onExit,
                       }}
                     >
                       <AppContent
@@ -714,6 +721,11 @@ async function main() {
   );
   overlayThemeRef.current = themeColors;
 
+  // Standalone TUI entrypoint: own the optional OTel runtime (returns the
+  // CLI-started instance when invoked via `pensar`, a fresh one otherwise;
+  // no-op without an OTLP endpoint).
+  const observabilityRuntime = startObservabilityRuntime();
+
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
     consoleOptions: buildConsoleOptions(themeColors),
@@ -724,29 +736,19 @@ async function main() {
   const { copyToClipboard } = createClipboardManager(renderer);
   setupAutoCopy(renderer, copyToClipboard);
 
-  const cleanup = () => {
-    cleanupTerminalFocusMode();
-    renderer.destroy();
-    process.exit(0);
-  };
-  process.on("SIGINT", cleanup);
-  process.on("SIGTERM", cleanup);
-
-  process.on("uncaughtException", (err) => {
-    cleanupTerminalFocusMode();
-    renderer.destroy();
-    console.error("Uncaught exception:", err);
-    writeErrorLog(err, "UNCAUGHT");
-    process.exit(1);
+  const exitWith = installObservabilityExitHandlers(observabilityRuntime, {
+    cleanup: () => {
+      cleanupTerminalFocusMode();
+      renderer.destroy();
+    },
+    onError: (error, source) => {
+      const uncaught = source === "uncaughtException";
+      const label = uncaught ? "Uncaught exception:" : "Unhandled rejection:";
+      console.error(label, error);
+      writeErrorLog(error, uncaught ? "UNCAUGHT" : "UNHANDLED_REJECTION");
+    },
   });
-
-  process.on("unhandledRejection", (reason) => {
-    cleanupTerminalFocusMode();
-    renderer.destroy();
-    console.error("Unhandled rejection:", reason);
-    writeErrorLog(reason, "UNHANDLED_REJECTION");
-    process.exit(1);
-  });
+  const cleanup = () => exitWith(0);
 
   const obfuscateEnabled = process.env.PENSAR_OBFUSCATE === "1";
 
@@ -761,7 +763,7 @@ async function main() {
         <TerminalDimensionsProvider>
           <ToastProvider>
             <ErrorBoundary>
-              <App appConfig={appConfig} />
+              <App appConfig={appConfig} onExit={cleanup} />
             </ErrorBoundary>
             <ToastContainer />
           </ToastProvider>

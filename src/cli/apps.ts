@@ -11,6 +11,8 @@
  *   pensar apps create --name N --description D [opts]      Create an app
  *   pensar apps update <appId> [opts]                       Update app fields
  *   pensar apps delete <appId>                              Delete an app
+ *   pensar apps domains                                     List domains
+ *   pensar apps domain-create <domain>                      Create a domain
  *   pensar apps endpoints <appId> [filters]                 List endpoints
  *   pensar apps endpoint <endpointId>                       Show endpoint
  *   pensar apps endpoint-create <appId> --endpoint E ...    Create endpoint
@@ -23,13 +25,17 @@ import {
   type CreateAppInput,
   type CreateEndpointInput,
   createApp,
+  createDomain,
   createEndpoint,
   deleteApp,
   deleteEndpoint,
+  ENDPOINT_TRANSPORTS,
+  type EndpointTransport,
   type EndpointType,
   getApp,
   getEndpoint,
   listApps,
+  listDomains,
   listEndpoints,
   searchApps,
   searchEndpoints,
@@ -38,6 +44,7 @@ import {
   updateApp,
   updateEndpoint,
 } from "../core/api";
+import { markCommandFailed } from "./command-exit";
 
 const APPLICATION_TYPES: ApplicationType[] = [
   "ui",
@@ -102,6 +109,18 @@ function parseEndpointType(
   return value as EndpointType;
 }
 
+function parseTransport(
+  value: string | undefined,
+): EndpointTransport | undefined {
+  if (value === undefined) return undefined;
+  if (!ENDPOINT_TRANSPORTS.includes(value as EndpointTransport)) {
+    throw new Error(
+      `Invalid --transport "${value}". Must be one of: ${ENDPOINT_TRANSPORTS.join(", ")}`,
+    );
+  }
+  return value as EndpointTransport;
+}
+
 function parseInteger(
   flag: string,
   value: string | undefined,
@@ -137,6 +156,8 @@ Usage:
   pensar apps create [options]                             Create an app
   pensar apps update <appId> [options]                     Update an app
   pensar apps delete <appId>                               Delete an app
+  pensar apps domains                                      List workspace domains
+  pensar apps domain-create <domain>                       Create/resolve a domain
   pensar apps endpoints <appId> [filters]                  List endpoints
   pensar apps endpoint <endpointId>                        Show endpoint details
   pensar apps endpoint-create <appId> [options]            Create an endpoint
@@ -150,8 +171,12 @@ App fields (create requires --name and --description):
   --description <text>         Application description
   --type <type>                One of: ${APPLICATION_TYPES.join(", ")}
   --framework <text>           Framework / runtime hint
-  --domain <id>                Linked domain UUID
+  --domain <id>                Linked domain UUID (see "apps domains")
   --disallowed-actions <text>  Free-form disallowed actions notes
+
+Domains:
+  API-created domains are canonicalized and created idempotently by Console.
+  They stay unverified and do not start reconnaissance.
 
 List pagination (for "apps" and "endpoints <appId>"):
   --limit <n>                  Page size (default 100, max 200)
@@ -178,6 +203,8 @@ Endpoint fields (create requires --endpoint and --description):
   --endpoint <text>            Endpoint path / URL / route
   --description <text>         Endpoint description
   --type <type>                One of: ${ENDPOINT_TYPES.join(", ")}
+  --transport <transport>      One of: ${ENDPOINT_TRANSPORTS.join(", ")}
+                               (defaults to http when omitted)
   --location <text>            Source file (whitebox)
   --start-line <n>             Start line number
   --end-line <n>               End line number
@@ -255,6 +282,7 @@ function parseEndpointCreateOptions(argv: string[]): CreateEndpointInput {
   if (description === undefined) throw new Error("--description is required");
 
   const type = parseEndpointType(getFlag("--type", argv));
+  const transport = parseTransport(getFlag("--transport", argv));
   const location = getFlag("--location", argv);
   const startLineNumber = parseInteger(
     "--start-line",
@@ -270,6 +298,7 @@ function parseEndpointCreateOptions(argv: string[]): CreateEndpointInput {
     endpoint,
     description,
     ...(type !== undefined ? { type } : {}),
+    ...(transport !== undefined ? { transport } : {}),
     ...(location !== undefined ? { location } : {}),
     ...(startLineNumber !== undefined ? { startLineNumber } : {}),
     ...(endLineNumber !== undefined ? { endLineNumber } : {}),
@@ -290,6 +319,8 @@ function parseEndpointUpdateOptions(argv: string[]): UpdateEndpointInput {
   if (description !== undefined) update.description = description;
   const type = parseEndpointType(getFlag("--type", argv));
   if (type !== undefined) update.type = type;
+  const transport = parseTransport(getFlag("--transport", argv));
+  if (transport !== undefined) update.transport = transport;
   const location = getFlag("--location", argv);
   if (location !== undefined) update.location = location;
   const startLine = parseInteger("--start-line", getFlag("--start-line", argv));
@@ -322,7 +353,7 @@ async function main(): Promise<void> {
       if (!appId) {
         console.error("Error: app ID is required");
         console.error("Usage: pensar apps get <appId>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const app = await getApp(appId);
       console.log(JSON.stringify(app, null, 2));
@@ -335,7 +366,7 @@ async function main(): Promise<void> {
       if (!appId) {
         console.error("Error: app ID is required");
         console.error("Usage: pensar apps update <appId> [options]");
-        process.exit(1);
+        return markCommandFailed();
       }
       const opts = parseAppUpdateOptions(args);
       const result = await updateApp(appId, opts);
@@ -345,16 +376,28 @@ async function main(): Promise<void> {
       if (!appId) {
         console.error("Error: app ID is required");
         console.error("Usage: pensar apps delete <appId>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const result = await deleteApp(appId);
+      console.log(JSON.stringify(result, null, 2));
+    } else if (sub === "domains") {
+      const result = await listDomains();
+      console.log(JSON.stringify(result, null, 2));
+    } else if (sub === "domain-create") {
+      const url = args[1];
+      if (!url) {
+        console.error("Error: domain is required");
+        console.error("Usage: pensar apps domain-create <domain>");
+        return markCommandFailed();
+      }
+      const result = await createDomain({ url });
       console.log(JSON.stringify(result, null, 2));
     } else if (sub === "endpoints") {
       const appId = args[1];
       if (!appId) {
         console.error("Error: app ID is required");
         console.error("Usage: pensar apps endpoints <appId> [filters]");
-        process.exit(1);
+        return markCommandFailed();
       }
       const type = parseEndpointType(getFlag("--type", args));
       const minRiskScore = parseNumber(
@@ -376,7 +419,7 @@ async function main(): Promise<void> {
       if (!endpointId) {
         console.error("Error: endpoint ID is required");
         console.error("Usage: pensar apps endpoint <endpointId>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const result = await getEndpoint(endpointId);
       console.log(JSON.stringify(result, null, 2));
@@ -387,7 +430,7 @@ async function main(): Promise<void> {
         console.error(
           "Usage: pensar apps endpoint-create <appId> --endpoint E --description D",
         );
-        process.exit(1);
+        return markCommandFailed();
       }
       const opts = parseEndpointCreateOptions(args);
       const result = await createEndpoint(appId, opts);
@@ -399,7 +442,7 @@ async function main(): Promise<void> {
         console.error(
           "Usage: pensar apps endpoint-update <endpointId> [options]",
         );
-        process.exit(1);
+        return markCommandFailed();
       }
       const opts = parseEndpointUpdateOptions(args);
       const result = await updateEndpoint(endpointId, opts);
@@ -409,7 +452,7 @@ async function main(): Promise<void> {
       if (!endpointId) {
         console.error("Error: endpoint ID is required");
         console.error("Usage: pensar apps endpoint-delete <endpointId>");
-        process.exit(1);
+        return markCommandFailed();
       }
       const result = await deleteEndpoint(endpointId);
       console.log(JSON.stringify(result, null, 2));
@@ -418,7 +461,7 @@ async function main(): Promise<void> {
       if (!query || query.startsWith("--")) {
         console.error("Error: search query is required");
         console.error("Usage: pensar apps search <query> [options]");
-        process.exit(1);
+        return markCommandFailed();
       }
       const type = parseAppType(getFlag("--type", args));
       const limit = parseInteger("--limit", getFlag("--limit", args));
@@ -434,7 +477,7 @@ async function main(): Promise<void> {
       if (!query || query.startsWith("--")) {
         console.error("Error: search query is required");
         console.error("Usage: pensar apps search-endpoints <query> [options]");
-        process.exit(1);
+        return markCommandFailed();
       }
       const applicationId = getFlag("--app", args);
       const type = parseEndpointType(getFlag("--type", args));
@@ -470,14 +513,14 @@ async function main(): Promise<void> {
     } else {
       console.error(`Error: Unknown subcommand "${sub}"`);
       showHelp();
-      process.exit(1);
+      return markCommandFailed();
     }
   } catch (err) {
     console.error(
       `\nError: ${err instanceof Error ? err.message : String(err)}`,
     );
-    process.exit(1);
+    return markCommandFailed();
   }
 }
 
-main();
+await main();

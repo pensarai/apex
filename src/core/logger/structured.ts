@@ -1,3 +1,4 @@
+import { getActiveTraceCorrelation } from "../observability";
 import { writeErrorLog } from "./index";
 
 // SCREAMING_SNAKE to match the Console logLevel flag value (PENSAR_LOG_LEVEL),
@@ -161,6 +162,13 @@ class Logger {
           record[k] = v;
         }
       }
+    }
+    // OTel correlation when a valid span is active; absent otherwise.
+    // Pretty output stays clean — ids belong in machine-readable JSON only.
+    const correlation = getActiveTraceCorrelation();
+    if (correlation) {
+      record.trace_id = correlation.traceId;
+      record.span_id = correlation.spanId;
     }
     return safeStringify(record);
   }

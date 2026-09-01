@@ -7,6 +7,7 @@ const prefixes = {
   permission: "per",
   user: "usr",
   part: "prt",
+  run: "run",
 } as const;
 
 export type IdentifierPrefix = keyof typeof prefixes;
@@ -66,6 +67,8 @@ export type SessionID = string & { readonly __brand: "SessionID" };
 export type MessageID = string & { readonly __brand: "MessageID" };
 /** A part identifier: `prt_<time><random>`. */
 export type PartID = string & { readonly __brand: "PartID" };
+/** An agent-run identifier: `run_<time><random>`. */
+export type RunID = string & { readonly __brand: "RunID" };
 
 /** Mint a fresh, time-descending session id. */
 export const newSessionId = (): SessionID => descending("session") as SessionID;
@@ -73,6 +76,8 @@ export const newSessionId = (): SessionID => descending("session") as SessionID;
 export const newMessageId = (): MessageID => descending("message") as MessageID;
 /** Mint a fresh, time-descending part id. */
 export const newPartId = (): PartID => descending("part") as PartID;
+/** Mint a fresh, time-descending agent-run id. */
+export const newRunId = (): RunID => descending("run") as RunID;
 
 /** Runtime guard: is this string a session id? */
 export const isSessionId = (s: string): s is SessionID =>

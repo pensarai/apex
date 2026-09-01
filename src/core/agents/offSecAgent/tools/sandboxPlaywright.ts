@@ -334,12 +334,8 @@ const fs = require('fs');
       ...${JSON.stringify(CAMOUFOX_OPTIONS)},
       headless: __headless,
       window: __window,
-      screen: {
-        minWidth: __window[0],
-        maxWidth: __window[0],
-        minHeight: __window[1],
-        maxHeight: __window[1],
-      },
+      // Floor only — exact-pinning a 720px height throws in browserforge.
+      screen: { minWidth: __window[0], minHeight: __window[1] },
     });
     fs.writeFileSync('${SANDBOX_CAMOU_CACHE}', JSON.stringify(__camou));
   }

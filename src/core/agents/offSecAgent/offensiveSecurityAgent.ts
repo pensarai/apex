@@ -1,13 +1,11 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { SpanStatusCode } from "@opentelemetry/api";
 import type {
   ModelMessage,
   StopCondition,
   StreamTextResult,
   TextStreamPart,
-  ToolCallPart,
-  ToolResultPart,
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
@@ -17,15 +15,27 @@ import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../http/targetHeaders";
-import { newMessageId, newPartId } from "../../id/id";
+import { newMessageId, newPartId, newRunId } from "../../id/id";
 import { createLogger } from "../../logger/structured";
-import { getApexTracer, withSubagentSessionBaggage } from "../../observability";
+import {
+  getApexTracer,
+  registerActiveRootSpan,
+  unregisterActiveRootSpan,
+  withSubagentSessionBaggage,
+} from "../../observability";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
+import {
+  createInterruptedStepFinalizer,
+  type FinalizeInterruptedStepInput,
+} from "./interruptedStepFinalization";
+import { AgentMessageWriter } from "./messagePersistence";
 import { buildBaseSystemPrompt, buildSessionWorkspaceSection } from "./prompt";
+import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
+import { ToolLifecycleTracker } from "./toolLifecycle";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
   createAllTools,
@@ -37,11 +47,17 @@ import {
   PlaywrightMcpSession,
   RESPONSE_TOOL_NAME,
   SEND_EMAIL_TOOL_NAME,
+  SMS_TOOL_NAMES_ACTIVE,
+  sessionHasSmsPasswordless,
   WORKSPACE_TOOL_NAMES,
   WORKSPACE_WRITE_TOOL_NAMES,
 } from "./tools";
 import { StepTraceWriter } from "./trace";
-import type { CreateAgentInput, OffensiveSecurityAgentInput } from "./types";
+import type {
+  AgentMode,
+  CreateAgentInput,
+  OffensiveSecurityAgentInput,
+} from "./types";
 
 const log = scopedLogger(() => createLogger("approval-gate"));
 
@@ -173,24 +189,6 @@ export function filterWorkspaceToolsForRun(
   });
 }
 
-// Opt-in stall watchdog (STREAM_STALL_DEBUG=1): warns when fullStream goes byte-silent, catching a Bedrock wedge.
-const STREAM_STALL_DEBUG =
-  process.env.STREAM_STALL_DEBUG === "1" ||
-  process.env.STREAM_STALL_DEBUG === "true";
-const STREAM_STALL_TICK_MS = 15_000;
-const STREAM_STALL_WARN_MS = 20_000;
-const STREAM_GAP_RECOVERED_MS = 10_000;
-
-function responseArgBytes(input: unknown): number {
-  if (input == null) return 0;
-  if (typeof input === "string") return input.length;
-  try {
-    return JSON.stringify(input).length;
-  } catch {
-    return -1;
-  }
-}
-
 /**
  * General-purpose offensive security agent harness.
  *
@@ -267,6 +265,8 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** Display label for span name / `gen_ai.agent.name`; the id stays the join key. */
   private readonly subagentName?: string;
+  /** Operating mode (tools surface); used for run-span attribution. */
+  private readonly agentMode: AgentMode;
 
   /** The current open assistant message id (`msg_…`); minted on `start-step` in {@link consume}, `null` between steps. */
   private currentMessageId: string | null = null;
@@ -308,6 +308,7 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** Guards against double force-kill across the drain-finally and result-capture paths. */
   private browserDisconnected = false;
+  private shellDisposed = false;
 
   private readonly abortSignal?: AbortSignal;
 
@@ -317,16 +318,17 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** The session this agent is operating within. */
   private readonly _session: SessionInfo;
 
-  /** Latest accumulated messages, shared with `consume()` for abort persistence. */
-  private latestMessages: ModelMessage[] | null = null;
+  /** Agent-local message persistence (debounce + serialized writes). */
+  private readonly writer!: AgentMessageWriter;
+
+  /** Closes an interrupted step: synthetic results, reconstruction, write. */
+  private readonly finalizeInterruptedStep!: (
+    input: FinalizeInterruptedStepInput,
+  ) => Promise<void>;
 
   private messagesPath: string | null = null;
 
-  /** Cancels the debounced persist timer so abort writes don't race it. */
-  private cancelPersistTimer: (() => void) | null = null;
-
-  private syntheticsPersisted = false;
-
+  /** Serializes agent-owned messages.json writes in enqueue order. */
   /**
    * Async factory that creates a session when one is not provided,
    * then constructs the agent. Use this instead of `new` when you
@@ -366,6 +368,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     this._session = input.session;
     this.subagentId = input.subagentId;
     this.subagentName = input.subagentName;
+    this.agentMode = input.mode ?? "default";
     this.abortSignal = input.abortSignal;
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
@@ -466,10 +469,17 @@ export class OffensiveSecurityAgent<TResult = void> {
       agentCwd,
       target: input.target,
       grpc: input.grpc,
+      systemScope: input.systemScope,
       abortSignal: input.abortSignal,
       model: input.model,
       authConfig: input.authConfig,
       eventBus: this.eventBus,
+      onStepFinish: input.forwardUsageCallbacksToSpawnedAgents
+        ? input.onStepFinish
+        : undefined,
+      onCacheMetrics: input.forwardUsageCallbacksToSpawnedAgents
+        ? input.onCacheMetrics
+        : undefined,
       sandbox: input.sandbox,
       findingsRegistry: input.findingsRegistry,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
@@ -585,7 +595,10 @@ export class OffensiveSecurityAgent<TResult = void> {
     const hasSmtp = !!input.session.config?.smtpConfig;
 
     const emailToolSet = new Set<string>(EMAIL_TOOL_NAMES_ACTIVE);
+    const smsToolSet = new Set<string>(SMS_TOOL_NAMES_ACTIVE);
+    const hasSms = sessionHasSmsPasswordless(input.session);
     let activeTools = (input.activeTools as string[]).filter((t) => {
+      if (smsToolSet.has(t)) return hasSms;
       if (!emailToolSet.has(t)) return true;
       if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
       return hasEmail;
@@ -600,6 +613,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       const excluded = new Set<string>(FAST_STRIKE_EXCLUDED_TOOL_NAMES);
       activeTools = Object.keys(tools).filter((t) => {
         if (excluded.has(t)) return false;
+        if (smsToolSet.has(t)) return hasSms;
         if (!emailToolSet.has(t)) return true;
         if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
         return hasEmail;
@@ -617,7 +631,6 @@ export class OffensiveSecurityAgent<TResult = void> {
       mkdirSync(messagesDir, { recursive: true });
     }
     this.messagesPath = join(messagesDir, "messages.json");
-    const messagesPath = this.messagesPath;
 
     // Mutable so that summarization can clear stale history.
     const initialMessagesRef: { current: ModelMessage[] } = {
@@ -631,29 +644,21 @@ export class OffensiveSecurityAgent<TResult = void> {
           ],
     };
 
-    // Debounced persistence: avoid blocking the event loop with
-    // JSON.stringify on every step when many agents run concurrently.
-    const PERSIST_INTERVAL_MS = 15_000;
-    let persistTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const schedulePersist = () => {
-      if (persistTimer) return;
-      persistTimer = setTimeout(() => {
-        persistTimer = null;
-        if (this.latestMessages) {
-          const toWrite = this.latestMessages;
-          this.latestMessages = null;
-          writeFile(messagesPath, JSON.stringify(toWrite)).catch(() => {});
-        }
-      }, PERSIST_INTERVAL_MS);
-    };
-
-    this.cancelPersistTimer = () => {
-      if (persistTimer) {
-        clearTimeout(persistTimer);
-        persistTimer = null;
-      }
-    };
+    // Agent-local persistence: debounce, latest snapshot, and the
+    // serialized write queue live in the writer (see ./messagePersistence).
+    this.writer = new AgentMessageWriter({ messagesPath: this.messagesPath });
+    this.finalizeInterruptedStep = createInterruptedStepFinalizer({
+      eventBus: this.eventBus,
+      sessionId: this.busSessionId,
+      subagentId: this.subagentId,
+      writer: this.writer,
+      responseToolName: RESPONSE_TOOL_NAME,
+      responseToolFired: () => this._responseToolFired,
+      ...(RESPONSE_DEBUG
+        ? { debugLog: (message: string) => rlog.warn(message) }
+        : {}),
+    });
+    const schedulePersist = () => this.writer.schedulePersist();
 
     // -- Init record (trace.jsonl first line) ---------------------------------
     // Hash only the base system prompt (excluding session workspace paths)
@@ -705,10 +710,10 @@ export class OffensiveSecurityAgent<TResult = void> {
         sessionPath: messagesDir,
         sessionId: this.busSessionId,
         onStepFinish: async (event) => {
-          this.latestMessages = [
+          this.writer.setLatest([
             ...initialMessagesRef.current,
             ...event.response.messages,
-          ];
+          ]);
           schedulePersist();
           traceWriter.recordStep(event.response.messages as ModelMessage[], {
             inputTokens: event.usage.inputTokens ?? 0,
@@ -733,19 +738,15 @@ export class OffensiveSecurityAgent<TResult = void> {
         },
         onFinish: async (event) => {
           // Flush any pending persistence before finishing
-          if (persistTimer) {
-            clearTimeout(persistTimer);
-            persistTimer = null;
-          }
-          // Skip if emitSyntheticToolResults already wrote the abort snapshot.
-          if (!this.syntheticsPersisted) {
-            const finalMessages = this.latestMessages ?? [
+          this.writer.cancelTimer();
+          // Skip if the interrupted-step finalizer already wrote the abort snapshot.
+          if (!this.writer.syntheticsPersisted) {
+            const finalMessages = this.writer.latest ?? [
               ...initialMessagesRef.current,
               ...event.response.messages,
             ];
-            await writeFile(messagesPath, JSON.stringify(finalMessages)).catch(
-              () => {},
-            );
+            this.writer.setLatest(finalMessages);
+            await this.writer.enqueueWrite(finalMessages).catch(() => {});
           }
           await input.onFinish?.(event);
         },
@@ -841,329 +842,47 @@ export class OffensiveSecurityAgent<TResult = void> {
         },
       };
 
-      // inFlightTools = calls awaiting a result; completedResults = streamed but not yet persisted by onStepFinish (PR #779).
-      const inFlightTools = new Map<string, string>();
-      const completedResults: ToolResultPart[] = [];
+      // Tool lifecycle state: in-flight calls awaiting a result, completed but
+      // unpersisted results (PR #779), streamed arg text, and deferred tool
+      // errors — all owned by the tracker (see ./toolLifecycle).
+      const tracker = new ToolLifecycleTracker();
       let streamError: unknown = null;
 
-      const responseArgChars = new Map<string, number>();
-      const responseSawTerminal = new Map<string, string>();
-
-      // Raw streamed arg text per tool-call id, kept so a `tool-error` can persist the real (possibly truncated) payload instead of `{}`.
-      const streamedArgText = new Map<string, string>();
-      // Tool errors observed mid-stream, surfaced at finish-step (where finishReason is known) instead of a generic "did not complete".
-      const toolErrors = new Map<
-        string,
-        { message: string; input: unknown; toolName: string }
-      >();
-
-      let lastChunkAt = Date.now();
-      let lastChunkType = "none";
-      let stallStepIndex = -1;
-      let stallTimer: ReturnType<typeof setInterval> | undefined;
-      if (STREAM_STALL_DEBUG) {
-        const label = this._session.id;
-        stallTimer = setInterval(() => {
-          const gap = Date.now() - lastChunkAt;
-          if (gap > STREAM_STALL_WARN_MS) {
-            rlog.warn(
-              `[stream-stall] no chunk for ${Math.round(gap / 1000)}s ` +
-                `session=${label} subagent=${sid ?? "-"} step=${stallStepIndex} ` +
-                `lastChunkType=${lastChunkType} ` +
-                `inFlightTools=${[...inFlightTools.values()].join(",")} ` +
-                `responseToolFired=${this._responseToolFired}`,
-            );
-          }
-        }, STREAM_STALL_TICK_MS);
-      }
+      // Opt-in stall watchdog + response-tool tracer (see ./streamDiagnostics).
+      const diagnostics = new StreamDiagnostics({
+        sessionId: this._session.id,
+        subagentId: sid,
+        inFlightTools: () => tracker.inFlightTools,
+        responseToolFired: () => this._responseToolFired,
+        responseToolName: RESPONSE_TOOL_NAME,
+      });
+      diagnostics.start();
 
       try {
+        // 1–3. Iterate the stream: observe diagnostics, apply the part (id
+        // bookkeeping, tracker updates, step-close emissions), forward it.
         for await (const chunk of this.streamResult.fullStream) {
-          if (STREAM_STALL_DEBUG) {
-            const now = Date.now();
-            const gap = now - lastChunkAt;
-            lastChunkAt = now;
-            lastChunkType = chunk.type;
-            if (chunk.type === "start-step") stallStepIndex++;
-            if (gap > STREAM_GAP_RECOVERED_MS) {
-              rlog.warn(
-                `[stream-gap] recovered after ${Math.round(gap / 1000)}s ` +
-                  `session=${this._session.id} chunkType=${chunk.type}`,
-              );
-            }
-          }
-          if (RESPONSE_DEBUG) {
-            const c = chunk as {
-              type: string;
-              id?: string;
-              toolCallId?: string;
-              toolName?: string;
-              delta?: string;
-              input?: unknown;
-              args?: unknown;
-              error?: unknown;
-            };
-            const idForChunk = c.toolCallId ?? c.id;
-            const nameForChunk =
-              c.toolName ??
-              (idForChunk ? inFlightTools.get(idForChunk) : undefined);
-            if (nameForChunk === RESPONSE_TOOL_NAME && idForChunk) {
-              if (chunk.type === "tool-input-start") {
-                responseArgChars.set(idForChunk, 0);
-                rlog.warn(
-                  `[response-debug] tool-input-start id=${idForChunk} session=${this.busSessionId}`,
-                );
-              } else if (chunk.type === "tool-input-delta") {
-                responseArgChars.set(
-                  idForChunk,
-                  (responseArgChars.get(idForChunk) ?? 0) +
-                    (c.delta?.length ?? 0),
-                );
-              } else if (chunk.type === "tool-input-end") {
-                rlog.warn(
-                  `[response-debug] tool-input-end id=${idForChunk} argChars=${responseArgChars.get(idForChunk) ?? 0}`,
-                );
-              } else if (chunk.type === "tool-call") {
-                responseSawTerminal.set(idForChunk, "tool-call");
-                const inputBytes = responseArgBytes(c.input ?? c.args);
-                const invalid = (c as { invalid?: boolean }).invalid === true;
-                rlog.warn(
-                  `[response-debug] tool-call id=${idForChunk} streamedArgChars=${responseArgChars.get(idForChunk) ?? 0} parsedInputBytes=${inputBytes} invalid=${invalid}`,
-                );
-              } else if (chunk.type === "tool-error") {
-                responseSawTerminal.set(idForChunk, "tool-error");
-                const errMsg =
-                  c.error instanceof Error
-                    ? c.error.message
-                    : typeof c.error === "string"
-                      ? c.error
-                      : JSON.stringify(c.error)?.slice(0, 300);
-                rlog.warn(
-                  `[response-debug] tool-error id=${idForChunk} streamedArgChars=${responseArgChars.get(idForChunk) ?? 0} stillInFlight=${inFlightTools.has(idForChunk)} error=${errMsg}`,
-                );
-              } else if (chunk.type === "tool-result") {
-                responseSawTerminal.set(idForChunk, "tool-result");
-                rlog.warn(
-                  `[response-debug] tool-result id=${idForChunk} streamedArgChars=${responseArgChars.get(idForChunk) ?? 0}`,
-                );
-              } else if (chunk.type === "finish-step") {
-                const fr = (c as { finishReason?: string }).finishReason;
-                rlog.warn(
-                  `[response-debug] finish-step finishReason=${fr} responseInFlight=${[
-                    ...inFlightTools.entries(),
-                  ]
-                    .filter(([, n]) => n === RESPONSE_TOOL_NAME)
-                    .map(([id]) => id)
-                    .join(",")} responseToolFired=${this._responseToolFired}`,
-                );
-              }
-            }
-          }
-          switch (chunk.type) {
-            case "start-step":
-              ids.messageId = newMessageId();
-              this.currentMessageId = ids.messageId;
-              ids.textPartId = undefined;
-              break;
-            case "text-start":
-              ids.textPartId = newPartId();
-              break;
-            case "text-end":
-              ids.textPartId = undefined;
-              break;
-            case "tool-input-start":
-              // Track from the start so a truncated call still gets closed instead of left "running".
-              inFlightTools.set(chunk.id, chunk.toolName);
-              streamedArgText.set(chunk.id, "");
-              break;
-            case "tool-input-delta": {
-              const d = chunk as { id: string; delta?: string };
-              streamedArgText.set(
-                d.id,
-                (streamedArgText.get(d.id) ?? "") + (d.delta ?? ""),
-              );
-              break;
-            }
-            case "tool-call":
-              inFlightTools.set(chunk.toolCallId, chunk.toolName);
-              break;
-            case "tool-error": {
-              // `execute` never runs for an errored call, so it must be cleared here or finish-step would fabricate a bogus "did not complete".
-              const te = chunk as {
-                toolCallId: string;
-                toolName: string;
-                input?: unknown;
-                error?: unknown;
-              };
-              inFlightTools.delete(te.toolCallId);
-              const errMsg =
-                te.error instanceof Error
-                  ? te.error.message
-                  : typeof te.error === "string"
-                    ? te.error
-                    : (() => {
-                        try {
-                          return JSON.stringify(te.error);
-                        } catch {
-                          return String(te.error);
-                        }
-                      })();
-              const partialArgs =
-                te.input !== undefined &&
-                te.input !== null &&
-                responseArgBytes(te.input) > 2
-                  ? te.input
-                  : (streamedArgText.get(te.toolCallId) ?? "");
-              toolErrors.set(te.toolCallId, {
-                message: errMsg,
-                input: partialArgs,
-                toolName: te.toolName,
-              });
-              break;
-            }
-            case "tool-result": {
-              const tc = chunk as {
-                toolCallId: string;
-                toolName: string;
-                result?: unknown;
-                output?: unknown;
-              };
-              inFlightTools.delete(tc.toolCallId);
-              completedResults.push({
-                type: "tool-result",
-                toolCallId: tc.toolCallId,
-                toolName: tc.toolName,
-                output: (tc.result ?? tc.output) as ToolResultPart["output"],
-              });
-              break;
-            }
-            case "finish-step": {
-              // onStepFinish has persisted this step; drop its results so a later abort doesn't re-append them.
-              completedResults.length = 0;
-              const finishReason = (chunk as { finishReason?: string })
-                .finishReason;
-              const truncated = finishReason === "length";
-
-              for (const [toolCallId, info] of toolErrors) {
-                if (RESPONSE_DEBUG && info.toolName === RESPONSE_TOOL_NAME) {
-                  rlog.warn(
-                    `[response-debug] tool-error SURFACED id=${toolCallId} ` +
-                      `streamedArgChars=${(streamedArgText.get(toolCallId) ?? "").length} ` +
-                      `finishReason=${finishReason ?? "unknown"} ` +
-                      `outputTokenTruncated=${truncated} error=${info.message.slice(0, 300)}`,
-                  );
-                }
-                bus.emit("tool-result", {
-                  toolCallId,
-                  toolName: info.toolName,
-                  result: {
-                    type: "error-text",
-                    value: truncated
-                      ? `Tool call failed: the model's output was truncated at its max output tokens before the "${info.toolName}" arguments were complete. ${info.message}`
-                      : `Tool call failed: ${info.message}`,
-                  },
-                  sessionId: this.busSessionId,
-                  subagentId: sid,
-                  partId: ids.toolPartId?.(toolCallId),
-                  messageId: ids.messageId,
-                });
-              }
-              toolErrors.clear();
-
-              // Close any call still in flight (args never finalized) so it doesn't render stuck "running".
-              for (const [toolCallId, toolName] of inFlightTools) {
-                if (RESPONSE_DEBUG && toolName === RESPONSE_TOOL_NAME) {
-                  rlog.warn(
-                    `[response-debug] CLOSING response as "did not complete" id=${toolCallId} ` +
-                      `streamedArgChars=${responseArgChars.get(toolCallId) ?? 0} ` +
-                      `sawTerminalChunk=${responseSawTerminal.get(toolCallId) ?? "none"} ` +
-                      `finishReason=${finishReason ?? "unknown"} outputTokenTruncated=${truncated} ` +
-                      `responseToolFired=${this._responseToolFired}`,
-                  );
-                }
-                // Already-fired response: mark submitted, not "did not complete".
-                const result =
-                  toolName === RESPONSE_TOOL_NAME && this._responseToolFired
-                    ? { type: "text" as const, value: "Response submitted." }
-                    : {
-                        type: "error-text" as const,
-                        value: truncated
-                          ? "Tool call did not complete: the model's output was truncated at its max output tokens before the arguments were finalized."
-                          : "Tool call did not complete",
-                      };
-                bus.emit("tool-result", {
-                  toolCallId,
-                  toolName,
-                  result,
-                  sessionId: this.busSessionId,
-                  subagentId: sid,
-                  partId: ids.toolPartId?.(toolCallId),
-                  messageId: ids.messageId,
-                });
-              }
-              inFlightTools.clear();
-              break;
-            }
-          }
+          diagnostics.observeChunk(chunk);
+          this.applyStreamPart(chunk, { ids, tracker, diagnostics });
           bus.emitStreamPart(chunk, ids);
         }
-        // Keep completedResults: an abort with no trailing finish-step needs them for the finally snapshot.
+        // The tracker keeps completed results: an abort with no trailing
+        // finish-step needs them for the finalization snapshot.
       } catch (err) {
+        // 4. Capture the error; finalization below still runs.
         streamError = err;
       } finally {
-        // Stop the stall watchdog so it never leaks past stream end / throw.
-        if (stallTimer) clearInterval(stallTimer);
-        // Dispose first — don't block on persistence I/O.
-        this.persistentShell?.dispose();
-        // Flush tool-errors that never reached a finish-step into the snapshot.
-        for (const [toolCallId, info] of toolErrors) {
-          const result = {
-            type: "error-text" as const,
-            value: `Tool call failed: ${info.message}`,
-          };
-          bus.emit("tool-result", {
-            toolCallId,
-            toolName: info.toolName,
-            result,
-            sessionId: this.busSessionId,
-            subagentId: sid,
-            partId: ids.toolPartId?.(toolCallId),
-            messageId: ids.messageId,
-          });
-          completedResults.push({
-            type: "tool-result",
-            toolCallId,
-            toolName: info.toolName,
-            output: result,
-          });
+        // 5–7. Close the interrupted step, dispose owned resources, settle.
+        const finalizeError = await this.finalizeRun({
+          tracker,
+          diagnostics,
+          ids,
+          streamError,
+        });
+        // Teardown failures must not replace the provider/stream failure.
+        if (streamError === null && finalizeError !== null) {
+          streamError = finalizeError;
         }
-        toolErrors.clear();
-        // Snapshot unpersisted step state: open tools get synthetic closes, completed/errored results get written.
-        if (inFlightTools.size > 0 || completedResults.length > 0) {
-          const reason = this.abortSignal?.aborted
-            ? "Agent aborted by user"
-            : streamError instanceof Error && streamError.message
-              ? streamError.message
-              : "Stream terminated unexpectedly";
-          try {
-            await this.emitSyntheticToolResults(
-              inFlightTools,
-              completedResults,
-              reason,
-              ids.toolPartId,
-              ids.messageId,
-              streamedArgText,
-            );
-          } catch {
-            // Never mask the original streamError with a listener error.
-          }
-        }
-        // Tear down the Chromium child process we own. Without this, a
-        // naturally-finishing agent leaks its Playwright MCP browser — over a
-        // long single-process scan (many endpoints) the leaked Chromium
-        // processes exhaust memory and OOM the run. disconnect() force-kills
-        // and never hangs, so awaiting here is safe.
-        await this.disconnectOwnedBrowser();
       }
 
       if (streamError) {
@@ -1183,31 +902,58 @@ export class OffensiveSecurityAgent<TResult = void> {
       return undefined as TResult;
     };
 
-    // Only subagents get a span here; top-level runs are wrapped by the host.
-    const spanLabel = this.subagentName ?? sid;
-    const drain = !sid
-      ? runConsume()
-      : withSubagentSessionBaggage(sid, () =>
-          getApexTracer().startActiveSpan(
-            `invoke_agent ${spanLabel}`,
-            {
-              attributes: {
-                "gen_ai.operation.name": "invoke_agent",
-                "gen_ai.agent.name": spanLabel,
-              },
-            },
-            async (span) => {
-              try {
-                return await runConsume();
-              } catch (err) {
-                span.recordException(err as Error);
-                throw err;
-              } finally {
-                span.end();
-              }
-            },
-          ),
-        );
+    // One invoke_agent span per execution: root runs get the full run
+    // attribution (stable run id, mode); subagent runs nest beneath the root
+    // span via the async context and carry their own execution-session id.
+    const isSubagent = Boolean(sid);
+    const spanLabel = isSubagent
+      ? (this.subagentName ?? sid ?? "subagent")
+      : this.agentMode;
+    const runId = isSubagent ? undefined : newRunId();
+    const runSpanAttributes: Record<string, string> = {
+      "gen_ai.operation.name": "invoke_agent",
+      "gen_ai.agent.name": spanLabel,
+      "gen_ai.conversation.id": this.busSessionId,
+      "pensar.session.id": this.busSessionId,
+      ...(isSubagent
+        ? {}
+        : {
+            "pensar.run.id": runId,
+            "pensar.agent.mode": this.agentMode,
+          }),
+    };
+
+    const runInSpan = () =>
+      getApexTracer().startActiveSpan(
+        `invoke_agent ${spanLabel}`,
+        { attributes: runSpanAttributes },
+        async (span) => {
+          // Root runs register so process-exit shutdown can end an
+          // in-flight run's span before the final flush.
+          if (!isSubagent) registerActiveRootSpan(span);
+          try {
+            return await runConsume();
+          } catch (err) {
+            // Record once, keep the cardinality low, preserve the original.
+            span.recordException(err as Error);
+            span.setStatus({ code: SpanStatusCode.ERROR });
+            span.setAttribute(
+              "error.type",
+              err instanceof Error ? err.name : "Error",
+            );
+            throw err;
+          } finally {
+            unregisterActiveRootSpan(span);
+            // Ends only after runConsume's finalization (persistence +
+            // owned-resource disposal) has settled.
+            span.end();
+          }
+        },
+      );
+
+    const drain = !isSubagent
+      ? runInSpan()
+      : withSubagentSessionBaggage(sid, runInSpan);
 
     // Decouple the result from stream teardown: with a `response` schema, return as soon as it's captured rather than waiting for the stream to close (which can wedge).
     let rejectDrain: ((err: unknown) => void) | undefined;
@@ -1245,6 +991,202 @@ export class OffensiveSecurityAgent<TResult = void> {
     return result;
   }
 
+  /**
+   * Apply one stream part: part-id bookkeeping, lifecycle-tracker updates,
+   * and the finish-step close-out emissions. Pure projection of the part
+   * onto run state; forwarding to the bus is the caller's job.
+   */
+  private applyStreamPart(
+    chunk: TextStreamPart<ToolSet>,
+    ctx: {
+      ids: StreamIdContext;
+      tracker: ToolLifecycleTracker;
+      diagnostics: StreamDiagnostics;
+    },
+  ): void {
+    const { ids, tracker, diagnostics } = ctx;
+    const sid = this.subagentId;
+    const bus = this.eventBus;
+    switch (chunk.type) {
+      case "start-step":
+        ids.messageId = newMessageId();
+        this.currentMessageId = ids.messageId;
+        ids.textPartId = undefined;
+        break;
+      case "text-start":
+        ids.textPartId = newPartId();
+        break;
+      case "text-end":
+        ids.textPartId = undefined;
+        break;
+      case "finish-step": {
+        tracker.onStepPersisted();
+        const finishReason = (chunk as { finishReason?: string }).finishReason;
+        const truncated = finishReason === "length";
+
+        for (const [toolCallId, info] of tracker.toolErrors) {
+          diagnostics.logSurfacedToolError({
+            toolCallId,
+            toolName: info.toolName,
+            message: info.message,
+            streamedArgChars: (tracker.streamedArgText.get(toolCallId) ?? "")
+              .length,
+            finishReason,
+            truncated,
+          });
+          bus.emit("tool-result", {
+            toolCallId,
+            toolName: info.toolName,
+            result: {
+              type: "error-text",
+              value: truncated
+                ? `Tool call failed: the model's output was truncated at its max output tokens before the "${info.toolName}" arguments were complete. ${info.message}`
+                : `Tool call failed: ${info.message}`,
+            },
+            sessionId: this.busSessionId,
+            subagentId: sid,
+            partId: ids.toolPartId?.(toolCallId),
+            messageId: ids.messageId,
+          });
+        }
+        tracker.clearToolErrors();
+
+        // Close any call still in flight (args never finalized) so it doesn't render stuck "running".
+        for (const [toolCallId, toolName] of tracker.inFlightTools) {
+          diagnostics.logClosingInFlightTool({
+            toolCallId,
+            toolName,
+            finishReason,
+            truncated,
+          });
+          // Already-fired response: mark submitted, not "did not complete".
+          const result =
+            toolName === RESPONSE_TOOL_NAME && this._responseToolFired
+              ? { type: "text" as const, value: "Response submitted." }
+              : {
+                  type: "error-text" as const,
+                  value: truncated
+                    ? "Tool call did not complete: the model's output was truncated at its max output tokens before the arguments were finalized."
+                    : "Tool call did not complete",
+                };
+          bus.emit("tool-result", {
+            toolCallId,
+            toolName,
+            result,
+            sessionId: this.busSessionId,
+            subagentId: sid,
+            partId: ids.toolPartId?.(toolCallId),
+            messageId: ids.messageId,
+          });
+        }
+        tracker.clearInFlight();
+        break;
+      }
+      default:
+        // Tool-input/delta, tool-call, tool-error, tool-result → tracker.
+        tracker.observePart(chunk);
+    }
+  }
+
+  /**
+   * Finalize a finished (or failed) run: stop diagnostics, dispose the owned
+   * shell, surface deferred tool errors, close the interrupted step, and
+   * disconnect the owned browser on every path. Returns the first
+   * finalization error (or null) — the caller keeps the stream error
+   * primary.
+   */
+  private async finalizeRun(input: {
+    tracker: ToolLifecycleTracker;
+    diagnostics: StreamDiagnostics;
+    ids: StreamIdContext;
+    streamError: unknown;
+  }): Promise<unknown> {
+    const { tracker, diagnostics, ids, streamError } = input;
+    const sid = this.subagentId;
+    const bus = this.eventBus;
+
+    // Stop the stall watchdog so it never leaks past stream end / throw.
+    diagnostics.stop();
+    let finalizationError: unknown;
+    let hasFinalizationError = false;
+    const recordFinalizationError = (error: unknown) => {
+      if (hasFinalizationError) return;
+      finalizationError = error;
+      hasFinalizationError = true;
+    };
+
+    try {
+      // Dispose first — don't block on persistence I/O.
+      try {
+        this.disposeOwnedShell();
+      } catch (error) {
+        recordFinalizationError(error);
+      }
+      // Flush tool-errors that never reached a finish-step into the snapshot.
+      for (const [toolCallId, info] of tracker.flushToolErrorsToResults()) {
+        const result = {
+          type: "error-text" as const,
+          value: `Tool call failed: ${info.message}`,
+        };
+        try {
+          bus.emit("tool-result", {
+            toolCallId,
+            toolName: info.toolName,
+            result,
+            sessionId: this.busSessionId,
+            subagentId: sid,
+            partId: ids.toolPartId?.(toolCallId),
+            messageId: ids.messageId,
+          });
+        } catch (error) {
+          recordFinalizationError(error);
+        }
+      }
+      // Snapshot unpersisted step state: open tools get synthetic closes,
+      // completed/errored results get written.
+      if (tracker.hasUnpersistedState()) {
+        const reason = this.abortSignal?.aborted
+          ? "Agent aborted by user"
+          : streamError instanceof Error && streamError.message
+            ? streamError.message
+            : "Stream terminated unexpectedly";
+        try {
+          await this.finalizeInterruptedStep({
+            snapshot: tracker.snapshot(),
+            reason,
+            partIdFor: ids.toolPartId,
+            messageId: ids.messageId,
+          });
+        } catch (error) {
+          recordFinalizationError(error);
+        }
+      }
+    } catch (error) {
+      recordFinalizationError(error);
+    } finally {
+      // Tear down the Chromium child process we own. Without this, a
+      // naturally-finishing agent leaks its Playwright MCP browser — over a
+      // long single-process scan (many endpoints) the leaked Chromium
+      // processes exhaust memory and OOM the run. disconnect() force-kills
+      // and never hangs, so awaiting here is safe.
+      await this.disconnectOwnedBrowser();
+    }
+    return hasFinalizationError ? finalizationError : null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Owned-resource disposal — explicit idempotent operations; the
+  // finalization path and host teardown (abortAndDrain) coordinate them
+  // without knowing the shell/browser implementations.
+  // ---------------------------------------------------------------------------
+
+  /** Disposes the owned persistent shell exactly once; safe to call from multiple teardown paths. */
+  disposeOwnedShell(): void {
+    if (this.shellDisposed) return;
+    this.shellDisposed = true;
+    this.persistentShell?.dispose();
+  }
+
   /** Force-kills the owned Chromium child process exactly once; safe to call from multiple teardown paths. */
   private async disconnectOwnedBrowser(): Promise<void> {
     if (this.browserDisconnected) return;
@@ -1270,156 +1212,6 @@ export class OffensiveSecurityAgent<TResult = void> {
    */
   get response() {
     return this.streamResult.response;
-  }
-
-  private async emitSyntheticToolResults(
-    inFlightTools: Map<string, string>,
-    completedResults: ToolResultPart[],
-    reason: string,
-    partIdFor?: (toolCallId: string) => string,
-    messageId?: string,
-    streamedArgText?: Map<string, string>,
-  ): Promise<void> {
-    const sid = this.subagentId;
-    const output = {
-      type: "error-text" as const,
-      value: `Tool execution aborted: ${reason}`,
-    };
-    const syntheticParts: ToolResultPart[] = [];
-
-    if (RESPONSE_DEBUG) {
-      const responseInFlight = [...inFlightTools.entries()].filter(
-        ([, n]) => n === RESPONSE_TOOL_NAME,
-      );
-      if (responseInFlight.length > 0) {
-        rlog.warn(
-          `[response-debug] emitSyntheticToolResults closing ${responseInFlight.length} response call(s) ` +
-            `ids=${responseInFlight.map(([id]) => id).join(",")} reason="${reason}" ` +
-            `aborted=${this.abortSignal?.aborted === true} responseToolFired=${this._responseToolFired}`,
-        );
-      }
-    }
-
-    for (const [toolCallId, toolName] of inFlightTools) {
-      // The `response` tool reaching here after a successful capture didn't fail — mark it completed, not aborted.
-      const result =
-        toolName === RESPONSE_TOOL_NAME && this._responseToolFired
-          ? { type: "text" as const, value: "Response submitted." }
-          : output;
-      this.eventBus.emit("tool-result", {
-        toolCallId,
-        toolName,
-        result,
-        // Canonical session id, not just the legacy subagentId alias, so the translator routes to THIS subagent's session.
-        sessionId: this.busSessionId,
-        subagentId: sid,
-        partId: partIdFor?.(toolCallId),
-        messageId,
-      });
-      syntheticParts.push({
-        type: "tool-result",
-        toolCallId,
-        toolName,
-        output: result,
-      });
-    }
-
-    if (!this.messagesPath) return;
-
-    // Cancel the debounced timer so its writeFile can't race the write below.
-    this.cancelPersistTimer?.();
-
-    // Fall back to the on-disk snapshot once the debounced timer has flushed latestMessages, so we don't overwrite history.
-    let base: ModelMessage[] = this.latestMessages ?? [];
-    if (base.length === 0 && existsSync(this.messagesPath)) {
-      try {
-        base = JSON.parse(readFileSync(this.messagesPath, "utf-8"));
-      } catch {
-        // Corrupt file → proceed with empty base.
-      }
-    }
-
-    // When onStepFinish hasn't fired, this step's messages aren't in base yet; reconstruct so resumed sessions see valid pairs.
-    const allToolCallIds = new Set([
-      ...inFlightTools.keys(),
-      ...completedResults.map((r) => r.toolCallId),
-    ]);
-    const lastMsg = base[base.length - 1];
-    const needsStepReconstruction =
-      !lastMsg ||
-      lastMsg.role !== "assistant" ||
-      !this.baseContainsToolCalls(lastMsg, allToolCallIds);
-
-    const appended: ModelMessage[] = [];
-    if (needsStepReconstruction) {
-      const stepTools: Array<[string, string]> = [
-        ...inFlightTools,
-        ...completedResults.map((r): [string, string] => [
-          r.toolCallId,
-          r.toolName,
-        ]),
-      ];
-      // Preserve whatever args the model actually streamed instead of writing an empty `{}`.
-      const reconstructInput = (toolCallId: string): unknown => {
-        const raw = streamedArgText?.get(toolCallId);
-        if (!raw) return {};
-        try {
-          return JSON.parse(raw);
-        } catch {
-          return { _partial: raw };
-        }
-      };
-      if (RESPONSE_DEBUG) {
-        const responseReconstructed = stepTools
-          .filter(([, n]) => n === RESPONSE_TOOL_NAME)
-          .map(([id]) => id);
-        if (responseReconstructed.length > 0) {
-          rlog.warn(
-            `[response-debug] step-reconstruction for response call(s) ` +
-              `ids=${responseReconstructed.join(",")} ` +
-              `preservedArgChars=${responseReconstructed
-                .map((id) => streamedArgText?.get(id)?.length ?? 0)
-                .join(",")}`,
-          );
-        }
-      }
-      const toolCalls: ToolCallPart[] = stepTools.map(
-        ([toolCallId, toolName]) => ({
-          type: "tool-call" as const,
-          toolCallId,
-          toolName,
-          input: reconstructInput(toolCallId),
-        }),
-      );
-      appended.push({ role: "assistant", content: toolCalls });
-    }
-    appended.push({
-      role: "tool",
-      content: [...completedResults, ...syntheticParts],
-    });
-
-    const next: ModelMessage[] = [...base, ...appended];
-    this.latestMessages = next;
-    try {
-      await writeFile(this.messagesPath, JSON.stringify(next));
-      // Only suppress onFinish's write once the snapshot is safely on disk.
-      this.syntheticsPersisted = true;
-    } catch {
-      // Write failed — leave the flag false so onFinish still attempts a write.
-    }
-  }
-
-  private baseContainsToolCalls(
-    msg: ModelMessage,
-    toolCallIds: Set<string>,
-  ): boolean {
-    if (!Array.isArray(msg.content)) return false;
-    const contentToolIds = new Set(
-      (msg.content as Array<{ type: string; toolCallId?: string }>)
-        .filter((p) => p.type === "tool-call" && p.toolCallId)
-        .map((p) => p.toolCallId),
-    );
-    return [...toolCallIds].every((id) => contentToolIds.has(id));
   }
 }
 
