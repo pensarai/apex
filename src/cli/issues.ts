@@ -16,7 +16,9 @@
  *   pensar issues comment <issueId> --body <text> Post a comment on an issue
  */
 
+import type { ClosedDisposition } from "../core/api";
 import {
+  CLOSED_DISPOSITIONS,
   createIssueComment,
   getIssue,
   linkPullRequest,
@@ -63,6 +65,8 @@ Update options:
   --status <status>         New status
   --closed-reason <reason>  Reason for closing
   --closed-comments <text>  Additional comments
+  --disposition <value>     Why it is closed: resolved, wont-fix, out-of-scope,
+                            risk-accepted
   --false-positive          Flag as false positive
   --fp-reason <reason>      Reason for false positive flag
 
@@ -121,6 +125,19 @@ async function main(): Promise<void> {
         | undefined;
       const closedReason = getFlag("--closed-reason", args);
       const closedComments = getFlag("--closed-comments", args);
+      const dispositionFlag = getFlag("--disposition", args);
+      if (
+        dispositionFlag !== undefined &&
+        !(CLOSED_DISPOSITIONS as readonly string[]).includes(dispositionFlag)
+      ) {
+        console.error(
+          `Error: invalid --disposition "${dispositionFlag}". Accepted: ${CLOSED_DISPOSITIONS.join(", ")}`,
+        );
+        return markCommandFailed();
+      }
+      const closedDisposition = dispositionFlag as
+        | ClosedDisposition
+        | undefined;
       const userFlaggedFalsePositive = args.includes("--false-positive")
         ? true
         : undefined;
@@ -130,6 +147,7 @@ async function main(): Promise<void> {
         status,
         closedReason,
         closedComments,
+        closedDisposition,
         userFlaggedFalsePositive,
         userFlaggedFalsePositiveReason,
       });

@@ -39,6 +39,27 @@ describe("pensar issues CLI", () => {
     expect(stderr).toBe("");
   });
 
+  it("documents the close disposition on update", () => {
+    const { status, stdout } = runIssues(["--help"]);
+
+    expect(status).toBe(0);
+    expect(stdout).toContain("--disposition <value>");
+    expect(stdout).toContain("resolved, wont-fix, out-of-scope");
+  });
+
+  it("rejects a disposition outside the accepted set, naming the set", () => {
+    const { status, stderr } = runIssues([
+      "update",
+      "VULN-000001",
+      "--disposition",
+      "other",
+    ]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain('invalid --disposition "other"');
+    expect(stderr).toContain("resolved, wont-fix, out-of-scope, risk-accepted");
+  });
+
   it("prints help for `-h` on a subcommand", () => {
     const { status, stdout } = runIssues(["update", "-h"]);
 

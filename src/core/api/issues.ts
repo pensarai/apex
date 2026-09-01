@@ -28,6 +28,19 @@ export interface ScanDetail extends ScanSummary {
   reportReady: boolean;
 }
 
+/**
+ * Close dispositions the API accepts. Mirrors the server's public vocabulary;
+ * `other` is deliberately absent — the server rejects it.
+ */
+export const CLOSED_DISPOSITIONS = [
+  "resolved",
+  "wont-fix",
+  "out-of-scope",
+  "risk-accepted",
+] as const;
+
+export type ClosedDisposition = (typeof CLOSED_DISPOSITIONS)[number];
+
 export interface IssueSummary {
   id: string;
   /** Human-facing label, e.g. `VULN-000123`. Null for issues created before labels existed. */
@@ -50,6 +63,12 @@ export interface IssueDetail extends IssueSummary {
   workspaceId: string;
   workspaceName: string;
   createdAt: string;
+  /** Close metadata. Absent when talking to a console that predates it. */
+  closedAt?: string | null;
+  closedMethod?: string | null;
+  closedReason?: string | null;
+  closedComments?: string | null;
+  closedDisposition?: ClosedDisposition | null;
 }
 
 /** Who wrote a comment. Null when the author's user record is gone. */
@@ -93,6 +112,9 @@ export interface UpdateIssueResult {
     userFlaggedFalsePositive: boolean;
     closedAt: string | null;
     closedReason: string | null;
+    closedMethod?: string | null;
+    closedComments?: string | null;
+    closedDisposition?: ClosedDisposition | null;
   };
 }
 
@@ -263,6 +285,7 @@ export async function updateIssue(
     userFlaggedFalsePositiveReason?: string;
     closedReason?: string;
     closedComments?: string;
+    closedDisposition?: ClosedDisposition;
   },
 ): Promise<UpdateIssueResult> {
   return apiRequest<UpdateIssueResult>("PATCH", `/issues/${issueId}`, data);
