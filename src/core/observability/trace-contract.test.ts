@@ -291,11 +291,10 @@ describe("existing trace contract: model spans", () => {
     }
   });
 
-  it("an in-stream error part currently leaks the root span (known limitation)", async () => {
-    // Contract finding: when the model emits an error PART (instead of
-    // throwing), the ai.streamText root span (endWhenDone: false) is never
-    // ended — no spans export. Pinned as-is; Stack D's O3 root-run spans
-    // own their end() on every path instead.
+  it("an in-stream error part exports a complete tree with error status", async () => {
+    // The wrapper drains the post-error tail (the SDK's terminal lifecycle
+    // only runs when the stream completes), awaits the terminal response,
+    // and marks the root generation span failed before propagating.
     mockState.model = new MockLanguageModelV3({
       provider: "mock-anthropic",
       modelId: MODEL,
@@ -309,12 +308,28 @@ describe("existing trace contract: model spans", () => {
       }),
     });
 
+    // The original provider error is preserved.
     await expect(
       drain(streamResponse({ prompt: "hi", model: MODEL, silent: true })),
     ).rejects.toThrow("model exploded");
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(otel.getFinishedSpans()).toHaveLength(0);
+    // Both generation spans export — deterministic, no sleeps — with the
+    // root marked error (the provider-call span completes normally in the
+    // SDK and stays unset).
+    const spans = otel.getFinishedSpans();
+    const streamText = requireSpan(spans, "ai.streamText");
+    const doStream = requireSpan(spans, "ai.streamText.doStream");
+    expect(streamText.status.code).toBe(SpanStatusCode.ERROR);
+    expect(
+      streamText.events.some(
+        (e) =>
+          e.name === "exception" &&
+          (e.attributes?.["exception.message"] as string) === "model exploded",
+      ),
+    ).toBe(true);
+    expect(doStream.spanContext().traceId).toBe(
+      streamText.spanContext().traceId,
+    );
   });
 });
 

@@ -1859,3 +1859,56 @@ describe("OffensiveSecurityAgent.consume() streamIdFactory", () => {
     expect(deltaEmit?.messageId).not.toBe("msg-0");
   });
 });
+
+// ---------------------------------------------------------------------------
+// O3/PR3: in-stream error parts complete every span (agent + generation)
+// ---------------------------------------------------------------------------
+
+describe("error-part span completion", () => {
+  it("an error-part run exports the agent span with error status", async () => {
+    // Local in-memory harness (inlined per this file's rule).
+    const { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } =
+      require("@opentelemetry/sdk-trace-base") as typeof import("@opentelemetry/sdk-trace-base");
+    const { AsyncLocalStorageContextManager } =
+      require("@opentelemetry/context-async-hooks") as typeof import("@opentelemetry/context-async-hooks");
+    const api =
+      require("@opentelemetry/api") as typeof import("@opentelemetry/api");
+    const exporter = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    });
+    const contextManager = new AsyncLocalStorageContextManager();
+    contextManager.enable();
+    api.trace.setGlobalTracerProvider(provider);
+    api.context.setGlobalContextManager(contextManager);
+
+    try {
+      // The stream yields a chunk then an error — the raw generator mimics
+      // the AI SDK's error part (consume() sees it as a thrown error after
+      // the drain in the real pipeline).
+      async function* errorPartStream(): AsyncGenerator<
+        unknown,
+        void,
+        undefined
+      > {
+        yield { type: "text-delta", id: "t1", delta: "partial" };
+        throw new Error("model exploded mid-stream");
+      }
+      const agent = buildStubAgent({ fullStream: errorPartStream() });
+      await expect(agent.consume()).rejects.toThrow("model exploded");
+
+      const span = exporter
+        .getFinishedSpans()
+        .find((s) => s.name === "invoke_agent default");
+      expect(span).toBeDefined();
+      expect(span?.status.code).toBe(api.SpanStatusCode.ERROR);
+      expect(span?.attributes["error.type"]).toBe("Error");
+      expect(span?.ended).toBe(true);
+    } finally {
+      await provider.shutdown();
+      contextManager.disable();
+      api.trace.disable();
+      api.context.disable();
+    }
+  });
+});

@@ -20,7 +20,11 @@ import {
 } from "ai";
 import type { z } from "zod";
 import { createLogger } from "../logger/structured";
-import { createAiTelemetrySettings } from "../observability";
+import {
+  createAiTelemetrySettings,
+  createGenerationSpanTracker,
+  type GenerationSpanTracker,
+} from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
 import {
   cacheBreakpointFor,
@@ -487,6 +491,7 @@ function wrapStreamWithErrorHandler(
   silent?: boolean,
   rateLimitRetryCount: number = 0,
   idleResumeCount: number = 0,
+  generationSpans?: GenerationSpanTracker,
 ): StreamTextResult<ToolSet, never> {
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
@@ -505,6 +510,7 @@ function wrapStreamWithErrorHandler(
           const toolGate = createToolExecutionGate();
 
           wrappedStream = (async function* () {
+            let streamError: unknown;
             try {
               for await (const chunk of withIdleTimeout(
                 originalStream.fullStream,
@@ -540,13 +546,40 @@ function wrapStreamWithErrorHandler(
 
                 // Only stream-level errors are fatal; tool-level errors
                 // flow through so the UI renders them as failed tool results.
+                // Instead of throwing mid-stream, capture the error and drain
+                // the tail (finish-step/finish): the AI SDK's terminal
+                // lifecycle — root-span end included — only runs when the
+                // stream completes, and aborting the iteration leaks it.
                 if (chunk.type === "error") {
-                  throw (chunk as unknown as { error: unknown }).error;
+                  streamError = (chunk as unknown as { error: unknown }).error;
+                  // Mark the root generation span failed NOW: the SDK's
+                  // flush ends it mid-drain, before the loop exits — a
+                  // later mark is a no-op on an ended span.
+                  generationSpans?.markFailed(streamError);
+                  continue;
+                }
+                // Drain the post-error tail silently: the terminal parts
+                // must be consumed for the SDK's finalization, but consumers
+                // must not observe step-close-out after a fatal error.
+                if (streamError !== undefined) {
+                  continue;
                 }
 
                 yield chunk;
               }
+              if (streamError !== undefined) {
+                // The tail is consumed but the SDK's finalization
+                // (root-span end) settles with the response promise —
+                // await it so the error never overtakes the span lifecycle.
+                await Promise.resolve(originalStream.response).catch(() => {});
+                throw streamError;
+              }
             } catch (error) {
+              // Error-part runs complete normally inside the SDK, so nothing
+              // sets the root generation span failed — mark it here (the
+              // SDK's own thrown-error marking is guarded against below).
+              generationSpans?.markFailed(error);
+
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
 
@@ -1251,7 +1284,9 @@ export function streamResponse(
   let rateLimitRetryCount = 0;
 
   try {
-    // Create the appropriate provider instance
+    // Create the appropriate provider instance. The span tracker captures
+    // the SDK's root generation span for error marking (see below).
+    const generationSpans = createGenerationSpanTracker();
     const response = streamText({
       model: providerModel,
       system: effectiveSystem,
@@ -1261,10 +1296,16 @@ export function streamResponse(
       tools,
       maxRetries: 3,
       providerOptions,
-      experimental_telemetry: createAiTelemetrySettings({
-        operation: "apex.agent.stream",
-        sessionId,
-      }),
+      // The forwarding tracer keeps a handle on the SDK's root generation
+      // span: error-part runs complete normally in the SDK, so nothing
+      // marks the span failed — the wrapper's catch does.
+      experimental_telemetry: {
+        ...createAiTelemetrySettings({
+          operation: "apex.agent.stream",
+          sessionId,
+        }),
+        tracer: generationSpans.tracer,
+      },
       // Pin actual emission to the same value `fitMessagesToContext`
       // reserved for output. Without this, the SDK applies provider
       // defaults that can exceed our budget — e.g. GPT-4o defaults to
@@ -1283,6 +1324,12 @@ export function streamResponse(
         return undefined;
       },
       onError: async ({ error }: { error: unknown }) => {
+        // Never throw here: the SDK calls this inside its stream pipeline,
+        // and a thrown callback kills the pipeline's terminal lifecycle —
+        // the root generation span never ends and nothing exports. Return
+        // normally instead; the error part continues downstream and the
+        // consumption wrapper converts it to a thrown error (after the
+        // tail drains), where the retry machinery takes over.
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         if (
@@ -1293,11 +1340,7 @@ export function streamResponse(
           await new Promise((resolve) =>
             setTimeout(resolve, 1000 * rateLimitRetryCount),
           );
-          if (rateLimitRetryCount < 20) {
-            return;
-          }
         }
-        throw error;
       },
       onStepFinish,
       abortSignal,
@@ -1479,6 +1522,9 @@ export function streamResponse(
       opts,
       providerModel,
       silent,
+      0,
+      0,
+      generationSpans,
     );
   } catch (error) {
     // Check if the error is related to context length
