@@ -554,6 +554,9 @@ function generateAndStreamModel(): MockLanguageModelV3 {
 describe("auxiliary model lifecycle", () => {
   it("summarization awaits the wrapped onStepFinish and its synthetic event is handler-safe", async () => {
     mockState.model = generateAndStreamModel();
+    const history = [
+      { role: "user" as const, content: "history to summarize" },
+    ];
 
     const events: Array<{
       response: { id?: string; messages?: unknown[] };
@@ -569,7 +572,7 @@ describe("auxiliary model lifecycle", () => {
     let syntheticCompleted = false;
 
     const stream = createSummarizationStream(
-      [{ role: "user", content: "history to summarize" }],
+      history,
       {
         prompt: "resume",
         model: MODEL,
@@ -597,6 +600,7 @@ describe("auxiliary model lifecycle", () => {
     // Handler-safe: handlers spread response.messages; cache and provider
     // metadata survive the synthetic event.
     expect(Array.isArray(synthetic?.response.messages)).toBe(true);
+    expect(synthetic?.response.messages).toEqual(history);
     expect(synthetic?.usage.inputTokenDetails?.cacheReadTokens).toBe(400);
     expect(synthetic?.usage.inputTokenDetails?.cacheWriteTokens).toBe(7);
     expect(synthetic?.providerMetadata).toEqual({
@@ -630,7 +634,7 @@ describe("auxiliary model lifecycle", () => {
     await expect(drain(stream)).rejects.toThrow("persistence boom");
   });
 
-  it("tool repair awaits the wrapped onStepFinish and preserves provider metadata", async () => {
+  it("preserves a successful tool repair when its usage callback rejects", async () => {
     let call = 0;
     mockState.model = new MockLanguageModelV3({
       provider: "mock-anthropic",
@@ -710,6 +714,7 @@ describe("auxiliary model lifecycle", () => {
       };
     }> = [];
     let callbackCompleted = false;
+    const executeProbe = vi.fn();
 
     await drain(
       streamResponse({
@@ -720,12 +725,21 @@ describe("auxiliary model lifecycle", () => {
           events.push(event as never);
           await new Promise((resolve) => setTimeout(resolve, 5));
           callbackCompleted = true;
+          if (
+            (event as { response: { id?: string } }).response.id ===
+            "tool-repair"
+          ) {
+            throw new Error("repair persistence boom");
+          }
         },
         tools: {
           probe: {
             description: "test tool",
             inputSchema: z.object({ q: z.string() }),
-            execute: async (input: { q: string }) => `echo:${input.q}`,
+            execute: async (input: { q: string }) => {
+              executeProbe(input);
+              return `echo:${input.q}`;
+            },
           },
         },
         stopWhen: stepCountIs(2),
@@ -733,6 +747,7 @@ describe("auxiliary model lifecycle", () => {
     );
 
     expect(callbackCompleted).toBe(true);
+    expect(executeProbe).toHaveBeenCalledWith({ q: "fixed" });
 
     const repairEvent = events.find((e) => e.response.id === "tool-repair");
     expect(repairEvent).toBeDefined();

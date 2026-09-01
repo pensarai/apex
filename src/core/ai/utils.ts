@@ -482,7 +482,7 @@ async function summarizeConversation(
         id: "summarization",
         timestamp: new Date(),
         modelId: "",
-        messages: [],
+        messages,
       },
       providerMetadata: summaryProviderMetadata,
       stepType: "initial",

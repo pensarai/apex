@@ -728,6 +728,21 @@ export class OffensiveSecurityAgent<TResult = void> {
         sessionPath: messagesDir,
         sessionId: this.busSessionId,
         onStepFinish: async (event) => {
+          const auxiliaryModelEvent =
+            event.response.id === "summarization" ||
+            event.response.id === "tool-repair";
+
+          if (auxiliaryModelEvent) {
+            traceWriter.recordStep([], {
+              inputTokens: event.usage.inputTokens ?? 0,
+              outputTokens: event.usage.outputTokens ?? 0,
+              ...lastCacheMetrics,
+            });
+            lastCacheMetrics = null;
+            await input.onStepFinish?.(event);
+            return;
+          }
+
           this.writer.setLatest([
             ...initialMessagesRef.current,
             ...event.response.messages,

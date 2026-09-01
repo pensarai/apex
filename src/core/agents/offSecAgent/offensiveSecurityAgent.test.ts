@@ -12,6 +12,9 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 const toolContexts = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+const streamResponseCalls = vi.hoisted(
+  () => [] as Array<Record<string, unknown>>,
+);
 
 // ---------------------------------------------------------------------------
 // Module stubs — prevent the full tool/AI/zod import chain from loading.
@@ -65,7 +68,12 @@ vi.mock("./tools", () => ({
   ],
   PersistentShell: class {},
 }));
-vi.mock("../../ai", () => ({ streamResponse: () => {} }));
+vi.mock("../../ai", () => ({
+  streamResponse: (opts: Record<string, unknown>) => {
+    streamResponseCalls.push(opts);
+    return { fullStream: (async function* () {})() };
+  },
+}));
 vi.mock("../../session", () => ({ create: () => {} }));
 vi.mock("../specialized/utils", () => ({
   detectOSAndEnhancePrompt: (p: string) => p,
@@ -77,7 +85,8 @@ vi.mock("./prompt", () => ({
 vi.mock("./trace", () => ({
   StepTraceWriter: class {
     writeInit() {}
-    onStepFinish() {}
+    recordStep() {}
+    markSummarized() {}
   },
 }));
 vi.mock("../../operator", () => ({
@@ -118,6 +127,59 @@ describe("spawned-agent usage callbacks", () => {
     expect(toolContexts[0]?.onCacheMetrics).toBeUndefined();
     expect(toolContexts[1]?.onStepFinish).toBe(onStepFinish);
     expect(toolContexts[1]?.onCacheMetrics).toBe(onCacheMetrics);
+  });
+});
+
+describe("auxiliary model events", () => {
+  it("keeps the last complete message snapshot while forwarding usage", async () => {
+    streamResponseCalls.length = 0;
+    const rootPath = join(
+      "/tmp",
+      `apex-auxiliary-model-event-${Date.now()}-${Math.random()}`,
+    );
+    const initialMessages = [
+      { role: "user" as const, content: "original request" },
+    ];
+    const completedMessages = [
+      { role: "assistant" as const, content: "completed step" },
+    ];
+    const onStepFinish = vi.fn();
+
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        model: "test-model",
+        messages: initialMessages,
+        session: { id: "ses_auxiliary", rootPath },
+        activeTools: [],
+        sandbox: {},
+        onStepFinish,
+      } as never);
+
+      void agent.streamResult;
+      const call = streamResponseCalls[0] as {
+        onStepFinish: (event: unknown) => Promise<void>;
+      };
+      await call.onStepFinish({
+        response: { id: "step-1", messages: completedMessages },
+        usage: { inputTokens: 10, outputTokens: 2 },
+      });
+
+      const writer = (agent as unknown as { writer: AgentMessageWriter })
+        .writer;
+      expect(writer.latest).toEqual([...initialMessages, ...completedMessages]);
+
+      await call.onStepFinish({
+        response: { id: "summarization", messages: [] },
+        usage: { inputTokens: 5, outputTokens: 1 },
+      });
+
+      expect(writer.latest).toEqual([...initialMessages, ...completedMessages]);
+      expect(onStepFinish).toHaveBeenCalledTimes(2);
+      writer.cancelTimer();
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
   });
 });
 

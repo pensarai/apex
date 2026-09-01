@@ -1410,37 +1410,45 @@ export function streamResponse(
           // into the tool loop. Provider metadata and cache details flow
           // through so repair usage stays attributable.
           if (onStepFinish && repairUsage) {
-            await onStepFinish({
-              text: "",
-              reasoning: undefined,
-              reasoningDetails: [],
-              files: [],
-              sources: [],
-              toolCalls: [],
-              toolResults: [],
-              finishReason: "stop",
-              usage: {
-                inputTokens: repairUsage.inputTokens ?? 0,
-                outputTokens: repairUsage.outputTokens ?? 0,
-                totalTokens: repairUsage.totalTokens ?? 0,
-                ...(repairUsage.inputTokenDetails
-                  ? { inputTokenDetails: repairUsage.inputTokenDetails }
-                  : {}),
-              },
-              warnings: [],
-              request: {},
-              response: {
-                id: "tool-repair",
-                timestamp: new Date(),
-                modelId: "",
-                messages: [],
-              },
-              providerMetadata: repairProviderMetadata,
-              stepType: "initial",
-              isContinued: false,
-            } as unknown as Parameters<
-              StreamTextOnStepFinishCallback<ToolSet>
-            >[0]);
+            try {
+              await onStepFinish({
+                text: "",
+                reasoning: undefined,
+                reasoningDetails: [],
+                files: [],
+                sources: [],
+                toolCalls: [],
+                toolResults: [],
+                finishReason: "stop",
+                usage: {
+                  inputTokens: repairUsage.inputTokens ?? 0,
+                  outputTokens: repairUsage.outputTokens ?? 0,
+                  totalTokens: repairUsage.totalTokens ?? 0,
+                  ...(repairUsage.inputTokenDetails
+                    ? { inputTokenDetails: repairUsage.inputTokenDetails }
+                    : {}),
+                },
+                warnings: [],
+                request: {},
+                response: {
+                  id: "tool-repair",
+                  timestamp: new Date(),
+                  modelId: "",
+                  messages: messagesContainer.current,
+                },
+                providerMetadata: repairProviderMetadata,
+                stepType: "initial",
+                isContinued: false,
+              } as unknown as Parameters<
+                StreamTextOnStepFinishCallback<ToolSet>
+              >[0]);
+            } catch (callbackError) {
+              if (!silent) {
+                log.warn("Error reporting tool repair usage", {
+                  error: String(callbackError),
+                });
+              }
+            }
           }
 
           if (repairedArgs === undefined || repairedArgs === null) {
