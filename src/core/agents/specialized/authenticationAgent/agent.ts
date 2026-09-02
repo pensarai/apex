@@ -1,18 +1,24 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
+import type {
+  LanguageModelMiddleware,
+  StreamTextOnStepFinishCallback,
+  ToolSet,
+} from "ai";
 import { hasToolCall } from "ai";
 import type {
   AIAuthConfig,
   AIModel,
   OpenAIReasoningEffort,
   ThinkingEffort,
+  UsageRecorder,
 } from "../../../ai";
 import type { AgentEventBus } from "../../../eventBus";
 import { createLogger } from "../../../logger/structured";
 import type { SessionInfo } from "../../../session";
 import { scopedLogger } from "../../../util/lazyLogger";
 import { OffensiveSecurityAgent } from "../../offSecAgent";
+import type { StreamIdFactory } from "../../offSecAgent/types";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import type { AuthBarrier } from "./types";
@@ -87,6 +93,15 @@ export interface AuthenticationAgentInput {
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+
+  /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+
+  /** Per-run usage recorder. Unset → the process-global usage callback fires as today. */
+  usageRecorder?: UsageRecorder;
+
+  /** Factory for streamed message/part ids. Unset → random ULIDs, unchanged. */
+  streamIdFactory?: StreamIdFactory;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */

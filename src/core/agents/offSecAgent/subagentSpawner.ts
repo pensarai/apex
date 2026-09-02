@@ -338,6 +338,9 @@ const runAuthChild: SubagentRunner<"authentication"> = async (spec, ctx) => {
         subagentName: ctx.subagentName,
         environmentVariables: ctx.environmentVariables,
         secretValues: ctx.secretValues,
+        languageModelMiddleware: ctx.languageModelMiddleware,
+        usageRecorder: ctx.usageRecorder,
+        streamIdFactory: ctx.streamIdFactory,
       }),
   };
 };
@@ -359,6 +362,9 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
         enableThinking: ctx.enableThinking,
         thinkingEffort: ctx.thinkingEffort,
         openAIReasoningEffort: ctx.openAIReasoningEffort,
+        languageModelMiddleware: ctx.languageModelMiddleware,
+        usageRecorder: ctx.usageRecorder,
+        streamIdFactory: ctx.streamIdFactory,
       }),
   };
 };
