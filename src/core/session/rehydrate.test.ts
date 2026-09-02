@@ -8,7 +8,6 @@ import {
   type ConsolePartRow,
   type ConsoleSessionNode,
   type ConsoleSessionTree,
-  rehydrateFromConsole,
   rehydrateFromConsoleTree,
   repairOrphanToolCalls,
 } from "./persistence";
@@ -303,36 +302,6 @@ describe("rehydrateFromConsoleTree", () => {
       type: "text",
       value: "first 100 bytes…",
     });
-  });
-
-  it("rehydrateFromConsole fetches via the injected fetcher", async () => {
-    const rootId = newSessionId();
-    const tree: ConsoleSessionTree = {
-      session: {
-        id: rootId,
-        agentType: "pentest",
-        parentSessionId: null,
-        status: "running",
-      },
-      messages: [
-        {
-          id: "msg_u1",
-          sessionId: rootId,
-          role: "user",
-          sequence: 0,
-          stepSeq: null,
-          data: null,
-          createdAt: new Date().toISOString(),
-        },
-      ],
-      parts: [textPart("msg_u1", rootId, 0, "hello")],
-      descendants: [],
-    };
-    const fetchTree = vi.fn(async () => tree);
-
-    const result = await rehydrateFromConsole(rootId as SessionID, fetchTree);
-    expect(fetchTree).toHaveBeenCalledWith(rootId);
-    expect(result.messages[0]).toEqual({ role: "user", content: "hello" });
   });
 });
 

@@ -104,18 +104,6 @@ export function parseDisplayNumber(
 }
 
 /**
- * Default viewport for a bound X display. Endpoint desktops (`:10+`) are 720p;
- * everything else (including no display / headless) stays at 1080p.
- */
-export function viewportSizeForDisplay(display: string | undefined): string {
-  const num = parseDisplayNumber(display);
-  if (num !== undefined && num >= ENDPOINT_DISPLAY_BASE) {
-    return ENDPOINT_VIEWPORT_SIZE;
-  }
-  return COMPUTER_USE_VIEWPORT_SIZE;
-}
-
-/**
  * Camoufox `window` + a `screen` floor (min only, never an exact pin).
  *
  * browserforge has no Firefox fingerprint at 720px height, so exact-pinning the

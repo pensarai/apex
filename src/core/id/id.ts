@@ -82,10 +82,16 @@ export const newRunId = (): RunID => descending("run") as RunID;
 /** Runtime guard: is this string a session id? */
 export const isSessionId = (s: string): s is SessionID =>
   s.startsWith(`${prefixes.session}_`);
-/** Runtime guard: is this string a message id? */
+/**
+ * @knipignore completes the guard set alongside isSessionId; used by tests of
+ * other modules to assert the id shapes they emit.
+ */
 export const isMessageId = (s: string): s is MessageID =>
   s.startsWith(`${prefixes.message}_`);
-/** Runtime guard: is this string a part id? */
+/**
+ * @knipignore completes the guard set alongside isSessionId; used by tests of
+ * other modules to assert the id shapes they emit.
+ */
 export const isPartId = (s: string): s is PartID =>
   s.startsWith(`${prefixes.part}_`);
 

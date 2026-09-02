@@ -3,7 +3,6 @@ import {
   deobfuscate,
   isObfuscationEnabled,
   obfuscate,
-  obfuscateValue,
   resetObfuscation,
   setObfuscationEnabled,
 } from "./engine";
@@ -273,17 +272,6 @@ describe("obfuscation engine", () => {
   it("redacts phone numbers", () => {
     const out = obfuscate("Call +1 415 555 0123 today");
     expect(out).toContain("[PHONE_1]");
-  });
-
-  it("obfuscateValue assigns category placeholder when enabled", () => {
-    expect(obfuscateValue("acme-internal-host", "HOST")).toBe("[HOST_1]");
-  });
-
-  it("returns original from obfuscateValue when disabled", () => {
-    setObfuscationEnabled(false);
-    expect(obfuscateValue("acme-internal-host", "HOST")).toBe(
-      "acme-internal-host",
-    );
   });
 
   it("ignores common file extensions when redacting hostnames", () => {
