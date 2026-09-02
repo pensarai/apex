@@ -64,6 +64,7 @@ interface CommandProviderProps {
   onOpenAuthDialog?: () => void;
   onOpenPentestDialog?: (flags?: WebCommandOptions) => void;
   onOpenSkillsDialog?: (slug?: string) => void;
+  onExit?: () => Promise<void>;
 }
 
 export function CommandProvider({
@@ -78,6 +79,7 @@ export function CommandProvider({
   onOpenAuthDialog,
   onOpenPentestDialog,
   onOpenSkillsDialog,
+  onExit,
 }: CommandProviderProps) {
   const route = useRoute();
   const obfuscation = useObfuscation();
@@ -99,6 +101,7 @@ export function CommandProvider({
       openAuthDialog: onOpenAuthDialog,
       openPentestDialog: onOpenPentestDialog,
       openSkillsDialog: onOpenSkillsDialog,
+      exitApplication: onExit,
       setObfuscation: (enabled) => {
         // Read live engine state so toast feedback is accurate even if
         // this closure was captured on an earlier render. The provider's
@@ -124,6 +127,7 @@ export function CommandProvider({
     onOpenAuthDialog,
     onOpenPentestDialog,
     onOpenSkillsDialog,
+    onExit,
     obfuscation,
     toast,
   ]);

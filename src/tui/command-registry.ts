@@ -34,6 +34,7 @@ export interface AppCommandContext {
   openAuthDialog?: () => void;
   openPentestDialog?: (flags?: WebCommandOptions) => void;
   openSkillsDialog?: (slug?: string) => void;
+  exitApplication?: () => Promise<void>;
   /**
    * Toggle obfuscation mode (when called without an argument) or set it to
    * an explicit value. Returns the new state.
@@ -547,8 +548,8 @@ export const commands: CommandConfig[] = [
     aliases: ["quit", "q"],
     description: "Exit the application",
     category: "General",
-    handler: async () => {
-      process.kill(process.pid, "SIGINT");
+    handler: async (_args, ctx) => {
+      await ctx.exitApplication?.();
     },
   },
 

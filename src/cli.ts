@@ -10,12 +10,16 @@
 import { config as loadEnv } from "dotenv";
 import packageJson from "../package.json";
 import { type AIModel, buildAuthConfig } from "./core/ai";
+import { setCurrentCommand } from "./core/api/clientIdentity";
 import { resolveCliLogLevel } from "./core/cli/logLevelArgs";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
 import { logger } from "./core/logger";
-import { startObservabilityRuntime } from "./core/observability/runtime";
+import {
+  installObservabilityExitHandlers,
+  startObservabilityRuntime,
+} from "./core/observability/runtime";
 import type { SessionInfo } from "./core/session";
 import {
   combinePromptParts,
@@ -597,6 +601,21 @@ async function runUpgrade() {
 // OTLP endpoint is configured; the TUI branch below takes over the process
 // and manages the runtime's lifecycle in its own exit path.
 const observabilityRuntime = startObservabilityRuntime();
+// Signals and fatal errors flush traces (bounded) before exiting — headless
+// commands only; the TUI installs its own handlers alongside renderer
+// teardown.
+const exitAfterObservabilityShutdown =
+  args.length !== 0
+    ? installObservabilityExitHandlers(observabilityRuntime, {
+        onError: (error) => {
+          console.error("Uncaught exception:", error);
+        },
+      })
+    : null;
+
+// Tell Console which command is talking to it; one place, so a command added
+// below is covered without another edit.
+setCurrentCommand(command);
 
 try {
   if (hasFlag("-p") || command === "--prompt") {
@@ -662,16 +681,27 @@ try {
     console.error("Run 'pensar --help' for usage information");
     process.exit(1);
   }
-} finally {
-  // Preserve command failures while still making process-boundary flushing
-  // best-effort. The TUI owns its runtime lifecycle after import.
-  if (args.length !== 0) {
-    await observabilityRuntime.shutdown().catch(() => {});
+} catch (error) {
+  if (exitAfterObservabilityShutdown !== null) {
+    await exitAfterObservabilityShutdown(1, error, "uncaughtException");
   }
-}
-
-// Some pentest tool subsystems can leave handles open after completion. Keep
-// the explicit exit, but only after the final OTLP batch has been flushed.
-if (command === "pentest" || command === "targeted-pentest") {
-  process.exit(0);
+  throw error;
+} finally {
+  // The TUI owns its runtime lifecycle after import.
+  if (exitAfterObservabilityShutdown !== null) {
+    const shutdownResult = await observabilityRuntime
+      .shutdown()
+      .catch(() => "completed" as const);
+    // A timed-out exporter can still own live HTTP handles, and pentest tool
+    // subsystems can leave handles open after completion.
+    if (
+      shutdownResult === "timed-out" ||
+      command === "pentest" ||
+      command === "targeted-pentest"
+    ) {
+      await exitAfterObservabilityShutdown(
+        typeof process.exitCode === "number" ? process.exitCode : 0,
+      );
+    }
+  }
 }

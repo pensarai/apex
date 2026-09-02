@@ -1,6 +1,6 @@
 ---
 title: "pensar issues"
-description: "List, view, update, retest, and link pull requests to security issues via the Pensar Console API"
+description: "List, view, update, retest, comment on, and link pull requests to security issues via the Pensar Console API"
 ---
 
 ## Overview
@@ -18,6 +18,8 @@ pensar issues update <issueId> [options]       # Update an issue
 pensar issues retest <issueId>                 # Queue an issue retest
 pensar issues link-pr <issueId> --url <url>    # Link a pull request to an issue
 pensar issues prs <issueId>                    # List pull requests linked to an issue
+pensar issues comments <issueId>               # List review comments on an issue
+pensar issues comment <issueId> --body "..."   # Post a comment on an issue
 ```
 
 <Note>
@@ -79,13 +81,18 @@ A reference that is neither a UUID nor a `VULN-…` label is rejected with a 400
 pensar issues update <issueId> [options]
 ```
 
-| Option                     | Description                        |
-| -------------------------- | ---------------------------------- |
-| `--status <status>`        | New status                         |
-| `--closed-reason <reason>` | Reason for closing                 |
-| `--closed-comments <text>` | Additional comments when closing   |
-| `--false-positive`         | Flag the issue as a false positive |
-| `--fp-reason <reason>`     | Reason for the false positive flag |
+| Option                      | Description                                                             |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `--status <status>`         | New status                                                              |
+| `--disposition <value>`     | Why the issue is closed: `resolved`, `wont-fix`, `out-of-scope`, `risk-accepted` |
+| `--closed-reason <reason>`  | Reason for closing                                                      |
+| `--closed-comments <text>`  | Additional comments when closing                                        |
+| `--false-positive`          | Flag the issue as a false positive                                      |
+| `--fp-reason <reason>`      | Reason for the false positive flag                                      |
+
+`--disposition` records *why* an issue is closed as a structured value, so it can
+be filtered and counted. Without it a close reads as a plain resolution whatever
+the reason was. The four values above are the full accepted set.
 
 ### Retest an Issue
 
@@ -103,9 +110,9 @@ pensar issues link-pr <issueId> --url <prUrl>
 
 Links a pull request to the issue. `--url` is required.
 
-| Option        | Description                                          |
-| ------------- | ---------------------------------------------------- |
-| `--url <url>` | URL of the pull request to link (**required**)       |
+| Option        | Description                                    |
+| ------------- | ---------------------------------------------- |
+| `--url <url>` | URL of the pull request to link (**required**) |
 
 Returns `{ success, created, pullRequest, issue }`. `created` distinguishes a newly linked PR from one that was already attached, so re-running the command is safe.
 
@@ -117,6 +124,60 @@ pensar issues prs <issueId>
 
 Returns the pull requests linked to the issue as an array of `{ id, url, status, createMethod, createdAt }`. `createMethod` tells you whether the link came from an agent or from a person.
 
+### List Comments
+
+```bash
+pensar issues comments <issueId> [--page <n>] [--page-size <n>]
+```
+
+Returns the issue's review thread, **oldest first** — the running conversation
+between reviewers about a finding, which is where a corrected CVSS score or the
+argument for a dismissal usually lives.
+
+```json
+{
+  "comments": [
+    {
+      "id": "66666666-7777-8888-9999-000000000000",
+      "issueId": "11111111-2222-3333-4444-555555555555",
+      "body": "Rescored this to 7.1 — the endpoint needs an authenticated session.",
+      "author": {
+        "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "name": "Ada Lovelace",
+        "email": "ada@example.com",
+        "type": "user"
+      },
+      "createdAt": "2026-08-14T10:22:31.000Z",
+      "editedAt": null,
+      "url": "https://console.pensar.dev/acme/VULN-000123#comment-66666666-7777-8888-9999-000000000000"
+    }
+  ],
+  "pagination": { "page": 1, "pageSize": 50, "totalRows": 1, "totalPages": 1 }
+}
+```
+
+`author` is `null` when the person who wrote the comment no longer has an
+account. `editedAt` is `null` until the comment is edited. Mentions stay inline
+in `body` as `@first.last` — there is no separate mentions field.
+
+Default page size is 50; the maximum is 200.
+
+### Post a Comment
+
+```bash
+pensar issues comment <issueId> --body "<text>"
+```
+
+Adds a comment to the issue's thread and returns the created comment in the
+shape above. Mentions written as `@first.last` notify that person, exactly as
+they do from the Console.
+
+<Note>
+  Posting requires a **user login** (`pensar login`). A workspace API key is
+  accepted for reading comments but rejected for posting, because it has no
+  author to attribute the comment to.
+</Note>
+
 ## Examples
 
 ```bash
@@ -127,7 +188,7 @@ pensar issues --status open --severity critical
 pensar issues get VULN-000123
 
 # Close an issue with a reason
-pensar issues update VULN-000123 --status closed --closed-reason "Patched in v2.1"
+pensar issues update VULN-000123 --status closed --disposition resolved --closed-reason "Patched in v2.1"
 
 # Flag as false positive
 pensar issues update VULN-000123 --false-positive --fp-reason "Test environment only"
@@ -141,6 +202,10 @@ pensar issues get VULN-000123
 # Link the PR that fixes an issue, then confirm the link
 pensar issues link-pr VULN-000123 --url https://github.com/acme/api/pull/42
 pensar issues prs VULN-000123
+
+# Read the review thread on a finding, then reply to it
+pensar issues comments VULN-000123
+pensar issues comment VULN-000123 --body "Confirmed exploitable, rescored to 7.1"
 ```
 
 ## Related Commands

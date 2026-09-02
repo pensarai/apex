@@ -12,11 +12,17 @@
  *   pensar issues retest <issueId>                Retest an issue
  *   pensar issues link-pr <issueId> --url <url>   Link a pull request to an issue
  *   pensar issues prs <issueId>                   List pull requests linked to an issue
+ *   pensar issues comments <issueId>              List review comments on an issue
+ *   pensar issues comment <issueId> --body <text> Post a comment on an issue
  */
 
+import type { ClosedDisposition } from "../core/api";
 import {
+  CLOSED_DISPOSITIONS,
+  createIssueComment,
   getIssue,
   linkPullRequest,
+  listIssueComments,
   listIssuePullRequests,
   listIssues,
   retestIssue,
@@ -41,6 +47,8 @@ Usage:
   pensar issues retest <issueId>                 Retest an issue
   pensar issues link-pr <issueId> --url <url>    Link a pull request to an issue
   pensar issues prs <issueId>                    List pull requests linked to an issue
+  pensar issues comments <issueId>               List review comments on an issue
+  pensar issues comment <issueId> --body <text>  Post a comment on an issue
 
 <issueId> accepts the issue UUID or its label (e.g. VULN-000123).
 
@@ -57,11 +65,23 @@ Update options:
   --status <status>         New status
   --closed-reason <reason>  Reason for closing
   --closed-comments <text>  Additional comments
+  --disposition <value>     Why it is closed: resolved, wont-fix, out-of-scope,
+                            risk-accepted
   --false-positive          Flag as false positive
   --fp-reason <reason>      Reason for false positive flag
 
 Link-pr options:
   --url <url>               URL of the pull request to link (required)
+
+Comments options:
+  --page <n>                Page number (default 1)
+  --page-size <n>           Comments per page (default 50, max 200)
+
+Comment options:
+  --body <text>             Comment text (required)
+
+Comments are returned oldest first. Posting requires a user login; a workspace
+API key has no author to attribute a comment to.
 
 Options:
   -h, --help                Show this help message`);
@@ -105,6 +125,19 @@ async function main(): Promise<void> {
         | undefined;
       const closedReason = getFlag("--closed-reason", args);
       const closedComments = getFlag("--closed-comments", args);
+      const dispositionFlag = getFlag("--disposition", args);
+      if (
+        dispositionFlag !== undefined &&
+        !(CLOSED_DISPOSITIONS as readonly string[]).includes(dispositionFlag)
+      ) {
+        console.error(
+          `Error: invalid --disposition "${dispositionFlag}". Accepted: ${CLOSED_DISPOSITIONS.join(", ")}`,
+        );
+        return markCommandFailed();
+      }
+      const closedDisposition = dispositionFlag as
+        | ClosedDisposition
+        | undefined;
       const userFlaggedFalsePositive = args.includes("--false-positive")
         ? true
         : undefined;
@@ -114,6 +147,7 @@ async function main(): Promise<void> {
         status,
         closedReason,
         closedComments,
+        closedDisposition,
         userFlaggedFalsePositive,
         userFlaggedFalsePositiveReason,
       });
@@ -136,6 +170,30 @@ async function main(): Promise<void> {
         return markCommandFailed();
       }
       const result = await linkPullRequest(issueId, url);
+      console.log(JSON.stringify(result, null, 2));
+    } else if (sub === "comments") {
+      const issueId = args[1];
+      if (!issueId || issueId.startsWith("--")) {
+        console.error("Error: issue ID is required");
+        console.error("Usage: pensar issues comments <issueId>");
+        return markCommandFailed();
+      }
+      const page = getFlag("--page", args);
+      const pageSize = getFlag("--page-size", args);
+      const result = await listIssueComments(issueId, {
+        page: page ? Number(page) : undefined,
+        pageSize: pageSize ? Number(pageSize) : undefined,
+      });
+      console.log(JSON.stringify(result, null, 2));
+    } else if (sub === "comment") {
+      const issueId = args[1];
+      const body = getFlag("--body", args);
+      if (!issueId || issueId.startsWith("--") || !body) {
+        console.error("Error: issue ID and --body are required");
+        console.error('Usage: pensar issues comment <issueId> --body "<text>"');
+        return markCommandFailed();
+      }
+      const result = await createIssueComment(issueId, body);
       console.log(JSON.stringify(result, null, 2));
     } else if (sub === "prs") {
       const issueId = args[1];
