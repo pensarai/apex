@@ -119,6 +119,35 @@ describe("pentest usage callback forwarding", () => {
     );
   });
 
+  it("forwards durable AI hooks through the pentest swarm", async () => {
+    const languageModelMiddleware = {
+      __sentinel: "mw",
+    } as unknown as PentestWorkflowInput["languageModelMiddleware"];
+    const usageRecorder = {
+      __sentinel: "usage",
+    } as unknown as PentestWorkflowInput["usageRecorder"];
+    const streamIdFactory = (() =>
+      "sid") as unknown as PentestWorkflowInput["streamIdFactory"];
+
+    await runPentestSwarm({
+      targets: [
+        { target: "https://example.com", objectives: ["Test the target"] },
+      ],
+      model: {} as PentestWorkflowInput["model"],
+      session,
+      findingsRegistry: mocks.registry as never,
+      languageModelMiddleware,
+      usageRecorder,
+      streamIdFactory,
+    });
+
+    expect(mocks.targetedInputs[0]?.languageModelMiddleware).toBe(
+      languageModelMiddleware,
+    );
+    expect(mocks.targetedInputs[0]?.usageRecorder).toBe(usageRecorder);
+    expect(mocks.targetedInputs[0]?.streamIdFactory).toBe(streamIdFactory);
+  });
+
   it("forwards step and cache usage through fast strike", async () => {
     const onStepFinish = vi.fn();
     const onCacheMetrics = vi.fn();
