@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 
-import { type EndpointInfo, type MapResult, map } from "@pensar/surface";
+import { type EndpointInfo, map } from "@pensar/surface";
 
 import type { ConsolidatedEndpoint, FrameworkId } from "./types";
 
@@ -56,20 +56,6 @@ export type MapAppResult =
       endpoints: ConsolidatedEndpoint[];
       frameworks: FrameworkId[];
     };
-
-export type FallbackDecision =
-  | { fallback: true; reason: string }
-  | { fallback: false };
-
-export function shouldFallback(result: MapResult): FallbackDecision {
-  if (result.frameworks.length === 0) {
-    return { fallback: true, reason: "no frameworks detected" };
-  }
-  if (result.endpoints.length === 0) {
-    return { fallback: true, reason: "frameworks detected but zero endpoints" };
-  }
-  return { fallback: false };
-}
 
 /**
  * Group surface's per-`(method, path)` rows into one record per `(file, path)`.

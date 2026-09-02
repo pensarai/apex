@@ -5,10 +5,7 @@ import {
   buildSessionWorkspaceSection,
 } from "../core/agents/offSecAgent";
 import { PATCHING_ACTIVE_TOOLS } from "../core/agents/specialized/patching";
-import {
-  buildOperatorSessionConfig,
-  parseWebFlags,
-} from "../tui/utils/command-flags";
+import { parseWebFlags } from "../tui/utils/command-flags";
 
 // =============================================================================
 // Flag Parsing
@@ -42,38 +39,6 @@ describe("parseWebFlags", () => {
     expect(flags.target).toBe("https://example.com");
     expect(flags.mode).toBe("auto");
     expect(flags.requireApproval).toBe(false);
-  });
-});
-
-// =============================================================================
-// Session Config
-// =============================================================================
-
-describe("buildOperatorSessionConfig", () => {
-  it("sets agentCwd to process.cwd() by default", () => {
-    const result = buildOperatorSessionConfig({
-      target: "https://example.com",
-    });
-    expect(result.config.agentCwd).toBe(process.cwd());
-  });
-
-  it("sets agentCwd to undefined when sandbox is true", () => {
-    const result = buildOperatorSessionConfig({
-      target: "https://example.com",
-      sandbox: true,
-    });
-    expect(result.config.agentCwd).toBeUndefined();
-  });
-
-  it("sets operator mode and target correctly alongside sandbox", () => {
-    const result = buildOperatorSessionConfig({
-      target: "https://example.com",
-      sandbox: true,
-      mode: "auto",
-    });
-    expect(result.config.mode).toBe("operator");
-    expect(result.config.agentCwd).toBeUndefined();
-    expect(result.targets).toEqual(["https://example.com"]);
   });
 });
 

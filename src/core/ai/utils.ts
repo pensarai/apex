@@ -627,6 +627,7 @@ export function createSummarizationStream(
   } as unknown as StreamTextResult<ToolSet, never>;
 }
 
+/** @knipignore drives the live-API stream tests in ai.test.ts; no production caller. */
 export async function consumeStream(
   stream: StreamTextResult<ToolSet, never>,
   {

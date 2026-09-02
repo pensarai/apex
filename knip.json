@@ -23,9 +23,18 @@
     "src/core/session/index.ts",
     "src/core/workflows/whiteboxAttackSurface.ts"
   ],
-  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
+  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts", "loader-demo.tsx"],
   "ignoreDependencies": ["@playwright/mcp"],
-  "ignoreExportsUsedInFile": { "type": true },
+  "ignore": [
+    "**/*.test.{ts,tsx,js,jsx,mts,cts}",
+    "**/*.spec.{ts,tsx,js,jsx,mts,cts}",
+    "**/__tests__/**",
+    "**/__mocks__/**",
+    "**/testkit.ts"
+  ],
+  "vitest": false,
+  "tags": ["-knipignore"],
+  "ignoreExportsUsedInFile": true,
   "include": [
     "files",
     "dependencies",
