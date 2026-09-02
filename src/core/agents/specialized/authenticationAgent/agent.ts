@@ -329,11 +329,13 @@ function buildAuthPrompt(
     const smsInstructions = hasSmsPasswordless
       ? `
 If a credential has a phoneNumber additional field (Mobile OTP / sms-passwordless), phone is the login
-identifier — not MFA-after-password. browser_fill credentialField="phoneNumber", click send-code, then
-execute_command \`sleep 5\` and call sms_list_messages with sinceMs = Date.now() at that click (claim=true
-once a message is present). If the list is empty, sleep and list again; if it stays empty, fail with what
-you observed — do not hang waiting. Then browser_fill the OTP. Do NOT report phone_verification as a
-barrier for this flow. TOTP-via-env for authenticator MFA is unchanged.`
+identifier — not MFA-after-password. Immediately before filling the phone field, call sms_list_messages
+with reserve=true; never pass that tool a phone number. If it returns 429, retry the reservation later as
+a separate attempt without waiting in the tool. Then browser_fill credentialField="phoneNumber", click
+send-code, and call sms_list_messages with sinceMs = Date.now() at that click and claim=true after a brief
+execute_command sleep. If the list is empty, make one delayed list retry; if it stays empty, fail with what
+you observed. Then browser_fill the OTP. Do NOT report phone_verification as a barrier for this flow.
+TOTP-via-env for authenticator MFA is unchanged.`
       : "";
     parts.push(`INSTRUCTIONS:
 You have credentials available via credential IDs — authenticate immediately.
