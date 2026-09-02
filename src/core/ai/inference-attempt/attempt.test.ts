@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isAttemptId, isIdempotencyKey } from "../id/id";
+import { isAttemptId, isIdempotencyKey } from "../../id/id";
 import {
   allocateAttemptIdentity,
-  type ProviderAttemptEnvelope,
-  ProviderAttemptValidationError,
-  parseProviderAttemptEnvelope,
-  startProviderAttempt,
+  type InferenceAttempt,
+  InferenceAttemptValidationError,
+  parseInferenceAttempt,
+  startInferenceAttempt,
   UNKNOWN_TOKENS,
 } from "./index";
 
@@ -16,7 +16,7 @@ const REQUESTED = {
 };
 
 function start() {
-  return startProviderAttempt({
+  return startInferenceAttempt({
     operationKind: "agent.stream",
     requested: REQUESTED,
     attribution: {
@@ -52,7 +52,7 @@ describe("allocateAttemptIdentity", () => {
   });
 });
 
-describe("startProviderAttempt", () => {
+describe("startInferenceAttempt", () => {
   it("exposes identity before any provider usage is attached", () => {
     const handle = start();
     expect(isAttemptId(handle.attemptId)).toBe(true);
@@ -120,7 +120,7 @@ describe("startProviderAttempt", () => {
 
     expect(failed.lifecycle).toBe("failed");
     expect(retry.attemptId).not.toBe(first.attemptId);
-    expect(retry.idempotencyKey).not.toBe(first.idempotencyKey);
+    expect(retry.idempotencyKey).toBe(first.idempotencyKey);
     expect(retry.started.lineage).toEqual({
       sequence: 2,
       previousAttemptId: first.attemptId,
@@ -131,9 +131,15 @@ describe("startProviderAttempt", () => {
     expect(completed.lifecycle).toBe("completed");
   });
 
+  it("rejects a second retry() on the same handle", () => {
+    const first = start();
+    first.retry();
+    expect(() => first.retry()).toThrow(InferenceAttemptValidationError);
+  });
+
   it("attributes a child attempt to its parent and root", () => {
     const root = start();
-    const child = startProviderAttempt({
+    const child = startInferenceAttempt({
       operationKind: "context.summarize",
       requested: REQUESTED,
       attribution: {
@@ -148,32 +154,32 @@ describe("startProviderAttempt", () => {
   });
 });
 
-describe("parseProviderAttemptEnvelope", () => {
+describe("parseInferenceAttempt", () => {
   it("rejects a first attempt that names a previous id", () => {
     const handle = start();
     const raw = {
       ...handle.started,
       lineage: { sequence: 1, previousAttemptId: handle.attemptId },
     };
-    expect(() => parseProviderAttemptEnvelope(raw)).toThrow(
-      ProviderAttemptValidationError,
+    expect(() => parseInferenceAttempt(raw)).toThrow(
+      InferenceAttemptValidationError,
     );
   });
 
   it("rejects money-shaped fields on the envelope", () => {
     const handle = start();
     expect(() =>
-      parseProviderAttemptEnvelope({
+      parseInferenceAttempt({
         ...handle.started,
         costUsd: 0.12,
       }),
-    ).toThrow(ProviderAttemptValidationError);
+    ).toThrow(InferenceAttemptValidationError);
   });
 });
 
 describe("envelope money-free contract", () => {
   it("serialized attempts expose no money or account keys", () => {
-    const envelope: ProviderAttemptEnvelope = start().complete({
+    const envelope: InferenceAttempt = start().complete({
       transport: "anthropic-messages",
       usage: {
         input_tokens: 10,

@@ -1,6 +1,6 @@
 import type { AttemptEvidence, AttemptTransport } from "./envelope";
 import { ATTEMPT_TRANSPORTS, CACHE_BREAKPOINTS } from "./envelope";
-import { ProviderAttemptValidationError } from "./errors";
+import { InferenceAttemptValidationError } from "./errors";
 import { type AttemptTokens, finalizeTokens, parseTokenCount } from "./tokens";
 
 export interface TransportUsageInput {
@@ -19,7 +19,7 @@ export interface AdaptedUsage {
 
 export function adaptTransportUsage(input: TransportUsageInput): AdaptedUsage {
   if (!ATTEMPT_TRANSPORTS.includes(input.transport)) {
-    throw new ProviderAttemptValidationError(
+    throw new InferenceAttemptValidationError(
       "invalid-envelope",
       `unknown transport ${String(input.transport)}`,
     );
@@ -293,7 +293,7 @@ function extractEvidence(
 
   if (input.cacheBreakpoint) {
     if (!CACHE_BREAKPOINTS.includes(input.cacheBreakpoint)) {
-      throw new ProviderAttemptValidationError(
+      throw new InferenceAttemptValidationError(
         "invalid-envelope",
         `unknown cacheBreakpoint ${String(input.cacheBreakpoint)}`,
       );
@@ -312,7 +312,7 @@ function asRecord(
     return undefined;
   }
   if (typeof value !== "object" || Array.isArray(value)) {
-    throw new ProviderAttemptValidationError(
+    throw new InferenceAttemptValidationError(
       "invalid-token",
       `${label} must be an object`,
     );
@@ -382,7 +382,7 @@ function readNonEmptyString(value: unknown, label: string): string | undefined {
     return undefined;
   }
   if (typeof value !== "string" || value.length === 0) {
-    throw new ProviderAttemptValidationError(
+    throw new InferenceAttemptValidationError(
       "invalid-envelope",
       `${label} must be a non-empty string`,
     );

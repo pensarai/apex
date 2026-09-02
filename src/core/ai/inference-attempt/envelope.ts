@@ -1,10 +1,10 @@
 import { z } from "zod";
-import type { AttemptID, IdempotencyKey } from "../id/id";
-import { isAttemptId, isIdempotencyKey } from "../id/id";
-import { ProviderAttemptValidationError } from "./errors";
+import type { AttemptID, IdempotencyKey } from "../../id/id";
+import { isAttemptId, isIdempotencyKey } from "../../id/id";
+import { InferenceAttemptValidationError } from "./errors";
 
-export const PROVIDER_ATTEMPT_SCHEMA = "pensar.provider_attempt" as const;
-export const PROVIDER_ATTEMPT_VERSION = 1 as const;
+export const INFERENCE_ATTEMPT_SCHEMA = "pensar.inference_attempt" as const;
+export const INFERENCE_ATTEMPT_VERSION = 1 as const;
 
 export const ATTEMPT_LIFECYCLES = [
   "started",
@@ -45,7 +45,7 @@ const attemptIdSchema = z.string().refine(isAttemptId, {
 }) as z.ZodType<AttemptID>;
 
 const idempotencyKeySchema = z.string().refine(isIdempotencyKey, {
-  message: "idempotencyKey must start with idk_",
+  message: "idempotencyKey must start with idem_",
 }) as z.ZodType<IdempotencyKey>;
 
 const maybeTokenCountSchema = z.number().int().nonnegative().nullable();
@@ -83,9 +83,9 @@ const evidenceSchema = z.strictObject({
   cacheBreakpoint: z.enum(CACHE_BREAKPOINTS).optional(),
 });
 
-export const ProviderAttemptEnvelopeSchema = z.strictObject({
-  schema: z.literal(PROVIDER_ATTEMPT_SCHEMA),
-  version: z.literal(PROVIDER_ATTEMPT_VERSION),
+export const InferenceAttemptSchema = z.strictObject({
+  schema: z.literal(INFERENCE_ATTEMPT_SCHEMA),
+  version: z.literal(INFERENCE_ATTEMPT_VERSION),
   attemptId: attemptIdSchema,
   idempotencyKey: idempotencyKeySchema,
   lifecycle: z.enum(ATTEMPT_LIFECYCLES),
@@ -102,19 +102,17 @@ export type AttemptModelRef = z.infer<typeof modelRefSchema>;
 export type AttemptAttribution = z.infer<typeof attributionSchema>;
 export type AttemptLineage = z.infer<typeof lineageSchema>;
 export type AttemptEvidence = z.infer<typeof evidenceSchema>;
-export type ProviderAttemptEnvelope = z.infer<
-  typeof ProviderAttemptEnvelopeSchema
->;
+export type InferenceAttempt = z.infer<typeof InferenceAttemptSchema>;
 
 export function assertLineage(lineage: AttemptLineage): void {
   if (lineage.sequence === 1 && lineage.previousAttemptId !== undefined) {
-    throw new ProviderAttemptValidationError(
+    throw new InferenceAttemptValidationError(
       "invalid-envelope",
       "first attempt cannot name a previousAttemptId",
     );
   }
   if (lineage.sequence > 1 && lineage.previousAttemptId === undefined) {
-    throw new ProviderAttemptValidationError(
+    throw new InferenceAttemptValidationError(
       "invalid-envelope",
       "retry lineage requires previousAttemptId",
     );

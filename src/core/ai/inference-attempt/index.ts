@@ -13,19 +13,19 @@
  *   wipe a reported input count.
  * - `projectAttemptCacheMetrics` maps onto `CacheMetrics` only when a
  *   known cache field is `> 0`, matching `onCacheMetrics`.
- * - `onStepFinish` / `onCacheMetrics` / `onUsage` stay the live sinks
- *   until attempt lifecycles are wired (#1013). Do not treat this module
- *   as a billing ledger.
+ * - `onStepFinish` / `onCacheMetrics` / `onUsage` stay the live sinks.
+ *   This module is not wired into `streamResponse` yet — that is #1013.
+ *   Do not treat this module as a billing ledger.
  */
 
 export type { AdaptedUsage, TransportUsageInput } from "./adapters";
 export { adaptTransportUsage } from "./adapters";
 export type {
   AttemptUsageInput,
-  ProviderAttemptHandle,
-  StartProviderAttemptInput,
+  InferenceAttemptHandle,
+  StartInferenceAttemptInput,
 } from "./builder";
-export { startProviderAttempt } from "./builder";
+export { startInferenceAttempt } from "./builder";
 export type {
   AttemptAttribution,
   AttemptEvidence,
@@ -35,20 +35,20 @@ export type {
   AttemptOperationKind,
   AttemptTransport,
   CacheBreakpoint,
-  ProviderAttemptEnvelope,
+  InferenceAttempt,
 } from "./envelope";
 export {
   ATTEMPT_LIFECYCLES,
   ATTEMPT_OPERATION_KINDS,
   ATTEMPT_TRANSPORTS,
   CACHE_BREAKPOINTS,
-  PROVIDER_ATTEMPT_SCHEMA,
-  PROVIDER_ATTEMPT_VERSION,
-  ProviderAttemptEnvelopeSchema,
+  INFERENCE_ATTEMPT_SCHEMA,
+  INFERENCE_ATTEMPT_VERSION,
+  InferenceAttemptSchema,
 } from "./envelope";
 
-export type { ProviderAttemptValidationCode } from "./errors";
-export { ProviderAttemptValidationError } from "./errors";
+export type { InferenceAttemptValidationCode } from "./errors";
+export { InferenceAttemptValidationError } from "./errors";
 export type { AttemptIdentity } from "./identity";
 export { allocateAttemptIdentity } from "./identity";
 export type {
@@ -61,4 +61,4 @@ export {
 } from "./project";
 export type { AttemptTokens, MaybeTokenCount } from "./tokens";
 export { UNKNOWN_TOKEN_COUNT, UNKNOWN_TOKENS } from "./tokens";
-export { parseProviderAttemptEnvelope } from "./validate";
+export { parseInferenceAttempt } from "./validate";

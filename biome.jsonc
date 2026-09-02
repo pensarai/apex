@@ -92,6 +92,13 @@
               },
               {
                 "group": [
+                  "**/core/ai/inference-attempt/*",
+                  "!**/core/ai/inference-attempt/index"
+                ],
+                "message": "Import from the core/ai barrel (index), not inference-attempt internals."
+              },
+              {
+                "group": [
                   "**/core/agents/offSecAgent/*",
                   "!**/core/agents/offSecAgent/index"
                 ],
@@ -150,10 +157,6 @@
               {
                 "group": ["**/tui/keybindings/*", "!**/tui/keybindings/index"],
                 "message": "Import from the tui/keybindings barrel (index), not its internals."
-              },
-              {
-                "group": ["**/core/attempt/*", "!**/core/attempt/index"],
-                "message": "Import from the core/attempt barrel (index), not its internals."
               }
             ]
           }

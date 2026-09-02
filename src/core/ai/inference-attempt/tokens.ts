@@ -1,4 +1,4 @@
-import { ProviderAttemptValidationError } from "./errors";
+import { InferenceAttemptValidationError } from "./errors";
 
 /** Known token count, or `null` when the provider did not report the field. */
 export type MaybeTokenCount = number | null;
@@ -34,7 +34,7 @@ export function parseTokenCount(
     value < 0 ||
     !Number.isFinite(value)
   ) {
-    throw new ProviderAttemptValidationError(
+    throw new InferenceAttemptValidationError(
       "invalid-token",
       `${label} must be a finite non-negative integer or null`,
     );
@@ -104,7 +104,7 @@ function deriveInputTokens(tokens: AttemptTokens): AttemptTokens {
     ["cacheWrite", derived.cacheWrite],
   ] as const) {
     if (value !== null && value < 0) {
-      throw new ProviderAttemptValidationError(
+      throw new InferenceAttemptValidationError(
         "inclusive-identity",
         `derived ${label} is negative (${value})`,
       );
@@ -124,7 +124,7 @@ function assertTokenIdentity(tokens: AttemptTokens): void {
     cacheWrite !== null
   ) {
     if (inclusiveInput !== uncachedInput + cacheRead + cacheWrite) {
-      throw new ProviderAttemptValidationError(
+      throw new InferenceAttemptValidationError(
         "inclusive-identity",
         `inclusive input ${inclusiveInput} !== uncached ${uncachedInput} + cacheRead ${cacheRead} + cacheWrite ${cacheWrite}`,
       );
@@ -142,7 +142,7 @@ function assertTokenIdentity(tokens: AttemptTokens): void {
     ["cacheWrite", cacheWrite],
   ] as const) {
     if (value !== null && value > inclusiveInput) {
-      throw new ProviderAttemptValidationError(
+      throw new InferenceAttemptValidationError(
         "inclusive-identity",
         `${label} ${value} exceeds inclusive input ${inclusiveInput}`,
       );
@@ -151,7 +151,7 @@ function assertTokenIdentity(tokens: AttemptTokens): void {
 
   const knownSum = (uncachedInput ?? 0) + (cacheRead ?? 0) + (cacheWrite ?? 0);
   if (knownSum > inclusiveInput) {
-    throw new ProviderAttemptValidationError(
+    throw new InferenceAttemptValidationError(
       "inclusive-identity",
       `known input components ${knownSum} exceed inclusive input ${inclusiveInput}`,
     );

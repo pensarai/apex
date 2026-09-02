@@ -12,12 +12,13 @@ a billing ledger, but it was easy to treat it as one.
 
 ## Decision
 
-A versioned, provider-neutral `ProviderAttemptEnvelope` represents one
+A versioned, provider-neutral `InferenceAttempt` represents one
 physical inference attempt. Token categories are finite non-negative
 integers when known and explicit `null` when the provider did not
 report them. The contract contains no money, rate, customer, or
-provider-account fields. Identity (`atm_…` / `idk_…`) is allocated
-before the provider request. Existing `onUsage` / `onCacheMetrics` /
+provider-account fields. Identity (`atm_…` / `idem_…`) is allocated
+before the provider request; the idempotency key is stable across
+retries of that request. Existing `onUsage` / `onCacheMetrics` /
 `onStepFinish` consumers keep their #1002 zero-filling projection until
 they migrate.
 

@@ -1,16 +1,14 @@
-import type { ProviderAttemptEnvelope } from "./envelope";
-import { assertLineage, ProviderAttemptEnvelopeSchema } from "./envelope";
-import { ProviderAttemptValidationError } from "./errors";
+import type { InferenceAttempt } from "./envelope";
+import { assertLineage, InferenceAttemptSchema } from "./envelope";
+import { InferenceAttemptValidationError } from "./errors";
 import { finalizeTokens } from "./tokens";
 
-export function parseProviderAttemptEnvelope(
-  value: unknown,
-): ProviderAttemptEnvelope {
-  const parsed = ProviderAttemptEnvelopeSchema.safeParse(value);
+export function parseInferenceAttempt(value: unknown): InferenceAttempt {
+  const parsed = InferenceAttemptSchema.safeParse(value);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     const path = issue?.path.length ? issue.path.join(".") : "envelope";
-    throw new ProviderAttemptValidationError(
+    throw new InferenceAttemptValidationError(
       "invalid-envelope",
       `${path}: ${issue?.message ?? "invalid envelope"}`,
     );

@@ -24,7 +24,7 @@ describe("id minters", () => {
     expect(newMessageId()).toMatch(/^msg_/);
     expect(newPartId()).toMatch(/^prt_/);
     expect(newAttemptId()).toMatch(/^atm_/);
-    expect(newIdempotencyKey()).toMatch(/^idk_/);
+    expect(newIdempotencyKey()).toMatch(/^idem_/);
   });
 
   it("produce unique session ids over 100k iterations", () => {
@@ -60,7 +60,7 @@ describe("id guards", () => {
     const msg = newMessageId();
     const prt = newPartId();
     const atm = newAttemptId();
-    const idk = newIdempotencyKey();
+    const idem = newIdempotencyKey();
 
     expect(isSessionId(msg)).toBe(false);
     expect(isSessionId(prt)).toBe(false);
@@ -73,7 +73,7 @@ describe("id guards", () => {
     expect(isPartId(msg)).toBe(false);
 
     expect(isAttemptId(ses)).toBe(false);
-    expect(isAttemptId(idk)).toBe(false);
+    expect(isAttemptId(idem)).toBe(false);
     expect(isIdempotencyKey(atm)).toBe(false);
     expect(isIdempotencyKey(ses)).toBe(false);
   });
@@ -83,6 +83,6 @@ describe("id guards", () => {
     expect(isMessageId("")).toBe(false);
     expect(isPartId("prt")).toBe(false); // no underscore separator
     expect(isAttemptId("atm")).toBe(false);
-    expect(isIdempotencyKey("idk")).toBe(false);
+    expect(isIdempotencyKey("idem")).toBe(false);
   });
 });

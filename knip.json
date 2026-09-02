@@ -19,7 +19,7 @@
     "src/lib/cvss/index.ts",
     "src/core/ai/index.ts",
     "src/core/ai/ai.ts",
-    "src/core/attempt/index.ts",
+    "src/core/ai/inference-attempt/index.ts",
     "src/core/prompt-injections/index.ts",
     "src/core/session/index.ts",
     "src/core/workflows/whiteboxAttackSurface.ts"

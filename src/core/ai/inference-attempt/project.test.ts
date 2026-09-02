@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   projectAttemptCacheMetrics,
   projectAttemptUsage,
-  startProviderAttempt,
+  startInferenceAttempt,
 } from "./index";
 
 const handle = () =>
-  startProviderAttempt({
+  startInferenceAttempt({
     operationKind: "structured.generate",
     requested: {
       provider: "pensar",

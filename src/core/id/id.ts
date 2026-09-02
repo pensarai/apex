@@ -9,7 +9,7 @@ const prefixes = {
   part: "prt",
   run: "run",
   attempt: "atm",
-  idempotency: "idk",
+  idempotency: "idem",
 } as const;
 
 export type IdentifierPrefix = keyof typeof prefixes;
@@ -73,7 +73,7 @@ export type PartID = string & { readonly __brand: "PartID" };
 export type RunID = string & { readonly __brand: "RunID" };
 /** A physical inference-attempt identifier: `atm_<time><random>`. */
 export type AttemptID = string & { readonly __brand: "AttemptID" };
-/** An attempt idempotency key: `idk_<time><random>`. */
+/** An attempt idempotency key: `idem_<time><random>`. */
 export type IdempotencyKey = string & { readonly __brand: "IdempotencyKey" };
 
 /** Mint a fresh, time-descending session id. */

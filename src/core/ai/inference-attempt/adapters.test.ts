@@ -7,8 +7,8 @@ import {
   type AttemptTokens,
   type AttemptTransport,
   adaptTransportUsage,
-  type ProviderAttemptValidationCode,
-  ProviderAttemptValidationError,
+  type InferenceAttemptValidationCode,
+  InferenceAttemptValidationError,
 } from "./index";
 
 interface AttemptFixture {
@@ -22,7 +22,7 @@ interface AttemptFixture {
     tokens: AttemptTokens;
     evidence?: Partial<AttemptEvidence>;
   };
-  reject?: ProviderAttemptValidationCode;
+  reject?: InferenceAttemptValidationCode;
 }
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -75,8 +75,8 @@ describe("adaptTransportUsage fixtures", () => {
       });
       expect.unreachable("expected contradictory usage to be rejected");
     } catch (error) {
-      expect(error).toBeInstanceOf(ProviderAttemptValidationError);
-      expect((error as ProviderAttemptValidationError).code).toBe(
+      expect(error).toBeInstanceOf(InferenceAttemptValidationError);
+      expect((error as InferenceAttemptValidationError).code).toBe(
         fixture.reject,
       );
     }

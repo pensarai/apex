@@ -1,4 +1,4 @@
-import type { ProviderAttemptEnvelope } from "./envelope";
+import type { InferenceAttempt } from "./envelope";
 
 /**
  * #1002 usage-callback shape. Unknown envelope fields become 0 — the
@@ -21,7 +21,7 @@ export interface ProjectedCacheMetrics {
 }
 
 export function projectAttemptUsage(
-  envelope: ProviderAttemptEnvelope,
+  envelope: InferenceAttempt,
 ): ProjectedAttemptUsage {
   return {
     inputTokens: projectInputTokens(envelope),
@@ -36,7 +36,7 @@ export function projectAttemptUsage(
  * inclusive (cache keys omitted), reconstruct it from known uncached
  * plus zero-filled cache — do not drop a known uncached total to 0.
  */
-function projectInputTokens(envelope: ProviderAttemptEnvelope): number {
+function projectInputTokens(envelope: InferenceAttempt): number {
   const { inclusiveInput, uncachedInput, cacheRead, cacheWrite } =
     envelope.tokens;
   if (inclusiveInput !== null) {
@@ -49,7 +49,7 @@ function projectInputTokens(envelope: ProviderAttemptEnvelope): number {
 }
 
 export function projectAttemptCacheMetrics(
-  envelope: ProviderAttemptEnvelope,
+  envelope: InferenceAttempt,
 ): ProjectedCacheMetrics | null {
   const cacheReadInputTokens = envelope.tokens.cacheRead ?? 0;
   const cacheCreationInputTokens = envelope.tokens.cacheWrite ?? 0;
