@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:http";
-import { context, trace } from "@opentelemetry/api";
+import { context, createContextKey, trace } from "@opentelemetry/api";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildResource,
@@ -418,11 +418,14 @@ describe("provider ownership", () => {
       await runtime.forceFlush();
       await runtime.shutdown();
 
-      // The host context manager survived Apex's shutdown: context still
-      // flows through it (a scoped run sees its own context back).
-      const marker = { probe: true };
-      const seen = await context.with(context.active(), async () => marker);
-      expect(seen).toBe(marker);
+      // The host context manager survived Apex's shutdown: a value placed on
+      // a scoped context is visible through context.active() inside the run.
+      const probeKey = createContextKey("host-context-probe");
+      const probeContext = context.active().setValue(probeKey, "alive");
+      const seen = context.with(probeContext, () =>
+        context.active().getValue(probeKey),
+      );
+      expect(seen).toBe("alive");
     } finally {
       hostContext.disable();
       context.disable();
