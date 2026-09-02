@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     groupByRootCause: vi.fn(async () => {}),
     getFindings: vi.fn(() => []),
   },
+  registryOptions: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("../agents/specialized/pentest/agent", () => ({
@@ -61,12 +62,30 @@ vi.mock("../agents/offSecAgent", () => ({
 
 vi.mock("../findings/registry", () => ({
   FindingsRegistry: {
-    fromDirectory: () => mocks.registry,
+    fromDirectory: (_path: string, options: Record<string, unknown>) => {
+      mocks.registryOptions.push(options);
+      return mocks.registry;
+    },
   },
 }));
 
+vi.mock("../session/loader", () => ({
+  loadAttackSurfaceResults: () => ({
+    targets: [
+      {
+        target: "https://example.com/api",
+        objective: "Test the target",
+      },
+    ],
+  }),
+}));
+
 import { runFastStrike } from "./fastStrike";
-import { type PentestWorkflowInput, runPentestSwarm } from "./pentest";
+import {
+  type PentestWorkflowInput,
+  runPentestSwarm,
+  runPentestWorkflow,
+} from "./pentest";
 
 let rootPath: string;
 let session: SessionInfo;
@@ -89,6 +108,7 @@ beforeEach(() => {
 afterEach(() => {
   mocks.targetedInputs.length = 0;
   mocks.fastStrikeInputs.length = 0;
+  mocks.registryOptions.length = 0;
   vi.clearAllMocks();
   rmSync(rootPath, { recursive: true, force: true });
 });
@@ -165,5 +185,19 @@ describe("pentest usage callback forwarding", () => {
       cacheReadInputTokens: 8,
       cacheCreationInputTokens: 2,
     });
+  });
+});
+
+describe("pentest findings session attribution", () => {
+  it("attributes the workflow registry to the root session", async () => {
+    await runPentestWorkflow({
+      target: "https://example.com",
+      model: {} as PentestWorkflowInput["model"],
+      session,
+    });
+
+    expect(mocks.registryOptions).toContainEqual(
+      expect.objectContaining({ sessionId: session.id }),
+    );
   });
 });
