@@ -386,7 +386,10 @@ describe("final export", () => {
         {
           attributes: {
             "gen_ai.operation.name": "invoke_agent",
-            "pensar.run.id": "run_final",
+            "gen_ai.agent.id": "ses_root",
+            "gen_ai.conversation.id": "ses_root",
+            "pensar.session.id": "ses_root",
+            "pensar.root_session.id": "ses_root",
           },
         },
         async (root) => {

@@ -15,7 +15,7 @@ import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../http/targetHeaders";
-import { newMessageId, newPartId, newRunId } from "../../id/id";
+import { newMessageId, newPartId } from "../../id/id";
 import { createLogger } from "../../logger/structured";
 import {
   getApexTracer,
@@ -273,9 +273,6 @@ export class OffensiveSecurityAgent<TResult = void> {
   private readonly subagentName?: string;
   /** Operating mode (tools surface); used for run-span attribution. */
   private readonly agentMode: AgentMode;
-  /** Run id minted by consume() for the in-flight execution (root runs). */
-  private currentRunId?: string;
-
   /** The current open assistant message id (`msg_…`); minted on `start-step` in {@link consume}, `null` between steps. */
   private currentMessageId: string | null = null;
 
@@ -734,11 +731,6 @@ export class OffensiveSecurityAgent<TResult = void> {
         // to the session root for the root/operator agent.
         sessionPath: messagesDir,
         sessionId: this.busSessionId,
-        // Run/execution attribution for AI-span metadata — the run id is
-        // minted in consume() before the stream starts (the getter deferral
-        // above guarantees ordering); subagents add their execution id.
-        ...(this.currentRunId ? { runId: this.currentRunId } : {}),
-        ...(this.subagentId ? { agentId: this.subagentId } : {}),
         onStepFinish: async (event) => {
           const auxiliaryModelEvent =
             event.response.id === "summarization" ||
@@ -962,32 +954,23 @@ export class OffensiveSecurityAgent<TResult = void> {
       return undefined as TResult;
     };
 
-    // One invoke_agent span per execution: root runs get the full run
-    // attribution (stable run id, mode); subagent runs nest beneath the root
-    // span via the async context and carry their own execution-session id.
+    // One invoke_agent span per execution. The conversation/root id stays
+    // stable across the tree while each span identifies its current agent.
     const isSubagent = Boolean(sid);
     const spanLabel = isSubagent
       ? (this.subagentName ?? sid ?? "subagent")
       : this.agentMode;
-    const runId = isSubagent ? undefined : newRunId();
-    this.currentRunId = runId;
-    // One stable conversation/session id for the whole trace: every agent in
-    // the run shares the session object (`_session.id` = the root session),
-    // while a subagent's own id is its EXECUTION id — never the conversation
-    // id (busSessionId is the routing id, which for subagents IS their own).
-    const traceSessionId = this._session.id;
+    const rootSessionId = this._session.id;
+    const agentSessionId = this.busSessionId;
     const runSpanAttributes: Record<string, string> = {
       "gen_ai.operation.name": "invoke_agent",
+      "gen_ai.agent.id": agentSessionId,
       "gen_ai.agent.name": spanLabel,
-      "gen_ai.conversation.id": traceSessionId,
-      "session.id": traceSessionId,
-      "pensar.session.id": traceSessionId,
-      ...(isSubagent
-        ? { "pensar.agent.execution.id": sid as string }
-        : {
-            "pensar.run.id": runId as string,
-            "pensar.agent.mode": this.agentMode,
-          }),
+      "gen_ai.conversation.id": rootSessionId,
+      "session.id": rootSessionId,
+      "pensar.session.id": agentSessionId,
+      "pensar.root_session.id": rootSessionId,
+      ...(!isSubagent ? { "pensar.agent.mode": this.agentMode } : {}),
     };
 
     const runInSpan = () =>

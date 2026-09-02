@@ -33,8 +33,6 @@ export type AiTelemetryOperation =
 export interface CreateAiTelemetryInput {
   operation: AiTelemetryOperation;
   sessionId?: string;
-  runId?: string;
-  agentId?: string;
 }
 
 /**
@@ -52,8 +50,6 @@ export function createAiTelemetrySettings(
   const recordPayloads = shouldRecordAiPayloads();
   const metadata: Record<string, string> = {};
   if (input.sessionId) metadata.sessionId = input.sessionId;
-  if (input.runId) metadata.runId = input.runId;
-  if (input.agentId) metadata.agentId = input.agentId;
   return {
     isEnabled: true,
     recordInputs: recordPayloads,

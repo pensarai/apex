@@ -203,18 +203,12 @@ describe("createAiTelemetrySettings", () => {
     expect(settings.recordOutputs).toBe(true);
   });
 
-  it("propagates session, run, and agent metadata when present", () => {
+  it("propagates session metadata when present", () => {
     const settings = createAiTelemetrySettings({
       operation: "apex.agent.stream",
       sessionId: "ses_1",
-      runId: "run_1",
-      agentId: "sub_1",
     });
-    expect(settings.metadata).toEqual({
-      sessionId: "ses_1",
-      runId: "run_1",
-      agentId: "sub_1",
-    });
+    expect(settings.metadata).toEqual({ sessionId: "ses_1" });
   });
 
   it("operation identifiers are a fixed low-cardinality set", () => {
@@ -760,11 +754,11 @@ describe("auxiliary model lifecycle", () => {
 });
 
 // ---------------------------------------------------------------------------
-// PR4: runId/agentId metadata propagation + structured operation ids
+// PR4: stable session metadata + structured operation ids
 // ---------------------------------------------------------------------------
 
 describe("identity metadata propagation", () => {
-  it("streamResponse stamps runId/agentId onto AI-span telemetry", async () => {
+  it("streamResponse emits session metadata without redundant identity fields", async () => {
     mockState.model = oneStepTextModel();
     await drain(
       streamResponse({
@@ -772,15 +766,13 @@ describe("identity metadata propagation", () => {
         model: MODEL,
         silent: true,
         sessionId: "ses_root",
-        runId: "run_meta1",
-        agentId: "ses_exec9",
       }),
     );
 
     const span = requireSpan(otel.getFinishedSpans(), "ai.streamText");
     expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe("ses_root");
-    expect(span.attributes["ai.telemetry.metadata.runId"]).toBe("run_meta1");
-    expect(span.attributes["ai.telemetry.metadata.agentId"]).toBe("ses_exec9");
+    expect(span.attributes["ai.telemetry.metadata.runId"]).toBeUndefined();
+    expect(span.attributes["ai.telemetry.metadata.agentId"]).toBeUndefined();
     expect(span.attributes["ai.telemetry.functionId"]).toBe(
       "apex.agent.stream",
     );
@@ -794,8 +786,6 @@ describe("identity metadata propagation", () => {
       prompt: "hi",
       sessionId: "ses_root",
       operation: "apex.finding.cvss",
-      runId: "run_meta2",
-      agentId: "ses_exec8",
     });
 
     const span = requireSpan(
@@ -806,7 +796,7 @@ describe("identity metadata propagation", () => {
       "apex.finding.cvss",
     );
     expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe("ses_root");
-    expect(span.attributes["ai.telemetry.metadata.runId"]).toBe("run_meta2");
-    expect(span.attributes["ai.telemetry.metadata.agentId"]).toBe("ses_exec8");
+    expect(span.attributes["ai.telemetry.metadata.runId"]).toBeUndefined();
+    expect(span.attributes["ai.telemetry.metadata.agentId"]).toBeUndefined();
   });
 });

@@ -1646,7 +1646,7 @@ describe("root agent-run spans", () => {
     };
   }
 
-  it("one root span per top-level run, with full run attribution", async () => {
+  it("one root span per top-level run, with canonical identity", async () => {
     const otel = setupOtel();
     try {
       const agent = buildStubAgent({ fullStream: singleStepStream() });
@@ -1659,11 +1659,15 @@ describe("root agent-run spans", () => {
       expect(invokeSpans).toHaveLength(1);
       const attrs = invokeSpans[0]?.attributes as Record<string, string>;
       expect(attrs["gen_ai.operation.name"]).toBe("invoke_agent");
+      expect(attrs["gen_ai.agent.id"]).toBe("ses_stub");
       expect(attrs["gen_ai.agent.name"]).toBe("default");
       expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
+      expect(attrs["session.id"]).toBe("ses_stub");
       expect(attrs["pensar.session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.root_session.id"]).toBe("ses_stub");
       expect(attrs["pensar.agent.mode"]).toBe("default");
-      expect(attrs["pensar.run.id"]).toMatch(/^run_/);
+      expect(attrs["pensar.run.id"]).toBeUndefined();
+      expect(attrs["pensar.agent.execution.id"]).toBeUndefined();
     } finally {
       await otel.teardown();
     }
@@ -1773,7 +1777,7 @@ describe("root agent-run spans", () => {
     }
   });
 
-  it("subagent runs keep their span but carry no run id", async () => {
+  it("subagent runs keep current and root identity distinct", async () => {
     const otel = setupOtel();
     try {
       const agent = buildStubAgent({
@@ -1788,12 +1792,13 @@ describe("root agent-run spans", () => {
         .find((s) => s.name === "invoke_agent recon-sub");
       expect(span).toBeDefined();
       const attrs = span?.attributes as Record<string, string>;
+      expect(attrs["gen_ai.agent.id"]).toBe("ses_sub_1");
       expect(attrs["gen_ai.agent.name"]).toBe("recon-sub");
-      // PR4 identity contract: the shared session id is the conversation id;
-      // the subagent's own id is the separate execution id.
       expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
-      expect(attrs["pensar.session.id"]).toBe("ses_stub");
-      expect(attrs["pensar.agent.execution.id"]).toBe("ses_sub_1");
+      expect(attrs["session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.session.id"]).toBe("ses_sub_1");
+      expect(attrs["pensar.root_session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.agent.execution.id"]).toBeUndefined();
       expect(attrs["pensar.run.id"]).toBeUndefined();
       expect(attrs["pensar.agent.mode"]).toBeUndefined();
     } finally {
@@ -1956,7 +1961,7 @@ describe("trace identity and root IO", () => {
     };
   }
 
-  it("root spans mirror session.id and carry the run id", async () => {
+  it("root spans carry canonical conversation and agent identity", async () => {
     const otel = setupOtel();
     try {
       const agent = buildStubAgent({ fullStream: oneStep() });
@@ -1964,17 +1969,19 @@ describe("trace identity and root IO", () => {
 
       const span = otel.spans().find((s) => s.name === "invoke_agent default");
       const attrs = span?.attributes as Record<string, string>;
+      expect(attrs["gen_ai.agent.id"]).toBe("ses_stub");
       expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
       expect(attrs["session.id"]).toBe("ses_stub");
       expect(attrs["pensar.session.id"]).toBe("ses_stub");
-      expect(attrs["pensar.run.id"]).toMatch(/^run_/);
+      expect(attrs["pensar.root_session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.run.id"]).toBeUndefined();
       expect(attrs["pensar.agent.execution.id"]).toBeUndefined();
     } finally {
       await otel.teardown();
     }
   });
 
-  it("subagent spans carry their execution id, never as the conversation id", async () => {
+  it("subagent spans separate agent identity from the root conversation", async () => {
     const otel = setupOtel();
     try {
       const agent = buildStubAgent({
@@ -1988,11 +1995,12 @@ describe("trace identity and root IO", () => {
         .spans()
         .find((s) => s.name === "invoke_agent recon-sub");
       const attrs = span?.attributes as Record<string, string>;
-      // Identity: the shared (root) session is the conversation/session id;
-      // the subagent's own id stays a separate execution attribute.
+      expect(attrs["gen_ai.agent.id"]).toBe("ses_exec_1");
       expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
       expect(attrs["session.id"]).toBe("ses_stub");
-      expect(attrs["pensar.agent.execution.id"]).toBe("ses_exec_1");
+      expect(attrs["pensar.session.id"]).toBe("ses_exec_1");
+      expect(attrs["pensar.root_session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.agent.execution.id"]).toBeUndefined();
       expect(attrs["pensar.run.id"]).toBeUndefined();
     } finally {
       await otel.teardown();
