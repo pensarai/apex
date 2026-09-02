@@ -17,7 +17,12 @@ import {
 } from "../../http/targetHeaders";
 import { newMessageId, newPartId, newRunId } from "../../id/id";
 import { createLogger } from "../../logger/structured";
-import { getApexTracer, withSubagentSessionBaggage } from "../../observability";
+import {
+  getApexTracer,
+  registerActiveRootSpan,
+  unregisterActiveRootSpan,
+  withSubagentSessionBaggage,
+} from "../../observability";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
@@ -923,6 +928,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         `invoke_agent ${spanLabel}`,
         { attributes: runSpanAttributes },
         async (span) => {
+          // Root runs register so process-exit shutdown can end an
+          // in-flight run's span before the final flush.
+          if (!isSubagent) registerActiveRootSpan(span);
           try {
             return await runConsume();
           } catch (err) {
@@ -935,6 +943,7 @@ export class OffensiveSecurityAgent<TResult = void> {
             );
             throw err;
           } finally {
+            unregisterActiveRootSpan(span);
             // Ends only after runConsume's finalization (persistence +
             // owned-resource disposal) has settled.
             span.end();

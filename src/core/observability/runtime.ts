@@ -16,8 +16,10 @@ import {
   BasicTracerProvider,
   BatchSpanProcessor,
   type SpanExporter,
+  type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import { version as apexVersion } from "../../../package.json";
+import { endAllActiveRootSpans } from "./active-root-spans";
 
 /**
  * Optional standalone OTLP/HTTP trace runtime. Apex keeps OTel disabled
@@ -27,14 +29,49 @@ import { version as apexVersion } from "../../../package.json";
  * SDK and must not have Apex install a competing global provider.
  */
 
+export type ObservabilityShutdownResult = "completed" | "timed-out";
+
 export interface ObservabilityRuntime {
   forceFlush(): Promise<void>;
-  shutdown(): Promise<void>;
+  /** Idempotent and bounded: ends active root spans, flushes, shuts down. */
+  shutdown(): Promise<ObservabilityShutdownResult>;
+}
+
+/** Options for {@link startObservabilityRuntime}. */
+export interface StartObservabilityRuntimeOptions {
+  /** Bound on shutdown (flush + exporter teardown); default 5000ms. */
+  shutdownTimeoutMs?: number;
+  /** Replace the default BatchSpanProcessor(OTLP exporter) — tests. */
+  spanProcessors?: SpanProcessor[];
+}
+
+const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000;
+
+function withTimeout(
+  promise: Promise<void>,
+  timeoutMs: number,
+): Promise<ObservabilityShutdownResult> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (result: ObservabilityShutdownResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => settle("timed-out"), timeoutMs);
+    promise.then(
+      () => settle("completed"),
+      () => settle("completed"),
+    );
+  });
 }
 
 const NOOP_RUNTIME: ObservabilityRuntime = {
   async forceFlush() {},
-  async shutdown() {},
+  async shutdown() {
+    return "completed";
+  },
 };
 
 type Env = Record<string, string | undefined>;
@@ -131,15 +168,18 @@ let activeRuntime: ObservabilityRuntime | null = null;
  */
 export function startObservabilityRuntime(
   env: Env = process.env,
+  opts?: StartObservabilityRuntimeOptions,
 ): ObservabilityRuntime {
   if (activeRuntime) return activeRuntime;
   if (isOtelSdkDisabled(env)) return NOOP_RUNTIME;
   if (!resolveTracesEndpoint(env)) return NOOP_RUNTIME;
 
+  const shutdownTimeoutMs =
+    opts?.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
   const exporter = createTraceExporter(resolveTracesProtocol(env));
   const provider = new BasicTracerProvider({
     resource: buildResource(env),
-    spanProcessors: [new BatchSpanProcessor(exporter)],
+    spanProcessors: opts?.spanProcessors ?? [new BatchSpanProcessor(exporter)],
   });
   const contextManager = new AsyncLocalStorageContextManager();
   contextManager.enable();
@@ -147,21 +187,129 @@ export function startObservabilityRuntime(
   trace.setGlobalTracerProvider(provider);
   context.setGlobalContextManager(contextManager);
 
+  let shutdownPromise: Promise<ObservabilityShutdownResult> | null = null;
   const runtime: ObservabilityRuntime = {
     async forceFlush() {
       await provider.forceFlush();
     },
-    async shutdown() {
-      activeRuntime = null;
-      await provider.shutdown();
-      contextManager.disable();
-      // Reset globals so a later start (or the host's own SDK) begins clean.
-      trace.disable();
-      context.disable();
+    shutdown() {
+      // Idempotent: every caller awaits the same bounded shutdown.
+      if (!shutdownPromise) {
+        const shutdownWork = (async () => {
+          // End in-flight root runs first so their spans still export…
+          endAllActiveRootSpans();
+          // …then flush explicitly before processor/exporter teardown.
+          try {
+            await provider.forceFlush();
+          } finally {
+            await provider.shutdown();
+          }
+        })();
+        shutdownPromise = withTimeout(shutdownWork, shutdownTimeoutMs)
+          .then((result) => {
+            contextManager.disable();
+            // Reset globals so a later start (or the host's own SDK) begins clean.
+            trace.disable();
+            context.disable();
+            return result;
+          })
+          .finally(() => {
+            activeRuntime = null;
+          });
+      }
+      return shutdownPromise;
     },
   };
   activeRuntime = runtime;
   return runtime;
+}
+
+/**
+ * Standalone-process exit wiring: signals and fatal errors run the bounded
+ * runtime shutdown before exiting — never a direct process.exit() while a
+ * flush could still complete. `cleanup` runs synchronously before the flush
+ * (entrypoint teardown such as renderer destruction); fatal errors are
+ * reported after cleanup — so the TUI has left the alternate screen buffer
+ * and the output survives — and preserved via exit code 1.
+ */
+export function installObservabilityExitHandlers(
+  runtime: ObservabilityRuntime,
+  opts?: {
+    /** Synchronous entrypoint teardown before the flush. */
+    cleanup?: (code: number) => void;
+    /** Report a fatal error (entrypoints own their logging). */
+    onError?: (
+      error: unknown,
+      source: "uncaughtException" | "unhandledRejection",
+    ) => void;
+  },
+): (
+  code: number,
+  error?: unknown,
+  source?: "uncaughtException" | "unhandledRejection",
+) => Promise<void> {
+  let exitPromise: Promise<void> | null = null;
+  let exitCode = 0;
+  let fatalSeen = false;
+  const reportError = (
+    error: unknown,
+    source: "uncaughtException" | "unhandledRejection",
+  ) => {
+    try {
+      opts?.onError?.(error, source);
+    } catch {
+      // Error reporting must not block the process exit path.
+    }
+  };
+  const exitWith = (
+    code: number,
+    error?: unknown,
+    source?: "uncaughtException" | "unhandledRejection",
+  ) => {
+    let pendingReport: (() => void) | null = null;
+    if (error !== undefined && !fatalSeen) {
+      fatalSeen = true;
+      exitCode = 1;
+      const fatalSource = source ?? "uncaughtException";
+      pendingReport = () => reportError(error, fatalSource);
+    } else if (!fatalSeen && exitCode === 0) {
+      exitCode = code;
+    }
+    if (exitPromise) {
+      // Cleanup already ran (terminal restored) — a late fatal reports now.
+      pendingReport?.();
+      return exitPromise;
+    }
+    try {
+      opts?.cleanup?.(code);
+    } catch (cleanupError) {
+      if (!fatalSeen) {
+        fatalSeen = true;
+        exitCode = 1;
+        pendingReport = () => reportError(cleanupError, "uncaughtException");
+      }
+    }
+    // Report only after entrypoint teardown: the TUI must leave the
+    // alternate screen buffer first or the console output is discarded.
+    pendingReport?.();
+    exitPromise = runtime
+      .shutdown()
+      .catch(() => {})
+      .then(() => process.exit(exitCode));
+    return exitPromise;
+  };
+
+  process.on("SIGINT", () => void exitWith(130));
+  process.on("SIGTERM", () => void exitWith(143));
+  process.on(
+    "uncaughtException",
+    (error) => void exitWith(1, error, "uncaughtException"),
+  );
+  process.on(
+    "unhandledRejection",
+    (reason) => void exitWith(1, reason, "unhandledRejection"),
+  );
+  return exitWith;
 }
 
 /** Test/teardown hook: stop any active runtime and reset the singleton. */
