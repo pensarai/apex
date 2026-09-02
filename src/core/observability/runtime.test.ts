@@ -534,11 +534,12 @@ describe("end-to-end export contract", () => {
         {
           attributes: {
             "gen_ai.operation.name": "invoke_agent",
+            "gen_ai.agent.id": "ses_e2e",
             "gen_ai.agent.name": "default",
             "gen_ai.conversation.id": "ses_e2e",
             "session.id": "ses_e2e",
             "pensar.session.id": "ses_e2e",
-            "pensar.run.id": "run_e2e",
+            "pensar.root_session.id": "ses_e2e",
             "pensar.agent.mode": "default",
             "gen_ai.prompt": "objective: test the target",
           },
@@ -556,11 +557,12 @@ describe("end-to-end export contract", () => {
                   {
                     attributes: {
                       "gen_ai.operation.name": "invoke_agent",
+                      "gen_ai.agent.id": "ses_exec_e2e",
                       "gen_ai.agent.name": "recon-sub",
                       "gen_ai.conversation.id": "ses_e2e",
                       "session.id": "ses_e2e",
-                      "pensar.session.id": "ses_e2e",
-                      "pensar.agent.execution.id": "ses_exec_e2e",
+                      "pensar.session.id": "ses_exec_e2e",
+                      "pensar.root_session.id": "ses_e2e",
                     },
                   },
                   async (sub) => {
@@ -573,7 +575,6 @@ describe("end-to-end export contract", () => {
                           model: "claude-haiku-4-5",
                           silent: true,
                           sessionId: "ses_e2e",
-                          agentId: "ses_exec_e2e",
                         }),
                       );
                     } finally {
@@ -592,7 +593,6 @@ describe("end-to-end export contract", () => {
                 model: "claude-haiku-4-5",
                 silent: true,
                 sessionId: "ses_e2e",
-                runId: "run_e2e",
                 tools: { probe },
                 stopWhen: stepCountIs(2),
               }),
@@ -680,13 +680,25 @@ describe("end-to-end export contract", () => {
       expect(sub?.traceId).toBe(root?.traceId);
       expect(sub?.parentSpanId).toBe(tool?.spanId);
 
-      // Identity: one session across every span, execution id separate.
+      // Identity: one root conversation across the tree, current agent kept
+      // separately on each invoke span.
       for (const sp of spans) {
         if (sp.name?.startsWith("invoke_agent")) {
           expect(attr(sp, "gen_ai.conversation.id")).toBe("ses_e2e");
+          expect(attr(sp, "session.id")).toBe("ses_e2e");
+          expect(attr(sp, "pensar.root_session.id")).toBe("ses_e2e");
+          expect(attr(sp, "pensar.run.id")).toBeUndefined();
+          expect(attr(sp, "pensar.agent.execution.id")).toBeUndefined();
         }
       }
-      expect(attr(sub, "pensar.agent.execution.id")).toBe("ses_exec_e2e");
+      expect(attr(root, "gen_ai.agent.id")).toBe("ses_e2e");
+      expect(attr(root, "pensar.session.id")).toBe("ses_e2e");
+      expect(attr(sub, "gen_ai.agent.id")).toBe("ses_exec_e2e");
+      expect(attr(sub, "pensar.session.id")).toBe("ses_exec_e2e");
+      for (const sp of spans.filter((span) => span.name === "ai.streamText")) {
+        expect(attr(sp, "ai.telemetry.metadata.runId")).toBeUndefined();
+        expect(attr(sp, "ai.telemetry.metadata.agentId")).toBeUndefined();
+      }
 
       // Payload mode: prompts and tool payloads exported.
       expect(String(attr(root, "gen_ai.prompt"))).toContain("objective");
