@@ -574,7 +574,11 @@ function wrapStreamWithErrorHandler(
                 await Promise.resolve(originalStream.response).catch(() => {});
                 throw streamError;
               }
-            } catch (error) {
+            } catch (caughtError) {
+              // A tail-drain failure must not replace the provider error that
+              // put the wrapper into drain mode.
+              const error =
+                streamError !== undefined ? streamError : caughtError;
               // Error-part runs complete normally inside the SDK, so nothing
               // sets the root generation span failed — mark it here (the
               // SDK's own thrown-error marking is guarded against below).

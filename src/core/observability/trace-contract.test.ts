@@ -334,6 +334,67 @@ describe("existing trace contract: model spans", () => {
     );
   });
 
+  it("preserves an in-stream error when its tail drain times out", async () => {
+    vi.useFakeTimers();
+    const providerError = new Error("model exploded before stalled tail");
+    let calls = 0;
+    let tailWaitStartedResolve!: () => void;
+    const tailWaitStarted = new Promise<void>((resolve) => {
+      tailWaitStartedResolve = resolve;
+    });
+
+    try {
+      mockState.model = new MockLanguageModelV3({
+        provider: "mock-anthropic",
+        modelId: MODEL,
+        doStream: async () => {
+          calls += 1;
+          if (calls > 1) {
+            return {
+              stream: simulateReadableStream({
+                chunks:
+                  textStepChunks() as unknown as Array<LanguageModelV3StreamPart>,
+              }),
+            };
+          }
+
+          let emittedError = false;
+          return {
+            stream: new ReadableStream<LanguageModelV3StreamPart>({
+              pull(controller) {
+                if (!emittedError) {
+                  emittedError = true;
+                  controller.enqueue({ type: "stream-start", warnings: [] });
+                  controller.enqueue({ type: "error", error: providerError });
+                  return;
+                }
+                tailWaitStartedResolve();
+                return new Promise<void>(() => {});
+              },
+            }),
+          };
+        },
+      });
+
+      const consumption = drain(
+        streamResponse({
+          prompt: "hi",
+          messages: [{ role: "user", content: "hi" }],
+          model: MODEL,
+          silent: true,
+        }),
+      );
+      const rejection = expect(consumption).rejects.toBe(providerError);
+
+      await tailWaitStarted;
+      await vi.advanceTimersByTimeAsync(300_000);
+      await rejection;
+      expect(calls).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("records details for non-Error provider failures", () => {
     const tracker = createGenerationSpanTracker();
     tracker.tracer.startActiveSpan("ai.streamText", (span) => {
