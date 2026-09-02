@@ -111,8 +111,7 @@ Requires a Console sandbox (AGENT_API_URL).`,
           if (input.sinceMs !== undefined || input.claim !== undefined) {
             refinementCtx.addIssue({
               code: "custom",
-              message:
-                "reserve=true cannot be combined with sinceMs or claim",
+              message: "reserve=true cannot be combined with sinceMs or claim",
             });
           }
           return;
