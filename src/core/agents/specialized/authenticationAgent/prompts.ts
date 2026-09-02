@@ -133,14 +133,16 @@ or two fresh codes are both rejected.
 If a credential has a \`phoneNumber\` additional field, the phone number IS the login identifier — not MFA
 after a password. Do **not** report \`phone_verification\` as a barrier for this flow.
 
-1. \`browser_fill\` with \`credentialId\` and \`credentialField="phoneNumber"\` (never type the number).
-2. Click the target's send-code / text-me control. Note \`Date.now()\` at that click as \`sinceMs\`.
-3. \`execute_command\` \`sleep 5\`, then call \`sms_list_messages\` with that \`credentialId\` and \`sinceMs\`.
-   If the list is empty, sleep and list again a few times. If it stays empty or returns an error, stop
-   and report what you observed — do not hang in a wait loop. Set \`claim=true\` once a message is present
-   so other runs cannot reuse the OTP.
-4. \`browser_fill\` the OTP from the claimed/listed result (\`code\`, or parse \`body\` if \`code\` is null).
-5. Continue the login and call \`complete_authentication\`.
+1. Call \`sms_list_messages\` with \`reserve=true\` immediately before filling the phone field. Never pass
+   a phone number to this tool. If it returns 429, retry this reservation later as a separate attempt; do
+   not wait or poll inside the tool.
+2. \`browser_fill\` with \`credentialId\` and \`credentialField="phoneNumber"\` (never type the number).
+3. Click the target's send-code / text-me control. Note \`Date.now()\` at that click as \`sinceMs\`.
+4. \`execute_command\` \`sleep 5\`, then call \`sms_list_messages\` with \`sinceMs\` and \`claim=true\`.
+   If the list is empty, make one delayed list retry; if it stays empty or returns an error, stop and report
+   what you observed — do not hang in a wait loop.
+5. \`browser_fill\` the OTP from the claimed/listed result (\`code\`, or parse \`body\` if \`code\` is null).
+6. Continue the login and call \`complete_authentication\`.
 
 TOTP-via-environment-variable above is unchanged and still applies when the login asks for an authenticator
 app code.
