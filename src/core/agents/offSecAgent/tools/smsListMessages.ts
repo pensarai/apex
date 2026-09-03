@@ -101,6 +101,7 @@ Requires a Console sandbox (AGENT_API_URL).`,
           ),
         toolCallDescription: z
           .string()
+          .optional()
           .describe(
             "A concise, human-readable description of what this tool call is doing",
           ),
