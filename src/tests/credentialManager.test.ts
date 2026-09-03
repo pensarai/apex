@@ -391,6 +391,26 @@ describe("CredentialManager", () => {
       expect(prompt).toContain("Additional secret fields: phoneNumber");
       expect(prompt).not.toContain("stage-managed-number");
     });
+
+    it("lists unrecognized authMethod as a secret field instead of dropping it", () => {
+      cm.add({
+        id: "cred-unknown-auth",
+        username: "tester",
+        password: "secret",
+        additionalFields: {
+          authMethod: "email-otp",
+          recoveryCode: "hidden-recovery",
+        },
+      });
+
+      const prompt = cm.formatForPrompt();
+      expect(prompt).not.toContain("Authentication method:");
+      expect(prompt).toContain(
+        "Additional secret fields: authMethod, recoveryCode",
+      );
+      expect(prompt).not.toContain("email-otp");
+      expect(prompt).not.toContain("hidden-recovery");
+    });
   });
 
   describe("additional secret fields", () => {
@@ -427,6 +447,23 @@ describe("CredentialManager", () => {
       const ref = cm.getReference(id)!;
       expect(ref.authMethod).toBe("sms-passwordless");
       expect(ref.additionalFieldKeys).toEqual(["phoneNumber"]);
+      expect(JSON.stringify(ref)).not.toContain("stage-managed-number");
+    });
+
+    it("keeps unrecognized authMethod on the secret-field list", () => {
+      const id = cm.add({
+        username: "admin",
+        password: "pw",
+        additionalFields: {
+          authMethod: "email-otp",
+          phoneNumber: "stage-managed-number",
+        },
+      });
+
+      const ref = cm.getReference(id)!;
+      expect(ref.authMethod).toBeUndefined();
+      expect(ref.additionalFieldKeys).toEqual(["authMethod", "phoneNumber"]);
+      expect(JSON.stringify(ref)).not.toContain("email-otp");
       expect(JSON.stringify(ref)).not.toContain("stage-managed-number");
     });
 

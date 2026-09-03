@@ -19,8 +19,8 @@ import type { SessionInfo } from "../../../session";
 import { scopedLogger } from "../../../util/lazyLogger";
 import { OffensiveSecurityAgent } from "../../offSecAgent";
 import type { StreamIdFactory } from "../../offSecAgent/types";
-import { detectOSAndEnhancePrompt } from "../utils";
 import { MOBILE_OTP_PROMPT_GUIDANCE } from "../mobileOtpPrompt";
+import { detectOSAndEnhancePrompt } from "../utils";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import type { AuthBarrier } from "./types";
 

@@ -64,10 +64,11 @@ function toReference(stored: StoredCredential): CredentialReference {
   }
   if (stored.additionalFields) {
     const authMethod = stored.additionalFields.authMethod;
-    if (isMobileOtpAuthMethod(authMethod)) ref.authMethod = authMethod;
+    const recognized = isMobileOtpAuthMethod(authMethod);
+    if (recognized) ref.authMethod = authMethod;
 
     const keys = Object.keys(stored.additionalFields).filter(
-      (key) => key !== "authMethod",
+      (key) => !(key === "authMethod" && recognized),
     );
     if (keys.length > 0) ref.additionalFieldKeys = keys;
   }
