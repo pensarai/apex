@@ -172,6 +172,31 @@ describe("StepTraceWriter", () => {
     expect(records.map((r) => r.stepIndex)).toEqual([0, 1, 2]);
   });
 
+  it("usage-only records do not reset the cumulative message cursor", () => {
+    const tracePath = join(tmpDir, "trace.jsonl");
+    const writer = new StepTraceWriter({ tracePath, agentId: null });
+    const msgs = buildMessages();
+
+    writer.recordStep(msgs.afterStep0, { inputTokens: 100, outputTokens: 50 });
+    writer.recordStep(
+      [],
+      { inputTokens: 25, outputTokens: 5, cacheReadTokens: 20 },
+      { usageOnly: true },
+    );
+    writer.recordStep(msgs.afterStep1, { inputTokens: 200, outputTokens: 80 });
+
+    const records = readStepRecords(tracePath);
+    expect(records[1]?.actions).toEqual([]);
+    expect(records[1]?.usage.cacheReadTokens).toBe(20);
+    expect(records[2]?.text).toBeNull();
+    expect(records[2]?.observations?.map((item) => item.toolCallId)).toEqual([
+      "tc_001",
+    ]);
+    expect(records[2]?.actions.map((item) => item.toolCallId)).toEqual([
+      "tc_002",
+    ]);
+  });
+
   it("sets observations to null on step 0", () => {
     const tracePath = join(tmpDir, "trace.jsonl");
     const writer = new StepTraceWriter({ tracePath, agentId: null });
