@@ -2040,6 +2040,35 @@ describe("trace identity and root IO", () => {
     }
   });
 
+  it("records root IO for the primary Fast Strike run", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({
+        fullStream: oneStep(),
+        resolveResult: () => ({ summary: "strike complete" }),
+        subagentId: "fast-strike",
+        agentMode: "fast-strike",
+      });
+      Object.defineProperty(agent, "userPrompt", {
+        value: "strike the acme api",
+      });
+
+      await agent.consume();
+
+      const span = otel
+        .spans()
+        .find((candidate) => candidate.name === "invoke_agent fast-strike");
+      expect(span?.attributes["gen_ai.prompt"]).toBe("strike the acme api");
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        '"summary":"strike complete"',
+      );
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+  });
+
   it("records the captured response tool result as root output", async () => {
     process.env.AI_TRACE_RECORD_PAYLOADS = "true";
     const otel = setupOtel();

@@ -983,7 +983,11 @@ export class OffensiveSecurityAgent<TResult = void> {
           if (!isSubagent) registerActiveRootSpan(span);
           // Root-level input/output for trace previews — ONLY under full
           // payload capture (sensitive: objectives can name internal hosts).
-          const recordRootIO = !isSubagent && shouldRecordAiPayloads();
+          // Fast Strike uses a synthetic subagent id for UI routing but is the
+          // primary run in that workflow.
+          const recordRootIO =
+            (!isSubagent || this.agentMode === "fast-strike") &&
+            shouldRecordAiPayloads();
           if (recordRootIO && this.userPrompt) {
             span.setAttribute("gen_ai.prompt", this.userPrompt);
           }
