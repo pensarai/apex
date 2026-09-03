@@ -48,7 +48,7 @@ const httpRequestInputSchema = z.object({
     .union([z.string(), promptInjectionRefSchema])
     .optional()
     .describe(
-      'Request body (for POST, PUT, PATCH), sent verbatim to the target. Pass it as a raw string, not a JSON object — e.g. \'{"user":"admin"}\' as the string `{"user":"admin"}`. Any payload that must reach the target byte-for-byte MUST be a JSON-encoded string, never an object: this includes prototype-pollution payloads (send `{"__proto__":{"isAdmin":true}}` as a string, NOT as an object with a `__proto__` key, which the tool-call transport rejects), injection strings, and intentionally malformed JSON. To use a hidden prompt-injection payload, pass a PromptInjectionRef object instead of raw payload text.',
+      'Request body (for POST, PUT, PATCH), sent to the target verbatim. Pass it as a string — for a JSON body, JSON-encode it into that string (e.g. `{"user":"admin"}`) rather than a nested object. To send a hidden prompt-injection payload instead, pass a PromptInjectionRef object.',
     ),
   followRedirects: z
     .boolean()
