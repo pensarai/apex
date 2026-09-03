@@ -441,6 +441,14 @@ describe("provider ownership", () => {
 
 const mockState: { model: unknown } = { model: null };
 
+async function drain(stream: {
+  fullStream: AsyncIterable<unknown>;
+}): Promise<void> {
+  for await (const _part of stream.fullStream) {
+    // drain
+  }
+}
+
 const STEP_ONE_CHUNKS = [
   { type: "stream-start", warnings: [] },
   { type: "tool-input-start", id: "c1", toolName: "probe" },
@@ -571,7 +579,6 @@ describe("end-to-end export contract", () => {
                   async (sub) => {
                     try {
                       call += 1; // the subagent's own model call
-                      const { drain } = await import("./e2e-drain");
                       await drain(
                         streamResponse({
                           prompt: "subagent task",
@@ -589,7 +596,6 @@ describe("end-to-end export contract", () => {
               },
             };
 
-            const { drain } = await import("./e2e-drain");
             await drain(
               streamResponse({
                 prompt: "objective: test the target",
