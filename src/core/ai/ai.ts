@@ -21,6 +21,7 @@ import {
 import type { z } from "zod";
 import { createLogger } from "../logger/structured";
 import {
+  type AiTelemetryOperation,
   createAiTelemetrySettings,
   createGenerationSpanTracker,
   type GenerationSpanTracker,
@@ -1589,6 +1590,8 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
   /** Session id (`ses_…`) of the caller — stamped onto AI-span telemetry. */
   sessionId?: string;
+  /** Stable operation id; defaults to `apex.structured.generate`. */
+  operation?: AiTelemetryOperation;
 }
 
 const MAX_OBJECT_RATE_LIMIT_RETRIES = 8;
@@ -1646,7 +1649,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
         maxRetries: 0,
         abortSignal,
         experimental_telemetry: createAiTelemetrySettings({
-          operation: "apex.structured.generate",
+          operation: opts.operation ?? "apex.structured.generate",
           sessionId,
         }),
       });

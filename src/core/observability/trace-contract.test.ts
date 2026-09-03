@@ -44,6 +44,7 @@ const { parentOf, requireSpan, spansNamed, startOtelTestHarness } =
 // ---------------------------------------------------------------------------
 
 const MODEL = "claude-haiku-4-5";
+const ROOT_SESSION_ID = "ses_root";
 
 const NESTED_USAGE = {
   inputTokens: { total: 1000, noCache: 100, cacheRead: 900, cacheWrite: 0 },
@@ -160,7 +161,12 @@ async function subagentInvoke(
       {
         attributes: {
           "gen_ai.operation.name": "invoke_agent",
+          "gen_ai.agent.id": subagentId,
           "gen_ai.agent.name": label,
+          "gen_ai.conversation.id": ROOT_SESSION_ID,
+          "session.id": ROOT_SESSION_ID,
+          "pensar.session.id": subagentId,
+          "pensar.root_session.id": ROOT_SESSION_ID,
         },
       },
       async (span) => {
@@ -571,10 +577,12 @@ describe("root agent-run tree", () => {
     // Root span with the agent's production attribute shape.
     const rootAttributes = {
       "gen_ai.operation.name": "invoke_agent",
+      "gen_ai.agent.id": ROOT_SESSION_ID,
       "gen_ai.agent.name": "default",
-      "gen_ai.conversation.id": "ses_root",
-      "pensar.session.id": "ses_root",
-      "pensar.run.id": "run_test123",
+      "gen_ai.conversation.id": ROOT_SESSION_ID,
+      "session.id": ROOT_SESSION_ID,
+      "pensar.session.id": ROOT_SESSION_ID,
+      "pensar.root_session.id": ROOT_SESSION_ID,
       "pensar.agent.mode": "default",
     };
 
@@ -621,9 +629,21 @@ describe("root agent-run tree", () => {
     expect(parentOf(spans, subInvoke)?.spanContext().spanId).toBe(
       toolSpan.spanContext().spanId,
     );
-    // Root attributes survive.
-    expect(root.attributes["pensar.run.id"]).toBe("run_test123");
+    // Root and current-agent identity survive without redundant run ids.
+    expect(root.attributes["gen_ai.agent.id"]).toBe(ROOT_SESSION_ID);
+    expect(root.attributes["gen_ai.conversation.id"]).toBe(ROOT_SESSION_ID);
+    expect(root.attributes["pensar.session.id"]).toBe(ROOT_SESSION_ID);
+    expect(root.attributes["pensar.root_session.id"]).toBe(ROOT_SESSION_ID);
+    expect(root.attributes["pensar.run.id"]).toBeUndefined();
     expect(root.attributes["pensar.agent.mode"]).toBe("default");
+    expect(subInvoke.attributes["gen_ai.agent.id"]).toBe("ses_tree_sub");
+    expect(subInvoke.attributes["gen_ai.conversation.id"]).toBe(
+      ROOT_SESSION_ID,
+    );
+    expect(subInvoke.attributes["pensar.session.id"]).toBe("ses_tree_sub");
+    expect(subInvoke.attributes["pensar.root_session.id"]).toBe(
+      ROOT_SESSION_ID,
+    );
   });
 
   it("concurrent subagents under one root keep their own parents and trace", async () => {
@@ -634,10 +654,12 @@ describe("root agent-run tree", () => {
       {
         attributes: {
           "gen_ai.operation.name": "invoke_agent",
+          "gen_ai.agent.id": ROOT_SESSION_ID,
           "gen_ai.agent.name": "default",
-          "gen_ai.conversation.id": "ses_root",
-          "pensar.session.id": "ses_root",
-          "pensar.run.id": "run_conc",
+          "gen_ai.conversation.id": ROOT_SESSION_ID,
+          "session.id": ROOT_SESSION_ID,
+          "pensar.session.id": ROOT_SESSION_ID,
+          "pensar.root_session.id": ROOT_SESSION_ID,
           "pensar.agent.mode": "default",
         },
       },

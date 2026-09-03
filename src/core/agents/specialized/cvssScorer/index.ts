@@ -371,6 +371,7 @@ export async function scoreFindingWithCVSS(
   model: AIModel,
   authConfig?: AIAuthConfig,
   abortSignal?: AbortSignal,
+  sessionId?: string,
 ): Promise<CVSSScorerResult> {
   const prompt = buildScoringPrompt(input);
 
@@ -382,6 +383,8 @@ export async function scoreFindingWithCVSS(
     system: CVSS_SCORER_SYSTEM_PROMPT,
     authConfig,
     abortSignal,
+    sessionId,
+    operation: "apex.finding.cvss",
   });
 
   // Calculate final score using the CVSS calculator

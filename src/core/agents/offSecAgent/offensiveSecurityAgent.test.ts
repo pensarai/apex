@@ -240,6 +240,7 @@ function buildStubAgent(overrides: {
   latestMessages?: unknown[] | null;
   writeImpl?: (messagesPath: string, contents: string) => Promise<void>;
   responseCaptured?: Promise<unknown>;
+  responseToolResult?: unknown;
   subagentId?: string;
   subagentName?: string;
   agentMode?: "default" | "plan" | "fast-strike";
@@ -268,6 +269,9 @@ function buildStubAgent(overrides: {
   // Never resolves by default, so consume() settles via the drain path.
   Object.defineProperty(agent, "responseCaptured", {
     value: overrides.responseCaptured ?? new Promise(() => {}),
+  });
+  Object.defineProperty(agent, "_responseToolResult", {
+    value: overrides.responseToolResult,
   });
   // Stub bypasses the constructor, so provide a minimal session for busSessionId.
   Object.defineProperty(agent, "_session", {
@@ -1642,7 +1646,7 @@ describe("root agent-run spans", () => {
     };
   }
 
-  it("one root span per top-level run, with full run attribution", async () => {
+  it("one root span per top-level run, with canonical identity", async () => {
     const otel = setupOtel();
     try {
       const agent = buildStubAgent({ fullStream: singleStepStream() });
@@ -1655,11 +1659,15 @@ describe("root agent-run spans", () => {
       expect(invokeSpans).toHaveLength(1);
       const attrs = invokeSpans[0]?.attributes as Record<string, string>;
       expect(attrs["gen_ai.operation.name"]).toBe("invoke_agent");
+      expect(attrs["gen_ai.agent.id"]).toBe("ses_stub");
       expect(attrs["gen_ai.agent.name"]).toBe("default");
       expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
+      expect(attrs["session.id"]).toBe("ses_stub");
       expect(attrs["pensar.session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.root_session.id"]).toBe("ses_stub");
       expect(attrs["pensar.agent.mode"]).toBe("default");
-      expect(attrs["pensar.run.id"]).toMatch(/^run_/);
+      expect(attrs["pensar.run.id"]).toBeUndefined();
+      expect(attrs["pensar.agent.execution.id"]).toBeUndefined();
     } finally {
       await otel.teardown();
     }
@@ -1769,7 +1777,7 @@ describe("root agent-run spans", () => {
     }
   });
 
-  it("subagent runs keep their span but carry no run id", async () => {
+  it("subagent runs keep current and root identity distinct", async () => {
     const otel = setupOtel();
     try {
       const agent = buildStubAgent({
@@ -1784,9 +1792,13 @@ describe("root agent-run spans", () => {
         .find((s) => s.name === "invoke_agent recon-sub");
       expect(span).toBeDefined();
       const attrs = span?.attributes as Record<string, string>;
+      expect(attrs["gen_ai.agent.id"]).toBe("ses_sub_1");
       expect(attrs["gen_ai.agent.name"]).toBe("recon-sub");
-      expect(attrs["gen_ai.conversation.id"]).toBe("ses_sub_1");
+      expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
+      expect(attrs["session.id"]).toBe("ses_stub");
       expect(attrs["pensar.session.id"]).toBe("ses_sub_1");
+      expect(attrs["pensar.root_session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.agent.execution.id"]).toBeUndefined();
       expect(attrs["pensar.run.id"]).toBeUndefined();
       expect(attrs["pensar.agent.mode"]).toBeUndefined();
     } finally {
@@ -1909,6 +1921,280 @@ describe("error-part span completion", () => {
       contextManager.disable();
       api.trace.disable();
       api.context.disable();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR4: root IO + consistent trace identity
+// ---------------------------------------------------------------------------
+
+describe("trace identity and root IO", () => {
+  const textChunk = { type: "text-delta", id: "t1", delta: "hi" };
+  async function* oneStep(): AsyncGenerator<unknown, void, undefined> {
+    yield textChunk;
+  }
+
+  function setupOtel() {
+    const { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } =
+      require("@opentelemetry/sdk-trace-base") as typeof import("@opentelemetry/sdk-trace-base");
+    const { AsyncLocalStorageContextManager } =
+      require("@opentelemetry/context-async-hooks") as typeof import("@opentelemetry/context-async-hooks");
+    const api =
+      require("@opentelemetry/api") as typeof import("@opentelemetry/api");
+    const exporter = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    });
+    const contextManager = new AsyncLocalStorageContextManager();
+    contextManager.enable();
+    api.trace.setGlobalTracerProvider(provider);
+    api.context.setGlobalContextManager(contextManager);
+    return {
+      spans: () => exporter.getFinishedSpans(),
+      async teardown() {
+        await provider.shutdown();
+        contextManager.disable();
+        api.trace.disable();
+        api.context.disable();
+      },
+    };
+  }
+
+  it("root spans carry canonical conversation and agent identity", async () => {
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({ fullStream: oneStep() });
+      await agent.consume();
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      const attrs = span?.attributes as Record<string, string>;
+      expect(attrs["gen_ai.agent.id"]).toBe("ses_stub");
+      expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
+      expect(attrs["session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.root_session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.run.id"]).toBeUndefined();
+      expect(attrs["pensar.agent.execution.id"]).toBeUndefined();
+    } finally {
+      await otel.teardown();
+    }
+  });
+
+  it("subagent spans separate agent identity from the root conversation", async () => {
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({
+        fullStream: oneStep(),
+        subagentId: "ses_exec_1",
+        subagentName: "recon-sub",
+      });
+      await agent.consume();
+
+      const span = otel
+        .spans()
+        .find((s) => s.name === "invoke_agent recon-sub");
+      const attrs = span?.attributes as Record<string, string>;
+      expect(attrs["gen_ai.agent.id"]).toBe("ses_exec_1");
+      expect(attrs["gen_ai.conversation.id"]).toBe("ses_stub");
+      expect(attrs["session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.session.id"]).toBe("ses_exec_1");
+      expect(attrs["pensar.root_session.id"]).toBe("ses_stub");
+      expect(attrs["pensar.agent.execution.id"]).toBeUndefined();
+      expect(attrs["pensar.run.id"]).toBeUndefined();
+    } finally {
+      await otel.teardown();
+    }
+  });
+
+  it("root span IO appears only under full payload capture", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({ fullStream: oneStep() });
+      Object.defineProperty(agent, "userPrompt", {
+        value: "pentest the acme api",
+      });
+      await agent.consume();
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(span?.attributes["gen_ai.prompt"]).toBe("pentest the acme api");
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+
+    // Default mode: metadata only — no prompt or result payload.
+    const otel2 = setupOtel();
+    try {
+      const agent = buildStubAgent({ fullStream: oneStep() });
+      Object.defineProperty(agent, "userPrompt", {
+        value: "pentest the acme api",
+      });
+      await agent.consume();
+      const span = otel2.spans().find((s) => s.name === "invoke_agent default");
+      expect(span?.attributes["gen_ai.prompt"]).toBeUndefined();
+      expect(span?.attributes["gen_ai.completion"]).toBeUndefined();
+    } finally {
+      await otel2.teardown();
+    }
+  });
+
+  it("records root IO for the primary Fast Strike run", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({
+        fullStream: oneStep(),
+        resolveResult: () => ({ summary: "strike complete" }),
+        subagentId: "fast-strike",
+        agentMode: "fast-strike",
+      });
+      Object.defineProperty(agent, "userPrompt", {
+        value: "strike the acme api",
+      });
+
+      await agent.consume();
+
+      const span = otel
+        .spans()
+        .find((candidate) => candidate.name === "invoke_agent fast-strike");
+      expect(span?.attributes["gen_ai.prompt"]).toBe("strike the acme api");
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        '"summary":"strike complete"',
+      );
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+  });
+
+  it("records the captured response tool result as root output", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    try {
+      const agent = buildStubAgent({
+        fullStream: oneStep(),
+        responseCaptured: Promise.resolve({ summary: "scan complete" }),
+        responseToolResult: { summary: "scan complete" },
+      });
+      Object.defineProperty(agent, "_responseToolFired", { value: true });
+
+      await agent.consume();
+      await agent.drained;
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        '"summary":"scan complete"',
+      );
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+  });
+
+  it("does not wait on response resolution before ending a response-tool run", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    let resolveCaptured!: (value: unknown) => void;
+    const responseCaptured = new Promise<unknown>((resolve) => {
+      resolveCaptured = resolve;
+    });
+    try {
+      const agent = buildStubAgent({
+        fullStream: oneStep(),
+        responseCaptured,
+        responseToolResult: { summary: "submitted" },
+      });
+      Object.defineProperty(agent, "_responseToolFired", { value: true });
+
+      const consume = agent.consume();
+      const drainRejection = Reflect.get(
+        agent,
+        "_drainRejection",
+      ) as Promise<never>;
+      void drainRejection.catch(() => {
+        resolveCaptured({ summary: "resolved" });
+      });
+
+      const result = await Promise.race([
+        consume,
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("response resolution stalled")),
+            1000,
+          ),
+        ),
+      ]);
+      await agent.drained;
+
+      expect(result).toEqual({ summary: "resolved" });
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(span?.ended).toBe(true);
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        '"summary":"submitted"',
+      );
+    } finally {
+      resolveCaptured(undefined);
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+  });
+
+  it("preserves captured output when the background drain later fails", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    const captured = { summary: "scan complete" };
+    try {
+      async function* failingAfterResponse(): AsyncGenerator<
+        unknown,
+        void,
+        undefined
+      > {
+        yield textChunk;
+        throw new Error("late drain failure");
+      }
+      const agent = buildStubAgent({
+        fullStream: failingAfterResponse(),
+        responseCaptured: Promise.resolve(captured),
+        responseToolResult: captured,
+      });
+      Object.defineProperty(agent, "_responseToolFired", { value: true });
+
+      await expect(agent.consume()).resolves.toEqual(captured);
+      await agent.drained;
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        '"summary":"scan complete"',
+      );
+      expect(String(span?.attributes["gen_ai.completion"])).not.toContain(
+        "Failure: late drain failure",
+      );
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+  });
+
+  it("failed runs record the failure as root output under full capture", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    try {
+      async function* failing(): AsyncGenerator<unknown, void, undefined> {
+        yield textChunk;
+        throw new Error("final failure");
+      }
+      const agent = buildStubAgent({ fullStream: failing() });
+      await expect(agent.consume()).rejects.toThrow("final failure");
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        "Failure: final failure",
+      );
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
     }
   });
 });

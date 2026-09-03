@@ -608,6 +608,7 @@ export async function create(input: CreateInputProps) {
       userMessage: input.userMessage,
       model: input.model,
       authConfig: input.authConfig,
+      sessionId: result.id,
     }).then((aiName) => {
       if (aiName) {
         result.name = aiName;

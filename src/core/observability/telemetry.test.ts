@@ -203,18 +203,12 @@ describe("createAiTelemetrySettings", () => {
     expect(settings.recordOutputs).toBe(true);
   });
 
-  it("propagates session, run, and agent metadata when present", () => {
+  it("propagates session metadata when present", () => {
     const settings = createAiTelemetrySettings({
       operation: "apex.agent.stream",
       sessionId: "ses_1",
-      runId: "run_1",
-      agentId: "sub_1",
     });
-    expect(settings.metadata).toEqual({
-      sessionId: "ses_1",
-      runId: "run_1",
-      agentId: "sub_1",
-    });
+    expect(settings.metadata).toEqual({ sessionId: "ses_1" });
   });
 
   it("operation identifiers are a fixed low-cardinality set", () => {
@@ -756,5 +750,53 @@ describe("auxiliary model lifecycle", () => {
     expect(repairEvent?.providerMetadata).toEqual({
       anthropic: { cacheReadInputTokens: 50 },
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR4: stable session metadata + structured operation ids
+// ---------------------------------------------------------------------------
+
+describe("identity metadata propagation", () => {
+  it("streamResponse emits session metadata without redundant identity fields", async () => {
+    mockState.model = oneStepTextModel();
+    await drain(
+      streamResponse({
+        prompt: "hi",
+        model: MODEL,
+        silent: true,
+        sessionId: "ses_root",
+      }),
+    );
+
+    const span = requireSpan(otel.getFinishedSpans(), "ai.streamText");
+    expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe("ses_root");
+    expect(span.attributes["ai.telemetry.metadata.runId"]).toBeUndefined();
+    expect(span.attributes["ai.telemetry.metadata.agentId"]).toBeUndefined();
+    expect(span.attributes["ai.telemetry.functionId"]).toBe(
+      "apex.agent.stream",
+    );
+  });
+
+  it("generateObjectResponse honors caller operation ids and identity", async () => {
+    mockState.model = generateModel();
+    await generateObjectResponse({
+      model: MODEL,
+      schema: z.object({ result: z.string() }),
+      prompt: "hi",
+      sessionId: "ses_root",
+      operation: "apex.finding.cvss",
+    });
+
+    const span = requireSpan(
+      otel.getFinishedSpans(),
+      "ai.generateText.doGenerate",
+    );
+    expect(span.attributes["ai.telemetry.functionId"]).toBe(
+      "apex.finding.cvss",
+    );
+    expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe("ses_root");
+    expect(span.attributes["ai.telemetry.metadata.runId"]).toBeUndefined();
+    expect(span.attributes["ai.telemetry.metadata.agentId"]).toBeUndefined();
   });
 });
