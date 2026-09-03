@@ -31,9 +31,11 @@ import type { OtelTestHarness } from "./testkit";
 
 // Imported AFTER vi.mock so streamResponse's closure picks up the stub.
 const { streamResponse } = await import("../ai");
-const { getApexTracer, withSubagentSessionBaggage } = await import(
-  "../observability"
-);
+const {
+  createGenerationSpanTracker,
+  getApexTracer,
+  withSubagentSessionBaggage,
+} = await import("../observability");
 const { parentOf, requireSpan, spansNamed, startOtelTestHarness } =
   await import("./testkit");
 
@@ -291,11 +293,10 @@ describe("existing trace contract: model spans", () => {
     }
   });
 
-  it("an in-stream error part currently leaks the root span (known limitation)", async () => {
-    // Contract finding: when the model emits an error PART (instead of
-    // throwing), the ai.streamText root span (endWhenDone: false) is never
-    // ended — no spans export. Pinned as-is; Stack D's O3 root-run spans
-    // own their end() on every path instead.
+  it("an in-stream error part exports a complete tree with error status", async () => {
+    // The wrapper drains the post-error tail (the SDK's terminal lifecycle
+    // only runs when the stream completes), awaits the terminal response,
+    // and marks the root generation span failed before propagating.
     mockState.model = new MockLanguageModelV3({
       provider: "mock-anthropic",
       modelId: MODEL,
@@ -309,12 +310,114 @@ describe("existing trace contract: model spans", () => {
       }),
     });
 
+    // The original provider error is preserved.
     await expect(
       drain(streamResponse({ prompt: "hi", model: MODEL, silent: true })),
     ).rejects.toThrow("model exploded");
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(otel.getFinishedSpans()).toHaveLength(0);
+    // Both generation spans export — deterministic, no sleeps — with the
+    // root marked error (the provider-call span completes normally in the
+    // SDK and stays unset).
+    const spans = otel.getFinishedSpans();
+    const streamText = requireSpan(spans, "ai.streamText");
+    const doStream = requireSpan(spans, "ai.streamText.doStream");
+    expect(streamText.status.code).toBe(SpanStatusCode.ERROR);
+    expect(
+      streamText.events.some(
+        (e) =>
+          e.name === "exception" &&
+          (e.attributes?.["exception.message"] as string) === "model exploded",
+      ),
+    ).toBe(true);
+    expect(doStream.spanContext().traceId).toBe(
+      streamText.spanContext().traceId,
+    );
+  });
+
+  it("preserves an in-stream error when its tail drain times out", async () => {
+    vi.useFakeTimers();
+    const providerError = new Error("model exploded before stalled tail");
+    let calls = 0;
+    let tailWaitStartedResolve!: () => void;
+    const tailWaitStarted = new Promise<void>((resolve) => {
+      tailWaitStartedResolve = resolve;
+    });
+
+    try {
+      mockState.model = new MockLanguageModelV3({
+        provider: "mock-anthropic",
+        modelId: MODEL,
+        doStream: async () => {
+          calls += 1;
+          if (calls > 1) {
+            return {
+              stream: simulateReadableStream({
+                chunks:
+                  textStepChunks() as unknown as Array<LanguageModelV3StreamPart>,
+              }),
+            };
+          }
+
+          let emittedError = false;
+          return {
+            stream: new ReadableStream<LanguageModelV3StreamPart>({
+              pull(controller) {
+                if (!emittedError) {
+                  emittedError = true;
+                  controller.enqueue({ type: "stream-start", warnings: [] });
+                  controller.enqueue({ type: "error", error: providerError });
+                  return;
+                }
+                tailWaitStartedResolve();
+                return new Promise<void>(() => {});
+              },
+            }),
+          };
+        },
+      });
+
+      const consumption = drain(
+        streamResponse({
+          prompt: "hi",
+          messages: [{ role: "user", content: "hi" }],
+          model: MODEL,
+          silent: true,
+        }),
+      );
+      const rejection = expect(consumption).rejects.toBe(providerError);
+
+      await tailWaitStarted;
+      await vi.advanceTimersByTimeAsync(300_000);
+      await rejection;
+      expect(calls).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("records details for non-Error provider failures", () => {
+    const tracker = createGenerationSpanTracker();
+    tracker.tracer.startActiveSpan("ai.streamText", (span) => {
+      tracker.markFailed({
+        name: "BedrockServiceError",
+        message: "throttled",
+      });
+      span.end();
+    });
+
+    const span = requireSpan(otel.getFinishedSpans(), "ai.streamText");
+    expect(span.status).toEqual({
+      code: SpanStatusCode.ERROR,
+      message: '{"name":"BedrockServiceError","message":"throttled"}',
+    });
+    expect(
+      span.events.some(
+        (event) =>
+          event.name === "exception" &&
+          event.attributes?.["exception.message"] ===
+            '{"name":"BedrockServiceError","message":"throttled"}',
+      ),
+    ).toBe(true);
   });
 });
 

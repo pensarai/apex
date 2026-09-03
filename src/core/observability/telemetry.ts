@@ -1,3 +1,9 @@
+import {
+  type Span,
+  SpanStatusCode,
+  type Tracer,
+  trace,
+} from "@opentelemetry/api";
 import { shouldRecordAiPayloads } from "./index";
 
 /**
@@ -52,5 +58,80 @@ export function createAiTelemetrySettings(
     // operation name — a per-model functionId is unbounded cardinality.
     functionId: input.operation,
     ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Generation span tracker — the AI SDK completes error-part runs normally,
+// so its root generation span exports without error status. A forwarding
+// tracer captures that span's handle so the stream wrapper can mark it
+// failed. Not a span processor; the spans are the SDK's own.
+// ---------------------------------------------------------------------------
+
+export interface GenerationSpanTracker {
+  /** Forwarding tracer — pass as `experimental_telemetry.tracer`. */
+  readonly tracer: Tracer;
+  /** Record the failure on the captured root generation span (no-op if none
+   *  or already marked by the SDK's thrown-error handling). */
+  markFailed(error: unknown): void;
+}
+
+function describeFailure(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error) || String(error);
+  } catch {
+    return String(error);
+  }
+}
+
+export function createGenerationSpanTracker(): GenerationSpanTracker {
+  const inner = trace.getTracer("ai");
+  let rootSpan: Span | null = null;
+  // The SDK creates its spans via startActiveSpan (recordSpan); capture the
+  // root generation span by wrapping the caller's callback.
+  const tracer = {
+    startSpan: (
+      name: string,
+      options?: Parameters<Tracer["startSpan"]>[1],
+      context?: Parameters<Tracer["startSpan"]>[2],
+    ) => {
+      const span = inner.startSpan(name, options, context);
+      if (name === "ai.streamText") rootSpan = span;
+      return span;
+    },
+    // The API resolves overloads by arguments.length — forward with the
+    // caller's exact arity and wrap the callback to capture the span.
+    startActiveSpan: (name: string, ...rest: unknown[]) => {
+      const callback = rest[rest.length - 1] as (
+        span: Span,
+        ...r: unknown[]
+      ) => unknown;
+      const capture = (span: Span, ...restArgs: unknown[]) => {
+        if (name === "ai.streamText") rootSpan = span;
+        return callback(span, ...restArgs);
+      };
+      const forwardArgs = [...rest.slice(0, -1), capture];
+      return (
+        inner.startActiveSpan as unknown as (
+          this: unknown,
+          n: string,
+          ...a: unknown[]
+        ) => unknown
+      ).call(inner, name, ...forwardArgs);
+    },
+  } as unknown as Tracer;
+  let marked = false;
+  return {
+    tracer,
+    markFailed(error: unknown) {
+      const span = rootSpan;
+      if (!span || marked) return;
+      marked = true;
+      const message = describeFailure(error);
+      span.recordException(error instanceof Error ? error : message);
+      span.setStatus({ code: SpanStatusCode.ERROR, message });
+    },
   };
 }
