@@ -1019,7 +1019,9 @@ export class OffensiveSecurityAgent<TResult = void> {
             if (recordRootIO) {
               span.setAttribute(
                 "gen_ai.completion",
-                `Failure: ${err instanceof Error ? err.message : String(err)}`,
+                this._responseToolFired
+                  ? safePreview(this._responseToolResult)
+                  : `Failure: ${err instanceof Error ? err.message : String(err)}`,
               );
             }
             throw err;

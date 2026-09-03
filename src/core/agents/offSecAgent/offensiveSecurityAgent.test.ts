@@ -2141,6 +2141,42 @@ describe("trace identity and root IO", () => {
     }
   });
 
+  it("preserves captured output when the background drain later fails", async () => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = "true";
+    const otel = setupOtel();
+    const captured = { summary: "scan complete" };
+    try {
+      async function* failingAfterResponse(): AsyncGenerator<
+        unknown,
+        void,
+        undefined
+      > {
+        yield textChunk;
+        throw new Error("late drain failure");
+      }
+      const agent = buildStubAgent({
+        fullStream: failingAfterResponse(),
+        responseCaptured: Promise.resolve(captured),
+        responseToolResult: captured,
+      });
+      Object.defineProperty(agent, "_responseToolFired", { value: true });
+
+      await expect(agent.consume()).resolves.toEqual(captured);
+      await agent.drained;
+
+      const span = otel.spans().find((s) => s.name === "invoke_agent default");
+      expect(String(span?.attributes["gen_ai.completion"])).toContain(
+        '"summary":"scan complete"',
+      );
+      expect(String(span?.attributes["gen_ai.completion"])).not.toContain(
+        "Failure: late drain failure",
+      );
+    } finally {
+      await otel.teardown();
+      process.env.AI_TRACE_RECORD_PAYLOADS = undefined;
+    }
+  });
+
   it("failed runs record the failure as root output under full capture", async () => {
     process.env.AI_TRACE_RECORD_PAYLOADS = "true";
     const otel = setupOtel();
