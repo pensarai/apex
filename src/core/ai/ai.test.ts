@@ -62,8 +62,14 @@ describe("isRepairFailClosedTool", () => {
 
   it("leaves ordinary tools eligible for repair", () => {
     expect(isRepairFailClosedTool("response")).toBe(false);
-    expect(isRepairFailClosedTool("document_vulnerability")).toBe(false);
     expect(isRepairFailClosedTool("http_request")).toBe(false);
+  });
+
+  it("keeps result-submission tools eligible for repair so a bad field is fixed, not dropped", () => {
+    // These carry no authorization boundary; repair re-prompts the model to fix
+    // a mis-shaped field instead of discarding a completed recon or finding.
+    expect(isRepairFailClosedTool("submit_results")).toBe(false);
+    expect(isRepairFailClosedTool("document_vulnerability")).toBe(false);
   });
 });
 
