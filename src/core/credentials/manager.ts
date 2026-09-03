@@ -11,6 +11,7 @@ import type { AuthCredentials } from "../session";
 import type {
   CredentialReference,
   CredentialType,
+  MobileOtpAuthMethod,
   StoredCredential,
 } from "./types";
 
@@ -62,12 +63,23 @@ function toReference(stored: StoredCredential): CredentialReference {
     ref.customHeaderKeys = Object.keys(stored.tokens.customHeaders);
   }
   if (stored.additionalFields) {
-    const keys = Object.keys(stored.additionalFields);
+    const authMethod = stored.additionalFields.authMethod;
+    if (isMobileOtpAuthMethod(authMethod)) ref.authMethod = authMethod;
+
+    const keys = Object.keys(stored.additionalFields).filter(
+      (key) => key !== "authMethod",
+    );
     if (keys.length > 0) ref.additionalFieldKeys = keys;
   }
   const ctx = stored.metadata?.context;
   if (typeof ctx === "string" && ctx) ref.context = ctx;
   return ref;
+}
+
+function isMobileOtpAuthMethod(
+  value: string | undefined,
+): value is MobileOtpAuthMethod {
+  return value === "sms-passwordless" || value === "sms-mfa";
 }
 
 // ---------------------------------------------------------------------------
@@ -258,6 +270,9 @@ export class CredentialManager {
         parts.push(
           `  Additional secret fields: ${ref.additionalFieldKeys.join(", ")}`,
         );
+      }
+      if (ref.authMethod) {
+        parts.push(`  Authentication method: ${ref.authMethod}`);
       }
       if (ref.context) parts.push(`  Context: ${ref.context}`);
       return parts.join("\n");

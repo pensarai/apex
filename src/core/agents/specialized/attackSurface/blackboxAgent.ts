@@ -6,6 +6,7 @@ import {
   OffensiveSecurityAgent,
   type SpecializedAgentInput,
 } from "../../offSecAgent";
+import { MOBILE_OTP_PROMPT_GUIDANCE } from "../mobileOtpPrompt";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { SYSTEM as ATTACK_SURFACE_SYSTEM_PROMPT } from "./prompts";
 import type { AttackSurfaceAnalysisResults, PentestTarget } from "./types";
@@ -124,7 +125,7 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
         "email_get_message",
         // Send email (filtered out by base class when no SMTP configured)
         "send_email",
-        // Mobile OTP list (filtered out by base class when no sms-passwordless cred)
+        // Mobile OTP list (filtered out by base class when no Mobile OTP cred)
         "sms_list_messages",
         // Web search tools — research target technologies, find known vulnerabilities
         "web_search",
@@ -154,7 +155,7 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
 
         return { results, targets, resultsPath, assetsPath };
       },
-      prompt: buildPrompt(target, session),
+      prompt: buildBlackboxPrompt(target, session),
       onStepFinish: (e) => {
         onStepFinish?.(e);
         const messages = e.response.messages;
@@ -173,7 +174,10 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-function buildPrompt(target: string, session: SessionInfo): string {
+export function buildBlackboxPrompt(
+  target: string,
+  session: SessionInfo,
+): string {
   const scopeConstraints = session.config?.scopeConstraints;
   const authenticationInstructions = session.config?.authenticationInstructions;
   const enumerateSubdomains = session.config?.enumerateSubdomains ?? false;
@@ -201,7 +205,7 @@ function buildPrompt(target: string, session: SessionInfo): string {
 Your FIRST tool call must be: browser_navigate to ${loginTarget}
 Then use browser tools to authenticate. Pass the credentialId to delegate_to_auth_subagent — secrets are resolved automatically.
 For browser_fill on password/secret fields, use credentialId + credentialField instead of raw values.
-When a credential has a phoneNumber additional field (Mobile OTP / sms-passwordless), phone is the login identifier — not MFA-after-password. Immediately before filling it, call sms_list_messages with reserve=true; never pass that tool a phone number. If it returns 429, retry the reservation later as a separate attempt without waiting in the tool. Then fill credentialField="phoneNumber", click send-code, sleep with execute_command, and call sms_list_messages with sinceMs from that click and claim=true. If the list is empty, make one delayed list retry; if it stays empty, stop and report. Do not report phone_verification as a barrier. TOTP-via-env for authenticator MFA is unchanged.
+${MOBILE_OTP_PROMPT_GUIDANCE}
 
 Do NOT run curl, nmap, dig, or any other command before completing login.
 Include authentication information with EVERY target that requires it in your final report.

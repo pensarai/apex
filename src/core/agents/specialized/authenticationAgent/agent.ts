@@ -20,6 +20,7 @@ import { scopedLogger } from "../../../util/lazyLogger";
 import { OffensiveSecurityAgent } from "../../offSecAgent";
 import type { StreamIdFactory } from "../../offSecAgent/types";
 import { detectOSAndEnhancePrompt } from "../utils";
+import { MOBILE_OTP_PROMPT_GUIDANCE } from "../mobileOtpPrompt";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import type { AuthBarrier } from "./types";
 
@@ -188,7 +189,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         "email_get_message",
         // Send email (filtered out by base class when no SMTP configured)
         "send_email",
-        // Mobile OTP list (filtered out by base class when no sms-passwordless cred)
+        // Mobile OTP list (filtered out by base class when no Mobile OTP cred)
         "sms_list_messages",
         // Web search tools — look up auth bypass techniques, default credentials
         "web_search",
@@ -308,19 +309,11 @@ function buildAuthPrompt(
   }
 
   if (credBlock) {
-    const hasSmsPasswordless = credentialManager
+    const hasMobileOtp = credentialManager
       ?.listReferences()
       .some((ref) => ref.additionalFieldKeys?.includes("phoneNumber"));
-    const smsInstructions = hasSmsPasswordless
-      ? `
-If a credential has a phoneNumber additional field (Mobile OTP / sms-passwordless), phone is the login
-identifier — not MFA-after-password. Immediately before filling the phone field, call sms_list_messages
-with reserve=true; never pass that tool a phone number. If it returns 429, retry the reservation later as
-a separate attempt without waiting in the tool. Then browser_fill credentialField="phoneNumber", click
-send-code, and call sms_list_messages with sinceMs = Date.now() at that click and claim=true after a brief
-execute_command sleep. If the list is empty, make one delayed list retry; if it stays empty, fail with what
-you observed. Then browser_fill the OTP. Do NOT report phone_verification as a barrier for this flow.
-TOTP-via-env for authenticator MFA is unchanged.`
+    const smsInstructions = hasMobileOtp
+      ? `\n${MOBILE_OTP_PROMPT_GUIDANCE}\n`
       : "";
     parts.push(`INSTRUCTIONS:
 You have credentials available via credential IDs — authenticate immediately.

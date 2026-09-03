@@ -72,9 +72,9 @@ async function agentFetch(
 
 export function smsListMessages(ctx: ToolContext) {
   return tool({
-    description: `Reserve or list inbound SMS on the stage-managed Mobile OTP (sms-passwordless) receiving number.
+    description: `Reserve or list inbound SMS on the stage-managed Mobile OTP receiving number for sms-passwordless or sms-mfa authentication.
 
-Reserve immediately before filling the target phone field and clicking send-code: call with reserve=true. The Console chooses and leases the receiving number from the signed session; never supply or request a phone number here.
+For sms-passwordless, reserve immediately before filling the target phone field and requesting a code. For sms-mfa, fill username and password first, then reserve immediately before the action that sends the code. The Console chooses and leases the receiving number from the signed session; never supply or request a phone number here.
 
 After the target sends a code, sleep with execute_command (e.g. sleep 5), then call with sinceMs from the send-code click. Set claim=true to consume the newest unconsumed message (exclusive; other runs cannot reuse that OTP). This is a single request — it does not wait. A 429 means the shared number is busy; retry the reservation later rather than waiting in this tool.
 
