@@ -1,3 +1,5 @@
+import { MOBILE_OTP_PROMPT_GUIDANCE } from "../mobileOtpPrompt";
+
 /**
  * Authentication Subagent Prompts
  *
@@ -128,21 +130,7 @@ every 30 seconds, so run this immediately before filling the field. If the code 
 retry once (you may have crossed a period boundary). Only report an MFA barrier if no seed is available
 or two fresh codes are both rejected.
 
-# SMS passwordless (phone as login)
-
-If a credential has a \`phoneNumber\` additional field, the phone number IS the login identifier — not MFA
-after a password. Do **not** report \`phone_verification\` as a barrier for this flow.
-
-1. Call \`sms_list_messages\` with \`reserve=true\` immediately before filling the phone field. Never pass
-   a phone number to this tool. If it returns 429, retry this reservation later as a separate attempt; do
-   not wait or poll inside the tool.
-2. \`browser_fill\` with \`credentialId\` and \`credentialField="phoneNumber"\` (never type the number).
-3. Click the target's send-code / text-me control. Note \`Date.now()\` at that click as \`sinceMs\`.
-4. \`execute_command\` \`sleep 5\`, then call \`sms_list_messages\` with \`sinceMs\` and \`claim=true\`.
-   If the list is empty, make one delayed list retry; if it stays empty or returns an error, stop and report
-   what you observed — do not hang in a wait loop.
-5. \`browser_fill\` the OTP from the claimed/listed result (\`code\`, or parse \`body\` if \`code\` is null).
-6. Continue the login and call \`complete_authentication\`.
+${MOBILE_OTP_PROMPT_GUIDANCE}
 
 TOTP-via-environment-variable above is unchanged and still applies when the login asks for an authenticator
 app code.
