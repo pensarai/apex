@@ -24,6 +24,7 @@ import {
   type ToolContext,
   type UnifiedSandbox,
 } from "../src/core/agents/offSecAgent";
+import { inProcessSubagentSpawner } from "../src/core/agents/offSecAgent/subagentSpawner";
 
 // ---------------------------------------------------------------------------
 // Daytona REST API helpers
@@ -260,6 +261,7 @@ async function main() {
     mkdirSync(join(testDir, "scratchpad"), { recursive: true });
 
     const ctx: ToolContext = {
+      subagentSpawner: inProcessSubagentSpawner,
       session: {
         id: "test-sandbox-pw",
         version: "0.0.1",

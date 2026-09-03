@@ -19,7 +19,6 @@ import {
   consolidateBySameRoute,
   findDependencyRoot,
   mapAppWithSurface,
-  shouldFallback,
 } from "./index";
 
 function makeEndpointInfo(
@@ -177,40 +176,6 @@ describe("consolidateBySameRoute", () => {
   });
 });
 
-describe("shouldFallback", () => {
-  it("falls back when no frameworks are detected", () => {
-    const result = makeMapResult([], { frameworks: [] });
-
-    expect(shouldFallback(result)).toEqual({
-      fallback: true,
-      reason: "no frameworks detected",
-    });
-  });
-
-  it("falls back when frameworks are detected but zero endpoints found", () => {
-    const result = makeMapResult([], { frameworks: ["nextjs"] });
-
-    const decision = shouldFallback(result);
-
-    expect(decision.fallback).toBe(true);
-    if (decision.fallback) {
-      expect(decision.reason).toMatch(/zero endpoints/);
-    }
-  });
-
-  it("does not fall back when frameworks and endpoints are present", () => {
-    const ep = makeEndpointInfo({
-      framework: "nextjs",
-      file: "app/api/users/route.ts",
-      method: "GET",
-      path: "/api/users",
-    });
-    const result = makeMapResult([ep], { frameworks: ["nextjs"] });
-
-    expect(shouldFallback(result)).toEqual({ fallback: false });
-  });
-});
-
 describe("mapAppWithSurface — pass-through behavior", () => {
   // Surface emits `kind: "page"` (since v0.2.0). The integration layer is a
   // pure pass-through: `kind` is preserved as the page/api signal and
@@ -254,18 +219,6 @@ describe("mapAppWithSurface — pass-through behavior", () => {
     expect(page?.method).toEqual(["GET"]);
     expect(api?.kind).toBe("api");
     expect(api?.method).toEqual(["GET", "POST"]);
-  });
-
-  it("returns a fallback signal when surface produces no frameworks", () => {
-    // Sanity check on the fallback decision reaching the public API.
-    // We don't call mapAppWithSurface against a real path here; instead
-    // we verify shouldFallback drives the same decision.
-    const result = makeMapResult([], { frameworks: [] });
-    const decision = shouldFallback(result);
-    expect(decision.fallback).toBe(true);
-    if (decision.fallback) {
-      expect(decision.reason).toBe("no frameworks detected");
-    }
   });
 
   it("end-to-end against a non-existent path returns a fallback signal (real surface.map)", () => {

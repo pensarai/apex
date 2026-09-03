@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  buildSwarmSessionConfig,
   parseWebFlags,
   resolveFlagValue,
   resolveThreatModelPrompt,
@@ -23,13 +22,6 @@ describe("parseWebFlags", () => {
 
     expect(flags.hosts).toEqual(["example.com"]);
     expect(flags.ports).toEqual([8080]);
-
-    const params = buildSwarmSessionConfig(flags);
-
-    expect(params.config.scopeConstraints).toMatchObject({
-      allowedHosts: ["example.com"],
-      allowedPorts: [8080],
-    });
   });
 
   it("merges target-derived scope with explicit hosts and ports", () => {

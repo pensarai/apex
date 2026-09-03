@@ -43,37 +43,11 @@ import {
  */
 export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> {
   constructor(opts: EnvironmentAgentInput) {
-    const {
-      model,
-      cwd,
-      config,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      subagentId,
-      sandbox,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-    } = opts;
+    const { cwd, config, ...base } = opts;
 
     super({
+      ...base,
       system: buildEnvironmentSystemPrompt(),
-      prompt: buildEnvironmentPrompt(cwd, config),
-      model,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      subagentId,
-      sandbox,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-
       activeTools: [
         "read_file",
         "list_files",
@@ -86,8 +60,8 @@ export class EnvironmentAgent extends OffensiveSecurityAgent<EnvironmentResult> 
         "web_search",
         "get_page",
       ],
-
       responseSchema: EnvironmentResultSchema,
+      prompt: buildEnvironmentPrompt(cwd, config),
     });
   }
 }

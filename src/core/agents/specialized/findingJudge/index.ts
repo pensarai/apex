@@ -36,6 +36,9 @@ export type FindingJudgeRuntimeContext = Pick<
   | "enableThinking"
   | "thinkingEffort"
   | "openAIReasoningEffort"
+  | "languageModelMiddleware"
+  | "usageRecorder"
+  | "streamIdFactory"
 > & {
   model: AIModel;
   /**
@@ -77,6 +80,9 @@ export async function judgeFinding(
       enableThinking: ctx.enableThinking,
       thinkingEffort: ctx.thinkingEffort,
       openAIReasoningEffort: ctx.openAIReasoningEffort,
+      languageModelMiddleware: ctx.languageModelMiddleware,
+      usageRecorder: ctx.usageRecorder,
+      streamIdFactory: ctx.streamIdFactory,
     });
 
     const result = await agent.consume();

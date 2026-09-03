@@ -80,60 +80,28 @@ export interface AttackSurfaceResult {
 export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSurfaceResult> {
   constructor(opts: AttackSurfaceAgentInput) {
     const {
-      model,
-      session,
-      authConfig,
+      target: targetOpt,
+      cwd,
+      surfaceIntegrationEnabled: _surfaceIntegrationEnabled,
       onStepFinish,
-      onCacheMetrics,
-      abortSignal,
-      attackSurfaceRegistry,
-      eventBus,
-      subagentId,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
+      ...base
     } = opts;
-    const target = opts.target ?? opts.cwd!;
-
-    const resultsPath = join(session.rootPath, "attack-surface-results.json");
-    const assetsPath = join(session.rootPath, "assets");
+    const target = targetOpt ?? cwd!;
+    const { session } = base;
 
     const subagentFolder = join(
       session.rootPath,
       "subagents",
       "attack-surface-agent",
     );
-
     if (!existsSync(subagentFolder)) {
       mkdirSync(subagentFolder, { recursive: true });
     }
 
     super({
-      system: detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
-      prompt: buildPrompt(target, session),
-      model,
-      session,
+      ...base,
       target,
-      authConfig,
-      onStepFinish: (e) => {
-        onStepFinish?.(e);
-        const messages = e.response.messages;
-        if (messages !== undefined) {
-          writeFileSync(
-            join(subagentFolder, "attack-surface-agent.log"),
-            JSON.stringify(messages, null, 2),
-          );
-        }
-      },
-      onCacheMetrics,
-      abortSignal,
-      attackSurfaceRegistry,
-      eventBus,
-      subagentId,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-      messages: opts.messages,
+      system: detectOSAndEnhancePrompt(ATTACK_SURFACE_SYSTEM_PROMPT),
       activeTools: [
         // Core recon tools
         "execute_command",
@@ -162,14 +130,16 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
         "web_search",
         "get_page",
       ],
-
       stopWhen: [
         hasToolCall("create_attack_surface_report"),
         stepCountIs(10_000),
       ],
-      toolChoice: "auto",
-
       resolveResult: () => {
+        const resultsPath = join(
+          session.rootPath,
+          "attack-surface-results.json",
+        );
+        const assetsPath = join(session.rootPath, "assets");
         let results: AttackSurfaceAnalysisResults | null = null;
         let targets: PentestTarget[] = [];
 
@@ -183,6 +153,17 @@ export class BlackboxAttackSurfaceAgent extends OffensiveSecurityAgent<AttackSur
         }
 
         return { results, targets, resultsPath, assetsPath };
+      },
+      prompt: buildPrompt(target, session),
+      onStepFinish: (e) => {
+        onStepFinish?.(e);
+        const messages = e.response.messages;
+        if (messages !== undefined) {
+          writeFileSync(
+            join(subagentFolder, "attack-surface-agent.log"),
+            JSON.stringify(messages, null, 2),
+          );
+        }
       },
     });
   }
@@ -220,7 +201,7 @@ function buildPrompt(target: string, session: SessionInfo): string {
 Your FIRST tool call must be: browser_navigate to ${loginTarget}
 Then use browser tools to authenticate. Pass the credentialId to delegate_to_auth_subagent — secrets are resolved automatically.
 For browser_fill on password/secret fields, use credentialId + credentialField instead of raw values.
-When a credential has a phoneNumber additional field (Mobile OTP / sms-passwordless), phone is the login identifier — not MFA-after-password. Fill credentialField="phoneNumber", click send-code, sleep with execute_command, then sms_list_messages with sinceMs from that click (claim=true once a message is present). If the list stays empty, stop and report — do not hang. Do not report phone_verification as a barrier. TOTP-via-env for authenticator MFA is unchanged.
+When a credential has a phoneNumber additional field (Mobile OTP / sms-passwordless), phone is the login identifier — not MFA-after-password. Immediately before filling it, call sms_list_messages with reserve=true; never pass that tool a phone number. If it returns 429, retry the reservation later as a separate attempt without waiting in the tool. Then fill credentialField="phoneNumber", click send-code, sleep with execute_command, and call sms_list_messages with sinceMs from that click and claim=true. If the list is empty, make one delayed list retry; if it stays empty, stop and report. Do not report phone_verification as a barrier. TOTP-via-env for authenticator MFA is unchanged.
 
 Do NOT run curl, nmap, dig, or any other command before completing login.
 Include authentication information with EVERY target that requires it in your final report.

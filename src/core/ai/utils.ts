@@ -4,6 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   generateText,
@@ -131,7 +132,7 @@ export function buildAuthConfig(cfg: {
 export function getProviderModel(
   model: AIModel,
   authConfig?: AIAuthConfig,
-): LanguageModel {
+): LanguageModelV3 {
   const { provider } = getModelInfo(model);
 
   const openAiAPIKey = authConfig?.openAiAPIKey || process.env.OPENAI_API_KEY;
@@ -159,7 +160,7 @@ export function getProviderModel(
     process.env.LOCAL_MODEL_URL ||
     "http://127.0.0.1:1234/v1";
 
-  let providerModel: LanguageModel;
+  let providerModel: LanguageModelV3;
 
   switch (provider) {
     case "openai": {
@@ -627,6 +628,7 @@ export function createSummarizationStream(
   } as unknown as StreamTextResult<ToolSet, never>;
 }
 
+/** @knipignore drives the live-API stream tests in ai.test.ts; no production caller. */
 export async function consumeStream(
   stream: StreamTextResult<ToolSet, never>,
   {

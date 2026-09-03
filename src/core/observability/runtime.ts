@@ -312,7 +312,10 @@ export function installObservabilityExitHandlers(
   return exitWith;
 }
 
-/** Test/teardown hook: stop any active runtime and reset the singleton. */
+/** Test/teardown hook: stop any active runtime and reset the singleton.
+ *
+ * @knipignore test hook for resetting module-level runtime state.
+ */
 export async function resetObservabilityRuntime(): Promise<void> {
   if (activeRuntime) {
     await activeRuntime.shutdown();

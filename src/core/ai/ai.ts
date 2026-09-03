@@ -5,6 +5,7 @@ import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
 import {
   generateText,
   type LanguageModel,
+  type LanguageModelMiddleware,
   type ModelMessage,
   Output,
   type StopCondition,
@@ -15,6 +16,7 @@ import {
   type TextStreamPart,
   type ToolChoice,
   type ToolSet,
+  wrapLanguageModel,
 } from "ai";
 import type { z } from "zod";
 import { createLogger } from "../logger/structured";
@@ -132,6 +134,22 @@ export type UsageCallback = (
   outputTokens: number,
   context: UsageCallbackContext,
 ) => void | Promise<void>;
+
+/**
+ * Per-run usage recorder threaded through {@link StreamResponseOpts}. When set
+ * it replaces the process-global {@link onUsage} callback for that stream's
+ * steps, so a durable runtime can attribute usage per run instead of relying on
+ * a shared singleton. Async work is awaited before the next model step. Receives
+ * the same cache-aware {@link UsageCallbackContext} as the global callback, so
+ * the cached/uncached split travels on the usage event itself.
+ */
+export type UsageRecorder = (
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  context?: UsageCallbackContext,
+) => void | Promise<void>;
+
 let _usageCallback: UsageCallback | null = null;
 
 /** Register a callback to receive token usage reports from all AI operations. */
@@ -1001,6 +1019,10 @@ export interface StreamResponseOpts {
   toolChoice?: ToolChoice<ToolSet>;
   tools?: ToolSet;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  /** Provider middleware applied only to this stream's model calls. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+  /** Per-run usage recorder; when set it replaces the global usage callback for this stream. */
+  usageRecorder?: UsageRecorder;
   abortSignal?: AbortSignal;
   activeTools?: string[];
   silent?: boolean;
@@ -1056,6 +1078,8 @@ export function streamResponse(
     toolChoice,
     tools,
     onStepFinish: userOnStepFinish,
+    languageModelMiddleware,
+    usageRecorder,
     abortSignal,
     activeTools,
     silent,
@@ -1085,24 +1109,43 @@ export function streamResponse(
       });
     }
     await userOnStepFinish?.(step);
-    if (_usageCallback) {
+    if (usageRecorder || _usageCallback) {
       // Advance stepSeq every finished step (even zero-usage) to stay aligned with the AI-SDK step index.
       const stepCtx = takeStepContext();
       if (stepUsage.inputTokens > 0 || stepUsage.outputTokens > 0) {
-        await _usageCallback(
-          model,
-          stepUsage.inputTokens,
-          stepUsage.outputTokens,
-          {
-            ...stepCtx,
-            cacheReadTokens: stepUsage.cacheReadTokens,
-            cacheWriteTokens: stepUsage.cacheWriteTokens,
-          },
-        );
+        // Both sinks receive the same cache-aware context, so the cached and
+        // uncached split travels on the usage event itself. A per-run recorder,
+        // when set, replaces the process-global singleton for this stream.
+        const usageContext: UsageCallbackContext = {
+          ...stepCtx,
+          cacheReadTokens: stepUsage.cacheReadTokens,
+          cacheWriteTokens: stepUsage.cacheWriteTokens,
+        };
+        if (usageRecorder) {
+          await usageRecorder(
+            model,
+            stepUsage.inputTokens,
+            stepUsage.outputTokens,
+            usageContext,
+          );
+        } else {
+          await _usageCallback?.(
+            model,
+            stepUsage.inputTokens,
+            stepUsage.outputTokens,
+            usageContext,
+          );
+        }
       }
     }
   };
-  const providerModel = getProviderModel(model, authConfig);
+  const baseProviderModel = getProviderModel(model, authConfig);
+  const providerModel = languageModelMiddleware
+    ? wrapLanguageModel({
+        model: baseProviderModel,
+        middleware: languageModelMiddleware,
+      })
+    : baseProviderModel;
   // Undefined when the model has no cache breakpoint we can express (non-Claude
   // Bedrock models, OpenAI/Google/OpenRouter) — those run uncached.
   const cacheBreakpoint = cacheBreakpointFor(model);

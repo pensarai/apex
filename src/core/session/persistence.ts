@@ -824,9 +824,6 @@ export interface ConsoleSessionTree extends ConsoleSessionNode {
   descendants: ConsoleSessionNode[];
 }
 
-/** Injected fetcher — resolves a Console session tree by session id. */
-export type FetchConsoleTree = (id: string) => Promise<ConsoleSessionTree>;
-
 /** Result of rehydration: the on-disk root plus in-memory model messages. */
 export interface RehydrateResult {
   rootPath: string;
@@ -1030,6 +1027,9 @@ function atomicWriteJson(filePath: string, value: unknown): void {
  * already-fetched Console session tree, and return the same messages
  * in-memory for the agent constructor. Prefer over {@link rehydrateFromConsole}
  * when the caller already holds the tree.
+ *
+ * @knipignore Console imports this from `@pensar/apex/src/core/session/persistence`;
+ * nothing in this repo calls it, so knip would otherwise report it as dead.
  */
 export function rehydrateFromConsoleTree(
   sessionId: SessionID,
@@ -1068,16 +1068,4 @@ export function rehydrateFromConsoleTree(
   }
 
   return { rootPath, messages: rootMessages, subagentMessages };
-}
-
-/**
- * Fetch a Console session tree (via the injected `fetchTree`) and rebuild the
- * session's on-disk state from it. See {@link rehydrateFromConsoleTree}.
- */
-export async function rehydrateFromConsole(
-  sessionId: SessionID,
-  fetchTree: FetchConsoleTree,
-): Promise<RehydrateResult> {
-  const tree = await fetchTree(sessionId);
-  return rehydrateFromConsoleTree(sessionId, tree);
 }

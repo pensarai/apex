@@ -1,4 +1,5 @@
 import type {
+  LanguageModelMiddleware,
   ModelMessage,
   StopCondition,
   StreamTextOnFinishCallback,
@@ -20,6 +21,7 @@ import type {
   CacheMetrics,
   OpenAIReasoningEffort,
   ThinkingEffort,
+  UsageRecorder,
 } from "../../ai";
 import type { CredentialManager } from "../../credentials";
 import type { AgentEventBus } from "../../eventBus";
@@ -30,6 +32,7 @@ import type { PromptInjectionLibrary } from "../../prompt-injections";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
+import type { SubagentSpawner } from "./subagentSpawner";
 import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
@@ -83,6 +86,19 @@ export type SystemPentestScope = {
   systemId: string;
   memberHosts: string[];
 };
+
+/** Identifies which streamed event a {@link StreamIdFactory} is minting an id for. */
+export type StreamIdFactoryContext =
+  | { kind: "message"; stepIndex: number }
+  | { kind: "text-part"; stepIndex: number; textPartIndex: number }
+  | { kind: "tool-part"; toolCallId: string };
+
+/**
+ * Mints message/part ids for streamed events. Defaults to random ULIDs
+ * ({@link newMessageId}/{@link newPartId}) when unset; a durable runtime injects
+ * a factory that derives deterministic, replay-stable ids from the context.
+ */
+export type StreamIdFactory = (context: StreamIdFactoryContext) => string;
 
 export type OffensiveSecurityAgentInput<TResult = void> = {
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
@@ -158,6 +174,15 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** Callback fired after each agent step completes */
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
 
+  /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+
+  /** Per-run usage recorder. Unset → the process-global usage callback fires as today. */
+  usageRecorder?: UsageRecorder;
+
+  /** Factory for streamed message/part ids. Unset → random ULIDs, unchanged. */
+  streamIdFactory?: StreamIdFactory;
+
   /** Callback fired when the entire stream finishes */
   onFinish?: StreamTextOnFinishCallback<ToolSet>;
 
@@ -181,6 +206,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * route execution through this sandbox instead of running locally.
    */
   sandbox?: UnifiedSandbox;
+
+  /**
+   * Seam through which orchestration tools spawn sub-agents. Forwarded into the
+   * {@link ToolContext}; unset → tools use the in-process spawner.
+   */
+  subagentSpawner?: SubagentSpawner;
 
   /**
    * Shared findings registry for cross-agent dedup.
@@ -420,6 +451,39 @@ export interface SpecializedAgentInput {
 
   /** In-memory credential store for secret-free agent prompts */
   credentialManager?: CredentialManager;
+
+  /**
+   * When set, tools route execution through this sandbox instead of running
+   * locally. Shared by every specialized agent so the runtime can forward it
+   * uniformly — individual agents no longer re-declare it.
+   */
+  sandbox?: UnifiedSandbox;
+
+  /** Provider middleware applied only to this agent's model calls. Forwarded to the runtime. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+
+  /** Per-run usage recorder. Forwarded to the runtime. */
+  usageRecorder?: UsageRecorder;
+
+  /** Factory for streamed message/part ids. Forwarded to the runtime. */
+  streamIdFactory?: StreamIdFactory;
+
+  /**
+   * Seam through which this agent's orchestration tools spawn sub-agents.
+   * Forwarded (into the OffensiveSecurityAgent constructor) into the ToolContext;
+   * unset → the in-process spawner, so behavior is unchanged. A durable runtime
+   * injects a child-workflow spawner here so a specialized agent's fan-out (e.g.
+   * spawn_coding_agent) becomes durable child workflows.
+   */
+  subagentSpawner?: SubagentSpawner;
+
+  /**
+   * Additional tools merged on top of the built-in toolset (same-named tools
+   * override the built-ins). Forwarded (into the OffensiveSecurityAgent constructor)
+   * so a durable runtime can swap `read_file`/`list_files`/`grep` for
+   * sandbox-backed versions without touching the shared tool registry.
+   */
+  extraTools?: ToolSet;
 
   /** Override the default stop condition */
   stopWhen?: StopCondition<ToolSet>;

@@ -95,6 +95,9 @@ export async function addMemory(input: {
 /**
  * Create or overwrite a memory with a pre-determined ID.
  * Used for idempotent syncing from external sources (e.g., project knowledge).
+ *
+ * @knipignore Console imports this from `@/packages/apex/src/core/memory`;
+ * nothing in this repo calls it, so knip would otherwise report it as dead.
  */
 export async function addMemoryWithId(input: {
   id: string;
@@ -146,6 +149,9 @@ export async function addMemoryWithId(input: {
 /**
  * Delete a single memory by category + id.
  * Returns true if deleted, false if not found.
+ *
+ * @knipignore Console imports this from `@/packages/apex/src/core/memory`;
+ * nothing in this repo calls it, so knip would otherwise report it as dead.
  */
 export async function deleteMemory(
   category: MemoryCategory,

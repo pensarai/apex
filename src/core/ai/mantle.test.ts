@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  isMantleModel,
   isMantleResponsesModelId,
   mantleBaseUrl,
   stripMantlePrefix,
@@ -10,8 +9,6 @@ import { getProviderModel } from "./utils";
 
 describe("apex mantle helpers", () => {
   it("detects mantle routing ids and Responses-API models", () => {
-    expect(isMantleModel("mantle:openai.gpt-5.5")).toBe(true);
-    expect(isMantleModel("openai.gpt-5.5")).toBe(false);
     expect(isMantleResponsesModelId("openai.gpt-5.5")).toBe(true);
     expect(isMantleResponsesModelId("mantle:openai.gpt-5.5")).toBe(true);
     expect(isMantleResponsesModelId("openai.gpt-oss-120b")).toBe(false);

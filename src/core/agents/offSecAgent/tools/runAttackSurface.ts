@@ -1,7 +1,5 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { AgentEventBus } from "../../../eventBus";
-import { newSessionId } from "../../../id/id";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import type { AttackSurfaceResult } from "../../specialized/attackSurface/blackboxAgent";
@@ -62,42 +60,33 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       }
 
       const subagentName = "Attack Surface";
-      // Blackbox hard-codes a `subagents/attack-surface-agent/` folder, so keep
-      // the slug there; whitebox gets a fresh `ses_` id.
-      const subagentId = cwd ? newSessionId() : "attack-surface-agent";
-
-      ctx.eventBus?.emit("subagent-spawn", {
-        subagentId,
-        name: subagentName,
-        input: { target, cwd },
-        parentSubagentId: ctx.subagentId,
-      });
+      const spawner = ctx.subagentSpawner;
 
       // -----------------------------------------------------------------------
       // Whitebox mode — analyze source code (cwd is the indicator)
       // -----------------------------------------------------------------------
       if (cwd) {
         try {
-          const { WhiteboxAttackSurfaceAgent } = await import(
-            "../../specialized/whiteboxAttackSurface"
-          );
-
-          const localBus = new AgentEventBus();
-          AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
-
-          const agent = new WhiteboxAttackSurfaceAgent({
-            codebasePath: cwd,
-            model: ctx.model,
-            session: ctx.session,
-            authConfig: ctx.authConfig,
-            abortSignal: ctx.abortSignal,
-            attackSurfaceRegistry: ctx.attackSurfaceRegistry,
-            eventBus: localBus,
-            subagentId,
+          const result = await spawner.spawn<WhiteboxAttackSurfaceResult>({
+            spec: {
+              type: "whitebox-attack-surface",
+              codebasePath: cwd,
+              attackSurfaceRegistry: ctx.attackSurfaceRegistry,
+            },
+            runtime: {
+              session: ctx.session,
+              model: ctx.model,
+              authConfig: ctx.authConfig,
+              abortSignal: ctx.abortSignal,
+              languageModelMiddleware: ctx.languageModelMiddleware,
+              usageRecorder: ctx.usageRecorder,
+              streamIdFactory: ctx.streamIdFactory,
+            },
+            parentBus: ctx.eventBus,
             subagentName,
+            lifecycleInput: { target, cwd },
+            parentSubagentId: ctx.subagentId,
           });
-
-          const result: WhiteboxAttackSurfaceResult = await agent.consume();
 
           // Flatten whitebox results into the same targets shape the swarm expects
           const targets = result.apps.flatMap((app) =>
@@ -120,12 +109,6 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             `Whitebox attack surface complete: ${targets.length} targets from ${result.apps.length} apps`,
           );
 
-          ctx.eventBus?.emit("subagent-complete", {
-            subagentId,
-            status: "completed",
-            parentSubagentId: ctx.subagentId,
-          });
-
           return {
             success: true,
             mode: "whitebox" as const,
@@ -138,12 +121,6 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           const errorMsg =
             error instanceof Error ? error.message : String(error);
           log.error(`Whitebox attack surface agent failed: ${errorMsg}`);
-
-          ctx.eventBus?.emit("subagent-complete", {
-            subagentId,
-            status: "failed",
-            parentSubagentId: ctx.subagentId,
-          });
 
           return {
             success: false,
@@ -158,36 +135,33 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       // Blackbox mode — probe live target
       // -----------------------------------------------------------------------
       try {
-        const { BlackboxAttackSurfaceAgent } = await import(
-          "../../specialized/attackSurface/blackboxAgent"
-        );
-
-        const localBus = new AgentEventBus();
-        AgentEventBus.attachChild(localBus, ctx.eventBus, subagentId);
-
-        const agent = new BlackboxAttackSurfaceAgent({
-          target: target!,
-          model: ctx.model,
-          session: ctx.session,
-          authConfig: ctx.authConfig,
-          abortSignal: ctx.abortSignal,
-          attackSurfaceRegistry: ctx.attackSurfaceRegistry,
-          eventBus: localBus,
-          subagentId,
+        const result = await spawner.spawn<AttackSurfaceResult>({
+          spec: {
+            type: "blackbox-attack-surface",
+            target: target!,
+            attackSurfaceRegistry: ctx.attackSurfaceRegistry,
+          },
+          runtime: {
+            session: ctx.session,
+            model: ctx.model,
+            authConfig: ctx.authConfig,
+            abortSignal: ctx.abortSignal,
+            languageModelMiddleware: ctx.languageModelMiddleware,
+            usageRecorder: ctx.usageRecorder,
+            streamIdFactory: ctx.streamIdFactory,
+          },
+          parentBus: ctx.eventBus,
+          subagentName,
+          lifecycleInput: { target, cwd },
+          parentSubagentId: ctx.subagentId,
+          // Blackbox hard-codes a `subagents/attack-surface-agent/` folder.
+          subagentId: "attack-surface-agent",
         });
-
-        const result: AttackSurfaceResult = await agent.consume();
 
         const targetCount = result.targets.length;
         log.info(
           `Blackbox attack surface complete: ${targetCount} targets identified`,
         );
-
-        ctx.eventBus?.emit("subagent-complete", {
-          subagentId,
-          status: "completed",
-          parentSubagentId: ctx.subagentId,
-        });
 
         return {
           success: true,
@@ -207,12 +181,6 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         log.error(`Blackbox attack surface agent failed: ${errorMsg}`);
-
-        ctx.eventBus?.emit("subagent-complete", {
-          subagentId,
-          status: "failed",
-          parentSubagentId: ctx.subagentId,
-        });
 
         return {
           success: false,
