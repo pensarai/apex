@@ -33,19 +33,34 @@ const promptInjectionRefSchema = z.object({
     .describe("Stable prompt-injection id returned by list_prompt_injections"),
 });
 
+// The model routinely supplies headers/body as a JSON object rather than the
+// JSON-encoded string this tool expects, so a well-formed call gets rejected by
+// schema validation. Stringify a plain object here to accept both shapes. A
+// PromptInjectionRef object is passed through untouched so hidden-payload body
+// refs still resolve.
+const coerceObjectToJsonString = (value: unknown): unknown =>
+  value !== null &&
+  typeof value === "object" &&
+  (value as { kind?: unknown }).kind !== "prompt_injection_ref"
+    ? JSON.stringify(value)
+    : value;
+
 const httpRequestInputSchema = z.object({
   url: z.string().describe("The URL to request"),
   method: z
     .enum(["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
     .default("GET"),
   headers: z
-    .string()
+    .preprocess(coerceObjectToJsonString, z.string())
     .optional()
     .describe(
       'HTTP headers as a JSON-encoded object string, e.g. \'{"Content-Type": "application/json", "Authorization": "Bearer token"}\'',
     ),
   body: z
-    .union([z.string(), promptInjectionRefSchema])
+    .preprocess(
+      coerceObjectToJsonString,
+      z.union([z.string(), promptInjectionRefSchema]),
+    )
     .optional()
     .describe(
       "Request body (for POST, PUT, PATCH). To use a hidden prompt-injection payload, pass a PromptInjectionRef object instead of raw payload text.",

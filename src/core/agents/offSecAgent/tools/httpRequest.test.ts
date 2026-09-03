@@ -255,3 +255,42 @@ describe("httpRequest rate limiting", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("httpRequest input coercion", () => {
+  const schemaOf = () =>
+    httpRequest(makeCtx()).inputSchema as unknown as {
+      safeParse: (v: unknown) => {
+        success: boolean;
+        data?: { headers?: unknown; body?: unknown };
+      };
+    };
+
+  it("coerces an object body and headers to JSON strings", () => {
+    const parsed = schemaOf().safeParse({
+      url: "https://example.com/graphql",
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: { query: "{ me { id } }" },
+      toolCallDescription: "graphql",
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.headers).toBe('{"Content-Type":"application/json"}');
+    expect(parsed.data?.body).toBe('{"query":"{ me { id } }"}');
+  });
+
+  it("still accepts string headers/body and a PromptInjectionRef body", () => {
+    expect(
+      schemaOf().safeParse({
+        url: "https://example.com",
+        headers: '{"a":"b"}',
+        body: "raw",
+      }).success,
+    ).toBe(true);
+    const ref = schemaOf().safeParse({
+      url: "https://example.com",
+      body: { kind: "prompt_injection_ref", id: "pi_1" },
+    });
+    expect(ref.success).toBe(true);
+    expect(ref.data?.body).toEqual({ kind: "prompt_injection_ref", id: "pi_1" });
+  });
+});
