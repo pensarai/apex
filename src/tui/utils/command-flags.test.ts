@@ -248,3 +248,22 @@ describe("parseWebFlags prompt/threatModel", () => {
     expect(flags.threatModel).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Exit routing: an invalid --header throws (surfacing through the TUI exit
+// handler: renderer teardown + bounded trace flush) instead of a direct
+// process.exit that would discard both.
+// ---------------------------------------------------------------------------
+
+describe("parseWebFlags exit routing", () => {
+  it("throws on an invalid --header instead of exiting the process", () => {
+    expect(() =>
+      parseWebFlags([
+        "--target",
+        "https://example.com",
+        "--header",
+        "bad header line",
+      ]),
+    ).toThrowError(/--header "bad header line" rejected/);
+  });
+});
