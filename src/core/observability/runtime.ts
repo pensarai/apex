@@ -238,12 +238,12 @@ export function startObservabilityRuntime(
         };
         shutdownPromise = withTimeout(shutdownWork(), shutdownTimeoutMs)
           .then((result) => {
+            contextManager.disable();
             if (ownsContextGlobal) {
-              contextManager.disable();
               context.disable();
             }
-            // Only reset globals Apex owns (the tracer is ours by
-            // construction here — the context may belong to the host).
+            // Only reset globals Apex owns. The tracer is ours by
+            // construction here; the context global may belong to the host.
             trace.disable();
             return result;
           })

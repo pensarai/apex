@@ -409,6 +409,10 @@ describe("provider ownership", () => {
       "@opentelemetry/context-async-hooks"
     );
     const hostContext = new AsyncLocalStorageContextManager();
+    const disableSpy = vi.spyOn(
+      AsyncLocalStorageContextManager.prototype,
+      "disable",
+    );
     hostContext.enable();
     context.setGlobalContextManager(hostContext);
     try {
@@ -426,8 +430,11 @@ describe("provider ownership", () => {
         context.active().getValue(probeKey),
       );
       expect(seen).toBe("alive");
+      expect(disableSpy).toHaveBeenCalledOnce();
+      expect(disableSpy.mock.instances[0]).not.toBe(hostContext);
     } finally {
       hostContext.disable();
+      disableSpy.mockRestore();
       context.disable();
       trace.disable();
     }
