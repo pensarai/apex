@@ -22,6 +22,7 @@
 
 import path from "node:path";
 import { Daytona, Image } from "@daytonaio/sdk";
+import { inProcessSubagentSpawner } from "../src/core/agents/offSecAgent/subagentSpawner";
 import type { UnifiedSandbox } from "../src/core/agents/offSecAgent/tools/sandbox";
 import {
   createSandboxBrowserTools,
@@ -144,6 +145,7 @@ try {
     targets: [target],
   });
   const ctx: ToolContext = {
+    subagentSpawner: inProcessSubagentSpawner,
     session,
     agentCwd: session.rootPath,
     target,

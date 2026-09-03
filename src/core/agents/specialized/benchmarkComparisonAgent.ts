@@ -68,40 +68,19 @@ export interface BenchmarkComparisonResult {
  */
 export class BenchmarkComparisonAgent extends OffensiveSecurityAgent<BenchmarkComparisonResult> {
   constructor(opts: BenchmarkComparisonAgentInput) {
-    const {
-      model,
-      repoPath,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-    } = opts;
+    const { repoPath, ...base } = opts;
+    const { session } = base;
 
     const expectedResults = loadExpectedResults(repoPath);
     const actualFindings = loadActualFindings(session.rootPath);
-    const resultsPath = join(session.rootPath, "comparison-results.json");
 
     super({
+      ...base,
       system: COMPARISON_SYSTEM_PROMPT,
-      prompt: buildComparisonPrompt(expectedResults, actualFindings),
-      model,
-      session,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-
       activeTools: ["provide_comparison_results"],
-
       stopWhen: [hasToolCall("provide_comparison_results"), stepCountIs(10000)],
-      toolChoice: "auto",
-
       resolveResult: () => {
+        const resultsPath = join(session.rootPath, "comparison-results.json");
         let comparison: ComparisonResult | null = null;
         if (existsSync(resultsPath)) {
           try {
@@ -114,6 +93,7 @@ export class BenchmarkComparisonAgent extends OffensiveSecurityAgent<BenchmarkCo
         }
         return { comparison, resultsPath };
       },
+      prompt: buildComparisonPrompt(expectedResults, actualFindings),
     });
   }
 }

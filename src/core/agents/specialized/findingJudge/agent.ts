@@ -1,14 +1,17 @@
+import type { LanguageModelMiddleware } from "ai";
 import { stepCountIs } from "ai";
 import type {
   AIModel,
   OpenAIReasoningEffort,
   ThinkingEffort,
+  UsageRecorder,
 } from "../../../ai";
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { AgentEventBus } from "../../../eventBus";
 import type { SessionInfo } from "../../../session";
-import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
+import { OffensiveSecurityAgent } from "../../offSecAgent";
 import type { UnifiedSandbox } from "../../offSecAgent/tools";
+import type { StreamIdFactory } from "../../offSecAgent/types";
 import { detectOSAndEnhancePrompt } from "../utils";
 import {
   buildFindingJudgePrompt,
@@ -36,6 +39,12 @@ export interface FindingJudgeAgentInput {
   enableThinking?: boolean;
   thinkingEffort?: ThinkingEffort | null;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+  /** Per-run usage recorder. Unset → the process-global usage callback fires as today. */
+  usageRecorder?: UsageRecorder;
+  /** Factory for streamed message/part ids. Unset → random ULIDs, unchanged. */
+  streamIdFactory?: StreamIdFactory;
 }
 
 const FINDING_JUDGE_ACTIVE_TOOLS = [
@@ -51,27 +60,25 @@ const FINDING_JUDGE_ACTIVE_TOOLS = [
 
 export class FindingJudgeAgent extends OffensiveSecurityAgent<FindingJudgeAgentOutput> {
   constructor(opts: FindingJudgeAgentInput) {
-    const target =
-      opts.finding.target ?? opts.target ?? opts.session.targets[0];
+    const {
+      finding,
+      target: targetOpt,
+      subagentId,
+      subagentName,
+      ...base
+    } = opts;
+    const target = finding.target ?? targetOpt ?? base.session.targets[0];
 
     super({
+      ...base,
       system: detectOSAndEnhancePrompt(FINDING_JUDGE_SYSTEM_PROMPT),
-      prompt: buildFindingJudgePrompt({ ...opts.finding, target }),
-      model: opts.model,
-      session: opts.session,
-      target,
-      authConfig: opts.authConfig,
-      abortSignal: opts.abortSignal,
-      eventBus: opts.eventBus,
-      sandbox: opts.sandbox,
-      enableThinking: opts.enableThinking,
-      thinkingEffort: opts.thinkingEffort,
-      openAIReasoningEffort: opts.openAIReasoningEffort,
-      subagentId: opts.subagentId ?? "finding-judge",
-      subagentName: opts.subagentName ?? "Finding Judge",
       activeTools: [...FINDING_JUDGE_ACTIVE_TOOLS],
       responseSchema: FindingJudgeOutputSchema,
       stopWhen: stepCountIs(60),
+      target,
+      prompt: buildFindingJudgePrompt({ ...finding, target }),
+      subagentId: subagentId ?? "finding-judge",
+      subagentName: subagentName ?? "Finding Judge",
     });
   }
 }

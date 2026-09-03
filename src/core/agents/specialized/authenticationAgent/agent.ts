@@ -1,18 +1,24 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
+import type {
+  LanguageModelMiddleware,
+  StreamTextOnStepFinishCallback,
+  ToolSet,
+} from "ai";
 import { hasToolCall } from "ai";
 import type {
   AIAuthConfig,
   AIModel,
   OpenAIReasoningEffort,
   ThinkingEffort,
+  UsageRecorder,
 } from "../../../ai";
 import type { AgentEventBus } from "../../../eventBus";
 import { createLogger } from "../../../logger/structured";
 import type { SessionInfo } from "../../../session";
 import { scopedLogger } from "../../../util/lazyLogger";
 import { OffensiveSecurityAgent } from "../../offSecAgent";
+import type { StreamIdFactory } from "../../offSecAgent/types";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import type { AuthBarrier } from "./types";
@@ -87,6 +93,15 @@ export interface AuthenticationAgentInput {
 
   /** OpenAI reasoning effort for GPT/o-series reasoning models. */
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+
+  /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+
+  /** Per-run usage recorder. Unset → the process-global usage callback fires as today. */
+  usageRecorder?: UsageRecorder;
+
+  /** Factory for streamed message/part ids. Unset → random ULIDs, unchanged. */
+  streamIdFactory?: StreamIdFactory;
 }
 
 /** The typed result returned by `AuthenticationAgent.consume()`. */
@@ -145,50 +160,14 @@ export interface AuthenticationResult {
  */
 export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationResult> {
   constructor(opts: AuthenticationAgentInput) {
-    const {
-      model,
-      target,
-      session,
-      authHints,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      subagentId,
-      context,
-      environmentVariables,
-      secretValues,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-    } = opts;
+    const { target, authHints, context, ...base } = opts;
+    const { session } = base;
 
     const cm = session.credentialManager;
 
     super({
+      ...base,
       system: detectOSAndEnhancePrompt(AUTH_SUBAGENT_SYSTEM_PROMPT),
-      prompt: buildAuthPrompt(
-        target,
-        authHints,
-        cm,
-        context,
-        environmentVariables ? Object.keys(environmentVariables) : undefined,
-      ),
-      model,
-      session,
-      target,
-      authConfig,
-      onStepFinish,
-      abortSignal,
-      eventBus,
-      subagentId,
-      subagentName: opts.subagentName,
-      environmentVariables,
-      secretValues,
-      enableThinking,
-      thinkingEffort,
-      openAIReasoningEffort,
-      toolChoice: "auto",
       activeTools: [
         // Auth flow tools
         "execute_command",
@@ -215,13 +194,19 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         "web_search",
         "get_page",
       ],
-
       stopWhen: hasToolCall("complete_authentication"),
-
-      resolveResult: () => {
-        const authDataPath = join(session.rootPath, "auth", "auth-data.json");
-        return loadAuthResult(authDataPath);
-      },
+      resolveResult: () =>
+        loadAuthResult(join(session.rootPath, "auth", "auth-data.json")),
+      target,
+      prompt: buildAuthPrompt(
+        target,
+        authHints,
+        cm,
+        context,
+        base.environmentVariables
+          ? Object.keys(base.environmentVariables)
+          : undefined,
+      ),
     });
   }
 }

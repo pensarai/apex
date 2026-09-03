@@ -12,6 +12,10 @@ import { join } from "node:path";
 import type { StreamTextOnStepFinishCallback, ToolSet } from "ai";
 import pLimit from "p-limit";
 import { z } from "zod";
+import {
+  inProcessSubagentSpawner,
+  type SubagentSpawner,
+} from "../agents/offSecAgent/subagentSpawner";
 import type { DocumentedEndpointRecord } from "../agents/specialized/attackSurface/schemas";
 import { CodeAgent } from "../agents/specialized/codeAgent/agent";
 import {
@@ -41,7 +45,6 @@ import { mapAppWithSurface } from "../integrations/surface";
 import { createLogger } from "../logger/structured";
 import type { SessionInfo } from "../session";
 import { scopedLogger } from "../util/lazyLogger";
-import { runWithBoundedConcurrency } from "../utils/concurrency";
 
 const log = scopedLogger(() => createLogger("whitebox-workflow"));
 
@@ -140,6 +143,8 @@ export interface WhiteboxAttackSurfaceWorkflowInput {
    * doesn't scale with the number of apps in the repo.
    */
   maxConcurrentAgents?: number;
+  /** Fan-out spawner. Defaults to the in-process spawner. */
+  subagentSpawner?: SubagentSpawner;
 }
 
 interface IncrementalWhiteboxInput extends WhiteboxAttackSurfaceWorkflowInput {
@@ -189,7 +194,10 @@ export async function runWhiteboxAttackSurfaceWorkflow(
     environments,
     surfaceIntegrationEnabled = true,
     maxConcurrentAgents = MAX_CONCURRENT_AGENTS,
+    subagentSpawner,
   } = input;
+
+  const spawner = subagentSpawner ?? inProcessSubagentSpawner;
 
   // Single shared gate for every CodeAgent run in this workflow (Phase 1
   // discovery, Phase 2 per-app discovery, and per-endpoint documentation). This
@@ -437,9 +445,8 @@ export async function runWhiteboxAttackSurfaceWorkflow(
       buildCloudResourceEndpointsObjective(codebasePath, app, environments),
     );
 
-  await runWithBoundedConcurrency(
+  await spawner.spawnMany(
     appsResult.apps,
-    DEFAULT_CONCURRENCY,
     async (app) => {
       const appNodeId = appNodeIdFor(app.name);
       try {
@@ -482,6 +489,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
               projectThreatModel,
               parentSubagentId: appNodeId,
               agentLimiter,
+              subagentSpawner,
             });
           } else {
             log.debug(`${app.name}: fallback (${surfaceResult.reason})`);
@@ -512,6 +520,7 @@ export async function runWhiteboxAttackSurfaceWorkflow(
         });
       }
     },
+    { concurrency: DEFAULT_CONCURRENCY },
   );
 
   eventBus?.emit("subagent-complete", {

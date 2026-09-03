@@ -13,8 +13,6 @@ import { z } from "zod";
 import { AttackPathSchema } from "../../../../lib/attack-path/types";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
-import { AgentEventBus } from "../../../eventBus";
-import { newSessionId } from "../../../id/id";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import {
@@ -22,10 +20,9 @@ import {
   type CVSSScorerResult,
   scoreFindingWithCVSS,
 } from "../../specialized/cvssScorer";
-import {
-  type FindingJudgeInput,
-  type FindingJudgeResult,
-  judgeFinding,
+import type {
+  FindingJudgeInput,
+  FindingJudgeResult,
 } from "../../specialized/findingJudge";
 import type { Finding } from "../types";
 import {
@@ -264,56 +261,34 @@ CRITICAL RULES — READ BEFORE CALLING:
           },
         };
 
-        // Run the judge as a proper nested subagent: explicit lifecycle
-        // events (with parentSubagentId) plus a child bus, mirroring
-        // spawn_pentest_agent / spawn_coding_agent. Without this the judge's
-        // stream renders as a top-level sibling instead of nested under the
-        // worker that invoked document_vulnerability.
-        const judgeSubagentId = newSessionId();
-        const judgeSubagentName = "Finding Judge";
-
-        ctx.eventBus?.emit("subagent-spawn", {
-          subagentId: judgeSubagentId,
-          name: judgeSubagentName,
-          input: { title: input.title, endpoint: input.endpoint },
-          parentSubagentId: ctx.subagentId,
-        });
-
-        const judgeBus = new AgentEventBus();
-        AgentEventBus.attachChild(judgeBus, ctx.eventBus, judgeSubagentId);
-
-        let judgeResult: FindingJudgeResult;
-        try {
-          judgeResult = await judgeFinding(judgeInput, {
-            model: ctx.model!,
-            session: ctx.session,
-            authConfig: ctx.authConfig,
-            abortSignal: ctx.abortSignal,
-            eventBus: judgeBus,
-            subagentId: judgeSubagentId,
-            subagentName: judgeSubagentName,
-            sandbox: ctx.sandbox,
-            target: ctx.target,
-            enableThinking: ctx.enableThinking,
-            thinkingEffort: ctx.thinkingEffort,
-            openAIReasoningEffort: ctx.openAIReasoningEffort,
-          });
-        } catch (error) {
-          ctx.eventBus?.emit("subagent-complete", {
-            subagentId: judgeSubagentId,
-            status: "failed",
+        // Run the judge as a proper nested subagent through the spawner —
+        // child bus + explicit lifecycle so its stream nests under the worker
+        // that invoked document_vulnerability. `error` is only set by the
+        // infrastructure-failure fallback, so a judge that completed and
+        // rejected the finding still counts as "completed".
+        const spawner = ctx.subagentSpawner;
+        const judgeResult: FindingJudgeResult =
+          await spawner.spawn<FindingJudgeResult>({
+            spec: { type: "finding-judge", judgeInput, target: ctx.target },
+            runtime: {
+              session: ctx.session,
+              model: ctx.model!,
+              authConfig: ctx.authConfig,
+              abortSignal: ctx.abortSignal,
+              sandbox: ctx.sandbox,
+              enableThinking: ctx.enableThinking,
+              thinkingEffort: ctx.thinkingEffort,
+              openAIReasoningEffort: ctx.openAIReasoningEffort,
+              languageModelMiddleware: ctx.languageModelMiddleware,
+              usageRecorder: ctx.usageRecorder,
+              streamIdFactory: ctx.streamIdFactory,
+            },
+            parentBus: ctx.eventBus,
+            subagentName: "Finding Judge",
+            lifecycleInput: { title: input.title, endpoint: input.endpoint },
             parentSubagentId: ctx.subagentId,
+            resolveStatus: (r) => (r.error ? "failed" : "completed"),
           });
-          throw error;
-        }
-
-        ctx.eventBus?.emit("subagent-complete", {
-          subagentId: judgeSubagentId,
-          // `error` is only set by the infrastructure-failure fallback —
-          // a judge that completed and rejected the finding still "completed".
-          status: judgeResult.error ? "failed" : "completed",
-          parentSubagentId: ctx.subagentId,
-        });
 
         if (!judgeResult.valid) {
           cleanupPocFiles(ctx, filename);
