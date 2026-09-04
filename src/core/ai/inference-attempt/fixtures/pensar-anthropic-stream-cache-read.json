@@ -1,0 +1,20 @@
+{
+  "transport": "pensar-anthropic-stream",
+  "usage": {
+    "inputTokens": {
+      "total": 1000,
+      "noCache": 100,
+      "cacheRead": 900
+    },
+    "outputTokens": { "total": 80 }
+  },
+  "expected": {
+    "tokens": {
+      "inclusiveInput": 1000,
+      "uncachedInput": 100,
+      "cacheRead": 900,
+      "cacheWrite": 0,
+      "output": 80
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "transport": "anthropic-messages",
+  "usage": {
+    "input_tokens": 1000,
+    "output_tokens": 50,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "providerMetadata": {
+    "anthropic": { "id": "msg_noncache" }
+  },
+  "cacheBreakpoint": "anthropic.cacheControl",
+  "expected": {
+    "tokens": {
+      "inclusiveInput": 1000,
+      "uncachedInput": 1000,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "output": 50
+    },
+    "evidence": {
+      "providerRequestId": "msg_noncache",
+      "cacheBreakpoint": "anthropic.cacheControl"
+    }
+  }
+}

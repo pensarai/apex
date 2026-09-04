@@ -1,0 +1,15 @@
+{
+  "transport": "sdk-normalized",
+  "usage": {
+    "outputTokens": 7
+  },
+  "expected": {
+    "tokens": {
+      "inclusiveInput": null,
+      "uncachedInput": null,
+      "cacheRead": null,
+      "cacheWrite": null,
+      "output": 7
+    }
+  }
+}

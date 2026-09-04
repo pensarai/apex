@@ -1,0 +1,11 @@
+{
+  "transport": "sdk-normalized",
+  "usage": {
+    "inputTokens": 100,
+    "outputTokens": 10,
+    "inputTokenDetails": {
+      "cacheReadTokens": 200
+    }
+  },
+  "reject": "inclusive-identity"
+}
