@@ -35,6 +35,7 @@ import type { ToolContext } from "./types";
 export type DestructiveCategory =
   | "http-delete-method"
   | "http-destructive-path"
+  | "financial-side-effect"
   | "sql-destructive"
   | "nosql-destructive"
   | "host-destructive";
@@ -153,6 +154,21 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH"]);
  */
 const DESTRUCTIVE_PATH_PATTERN =
   /(?:^|[/_?&=.-])(?:delete|destroy|drop|purge|truncate|wipe|obliterate|nuke|remove|hard[-_]?delete|force[-_]?delete)(?:[/_?&=.-]|$)/i;
+
+/**
+ * Financial mutation routes. Reads remain allowed; write methods to these
+ * routes can create real payouts, transfers, charges, refunds, or withdrawals.
+ */
+const FINANCIAL_PATH_PATTERN =
+  /(?:^|[/_?&=.'"`\s([{:-])(?:payouts?|payout[-_]?links?|payout[-_]?requests?|send[-_]?payout|payments?|transfers?|withdrawals?|withdraw|refunds?|charges?|disbursements?|remittances?)(?:[/_?&=.'"`\s)\]}:-]|$)/i;
+
+/**
+ * Financial mutations can also hide behind generic webhook / GraphQL routes.
+ * Require an explicit action or provider event token instead of matching bare
+ * words such as "amount" so ordinary form submissions stay available.
+ */
+const FINANCIAL_BODY_PATTERN =
+  /\bPAYMENT[._-]PAYOUTS?(?:[._-]ITEM)?\b|(?:create|send|issue|initiate|approve|submit|process|execute)[-_\s]?(?:payout|payment|transfer|withdrawal|refund|charge)\b/i;
 
 /**
  * Method-override to DELETE via header, query, or body — covers the common
@@ -318,10 +334,13 @@ const CURL_DATA_FLAG =
  *  - a positional client delete call (`axios.delete(`, `page.request.delete(`).
  */
 const JS_METHOD_DELETE = /\bmethod\s*:\s*['"`]?\s*delete\b/i;
+const JS_METHOD_WRITE = /\bmethod\s*:\s*['"`]?\s*(?:post|put|patch)\b/i;
 const JS_HTTP_CLIENT_HINT =
   /\b(?:fetch|axios|got|ky|superagent|needle|node-fetch|undici|phin|XMLHttpRequest|xhr)\b|\.\s*(?:request|open)\s*\(/i;
 const JS_CLIENT_DELETE_CALL =
   /\b(?:axios|got|ky|superagent|needle|supertest|phin|page|apiContext|apiRequestContext|request)\s*(?:\.\s*\w+)*\.\s*delete\s*\(/i;
+const JS_CLIENT_WRITE_CALL =
+  /\b(?:axios|got|ky|superagent|needle|supertest|phin|page|apiContext|apiRequestContext|request)\s*(?:\.\s*\w+)*\.\s*(?:post|put|patch)\s*\(/i;
 
 /** Classify an HTTP call expressed as a shell command (curl/wget/httpie/xh, or an in-script fetch/axios). */
 function classifyCommandHttp(command: string): DestructiveClassification {
@@ -358,6 +377,21 @@ function classifyCommandHttp(command: string): DestructiveClassification {
       ruleId: "cmd-script-http-delete",
       reason:
         "command runs an in-script HTTP DELETE (fetch/axios/Playwright) against the target",
+    };
+  }
+
+  if (
+    hasJsHttpClient &&
+    (JS_METHOD_WRITE.test(command) || JS_CLIENT_WRITE_CALL.test(command)) &&
+    (FINANCIAL_PATH_PATTERN.test(decoded) ||
+      FINANCIAL_BODY_PATTERN.test(decoded))
+  ) {
+    return {
+      destructive: true,
+      category: "financial-side-effect",
+      ruleId: "cmd-script-financial-write",
+      reason:
+        "command runs an in-script financial mutation (payout/payment/transfer/withdrawal/refund/charge)",
     };
   }
 
@@ -403,7 +437,20 @@ function classifyCommandHttp(command: string): DestructiveClassification {
     httpieMethod === "put" ||
     httpieMethod === "patch";
   if (hasShellHttpClient && writeIndicated) {
-    for (const rawUrl of command.match(URL_IN_COMMAND) ?? []) {
+    const urls = command.match(URL_IN_COMMAND) ?? [];
+    if (
+      urls.some((rawUrl) => FINANCIAL_PATH_PATTERN.test(safeDecode(rawUrl))) ||
+      FINANCIAL_BODY_PATTERN.test(decoded)
+    ) {
+      return {
+        destructive: true,
+        category: "financial-side-effect",
+        ruleId: "cmd-http-financial-write",
+        reason:
+          "command sends a financial mutation (payout/payment/transfer/withdrawal/refund/charge)",
+      };
+    }
+    for (const rawUrl of urls) {
       if (DESTRUCTIVE_PATH_PATTERN.test(safeDecode(rawUrl))) {
         return {
           destructive: true,
@@ -501,6 +548,20 @@ export function classifyHttpAction(input: {
     };
   }
 
+  if (
+    WRITE_METHODS.has(method) &&
+    (FINANCIAL_PATH_PATTERN.test(decodedUrl) ||
+      FINANCIAL_BODY_PATTERN.test(decodedBody))
+  ) {
+    return {
+      destructive: true,
+      category: "financial-side-effect",
+      ruleId: "http-financial-write",
+      reason:
+        "request performs a financial mutation (payout/payment/transfer/withdrawal/refund/charge)",
+    };
+  }
+
   return NOT_DESTRUCTIVE;
 }
 
@@ -557,9 +618,12 @@ export class DestructiveActionError extends Error {
     subject: string,
   ) {
     super(
-      `Destructive action blocked: ${subject} — ${classification.reason ?? "destructive operation"}. ` +
-        `Destructive testing (DB deletes/drops, API write-deletes, catastrophic host operations) is NOT authorized for this engagement. ` +
-        `Prove the flaw without completing the destructive step (e.g. demonstrate the authorization boundary is crossed with a read or a reversible action), or ask the operator to enable destructive testing.`,
+      classification.category === "financial-side-effect"
+        ? `Financial mutation blocked: ${subject} — ${classification.reason ?? "financial operation"}. ` +
+            `Destructive testing is NOT authorized for this engagement. Prove the flaw without moving money, or ask the operator to enable destructive testing.`
+        : `Destructive action blocked: ${subject} — ${classification.reason ?? "destructive operation"}. ` +
+            `Destructive testing (DB deletes/drops, API write-deletes, catastrophic host operations) is NOT authorized for this engagement. ` +
+            `Prove the flaw without completing the destructive step (e.g. demonstrate the authorization boundary is crossed with a read or a reversible action), or ask the operator to enable destructive testing.`,
     );
     this.name = "DestructiveActionError";
   }

@@ -57,6 +57,7 @@ const mockedJudgeFinding = vi.mocked(judgeFinding);
 
 type DocumentToolResult = {
   success: boolean;
+  error?: string;
   judgeRejected?: boolean;
   judgeReasoning?: string;
   finding?: {
@@ -138,6 +139,32 @@ describe("documentVulnerability judge handling", () => {
     expect(tool.description).toContain(
       "do not leave the chain only in the description or evidence",
     );
+  });
+
+  it("blocks a financial-mutation PoC before executing it", async () => {
+    const ctx = makeToolContext(rootPath);
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute?.(
+      {
+        ...makeDocumentInput(),
+        pocName: "large_payout",
+        pocContent:
+          `curl -X POST https://example.com/api/v2/payout-links ` +
+          `-H 'Content-Type: application/json' ` +
+          `-d '{"amount":99999999,"funding_source":"ach"}'`,
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+      },
+    )) as DocumentToolResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Financial mutation blocked");
+    expect(existsSync(join(ctx.session.pocsPath, "poc_large_payout.sh"))).toBe(
+      false,
+    );
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
   });
 
   it("cleans up the POC and returns judgeRejected when a completed judge rejects", async () => {

@@ -72,6 +72,31 @@ describe("classifyHttpAction", () => {
     ).toBe(false);
   });
 
+  it("flags financial writes while allowing financial reads", () => {
+    const payout = classifyHttpAction({
+      method: "POST",
+      url: "https://api.example.com/api/v2/payout-links",
+      body: '{"amount":99999999,"funding_source":"ach"}',
+    });
+    expect(payout.destructive).toBe(true);
+    expect(payout.category).toBe("financial-side-effect");
+
+    expect(
+      classifyHttpAction({
+        method: "POST",
+        url: "https://api.example.com/webhooks",
+        body: '{"event_type":"PAYMENT.PAYOUTS-ITEM.SUCCEEDED"}',
+      }).category,
+    ).toBe("financial-side-effect");
+
+    expect(
+      classifyHttpAction({
+        method: "GET",
+        url: "https://api.example.com/api/v2/payout-links",
+      }).destructive,
+    ).toBe(false);
+  });
+
   it("flags a write method aimed at a delete/destroy route", () => {
     expect(
       classifyHttpAction({
@@ -367,6 +392,41 @@ describe("classifyCommandAction", () => {
     ).toBe(false);
   });
 
+  it("flags financial writes issued through shell and script HTTP clients", () => {
+    expect(
+      classifyCommandAction(
+        `curl -X POST https://api.example.com/api/v2/payout-links -d '{"amount":99999999,"funding_source":"ach"}'`,
+      ).category,
+    ).toBe("financial-side-effect");
+    expect(
+      classifyCommandAction(
+        `curl -X POST https://api.example.com/webhooks -d '{"event_type":"PAYMENT.PAYOUTS-ITEM.SUCCEEDED"}'`,
+      ).category,
+    ).toBe("financial-side-effect");
+    expect(
+      classifyCommandAction(
+        `fetch("/api/v2/transfers", { method: "POST", body: payload })`,
+      ).category,
+    ).toBe("financial-side-effect");
+    expect(
+      classifyCommandAction(
+        `axios.post("/api/v2/refunds", { chargeId: "ch_123" })`,
+      ).category,
+    ).toBe("financial-side-effect");
+  });
+
+  it("allows financial endpoint reconnaissance that cannot mutate state", () => {
+    expect(
+      classifyCommandAction(
+        "curl -i https://api.example.com/api/v2/payout-links",
+      ).destructive,
+    ).toBe(false);
+    expect(
+      classifyCommandAction('grep -r "create payout" ./captured-api-docs')
+        .destructive,
+    ).toBe(false);
+  });
+
   it("does not flag SQL/NoSQL keywords in recon (no DB client executing them)", () => {
     // Grepping logs/config for destructive keywords is recon, not a DB op.
     expect(
@@ -606,6 +666,19 @@ describe("assertHttpActionAllowed", () => {
     ).not.toThrow();
   });
 
+  it("allows financial mutations when destructive testing is authorized", () => {
+    expect(() =>
+      assertHttpActionAllowed(
+        {
+          method: "POST",
+          url: "https://x.com/api/v2/payout-links",
+          body: '{"amount":99999999}',
+        },
+        makeCtx({ allowDestructiveActions: true }),
+      ),
+    ).not.toThrow();
+  });
+
   it("is a no-op for a non-destructive request", () => {
     expect(() =>
       assertHttpActionAllowed(
@@ -627,6 +700,15 @@ describe("assertCommandActionAllowed", () => {
     expect(() =>
       assertCommandActionAllowed(
         'psql -c "DROP TABLE t"',
+        makeCtx({ allowDestructiveActions: true }),
+      ),
+    ).not.toThrow();
+  });
+
+  it("allows financial commands when destructive testing is authorized", () => {
+    expect(() =>
+      assertCommandActionAllowed(
+        `curl -X POST https://x.com/api/v2/transfers -d '{"amount":99999999}'`,
         makeCtx({ allowDestructiveActions: true }),
       ),
     ).not.toThrow();

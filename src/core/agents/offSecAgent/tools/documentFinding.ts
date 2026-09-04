@@ -25,7 +25,9 @@ import type {
   FindingJudgeResult,
 } from "../../specialized/findingJudge";
 import type { Finding } from "../types";
+import { assertCommandActionAllowed } from "./destructiveGuard";
 import {
+  assertCommandInScope,
   assertFindingEndpointInScope,
   ScopeViolationError,
 } from "./scopeGuard";
@@ -191,6 +193,10 @@ CRITICAL RULES — READ BEFORE CALLING:
       }
 
       try {
+        // PoCs execute, so enforce the same guards as execute_command.
+        assertCommandInScope(input.pocContent, ctx);
+        assertCommandActionAllowed(input.pocContent, ctx);
+
         // Early dedup check — avoid POC execution + LLM calls for known vulns
         const materializedEvidence = formatMateriality(input);
 
