@@ -95,6 +95,31 @@ describe("classifyHttpAction", () => {
         url: "https://api.example.com/api/v2/payout-links",
       }).destructive,
     ).toBe(false);
+
+    expect(
+      classifyHttpAction({
+        method: "POST",
+        url: "https://payments.example.com/profile",
+        body: '{"displayName":"Researcher"}',
+      }).destructive,
+    ).toBe(false);
+  });
+
+  it("flags financial mutations on generic RPC endpoints", () => {
+    for (const body of [
+      '{"operationName":"createPaymentIntent"}',
+      '{"action":"createPayoutLink"}',
+      '{"method":"payments.create"}',
+      '{"operationName":"createDisbursement"}',
+    ]) {
+      expect(
+        classifyHttpAction({
+          method: "POST",
+          url: "https://api.example.com/graphql",
+          body,
+        }).category,
+      ).toBe("financial-side-effect");
+    }
   });
 
   it("flags a write method aimed at a delete/destroy route", () => {
@@ -411,6 +436,44 @@ describe("classifyCommandAction", () => {
     expect(
       classifyCommandAction(
         `axios.post("/api/v2/refunds", { chargeId: "ch_123" })`,
+      ).category,
+    ).toBe("financial-side-effect");
+    expect(
+      classifyCommandAction(
+        `requests.post("https://api.example.com/api/v2/transfers", json={"amount": 99999999})`,
+      ).category,
+    ).toBe("financial-side-effect");
+    expect(
+      classifyCommandAction(
+        `httpx.patch("https://api.example.com/api/v2/payouts/123", json=payload)`,
+      ).category,
+    ).toBe("financial-side-effect");
+    expect(
+      classifyCommandAction(
+        `urllib3.PoolManager().request("POST", "https://api.example.com/api/v2/charges", body=payload)`,
+      ).category,
+    ).toBe("financial-side-effect");
+    expect(
+      classifyCommandAction(
+        `page.request.post("/api/v2/payouts", { data: payload })`,
+      ).category,
+    ).toBe("financial-side-effect");
+    expect(
+      classifyCommandAction(
+        `fetch("/api/v2/transfers", { "method": "POST", body: payload })`,
+      ).category,
+    ).toBe("financial-side-effect");
+  });
+
+  it("flags financial paths composed through shell variables", () => {
+    expect(
+      classifyCommandAction(
+        `path="/api/v2/transfers"; curl -X POST "https://api.example.com$path" -d '{"amount":99999999}'`,
+      ).category,
+    ).toBe("financial-side-effect");
+    expect(
+      classifyCommandAction(
+        `curl -X POST "$TARGET/api/v2/payouts" -d '{"amount":99999999}'`,
       ).category,
     ).toBe("financial-side-effect");
   });

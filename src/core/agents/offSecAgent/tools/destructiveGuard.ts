@@ -40,15 +40,21 @@ export type DestructiveCategory =
   | "nosql-destructive"
   | "host-destructive";
 
-export interface DestructiveClassification {
-  destructive: boolean;
-  /** Populated when `destructive` is true. */
-  category?: DestructiveCategory;
-  /** Stable rule id that fired (for logs / block message). */
-  ruleId?: string;
-  /** Human-readable explanation of what was matched. */
-  reason?: string;
-}
+export type DestructiveClassification =
+  | {
+      destructive: false;
+      category?: never;
+      ruleId?: never;
+      reason?: never;
+    }
+  | {
+      destructive: true;
+      category: DestructiveCategory;
+      /** Stable rule id that fired (for logs / block message). */
+      ruleId: string;
+      /** Human-readable explanation of what was matched. */
+      reason: string;
+    };
 
 const NOT_DESTRUCTIVE: DestructiveClassification = { destructive: false };
 
@@ -76,6 +82,10 @@ function safeDecode(input: string): string {
     out = decoded;
   }
   return out;
+}
+
+function stripUrlAuthorities(input: string): string {
+  return input.replace(/\bhttps?:\/\/[^/\s"'`;|&)<>]+/gi, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -155,20 +165,24 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH"]);
 const DESTRUCTIVE_PATH_PATTERN =
   /(?:^|[/_?&=.-])(?:delete|destroy|drop|purge|truncate|wipe|obliterate|nuke|remove|hard[-_]?delete|force[-_]?delete)(?:[/_?&=.-]|$)/i;
 
-/**
- * Financial mutation routes. Reads remain allowed; write methods to these
- * routes can create real payouts, transfers, charges, refunds, or withdrawals.
- */
-const FINANCIAL_PATH_PATTERN =
-  /(?:^|[/_?&=.'"`\s([{:-])(?:payouts?|payout[-_]?links?|payout[-_]?requests?|send[-_]?payout|payments?|transfers?|withdrawals?|withdraw|refunds?|charges?|disbursements?|remittances?)(?:[/_?&=.'"`\s)\]}:-]|$)/i;
+const FINANCIAL_RESOURCE = String.raw`(?:payout(?:s|[-_.\s]?(?:links?|requests?))?|payment(?:s|[-_.\s]?intents?)?|transfers?|withdraw(?:als?)?|refunds?|charges?|disbursements?|remittances?)`;
+const FINANCIAL_ACTION =
+  "(?:create|send|issue|initiate|approve|submit|process|execute)";
+
+const FINANCIAL_PATH_PATTERN = new RegExp(
+  String.raw`(?:^|[/_?&=.'"\x60\s([{:-])${FINANCIAL_RESOURCE}(?:[/_?&=.'"\x60\s)\]}:-]|$)`,
+  "i",
+);
 
 /**
  * Financial mutations can also hide behind generic webhook / GraphQL routes.
  * Require an explicit action or provider event token instead of matching bare
  * words such as "amount" so ordinary form submissions stay available.
  */
-const FINANCIAL_BODY_PATTERN =
-  /\bPAYMENT[._-]PAYOUTS?(?:[._-]ITEM)?\b|(?:create|send|issue|initiate|approve|submit|process|execute)[-_\s]?(?:payout|payment|transfer|withdrawal|refund|charge)\b/i;
+const FINANCIAL_BODY_PATTERN = new RegExp(
+  String.raw`\bPAYMENT[._-]PAYOUTS?(?:[._-]ITEM)?\b|${FINANCIAL_ACTION}[-_.\s]*${FINANCIAL_RESOURCE}\b|${FINANCIAL_RESOURCE}[-_.\s]+${FINANCIAL_ACTION}\b`,
+  "i",
+);
 
 /**
  * Method-override to DELETE via header, query, or body — covers the common
@@ -333,14 +347,16 @@ const CURL_DATA_FLAG =
  *    for the literal string is not misclassified; and
  *  - a positional client delete call (`axios.delete(`, `page.request.delete(`).
  */
-const JS_METHOD_DELETE = /\bmethod\s*:\s*['"`]?\s*delete\b/i;
-const JS_METHOD_WRITE = /\bmethod\s*:\s*['"`]?\s*(?:post|put|patch)\b/i;
-const JS_HTTP_CLIENT_HINT =
-  /\b(?:fetch|axios|got|ky|superagent|needle|node-fetch|undici|phin|XMLHttpRequest|xhr)\b|\.\s*(?:request|open)\s*\(/i;
+const JS_METHOD_DELETE = /\bmethod\s*['"`]?\s*:\s*['"`]?\s*delete\b/i;
+const SCRIPT_METHOD_WRITE =
+  /\bmethod\s*['"`]?\s*:\s*['"`]?\s*(?:post|put|patch)\b/i;
+const SCRIPT_HTTP_CLIENT_HINT =
+  /\b(?:fetch|axios|got|ky|superagent|needle|node-fetch|undici|phin|XMLHttpRequest|xhr|requests|httpx|urllib3|page|apiContext|apiRequestContext|request)\b|\.\s*(?:request|open)\s*\(/i;
 const JS_CLIENT_DELETE_CALL =
   /\b(?:axios|got|ky|superagent|needle|supertest|phin|page|apiContext|apiRequestContext|request)\s*(?:\.\s*\w+)*\.\s*delete\s*\(/i;
-const JS_CLIENT_WRITE_CALL =
-  /\b(?:axios|got|ky|superagent|needle|supertest|phin|page|apiContext|apiRequestContext|request)\s*(?:\.\s*\w+)*\.\s*(?:post|put|patch)\s*\(/i;
+const SCRIPT_CLIENT_WRITE_CALL = /\.(?:post|put|patch)\s*\(/i;
+const SCRIPT_POSITIONAL_WRITE_CALL =
+  /\.request\s*\(\s*['"`](?:post|put|patch)['"`]/i;
 
 /** Classify an HTTP call expressed as a shell command (curl/wget/httpie/xh, or an in-script fetch/axios). */
 function classifyCommandHttp(command: string): DestructiveClassification {
@@ -351,7 +367,7 @@ function classifyCommandHttp(command: string): DestructiveClassification {
   // recon `grep -X DELETE` / `echo _method=DELETE` is not misclassified.
   const hasShellHttpClient =
     HTTP_CLIENT_PATTERN.test(command) || httpieMethod !== undefined;
-  const hasJsHttpClient = JS_HTTP_CLIENT_HINT.test(command);
+  const hasScriptHttpClient = SCRIPT_HTTP_CLIENT_HINT.test(command);
 
   // Explicit DELETE via curl flag or httpie positional method.
   if (
@@ -368,7 +384,7 @@ function classifyCommandHttp(command: string): DestructiveClassification {
 
   // In-script HTTP DELETE (fetch/axios/Playwright) run via a JS runtime.
   if (
-    (JS_METHOD_DELETE.test(command) && hasJsHttpClient) ||
+    (JS_METHOD_DELETE.test(command) && hasScriptHttpClient) ||
     JS_CLIENT_DELETE_CALL.test(command)
   ) {
     return {
@@ -381,9 +397,11 @@ function classifyCommandHttp(command: string): DestructiveClassification {
   }
 
   if (
-    hasJsHttpClient &&
-    (JS_METHOD_WRITE.test(command) || JS_CLIENT_WRITE_CALL.test(command)) &&
-    (FINANCIAL_PATH_PATTERN.test(decoded) ||
+    hasScriptHttpClient &&
+    (SCRIPT_METHOD_WRITE.test(command) ||
+      SCRIPT_CLIENT_WRITE_CALL.test(command) ||
+      SCRIPT_POSITIONAL_WRITE_CALL.test(command)) &&
+    (FINANCIAL_PATH_PATTERN.test(stripUrlAuthorities(decoded)) ||
       FINANCIAL_BODY_PATTERN.test(decoded))
   ) {
     return {
@@ -397,7 +415,7 @@ function classifyCommandHttp(command: string): DestructiveClassification {
 
   // Method-override to DELETE carried in headers/data — only in an HTTP context.
   if (
-    (hasShellHttpClient || hasJsHttpClient) &&
+    (hasShellHttpClient || hasScriptHttpClient) &&
     METHOD_OVERRIDE_DELETE_PATTERN.test(decoded)
   ) {
     return {
@@ -439,7 +457,7 @@ function classifyCommandHttp(command: string): DestructiveClassification {
   if (hasShellHttpClient && writeIndicated) {
     const urls = command.match(URL_IN_COMMAND) ?? [];
     if (
-      urls.some((rawUrl) => FINANCIAL_PATH_PATTERN.test(safeDecode(rawUrl))) ||
+      FINANCIAL_PATH_PATTERN.test(stripUrlAuthorities(decoded)) ||
       FINANCIAL_BODY_PATTERN.test(decoded)
     ) {
       return {
@@ -486,6 +504,7 @@ export function classifyHttpAction(input: {
 }): DestructiveClassification {
   const method = input.method.toUpperCase();
   const decodedUrl = safeDecode(input.url);
+  const decodedUrlAction = stripUrlAuthorities(decodedUrl);
   const decodedBody = safeDecode(
     typeof input.body === "string" ? input.body : "",
   );
@@ -550,7 +569,7 @@ export function classifyHttpAction(input: {
 
   if (
     WRITE_METHODS.has(method) &&
-    (FINANCIAL_PATH_PATTERN.test(decodedUrl) ||
+    (FINANCIAL_PATH_PATTERN.test(decodedUrlAction) ||
       FINANCIAL_BODY_PATTERN.test(decodedBody))
   ) {
     return {
@@ -614,16 +633,16 @@ export function classifyCommandAction(
 
 export class DestructiveActionError extends Error {
   constructor(
-    public readonly classification: DestructiveClassification,
+    public readonly classification: Extract<
+      DestructiveClassification,
+      { destructive: true }
+    >,
     subject: string,
   ) {
     super(
-      classification.category === "financial-side-effect"
-        ? `Financial mutation blocked: ${subject} — ${classification.reason ?? "financial operation"}. ` +
-            `Destructive testing is NOT authorized for this engagement. Prove the flaw without moving money, or ask the operator to enable destructive testing.`
-        : `Destructive action blocked: ${subject} — ${classification.reason ?? "destructive operation"}. ` +
-            `Destructive testing (DB deletes/drops, API write-deletes, catastrophic host operations) is NOT authorized for this engagement. ` +
-            `Prove the flaw without completing the destructive step (e.g. demonstrate the authorization boundary is crossed with a read or a reversible action), or ask the operator to enable destructive testing.`,
+      `Destructive action blocked: ${subject} — ${classification.reason}. ` +
+        `Destructive testing (financial mutations, DB deletes/drops, API write-deletes, catastrophic host operations) is NOT authorized for this engagement. ` +
+        `Prove the flaw without completing the destructive step (e.g. demonstrate the authorization boundary is crossed with a read or a reversible action), or ask the operator to enable destructive testing.`,
     );
     this.name = "DestructiveActionError";
   }
