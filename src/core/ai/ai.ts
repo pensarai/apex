@@ -61,6 +61,12 @@ const RESPONSE_TOOL_NAME = "response";
  * (e.g. a default/localhost `target`) would silently bypass deterministic scope
  * enforcement. Repair therefore FAILS CLOSED for them — it returns `null` and
  * the original invalid call is never executed.
+ *
+ * Result-submission tools (`submit_results`, `document_vulnerability`) are
+ * deliberately NOT listed: they carry no authorization boundary, so repair is
+ * safe and desirable — it re-prompts the model to fix a mis-shaped field (e.g.
+ * `method` sent as an array) instead of dropping a completed recon or a
+ * confirmed finding.
  */
 const REPAIR_FAIL_CLOSED_TOOLS: ReadonlySet<string> = new Set([
   "spawn_pentest_agent",

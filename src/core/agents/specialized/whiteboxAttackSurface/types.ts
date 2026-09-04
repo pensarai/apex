@@ -52,12 +52,24 @@ export type RiskScoreBreakdown = z.infer<typeof RiskScoreBreakdownSchema>;
 // Endpoint & App schemas
 // ---------------------------------------------------------------------------
 
+// The model routinely emits `method` as an array for multi-method endpoints
+// (e.g. ["GET","POST"]). Accept both shapes and normalize to a single string —
+// matching how `assetRecordToEndpoint` in the whitebox workflow already joins
+// array methods — so downstream consumers keep a plain string.
+const MethodSchema = z
+  .union([z.string(), z.array(z.string())])
+  .transform((m) => (Array.isArray(m) ? m.join(", ") : m));
+
+// Array-of-strings fields where the model sometimes emits a single bare string.
+// Wrap a lone string into a one-element array instead of rejecting the payload.
+const StringListSchema = z
+  .union([z.string(), z.array(z.string())])
+  .transform((v) => (Array.isArray(v) ? v : [v]));
+
 export const EndpointSchema = z.object({
-  method: z
-    .string()
-    .describe(
-      "HTTP method (GET, POST, PUT, DELETE, etc.) or 'PAGE' for web pages",
-    ),
+  method: MethodSchema.describe(
+    "HTTP method (GET, POST, PUT, DELETE, etc.) or 'PAGE' for web pages",
+  ),
   path: z.string().describe("Route path (e.g. /api/users/:id, /dashboard)"),
   handler: z
     .string()
@@ -73,13 +85,10 @@ export const EndpointSchema = z.object({
     .string()
     .optional()
     .describe("Brief description of what this endpoint does"),
-  pentestObjectives: z
-    .array(z.string())
-    .default([])
-    .describe(
-      "Pentest objectives for this endpoint, derived from the threat model when available " +
-        "(e.g. 'Test for IDOR by enumerating user IDs', 'Test for SQL injection in search parameter')",
-    ),
+  pentestObjectives: StringListSchema.default([]).describe(
+    "Pentest objectives for this endpoint, derived from the threat model when available " +
+      "(e.g. 'Test for IDOR by enumerating user IDs', 'Test for SQL injection in search parameter')",
+  ),
   riskScore: RiskScoreSchema.optional().describe(
     "AI-calculated risk score for prioritizing pentest efforts",
   ),
