@@ -387,6 +387,7 @@ CRITICAL RULES — READ BEFORE CALLING:
                 ctx.model!,
                 ctx.authConfig,
                 ctx.abortSignal,
+                ctx.session.id,
               );
               break;
             } catch (err: unknown) {

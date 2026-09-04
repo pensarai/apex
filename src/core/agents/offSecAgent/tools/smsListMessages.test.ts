@@ -96,6 +96,23 @@ describe("sessionHasSmsPasswordless", () => {
     ).toBe(true);
   });
 
+  it("enables the SMS tool for sms-mfa credentials", () => {
+    expect(
+      sessionHasSmsPasswordless({
+        config: {
+          authCredentials: {
+            username: "tester",
+            password: "secret",
+            additionalFields: {
+              authMethod: "sms-mfa",
+              phoneNumber: "stage-managed-number",
+            },
+          },
+        },
+      } as unknown as SessionInfo),
+    ).toBe(true);
+  });
+
   it("requires a phoneNumber for sms-passwordless credentials", () => {
     expect(
       sessionHasSmsPasswordless({

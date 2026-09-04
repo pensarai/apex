@@ -20,7 +20,12 @@ import {
 } from "ai";
 import type { z } from "zod";
 import { createLogger } from "../logger/structured";
-import { createAiTelemetrySettings } from "../observability";
+import {
+  type AiTelemetryOperation,
+  createAiTelemetrySettings,
+  createGenerationSpanTracker,
+  type GenerationSpanTracker,
+} from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
 import {
   cacheBreakpointFor,
@@ -487,6 +492,7 @@ function wrapStreamWithErrorHandler(
   silent?: boolean,
   rateLimitRetryCount: number = 0,
   idleResumeCount: number = 0,
+  generationSpans?: GenerationSpanTracker,
 ): StreamTextResult<ToolSet, never> {
   // Create a lazy getter for fullStream that wraps it with error handling
   let wrappedStream: AsyncIterable<TextStreamPart<ToolSet>> | null = null;
@@ -505,6 +511,7 @@ function wrapStreamWithErrorHandler(
           const toolGate = createToolExecutionGate();
 
           wrappedStream = (async function* () {
+            let streamError: unknown;
             try {
               for await (const chunk of withIdleTimeout(
                 originalStream.fullStream,
@@ -540,13 +547,44 @@ function wrapStreamWithErrorHandler(
 
                 // Only stream-level errors are fatal; tool-level errors
                 // flow through so the UI renders them as failed tool results.
+                // Instead of throwing mid-stream, capture the error and drain
+                // the tail (finish-step/finish): the AI SDK's terminal
+                // lifecycle — root-span end included — only runs when the
+                // stream completes, and aborting the iteration leaks it.
                 if (chunk.type === "error") {
-                  throw (chunk as unknown as { error: unknown }).error;
+                  streamError = (chunk as unknown as { error: unknown }).error;
+                  // Mark the root generation span failed NOW: the SDK's
+                  // flush ends it mid-drain, before the loop exits — a
+                  // later mark is a no-op on an ended span.
+                  generationSpans?.markFailed(streamError);
+                  continue;
+                }
+                // Drain the post-error tail silently: the terminal parts
+                // must be consumed for the SDK's finalization, but consumers
+                // must not observe step-close-out after a fatal error.
+                if (streamError !== undefined) {
+                  continue;
                 }
 
                 yield chunk;
               }
-            } catch (error) {
+              if (streamError !== undefined) {
+                // The tail is consumed but the SDK's finalization
+                // (root-span end) settles with the response promise —
+                // await it so the error never overtakes the span lifecycle.
+                await Promise.resolve(originalStream.response).catch(() => {});
+                throw streamError;
+              }
+            } catch (caughtError) {
+              // A tail-drain failure must not replace the provider error that
+              // put the wrapper into drain mode.
+              const error =
+                streamError !== undefined ? streamError : caughtError;
+              // Error-part runs complete normally inside the SDK, so nothing
+              // sets the root generation span failed — mark it here (the
+              // SDK's own thrown-error marking is guarded against below).
+              generationSpans?.markFailed(error);
+
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
 
@@ -1251,7 +1289,9 @@ export function streamResponse(
   let rateLimitRetryCount = 0;
 
   try {
-    // Create the appropriate provider instance
+    // Create the appropriate provider instance. The span tracker captures
+    // the SDK's root generation span for error marking (see below).
+    const generationSpans = createGenerationSpanTracker();
     const response = streamText({
       model: providerModel,
       system: effectiveSystem,
@@ -1261,10 +1301,16 @@ export function streamResponse(
       tools,
       maxRetries: 3,
       providerOptions,
-      experimental_telemetry: createAiTelemetrySettings({
-        operation: "apex.agent.stream",
-        sessionId,
-      }),
+      // The forwarding tracer keeps a handle on the SDK's root generation
+      // span: error-part runs complete normally in the SDK, so nothing
+      // marks the span failed — the wrapper's catch does.
+      experimental_telemetry: {
+        ...createAiTelemetrySettings({
+          operation: "apex.agent.stream",
+          sessionId,
+        }),
+        tracer: generationSpans.tracer,
+      },
       // Pin actual emission to the same value `fitMessagesToContext`
       // reserved for output. Without this, the SDK applies provider
       // defaults that can exceed our budget — e.g. GPT-4o defaults to
@@ -1283,6 +1329,12 @@ export function streamResponse(
         return undefined;
       },
       onError: async ({ error }: { error: unknown }) => {
+        // Never throw here: the SDK calls this inside its stream pipeline,
+        // and a thrown callback kills the pipeline's terminal lifecycle —
+        // the root generation span never ends and nothing exports. Return
+        // normally instead; the error part continues downstream and the
+        // consumption wrapper converts it to a thrown error (after the
+        // tail drains), where the retry machinery takes over.
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         if (
@@ -1293,11 +1345,7 @@ export function streamResponse(
           await new Promise((resolve) =>
             setTimeout(resolve, 1000 * rateLimitRetryCount),
           );
-          if (rateLimitRetryCount < 20) {
-            return;
-          }
         }
-        throw error;
       },
       onStepFinish,
       abortSignal,
@@ -1376,61 +1424,79 @@ export function streamResponse(
             "schema",
           );
 
-          const { output: repairedArgs, usage: repairUsage } =
-            await generateText({
-              model: providerModel,
-              output: Output.object({
-                schema: tool.inputSchema, // Use the actual Zod schema from the tool
-              }),
-              prompt: [
-                `The model tried to call the tool "${toolCall.toolName}"` +
-                  ` with the following inputs:`,
-                boundedInput,
-                `The tool accepts the following schema:`,
-                boundedSchema,
-                `Error encountered: ${error}`,
-                "Please fix the inputs to match the schema.",
-                "",
-                "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
-                "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
-              ].join("\n"),
-              abortSignal,
-              experimental_telemetry: createAiTelemetrySettings({
-                operation: "apex.tool.repair",
-                sessionId,
-              }),
-            });
+          const {
+            output: repairedArgs,
+            usage: repairUsage,
+            providerMetadata: repairProviderMetadata,
+          } = await generateText({
+            model: providerModel,
+            output: Output.object({
+              schema: tool.inputSchema, // Use the actual Zod schema from the tool
+            }),
+            prompt: [
+              `The model tried to call the tool "${toolCall.toolName}"` +
+                ` with the following inputs:`,
+              boundedInput,
+              `The tool accepts the following schema:`,
+              boundedSchema,
+              `Error encountered: ${error}`,
+              "Please fix the inputs to match the schema.",
+              "",
+              "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
+              "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
+            ].join("\n"),
+            abortSignal,
+            experimental_telemetry: createAiTelemetrySettings({
+              operation: "apex.tool.repair",
+              sessionId,
+            }),
+          });
 
-          // Report tool repair token usage if onStepFinish callback is provided
+          // Report tool repair token usage if onStepFinish callback is
+          // provided. Awaited: the callback persists messages and records
+          // usage — a detached invocation would leak unhandled rejections
+          // into the tool loop. Provider metadata and cache details flow
+          // through so repair usage stays attributable.
           if (onStepFinish && repairUsage) {
-            onStepFinish({
-              text: "",
-              reasoning: undefined,
-              reasoningDetails: [],
-              files: [],
-              sources: [],
-              toolCalls: [],
-              toolResults: [],
-              finishReason: "stop",
-              usage: {
-                inputTokens: repairUsage.inputTokens ?? 0,
-                outputTokens: repairUsage.outputTokens ?? 0,
-                totalTokens: repairUsage.totalTokens ?? 0,
-              },
-              warnings: [],
-              request: {},
-              response: {
-                id: "tool-repair",
-                timestamp: new Date(),
-                modelId: "",
-                messages: [],
-              },
-              providerMetadata: undefined,
-              stepType: "initial",
-              isContinued: false,
-            } as unknown as Parameters<
-              StreamTextOnStepFinishCallback<ToolSet>
-            >[0]);
+            try {
+              await onStepFinish({
+                text: "",
+                reasoning: undefined,
+                reasoningDetails: [],
+                files: [],
+                sources: [],
+                toolCalls: [],
+                toolResults: [],
+                finishReason: "stop",
+                usage: {
+                  inputTokens: repairUsage.inputTokens ?? 0,
+                  outputTokens: repairUsage.outputTokens ?? 0,
+                  totalTokens: repairUsage.totalTokens ?? 0,
+                  ...(repairUsage.inputTokenDetails
+                    ? { inputTokenDetails: repairUsage.inputTokenDetails }
+                    : {}),
+                },
+                warnings: [],
+                request: {},
+                response: {
+                  id: "tool-repair",
+                  timestamp: new Date(),
+                  modelId: "",
+                  messages: messagesContainer.current,
+                },
+                providerMetadata: repairProviderMetadata,
+                stepType: "initial",
+                isContinued: false,
+              } as unknown as Parameters<
+                StreamTextOnStepFinishCallback<ToolSet>
+              >[0]);
+            } catch (callbackError) {
+              if (!silent) {
+                log.warn("Error reporting tool repair usage", {
+                  error: String(callbackError),
+                });
+              }
+            }
           }
 
           if (repairedArgs === undefined || repairedArgs === null) {
@@ -1461,6 +1527,9 @@ export function streamResponse(
       opts,
       providerModel,
       silent,
+      0,
+      0,
+      generationSpans,
     );
   } catch (error) {
     // Check if the error is related to context length
@@ -1521,6 +1590,8 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
   /** Session id (`ses_…`) of the caller — stamped onto AI-span telemetry. */
   sessionId?: string;
+  /** Stable operation id; defaults to `apex.structured.generate`. */
+  operation?: AiTelemetryOperation;
 }
 
 const MAX_OBJECT_RATE_LIMIT_RETRIES = 8;
@@ -1578,7 +1649,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
         maxRetries: 0,
         abortSignal,
         experimental_telemetry: createAiTelemetrySettings({
-          operation: "apex.structured.generate",
+          operation: opts.operation ?? "apex.structured.generate",
           sessionId,
         }),
       });

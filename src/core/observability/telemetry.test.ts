@@ -203,18 +203,12 @@ describe("createAiTelemetrySettings", () => {
     expect(settings.recordOutputs).toBe(true);
   });
 
-  it("propagates session, run, and agent metadata when present", () => {
+  it("propagates session metadata when present", () => {
     const settings = createAiTelemetrySettings({
       operation: "apex.agent.stream",
       sessionId: "ses_1",
-      runId: "run_1",
-      agentId: "sub_1",
     });
-    expect(settings.metadata).toEqual({
-      sessionId: "ses_1",
-      runId: "run_1",
-      agentId: "sub_1",
-    });
+    expect(settings.metadata).toEqual({ sessionId: "ses_1" });
   });
 
   it("operation identifiers are a fixed low-cardinality set", () => {
@@ -496,5 +490,313 @@ describe("full payload capture (stream path)", () => {
       .map(String)
       .join(" ");
     expect(reasoning).toContain("pondering");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR1: auxiliary model lifecycle — summarization and tool-repair callbacks
+// are awaited, their synthetic events are handler-safe, and cache usage
+// flows through.
+// ---------------------------------------------------------------------------
+
+/** A model that streams one text step AND generates with cache + metadata. */
+function generateAndStreamModel(): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    provider: "mock-anthropic",
+    modelId: MODEL,
+    doStream: async () => ({
+      stream: simulateReadableStream({
+        chunks: [
+          { type: "stream-start", warnings: [] },
+          { type: "text-start", id: "t" },
+          { type: "text-delta", id: "t", delta: "resumed" },
+          { type: "text-end", id: "t" },
+          {
+            type: "finish",
+            finishReason: { unified: "stop", raw: "stop" },
+            usage: {
+              inputTokens: {
+                total: 100,
+                noCache: 100,
+                cacheRead: 0,
+                cacheWrite: 0,
+              },
+              outputTokens: { total: 5, text: 5, reasoning: undefined },
+            },
+          },
+        ] as unknown as Array<LanguageModelV3StreamPart>,
+      }),
+    }),
+    doGenerate: async () => ({
+      content: [{ type: "text", text: "summary text" }],
+      finishReason: { unified: "stop", raw: "stop" },
+      warnings: [],
+      usage: {
+        inputTokens: {
+          total: 500,
+          noCache: 100,
+          cacheRead: 400,
+          cacheWrite: 7,
+        },
+        outputTokens: { total: 40, text: 40, reasoning: undefined },
+      },
+      providerMetadata: { anthropic: { cacheReadInputTokens: 400 } },
+    }),
+  });
+}
+
+describe("auxiliary model lifecycle", () => {
+  it("summarization awaits the wrapped onStepFinish and its synthetic event is handler-safe", async () => {
+    mockState.model = generateAndStreamModel();
+    const history = [
+      { role: "user" as const, content: "history to summarize" },
+    ];
+
+    const events: Array<{
+      response: { id?: string; messages?: unknown[] };
+      providerMetadata?: Record<string, unknown>;
+      usage: {
+        inputTokens: number;
+        inputTokenDetails?: {
+          cacheReadTokens?: number;
+          cacheWriteTokens?: number;
+        };
+      };
+    }> = [];
+    let syntheticCompleted = false;
+
+    const stream = createSummarizationStream(
+      history,
+      {
+        prompt: "resume",
+        model: MODEL,
+        silent: true,
+        onStepFinish: async (event) => {
+          const isSynthetic =
+            (event as { response: { id?: string } }).response.id ===
+            "summarization";
+          events.push(event as never);
+          // Deferred work (persistence) — the summarization must await it.
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          if (isSynthetic) syntheticCompleted = true;
+        },
+      },
+      mockState.model,
+    );
+
+    await drain(stream);
+
+    // The synthetic event's callback finished — it was awaited, not detached.
+    expect(syntheticCompleted).toBe(true);
+
+    const synthetic = events.find((e) => e.response.id === "summarization");
+    expect(synthetic).toBeDefined();
+    // Handler-safe: handlers spread response.messages; cache and provider
+    // metadata survive the synthetic event.
+    expect(Array.isArray(synthetic?.response.messages)).toBe(true);
+    expect(synthetic?.response.messages).toEqual(history);
+    expect(synthetic?.usage.inputTokenDetails?.cacheReadTokens).toBe(400);
+    expect(synthetic?.usage.inputTokenDetails?.cacheWriteTokens).toBe(7);
+    expect(synthetic?.providerMetadata).toEqual({
+      anthropic: { cacheReadInputTokens: 400 },
+    });
+  });
+
+  it("a rejecting summarization callback surfaces through the resumed stream, not as an unhandled rejection", async () => {
+    mockState.model = generateAndStreamModel();
+
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history" }],
+      {
+        prompt: "resume",
+        model: MODEL,
+        silent: true,
+        onStepFinish: async (event) => {
+          if (
+            (event as { response: { id?: string } }).response.id ===
+            "summarization"
+          ) {
+            throw new Error("persistence boom");
+          }
+        },
+      },
+      mockState.model,
+    );
+
+    // Awaited: the failure propagates through the resumed stream. Detached,
+    // this would be an unhandled rejection with the stream continuing.
+    await expect(drain(stream)).rejects.toThrow("persistence boom");
+  });
+
+  it("preserves a successful tool repair when its usage callback rejects", async () => {
+    let call = 0;
+    mockState.model = new MockLanguageModelV3({
+      provider: "mock-anthropic",
+      modelId: MODEL,
+      doStream: async () => {
+        call += 1;
+        if (call === 1) {
+          return {
+            stream: simulateReadableStream({
+              chunks: [
+                { type: "stream-start", warnings: [] },
+                {
+                  type: "tool-call",
+                  toolCallId: "call-bad",
+                  toolName: "probe",
+                  input: '{"q":42}',
+                },
+                {
+                  type: "finish",
+                  finishReason: { unified: "tool-calls", raw: "tool_use" },
+                  usage: {
+                    inputTokens: {
+                      total: 50,
+                      noCache: 50,
+                      cacheRead: 0,
+                      cacheWrite: 0,
+                    },
+                    outputTokens: { total: 5, text: 5, reasoning: undefined },
+                  },
+                },
+              ] as unknown as Array<LanguageModelV3StreamPart>,
+            }),
+          };
+        }
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "t" },
+              { type: "text-delta", id: "t", delta: "done" },
+              { type: "text-end", id: "t" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage: {
+                  inputTokens: {
+                    total: 60,
+                    noCache: 60,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 6, text: 6, reasoning: undefined },
+                },
+              },
+            ] as unknown as Array<LanguageModelV3StreamPart>,
+          }),
+        };
+      },
+      doGenerate: async () => ({
+        content: [{ type: "text", text: '{"q":"fixed"}' }],
+        finishReason: { unified: "stop", raw: "stop" },
+        warnings: [],
+        usage: {
+          inputTokens: { total: 80, noCache: 30, cacheRead: 50, cacheWrite: 0 },
+          outputTokens: { total: 8, text: 8, reasoning: undefined },
+        },
+        providerMetadata: { anthropic: { cacheReadInputTokens: 50 } },
+      }),
+    });
+
+    const events: Array<{
+      response: { id?: string };
+      providerMetadata?: Record<string, unknown>;
+      usage: {
+        inputTokens: number;
+        inputTokenDetails?: { cacheReadTokens?: number };
+      };
+    }> = [];
+    let callbackCompleted = false;
+    const executeProbe = vi.fn();
+
+    await drain(
+      streamResponse({
+        prompt: "hi",
+        model: MODEL,
+        silent: true,
+        onStepFinish: async (event) => {
+          events.push(event as never);
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          callbackCompleted = true;
+          if (
+            (event as { response: { id?: string } }).response.id ===
+            "tool-repair"
+          ) {
+            throw new Error("repair persistence boom");
+          }
+        },
+        tools: {
+          probe: {
+            description: "test tool",
+            inputSchema: z.object({ q: z.string() }),
+            execute: async (input: { q: string }) => {
+              executeProbe(input);
+              return `echo:${input.q}`;
+            },
+          },
+        },
+        stopWhen: stepCountIs(2),
+      }),
+    );
+
+    expect(callbackCompleted).toBe(true);
+    expect(executeProbe).toHaveBeenCalledWith({ q: "fixed" });
+
+    const repairEvent = events.find((e) => e.response.id === "tool-repair");
+    expect(repairEvent).toBeDefined();
+    expect(repairEvent?.usage.inputTokens).toBe(80);
+    expect(repairEvent?.usage.inputTokenDetails?.cacheReadTokens).toBe(50);
+    expect(repairEvent?.providerMetadata).toEqual({
+      anthropic: { cacheReadInputTokens: 50 },
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR4: stable session metadata + structured operation ids
+// ---------------------------------------------------------------------------
+
+describe("identity metadata propagation", () => {
+  it("streamResponse emits session metadata without redundant identity fields", async () => {
+    mockState.model = oneStepTextModel();
+    await drain(
+      streamResponse({
+        prompt: "hi",
+        model: MODEL,
+        silent: true,
+        sessionId: "ses_root",
+      }),
+    );
+
+    const span = requireSpan(otel.getFinishedSpans(), "ai.streamText");
+    expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe("ses_root");
+    expect(span.attributes["ai.telemetry.metadata.runId"]).toBeUndefined();
+    expect(span.attributes["ai.telemetry.metadata.agentId"]).toBeUndefined();
+    expect(span.attributes["ai.telemetry.functionId"]).toBe(
+      "apex.agent.stream",
+    );
+  });
+
+  it("generateObjectResponse honors caller operation ids and identity", async () => {
+    mockState.model = generateModel();
+    await generateObjectResponse({
+      model: MODEL,
+      schema: z.object({ result: z.string() }),
+      prompt: "hi",
+      sessionId: "ses_root",
+      operation: "apex.finding.cvss",
+    });
+
+    const span = requireSpan(
+      otel.getFinishedSpans(),
+      "ai.generateText.doGenerate",
+    );
+    expect(span.attributes["ai.telemetry.functionId"]).toBe(
+      "apex.finding.cvss",
+    );
+    expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe("ses_root");
+    expect(span.attributes["ai.telemetry.metadata.runId"]).toBeUndefined();
+    expect(span.attributes["ai.telemetry.metadata.agentId"]).toBeUndefined();
   });
 });

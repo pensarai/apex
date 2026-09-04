@@ -590,7 +590,9 @@ async function runUpgrade() {
   const result = await upgrade({ interactive: true });
   console.log(`\n${result.message}`);
 
-  process.exit(result.success ? 0 : 1);
+  // Set the code and unwind — the top-level finally flushes traces before
+  // the process exits; a direct exit would discard them.
+  process.exitCode = result.success ? 0 : 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -672,14 +674,19 @@ try {
         "TUI mode requires Bun. Install Bun (https://bun.sh) or use a standalone binary release for interactive mode.",
       );
       console.error("All other commands work with Node — run 'pensar --help'.");
-      process.exit(1);
+      // This branch owns the runtime lifecycle (the TUI never imported): the
+      // bounded shutdown flushes any queued spans before the process exits.
+      await observabilityRuntime.shutdown().catch(() => {});
+      process.exitCode = 1;
+    } else {
+      await import("./tui/index.tsx");
     }
-    await import("./tui/index.tsx");
   } else {
     console.error(`Error: Unknown command '${command}'`);
     console.error();
     console.error("Run 'pensar --help' for usage information");
-    process.exit(1);
+    // Unwind with the error code — the top-level finally flushes before exit.
+    process.exitCode = 1;
   }
 } catch (error) {
   if (exitAfterObservabilityShutdown !== null) {

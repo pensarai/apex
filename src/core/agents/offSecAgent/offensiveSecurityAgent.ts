@@ -15,11 +15,12 @@ import {
   resolveEffectiveHeaders,
   stripBrowserManagedHeaders,
 } from "../../http/targetHeaders";
-import { newMessageId, newPartId, newRunId } from "../../id/id";
+import { newMessageId, newPartId } from "../../id/id";
 import { createLogger } from "../../logger/structured";
 import {
   getApexTracer,
   registerActiveRootSpan,
+  shouldRecordAiPayloads,
   unregisterActiveRootSpan,
   withSubagentSessionBaggage,
 } from "../../observability";
@@ -246,6 +247,9 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Set synchronously when `response` fires, ahead of any async `resolveResult`, to distinguish a clean finish from an abort. */
   private _responseToolFired = false;
 
+  /** Raw structured result submitted to the response tool, retained for root-span output. */
+  private _responseToolResult: unknown;
+
   /** Resolves the instant `response` captures the result, so {@link consume} can return early and drain in the background. */
   private _resolveResponseCaptured!: (result: TResult) => void;
   private _rejectResponseCaptured!: (err: unknown) => void;
@@ -269,7 +273,6 @@ export class OffensiveSecurityAgent<TResult = void> {
   private readonly subagentName?: string;
   /** Operating mode (tools surface); used for run-span attribution. */
   private readonly agentMode: AgentMode;
-
   /** The current open assistant message id (`msg_…`); minted on `start-step` in {@link consume}, `null` between steps. */
   private currentMessageId: string | null = null;
 
@@ -545,6 +548,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           input.responseSchema,
           (result) => {
             this._responseToolFired = true;
+            this._responseToolResult = result;
             if (RESPONSE_DEBUG) {
               rlog.warn(
                 `[response-debug] response tool EXECUTED (captured) session=${this.busSessionId} ` +
@@ -728,6 +732,31 @@ export class OffensiveSecurityAgent<TResult = void> {
         sessionPath: messagesDir,
         sessionId: this.busSessionId,
         onStepFinish: async (event) => {
+          const auxiliaryModelEvent =
+            event.response.id === "summarization" ||
+            event.response.id === "tool-repair";
+
+          if (auxiliaryModelEvent) {
+            const cacheDetails = event.usage.inputTokenDetails;
+            traceWriter.recordStep(
+              [],
+              {
+                inputTokens: event.usage.inputTokens ?? 0,
+                outputTokens: event.usage.outputTokens ?? 0,
+                cacheReadTokens:
+                  lastCacheMetrics?.cacheReadTokens ??
+                  cacheDetails?.cacheReadTokens,
+                cacheWriteTokens:
+                  lastCacheMetrics?.cacheWriteTokens ??
+                  cacheDetails?.cacheWriteTokens,
+              },
+              { usageOnly: true },
+            );
+            lastCacheMetrics = null;
+            await input.onStepFinish?.(event);
+            return;
+          }
+
           this.writer.setLatest([
             ...initialMessagesRef.current,
             ...event.response.messages,
@@ -925,25 +954,23 @@ export class OffensiveSecurityAgent<TResult = void> {
       return undefined as TResult;
     };
 
-    // One invoke_agent span per execution: root runs get the full run
-    // attribution (stable run id, mode); subagent runs nest beneath the root
-    // span via the async context and carry their own execution-session id.
+    // One invoke_agent span per execution. The conversation/root id stays
+    // stable across the tree while each span identifies its current agent.
     const isSubagent = Boolean(sid);
     const spanLabel = isSubagent
       ? (this.subagentName ?? sid ?? "subagent")
       : this.agentMode;
-    const runId = isSubagent ? undefined : newRunId();
+    const rootSessionId = this._session.id;
+    const agentSessionId = this.busSessionId;
     const runSpanAttributes: Record<string, string> = {
       "gen_ai.operation.name": "invoke_agent",
+      "gen_ai.agent.id": agentSessionId,
       "gen_ai.agent.name": spanLabel,
-      "gen_ai.conversation.id": this.busSessionId,
-      "pensar.session.id": this.busSessionId,
-      ...(isSubagent
-        ? {}
-        : {
-            "pensar.run.id": runId,
-            "pensar.agent.mode": this.agentMode,
-          }),
+      "gen_ai.conversation.id": rootSessionId,
+      "session.id": rootSessionId,
+      "pensar.session.id": agentSessionId,
+      "pensar.root_session.id": rootSessionId,
+      ...(!isSubagent ? { "pensar.agent.mode": this.agentMode } : {}),
     };
 
     const runInSpan = () =>
@@ -954,8 +981,33 @@ export class OffensiveSecurityAgent<TResult = void> {
           // Root runs register so process-exit shutdown can end an
           // in-flight run's span before the final flush.
           if (!isSubagent) registerActiveRootSpan(span);
+          // Root-level input/output for trace previews — ONLY under full
+          // payload capture (sensitive: objectives can name internal hosts).
+          // Fast Strike uses a synthetic subagent id for UI routing but is the
+          // primary run in that workflow.
+          const recordRootIO =
+            (!isSubagent || this.agentMode === "fast-strike") &&
+            shouldRecordAiPayloads();
+          if (recordRootIO && this.userPrompt) {
+            span.setAttribute("gen_ai.prompt", this.userPrompt);
+          }
           try {
-            return await runConsume();
+            const result = await runConsume();
+            const completedResult =
+              result === undefined && this._responseToolFired
+                ? this._responseToolResult
+                : result;
+            if (
+              recordRootIO &&
+              completedResult !== undefined &&
+              completedResult !== null
+            ) {
+              span.setAttribute(
+                "gen_ai.completion",
+                safePreview(completedResult),
+              );
+            }
+            return result;
           } catch (err) {
             // Record once, keep the cardinality low, preserve the original.
             span.recordException(err as Error);
@@ -964,6 +1016,14 @@ export class OffensiveSecurityAgent<TResult = void> {
               "error.type",
               err instanceof Error ? err.name : "Error",
             );
+            if (recordRootIO) {
+              span.setAttribute(
+                "gen_ai.completion",
+                this._responseToolFired
+                  ? safePreview(this._responseToolResult)
+                  : `Failure: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
             throw err;
           } finally {
             unregisterActiveRootSpan(span);
@@ -1305,4 +1365,14 @@ function wrapToolsWithApprovalGate(
   }
 
   return wrapped;
+}
+
+/** Bounded, crash-safe JSON preview of a run result for span output. */
+function safePreview(value: unknown): string {
+  try {
+    const text = JSON.stringify(value);
+    return text === undefined ? String(value) : text.slice(0, 2000);
+  } catch {
+    return "[unserializable result]";
+  }
 }
