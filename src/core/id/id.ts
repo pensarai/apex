@@ -7,7 +7,6 @@ const prefixes = {
   permission: "per",
   user: "usr",
   part: "prt",
-  run: "run",
   attempt: "atm",
   idempotency: "idem",
 } as const;
@@ -69,8 +68,6 @@ export type SessionID = string & { readonly __brand: "SessionID" };
 export type MessageID = string & { readonly __brand: "MessageID" };
 /** A part identifier: `prt_<time><random>`. */
 export type PartID = string & { readonly __brand: "PartID" };
-/** An agent-run identifier: `run_<time><random>`. */
-export type RunID = string & { readonly __brand: "RunID" };
 /** A physical inference-attempt identifier: `atm_<time><random>`. */
 export type AttemptID = string & { readonly __brand: "AttemptID" };
 /** An attempt idempotency key: `idem_<time><random>`. */
@@ -82,8 +79,6 @@ export const newSessionId = (): SessionID => descending("session") as SessionID;
 export const newMessageId = (): MessageID => descending("message") as MessageID;
 /** Mint a fresh, time-descending part id. */
 export const newPartId = (): PartID => descending("part") as PartID;
-/** Mint a fresh, time-descending agent-run id. */
-export const newRunId = (): RunID => descending("run") as RunID;
 /** Mint a fresh, time-descending inference-attempt id. */
 export const newAttemptId = (): AttemptID => descending("attempt") as AttemptID;
 /** Mint a fresh, time-descending attempt idempotency key. */
