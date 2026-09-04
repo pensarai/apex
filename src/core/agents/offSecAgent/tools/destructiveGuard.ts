@@ -180,7 +180,7 @@ const FINANCIAL_PATH_PATTERN = new RegExp(
  * words such as "amount" so ordinary form submissions stay available.
  */
 const FINANCIAL_BODY_PATTERN = new RegExp(
-  String.raw`\bPAYMENT[._-]PAYOUTS?(?:[._-]ITEM)?\b|${FINANCIAL_ACTION}[-_.\s]*${FINANCIAL_RESOURCE}\b|${FINANCIAL_RESOURCE}[-_.\s]+${FINANCIAL_ACTION}\b`,
+  String.raw`\bPAYMENT[._-]PAYOUTS?(?:[._-]ITEM)?\b|${FINANCIAL_ACTION}[-_.\s]*${FINANCIAL_RESOURCE}\b|${FINANCIAL_RESOURCE}[-_.\s]*${FINANCIAL_ACTION}\b`,
   "i",
 );
 
@@ -351,12 +351,55 @@ const JS_METHOD_DELETE = /\bmethod\s*['"`]?\s*:\s*['"`]?\s*delete\b/i;
 const SCRIPT_METHOD_WRITE =
   /\bmethod\s*['"`]?\s*:\s*['"`]?\s*(?:post|put|patch)\b/i;
 const SCRIPT_HTTP_CLIENT_HINT =
-  /\b(?:fetch|axios|got|ky|superagent|needle|node-fetch|undici|phin|XMLHttpRequest|xhr|requests|httpx|urllib3|page|apiContext|apiRequestContext|request)\b|\.\s*(?:request|open)\s*\(/i;
+  /\b(?:fetch|axios|got|ky|superagent|needle|node-fetch|undici|phin|XMLHttpRequest|xhr|requests|httpx|urllib3|page|apiContext|apiRequestContext|request)\b\s*(?:\.\s*\w+\s*)*\(/i;
 const JS_CLIENT_DELETE_CALL =
   /\b(?:axios|got|ky|superagent|needle|supertest|phin|page|apiContext|apiRequestContext|request)\s*(?:\.\s*\w+)*\.\s*delete\s*\(/i;
 const SCRIPT_CLIENT_WRITE_CALL = /\.(?:post|put|patch)\s*\(/i;
 const SCRIPT_POSITIONAL_WRITE_CALL =
   /\.request\s*\(\s*['"`](?:post|put|patch)['"`]/i;
+const SHELL_DATA_ARGUMENT =
+  /(?:^|\s)(?:-d|--data(?:-raw|-binary|-urlencode|-ascii)?|-F|--form|--json|--post-data|--body-data)(?:=|\s)+(?:'([^']*)'|"([^"]*)"|(\S+))/gi;
+const SHELL_VARIABLE_TARGET = /\$\{?[A-Za-z_]\w*\}?\/[^\s"'`;|&)<>]+/g;
+const SHELL_VARIABLE_ASSIGNMENT =
+  /\b([A-Za-z_]\w*)\s*=\s*(?:'([^']*)'|"([^"]*)")/g;
+const QUOTED_SCRIPT_VALUE = /(['"`])((?:\\.|(?!\1)[\s\S])*?)\1/g;
+
+function extractShellRequestContent(command: string): string {
+  const fragments = [
+    ...(command.match(URL_IN_COMMAND) ?? []),
+    ...(command.match(SHELL_VARIABLE_TARGET) ?? []),
+  ];
+  for (const match of command.matchAll(SHELL_DATA_ARGUMENT)) {
+    fragments.push(match[1] ?? match[2] ?? match[3] ?? "");
+  }
+  for (const match of command.matchAll(SHELL_VARIABLE_ASSIGNMENT)) {
+    const name = match[1];
+    const value = match[2] ?? match[3] ?? "";
+    if (
+      name &&
+      new RegExp(String.raw`\$\{?${name}\}?`).test(
+        command.slice((match.index ?? 0) + match[0].length),
+      )
+    ) {
+      fragments.push(value);
+    }
+  }
+  return fragments.join("\n");
+}
+
+function extractScriptRequestContent(command: string): string {
+  const fragments: string[] = command.match(URL_IN_COMMAND) ?? [];
+  for (const match of command.matchAll(QUOTED_SCRIPT_VALUE)) {
+    const value = match[2] ?? "";
+    if (
+      /^(?:https?:\/\/|\/|\$\{?[\w]+}?\/)/i.test(value) ||
+      FINANCIAL_BODY_PATTERN.test(value)
+    ) {
+      fragments.push(value);
+    }
+  }
+  return fragments.join("\n");
+}
 
 /** Classify an HTTP call expressed as a shell command (curl/wget/httpie/xh, or an in-script fetch/axios). */
 function classifyCommandHttp(command: string): DestructiveClassification {
@@ -368,6 +411,8 @@ function classifyCommandHttp(command: string): DestructiveClassification {
   const hasShellHttpClient =
     HTTP_CLIENT_PATTERN.test(command) || httpieMethod !== undefined;
   const hasScriptHttpClient = SCRIPT_HTTP_CLIENT_HINT.test(command);
+  const shellRequestContent = extractShellRequestContent(decoded);
+  const scriptRequestContent = extractScriptRequestContent(decoded);
 
   // Explicit DELETE via curl flag or httpie positional method.
   if (
@@ -401,8 +446,8 @@ function classifyCommandHttp(command: string): DestructiveClassification {
     (SCRIPT_METHOD_WRITE.test(command) ||
       SCRIPT_CLIENT_WRITE_CALL.test(command) ||
       SCRIPT_POSITIONAL_WRITE_CALL.test(command)) &&
-    (FINANCIAL_PATH_PATTERN.test(stripUrlAuthorities(decoded)) ||
-      FINANCIAL_BODY_PATTERN.test(decoded))
+    (FINANCIAL_PATH_PATTERN.test(stripUrlAuthorities(scriptRequestContent)) ||
+      FINANCIAL_BODY_PATTERN.test(scriptRequestContent))
   ) {
     return {
       destructive: true,
@@ -457,8 +502,8 @@ function classifyCommandHttp(command: string): DestructiveClassification {
   if (hasShellHttpClient && writeIndicated) {
     const urls = command.match(URL_IN_COMMAND) ?? [];
     if (
-      FINANCIAL_PATH_PATTERN.test(stripUrlAuthorities(decoded)) ||
-      FINANCIAL_BODY_PATTERN.test(decoded)
+      FINANCIAL_PATH_PATTERN.test(stripUrlAuthorities(shellRequestContent)) ||
+      FINANCIAL_BODY_PATTERN.test(shellRequestContent)
     ) {
       return {
         destructive: true,

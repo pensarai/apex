@@ -111,6 +111,8 @@ describe("classifyHttpAction", () => {
       '{"action":"createPayoutLink"}',
       '{"method":"payments.create"}',
       '{"operationName":"createDisbursement"}',
+      '{"operationName":"payoutCreate"}',
+      '{"operationName":"paymentIntentCreate"}',
     ]) {
       expect(
         classifyHttpAction({
@@ -478,6 +480,37 @@ describe("classifyCommandAction", () => {
     ).toBe("financial-side-effect");
   });
 
+  it("does not treat unrelated request headers or comments as financial paths", () => {
+    expect(
+      classifyCommandAction(
+        `curl -X POST -H 'Transfer-Encoding: chunked' https://api.example.com/profile -d '{"displayName":"Researcher"}'`,
+      ).destructive,
+    ).toBe(false);
+    expect(
+      classifyCommandAction(
+        `curl -X POST https://api.example.com/profile -d '{"displayName":"Researcher"}' # create payout later`,
+      ).destructive,
+    ).toBe(false);
+    expect(
+      classifyCommandAction(
+        `fetch("/profile", { method: "POST", headers: { "Transfer-Encoding": "chunked" } }) // create payout later`,
+      ).destructive,
+    ).toBe(false);
+  });
+
+  it("flags reverse-named financial mutations in command payloads", () => {
+    expect(
+      classifyCommandAction(
+        `curl -X POST https://api.example.com/graphql -d '{"operationName":"payoutCreate"}'`,
+      ).category,
+    ).toBe("financial-side-effect");
+    expect(
+      classifyCommandAction(
+        `fetch("/graphql", { method: "POST", body: '{"operationName":"paymentIntentCreate"}' })`,
+      ).category,
+    ).toBe("financial-side-effect");
+  });
+
   it("allows financial endpoint reconnaissance that cannot mutate state", () => {
     expect(
       classifyCommandAction(
@@ -612,6 +645,15 @@ describe("classifier hardening", () => {
     expect(
       classifyCommandAction('echo "pass the -X DELETE flag to remove"')
         .destructive,
+    ).toBe(false);
+    expect(
+      classifyCommandAction(`grep -rn "method: 'DELETE'" src/request.ts`)
+        .destructive,
+    ).toBe(false);
+    expect(
+      classifyCommandAction(
+        `printf '%s' '_method=DELETE' > captured/request.txt`,
+      ).destructive,
     ).toBe(false);
   });
 });
