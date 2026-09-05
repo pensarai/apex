@@ -183,7 +183,7 @@ export default function OperatorDashboard({
     replace: replaceDialog,
     clear: clearDialog,
   } = useDialog();
-  const { refocusPrompt } = useFocus();
+  const { refocusPromptIfNoActiveEditor } = useFocus();
   const initialStrikeModeRef = useRef(
     resolveOperatorStrikeMode({
       resuming: !!sessionId,
@@ -522,9 +522,9 @@ export default function OperatorDashboard({
   // Auto-focus the input when the operator dashboard finishes loading
   useEffect(() => {
     if (!loading) {
-      refocusPrompt();
+      refocusPromptIfNoActiveEditor();
     }
-  }, [loading, refocusPrompt]);
+  }, [loading, refocusPromptIfNoActiveEditor]);
 
   useEffect(() => {
     if (sessionId === undefined) usageStore.beginNewSession();
@@ -1899,11 +1899,12 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
                     ? "Type to redirect agent, or Y/A to approve..."
                     : "Enter directive or / for commands & skills..."
             }
-            focused={
-              status === "running"
-                ? selectedQueueIndex < 0
-                : resolveInputFocused(status, stack.length, externalDialogOpen)
-            }
+            focused={resolveInputFocused(
+              status,
+              stack.length,
+              externalDialogOpen,
+              selectedQueueIndex,
+            )}
             status={status === "waiting" ? "running" : status}
             mode="operator"
             operatorMode={operatorMode}
