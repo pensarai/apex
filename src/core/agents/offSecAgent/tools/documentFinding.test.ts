@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -57,6 +63,7 @@ const mockedJudgeFinding = vi.mocked(judgeFinding);
 
 type DocumentToolResult = {
   success: boolean;
+  error?: string;
   judgeRejected?: boolean;
   judgeReasoning?: string;
   finding?: {
@@ -138,6 +145,57 @@ describe("documentVulnerability judge handling", () => {
     expect(tool.description).toContain(
       "do not leave the chain only in the description or evidence",
     );
+  });
+
+  it("blocks a financial-mutation PoC before executing it", async () => {
+    const ctx = makeToolContext(rootPath);
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute?.(
+      {
+        ...makeDocumentInput(),
+        pocName: "large_payout",
+        pocContent:
+          `curl -X POST https://example.com/api/v2/payout-links ` +
+          `-H 'Content-Type: application/json' ` +
+          `-d '{"amount":99999999,"funding_source":"ach"}'`,
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+      },
+    )) as DocumentToolResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Destructive action blocked");
+    expect(existsSync(join(ctx.session.pocsPath, "poc_large_payout.sh"))).toBe(
+      false,
+    );
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
+  });
+
+  it("blocks an out-of-scope PoC before executing it", async () => {
+    const ctx = makeToolContext(rootPath);
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute?.(
+      {
+        ...makeDocumentInput(),
+        pocName: "external_target",
+        pocType: "python",
+        pocContent:
+          'import requests\nrequests.get("https://outside.example.net/admin")',
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+      },
+    )) as DocumentToolResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Scope violation");
+    expect(
+      existsSync(join(ctx.session.pocsPath, "poc_external_target.py")),
+    ).toBe(false);
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
   });
 
   it("cleans up the POC and returns judgeRejected when a completed judge rejects", async () => {
@@ -225,6 +283,31 @@ describe("documentVulnerability judge handling", () => {
     expect(existsSync(join(ctx.session.pocsPath, "poc_admin_data.sh"))).toBe(
       true,
     );
+  });
+
+  it("comments every line of a multiline PoC description", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+
+    const ctx = makeToolContext(rootPath);
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute?.(
+      {
+        ...makeDocumentInput(),
+        pocDescription: "Safe description\nexit 42",
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+      },
+    )) as DocumentToolResult;
+
+    expect(result.success).toBe(true);
+    const poc = readFileSync(
+      join(ctx.session.pocsPath, "poc_admin_data.sh"),
+      "utf8",
+    );
+    expect(poc).toContain("# POC: Safe description\n# exit 42");
+    expect(poc).not.toContain("\nexit 42\n");
   });
 });
 
