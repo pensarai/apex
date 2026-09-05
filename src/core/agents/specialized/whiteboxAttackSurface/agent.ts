@@ -1,4 +1,4 @@
-import { hasToolCall, tool } from "ai";
+import { stepCountIs, tool } from "ai";
 import {
   OffensiveSecurityAgent,
   type SpecializedAgentInput,
@@ -9,7 +9,16 @@ import {
   WhiteboxAttackSurfaceResultSchema,
 } from "./types";
 
-const WHITEBOX_FALLBACK_RESULT: WhiteboxAttackSurfaceResult = {
+const SUBMIT_RESULTS_TOOL_NAME = "submit_results";
+
+/**
+ * Safety cap on the agent loop. The run normally stops the instant
+ * `submit_results` validates (see {@link WhiteboxAttackSurfaceAgent}); this only
+ * guards against a model that never produces a valid submission.
+ */
+const WHITEBOX_MAX_STEPS = 10_000;
+
+export const WHITEBOX_FALLBACK_RESULT: WhiteboxAttackSurfaceResult = {
   repoType: "unknown",
   packageManager: "unknown",
   apps: [],
@@ -20,6 +29,39 @@ const WHITEBOX_FALLBACK_RESULT: WhiteboxAttackSurfaceResult = {
     totalPentestObjectives: 0,
   },
 };
+
+/**
+ * Thrown when the model called `submit_results` but no attempt ever passed
+ * schema validation, so {@link WhiteboxAttackSurfaceAgent} has no captured
+ * result. Failing loud lets the caller retry or surface the error instead of
+ * silently proceeding on an empty attack surface.
+ */
+export class WhiteboxSubmitValidationError extends Error {
+  constructor() {
+    super(
+      "Whitebox attack surface recon called submit_results but no attempt passed " +
+        "schema validation — refusing to silently return an empty attack surface. " +
+        "The run should be retried.",
+    );
+    this.name = "WhiteboxSubmitValidationError";
+  }
+}
+
+/**
+ * Decide the final result once the run ends. Kept pure so the fail-loud vs.
+ * empty-fallback decision is unit-testable without a live stream:
+ * - a captured (validated) result is returned as-is;
+ * - a `submit_results` call that never validated fails loud;
+ * - a run where the model genuinely never submitted returns the empty fallback.
+ */
+export function finalizeWhiteboxResult(
+  capturedResult: WhiteboxAttackSurfaceResult | null,
+  submitAttempted: boolean,
+): WhiteboxAttackSurfaceResult {
+  if (capturedResult !== null) return capturedResult;
+  if (submitAttempted) throw new WhiteboxSubmitValidationError();
+  return WHITEBOX_FALLBACK_RESULT;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -86,10 +128,18 @@ export class WhiteboxAttackSurfaceAgent extends OffensiveSecurityAgent<WhiteboxA
         // Response tool (injected via extraTools)
         "submit_results",
       ],
-      stopWhen: hasToolCall("submit_results"),
+      // Stop on a *successful* submission, not merely on the tool call. A
+      // `submit_results` call whose arguments fail schema validation never sets
+      // `capturedResult`, so the loop continues and the model gets another turn
+      // to fix and resubmit (aided by tool-call repair). `stepCountIs` is only a
+      // safety cap for a model that never produces a valid submission.
+      stopWhen: [
+        () => capturedResult !== null,
+        stepCountIs(WHITEBOX_MAX_STEPS),
+      ],
       extraTools: {
         ...base.extraTools,
-        submit_results: tool({
+        [SUBMIT_RESULTS_TOOL_NAME]: tool({
           description: `Submit the final whitebox attack surface analysis results.
 
 Call this ONCE at the end with your complete structured findings.
@@ -101,7 +151,19 @@ This ends the agent run — make sure all data is included.`,
           },
         }),
       },
-      resolveResult: () => capturedResult ?? WHITEBOX_FALLBACK_RESULT,
+      resolveResult: async (streamResult) => {
+        // `capturedResult` is only set by a submission that passed validation.
+        // If it's null but the model *did* call `submit_results` (the call was
+        // rejected on a bad field), fail loud rather than masking the discarded
+        // recon with an empty fallback.
+        const steps = await streamResult.steps;
+        const submitAttempted = steps.some((step) =>
+          step.toolCalls.some(
+            (call) => call.toolName === SUBMIT_RESULTS_TOOL_NAME,
+          ),
+        );
+        return finalizeWhiteboxResult(capturedResult, submitAttempted);
+      },
       prompt: buildPrompt(codebasePath, domains, base.session.config?.prompt),
     });
   }
