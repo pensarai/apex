@@ -725,23 +725,29 @@ describe("buildOperatorSystemPrompt", () => {
 
 describe("resolveInputFocused", () => {
   it("returns true when idle and no dialogs", () => {
-    expect(resolveInputFocused("idle", 0, false)).toBe(true);
+    expect(resolveInputFocused("idle", 0, false, -1)).toBe(true);
   });
 
-  it("returns false when running", () => {
-    expect(resolveInputFocused("running", 0, false)).toBe(false);
+  it("returns true while running when no queued message is selected", () => {
+    expect(resolveInputFocused("running", 0, false, -1)).toBe(true);
+  });
+
+  it("returns false while running when a queued message is selected", () => {
+    expect(resolveInputFocused("running", 0, false, 0)).toBe(false);
   });
 
   it("returns false when dialog stack is non-empty", () => {
-    expect(resolveInputFocused("idle", 1, false)).toBe(false);
+    expect(resolveInputFocused("idle", 1, false, -1)).toBe(false);
+    expect(resolveInputFocused("running", 1, false, -1)).toBe(false);
   });
 
   it("returns false when external dialog is open", () => {
-    expect(resolveInputFocused("idle", 0, true)).toBe(false);
+    expect(resolveInputFocused("idle", 0, true, -1)).toBe(false);
+    expect(resolveInputFocused("running", 0, true, -1)).toBe(false);
   });
 
   it("returns true when waiting (input is active for redirects)", () => {
-    expect(resolveInputFocused("waiting", 0, false)).toBe(true);
+    expect(resolveInputFocused("waiting", 0, false, -1)).toBe(true);
   });
 });
 

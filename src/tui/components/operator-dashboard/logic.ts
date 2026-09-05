@@ -447,12 +447,15 @@ ${refinementBlock}`;
 // Input focus resolution
 // ---------------------------------------------------------------------------
 
+/** Dialogs always win focus; queue selection only overrides the running input. */
 export function resolveInputFocused(
   status: DashboardStatus,
   dialogStackLength: number,
   externalDialogOpen: boolean,
+  selectedQueueIndex: number,
 ): boolean {
-  return status !== "running" && dialogStackLength === 0 && !externalDialogOpen;
+  if (dialogStackLength > 0 || externalDialogOpen) return false;
+  return status !== "running" || selectedQueueIndex < 0;
 }
 
 // ---------------------------------------------------------------------------
