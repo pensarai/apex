@@ -24,6 +24,10 @@ export class EngagementWorkerPool {
     }
   }
 
+  get maxConcurrency(): number {
+    return this.concurrency;
+  }
+
   run<T>(priority: EngagementWorkPriority, work: () => Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       this.queues.get(priority)?.push({

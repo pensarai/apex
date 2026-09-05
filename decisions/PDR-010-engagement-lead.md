@@ -17,11 +17,17 @@ Fast Strike is a bounded objective executor. It returns `impact-proven`, `exhaus
 Engagement completion is deterministic:
 
 - every objective attached to every in-scope target is terminal;
-- target-local cells run automatically in related batches while the lead works;
+- target-local cells run automatically while the lead works; production may select one Fast Strike worker per endpoint/objective cell through host configuration;
 - failed or omitted cells retry once as singletons, then require lead resolution;
 - service baselines derive from their terminal target coverage;
 - candidate capabilities and confirmed capabilities with supported next steps are resolved;
 - chain-and-explore reaches a terminal disposition.
+
+The coverage ledger remains external to the lead's model context. Coordination
+tools return compact pages, mutation acknowledgements, and state versions rather
+than embedding the complete checkpoint after every update. Automatic exhausted
+results stay in the ledger; only impact, blocking, and needs-lead signals enter
+the lead mailbox.
 
 Impact proofs reference accepted findings, capabilities, artifacts, or observations. They do not bypass `document_vulnerability` or the finding judge.
 

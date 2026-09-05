@@ -290,6 +290,8 @@ const SessionConfigObject = z.object({
     .optional(),
   /** Use one durable scan-level lead over the complete discovered surface. */
   engagementLead: z.boolean().optional(),
+  /** Worker used for deterministic endpoint/objective coverage under an engagement lead. */
+  engagementCoverageMode: z.enum(["targeted", "fast-strike"]).optional(),
   /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
   agentCwd: z.string().optional(),
   /** Operator-provided guidance injected into the orchestrator/agent system prompts */

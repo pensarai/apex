@@ -37,7 +37,7 @@ export const DEFAULT_ENGAGEMENT_WORKER_CONCURRENCY = 4;
 
 export const ENGAGEMENT_LEAD_SYSTEM_PROMPT = `You are the durable lead penetration tester for one authorized engagement. You own the complete attack surface, threat-model objectives, coverage ledger, finding quality, and final chain-and-explore pass.
 
-Deterministic endpoint-local coverage runs beside you automatically. Work directly and delegate selectively: personally test high-value hypotheses, resolve cells marked needs-lead, interpret cross-service evidence, and maintain continuity. Spawn focused workers when independent context windows improve validation or chaining; do not duplicate pending or running automatic coverage, and resume the same worker for stateful follow-ups. Fast Strike workers prove one concrete impact objective—they never decide that the engagement is complete.
+Deterministic endpoint-local coverage runs beside you automatically. Work directly and delegate selectively: personally test high-value hypotheses, resolve cells marked needs-lead, interpret cross-service evidence, and maintain continuity. Automatic exhausted results remain in the external ledger; your inbox contains only impact, blocking, and needs-lead signals. Spawn focused workers when independent context windows improve validation or chaining; do not duplicate pending or running automatic coverage, and resume the same worker for stateful follow-ups. Fast Strike workers prove one concrete impact objective—they never decide that the engagement is complete.
 
 Use read_engagement_state as the source of truth: every objective attached to every target must become terminal; objectives are never copied onto unrelated targets. Discover net-new vulnerabilities and attack paths beyond the supplied objectives. Record reusable primitives with their source target IDs as capabilities and resolve every supported next step by consuming it in a chain or marking it blocked with evidence. Give chain and validation workers exact target and capability IDs.
 
@@ -206,6 +206,7 @@ export async function runEngagementLead(input: {
     leadAgentId,
     surfaceTools,
     engagementTargetIds,
+    mode: workflow.session.config?.engagementCoverageMode,
     onCheckpoint: input.onCheckpoint,
   });
   try {
@@ -215,7 +216,7 @@ export async function runEngagementLead(input: {
     return { ...result, checkpoint };
   } catch (error) {
     internalAbort.abort();
-    await agent.abortAndDrain();
+    await Promise.allSettled([agent.abortAndDrain(), coverage]);
     throw error;
   }
 }

@@ -186,7 +186,11 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
   ) => {
     const checkpoint = store.checkpoint();
     await onCheckpoint?.(checkpoint);
-    return { checkpoint, ...result };
+    return {
+      ...result,
+      stateVersion: checkpoint.updatedAt,
+      completion: store.completion(),
+    };
   };
 
   const runWorker = async (options: {
@@ -455,7 +459,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     ...surfaceTools,
     read_engagement_state: tool({
       description:
-        "Read a page of the persisted engagement services, objectives, and coverage plus capabilities, impact proofs, worker records, completion gate, and unread worker handoffs.",
+        "Read a compact page of persisted engagement services, objectives, and coverage plus high-signal capabilities, impact proofs, worker counts, completion gate, and unread worker handoffs.",
       inputSchema: z.object({
         includeInbox: z.boolean().optional().default(true),
         limit: z.number().int().min(1).max(100).default(25),
@@ -466,21 +470,35 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         const state = store.snapshot();
         const objectives = state.objectives.slice(offset, offset + limit);
         const objectiveIds = new Set(objectives.map((item) => item.id));
+        const workerCounts = state.workers.reduce(
+          (counts, worker) => {
+            counts[worker.status] += 1;
+            return counts;
+          },
+          { running: 0, completed: 0, failed: 0 },
+        );
         return {
           success: true,
           state: {
-            ...state,
+            version: state.version,
+            rootTarget: state.rootTarget,
             services: state.services.slice(offset, offset + limit),
             objectives,
             coverage: state.coverage.filter((item) =>
               objectiveIds.has(item.objectiveId),
             ),
+            capabilities: state.capabilities,
+            impactProofs: state.impactProofs,
+            workerCounts,
+            chainExplore: state.chainExplore,
+            updatedAt: state.updatedAt,
           },
           pagination: {
             offset,
             limit,
             serviceTotal: state.services.length,
             objectiveTotal: state.objectives.length,
+            workerTotal: state.workers.length,
           },
           completion: store.completion(),
           inbox: includeInbox ? mailbox.take(leadAgentId) : [],

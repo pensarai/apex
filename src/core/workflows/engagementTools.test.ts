@@ -137,12 +137,16 @@ describe("engagement worker tools", () => {
       limit: 1,
       serviceTotal: 1,
       objectiveTotal: 1,
+      workerTotal: 0,
     });
     expect(result.state).toMatchObject({
       services: seed.services,
       objectives: seed.objectives,
       coverage: seed.coverage,
+      workerCounts: { running: 0, completed: 0, failed: 0 },
     });
+    expect(result.state).not.toHaveProperty("targets");
+    expect(result.state).not.toHaveProperty("workers");
     expect(result.inbox).toEqual([]);
   });
 

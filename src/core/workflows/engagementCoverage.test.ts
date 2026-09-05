@@ -4,8 +4,12 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const agentCalls: Array<Record<string, unknown>> = [];
+const fastStrikeCalls: Array<Record<string, unknown>> = [];
 const assignmentAttempts = new Map<string, number>();
 let alwaysIncomplete = false;
+let fastStrikeHandler:
+  | ((input: Record<string, unknown>) => Promise<Record<string, unknown>>)
+  | undefined;
 
 vi.mock("../agents/specialized/pentest/agent", () => ({
   TargetedPentestAgent: class {
@@ -34,6 +38,19 @@ vi.mock("../agents/specialized/pentest/agent", () => ({
   },
 }));
 
+vi.mock("./fastStrike", () => ({
+  runFastStrikeObjective: async (input: Record<string, unknown>) => {
+    fastStrikeCalls.push(input);
+    if (fastStrikeHandler) return fastStrikeHandler(input);
+    return {
+      status: "exhausted",
+      summary: "Fast Strike exhausted the assigned objective",
+      evidence: [],
+      findings: [],
+    };
+  },
+}));
+
 import type { AIModel } from "../ai";
 import { AgentEventBus } from "../eventBus";
 import type { FindingsRegistry } from "../findings/registry";
@@ -49,8 +66,10 @@ const directories: string[] = [];
 
 afterEach(() => {
   agentCalls.length = 0;
+  fastStrikeCalls.length = 0;
   assignmentAttempts.clear();
   alwaysIncomplete = false;
+  fastStrikeHandler = undefined;
   for (const directory of directories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -90,6 +109,80 @@ describe("deterministic engagement coverage", () => {
     expect(
       buildEngagementCoverageBatches(seed).map((batch) => batch.cells.length),
     ).toEqual([6, 1]);
+  });
+
+  it("creates one Fast Strike batch per endpoint/objective cell", () => {
+    const { seed } = runtime(7);
+    expect(
+      buildEngagementCoverageBatches(seed, 6, "fast-strike").map(
+        (batch) => batch.cells.length,
+      ),
+    ).toEqual([1, 1, 1, 1, 1, 1, 1]);
+  });
+
+  it("uses one Fast Strike worker per cell without sending exhausted results to the lead", async () => {
+    const { session, store, findingsRegistry } = runtime(3);
+    await runDeterministicEngagementCoverage({
+      workflow: {
+        target: "https://example.test",
+        model: "test-model" as AIModel,
+        session,
+      },
+      store,
+      pool: new EngagementWorkerPool(2),
+      findingsRegistry,
+      eventBus: new AgentEventBus(),
+      leadAgentId: session.id,
+      engagementTargetIds: store.snapshot().targets.map((target) => target.id),
+      mode: "fast-strike",
+    });
+
+    expect(agentCalls).toHaveLength(0);
+    expect(fastStrikeCalls).toHaveLength(3);
+    expect(
+      store.snapshot().coverage.every((cell) => cell.status === "exhausted"),
+    ).toBe(true);
+    expect(store.snapshot().workers.map((worker) => worker.mode)).toEqual([
+      "fast-strike",
+      "fast-strike",
+      "fast-strike",
+    ]);
+  });
+
+  it("does not materialize queued coverage after the engagement aborts", async () => {
+    const abortController = new AbortController();
+    fastStrikeHandler = async (input) =>
+      new Promise((_resolve, reject) => {
+        const signal = input.abortSignal as AbortSignal;
+        signal.addEventListener(
+          "abort",
+          () => reject(new DOMException("aborted", "AbortError")),
+          { once: true },
+        );
+      });
+    const { session, store, findingsRegistry } = runtime(8);
+    const coverage = runDeterministicEngagementCoverage({
+      workflow: {
+        target: "https://example.test",
+        model: "test-model" as AIModel,
+        session,
+        abortSignal: abortController.signal,
+      },
+      store,
+      pool: new EngagementWorkerPool(1),
+      findingsRegistry,
+      eventBus: new AgentEventBus(),
+      leadAgentId: session.id,
+      engagementTargetIds: store.snapshot().targets.map((target) => target.id),
+      mode: "fast-strike",
+    });
+
+    await vi.waitFor(() => expect(fastStrikeCalls).toHaveLength(1));
+    abortController.abort();
+    await coverage;
+
+    expect(fastStrikeCalls).toHaveLength(1);
+    expect(store.snapshot().workers).toHaveLength(1);
   });
 
   it("retries one incomplete cell as a singleton and completes the service", async () => {
