@@ -214,6 +214,9 @@ Endpoint fields (create requires --endpoint and --description):
   --auth-details <text>        Free-form auth details
   --business-logic <text>      Business-logic notes
   --threat-model <text>        Per-endpoint threat model notes
+  --include-by-default        endpoint-update: include in default pentest scope
+  --exclude-by-default        endpoint-update: exclude from default pentest scope
+  --exclusion-reason <text>    Reason for --exclude-by-default
 
 Options:
   -h, --help                   Show this help message`);
@@ -311,6 +314,20 @@ function parseEndpointCreateOptions(argv: string[]): CreateEndpointInput {
 
 function parseEndpointUpdateOptions(argv: string[]): UpdateEndpointInput {
   const update: UpdateEndpointInput = {};
+  const include = hasFlag("--include-by-default", argv);
+  const exclude = hasFlag("--exclude-by-default", argv);
+  if (include && exclude) {
+    throw new Error(
+      "Choose either --include-by-default or --exclude-by-default",
+    );
+  }
+  if (include || exclude) update.excludedFromScan = exclude;
+  const exclusionReason = getFlag("--exclusion-reason", argv);
+  if (exclusionReason !== undefined) {
+    if (!exclude)
+      throw new Error("--exclusion-reason requires --exclude-by-default");
+    update.exclusionReason = exclusionReason;
+  }
   const applicationId = getFlag("--app", argv);
   if (applicationId !== undefined) update.applicationId = applicationId;
   const endpoint = getFlag("--endpoint", argv);

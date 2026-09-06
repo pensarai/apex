@@ -78,6 +78,8 @@ export interface AppDetail extends AppSummary {
  * {@link getEndpoint} for the full {@link EndpointDetail}.
  */
 export interface EndpointSummary {
+  excludedFromScan: boolean;
+  exclusionReason: string | null;
   id: string;
   endpoint: string;
   transport: EndpointTransport | null;
@@ -163,6 +165,8 @@ export interface CreateEndpointInput {
 }
 
 export interface UpdateEndpointInput {
+  excludedFromScan?: boolean;
+  exclusionReason?: string | null;
   /** Move the endpoint to a different application within the workspace. */
   applicationId?: string;
   endpoint?: string;

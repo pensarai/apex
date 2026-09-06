@@ -215,18 +215,20 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         grpc: input.grpc,
       };
 
-      const threatModelOutput = await generateThreatModelForEndpoint(
-        ctx,
-        subagentInput,
-      );
+      const threatModelOutput = await generateThreatModelForEndpoint(ctx, {
+        ...subagentInput,
+        notes: input.notes,
+      });
 
       const riskScore = threatModelOutput?.riskScore ?? heuristicRiskScore;
       const pentestObjectives = threatModelOutput?.pentestObjectives ?? [];
       const businessLogic = threatModelOutput?.businessLogic;
       const threatModel = threatModelOutput?.threatModel;
+      const scopeRecommendation = threatModelOutput?.scopeRecommendation;
 
       const endpointRecord = {
         ...input,
+        scopeRecommendation,
         pentestObjectives,
         discoveredAt: new Date().toISOString(),
         sessionId: ctx.session.id,
@@ -265,6 +267,7 @@ Each endpoint creates a JSON file in the assets directory for tracking and analy
         pentestObjectives,
         riskScore,
         message: `Endpoint '${input.routePath}' documented successfully under app '${input.appName}'`,
+        scopeRecommendation,
       };
     },
   });

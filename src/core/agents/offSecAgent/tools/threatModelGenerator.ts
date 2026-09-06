@@ -2,6 +2,10 @@ import { stepCountIs } from "ai";
 import pLimit from "p-limit";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
+import {
+  type EndpointScopeRecommendation,
+  EndpointScopeRecommendationSchema,
+} from "../../../findings/endpointScope";
 import { newSessionId } from "../../../id/id";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
@@ -127,6 +131,7 @@ const SCHEMA_SOURCE_UNAVAILABLE_NOTE =
   "If the handler source is unreachable in your environment (source-unavailable mode — see prompt body), cite the grounding source you actually read (endpoint description, route table, OpenAPI spec, README) instead of `file:line` and tag the claim `[unverified: source unavailable]`. Never fabricate `file:line` references or invent code paths.";
 
 const ThreatModelResultSchema = z.object({
+  scopeRecommendation: EndpointScopeRecommendationSchema,
   businessLogic: z
     .string()
     .describe(
@@ -297,11 +302,13 @@ export interface GenerateThreatModelInput {
   handler?: string;
   authRequired?: boolean;
   description: string;
+  notes?: string;
   transport?: EndpointTransport;
   grpc?: GrpcEndpointMetadata;
 }
 
 export interface ThreatModelOutput {
+  scopeRecommendation: EndpointScopeRecommendation;
   businessLogic: string;
   threatModel: string;
   riskScore: RiskScore;
@@ -378,6 +385,7 @@ export async function generateThreatModelForEndpoint(
         result.functionCriticality +
         result.securityIndicators;
       return {
+        scopeRecommendation: result.scopeRecommendation,
         businessLogic: result.businessLogic,
         threatModel: result.threatModel,
         riskScore: {
@@ -460,6 +468,11 @@ The threat model and pentest objectives must be gRPC-specific (reflection/schema
 - **Handler**: ${input.handler ?? "unknown"}
 - **Auth**: ${authInfo}
 - **Description**: ${input.description}
+${input.notes ? `- **Recon observations**: ${input.notes}` : ""}
+
+## Default pentest scope
+
+Return a scopeRecommendation based on the behavior you actually establish below. Only confirmed health/readiness/liveness probes, public static assets, public documentation, robots files and sitemaps may be excluded by default. Metrics, diagnostics and other utility routes remain included. Sensitive or tenant-specific output, authorization-sensitive downloads, user-controlled fetching and business operations remain included even on a route named /health or /docs. Consider every HTTP method on a consolidated route. When source and observations are insufficient, keep the endpoint included (category unknown). Generic hypothetical threats alone do not change a confirmed public utility's classification. Document every endpoint regardless of this recommendation.
 ${grpcSection}
 ## Reading the code
 
