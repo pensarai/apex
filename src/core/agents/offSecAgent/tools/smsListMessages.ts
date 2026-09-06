@@ -1,14 +1,16 @@
 /**
  * Tool: sms_list_messages
  *
- * Reserves or lists inbound SMS on a stage-managed Mobile OTP number via the
- * Console Agent API. Number selection and leasing are server-side.
- * Console-only — AGENT_API_URL must be set (sandbox dispatch).
+ * Reserves or lists inbound SMS on a stage-managed Mobile OTP number. Number
+ * selection and leasing belong to the host, reached through the `SmsInbox`
+ * seam: the default talks to the Console Agent API and needs sandbox dispatch
+ * (AGENT_API_URL), while a host with direct database access injects its own.
  */
 
 import { tool } from "ai";
 import { z } from "zod";
 import type { SessionInfo } from "../../../session";
+import { HttpSmsInbox, type SmsInboxRefusal } from "./smsInbox";
 import type { ToolContext } from "./types";
 
 export const SMS_LIST_MESSAGES_TOOL_NAME = "sms_list_messages" as const;
@@ -29,46 +31,14 @@ export function sessionHasSmsPasswordless(session: SessionInfo): boolean {
   return hasPhoneNumberAuthCredential(session);
 }
 
-function requireAgentApi(): { base: string; token: string } {
-  const base = process.env.AGENT_API_URL;
-  const token = process.env.AGENT_API_TOKEN;
-  if (!base || !token) {
-    throw new Error(
-      "sms_list_messages requires AGENT_API_URL and AGENT_API_TOKEN (Console sandbox dispatch). Local CLI without Console cannot read inbound SMS.",
-    );
-  }
-  return { base: base.replace(/\/+$/, ""), token };
-}
-
-type SmsWireMessage = {
-  id: string;
-  fromPhoneNumber: string;
-  toPhoneNumber: string;
-  body: string;
-  receivedAt: string;
-  consumedAt: string | null;
-  code: string | null;
+const REFUSALS: Record<SmsInboxRefusal, string> = {
+  "lease-held":
+    "The shared Mobile OTP number is busy. Retry the reservation later; this tool does not wait.",
+  "not-configured":
+    "No Mobile OTP receiving number is configured for this session.",
+  "already-claimed":
+    "That SMS was already claimed. List without claim, or wait for a newer message.",
 };
-
-type SmsListResponse = {
-  messages: SmsWireMessage[];
-  claimed: SmsWireMessage | null;
-};
-
-async function agentFetch(
-  path: string,
-  init: RequestInit & { token: string },
-): Promise<Response> {
-  const { token, ...rest } = init;
-  // biome-ignore lint/style/noRestrictedGlobals: Agent API (not the pentest target); must not pass through targetFetch.
-  return fetch(path, {
-    ...rest,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(rest.headers ?? {}),
-    },
-  });
-}
 
 export function smsListMessages(ctx: ToolContext) {
   return tool({
@@ -126,55 +96,27 @@ Requires a Console sandbox (AGENT_API_URL).`,
         }
       }),
     execute: async ({ reserve, sinceMs, claim }) => {
-      const { base, token } = requireAgentApi();
+      const inbox = ctx.smsInbox ?? new HttpSmsInbox();
 
-      const url = new URL(`${base}/agent/sms/messages`);
       if (reserve) {
-        url.searchParams.set("reserve", "1");
-      } else {
-        if (sinceMs === undefined) {
-          throw new Error("sms_list_messages requires sinceMs when listing");
+        const reserved = await inbox.reserve(ctx.abortSignal);
+        if (!reserved.ok) {
+          return { success: false as const, error: REFUSALS[reserved.reason] };
         }
-        url.searchParams.set("since", new Date(sinceMs).toISOString());
-        if (claim) url.searchParams.set("claim", "1");
+        return { success: true as const, messages: [], claimed: null };
       }
 
-      const res = await agentFetch(url.toString(), {
-        method: "GET",
-        token,
-        signal: ctx.abortSignal,
-      });
-
-      if (res.status === 429) {
-        return {
-          success: false as const,
-          error:
-            "The shared Mobile OTP number is busy. Retry the reservation later; this tool does not wait.",
-        };
+      if (sinceMs === undefined) {
+        throw new Error("sms_list_messages requires sinceMs when listing");
       }
-      if (res.status === 403) {
-        return {
-          success: false as const,
-          error:
-            "No Mobile OTP receiving number is configured for this session.",
-        };
+      const listed = await inbox.list({ sinceMs, claim }, ctx.abortSignal);
+      if (!listed.ok) {
+        return { success: false as const, error: REFUSALS[listed.reason] };
       }
-      if (res.status === 409) {
-        return {
-          success: false as const,
-          error:
-            "That SMS was already claimed. List without claim, or wait for a newer message.",
-        };
-      }
-      if (!res.ok) {
-        throw new Error(`SMS list API error ${res.status} ${res.statusText}`);
-      }
-
-      const data = (await res.json()) as SmsListResponse;
       return {
         success: true as const,
-        messages: data.messages,
-        claimed: data.claimed,
+        messages: listed.messages,
+        claimed: listed.claimed,
       };
     },
   });

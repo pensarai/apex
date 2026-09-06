@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "../types";
-import { createEmailAdapter } from "./adapters";
+import { resolveEmailAdapter } from "./adapters";
 
 /**
  * Tool: email_get_attachments
@@ -46,7 +46,7 @@ the attachment content as base64.`,
       }
 
       try {
-        const adapter = createEmailAdapter(inbox);
+        const adapter = resolveEmailAdapter(inbox, ctx.emailAdapterFor);
 
         if (attachmentId) {
           const content = await adapter.getAttachmentContent(
