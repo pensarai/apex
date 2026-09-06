@@ -71,6 +71,15 @@ describe("getMaxOutputTokens", () => {
     );
   });
 
+  it("registers GLM 5.3 with its OpenRouter limits", () => {
+    expect(getModelInfo("z-ai/glm-5.3")).toMatchObject({
+      name: "GLM 5.3",
+      provider: "openrouter",
+      contextLength: 1_310_720,
+    });
+    expect(getMaxOutputTokens("z-ai/glm-5.3")).toBe(262_144);
+  });
+
   it("recognizes GLM 5 / 5.2's 131.1K max-output window", () => {
     expect(getMaxOutputTokens("z-ai/glm-5.2")).toBe(131_072);
     expect(getMaxOutputTokens("zai.glm-5")).toBe(131_072);
