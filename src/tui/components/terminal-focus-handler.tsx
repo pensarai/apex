@@ -15,19 +15,19 @@ import { setupTerminalFocusHandling } from "../terminal-focus";
  * Must be rendered inside FocusProvider to access refocusPrompt.
  */
 export function TerminalFocusHandler() {
-  const { refocusPrompt } = useFocus();
+  const { refocusPromptIfNoActiveEditor } = useFocus();
   const renderer = useRenderer();
 
   useEffect(() => {
     // Set up terminal focus handling with a callback to re-focus the prompt
     const cleanup = setupTerminalFocusHandling(renderer, {
-      onTerminalFocus: refocusPrompt,
+      onTerminalFocus: refocusPromptIfNoActiveEditor,
       debug: false, // Set to true for debugging
     });
 
     // Clean up on unmount
     return cleanup;
-  }, [renderer, refocusPrompt]);
+  }, [renderer, refocusPromptIfNoActiveEditor]);
 
   // This component doesn't render anything
   return null;
