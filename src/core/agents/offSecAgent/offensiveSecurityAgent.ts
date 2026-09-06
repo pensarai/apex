@@ -519,6 +519,8 @@ export class OffensiveSecurityAgent<TResult = void> {
       // Spawn seam + durable hooks inherited by any sub-agent this agent spawns.
       // Resolve the default once here so every tool sees a guaranteed spawner.
       subagentSpawner: input.subagentSpawner ?? inProcessSubagentSpawner,
+      smsInbox: input.smsInbox,
+      emailAdapterFor: input.emailAdapterFor,
       languageModelMiddleware: input.languageModelMiddleware,
       usageRecorder: input.usageRecorder,
       streamIdFactory: input.streamIdFactory,
