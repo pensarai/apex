@@ -160,6 +160,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 524288,
   },
   {
+    id: "poolside/laguna-s-2.1",
+    name: "Laguna S 2.1",
+    provider: "openrouter",
+    contextLength: 1048576,
+  },
+  {
     id: "qwen/qwen3-8b",
     name: "Qwen 3 8B Thinking",
     provider: "openrouter",

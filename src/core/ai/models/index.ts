@@ -184,6 +184,10 @@ function lookupOutputBudgetByPattern(modelId: string): number {
     return 128_000;
   }
 
+  if (modelId.includes("laguna-s-2.1")) {
+    return 131_072;
+  }
+
   // GLM 5 / 5.2 ship a ~131K (128Ki) max-output window. Matching both keeps the
   // Bedrock `zai.glm-5` id and OpenRouter `z-ai/glm-5.2` on the same budget.
   if (modelId.includes("glm-5")) {
