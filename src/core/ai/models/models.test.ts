@@ -60,6 +60,17 @@ describe("getMaxOutputTokens", () => {
     expect(getMaxOutputTokens("poolside/laguna-s-2.1")).toBe(131_072);
   });
 
+  it("registers Nemotron 3 Ultra with its OpenRouter limits", () => {
+    expect(getModelInfo("nvidia/nemotron-3-ultra-550b-a55b")).toMatchObject({
+      name: "Nemotron 3 Ultra 550B A55B",
+      provider: "openrouter",
+      contextLength: 262_144,
+    });
+    expect(getMaxOutputTokens("nvidia/nemotron-3-ultra-550b-a55b")).toBe(
+      16_384,
+    );
+  });
+
   it("recognizes GLM 5 / 5.2's 131.1K max-output window", () => {
     expect(getMaxOutputTokens("z-ai/glm-5.2")).toBe(131_072);
     expect(getMaxOutputTokens("zai.glm-5")).toBe(131_072);

@@ -208,5 +208,9 @@ function lookupOutputBudgetByPattern(modelId: string): number {
     return 16_000;
   }
 
+  if (modelId.includes("nemotron-3-ultra")) {
+    return 16_384;
+  }
+
   return 4_096;
 }

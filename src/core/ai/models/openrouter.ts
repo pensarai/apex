@@ -202,6 +202,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 262144,
   },
   {
+    id: "nvidia/nemotron-3-ultra-550b-a55b",
+    name: "Nemotron 3 Ultra 550B A55B",
+    provider: "openrouter",
+    contextLength: 262144,
+  },
+  {
     id: "arcee-ai/trinity-mini:free",
     name: "Arcee Trinity Mini (Free)",
     provider: "openrouter",
