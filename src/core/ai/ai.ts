@@ -977,7 +977,7 @@ export type OpenRouterProviderOptions = {
 export function buildOpenRouterProviderOptions(
   model: AIModel,
 ): OpenRouterProviderOptions | undefined {
-  if (model !== "z-ai/glm-5.2") return undefined;
+  if (model !== "z-ai/glm-5.2" && model !== "z-ai/glm-5.3") return undefined;
   return {
     openrouter: {
       provider: {
