@@ -162,6 +162,8 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Existing conversation history (for resumption / multi-turn) */
   messages?: Array<ModelMessage>;
+  /** Durable directed handoffs delivered between model steps. */
+  getPendingMessages?: () => Promise<ModelMessage[]>;
 
   /** Condition(s) under which the agent should stop */
   stopWhen?:

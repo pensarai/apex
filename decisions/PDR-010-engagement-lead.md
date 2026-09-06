@@ -10,20 +10,22 @@ Production pentests must both discover and validate vulnerabilities across a com
 
 Add an opt-in scan-level engagement lead that owns the complete discovered surface for the lifetime of a scan.
 
-The lead can test directly and delegate focused work. Workers have stable IDs, persisted conversations, directed `MESSAGE` and `FINAL_ANSWER` mailbox records, and an explicit follow-up operation. Independent assignments may run concurrently; stateful chains resume the same worker.
+The lead can test directly and delegate focused work. In grouped mode, the lead model reads the paged attack surface and threat-model details and creates semantic missions; application code does not infer route families. Each mission declares its exact endpoint/objective coverage obligations, supporting targets, rationale, context references, and prerequisites. Workers have stable IDs, persisted conversations, directed `MESSAGE` and `FINAL_ANSWER` mailbox records, and an explicit follow-up operation. Independent assignments may run concurrently; stateful chains resume the same worker.
 
 Fast Strike is a bounded objective executor. It returns `impact-proven`, `exhausted`, or `blocked`, and an impact claim must cite a successful observation from its own trace scope. Production defaults to one lane; competitive lanes are explicit benchmark configuration.
 
 Engagement completion is deterministic:
 
 - every objective attached to every in-scope target is terminal;
-- target-local cells run automatically while the lead works; production may select one Fast Strike worker per endpoint/objective cell through host configuration;
+- grouped missions preserve related flows in one worker while exact obligation results retain deterministic endpoint coverage; legacy production modes may still select one worker per endpoint/objective cell;
 - failed or omitted cells retry once as singletons, then require lead resolution;
 - service baselines derive from their terminal target coverage;
 - candidate capabilities and confirmed capabilities with supported next steps are resolved;
 - chain-and-explore reaches a terminal disposition.
 
-The coverage ledger remains external to the lead's model context. Coordination
+The coverage ledger remains external to the lead's model context. Assignment,
+execution, tested, blocked, and untested state remain distinct, so blocked work
+never appears as tested coverage. Coordination
 tools return compact pages, mutation acknowledgements, and state versions rather
 than embedding the complete checkpoint after every update. Automatic exhausted
 results stay in the ledger; only impact, blocking, and needs-lead signals enter
@@ -31,7 +33,9 @@ the lead mailbox.
 
 Impact proofs reference accepted findings, capabilities, artifacts, or observations. They do not bypass `document_vulnerability` or the finding judge.
 
-The legacy endpoint swarm remains the default until the Console feature flag enables the engagement lead.
+The host may independently select the lead and worker models. Unset selections inherit the existing pentest model, and resolved selections are persisted in the engagement checkpoint so resume does not silently change models.
+
+The legacy endpoint swarm remains the default until the Console feature flags enable the engagement lead and grouped coverage.
 
 ## Rationale
 

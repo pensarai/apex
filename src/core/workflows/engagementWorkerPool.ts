@@ -11,6 +11,7 @@ const PRIORITIES: EngagementWorkPriority[] = ["chain", "retry", "baseline"];
 /** Shared bounded queue for deterministic coverage and lead-directed workers. */
 export class EngagementWorkerPool {
   private active = 0;
+  private highPriorityStreak = 0;
   private readonly queues = new Map<
     EngagementWorkPriority,
     Array<QueuedWork<unknown>>
@@ -41,7 +42,12 @@ export class EngagementWorkerPool {
 
   private drain(): void {
     while (this.active < this.concurrency) {
-      const next = PRIORITIES.flatMap(
+      const baseline = this.queues.get("baseline")?.[0];
+      const priorityOrder =
+        this.highPriorityStreak >= 3 && baseline
+          ? (["baseline", "chain", "retry"] as const)
+          : PRIORITIES;
+      const next = priorityOrder.flatMap(
         (priority) => this.queues.get(priority) ?? [],
       )[0];
       if (!next) return;
@@ -49,6 +55,8 @@ export class EngagementWorkerPool {
         const queue = this.queues.get(priority);
         if (queue?.[0] === next) {
           queue.shift();
+          this.highPriorityStreak =
+            priority === "baseline" ? 0 : this.highPriorityStreak + 1;
           break;
         }
       }

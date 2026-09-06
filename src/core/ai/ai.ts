@@ -995,6 +995,7 @@ export interface CacheMetrics {
 }
 
 export interface StreamResponseOpts {
+  getPendingMessages?: () => Promise<ModelMessage[]>;
   prompt: string;
   system?: string;
   model: AIModel;
@@ -1259,16 +1260,18 @@ export function streamResponse(
       // 16K output but our messages were sized assuming a smaller
       // reservation. Making the value explicit closes that drift class.
       maxOutputTokens: getMaxOutputTokens(model),
-      prepareStep: (opts) => {
+      prepareStep: async (step) => {
+        const pending = (await opts.getPendingMessages?.()) ?? [];
+        const messages = [...step.messages, ...pending];
         // Update the container with the latest messages
-        messagesContainer.current = opts.messages;
+        messagesContainer.current = messages;
         // Mark the last message so the growing conversation caches incrementally
         if (cacheBreakpoint) {
           return {
-            messages: withCachedLastMessage(opts.messages, cacheBreakpoint),
+            messages: withCachedLastMessage(messages, cacheBreakpoint),
           };
         }
-        return undefined;
+        return pending.length ? { messages } : undefined;
       },
       onError: async ({ error }: { error: unknown }) => {
         const errorMessage =

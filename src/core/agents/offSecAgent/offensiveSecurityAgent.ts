@@ -849,6 +849,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         system: systemPrompt,
         model: input.model,
         messages: input.messages,
+        getPendingMessages: input.getPendingMessages,
         tools,
         activeTools,
         stopWhen,
