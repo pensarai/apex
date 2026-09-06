@@ -22,9 +22,11 @@ import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSch
 import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
 import type { StreamIdFactory, SystemPentestScope } from "../types";
+import type { EmailAdapterResolver } from "./email/adapters";
 import type { PersistentShell } from "./persistentShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
 import type { UnifiedSandbox } from "./sandbox";
+import type { SmsInbox } from "./smsInbox";
 
 /**
  * Shared context passed to every tool factory.
@@ -212,6 +214,19 @@ export type ToolContext = {
    * spawner constructs.
    */
   subagentSpawner: SubagentSpawner;
+
+  /**
+   * Transport for inbound SMS reads. Unset → the Console agent API over HTTP,
+   * which needs sandbox dispatch; a host with direct database access injects
+   * one that reads in-process.
+   */
+  smsInbox?: SmsInbox;
+
+  /**
+   * Supplies an adapter for an inbox with no transport of its own (a
+   * `pensar-managed` inbox). Unset → the config-driven factory.
+   */
+  emailAdapterFor?: EmailAdapterResolver;
 
   /** Provider middleware inherited by spawned children. Unset → raw model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];

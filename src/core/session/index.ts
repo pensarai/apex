@@ -136,6 +136,14 @@ const EmailInboxConfigObject = z.discriminatedUnion("provider", [
     endpoint: z.string(),
     token: z.string(),
   }),
+  // Read through a host-supplied adapter, not a transport of its own. Carries
+  // no credential: the host resolves it (see EmailAdapterResolver).
+  z.object({
+    provider: z.literal("pensar-managed"),
+    id: z.string(),
+    name: z.string(),
+    emailAddress: z.string(),
+  }),
 ]);
 
 export type EmailInboxConfig = z.infer<typeof EmailInboxConfigObject>;

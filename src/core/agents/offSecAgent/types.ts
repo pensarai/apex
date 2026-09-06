@@ -34,6 +34,8 @@ import type { SkillsRegistry } from "../../skills/registry";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { SubagentSpawner } from "./subagentSpawner";
 import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
+import type { EmailAdapterResolver } from "./tools/email/adapters";
+import type { SmsInbox } from "./tools/smsInbox";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -212,6 +214,18 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * {@link ToolContext}; unset → tools use the in-process spawner.
    */
   subagentSpawner?: SubagentSpawner;
+
+  /**
+   * Transport for inbound SMS reads. Forwarded into the {@link ToolContext};
+   * unset → the Console agent API over HTTP, which needs sandbox dispatch.
+   */
+  smsInbox?: SmsInbox;
+
+  /**
+   * Supplies an adapter for a `pensar-managed` inbox, forwarded into the
+   * ToolContext. Unset → the config-driven factory, which rejects that provider.
+   */
+  emailAdapterFor?: EmailAdapterResolver;
 
   /**
    * Shared findings registry for cross-agent dedup.
@@ -476,6 +490,19 @@ export interface SpecializedAgentInput {
    * spawn_coding_agent) becomes durable child workflows.
    */
   subagentSpawner?: SubagentSpawner;
+
+  /**
+   * Transport for inbound SMS reads, forwarded into the ToolContext. Unset →
+   * the Console agent API over HTTP, which needs sandbox dispatch; a durable
+   * runtime injects one that reads in-process.
+   */
+  smsInbox?: SmsInbox;
+
+  /**
+   * Supplies an adapter for a `pensar-managed` inbox, forwarded into the
+   * ToolContext. Unset → the config-driven factory, which rejects that provider.
+   */
+  emailAdapterFor?: EmailAdapterResolver;
 
   /**
    * Additional tools merged on top of the built-in toolset (same-named tools
