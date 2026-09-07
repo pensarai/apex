@@ -160,6 +160,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 524288,
   },
   {
+    id: "poolside/laguna-s-2.1",
+    name: "Laguna S 2.1",
+    provider: "openrouter",
+    contextLength: 1048576,
+  },
+  {
     id: "qwen/qwen3-8b",
     name: "Qwen 3 8B Thinking",
     provider: "openrouter",
@@ -192,6 +198,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
   {
     id: "nvidia/nemotron-3-nano-30b-a3b",
     name: "Nemotron 3 Nano 30B A3B",
+    provider: "openrouter",
+    contextLength: 262144,
+  },
+  {
+    id: "nvidia/nemotron-3-ultra-550b-a55b",
+    name: "Nemotron 3 Ultra 550B A55B",
     provider: "openrouter",
     contextLength: 262144,
   },
