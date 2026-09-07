@@ -26,6 +26,11 @@ import type {
 } from "../../specialized/findingJudge";
 import type { Finding } from "../types";
 import {
+  assertCommandActionAllowed,
+  DestructiveActionError,
+} from "./destructiveGuard";
+import {
+  assertCommandInScope,
   assertFindingEndpointInScope,
   ScopeViolationError,
 } from "./scopeGuard";
@@ -185,6 +190,23 @@ CRITICAL RULES — READ BEFORE CALLING:
             success: false,
             error: error.message,
             message: `Finding endpoint rejected — out of scope: ${error.message}`,
+          };
+        }
+        throw error;
+      }
+
+      try {
+        assertCommandInScope(input.pocContent, ctx);
+        assertCommandActionAllowed(input.pocContent, ctx);
+      } catch (error) {
+        if (
+          error instanceof ScopeViolationError ||
+          error instanceof DestructiveActionError
+        ) {
+          return {
+            success: false,
+            error: error.message,
+            message: `Finding PoC rejected: ${error.message}`,
           };
         }
         throw error;
@@ -872,7 +894,10 @@ function preparePoc(input: {
   }
 
   const commentChar = input.pocType === "javascript" ? "//" : "#";
-  const header = `${commentChar} POC: ${input.pocDescription}\n${commentChar} Created: ${new Date().toISOString()}\n\n`;
+  const commentedDescription = input.pocDescription
+    .split(/\r\n?|\n/)
+    .join(`\n${commentChar} `);
+  const header = `${commentChar} POC: ${commentedDescription}\n${commentChar} Created: ${new Date().toISOString()}\n\n`;
   pocContent = pocContent.replace(/^#!.*\n/, (match) => match + header);
 
   return { filename, pocContent };
