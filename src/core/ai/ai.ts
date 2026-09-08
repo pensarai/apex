@@ -258,6 +258,26 @@ export function takeStepContext(): UsageStepContext | undefined {
   return { sessionId: store.sessionId, stepSeq };
 }
 
+/**
+ * Report one finished model call to a usage sink. Advances `stepSeq` whenever
+ * a sink is present (including zero-token steps) so the index stays aligned
+ * with the AI SDK. Skips the callback itself when both token counts are 0.
+ */
+async function emitUsage(
+  model: string,
+  stepUsage: NormalizedStepUsage,
+  sink: UsageRecorder | UsageCallback | null | undefined,
+): Promise<void> {
+  if (!sink) return;
+  const stepCtx = takeStepContext();
+  if (stepUsage.inputTokens <= 0 && stepUsage.outputTokens <= 0) return;
+  await sink(model, stepUsage.inputTokens, stepUsage.outputTokens, {
+    ...stepCtx,
+    cacheReadTokens: stepUsage.cacheReadTokens,
+    cacheWriteTokens: stepUsage.cacheWriteTokens,
+  });
+}
+
 export type AIModelProvider =
   | "anthropic"
   | "openai"
@@ -1156,35 +1176,7 @@ export function streamResponse(
       });
     }
     await userOnStepFinish?.(step);
-    if (usageRecorder || _usageCallback) {
-      // Advance stepSeq every finished step (even zero-usage) to stay aligned with the AI-SDK step index.
-      const stepCtx = takeStepContext();
-      if (stepUsage.inputTokens > 0 || stepUsage.outputTokens > 0) {
-        // Both sinks receive the same cache-aware context, so the cached and
-        // uncached split travels on the usage event itself. A per-run recorder,
-        // when set, replaces the process-global singleton for this stream.
-        const usageContext: UsageCallbackContext = {
-          ...stepCtx,
-          cacheReadTokens: stepUsage.cacheReadTokens,
-          cacheWriteTokens: stepUsage.cacheWriteTokens,
-        };
-        if (usageRecorder) {
-          await usageRecorder(
-            model,
-            stepUsage.inputTokens,
-            stepUsage.outputTokens,
-            usageContext,
-          );
-        } else {
-          await _usageCallback?.(
-            model,
-            stepUsage.inputTokens,
-            stepUsage.outputTokens,
-            usageContext,
-          );
-        }
-      }
-    }
+    await emitUsage(model, stepUsage, usageRecorder ?? _usageCallback);
   };
   const baseProviderModel = getProviderModel(model, authConfig);
   const providerModel = languageModelMiddleware
@@ -1597,6 +1589,8 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
+  /** Per-run usage recorder; when set it replaces the global usage callback. */
+  usageRecorder?: UsageRecorder;
   /** Session id (`ses_…`) of the caller — stamped onto AI-span telemetry. */
   sessionId?: string;
   /** Stable operation id; defaults to `apex.structured.generate`. */
@@ -1619,6 +1613,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
     authConfig,
     abortSignal,
     onTokenUsage,
+    usageRecorder,
     sessionId,
   } = opts;
 
@@ -1667,21 +1662,12 @@ export async function generateObjectResponse<T extends z.ZodType>(
         onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
       }
 
-      if (_usageCallback && usage) {
-        const stepUsage = normalizeStepUsage({ usage, providerMetadata });
-        const stepCtx = takeStepContext();
-        if (stepUsage.inputTokens > 0 || stepUsage.outputTokens > 0) {
-          await _usageCallback(
-            model,
-            stepUsage.inputTokens,
-            stepUsage.outputTokens,
-            {
-              ...stepCtx,
-              cacheReadTokens: stepUsage.cacheReadTokens,
-              cacheWriteTokens: stepUsage.cacheWriteTokens,
-            },
-          );
-        }
+      if (usage) {
+        await emitUsage(
+          model,
+          normalizeStepUsage({ usage, providerMetadata }),
+          usageRecorder ?? _usageCallback,
+        );
       }
 
       // zod v4: the AI SDK's `Output.object` no longer carries the schema's
