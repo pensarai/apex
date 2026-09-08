@@ -74,6 +74,33 @@ vi.mock("../../ai", () => ({
     streamResponseCalls.push(opts);
     return { fullStream: (async function* () {})() };
   },
+  normalizeStepUsage: (step: {
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      inputTokenDetails?: {
+        cacheReadTokens?: number;
+        cacheWriteTokens?: number;
+      };
+    };
+    providerMetadata?: {
+      anthropic?: {
+        cacheReadInputTokens?: number;
+        cacheCreationInputTokens?: number;
+      };
+    };
+  }) => {
+    const meta = step.providerMetadata?.anthropic;
+    const details = step.usage?.inputTokenDetails;
+    return {
+      inputTokens: step.usage?.inputTokens ?? 0,
+      outputTokens: step.usage?.outputTokens ?? 0,
+      cacheReadTokens:
+        meta?.cacheReadInputTokens ?? details?.cacheReadTokens ?? 0,
+      cacheWriteTokens:
+        meta?.cacheCreationInputTokens ?? details?.cacheWriteTokens ?? 0,
+    };
+  },
 }));
 vi.mock("../../session", () => ({ create: () => {} }));
 vi.mock("../specialized/utils", () => ({
@@ -191,6 +218,56 @@ describe("auxiliary model events", () => {
         cacheWriteTokens: 1,
       });
       expect(traceRecordStepCalls.at(-1)?.[2]).toEqual({ usageOnly: true });
+      writer.cancelTimer();
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it("records cache from the step event without onCacheMetrics", async () => {
+    streamResponseCalls.length = 0;
+    traceRecordStepCalls.length = 0;
+    const rootPath = join(
+      "/tmp",
+      `apex-step-cache-${Date.now()}-${Math.random()}`,
+    );
+
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        model: "test-model",
+        session: { id: "ses_step_cache", rootPath },
+        activeTools: [],
+        sandbox: {},
+      } as never);
+
+      void agent.streamResult;
+      const call = streamResponseCalls[0] as {
+        onStepFinish: (event: unknown) => Promise<void>;
+        onCacheMetrics?: unknown;
+      };
+      expect(call.onCacheMetrics).toBeUndefined();
+
+      await call.onStepFinish({
+        response: {
+          id: "step-1",
+          messages: [{ role: "assistant", content: "ok" }],
+        },
+        usage: {
+          inputTokens: 40,
+          outputTokens: 6,
+          inputTokenDetails: { cacheReadTokens: 30, cacheWriteTokens: 2 },
+        },
+      });
+
+      expect(traceRecordStepCalls.at(-1)?.[1]).toEqual({
+        inputTokens: 40,
+        outputTokens: 6,
+        cacheReadTokens: 30,
+        cacheWriteTokens: 2,
+      });
+      const writer = (agent as unknown as { writer: AgentMessageWriter })
+        .writer;
       writer.cancelTimer();
     } finally {
       rmSync(rootPath, { recursive: true, force: true });
