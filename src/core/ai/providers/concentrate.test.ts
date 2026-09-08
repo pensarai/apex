@@ -69,7 +69,7 @@ describe("createConcentrateModel", () => {
     expect(JSON.parse(String(init?.body))).toMatchObject({
       model: "glm-5.3",
       store: false,
-      reasoning: { effort: "high" },
+      reasoning: { effort: "high", summary: "auto" },
       input: [
         {
           role: "user",

@@ -90,7 +90,9 @@ function withConcentrateDefaults(
       openai: {
         ...options.providerOptions?.openai,
         store: false,
-        ...(forceReasoning ? { forceReasoning: true } : {}),
+        ...(forceReasoning
+          ? { forceReasoning: true, reasoningSummary: "auto" }
+          : {}),
       },
     },
   });
