@@ -86,6 +86,7 @@ import type { AIModel } from "../ai";
 import { AgentEventBus } from "../eventBus";
 import type { FindingsRegistry } from "../findings/registry";
 import type { SessionInfo } from "../session";
+import { createEngagementPlanningTools } from "./engagementPlanning";
 import { buildEngagementState, EngagementStore } from "./engagementState";
 import { createEngagementTools } from "./engagementTools";
 
@@ -128,7 +129,7 @@ function makeRuntime(grouped = false) {
   const findingsRegistry = {
     getFindings: () => [],
   } as unknown as FindingsRegistry;
-  const tools = createEngagementTools({
+  const runtime = createEngagementTools({
     input: {
       target: "https://example.test",
       model: "test-model" as AIModel,
@@ -146,7 +147,13 @@ function makeRuntime(grouped = false) {
       search_engagement_surface: { execute: vi.fn() } as never,
     },
   });
-  return { tools, store, seed };
+  return {
+    tools: runtime.tools,
+    startPlannedMissions: runtime.startPlannedMissions,
+    planningTools: createEngagementPlanningTools(store),
+    store,
+    seed,
+  };
 }
 
 async function executeTool(
@@ -272,36 +279,33 @@ describe("engagement worker tools", () => {
   });
 
   it("runs one model-planned grouped mission with exact per-target results", async () => {
-    const { tools, store, seed } = makeRuntime(true);
+    const { planningTools, startPlannedMissions, store, seed } =
+      makeRuntime(true);
     store.saveMissions({ planningStatus: "pending", missions: [] });
+    await executeTool(planningTools.read_engagement_manifest, {
+      offset: 0,
+      limit: 25,
+      toolCallDescription: "read all targets",
+    });
     const coverage = seed.coverage.map(({ targetId, objectiveId }) => ({
       targetId,
       objectiveId,
     }));
-    const spawned = await executeTool(tools.spawn_engagement_worker, {
-      mission: "Test the user authorization and MFA flow",
+    const planned = await executeTool(planningTools.define_engagement_mission, {
+      purpose: "Test the user authorization and MFA flow",
       rationale: "The endpoints share authentication and user state",
-      serviceIds: [seed.services[0]?.id as string],
-      targetIds: seed.targets.map((target) => target.id),
-      objectiveIds: [seed.objectives[0]?.id as string],
-      capabilityIds: [],
       coverage,
       supportingTargetIds: [],
       prerequisiteMissionIds: [],
       contextTargetIds: seed.targets.map((target) => target.id),
-      mode: "grouped",
-      toolCallDescription: "dispatch related flow mission",
+      toolCallDescription: "define related flow mission",
     });
 
-    expect(spawned).toMatchObject({ success: true, accepted: true });
-    await executeTool(tools.wait_for_engagement_workers, {
-      workerIds: [spawned.workerId as string],
-      timeoutMs: 1_000,
-      toolCallDescription: "wait for grouped mission",
-    });
-    await executeTool(tools.complete_engagement_mission_plan, {
+    expect(planned).toMatchObject({ success: true });
+    await executeTool(planningTools.complete_engagement_mission_plan, {
       toolCallDescription: "seal complete mission plan",
     });
+    await startPlannedMissions();
 
     expect(groupedCalls[0]).toMatchObject({
       model: "worker-model",
@@ -318,15 +322,17 @@ describe("engagement worker tools", () => {
   });
 
   it("refuses to seal a grouped plan that omits coverage", async () => {
-    const { tools, store, seed } = makeRuntime(true);
+    const { planningTools, store, seed } = makeRuntime(true);
     store.saveMissions({ planningStatus: "pending", missions: [] });
-    await executeTool(tools.spawn_engagement_worker, {
-      mission: "Test only one part of the flow",
+    await executeTool(planningTools.read_engagement_manifest, {
+      offset: 0,
+      limit: 25,
+      toolCallDescription: "read all targets",
+    });
+    await executeTool(planningTools.define_engagement_mission, {
+      purpose: "Test only one part of the flow",
       rationale: "Initial bounded mission",
-      serviceIds: [seed.services[0]?.id as string],
-      targetIds: [seed.targets[0]?.id as string],
-      objectiveIds: [seed.objectives[0]?.id as string],
-      capabilityIds: [],
+      singletonJustification: "This test intentionally exercises one target",
       coverage: [
         {
           targetId: seed.targets[0]?.id as string,
@@ -336,12 +342,11 @@ describe("engagement worker tools", () => {
       supportingTargetIds: [],
       prerequisiteMissionIds: [],
       contextTargetIds: [],
-      mode: "grouped",
-      toolCallDescription: "dispatch partial mission",
+      toolCallDescription: "define partial mission",
     });
 
     await expect(
-      executeTool(tools.complete_engagement_mission_plan, {
+      executeTool(planningTools.complete_engagement_mission_plan, {
         toolCallDescription: "attempt incomplete plan",
       }),
     ).rejects.toThrow("omits 1 required coverage obligation");

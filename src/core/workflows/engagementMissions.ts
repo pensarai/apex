@@ -19,17 +19,21 @@ export interface EngagementMission {
   workerId: string;
   purpose: string;
   rationale: string;
+  singletonJustification?: string;
   coverage: EngagementMissionCoverage[];
   supportingTargetIds: string[];
   prerequisiteMissionIds: string[];
   contextTargetIds: string[];
-  status: "queued" | "running" | "completed" | "failed";
+  status: "planned" | "queued" | "running" | "completed" | "failed";
   createdAt: string;
+  startedAt?: string;
   completedAt?: string;
 }
 
 export interface EngagementMissionState {
   planningStatus: "pending" | "partial" | "complete";
+  inspectedTargetIds?: string[];
+  metrics?: { primaryTargetsPerMission: number; singletonTargets: number };
   missions: EngagementMission[];
 }
 

@@ -10,6 +10,11 @@ import {
   engagementModelFromWorkflow,
 } from "./engagementMissions";
 import {
+  createEngagementPlanningTools,
+  ENGAGEMENT_PLANNING_PROMPT,
+  ENGAGEMENT_PLANNING_TOOL_NAMES,
+} from "./engagementPlanning";
+import {
   buildEngagementState,
   type EngagementCheckpoint,
   type EngagementCompletion,
@@ -34,6 +39,11 @@ export const EngagementLeadResult = z.object({
   chainExploreSummary: z.string(),
 });
 
+const EngagementPlanResult = z.object({
+  summary: z.string(),
+  planComplete: z.boolean(),
+});
+
 export type EngagementLeadOutcome = z.infer<typeof EngagementLeadResult> & {
   checkpoint: EngagementCheckpoint;
 };
@@ -42,7 +52,7 @@ export const DEFAULT_ENGAGEMENT_WORKER_CONCURRENCY = 4;
 
 export const ENGAGEMENT_LEAD_SYSTEM_PROMPT = `You are the durable lead penetration tester for one authorized engagement. You own the complete attack surface, threat-model objectives, coverage ledger, finding quality, and final chain-and-explore pass.
 
-When grouped coverage is enabled, you—not heuristic code—design coherent missions from the attack surface, threat models, objectives, and flow semantics. Group related endpoints that benefit from shared authentication, cookies, resources, or causal context. Give every mission explicit target/objective coverage obligations, a rationale, supporting target IDs, context references, and prerequisites. Supporting targets may be reused but do not earn coverage credit. Dispatch independent missions as soon as they are sound, then seal the plan only after every obligation is assigned exactly once. Check worker status and direct running workers as evidence changes. Preserve promising state: resume the same worker for stateful follow-ups.
+When grouped coverage is enabled, a restricted planning pass has already designed and sealed coherent missions from the complete attack surface. The bounded scheduler launches those missions. Check worker status and direct running workers as evidence changes. Preserve promising state: resume the same worker for stateful follow-ups.
 
 On legacy coverage modes, deterministic endpoint-local coverage runs beside you automatically. Work directly and delegate selectively: personally test high-value hypotheses, resolve cells marked needs-lead, interpret cross-service evidence, and maintain continuity. Coverage remains in the external ledger. Fast Strike workers prove one concrete impact objective—they never decide that the engagement is complete.
 
@@ -160,8 +170,10 @@ export async function runEngagementLead(input: {
   const workerPool = new EngagementWorkerPool(
     input.concurrency ?? DEFAULT_ENGAGEMENT_WORKER_CONCURRENCY,
   );
+  store.saveConcurrency(workerPool.maxConcurrency);
+  await input.onCheckpoint?.(store.checkpoint());
   const workerJobs = new Set<Promise<unknown>>();
-  const engagementTools = createEngagementTools({
+  const engagementRuntime = createEngagementTools({
     input: workflow,
     workerModel,
     store,
@@ -180,6 +192,59 @@ export async function runEngagementLead(input: {
     },
     onCheckpoint: input.onCheckpoint,
   });
+  const engagementTools = engagementRuntime.tools;
+
+  if (
+    workflow.session.config?.engagementCoverageMode === "grouped" &&
+    store.snapshot().missions?.planningStatus !== "complete"
+  ) {
+    const planningTools = createEngagementPlanningTools(
+      store,
+      input.onCheckpoint,
+    );
+    const planner = new OffensiveSecurityAgent<
+      z.infer<typeof EngagementPlanResult>
+    >({
+      system: ENGAGEMENT_PLANNING_PROMPT,
+      prompt: `Plan the engagement for ${workflow.target}. Read all ${store.snapshot().targets.length} authorized targets before sealing.`,
+      model: workflow.model,
+      session: workflow.session,
+      target: workflow.target,
+      activeTools: [
+        ...ENGAGEMENT_PLANNING_TOOL_NAMES,
+        ...(surfaceTools ? ENGAGEMENT_SURFACE_TOOL_NAMES : []),
+        "response",
+      ],
+      directTools: [
+        ...ENGAGEMENT_PLANNING_TOOL_NAMES,
+        ...(surfaceTools ? ENGAGEMENT_SURFACE_TOOL_NAMES : []),
+      ],
+      extraTools: { ...surfaceTools, ...planningTools },
+      responseSchema: EngagementPlanResult,
+      responseGuard: (result) => {
+        if (store.snapshot().missions?.planningStatus !== "complete") {
+          return "Seal a valid complete mission plan before responding.";
+        }
+        const parsed = EngagementPlanResult.safeParse(result);
+        return parsed.success && parsed.data.planComplete
+          ? undefined
+          : "The response must acknowledge that the mission plan is complete.";
+      },
+      findingsRegistry: input.findingsRegistry,
+      authConfig: workflow.authConfig,
+      abortSignal: workflow.abortSignal,
+      eventBus,
+      enableThinking: workflow.enableThinking,
+      thinkingEffort: workflow.thinkingEffort,
+      openAIReasoningEffort: workflow.openAIReasoningEffort,
+      toolProtocol: workflow.toolProtocol,
+      environmentVariables: workflow.environmentVariables,
+      secretValues: workflow.secretValues,
+      sandbox: workflow.sandbox,
+      display: workflow.display,
+    });
+    await planner.consume();
+  }
   const state = store.snapshot();
   const prompt = [
     `Root target: ${input.workflow.target}`,
@@ -196,7 +261,7 @@ export async function runEngagementLead(input: {
       2,
     ),
     workflow.session.config?.engagementCoverageMode === "grouped"
-      ? "Design and dispatch semantic grouped missions. Page through the complete surface, inspect detailed threat-model context where useful, assign every coverage obligation exactly once, then seal the mission plan. Preserve flow state within each mission and use worker evidence to drive chain-and-explore."
+      ? "The semantic mission plan is sealed and bounded workers are starting. Monitor their evidence, resolve needs-lead coverage, preserve flow state, and drive chain-and-explore."
       : "Automatic endpoint-local coverage is already starting. Orient across the full surface, resolve needs-lead cells, preserve promising primitives, and run chain-and-explore toward threat-model-derived crown-jewel impact.",
   ].join("\n\n");
 
@@ -245,7 +310,7 @@ export async function runEngagementLead(input: {
 
   const coverage =
     workflow.session.config?.engagementCoverageMode === "grouped"
-      ? Promise.resolve()
+      ? engagementRuntime.startPlannedMissions()
       : runDeterministicEngagementCoverage({
           workflow,
           store,

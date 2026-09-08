@@ -9,6 +9,7 @@ import { newSessionId } from "../id/id";
 import { loadSubagentMessages, saveSubagentData } from "../session/persistence";
 import {
   applyEngagementModel,
+  type EngagementMission,
   type EngagementMissionCoverage,
   type EngagementModelConfig,
   GROUPED_MISSION_SYSTEM_PROMPT,
@@ -27,6 +28,7 @@ import type { PentestWorkflowInput } from "./pentest";
 
 const COVERAGE_STATUSES = [
   "pending",
+  "assigned",
   "running",
   "needs-lead",
   "impact-proven",
@@ -55,7 +57,6 @@ export const ENGAGEMENT_TOOL_NAMES = [
   "follow_up_engagement_worker",
   "send_engagement_worker_message",
   "wait_for_engagement_workers",
-  "complete_engagement_mission_plan",
   "update_engagement_coverage",
   "record_engagement_capability",
   "record_impact_proof",
@@ -190,6 +191,30 @@ function validateAssignment(
   }
 }
 
+const WorkerAssignmentSchema = z.object({
+  mission: z.string().min(1).max(4_000),
+  serviceIds: z.array(z.string()).min(1).max(100),
+  targetIds: z.array(z.string()).min(1).max(100),
+  objectiveIds: z.array(z.string()).max(100).default([]),
+  capabilityIds: z.array(z.string()).max(100).default([]),
+  rationale: z.string().min(1).max(4_000).optional(),
+  coverage: z
+    .array(
+      z.object({
+        targetId: z.string().min(1),
+        objectiveId: z.string().min(1),
+      }),
+    )
+    .max(100)
+    .optional(),
+  supportingTargetIds: z.array(z.string()).max(100).default([]),
+  prerequisiteMissionIds: z.array(z.string()).max(100).default([]),
+  contextTargetIds: z.array(z.string()).max(100).default([]),
+  mode: z.enum(WORKER_MODES),
+  toolCallDescription: z.string(),
+});
+type WorkerAssignment = z.infer<typeof WorkerAssignmentSchema>;
+
 export function createEngagementTools(runtime: EngagementToolRuntime) {
   const {
     input,
@@ -247,93 +272,106 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
       throw new Error(`Worker ${options.workerId} is already running`);
     }
     activeWorkers.add(options.workerId);
-    if (options.missionId) store.setMissionStatus(options.missionId, "running");
-    if (options.followUp) {
-      store.restartWorker(options.workerId);
-      if (options.mode === "explore") {
-        for (const serviceId of options.serviceIds) {
-          store.markServiceBaseline(serviceId, "running", options.mission);
-        }
-      } else if (options.mode === "grouped") {
-        const pending = (options.coverage ?? []).filter((cell) =>
-          store
-            .snapshot()
-            .coverage.some(
-              (candidate) =>
-                candidate.targetId === cell.targetId &&
-                candidate.objectiveId === cell.objectiveId &&
-                candidate.status === "pending",
-            ),
-        );
+    try {
+      if (!options.followUp) store.startWorker(options.workerId);
+      if (options.missionId)
+        store.setMissionStatus(options.missionId, "running");
+      if (options.mode === "grouped" && !options.followUp) {
         const claimed = store.claimCoverageCells({
           workerId: options.workerId,
-          cells: pending,
+          cells: options.coverage ?? [],
         });
-        if (claimed.length !== pending.length) {
-          throw new Error("Failed to reclaim interrupted grouped coverage");
+        if (claimed.length !== (options.coverage ?? []).length) {
+          throw new Error("Failed to claim grouped mission coverage");
         }
-      } else {
-        for (const objectiveId of options.objectiveIds) {
-          for (const targetId of options.targetIds) {
-            const target = store.getTarget(targetId);
-            if (!target.objectiveIds.includes(objectiveId)) continue;
-            store.markObjectiveCoverage({
-              targetId,
-              objectiveId,
-              serviceId: target.serviceId,
-              status: "running",
-              workerId: options.workerId,
-              summary: options.mission,
-            });
+      }
+      if (options.followUp) {
+        store.restartWorker(options.workerId);
+        if (options.mode === "explore") {
+          for (const serviceId of options.serviceIds) {
+            store.markServiceBaseline(serviceId, "running", options.mission);
+          }
+        } else if (options.mode === "grouped") {
+          const pending = (options.coverage ?? []).filter((cell) =>
+            store
+              .snapshot()
+              .coverage.some(
+                (candidate) =>
+                  candidate.targetId === cell.targetId &&
+                  candidate.objectiveId === cell.objectiveId &&
+                  candidate.status === "pending",
+              ),
+          );
+          const claimed = store.claimCoverageCells({
+            workerId: options.workerId,
+            cells: pending,
+          });
+          if (claimed.length !== pending.length) {
+            throw new Error("Failed to reclaim interrupted grouped coverage");
+          }
+        } else {
+          for (const objectiveId of options.objectiveIds) {
+            for (const targetId of options.targetIds) {
+              const target = store.getTarget(targetId);
+              if (!target.objectiveIds.includes(objectiveId)) continue;
+              store.markObjectiveCoverage({
+                targetId,
+                objectiveId,
+                serviceId: target.serviceId,
+                status: "running",
+                workerId: options.workerId,
+                summary: options.mission,
+              });
+            }
           }
         }
       }
-    }
-    const services = options.serviceIds.map((id) => store.getService(id));
-    const objectives = options.objectiveIds.map((id) => store.getObjective(id));
-    const targets = options.targetIds.map((id) => store.getTarget(id));
-    const workerWorkflow =
-      options.mode === "chain"
-        ? input
-        : applyEngagementModel(input, workerModel);
-    const target =
-      targets[0]?.target ?? services[0]?.targets[0] ?? input.target;
-    const context = buildWorkerContext(
-      store,
-      options.mission,
-      options.serviceIds,
-      options.targetIds,
-      options.objectiveIds,
-      options.capabilityIds,
-    );
-    const childBus = new AgentEventBus();
-    AgentEventBus.attachChild(childBus, eventBus, options.workerId);
-    eventBus.emit("subagent-spawn", {
-      subagentId: options.workerId,
-      sessionId: options.workerId,
-      name: options.followUp
-        ? `Follow-up: ${options.mission.slice(0, 70)}`
-        : options.mission.slice(0, 80),
-      input: {
-        mission: options.mission,
-        mode: options.mode,
-        serviceIds: options.serviceIds,
-        targetIds: options.targetIds,
-        objectiveIds: options.objectiveIds,
-        capabilityIds: options.capabilityIds,
-      },
-      parentSubagentId: leadAgentId,
-      parentSessionId: leadAgentId,
-    });
+      const services = options.serviceIds.map((id) => store.getService(id));
+      const objectives = options.objectiveIds.map((id) =>
+        store.getObjective(id),
+      );
+      const targets = options.targetIds.map((id) => store.getTarget(id));
+      const workerWorkflow =
+        options.mode === "chain"
+          ? input
+          : applyEngagementModel(input, workerModel);
+      const target =
+        targets[0]?.target ?? services[0]?.targets[0] ?? input.target;
+      const context = buildWorkerContext(
+        store,
+        options.mission,
+        options.serviceIds,
+        options.targetIds,
+        options.objectiveIds,
+        options.capabilityIds,
+      );
+      const childBus = new AgentEventBus();
+      AgentEventBus.attachChild(childBus, eventBus, options.workerId);
+      eventBus.emit("subagent-spawn", {
+        subagentId: options.workerId,
+        sessionId: options.workerId,
+        name: options.followUp
+          ? `Follow-up: ${options.mission.slice(0, 70)}`
+          : options.mission.slice(0, 80),
+        input: {
+          mission: options.mission,
+          mode: options.mode,
+          serviceIds: options.serviceIds,
+          targetIds: options.targetIds,
+          objectiveIds: options.objectiveIds,
+          capabilityIds: options.capabilityIds,
+        },
+        parentSubagentId: leadAgentId,
+        parentSessionId: leadAgentId,
+      });
 
-    let latestMessages: ModelMessage[] = [];
-    const handleStepFinish = (
-      event: Parameters<NonNullable<PentestWorkflowInput["onStepFinish"]>>[0],
-    ) => {
-      if (event.response.messages) latestMessages = event.response.messages;
-      input.onStepFinish?.(event);
-    };
-    try {
+      let latestMessages: ModelMessage[] = [];
+      const handleStepFinish = (
+        event: Parameters<NonNullable<PentestWorkflowInput["onStepFinish"]>>[0],
+      ) => {
+        if (event.response.messages) latestMessages = event.response.messages;
+        input.onStepFinish?.(event);
+      };
       let summary: string;
       let result: Record<string, unknown>;
       if (options.mode === "fast-strike") {
@@ -620,7 +658,191 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     }
   };
 
-  return {
+  const dispatchWorker = async (
+    {
+      mission,
+      serviceIds,
+      targetIds,
+      objectiveIds,
+      capabilityIds,
+      rationale,
+      coverage,
+      supportingTargetIds,
+      contextTargetIds,
+      mode,
+    }: WorkerAssignment,
+    plannedMission?: EngagementMission,
+  ) => {
+    const configuredMode = input.session.config?.engagementCoverageMode;
+    if (
+      configuredMode === "grouped" &&
+      (mode === "targeted" || mode === "fast-strike")
+    ) {
+      throw new Error(
+        "Grouped coverage requires mode=grouped with explicit coverage obligations",
+      );
+    }
+    if (mode === "grouped" && configuredMode !== "grouped") {
+      throw new Error("Grouped workers require grouped engagement coverage");
+    }
+    const selectedServiceIds = unique(serviceIds);
+    const selectedCoverage = coverage ?? [];
+    const selectedTargetIds = unique([
+      ...targetIds,
+      ...(supportingTargetIds ?? []),
+      ...(contextTargetIds ?? []),
+      ...selectedCoverage.map((cell) => cell.targetId),
+    ]);
+    const selectedObjectiveIds = unique(objectiveIds);
+    const selectedCapabilityIds = unique(capabilityIds);
+    validateAssignment(
+      store,
+      mode,
+      selectedServiceIds,
+      selectedTargetIds,
+      selectedObjectiveIds,
+      selectedCapabilityIds,
+    );
+    if (mode === "grouped") {
+      if (!rationale || selectedCoverage.length === 0) {
+        throw new Error(
+          "Grouped missions require rationale and explicit coverage obligations",
+        );
+      }
+      const uniqueCells = new Set(
+        selectedCoverage.map((cell) => `${cell.targetId}:${cell.objectiveId}`),
+      );
+      if (uniqueCells.size !== selectedCoverage.length) {
+        throw new Error("Grouped mission coverage contains duplicates");
+      }
+      for (const cell of selectedCoverage) {
+        const targetRecord = store.getTarget(cell.targetId);
+        if (!targetRecord.objectiveIds.includes(cell.objectiveId)) {
+          throw new Error(
+            `Objective ${cell.objectiveId} is not assigned to target ${cell.targetId}`,
+          );
+        }
+        if (!selectedObjectiveIds.includes(cell.objectiveId)) {
+          throw new Error(
+            `Coverage objective ${cell.objectiveId} is missing from objectiveIds`,
+          );
+        }
+        const coverageCell = store
+          .snapshot()
+          .coverage.find(
+            (candidate) =>
+              candidate.targetId === cell.targetId &&
+              candidate.objectiveId === cell.objectiveId,
+          );
+        if (
+          coverageCell?.status !== "pending" &&
+          coverageCell?.status !== "assigned"
+        ) {
+          throw new Error(
+            `Coverage ${cell.targetId}:${cell.objectiveId} is already assigned or terminal`,
+          );
+        }
+      }
+    }
+    const workerId = plannedMission?.workerId ?? (newSessionId() as string);
+    const existingWorker = store
+      .snapshot()
+      .workers.find((worker) => worker.id === workerId);
+    if (!existingWorker)
+      store.registerWorker({
+        id: workerId,
+        mission,
+        mode,
+        serviceIds: selectedServiceIds,
+        targetIds: selectedTargetIds,
+        objectiveIds: selectedObjectiveIds,
+        capabilityIds: selectedCapabilityIds,
+        model:
+          mode === "chain"
+            ? {
+                model: input.model,
+                enableThinking: input.enableThinking,
+                thinkingEffort: input.thinkingEffort,
+                openAIReasoningEffort: input.openAIReasoningEffort,
+              }
+            : workerModel,
+      });
+    const missionId = plannedMission?.id;
+    if (mode === "explore") {
+      for (const serviceId of selectedServiceIds) {
+        store.markServiceBaseline(serviceId, "running", mission);
+      }
+    } else if (mode === "grouped") {
+      // Coverage is claimed only after scheduler admission.
+    } else {
+      for (const objectiveId of selectedObjectiveIds) {
+        for (const targetId of selectedTargetIds) {
+          const target = store.getTarget(targetId);
+          if (!target.objectiveIds.includes(objectiveId)) continue;
+          store.markObjectiveCoverage({
+            targetId,
+            objectiveId,
+            serviceId: target.serviceId,
+            status: "running",
+            workerId,
+            summary: mission,
+          });
+        }
+      }
+    }
+    const run = () =>
+      workerPool.run(mode === "chain" ? "chain" : "baseline", () =>
+        runWorker({
+          workerId,
+          mission,
+          mode,
+          serviceIds: selectedServiceIds,
+          targetIds: selectedTargetIds,
+          objectiveIds: selectedObjectiveIds,
+          capabilityIds: selectedCapabilityIds,
+          missionId,
+          coverage: selectedCoverage,
+          messages: existingWorker
+            ? loadSubagentMessages(input.session, workerId)
+            : undefined,
+        }),
+      );
+    const job = run();
+    if (mode !== "grouped") return job;
+    const resilientJob = job.catch(async (error) => {
+      const summary = error instanceof Error ? error.message : String(error);
+      const worker = store
+        .snapshot()
+        .workers.find((candidate) => candidate.id === workerId);
+      if (worker?.status === "running") {
+        for (const cell of store.snapshot().coverage) {
+          if (cell.workerId !== workerId || cell.status !== "running") continue;
+          store.markObjectiveCoverage({
+            targetId: cell.targetId,
+            objectiveId: cell.objectiveId,
+            serviceId: cell.serviceId,
+            status: "needs-lead",
+            workerId: null,
+            summary,
+          });
+        }
+        store.completeWorker(workerId, "failed", summary);
+        if (missionId) store.setMissionStatus(missionId, "failed");
+      }
+      return withCheckpoint({ success: false, workerId, message: summary });
+    });
+    const tracked = resilientJob.finally(() => workerJobs.delete(workerId));
+    workerJobs.set(workerId, tracked);
+    onWorkerJob?.(tracked);
+    return withCheckpoint({
+      success: true,
+      accepted: true,
+      missionId,
+      workerId,
+    });
+  };
+
+  const tools = {
     ...surfaceTools,
     read_engagement_state: tool({
       description:
@@ -640,7 +862,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             counts[worker.status] += 1;
             return counts;
           },
-          { running: 0, completed: 0, failed: 0 },
+          { queued: 0, running: 0, completed: 0, failed: 0 },
         );
         return {
           success: true,
@@ -682,276 +904,20 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
 
     spawn_engagement_worker: tool({
       description:
-        "Start a durable focused worker. In grouped coverage mode, use grouped with explicit target/objective obligations plus rationale and context; use chain for cross-mission exploitation. Legacy modes also support targeted, fast-strike, and explore. Grouped calls return immediately and independent missions run concurrently.",
-      inputSchema: z.object({
-        mission: z.string().min(1).max(4_000),
-        serviceIds: z.array(z.string()).min(1).max(100),
-        targetIds: z.array(z.string()).min(1).max(100),
-        objectiveIds: z.array(z.string()).max(100).default([]),
-        capabilityIds: z.array(z.string()).max(100).default([]),
-        rationale: z.string().min(1).max(4_000).optional(),
-        coverage: z
-          .array(
-            z.object({
-              targetId: z.string().min(1),
-              objectiveId: z.string().min(1),
-            }),
-          )
-          .max(100)
-          .optional(),
-        supportingTargetIds: z.array(z.string()).max(100).default([]),
-        prerequisiteMissionIds: z.array(z.string()).max(100).default([]),
-        contextTargetIds: z.array(z.string()).max(100).default([]),
-        mode: z.enum(WORKER_MODES),
-        toolCallDescription: z.string(),
-      }),
-      execute: async ({
-        mission,
-        serviceIds,
-        targetIds,
-        objectiveIds,
-        capabilityIds,
-        rationale,
-        coverage,
-        supportingTargetIds,
-        prerequisiteMissionIds,
-        contextTargetIds,
-        mode,
-      }) => {
-        const configuredMode = input.session.config?.engagementCoverageMode;
+        "Delegate focused exploration or chain work after planning. Grouped baseline missions are launched only by the scheduler.",
+      inputSchema: WorkerAssignmentSchema,
+      execute: async (assignment) => {
         if (
-          configuredMode === "grouped" &&
-          (mode === "targeted" || mode === "fast-strike")
-        ) {
+          input.session.config?.engagementCoverageMode === "grouped" &&
+          store.snapshot().missions?.planningStatus !== "complete"
+        )
+          throw new Error("Seal the mission plan before delegating workers");
+        if (assignment.mode === "grouped")
           throw new Error(
-            "Grouped coverage requires mode=grouped with explicit coverage obligations",
+            "Grouped missions are launched only from the sealed plan",
           );
-        }
-        if (mode === "grouped" && configuredMode !== "grouped") {
-          throw new Error(
-            "Grouped workers require grouped engagement coverage",
-          );
-        }
-        const selectedServiceIds = unique(serviceIds);
-        const selectedCoverage = coverage ?? [];
-        const selectedTargetIds = unique([
-          ...targetIds,
-          ...(supportingTargetIds ?? []),
-          ...(contextTargetIds ?? []),
-          ...selectedCoverage.map((cell) => cell.targetId),
-        ]);
-        const selectedObjectiveIds = unique(objectiveIds);
-        const selectedCapabilityIds = unique(capabilityIds);
-        validateAssignment(
-          store,
-          mode,
-          selectedServiceIds,
-          selectedTargetIds,
-          selectedObjectiveIds,
-          selectedCapabilityIds,
-        );
-        if (mode === "grouped") {
-          if (!rationale || selectedCoverage.length === 0) {
-            throw new Error(
-              "Grouped missions require rationale and explicit coverage obligations",
-            );
-          }
-          const uniqueCells = new Set(
-            selectedCoverage.map(
-              (cell) => `${cell.targetId}:${cell.objectiveId}`,
-            ),
-          );
-          if (uniqueCells.size !== selectedCoverage.length) {
-            throw new Error("Grouped mission coverage contains duplicates");
-          }
-          for (const cell of selectedCoverage) {
-            const targetRecord = store.getTarget(cell.targetId);
-            if (!targetRecord.objectiveIds.includes(cell.objectiveId)) {
-              throw new Error(
-                `Objective ${cell.objectiveId} is not assigned to target ${cell.targetId}`,
-              );
-            }
-            if (!selectedObjectiveIds.includes(cell.objectiveId)) {
-              throw new Error(
-                `Coverage objective ${cell.objectiveId} is missing from objectiveIds`,
-              );
-            }
-            const coverageCell = store
-              .snapshot()
-              .coverage.find(
-                (candidate) =>
-                  candidate.targetId === cell.targetId &&
-                  candidate.objectiveId === cell.objectiveId,
-              );
-            if (coverageCell?.status !== "pending") {
-              throw new Error(
-                `Coverage ${cell.targetId}:${cell.objectiveId} is already assigned or terminal`,
-              );
-            }
-          }
-        }
-        const workerId = newSessionId() as string;
-        store.registerWorker({
-          id: workerId,
-          mission,
-          mode,
-          serviceIds: selectedServiceIds,
-          targetIds: selectedTargetIds,
-          objectiveIds: selectedObjectiveIds,
-          capabilityIds: selectedCapabilityIds,
-          model:
-            mode === "chain"
-              ? {
-                  model: input.model,
-                  enableThinking: input.enableThinking,
-                  thinkingEffort: input.thinkingEffort,
-                  openAIReasoningEffort: input.openAIReasoningEffort,
-                }
-              : workerModel,
-        });
-        const missionId =
-          mode === "grouped" ? `mission_${workerId}` : undefined;
-        if (missionId) {
-          const existingMissionIds = new Set(
-            store.snapshot().missions?.missions.map((mission) => mission.id) ??
-              [],
-          );
-          for (const prerequisite of prerequisiteMissionIds ?? []) {
-            if (!existingMissionIds.has(prerequisite)) {
-              throw new Error(`Unknown prerequisite mission: ${prerequisite}`);
-            }
-          }
-          store.addMission({
-            id: missionId,
-            workerId,
-            purpose: mission,
-            rationale: rationale as string,
-            coverage: selectedCoverage,
-            supportingTargetIds: unique(supportingTargetIds ?? []),
-            prerequisiteMissionIds: unique(prerequisiteMissionIds ?? []),
-            contextTargetIds: unique(contextTargetIds ?? []),
-            status: "queued",
-            createdAt: new Date().toISOString(),
-          });
-        }
-        if (mode === "explore") {
-          for (const serviceId of selectedServiceIds) {
-            store.markServiceBaseline(serviceId, "running", mission);
-          }
-        } else if (mode === "grouped") {
-          const claimed = store.claimCoverageCells({
-            workerId,
-            cells: selectedCoverage,
-          });
-          if (claimed.length !== selectedCoverage.length) {
-            throw new Error(
-              "One or more grouped coverage obligations are already assigned or terminal",
-            );
-          }
-        } else {
-          for (const objectiveId of selectedObjectiveIds) {
-            for (const targetId of selectedTargetIds) {
-              const target = store.getTarget(targetId);
-              if (!target.objectiveIds.includes(objectiveId)) continue;
-              store.markObjectiveCoverage({
-                targetId,
-                objectiveId,
-                serviceId: target.serviceId,
-                status: "running",
-                workerId,
-                summary: mission,
-              });
-            }
-          }
-        }
-        const run = () =>
-          workerPool.run(mode === "chain" ? "chain" : "baseline", () =>
-            runWorker({
-              workerId,
-              mission,
-              mode,
-              serviceIds: selectedServiceIds,
-              targetIds: selectedTargetIds,
-              objectiveIds: selectedObjectiveIds,
-              capabilityIds: selectedCapabilityIds,
-              missionId,
-              coverage: selectedCoverage,
-            }),
-          );
-        const prerequisites = (prerequisiteMissionIds ?? [])
-          .map((id) => {
-            const mission = store
-              .snapshot()
-              .missions?.missions.find((candidate) => candidate.id === id);
-            return mission ? workerJobs.get(mission.workerId) : undefined;
-          })
-          .filter((job): job is Promise<Record<string, unknown>> =>
-            Boolean(job),
-          );
-        const job =
-          mode === "grouped" && prerequisites.length > 0
-            ? Promise.all(prerequisites).then(() => {
-                for (const prerequisiteId of prerequisiteMissionIds ?? []) {
-                  const prerequisite = store
-                    .snapshot()
-                    .missions?.missions.find(
-                      (candidate) => candidate.id === prerequisiteId,
-                    );
-                  if (prerequisite?.status !== "completed") {
-                    throw new Error(
-                      `Prerequisite mission ${prerequisiteId} did not complete`,
-                    );
-                  }
-                }
-                return run();
-              })
-            : run();
-        if (mode !== "grouped") return job;
-        const resilientJob = job.catch(async (error) => {
-          const summary =
-            error instanceof Error ? error.message : String(error);
-          const worker = store
-            .snapshot()
-            .workers.find((candidate) => candidate.id === workerId);
-          if (worker?.status === "running") {
-            for (const cell of store.snapshot().coverage) {
-              if (cell.workerId !== workerId || cell.status !== "running")
-                continue;
-              store.markObjectiveCoverage({
-                targetId: cell.targetId,
-                objectiveId: cell.objectiveId,
-                serviceId: cell.serviceId,
-                status: "needs-lead",
-                workerId: null,
-                summary,
-              });
-            }
-            store.completeWorker(workerId, "failed", summary);
-            if (missionId) store.setMissionStatus(missionId, "failed");
-          }
-          return withCheckpoint({ success: false, workerId, message: summary });
-        });
-        const tracked = resilientJob.finally(() => workerJobs.delete(workerId));
-        workerJobs.set(workerId, tracked);
-        onWorkerJob?.(tracked);
-        return withCheckpoint({
-          success: true,
-          accepted: true,
-          missionId,
-          workerId,
-        });
+        return dispatchWorker(assignment);
       },
-    }),
-
-    complete_engagement_mission_plan: tool({
-      description:
-        "Seal the model-created grouped mission plan. Fails unless every required endpoint/objective obligation appears in exactly one accepted mission.",
-      inputSchema: z.object({ toolCallDescription: z.string() }),
-      execute: async () =>
-        withCheckpoint({
-          success: true,
-          missions: store.setMissionPlanningComplete(),
-        }),
     }),
 
     send_engagement_worker_message: tool({
@@ -1183,4 +1149,91 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         }),
     }),
   };
+  const startPlannedMissions = async (): Promise<void> => {
+    const state = store.snapshot();
+    if (state.missions?.planningStatus !== "complete")
+      throw new Error("Cannot execute an unsealed mission plan");
+    const jobs = new Map<string, Promise<Record<string, unknown>>>();
+    const schedule = (
+      mission: EngagementMission,
+    ): Promise<Record<string, unknown>> => {
+      const existing = jobs.get(mission.id);
+      if (existing) return existing;
+      const prerequisites = mission.prerequisiteMissionIds.map((id) => {
+        const dependency = state.missions?.missions.find(
+          (candidate) => candidate.id === id,
+        );
+        if (!dependency) throw new Error(`Unknown prerequisite mission: ${id}`);
+        return schedule(dependency);
+      });
+      const job = Promise.all(prerequisites).then(async () => {
+        if (mission.status === "completed") return { success: true };
+        if (mission.status === "failed") return { success: false };
+        if (input.abortSignal?.aborted) throw input.abortSignal.reason;
+        const failed = mission.prerequisiteMissionIds.some(
+          (id) =>
+            store.snapshot().missions?.missions.find((item) => item.id === id)
+              ?.status !== "completed",
+        );
+        if (failed) {
+          store.setMissionStatus(mission.id, "failed");
+          for (const cell of mission.coverage)
+            store.markObjectiveCoverage({
+              ...cell,
+              serviceId: store.getTarget(cell.targetId).serviceId,
+              status: "needs-lead",
+              summary: "Prerequisite mission did not complete",
+            });
+          return withCheckpoint({ success: false, missionId: mission.id });
+        }
+        const coverage = mission.coverage.filter((cell) =>
+          store
+            .snapshot()
+            .coverage.some(
+              (item) =>
+                item.targetId === cell.targetId &&
+                item.objectiveId === cell.objectiveId &&
+                (item.status === "pending" || item.status === "assigned"),
+            ),
+        );
+        if (!coverage.length) {
+          store.setMissionStatus(mission.id, "completed");
+          return withCheckpoint({ success: true, missionId: mission.id });
+        }
+        const targetIds = unique([
+          ...coverage.map((cell) => cell.targetId),
+          ...mission.supportingTargetIds,
+          ...mission.contextTargetIds,
+        ]);
+        await dispatchWorker(
+          {
+            mission: mission.purpose,
+            rationale: mission.rationale,
+            coverage,
+            serviceIds: unique(
+              targetIds.map((id) => store.getTarget(id).serviceId),
+            ),
+            targetIds,
+            objectiveIds: unique(coverage.map((cell) => cell.objectiveId)),
+            capabilityIds: [],
+            supportingTargetIds: mission.supportingTargetIds,
+            contextTargetIds: mission.contextTargetIds,
+            prerequisiteMissionIds: [],
+            mode: "grouped",
+            toolCallDescription: "Run sealed mission",
+          },
+          mission,
+        );
+        const workerJob = workerJobs.get(mission.workerId);
+        if (!workerJob) {
+          throw new Error(`Mission ${mission.id} did not create a worker job`);
+        }
+        return workerJob;
+      });
+      jobs.set(mission.id, job);
+      return job;
+    };
+    await Promise.all(state.missions.missions.map(schedule));
+  };
+  return { tools, startPlannedMissions };
 }
