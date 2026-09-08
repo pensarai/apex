@@ -4,7 +4,10 @@ import {
   applySequentialToolCallPolicy,
   buildOpenRouterProviderOptions,
   buildReasoningProviderOptions,
+  getOpenAIReasoningEfforts,
   isRepairFailClosedTool,
+  modelSupportsOpenAIReasoning,
+  normalizeOpenAIReasoningEffort,
   SEQUENTIAL_TOOL_CALL_INSTRUCTION,
   streamResponse,
 } from "./ai";
@@ -147,6 +150,22 @@ describe("buildReasoningProviderOptions", () => {
         openAIReasoningEffort: "ultra",
       }),
     ).toEqual({ openai: { reasoningEffort: "max" } });
+  });
+
+  it("maps GLM 5.3 onto its always-on Concentrate effort levels", () => {
+    const model = "concentrate:glm-5.3";
+
+    expect(modelSupportsOpenAIReasoning(model)).toBe(true);
+    expect(getOpenAIReasoningEfforts(model)).toEqual(["low", "high", "max"]);
+    expect(normalizeOpenAIReasoningEffort(model, "none")).toBe("low");
+    expect(normalizeOpenAIReasoningEffort(model, "medium")).toBe("high");
+    expect(normalizeOpenAIReasoningEffort(model, "xhigh")).toBe("max");
+    expect(normalizeOpenAIReasoningEffort(model)).toBe("high");
+    expect(
+      buildReasoningProviderOptions(model, {
+        openAIReasoningEffort: "medium",
+      }),
+    ).toEqual({ openai: { reasoningEffort: "high" } });
   });
 
   it("carries the adaptive-thinking effort hint on both anthropic and bedrock for a 4.6 model", () => {
