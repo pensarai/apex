@@ -10,6 +10,11 @@ export const CONCENTRATE_GLM_5_3_MODEL_ID = "concentrate:glm-5.3";
 
 const RETRYABLE_STATUSES = new Set([424, 429, 500, 503, 504]);
 
+export type ConcentrateFetch = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
 type ConcentrateErrorBody = {
   error?: string | { message?: string };
   message?: string;
@@ -23,7 +28,11 @@ function requestUrl(input: RequestInfo | URL): string {
 }
 
 function responseHeaders(headers: Headers): Record<string, string> {
-  return Object.fromEntries(headers.entries());
+  const result: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    result[key] = value;
+  });
+  return result;
 }
 
 function parseErrorBody(body: string): {
@@ -42,8 +51,8 @@ function parseErrorBody(body: string): {
 }
 
 export function createConcentrateFetch(
-  fetchFn: typeof fetch = globalThis.fetch,
-): typeof fetch {
+  fetchFn: ConcentrateFetch = (input, init) => globalThis.fetch(input, init),
+): ConcentrateFetch {
   return async (
     input: RequestInfo | URL,
     init?: RequestInit,
@@ -98,7 +107,7 @@ function withConcentrateDefaults(
 
 export function createConcentrateModel(
   modelId: string,
-  options: { apiKey?: string; fetch?: typeof fetch },
+  options: { apiKey?: string; fetch?: ConcentrateFetch },
 ): LanguageModelV3 {
   const apiKey = options.apiKey?.trim();
   if (!apiKey) {
@@ -121,7 +130,7 @@ export function createConcentrateModel(
     name: "concentrate",
     apiKey,
     baseURL: CONCENTRATE_BASE_URL,
-    fetch: createConcentrateFetch(options.fetch),
+    fetch: createConcentrateFetch(options.fetch) as unknown as typeof fetch,
   });
   return withConcentrateDefaults(
     concentrate.responses(upstreamModelId),

@@ -5,6 +5,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import {
   CONCENTRATE_BASE_URL,
+  type ConcentrateFetch,
   createConcentrateFetch,
   createConcentrateModel,
 } from "./concentrate";
@@ -42,10 +43,13 @@ function completedResponse(): Response {
 
 describe("createConcentrateModel", () => {
   it("uses the Responses API with the bare model slug and safe defaults", async () => {
-    const fetchMock = vi.fn(async () => completedResponse());
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        completedResponse(),
+    );
     const model = createConcentrateModel("concentrate:glm-5.3", {
       apiKey: "sk-cn-test",
-      fetch: fetchMock as typeof fetch,
+      fetch: fetchMock,
     });
 
     await model.doGenerate({
@@ -54,7 +58,10 @@ describe("createConcentrateModel", () => {
     } satisfies LanguageModelV3CallOptions);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0]!;
+    const call = fetchMock.mock.calls[0];
+    expect(call).toBeDefined();
+    if (!call) throw new Error("Expected Concentrate fetch call");
+    const [url, init] = call;
     expect(String(url)).toBe(`${CONCENTRATE_BASE_URL}/responses`);
     expect(new Headers(init?.headers).get("authorization")).toBe(
       "Bearer sk-cn-test",
@@ -63,7 +70,12 @@ describe("createConcentrateModel", () => {
       model: "glm-5.3",
       store: false,
       reasoning: { effort: "high" },
-      input: [{ role: "user", content: "Say ok" }],
+      input: [
+        {
+          role: "user",
+          content: [{ type: "input_text", text: "Say ok" }],
+        },
+      ],
     });
   });
 
@@ -95,25 +107,25 @@ describe("createConcentrateFetch", () => {
     [503, true],
     [504, true],
   ])("classifies HTTP %i retryable=%s", async (status, retryable) => {
-    const fetchMock = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({
-          error: "Upstream request failed",
-          message: "Provider unavailable",
-          model: "fireworks/glm-5.3",
-        }),
-        {
-          status,
-          headers: {
-            "retry-after": "2",
-            "x-request-id": "req_error",
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => {
+        return new Response(
+          JSON.stringify({
+            error: "Upstream request failed",
+            message: "Provider unavailable",
+            model: "fireworks/glm-5.3",
+          }),
+          {
+            status,
+            headers: {
+              "retry-after": "2",
+              "x-request-id": "req_error",
+            },
           },
-        },
-      );
-    });
-    const fetchConcentrate = createConcentrateFetch(
-      fetchMock as typeof fetch,
+        );
+      },
     );
+    const fetchConcentrate = createConcentrateFetch(fetchMock);
 
     try {
       await fetchConcentrate(`${CONCENTRATE_BASE_URL}/responses`, {
@@ -136,7 +148,9 @@ describe("createConcentrateFetch", () => {
   it("passes successful streaming responses through unchanged", async () => {
     const response = completedResponse();
     const fetchConcentrate = createConcentrateFetch(
-      vi.fn(async () => response) as typeof fetch,
+      vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) => response,
+      ) satisfies ConcentrateFetch,
     );
 
     await expect(
