@@ -340,6 +340,29 @@ describe("model-call helpers", () => {
     expect(span.attributes["ai.telemetry.metadata.sessionId"]).toBe("ses_sum");
   });
 
+  it("keeps GLM summarization pinned to Z.ai", async () => {
+    mockState.model = oneStepTextModel();
+    const stream = createSummarizationStream(
+      [{ role: "user", content: "history to summarize" }],
+      {
+        prompt: "resume",
+        model: "z-ai/glm-5.3",
+        silent: true,
+      },
+      mockState.model,
+    );
+    await drain(stream);
+
+    expect(mockState.model.doGenerateCalls[0]?.providerOptions).toEqual({
+      openrouter: {
+        provider: {
+          only: ["z-ai"],
+          allow_fallbacks: false,
+        },
+      },
+    });
+  });
+
   it("tool repair runs its model call with the repair id", async () => {
     mockState.model = invalidToolArgsModel();
     await drain(
@@ -365,6 +388,34 @@ describe("model-call helpers", () => {
     expect(generateSpans[0]?.attributes["ai.telemetry.functionId"]).toBe(
       "apex.tool.repair",
     );
+  });
+
+  it("keeps GLM tool repair pinned to Z.ai", async () => {
+    mockState.model = invalidToolArgsModel();
+    await drain(
+      streamResponse({
+        prompt: "hi",
+        model: "z-ai/glm-5.3",
+        silent: true,
+        tools: {
+          probe: {
+            description: "test tool",
+            inputSchema: z.object({ q: z.string() }),
+            execute: async (input: { q: string }) => `echo:${input.q}`,
+          },
+        },
+        stopWhen: stepCountIs(2),
+      }),
+    );
+
+    expect(mockState.model.doGenerateCalls[0]?.providerOptions).toEqual({
+      openrouter: {
+        provider: {
+          only: ["z-ai"],
+          allow_fallbacks: false,
+        },
+      },
+    });
   });
 });
 

@@ -977,7 +977,7 @@ export type OpenRouterProviderOptions = {
 export function buildOpenRouterProviderOptions(
   model: AIModel,
 ): OpenRouterProviderOptions | undefined {
-  if (model !== "z-ai/glm-5.2") return undefined;
+  if (model !== "z-ai/glm-5.2" && model !== "z-ai/glm-5.3") return undefined;
   return {
     openrouter: {
       provider: {
@@ -1436,6 +1436,7 @@ export function streamResponse(
             providerMetadata: repairProviderMetadata,
           } = await generateText({
             model: providerModel,
+            providerOptions: openRouterProviderOptions,
             output: Output.object({
               schema: tool.inputSchema, // Use the actual Zod schema from the tool
             }),

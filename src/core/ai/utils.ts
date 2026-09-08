@@ -22,7 +22,12 @@ import { config } from "../config";
 import { createLogger } from "../logger/structured";
 import { createAiTelemetrySettings } from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
-import { type AIModel, type StreamResponseOpts, streamResponse } from "./ai";
+import {
+  type AIModel,
+  buildOpenRouterProviderOptions,
+  type StreamResponseOpts,
+  streamResponse,
+} from "./ai";
 import {
   extractTaskSummaryFromMessages,
   truncateWithMarker,
@@ -442,6 +447,7 @@ async function summarizeConversation(
     providerMetadata: summaryProviderMetadata,
   } = await generateText({
     model,
+    providerOptions: buildOpenRouterProviderOptions(opts.model),
     system: `You are a helpful assistant that summarizes conversations to pass to another agent. Review the conversation and system prompt at the end provided by the user.`,
     messages: summarizedMessages,
     abortSignal: opts.abortSignal,
