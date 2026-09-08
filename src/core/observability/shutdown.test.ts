@@ -272,7 +272,11 @@ describe("installObservabilityExitHandlers", () => {
     install(runtime);
 
     process.emit("uncaughtException", new Error("first"));
-    process.emit("unhandledRejection", new Error("second"));
+    process.emit(
+      "unhandledRejection",
+      new Error("second"),
+      Promise.resolve(),
+    );
 
     await new Promise((resolve) => setTimeout(resolve, 120));
     expect(errors).toHaveLength(1);
