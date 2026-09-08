@@ -148,10 +148,9 @@ export type UsageCallback = (
 
 /**
  * Per-run usage recorder threaded through {@link StreamResponseOpts}. When set
- * it replaces the process-global {@link onUsage} callback for that stream's
- * steps, so a durable runtime can attribute usage per run instead of relying on
- * a shared singleton. Async work is awaited before the next model step. Receives
- * the same cache-aware {@link UsageCallbackContext} as the global callback, so
+ * it replaces the ALS run sink and the ambient {@link onUsage} callback for
+ * that call. Async work is awaited before the next model step. Receives the
+ * same cache-aware {@link UsageCallbackContext} as the global callback, so
  * the cached/uncached split travels on the usage event itself.
  */
 export type UsageRecorder = (
@@ -163,7 +162,7 @@ export type UsageRecorder = (
 
 let _usageCallback: UsageCallback | null = null;
 
-/** Register a callback to receive token usage reports from all AI operations. */
+/** Ambient default usage sink when no run-context sink is set. */
 export function onUsage(cb: UsageCallback | null): void {
   _usageCallback = cb;
 }
@@ -234,17 +233,28 @@ interface StepContext {
   sessionId?: string;
   /** Next step index to hand out; mutated in place as steps finish. */
   next: number;
+  /** Per-run usage sink; wins over the ambient {@link onUsage} callback. */
+  usageSink?: UsageCallback;
 }
 
 const stepContextStore = new AsyncLocalStorage<StepContext>();
 
 /** Runs `fn` in a per-run step-counting context; `streamResponse` steps inside it report usage tagged with `sessionId` and an increasing `stepSeq` starting at `seedStepSeq`. */
 export function runWithStepContext<T>(
-  opts: { sessionId?: string; seedStepSeq?: number },
+  opts: {
+    sessionId?: string;
+    seedStepSeq?: number;
+    usageSink?: UsageCallback;
+  },
   fn: () => T,
 ): T {
+  const parent = stepContextStore.getStore();
   return stepContextStore.run(
-    { sessionId: opts.sessionId, next: opts.seedStepSeq ?? 0 },
+    {
+      sessionId: opts.sessionId,
+      next: opts.seedStepSeq ?? 0,
+      usageSink: opts.usageSink ?? parent?.usageSink,
+    },
     fn,
   );
 }
@@ -276,6 +286,13 @@ async function emitUsage(
     cacheReadTokens: stepUsage.cacheReadTokens,
     cacheWriteTokens: stepUsage.cacheWriteTokens,
   });
+}
+
+/** explicit recorder > ALS run sink > ambient {@link onUsage}. */
+function resolveUsageSink(
+  explicit?: UsageRecorder,
+): UsageRecorder | UsageCallback | null {
+  return explicit ?? stepContextStore.getStore()?.usageSink ?? _usageCallback;
 }
 
 export type AIModelProvider =
@@ -1176,7 +1193,7 @@ export function streamResponse(
       });
     }
     await userOnStepFinish?.(step);
-    await emitUsage(model, stepUsage, usageRecorder ?? _usageCallback);
+    await emitUsage(model, stepUsage, resolveUsageSink(usageRecorder));
   };
   const baseProviderModel = getProviderModel(model, authConfig);
   const providerModel = languageModelMiddleware
@@ -1666,7 +1683,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
         await emitUsage(
           model,
           normalizeStepUsage({ usage, providerMetadata }),
-          usageRecorder ?? _usageCallback,
+          resolveUsageSink(usageRecorder),
         );
       }
 
