@@ -4,10 +4,14 @@ export type {
   CacheMetrics,
   GenerateObjectOpts,
   ModelInfo,
+  NormalizedStepUsage,
   OpenAIReasoningEffort,
   StreamResponseOpts,
   ThinkingEffort,
+  UsageCallback,
+  UsageCallbackContext,
   UsageRecorder,
+  UsageStepContext,
 } from "./ai";
 export {
   buildReasoningProviderOptions,
@@ -20,6 +24,8 @@ export {
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,
   normalizeOpenAIReasoningEffort,
+  normalizeStepUsage,
+  onUsage,
   runWithStepContext,
   streamResponse,
 } from "./ai";

@@ -149,10 +149,9 @@ export type UsageCallback = (
 
 /**
  * Per-run usage recorder threaded through {@link StreamResponseOpts}. When set
- * it replaces the process-global {@link onUsage} callback for that stream's
- * steps, so a durable runtime can attribute usage per run instead of relying on
- * a shared singleton. Async work is awaited before the next model step. Receives
- * the same cache-aware {@link UsageCallbackContext} as the global callback, so
+ * it replaces the ALS run sink and the ambient {@link onUsage} callback for
+ * that call. Async work is awaited before the next model step. Receives the
+ * same cache-aware {@link UsageCallbackContext} as the global callback, so
  * the cached/uncached split travels on the usage event itself.
  */
 export type UsageRecorder = (
@@ -164,7 +163,7 @@ export type UsageRecorder = (
 
 let _usageCallback: UsageCallback | null = null;
 
-/** Register a callback to receive token usage reports from all AI operations. */
+/** Ambient default usage sink when no run-context sink is set. */
 export function onUsage(cb: UsageCallback | null): void {
   _usageCallback = cb;
 }
@@ -235,17 +234,28 @@ interface StepContext {
   sessionId?: string;
   /** Next step index to hand out; mutated in place as steps finish. */
   next: number;
+  /** Per-run usage sink; wins over the ambient {@link onUsage} callback. */
+  usageSink?: UsageCallback;
 }
 
 const stepContextStore = new AsyncLocalStorage<StepContext>();
 
 /** Runs `fn` in a per-run step-counting context; `streamResponse` steps inside it report usage tagged with `sessionId` and an increasing `stepSeq` starting at `seedStepSeq`. */
 export function runWithStepContext<T>(
-  opts: { sessionId?: string; seedStepSeq?: number },
+  opts: {
+    sessionId?: string;
+    seedStepSeq?: number;
+    usageSink?: UsageCallback;
+  },
   fn: () => T,
 ): T {
+  const parent = stepContextStore.getStore();
   return stepContextStore.run(
-    { sessionId: opts.sessionId, next: opts.seedStepSeq ?? 0 },
+    {
+      sessionId: opts.sessionId,
+      next: opts.seedStepSeq ?? 0,
+      usageSink: opts.usageSink ?? parent?.usageSink,
+    },
     fn,
   );
 }
@@ -257,6 +267,33 @@ export function takeStepContext(): UsageStepContext | undefined {
   const stepSeq = store.next;
   store.next += 1;
   return { sessionId: store.sessionId, stepSeq };
+}
+
+/**
+ * Report one finished model call to a usage sink. Advances `stepSeq` whenever
+ * a sink is present (including zero-token steps) so the index stays aligned
+ * with the AI SDK. Skips the callback itself when both token counts are 0.
+ */
+async function emitUsage(
+  model: string,
+  stepUsage: NormalizedStepUsage,
+  sink: UsageRecorder | UsageCallback | null | undefined,
+): Promise<void> {
+  if (!sink) return;
+  const stepCtx = takeStepContext();
+  if (stepUsage.inputTokens <= 0 && stepUsage.outputTokens <= 0) return;
+  await sink(model, stepUsage.inputTokens, stepUsage.outputTokens, {
+    ...stepCtx,
+    cacheReadTokens: stepUsage.cacheReadTokens,
+    cacheWriteTokens: stepUsage.cacheWriteTokens,
+  });
+}
+
+/** explicit recorder > ALS run sink > ambient {@link onUsage}. */
+function resolveUsageSink(
+  explicit?: UsageRecorder,
+): UsageRecorder | UsageCallback | null {
+  return explicit ?? stepContextStore.getStore()?.usageSink ?? _usageCallback;
 }
 
 export type AIModelProvider =
@@ -1002,7 +1039,7 @@ export type OpenRouterProviderOptions = {
 export function buildOpenRouterProviderOptions(
   model: AIModel,
 ): OpenRouterProviderOptions | undefined {
-  if (model !== "z-ai/glm-5.2") return undefined;
+  if (model !== "z-ai/glm-5.2" && model !== "z-ai/glm-5.3") return undefined;
   return {
     openrouter: {
       provider: {
@@ -1104,7 +1141,10 @@ export interface StreamResponseOpts {
    * new messages (not the full pre-summarization history).
    */
   onSummarized?: (summary: string) => void;
-  /** Called when Anthropic cache metrics are present in a step's providerMetadata */
+  /**
+   * Deprecated host shim: fires only when a cache counter is `> 0`.
+   * Apex internals read cache from {@link normalizeStepUsage} on the step.
+   */
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+) */
   enableThinking?: boolean;
@@ -1178,35 +1218,7 @@ export function streamResponse(
       });
     }
     await userOnStepFinish?.(step);
-    if (usageRecorder || _usageCallback) {
-      // Advance stepSeq every finished step (even zero-usage) to stay aligned with the AI-SDK step index.
-      const stepCtx = takeStepContext();
-      if (stepUsage.inputTokens > 0 || stepUsage.outputTokens > 0) {
-        // Both sinks receive the same cache-aware context, so the cached and
-        // uncached split travels on the usage event itself. A per-run recorder,
-        // when set, replaces the process-global singleton for this stream.
-        const usageContext: UsageCallbackContext = {
-          ...stepCtx,
-          cacheReadTokens: stepUsage.cacheReadTokens,
-          cacheWriteTokens: stepUsage.cacheWriteTokens,
-        };
-        if (usageRecorder) {
-          await usageRecorder(
-            model,
-            stepUsage.inputTokens,
-            stepUsage.outputTokens,
-            usageContext,
-          );
-        } else {
-          await _usageCallback?.(
-            model,
-            stepUsage.inputTokens,
-            stepUsage.outputTokens,
-            usageContext,
-          );
-        }
-      }
-    }
+    await emitUsage(model, stepUsage, resolveUsageSink(usageRecorder));
   };
   const baseProviderModel = getProviderModel(model, authConfig);
   const providerModel = languageModelMiddleware
@@ -1461,6 +1473,7 @@ export function streamResponse(
             providerMetadata: repairProviderMetadata,
           } = await generateText({
             model: providerModel,
+            providerOptions: openRouterProviderOptions,
             output: Output.object({
               schema: tool.inputSchema, // Use the actual Zod schema from the tool
             }),
@@ -1619,6 +1632,8 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
+  /** Per-run usage recorder; when set it replaces the global usage callback. */
+  usageRecorder?: UsageRecorder;
   /** Session id (`ses_…`) of the caller — stamped onto AI-span telemetry. */
   sessionId?: string;
   /** Stable operation id; defaults to `apex.structured.generate`. */
@@ -1641,6 +1656,7 @@ export async function generateObjectResponse<T extends z.ZodType>(
     authConfig,
     abortSignal,
     onTokenUsage,
+    usageRecorder,
     sessionId,
   } = opts;
 
@@ -1689,21 +1705,12 @@ export async function generateObjectResponse<T extends z.ZodType>(
         onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
       }
 
-      if (_usageCallback && usage) {
-        const stepUsage = normalizeStepUsage({ usage, providerMetadata });
-        const stepCtx = takeStepContext();
-        if (stepUsage.inputTokens > 0 || stepUsage.outputTokens > 0) {
-          await _usageCallback(
-            model,
-            stepUsage.inputTokens,
-            stepUsage.outputTokens,
-            {
-              ...stepCtx,
-              cacheReadTokens: stepUsage.cacheReadTokens,
-              cacheWriteTokens: stepUsage.cacheWriteTokens,
-            },
-          );
-        }
+      if (usage) {
+        await emitUsage(
+          model,
+          normalizeStepUsage({ usage, providerMetadata }),
+          resolveUsageSink(usageRecorder),
+        );
       }
 
       // zod v4: the AI SDK's `Output.object` no longer carries the schema's

@@ -229,15 +229,17 @@ describe("buildReasoningProviderOptions", () => {
 });
 
 describe("buildOpenRouterProviderOptions", () => {
-  it("pins GLM 5.2 to Z.ai without provider fallbacks", () => {
-    expect(buildOpenRouterProviderOptions("z-ai/glm-5.2")).toEqual({
-      openrouter: {
-        provider: {
-          only: ["z-ai"],
-          allow_fallbacks: false,
+  it("pins GLM 5.2 and 5.3 to Z.ai without provider fallbacks", () => {
+    for (const model of ["z-ai/glm-5.2", "z-ai/glm-5.3"]) {
+      expect(buildOpenRouterProviderOptions(model)).toEqual({
+        openrouter: {
+          provider: {
+            only: ["z-ai"],
+            allow_fallbacks: false,
+          },
         },
-      },
-    });
+      });
+    }
   });
 
   it("leaves other OpenRouter models unchanged", () => {

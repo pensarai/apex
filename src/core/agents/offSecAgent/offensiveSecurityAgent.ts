@@ -9,7 +9,7 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import { streamResponse } from "../../ai";
+import { normalizeStepUsage, streamResponse } from "../../ai";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
 import {
   resolveEffectiveHeaders,
@@ -703,13 +703,6 @@ export class OffensiveSecurityAgent<TResult = void> {
     });
 
     // -- Stream ---------------------------------------------------------------
-    // Mutable ref for cache metrics — onCacheMetrics fires synchronously
-    // before onStepFinish within the same step (see ai.ts:367-391).
-    let lastCacheMetrics: {
-      cacheReadTokens: number;
-      cacheWriteTokens: number;
-    } | null = null;
-
     // Deferred so the AI SDK telemetry binds to this agent's span (entered in
     // consume()) rather than the construction-time context. See `streamResult`.
     this.createStream = () =>
@@ -735,24 +728,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           const auxiliaryModelEvent =
             event.response.id === "summarization" ||
             event.response.id === "tool-repair";
+          const stepUsage = normalizeStepUsage(event);
 
           if (auxiliaryModelEvent) {
-            const cacheDetails = event.usage.inputTokenDetails;
-            traceWriter.recordStep(
-              [],
-              {
-                inputTokens: event.usage.inputTokens ?? 0,
-                outputTokens: event.usage.outputTokens ?? 0,
-                cacheReadTokens:
-                  lastCacheMetrics?.cacheReadTokens ??
-                  cacheDetails?.cacheReadTokens,
-                cacheWriteTokens:
-                  lastCacheMetrics?.cacheWriteTokens ??
-                  cacheDetails?.cacheWriteTokens,
-              },
-              { usageOnly: true },
-            );
-            lastCacheMetrics = null;
+            traceWriter.recordStep([], stepUsage, { usageOnly: true });
             await input.onStepFinish?.(event);
             return;
           }
@@ -762,12 +741,10 @@ export class OffensiveSecurityAgent<TResult = void> {
             ...event.response.messages,
           ]);
           schedulePersist();
-          traceWriter.recordStep(event.response.messages as ModelMessage[], {
-            inputTokens: event.usage.inputTokens ?? 0,
-            outputTokens: event.usage.outputTokens ?? 0,
-            ...lastCacheMetrics,
-          });
-          lastCacheMetrics = null;
+          traceWriter.recordStep(
+            event.response.messages as ModelMessage[],
+            stepUsage,
+          );
           this.eventBus.emit("step-finish", {
             messages: event.response.messages,
             subagentId: this.subagentId,
@@ -799,13 +776,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         },
         abortSignal: input.abortSignal,
         authConfig: input.authConfig,
-        onCacheMetrics: (metrics) => {
-          lastCacheMetrics = {
-            cacheReadTokens: metrics.cacheReadInputTokens,
-            cacheWriteTokens: metrics.cacheCreationInputTokens,
-          };
-          input.onCacheMetrics?.(metrics);
-        },
+        onCacheMetrics: input.onCacheMetrics,
         enableThinking: input.enableThinking,
         thinkingEffort: input.thinkingEffort,
         openAIReasoningEffort: input.openAIReasoningEffort,
