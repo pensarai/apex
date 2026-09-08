@@ -247,6 +247,6 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     id: "z-ai/glm-5.3",
     name: "GLM 5.3",
     provider: "openrouter",
-    contextLength: 1310720,
+    contextLength: 1048576,
   },
 ];
