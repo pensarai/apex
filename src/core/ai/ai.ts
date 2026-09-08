@@ -1436,6 +1436,7 @@ export function streamResponse(
             providerMetadata: repairProviderMetadata,
           } = await generateText({
             model: providerModel,
+            providerOptions: openRouterProviderOptions,
             output: Output.object({
               schema: tool.inputSchema, // Use the actual Zod schema from the tool
             }),
