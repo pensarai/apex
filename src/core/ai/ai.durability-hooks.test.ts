@@ -329,3 +329,115 @@ describe("generateObjectResponse usageRecorder", () => {
     });
   });
 });
+
+describe("usage sink resolution", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getProviderModel.mockReturnValue(mocks.baseModel);
+    mocks.wrapLanguageModel.mockReturnValue(mocks.wrappedModel);
+    mocks.streamText.mockImplementation(emptyStreamResult);
+    mocks.generateText.mockResolvedValue(objectResult(11, 7));
+  });
+
+  afterEach(() => {
+    onUsage(null);
+  });
+
+  it("uses the ALS run sink when no recorder is set", async () => {
+    const usageSink = vi.fn();
+    streamResponse({ model: "test-model", prompt: "hi" });
+    await runWithStepContext({ sessionId: "ses_als", usageSink }, () =>
+      Promise.resolve(streamCall(0).onStepFinish(step(11, 7))),
+    );
+    expect(usageSink).toHaveBeenCalledWith("test-model", 11, 7, {
+      sessionId: "ses_als",
+      stepSeq: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+  });
+
+  it("lets an explicit recorder win over the ALS sink and ambient callback", async () => {
+    const ambient = vi.fn();
+    const usageSink = vi.fn();
+    const usageRecorder = vi.fn();
+    onUsage(ambient);
+    streamResponse({ model: "test-model", prompt: "hi", usageRecorder });
+    await runWithStepContext({ sessionId: "ses_als", usageSink }, () =>
+      Promise.resolve(streamCall(0).onStepFinish(step(11, 7))),
+    );
+    expect(usageRecorder).toHaveBeenCalledOnce();
+    expect(usageSink).not.toHaveBeenCalled();
+    expect(ambient).not.toHaveBeenCalled();
+  });
+
+  it("falls back to onUsage outside any run context", async () => {
+    const ambient = vi.fn();
+    onUsage(ambient);
+    streamResponse({ model: "test-model", prompt: "hi" });
+    await streamCall(0).onStepFinish(step(11, 7));
+    expect(ambient).toHaveBeenCalledOnce();
+  });
+
+  it("keeps concurrent ALS sinks isolated", async () => {
+    const sinkA = vi.fn();
+    const sinkB = vi.fn();
+    streamResponse({ model: "model-a", prompt: "a" });
+    streamResponse({ model: "model-b", prompt: "b" });
+    await Promise.all([
+      runWithStepContext({ sessionId: "ses_a", usageSink: sinkA }, () =>
+        Promise.resolve(streamCall(0).onStepFinish(step(3, 5))),
+      ),
+      runWithStepContext({ sessionId: "ses_b", usageSink: sinkB }, () =>
+        Promise.resolve(streamCall(1).onStepFinish(step(13, 17))),
+      ),
+    ]);
+    expect(sinkA).toHaveBeenCalledWith("model-a", 3, 5, {
+      sessionId: "ses_a",
+      stepSeq: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+    expect(sinkB).toHaveBeenCalledWith("model-b", 13, 17, {
+      sessionId: "ses_b",
+      stepSeq: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+  });
+
+  it("generateObjectResponse records via ALS without opts.usageRecorder", async () => {
+    const usageSink = vi.fn();
+    await runWithStepContext(
+      { sessionId: "ses_als", seedStepSeq: 2, usageSink },
+      () =>
+        generateObjectResponse({
+          model: "test-model",
+          schema: objectSchema,
+          prompt: "hi",
+        }),
+    );
+    expect(usageSink).toHaveBeenCalledWith("test-model", 11, 7, {
+      sessionId: "ses_als",
+      stepSeq: 2,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+  });
+
+  it("inherits the ALS sink across nested runWithStepContext calls", async () => {
+    const usageSink = vi.fn();
+    streamResponse({ model: "test-model", prompt: "hi" });
+    await runWithStepContext({ sessionId: "ses_outer", usageSink }, () =>
+      runWithStepContext({ sessionId: "ses_inner", seedStepSeq: 9 }, () =>
+        Promise.resolve(streamCall(0).onStepFinish(step(11, 7))),
+      ),
+    );
+    expect(usageSink).toHaveBeenCalledWith("test-model", 11, 7, {
+      sessionId: "ses_inner",
+      stepSeq: 9,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+  });
+});
