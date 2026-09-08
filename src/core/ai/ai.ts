@@ -1079,7 +1079,10 @@ export interface StreamResponseOpts {
    * new messages (not the full pre-summarization history).
    */
   onSummarized?: (summary: string) => void;
-  /** Called when Anthropic cache metrics are present in a step's providerMetadata */
+  /**
+   * Deprecated host shim: fires only when a cache counter is `> 0`.
+   * Apex internals read cache from {@link normalizeStepUsage} on the step.
+   */
   onCacheMetrics?: (metrics: CacheMetrics) => void;
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+) */
   enableThinking?: boolean;

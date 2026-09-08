@@ -33,10 +33,10 @@ import {
 } from "../../../core/agents/offSecAgent";
 import {
   buildAuthConfig,
-  type CacheMetrics,
   getContextWindow,
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,
+  normalizeStepUsage,
 } from "../../../core/ai";
 import {
   type RunAgentResult,
@@ -731,25 +731,37 @@ export default function OperatorDashboard({
       // whole conversation as the model saw it, and the denominator comes
       // from the model this run actually used.
       const runModelId = model.id;
-      const recordRootStepUsage = (usage: {
-        inputTokens?: number;
-        outputTokens?: number;
+      const recordRootStepUsage = (event: {
+        usage?: {
+          inputTokens?: number;
+          outputTokens?: number;
+          inputTokenDetails?: {
+            cacheReadTokens?: number;
+            cacheWriteTokens?: number;
+          };
+        };
+        providerMetadata?: unknown;
       }) => {
-        const inputTokens = usage.inputTokens ?? 0;
-        if (inputTokens > 0) {
+        const stepUsage = normalizeStepUsage(event);
+        if (stepUsage.inputTokens > 0) {
           usageStore.setRootContext(runSessionIdRef.current, {
-            usedTokens: inputTokens,
+            usedTokens: stepUsage.inputTokens,
             contextLimit: getContextWindow(runModelId),
             modelId: runModelId,
           });
         }
-        recordTokenUsage(inputTokens, usage.outputTokens ?? 0);
+        recordTokenUsage(
+          stepUsage.inputTokens,
+          stepUsage.outputTokens,
+          stepUsage.cacheReadTokens,
+          stepUsage.cacheWriteTokens,
+        );
       };
 
       const onStepFinish = (event: {
         usage?: { inputTokens?: number; outputTokens?: number };
       }) => {
-        recordRootStepUsage(event.usage ?? {});
+        recordRootStepUsage(event);
       };
 
       const eventBus = new AgentEventBus();
@@ -800,12 +812,6 @@ export default function OperatorDashboard({
             ? route.data.initialSkill?.args?.library
             : undefined),
         onStepFinish,
-        onCacheMetrics: (metrics: CacheMetrics) => {
-          usageStore.addSessionTokens(runSessionIdRef.current, {
-            cacheReadTokens: metrics.cacheReadInputTokens,
-            cacheWriteTokens: metrics.cacheCreationInputTokens,
-          });
-        },
         eventBus,
         onSessionReady: (s: SessionInfo) => {
           setSessionCwd(s.rootPath);
