@@ -233,12 +233,15 @@ export function startObservabilityRuntime(
           // OpenTelemetry only queues spans for export from onEnd(). Close all
           // still-recording spans, deepest-first, before the final flush.
           activeSpans.endAll();
-          // Clear the legacy root registry too. Its spans are already ended by
-          // the processor, but embedded/no-op callers may still register them.
+          // Clear stale references from the legacy root registry too. Its
+          // recording spans were already ended by the general tracker.
           endAllActiveRootSpans();
           try {
             await provider.forceFlush();
           } finally {
+            // Async work can start spans while forceFlush yields. End that
+            // final window explicitly before downstream processors shut down.
+            activeSpans.endAll();
             await provider.shutdown().catch((error) => {
               log.warn("OTLP export/shutdown failed", { error: String(error) });
             });

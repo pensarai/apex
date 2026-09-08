@@ -17,7 +17,10 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getApexTracer } from "../observability";
-import { INTERRUPTED_SPAN_ATTRIBUTE } from "./active-spans";
+import {
+  INTERRUPTED_ERROR_TYPE,
+  INTERRUPTED_SPAN_ATTRIBUTE,
+} from "./active-spans";
 import {
   installObservabilityExitHandlers,
   resetObservabilityRuntime,
@@ -83,6 +86,21 @@ class HungProcessor implements SpanProcessor {
   async shutdown(): Promise<void> {
     await new Promise<void>(() => {});
   }
+}
+
+class StartSpanOnFlushProcessor implements SpanProcessor {
+  private started = false;
+
+  constructor(private readonly startSpan: () => void) {}
+
+  onStart(_span: SdkSpan): void {}
+  onEnd(_span: ReadableSpan): void {}
+  async forceFlush(): Promise<void> {
+    if (this.started) return;
+    this.started = true;
+    this.startSpan();
+  }
+  async shutdown(): Promise<void> {}
 }
 
 function startWithProcessors(
@@ -185,12 +203,29 @@ describe("shutdown semantics", () => {
     for (const span of recorder.endedSpans) {
       expect(span.status.code).toBe(SpanStatusCode.ERROR);
       expect(span.attributes[INTERRUPTED_SPAN_ATTRIBUTE]).toBe(true);
+      expect(span.attributes["error.type"]).toBe(INTERRUPTED_ERROR_TYPE);
     }
     const [child, model, root] = recorder.endedSpans;
     expect(child?.parentSpanContext?.spanId).toBe(model?.spanContext().spanId);
     expect(model?.parentSpanContext?.spanId).toBe(root?.spanContext().spanId);
     expect(recorder.calls.at(-2)).toBe("forceFlush");
     expect(recorder.calls.at(-1)).toBe("shutdown");
+  });
+
+  it("ends spans started while the final forceFlush is in flight", async () => {
+    const exporter = new InMemorySpanExporter();
+    const recorder = new RecordingProcessor(new SimpleSpanProcessor(exporter));
+    const starter = new StartSpanOnFlushProcessor(() => {
+      getApexTracer().startSpan("late shutdown work");
+    });
+    const runtime = startWithProcessors([recorder, starter]);
+
+    await runtime.shutdown();
+
+    expect(recorder.endedSpans.map((span) => span.name)).toEqual([
+      "late shutdown work",
+    ]);
+    expect(recorder.calls).toEqual(["forceFlush", "onEnd", "shutdown"]);
   });
 });
 
@@ -483,6 +518,10 @@ describe("final export", () => {
                   name?: string;
                   spanId?: string;
                   parentSpanId?: string;
+                  attributes?: Array<{
+                    key?: string;
+                    value?: { boolValue?: boolean };
+                  }>;
                 }>;
               }>;
             }>;
@@ -498,6 +537,13 @@ describe("final export", () => {
       expect(root).toBeDefined();
       expect(model?.parentSpanId).toBe(root?.spanId);
       expect(tool?.parentSpanId).toBe(model?.spanId);
+      for (const span of [root, model, tool]) {
+        expect(
+          span?.attributes?.find(
+            (attribute) => attribute.key === INTERRUPTED_SPAN_ATTRIBUTE,
+          )?.value?.boolValue,
+        ).toBe(true);
+      }
     } finally {
       await new Promise((resolve) => receiver.server.close(resolve));
     }
