@@ -15,6 +15,7 @@ export {
   generateObjectResponse,
   getContextWindow,
   getOpenAIReasoningEfforts,
+  modelRequiresReasoning,
   modelSupportsAdaptiveThinking,
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,

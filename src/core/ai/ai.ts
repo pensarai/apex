@@ -38,6 +38,7 @@ import {
   getModelInfo,
   prefersSequentialToolCalls,
 } from "./models";
+import { CONCENTRATE_GLM_5_3_MODEL_ID } from "./providers/concentrate";
 import { STREAM_DEBUG } from "./streamTelemetry";
 import {
   type AIAuthConfig,
@@ -902,6 +903,7 @@ export function modelSupportsAdaptiveThinking(modelId: string): boolean {
 }
 
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
+  if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) return true;
   const { provider } = getModelInfo(modelId);
   if (provider !== "openai") return false;
   return (
@@ -909,10 +911,17 @@ export function modelSupportsOpenAIReasoning(modelId: string): boolean {
   );
 }
 
+export function modelRequiresReasoning(modelId: string): boolean {
+  return modelId === CONCENTRATE_GLM_5_3_MODEL_ID;
+}
+
 export function getOpenAIReasoningEfforts(
   modelId: string,
 ): OpenAIReasoningEffort[] {
   if (!modelSupportsOpenAIReasoning(modelId)) return [];
+  if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) {
+    return ["low", "high", "max"];
+  }
   if (/^gpt-5\.6(?:\b|-)/.test(modelId)) {
     return ["low", "medium", "high", "xhigh", "max", "ultra"];
   }
@@ -926,6 +935,22 @@ export function normalizeOpenAIReasoningEffort(
   modelId: string,
   effort?: OpenAIReasoningEffort | null,
 ): OpenAIReasoningEffort | undefined {
+  if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) {
+    switch (effort) {
+      case "none":
+      case "low":
+        return "low";
+      case "medium":
+      case "high":
+        return "high";
+      case "xhigh":
+      case "max":
+      case "ultra":
+        return "max";
+      default:
+        return "high";
+    }
+  }
   const efforts = getOpenAIReasoningEfforts(modelId);
   if (efforts.length === 0) return undefined;
   if (effort && efforts.includes(effort)) {

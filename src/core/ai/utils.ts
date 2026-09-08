@@ -29,6 +29,7 @@ import {
 } from "./contextManagement";
 import { MANTLE_REGION, mantleBaseUrl, stripMantlePrefix } from "./mantle";
 import { getModelInfo } from "./models";
+import { createConcentrateModel } from "./providers/concentrate";
 import { createPensarModel } from "./providers/pensar";
 
 const log = scopedLogger(() => createLogger("ai:utils"));
@@ -180,12 +181,9 @@ export function getProviderModel(
     }
 
     case "concentrate": {
-      const concentrate = createOpenAICompatible({
-        name: "concentrate",
+      providerModel = createConcentrateModel(model, {
         apiKey: concentrateAPIKey,
-        baseURL: "https://api.concentrate.ai/v1",
       });
-      providerModel = concentrate(model.replace(/^concentrate:/, ""));
       break;
     }
 
