@@ -24,6 +24,7 @@ Sets the read/seen flag on a message so it no longer appears as unread.`,
         ),
       toolCallDescription: z
         .string()
+        .optional()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),

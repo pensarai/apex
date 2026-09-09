@@ -32,6 +32,7 @@ const globInputSchema = z.object({
     ),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Find all TypeScript source files')",
     ),

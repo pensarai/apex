@@ -5,6 +5,7 @@ import type { ToolContext } from "./types";
 const gitStatusInputSchema = z.object({
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Check which files were modified')",
     ),

@@ -18,6 +18,7 @@ inboxes are available, then reference them by ID in other email tools.`,
     inputSchema: z.object({
       toolCallDescription: z
         .string()
+        .optional()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),

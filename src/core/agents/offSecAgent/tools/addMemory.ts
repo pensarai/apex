@@ -26,6 +26,7 @@ const addMemoryInputSchema = z.object({
     .describe("Optional tags for categorisation and filtering"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Saving XSS payload pattern')",
     ),

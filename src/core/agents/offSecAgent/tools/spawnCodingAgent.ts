@@ -57,6 +57,7 @@ Returns an array of results with the text output from each agent.`,
         .describe("Array of tasks to fan out to coding sub-agents"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),

@@ -10,6 +10,7 @@ const log = scopedLogger(() => createLogger("submit_plan"));
 const submitPlanInputSchema = z.object({
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Submitting pentest plan for operator review')",
     ),

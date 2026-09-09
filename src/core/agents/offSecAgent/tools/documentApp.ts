@@ -150,6 +150,7 @@ Each application creates a JSON file in the apps directory for tracking and anal
         ),
       toolCallDescription: z
         .string()
+        .optional()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),

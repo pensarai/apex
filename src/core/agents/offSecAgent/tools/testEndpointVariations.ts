@@ -30,6 +30,7 @@ Use this to:
         .describe("Session cookie if authentication required"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),

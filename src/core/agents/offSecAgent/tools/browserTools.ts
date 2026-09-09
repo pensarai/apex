@@ -114,6 +114,7 @@ export function createBrowserToolset(ctx: ToolContext) {
       ),
     toolCallDescription: z
       .string()
+      .optional()
       .describe("Why you are filling this field with this value"),
   };
   if (injectionEnabled) {

@@ -39,6 +39,7 @@ export function crawlAuthenticated(ctx: ToolContext) {
       maxPages: z.number().default(50).describe("Maximum pages to visit"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),

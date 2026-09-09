@@ -30,6 +30,7 @@ Returns detected scheme and required fields for authentication.`,
       endpoint: z.string().describe("URL to analyze for auth scheme"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("A concise description of what this tool call is doing"),
     }),
     execute: async ({ endpoint }) => {

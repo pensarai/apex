@@ -103,6 +103,7 @@ const documentEndpointInputSchema = z.object({
     .describe("Additional notes or observations about the endpoint"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing",
     ),

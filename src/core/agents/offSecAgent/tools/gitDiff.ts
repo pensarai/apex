@@ -14,6 +14,7 @@ const gitDiffInputSchema = z.object({
     .describe("If true, show staged (--cached) diff. Default: unstaged."),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Review unstaged patch before finalize')",
     ),

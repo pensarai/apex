@@ -92,6 +92,7 @@ Returns discovered endpoints and recommended login approach.`,
         .describe("Base URL to probe (e.g., https://example.com)"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("A concise description of what this tool call is doing"),
     }),
     execute: async ({ baseUrl }) => {

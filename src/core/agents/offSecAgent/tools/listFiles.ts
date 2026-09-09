@@ -17,6 +17,7 @@ const listFilesInputSchema = z.object({
     .describe("If true, list files recursively (default: false)"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Listing files in /etc/nginx')",
     ),

@@ -109,6 +109,7 @@ instead of flooding context with every match. Output size and runtime are bounde
         .describe("Per-query timeout in seconds (default 30, max 900)."),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("A concise description of the code query"),
     }),
     execute: async ({ engine = "rg", queries, cwd, timeoutSeconds = 30 }) => {

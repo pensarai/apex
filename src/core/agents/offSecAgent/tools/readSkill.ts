@@ -10,6 +10,7 @@ export function readSkill(ctx: ToolContext) {
       name: z.string().describe("Skill slug from the available skills catalog"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe(
           "A concise, human-readable description of what this tool call is doing",
         ),

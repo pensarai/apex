@@ -36,6 +36,7 @@ const getPageInputSchema = z.object({
     .describe("The URL of the page to fetch and extract content from."),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Fetching CVE details from NVD')",
     ),

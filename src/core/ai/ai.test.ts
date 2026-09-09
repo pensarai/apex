@@ -5,6 +5,7 @@ import {
   buildOpenRouterProviderOptions,
   buildReasoningProviderOptions,
   isRepairFailClosedTool,
+  restrictToolsToActive,
   SEQUENTIAL_TOOL_CALL_INSTRUCTION,
   streamResponse,
 } from "./ai";
@@ -52,6 +53,52 @@ describe("applySequentialToolCallPolicy", () => {
     expect(
       applySequentialToolCallPolicy("Base.", tools, "claude-haiku-4-5"),
     ).toBe("Base.");
+  });
+});
+
+describe("restrictToolsToActive", () => {
+  const tools = {
+    read_file: {
+      description: "read",
+      inputSchema: z.object({ p: z.string() }),
+    },
+    execute_command: {
+      description: "exec",
+      inputSchema: z.object({ c: z.string() }),
+    },
+    delete_file: {
+      description: "delete",
+      inputSchema: z.object({ p: z.string() }),
+    },
+  };
+
+  it("filters the tools map down to the activeTools allowlist", () => {
+    const result = restrictToolsToActive(tools, ["read_file", "delete_file"]);
+    expect(Object.keys(result ?? {}).sort()).toEqual([
+      "delete_file",
+      "read_file",
+    ]);
+    // execute_command must not be advertised, executable, or enumerable.
+    expect(result).not.toHaveProperty("execute_command");
+    // Retained tools keep their original definition (same reference).
+    expect(result?.read_file).toBe(tools.read_file);
+  });
+
+  it("is a no-op when activeTools is empty (means: all tools)", () => {
+    expect(restrictToolsToActive(tools, [])).toBe(tools);
+  });
+
+  it("is a no-op when activeTools is undefined", () => {
+    expect(restrictToolsToActive(tools, undefined)).toBe(tools);
+  });
+
+  it("returns tools unchanged when tools is undefined", () => {
+    expect(restrictToolsToActive(undefined, ["read_file"])).toBeUndefined();
+  });
+
+  it("ignores allowlist entries that are not present in the tools map", () => {
+    const result = restrictToolsToActive(tools, ["read_file", "no_such_tool"]);
+    expect(Object.keys(result ?? {})).toEqual(["read_file"]);
   });
 });
 
