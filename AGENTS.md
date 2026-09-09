@@ -40,7 +40,7 @@ Bias to caution over speed on non-trivial work. Use judgment on trivial tasks.
 
 **Match the codebase's conventions, even if you disagree.** Conformance > taste. If a convention seems harmful, surface it — don't fork silently.
 
-**Avoid verbose comments.** Code should speak for itself — well-named identifiers and small functions beat prose. If context is genuinely non-obvious (a hidden constraint, a workaround, surprising behavior), a brief one-liner is fine. Don't narrate what the code does or write multi-paragraph docstrings.
+**Avoid verbose comments.** Code should speak for itself — well-named identifiers and small functions beat prose. If context is genuinely non-obvious (a hidden constraint, a workaround, surprising behavior), a brief one-liner is fine. Don't narrate what the code does or write multi-paragraph docstrings. The full standard is `.agents/skills/code-comments/SKILL.md`.
 
 **Fail loud.** "Completed" is wrong if anything was silently skipped. Default to surfacing uncertainty.
 
@@ -164,9 +164,11 @@ Enforced via the `import-x/no-internal-modules` ESLint rule in `eslint.config.js
 
 ### Skills
 
-Team-shared development-agent skills live at `.agents/skills/<name>/`. Use `/create-skill` to add a new one. The PR workflow below is developer-only and intentionally remains there: Apex scans `.claude/skills`, `.skills`, `skills`, `~/.agents/skills`, and `~/.pensar/skills` as runtime skill sources.
+Team-shared development-agent skills live at `.agents/skills/<name>/`. Use `/create-skill` to add a new one. Developer-only skills (PR workflow, code comments) intentionally remain there: Apex scans `.claude/skills`, `.skills`, `skills`, `~/.agents/skills`, and `~/.pensar/skills` as runtime skill sources.
 
 Before pull-request or merge-request work, read and follow `.agents/skills/pr/SKILL.md` (`/pr` in coding agents that discover repo `.agents` skills). It covers creating or updating PRs, preserving stack topology and formatting, babysitting CI, handling review or Bugbot findings, resolving conflicts, and performing explicitly authorized merges. The skill is the source of truth for the workflow; verify live GitHub state and operate on the latest head SHA.
+
+When writing or editing comments, JSDoc, or TODOs, read and follow `.agents/skills/code-comments/SKILL.md` (`/code-comments` in coding agents that discover repo `.agents` skills). Comment only what the code cannot say; do not narrate mechanics or add ceremony.
 
 ### Gotchas
 
