@@ -5,6 +5,7 @@
 // never touched; the final trace reaches a local OTLP receiver.
 
 import { createServer, type Server } from "node:http";
+import { SpanStatusCode } from "@opentelemetry/api";
 import type {
   ReadableSpan,
   Span as SdkSpan,
@@ -16,6 +17,10 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getApexTracer } from "../observability";
+import {
+  INTERRUPTED_ERROR_TYPE,
+  INTERRUPTED_SPAN_ATTRIBUTE,
+} from "./active-spans";
 import {
   installObservabilityExitHandlers,
   resetObservabilityRuntime,
@@ -50,6 +55,7 @@ afterEach(async () => {
 /** Span processor that records lifecycle call order. */
 class RecordingProcessor implements SpanProcessor {
   readonly calls: string[] = [];
+  readonly endedSpans: ReadableSpan[] = [];
   private readonly inner: SpanProcessor;
   constructor(inner: SpanProcessor) {
     this.inner = inner;
@@ -59,6 +65,7 @@ class RecordingProcessor implements SpanProcessor {
   }
   onEnd(span: ReadableSpan): void {
     this.calls.push("onEnd");
+    this.endedSpans.push(span);
     this.inner.onEnd(span);
   }
   async shutdown(): Promise<void> {
@@ -79,6 +86,21 @@ class HungProcessor implements SpanProcessor {
   async shutdown(): Promise<void> {
     await new Promise<void>(() => {});
   }
+}
+
+class StartSpanOnFlushProcessor implements SpanProcessor {
+  private started = false;
+
+  constructor(private readonly startSpan: () => void) {}
+
+  onStart(_span: SdkSpan): void {}
+  onEnd(_span: ReadableSpan): void {}
+  async forceFlush(): Promise<void> {
+    if (this.started) return;
+    this.started = true;
+    this.startSpan();
+  }
+  async shutdown(): Promise<void> {}
 }
 
 function startWithProcessors(
@@ -155,6 +177,55 @@ describe("shutdown semantics", () => {
     // with the final flush instead of leaking.
     expect(recorder.calls).toEqual(["onEnd", "forceFlush", "shutdown"]);
     expect((rootSpan as unknown as { ended: boolean }).ended).toBe(true);
+  });
+
+  it("ends every in-flight span child-first and marks it interrupted", async () => {
+    const exporter = new InMemorySpanExporter();
+    const recorder = new RecordingProcessor(new SimpleSpanProcessor(exporter));
+    const runtime = startWithProcessors([recorder]);
+    const tracer = getApexTracer();
+
+    tracer.startActiveSpan("invoke_agent default", (root) => {
+      tracer.startActiveSpan("ai.streamText", (model) => {
+        tracer.startSpan("ai.streamText.doStream");
+        expect(model.isRecording()).toBe(true);
+      });
+      expect(root.isRecording()).toBe(true);
+    });
+
+    await runtime.shutdown();
+
+    expect(recorder.endedSpans.map((span) => span.name)).toEqual([
+      "ai.streamText.doStream",
+      "ai.streamText",
+      "invoke_agent default",
+    ]);
+    for (const span of recorder.endedSpans) {
+      expect(span.status.code).toBe(SpanStatusCode.ERROR);
+      expect(span.attributes[INTERRUPTED_SPAN_ATTRIBUTE]).toBe(true);
+      expect(span.attributes["error.type"]).toBe(INTERRUPTED_ERROR_TYPE);
+    }
+    const [child, model, root] = recorder.endedSpans;
+    expect(child?.parentSpanContext?.spanId).toBe(model?.spanContext().spanId);
+    expect(model?.parentSpanContext?.spanId).toBe(root?.spanContext().spanId);
+    expect(recorder.calls.at(-2)).toBe("forceFlush");
+    expect(recorder.calls.at(-1)).toBe("shutdown");
+  });
+
+  it("ends spans started while the final forceFlush is in flight", async () => {
+    const exporter = new InMemorySpanExporter();
+    const recorder = new RecordingProcessor(new SimpleSpanProcessor(exporter));
+    const starter = new StartSpanOnFlushProcessor(() => {
+      getApexTracer().startSpan("late shutdown work");
+    });
+    const runtime = startWithProcessors([recorder, starter]);
+
+    await runtime.shutdown();
+
+    expect(recorder.endedSpans.map((span) => span.name)).toEqual([
+      "late shutdown work",
+    ]);
+    expect(recorder.calls).toEqual(["forceFlush", "onEnd", "shutdown"]);
   });
 });
 
@@ -417,6 +488,62 @@ describe("final export", () => {
       expect(names).toContain("invoke_agent default");
       expect(names).toContain("ai.streamText");
       expect(names).toContain("invoke_agent recon-sub");
+    } finally {
+      await new Promise((resolve) => receiver.server.close(resolve));
+    }
+  });
+
+  it("shutdown exports a still-open root/model/tool tree with its hierarchy", async () => {
+    const receiver = await startReceiver();
+    try {
+      process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = `http://127.0.0.1:${receiver.port}/v1/traces`;
+      const runtime = startObservabilityRuntime();
+      const tracer = getApexTracer();
+
+      tracer.startActiveSpan("invoke_agent default", () => {
+        tracer.startActiveSpan("ai.streamText", () => {
+          tracer.startSpan("ai.streamText.doStream");
+        });
+      });
+
+      await runtime.shutdown();
+
+      const [body] = await receiver.waitForRequests(1);
+      const spans =
+        (
+          body as {
+            resourceSpans?: Array<{
+              scopeSpans?: Array<{
+                spans?: Array<{
+                  name?: string;
+                  spanId?: string;
+                  parentSpanId?: string;
+                  attributes?: Array<{
+                    key?: string;
+                    value?: { boolValue?: boolean };
+                  }>;
+                }>;
+              }>;
+            }>;
+          }
+        ).resourceSpans?.flatMap(
+          (resource) =>
+            resource.scopeSpans?.flatMap((scope) => scope.spans ?? []) ?? [],
+        ) ?? [];
+      const root = spans.find((span) => span.name === "invoke_agent default");
+      const model = spans.find((span) => span.name === "ai.streamText");
+      const tool = spans.find((span) => span.name === "ai.streamText.doStream");
+
+      expect(root).toBeDefined();
+      expect(model?.parentSpanId).toBe(root?.spanId);
+      expect(tool?.parentSpanId).toBe(model?.spanId);
+      for (const span of [root, model, tool]) {
+        expect(
+          span?.attributes?.find(
+            (attribute) => attribute.key === INTERRUPTED_SPAN_ATTRIBUTE,
+          )?.value?.boolValue,
+        ).toBe(true);
+      }
     } finally {
       await new Promise((resolve) => receiver.server.close(resolve));
     }

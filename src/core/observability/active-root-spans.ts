@@ -21,7 +21,7 @@ export function unregisterActiveRootSpan(span: Span): void {
 export function endAllActiveRootSpans(): void {
   for (const span of activeRootSpans) {
     try {
-      span.end();
+      if (span.isRecording()) span.end();
     } catch {
       // A dead span must never block process teardown.
     }
