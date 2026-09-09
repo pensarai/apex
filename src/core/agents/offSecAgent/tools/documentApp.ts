@@ -155,6 +155,18 @@ Each application creates a JSON file in the apps directory for tracking and anal
         ),
     }),
     execute: async (input) => {
+      if (
+        !input.domain &&
+        ["web_application", "api", "full_stack"].includes(input.appType)
+      ) {
+        if (ctx.target) {
+          const targetCheck = validateDomainUrl(ctx.target);
+          if (targetCheck.origin) {
+            input = { ...input, domain: targetCheck.origin };
+          }
+        }
+      }
+
       if (input.domain) {
         const domainCheck = validateDomainUrl(input.domain);
         if (!domainCheck.valid) {
