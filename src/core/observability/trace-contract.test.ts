@@ -546,12 +546,18 @@ describe("existing trace contract: helper generateText path", () => {
     expect(wrapper.attributes["http.response.status_code"]).toBeUndefined();
   });
 
-  it("an out-of-range status code is not recorded", async () => {
+  it.each([
+    99,
+    600,
+    400.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+  ])("invalid HTTP status %s is not recorded", async (statusCode) => {
     const rejection = new APICallError({
       message: "Request rejected",
       url: "https://api.example.com/v1/responses",
       requestBodyValues: {},
-      statusCode: 99,
+      statusCode,
       isRetryable: false,
     });
     mockState.model = new MockLanguageModelV3({
@@ -574,8 +580,40 @@ describe("existing trace contract: helper generateText path", () => {
       otel.getFinishedSpans(),
       "ai.generateText.doGenerate",
     );
-    // The identifier-like type name is kept; the out-of-range status is not.
     expect(provider.attributes["error.type"]).toBe("AI_APICallError");
+    expect(provider.attributes["http.response.status_code"]).toBeUndefined();
+  });
+
+  it.each([
+    "",
+    "Error private-sentinel",
+    "Error\nprivate-sentinel",
+    "E".repeat(65),
+  ])("does not project invalid error name %j", async (name) => {
+    const rejection = new Error("synthetic provider failure");
+    rejection.name = name;
+    mockState.model = new MockLanguageModelV3({
+      provider: "mock-anthropic",
+      modelId: MODEL,
+      doGenerate: async () => {
+        throw rejection;
+      },
+    });
+
+    await expect(
+      generateObjectResponse({
+        model: MODEL,
+        schema: z.object({ answer: z.number() }),
+        prompt: "hi",
+      }),
+    ).rejects.toBe(rejection);
+
+    const provider = requireSpan(
+      otel.getFinishedSpans(),
+      "ai.generateText.doGenerate",
+    );
+    expect(provider.status.code).toBe(SpanStatusCode.ERROR);
+    expect(provider.attributes["error.type"]).toBeUndefined();
     expect(provider.attributes["http.response.status_code"]).toBeUndefined();
   });
 
