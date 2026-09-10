@@ -74,16 +74,22 @@ traces, logs, and W&B uploads.
 Model-call failures are recorded passively on the spans the AI SDK already
 emits. What each path carries on failure:
 
-| Path                                                                | Recorded on failure                                                                                                                                       | Known limits                                                                                                    |
-| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Helper `generateText` (structured generate, summarize, tool repair) | `ai.generateText` and `ai.generateText.doGenerate` both end with error status and an `exception` event (`exception.type`, message, stack)                 | No `error.type` span attribute; a numeric HTTP status known to the thrown error is not projected onto the spans |
-| Streaming (`streamText`)                                            | A thrown provider error marks both spans; an in-stream error part is marked on the root `ai.streamText` span (the `doStream` span can complete unerrored) | Same attribute limits as the helper path                                                                        |
-| Shutdown                                                            | Open spans gain `pensar.telemetry.interrupted=true` and `error.type=ApexProcessInterrupted` unless an error type is already set                           | An interruption marker is not evidence that the run was cancelled                                               |
+| Path                                                                | Recorded on failure                                                                                                                                                                                                                                         | Known limits                                                                                         |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Helper `generateText` (structured generate, summarize, tool repair) | `ai.generateText` and `ai.generateText.doGenerate` both end with error status and an `exception` event (`exception.type`, message, stack); the provider span also gains `error.type` and, when the error carries one, a numeric `http.response.status_code` | Attributes land on the provider span only; no messages, bodies, or stacks are copied into attributes |
+| Streaming (`streamText`)                                            | Same pair for a thrown provider error, with the same bounded attributes on the `doStream` span; an in-stream error part is marked on the root `ai.streamText` span (the `doStream` span can complete unerrored)                                             | In-stream error parts do not gain span attributes — only the root span's exception event             |
+| Shutdown                                                            | Open spans gain `pensar.telemetry.interrupted=true` and `error.type=ApexProcessInterrupted` unless an error type is already set                                                                                                                             | An interruption marker is not evidence that the run was cancelled                                    |
 
 A rejected request never generated: token attributes stay absent rather than
-zero, and a generic error stays generic — nothing invents a schema or
-transport diagnosis. Payload capture remains opt-in
-(`AI_TRACE_RECORD_PAYLOADS`).
+zero, and a generic error stays generic — a plain `Error` records only its type
+name, and an opaque non-Error failure records no attributes at all. Type names
+are kept only when identifier-like (1–64 characters of letters, digits, `.`,
+`_`, `-`); numeric statuses only when the error carries an integer in the
+100–599 range. Nothing invents a schema or transport diagnosis, and decoration
+is best-effort: a telemetry failure never replaces the provider's original
+error. Payload capture remains opt-in (`AI_TRACE_RECORD_PAYLOADS`), and the
+decoration is passive: return values, thrown errors, and provider call counts
+are unchanged.
 
 ## Shutdown behavior
 

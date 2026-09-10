@@ -1,3 +1,4 @@
+import { APICallError, type LanguageModelV3 } from "@ai-sdk/provider";
 import {
   type Span,
   SpanStatusCode,
@@ -132,6 +133,81 @@ export function createGenerationSpanTracker(): GenerationSpanTracker {
       const message = describeFailure(error);
       span.recordException(error instanceof Error ? error : message);
       span.setStatus({ code: SpanStatusCode.ERROR, message });
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Provider-call failure attributes. The SDK's exception events carry type,
+// message, and stack but drop structured facts such as APICallError
+// .statusCode; downstream trace projection retains allowlisted span
+// attributes, not event payloads — so known failure facts must land on the
+// provider span itself while it is still recording.
+// ---------------------------------------------------------------------------
+
+const ERROR_TYPE_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+
+const MIN_HTTP_STATUS = 100;
+const MAX_HTTP_STATUS = 599;
+
+function recordProviderCallFailure(error: unknown): void {
+  try {
+    const span = trace.getActiveSpan();
+    if (!span?.isRecording()) return;
+    if (error instanceof Error && ERROR_TYPE_PATTERN.test(error.name)) {
+      span.setAttribute("error.type", error.name);
+    }
+    // statusCode is carried only by APICallError; anything that is not an
+    // in-range integer stays unattributed rather than guessed.
+    if (APICallError.isInstance(error)) {
+      const statusCode = error.statusCode;
+      if (
+        typeof statusCode === "number" &&
+        Number.isInteger(statusCode) &&
+        statusCode >= MIN_HTTP_STATUS &&
+        statusCode <= MAX_HTTP_STATUS
+      ) {
+        span.setAttribute("http.response.status_code", statusCode);
+      }
+    }
+  } catch {
+    // Decoration is best-effort telemetry: it must never replace the
+    // provider's original thrown error.
+  }
+}
+
+/**
+ * Passive diagnostic wrapper around a resolved provider model. When a
+ * provider call throws, the SDK's active provider span (`*.doGenerate` /
+ * `*.doStream`) gains `error.type` when the error's name is identifier-like
+ * (1–64 chars of `[A-Za-z0-9._-]`), and a numeric `http.response.status_code`
+ * when an `APICallError` carries an integer in the 100–599 range. Return
+ * values, thrown errors, and call counts pass through untouched; no messages,
+ * request or response bodies, or stack traces are copied into attributes.
+ */
+export function withModelCallDiagnostics<T extends LanguageModelV3>(
+  model: T,
+): LanguageModelV3 {
+  return {
+    specificationVersion: model.specificationVersion,
+    provider: model.provider,
+    modelId: model.modelId,
+    supportedUrls: model.supportedUrls,
+    doGenerate: async (options) => {
+      try {
+        return await model.doGenerate(options);
+      } catch (error) {
+        recordProviderCallFailure(error);
+        throw error;
+      }
+    },
+    doStream: async (options) => {
+      try {
+        return await model.doStream(options);
+      } catch (error) {
+        recordProviderCallFailure(error);
+        throw error;
+      }
     },
   };
 }

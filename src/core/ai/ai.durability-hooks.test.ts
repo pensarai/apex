@@ -41,6 +41,16 @@ vi.mock("./utils", async () => {
   return { ...actual, getProviderModel: mocks.getProviderModel };
 });
 
+// This suite pins middleware and usage wiring, not diagnostics; identity
+// pass-through keeps the model assertions about middleware alone.
+vi.mock("../observability", async () => {
+  const actual =
+    await vi.importActual<typeof import("../observability")>(
+      "../observability",
+    );
+  return { ...actual, withModelCallDiagnostics: (model: unknown) => model };
+});
+
 const { generateObjectResponse, onUsage, runWithStepContext, streamResponse } =
   await import("./ai");
 
