@@ -16,6 +16,19 @@ metadata:
   og:image:width: 1200
   og:image:height: 630
   og:locale: "en_US"
+  # Dynamic per-page cards (Fern renders logo + section + title + description
+  # over the background). Static og:image above applies to the homepage only.
+  og:dynamic: true
+  og:dynamic:background-image: ./docs/assets/og-background-livecells.png
+  og:dynamic:background-color: "#000000"
+  og:dynamic:text-color: "#e5e5e5"
+  og:dynamic:logo-color: dark
+  og:dynamic:show-logo: true
+  og:dynamic:show-section: true
+  og:dynamic:show-description: true
+  # Off: on basepath instances Fern renders the URL as .../apex/apex/<page>.
+  og:dynamic:show-url: false
+  og:dynamic:show-gradient: true
   twitter:title: "Pensar Apex Documentation"
   twitter:description: "AI-powered penetration testing CLI."
   twitter:handle: "@ai_pensar"
