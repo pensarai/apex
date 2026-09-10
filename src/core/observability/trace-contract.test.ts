@@ -550,8 +550,11 @@ describe("existing trace contract: payload policy", () => {
     expect(streamText.attributes["ai.response.text"]).toBeUndefined();
   });
 
-  it("AI_TRACE_RECORD_PAYLOADS=false excludes helper prompts and responses", async () => {
-    process.env.AI_TRACE_RECORD_PAYLOADS = "false";
+  it.each([
+    false,
+    true,
+  ])("helper payload capture follows AI_TRACE_RECORD_PAYLOADS=%s", async (enabled) => {
+    process.env.AI_TRACE_RECORD_PAYLOADS = String(enabled);
     mockState.model = objectResultModel();
 
     await generateObjectResponse({
@@ -560,9 +563,20 @@ describe("existing trace contract: payload policy", () => {
       prompt: "secret prompt",
     });
 
-    const wrapper = requireSpan(otel.getFinishedSpans(), "ai.generateText");
-    expect(wrapper.attributes["ai.prompt"]).toBeUndefined();
-    expect(wrapper.attributes["ai.response.text"]).toBeUndefined();
+    const spans = otel.getFinishedSpans();
+    const provider = requireSpan(spans, "ai.generateText.doGenerate");
+    if (enabled) {
+      expect(provider.attributes["ai.prompt.messages"]).toContain(
+        "secret prompt",
+      );
+      expect(provider.attributes["ai.response.text"]).toBe('{"answer": 42}');
+    } else {
+      expect(provider.attributes["ai.prompt.messages"]).toBeUndefined();
+      expect(provider.attributes["ai.response.text"]).toBeUndefined();
+      const wrapper = requireSpan(spans, "ai.generateText");
+      expect(wrapper.attributes["ai.prompt"]).toBeUndefined();
+      expect(wrapper.attributes["ai.response.text"]).toBeUndefined();
+    }
   });
 
   it("AI_TRACE_RECORD_PAYLOADS=true includes prompts, responses, reasoning, tool arguments, and tool results", async () => {
