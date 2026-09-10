@@ -1,7 +1,9 @@
+import type { ModelMessage } from "ai";
 import { z } from "zod";
 import { OffensiveSecurityAgent } from "../agents/offSecAgent";
 import { AgentEventBus } from "../eventBus";
 import type { FindingsRegistry } from "../findings/registry";
+import { getResumeMessages, normalizeMessages } from "../session";
 import type { SwarmTarget } from "../session/persistence";
 import { runDeterministicEngagementCoverage } from "./engagementCoverage";
 import {
@@ -265,49 +267,6 @@ export async function runEngagementLead(input: {
       : "Automatic endpoint-local coverage is already starting. Orient across the full surface, resolve needs-lead cells, preserve promising primitives, and run chain-and-explore toward threat-model-derived crown-jewel impact.",
   ].join("\n\n");
 
-  const agent = new OffensiveSecurityAgent<
-    z.infer<typeof EngagementLeadResult>
-  >({
-    system: ENGAGEMENT_LEAD_SYSTEM_PROMPT,
-    prompt,
-    model: workflow.model,
-    session: workflow.session,
-    target: workflow.target,
-    activeTools: [...LEAD_TOOL_NAMES],
-    directTools: [
-      ...ENGAGEMENT_TOOL_NAMES,
-      ...(surfaceTools ? ENGAGEMENT_SURFACE_TOOL_NAMES : []),
-    ],
-    extraTools: engagementTools,
-    engagementTargetIds:
-      engagementTargetIds.length > 0 ? engagementTargetIds : undefined,
-    responseSchema: EngagementLeadResult,
-    responseGuard: (result) => {
-      const completion = store.completion();
-      if (!completion.complete) return completionMessage(completion);
-      const parsed = EngagementLeadResult.safeParse(result);
-      if (!parsed.success || !parsed.data.coverageComplete) {
-        return "The response must acknowledge that deterministic engagement coverage is complete.";
-      }
-      return undefined;
-    },
-    findingsRegistry: input.findingsRegistry,
-    messages: workflow.messages,
-    authConfig: workflow.authConfig,
-    abortSignal: workflow.abortSignal,
-    eventBus,
-    onStepFinish: workflow.onStepFinish,
-    onCacheMetrics: workflow.onCacheMetrics,
-    enableThinking: workflow.enableThinking,
-    thinkingEffort: workflow.thinkingEffort,
-    openAIReasoningEffort: workflow.openAIReasoningEffort,
-    toolProtocol: workflow.toolProtocol,
-    environmentVariables: workflow.environmentVariables,
-    secretValues: workflow.secretValues,
-    sandbox: workflow.sandbox,
-    display: workflow.display,
-  });
-
   const coverage =
     workflow.session.config?.engagementCoverageMode === "grouped"
       ? engagementRuntime.startPlannedMissions()
@@ -323,15 +282,121 @@ export async function runEngagementLead(input: {
           mode: workflow.session.config?.engagementCoverageMode,
           onCheckpoint: input.onCheckpoint,
         });
+  let activeAgent:
+    | OffensiveSecurityAgent<z.infer<typeof EngagementLeadResult>>
+    | undefined;
+  let leadMessages = workflow.messages;
+  let turn = 0;
   try {
-    const [result] = await Promise.all([agent.consume(), coverage]);
-    await Promise.allSettled([...workerJobs]);
-    const checkpoint = store.checkpoint();
-    await input.onCheckpoint?.(checkpoint);
-    return { ...result, checkpoint };
+    while (!abortSignal.aborted) {
+      const handoffs = engagementRuntime.takeLeadHandoffs();
+      let turnMessages: ModelMessage[] | undefined = leadMessages;
+      if (turn > 0 || handoffs.length > 0) {
+        const directive = [
+          turn > 0
+            ? "Continue leading this engagement from the durable ledger. The prior lead turn ended before the completion gate opened."
+            : "Begin from the durable ledger and incorporate the worker handoffs below.",
+          completionMessage(store.completion()),
+          handoffs.length > 0
+            ? `New worker handoffs:\n${handoffs
+                .map(
+                  (handoff) =>
+                    `- ${handoff.senderAgentId} (${handoff.status ?? "update"}): ${handoff.payload}`,
+                )
+                .join("\n")}`
+            : "No unread handoffs; inspect the current ledger and resolve its open work.",
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+        turnMessages = getResumeMessages(
+          normalizeMessages([
+            ...(leadMessages ?? []),
+            {
+              role: "user",
+              content: [{ type: "text", text: directive }],
+            },
+          ]),
+        );
+      }
+      activeAgent = new OffensiveSecurityAgent<
+        z.infer<typeof EngagementLeadResult>
+      >({
+        system: ENGAGEMENT_LEAD_SYSTEM_PROMPT,
+        prompt,
+        model: workflow.model,
+        session: workflow.session,
+        target: workflow.target,
+        activeTools: [...LEAD_TOOL_NAMES],
+        directTools: [
+          ...ENGAGEMENT_TOOL_NAMES,
+          ...(surfaceTools ? ENGAGEMENT_SURFACE_TOOL_NAMES : []),
+        ],
+        extraTools: engagementTools,
+        engagementTargetIds:
+          engagementTargetIds.length > 0 ? engagementTargetIds : undefined,
+        responseSchema: EngagementLeadResult,
+        responseGuard: (result) => {
+          const completion = store.completion();
+          if (!completion.complete) return completionMessage(completion);
+          const parsed = EngagementLeadResult.safeParse(result);
+          if (!parsed.success || !parsed.data.coverageComplete) {
+            return "The response must acknowledge that deterministic engagement coverage is complete.";
+          }
+          return undefined;
+        },
+        findingsRegistry: input.findingsRegistry,
+        messages: turnMessages,
+        authConfig: workflow.authConfig,
+        abortSignal: workflow.abortSignal,
+        eventBus,
+        onStepFinish: (event) => {
+          if (event.response.messages) leadMessages = event.response.messages;
+          workflow.onStepFinish?.(event);
+        },
+        getPendingMessages: async () =>
+          engagementRuntime.takeLeadHandoffs().map((handoff) => ({
+            role: "user" as const,
+            content: [
+              {
+                type: "text" as const,
+                text: `Worker handoff from ${handoff.senderAgentId} (${handoff.status ?? "update"}): ${handoff.payload}`,
+              },
+            ],
+          })),
+        onCacheMetrics: workflow.onCacheMetrics,
+        enableThinking: workflow.enableThinking,
+        thinkingEffort: workflow.thinkingEffort,
+        openAIReasoningEffort: workflow.openAIReasoningEffort,
+        toolProtocol: workflow.toolProtocol,
+        environmentVariables: workflow.environmentVariables,
+        secretValues: workflow.secretValues,
+        sandbox: workflow.sandbox,
+        display: workflow.display,
+      });
+      const candidate = await activeAgent.consume();
+      const result = EngagementLeadResult.safeParse(candidate);
+      if (store.completion().complete && result.success) {
+        await coverage;
+        await Promise.allSettled([...workerJobs]);
+        const checkpoint = store.checkpoint();
+        await input.onCheckpoint?.(checkpoint);
+        return { ...result.data, checkpoint };
+      }
+      turn += 1;
+      if (engagementRuntime.hasActiveWorkers()) {
+        await engagementRuntime.waitForWorkerActivity();
+      } else {
+        await coverage;
+      }
+    }
+    throw abortSignal.reason ?? new Error("Engagement lead aborted");
   } catch (error) {
     internalAbort.abort();
-    await Promise.allSettled([agent.abortAndDrain(), coverage, ...workerJobs]);
+    await Promise.allSettled([
+      activeAgent?.abortAndDrain(),
+      coverage,
+      ...workerJobs,
+    ]);
     throw error;
   }
 }

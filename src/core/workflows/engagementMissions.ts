@@ -37,35 +37,37 @@ export interface EngagementMissionState {
   missions: EngagementMission[];
 }
 
-export const GroupedMissionResult = z.object({
-  summary: z.string().min(1).max(20_000),
-  obligationResults: z
+export const GroupedMissionCoverageResult = z.object({
+  targetId: z.string().min(1),
+  objectiveId: z.string().min(1),
+  status: z.enum(["impact-proven", "exhausted", "blocked"]),
+  summary: z.string().min(1).max(10_000),
+  evidence: z
     .array(
       z.object({
-        targetId: z.string().min(1),
-        objectiveId: z.string().min(1),
-        status: z.enum(["impact-proven", "exhausted", "blocked"]),
-        summary: z.string().min(1).max(10_000),
-        evidence: z
-          .array(
-            z.object({
-              description: z.string().min(1),
-              toolCallId: z.string().min(1),
-              toolName: z.string().min(1),
-            }),
-          )
-          .max(20)
-          .default([]),
+        description: z.string().min(1),
+        toolCallId: z.string().min(1),
+        toolName: z.string().min(1),
       }),
     )
-    .max(100),
+    .max(20)
+    .default([]),
+});
+
+export const GroupedMissionCoverageBatch = z.object({
+  obligationResults: z.array(GroupedMissionCoverageResult).min(1).max(25),
+  toolCallDescription: z.string(),
+});
+
+export const GroupedMissionResult = z.object({
+  summary: z.string().min(1).max(20_000),
 });
 
 export type GroupedMissionOutcome = z.infer<typeof GroupedMissionResult>;
 
 export const GROUPED_MISSION_SYSTEM_PROMPT = `You are a focused penetration-test mission worker inside one authorized engagement. Test the related endpoint flow as a system, preserving cookies, authentication state, and causal context across the mission.
 
-You own only the explicit coverage obligations in the mission contract. Supporting targets are context and may be exercised, but do not create coverage credit. For every obligation, return exactly one result: impact-proven only with trace-linked successful evidence, exhausted only after meaningful bounded testing, or blocked with the concrete prerequisite that prevented testing. Never mark an obligation tested merely because a related endpoint was tested.
+You own only the explicit coverage obligations in the mission contract. Supporting targets are context and may be exercised, but do not create coverage credit. Record every obligation through report_engagement_coverage in batches as testing progresses: impact-proven only with trace-linked successful evidence, exhausted only after meaningful bounded testing, or blocked with the concrete prerequisite that prevented testing. Never mark an obligation tested merely because a related endpoint was tested. The final response is only a concise mission summary and is rejected while any assigned obligation remains unreported.
 
 Discover and validate net-new vulnerabilities and multi-step paths while executing the assigned flow. Document only reproducible exploitable findings through the shared finding judge. All network and finding tools enforce the engagement's authorized scope.`;
 
