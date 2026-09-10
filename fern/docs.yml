@@ -28,7 +28,7 @@ metadata:
   og:dynamic:show-description: true
   # Off: on basepath instances Fern renders the URL as .../apex/apex/<page>.
   og:dynamic:show-url: false
-  og:dynamic:show-gradient: true
+  og:dynamic:show-gradient: false
   twitter:title: "Pensar Apex Documentation"
   twitter:description: "AI-powered penetration testing CLI."
   twitter:handle: "@ai_pensar"
