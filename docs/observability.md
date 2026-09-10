@@ -80,9 +80,9 @@ emits. What each path carries on failure:
 | Streaming (`streamText`)                                            | A thrown provider error marks both spans; an in-stream error part is marked on the root `ai.streamText` span (the `doStream` span can complete unerrored) | Same attribute limits as the helper path                                                                        |
 | Shutdown                                                            | Open spans gain `pensar.telemetry.interrupted=true` and `error.type=ApexProcessInterrupted` unless an error type is already set                           | An interruption marker is not evidence that the run was cancelled                                               |
 
-A rejected request never generated: token attributes stay absent rather than
-zero, and a generic error stays generic — nothing invents a schema or
-transport diagnosis. Payload capture remains opt-in
+When a failed call has no recorded usage, token attributes remain absent.
+Missing usage does not establish zero consumption. Generic errors do not
+establish a schema or transport diagnosis. Payload capture remains opt-in
 (`AI_TRACE_RECORD_PAYLOADS`).
 
 ## Shutdown behavior
