@@ -80,9 +80,9 @@ emits. What each path carries on failure:
 | Streaming (`streamText`)                                            | Same pair for a thrown provider error, with the same bounded attributes on the `doStream` span; an in-stream error part is marked on the root `ai.streamText` span (the `doStream` span can complete unerrored)                                             | In-stream error parts do not gain span attributes — only the root span's exception event             |
 | Shutdown                                                            | Open spans gain `pensar.telemetry.interrupted=true` and `error.type=ApexProcessInterrupted` unless an error type is already set                                                                                                                             | An interruption marker is not evidence that the run was cancelled                                    |
 
-A rejected request never generated: token attributes stay absent rather than
-zero, and a generic error stays generic — a plain `Error` records only its type
-name, and an opaque non-Error failure records no attributes at all. Type names
+When a failed call has no recorded usage, token attributes remain absent.
+Missing usage does not establish zero consumption. A plain `Error` records
+only its type name, and an opaque non-Error failure records no attributes. Type names
 are kept only when identifier-like (1–64 characters of letters, digits, `.`,
 `_`, `-`); numeric statuses only when the error carries an integer in the
 100–599 range. Nothing invents a schema or transport diagnosis, and decoration
