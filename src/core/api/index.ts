@@ -121,3 +121,16 @@ export type {
   ThreatModelWorkflowResult,
 } from "./threatModel";
 export { runThreatModelWorkflow } from "./threatModel";
+export type {
+  VulnerabilityReportAnswerKey,
+  VulnerabilityReproductionAgentInput,
+  VulnerabilityReproductionHandle,
+  VulnerabilityReproductionResult,
+} from "./vulnerabilityReproduction";
+export {
+  runVulnerabilityReproductionAgent,
+  startVulnerabilityReproductionAgent,
+  VulnerabilityReproductionResultSchema,
+  VulnerabilityReproductionStepSchema,
+  VulnerabilityReproductionVerdictSchema,
+} from "./vulnerabilityReproduction";
