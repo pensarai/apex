@@ -194,9 +194,12 @@ function lookupOutputBudgetByPattern(modelId: string): number {
     return 131_072;
   }
 
-  // DeepSeek (V3.1, R1, chat). Bedrock documents an 8K output window for
-  // DeepSeek V3.1; the rest of the family is no larger, so this is a safe floor
-  // that keeps new `deepseek.*` ids off the 4,096 catch-all.
+  // V4.1 Flash's larger output window must precede the legacy DeepSeek fallback.
+  if (modelId.includes("deepseek-v4.1-flash")) {
+    return 384_000;
+  }
+
+  // Keep the conservative 8K floor used by Bedrock's legacy DeepSeek models.
   if (modelId.includes("deepseek")) {
     return 8_192;
   }
