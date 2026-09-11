@@ -69,6 +69,22 @@ Structured JSON logs carry `trace_id`/`span_id` when written inside a span,
 and `trace.jsonl` records carry a `correlation` object — connecting OTel
 traces, logs, and W&B uploads.
 
+## Failure diagnostics
+
+Model-call failures are recorded passively on the spans the AI SDK already
+emits. What each path carries on failure:
+
+| Path                                                                | Recorded on failure                                                                                                                                       | Known limits                                                                                                    |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Helper `generateText` (structured generate, summarize, tool repair) | `ai.generateText` and `ai.generateText.doGenerate` both end with error status and an `exception` event (`exception.type`, message, stack)                 | No `error.type` span attribute; a numeric HTTP status known to the thrown error is not projected onto the spans |
+| Streaming (`streamText`)                                            | A thrown provider error marks both spans; an in-stream error part is marked on the root `ai.streamText` span (the `doStream` span can complete unerrored) | Same attribute limits as the helper path                                                                        |
+| Shutdown                                                            | Open spans gain `pensar.telemetry.interrupted=true` and `error.type=ApexProcessInterrupted` unless an error type is already set                           | An interruption marker is not evidence that the run was cancelled                                               |
+
+When a failed call has no recorded usage, token attributes remain absent.
+Missing usage does not establish zero consumption. Generic errors do not
+establish a schema or transport diagnosis. Payload capture remains opt-in
+(`AI_TRACE_RECORD_PAYLOADS`).
+
 ## Shutdown behavior
 
 Standalone processes flush before exit on every path — normal completion,
