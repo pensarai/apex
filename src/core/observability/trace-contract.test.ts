@@ -6,14 +6,16 @@
 // keys are needed and spans are reproducible.
 
 import { APICallError, type LanguageModelV3StreamPart } from "@ai-sdk/provider";
-import { SpanStatusCode } from "@opentelemetry/api";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 import { simulateReadableStream, stepCountIs } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 // getProviderModel is patched so the mock model serves the provider call —
-// no provider keys, deterministic protocol parts.
+// no provider keys, deterministic protocol parts. Production wraps the
+// resolved model with the passive diagnostics wrapper at its call sites, so
+// the mock returns the bare model.
 const mockState: { model: MockLanguageModelV3 | null } = { model: null };
 vi.mock("../ai/utils", async () => {
   const actual =
@@ -34,6 +36,7 @@ const { generateObjectResponse, streamResponse } = await import("../ai");
 const {
   createGenerationSpanTracker,
   getApexTracer,
+  withModelCallDiagnostics,
   withSubagentSessionBaggage,
 } = await import("../observability");
 const { parentOf, requireSpan, spansNamed, startOtelTestHarness } =
@@ -314,6 +317,11 @@ describe("existing trace contract: model spans", () => {
         name,
       ).toBe(true);
     }
+    // The wrapper decorates the provider span with the genuinely known type
+    // name; a plain Error carries no numeric status, so none is invented.
+    const doStream = requireSpan(spans, "ai.streamText.doStream");
+    expect(doStream.attributes["error.type"]).toBe("Error");
+    expect(doStream.attributes["http.response.status_code"]).toBeUndefined();
   });
 
   it("an in-stream error part exports a complete tree with error status", async () => {
@@ -525,10 +533,195 @@ describe("existing trace contract: helper generateText path", () => {
     // A rejected request never generated: usage stays absent, not zero.
     expect(provider.attributes["gen_ai.usage.input_tokens"]).toBeUndefined();
     expect(provider.attributes["ai.usage.inputTokens"]).toBeUndefined();
-    // Known failure facts are not yet projected onto span attributes; filling
-    // that emitter gap is the follow-up passive-diagnostics change.
+    // Known failure facts reach the provider span as bounded attributes:
+    // the recognized error type and the numeric status the error carries.
+    expect(provider.attributes["error.type"]).toBe("AI_APICallError");
+    expect(provider.attributes["http.response.status_code"]).toBe(400);
+    // Only those bounded facts — no message or body text is copied.
+    expect(provider.attributes["error.message"]).toBeUndefined();
+    // Decoration lands on the provider span, not the enclosing wrapper; the
+    // wrapper still carries the SDK's exception event.
+    const wrapper = requireSpan(spans, "ai.generateText");
+    expect(wrapper.attributes["error.type"]).toBeUndefined();
+    expect(wrapper.attributes["http.response.status_code"]).toBeUndefined();
+  });
+
+  it.each([
+    99,
+    600,
+    400.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+  ])("invalid HTTP status %s is not recorded", async (statusCode) => {
+    const rejection = new APICallError({
+      message: "Request rejected",
+      url: "https://api.example.com/v1/responses",
+      requestBodyValues: {},
+      statusCode,
+      isRetryable: false,
+    });
+    mockState.model = new MockLanguageModelV3({
+      provider: "mock-anthropic",
+      modelId: MODEL,
+      doGenerate: async () => {
+        throw rejection;
+      },
+    });
+
+    await expect(
+      generateObjectResponse({
+        model: MODEL,
+        schema: z.object({ answer: z.number() }),
+        prompt: "hi",
+      }),
+    ).rejects.toBe(rejection);
+
+    const provider = requireSpan(
+      otel.getFinishedSpans(),
+      "ai.generateText.doGenerate",
+    );
+    expect(provider.attributes["error.type"]).toBe("AI_APICallError");
+    expect(provider.attributes["http.response.status_code"]).toBeUndefined();
+  });
+
+  it.each([
+    "",
+    "Error private-sentinel",
+    "Error\nprivate-sentinel",
+    "E".repeat(65),
+  ])("does not project invalid error name %j", async (name) => {
+    const rejection = new Error("synthetic provider failure");
+    rejection.name = name;
+    mockState.model = new MockLanguageModelV3({
+      provider: "mock-anthropic",
+      modelId: MODEL,
+      doGenerate: async () => {
+        throw rejection;
+      },
+    });
+
+    await expect(
+      generateObjectResponse({
+        model: MODEL,
+        schema: z.object({ answer: z.number() }),
+        prompt: "hi",
+      }),
+    ).rejects.toBe(rejection);
+
+    const provider = requireSpan(
+      otel.getFinishedSpans(),
+      "ai.generateText.doGenerate",
+    );
+    expect(provider.status.code).toBe(SpanStatusCode.ERROR);
     expect(provider.attributes["error.type"]).toBeUndefined();
     expect(provider.attributes["http.response.status_code"]).toBeUndefined();
+  });
+
+  it("a throwing telemetry hook never replaces the original provider error", async () => {
+    // Decoration is best-effort: if the telemetry backend explodes while the
+    // failure is being recorded, the provider's own error must still surface.
+    const hostileSpan = {
+      isRecording: () => true,
+      setAttribute: () => {
+        throw new Error("telemetry backend exploded");
+      },
+    };
+    const originalActiveSpan = trace.getActiveSpan;
+    trace.getActiveSpan = () => hostileSpan as never;
+    const rejection = new APICallError({
+      message: "Request rejected: invalid request",
+      url: "https://api.example.com/v1/responses",
+      requestBodyValues: {},
+      statusCode: 400,
+      isRetryable: false,
+    });
+    let calls = 0;
+    mockState.model = new MockLanguageModelV3({
+      provider: "mock-anthropic",
+      modelId: MODEL,
+      doGenerate: async () => {
+        calls += 1;
+        throw rejection;
+      },
+    });
+    try {
+      const thrown = await generateObjectResponse({
+        model: MODEL,
+        schema: z.object({ answer: z.number() }),
+        prompt: "hi",
+      }).catch((error: unknown) => error);
+      expect(thrown).toBe(rejection);
+      expect(calls).toBe(1);
+    } finally {
+      trace.getActiveSpan = originalActiveSpan;
+    }
+  });
+
+  it("a non-Error provider failure stays unattributed — unknown remains unknown", async () => {
+    let calls = 0;
+    mockState.model = new MockLanguageModelV3({
+      provider: "mock-anthropic",
+      modelId: MODEL,
+      doGenerate: async () => {
+        calls += 1;
+        throw "opaque provider failure";
+      },
+    });
+
+    const thrown = await generateObjectResponse({
+      model: MODEL,
+      schema: z.object({ answer: z.number() }),
+      prompt: "hi",
+    }).catch((error: unknown) => error);
+
+    expect(thrown).toBe("opaque provider failure");
+    expect(calls).toBe(1);
+    const provider = requireSpan(
+      otel.getFinishedSpans(),
+      "ai.generateText.doGenerate",
+    );
+    // The SDK still records the failure itself; the wrapper adds nothing it
+    // cannot genuinely know.
+    expect(provider.status.code).toBe(SpanStatusCode.ERROR);
+    expect(provider.attributes["error.type"]).toBeUndefined();
+    expect(provider.attributes["http.response.status_code"]).toBeUndefined();
+  });
+
+  it("the diagnostic wrapper is inert outside an active span", async () => {
+    // No startActiveSpan here: there is no active span, so decoration is a
+    // no-op and the pass-through behavior is all that remains.
+    const rejection = new Error("no active span");
+    let calls = 0;
+    const inner = new MockLanguageModelV3({
+      provider: "mock-anthropic",
+      modelId: MODEL,
+      doGenerate: async () => {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            content: [{ type: "text", text: '{"answer": 42}' }],
+            finishReason: { unified: "stop", raw: "stop" },
+            usage: {
+              inputTokens: {
+                total: 10,
+                noCache: 10,
+                cacheRead: 0,
+                cacheWrite: 0,
+              },
+              outputTokens: { total: 5, text: 5, reasoning: undefined },
+            },
+            warnings: [],
+          };
+        }
+        throw rejection;
+      },
+    });
+    const wrapped = withModelCallDiagnostics(inner);
+
+    const result = await wrapped.doGenerate({} as never);
+    expect(result.content).toEqual([{ type: "text", text: '{"answer": 42}' }]);
+    await expect(wrapped.doGenerate({} as never)).rejects.toBe(rejection);
+    expect(calls).toBe(2);
   });
 });
 
