@@ -22,7 +22,7 @@ const PREFERRED_MODEL_BY_PROVIDER: Record<string, string> = {
   openai: "gpt-5.6-sol",
   google: "gemini-3.1-pro-preview",
   openrouter: "anthropic/claude-opus-4.6",
-  concentrate: "concentrate:claude-opus-4-6",
+  concentrate: "concentrate:glm-5.3",
   bedrock: "anthropic.claude-opus-4-6-v1",
 };
 

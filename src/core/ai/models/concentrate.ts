@@ -106,6 +106,12 @@ export const CONCENTRATE_MODELS: ModelInfo[] = [
     contextLength: 204800,
   },
   {
+    id: "concentrate:glm-5.3",
+    name: "GLM-5.3",
+    provider: "concentrate",
+    contextLength: 1048576,
+  },
+  {
     id: "concentrate:glm-5",
     name: "GLM-5",
     provider: "concentrate",
