@@ -29,13 +29,14 @@ import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
 import { listTasks } from "../../tasks";
 import { scopedLogger } from "../../util/lazyLogger";
+import { createEngagementSurfaceTools } from "../../workflows/engagementSurface";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import {
   buildCodeModeInstructions,
   CanonicalCapabilityInvoker,
-  CODE_MODE_DIRECT_TOOL_NAMES,
   CodeModeRuntime,
   createCodeModeTools,
+  resolveCodeModeToolPresentation,
 } from "./codeMode";
 import {
   createInterruptedStepFinalizer,
@@ -538,6 +539,8 @@ export class OffensiveSecurityAgent<TResult = void> {
       abortSignal: input.abortSignal,
       model: input.model,
       authConfig: input.authConfig,
+      toolProtocol: input.toolProtocol,
+      engagementContext: input.engagementContext,
       eventBus: this.eventBus,
       onStepFinish: input.forwardUsageCallbacksToSpawnedAgents
         ? input.onStepFinish
@@ -576,9 +579,11 @@ export class OffensiveSecurityAgent<TResult = void> {
       display: input.display,
     });
 
-    let tools: ToolSet = input.extraTools
-      ? { ...builtinTools, ...input.extraTools }
-      : { ...builtinTools };
+    const contextTools = input.engagementContext
+      ? createEngagementSurfaceTools(input.engagementContext, false)
+      : {};
+    const extraTools = { ...input.extraTools, ...contextTools };
+    let tools: ToolSet = { ...builtinTools, ...extraTools };
 
     // -- Approval gate wrapping -----------------------------------------------
     if (input.approvalGate) {
@@ -677,7 +682,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     for (const contractName of [
       RESPONSE_TOOL_NAME,
       "checkpoint_state",
-      ...Object.keys(input.extraTools ?? {}),
+      ...Object.keys(extraTools),
     ]) {
       if (tools[contractName] && !activeTools.includes(contractName)) {
         activeTools.push(contractName);
@@ -731,17 +736,16 @@ export class OffensiveSecurityAgent<TResult = void> {
       const canonicalActiveTools = activeTools.filter(
         (name) => canonicalTools[name] !== undefined,
       );
-      const directToolNames = new Set<string>([
-        ...CODE_MODE_DIRECT_TOOL_NAMES,
-        ...(input.directTools ?? []),
-        ...Object.keys(input.extraTools ?? {}),
-      ]);
-      const presentedDirectTools = canonicalActiveTools.filter((name) =>
-        directToolNames.has(name),
-      );
-      const allowedTools = canonicalActiveTools.filter(
-        (name) => !directToolNames.has(name),
-      );
+      const { direct: presentedDirectTools, nested: allowedTools } =
+        resolveCodeModeToolPresentation({
+          activeTools: canonicalActiveTools,
+          extraTools: Object.keys(extraTools),
+          directTools: input.directTools,
+          nestedTools: [
+            ...(input.nestedTools ?? []),
+            ...Object.keys(contextTools),
+          ],
+        });
       const invoker = new CanonicalCapabilityInvoker({
         tools: canonicalTools,
         allowedTools,

@@ -26,6 +26,7 @@ import {
 import {
   createEngagementSurfaceTools,
   ENGAGEMENT_SURFACE_TOOL_NAMES,
+  EngagementContext,
   type EngagementSurfaceProvider,
 } from "./engagementSurface";
 import {
@@ -163,12 +164,23 @@ export async function runEngagementLead(input: {
     store.saveMissions({ planningStatus: "pending", missions: [] });
   }
   store.saveModels({ lead: leadModel, worker: workerModel });
-  const surfaceTools = input.surfaceProvider
-    ? createEngagementSurfaceTools(input.surfaceProvider)
+  const engagementTargetIds = store
+    .snapshot()
+    .targets.map((target) => target.id);
+  const engagementContext = input.surfaceProvider
+    ? new EngagementContext({
+        provider: input.surfaceProvider,
+        targetIds: engagementTargetIds,
+        secretValues: workflow.secretValues,
+        onRead: async ({ targetId, ...receipt }) => {
+          store.recordContextRead(targetId, receipt);
+          await input.onCheckpoint?.(store.checkpoint());
+        },
+      })
     : undefined;
-  const engagementTargetIds = input.targets
-    .map((target) => target.id)
-    .filter((id): id is string => Boolean(id));
+  const surfaceTools = engagementContext
+    ? createEngagementSurfaceTools(engagementContext)
+    : undefined;
   const workerPool = new EngagementWorkerPool(
     input.concurrency ?? DEFAULT_ENGAGEMENT_WORKER_CONCURRENCY,
   );
@@ -184,6 +196,7 @@ export async function runEngagementLead(input: {
     leadAgentId,
     surfaceTools,
     engagementTargetIds,
+    engagementContext,
     workerPool,
     onWorkerJob: (job) => {
       workerJobs.add(job);
@@ -217,11 +230,12 @@ export async function runEngagementLead(input: {
         ...(surfaceTools ? ENGAGEMENT_SURFACE_TOOL_NAMES : []),
         "response",
       ],
-      directTools: [
+      nestedTools: [
         ...ENGAGEMENT_PLANNING_TOOL_NAMES,
         ...(surfaceTools ? ENGAGEMENT_SURFACE_TOOL_NAMES : []),
       ],
       extraTools: { ...surfaceTools, ...planningTools },
+      engagementContext,
       responseSchema: EngagementPlanResult,
       responseGuard: (result) => {
         if (store.snapshot().missions?.planningStatus !== "complete") {
@@ -277,7 +291,7 @@ export async function runEngagementLead(input: {
           findingsRegistry: input.findingsRegistry,
           eventBus,
           leadAgentId,
-          surfaceTools,
+          engagementContext,
           engagementTargetIds,
           mode: workflow.session.config?.engagementCoverageMode,
           onCheckpoint: input.onCheckpoint,
@@ -327,11 +341,12 @@ export async function runEngagementLead(input: {
         session: workflow.session,
         target: workflow.target,
         activeTools: [...LEAD_TOOL_NAMES],
-        directTools: [
+        nestedTools: [
           ...ENGAGEMENT_TOOL_NAMES,
           ...(surfaceTools ? ENGAGEMENT_SURFACE_TOOL_NAMES : []),
         ],
         extraTools: engagementTools,
+        engagementContext,
         engagementTargetIds:
           engagementTargetIds.length > 0 ? engagementTargetIds : undefined,
         responseSchema: EngagementLeadResult,

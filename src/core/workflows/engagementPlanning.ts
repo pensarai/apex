@@ -12,8 +12,8 @@ export const ENGAGEMENT_PLANNING_TOOL_NAMES = [
 
 export const ENGAGEMENT_PLANNING_PROMPT = `Plan coherent testing missions for this authorized engagement before testing begins.
 Page through the entire read_engagement_manifest, search the attack surface, and read detailed threat models where useful. Group related endpoints by authentication, shared resources, and causal flow. Application code does not choose groups.
-Define missions with exact target/objective obligations, rationale, context target references, supporting targets, and prerequisite mission IDs. Read each definition's returned ID before referencing it. Supporting/context targets do not earn coverage credit.
-Every obligation must be assigned exactly once. Every singleton mission needs a justification. For eight or more targets, at most 25% of targets may have singleton missions and the plan must average at least two primary targets per mission. Keep missions bounded to 100 obligations. Edit or delete definitions to repair validation errors; never force unrelated endpoints together just to pass a gate. If a valid coherent plan is impossible, report the limitation.
+Define missions with canonical requirements, rationale, context target references, supporting targets, and prerequisite mission IDs. A requirement may consolidate source endpoint/objective associations only when the threat model, trust boundary, authentication state, expected behavior, and evidence needed to assess them are materially equivalent. Preserve all source associations in the requirement coverage and explain why consolidation is sound. Keep meaningful distinctions separate. Read each definition's returned ID before referencing it. Supporting/context targets do not earn coverage credit.
+Every source association must be assigned to exactly one canonical requirement. Every singleton mission needs a justification. For eight or more targets, at most 25% of targets may have singleton missions and the plan must average at least two primary targets per mission. Keep missions bounded to 100 source associations and 25 canonical requirements. Edit or delete definitions to repair validation errors; never force unrelated endpoints together just to pass a gate. If a valid coherent plan is impossible, report the limitation.
 Definitions do not launch workers. Call complete_engagement_mission_plan to validate and seal the plan, then response. No testing tools are available during planning.`;
 
 export function createEngagementPlanningTools(
@@ -69,14 +69,39 @@ export function createEngagementPlanningTools(
               objectiveId: z.string().min(1),
             }),
           )
-          .min(1)
-          .max(100),
+          .max(100)
+          .default([]),
+        requirements: z
+          .array(
+            z.object({
+              id: z.string().min(1).max(120),
+              description: z.string().min(1).max(4_000),
+              rationale: z.string().min(1).max(4_000),
+              coverage: z
+                .array(
+                  z.object({
+                    targetId: z.string().min(1),
+                    objectiveId: z.string().min(1),
+                  }),
+                )
+                .min(1)
+                .max(100),
+            }),
+          )
+          .max(25)
+          .default([]),
         supportingTargetIds: z.array(z.string()).max(100).default([]),
         contextTargetIds: z.array(z.string()).max(100).default([]),
         prerequisiteMissionIds: z.array(z.string()).max(100).default([]),
         toolCallDescription: z.string(),
       }),
-      execute: async ({ missionId, toolCallDescription: _, ...definition }) => {
+      execute: async ({
+        missionId,
+        toolCallDescription: _,
+        coverage = [],
+        requirements = [],
+        ...definition
+      }) => {
         const existing = missionId
           ? store
               .snapshot()
@@ -86,8 +111,22 @@ export function createEngagementPlanningTools(
           throw new Error(`Unknown mission: ${missionId}`);
         const workerId = existing?.workerId ?? (newSessionId() as string);
         const id = missionId ?? `mission_${workerId}`;
+        if (coverage.length > 0 && requirements.length > 0) {
+          throw new Error(
+            "Define canonical requirements instead of also supplying legacy coverage",
+          );
+        }
+        const sourceCoverage =
+          requirements.length > 0
+            ? requirements.flatMap((requirement) => requirement.coverage)
+            : coverage;
+        if (sourceCoverage.length === 0) {
+          throw new Error("A mission requires source coverage");
+        }
         store.defineMission({
           ...definition,
+          coverage: sourceCoverage,
+          requirements: requirements.length > 0 ? requirements : undefined,
           id,
           workerId,
           status: "planned",

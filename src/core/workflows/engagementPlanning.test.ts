@@ -118,4 +118,81 @@ describe("engagement mission planning", () => {
     ).toBe(true);
     expect(store.snapshot().workers).toEqual([]);
   });
+
+  it("consolidates reviewed source associations into canonical requirements", async () => {
+    const { state, store, tools } = setup(2);
+    await execute(tools.read_engagement_manifest, {
+      offset: 0,
+      limit: 25,
+      toolCallDescription: "read all targets",
+    });
+    for (const target of state.targets) {
+      store.recordContextRead(target.id, {
+        status: "read",
+        version: `version-${target.id}`,
+        complete: true,
+        hasProductContext: true,
+      });
+    }
+    await execute(tools.define_engagement_mission, {
+      purpose: "Review the shared resource authorization boundary",
+      rationale: "Both routes enforce the same documented ownership policy",
+      requirements: [
+        {
+          id: "resource-owner-boundary",
+          description: "Resource reads preserve the documented owner boundary",
+          rationale:
+            "The targets share authentication, resource ownership, and expected behavior",
+          coverage: state.coverage,
+        },
+      ],
+      supportingTargetIds: [],
+      contextTargetIds: [],
+      prerequisiteMissionIds: [],
+      toolCallDescription: "define consolidated mission",
+    });
+    await execute(tools.complete_engagement_mission_plan, {
+      toolCallDescription: "seal plan",
+    });
+
+    const mission = store.snapshot().missions?.missions[0];
+    expect(mission?.coverage).toEqual(state.coverage);
+    expect(mission?.requirements).toEqual([
+      expect.objectContaining({
+        id: "resource-owner-boundary",
+        coverage: state.coverage,
+      }),
+    ]);
+  });
+
+  it("requires complete target context before consolidating associations", async () => {
+    const { state, tools } = setup(2);
+    await execute(tools.read_engagement_manifest, {
+      offset: 0,
+      limit: 25,
+      toolCallDescription: "read all targets",
+    });
+    await execute(tools.define_engagement_mission, {
+      purpose: "Review authorization",
+      rationale: "Potentially shared behavior",
+      requirements: [
+        {
+          id: "authorization",
+          description: "Authorization boundary",
+          rationale: "Potential equivalent behavior",
+          coverage: state.coverage,
+        },
+      ],
+      supportingTargetIds: [],
+      contextTargetIds: [],
+      prerequisiteMissionIds: [],
+      toolCallDescription: "define consolidated mission",
+    });
+
+    await expect(
+      execute(tools.complete_engagement_mission_plan, {
+        toolCallDescription: "seal plan",
+      }),
+    ).rejects.toThrow("Read complete target context");
+  });
 });

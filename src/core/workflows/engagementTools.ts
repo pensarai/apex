@@ -11,9 +11,11 @@ import {
   applyEngagementModel,
   type EngagementMission,
   type EngagementMissionCoverage,
+  type EngagementMissionRequirement,
   type EngagementModelConfig,
   GROUPED_MISSION_SYSTEM_PROMPT,
   GroupedMissionCoverageBatch,
+  GroupedMissionRequirementBatch,
   GroupedMissionResult,
 } from "./engagementMissions";
 import {
@@ -22,6 +24,7 @@ import {
   type EngagementStore,
   type EngagementWorkerMode,
 } from "./engagementState";
+import type { EngagementContext } from "./engagementSurface";
 import { EngagementWorkerPool } from "./engagementWorkerPool";
 import { runFastStrikeObjective } from "./fastStrike";
 import { FastStrikeEvidenceLedger } from "./fastStrikeEvidence";
@@ -72,6 +75,7 @@ interface EngagementToolRuntime {
   leadAgentId: string;
   surfaceTools?: ToolSet;
   engagementTargetIds?: string[];
+  engagementContext?: EngagementContext;
   workerPool?: EngagementWorkerPool;
   onWorkerJob?: (job: Promise<unknown>) => void;
   onCheckpoint?: (checkpoint: EngagementCheckpoint) => void | Promise<void>;
@@ -245,6 +249,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     leadAgentId,
     surfaceTools,
     engagementTargetIds = [],
+    engagementContext,
     workerPool = new EngagementWorkerPool(4),
     onWorkerJob,
     onCheckpoint,
@@ -285,6 +290,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     capabilityIds: string[];
     missionId?: string;
     coverage?: EngagementMissionCoverage[];
+    requirements?: EngagementMissionRequirement[];
     messages?: ModelMessage[];
     followUp?: boolean;
   }) => {
@@ -370,6 +376,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
       );
       const childBus = new AgentEventBus();
       AgentEventBus.attachChild(childBus, eventBus, options.workerId);
+      const workerContext = engagementContext?.scope(options.targetIds);
       eventBus.emit("subagent-spawn", {
         subagentId: options.workerId,
         sessionId: options.workerId,
@@ -377,6 +384,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           ? `Follow-up: ${options.mission.slice(0, 70)}`
           : options.mission.slice(0, 80),
         input: {
+          missionId: options.missionId,
           mission: options.mission,
           mode: options.mode,
           serviceIds: options.serviceIds,
@@ -413,9 +421,8 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           sandbox: input.sandbox,
           secretValues: input.secretValues,
           display: input.display,
-          extraTools: surfaceTools,
-          directTools: surfaceTools ? Object.keys(surfaceTools) : undefined,
           engagementTargetIds,
+          engagementContext: workerContext,
         });
         summary = outcome.summary;
         result = {
@@ -437,6 +444,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         });
       } else if (options.mode === "grouped") {
         const assigned = options.coverage ?? [];
+        const requirements = options.requirements ?? [];
         const evidenceLedger = new FastStrikeEvidenceLedger(childBus);
         try {
           const expected = new Set(
@@ -502,12 +510,81 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
               });
             },
           });
+          const requirementsById = new Map(
+            requirements.map((requirement) => [requirement.id, requirement]),
+          );
+          const reportMissionProgress = tool({
+            description:
+              "Durably record completed canonical mission requirements. Each result settles all reviewed source associations represented by that requirement.",
+            inputSchema: GroupedMissionRequirementBatch,
+            execute: async ({ requirementResults }) => {
+              const returned = requirementResults.map(
+                (result) => result.requirementId,
+              );
+              if (
+                new Set(returned).size !== returned.length ||
+                returned.some((id) => !requirementsById.has(id))
+              ) {
+                throw new Error(
+                  "Mission progress must contain unique requirements from this mission contract",
+                );
+              }
+              for (const result of requirementResults) {
+                const requirement = requirementsById.get(result.requirementId);
+                if (!requirement)
+                  throw new Error("Unknown mission requirement");
+                if (result.status === "impact-proven") {
+                  const rejection = evidenceLedger.validateImpactEvidence(
+                    result.evidence,
+                    new Set([options.workerId]),
+                  );
+                  if (rejection) throw new Error(rejection);
+                }
+                store.settleMissionRequirement({
+                  workerId: options.workerId,
+                  coverage: requirement.coverage,
+                  status: result.status,
+                  summary: result.summary,
+                  evidence: result.evidence.map(
+                    (reference) =>
+                      `${reference.toolName}:${reference.toolCallId}`,
+                  ),
+                });
+              }
+              const snapshot = store.snapshot();
+              const remainingRequirementIds = requirements
+                .filter((requirement) =>
+                  requirement.coverage.some(({ targetId, objectiveId }) =>
+                    snapshot.coverage.some(
+                      (cell) =>
+                        cell.targetId === targetId &&
+                        cell.objectiveId === objectiveId &&
+                        cell.status === "running",
+                    ),
+                  ),
+                )
+                .map((requirement) => requirement.id);
+              return withCheckpoint({
+                success: true,
+                recorded: requirementResults.length,
+                remainingRequirementIds,
+              });
+            },
+          });
+          const reportToolName = requirements.length
+            ? "report_engagement_mission_progress"
+            : "report_engagement_coverage";
+          const reportTool = requirements.length
+            ? reportMissionProgress
+            : reportCoverage;
           const agent = new OffensiveSecurityAgent({
             system: GROUPED_MISSION_SYSTEM_PROMPT,
             prompt: [
               `Mission: ${options.mission}`,
-              "Coverage contract:",
-              JSON.stringify(assigned),
+              requirements.length
+                ? "Canonical mission requirements:"
+                : "Legacy coverage contract:",
+              JSON.stringify(requirements.length ? requirements : assigned),
               "Authorized target and threat-model context:",
               context,
             ].join("\n\n"),
@@ -515,15 +592,9 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             session: input.session,
             target,
             mode: "fast-strike",
-            activeTools: ["report_engagement_coverage"],
-            extraTools: {
-              ...surfaceTools,
-              report_engagement_coverage: reportCoverage,
-            },
-            directTools: [
-              ...(surfaceTools ? Object.keys(surfaceTools) : []),
-              "report_engagement_coverage",
-            ],
+            activeTools: [reportToolName],
+            extraTools: { [reportToolName]: reportTool },
+            directTools: [reportToolName],
             engagementTargetIds,
             responseSchema: GroupedMissionResult,
             responseGuard: (candidate) => {
@@ -563,6 +634,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             thinkingEffort: workerWorkflow.thinkingEffort,
             openAIReasoningEffort: workerWorkflow.openAIReasoningEffort,
             toolProtocol: input.toolProtocol,
+            engagementContext: workerContext,
             environmentVariables: input.environmentVariables,
             secretValues: input.secretValues,
             sandbox: input.sandbox,
@@ -601,9 +673,8 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           display: input.display,
           role: "worker",
           toolProtocol: input.toolProtocol,
-          extraTools: surfaceTools,
-          directTools: surfaceTools ? Object.keys(surfaceTools) : undefined,
           engagementTargetIds,
+          engagementContext: workerContext,
         });
         const outcome = await agent.consume();
         summary =
@@ -848,6 +919,27 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         }
       }
     }
+    const selectedCoverageIds = new Set(
+      selectedCoverage.map((cell) => `${cell.targetId}:${cell.objectiveId}`),
+    );
+    const selectedRequirements = plannedMission?.requirements?.filter(
+      (requirement) =>
+        requirement.coverage.some((cell) =>
+          selectedCoverageIds.has(`${cell.targetId}:${cell.objectiveId}`),
+        ),
+    );
+    if (
+      selectedRequirements?.some((requirement) =>
+        requirement.coverage.some(
+          (cell) =>
+            !selectedCoverageIds.has(`${cell.targetId}:${cell.objectiveId}`),
+        ),
+      )
+    ) {
+      throw new Error(
+        "A canonical mission requirement cannot be partially resumed",
+      );
+    }
     const workerId = plannedMission?.workerId ?? (newSessionId() as string);
     const existingWorker = store
       .snapshot()
@@ -906,6 +998,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           capabilityIds: selectedCapabilityIds,
           missionId,
           coverage: selectedCoverage,
+          requirements: selectedRequirements,
           messages: existingWorker
             ? loadSubagentMessages(input.session, workerId)
             : undefined,

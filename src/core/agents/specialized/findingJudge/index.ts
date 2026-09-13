@@ -36,6 +36,8 @@ export type FindingJudgeRuntimeContext = Pick<
   | "enableThinking"
   | "thinkingEffort"
   | "openAIReasoningEffort"
+  | "toolProtocol"
+  | "engagementContext"
 > & {
   model: AIModel;
   /**
@@ -77,6 +79,8 @@ export async function judgeFinding(
       enableThinking: ctx.enableThinking,
       thinkingEffort: ctx.thinkingEffort,
       openAIReasoningEffort: ctx.openAIReasoningEffort,
+      toolProtocol: ctx.toolProtocol,
+      engagementContext: ctx.engagementContext,
     });
 
     const result = await agent.consume();
@@ -84,7 +88,12 @@ export async function judgeFinding(
       throw new Error("Finding judge agent finished without a response.");
     }
 
-    return normalizeJudgeResult(result);
+    const contextReceipt = input.sourceTargetId
+      ? ctx.engagementContext
+          ?.receipts()
+          .find((receipt) => receipt.targetId === input.sourceTargetId)
+      : undefined;
+    return normalizeJudgeResult(result, contextReceipt);
   } catch (err: unknown) {
     const fallback = createJudgeFailureResult(err, ctx.model);
     log.warn("Agentic validation failed", {
@@ -98,6 +107,7 @@ export async function judgeFinding(
 
 function normalizeJudgeResult(
   result: FindingJudgeAgentOutput,
+  contextReceipt?: FindingJudgeResult["contextReceipt"],
 ): FindingJudgeResult {
   return {
     valid: result.valid,
@@ -110,6 +120,7 @@ function normalizeJudgeResult(
     reproducedPoc: result.reproducedPoc,
     webResearchUsed: result.webResearchUsed,
     limitations: result.limitations,
+    ...(contextReceipt && { contextReceipt }),
   };
 }
 

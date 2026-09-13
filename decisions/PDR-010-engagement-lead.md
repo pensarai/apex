@@ -10,20 +10,22 @@ Production pentests must both discover and validate vulnerabilities across a com
 
 Add an opt-in scan-level engagement lead that owns the complete discovered surface for the lifetime of a scan.
 
-The lead can test directly and delegate focused work after a restricted planning pass. In grouped mode, the lead model first reads the complete paged attack surface and threat-model details and creates semantic missions; application code does not infer route families. Planning tools cannot execute tests or launch workers. The host validates and seals exact coverage before its bounded scheduler admits any mission. Each mission declares its exact endpoint/objective coverage obligations, supporting targets, rationale, context references, and prerequisites. Workers have stable IDs, persisted conversations, directed `MESSAGE` and `FINAL_ANSWER` mailbox records, and an explicit follow-up operation. Independent assignments may run concurrently; stateful chains resume the same worker.
+The lead can test directly and delegate focused work after a restricted planning pass. In grouped mode, the lead model first reads the complete paged attack surface and read-only product context, including business logic and threat models, then creates semantic missions; application code does not infer route families. Planning tools cannot execute tests or launch workers. The host validates and seals coverage before its bounded scheduler admits any mission. Each mission declares canonical security requirements, the exact endpoint/objective associations each requirement represents, supporting targets, rationale, context references, and prerequisites. Consolidation is allowed only after the planner has completely read the affected target context and determined that threat boundary, authentication state, expected behavior, and evidence requirements are equivalent. Workers have stable IDs, persisted conversations, directed `MESSAGE` and `FINAL_ANSWER` mailbox records, and an explicit follow-up operation. Independent assignments may run concurrently; stateful chains resume the same worker.
+
+The lead, planner, workers, and finding judge retain code mode. Read-only target context is a host-governed nested capability scoped to the target IDs assigned to that agent. Context documents are immutable within a run, paged, redacted, versioned, and treated as untrusted data. The finding judge must read the complete scoped context before deciding whether reported behavior is a vulnerability, expected behavior, or informational; missing context remains an explicit verification limitation.
 
 Fast Strike is a bounded objective executor. It returns `impact-proven`, `exhausted`, or `blocked`, and an impact claim must cite a successful observation from its own trace scope. Production defaults to one lane; competitive lanes are explicit benchmark configuration.
 
 Engagement completion is deterministic:
 
 - every objective attached to every in-scope target is terminal;
-- grouped missions preserve related flows in one worker while exact obligation results retain deterministic endpoint coverage; legacy production modes may still select one worker per endpoint/objective cell;
+- grouped missions preserve related flows in one worker, and one canonical requirement result atomically settles all of its reviewed source associations; the source ledger remains available for audit and deterministic completion;
 - failed or omitted cells retry once as singletons, then require lead resolution;
 - service baselines derive from their terminal target coverage;
 - candidate capabilities and confirmed capabilities with supported next steps are resolved;
 - chain-and-explore reaches a terminal disposition.
 
-The coverage ledger remains external to the lead's model context. Assignment,
+The coverage ledger remains external to the lead's model context. The production progress contract is mission-centric: frontends render planning state and mission progress, while endpoint/objective associations remain backend audit and completion detail. Assignment,
 execution, tested, blocked, and untested state remain distinct, so blocked work
 never appears as tested coverage. Coordination
 tools return compact pages, mutation acknowledgements, and state versions rather
@@ -39,7 +41,7 @@ The legacy endpoint swarm remains the default until the Console feature flags en
 
 ## Rationale
 
-A single owner preserves the causal history needed to recognize attack paths across services. Direct tools keep the lead capable of judgment-heavy testing, while focused workers provide independent context windows without turning the lead into a passive manager. Deterministic coverage prevents a model from ending the scan because one objective succeeded or a summary sounds complete.
+A single owner preserves the causal history needed to recognize attack paths across services. Code mode keeps the lead capable of judgment-heavy testing while leaving lifecycle and evidence contracts first-class, and focused workers provide independent context windows without turning the lead into a passive manager. Deterministic source coverage prevents a model from ending the scan because one canonical requirement succeeded or a summary sounds complete.
 
 Separating the objective executor from the engagement owner lets benchmark improvements transfer to production without importing benchmark-specific prompts or completion semantics.
 
@@ -56,6 +58,9 @@ Separating the objective executor from the engagement owner lets benchmark impro
 - ✅ Fast Strike results have a small production contract and trace-backed impact claims.
 - ✅ Coverage and completion survive model context compaction and process resume.
 - ✅ Related endpoint checks share bounded workers instead of paying for one session per endpoint.
+- ✅ Equivalent endpoint/objective associations collapse into reviewed canonical requirements without losing source-level auditability.
+- ✅ Workers and the finding judge ground decisions in scoped, versioned product context without receiving write access to it.
+- ✅ Frontends can track bounded mission progress instead of rendering thousands of implementation-level objectives.
 - ✅ Existing pentest APIs and the legacy path remain available during rollout.
 - ⚠️ The lead has a larger context and requires careful compaction and budget monitoring.
 - ⚠️ Worker concurrency must respect target state, browser isolation, and mutation safety.

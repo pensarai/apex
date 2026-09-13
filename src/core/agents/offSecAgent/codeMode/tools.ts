@@ -53,6 +53,32 @@ function executeCode(
 }
 
 /** Build the deliberately small model-facing tool surface for code mode. */
+export function resolveCodeModeToolPresentation(input: {
+  activeTools: string[];
+  extraTools?: string[];
+  directTools?: string[];
+  nestedTools?: string[];
+}): { direct: string[]; nested: string[] } {
+  const nested = new Set(input.nestedTools ?? []);
+  const explicitDirect = new Set([
+    ...CODE_MODE_DIRECT_TOOL_NAMES,
+    ...(input.directTools ?? []),
+  ]);
+  for (const name of nested) {
+    if (!input.extraTools?.includes(name) || explicitDirect.has(name)) {
+      throw new Error(`Cannot present ${name} as a nested workflow tool`);
+    }
+  }
+  const direct = new Set([
+    ...explicitDirect,
+    ...(input.extraTools ?? []).filter((name) => !nested.has(name)),
+  ]);
+  return {
+    direct: input.activeTools.filter((name) => direct.has(name)),
+    nested: input.activeTools.filter((name) => !direct.has(name)),
+  };
+}
+
 export function createCodeModeTools(
   protocol: Exclude<AgentToolProtocol, "direct">,
   runtime: CodeModeRuntime,

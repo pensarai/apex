@@ -1,7 +1,47 @@
 import { type ToolSet, tool } from "ai";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { buildCodeModeInstructions, createCodeModeTools } from "./tools";
+import {
+  buildCodeModeInstructions,
+  createCodeModeTools,
+  resolveCodeModeToolPresentation,
+} from "./tools";
+
+describe("workflow tool presentation", () => {
+  test("preserves injected tools as direct by default", () => {
+    expect(
+      resolveCodeModeToolPresentation({
+        activeTools: ["response", "read_context", "execute_command"],
+        extraTools: ["read_context"],
+      }),
+    ).toEqual({
+      direct: ["response", "read_context"],
+      nested: ["execute_command"],
+    });
+  });
+
+  test("explicit nested reads do not activate unavailable capabilities", () => {
+    expect(
+      resolveCodeModeToolPresentation({
+        activeTools: ["response", "read_context"],
+        extraTools: ["read_context", "unavailable"],
+        nestedTools: ["read_context", "unavailable"],
+      }),
+    ).toEqual({ direct: ["response"], nested: ["read_context"] });
+  });
+
+  test("cannot move lifecycle contracts or non-injected capabilities", () => {
+    for (const name of ["response", "execute_command"]) {
+      expect(() =>
+        resolveCodeModeToolPresentation({
+          activeTools: [name],
+          extraTools: ["response"],
+          nestedTools: [name],
+        }),
+      ).toThrow("Cannot present");
+    }
+  });
+});
 
 const runtime = {
   execute: async () => ({

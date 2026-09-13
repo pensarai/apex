@@ -4,4 +4,5 @@ export {
   buildCodeModeInstructions,
   CODE_MODE_DIRECT_TOOL_NAMES,
   createCodeModeTools,
+  resolveCodeModeToolPresentation,
 } from "./tools";

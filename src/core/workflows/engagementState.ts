@@ -12,6 +12,7 @@ import type { ModelMessage } from "ai";
 import type { SwarmTarget } from "../session/persistence";
 import type {
   EngagementMission,
+  EngagementMissionCoverage,
   EngagementMissionState,
   EngagementModelConfig,
 } from "./engagementMissions";
@@ -118,6 +119,15 @@ export interface EngagementWorkerRecord {
 
 export interface EngagementState {
   version: 3;
+  contextReads?: Record<
+    string,
+    {
+      status: "read" | "unavailable";
+      version?: string;
+      complete: boolean;
+      hasProductContext: boolean;
+    }
+  >;
   concurrency?: number;
   missions?: EngagementMissionState;
   models?: { lead: EngagementModelConfig; worker: EngagementModelConfig };
@@ -158,6 +168,7 @@ export interface EngagementCompletion {
 /** Compact durable state embedded in coordination tool results for host resume. */
 export interface EngagementCheckpoint {
   version: 2 | 3;
+  contextReads?: EngagementState["contextReads"];
   concurrency?: number;
   missions?: EngagementMissionState;
   models?: { lead: EngagementModelConfig; worker: EngagementModelConfig };
@@ -386,6 +397,10 @@ function applyCheckpoint(
     ...structuredClone(seed),
     version: 3,
     concurrency: checkpoint.concurrency,
+    contextReads:
+      "contextReads" in checkpoint
+        ? structuredClone(checkpoint.contextReads)
+        : undefined,
     missions: structuredClone(checkpoint.missions),
     models: structuredClone(checkpoint.models),
     services: seed.services.map((service) => ({
@@ -570,6 +585,30 @@ export class EngagementStore {
           `Objective ${cell.objectiveId} is not assigned to target ${cell.targetId}`,
         );
     }
+    if (mission.requirements?.length) {
+      const requirementIds = mission.requirements.map((item) => item.id);
+      if (new Set(requirementIds).size !== requirementIds.length) {
+        throw new Error("Mission requirement IDs must be unique");
+      }
+      const requirementCoverage = mission.requirements.flatMap(
+        (requirement) => requirement.coverage,
+      );
+      const requirementCells = requirementCoverage.map((cell) =>
+        engagementCoverageCellId(cell.targetId, cell.objectiveId),
+      );
+      const missionCells = mission.coverage.map((cell) =>
+        engagementCoverageCellId(cell.targetId, cell.objectiveId),
+      );
+      if (
+        new Set(requirementCells).size !== requirementCells.length ||
+        requirementCells.length !== missionCells.length ||
+        requirementCells.some((cell) => !missionCells.includes(cell))
+      ) {
+        throw new Error(
+          "Canonical requirements must partition the mission source coverage exactly once",
+        );
+      }
+    }
     for (const id of [
       ...mission.supportingTargetIds,
       ...mission.contextTargetIds,
@@ -696,6 +735,19 @@ export class EngagementStore {
       throw new Error(
         "Read the complete target manifest before sealing the mission plan",
       );
+    for (const mission of missions.missions) {
+      for (const requirement of mission.requirements ?? []) {
+        if (requirement.coverage.length < 2) continue;
+        const missingContext = unique(
+          requirement.coverage.map((cell) => cell.targetId),
+        ).filter((targetId) => !this.state.contextReads?.[targetId]?.complete);
+        if (missingContext.length > 0) {
+          throw new Error(
+            `Read complete target context before consolidating requirement ${requirement.id}: ${missingContext.join(", ")}`,
+          );
+        }
+      }
+    }
     missions.metrics = {
       primaryTargetsPerMission: average,
       singletonTargets: singletonTargets.size,
@@ -736,9 +788,44 @@ export class EngagementStore {
     return structuredClone(mission);
   }
 
+  settleMissionRequirement(input: {
+    workerId: string;
+    coverage: EngagementMissionCoverage[];
+    status: Extract<CoverageStatus, "impact-proven" | "exhausted" | "blocked">;
+    summary: string;
+    evidence: string[];
+  }): ObjectiveCoverage[] {
+    const cells = input.coverage.map(({ targetId, objectiveId }) => {
+      const cell = this.state.coverage.find(
+        (candidate) =>
+          candidate.targetId === targetId &&
+          candidate.objectiveId === objectiveId,
+      );
+      if (
+        !cell ||
+        cell.workerId !== input.workerId ||
+        cell.status !== "running"
+      ) {
+        throw new Error(
+          `Worker no longer owns running coverage ${targetId}:${objectiveId}`,
+        );
+      }
+      return cell;
+    });
+    for (const cell of cells) {
+      cell.status = input.status;
+      cell.summary = input.summary;
+      cell.evidence = unique([...cell.evidence, ...input.evidence]);
+    }
+    this.refreshServiceBaselines();
+    this.persist();
+    return structuredClone(cells);
+  }
+
   checkpoint(): EngagementCheckpoint {
     return structuredClone({
       version: 3,
+      contextReads: this.state.contextReads,
       concurrency: this.state.concurrency,
       missions: this.state.missions,
       models: this.state.models,
@@ -756,6 +843,32 @@ export class EngagementStore {
       chainExplore: this.state.chainExplore,
       updatedAt: this.state.updatedAt,
     });
+  }
+
+  recordContextRead(
+    targetId: string,
+    receipt: NonNullable<EngagementState["contextReads"]>[string],
+  ): void {
+    this.getTarget(targetId);
+    const previous = this.state.contextReads?.[targetId];
+    if (
+      previous?.version &&
+      receipt.version &&
+      previous.version !== receipt.version
+    )
+      throw new Error(
+        "Target context changed since the engagement checkpoint; review the snapshot before resuming",
+      );
+    const next = {
+      ...receipt,
+      complete: Boolean(previous?.complete || receipt.complete),
+    };
+    if (JSON.stringify(previous) === JSON.stringify(next)) return;
+    this.state.contextReads = {
+      ...this.state.contextReads,
+      [targetId]: next,
+    };
+    this.persist();
   }
 
   getService(id: string): EngagementService {

@@ -30,6 +30,7 @@ import type { ApprovalGate } from "../../operator";
 import type { PromptInjectionLibrary } from "../../prompt-injections";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
+import type { EngagementContext } from "../../workflows/engagementSurface";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
 import type { ResponseGuard } from "./tools/response";
@@ -125,6 +126,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Additional workflow-specific tools that must remain directly model-visible in code mode. */
   directTools?: (ToolName | (string & {}))[];
+
+  /** Injected tools presented through the governed code bridge instead of top-level schemas. */
+  nestedTools?: string[];
+
+  /** Host-scoped, read-only context used for evidence adjudication. */
+  engagementContext?: EngagementContext;
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;
@@ -504,6 +511,9 @@ export interface SpecializedAgentInput {
 
   /** Workflow-specific tools inherited by specialized workers. */
   extraTools?: ToolSet;
+
+  engagementContext?: EngagementContext;
+  nestedTools?: string[];
 
   /** Workflow tools that stay directly visible when code mode is active. */
   directTools?: string[];

@@ -15,34 +15,53 @@ vi.mock("../agents/offSecAgent", () => ({
     }
     async consume() {
       const prompt = this.input.prompt as string;
-      const serialized = prompt
-        .split("Coverage contract:\n\n")[1]
-        ?.split("\n\nAuthorized target")[0];
-      const coverage = JSON.parse(serialized ?? "[]") as Array<{
-        targetId: string;
-        objectiveId: string;
-      }>;
-      const report = (
-        this.input.extraTools as Record<
-          string,
-          {
-            execute: (
-              input: Record<string, unknown>,
-              context: { toolCallId: string; messages: never[] },
-            ) => Promise<unknown>;
-          }
-        >
-      ).report_engagement_coverage;
-      await report?.execute(
+      const extraTools = this.input.extraTools as Record<
+        string,
         {
-          obligationResults: coverage.map((cell) => ({
-            ...cell,
-            status: "exhausted",
-            summary: "Bounded flow checks completed",
-            evidence: [],
-          })),
-          toolCallDescription: "record completed grouped coverage",
-        },
+          execute: (
+            input: Record<string, unknown>,
+            context: { toolCallId: string; messages: never[] },
+          ) => Promise<unknown>;
+        }
+      >;
+      const canonical = prompt.includes("Canonical mission requirements:");
+      const serialized = prompt
+        .split(
+          canonical
+            ? "Canonical mission requirements:\n\n"
+            : "Legacy coverage contract:\n\n",
+        )[1]
+        ?.split("\n\nAuthorized target")[0];
+      const contract = JSON.parse(serialized ?? "[]") as Array<
+        | { targetId: string; objectiveId: string }
+        | {
+            id: string;
+            coverage: Array<{ targetId: string; objectiveId: string }>;
+          }
+      >;
+      const report = canonical
+        ? extraTools.report_engagement_mission_progress
+        : extraTools.report_engagement_coverage;
+      await report?.execute(
+        canonical
+          ? {
+              requirementResults: contract.map((requirement) => ({
+                requirementId: "id" in requirement ? requirement.id : "missing",
+                status: "exhausted",
+                summary: "Bounded flow checks completed",
+                evidence: [],
+              })),
+              toolCallDescription: "record canonical mission progress",
+            }
+          : {
+              obligationResults: contract.map((cell) => ({
+                ...cell,
+                status: "exhausted",
+                summary: "Bounded flow checks completed",
+                evidence: [],
+              })),
+              toolCallDescription: "record completed grouped coverage",
+            },
         { toolCallId: "report-1", messages: [] },
       );
       if (groupedFailureAfterReport) throw groupedFailureAfterReport;
@@ -259,7 +278,6 @@ describe("engagement worker tools", () => {
     expect(constructorCalls[0]).toMatchObject({
       toolProtocol: undefined,
       engagementTargetIds: ["target-1"],
-      directTools: ["search_engagement_surface"],
     });
     const resumedMessages = constructorCalls[1]?.messages as Array<{
       role: string;
@@ -353,6 +371,61 @@ describe("engagement worker tools", () => {
       planningStatus: "complete",
       missions: [{ status: "completed", coverage }],
     });
+  });
+
+  it("reports one canonical requirement while preserving its source coverage", async () => {
+    const { planningTools, startPlannedMissions, store, seed } =
+      makeRuntime(true);
+    store.saveMissions({ planningStatus: "pending", missions: [] });
+    await executeTool(planningTools.read_engagement_manifest, {
+      offset: 0,
+      limit: 25,
+      toolCallDescription: "read all targets",
+    });
+    for (const target of seed.targets) {
+      store.recordContextRead(target.id, {
+        status: "read",
+        version: `version-${target.id}`,
+        complete: true,
+        hasProductContext: true,
+      });
+    }
+    const coverage = seed.coverage.map(({ targetId, objectiveId }) => ({
+      targetId,
+      objectiveId,
+    }));
+    await executeTool(planningTools.define_engagement_mission, {
+      purpose: "Review the shared user authorization boundary",
+      rationale: "Both endpoints share documented ownership semantics",
+      requirements: [
+        {
+          id: "user-owner-boundary",
+          description: "User resources enforce their documented owner boundary",
+          rationale:
+            "Same identity, resource, and expected authorization behavior",
+          coverage,
+        },
+      ],
+      supportingTargetIds: [],
+      prerequisiteMissionIds: [],
+      contextTargetIds: seed.targets.map((target) => target.id),
+      toolCallDescription: "define consolidated mission",
+    });
+    await executeTool(planningTools.complete_engagement_mission_plan, {
+      toolCallDescription: "seal complete mission plan",
+    });
+    await startPlannedMissions();
+
+    expect(groupedCalls[0]?.extraTools).toHaveProperty(
+      "report_engagement_mission_progress",
+    );
+    expect(store.snapshot().coverage).toHaveLength(2);
+    expect(
+      store.snapshot().coverage.every((cell) => cell.status === "exhausted"),
+    ).toBe(true);
+    expect(store.snapshot().missions?.missions[0]?.requirements).toMatchObject([
+      { id: "user-owner-boundary", coverage },
+    ]);
   });
 
   it("preserves reported coverage when the final worker stream fails", async () => {
