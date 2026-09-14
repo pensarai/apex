@@ -85,6 +85,15 @@ describe("getMaxOutputTokens", () => {
     expect(getMaxOutputTokens("zai.glm-5")).toBe(131_072);
   });
 
+  it("registers DeepSeek V4.1 Flash with its OpenRouter limits", () => {
+    expect(getModelInfo("deepseek/deepseek-v4.1-flash")).toMatchObject({
+      name: "DeepSeek V4.1 Flash",
+      provider: "openrouter",
+      contextLength: 1_048_576,
+    });
+    expect(getMaxOutputTokens("deepseek/deepseek-v4.1-flash")).toBe(384_000);
+  });
+
   it("recognizes the new Bedrock DeepSeek / Qwen output budgets", () => {
     // These three were silently inheriting the 4,096 catch-all, capping
     // replies far below each model's documented Bedrock limit.

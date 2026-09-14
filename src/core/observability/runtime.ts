@@ -21,6 +21,7 @@ import {
 import { version as apexVersion } from "../../../package.json";
 import { createLogger } from "../logger/structured";
 import { endAllActiveRootSpans } from "./active-root-spans";
+import { ActiveSpanProcessor } from "./active-spans";
 
 /**
  * Optional standalone OTLP/HTTP trace runtime. Apex keeps OTel disabled
@@ -34,7 +35,7 @@ export type ObservabilityShutdownResult = "completed" | "timed-out";
 
 export interface ObservabilityRuntime {
   forceFlush(): Promise<void>;
-  /** Idempotent and bounded: ends active root spans, flushes, shuts down. */
+  /** Idempotent and bounded: ends active spans, flushes, shuts down. */
   shutdown(): Promise<ObservabilityShutdownResult>;
 }
 
@@ -180,9 +181,13 @@ export function startObservabilityRuntime(
   const shutdownTimeoutMs =
     opts?.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
   const exporter = createTraceExporter(resolveTracesProtocol(env));
+  const activeSpans = new ActiveSpanProcessor();
   const provider = new BasicTracerProvider({
     resource: buildResource(env),
-    spanProcessors: opts?.spanProcessors ?? [new BatchSpanProcessor(exporter)],
+    spanProcessors: [
+      activeSpans,
+      ...(opts?.spanProcessors ?? [new BatchSpanProcessor(exporter)]),
+    ],
   });
   const contextManager = new AsyncLocalStorageContextManager();
   contextManager.enable();
@@ -225,12 +230,18 @@ export function startObservabilityRuntime(
       // Idempotent: every caller awaits the same bounded shutdown.
       if (!shutdownPromise) {
         const shutdownWork = async () => {
-          // End in-flight root runs first so their spans still export…
+          // OpenTelemetry only queues spans for export from onEnd(). Close all
+          // still-recording spans, deepest-first, before the final flush.
+          activeSpans.endAll();
+          // Clear stale references from the legacy root registry too. Its
+          // recording spans were already ended by the general tracker.
           endAllActiveRootSpans();
-          // …then flush explicitly before processor/exporter teardown.
           try {
             await provider.forceFlush();
           } finally {
+            // Async work can start spans while forceFlush yields. End that
+            // final window explicitly before downstream processors shut down.
+            activeSpans.endAll();
             await provider.shutdown().catch((error) => {
               log.warn("OTLP export/shutdown failed", { error: String(error) });
             });

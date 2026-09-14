@@ -999,8 +999,9 @@ export class OffensiveSecurityAgent<TResult = void> {
           } finally {
             unregisterActiveRootSpan(span);
             // Ends only after runConsume's finalization (persistence +
-            // owned-resource disposal) has settled.
-            span.end();
+            // owned-resource disposal) has settled. Shutdown may have already
+            // ended it while that finalization was still in flight.
+            if (span.isRecording()) span.end();
           }
         },
       );

@@ -47,6 +47,7 @@ export {
   createAiTelemetrySettings,
   createGenerationSpanTracker,
   type GenerationSpanTracker,
+  withModelCallDiagnostics,
 } from "./telemetry";
 
 /**

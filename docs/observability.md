@@ -69,6 +69,28 @@ Structured JSON logs carry `trace_id`/`span_id` when written inside a span,
 and `trace.jsonl` records carry a `correlation` object — connecting OTel
 traces, logs, and W&B uploads.
 
+## Failure diagnostics
+
+Model-call failures are recorded passively on the spans the AI SDK already
+emits. What each path carries on failure:
+
+| Path                                                                | Recorded on failure                                                                                                                                                                                                                                         | Known limits                                                                                         |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Helper `generateText` (structured generate, summarize, tool repair) | `ai.generateText` and `ai.generateText.doGenerate` both end with error status and an `exception` event (`exception.type`, message, stack); the provider span also gains `error.type` and, when the error carries one, a numeric `http.response.status_code` | Attributes land on the provider span only; no messages, bodies, or stacks are copied into attributes |
+| Streaming (`streamText`)                                            | Same pair for a thrown provider error, with the same bounded attributes on the `doStream` span; an in-stream error part is marked on the root `ai.streamText` span (the `doStream` span can complete unerrored)                                             | In-stream error parts do not gain span attributes — only the root span's exception event             |
+| Shutdown                                                            | Open spans gain `pensar.telemetry.interrupted=true` and `error.type=ApexProcessInterrupted` unless an error type is already set                                                                                                                             | An interruption marker is not evidence that the run was cancelled                                    |
+
+When a failed call has no recorded usage, token attributes remain absent.
+Missing usage does not establish zero consumption. A plain `Error` records
+only its type name, and an opaque non-Error failure records no attributes. Type names
+are kept only when identifier-like (1–64 characters of letters, digits, `.`,
+`_`, `-`); numeric statuses only when the error carries an integer in the
+100–599 range. Nothing invents a schema or transport diagnosis, and decoration
+is best-effort: a telemetry failure never replaces the provider's original
+error. Payload capture remains opt-in (`AI_TRACE_RECORD_PAYLOADS`), and the
+decoration is passive: return values, thrown errors, and provider call counts
+are unchanged.
+
 ## Shutdown behavior
 
 Standalone processes flush before exit on every path — normal completion,

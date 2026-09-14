@@ -100,6 +100,12 @@ export const OPENROUTER_MODELS: ModelInfo[] = [
     contextLength: 128000,
   },
   {
+    id: "deepseek/deepseek-v4.1-flash",
+    name: "DeepSeek V4.1 Flash",
+    provider: "openrouter",
+    contextLength: 1048576,
+  },
+  {
     id: "deepseek/deepseek-chat",
     name: "DeepSeek Chat",
     provider: "openrouter",

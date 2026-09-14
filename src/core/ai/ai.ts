@@ -25,6 +25,7 @@ import {
   createAiTelemetrySettings,
   createGenerationSpanTracker,
   type GenerationSpanTracker,
+  withModelCallDiagnostics,
 } from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
 import {
@@ -1220,7 +1221,9 @@ export function streamResponse(
     await userOnStepFinish?.(step);
     await emitUsage(model, stepUsage, resolveUsageSink(usageRecorder));
   };
-  const baseProviderModel = getProviderModel(model, authConfig);
+  const baseProviderModel = withModelCallDiagnostics(
+    getProviderModel(model, authConfig),
+  );
   const providerModel = languageModelMiddleware
     ? wrapLanguageModel({
         model: baseProviderModel,
@@ -1660,7 +1663,9 @@ export async function generateObjectResponse<T extends z.ZodType>(
     sessionId,
   } = opts;
 
-  const providerModel = getProviderModel(model, authConfig);
+  const providerModel = withModelCallDiagnostics(
+    getProviderModel(model, authConfig),
+  );
   const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
     model,
     openAIReasoningEffort,
