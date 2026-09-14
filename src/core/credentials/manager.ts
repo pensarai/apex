@@ -160,6 +160,13 @@ export class CredentialManager {
       metadata: creds.context ? { context: creds.context } : undefined,
     };
 
+    // A caller-supplied id is the durable identity (Console UUID). Keep it
+    // even when secret fields match another row — collapsing would lose
+    // provenance the caller needs to round-trip.
+    if (creds.id) {
+      return this.add({ ...candidate, id: creds.id });
+    }
+
     const existingId = this.findDuplicate(candidate);
     if (existingId) return existingId;
 
@@ -239,6 +246,7 @@ export class CredentialManager {
     if (!stored) return undefined;
 
     const result: AuthCredentials = {};
+    if (stored.id) result.id = stored.id;
     if (stored.username) result.username = stored.username;
     if (stored.password) result.password = stored.password;
     if (stored.apiKey) result.apiKey = stored.apiKey;

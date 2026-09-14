@@ -66,6 +66,12 @@ export const ApexFindingObject = z.object({
   rootCauseLead: z.boolean().optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
   attackPath: AttackPathSchema.optional(),
+  /**
+   * Session credential IDs used to prove the finding. Empty means the POC
+   * was unauthenticated. Defaults to [] so findings documented before
+   * provenance still parse. New writes always include the field.
+   */
+  credentialIds: z.array(z.string()).default([]),
 });
 
 export type Finding = z.infer<typeof ApexFindingObject>;

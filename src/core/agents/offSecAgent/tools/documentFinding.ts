@@ -86,6 +86,11 @@ export const documentVulnerabilityInputSchema = z.object({
   attackPath: AttackPathSchema.optional().describe(
     "Required ordered member-to-member hop chain when the finding spans multiple System members; do not leave this chain only in narrative fields",
   ),
+  credentialIds: z
+    .array(z.string().min(1))
+    .describe(
+      "IDs of the session credentials used by the successful POC. Empty means the proof was unauthenticated. Non-empty IDs must exist in Available Credentials.",
+    ),
 });
 
 export type DocumentVulnerabilityInput = z.infer<
@@ -102,6 +107,39 @@ function formatMateriality(input: DocumentVulnerabilityInput): string {
     `- Affected asset or abuse path: ${input.materiality.affectedAssetOrAbusePath}`,
     `- False-positive rationale: ${input.materiality.falsePositiveRationale}`,
   ].join("\n");
+}
+
+/**
+ * Empty `credentialIds` means the POC was unauthenticated. Any non-empty ID
+ * must already exist in the session credential manager — never invent one.
+ */
+function assertKnownCredentialIds(
+  credentialIds: string[],
+  ctx: ToolContext,
+): { ok: true; credentialIds: string[] } | { ok: false; message: string } {
+  const unique = [...new Set(credentialIds)];
+  if (unique.length === 0) {
+    return { ok: true, credentialIds: [] };
+  }
+
+  const manager = ctx.credentialManager ?? ctx.session.credentialManager;
+  if (!manager) {
+    return {
+      ok: false,
+      message:
+        "credentialIds were provided but this session has no credentials. Use [] if the proof was unauthenticated.",
+    };
+  }
+
+  const unknown = unique.filter((id) => !manager.resolve(id));
+  if (unknown.length > 0) {
+    return {
+      ok: false,
+      message: `Unknown credentialIds: ${unknown.join(", ")}. Use IDs from Available Credentials, or [] if the proof was unauthenticated.`,
+    };
+  }
+
+  return { ok: true, credentialIds: unique };
 }
 
 type PocType = "bash" | "python" | "javascript";
@@ -174,6 +212,7 @@ CRITICAL RULES — READ BEFORE CALLING:
 - POC must print clear evidence of exploitation to stdout
 - Fill the materiality checklist with the concrete exploit path, material security impact, affected non-public asset or abuse path, and why common false-positive traps do not apply
 - When a finding spans multiple System members, populate attackPath with every hop in order; do not leave the chain only in the description or evidence
+- credentialIds must list the exact session credential IDs used by the successful POC. Use an empty array when the proof was unauthenticated. Do not guess IDs.
 - If the tool returns a POC failure or judge rejection, revise your approach and call again
 - Do NOT use this for: positive observations, informational notes, testing limitations, or anything that is not an exploitable security vulnerability
 - If you could not exploit a vulnerability, do NOT call this tool — mention it in your final response summary instead`,
@@ -194,6 +233,19 @@ CRITICAL RULES — READ BEFORE CALLING:
         }
         throw error;
       }
+
+      const credentialIdsCheck = assertKnownCredentialIds(
+        input.credentialIds,
+        ctx,
+      );
+      if (!credentialIdsCheck.ok) {
+        return {
+          success: false,
+          error: credentialIdsCheck.message,
+          message: `Finding credential provenance rejected: ${credentialIdsCheck.message}`,
+        };
+      }
+      const credentialIds = credentialIdsCheck.credentialIds;
 
       try {
         assertCommandInScope(input.pocContent, ctx);
@@ -230,6 +282,7 @@ CRITICAL RULES — READ BEFORE CALLING:
             ...(input.vulnerabilityClass && {
               vulnerabilityClass: input.vulnerabilityClass,
             }),
+            credentialIds,
           });
           if (quickCheck.duplicate) {
             const matchTitle = quickCheck.matchedFinding?.title ?? "unknown";
@@ -471,6 +524,7 @@ CRITICAL RULES — READ BEFORE CALLING:
           ...(evidenceFiles.length > 0 && { evidenceFiles }),
           ...(input.attackPath &&
             input.attackPath.length > 0 && { attackPath: input.attackPath }),
+          credentialIds,
         };
 
         if (isVulnerability && ctx.findingsRegistry) {

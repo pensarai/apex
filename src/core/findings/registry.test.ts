@@ -34,6 +34,7 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
     endpoint: "https://target.com/api/test",
     pocPath: "pocs/poc_test.sh",
     remediation: "Fix the thing.",
+    credentialIds: [],
     ...overrides,
   };
 }
