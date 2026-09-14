@@ -66,9 +66,24 @@ export const ApexFindingObject = z.object({
   rootCauseLead: z.boolean().optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
   attackPath: AttackPathSchema.optional(),
+  /**
+   * Session credential IDs used to prove the finding. Empty means the POC
+   * was unauthenticated. Defaults to [] so findings documented before
+   * provenance still parse. New writes always include the field.
+   */
+  credentialIds: z.array(z.string()).default([]),
 });
 
-export type Finding = z.infer<typeof ApexFindingObject>;
+// Parse output always has credentialIds ([] default). The TS type keeps the
+// field optional so Console can still construct prior-finding objects until
+// it persists provenance — otherwise Apex console-typecheck fails against
+// current Console.
+export type Finding = Omit<
+  z.infer<typeof ApexFindingObject>,
+  "credentialIds"
+> & {
+  credentialIds?: string[];
+};
 
 /**
  * Input for the general-purpose OffensiveSecurityAgent harness.
