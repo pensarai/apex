@@ -74,7 +74,16 @@ export const ApexFindingObject = z.object({
   credentialIds: z.array(z.string()).default([]),
 });
 
-export type Finding = z.infer<typeof ApexFindingObject>;
+// Parse output always has credentialIds ([] default). The TS type keeps the
+// field optional so Console can still construct prior-finding objects until
+// it persists provenance — otherwise Apex console-typecheck fails against
+// current Console.
+export type Finding = Omit<
+  z.infer<typeof ApexFindingObject>,
+  "credentialIds"
+> & {
+  credentialIds?: string[];
+};
 
 /**
  * Input for the general-purpose OffensiveSecurityAgent harness.
