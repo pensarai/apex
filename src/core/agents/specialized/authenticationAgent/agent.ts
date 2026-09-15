@@ -8,14 +8,55 @@ import type {
   OpenAIReasoningEffort,
   ThinkingEffort,
 } from "../../../ai";
+import { loadCachedTargetSession } from "../../../auth/managedGoogle";
+import type { CredentialManager } from "../../../credentials";
 import type { AgentEventBus } from "../../../eventBus";
 import { createLogger } from "../../../logger/structured";
 import type { SessionInfo } from "../../../session";
 import { scopedLogger } from "../../../util/lazyLogger";
 import { OffensiveSecurityAgent } from "../../offSecAgent";
+import type { PlaywrightMcpSession } from "../../offSecAgent/tools/playwrightMcp";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
 import type { AuthBarrier } from "./types";
+
+function hasManagedGoogle(cm?: CredentialManager): boolean {
+  return Boolean(
+    cm?.listReferences().some((ref) => ref.type === "managed-google"),
+  );
+}
+
+async function restoreCachedGoogleSession(
+  browserSession: PlaywrightMcpSession,
+  cm: CredentialManager | undefined,
+  fallbackTarget: string,
+): Promise<void> {
+  if (!cm) return;
+  for (const ref of cm.listReferences()) {
+    if (ref.type !== "managed-google") continue;
+    const stored = cm.resolve(ref.id);
+    const meta = stored?.metadata?.managedGoogle as
+      | {
+          identityId?: string;
+          workspaceId?: string;
+          verificationUrl?: string;
+        }
+      | undefined;
+    if (!meta?.identityId || !meta.workspaceId) continue;
+    let targetOrigin = fallbackTarget;
+    try {
+      targetOrigin = new URL(meta.verificationUrl || fallbackTarget).origin;
+    } catch {
+      // keep fallback
+    }
+    const cached = await loadCachedTargetSession({
+      workspaceId: meta.workspaceId,
+      identityId: meta.identityId,
+      targetOrigin,
+    });
+    if (cached) await browserSession.seedStorageState(cached);
+  }
+}
 
 const log = scopedLogger(() => createLogger("authentication-agent"));
 
@@ -189,6 +230,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
       thinkingEffort,
       openAIReasoningEffort,
       toolChoice: "auto",
+      browserEngine: hasManagedGoogle(cm) ? "chrome" : "camoufox",
       activeTools: [
         // Auth flow tools
         "execute_command",
@@ -202,6 +244,7 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         "browser_evaluate",
         "browser_console",
         "browser_get_cookies",
+        "browser_tabs",
         // Email tools (filtered out by base class when no inboxes configured)
         "email_list_inboxes",
         "email_list_messages",
@@ -221,6 +264,14 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
         return loadAuthResult(authDataPath);
       },
     });
+
+    if (hasManagedGoogle(cm) && this.browserSession) {
+      void restoreCachedGoogleSession(
+        this.browserSession,
+        cm,
+        session.targets[0] ?? target,
+      );
+    }
   }
 }
 

@@ -33,14 +33,24 @@ function inferType(
     Object.keys(cred.tokens.customHeaders).length > 0;
   const hasCookies = !!cred.tokens?.cookies;
 
+  const hasManagedGoogle = Boolean(
+    cred.metadata &&
+      typeof cred.metadata.managedGoogle === "object" &&
+      cred.metadata.managedGoogle &&
+      "identityId" in (cred.metadata.managedGoogle as object) &&
+      (cred.metadata.managedGoogle as { identityId?: string }).identityId,
+  );
+
   const count =
     (hasPwd ? 1 : 0) +
     (hasApiKey ? 1 : 0) +
     (hasBearer ? 1 : 0) +
     (hasHeaders ? 1 : 0) +
-    (hasCookies ? 1 : 0);
+    (hasCookies ? 1 : 0) +
+    (hasManagedGoogle ? 1 : 0);
 
   if (count > 1) return "composite";
+  if (hasManagedGoogle) return "managed-google";
   if (hasPwd) return "username-password";
   if (hasApiKey) return "api-key";
   if (hasBearer) return "bearer-token";
@@ -58,6 +68,11 @@ function toReference(stored: StoredCredential): CredentialReference {
   if (stored.role) ref.role = stored.role;
   if (stored.username) ref.username = stored.username;
   if (stored.loginUrl) ref.loginUrl = stored.loginUrl;
+  const managedEmail =
+    typeof stored.metadata?.managedGoogleEmail === "string"
+      ? stored.metadata.managedGoogleEmail
+      : undefined;
+  if (managedEmail) ref.username = managedEmail;
   if (stored.tokens?.customHeaders) {
     ref.customHeaderKeys = Object.keys(stored.tokens.customHeaders);
   }
@@ -136,15 +151,23 @@ export class CredentialManager {
     extra?: { label?: string; role?: string },
   ): string {
     const candidate = {
-      username: creds.username,
+      username: creds.username ?? creds.managedGoogle?.email,
       password: creds.password,
       apiKey: creds.apiKey,
-      loginUrl: creds.loginUrl,
+      loginUrl: creds.loginUrl ?? creds.managedGoogle?.verificationUrl,
       additionalFields: creds.additionalFields,
       tokens: creds.tokens,
       label: extra?.label,
       role: extra?.role ?? creds.role,
-      metadata: creds.context ? { context: creds.context } : undefined,
+      metadata: {
+        ...(creds.context ? { context: creds.context } : {}),
+        ...(creds.managedGoogle
+          ? {
+              managedGoogle: creds.managedGoogle,
+              managedGoogleEmail: creds.managedGoogle.email,
+            }
+          : {}),
+      },
     };
 
     const existingId = this.findDuplicate(candidate);

@@ -186,4 +186,7 @@ export type ToolContext = {
    * virtual desktop instead of falling back to the process-wide `DISPLAY`.
    */
   display?: string;
+
+  /** Stock Chrome for managed Google auth; Camoufox otherwise. */
+  browserEngine?: "camoufox" | "chrome";
 };

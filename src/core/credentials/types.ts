@@ -17,7 +17,8 @@ export type CredentialType =
   | "bearer-token"
   | "custom-headers"
   | "cookies"
-  | "composite";
+  | "composite"
+  | "managed-google";
 
 /**
  * Full credential record stored in the manager.

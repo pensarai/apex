@@ -46,6 +46,11 @@ Obtain valid credentials/sessions that other agents can use for authenticated te
 
 # Strategy
 
+When a managed Google identity is listed in available credentials:
+1. Navigate to the target login URL and locate the Google sign-in button. Do not enter a Google password.
+2. After the Google or Pensar issuer origin loads, stop using evaluate/screenshot/console/cookie tools. Trusted code completes OIDC.
+3. When returned to the target verification URL, call complete_authentication.
+
 ## Step 1: Determine the auth method
 
 If credentials AND a loginUrl hint are provided, skip probing and go straight to Step 2.

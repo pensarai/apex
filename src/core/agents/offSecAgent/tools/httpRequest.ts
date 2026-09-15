@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { loadPersistedTargetHeaders } from "../../../auth/targetSession";
 import {
   resolveEffectiveHeaders,
   shellQuote,
@@ -79,6 +80,21 @@ export type HttpRequestResult = {
 };
 
 type HttpRequestBody = string | PromptInjectionRef | undefined;
+
+function withPersistedAuthHeaders(
+  ctx: ToolContext,
+  headers?: Record<string, string>,
+): Record<string, string> | undefined {
+  const persisted = loadPersistedTargetHeaders(ctx.session.rootPath);
+  if (Object.keys(persisted).length === 0) return headers;
+  const merged = { ...persisted, ...(headers ?? {}) };
+  const persistedCookie = persisted.Cookie || persisted.cookie;
+  const requestCookie = headers?.Cookie || headers?.cookie;
+  if (persistedCookie && requestCookie && persistedCookie !== requestCookie) {
+    merged.Cookie = `${persistedCookie}; ${requestCookie}`;
+  }
+  return merged;
+}
 
 /**
  * Check if a value contains any PromptInjectionRef (recursively).
@@ -242,7 +258,7 @@ COMMON TESTING PATTERNS:
         const effectiveHeaders = resolveEffectiveHeaders(
           resolverSessionFromCtx(ctx),
           url,
-          headers,
+          withPersistedAuthHeaders(ctx, headers),
         );
         assertHttpActionAllowed(
           { method, url, body: resolvedBody, headers: effectiveHeaders },
@@ -415,7 +431,7 @@ async function executeSandboxHttpRequest(
     const mergedHeaders = resolveEffectiveHeaders(
       resolverSessionFromCtx(ctx),
       url,
-      headers,
+      withPersistedAuthHeaders(ctx, headers),
     );
     for (const [key, value] of Object.entries(mergedHeaders)) {
       curlCommand += ` -H "${shellQuote(`${key}: ${value}`)}"`;

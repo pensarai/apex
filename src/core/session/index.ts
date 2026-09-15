@@ -56,6 +56,17 @@ const AuthCredentialsObject = z.object({
       customHeaders: z.record(z.string(), z.string()).optional(),
     })
     .optional(),
+  managedGoogle: z
+    .object({
+      identityId: z.string(),
+      email: z.string().optional(),
+      verificationUrl: z.string().optional(),
+      buttonSelector: z.string().optional(),
+      authBrokerHint: z.string().optional(),
+      workspaceId: z.string().optional(),
+      scanId: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type AuthCredentials = z.infer<typeof AuthCredentialsObject>;
@@ -588,6 +599,13 @@ export async function create(input: CreateInputProps) {
 
   // Exclude non-serializable fields (class instances with methods)
   const { _rateLimiter, credentialManager: _cm, ...sessionData } = result;
+  if (sessionData.config) {
+    const sanitized = { ...sessionData.config };
+    delete sanitized.authCredentials;
+    delete sanitized.emailIntegration;
+    delete sanitized.smtpConfig;
+    sessionData.config = sanitized;
+  }
   await createSessionDirs({ session: result });
   await Storage.write(["sessions", result.id, "session"], sessionData);
 

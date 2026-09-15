@@ -289,12 +289,60 @@ async function runPlaywrightScript(
   body: string,
   timeout = 60,
   extraHttpHeaders?: Record<string, string>,
+  engine: "camoufox" | "chrome" = "camoufox",
 ): Promise<unknown> {
   const headersJson =
     extraHttpHeaders && Object.keys(extraHttpHeaders).length > 0
       ? JSON.stringify(extraHttpHeaders)
       : "null";
-  const script = `
+  const chromeLaunch = engine === "chrome";
+  const script = chromeLaunch
+    ? `
+const { chromium } = require('playwright-core');
+const fs = require('fs');
+
+(async () => {
+  function resolve(value) {
+    process.stdout.write('${RESULT_START}' + JSON.stringify(value) + '${RESULT_END}');
+  }
+  const __extraHeaders = ${headersJson};
+  const __headless = process.env.DISPLAY ? false : true;
+  let context;
+  const __consoleMessages = [];
+  try {
+    context = await chromium.launchPersistentContext('/tmp/pw-chrome-user-data', {
+      channel: 'chrome',
+      headless: __headless,
+      ...(__extraHeaders ? { extraHTTPHeaders: __extraHeaders } : {}),
+    });
+    const pages = context.pages();
+    const page = pages.length > 0 ? pages[pages.length - 1] : await context.newPage();
+    page.on('console', msg => {
+      __consoleMessages.push({ type: msg.type(), text: msg.text() });
+    });
+    try {
+      const grant = JSON.parse(fs.readFileSync('/tmp/pw-oidc-grant.json', 'utf-8'));
+      await context.addCookies([grant]);
+    } catch {}
+    if (page.url() === 'about:blank') {
+      try {
+        const savedUrl = fs.readFileSync('${SANDBOX_URL_FILE}', 'utf-8').trim();
+        if (savedUrl) await page.goto(savedUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      } catch {}
+    }
+    ${body}
+  } catch (error) {
+    resolve({ success: false, error: error.message || String(error) });
+  } finally {
+    if (context) {
+      try { await context.close(); } catch {}
+    }
+  }
+})().catch((error) => {
+  process.stdout.write('${RESULT_START}' + JSON.stringify({ success: false, error: error.message || String(error) }) + '${RESULT_END}');
+});
+`
+    : `
 const { firefox } = require('playwright-core');
 const fs = require('fs');
 
@@ -349,9 +397,6 @@ const fs = require('fs');
   try {
     context = await firefox.launchPersistentContext('/tmp/pw-user-data', {
       ...__camou,
-      // Layer memory prefs over Camoufox's fingerprint prefs (ours win); see
-      // MEMORY_FIREFOX_PREFS in ./camoufox — collapses Fission/content-process
-      // fan-out that otherwise costs ~3 GB across the run.
       firefoxUserPrefs: { ...__camou.firefoxUserPrefs, ...${JSON.stringify(MEMORY_FIREFOX_PREFS)} },
       ...(__extraHeaders ? { extraHTTPHeaders: __extraHeaders } : {}),
     });
@@ -361,6 +406,10 @@ const fs = require('fs');
     page.on('console', msg => {
       __consoleMessages.push({ type: msg.type(), text: msg.text() });
     });
+    try {
+      const grant = JSON.parse(fs.readFileSync('/tmp/pw-oidc-grant.json', 'utf-8'));
+      await context.addCookies([grant]);
+    } catch {}
 
     // Restore the last-visited URL so page state persists across tool calls.
     if (page.url() === 'about:blank') {
@@ -584,7 +633,13 @@ export function createSandboxBrowserTools(ctx: ToolContext) {
       : ctx.session.config?.headers;
     const headers = stripBrowserManagedHeaders(resolved);
     const next = scriptQueue.then(() =>
-      runPlaywrightScript(sandbox, body, timeout, headers),
+      runPlaywrightScript(
+        sandbox,
+        body,
+        timeout,
+        headers,
+        ctx.browserEngine ?? "camoufox",
+      ),
     );
     scriptQueue = next.then(
       () => {},
@@ -1107,6 +1162,52 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
     },
   });
 
+  const browser_tabs = tool({
+    description:
+      "List, open, select, or close browser tabs. Use this for Google OAuth popups.",
+    inputSchema: z.object({
+      action: z.enum(["list", "new", "close", "select"]),
+      index: z.number().optional(),
+      toolCallDescription: z.string(),
+    }),
+    execute: async ({ action, index }) => {
+      try {
+        await setup();
+        const result = await runScript(
+          `
+    const pages = context.pages();
+    const action = ${JSON.stringify(action)};
+    const index = ${Number(index ?? 0)};
+    if (action === 'list') {
+      const tabs = [];
+      for (let i = 0; i < pages.length; i++) {
+        tabs.push({ index: i, url: pages[i].url(), title: await pages[i].title() });
+      }
+      resolve({ success: true, tabs });
+    } else if (action === 'new') {
+      const page = await context.newPage();
+      resolve({ success: true, index: context.pages().indexOf(page), url: page.url() });
+    } else if (action === 'select') {
+      const page = pages[index];
+      if (!page) { resolve({ success: false, error: 'tab not found' }); return; }
+      await page.bringToFront();
+      resolve({ success: true, url: page.url() });
+    } else if (action === 'close') {
+      const page = pages[index];
+      if (page) await page.close();
+      resolve({ success: true });
+    }
+          `,
+          15,
+        );
+        return result;
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { success: false, error: message };
+      }
+    },
+  });
+
   return {
     browser_navigate,
     browser_snapshot,
@@ -1116,5 +1217,6 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
     browser_evaluate,
     browser_console,
     browser_get_cookies,
+    browser_tabs,
   };
 }

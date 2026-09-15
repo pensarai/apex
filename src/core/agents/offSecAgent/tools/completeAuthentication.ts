@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { opaqueAuthHandle } from "../../../auth/targetSession";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import type { ToolContext } from "./types";
@@ -10,6 +11,7 @@ const log = scopedLogger(() => createLogger("complete_authentication"));
 
 const AUTH_DIR = "auth";
 const AUTH_DATA_FILENAME = "auth-data.json";
+const TARGET_SESSION_FILENAME = "target-session.json";
 
 /**
  * Factory for the `complete_authentication` tool.
@@ -18,28 +20,20 @@ const AUTH_DATA_FILENAME = "auth-data.json";
  * that the authentication process is finished (success or failure).
  * Used as a `stopWhen: hasToolCall("complete_authentication")` target.
  *
- * The agent MUST pass any extracted cookies, headers, and strategy so
- * they are available in the tool result for `resolveResult` to capture.
- *
- * On success the auth data is persisted to `<session>/auth/auth-data.json`
- * so other agents / resumed sessions can reload it without re-authenticating.
+ * Secrets stay in a target-only session file and a runtime handle.
+ * Prompts and traces receive the handle, never cookie values.
  */
 export function completeAuthentication(ctx: ToolContext) {
   return tool({
     description: `Signal that the authentication process is complete.
 
 Call this when you have either:
-- Successfully authenticated and obtained session credentials
+- Successfully authenticated and obtained a target session
 - Determined that authentication is not possible (barrier detected)
 - Exhausted all authentication strategies
 
-CRITICAL: When authentication succeeds, you MUST include the exported cookies and headers
-so downstream agents can make authenticated requests. Pass:
-- exportedCookies: The cookie string from browser_get_cookies (cookieHeader) or the Set-Cookie response header
-- exportedHeaders: Any auth headers (e.g. {"Authorization": "Bearer <token>"}) from browser_evaluate or the auth response
-- strategy: The method used ("browser", "form_post", "json_post", "basic_auth", "bearer", etc.)
-
-On success the credentials are persisted to the session's auth/ directory for reuse.
+On success, pass exported cookies/headers so trusted code can store a
+target-only session. Those values are never returned to the model.
 
 This tool marks the end of the authentication flow.`,
     inputSchema: z.object({
@@ -51,19 +45,17 @@ This tool marks the end of the authentication flow.`,
         .string()
         .optional()
         .describe(
-          "Cookie header string from authentication (e.g. from browser_get_cookies cookieHeader field or Set-Cookie response). Format: 'name1=value1; name2=value2'",
+          "Cookie header string from authentication. Format: 'name1=value1; name2=value2'",
         ),
       exportedHeaders: z
         .record(z.string(), z.string())
         .optional()
-        .describe(
-          'Auth headers to include in future requests (e.g. {"Authorization": "Bearer <token>"})',
-        ),
+        .describe("Auth headers to include in future requests"),
       strategy: z
         .string()
         .optional()
         .describe(
-          "Authentication strategy used (browser, form_post, json_post, basic_auth, bearer, api_key)",
+          "Authentication strategy used (browser, form_post, json_post, basic_auth, bearer, managed_google)",
         ),
       authBarrier: z
         .object({
@@ -72,6 +64,8 @@ This tool marks the end of the authentication flow.`,
             "mfa",
             "oauth_consent",
             "rate_limit",
+            "automation_block",
+            "admin_policy",
             "unknown",
           ]),
           details: z.string(),
@@ -88,6 +82,7 @@ This tool marks the end of the authentication flow.`,
       );
 
       let authDataPath: string | undefined;
+      const handle = opaqueAuthHandle();
 
       try {
         const authDir = join(ctx.session.rootPath, AUTH_DIR);
@@ -100,8 +95,7 @@ This tool marks the end of the authentication flow.`,
         const authData = {
           authenticated: result.success,
           strategy: result.strategy || "unknown",
-          cookies: result.exportedCookies || "",
-          headers: result.exportedHeaders || {},
+          handle,
           summary: result.summary,
           target: ctx.target || "",
           timestamp: new Date().toISOString(),
@@ -109,7 +103,20 @@ This tool marks the end of the authentication flow.`,
         };
 
         writeFileSync(authDataPath, JSON.stringify(authData, null, 2));
-        log.debug(`Auth data persisted to ${authDataPath}`);
+
+        if (result.success) {
+          writeFileSync(
+            join(authDir, TARGET_SESSION_FILENAME),
+            JSON.stringify({
+              handle,
+              cookies: result.exportedCookies || "",
+              headers: result.exportedHeaders || {},
+              timestamp: new Date().toISOString(),
+            }),
+            { mode: 0o600 },
+          );
+        }
+        log.debug(`Auth handle persisted to ${authDataPath}`);
       } catch (err) {
         log.error(
           "Failed to persist auth data",
@@ -122,13 +129,12 @@ This tool marks the end of the authentication flow.`,
         success: result.success,
         authenticated: result.success,
         summary: result.summary,
-        exportedCookies: result.exportedCookies || "",
-        exportedHeaders: result.exportedHeaders || {},
+        handle,
         strategy: result.strategy || "unknown",
         authBarrier: result.authBarrier,
         authDataPath: authDataPath || "",
         message: result.success
-          ? "Authentication succeeded."
+          ? "Authentication succeeded. Use the runtime auth handle; cookie values are not returned."
           : `Authentication failed.${result.authBarrier ? ` Barrier: ${result.authBarrier.type} — ${result.authBarrier.details}` : ""}`,
       };
     },

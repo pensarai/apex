@@ -474,6 +474,11 @@ export interface PlaywrightMcpSessionOptions {
    * them, so each is given its own display explicitly.
    */
   readonly display?: string;
+  /**
+   * Browser engine. `"chrome"` launches headed stock Chrome for Google
+   * authentication. Default `"camoufox"` is the pentest browser.
+   */
+  readonly engine?: "camoufox" | "chrome";
 }
 
 /**
@@ -499,6 +504,7 @@ export class PlaywrightMcpSession {
   private readonly extraHttpHeaders: Record<string, string> | undefined;
   /** X display for the spawned browser; overrides `process.env.DISPLAY`. */
   private readonly display: string | undefined;
+  private readonly engine: "camoufox" | "chrome";
   /** Temp config file written for MCP launch — deleted on disconnect. */
   private mcpConfigPath: string | null = null;
   /** Cached Camoufox launch options — resolved once, reused on reconnect. */
@@ -508,6 +514,15 @@ export class PlaywrightMcpSession {
    * it kills, so clearing there would blind the sweep. A new launch overwrites.
    */
   private currentLaunchId: string | null = null;
+  private pendingGrantCookie: {
+    name: string;
+    value: string;
+    url: string;
+    httpOnly?: boolean;
+    secure?: boolean;
+    sameSite?: "Strict" | "Lax" | "None";
+    path?: string;
+  } | null = null;
 
   /**
    * Each option is three-state: `undefined` → module default, value → use it,
@@ -515,7 +530,7 @@ export class PlaywrightMcpSession {
    * hard floor of `HARDCODED_VIEWPORT_FALLBACK` to avoid Chromium's tiny built-in.
    */
   constructor(options: PlaywrightMcpSessionOptions = {}) {
-    const { headless, userAgent, viewportSize, extraHttpHeaders, display } =
+    const { headless, userAgent, viewportSize, extraHttpHeaders, display, engine } =
       options;
 
     // An explicit `display` option wins over the process-wide env (needed when
@@ -558,6 +573,7 @@ export class PlaywrightMcpSession {
       headerSource && Object.keys(headerSource).length > 0
         ? { ...headerSource }
         : undefined;
+    this.engine = engine ?? "camoufox";
   }
 
   /**
@@ -687,42 +703,57 @@ export class PlaywrightMcpSession {
 
         const args = [cliPath, "--isolated"];
 
-        // Drive an anti-detect Camoufox (Firefox) instead of vanilla Chromium.
-        // camoufox-js produces the executablePath / args / firefoxUserPrefs / env
-        // that carry the fingerprint; MCP drives that browser through the same
-        // tool API. We pass these via a temp config file rather than CLI flags.
-        // Resolve once per session lifetime so reconnects keep the same fingerprint.
-        await ensureCamoufox();
-        if (!this.cachedCamouOptions) {
-          // Apply viewportSize as Camoufox `window` so the headed browser fills
-          // the bound Xvfb desktop (previously stored but never forwarded —
-          // Camoufox randomised the window and overflowed 720p endpoint streams).
-          const window = this.viewportSize
-            ? parseViewportSize(this.viewportSize)
-            : undefined;
-          this.cachedCamouOptions = await resolveCamoufoxLaunchOptions(
-            this.headless,
-            window ? { window } : undefined,
-          );
-        }
-        const camou = this.cachedCamouOptions;
-
         const os = await import("node:os");
         const fsp = await import("node:fs/promises");
-        const cfg = {
-          browser: {
-            browserName: "firefox",
-            launchOptions: {
-              executablePath: camou.executablePath,
-              args: camou.args,
-              firefoxUserPrefs: camou.firefoxUserPrefs,
-              headless: camou.headless,
-            },
-            ...(this.extraHttpHeaders
-              ? { contextOptions: { extraHTTPHeaders: this.extraHttpHeaders } }
-              : {}),
-          },
-        };
+        const cfg =
+          this.engine === "chrome"
+            ? {
+                browser: {
+                  browserName: "chromium",
+                  launchOptions: {
+                    channel: "chrome",
+                    headless: this.headless,
+                  },
+                  ...(this.extraHttpHeaders
+                    ? {
+                        contextOptions: {
+                          extraHTTPHeaders: this.extraHttpHeaders,
+                        },
+                      }
+                    : {}),
+                },
+              }
+            : await (async () => {
+                await ensureCamoufox();
+                if (!this.cachedCamouOptions) {
+                  const window = this.viewportSize
+                    ? parseViewportSize(this.viewportSize)
+                    : undefined;
+                  this.cachedCamouOptions = await resolveCamoufoxLaunchOptions(
+                    this.headless,
+                    window ? { window } : undefined,
+                  );
+                }
+                const camou = this.cachedCamouOptions;
+                return {
+                  browser: {
+                    browserName: "firefox",
+                    launchOptions: {
+                      executablePath: camou.executablePath,
+                      args: camou.args,
+                      firefoxUserPrefs: camou.firefoxUserPrefs,
+                      headless: camou.headless,
+                    },
+                    ...(this.extraHttpHeaders
+                      ? {
+                          contextOptions: {
+                            extraHTTPHeaders: this.extraHttpHeaders,
+                          },
+                        }
+                      : {}),
+                  },
+                };
+              })();
         this.mcpConfigPath = join(
           os.tmpdir(),
           `pensar-mcp-${process.pid}-${Date.now()}.json`,
@@ -756,9 +787,14 @@ export class PlaywrightMcpSession {
           // fails to start. Use this session's `display` (an explicit
           // per-session display wins over the process-wide env).
           env: {
-            ...Object.fromEntries(
-              Object.entries(camou.env).map(([k, v]) => [k, String(v)]),
-            ),
+            ...(this.engine === "camoufox" && this.cachedCamouOptions
+              ? Object.fromEntries(
+                  Object.entries(this.cachedCamouOptions.env).map(([k, v]) => [
+                    k,
+                    String(v),
+                  ]),
+                )
+              : {}),
             ...(this.display ? { DISPLAY: this.display } : {}),
             [BROWSER_LAUNCH_ENV]: launchId,
           },
@@ -789,6 +825,7 @@ export class PlaywrightMcpSession {
 
         this.mcpClient = client;
         this.mcpTransport = transport;
+        await this.flushPendingGrantCookie();
 
         client.onclose = () => {
           if (this.mcpClient === client) {
@@ -808,6 +845,59 @@ export class PlaywrightMcpSession {
     })();
 
     return this.connectionPromise;
+  }
+
+  queueGrantCookie(cookie: {
+    name: string;
+    value: string;
+    url: string;
+    httpOnly?: boolean;
+    secure?: boolean;
+    sameSite?: "Strict" | "Lax" | "None";
+    path?: string;
+  }): void {
+    this.pendingGrantCookie = cookie;
+  }
+
+  async currentUrl(): Promise<string | null> {
+    if (!this.isConnected() && !this.connectionPromise) return null;
+    try {
+      const result = await this.callTool("browser_run_code", {
+        code: `async (page) => page.url()`,
+      });
+      if (typeof result === "string" && result.startsWith("http")) return result;
+      if (result && typeof result === "object" && "url" in result) {
+        return String((result as { url: string }).url);
+      }
+      const text = typeof result === "string" ? result : JSON.stringify(result);
+      const match = text.match(/https?:\/\/[^\s"'\\]+/);
+      return match?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async flushPendingGrantCookie(): Promise<void> {
+    const cookie = this.pendingGrantCookie;
+    if (!cookie) return;
+    this.pendingGrantCookie = null;
+    const code = `async (page) => {
+      await page.context().addCookies([${JSON.stringify({
+        name: cookie.name,
+        value: cookie.value,
+        url: cookie.url,
+        httpOnly: cookie.httpOnly ?? true,
+        secure: cookie.secure ?? cookie.url.startsWith("https:"),
+        sameSite: cookie.sameSite ?? "Lax",
+        path: cookie.path ?? "/",
+      })}]);
+      return { ok: true };
+    }`;
+    try {
+      await this.callTool("browser_run_code", { code });
+    } catch {
+      this.pendingGrantCookie = cookie;
+    }
   }
 
   /**
@@ -1270,23 +1360,19 @@ export function createBrowserTools(
   viewportSize?: string | null,
   existingSession?: PlaywrightMcpSession,
   extraHttpHeaders?: Record<string, string> | null,
+  engine?: "camoufox" | "chrome",
 ) {
   let session: PlaywrightMcpSession;
 
   if (existingSession) {
     session = existingSession;
-    // Owner manages disconnect — do NOT register an abort handler here,
-    // otherwise an inheriting sub-agent finishing first would tear down
-    // the parent's browser mid-flight.
   } else {
-    // PlaywrightMcpSession's constructor folds in the module-level
-    // defaults (1920x1080 viewport, desktop Chrome UA, headless=true)
-    // when these options are undefined — pass them through verbatim.
     session = new PlaywrightMcpSession({
       headless,
       userAgent,
       viewportSize,
       extraHttpHeaders,
+      engine,
     });
 
     if (abortSignal) {
@@ -1660,6 +1746,34 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
     },
   });
 
+  const browser_tabs = tool({
+    description:
+      "List, open, select, or close browser tabs. Use this for Google OAuth popups.",
+    inputSchema: z.object({
+      action: z.enum(["list", "new", "close", "select"]),
+      index: z.number().optional(),
+      toolCallDescription: z.string(),
+    }),
+    execute: async ({ action, index }): Promise<{
+      success: boolean;
+      result?: unknown;
+      error?: string;
+    }> => {
+      try {
+        const result = await session.callTool(
+          "browser_tabs",
+          { action, index },
+          abortSignal,
+        );
+        return { success: true, result };
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger?.error(`browser_tabs failed: ${message}`);
+        return { success: false, error: message };
+      }
+    },
+  });
+
   return {
     browser_navigate,
     browser_snapshot,
@@ -1669,5 +1783,6 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
     browser_evaluate,
     browser_console,
     browser_get_cookies,
+    browser_tabs,
   };
 }

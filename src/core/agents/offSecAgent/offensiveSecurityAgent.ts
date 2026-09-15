@@ -337,6 +337,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         new PlaywrightMcpSession({
           extraHttpHeaders: stripBrowserManagedHeaders(sessionHeaders),
           display: input.display,
+          engine: input.browserEngine,
         });
       // Owned sessions aren't wired through createBrowserTools' abort path
       // (existingSession skips that listener). Disconnect on abort so timeout/
@@ -426,6 +427,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       // virtual desktop (their browsers belong to the same endpoint's stream),
       // rather than falling back to the process-wide DISPLAY (:0).
       display: input.display,
+      browserEngine: input.browserEngine,
     });
 
     let tools: ToolSet = input.extraTools

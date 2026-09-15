@@ -20,6 +20,15 @@
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { isManagedGoogleAuthError } from "../../../auth/failures";
+import {
+  completeManagedGoogleTransit,
+  freezeModelToolsOnTransit,
+  getIssuerUrl,
+  type ManagedGoogleCredential,
+  mintManagedGoogleGrant,
+} from "../../../auth/managedGoogle";
+import { isAuthTransitUrl } from "../../../auth/transit";
 import {
   getPromptInjectionLibrary,
   redactPromptInjectionPayloads,
@@ -40,6 +49,7 @@ export const BROWSER_TOOL_NAMES = [
   "browser_evaluate",
   "browser_console",
   "browser_get_cookies",
+  "browser_tabs",
 ] as const;
 
 /**
@@ -75,7 +85,11 @@ export function createBrowserToolset(ctx: ToolContext) {
         undefined,
         undefined,
         ctx.browserSession,
+        undefined,
+        ctx.browserEngine,
       );
+
+  const transitWrapped = wrapBrowserToolsForTransit(tools, ctx);
 
   const cm = ctx.credentialManager;
   // A prompt-injection payload library lets the agent deliver hidden payloads
@@ -89,10 +103,10 @@ export function createBrowserToolset(ctx: ToolContext) {
 
   // Nothing to wrap — return the raw browser tools unchanged.
   if (!cm && !injectionEnabled) {
-    return tools;
+    return transitWrapped;
   }
 
-  const originalFill = tools.browser_fill;
+  const originalFill = transitWrapped.browser_fill;
 
   const shape: Record<string, z.ZodTypeAny> = {
     element: z
@@ -275,7 +289,166 @@ export function createBrowserToolset(ctx: ToolContext) {
   });
 
   return {
-    ...tools,
+    ...transitWrapped,
     browser_fill: wrappedFill,
   };
+}
+
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+}
+
+function managedGoogleFromCtx(
+  ctx: ToolContext,
+): ManagedGoogleCredential | null {
+  const cm = ctx.credentialManager;
+  if (!cm) return null;
+  for (const ref of cm.listReferences()) {
+    if (ref.type !== "managed-google") continue;
+    const stored = cm.resolve(ref.id);
+    const meta = stored?.metadata?.managedGoogle as
+      | ManagedGoogleCredential
+      | undefined;
+    if (meta?.identityId) {
+      return {
+        ...meta,
+        verificationUrl: meta.verificationUrl || stored?.loginUrl || ctx.target,
+      };
+    }
+  }
+  return null;
+}
+
+function wrapBrowserToolsForTransit<
+  T extends Record<string, { execute?: (...args: never[]) => unknown }>,
+>(tools: T, ctx: ToolContext): T {
+  const session = ctx.browserSession;
+  if (!session || typeof session.currentUrl !== "function") return tools;
+
+  const issuerUrl = getIssuerUrl();
+  const managed = managedGoogleFromCtx(ctx);
+  let grantPromise: Promise<void> | null = null;
+
+  const persist =
+    managed?.workspaceId && managed.identityId
+      ? {
+          workspaceId: managed.workspaceId,
+          identityId: managed.identityId,
+          scanId: managed.scanId,
+          sessionRootPath: ctx.session.rootPath,
+        }
+      : undefined;
+
+  const runTransit = () =>
+    completeManagedGoogleTransit({
+      session,
+      verificationUrl: managed?.verificationUrl || ctx.target || "",
+      issuerUrl,
+      persist,
+    });
+
+  const ensureGrant = async () => {
+    if (!managed?.workspaceId || !managed.identityId) return;
+    if (!grantPromise) {
+      grantPromise = mintManagedGoogleGrant({
+        workspaceId: managed.workspaceId,
+        identityId: managed.identityId,
+        scanId: managed.scanId,
+        browserSessionId: ctx.session.id,
+        targetOrigin: originOf(
+          managed.verificationUrl || ctx.target || "https://invalid.local",
+        ),
+      })
+        .then(async (grant) => {
+          session.queueGrantCookie(grant.cookie);
+          if (ctx.sandbox) {
+            const encoded = Buffer.from(JSON.stringify(grant.cookie)).toString(
+              "base64",
+            );
+            await ctx.sandbox.execute(
+              `echo ${encoded} | base64 -d > /tmp/pw-oidc-grant.json`,
+              { timeout: 10 },
+            );
+          }
+        })
+        .catch(() => undefined);
+    }
+    await grantPromise;
+  };
+
+  const wrapped = { ...tools };
+  for (const [name, original] of Object.entries(tools)) {
+    if (!original?.execute) continue;
+    wrapped[name as keyof T] = {
+      ...original,
+      execute: async (...args: unknown[]) => {
+        await ensureGrant();
+        const url = await session.currentUrl();
+        if (url && isAuthTransitUrl(url, { issuerUrl })) {
+          if (name !== "browser_snapshot" && name !== "browser_tabs") {
+            try {
+              freezeModelToolsOnTransit(name, url, issuerUrl);
+            } catch (error) {
+              if (
+                (name === "browser_click" || name === "browser_navigate") &&
+                managed
+              ) {
+                try {
+                  const done = await runTransit();
+                  return {
+                    success: true,
+                    url: done.url,
+                    result: "Trusted code completed Google OIDC transit",
+                  };
+                } catch (transitError) {
+                  return {
+                    success: false,
+                    error: isManagedGoogleAuthError(transitError)
+                      ? `${transitError.code}: ${transitError.message}`
+                      : String(transitError),
+                  };
+                }
+              }
+              return {
+                success: false,
+                error: isManagedGoogleAuthError(error)
+                  ? `${error.code}: ${error.message}`
+                  : String(error),
+              };
+            }
+          }
+        }
+        const result = await original.execute?.(...(args as never[]));
+        const next = await session.currentUrl();
+        if (
+          managed &&
+          next &&
+          isAuthTransitUrl(next, { issuerUrl }) &&
+          (name === "browser_click" || name === "browser_navigate")
+        ) {
+          try {
+            const done = await runTransit();
+            return {
+              ...(typeof result === "object" && result ? result : {}),
+              success: true,
+              url: done.url,
+            };
+          } catch (transitError) {
+            return {
+              success: false,
+              error: isManagedGoogleAuthError(transitError)
+                ? `${transitError.code}: ${transitError.message}`
+                : String(transitError),
+            };
+          }
+        }
+        return result;
+      },
+    } as unknown as T[keyof T];
+  }
+  return wrapped;
 }

@@ -61,6 +61,7 @@ export const ApexFindingObject = z.object({
   /** True for the single lead finding of a root-cause group (the one that should anchor the consolidated write-up). */
   rootCauseLead: z.boolean().optional(),
   evidenceFiles: z.array(EvidenceFileEntrySchema).optional(),
+  vulnerabilityClass: z.string().optional(),
 });
 
 export type Finding = z.infer<typeof ApexFindingObject>;
@@ -345,6 +346,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * process-wide `DISPLAY`.
    */
   display?: string;
+
+  /** Stock Chrome for managed Google auth; Camoufox otherwise. */
+  browserEngine?: "camoufox" | "chrome";
 };
 
 /**
