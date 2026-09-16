@@ -82,7 +82,7 @@ describe("getDefaultModelForConfig", () => {
 
     expect(model).not.toBeNull();
     expect(model?.provider).toBe("concentrate");
-    expect(model?.id).toBe("concentrate:claude-opus-4-6");
+    expect(model?.id).toBe("concentrate:glm-5.3");
     expect(available.length).toBeGreaterThan(1);
     expect(available.every((item) => item.provider === "concentrate")).toBe(
       true,
