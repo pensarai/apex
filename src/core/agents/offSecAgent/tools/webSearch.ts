@@ -16,6 +16,7 @@ const webSearchInputSchema = z.object({
     ),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Searching for CVE-2024-1234 details')",
     ),

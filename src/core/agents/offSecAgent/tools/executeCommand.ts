@@ -60,6 +60,7 @@ const executeCommandInputSchema = z.object({
   // not actually sure if placing this above the other keys/zod values ensures that the model generates it first...
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Scanning for open ports on target')",
     ),

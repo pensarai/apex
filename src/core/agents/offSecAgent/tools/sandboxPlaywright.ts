@@ -465,6 +465,7 @@ const BrowserNavigateInput = z.object({
   url: z.string().describe("Full URL to navigate to"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you are navigating to this URL"),
 });
 
@@ -474,12 +475,14 @@ const BrowserScreenshotInput = z.object({
     .describe("Descriptive filename for screenshot (without extension)"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("What evidence this screenshot captures"),
 });
 
 const BrowserSnapshotInput = z.object({
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you need to get the page snapshot"),
 });
 
@@ -495,7 +498,10 @@ const BrowserClickInput = z.object({
     .describe(
       "Element reference from browser_snapshot (e.g., 'e5'). If provided, uses exact element reference for precise clicking.",
     ),
-  toolCallDescription: z.string().describe("Why you are clicking this element"),
+  toolCallDescription: z
+    .string()
+    .optional()
+    .describe("Why you are clicking this element"),
 });
 
 const BrowserFillInput = z.object({
@@ -513,6 +519,7 @@ const BrowserFillInput = z.object({
   value: z.string().describe("Value to fill into the field"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you are filling this field with this value"),
 });
 
@@ -520,12 +527,14 @@ const BrowserEvaluateInput = z.object({
   script: z.string().describe("JavaScript code to execute in browser"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("What you are testing with this script"),
 });
 
 const BrowserConsoleInput = z.object({
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you need to check console messages"),
 });
 
@@ -538,6 +547,7 @@ const BrowserGetCookiesInput = z.object({
     ),
   toolCallDescription: z
     .string()
+    .optional()
     .describe("Why you need to extract cookies from the browser"),
 });
 

@@ -8,6 +8,7 @@ const deleteFileInputSchema = z.object({
   path: z.string().describe("Absolute or relative path to the file to delete"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Remove obsolete insecure helper')",
     ),

@@ -80,6 +80,7 @@ This tool marks the end of the authentication flow.`,
         .describe("Auth barrier if one was encountered"),
       toolCallDescription: z
         .string()
+        .optional()
         .describe("A concise description of what this tool call is doing"),
     }),
     execute: async (result) => {

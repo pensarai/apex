@@ -16,6 +16,7 @@ const getMemoryInputSchema = z.object({
   id: z.string().describe("The unique memory id (returned by list_memories)"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Retrieving SQL injection cheatsheet')",
     ),

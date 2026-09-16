@@ -14,6 +14,7 @@ const writePlanInputSchema = z.object({
   content: z.string().describe("The full markdown content of the pentest plan"),
   toolCallDescription: z
     .string()
+    .optional()
     .describe(
       "A concise, human-readable description of what this tool call is doing (e.g., 'Writing initial pentest plan with recon findings')",
     ),
