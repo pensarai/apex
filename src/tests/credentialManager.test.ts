@@ -189,6 +189,36 @@ describe("CredentialManager", () => {
       expect(id1).not.toBe(id2);
       expect(cm.size).toBe(2);
     });
+
+    it("preserves a caller-supplied AuthCredentials id", () => {
+      const id = cm.addFromAuthCredentials({
+        id: "11111111-1111-1111-1111-111111111111",
+        username: "alice",
+        password: "s3cret",
+        role: "admin",
+      });
+
+      expect(id).toBe("11111111-1111-1111-1111-111111111111");
+      expect(cm.resolve(id)?.username).toBe("alice");
+      expect(cm.toAuthCredentials(id)?.id).toBe(id);
+    });
+
+    it("does not collapse two caller-supplied ids even when secrets match", () => {
+      const a = cm.addFromAuthCredentials({
+        id: "cred-a",
+        username: "alice",
+        password: "same",
+      });
+      const b = cm.addFromAuthCredentials({
+        id: "cred-b",
+        username: "alice",
+        password: "same",
+      });
+
+      expect(a).toBe("cred-a");
+      expect(b).toBe("cred-b");
+      expect(cm.size).toBe(2);
+    });
   });
 
   // =========================================================================
@@ -312,6 +342,23 @@ describe("CredentialManager", () => {
   describe("formatForPrompt()", () => {
     it("returns empty string when no credentials stored", () => {
       expect(cm.formatForPrompt()).toBe("");
+    });
+
+    it("includes a caller-supplied id in formatForPrompt without secrets", () => {
+      cm.addFromAuthCredentials({
+        id: "cred-stable",
+        username: "alice",
+        password: "hidden-secret",
+        role: "admin",
+        context: "staff portal",
+      });
+
+      const prompt = cm.formatForPrompt();
+      expect(prompt).toContain("cred-stable");
+      expect(prompt).toContain("admin");
+      expect(prompt).toContain("alice");
+      expect(prompt).toContain("staff portal");
+      expect(prompt).not.toContain("hidden-secret");
     });
 
     it("formats credentials safely for agent prompts", () => {
