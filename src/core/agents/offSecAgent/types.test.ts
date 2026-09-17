@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PentestReportFindingSchema } from "../../report/schemas";
 import { DocumentFindingSchema } from "../../session/types";
-import { ApexFindingObject } from "./types";
+import { ApexFindingObject, type Finding } from "./types";
 
 const baseFinding = {
   title: "SQL Injection in /api/products",
@@ -40,6 +40,28 @@ describe("ApexFindingObject", () => {
   it("accepts finding without cwes (backward compatible)", () => {
     const result = ApexFindingObject.safeParse(baseFinding);
     expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.credentialIds).toEqual([]);
+    }
+  });
+
+  it("lets prior-finding objects omit credentialIds", () => {
+    const finding: Finding = {
+      ...baseFinding,
+      severity: "HIGH",
+    };
+    expect(finding.credentialIds).toBeUndefined();
+  });
+
+  it("keeps documented credentialIds", () => {
+    const result = ApexFindingObject.safeParse({
+      ...baseFinding,
+      credentialIds: ["cred-1", "cred-2"],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.credentialIds).toEqual(["cred-1", "cred-2"]);
+    }
   });
 
   it("accepts finding with cwes", () => {

@@ -37,6 +37,9 @@ const DEFAULT_HEADER_RECORD: Record<string, string> = {
 };
 
 const AuthCredentialsObject = z.object({
+  // Stable identity from the caller (Console credential UUID). When present,
+  // CredentialManager keeps this id instead of minting a session-only `cred_*`.
+  id: z.string().min(1).optional(),
   // Username/password auth
   username: z.string().optional(),
   password: z.string().optional(),

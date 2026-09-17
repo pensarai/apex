@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CredentialManager } from "../../../credentials";
 import { AgentEventBus, type AgentEventMap } from "../../../eventBus";
 import { setLogSink } from "../../../logger/structured";
 import { scoreFindingWithCVSS } from "../../specialized/cvssScorer";
@@ -71,6 +72,7 @@ type DocumentToolResult = {
   judgeRejected?: boolean;
   judgeReasoning?: string;
   finding?: {
+    credentialIds?: string[];
     judge: {
       confidence: number;
       concerns: string[];
@@ -100,6 +102,7 @@ function makeDocumentInput() {
     pocType: "bash" as const,
     pocContent: 'echo "admin data leaked"\nexit 0',
     pocDescription: "Requests the admin endpoint and prints leaked data.",
+    credentialIds: [] as string[],
   };
 }
 
@@ -334,6 +337,85 @@ function makeAcceptedJudgeResult(): FindingJudgeResult {
     limitations: [],
   };
 }
+
+describe("documentVulnerability credential provenance", () => {
+  let rootPath: string;
+
+  beforeEach(() => {
+    rootPath = mkdtempSync(join(tmpdir(), "apex-document-finding-"));
+    mockedJudgeFinding.mockReset();
+  });
+
+  afterEach(() => {
+    rmSync(rootPath, { recursive: true, force: true });
+  });
+
+  it("records an empty credentialIds list for an unauthenticated proof", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const ctx = makeToolContext(rootPath);
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute?.(makeDocumentInput(), {
+      toolCallId: "test",
+      messages: [],
+    })) as DocumentToolResult;
+
+    expect(result.success).toBe(true);
+    expect(result.finding?.credentialIds).toEqual([]);
+  });
+
+  it("persists known credential IDs on the finding without secret values", async () => {
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    const cm = new CredentialManager();
+    const id = cm.addFromAuthCredentials({
+      id: "cred-stable",
+      username: "alice",
+      password: "s3cret-password",
+      role: "admin",
+    });
+    const base = makeToolContext(rootPath);
+    const ctx = {
+      ...base,
+      credentialManager: cm,
+      session: { ...base.session, credentialManager: cm },
+    };
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute?.(
+      { ...makeDocumentInput(), credentialIds: [id] },
+      { toolCallId: "test", messages: [] },
+    )) as DocumentToolResult;
+
+    expect(result.success).toBe(true);
+    expect(result.finding?.credentialIds).toEqual(["cred-stable"]);
+    expect(JSON.stringify(result.finding)).not.toContain("s3cret-password");
+  });
+
+  it("rejects unknown credential IDs before running the POC", async () => {
+    const cm = new CredentialManager();
+    cm.addFromAuthCredentials({
+      id: "cred-known",
+      username: "alice",
+      password: "s3cret",
+    });
+    const base = makeToolContext(rootPath);
+    const ctx = {
+      ...base,
+      credentialManager: cm,
+      session: { ...base.session, credentialManager: cm },
+    };
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute?.(
+      { ...makeDocumentInput(), credentialIds: ["cred-missing"] },
+      { toolCallId: "test", messages: [] },
+    )) as DocumentToolResult & { error?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("cred-missing");
+    expect(mockedJudgeFinding).not.toHaveBeenCalled();
+    expect(existsSync(join(ctx.session.pocsPath, "poc_admin_data.sh"))).toBe(
+      false,
+    );
+  });
+});
 
 describe("documentVulnerability finding-judge subagent lifecycle", () => {
   let rootPath: string;
