@@ -454,53 +454,32 @@ CRITICAL RULES — READ BEFORE CALLING:
             agentMessages: [],
           };
 
-          const MAX_CVSS_ATTEMPTS = 2;
-          for (let attempt = 0; attempt < MAX_CVSS_ATTEMPTS; attempt++) {
-            try {
-              cvssResult = await scoreFindingWithCVSS(
-                cvssInput,
-                ctx.model!,
-                ctx.authConfig,
-                ctx.abortSignal,
-                ctx.session.id,
-              );
-              break;
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : String(err);
+          // Deliberately no retry: an identical re-prompt seconds later has
+          // never recovered a scorer failure.
+          try {
+            cvssResult = await scoreFindingWithCVSS(
+              cvssInput,
+              ctx.model!,
+              ctx.authConfig,
+              ctx.abortSignal,
+              ctx.session.id,
+            );
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const cancelled = ctx.abortSignal?.aborted === true;
 
-              if (
-                attempt >= MAX_CVSS_ATTEMPTS - 1 ||
-                ctx.abortSignal?.aborted
-              ) {
-                cvssWarning = `CVSS scoring failed after ${attempt + 1} attempt(s) (${msg}), using estimated MEDIUM severity.`;
-                cvssResult = FALLBACK_CVSS;
-                break;
-              }
+            cvssWarning = cancelled
+              ? `CVSS scoring cancelled, using estimated MEDIUM severity.`
+              : `CVSS scoring failed (${msg}), using estimated MEDIUM severity.`;
+            cvssResult = FALLBACK_CVSS;
 
-              await new Promise<void>((resolve) => {
-                const timer = setTimeout(resolve, 2_000);
-                if (ctx.abortSignal) {
-                  const onAbort = () => {
-                    clearTimeout(timer);
-                    resolve();
-                  };
-                  if (ctx.abortSignal.aborted) {
-                    clearTimeout(timer);
-                    resolve();
-                  } else {
-                    ctx.abortSignal.addEventListener("abort", onAbort, {
-                      once: true,
-                    });
-                  }
-                }
-              });
-
-              if (ctx.abortSignal?.aborted) {
-                cvssWarning = `CVSS scoring cancelled, using estimated MEDIUM severity.`;
-                cvssResult = FALLBACK_CVSS;
-                break;
-              }
-            }
+            log.warn("CVSS scoring fell back to estimated MEDIUM severity", {
+              error: msg,
+              cancelled,
+              model: ctx.model,
+              sessionId: session.id,
+              finding: input.title,
+            });
           }
         }
 

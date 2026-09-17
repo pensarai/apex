@@ -1030,22 +1030,53 @@ export type ReasoningProviderOptions = {
 
 export type OpenRouterProviderOptions = {
   openrouter?: {
-    provider: {
-      only: ["z-ai"];
-      allow_fallbacks: false;
-    };
+    provider:
+      | {
+          only: ["z-ai"];
+          allow_fallbacks: false;
+        }
+      | {
+          order: ["z-ai"];
+          allow_fallbacks: true;
+          require_parameters: true;
+        };
   };
 };
+
+function isZaiPinnedModel(model: AIModel): boolean {
+  return model === "z-ai/glm-5.2" || model === "z-ai/glm-5.3";
+}
 
 export function buildOpenRouterProviderOptions(
   model: AIModel,
 ): OpenRouterProviderOptions | undefined {
-  if (model !== "z-ai/glm-5.2" && model !== "z-ai/glm-5.3") return undefined;
+  if (!isZaiPinnedModel(model)) return undefined;
   return {
     openrouter: {
       provider: {
         only: ["z-ai"],
         allow_fallbacks: false,
+      },
+    },
+  };
+}
+
+/**
+ * Z.AI's endpoint is the only `z-ai/*` provider that does not advertise
+ * `structured_outputs`, so under the hard pin above `response_format` is a soft
+ * preference and nothing enforces the schema. Prefer Z.AI, but require an
+ * endpoint that enforces it rather than silently returning unparseable output.
+ */
+export function buildOpenRouterStructuredProviderOptions(
+  model: AIModel,
+): OpenRouterProviderOptions | undefined {
+  if (!isZaiPinnedModel(model)) return undefined;
+  return {
+    openrouter: {
+      provider: {
+        order: ["z-ai"],
+        allow_fallbacks: true,
+        require_parameters: true,
       },
     },
   };
@@ -1670,7 +1701,8 @@ export async function generateObjectResponse<T extends z.ZodType>(
     model,
     openAIReasoningEffort,
   );
-  const openRouterProviderOptions = buildOpenRouterProviderOptions(model);
+  const openRouterProviderOptions =
+    buildOpenRouterStructuredProviderOptions(model);
 
   let lastError: unknown;
 

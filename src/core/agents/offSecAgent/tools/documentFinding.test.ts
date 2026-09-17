@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
 } from "node:fs";
@@ -10,6 +11,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CredentialManager } from "../../../credentials";
 import { AgentEventBus, type AgentEventMap } from "../../../eventBus";
+import { setLogSink } from "../../../logger/structured";
+import { scoreFindingWithCVSS } from "../../specialized/cvssScorer";
 import {
   type FindingJudgeResult,
   judgeFinding,
@@ -61,6 +64,7 @@ vi.mock("../../specialized/cvssScorer", async (importOriginal) => {
 });
 
 const mockedJudgeFinding = vi.mocked(judgeFinding);
+const mockedScoreFindingWithCVSS = vi.mocked(scoreFindingWithCVSS);
 
 type DocumentToolResult = {
   success: boolean;
@@ -831,5 +835,96 @@ axios.get('http://target.com')
 
       expect(warnings).toHaveLength(0);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CVSS scoring fallback. A failed scorer substitutes FALLBACK_CVSS, which sets
+// the finding's severity too, so the failure has to be visible in the logs and
+// flagged on the finding.
+// ---------------------------------------------------------------------------
+
+describe("documentVulnerability CVSS fallback", () => {
+  let rootPath: string;
+  let logLines: string[];
+
+  beforeEach(() => {
+    rootPath = mkdtempSync(join(tmpdir(), "apex-cvss-fallback-"));
+    mockedJudgeFinding.mockReset();
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+    logLines = [];
+    process.env.PENSAR_LOG_FORMAT = "json";
+    setLogSink((line) => logLines.push(line));
+  });
+
+  afterEach(() => {
+    setLogSink(null);
+    delete process.env.PENSAR_LOG_FORMAT;
+    rmSync(rootPath, { recursive: true, force: true });
+  });
+
+  function readPersistedFinding(findingsPath: string) {
+    const jsonFile = readdirSync(findingsPath).find((f) => f.endsWith(".json"));
+    if (!jsonFile) throw new Error("no finding JSON was persisted");
+    return JSON.parse(readFileSync(join(findingsPath, jsonFile), "utf8")) as {
+      severity: string;
+      cvss: { scored: boolean; score: number; vectorString: string };
+    };
+  }
+
+  it("marks the finding unscored and warns with the real error", async () => {
+    mockedScoreFindingWithCVSS.mockRejectedValueOnce(
+      new Error("response did not match schema"),
+    );
+
+    const ctx = makeToolContext(rootPath);
+    const result = (await documentVulnerability(ctx).execute?.(
+      makeDocumentInput(),
+      { toolCallId: "test", messages: [] },
+    )) as DocumentToolResult;
+
+    expect(result.success).toBe(true);
+
+    const persisted = readPersistedFinding(ctx.session.findingsPath);
+    expect(persisted.cvss.scored).toBe(false);
+    expect(persisted.cvss.score).toBe(5.0);
+    expect(persisted.cvss.vectorString).toBe("");
+
+    const warning = logLines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((record) => record.level === "WARN" && record.cancelled === false);
+    expect(warning?.msg).toBe(
+      "CVSS scoring fell back to estimated MEDIUM severity",
+    );
+    expect(warning?.error).toBe("response did not match schema");
+  });
+
+  it("does not retry a failed scorer", async () => {
+    mockedScoreFindingWithCVSS.mockClear();
+    mockedScoreFindingWithCVSS.mockRejectedValueOnce(
+      new Error("response did not match schema"),
+    );
+
+    await documentVulnerability(makeToolContext(rootPath)).execute?.(
+      makeDocumentInput(),
+      { toolCallId: "test", messages: [] },
+    );
+
+    expect(mockedScoreFindingWithCVSS).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks the finding scored when the scorer succeeds", async () => {
+    const ctx = makeToolContext(rootPath);
+    await documentVulnerability(ctx).execute?.(makeDocumentInput(), {
+      toolCallId: "test",
+      messages: [],
+    });
+
+    const persisted = readPersistedFinding(ctx.session.findingsPath);
+    expect(persisted.cvss.scored).toBe(true);
+    expect(persisted.cvss.vectorString).toContain("CVSS:4.0/");
+    expect(
+      logLines.some((line) => line.includes("fell back to estimated MEDIUM")),
+    ).toBe(false);
   });
 });

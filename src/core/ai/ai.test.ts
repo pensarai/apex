@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   applySequentialToolCallPolicy,
   buildOpenRouterProviderOptions,
+  buildOpenRouterStructuredProviderOptions,
   buildReasoningProviderOptions,
   getOpenAIReasoningEfforts,
   isRepairFailClosedTool,
@@ -246,6 +247,28 @@ describe("buildOpenRouterProviderOptions", () => {
     expect(buildOpenRouterProviderOptions("anthropic/claude-opus-4-6")).toBe(
       undefined,
     );
+  });
+});
+
+describe("buildOpenRouterStructuredProviderOptions", () => {
+  it("prefers Z.ai but requires an endpoint that enforces the schema", () => {
+    for (const model of ["z-ai/glm-5.2", "z-ai/glm-5.3"]) {
+      expect(buildOpenRouterStructuredProviderOptions(model)).toEqual({
+        openrouter: {
+          provider: {
+            order: ["z-ai"],
+            allow_fallbacks: true,
+            require_parameters: true,
+          },
+        },
+      });
+    }
+  });
+
+  it("leaves other OpenRouter models unchanged", () => {
+    expect(
+      buildOpenRouterStructuredProviderOptions("anthropic/claude-opus-4-6"),
+    ).toBe(undefined);
   });
 });
 
