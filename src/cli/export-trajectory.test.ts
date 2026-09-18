@@ -18,12 +18,29 @@ afterEach(async () => {
   );
 });
 
-function run(args: string[], entrypoint = cli) {
-  const result = spawnSync("bun", [entrypoint, ...args], {
-    encoding: "utf8",
-    env: { ...process.env, OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:1" },
-    timeout: 5_000,
-  });
+function run(
+  args: string[],
+  entrypoint = cli,
+  fixture?: { root: string; preload: string },
+) {
+  const result = spawnSync(
+    "bun",
+    [
+      "--no-env-file",
+      ...(fixture ? ["--preload", fixture.preload] : []),
+      entrypoint,
+      ...args,
+    ],
+    {
+      cwd: fixture?.root,
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH,
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:1",
+      },
+      timeout: 5_000,
+    },
+  );
   return {
     status: result.status,
     stdout: result.stdout ?? "",
@@ -34,6 +51,26 @@ function run(args: string[], entrypoint = cli) {
 async function requestFixture() {
   const root = await mkdtemp(join(tmpdir(), "apex-export-command-"));
   temporaryDirectories.push(root);
+  const fixtureHome = join(root, "fixture-home");
+  await mkdir(fixtureHome);
+  await writeFile(join(root, ".env"), "APEX_EXPORT_FIXTURE=benign\n");
+  const preload = join(root, "isolate-home.ts");
+  await writeFile(
+    preload,
+    `import os from "node:os";
+import { mock } from "bun:test";
+const fixtureHome = ${JSON.stringify(fixtureHome)};
+const fixtureOs = { ...os, homedir: () => fixtureHome };
+for (const name of ["os", "node:os"]) {
+  mock.module(name, () => ({ ...fixtureOs, default: fixtureOs }));
+}
+for (const name of ["os", "node:os"]) {
+  const module = await import(name);
+  if (module.homedir() !== fixtureHome || module.default.homedir() !== fixtureHome)
+    throw new Error("Fixture home isolation failed");
+}
+`,
+  );
   const source = nativeSource({ id: `source-${randomUUID()}` });
   const sourcePath = join(root, "evidence.json");
   const requestPath = join(root, "request.json");
@@ -56,7 +93,7 @@ async function requestFixture() {
       exporter: { name: "apex-native-evidence", version: "1" },
     }),
   );
-  return { requestPath, outputPath };
+  return { root, preload, requestPath, outputPath };
 }
 
 describe("pensar export-trajectory", () => {
@@ -72,28 +109,62 @@ describe("pensar export-trajectory", () => {
     expect(result.stdout).toMatch(/does not run an external\s+validator/);
   });
 
-  it("routes from the root CLI without starting telemetry", () => {
-    const result = run(["export-trajectory", "--help"], rootCli);
+  it("routes from the root CLI without starting telemetry", async () => {
+    const fixture = await requestFixture();
+    const result = run(["export-trajectory", "--help"], rootCli, fixture);
 
     expect(result.status).toBe(0);
     expect(result.stderr).not.toContain("ECONNREFUSED");
     expect(result.stdout).toContain("The command reads recorded evidence only");
   });
 
-  it("keeps the root CLI success output machine-readable", async () => {
-    const { requestPath, outputPath } = await requestFixture();
+  it.each([
+    { flags: [] },
+    { flags: ["--verbose"] },
+    { flags: ["--quiet"] },
+    { flags: ["--log-level", "ERROR"] },
+    { flags: ["--obfuscate"] },
+    { flags: ["--redact"] },
+    { flags: ["-O"] },
+    { flags: ["--obfuscate", "--verbose", "--log-level", "WARN"] },
+    { flags: ["--log-level", "invalid"] },
+  ])("keeps the root CLI success output machine-readable with prefix $flags", async ({
+    flags,
+  }) => {
+    const fixture = await requestFixture();
+    const { requestPath, outputPath } = fixture;
 
     const result = run(
-      ["export-trajectory", "--input", requestPath, "--output", outputPath],
+      [
+        ...flags,
+        "export-trajectory",
+        "--input",
+        requestPath,
+        "--output",
+        outputPath,
+      ],
       rootCli,
+      fixture,
     );
 
     expect(result.status).toBe(0);
     expect(result.stderr).not.toContain("ECONNREFUSED");
+    if (flags.includes("invalid")) {
+      expect(result.stderr).toContain('Ignoring invalid --log-level "invalid"');
+    }
     expect(JSON.parse(result.stdout)).toMatchObject({
       outputDirectory: outputPath,
       manifestPath: join(outputPath, "manifest.json"),
     });
+  });
+
+  it("preserves ordinary command output with preceding global flags", async () => {
+    const fixture = await requestFixture();
+    const result = run(["--quiet", "version"], rootCli, fixture);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("injected env");
+    expect(result.stdout).toMatch(/\nv\d+\.\d+\.\d+\n$/);
   });
 
   it("rejects missing and unknown options without creating output", async () => {

@@ -31,8 +31,6 @@ import {
 const args = process.argv.slice(2);
 const version = packageJson.version;
 
-loadEnv({ quiet: args[0] === "export-trajectory" });
-
 // Detect global --obfuscate flag and propagate to the TUI via env so the
 // flag works regardless of where it appears in argv. The flag is stripped
 // before any per-command parsing so it never collides with subcommand args.
@@ -66,6 +64,8 @@ if (obfuscateRequested) {
 // Resolve the subcommand AFTER global flags (--obfuscate, --log-level, etc.)
 // are stripped, so `pensar --verbose pentest` still routes to `pentest`.
 const command = args[0];
+
+loadEnv({ quiet: command === "export-trajectory" });
 
 // ---------------------------------------------------------------------------
 // Helpers
