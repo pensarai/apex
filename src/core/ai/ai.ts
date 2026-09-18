@@ -1,4 +1,4 @@
-import { AsyncLocalStorage } from "node:async_hooks";
+import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
@@ -1210,8 +1210,30 @@ export interface StreamResponseOpts {
   _restartDepth?: number;
 }
 
+const NATIVE_STREAM_RECOVERY = Symbol("native-stream-recovery");
+
+interface NativeStreamRecovery {
+  model: LanguageModel;
+  run<T>(fn: () => T): T;
+}
+
+type InternalStreamResponseOpts = StreamResponseOpts & {
+  [NATIVE_STREAM_RECOVERY]?: NativeStreamRecovery;
+};
+
 export function streamResponse(
   opts: StreamResponseOpts,
+): StreamTextResult<ToolSet, never> {
+  const recovery = (opts as InternalStreamResponseOpts)[NATIVE_STREAM_RECOVERY];
+  if (recovery) {
+    return recovery.run(() => streamResponseWithinOperation(opts, recovery));
+  }
+  return streamResponseWithinOperation(opts);
+}
+
+function streamResponseWithinOperation(
+  opts: StreamResponseOpts,
+  nativeRecovery?: NativeStreamRecovery,
 ): StreamTextResult<ToolSet, never> {
   // Bound recovery recursion (summarize → resume → overflow → …).
   const restartDepth = opts._restartDepth ?? 0;
@@ -1264,20 +1286,24 @@ export function streamResponse(
     await userOnStepFinish?.(step);
     await emitUsage(model, stepUsage, resolveUsageSink(usageRecorder));
   };
-  const baseProviderModel = withNativeRolloutEvidenceModel(
-    withModelCallDiagnostics(getProviderModel(model, authConfig)),
-    {
-      requestedModelId: model,
-      operationKind: "agent.stream",
-      sessionId,
-    },
-  );
-  const providerModel = languageModelMiddleware
-    ? wrapLanguageModel({
-        model: baseProviderModel,
-        middleware: languageModelMiddleware,
-      })
-    : baseProviderModel;
+  const providerModel =
+    nativeRecovery?.model ??
+    (() => {
+      const baseProviderModel = withNativeRolloutEvidenceModel(
+        withModelCallDiagnostics(getProviderModel(model, authConfig)),
+        {
+          requestedModelId: model,
+          operationKind: "agent.stream",
+          sessionId,
+        },
+      );
+      return languageModelMiddleware
+        ? wrapLanguageModel({
+            model: baseProviderModel,
+            middleware: languageModelMiddleware,
+          })
+        : baseProviderModel;
+    })();
   // Undefined when the model has no cache breakpoint we can express (non-Claude
   // Bedrock models, OpenAI/Google/OpenRouter) — those run uncached.
   const cacheBreakpoint = cacheBreakpointFor(model);
@@ -1618,16 +1644,29 @@ export function streamResponse(
       },
       onFinish,
     };
-    const response = runWithNativeRolloutOperation(
-      { operationKind: "agent.stream", sessionId },
-      () => streamText(responseOptions),
-    );
+    let recovery = nativeRecovery;
+    const response = recovery
+      ? streamText(responseOptions)
+      : runWithNativeRolloutOperation(
+          { operationKind: "agent.stream", sessionId },
+          () => {
+            const operation = new AsyncResource("apex.native-stream-recovery");
+            recovery = {
+              model: providerModel,
+              run: (fn) => operation.runInAsyncScope(fn),
+            };
+            return streamText(responseOptions);
+          },
+        );
 
     // Wrap the stream to catch async errors during consumption
+    const recoveryOpts: InternalStreamResponseOpts = recovery
+      ? { ...opts, [NATIVE_STREAM_RECOVERY]: recovery }
+      : opts;
     return wrapStreamWithErrorHandler(
       response,
       messagesContainer,
-      opts,
+      recoveryOpts,
       providerModel,
       silent,
       0,
