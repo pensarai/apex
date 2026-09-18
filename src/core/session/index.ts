@@ -260,6 +260,10 @@ const SessionConfigObject = z.object({
   prompt: z.string().optional(),
   /** Enable task-driven architecture — agents decompose objectives into tracked tasks (default: false) */
   taskDriven: z.boolean().optional(),
+  /** Explicit per-invocation destination for native model-boundary evidence. */
+  nativeRolloutEvidence: z
+    .object({ outputDirectory: z.string().min(1) })
+    .optional(),
   /** When true, pentest agents run a plan phase before execution (default: false) */
   requirePlan: z.boolean().optional(),
   /**

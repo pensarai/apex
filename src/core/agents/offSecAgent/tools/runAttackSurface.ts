@@ -51,7 +51,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           "A concise, human-readable description of what this tool call is doing",
         ),
     }),
-    execute: async ({ target, cwd }) => {
+    execute: async ({ target, cwd }, { toolCallId }) => {
       if (!ctx.model) {
         return {
           success: false,
@@ -86,6 +86,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
             subagentName,
             lifecycleInput: { target, cwd },
             parentSubagentId: ctx.subagentId,
+            parentToolCallId: toolCallId,
           });
 
           // Flatten whitebox results into the same targets shape the swarm expects
@@ -154,6 +155,7 @@ should be passed directly to spawn_pentest_swarm for deep testing.`,
           subagentName,
           lifecycleInput: { target, cwd },
           parentSubagentId: ctx.subagentId,
+          parentToolCallId: toolCallId,
           // Blackbox hard-codes a `subagents/attack-surface-agent/` folder.
           subagentId: "attack-surface-agent",
         });
