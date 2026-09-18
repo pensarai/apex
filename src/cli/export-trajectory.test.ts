@@ -80,6 +80,22 @@ describe("pensar export-trajectory", () => {
     expect(result.stdout).toContain("The command reads recorded evidence only");
   });
 
+  it("keeps the root CLI success output machine-readable", async () => {
+    const { requestPath, outputPath } = await requestFixture();
+
+    const result = run(
+      ["export-trajectory", "--input", requestPath, "--output", outputPath],
+      rootCli,
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain("ECONNREFUSED");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      outputDirectory: outputPath,
+      manifestPath: join(outputPath, "manifest.json"),
+    });
+  });
+
   it("rejects missing and unknown options without creating output", async () => {
     const { requestPath, outputPath } = await requestFixture();
 

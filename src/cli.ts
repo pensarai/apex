@@ -30,7 +30,7 @@ import {
 const args = process.argv.slice(2);
 const version = packageJson.version;
 
-loadEnv();
+loadEnv({ quiet: args[0] === "export-trajectory" });
 
 // Detect global --obfuscate flag and propagate to the TUI via env so the
 // flag works regardless of where it appears in argv. The flag is stripped
