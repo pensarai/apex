@@ -38,11 +38,12 @@ describe("neutral Evalgate trajectory bundle serialization", () => {
           referenceRevision: ATIF_REFERENCE_REVISION,
         },
         validation: {
-          status: "passed",
+          status: "valid",
+          validator: { version: "1" },
           independent: { status: "not_run" },
         },
         completeness: {
-          transcript: "complete",
+          status: "complete",
           sftEligibility: "ineligible",
           rlEligibility: "ineligible",
         },
@@ -60,10 +61,18 @@ describe("neutral Evalgate trajectory bundle serialization", () => {
     expect(bundle.files.map((file) => file.kind)).toEqual([
       "asset",
       "asset",
-      "manifest",
       "source",
       "document",
+      "manifest",
     ]);
+    expect(bundle.files.find((file) => file.kind === "manifest")?.path).toBe(
+      "trajectory-bundle.json",
+    );
+    expect(bundle.manifest.nativeSampling).toMatchObject({
+      status: "unavailable",
+      artifactPaths: [],
+      fields: { promptTokenIds: { unsupported: 1 } },
+    });
     for (const file of bundle.files) {
       expect(file.sha256).toBe(hash(file.bytes));
       expect(file.sizeBytes).toBe(file.bytes.byteLength);
@@ -113,8 +122,8 @@ describe("neutral Evalgate trajectory bundle serialization", () => {
       rootSourceId: source.id,
     });
 
-    expect(bundle.manifest.validation.status).toBe("passed");
-    expect(bundle.manifest.completeness.transcript).toBe("partial");
+    expect(bundle.manifest.validation.status).toBe("valid");
+    expect(bundle.manifest.completeness.status).toBe("partial");
     expect(
       bundle.manifest.completeness.diagnostics.map((entry) => entry.code),
     ).toEqual(
@@ -204,7 +213,7 @@ describe("neutral Evalgate trajectory bundle serialization", () => {
     });
 
     expect(bundle.manifest.validation).toMatchObject({
-      status: "passed",
+      status: "valid",
       independent: {
         status: "passed",
         detail: "validated by the injected offline reference validator",

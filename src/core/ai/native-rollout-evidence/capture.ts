@@ -82,7 +82,9 @@ interface CaptureStore {
   pendingWrites: Set<Promise<void>>;
   activeSinkWrites: Set<Promise<void>>;
   activeAttemptWrites: Set<Promise<void>>;
-  flushers: Set<() => void>;
+  retainedFailures: Set<() => void>;
+  openFinalizers: Set<() => void>;
+  flushers: Set<() => Promise<void>>;
   nextSegment: number;
   nextTurnBySession: Map<string, number>;
   interrupted: boolean;
@@ -92,11 +94,14 @@ interface OperationContext {
   operationKind: NativeRolloutModelContext["operationKind"];
   sessionId?: string;
   invocation: symbol;
+  finalizers: Set<() => void>;
+  closed: boolean;
 }
 
 interface ResolvedOperationContext {
   model: NativeRolloutModelContext;
   invocation: symbol;
+  operation?: OperationContext;
 }
 
 interface TurnIdentity {
@@ -124,6 +129,7 @@ interface AttemptCapture {
 interface PendingFailure {
   capture: AttemptCapture;
   nativeInput?: unknown;
+  settle: () => void;
 }
 
 interface StreamCollector {
@@ -231,6 +237,8 @@ export function createNativeRolloutEvidenceCapture(
     pendingWrites: new Set(),
     activeSinkWrites: new Set(),
     activeAttemptWrites: new Set(),
+    retainedFailures: new Set(),
+    openFinalizers: new Set(),
     flushers: new Set(),
     nextSegment: 1,
     nextTurnBySession: new Map(),
@@ -248,7 +256,11 @@ export function createNativeRolloutEvidenceCapture(
       }
     },
     async flush(): Promise<NativeRolloutCaptureReportV1> {
-      for (const flush of [...store.flushers]) flush();
+      for (const flush of [...store.flushers]) await flush();
+      while (store.pendingWrites.size > 0) {
+        await Promise.all([...store.pendingWrites]);
+      }
+      for (const finalize of [...store.openFinalizers]) finalize();
       while (store.pendingWrites.size > 0) {
         await Promise.all([...store.pendingWrites]);
       }
@@ -277,13 +289,36 @@ export function createNativeRolloutEvidenceCapture(
 }
 
 export function runWithNativeRolloutOperation<T>(
-  context: Omit<OperationContext, "invocation">,
+  context: Pick<OperationContext, "operationKind" | "sessionId">,
   fn: () => T,
 ): T {
-  return operationStore.run(
-    { ...context, invocation: Symbol("model-call") },
-    fn,
-  );
+  const operation: OperationContext = {
+    ...context,
+    invocation: Symbol("model-call"),
+    finalizers: new Set(),
+    closed: false,
+  };
+  const close = () => {
+    if (operation.closed) return;
+    operation.closed = true;
+    for (const finalize of [...operation.finalizers]) finalize();
+    operation.finalizers.clear();
+  };
+  let result: T;
+  try {
+    result = operationStore.run(operation, fn);
+  } catch (error) {
+    close();
+    throw error;
+  }
+  if (
+    result &&
+    (typeof result === "object" || typeof result === "function") &&
+    "then" in result
+  ) {
+    return Promise.resolve(result).finally(close) as T;
+  }
+  return result;
 }
 
 export function runWithNativeRolloutSession<T>(
@@ -665,6 +700,7 @@ function emitAttempt(
     normalizedOutput?: unknown;
     normalizedOutputState?: "available" | "truncated" | "interrupted";
     nativeOutput?: unknown;
+    nativeOutputState?: "available" | "truncated" | "interrupted";
     nativeOutputAbsent?: "omitted" | "unsupported";
     nativeOutputReason?: string;
     providerMetadata?: unknown;
@@ -726,6 +762,21 @@ function emitAttempt(
   );
   for (const asset of nativeOutput.assets) addAsset(assets, asset);
   limitations.push(...nativeOutput.limitations);
+  let nativeOutputAvailability = nativeOutput.availability;
+  if (
+    nativeOutputAvailability.state === "available" &&
+    input.nativeOutputState &&
+    input.nativeOutputState !== "available"
+  ) {
+    nativeOutputAvailability = {
+      state: input.nativeOutputState,
+      reason:
+        input.nativeOutputState === "truncated"
+          ? "the bounded collector omitted later raw response chunks"
+          : "the provider raw response ended before a complete terminal result",
+      partial: nativeOutputAvailability.value,
+    };
+  }
 
   const sampling = extractNativeSamplingEvidence({
     provider: capture.provider,
@@ -831,7 +882,7 @@ function emitAttempt(
       },
       output: {
         normalized: normalizedOutputAvailability,
-        native: nativeOutput.availability,
+        native: nativeOutputAvailability,
       },
     },
     native: sampling,
@@ -901,6 +952,7 @@ function collectStreamPart(
     }
   } catch {
     collector.truncated = true;
+    if (part.type === "raw") collector.rawTruncated = true;
   }
 }
 
@@ -909,7 +961,6 @@ function wrapCapturedStream(
   capture: AttemptCapture,
   result: LanguageModelV3StreamResult,
   options: LanguageModelV3CallOptions,
-  openFinalizers: Set<() => void>,
 ): LanguageModelV3StreamResult {
   const collector: StreamCollector = {
     parts: [],
@@ -941,13 +992,20 @@ function wrapCapturedStream(
   ) => {
     if (finalized) return;
     finalized = true;
-    openFinalizers.delete(interrupt);
+    store.openFinalizers.delete(interrupt);
     const limitations: CaptureDiagnosticV1[] = [];
     if (collector.truncated) {
       limitations.push({
         code: "stream_limit",
         message: "the bounded collector omitted later stream parts",
         field: "boundary.output.normalized",
+      });
+    }
+    if (collector.rawTruncated) {
+      limitations.push({
+        code: "stream_limit",
+        message: "the bounded collector omitted later raw response chunks",
+        field: "boundary.output.native",
       });
     }
     if (collector.finishReason === "length") {
@@ -966,6 +1024,12 @@ function wrapCapturedStream(
         collector.rawParts.length > 0
           ? { chunks: collector.rawParts }
           : undefined,
+      nativeOutputState:
+        outputState === "interrupted"
+          ? "interrupted"
+          : collector.rawTruncated
+            ? "truncated"
+            : "available",
       nativeOutputAbsent: options.includeRawChunks ? "omitted" : "unsupported",
       nativeOutputReason: options.includeRawChunks
         ? "the provider emitted no raw response chunks"
@@ -976,12 +1040,19 @@ function wrapCapturedStream(
       effectiveModelId: collector.responseModelId,
       limitations,
     });
+    collector.parts.length = 0;
+    collector.rawParts.length = 0;
+    collector.byteLength = 0;
+    collector.rawByteLength = 0;
   };
   const interrupt = () => {
     const terminal = terminalLifecycle();
     finalize(terminal.lifecycle, terminal.outputState);
   };
-  openFinalizers.add(interrupt);
+  if (store.openFinalizers.size >= store.limits.maxPendingRecords) {
+    store.openFinalizers.values().next().value?.();
+  }
+  store.openFinalizers.add(interrupt);
   let stream: ReadableStream<LanguageModelV3StreamPart>;
   try {
     stream = new ReadableStream<LanguageModelV3StreamPart>({
@@ -994,10 +1065,12 @@ function wrapCapturedStream(
             finalize(terminal.lifecycle, terminal.outputState);
             return;
           }
-          try {
-            collectStreamPart(store, collector, next.value);
-          } catch {
-            collector.truncated = true;
+          if (!finalized) {
+            try {
+              collectStreamPart(store, collector, next.value);
+            } catch {
+              collector.truncated = true;
+            }
           }
           controller.enqueue(next.value);
         } catch (error) {
@@ -1019,7 +1092,7 @@ function wrapCapturedStream(
       },
     });
   } catch (error) {
-    openFinalizers.delete(interrupt);
+    store.openFinalizers.delete(interrupt);
     reader.releaseLock();
     throw error;
   }
@@ -1036,24 +1109,89 @@ export function withNativeRolloutEvidenceModel(
   const activeStore = store;
 
   const pendingFailures = new Map<symbol, PendingFailure[]>();
-  const openFinalizers = new Set<() => void>();
-  const flush = () => {
-    for (const failures of pendingFailures.values()) {
-      for (const pending of failures) {
-        safeEmitAttempt(activeStore, pending.capture, {
-          lifecycle: "failed",
-          nativeInput: pending.nativeInput,
-          normalizedOutputState: "interrupted",
-          nativeOutputAbsent: "omitted",
-          nativeOutputReason:
-            "the provider call failed before returning output",
-        });
+  const scopeFinalizers = new Map<
+    symbol,
+    { operation: OperationContext; finalize: () => void }
+  >();
+  let pendingFailureCount = 0;
+  let flusherRegistered = false;
+  const releaseFlusherIfIdle = () => {
+    if (pendingFailureCount > 0) return;
+    activeStore.flushers.delete(flush);
+    flusherRegistered = false;
+  };
+  const ensureFlusher = () => {
+    if (pendingFailureCount === 0) return;
+    if (flusherRegistered) return;
+    activeStore.flushers.add(flush);
+    flusherRegistered = true;
+  };
+  const waitForPendingWrites = async () => {
+    if (activeStore.pendingWrites.size > 0) {
+      await Promise.all([...activeStore.pendingWrites]);
+    }
+  };
+  const emitFailed = (
+    pending: Pick<PendingFailure, "capture" | "nativeInput">,
+  ) => {
+    safeEmitAttempt(activeStore, pending.capture, {
+      lifecycle: "failed",
+      nativeInput: pending.nativeInput,
+      normalizedOutputState: "interrupted",
+      nativeOutputAbsent: "omitted",
+      nativeOutputReason: "the provider call failed before returning output",
+    });
+  };
+  const removeScopeFinalizerIfIdle = (invocation: symbol) => {
+    if (pendingFailures.has(invocation)) return;
+    const registered = scopeFinalizers.get(invocation);
+    if (!registered) return;
+    registered.operation.finalizers.delete(registered.finalize);
+    scopeFinalizers.delete(invocation);
+  };
+  const settlePendingFailure = (
+    invocation: symbol,
+    pending: PendingFailure,
+    emit: boolean,
+  ) => {
+    const failures = pendingFailures.get(invocation);
+    const index = failures?.indexOf(pending) ?? -1;
+    if (!failures || index < 0) return;
+    failures.splice(index, 1);
+    if (failures.length === 0) pendingFailures.delete(invocation);
+    activeStore.retainedFailures.delete(pending.settle);
+    pendingFailureCount -= 1;
+    removeScopeFinalizerIfIdle(invocation);
+    if (emit) emitFailed(pending);
+    releaseFlusherIfIdle();
+  };
+  const ensureScopeFinalizer = (operation: OperationContext) => {
+    if (scopeFinalizers.has(operation.invocation)) return;
+    const finalize = () => {
+      for (const pending of [
+        ...(pendingFailures.get(operation.invocation) ?? []),
+      ]) {
+        settlePendingFailure(operation.invocation, pending, true);
+      }
+    };
+    scopeFinalizers.set(operation.invocation, { operation, finalize });
+    if (operation.closed) finalize();
+    else operation.finalizers.add(finalize);
+  };
+  async function flush() {
+    for (const [invocation, failures] of [...pendingFailures]) {
+      for (const pending of [...failures]) {
+        if (
+          activeStore.activeSinkWrites.size >=
+          activeStore.limits.maxPendingRecords
+        ) {
+          await waitForPendingWrites();
+        }
+        settlePendingFailure(invocation, pending, true);
       }
     }
-    pendingFailures.clear();
-    for (const finalize of [...openFinalizers]) finalize();
-  };
-  activeStore.flushers.add(flush);
+    releaseFlusherIfIdle();
+  }
 
   const context = (): ResolvedOperationContext => {
     const override = operationStore.getStore();
@@ -1076,6 +1214,7 @@ export function withNativeRolloutEvidenceModel(
       // Direct wrapper calls are independent by default. AI SDK retries share
       // the explicit outer operation scope installed at each Apex call site.
       invocation: override?.invocation ?? Symbol("unscoped-model-call"),
+      ...(override ? { operation: override } : {}),
     };
   };
 
@@ -1084,14 +1223,49 @@ export function withNativeRolloutEvidenceModel(
   ): PendingFailure | undefined => {
     const failures = pendingFailures.get(invocation);
     const pending = failures?.shift();
+    if (pending) {
+      activeStore.retainedFailures.delete(pending.settle);
+      pendingFailureCount -= 1;
+    }
     if (failures?.length === 0) pendingFailures.delete(invocation);
+    removeScopeFinalizerIfIdle(invocation);
+    releaseFlusherIfIdle();
     return pending;
   };
 
-  const addPendingFailure = (invocation: symbol, failure: PendingFailure) => {
+  const addPendingFailure = (
+    invocation: symbol,
+    failure: Omit<PendingFailure, "settle">,
+    operation?: OperationContext,
+  ) => {
+    if (!operation) {
+      emitFailed(failure);
+      return;
+    }
+    if (
+      activeStore.retainedFailures.size >= activeStore.limits.maxPendingRecords
+    ) {
+      const settleOldest = activeStore.retainedFailures.values().next().value;
+      if (settleOldest) {
+        addDiagnostic(activeStore, {
+          code: "retry_lineage_limit",
+          message:
+            "a retained failed attempt was finalized before a later retry could be attributed",
+        });
+        settleOldest();
+      }
+    }
+    const pending: PendingFailure = {
+      ...failure,
+      settle: () => settlePendingFailure(invocation, pending, true),
+    };
     const failures = pendingFailures.get(invocation) ?? [];
-    failures.push(failure);
+    failures.push(pending);
     pendingFailures.set(invocation, failures);
+    activeStore.retainedFailures.add(pending.settle);
+    pendingFailureCount += 1;
+    ensureScopeFinalizer(operation);
+    ensureFlusher();
   };
 
   async function doGenerate(
@@ -1165,10 +1339,14 @@ export function withNativeRolloutEvidenceModel(
       });
       return result;
     } catch (error) {
-      addPendingFailure(current.invocation, {
-        capture,
-        nativeInput: errorRequestBody(error),
-      });
+      addPendingFailure(
+        current.invocation,
+        {
+          capture,
+          nativeInput: errorRequestBody(error),
+        },
+        current.operation,
+      );
       throw error;
     }
   }
@@ -1209,20 +1387,18 @@ export function withNativeRolloutEvidenceModel(
     try {
       result = await model.doStream(options);
     } catch (error) {
-      addPendingFailure(current.invocation, {
-        capture,
-        nativeInput: errorRequestBody(error),
-      });
+      addPendingFailure(
+        current.invocation,
+        {
+          capture,
+          nativeInput: errorRequestBody(error),
+        },
+        current.operation,
+      );
       throw error;
     }
     try {
-      return wrapCapturedStream(
-        activeStore,
-        capture,
-        result,
-        options,
-        openFinalizers,
-      );
+      return wrapCapturedStream(activeStore, capture, result, options);
     } catch {
       addDiagnostic(activeStore, {
         code: "capture_failure",

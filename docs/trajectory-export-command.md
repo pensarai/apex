@@ -32,9 +32,9 @@ from the input file's directory.
 
 The command validates every declared source identity and the complete bundle
 with bounded reads before creating the output directory. The destination must
-not exist. Files are created exclusively, and `manifest.json` is written last
+not exist. Files are created exclusively, and `trajectory-bundle.json` is written last
 as the commit marker. If a write fails, the command removes only the fresh
-directory it created. A directory without `manifest.json` is not a completed
+directory it created. A directory without `trajectory-bundle.json` is not a completed
 export.
 
 The optional `independentValidation` field records a result supplied by the

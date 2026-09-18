@@ -8,6 +8,7 @@ import {
   type AtifExporterIdentity,
   type AtifTrajectoryV1_8,
   serializeAtifExportBundle,
+  TRAJECTORY_BUNDLE_FILENAME,
   TrajectoryBundleManifestSchema,
   type TrajectoryBundleManifestV1,
 } from "../atif";
@@ -193,7 +194,7 @@ function validateBundle(
   files: readonly AtifBundleFile[],
   manifest: TrajectoryBundleManifestV1,
 ) {
-  if (manifest.validation.status !== "passed")
+  if (manifest.validation.status !== "valid")
     throw new TrajectoryExportError(
       "BUNDLE_VALIDATION_FAILED",
       "trajectory bundle validation failed",
@@ -226,10 +227,10 @@ function validateBundle(
       manifestFile = file;
     }
   }
-  if (!manifestFile || manifestFile.path !== "manifest.json")
+  if (!manifestFile || manifestFile.path !== TRAJECTORY_BUNDLE_FILENAME)
     throw new TrajectoryExportError(
       "BUNDLE_VALIDATION_FAILED",
-      "trajectory bundle must contain manifest.json",
+      `trajectory bundle must contain ${TRAJECTORY_BUNDLE_FILENAME}`,
     );
   let persistedManifest: TrajectoryBundleManifestV1;
   try {
@@ -333,7 +334,7 @@ export async function exportTrajectoryBundle(
   await publishBundle(outputDirectory, bundle.files);
   return {
     outputDirectory,
-    manifestPath: join(outputDirectory, "manifest.json"),
+    manifestPath: join(outputDirectory, TRAJECTORY_BUNDLE_FILENAME),
     manifest: bundle.manifest,
     files: bundle.files.map(({ bytes: _bytes, ...file }) => file),
   };

@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
+import { posix } from "node:path";
 import {
   stringifyCanonicalJson,
   toJsonValue,
 } from "../ai/native-rollout-evidence";
-import { convertNativeRolloutSourcesToAtif } from "./convert";
+import {
+  AtifConversionError,
+  convertNativeRolloutSourcesToAtif,
+} from "./convert";
 import type {
   AtifBundleFile,
   AtifDiagnostic,
@@ -16,6 +20,8 @@ import {
   APEX_ATIF_EXPORTER_VERSION,
   ATIF_REFERENCE_REVISION,
   ATIF_SCHEMA_VERSION,
+  TRAJECTORY_BUNDLE_FILENAME,
+  TRAJECTORY_BUNDLE_LIMITS,
   TRAJECTORY_BUNDLE_TYPE,
   TRAJECTORY_BUNDLE_VERSION,
   TrajectoryBundleManifestSchema,
@@ -67,13 +73,19 @@ function isExternalPath(path: string): boolean {
 function validateDocumentReferences(
   trajectory: AtifTrajectoryV1_8,
   path: string,
+  documentPath: string,
   documentPaths: ReadonlySet<string>,
   assetPaths: ReadonlySet<string>,
   diagnostics: AtifDiagnostic[],
 ): void {
   if (
     trajectory.continued_trajectory_ref &&
-    !documentPaths.has(trajectory.continued_trajectory_ref)
+    !documentPaths.has(
+      posix.join(
+        posix.dirname(documentPath),
+        trajectory.continued_trajectory_ref,
+      ),
+    )
   ) {
     diagnostics.push(
       diagnostic(
@@ -95,7 +107,9 @@ function validateDocumentReferences(
       if (
         part.type !== "text" &&
         !isExternalPath(part.source.path) &&
-        !assetPaths.has(part.source.path)
+        !assetPaths.has(
+          posix.join(posix.dirname(documentPath), part.source.path),
+        )
       ) {
         diagnostics.push(
           diagnostic(
@@ -115,7 +129,9 @@ function validateDocumentReferences(
         if (
           reference.trajectory_path &&
           !isExternalPath(reference.trajectory_path) &&
-          !documentPaths.has(reference.trajectory_path)
+          !documentPaths.has(
+            posix.join(posix.dirname(documentPath), reference.trajectory_path),
+          )
         ) {
           diagnostics.push(
             diagnostic(
@@ -135,6 +151,7 @@ function validateDocumentReferences(
     validateDocumentReferences(
       child,
       `${path}.subagent_trajectories[${index}]`,
+      documentPath,
       documentPaths,
       assetPaths,
       diagnostics,
@@ -227,6 +244,7 @@ export function serializeAtifExportBundle(
       validateDocumentReferences(
         trajectory,
         `documents.${sessionId}[${index}]`,
+        draft.documentPaths.get(trajectory.trajectory_id ?? "") ?? "",
         documentPaths,
         assetPaths,
         diagnostics,
@@ -265,6 +283,28 @@ export function serializeAtifExportBundle(
     diagnostics.some((entry) => entry.severity === "error") ||
     draft.independentValidation?.status === "failed";
   const transcriptPartial = diagnostics.length > 0;
+  const samplingFields = [
+    "promptTokenIds",
+    "completionTokenIds",
+    "logprobs",
+    "tokenizer",
+  ] as const;
+  const samplingComplete = samplingFields.every(
+    (field) => draft.nativeSampling[field].available === input.sources.length,
+  );
+  const samplingDocuments = new Set(
+    Object.values(draft.documents)
+      .flat()
+      .filter((document) =>
+        document.steps.some(
+          (step) =>
+            step.metrics?.prompt_token_ids !== undefined ||
+            step.metrics?.completion_token_ids !== undefined ||
+            step.metrics?.logprobs !== undefined,
+        ),
+      )
+      .map((document) => document.trajectory_id),
+  );
   const manifest: TrajectoryBundleManifestV1 = {
     type: TRAJECTORY_BUNDLE_TYPE,
     version: TRAJECTORY_BUNDLE_VERSION,
@@ -297,7 +337,7 @@ export function serializeAtifExportBundle(
       }))
       .sort((left, right) => left.path.localeCompare(right.path)),
     validation: {
-      status: validationFailed ? "failed" : "passed",
+      status: validationFailed ? "invalid" : "valid",
       validator: {
         name: "apex-atif-v1.8",
         version: APEX_ATIF_EXPORTER_VERSION,
@@ -310,20 +350,56 @@ export function serializeAtifExportBundle(
       diagnostics,
     },
     completeness: {
-      transcript: transcriptPartial ? "partial" : "complete",
+      status: transcriptPartial ? "partial" : "complete",
       sftEligibility: "ineligible",
       rlEligibility: "ineligible",
       diagnostics: [...diagnostics, ...eligibilityDiagnostics()],
     },
-    nativeSampling: draft.nativeSampling,
+    nativeSampling: {
+      status: Object.values(draft.nativeSampling).some(
+        (field) => field.available > 0,
+      )
+        ? samplingComplete
+          ? "available"
+          : "partial"
+        : "unavailable",
+      artifactPaths: documentEntries
+        .filter((entry) => samplingDocuments.has(entry.trajectoryId))
+        .map((entry) => entry.path),
+      reason: samplingComplete
+        ? null
+        : "One or more native sampling fields were not exposed completely; see the per-field availability counts.",
+      fields: draft.nativeSampling,
+    },
   };
   const parsedManifest = TrajectoryBundleManifestSchema.parse(manifest);
   const manifestBytes = Buffer.from(
     stringifyCanonicalJson(toJsonValue(parsedManifest)),
   );
   files.push(
-    bundleFile("manifest", "manifest.json", "application/json", manifestBytes),
+    bundleFile(
+      "manifest",
+      TRAJECTORY_BUNDLE_FILENAME,
+      "application/json",
+      manifestBytes,
+    ),
   );
+  if (
+    files.length > TRAJECTORY_BUNDLE_LIMITS.files ||
+    files.some((file) => file.sizeBytes > TRAJECTORY_BUNDLE_LIMITS.fileBytes) ||
+    files.reduce((total, file) => total + file.sizeBytes, 0) >
+      TRAJECTORY_BUNDLE_LIMITS.totalBytes
+  ) {
+    throw new AtifConversionError(
+      "trajectory bundle exceeds portable export limits",
+      [
+        diagnostic(
+          "bundle_size_limit",
+          "Bundle limits include every document, asset, source, and the manifest.",
+        ),
+      ],
+    );
+  }
   files.sort((left, right) => left.path.localeCompare(right.path));
 
   return {

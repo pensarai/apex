@@ -1,5 +1,8 @@
+import { posix } from "node:path";
+import type { LanguageModelV3ToolApprovalRequest } from "@ai-sdk/provider";
 import { describe, expect, it } from "vitest";
 import { convertNativeRolloutSourcesToAtif } from "./convert";
+import { serializeAtifExportBundle } from "./serialize";
 import { defaultPrompt, lookupTool, nativeSource } from "./test-fixtures";
 
 const identity = {
@@ -82,7 +85,7 @@ describe("native rollout evidence to ATIF conversion", () => {
     expect(documents).toHaveLength(2);
     expect(documents?.[0]).toMatchObject({
       trajectory_id: "atif_atm_turn_1",
-      continued_trajectory_ref: "trajectories/atif_atm_turn_2.json",
+      continued_trajectory_ref: "atif_atm_turn_2.json",
       agent: {
         tool_definitions: [
           {
@@ -212,12 +215,15 @@ describe("native rollout evidence to ATIF conversion", () => {
       ? userMessage.find((part) => part.type === "image")
       : undefined;
 
-    expect(image?.source.path).toMatch(/^assets\/[a-f0-9]{64}$/);
+    expect(image?.source.path).toMatch(/^\.\.\/assets\/[a-f0-9]{64}$/);
     expect(
       result.files.some(
         (file) =>
           file.kind === "asset" &&
-          file.path === image?.source.path &&
+          file.path ===
+            posix.normalize(
+              posix.join("trajectories", image?.source.path ?? ""),
+            ) &&
           Buffer.from(file.bytes).toString() === "synthetic image bytes",
       ),
     ).toBe(true);
@@ -262,11 +268,124 @@ describe("native rollout evidence to ATIF conversion", () => {
         type: "image",
         source: {
           media_type: "image/png",
-          path: expect.stringMatching(/^assets\/[a-f0-9]{64}$/),
+          path: expect.stringMatching(/^\.\.\/assets\/[a-f0-9]{64}$/),
         },
       },
       { type: "text", text: "after" },
     ]);
+  });
+
+  it("marks a numeric text delta as partial without inventing text or losing source bytes", () => {
+    const source = nativeSource({
+      normalizedOutput: {
+        parts: [{ type: "text-delta", id: "fixture-text", delta: 42 }],
+      },
+    });
+    const originalBytes = Buffer.from(source.bytes);
+
+    const bundle = serializeAtifExportBundle({
+      ...identity,
+      sources: [source],
+      rootSourceId: source.id,
+    });
+
+    expect(bundle.manifest.validation.status).toBe("valid");
+    expect(bundle.manifest.completeness.status).toBe("partial");
+    expect(bundle.manifest.completeness.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "invalid_content_part",
+        severity: "warning",
+        sourceId: source.id,
+        path: "output.parts[0]",
+      }),
+    );
+    expect(bundle.documents.ses_fixture?.[0]?.steps.at(-1)?.message).toBe("");
+    expect(bundle.files.find((file) => file.kind === "source")?.bytes).toEqual(
+      originalBytes,
+    );
+    expect(source.bytes).toEqual(originalBytes);
+  });
+
+  it("marks an unsupported SDK tool approval as partial and retains exact source bytes", () => {
+    const approval = {
+      type: "tool-approval-request",
+      approvalId: "approval-fixture",
+      toolCallId: "call-fixture",
+    } satisfies LanguageModelV3ToolApprovalRequest;
+    const source = nativeSource({ normalizedOutput: { parts: [approval] } });
+    const originalBytes = Buffer.from(source.bytes);
+
+    const bundle = serializeAtifExportBundle({
+      ...identity,
+      sources: [source],
+      rootSourceId: source.id,
+    });
+
+    expect(bundle.manifest.validation.status).toBe("valid");
+    expect(bundle.manifest.completeness.status).toBe("partial");
+    expect(bundle.manifest.completeness.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "unsupported_content_part",
+        severity: "warning",
+        sourceId: source.id,
+        path: "output.parts[0]",
+      }),
+    );
+    expect(bundle.documents.ses_fixture?.[0]?.steps.at(-1)?.message).toBe("");
+    expect(bundle.files.find((file) => file.kind === "source")?.bytes).toEqual(
+      originalBytes,
+    );
+    expect(source.bytes).toEqual(originalBytes);
+  });
+
+  it("keeps benign stream controls complete and preserves text, reasoning and usage", () => {
+    const source = nativeSource({
+      normalizedOutput: {
+        parts: [
+          { type: "stream-start", warnings: [] },
+          { type: "response-metadata", id: "response-fixture" },
+          { type: "raw", rawValue: { transport: "synthetic" } },
+          { type: "text-start", id: "fixture-text" },
+          { type: "text-delta", id: "fixture-text", delta: "blue" },
+          { type: "text-end", id: "fixture-text" },
+          { type: "reasoning-start", id: "fixture-reasoning" },
+          {
+            type: "reasoning-delta",
+            id: "fixture-reasoning",
+            delta: "A color.",
+          },
+          { type: "reasoning-end", id: "fixture-reasoning" },
+          { type: "tool-input-end", id: "fixture-control" },
+          {
+            type: "finish",
+            finishReason: { unified: "stop", raw: "stop" },
+            usage: {
+              inputTokens: { total: 12, cacheRead: 2 },
+              outputTokens: { total: 4 },
+            },
+          },
+        ],
+      },
+    });
+    const originalBytes = Buffer.from(source.bytes);
+
+    const bundle = serializeAtifExportBundle({
+      ...identity,
+      sources: [source],
+      rootSourceId: source.id,
+    });
+
+    expect(bundle.manifest.validation.status).toBe("valid");
+    expect(bundle.manifest.completeness.status).toBe("complete");
+    expect(bundle.manifest.validation.diagnostics).toEqual([]);
+    expect(bundle.documents.ses_fixture?.[0]?.steps.at(-1)).toMatchObject({
+      message: "blue",
+      reasoning_content: "A color.",
+      metrics: { prompt_tokens: 12, cached_tokens: 2, completion_tokens: 4 },
+    });
+    expect(bundle.files.find((file) => file.kind === "source")?.bytes).toEqual(
+      originalBytes,
+    );
   });
 
   it("reports external media whose bytes are unavailable without inventing them", () => {
@@ -448,12 +567,12 @@ describe("native rollout evidence to ATIF conversion", () => {
     expect(references).toEqual([
       {
         trajectory_id: "atif_atm_child",
-        trajectory_path: "trajectories/atif_atm_child.json",
+        trajectory_path: "atif_atm_child.json",
         session_id: "ses-child",
       },
       {
         trajectory_id: "atif_atm_grandchild",
-        trajectory_path: "trajectories/atif_atm_grandchild.json",
+        trajectory_path: "atif_atm_grandchild.json",
         session_id: "ses-grandchild",
       },
     ]);

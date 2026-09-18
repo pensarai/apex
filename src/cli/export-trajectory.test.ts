@@ -154,7 +154,7 @@ describe("pensar export-trajectory", () => {
     }
     expect(JSON.parse(result.stdout)).toMatchObject({
       outputDirectory: outputPath,
-      manifestPath: join(outputPath, "manifest.json"),
+      manifestPath: join(outputPath, "trajectory-bundle.json"),
     });
   });
 
@@ -202,13 +202,13 @@ describe("pensar export-trajectory", () => {
     };
     expect(response).toMatchObject({
       outputDirectory: outputPath,
-      manifestPath: join(outputPath, "manifest.json"),
+      manifestPath: join(outputPath, "trajectory-bundle.json"),
     });
     expect(response.rootTrajectoryId).toMatch(/^atif_/);
     expect(response.fileCount).toBeGreaterThan(2);
     expect(
       JSON.parse(await readFile(response.manifestPath, "utf8")),
-    ).toMatchObject({ validation: { status: "passed" } });
+    ).toMatchObject({ validation: { status: "valid" } });
   });
 
   it("does not overwrite an existing destination", async () => {

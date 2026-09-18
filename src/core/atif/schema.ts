@@ -11,7 +11,13 @@ export const ATIF_REFERENCE_REVISION =
   "88fdbc9d42e907c0414654f041ece5eaf798f538" as const;
 export const TRAJECTORY_BUNDLE_TYPE = "evalgate.trajectory-bundle" as const;
 export const TRAJECTORY_BUNDLE_VERSION = 1 as const;
-export const APEX_ATIF_EXPORTER_VERSION = 1 as const;
+export const TRAJECTORY_BUNDLE_FILENAME = "trajectory-bundle.json" as const;
+export const TRAJECTORY_BUNDLE_LIMITS = {
+  files: 512,
+  fileBytes: 16 * 1024 * 1024,
+  totalBytes: 64 * 1024 * 1024,
+} as const;
+export const APEX_ATIF_EXPORTER_VERSION = "1" as const;
 export const ATIF_EXPORT_SOURCE_LIMITS = {
   maxSources: 512,
   maxTotalSourceBytes: 64 * 1024 * 1024,
@@ -196,73 +202,98 @@ export const AtifTrajectorySchema: z.ZodType<AtifTrajectoryV1_8> = z.lazy(() =>
 );
 
 export const AtifDiagnosticSchema = z.strictObject({
-  code: z.string().min(1),
+  code: z.string().min(1).max(1_024),
   severity: z.enum(["error", "warning"]),
-  message: z.string().min(1),
-  path: z.string().min(1).optional(),
-  sourceId: z.string().min(1).optional(),
+  message: z.string().min(1).max(4_000),
+  path: z.string().min(1).max(2_048).optional(),
+  sourceId: z.string().min(1).max(1_024).optional(),
 });
 export type AtifDiagnostic = z.infer<typeof AtifDiagnosticSchema>;
 
+const bundleIdentifier = z.string().min(1).max(1_024);
+const bundlePath = bundleIdentifier.refine(
+  (path) =>
+    /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(path) &&
+    path
+      .split("/")
+      .every((part) => part !== "" && part !== "." && part !== ".."),
+  "Expected a normalized, relative bundle path",
+);
+const bundleDiagnostics = z.array(AtifDiagnosticSchema).max(1_000);
 const bundleFileEntrySchema = z.strictObject({
-  path: z.string().min(1),
+  path: bundlePath,
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  sizeBytes: z.number().int().nonnegative(),
+  sizeBytes: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(TRAJECTORY_BUNDLE_LIMITS.fileBytes),
 });
 
 export const TrajectoryBundleManifestSchema = z.strictObject({
   type: z.literal(TRAJECTORY_BUNDLE_TYPE),
   version: z.literal(TRAJECTORY_BUNDLE_VERSION),
-  rootTrajectoryId: z.string().min(1),
+  rootTrajectoryId: bundleIdentifier,
   atif: z.strictObject({
     schemaVersion: z.literal(ATIF_SCHEMA_VERSION),
     referenceRevision: z.literal(ATIF_REFERENCE_REVISION),
   }),
   exporter: z.strictObject({
-    name: z.string().min(1),
-    version: z.string().min(1),
+    name: bundleIdentifier,
+    version: bundleIdentifier,
   }),
-  documents: z.array(
-    bundleFileEntrySchema.extend({ trajectoryId: z.string().min(1) }),
-  ),
-  assets: z.array(
-    bundleFileEntrySchema.extend({
-      mediaType: z.string().min(1),
-      required: z.boolean(),
-    }),
-  ),
-  sources: z.array(bundleFileEntrySchema.extend({ id: z.string().min(1) })),
+  documents: z
+    .array(bundleFileEntrySchema.extend({ trajectoryId: bundleIdentifier }))
+    .min(1)
+    .max(TRAJECTORY_BUNDLE_LIMITS.files - 1),
+  assets: z
+    .array(
+      bundleFileEntrySchema.extend({
+        mediaType: bundleIdentifier,
+        required: z.boolean(),
+      }),
+    )
+    .max(TRAJECTORY_BUNDLE_LIMITS.files - 1),
+  sources: z
+    .array(bundleFileEntrySchema.extend({ id: bundleIdentifier }))
+    .min(1)
+    .max(TRAJECTORY_BUNDLE_LIMITS.files - 1),
   validation: z.strictObject({
-    status: z.enum(["passed", "failed"]),
+    status: z.enum(["valid", "invalid", "unvalidated"]),
     validator: z.strictObject({
       name: z.literal("apex-atif-v1.8"),
       version: z.literal(APEX_ATIF_EXPORTER_VERSION),
     }),
     independent: z.strictObject({
       status: z.enum(["not_run", "passed", "failed"]),
-      detail: z.string().min(1),
+      detail: z.string().min(1).max(4_000),
     }),
-    diagnostics: z.array(AtifDiagnosticSchema),
+    diagnostics: bundleDiagnostics,
   }),
   completeness: z.strictObject({
-    transcript: z.enum(["complete", "partial"]),
+    status: z.enum(["complete", "partial", "unknown"]),
     sftEligibility: z.enum(["eligible", "ineligible"]),
     rlEligibility: z.enum(["eligible", "ineligible"]),
-    diagnostics: z.array(AtifDiagnosticSchema),
+    diagnostics: bundleDiagnostics,
   }),
-  nativeSampling: z.record(
-    z.enum([
-      "promptTokenIds",
-      "completionTokenIds",
-      "logprobs",
-      "tokenizer",
-      "extra",
-    ]),
-    z.record(
-      z.enum(NATIVE_EVIDENCE_AVAILABILITY_STATES),
-      z.number().int().nonnegative(),
+  nativeSampling: z.strictObject({
+    status: z.enum(["available", "partial", "unavailable", "unknown"]),
+    artifactPaths: z.array(bundlePath).max(TRAJECTORY_BUNDLE_LIMITS.files - 1),
+    reason: z.string().max(4_000).nullable(),
+    fields: z.record(
+      z.enum([
+        "promptTokenIds",
+        "completionTokenIds",
+        "logprobs",
+        "tokenizer",
+        "extra",
+      ]),
+      z.record(
+        z.enum(NATIVE_EVIDENCE_AVAILABILITY_STATES),
+        z.number().int().nonnegative(),
+      ),
     ),
-  ),
+  }),
 });
 export type TrajectoryBundleManifestV1 = z.infer<
   typeof TrajectoryBundleManifestSchema

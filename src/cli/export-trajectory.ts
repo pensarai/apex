@@ -47,7 +47,7 @@ Options:
   -h, --help       Show this help message
 
 The command reads recorded evidence only. A successful output contains
-manifest.json as its commit marker. An optional independentValidation field
+trajectory-bundle.json as its commit marker. An optional independentValidation field
 records a caller-supplied result; this command does not run an external
 validator.`);
 }

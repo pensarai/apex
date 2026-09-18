@@ -73,8 +73,10 @@ describe("exportTrajectoryBundle", () => {
     const result = await exportTrajectoryBundle(input);
 
     expect(result.outputDirectory).toBe(outputDirectory);
-    expect(result.manifestPath).toBe(join(outputDirectory, "manifest.json"));
-    expect(result.manifest.validation.status).toBe("passed");
+    expect(result.manifestPath).toBe(
+      join(outputDirectory, "trajectory-bundle.json"),
+    );
+    expect(result.manifest.validation.status).toBe("valid");
     expect(result.manifest.sources).toEqual([
       expect.objectContaining({ id: source.id, sha256: source.sha256 }),
     ]);
@@ -170,7 +172,9 @@ describe("exportTrajectoryBundle", () => {
       code: "DESTINATION_EXISTS",
     });
     expect(await readFile(sentinel, "utf8")).toBe("keep");
-    expect(await exists(join(outputDirectory, "manifest.json"))).toBe(false);
+    expect(await exists(join(outputDirectory, "trajectory-bundle.json"))).toBe(
+      false,
+    );
   });
 
   it("allows only one concurrent publisher for a fresh destination", async () => {
@@ -188,7 +192,9 @@ describe("exportTrajectoryBundle", () => {
     expect(rejected).toMatchObject({
       reason: expect.objectContaining({ code: "DESTINATION_EXISTS" }),
     });
-    expect(await exists(join(outputDirectory, "manifest.json"))).toBe(true);
+    expect(await exists(join(outputDirectory, "trajectory-bundle.json"))).toBe(
+      true,
+    );
     expect((await readdir(outputDirectory)).length).toBeGreaterThan(1);
   });
 });

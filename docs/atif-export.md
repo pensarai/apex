@@ -24,12 +24,15 @@ Every source supplies an immutable ID, its exact bytes, SHA-256 digest, and byte
 length. The converter validates that identity and the native evidence schema
 before conversion. A bundle accepts at most 512 sources and 64 MiB of source
 bytes. Callers must split larger exports into separately rooted bundles.
+The serialized bundle, including its commit marker, is additionally bounded to
+512 files, 16 MiB per file, and 64 MiB total. Exceeding any bound rejects the
+export before the filesystem writer creates a destination.
 
 `serializeAtifExportBundle` returns:
 
 - one producer-neutral `evalgate.trajectory-bundle` version 1 manifest;
 - ATIF documents grouped by run-scoped ATIF `session_id`;
-- a sorted file set containing `manifest.json`, individual ATIF documents,
+- a sorted file set containing `trajectory-bundle.json`, individual ATIF documents,
   content-addressed assets, and the exact source evidence files;
 - SHA-256 and byte length for every file.
 
@@ -45,9 +48,22 @@ type WriteImmutableTrajectoryBundle = (input: {
 It persists each `file.bytes` at `file.path`, verifies `sha256` and
 `sizeBytes`, and publishes the immutable artifact only after all files succeed.
 The standalone `pensar export-trajectory` command performs the same bounded
-validation and writes `manifest.json` last to a fresh destination. See
+validation and writes `trajectory-bundle.json` last to a fresh destination. See
 [`trajectory-export-command.md`](./trajectory-export-command.md) for its input
 contract and commit-marker semantics.
+
+The version 1 wire manifest uses `validation.status` (`valid`, `invalid`, or
+`unvalidated`) and `completeness.status` (`complete`, `partial`, or `unknown`).
+Validator versions are strings. Native sampling carries an overall status,
+public payload paths, and a separate per-field count of availability states.
+Independent validation and producer training limitations remain explicit.
+Manifest paths are relative to the bundle root; references inside an ATIF
+document are relative to that document, including `../assets/...` references.
+
+`src/core/atif/fixtures/portable-bundle-v1.json` freezes the actual source and
+export bytes for a 33-source bundle with continuation, nested-session, and
+media references. The compatibility test regenerates every byte through the
+public serializer. Consumers can run the same fixture without importing Apex.
 
 ## Mapping and provenance
 

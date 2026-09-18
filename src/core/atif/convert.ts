@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { posix } from "node:path";
 import {
   type EvidenceAvailability,
   type JsonValue,
@@ -418,7 +419,10 @@ function contentPartFromFile(
       );
       return undefined;
     }
-    assetPath = context.assets.addBinary(bytes, mediaType, context.source.id);
+    assetPath = posix.relative(
+      "trajectories",
+      context.assets.addBinary(bytes, mediaType, context.source.id),
+    );
   }
   return type === "image"
     ? {
@@ -954,15 +958,43 @@ function collectStreamOutput(
   const text = new Map<string, Extract<AtifContentPart, { type: "text" }>>();
   const reasoning = new Map<string, string>();
   const partialTools = new Map<string, { name: string; input: string }>();
+  const transportParts = new Set([
+    "stream-start",
+    "response-metadata",
+    "raw",
+    "text-end",
+    "reasoning-start",
+    "reasoning-end",
+    "tool-input-end",
+  ]);
   let usage: JsonObject | undefined;
   for (const [index, raw] of parts.entries()) {
     const part = asObject(raw);
-    if (!part || typeof part.type !== "string") continue;
     const path = `output.parts[${index}]`;
+    if (!part || typeof part.type !== "string") {
+      diagnostic(
+        context.diagnostics,
+        context.source.id,
+        "invalid_content_part",
+        "stream part is not a typed object and remains only in source evidence",
+        path,
+      );
+      continue;
+    }
     if (
       (part.type === "text-start" || part.type === "text-delta") &&
       typeof part.id === "string"
     ) {
+      if (part.type === "text-delta" && typeof part.delta !== "string") {
+        diagnostic(
+          context.diagnostics,
+          context.source.id,
+          "invalid_content_part",
+          "stream text delta is not a string and remains only in source evidence",
+          path,
+        );
+        continue;
+      }
       let value = text.get(part.id);
       if (!value) {
         value = { type: "text", text: "" };
@@ -1015,6 +1047,14 @@ function collectStreamOutput(
         context.source.id,
         "stream_error",
         "captured stream contains an error part",
+        path,
+      );
+    } else if (!transportParts.has(part.type)) {
+      diagnostic(
+        context.diagnostics,
+        context.source.id,
+        "unsupported_content_part",
+        `stream part ${part.type} is retained only in source evidence`,
         path,
       );
     }
@@ -1401,7 +1441,7 @@ function attachSessionRelationships(
       ...(result.subagent_trajectory_ref ?? []),
       {
         trajectory_id: childId,
-        trajectory_path: childPath,
+        trajectory_path: posix.relative("trajectories", childPath),
         session_id: sessionId,
       },
     ];
@@ -1473,7 +1513,10 @@ export function convertNativeRolloutSourcesToAtif(
       const current = sessionDocuments[index];
       const nextId = sessionDocuments[index + 1]?.trajectory_id;
       if (current && nextId) {
-        current.continued_trajectory_ref = documentPath(nextId);
+        current.continued_trajectory_ref = posix.relative(
+          "trajectories",
+          documentPath(nextId),
+        );
       }
     }
   }
