@@ -29,6 +29,7 @@ export {
   runWithStepContext,
   streamResponse,
 } from "./ai";
+export type { InferenceAttempt } from "./inference-attempt";
 export {
   addRecentModelId,
   getRecentModels,
@@ -47,6 +48,10 @@ export type {
 export {
   createNativeRolloutEvidenceCapture,
   DEFAULT_NATIVE_ROLLOUT_CAPTURE_LIMITS,
+  runWithNativeRolloutSession,
+  serializeNativeRolloutEvidence,
+  stringifyCanonicalJson,
+  toJsonValue,
 } from "./native-rollout-evidence";
 export type { AIAuthConfig } from "./utils";
 export { buildAuthConfig } from "./utils";

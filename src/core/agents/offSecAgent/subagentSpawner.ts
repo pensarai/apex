@@ -13,6 +13,7 @@ import type {
   ThinkingEffort,
   UsageRecorder,
 } from "../../ai";
+import { runWithNativeRolloutSession } from "../../ai";
 import type { CredentialManager } from "../../credentials";
 import { AgentEventBus } from "../../eventBus";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
@@ -134,6 +135,9 @@ export interface SpawnOptions<TResult = unknown> {
 
   /** Owning agent session id → lifecycle `parentSessionId`. */
   parentSessionId?: string;
+
+  /** AI SDK tool call that authoritatively launched this child. */
+  parentToolCallId?: string;
 
   /** Stamp the child's own id as `sessionId` on lifecycle events. */
   stampChildSessionId?: boolean;
@@ -403,6 +407,8 @@ class InProcessSubagentSpawner implements SubagentSpawner {
   ): Promise<TResult> {
     const childId = opts.subagentId ?? this.idFactory();
     opts.onSpawned?.(childId);
+    const parentSessionId =
+      opts.parentSessionId ?? opts.parentSubagentId ?? opts.runtime.session.id;
 
     const lifecycleBase = {
       subagentId: childId,
@@ -410,9 +416,7 @@ class InProcessSubagentSpawner implements SubagentSpawner {
       ...(opts.parentSubagentId !== undefined
         ? { parentSubagentId: opts.parentSubagentId }
         : {}),
-      ...(opts.parentSessionId !== undefined
-        ? { parentSessionId: opts.parentSessionId }
-        : {}),
+      ...(parentSessionId !== undefined ? { parentSessionId } : {}),
     };
 
     opts.parentBus?.emit("subagent-spawn", {
@@ -436,7 +440,16 @@ class InProcessSubagentSpawner implements SubagentSpawner {
 
       opts.beforeConsume?.(childBus);
 
-      const result = (await handle.run()) as TResult;
+      const result = (await (opts.parentToolCallId && parentSessionId
+        ? runWithNativeRolloutSession(
+            {
+              sessionId: childId,
+              parentSessionId,
+              parentToolCallId: opts.parentToolCallId,
+            },
+            handle.run,
+          )
+        : handle.run())) as TResult;
       await opts.onConsumed?.(result);
       if (opts.drainGraceMs != null) {
         await drainBounded(handle.drained?.(), opts.drainGraceMs);

@@ -67,6 +67,22 @@ function fixture(): NativeRolloutEvidenceEnvelopeV1 {
 }
 
 describe("native rollout evidence schema", () => {
+  it("preserves an exact parent session and tool-call identity", () => {
+    const value = fixture();
+    value.parent = {
+      sessionId: "ses_parent",
+      toolCallId: "call_spawn_child",
+    };
+
+    expect(parseNativeRolloutEvidence(value).parent).toEqual(value.parent);
+    expect(() =>
+      parseNativeRolloutEvidence({
+        ...value,
+        parent: { sessionId: "ses_parent", label: "display-only" },
+      }),
+    ).toThrow();
+  });
+
   it("preserves empty sequences and zero log probabilities", () => {
     const value = fixture();
     value.native.promptTokenIds = { state: "available", value: [] };

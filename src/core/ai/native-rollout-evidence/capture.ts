@@ -6,8 +6,14 @@ import {
   type LanguageModelV3GenerateResult,
   type LanguageModelV3StreamPart,
   type LanguageModelV3StreamResult,
+  type LanguageModelV3Usage,
 } from "@ai-sdk/provider";
-import { allocateAttemptIdentity } from "../inference-attempt";
+import {
+  type AttemptUsageInput,
+  type InferenceAttempt,
+  type InferenceAttemptHandle,
+  startInferenceAttempt,
+} from "../inference-attempt";
 import {
   createContentAddressedAsset,
   hashCanonicalJson,
@@ -23,6 +29,7 @@ import type {
   EvidenceAvailability,
   JsonValue,
   NativeRolloutAttemptLifecycle,
+  NativeRolloutAttemptSink,
   NativeRolloutCaptureLimits,
   NativeRolloutCaptureReportV1,
   NativeRolloutEvidenceEnvelopeV1,
@@ -52,6 +59,7 @@ export interface CreateNativeRolloutEvidenceCaptureInput {
   enabled?: boolean;
   runId: string;
   sink?: NativeRolloutEvidenceSink;
+  attemptSink?: NativeRolloutAttemptSink;
   limits?: Partial<NativeRolloutCaptureLimits>;
 }
 
@@ -64,6 +72,7 @@ interface CaptureStore {
   enabled: boolean;
   runId: string;
   sink?: NativeRolloutEvidenceSink;
+  attemptSink?: NativeRolloutAttemptSink;
   limits: NativeRolloutCaptureLimits;
   diagnostics: CaptureDiagnosticV1[];
   attemptedRecords: number;
@@ -72,6 +81,7 @@ interface CaptureStore {
   deliveryUnknownRecords: number;
   pendingWrites: Set<Promise<void>>;
   activeSinkWrites: Set<Promise<void>>;
+  activeAttemptWrites: Set<Promise<void>>;
   flushers: Set<() => void>;
   nextSegment: number;
   nextTurnBySession: Map<string, number>;
@@ -93,10 +103,6 @@ interface TurnIdentity {
   segmentId: string;
   turnId: string;
   turnIndex: number;
-  rootAttemptId: NativeRolloutEvidenceEnvelopeV1["attempt"]["rootAttemptId"];
-  idempotencyKey: NativeRolloutEvidenceEnvelopeV1["attempt"]["idempotencyKey"];
-  sequence: number;
-  previousAttemptId?: NativeRolloutEvidenceEnvelopeV1["attempt"]["attemptId"];
 }
 
 interface PreparedInput {
@@ -107,7 +113,7 @@ interface PreparedInput {
 
 interface AttemptCapture {
   turn: TurnIdentity;
-  attemptId: NativeRolloutEvidenceEnvelopeV1["attempt"]["attemptId"];
+  attempt: InferenceAttemptHandle;
   modelContext: NativeRolloutModelContext;
   provider: string;
   modelId: string;
@@ -131,11 +137,20 @@ interface StreamCollector {
   sawFinish: boolean;
   finishReason?: string;
   providerMetadata?: unknown;
+  usage?: LanguageModelV3Usage;
+  responseId?: string;
   responseModelId?: string;
+}
+
+export interface NativeRolloutSessionContext {
+  sessionId: string;
+  parentSessionId?: string;
+  parentToolCallId?: string;
 }
 
 const captureStore = new AsyncLocalStorage<CaptureStore>();
 const operationStore = new AsyncLocalStorage<OperationContext>();
+const sessionStore = new AsyncLocalStorage<NativeRolloutSessionContext>();
 
 function positiveInteger(name: string, value: number): number {
   if (!Number.isInteger(value) || value <= 0) {
@@ -206,6 +221,7 @@ export function createNativeRolloutEvidenceCapture(
     enabled,
     runId: input.runId,
     sink: input.sink,
+    attemptSink: input.attemptSink,
     limits: resolveLimits(input.limits),
     diagnostics: [],
     attemptedRecords: 0,
@@ -214,6 +230,7 @@ export function createNativeRolloutEvidenceCapture(
     deliveryUnknownRecords: 0,
     pendingWrites: new Set(),
     activeSinkWrites: new Set(),
+    activeAttemptWrites: new Set(),
     flushers: new Set(),
     nextSegment: 1,
     nextTurnBySession: new Map(),
@@ -267,6 +284,21 @@ export function runWithNativeRolloutOperation<T>(
     { ...context, invocation: Symbol("model-call") },
     fn,
   );
+}
+
+export function runWithNativeRolloutSession<T>(
+  context: NativeRolloutSessionContext,
+  fn: () => T,
+): T {
+  if (
+    (context.parentSessionId === undefined) !==
+    (context.parentToolCallId === undefined)
+  ) {
+    throw new Error(
+      "parentSessionId and parentToolCallId must be supplied together",
+    );
+  }
+  return sessionStore.run(context, fn);
 }
 
 function boundedSinkWrite(
@@ -353,6 +385,60 @@ function queueEnvelope(
       addDiagnostic(store, {
         code: "sink_failure",
         message: "the evidence sink did not persist a captured attempt",
+      });
+    })
+    .finally(() => {
+      store.pendingWrites.delete(pending);
+    });
+  store.pendingWrites.add(pending);
+}
+
+function queueAttempt(store: CaptureStore, attempt: InferenceAttempt): void {
+  if (!store.attemptSink) return;
+  if (
+    Buffer.byteLength(JSON.stringify(attempt)) > store.limits.maxEnvelopeBytes
+  ) {
+    addDiagnostic(store, {
+      code: "attempt_envelope_limit",
+      message: "an inference-attempt event exceeded the envelope byte limit",
+    });
+    return;
+  }
+  if (store.activeAttemptWrites.size >= store.limits.maxPendingRecords) {
+    addDiagnostic(store, {
+      code: "attempt_queue_limit",
+      message: "the inference-attempt sink queue reached its record limit",
+    });
+    return;
+  }
+
+  const controller = new AbortController();
+  const write = Promise.resolve()
+    .then(() =>
+      store.attemptSink?.write(attempt, { signal: controller.signal }),
+    )
+    .finally(() => {
+      store.activeAttemptWrites.delete(write);
+    });
+  store.activeAttemptWrites.add(write);
+  const pending = boundedSinkWrite(
+    write,
+    controller,
+    store.limits.sinkTimeoutMs,
+  )
+    .then((outcome) => {
+      if (outcome === "unknown") {
+        addDiagnostic(store, {
+          code: "attempt_sink_delivery_unknown",
+          message:
+            "the inference-attempt sink did not confirm persistence before its deadline",
+        });
+      }
+    })
+    .catch(() => {
+      addDiagnostic(store, {
+        code: "attempt_sink_failure",
+        message: "the inference-attempt sink rejected an event",
       });
     })
     .finally(() => {
@@ -503,14 +589,10 @@ function allocateTurn(
   const turnIndex = (store.nextTurnBySession.get(sessionKey) ?? 0) + 1;
   store.nextTurnBySession.set(sessionKey, turnIndex);
   const segment = store.nextSegment++;
-  const identity = allocateAttemptIdentity();
   return {
     segmentId: `segment_${segment.toString().padStart(6, "0")}`,
     turnId: `turn_${turnIndex.toString().padStart(6, "0")}`,
     turnIndex,
-    rootAttemptId: identity.attemptId,
-    idempotencyKey: identity.idempotencyKey,
-    sequence: 1,
   };
 }
 
@@ -529,30 +611,45 @@ function beginAttempt(
   );
   if (!retry) {
     const turn = allocateTurn(store, context);
-    return {
+    const capture: AttemptCapture = {
       turn,
-      attemptId: turn.rootAttemptId,
+      attempt: startInferenceAttempt({
+        operationKind: context.operationKind,
+        requested: {
+          provider,
+          modelId: context.requestedModelId,
+          ...(context.transport ? { transport: context.transport } : {}),
+        },
+        effective: {
+          provider,
+          modelId,
+          ...(context.transport ? { transport: context.transport } : {}),
+        },
+        attribution: {
+          runId: store.runId,
+          ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+        },
+      }),
       modelContext: context,
       provider,
       modelId,
       input,
     };
+    queueAttempt(store, capture.attempt.started);
+    return capture;
   }
-  const identity = allocateAttemptIdentity({
-    idempotencyKey: retry.capture.turn.idempotencyKey,
-  });
-  return {
+  const capture: AttemptCapture = {
     turn: {
       ...retry.capture.turn,
-      sequence: retry.capture.turn.sequence + 1,
-      previousAttemptId: retry.capture.attemptId,
     },
-    attemptId: identity.attemptId,
+    attempt: retry.capture.attempt.retry(),
     modelContext: context,
     provider,
     modelId,
     input,
   };
+  queueAttempt(store, capture.attempt.started);
+  return capture;
 }
 
 function errorRequestBody(error: unknown): unknown {
@@ -571,6 +668,8 @@ function emitAttempt(
     nativeOutputAbsent?: "omitted" | "unsupported";
     nativeOutputReason?: string;
     providerMetadata?: unknown;
+    usage?: LanguageModelV3Usage;
+    providerRequestId?: string;
     effectiveModelId?: string;
     limitations?: CaptureDiagnosticV1[];
   },
@@ -642,6 +741,45 @@ function emitAttempt(
     };
   }
 
+  const usage: AttemptUsageInput = {
+    transport: "sdk-normalized",
+    usage: input.usage,
+    providerMetadata: input.providerMetadata,
+    providerRequestId: input.providerRequestId,
+    effective: {
+      provider: capture.provider,
+      modelId: input.effectiveModelId ?? capture.modelId,
+      ...(capture.modelContext.transport
+        ? { transport: capture.modelContext.transport }
+        : {}),
+    },
+  };
+  const settle = (attemptUsage?: AttemptUsageInput) => {
+    switch (input.lifecycle) {
+      case "completed":
+        return capture.attempt.complete(attemptUsage);
+      case "failed":
+        return capture.attempt.fail(attemptUsage);
+      case "partial":
+        return capture.attempt.partial(attemptUsage);
+      case "aborted":
+        return capture.attempt.abort(attemptUsage);
+      case "retried":
+        return capture.attempt.retried(attemptUsage);
+    }
+  };
+  let attempt: InferenceAttempt;
+  try {
+    attempt = settle(usage);
+  } catch {
+    addDiagnostic(store, {
+      code: "attempt_usage_unavailable",
+      message: "the inference-attempt observer could not normalize usage",
+    });
+    attempt = settle();
+  }
+  queueAttempt(store, attempt);
+
   queueEnvelope(store, {
     schema: NATIVE_ROLLOUT_EVIDENCE_SCHEMA,
     version: NATIVE_ROLLOUT_EVIDENCE_VERSION,
@@ -649,17 +787,26 @@ function emitAttempt(
     ...(capture.modelContext.sessionId
       ? { sessionId: capture.modelContext.sessionId }
       : {}),
+    ...(capture.modelContext.parentSessionId &&
+    capture.modelContext.parentToolCallId
+      ? {
+          parent: {
+            sessionId: capture.modelContext.parentSessionId,
+            toolCallId: capture.modelContext.parentToolCallId,
+          },
+        }
+      : {}),
     segmentId: capture.turn.segmentId,
     turnId: capture.turn.turnId,
     turnIndex: capture.turn.turnIndex,
     operationKind: capture.modelContext.operationKind,
     attempt: {
-      attemptId: capture.attemptId,
-      idempotencyKey: capture.turn.idempotencyKey,
-      sequence: capture.turn.sequence,
-      rootAttemptId: capture.turn.rootAttemptId,
-      ...(capture.turn.previousAttemptId
-        ? { previousAttemptId: capture.turn.previousAttemptId }
+      attemptId: attempt.attemptId,
+      idempotencyKey: attempt.idempotencyKey,
+      sequence: attempt.lineage.sequence,
+      rootAttemptId: attempt.attribution.rootAttemptId,
+      ...(attempt.lineage.previousAttemptId
+        ? { previousAttemptId: attempt.lineage.previousAttemptId }
         : {}),
       lifecycle: input.lifecycle,
     },
@@ -719,7 +866,9 @@ function collectStreamPart(
     collector.sawFinish = true;
     collector.finishReason = part.finishReason.unified;
     collector.providerMetadata = part.providerMetadata;
+    collector.usage = part.usage;
   } else if (part.type === "response-metadata") {
+    collector.responseId = part.id;
     collector.responseModelId = part.modelId;
   } else if (part.type === "error") {
     collector.sawError = true;
@@ -822,6 +971,8 @@ function wrapCapturedStream(
         ? "the provider emitted no raw response chunks"
         : "raw provider chunks were not enabled for this existing call",
       providerMetadata: collector.providerMetadata,
+      usage: collector.usage,
+      providerRequestId: collector.responseId,
       effectiveModelId: collector.responseModelId,
       limitations,
     });
@@ -906,6 +1057,7 @@ export function withNativeRolloutEvidenceModel(
 
   const context = (): ResolvedOperationContext => {
     const override = operationStore.getStore();
+    const session = sessionStore.getStore();
     return {
       model: {
         ...defaultContext,
@@ -913,6 +1065,13 @@ export function withNativeRolloutEvidenceModel(
           ? { operationKind: override.operationKind }
           : {}),
         ...(override?.sessionId ? { sessionId: override.sessionId } : {}),
+        ...(session?.sessionId ? { sessionId: session.sessionId } : {}),
+        ...(session?.parentSessionId && session.parentToolCallId
+          ? {
+              parentSessionId: session.parentSessionId,
+              parentToolCallId: session.parentToolCallId,
+            }
+          : {}),
       },
       // Direct wrapper calls are independent by default. AI SDK retries share
       // the explicit outer operation scope installed at each Apex call site.
@@ -989,6 +1148,8 @@ export function withNativeRolloutEvidenceModel(
         },
         nativeOutput: result.response?.body,
         providerMetadata: result.providerMetadata,
+        usage: result.usage,
+        providerRequestId: result.response?.id,
         effectiveModelId: result.response?.modelId,
         limitations:
           lifecycle === "partial"
