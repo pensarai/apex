@@ -61,7 +61,7 @@ Returns an array of results with the text output from each agent.`,
           "A concise, human-readable description of what this tool call is doing",
         ),
     }),
-    execute: async ({ tasks }) => {
+    execute: async ({ tasks }, { toolCallId }) => {
       if (!ctx.model) {
         return {
           success: false,
@@ -114,6 +114,7 @@ Returns an array of results with the text output from each agent.`,
               item.objective,
               i + 1,
               item.name,
+              toolCallId,
             );
             return {
               codebasePath: item.codebasePath,
@@ -180,6 +181,7 @@ async function runSingleCodingAgent(
   objective: string,
   _agentIndex: number,
   name: string,
+  parentToolCallId: string,
 ): Promise<string> {
   let textOutput = "";
 
@@ -203,6 +205,7 @@ async function runSingleCodingAgent(
     lifecycleInput: { codebasePath, objective },
     parentSubagentId: ctx.subagentId,
     parentSessionId: ctx.subagentId ?? ctx.session.id,
+    parentToolCallId,
     stampChildSessionId: true,
     beforeConsume: (childBus) => {
       childBus.on("text-delta", (d) => {

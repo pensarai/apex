@@ -3,11 +3,14 @@ import type {
   LanguageModelV3CallOptions,
   LanguageModelV3GenerateResult,
   LanguageModelV3StreamPart,
+  LanguageModelV3Usage,
 } from "@ai-sdk/provider";
 import { describe, expect, it, vi } from "vitest";
+import type { InferenceAttempt } from "../inference-attempt";
 import {
   createNativeRolloutEvidenceCapture,
   runWithNativeRolloutOperation,
+  runWithNativeRolloutSession,
   withNativeRolloutEvidenceModel,
 } from "./capture";
 import type { NativeRolloutEvidenceEnvelopeV1 } from "./schema";
@@ -100,6 +103,249 @@ async function drain(stream: ReadableStream<LanguageModelV3StreamPart>) {
 }
 
 describe("native rollout capture", () => {
+  it("shares one physical-call identity with payload-free attempt events", async () => {
+    const evidence: NativeRolloutEvidenceEnvelopeV1[] = [];
+    const attempts: InferenceAttempt[] = [];
+    const capture = createNativeRolloutEvidenceCapture({
+      enabled: true,
+      runId: "run-shared-attempt",
+      sink: {
+        write: (envelope) => {
+          evidence.push(envelope);
+        },
+      },
+      attemptSink: {
+        write: (attempt) => {
+          attempts.push(attempt);
+        },
+      },
+    });
+
+    await capture.run(async () => {
+      const wrapped = withNativeRolloutEvidenceModel(model(), {
+        requestedModelId: "requested-model",
+        operationKind: "agent.stream",
+        sessionId: "ses-shared-attempt",
+      });
+      await wrapped.doGenerate(options);
+    });
+    await capture.flush();
+
+    expect(attempts).toHaveLength(2);
+    expect(attempts.map((attempt) => attempt.lifecycle)).toEqual([
+      "started",
+      "completed",
+    ]);
+    expect(attempts[0]?.attemptId).toBe(evidence[0]?.attempt.attemptId);
+    expect(attempts[1]).toMatchObject({
+      attemptId: evidence[0]?.attempt.attemptId,
+      idempotencyKey: evidence[0]?.attempt.idempotencyKey,
+      attribution: {
+        runId: "run-shared-attempt",
+        sessionId: "ses-shared-attempt",
+      },
+      tokens: {
+        inclusiveInput: 2,
+        uncachedInput: 2,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 1,
+      },
+    });
+  });
+
+  it("records only authoritative child-session attribution", async () => {
+    const envelopes: NativeRolloutEvidenceEnvelopeV1[] = [];
+    const capture = createNativeRolloutEvidenceCapture({
+      enabled: true,
+      runId: "run-nested",
+      sink: {
+        write: (envelope) => {
+          envelopes.push(envelope);
+        },
+      },
+    });
+
+    await capture.run(() =>
+      runWithNativeRolloutSession(
+        {
+          sessionId: "ses-child",
+          parentSessionId: "ses-parent",
+          parentToolCallId: "call-spawn-child",
+        },
+        async () => {
+          const wrapped = withNativeRolloutEvidenceModel(model(), {
+            requestedModelId: "requested-model",
+            operationKind: "agent.stream",
+            sessionId: "ignored-child-alias",
+          });
+          await wrapped.doGenerate(options);
+        },
+      ),
+    );
+    await capture.flush();
+
+    expect(envelopes).toEqual([
+      expect.objectContaining({
+        sessionId: "ses-child",
+        parent: {
+          sessionId: "ses-parent",
+          toolCallId: "call-spawn-child",
+        },
+      }),
+    ]);
+    expect(() =>
+      runWithNativeRolloutSession(
+        { sessionId: "ses-child", parentSessionId: "ses-parent" },
+        () => undefined,
+      ),
+    ).toThrow("parentSessionId and parentToolCallId");
+  });
+
+  it("isolates inference-attempt observer failure from provider and evidence", async () => {
+    const doGenerate = vi.fn(async () => generated());
+    const evidence: NativeRolloutEvidenceEnvelopeV1[] = [];
+    const capture = createNativeRolloutEvidenceCapture({
+      enabled: true,
+      runId: "run-attempt-observer-failure",
+      sink: {
+        write: (envelope) => {
+          evidence.push(envelope);
+        },
+      },
+      attemptSink: {
+        write: () => Promise.reject(new Error("observer unavailable")),
+      },
+    });
+
+    await capture.run(async () => {
+      const wrapped = withNativeRolloutEvidenceModel(model({ doGenerate }), {
+        requestedModelId: "requested-model",
+        operationKind: "structured.generate",
+      });
+      await expect(wrapped.doGenerate(options)).resolves.toMatchObject({
+        content: generated().content,
+      });
+    });
+    const report = await capture.flush();
+
+    expect(doGenerate).toHaveBeenCalledOnce();
+    expect(evidence).toHaveLength(1);
+    expect(report.state).toBe("limited");
+    expect(report.diagnostics).toEqual([
+      { code: "attempt_sink_failure", message: expect.any(String) },
+      { code: "attempt_sink_failure", message: expect.any(String) },
+    ]);
+  });
+
+  it("bounds an unresponsive inference-attempt observer", async () => {
+    vi.useFakeTimers();
+    try {
+      let writeSignal: AbortSignal | undefined;
+      const evidence: NativeRolloutEvidenceEnvelopeV1[] = [];
+      const capture = createNativeRolloutEvidenceCapture({
+        enabled: true,
+        runId: "run-attempt-observer-timeout",
+        sink: {
+          write: (envelope) => {
+            evidence.push(envelope);
+          },
+        },
+        attemptSink: {
+          write: (_attempt, context) => {
+            writeSignal = context.signal;
+            return new Promise(() => {});
+          },
+        },
+        limits: { maxPendingRecords: 2, sinkTimeoutMs: 5 },
+      });
+
+      await capture.run(async () => {
+        const wrapped = withNativeRolloutEvidenceModel(model(), {
+          requestedModelId: "requested-model",
+          operationKind: "structured.generate",
+        });
+        await wrapped.doGenerate(options);
+      });
+      const pendingReport = capture.flush();
+      await vi.advanceTimersByTimeAsync(5);
+
+      await expect(pendingReport).resolves.toMatchObject({
+        state: "limited",
+        attemptedRecords: 1,
+        writtenRecords: 1,
+        diagnostics: [
+          { code: "attempt_sink_delivery_unknown" },
+          { code: "attempt_sink_delivery_unknown" },
+        ],
+      });
+      expect(evidence).toHaveLength(1);
+      expect(writeSignal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps native evidence when attempt usage cannot be normalized", async () => {
+    const evidence: NativeRolloutEvidenceEnvelopeV1[] = [];
+    const attempts: InferenceAttempt[] = [];
+    const invalidUsage = {
+      inputTokens: {
+        total: -1,
+        noCache: -1,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+      outputTokens: { total: 1, text: 1, reasoning: 0 },
+    } as LanguageModelV3Usage;
+    const capture = createNativeRolloutEvidenceCapture({
+      enabled: true,
+      runId: "run-invalid-attempt-usage",
+      sink: {
+        write: (envelope) => {
+          evidence.push(envelope);
+        },
+      },
+      attemptSink: {
+        write: (attempt) => {
+          attempts.push(attempt);
+        },
+      },
+    });
+
+    await capture.run(async () => {
+      const wrapped = withNativeRolloutEvidenceModel(
+        model({
+          doGenerate: async () => generated({ usage: invalidUsage }),
+        }),
+        {
+          requestedModelId: "requested-model",
+          operationKind: "structured.generate",
+        },
+      );
+      await wrapped.doGenerate(options);
+    });
+    const report = await capture.flush();
+
+    expect(evidence).toHaveLength(1);
+    expect(attempts.at(-1)).toMatchObject({
+      lifecycle: "completed",
+      tokens: {
+        inclusiveInput: null,
+        uncachedInput: null,
+        cacheRead: null,
+        cacheWrite: null,
+        output: null,
+      },
+    });
+    expect(report).toMatchObject({
+      state: "limited",
+      attemptedRecords: 1,
+      writtenRecords: 1,
+      diagnostics: [{ code: "attempt_usage_unavailable" }],
+    });
+  });
+
   it("is disabled by default and leaves the model unwrapped", async () => {
     const sink = vi.fn();
     const base = model();
@@ -187,6 +433,7 @@ describe("native rollout capture", () => {
   it("links physical retries without repeating the provider call", async () => {
     let calls = 0;
     const envelopes: NativeRolloutEvidenceEnvelopeV1[] = [];
+    const attempts: InferenceAttempt[] = [];
     const base = model({
       doGenerate: async () => {
         calls += 1;
@@ -200,6 +447,11 @@ describe("native rollout capture", () => {
       sink: {
         write: (envelope) => {
           envelopes.push(envelope);
+        },
+      },
+      attemptSink: {
+        write: (attempt) => {
+          attempts.push(attempt);
         },
       },
     });
@@ -233,6 +485,20 @@ describe("native rollout capture", () => {
       rootAttemptId: envelopes[0].attempt.attemptId,
       previousAttemptId: envelopes[0].attempt.attemptId,
       idempotencyKey: envelopes[0].attempt.idempotencyKey,
+    });
+    expect(attempts.map((attempt) => attempt.lifecycle)).toEqual([
+      "started",
+      "retried",
+      "started",
+      "completed",
+    ]);
+    expect(attempts[2]).toMatchObject({
+      attemptId: envelopes[1].attempt.attemptId,
+      idempotencyKey: envelopes[0].attempt.idempotencyKey,
+      lineage: {
+        sequence: 2,
+        previousAttemptId: envelopes[0].attempt.attemptId,
+      },
     });
   });
 
