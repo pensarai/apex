@@ -7,6 +7,7 @@ import {
   type AttemptModelRef,
   type AttemptOperationKind,
   type AttemptTransport,
+  type InferenceAttempt,
 } from "../inference-attempt";
 
 export const NATIVE_ROLLOUT_EVIDENCE_SCHEMA =
@@ -228,6 +229,7 @@ export const NativeRolloutAttemptSchema = z.strictObject({
   previousAttemptId: attemptIdSchema.optional(),
   lifecycle: z.enum(NATIVE_ROLLOUT_ATTEMPT_LIFECYCLES),
 });
+/** @public */
 export type NativeRolloutAttemptV1 = z.infer<typeof NativeRolloutAttemptSchema>;
 
 const modelRefSchema = z.strictObject({
@@ -246,6 +248,7 @@ export const NativeRolloutBoundarySchema = z.strictObject({
     native: contentAvailabilitySchema,
   }),
 });
+/** @public */
 export type NativeRolloutBoundaryV1 = z.infer<
   typeof NativeRolloutBoundarySchema
 >;
@@ -262,6 +265,12 @@ export const NativeRolloutEvidenceEnvelopeSchema = z.strictObject({
   version: z.literal(NATIVE_ROLLOUT_EVIDENCE_VERSION),
   runId: z.string().min(1),
   sessionId: z.string().min(1).optional(),
+  parent: z
+    .strictObject({
+      sessionId: z.string().min(1),
+      toolCallId: z.string().min(1),
+    })
+    .optional(),
   segmentId: z.string().min(1),
   turnId: z.string().min(1),
   turnIndex: z.number().int().positive(),
@@ -290,6 +299,7 @@ export const NATIVE_ROLLOUT_CAPTURE_STATES = [
   "limited",
   "interrupted",
 ] as const;
+/** @public */
 export type NativeRolloutCaptureState =
   (typeof NATIVE_ROLLOUT_CAPTURE_STATES)[number];
 
@@ -315,6 +325,13 @@ export interface NativeRolloutEvidenceSink {
   ): void | Promise<void>;
 }
 
+export interface NativeRolloutAttemptSink {
+  write(
+    attempt: InferenceAttempt,
+    context: { signal: AbortSignal },
+  ): void | Promise<void>;
+}
+
 export interface NativeRolloutCaptureLimits {
   maxAssetBytes: number;
   maxEnvelopeBytes: number;
@@ -327,6 +344,8 @@ export interface NativeRolloutModelContext {
   requestedModelId: string;
   operationKind: AttemptOperationKind;
   sessionId?: string;
+  parentSessionId?: string;
+  parentToolCallId?: string;
   transport?: AttemptTransport;
 }
 

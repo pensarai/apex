@@ -1,11 +1,13 @@
 export type {
   CreateNativeRolloutEvidenceCaptureInput,
   NativeRolloutEvidenceCapture,
+  NativeRolloutSessionContext,
 } from "./capture";
 export {
   createNativeRolloutEvidenceCapture,
   DEFAULT_NATIVE_ROLLOUT_CAPTURE_LIMITS,
   runWithNativeRolloutOperation,
+  runWithNativeRolloutSession,
   withNativeRolloutEvidenceModel,
 } from "./capture";
 export {
@@ -27,6 +29,7 @@ export type {
   NativeEvidencePartialState,
   NativeEvidenceUnavailableState,
   NativeRolloutAttemptLifecycle,
+  NativeRolloutAttemptSink,
   NativeRolloutAttemptV1,
   NativeRolloutBoundaryV1,
   NativeRolloutCaptureLimits,

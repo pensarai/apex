@@ -1,9 +1,23 @@
 # Native rollout evidence
 
 Native rollout evidence is an opt-in, run-scoped record of the model boundary.
-It is separate from Apex's payload-free inference-attempt and OpenTelemetry
-events. Enabling it does not enable telemetry payloads, alter provider options,
-or add a provider call.
+It can emit Apex's payload-free inference-attempt events from that same
+physical boundary, with the same attempt ID and retry lineage. Enabling it does
+not enable telemetry payloads, alter provider options, or add a provider call.
+
+For a standalone run, pass a fresh directory explicitly. The option is
+default-off for every invocation, including resumed sessions.
+
+```bash
+pensar pentest --target https://example.test \
+  --native-rollout-evidence ./evidence/run-001
+```
+
+`operator` and `targeted-pentest` accept the same option. Apex creates the
+destination exclusively before an agent or model starts. Evidence and attempt
+events are written immutably, and `manifest.json` is written last. A directory
+without that marker is an incomplete capture. Interrupted runs retain the
+files that were accepted before interruption.
 
 ## Host integration
 
@@ -15,6 +29,7 @@ const capture = createNativeRolloutEvidenceCapture({
   enabled: true,
   runId,
   sink: { write: persistImmutableEvidence },
+  attemptSink: { write: persistPayloadFreeAttempt },
 });
 
 await capture.run(runAgent);
@@ -29,6 +44,12 @@ dropped. A deadline without confirmation is reported separately as delivery
 unknown because a sink that ignores the signal may still finish later. Neither
 condition replaces a provider result or triggers a retry. Sinks must honor the
 abort signal and use the envelope attempt ID as an idempotency key.
+
+The optional attempt sink receives `started` and terminal inference-attempt
+events for the same physical call. Terminal events carry normalized usage when
+the SDK provides it. Attempt-sink rejection or timeout is diagnostic only and
+cannot change the provider result, trigger another request, or suppress the
+native evidence record.
 
 The default limits are 1 MiB per content asset, 2 MiB per envelope, 32 pending
 sink writes, 32 diagnostics, and 2 seconds per sink write. Callers can lower or
@@ -88,15 +109,18 @@ omitted here.
 ## Lifecycles and limits
 
 Retries receive new attempt IDs and preserve the first attempt's idempotency
-key, root attempt ID, previous attempt ID, and logical turn. Provider failures
+key, root attempt ID, previous attempt ID, and logical turn across both record
+types. Provider failures
 are held until the next physical call establishes a retry or until `flush`
 records a terminal failure. A cancelled stream is `aborted`; a stream error,
 unconsumed stream, or output-length stop is partial or interrupted. Collector
 assembly, validation, queue, size, sink, and timeout failures are bounded and
 reported without changing inference behavior.
 
-The inference boundary does not expose authoritative parent-session links, so
-nested-session ancestry is not inferred. It also cannot backfill native fields
-or exact model inputs from historical UI previews, session summaries, or OTel
-payload-free events. Those sources remain useful diagnostics but are not
-complete rollout evidence.
+In-process subagent calls include a parent session and parent tool-call ID only
+when the spawning AI SDK callback supplies that exact ID. Internal or legacy
+spawns without an authoritative SDK tool-call ID remain unattributed; labels,
+session names, and equal run IDs are never treated as ancestry. The boundary
+also cannot backfill native fields or exact model inputs from historical UI
+previews, session summaries, or OTel payload-free events. Those sources remain
+useful diagnostics but are not complete rollout evidence.
