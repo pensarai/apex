@@ -224,6 +224,7 @@ Usage:
   pensar fixes                        View security fixes
   pensar logs                         View agent execution logs
   pensar config headers               Manage global default HTTP headers
+  pensar export-trajectory            Convert saved rollout evidence to ATIF
   pensar upgrade                      Update pensar to the latest version
   pensar doctor                       Check dependencies and install missing tools
   pensar help                         Show this help message
@@ -264,6 +265,10 @@ targeted-pentest options:
 threat-model options:
   --output, -o <path>  Output file path (default: ./threat-model.md)
   --model <model>      AI model (default: auto-selected from configured provider)
+
+export-trajectory options:
+  --input <path>   Version 1 export request with saved evidence paths and digests
+  --output <path>  Fresh output directory; existing paths are never overwritten
 
 Global options:
   -h, --help         Show this help message
@@ -602,12 +607,13 @@ async function runUpgrade() {
 // Standalone CLI entrypoint: own the optional OTel runtime. No-op unless an
 // OTLP endpoint is configured; the TUI branch below takes over the process
 // and manages the runtime's lifecycle in its own exit path.
-const observabilityRuntime = startObservabilityRuntime();
+const observabilityRuntime =
+  command === "export-trajectory" ? null : startObservabilityRuntime();
 // Signals and fatal errors flush traces (bounded) before exiting — headless
 // commands only; the TUI installs its own handlers alongside renderer
 // teardown.
 const exitAfterObservabilityShutdown =
-  args.length !== 0
+  observabilityRuntime !== null && args.length !== 0
     ? installObservabilityExitHandlers(observabilityRuntime, {
         onError: (error) => {
           console.error("Uncaught exception:", error);
@@ -630,6 +636,9 @@ try {
     console.log(`v${version}`);
   } else if (command === "help" || command === "--help" || command === "-h") {
     showHelp();
+  } else if (command === "export-trajectory") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/export-trajectory");
   } else if (command === "upgrade" || command === "update") {
     await runUpgrade();
   } else if (command === "pentest") {
@@ -676,7 +685,7 @@ try {
       console.error("All other commands work with Node — run 'pensar --help'.");
       // This branch owns the runtime lifecycle (the TUI never imported): the
       // bounded shutdown flushes any queued spans before the process exits.
-      await observabilityRuntime.shutdown().catch(() => {});
+      await observabilityRuntime?.shutdown().catch(() => {});
       process.exitCode = 1;
     } else {
       await import("./tui/index.tsx");
@@ -689,13 +698,19 @@ try {
     process.exitCode = 1;
   }
 } catch (error) {
-  if (exitAfterObservabilityShutdown !== null) {
+  if (
+    exitAfterObservabilityShutdown !== null &&
+    observabilityRuntime !== null
+  ) {
     await exitAfterObservabilityShutdown(1, error, "uncaughtException");
   }
   throw error;
 } finally {
   // The TUI owns its runtime lifecycle after import.
-  if (exitAfterObservabilityShutdown !== null) {
+  if (
+    exitAfterObservabilityShutdown !== null &&
+    observabilityRuntime !== null
+  ) {
     const shutdownResult = await observabilityRuntime
       .shutdown()
       .catch(() => "completed" as const);
