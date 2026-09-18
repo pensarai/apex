@@ -35,5 +35,18 @@ export {
   MAX_RECENT_MODELS,
 } from "./model-history";
 export { AVAILABLE_MODELS } from "./models";
+export type {
+  CreateNativeRolloutEvidenceCaptureInput,
+  NativeRolloutCaptureLimits,
+  NativeRolloutCaptureReportV1,
+  NativeRolloutEvidenceCapture,
+  NativeRolloutEvidenceEnvelopeV1,
+  NativeRolloutEvidenceSink,
+  NativeRolloutModelContext,
+} from "./native-rollout-evidence";
+export {
+  createNativeRolloutEvidenceCapture,
+  DEFAULT_NATIVE_ROLLOUT_CAPTURE_LIMITS,
+} from "./native-rollout-evidence";
 export type { AIAuthConfig } from "./utils";
 export { buildAuthConfig } from "./utils";
