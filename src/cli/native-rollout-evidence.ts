@@ -39,18 +39,32 @@ function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-async function writeExclusive(path: string, bytes: Uint8Array): Promise<void> {
+async function writeExclusive(
+  path: string,
+  bytes: Uint8Array,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  signal?.throwIfAborted();
   const handle = await open(
     path,
     constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
     0o600,
   );
+  let closed = false;
   try {
-    await handle.writeFile(bytes);
+    signal?.throwIfAborted();
+    await handle.writeFile(bytes, signal ? { signal } : undefined);
+    signal?.throwIfAborted();
     await handle.sync();
-  } finally {
     await handle.close();
+    closed = true;
+    signal?.throwIfAborted();
+  } catch (error) {
+    if (!closed) await handle.close().catch(() => {});
+    await rm(path, { force: true }).catch(() => {});
+    throw error;
   }
 }
 
@@ -63,12 +77,14 @@ export async function runWithCliNativeRolloutEvidence<T>(
   let ownsDirectory = false;
   let runStarted = false;
   const files: CaptureFile[] = [];
+  const activeWrites = new Set<Promise<void>>();
   let reservedFiles = 0;
 
   const record = async (
     kind: CaptureFile["kind"],
     path: string,
     bytes: Uint8Array,
+    signal: AbortSignal,
   ): Promise<void> => {
     reservedFiles += 1;
     if (reservedFiles > MAX_CAPTURE_FILES) {
@@ -77,13 +93,27 @@ export async function runWithCliNativeRolloutEvidence<T>(
       );
     }
     const absolutePath = join(outputDirectory, path);
-    await writeExclusive(absolutePath, bytes);
+    await writeExclusive(absolutePath, bytes, signal);
     files.push({
       kind,
       path,
       sha256: digest(bytes),
       sizeBytes: bytes.byteLength,
     });
+  };
+  const trackRecord = (
+    kind: CaptureFile["kind"],
+    path: string,
+    bytes: Uint8Array,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const write = record(kind, path, bytes, signal);
+    activeWrites.add(write);
+    void write.then(
+      () => activeWrites.delete(write),
+      () => activeWrites.delete(write),
+    );
+    return write;
   };
 
   try {
@@ -94,19 +124,21 @@ export async function runWithCliNativeRolloutEvidence<T>(
       enabled: true,
       runId: input.session.id,
       sink: {
-        write: (envelope: NativeRolloutEvidenceEnvelopeV1) =>
-          record(
+        write: (envelope: NativeRolloutEvidenceEnvelopeV1, { signal }) =>
+          trackRecord(
             "evidence",
             `evidence/${envelope.attempt.attemptId}.json`,
             Buffer.from(serializeNativeRolloutEvidence(envelope)),
+            signal,
           ),
       },
       attemptSink: {
-        write: (attempt: InferenceAttempt) =>
-          record(
+        write: (attempt: InferenceAttempt, { signal }) =>
+          trackRecord(
             "attempt",
             `attempts/${attempt.attemptId}/${attempt.lifecycle}.json`,
             Buffer.from(stringifyCanonicalJson(toJsonValue(attempt))),
+            signal,
           ),
       },
     });
@@ -121,6 +153,9 @@ export async function runWithCliNativeRolloutEvidence<T>(
     }
 
     const report = await capture.flush();
+    while (activeWrites.size > 0) {
+      await Promise.allSettled([...activeWrites]);
+    }
     const manifest = {
       schema: "pensar.native_rollout_capture" as const,
       version: 1 as const,
