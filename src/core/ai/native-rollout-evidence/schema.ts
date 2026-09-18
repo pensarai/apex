@@ -135,6 +135,7 @@ export const NATIVE_EVIDENCE_PARTIAL_STATES = [
   "truncated",
   "interrupted",
 ] as const;
+/** @public */
 export const NATIVE_EVIDENCE_AVAILABILITY_STATES = [
   "available",
   ...NATIVE_EVIDENCE_UNAVAILABLE_STATES,
