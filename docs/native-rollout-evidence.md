@@ -1,0 +1,102 @@
+# Native rollout evidence
+
+Native rollout evidence is an opt-in, run-scoped record of the model boundary.
+It is separate from Apex's payload-free inference-attempt and OpenTelemetry
+events. Enabling it does not enable telemetry payloads, alter provider options,
+or add a provider call.
+
+## Host integration
+
+The host creates one capture for a run, supplies a sink, and keeps the complete
+run inside `capture.run`. Capture is disabled unless `enabled: true` is passed.
+
+```ts
+const capture = createNativeRolloutEvidenceCapture({
+  enabled: true,
+  runId,
+  sink: { write: persistImmutableEvidence },
+});
+
+await capture.run(runAgent);
+const report = await capture.flush();
+```
+
+`write` receives one validated `pensar.native_rollout_evidence` version 1
+envelope per physical model attempt and an abort signal for its delivery
+deadline. The host chooses storage and access controls. It must await `flush`
+before treating the capture report as final. A rejected write is reported as
+dropped. A deadline without confirmation is reported separately as delivery
+unknown because a sink that ignores the signal may still finish later. Neither
+condition replaces a provider result or triggers a retry. Sinks must honor the
+abort signal and use the envelope attempt ID as an idempotency key.
+
+The default limits are 1 MiB per content asset, 2 MiB per envelope, 32 pending
+sink writes, 32 diagnostics, and 2 seconds per sink write. Callers can lower or
+raise them per run. Oversized content and records remain explicit in the
+envelope or capture report.
+
+## Recorded boundary
+
+Each envelope identifies the run, optional session, logical turn, physical
+attempt, retry lineage, requested model, effective model, operation class, and
+content-addressed assets. The normalized input is the `LanguageModelV3` call
+after Apex and caller middleware have prepared the request. It includes the
+actual prompt, tool definitions and selection, output format, sampling values,
+provider options, and limits supplied to that call. A compacted call therefore
+records the compacted context actually sent, without presenting discarded
+history as visible context.
+
+When the adapter exposes a serialized provider request or response body, the
+envelope stores it as a separately labelled native asset. Streaming output is
+collected from the exact stream parts forwarded to the caller. Raw stream
+chunks are captured only when the existing call already requested them; the
+collector never enables raw chunks itself. Headers and credentials are not
+captured by this boundary.
+
+Availability uses five states:
+
+- `available`: the exact exposed value is present; empty arrays and zero values
+  remain available values.
+- `unsupported`: the provider or SDK boundary has no supported field.
+- `omitted`: the route could expose the field but did not return it.
+- `truncated`: the value crossed a capture limit; its observed hash and byte
+  length are retained when available.
+- `interrupted`: the stream or attempt ended before the field was complete.
+
+Disabled capture appears only in the run-level capture report. A completed
+capture report means the sink accepted every envelope; it does not imply that
+every optional native field was available.
+
+## Provider capability matrix
+
+| Evidence                        | OpenAI chat/responses                                                                                      | Anthropic, Bedrock, Google, OpenRouter, compatible and Pensar routes |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Normalized actual call context  | Available within limits                                                                                    | Available within limits                                              |
+| Serialized native request body  | Available when the adapter returns `request.body`; otherwise omitted                                       | Same                                                                 |
+| Non-stream native response body | Available when the adapter returns `response.body`; otherwise omitted                                      | Same                                                                 |
+| Raw streaming response chunks   | Captured only when the existing call enabled raw chunks and the adapter emitted them                       | Same                                                                 |
+| Prompt token IDs                | Unsupported by the current AI SDK v3 boundary                                                              | Unsupported by the current AI SDK v3 boundary                        |
+| Completion token IDs            | Unsupported by the current AI SDK v3 boundary                                                              | Unsupported by the current AI SDK v3 boundary                        |
+| Completion log probabilities    | Preserved from existing `providerMetadata.openai.logprobs`; omitted when absent                            | Unsupported until a documented adapter field is added                |
+| Tokenizer identity              | Unsupported by the current boundary                                                                        | Unsupported by the current boundary                                  |
+| Provider-specific `extra`       | Version 1 allowlist for response ID, service tier, prediction-token counters, and returned logprob entries | Unsupported until a versioned adapter is added                       |
+
+Apex does not request log probabilities or token IDs. A provider model can
+support them while the selected SDK route still reports them as unsupported or
+omitted here.
+
+## Lifecycles and limits
+
+Retries receive new attempt IDs and preserve the first attempt's idempotency
+key, root attempt ID, previous attempt ID, and logical turn. Provider failures
+are held until the next physical call establishes a retry or until `flush`
+records a terminal failure. A cancelled stream is `aborted`; a stream error,
+unconsumed stream, or output-length stop is partial or interrupted. Collector
+assembly, validation, queue, size, sink, and timeout failures are bounded and
+reported without changing inference behavior.
+
+The inference boundary does not expose authoritative parent-session links, so
+nested-session ancestry is not inferred. It also cannot backfill native fields
+or exact model inputs from historical UI previews, session summaries, or OTel
+payload-free events. Those sources remain useful diagnostics but are not
+complete rollout evidence.
