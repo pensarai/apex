@@ -3,7 +3,8 @@ import type {
   LanguageModelV3CallOptions,
   LanguageModelV3GenerateResult,
 } from "@ai-sdk/provider";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 const mocks = vi.hoisted(() => {
   const baseModel = {
@@ -23,12 +24,17 @@ const mocks = vi.hoisted(() => {
       })(),
       response: Promise.resolve({ messages: [] }),
     })),
+    generateText: vi.fn(),
   };
 });
 
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
-  return { ...actual, streamText: mocks.streamText };
+  return {
+    ...actual,
+    generateText: mocks.generateText,
+    streamText: mocks.streamText,
+  };
 });
 
 vi.mock("./utils", async () => {
@@ -47,7 +53,7 @@ vi.mock("../observability", async () => {
   };
 });
 
-const { streamResponse } = await import("./ai");
+const { generateObjectResponse, streamResponse } = await import("./ai");
 const { createNativeRolloutEvidenceCapture } = await import(
   "./native-rollout-evidence"
 );
@@ -71,6 +77,10 @@ function result(): LanguageModelV3GenerateResult {
 }
 
 describe("ai native rollout evidence boundary", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getProviderModel.mockReturnValue(mocks.baseModel);
@@ -111,6 +121,87 @@ describe("ai native rollout evidence boundary", () => {
         requested: expect.objectContaining({ modelId: "test-model" }),
         effective: expect.objectContaining({ modelId: "effective-model" }),
       }),
+    ]);
+  });
+
+  it("links structured generation retries within one physical operation", async () => {
+    vi.useFakeTimers();
+    const envelopes: Array<{
+      attempt: {
+        attemptId: string;
+        idempotencyKey: string;
+        lifecycle: string;
+        previousAttemptId?: string;
+        rootAttemptId: string;
+        sequence: number;
+      };
+      turnId: string;
+    }> = [];
+    const attempts: Array<{
+      attemptId: string;
+      idempotencyKey: string;
+      lifecycle: string;
+    }> = [];
+    mocks.baseModel.doGenerate
+      .mockRejectedValueOnce(
+        Object.assign(new Error("rate limited fixture"), { statusCode: 429 }),
+      )
+      .mockResolvedValueOnce(result());
+    mocks.generateText.mockImplementation(
+      async (input: { model: LanguageModelV3 }) => {
+        const generated = await input.model.doGenerate(callOptions);
+        return {
+          output: { answer: "done" },
+          providerMetadata: generated.providerMetadata,
+          usage: generated.usage,
+        };
+      },
+    );
+    const capture = createNativeRolloutEvidenceCapture({
+      enabled: true,
+      runId: "run-structured-retry",
+      sink: {
+        write: (envelope) => {
+          envelopes.push(envelope);
+        },
+      },
+      attemptSink: {
+        write: (attempt) => {
+          attempts.push(attempt);
+        },
+      },
+    });
+
+    const response = capture.run(() =>
+      generateObjectResponse({
+        model: "test-model",
+        schema: z.object({ answer: z.string() }),
+        prompt: "return an answer",
+        sessionId: "ses_structured_retry",
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(mocks.baseModel.doGenerate).toHaveBeenCalledTimes(1),
+    );
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(response).resolves.toEqual({ answer: "done" });
+    await capture.flush();
+    expect(envelopes.map((entry) => entry.attempt.lifecycle)).toEqual([
+      "retried",
+      "completed",
+    ]);
+    expect(envelopes[1]?.turnId).toBe(envelopes[0]?.turnId);
+    expect(envelopes[1]?.attempt).toMatchObject({
+      idempotencyKey: envelopes[0]?.attempt.idempotencyKey,
+      previousAttemptId: envelopes[0]?.attempt.attemptId,
+      rootAttemptId: envelopes[0]?.attempt.attemptId,
+      sequence: 2,
+    });
+    expect(attempts.map((attempt) => attempt.lifecycle)).toEqual([
+      "started",
+      "retried",
+      "started",
+      "completed",
     ]);
   });
 });

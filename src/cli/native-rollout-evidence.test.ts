@@ -1,4 +1,12 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  type open,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -9,9 +17,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { withNativeRolloutEvidenceModel } from "../core/ai/native-rollout-evidence";
 import { runWithCliNativeRolloutEvidence } from "./native-rollout-evidence";
 
+const fsMocks = vi.hoisted(() => ({
+  open: vi.fn(),
+  realOpen: undefined as typeof open | undefined,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  fsMocks.realOpen = actual.open;
+  fsMocks.open.mockImplementation(actual.open);
+  return { ...actual, open: fsMocks.open };
+});
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
+  vi.useRealTimers();
+  if (fsMocks.realOpen) fsMocks.open.mockImplementation(fsMocks.realOpen);
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -23,6 +45,15 @@ async function outputFixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "apex-native-capture-"));
   temporaryDirectories.push(root);
   return join(root, "capture");
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function model(): LanguageModelV3 {
@@ -163,5 +194,66 @@ describe("CLI native rollout evidence", () => {
         await readFile(join(outputDirectory, "manifest.json"), "utf8"),
       ),
     ).toMatchObject({ report: { state: "interrupted" }, files: [] });
+  });
+
+  it("waits for an aborted disk write to settle before publishing the manifest", async () => {
+    const outputDirectory = await outputFixture();
+    let delayedEvidencePath: string | undefined;
+    let releaseWrite: (() => void) | undefined;
+    let writeStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      writeStarted = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    const realOpen = fsMocks.realOpen;
+    if (!realOpen) throw new Error("missing real fs.open implementation");
+    fsMocks.open.mockImplementation(async (...args) => {
+      const handle = await realOpen(args[0], args[1], args[2]);
+      if (!String(args[0]).includes("/evidence/")) return handle;
+      delayedEvidencePath = String(args[0]);
+      return {
+        close: handle.close.bind(handle),
+        sync: handle.sync.bind(handle),
+        writeFile: async (bytes: Uint8Array) => {
+          writeStarted?.();
+          await released;
+          await handle.writeFile(bytes);
+        },
+      } as Awaited<ReturnType<typeof open>>;
+    });
+
+    const result = runWithCliNativeRolloutEvidence({
+      session: { id: "ses-delayed-write" },
+      outputDirectory,
+      run: async () => {
+        const wrapped = withNativeRolloutEvidenceModel(model(), {
+          requestedModelId: "fixture-model",
+          operationKind: "agent.stream",
+          sessionId: "ses-delayed-write",
+        });
+        await wrapped.doGenerate(callOptions);
+        return "done";
+      },
+    });
+    await started;
+    await new Promise((resolve) => setTimeout(resolve, 2_250));
+    const manifestPublishedBeforeWriteSettled = await pathExists(
+      join(outputDirectory, "manifest.json"),
+    );
+    releaseWrite?.();
+    await result;
+
+    const manifest = JSON.parse(
+      await readFile(join(outputDirectory, "manifest.json"), "utf8"),
+    ) as { files: Array<{ path: string }>; report: { state: string } };
+    if (!delayedEvidencePath) throw new Error("missing delayed evidence path");
+    expect(manifestPublishedBeforeWriteSettled).toBe(false);
+    expect(await pathExists(delayedEvidencePath)).toBe(false);
+    expect(
+      manifest.files.some((entry) => entry.path.startsWith("evidence/")),
+    ).toBe(false);
+    expect(manifest.report.state).toBe("limited");
   });
 });

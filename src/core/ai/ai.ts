@@ -1734,88 +1734,92 @@ export async function generateObjectResponse<T extends z.ZodType>(
   const openRouterProviderOptions =
     buildOpenRouterStructuredProviderOptions(model);
 
-  let lastError: unknown;
+  return runWithNativeRolloutOperation(
+    {
+      operationKind: nativeRolloutOperation(opts.operation),
+      sessionId,
+    },
+    async () => {
+      let lastError: unknown;
 
-  for (let attempt = 0; attempt <= MAX_OBJECT_RATE_LIMIT_RETRIES; attempt++) {
-    try {
-      const { output, usage, providerMetadata } =
-        await runWithNativeRolloutOperation(
-          {
-            operationKind: nativeRolloutOperation(opts.operation),
-            sessionId,
-          },
-          () =>
-            generateText({
-              model: providerModel,
-              output: Output.object({
-                schema,
-              }),
-              prompt,
-              system,
-              maxOutputTokens: maxTokens,
-              temperature,
-              providerOptions:
-                normalizedOpenAIEffort || openRouterProviderOptions
-                  ? {
-                      ...(normalizedOpenAIEffort
-                        ? {
-                            openai: {
-                              reasoningEffort: normalizedOpenAIEffort,
-                            },
-                          }
-                        : {}),
-                      ...openRouterProviderOptions,
-                    }
-                  : undefined,
-              maxRetries: 0,
-              abortSignal,
-              experimental_telemetry: createAiTelemetrySettings({
-                operation: opts.operation ?? "apex.structured.generate",
-                sessionId,
-              }),
-            }),
-        );
-
-      if (onTokenUsage && usage) {
-        onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
-      }
-
-      if (usage) {
-        await emitUsage(
-          model,
-          normalizeStepUsage({ usage, providerMetadata }),
-          resolveUsageSink(usageRecorder),
-        );
-      }
-
-      // zod v4: the AI SDK's `Output.object` no longer carries the schema's
-      // inferred type through `output` (it widens to `unknown`), so restore it
-      // from the schema generic for callers.
-      return output as z.infer<T>;
-    } catch (error) {
-      lastError = error;
-
-      if (checkIfContextLengthError(error)) {
-        const msg = error instanceof Error ? error.message : String(error);
-        throw new ContextLengthError(
-          `Prompt exceeds model context window: ${msg}`,
-        );
-      }
-
-      if (
-        checkIfRateLimitError(error) &&
-        attempt < MAX_OBJECT_RATE_LIMIT_RETRIES
+      for (
+        let attempt = 0;
+        attempt <= MAX_OBJECT_RATE_LIMIT_RETRIES;
+        attempt++
       ) {
-        const delayMs = Math.min(1000 * 2 ** attempt, 60_000);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        continue;
+        try {
+          const { output, usage, providerMetadata } = await generateText({
+            model: providerModel,
+            output: Output.object({
+              schema,
+            }),
+            prompt,
+            system,
+            maxOutputTokens: maxTokens,
+            temperature,
+            providerOptions:
+              normalizedOpenAIEffort || openRouterProviderOptions
+                ? {
+                    ...(normalizedOpenAIEffort
+                      ? {
+                          openai: {
+                            reasoningEffort: normalizedOpenAIEffort,
+                          },
+                        }
+                      : {}),
+                    ...openRouterProviderOptions,
+                  }
+                : undefined,
+            maxRetries: 0,
+            abortSignal,
+            experimental_telemetry: createAiTelemetrySettings({
+              operation: opts.operation ?? "apex.structured.generate",
+              sessionId,
+            }),
+          });
+
+          if (onTokenUsage && usage) {
+            onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
+          }
+
+          if (usage) {
+            await emitUsage(
+              model,
+              normalizeStepUsage({ usage, providerMetadata }),
+              resolveUsageSink(usageRecorder),
+            );
+          }
+
+          // zod v4: the AI SDK's `Output.object` no longer carries the schema's
+          // inferred type through `output` (it widens to `unknown`), so restore it
+          // from the schema generic for callers.
+          return output as z.infer<T>;
+        } catch (error) {
+          lastError = error;
+
+          if (checkIfContextLengthError(error)) {
+            const msg = error instanceof Error ? error.message : String(error);
+            throw new ContextLengthError(
+              `Prompt exceeds model context window: ${msg}`,
+            );
+          }
+
+          if (
+            checkIfRateLimitError(error) &&
+            attempt < MAX_OBJECT_RATE_LIMIT_RETRIES
+          ) {
+            const delayMs = Math.min(1000 * 2 ** attempt, 60_000);
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            continue;
+          }
+
+          throw error;
+        }
       }
 
-      throw error;
-    }
-  }
-
-  throw lastError;
+      throw lastError;
+    },
+  );
 }
 
 class ContextLengthError extends Error {
