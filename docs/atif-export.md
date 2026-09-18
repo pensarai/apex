@@ -33,7 +33,7 @@ bytes. Callers must split larger exports into separately rooted bundles.
   content-addressed assets, and the exact source evidence files;
 - SHA-256 and byte length for every file.
 
-The host writer should accept the result without interpreting Apex fields:
+The library writer accepts the result without interpreting Apex fields:
 
 ```ts
 type WriteImmutableTrajectoryBundle = (input: {
@@ -42,10 +42,12 @@ type WriteImmutableTrajectoryBundle = (input: {
 }) => Promise<{ artifactId: string }>;
 ```
 
-It must persist each `file.bytes` at `file.path`, verify `sha256` and
-`sizeBytes`, and publish the immutable artifact only after all files succeed.
-The writer and public CLI/barrel integration are intentionally outside this
-module.
+It persists each `file.bytes` at `file.path`, verifies `sha256` and
+`sizeBytes`, and publishes the immutable artifact only after all files succeed.
+The standalone `pensar export-trajectory` command performs the same bounded
+validation and writes `manifest.json` last to a fresh destination. See
+[`trajectory-export-command.md`](./trajectory-export-command.md) for its input
+contract and commit-marker semantics.
 
 ## Mapping and provenance
 
@@ -54,7 +56,10 @@ model-visible prompt is emitted as copied context, followed by one non-copied
 agent step for the recorded output. Retry order within a session is represented
 with `continued_trajectory_ref`. Attempt, turn, segment, operation, requested
 and effective model, run, source file, and boundary availability remain in
-versioned `extra` fields or the neutral manifest.
+versioned `extra` fields or the neutral manifest. When captured child evidence
+has an authoritative parent session and AI SDK tool-call ID, the original
+parent call receives exactly one resolvable `subagent_trajectory_ref`. Missing
+or contradictory attribution is a diagnostic rather than inferred ancestry.
 
 Text, exposed reasoning, parallel tool calls, tool results, usage, supported
 OpenAI log probabilities, and captured image/audio bytes are mapped when their
@@ -84,8 +89,9 @@ new supervised example. It marks RL ineligible because the boundary does not
 provide an attributable reward, policy revision, or trainer mask contract, even
 when token IDs or log probabilities are available.
 
-The native boundary does not expose authoritative parent/subagent links, exact
+Internal or legacy spawns without an authoritative AI SDK tool-call ID cannot
+produce a parent/subagent link. The native boundary also does not expose exact
 token IDs on current routes, tokenizer identity, grading revision, reward, or
 reuse permission. The exporter reports these gaps and never infers ancestry or
-training consent from session names, tool calls, OTel spans, or provider model
+training consent from labels, session names, OTel spans, or provider model
 metadata.

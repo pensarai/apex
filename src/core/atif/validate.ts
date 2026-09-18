@@ -279,6 +279,7 @@ export function collectAtifValidationDiagnostics(value: unknown): {
   return { trajectory: parsed.data, diagnostics };
 }
 
+/** @public */
 export function parseAtifTrajectory(value: unknown): AtifTrajectoryV1_8 {
   const result = collectAtifValidationDiagnostics(value);
   if (!result.trajectory || result.diagnostics.length > 0) {

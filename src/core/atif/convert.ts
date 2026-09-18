@@ -1282,6 +1282,133 @@ function recordMissingAssociations(
   }
 }
 
+function attachSessionRelationships(
+  sources: readonly ParsedNativeRolloutSource[],
+  rootSessionId: string,
+  documents: Record<string, AtifTrajectoryV1_8[]>,
+  documentPaths: ReadonlyMap<string, string>,
+  diagnostics: AtifDiagnostic[],
+): void {
+  const sourcesBySession = new Map<string, ParsedNativeRolloutSource[]>();
+  for (const source of sources) {
+    const sessionId = source.evidence.sessionId ?? source.evidence.runId;
+    const entries = sourcesBySession.get(sessionId) ?? [];
+    entries.push(source);
+    sourcesBySession.set(sessionId, entries);
+  }
+
+  for (const [sessionId, sessionSources] of sourcesBySession) {
+    const parentEntries = sessionSources.flatMap((source) =>
+      source.evidence.parent ? [source.evidence.parent] : [],
+    );
+    if (parentEntries.length === 0) {
+      if (sessionId !== rootSessionId) {
+        diagnostics.push({
+          code: "session_relationship_unavailable",
+          severity: "warning",
+          message: `session ${sessionId} has no authoritative parent tool call`,
+          path: sessionId,
+        });
+      }
+      continue;
+    }
+    if (parentEntries.length !== sessionSources.length) {
+      diagnostics.push({
+        code: "incomplete_session_relationship",
+        severity: "error",
+        message: `session ${sessionId} has only partially attributed source evidence`,
+        path: sessionId,
+      });
+      continue;
+    }
+    const [parent] = parentEntries;
+    if (
+      !parent ||
+      parentEntries.some(
+        (entry) =>
+          entry.sessionId !== parent.sessionId ||
+          entry.toolCallId !== parent.toolCallId,
+      )
+    ) {
+      diagnostics.push({
+        code: "conflicting_session_relationship",
+        severity: "error",
+        message: `session ${sessionId} has conflicting parent attribution`,
+        path: sessionId,
+      });
+      continue;
+    }
+    if (parent.sessionId === sessionId) {
+      diagnostics.push({
+        code: "cyclic_session_relationship",
+        severity: "error",
+        message: `session ${sessionId} cannot be its own parent`,
+        path: sessionId,
+      });
+      continue;
+    }
+
+    const child = documents[sessionId]?.[0];
+    const childId = child?.trajectory_id;
+    const childPath = childId ? documentPaths.get(childId) : undefined;
+    if (!child || !childId || !childPath) {
+      diagnostics.push({
+        code: "unresolved_child_trajectory",
+        severity: "error",
+        message: `session ${sessionId} has no resolvable first trajectory`,
+        path: sessionId,
+      });
+      continue;
+    }
+
+    const matchingSteps = (documents[parent.sessionId] ?? []).flatMap(
+      (document) =>
+        document.steps.filter(
+          (step) =>
+            step.is_copied_context !== true &&
+            step.tool_calls?.some(
+              (call) => call.tool_call_id === parent.toolCallId,
+            ),
+        ),
+    );
+    if (matchingSteps.length !== 1) {
+      diagnostics.push({
+        code:
+          matchingSteps.length === 0
+            ? "subagent_parent_call_unavailable"
+            : "ambiguous_subagent_parent_call",
+        severity: matchingSteps.length === 0 ? "warning" : "error",
+        message:
+          matchingSteps.length === 0
+            ? `parent tool call ${parent.toolCallId} is not present in recorded session ${parent.sessionId}`
+            : `parent tool call ${parent.toolCallId} appears in more than one original inference step`,
+        path: sessionId,
+      });
+      continue;
+    }
+
+    const step = matchingSteps[0];
+    if (!step) continue;
+    const results = step.observation?.results ?? [];
+    let result = results.find(
+      (entry) => entry.source_call_id === parent.toolCallId,
+    );
+    if (!result) {
+      result = { source_call_id: parent.toolCallId };
+      results.push(result);
+    }
+    result.subagent_trajectory_ref = [
+      ...(result.subagent_trajectory_ref ?? []),
+      {
+        trajectory_id: childId,
+        trajectory_path: childPath,
+        session_id: sessionId,
+      },
+    ];
+    step.observation = { results };
+  }
+}
+
 export function convertNativeRolloutSourcesToAtif(
   input: ConvertNativeRolloutToAtifInput,
 ): AtifConversionDraft {
@@ -1351,15 +1478,14 @@ export function convertNativeRolloutSourcesToAtif(
     }
   }
   const allDocuments = Object.values(documents).flat();
+  attachSessionRelationships(
+    sorted,
+    root.evidence.sessionId ?? root.evidence.runId,
+    documents,
+    documentPaths,
+    diagnostics,
+  );
   recordMissingAssociations(allDocuments, diagnostics);
-  if (Object.keys(documents).length > 1) {
-    diagnostics.push({
-      code: "session_relationships_unavailable",
-      severity: "warning",
-      message:
-        "recorded inference evidence does not establish parent-child relationships between sessions",
-    });
-  }
   const files: DraftFile[] = [
     ...sources.map((source) => ({
       kind: "source" as const,

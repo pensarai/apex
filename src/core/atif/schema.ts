@@ -62,6 +62,7 @@ export const AtifContentPartSchema = z.discriminatedUnion("type", [
   }),
 ]);
 export type AtifContentPart = z.infer<typeof AtifContentPartSchema>;
+/** @public */
 export type AtifMessage = string | AtifContentPart[];
 
 export const AtifToolDefinitionSchema = z.strictObject({
@@ -103,6 +104,7 @@ export const AtifSubagentTrajectoryRefSchema = z
       value.trajectory_id !== undefined || value.trajectory_path !== undefined,
     { message: "a subagent reference needs trajectory_id or trajectory_path" },
   );
+/** @public */
 export type AtifSubagentTrajectoryRef = z.infer<
   typeof AtifSubagentTrajectoryRefSchema
 >;

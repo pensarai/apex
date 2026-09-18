@@ -20,6 +20,7 @@ interface NativeSourceFixtureInput {
   previousAttemptId?: string;
   sequence?: number;
   sessionId?: string;
+  parent?: NativeRolloutEvidenceEnvelopeV1["parent"];
   turnId?: string;
   turnIndex?: number;
   lifecycle?: NativeRolloutAttemptLifecycle;
@@ -104,6 +105,7 @@ export function nativeSource(
     version: NATIVE_ROLLOUT_EVIDENCE_VERSION,
     runId: "run_fixture",
     sessionId: input.sessionId ?? "ses_fixture",
+    ...(input.parent ? { parent: input.parent } : {}),
     segmentId: `segment_${String(input.turnIndex ?? 1).padStart(6, "0")}`,
     turnId:
       input.turnId ?? `turn_${String(input.turnIndex ?? 1).padStart(6, "0")}`,

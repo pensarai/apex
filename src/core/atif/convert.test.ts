@@ -390,4 +390,80 @@ describe("native rollout evidence to ATIF conversion", () => {
       expect.objectContaining({ code: "missing_tool_result" }),
     );
   });
+
+  it("links nested sessions once through their authoritative parent tool calls", () => {
+    const parent = nativeSource({
+      id: "parent-source",
+      sessionId: "ses-parent",
+      attemptId: "atm_parent",
+      outputContent: [
+        {
+          type: "tool-call",
+          toolCallId: "call-child",
+          toolName: "spawn_agent",
+          input: { name: "child" },
+        },
+      ],
+    });
+    const child = nativeSource({
+      id: "child-source",
+      sessionId: "ses-child",
+      attemptId: "atm_child",
+      idempotencyKey: "idem_child",
+      parent: { sessionId: "ses-parent", toolCallId: "call-child" },
+      outputContent: [
+        {
+          type: "tool-call",
+          toolCallId: "call-grandchild",
+          toolName: "spawn_agent",
+          input: { name: "grandchild" },
+        },
+      ],
+    });
+    const grandchild = nativeSource({
+      id: "grandchild-source",
+      sessionId: "ses-grandchild",
+      attemptId: "atm_grandchild",
+      idempotencyKey: "idem_grandchild",
+      parent: {
+        sessionId: "ses-child",
+        toolCallId: "call-grandchild",
+      },
+    });
+
+    const result = convertNativeRolloutSourcesToAtif({
+      ...identity,
+      sources: [grandchild, child, parent],
+      rootSourceId: parent.id,
+    });
+    const references = Object.values(result.documents)
+      .flat()
+      .flatMap((document) => document.steps)
+      .flatMap((step) => step.observation?.results ?? [])
+      .flatMap((entry) => entry.subagent_trajectory_ref ?? [])
+      .sort((left, right) =>
+        (left.session_id ?? "").localeCompare(right.session_id ?? ""),
+      );
+
+    expect(references).toEqual([
+      {
+        trajectory_id: "atif_atm_child",
+        trajectory_path: "trajectories/atif_atm_child.json",
+        session_id: "ses-child",
+      },
+      {
+        trajectory_id: "atif_atm_grandchild",
+        trajectory_path: "trajectories/atif_atm_grandchild.json",
+        session_id: "ses-grandchild",
+      },
+    ]);
+    expect(
+      result.diagnostics.filter((entry) =>
+        entry.code.includes("session_relationship"),
+      ),
+    ).toEqual([]);
+    expect(result.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: "missing_tool_result" }),
+    );
+  });
 });
