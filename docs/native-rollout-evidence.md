@@ -110,10 +110,15 @@ omitted here.
 
 Retries receive new attempt IDs and preserve the first attempt's idempotency
 key, root attempt ID, previous attempt ID, and logical turn across both record
-types. Provider failures
-are held until the next physical call establishes a retry or until `flush`
-records a terminal failure. A cancelled stream is `aborted`; a stream error,
-unconsumed stream, or output-length stop is partial or interrupted. Collector
+types. Direct-call failures and failures in a completed asynchronous operation
+scope are recorded as terminal without waiting for run shutdown. An open
+streaming operation scope retains failed attempts for a possible physical
+retry, up to the configured pending-record limit. If that bound finalizes an
+older failure before attribution is known, the capture report includes a
+`retry_lineage_limit` diagnostic. A cancelled stream is `aborted`; a stream
+error, unconsumed stream, or output-length stop is partial or interrupted. A
+saved raw-stream prefix is independently marked `truncated` or `interrupted`
+when later raw bytes are omitted or a terminal finish is absent. Collector
 assembly, validation, queue, size, sink, and timeout failures are bounded and
 reported without changing inference behavior.
 
