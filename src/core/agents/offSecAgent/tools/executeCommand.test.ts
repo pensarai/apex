@@ -3,12 +3,16 @@ import { StaticPromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import {
+  DEFAULT_COMMAND_TIMEOUT_SECONDS,
+  type ExecuteCommandInput,
   type ExecuteCommandResult,
   executeCommand,
+  MAX_COMMAND_TIMEOUT_SECONDS,
   normalizeExecuteCommandTimeout,
   normalizePromptInjectionPointer,
   redactSecretValues,
 } from "./executeCommand";
+import { PersistentShell } from "./persistentShell";
 import type { UnifiedSandbox } from "./sandbox";
 import type { ToolContext } from "./types";
 
@@ -285,5 +289,176 @@ describe("redactSecretValues", () => {
     expect(redactSecretValues("nothing to hide", undefined)).toBe(
       "nothing to hide",
     );
+  });
+});
+
+// Finite-deadline contract: an omitted timeout must never mean "run until
+// completion or abort", and timeout/abort must terminate the real process.
+describe("executeCommand deadlines", () => {
+  function captureShell() {
+    const calls: {
+      command: string;
+      timeout?: number;
+      abortSignal?: AbortSignal;
+    }[] = [];
+    const persistentShell = {
+      execute: async (
+        command: string,
+        timeout?: number,
+        _onData?: (chunk: string) => void,
+        abortSignal?: AbortSignal,
+      ) => {
+        calls.push({ command, timeout, abortSignal });
+        return { exitCode: 0, stdout: "ok", stderr: "" };
+      },
+    } as unknown as ToolContext["persistentShell"];
+    return { calls, persistentShell };
+  }
+
+  function callTool(
+    ctx: ToolContext,
+    input: Omit<ExecuteCommandInput, "toolCallDescription"> & {
+      command: string;
+    },
+  ): Promise<unknown> {
+    return executeCommand(ctx).execute?.(
+      {
+        toolCallDescription: "Deadline contract test",
+        ...input,
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    ) as Promise<unknown>;
+  }
+
+  it("applies a finite default timeout when none is provided", async () => {
+    const { calls, persistentShell } = captureShell();
+    const result = (await callTool(makeCtx({ persistentShell }), {
+      command: "echo hello",
+    })) as ExecuteCommandResult;
+
+    expect(result.success).toBe(true);
+    expect(calls[0]?.timeout).toBe(DEFAULT_COMMAND_TIMEOUT_SECONDS);
+  });
+
+  it("clamps an explicit over-max timeout and preserves a valid one", async () => {
+    const { calls, persistentShell } = captureShell();
+    const ctx = makeCtx({ persistentShell });
+
+    await callTool(ctx, { command: "echo hello", timeout: 700 });
+    expect(calls[0]?.timeout).toBe(MAX_COMMAND_TIMEOUT_SECONDS);
+
+    await callTool(ctx, { command: "echo hello", timeout: 30 });
+    expect(calls[1]?.timeout).toBe(30);
+  });
+
+  it("rejects invalid explicit timeouts instead of running indefinitely", async () => {
+    const { calls, persistentShell } = captureShell();
+    const ctx = makeCtx({ persistentShell });
+
+    for (const bad of [0, -5]) {
+      const result = (await callTool(ctx, {
+        command: "echo hello",
+        timeout: bad,
+      })) as ExecuteCommandResult;
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Invalid timeout");
+      expect(result.error).toContain(String(bad));
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("terminates real process work on timeout (persistent shell integration)", async () => {
+    const shell = new PersistentShell();
+    try {
+      const result = (await callTool(makeCtx({ persistentShell: shell }), {
+        command: "sleep 30",
+        timeout: 1,
+      })) as ExecuteCommandResult;
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Command timed out");
+      // The shell survived the kill and is immediately reusable.
+      const after = await shell.execute("echo ok", 5);
+      expect(after.exitCode).toBe(0);
+      expect(after.stdout).toContain("ok");
+    } finally {
+      shell.dispose();
+    }
+  }, 8_000);
+
+  it("terminates real process work on caller abort (persistent shell integration)", async () => {
+    const shell = new PersistentShell();
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 300);
+    try {
+      const result = (await callTool(
+        makeCtx({ persistentShell: shell, abortSignal: ac.signal }),
+        { command: "sleep 30" },
+      )) as ExecuteCommandResult;
+
+      expect(result.success).toBe(false);
+      expect(result.stderr).toContain("aborted");
+      const after = await shell.execute("echo ok", 5);
+      expect(after.exitCode).toBe(0);
+    } finally {
+      shell.dispose();
+    }
+  }, 8_000);
+
+  it("keeps the payload-file write under its own 30s ceiling for omitted and over-max command timeouts", async () => {
+    const library = new StaticPromptInjectionLibrary([
+      {
+        id: "pi.write.deadline",
+        name: "Write Deadline",
+        category: "instruction-hijack",
+        description: "Safe metadata.",
+        tags: [],
+        deliveryHints: [],
+        expectedObservation: "",
+        payload: "TEST PAYLOAD",
+        payloadFilePath: "/tmp/apex-prompt-library/payloads/write.txt",
+      },
+    ]);
+    const writeTimeout: (number | undefined)[] = [];
+    const commandTimeout: (number | undefined)[] = [];
+    const sandbox: UnifiedSandbox = {
+      type: "linux",
+      execute: async (
+        command: string,
+        opts?: { timeout?: number; envVars?: Record<string, string> },
+      ) => {
+        if (command.includes("apex_payload_")) {
+          writeTimeout.push(opts?.timeout);
+          return { success: true, exitCode: 0, stdout: "", stderr: "" };
+        }
+        commandTimeout.push(opts?.timeout);
+        return { success: true, exitCode: 0, stdout: "ok", stderr: "" };
+      },
+    };
+
+    const ctx = makeCtx({ promptInjectionLibrary: library, sandbox });
+
+    // Omitted: write gets its own 30s, the command gets the finite default.
+    const omitted = (await callTool(ctx, {
+      command: 'cat "$APEX_PROMPT_INJECTION_FILE"',
+      promptInjection: { id: "pi.write.deadline" },
+    })) as ExecuteCommandResult;
+    expect(omitted.success).toBe(true);
+    expect(writeTimeout).toEqual([30]);
+    expect(commandTimeout).toEqual([DEFAULT_COMMAND_TIMEOUT_SECONDS]);
+
+    // Over-max explicit timeout: the command clamps to the hard cap, and the
+    // write stays under its 30s ceiling — an explicit value can never loosen it.
+    const overmax = (await callTool(ctx, {
+      command: 'cat "$APEX_PROMPT_INJECTION_FILE"',
+      promptInjection: { id: "pi.write.deadline" },
+      timeout: 700,
+    })) as ExecuteCommandResult;
+    expect(overmax.success).toBe(true);
+    expect(writeTimeout).toEqual([30, 30]);
+    expect(commandTimeout).toEqual([
+      DEFAULT_COMMAND_TIMEOUT_SECONDS,
+      MAX_COMMAND_TIMEOUT_SECONDS,
+    ]);
   });
 });

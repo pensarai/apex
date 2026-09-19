@@ -25,6 +25,10 @@ const MAX_INLINE = 50_000;
 const MS_TIMEOUT_THRESHOLD = 10_000;
 const DEFAULT_PROMPT_INJECTION_FILE_ENV = "APEX_PROMPT_INJECTION_FILE";
 
+/** Deadline applied when the model omits `timeout`; explicit values are clamped to the max. */
+export const DEFAULT_COMMAND_TIMEOUT_SECONDS = 120;
+export const MAX_COMMAND_TIMEOUT_SECONDS = 600;
+
 /**
  * Placeholder ids models emit for the optional promptInjection pointer when
  * they mean "no payload" but fill the field anyway instead of omitting it.
@@ -73,7 +77,7 @@ const executeCommandInputSchema = z.object({
     .number()
     .optional()
     .describe(
-      "Timeout in seconds. If omitted, the command runs until completion or abort.",
+      `Timeout in seconds (capped at ${MAX_COMMAND_TIMEOUT_SECONDS}). If omitted, defaults to ${DEFAULT_COMMAND_TIMEOUT_SECONDS} seconds.`,
     ),
   allow_unprotected: z
     .boolean()
@@ -83,7 +87,7 @@ const executeCommandInputSchema = z.object({
     ),
 });
 
-type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
+export type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
 
 /**
  * Models sometimes fill the optional promptInjection pointer with placeholder
@@ -294,6 +298,7 @@ OUTPUT HANDLING:
 - The tool's timeout parameter is in SECONDS, not milliseconds
 - Good timeout examples: 30, 60, 120
 - Do NOT pass millisecond values like 30000 or 120000
+- An omitted timeout defaults to ${DEFAULT_COMMAND_TIMEOUT_SECONDS} seconds (capped at ${MAX_COMMAND_TIMEOUT_SECONDS}); set an explicit timeout for longer bounded scans
 - If the tool's timeout is hit, the partial stdout the command had already
   produced is still returned (with exit code 124). It is safe to set a
   conservative timeout: you will not lose the bytes a fuzzer printed
@@ -345,6 +350,23 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           command,
         };
       }
+
+      // Fail loud on invalid explicit timeouts — silently dropping them
+      // would restore the old "run indefinitely" behavior.
+      const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
+      if (timeout !== undefined && normalizedTimeout == null) {
+        return {
+          success: false,
+          error: `Invalid timeout: must be a positive number of seconds (got ${timeout})`,
+          stdout: "",
+          stderr: "",
+          command,
+        };
+      }
+      const effectiveTimeout =
+        normalizedTimeout != null
+          ? Math.min(normalizedTimeout, MAX_COMMAND_TIMEOUT_SECONDS)
+          : DEFAULT_COMMAND_TIMEOUT_SECONDS;
 
       try {
         assertCommandInScope(command, ctx);
@@ -446,13 +468,9 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       if (ctx.sandbox) {
         try {
           const ssmOpts: {
-            timeout?: number;
+            timeout: number;
             envVars?: Record<string, string>;
-          } = {};
-          const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
-          if (normalizedTimeout != null) {
-            ssmOpts.timeout = normalizedTimeout;
-          }
+          } = { timeout: effectiveTimeout };
 
           // If we have a prompt injection payload for sandbox mode, we need to write
           // it to a temp file in the sandbox first, since the host file path won't
@@ -468,8 +486,11 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
               .replace(/'/g, "'\\''");
             const writeCommand = `printf '%s' '${escapedPayload}' > ${sandboxTempFile}`;
 
+            // The payload-file write keeps its own 30s ceiling: 30s when the
+            // command timeout is omitted, and an explicit timeout can only
+            // tighten it — a printf must never outlive a 600s command cap.
             const writeResult = await ctx.sandbox.execute(writeCommand, {
-              timeout: normalizedTimeout ?? 30,
+              timeout: Math.min(normalizedTimeout ?? 30, 30),
             });
 
             if (!writeResult.success) {
@@ -520,14 +541,13 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       // Local mode: use the persistent shell
       if (ctx.persistentShell) {
         try {
-          const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
           const onData = ctx.eventBus
             ? (data: string) =>
                 ctx.eventBus?.emit("command-output", { data: redact(data) })
             : undefined;
           const result = await ctx.persistentShell.execute(
             wrapCommandWithEnv(commandWithHeaders, promptInjectionEnvVars),
-            normalizedTimeout,
+            effectiveTimeout,
             onData,
             ctx.abortSignal,
           );

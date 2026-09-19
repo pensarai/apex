@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -476,6 +478,292 @@ describe("PersistentShell — long-running stability", () => {
     expect(final.stdout).toContain("final");
     expect(elapsed).toBeLessThan(3_000);
   }, 60_000);
+});
+
+describe("PersistentShell — termination guarantees", () => {
+  const shells: PersistentShell[] = [];
+  const make = () => {
+    const shell = new PersistentShell();
+    shells.push(shell);
+    return shell;
+  };
+
+  afterAll(() => {
+    for (const shell of shells) shell.dispose();
+  });
+
+  // Probe liveness with signal 0 until the pid is gone (ESRCH) — "reported
+  // dead" is not the same as actually dead.
+  async function expectPidDead(pid: number, timeoutMs = 3_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      try {
+        process.kill(pid, 0);
+      } catch {
+        return;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`pid ${pid} still alive after ${timeoutMs}ms`);
+      }
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  }
+
+  // Kill the exact pid recorded in a fixture pid-file even when an assertion
+  // above failed — a TERM-ignoring loop that outlives the test is an orphan.
+  function killOrphanFromPidFile(pidFile: string): void {
+    try {
+      const pid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
+      if (Number.isFinite(pid)) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // already dead
+        }
+      }
+    } catch {
+      // pidFile never written
+    }
+    try {
+      unlinkSync(pidFile);
+    } catch {
+      // already gone
+    }
+  }
+
+  it("restarts a bash wedged on a pure-builtin loop, reports the state loss, and recovers", async () => {
+    const shell = make();
+
+    await shell.execute("export APEX_WEDGED=1", 5);
+
+    // A pure-builtin `while` loop runs in the persistent bash itself — there
+    // is no descendant to signal, so only replacing the shell restores
+    // liveness. The next command must not inherit the wedge.
+    const wedged = await shell.execute("while :; do :; done", 0.05);
+    expect(wedged.exitCode).toBe(124);
+    expect(wedged.stderr).toContain("restarted");
+    expect(wedged.stderr).toContain("cwd/env/aliases reset");
+
+    const recovered = await shell.execute("printf recovered", 0.5);
+    expect(recovered.exitCode).toBe(0);
+    expect(recovered.stdout).toBe("recovered");
+
+    // The restart genuinely reset shell state.
+    const env = await shell.execute('echo "v=$APEX_WEDGED"', 0.5);
+    expect(env.stdout.trim()).toBe("v=");
+  }, 5_000);
+
+  it("SIGKILLs a TERM-ignoring grandchild even when the wrapper completes first", async () => {
+    const shell = make();
+    const pidFile = join(tmpdir(), `apex-test-grandchild-${process.pid}.pid`);
+
+    try {
+      // Foreground sleep dies on TERM so the wrapper epilogue runs and the
+      // pending resolves normally; the trapped spinner grandchild survives
+      // TERM and must still die by the escalation SIGKILL.
+      const command = `bash -c 'echo $$ > ${pidFile}; trap "" TERM; while :; do :; done' & sleep 30`;
+      const r = await shell.execute(command, 0.1);
+      expect(r.exitCode).toBe(124);
+
+      const grandchildPid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
+      expect(Number.isFinite(grandchildPid)).toBe(true);
+      await expectPidDead(grandchildPid);
+
+      // The wrapper advanced, so the shell itself was preserved.
+      const recovered = await shell.execute("printf recovered", 0.5);
+      expect(recovered.exitCode).toBe(0);
+      expect(recovered.stdout).toBe("recovered");
+    } finally {
+      killOrphanFromPidFile(pidFile);
+    }
+  }, 8_000);
+
+  it("a TERM-resistant wedged root is dead before the timed-out call returns", async () => {
+    const shell = make();
+    const pidFile = join(tmpdir(), `apex-test-root-${process.pid}.pid`);
+
+    try {
+      // trap '' TERM persists in the persistent bash, so the salvage TERM is
+      // ignored — only the group SIGKILL can end the wedge.
+      const started = Date.now();
+      const r = await shell.execute(
+        `echo $$ > ${pidFile}; trap '' TERM; while :; do :; done`,
+        0.05,
+      );
+      expect(r.exitCode).toBe(124);
+      expect(r.stderr).toContain("restarted");
+      // Bounded return: timeout + salvage + exit acknowledgement, never a hang.
+      expect(Date.now() - started).toBeLessThan(3_000);
+
+      const rootPid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
+      expect(Number.isFinite(rootPid)).toBe(true);
+      // The pending resolved only after the killed root's exit was observed
+      // (and reaped) — so the liveness probe at return time must throw.
+      // SIGKILL submission alone would not pass this: kill(0) answers for
+      // zombies too.
+      expect(() => process.kill(rootPid, 0)).toThrow();
+
+      // The successor runs on a fresh shell, strictly after the old root's
+      // death — no overlap window for the wedged root's effects.
+      const after = await shell.execute("printf successor", 0.5);
+      expect(after.exitCode).toBe(0);
+      expect(after.stdout).toBe("successor");
+    } finally {
+      killOrphanFromPidFile(pidFile);
+    }
+  }, 5_000);
+
+  it("does not let a killed shell's late pipe bytes contaminate the replacement's commands", async () => {
+    const shell = make();
+
+    // The builtin echo loop runs in the persistent bash itself and keeps the
+    // stdout pipe saturated until the kill — maximizing the late 'data' /
+    // 'close' events that arrive after the replacement shell spawns.
+    const wedged = await shell.execute(
+      "while :; do echo first-shell-noise; done",
+      0.05,
+    );
+    expect(wedged.exitCode).toBe(124);
+
+    const first = await shell.execute("printf isolated", 0.5);
+    expect(first.exitCode).toBe(0);
+    expect(first.stdout).toBe("isolated");
+
+    const second = await shell.execute("printf also-isolated", 0.5);
+    expect(second.exitCode).toBe(0);
+    expect(second.stdout).toBe("also-isolated");
+  }, 5_000);
+
+  it("resolves an active no-timeout command and drains the queue when dispose() runs mid-command", async () => {
+    const shell = make();
+
+    const first = shell.execute("sleep 30"); // no timeout — only dispose can end it
+    const queued = shell.execute("echo queued", 5);
+    await new Promise((r) => setTimeout(r, 200));
+
+    shell.dispose();
+
+    // Both commands must settle — the close event is identity-guarded after
+    // dispose clears this.proc, so dispose itself owns the rescue.
+    const firstResult = await first;
+    expect(firstResult.exitCode).toBe(1);
+    const queuedResult = await queued;
+    expect(queuedResult.stderr).toContain("disposed");
+    expect(queuedResult.exitCode).toBe(1);
+  }, 5_000);
+
+  it("resolves a pending command when the shell fails to spawn (no stranded queue)", async () => {
+    // Invalid cwd makes spawn fail: 'error' fires, then 'close' — the close
+    // rescue must still run and settle the caller.
+    const shell = new PersistentShell({ cwd: "/nonexistent/apex-test-dir" });
+
+    const r = await shell.execute("echo hello", 5);
+    expect(r.exitCode).toBe(1);
+
+    shell.dispose();
+  }, 5_000);
+
+  it("preserves cwd/env across a timeout whose wrapper completes (no forced restart)", async () => {
+    const shell = make();
+
+    await shell.execute("export APEX_PERSIST=1", 5);
+    await shell.execute("cd /tmp", 5);
+
+    // Pipeline timeout: the foreground dies on TERM and the wrapper epilogue
+    // runs, so the shell must survive with its state intact.
+    const r = await shell.execute("sleep 30 | cat", 0.2);
+    expect(r.exitCode).toBe(124);
+    expect(r.stderr).not.toContain("restarted");
+
+    const env = await shell.execute('echo "v=$APEX_PERSIST"', 0.5);
+    expect(env.stdout.trim()).toBe("v=1");
+    const cwd = await shell.execute("pwd", 0.5);
+    // `cd /tmp` logically resolves to the symlinked physical path on macOS.
+    expect(["/tmp", "/private/tmp"]).toContain(cwd.stdout.trim());
+  }, 5_000);
+
+  it("keeps natural completion bounded and clean through the monitor drain fence", async () => {
+    const shell = make();
+    const started = Date.now();
+
+    // Each epilogue TERMs/KILLs the monitor and polls for its reaped exit
+    // before the cutover write. A fence that waited unboundedly (or a monitor
+    // write crossing the cutover marker) would show up as slow or corrupted
+    // output here.
+    for (let i = 0; i < 5; i++) {
+      const r = await shell.execute("printf fence-ok", 5);
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toBe("fence-ok");
+    }
+    expect(Date.now() - started).toBeLessThan(2_000);
+
+    // State persistence is unaffected by the fence.
+    await shell.execute("export APEX_FENCE=1", 5);
+    const env = await shell.execute('echo "$APEX_FENCE"', 5);
+    expect(env.stdout.trim()).toBe("1");
+  }, 15_000);
+
+  it("withholds the authoritative cutover when monitor death is unconfirmed (fence exhaustion)", async () => {
+    const shell = new PersistentShell();
+    try {
+      // A synthetic kill() shadows the builtin for the wrapper's epilogue:
+      // -0 probes always "succeed" (death can never be confirmed), while real
+      // signals delegate to builtin kill so the monitor genuinely dies. The
+      // fence therefore exhausts through the real production code path.
+      const started = Date.now();
+      const r = await shell.execute(
+        'kill() { [ "$1" = "-0" ] && return 0; builtin kill "$@"; }; printf should-not-cross',
+        3,
+      );
+      const elapsed = Date.now() - started;
+
+      // No cutover/exit marker was emitted, so the parser never settled the
+      // pending; the caller's deadline salvage owned the teardown: forced
+      // 124, salvaged disk stdout, and the explicit drain failure in stderr.
+      expect(r.exitCode).toBe(124);
+      expect(r.stdout).toContain("should-not-cross");
+      expect(r.stderr).toContain("monitor drain unconfirmed");
+      // Bounded: fence exhaustion (~1s) + deadline (3s) + salvage + wedged
+      // determination + exit acknowledgement.
+      expect(elapsed).toBeGreaterThanOrEqual(3_000);
+      expect(elapsed).toBeLessThan(8_000);
+
+      // The pending can never settle, so the wedged determination restarted
+      // the shell — the successor runs on the replacement with no kill()
+      // override left behind.
+      const after = await shell.execute("printf recovered", 1);
+      expect(after.exitCode).toBe(0);
+      expect(after.stdout).toBe("recovered");
+    } finally {
+      shell.dispose();
+    }
+  }, 15_000);
+
+  it("bare wait in a user command awaits only user jobs, with a live monitor", async () => {
+    const shell = make();
+    const events: string[] = [];
+
+    // The internal tail monitor never ends, so a job-table bare `wait` used
+    // to deadlock the command until the tool timeout. `sleep 1.3 &` keeps the
+    // user's own job alive past a monitor poll interval on every platform,
+    // and the onData events prove the monitor was actually alive and
+    // streaming — not a dead tail masking the bug.
+    const r = await shell.execute(
+      "printf waiting; sleep 1.3 & wait; printf finished",
+      5,
+      (c) => events.push(c),
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe("waitingfinished");
+    expect(events.join("")).toContain("waiting");
+
+    // Natural completion repeatedly, well before the deadline — never 124.
+    for (let i = 0; i < 3; i++) {
+      const again = await shell.execute("sleep 0.1 & wait; printf done", 5);
+      expect(again.exitCode).toBe(0);
+      expect(again.stdout).toBe("done");
+    }
+  }, 15_000);
 });
 
 describe("extractFallbackStdout", () => {

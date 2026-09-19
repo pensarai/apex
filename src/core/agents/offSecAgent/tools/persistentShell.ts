@@ -14,6 +14,15 @@ import { join } from "node:path";
 
 const MAX_BUFFER = 5_000_000;
 
+// Appended to a timed-out command's stderr when the persistent bash itself had
+// to be killed and respawned — the caller must re-establish shell context.
+const SHELL_RESTART_STDERR_NOTE =
+  "(persistent shell restarted: cwd/env/aliases reset — re-establish context)";
+
+// Bounded wait for the killed shell's exit acknowledgement before releasing
+// the caller; without it the shell is disabled rather than replaced.
+const SHELL_EXIT_ACK_MS = 250;
+
 // Node-owned per-PID tempfile root. Paths are substituted into the wrapper
 // (not `mktemp` inside bash) so kill paths can fs.readFileSync directly —
 // Bun's child_process pipe drops bytes written after a descendant signal.
@@ -103,6 +112,10 @@ interface PendingCommand {
   // timer that already dequeued before clearTimeout running its side
   // effects (SIGKILL on stale pids, double-resolve).
   _activeSalvageId?: object;
+  // Set by resolve(). The salvage timer reads it to tell "wrapper completed"
+  // (kill only stragglers) from "wrapper never advanced" (the shell itself is
+  // wedged executing the command).
+  settled: boolean;
 }
 
 /**
@@ -145,6 +158,24 @@ function hasStdbuf(): boolean {
   const res = spawnSync("stdbuf", ["--version"], { stdio: "ignore" });
   stdbufAvailable = res.status === 0;
   return stdbufAvailable;
+}
+
+// GNU tail's `-s` sets the follow poll interval (50ms); BSD tail rejects it
+// and would die instantly — a dead monitor silently kills both live
+// streaming and the bare-`wait` regression, so gate the flag on support.
+let tailSleepAvailable: boolean | null = null;
+function hasTailSleep(): boolean {
+  if (tailSleepAvailable !== null) return tailSleepAvailable;
+  if (process.platform === "win32") {
+    tailSleepAvailable = false;
+    return false;
+  }
+  // Without -f the command terminates, so this is a safe usage probe.
+  const res = spawnSync("tail", ["-s", "0.05", "/dev/null"], {
+    stdio: "ignore",
+  });
+  tailSleepAvailable = res.status === 0;
+  return tailSleepAvailable;
 }
 
 /**
@@ -244,10 +275,23 @@ export class PersistentShell {
 
     this.alive = true;
 
-    this.proc.stdout?.on("data", (data: Buffer) => this.onStdoutData(data));
-    this.proc.stderr?.on("data", (data: Buffer) => this.onStderrData(data));
+    const child = this.proc;
 
+    // A killed shell's pipes can flush late; stale bytes must not land in the
+    // replacement's pending command.
+    child.stdout?.on("data", (data: Buffer) => {
+      if (this.proc !== child) return;
+      this.onStdoutData(data);
+    });
+    child.stderr?.on("data", (data: Buffer) => {
+      if (this.proc !== child) return;
+      this.onStderrData(data);
+    });
+
+    // Identity-guarded: a wedged shell's close can land AFTER its replacement
+    // spawned and must not clobber the replacement's state or pending command.
     this.proc.on("close", () => {
+      if (this.proc !== child) return;
       this.alive = false;
       this.proc = null;
       // If a command was pending, fail it fast rather than letting it wait
@@ -270,9 +314,101 @@ export class PersistentShell {
     });
 
     this.proc.on("error", () => {
+      if (this.proc !== child) return;
+      // Only mark dead — the close event always follows error and owns the
+      // pending rescue; nulling this.proc here would make close's identity
+      // guard skip it and strand the command.
       this.alive = false;
-      this.proc = null;
     });
+  }
+
+  /**
+   * Kill the persistent bash itself (wrapper never advanced: the bash, not a
+   * descendant, is executing the command) and report the state loss on the
+   * pending stderr. Holds the pending until the killed child's exit is
+   * observed (bounded) so the FIFO releases only after the old root is dead;
+   * without acknowledgement the shell is disabled rather than replaced.
+   */
+  private killStuckShell(
+    pending: PendingCommand,
+    salvage: { stdout: string; stderr: string; exitCode: number },
+  ): void {
+    pending.forcedStderrSuffix = pending.forcedStderrSuffix
+      ? `${pending.forcedStderrSuffix}\n${SHELL_RESTART_STDERR_NOTE}`
+      : SHELL_RESTART_STDERR_NOTE;
+
+    const child = this.proc;
+    this.current = null;
+    this.pendingCancel = null;
+    this.alive = false;
+    this.proc = null;
+
+    const finish = () => {
+      // The wrapper will never run its epilogue cat — own the unlink here
+      // (the salvage handoff deliberately left the files for a draining
+      // epilogue).
+      unlinkSafe(pending.outPath);
+      unlinkSafe(pending.errPath);
+      pending.resolve({
+        stdout:
+          salvage.stdout || extractFallbackStdout(pending) || "(no output)",
+        stderr:
+          (salvage.stderr || pending.stderr || "") +
+          (pending.forcedStderrSuffix ?? ""),
+        exitCode: salvage.exitCode,
+      });
+    };
+
+    if (!child) {
+      finish();
+      return;
+    }
+
+    let acknowledged = false;
+    const acknowledge = () => {
+      if (acknowledged) return;
+      acknowledged = true;
+      clearTimeout(ackTimer);
+      finish();
+    };
+    // SIGKILL submission is not exit acknowledgement — kill(pid, 0) answers
+    // for zombies too — so wait for the reaper before releasing the caller.
+    const ackTimer = setTimeout(() => {
+      if (acknowledged) return;
+      // No exit within the grace: never respawn over an unacknowledged kill.
+      this.disposed = true;
+      finish();
+    }, SHELL_EXIT_ACK_MS);
+
+    child.once("exit", acknowledge);
+    child.once("close", acknowledge);
+
+    const pid = child.pid;
+    if (pid && process.platform !== "win32") {
+      // Group signal reaches the wedged root plus anything pgrep missed;
+      // SIGKILL cannot be trapped.
+      try {
+        process.kill(-pid, "SIGTERM");
+      } catch {
+        // already gone
+      }
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        // already gone
+      }
+    } else {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // already gone
+      }
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // already gone
+      }
+    }
   }
 
   private ensureAlive(): void {
@@ -475,15 +611,15 @@ export class PersistentShell {
           forcedStderrSuffix: null,
           outPath,
           errPath,
+          settled: false,
           resolve: (result) => {
             if (resolved) return;
             resolved = true;
+            pending.settled = true;
             if (timeoutTimer) clearTimeout(timeoutTimer);
-            if (pending.killEscalationTimer)
-              clearTimeout(pending.killEscalationTimer);
-            // Invalidate so any in-flight salvage callback that already left
-            // the timer queue skips its side effects.
-            pending._activeSalvageId = undefined;
+            // killEscalationTimer is deliberately NOT cleared: the wrapper can
+            // complete after a partial kill while a signal-ignoring grandchild
+            // survives — the scheduled SIGKILL must still fire.
             if (abortCleanup) abortCleanup();
             resolve(result);
           },
@@ -503,6 +639,7 @@ export class PersistentShell {
               proc.pid,
               pending,
               130,
+              (salvage) => this.killStuckShell(pending, salvage),
             );
           };
           abortSignal.addEventListener("abort", onAbort, { once: true });
@@ -518,6 +655,7 @@ export class PersistentShell {
               proc.pid,
               pending,
               124,
+              (salvage) => this.killStuckShell(pending, salvage),
             );
           }, timeoutSeconds * 1_000);
         }
@@ -526,15 +664,18 @@ export class PersistentShell {
         //   - brace group `{ ...; }` (NOT a subshell) so cd/export/aliases persist;
         //   - stdin from /dev/null so children can't hijack our command pipe;
         //   - stdout/stderr to per-command tempfiles, streamed live via `tail -f`;
-        //   - after the command, kill tail, emit a cutover marker on bash's real
-        //     stdout, then `cat` the tempfile. Post-cutover bytes are
-        //     authoritative — they bypass tail's libc block-buffering, which is
-        //     a no-op `stdbuf` can't fix on macOS/SIP, Alpine, etc.
+        //   - the monitor is disowned so a user `wait` (bare) can't see it —
+        //     it runs forever, so a job-table wait would deadlock the command
+        //     until the tool timeout;
+        //   - after the command, TERM+KILL tail, emit a cutover marker on
+        //     bash's real stdout, then `cat` the tempfile. Post-cutover bytes
+        //     are authoritative — they bypass tail's libc block-buffering,
+        //     which is a no-op `stdbuf` can't fix on macOS/SIP, Alpine, etc.
         //   - tempfile paths come from Node, not `mktemp`, so kill paths can
         //     fs.readFileSync them directly. See #644.
-        const tailCmd = hasStdbuf()
-          ? `stdbuf -oL tail -n +1 -f -s 0.05 "$__APEX_OUT"`
-          : `tail -n +1 -f -s 0.05 "$__APEX_OUT"`;
+        const tailCmd = `${hasStdbuf() ? "stdbuf -oL " : ""}tail -n +1 -f${
+          hasTailSleep() ? " -s 0.05" : ""
+        } "$__APEX_OUT"`;
         const shOutPath = `'${outPath.replace(/'/g, `'\\''`)}'`;
         const shErrPath = `'${errPath.replace(/'/g, `'\\''`)}'`;
         const wrapped = [
@@ -545,20 +686,35 @@ export class PersistentShell {
           `: > "$__APEX_ERR"`,
           `${tailCmd} 2>/dev/null &`,
           `__APEX_TAIL=$!`,
+          // Disown the monitor: bare `wait` waits for all jobs and the
+          // monitor never ends. Disowned children are still reaped by bash
+          // and still killable by pid (epilogue) and by the salvage paths'
+          // descendant walk.
+          `disown "$__APEX_TAIL" 2>/dev/null`,
           `{ ${command}\n} </dev/null >"$__APEX_OUT" 2>"$__APEX_ERR"`,
           `__APEX_EC=$?`,
           `sleep 0.1`,
           `kill "$__APEX_TAIL" 2>/dev/null`,
-          `wait "$__APEX_TAIL" 2>/dev/null`,
-          `printf '%s\\n' "${cutoverMarker}"`,
-          `cat "$__APEX_OUT"`,
+          `kill -9 "$__APEX_TAIL" 2>/dev/null`,
+          // Kill submission is not termination acknowledgement: poll until
+          // the reaper collects the monitor before the cutover write, or a
+          // late monitor write would corrupt the authoritative capture.
+          `for __APEX_I in {1..50}; do kill -0 "$__APEX_TAIL" 2>/dev/null || break; sleep 0.01; done`,
+          `if kill -0 "$__APEX_TAIL" 2>/dev/null; then`,
+          // Monitor death unconfirmed: emit nothing authoritative — the
+          // caller's deadline salvage owns the bounded teardown and salvage.
+          `  echo "monitor drain unconfirmed; deferring to caller deadline" >> "$__APEX_ERR"`,
+          `else`,
+          `  printf '%s\\n' "${cutoverMarker}"`,
+          `  cat "$__APEX_OUT"`,
           // Stderr cutover fence: marks the boundary between bash's own
           // diagnostics (job-control kill messages from a killed sibling) and
           // this command's real stderr, so the former can't leak into it.
-          `printf '%s\\n' "${cutoverMarker}" >&2`,
-          `cat "$__APEX_ERR" >&2`,
+          `  printf '%s\\n' "${cutoverMarker}" >&2`,
+          `  cat "$__APEX_ERR" >&2`,
           // Node owns tempfile cleanup so kill paths can read before unlink.
-          `echo "${exitMarkerPrefix}$__APEX_EC"`,
+          `  echo "${exitMarkerPrefix}$__APEX_EC"`,
+          `fi`,
           ``,
         ].join("\n");
 
@@ -607,7 +763,12 @@ export class PersistentShell {
       : "(cancelled by user)";
 
     if (this.proc.pid && process.platform !== "win32") {
-      cmd.killEscalationTimer = scheduleSalvageKill(this.proc.pid, cmd, 130);
+      cmd.killEscalationTimer = scheduleSalvageKill(
+        this.proc.pid,
+        cmd,
+        130,
+        (salvage) => this.killStuckShell(cmd, salvage),
+      );
     } else {
       // Windows: no descendant signalling support, but we still own
       // tempfile cleanup.
@@ -627,19 +788,36 @@ export class PersistentShell {
     if (this.disposed) return;
     this.disposed = true;
 
-    // Cancel any in-flight salvage-kill so it doesn't read recycled PIDs
-    // after we unlink, then sweep the in-flight tempfiles ourselves.
-    if (this.current?.killEscalationTimer) {
-      clearTimeout(this.current.killEscalationTimer);
-    }
-    if (this.current) {
-      unlinkSafe(this.current.outPath);
-      unlinkSafe(this.current.errPath);
+    // Take ownership of the in-flight command BEFORE clearing shell state:
+    // after this.proc is null the close guard rejects the killed child's
+    // events, so an unresolved pending would strand its caller and the queue.
+    const cmd = this.current;
+    const child = this.proc;
+    this.current = null;
+    this.pendingCancel = null;
+    this.alive = false;
+    this.proc = null;
+
+    if (cmd) {
+      // Cancel any in-flight salvage-kill so it doesn't read recycled PIDs
+      // after we unlink, then sweep the tempfiles ourselves.
+      if (cmd.killEscalationTimer) {
+        clearTimeout(cmd.killEscalationTimer);
+      }
+      const diskStdout = readTempfileCapped(cmd.outPath);
+      const diskStderr = readTempfileCapped(cmd.errPath);
+      unlinkSafe(cmd.outPath);
+      unlinkSafe(cmd.errPath);
+      cmd.resolve({
+        stdout: diskStdout || extractFallbackStdout(cmd) || "(no output)",
+        stderr:
+          (diskStderr || cmd.stderr || "") + (cmd.forcedStderrSuffix ?? ""),
+        exitCode: cmd.forcedExitCode ?? 1,
+      });
     }
 
-    if (this.proc) {
-      const p = this.proc;
-      const pid = p.pid;
+    if (child) {
+      const pid = child.pid;
 
       // Kill the process group synchronously so backgrounded subshells
       // die even if the runner process is killed before timers fire.
@@ -651,7 +829,7 @@ export class PersistentShell {
         }
       }
       try {
-        p.kill("SIGTERM");
+        child.kill("SIGTERM");
       } catch {
         // already dead
       }
@@ -666,15 +844,12 @@ export class PersistentShell {
           }
         }
         try {
-          p.kill("SIGKILL");
+          child.kill("SIGKILL");
         } catch {
           // already dead
         }
       }, 2_000);
     }
-
-    this.alive = false;
-    this.proc = null;
   }
 }
 
@@ -730,13 +905,29 @@ function signalPids(pids: number[], signal: NodeJS.Signals): void {
  * written after a descendant signal (#644). PID snapshot is reused so the
  * SIGKILL doesn't hit wrapper helpers (`cat`, `sleep`) bash spawns after
  * SIGTERM — and by then we've already read, so it wouldn't matter anyway.
+ *
+ * `onUnrecovered` fires when the wrapper never advanced: the bash itself is
+ * executing the command (a pure-builtin loop has no descendant to signal).
+ * It receives the salvaged result and takes ownership of resolving the
+ * pending.
  */
 const SALVAGE_GRACE_MS = 200;
+
+// Second grace before concluding the bash itself is wedged: the wrapper's
+// epilogue forks `sleep`, `kill`, `cat` and can lag past the first grace on
+// slow machines without the shell actually being stuck — a false "wedged"
+// verdict would needlessly restart the shell and lose cd/env state.
+const WEDGED_DETERMINATION_MS = 500;
 
 function scheduleSalvageKill(
   rootPid: number | undefined,
   pending: PendingCommand,
   exitCode: number,
+  onUnrecovered?: (salvage: {
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+  }) => void,
 ): ReturnType<typeof setTimeout> {
   // Two kill paths can fire within the grace window (timeout then cancel);
   // clear any predecessor so its callback can't run stale side effects
@@ -753,16 +944,38 @@ function scheduleSalvageKill(
     // Skip if a successor timer / dispose has invalidated us.
     if (pending._activeSalvageId !== salvageId) return;
 
+    // Read WITHOUT unlinking: if the wrapper is still draining its epilogue,
+    // its `cat` needs these files. Unlink ownership stays with the parser
+    // (settled path — it already unlinks) or the wedged path (killStuckShell).
     const diskStdout = readTempfileCapped(pending.outPath);
     const diskStderr = readTempfileCapped(pending.errPath);
-    unlinkSafe(pending.outPath);
-    unlinkSafe(pending.errPath);
 
     // Defense-in-depth SIGKILL after we've already read. Bash's wrapper
     // post-cmd helpers (cat, sleep 0.1) may still be running; we don't
     // care about their output anymore.
     signalPids(pids, "SIGKILL");
 
+    if (!pending.settled) {
+      // The wrapper may still be finishing after the descendant kills (its
+      // epilogue forks `sleep`, `kill`, `cat`), so only conclude the bash
+      // itself is wedged after a second grace — a false verdict needlessly
+      // restarts the shell and loses cd/env state. The wedged handoff
+      // resolves the pending only after the killed child's exit is observed.
+      pending.killEscalationTimer = setTimeout(() => {
+        if (pending._activeSalvageId !== salvageId) return;
+        if (!pending.settled) {
+          onUnrecovered?.({
+            stdout: diskStdout,
+            stderr: diskStderr,
+            exitCode,
+          });
+        }
+      }, WEDGED_DETERMINATION_MS);
+      return;
+    }
+
+    unlinkSafe(pending.outPath);
+    unlinkSafe(pending.errPath);
     pending.resolve({
       stdout: diskStdout || extractFallbackStdout(pending) || "(no output)",
       stderr:
