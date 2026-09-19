@@ -78,7 +78,7 @@ export interface AuthenticationAgentInput {
   context?: string;
 
   /**
-   * Environment variables to inject into the agent's persistent shell.
+   * Environment variables to inject into the agent's per-command executor.
    * Forwarded to the underlying {@link OffensiveSecurityAgentInput}.
    */
   environmentVariables?: Record<string, string>;

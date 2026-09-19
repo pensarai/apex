@@ -331,7 +331,19 @@ describe("httpRequest body liveness", () => {
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Request timeout after 100ms");
+    expect(result.error).toContain("Request timeout after 100ms");
+    // Timeout after partial data: status/headers and the bounded partial body
+    // survive, marked incomplete — never discarded, never a clean success.
+    expect(result.status).toBe(200);
+    expect(result.headers["content-type"]).toBe("text/html");
+    expect(result.body).toContain("headers-arrived-body-stalls");
+    expect(result.body).toContain("INCOMPLETE");
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "timeout",
+      capturedBytes: "headers-arrived-body-stalls".length,
+      capturedBytesBasis: "raw",
+    });
   }, 5_000);
 
   it("bounds an endless body at the byte cap, cancels the stream, and still saves the capture", async () => {
@@ -364,7 +376,16 @@ describe("httpRequest body liveness", () => {
       { toolCallId: "tc_test", messages: [], abortSignal: undefined },
     )) as HttpRequestResult;
 
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    // A capped capture is not an ordinary success even though the status is
+    // 200 — the structured capture says exactly why.
+    expect(result.error).toContain("capped");
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "byte-cap",
+      capturedBytes: CAP,
+      capturedBytesBasis: "raw",
+    });
     // Streaming cap: the tool stopped reading well before the fixture could
     // deliver an unbounded body (response.text() would never finish here).
     // Slack covers the stream's one-chunk readahead plus the cap-boundary peek.
@@ -418,7 +439,13 @@ describe("httpRequest body liveness", () => {
       { toolCallId: "tc_test", messages: [], abortSignal: undefined },
     )) as HttpRequestResult;
 
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "byte-cap",
+      capturedBytes: CAP,
+      capturedBytesBasis: "raw",
+    });
     expect(cancelled).toBe(true);
     // The capture is byte-exact: every tiny chunk landed, then the huge chunk
     // filled the remaining room to the cap — one owned buffer, no loss.
@@ -459,7 +486,11 @@ describe("httpRequest body liveness", () => {
 
     // The cap path invoked the real cancel but never awaited it — completion
     // must not depend on the stream's cancel promise.
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.capture).toMatchObject({
+      stopReason: "byte-cap",
+      capturedBytesBasis: "raw",
+    });
     expect(cancelCalled).toBe(true);
     expect(Date.now() - started).toBeLessThan(2_000);
   }, 5_000);
@@ -499,7 +530,13 @@ describe("httpRequest body liveness", () => {
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Request aborted by user");
+    expect(result.error).toContain("Request aborted by user");
+    // Nothing was read before the abort — zero-byte partial, abort cause.
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "aborted",
+      capturedBytes: 0,
+    });
     expect(cancelled).toBe(true);
   }, 5_000);
 
@@ -539,6 +576,12 @@ describe("httpRequest body liveness", () => {
     expect(result.headers["content-type"]).toBe("text/plain");
     expect(result.body).toContain("partial");
     expect(result.body).toContain("INCOMPLETE");
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "curl-exit",
+      capturedBytes: "partial".length,
+      capturedBytesBasis: "decoded",
+    });
   });
 
   it("preserves raw CRLF bytes in a sandbox response body", async () => {
@@ -572,6 +615,14 @@ describe("httpRequest body liveness", () => {
     expect(result.headers["content-type"]).toBe("text/plain");
     // The body keeps its raw bytes — no line-ending normalization.
     expect(result.body).toBe("line1\r\nline2\r\n");
+    // Sandbox byte counts are honestly labeled: the decoded output's UTF-8
+    // length, including every CRLF byte.
+    expect(result.capture).toMatchObject({
+      complete: true,
+      stopReason: "end",
+      capturedBytes: Buffer.byteLength("line1\r\nline2\r\n", "utf-8"),
+      capturedBytesBasis: "decoded",
+    });
   });
 
   it("reports success for a complete sandbox transfer with a clean curl exit marker", async () => {
@@ -739,7 +790,9 @@ describe("httpRequest body liveness", () => {
     const body = new ReadableStream<Uint8Array>({
       start(c) {
         c.enqueue(enc.encode("partial;"));
-        c.error(new Error("synthetic connection reset"));
+        // Error after the first chunk is consumed, so the partial capture
+        // is real (error() drops unread queued chunks).
+        setTimeout(() => c.error(new Error("synthetic connection reset")), 10);
       },
     });
     vi.stubGlobal(
@@ -760,6 +813,16 @@ describe("httpRequest body liveness", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("synthetic connection reset");
+    // An ordinary stream failure is error, not a deadline timeout — the
+    // bounded partial capture is preserved with its cause.
+    expect(result.body).toContain("partial;");
+    expect(result.body).toContain("INCOMPLETE");
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "error",
+      capturedBytes: "partial;".length,
+      capturedBytesBasis: "raw",
+    });
   });
 
   it("fails and cancels the stream when the host aborts mid-body", async () => {
@@ -794,7 +857,15 @@ describe("httpRequest body liveness", () => {
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Request aborted by user");
+    expect(result.error).toContain("Request aborted by user");
+    // Abort mid-body: the bounded partial capture is preserved.
+    expect(result.body).toContain("<html>partial");
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "aborted",
+      capturedBytes: "<html>partial".length,
+      capturedBytesBasis: "raw",
+    });
     expect(cancelled).toBe(true);
   }, 5_000);
 
@@ -840,5 +911,118 @@ describe("httpRequest body liveness", () => {
     expect(readFileSync(savedPathFrom(large.body), "utf-8")).toBe(
       "x".repeat(6_000),
     );
+    // Complete transfer: an ordinary success with complete capture metadata.
+    expect(large.capture).toMatchObject({
+      complete: true,
+      stopReason: "end",
+      capturedBytes: 6_000,
+      capturedBytesBasis: "raw",
+    });
   });
+
+  it("counts raw bytes exactly for CRLF and multibyte bodies", async () => {
+    const body = "héllo\r\nwörld\r\n€\r\n";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: {
+              "content-type": "text/plain; charset=utf-8",
+              "content-length": String(Buffer.byteLength(body, "utf-8")),
+            },
+          }),
+      ),
+    );
+
+    const result = (await httpRequest(ctxWithScratchLogs()).execute?.(
+      {
+        url: "https://example.com/counts",
+        method: "GET",
+        followRedirects: false,
+        timeout: 2_000,
+        toolCallDescription: "CRLF + multibyte byte counts",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(true);
+    // capturedBytes is the raw byte count: CRLF bytes and multibyte UTF-8
+    // sequences counted exactly, not the character count.
+    expect(result.capture).toMatchObject({
+      complete: true,
+      stopReason: "end",
+      capturedBytes: Buffer.byteLength(body, "utf-8"),
+      capturedBytesBasis: "raw",
+      declaredBytes: Buffer.byteLength(body, "utf-8"),
+    });
+    expect(result.capture.capturedBytes).not.toBe(body.length);
+  });
+
+  it("keeps a complete 4xx as success (pre-existing local-path semantics)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("not found body", { status: 404 })),
+    );
+
+    const result = (await httpRequest(ctxWithScratchLogs()).execute?.(
+      {
+        url: "https://example.com/missing",
+        method: "GET",
+        followRedirects: false,
+        timeout: 2_000,
+        toolCallDescription: "complete 404",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    // Complete capture stays success:true — only incomplete transfers flip
+    // it. The status itself is already a first-class field.
+    expect(result.success).toBe(true);
+    expect(result.status).toBe(404);
+    expect(result.capture).toMatchObject({
+      complete: true,
+      stopReason: "end",
+    });
+  });
+
+  it("labels an incomplete capture with advertised Content-Length, never as a denominator", async () => {
+    // Endless body: hits the byte cap; note must say advertised, not "of".
+    const chunk = new Uint8Array(64 * 1024).fill(65);
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        c.enqueue(chunk);
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-length": "999999999" },
+          }),
+      ),
+    );
+
+    const result = (await httpRequest(ctxWithScratchLogs()).execute?.(
+      {
+        url: "https://example.com/advertised",
+        method: "GET",
+        followRedirects: false,
+        timeout: 30_000,
+        toolCallDescription: "cap with advertised length",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.body).toContain("advertised Content-Length: 999999999");
+    expect(result.body).not.toMatch(/captured \d+ of \d+/);
+    expect(result.capture).toMatchObject({
+      stopReason: "byte-cap",
+      declaredBytes: 999_999_999,
+    });
+  }, 10_000);
 });

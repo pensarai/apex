@@ -65,7 +65,13 @@ describe("getPage body liveness", () => {
     const result = (await pending) as GetPageResponse;
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Request timeout after 30s");
+    expect(result.error).toContain("Request timeout after 30s");
+    // Timeout after partial data: the bounded partial extraction survives,
+    // marked incomplete — never discarded, never a clean success.
+    expect(result.content).toContain("partial");
+    expect(result.content).toContain("INCOMPLETE");
+    expect(result.contentTruncated).toBe(true);
+    expect(result.stopReason).toBe("timeout");
   }, 5_000);
 
   it("bounds an endless body at the byte cap and cancels the stream", async () => {
@@ -101,21 +107,29 @@ describe("getPage body liveness", () => {
       { toolCallId: "tc_test", messages: [], abortSignal: undefined },
     )) as GetPageResponse;
 
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    // A capped capture is not an ordinary success — the producer stop reason
+    // is preserved, not overwritten by the preview-limit cause.
+    expect(result.stopReason).toBe("byte-cap");
+    expect(result.contentTruncated).toBe(true);
     // Streaming cap: the tool stopped reading instead of buffering forever
     // (response.text() would never finish on this fixture).
     expect(delivered).toBeLessThanOrEqual(CAP + 4 * chunk.byteLength);
     expect(cancelled).toBe(true);
-    // Content is bounded to the inline limit, and the truncation is reported.
-    expect((result.content ?? "").length).toBeLessThanOrEqual(50_000 + 200);
+    // Content is bounded to the inline limit, and both truncations are
+    // reported: the 50k preview cut and the INCOMPLETE capture.
+    expect((result.content ?? "").length).toBeLessThanOrEqual(50_000 + 400);
     expect(result.content).toContain("content truncated");
+    expect(result.content).toContain("INCOMPLETE");
   }, 10_000);
 
   it("reports failure when the body stream errors mid-read", async () => {
     const body = new ReadableStream<Uint8Array>({
       start(c) {
-        c.enqueue(enc.encode("<html>partial"));
-        c.error(new Error("synthetic connection reset"));
+        c.enqueue(enc.encode("<html><body>partial page"));
+        // Error after the first chunk is consumed, so the partial capture
+        // is real (error() drops unread queued chunks).
+        setTimeout(() => c.error(new Error("synthetic connection reset")), 10);
       },
     });
     vi.stubGlobal(
@@ -136,6 +150,11 @@ describe("getPage body liveness", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("synthetic connection reset");
+    // An ordinary stream failure is labeled error, not a deadline timeout.
+    expect(result.stopReason).toBe("error");
+    expect(result.content).toContain("partial page");
+    expect(result.content).toContain("INCOMPLETE");
+    expect(result.contentTruncated).toBe(true);
   });
 
   it("fails and cancels the stream when the host aborts mid-body", async () => {
@@ -173,7 +192,10 @@ describe("getPage body liveness", () => {
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Request aborted by user");
+    expect(result.error).toContain("Request aborted by user");
+    expect(result.stopReason).toBe("aborted");
+    expect(result.content).toContain("partial");
+    expect(result.content).toContain("INCOMPLETE");
     expect(cancelled).toBe(true);
   }, 5_000);
 
@@ -284,12 +306,14 @@ describe("getPage body liveness", () => {
       { toolCallId: "tc_test", messages: [], abortSignal: undefined },
     )) as GetPageResponse;
 
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.stopReason).toBe("byte-cap");
     expect(cancelled).toBe(true);
-    // Content is bounded to the inline limit with an honest truncation note;
+    // Content is bounded to the inline limit with honest truncation notes;
     // the leading text proves every tiny chunk landed before the huge one.
     expect(result.content?.startsWith("A".repeat(tinyCount))).toBe(true);
     expect(result.content).toContain("content truncated");
+    expect(result.content).toContain("INCOMPLETE");
   }, 10_000);
 
   it("completes despite a body stream whose cancel never settles", async () => {
@@ -324,7 +348,8 @@ describe("getPage body liveness", () => {
       { toolCallId: "tc_test", messages: [], abortSignal: undefined },
     )) as GetPageResponse;
 
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.stopReason).toBe("byte-cap");
     expect(cancelCalled).toBe(true);
     expect(Date.now() - started).toBeLessThan(2_000);
   }, 5_000);
@@ -364,7 +389,8 @@ describe("getPage body liveness", () => {
     )) as GetPageResponse;
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe("Request aborted by user");
+    expect(result.error).toContain("Request aborted by user");
+    expect(result.stopReason).toBe("aborted");
     expect(cancelled).toBe(true);
   }, 5_000);
 
@@ -391,5 +417,150 @@ describe("getPage body liveness", () => {
     expect(result.success).toBe(true);
     expect(result.title).toBe("Example");
     expect(result.content).toContain("hello page");
+    expect(result.contentTruncated).toBeUndefined();
+    expect(result.stopReason).toBeUndefined();
+  });
+});
+
+// Capture-vs-preview distinction: a >50k extraction followed by a producer
+// failure must be a FAILED capture with the producer stop reason — the 50k
+// preview cut never launders an incomplete download into success.
+describe("getPage preview-limit vs producer failure", () => {
+  const enc = new TextEncoder();
+  const BIG_BODY = `<html><body>${"page text ".repeat(10_000)}</body></html>`; // >50k chars
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it(">50k then stream error: success=false, stopReason=error (not content-limit)", async () => {
+    const body = new ReadableStream({
+      start(c) {
+        c.enqueue(enc.encode(BIG_BODY));
+        setTimeout(() => c.error(new Error("synthetic connection reset")), 10);
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+      ),
+    );
+
+    const result = (await getPage(makeCtx()).execute?.(
+      {
+        url: "https://example.com/big-broken",
+        toolCallDescription: "big + error",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(false);
+    expect(result.stopReason).toBe("error");
+    expect(result.contentTruncated).toBe(true);
+    // Both facts visible: the preview cut AND the incomplete capture.
+    expect(result.content).toContain("content truncated");
+    expect(result.content).toContain("INCOMPLETE");
+    expect((result.content ?? "").length).toBeLessThanOrEqual(50_000 + 400);
+  });
+
+  it(">50k then byte-cap: success=false, stopReason=byte-cap", async () => {
+    const CAP = 5 * 1024 * 1024;
+    const chunk = new Uint8Array(64 * 1024).fill(97);
+    const body = new ReadableStream({
+      pull(c) {
+        c.enqueue(chunk);
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+    expect(CAP).toBeGreaterThan(0); // fixture sanity
+
+    const result = (await getPage(makeCtx()).execute?.(
+      {
+        url: "https://example.com/big-capped",
+        toolCallDescription: "big + cap",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(false);
+    expect(result.stopReason).toBe("byte-cap");
+    expect(result.contentTruncated).toBe(true);
+    expect(result.content).toContain("content truncated");
+    expect(result.content).toContain("INCOMPLETE");
+  }, 10_000);
+
+  it(">50k then host abort: success=false, stopReason=aborted", async () => {
+    const ac = new AbortController();
+    const body = new ReadableStream({
+      start(c) {
+        c.enqueue(enc.encode(BIG_BODY));
+        setTimeout(() => ac.abort(), 50);
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+      ),
+    );
+
+    const result = (await getPage(
+      makeCtx({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/big-abort",
+        toolCallDescription: "big + abort",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(false);
+    expect(result.stopReason).toBe("aborted");
+    expect(result.content).toContain("content truncated");
+    expect(result.content).toContain("INCOMPLETE");
+  }, 5_000);
+
+  it(">50k at clean EOF: success=true with content-limit stopReason only", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(BIG_BODY, {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+      ),
+    );
+
+    const result = (await getPage(makeCtx()).execute?.(
+      { url: "https://example.com/big-ok", toolCallDescription: "big + EOF" },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as GetPageResponse;
+
+    // Complete capture, preview-limited — this IS a success.
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result.stopReason).toBe("content-limit");
+    expect(result.contentTruncated).toBe(true);
+    expect(result.content).toContain("content truncated");
+    expect(result.content).not.toContain("INCOMPLETE");
   });
 });

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type GitDiffResult, gitDiff } from "./gitDiff";
 import { type GitStatusResult, gitStatus } from "./gitStatus";
-import { PersistentShell } from "./persistentShell";
+import { PerCommandShell } from "./perCommandShell";
 import type { ToolContext } from "./types";
 
 function makeGitRepo(): string {
@@ -20,11 +20,11 @@ function makeGitRepo(): string {
 }
 
 function makeCtx(agentCwd: string): ToolContext {
-  const shell = new PersistentShell({ cwd: agentCwd });
+  const shell = new PerCommandShell({ cwd: agentCwd });
   return {
     agentCwd,
     session: { id: "ses_test", rootPath: agentCwd },
-    persistentShell: shell,
+    commandShell: shell,
   } as ToolContext;
 }
 
@@ -41,7 +41,7 @@ describe("git_status / git_diff", () => {
       expect(result.success).toBe(true);
       expect(result.status).toMatch(/a\.ts/);
     } finally {
-      ctx.persistentShell?.dispose();
+      await ctx.commandShell?.dispose();
     }
   });
 
@@ -58,7 +58,7 @@ describe("git_status / git_diff", () => {
       expect(result.diff).toContain("-export const a = 1;");
       expect(result.diff).toContain("+export const a = 2;");
     } finally {
-      ctx.persistentShell?.dispose();
+      await ctx.commandShell?.dispose();
     }
   });
 });
