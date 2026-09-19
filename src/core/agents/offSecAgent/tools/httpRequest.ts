@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tool } from "ai";
@@ -25,6 +26,54 @@ import {
 import type { ToolContext } from "./types";
 
 const MAX_INLINE_BODY = 5_000;
+// Cap on bytes buffered/decoded — response.text() buffers the whole body
+// before truncating, so a stalling or endless body must be bounded at capture.
+const MAX_DOWNLOAD_BYTES = 5 * 1024 * 1024;
+
+/** Why the body capture ended. `end` is the only complete outcome. */
+export type BodyCaptureStopReason =
+  | "end"
+  | "byte-cap"
+  | "timeout"
+  | "aborted"
+  | "error"
+  | "curl-exit"
+  | "sandbox-exec";
+
+export type HttpRequestResult = {
+  /**
+   * True only when the transfer completed AND the status is 2xx/3xx. A capped
+   * or interrupted capture is never an ordinary success — see `capture`.
+   */
+  success: boolean;
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+  url: string;
+  redirected: boolean;
+  error?: string;
+  method?: string;
+  /** Structured producer-capture outcome; the inline body is only a preview. */
+  capture: {
+    complete: boolean;
+    stopReason: BodyCaptureStopReason;
+    /**
+     * Bytes captured at the producer. `raw` counts undecoded bytes (local
+     * path); `decoded` is the UTF-8 length of adapter-decoded text (sandbox
+     * path — the adapter returns a string, so raw precision is not
+     * recoverable there).
+     */
+    capturedBytes: number;
+    capturedBytesBasis: "raw" | "decoded";
+    /**
+     * Advertised Content-Length, when the response carried one. With
+     * auto-decompression this is the ENCODED length — it is not a denominator
+     * for capturedBytes.
+     */
+    declaredBytes?: number;
+  };
+};
 
 const promptInjectionRefSchema = z.object({
   kind: z.literal("prompt_injection_ref"),
@@ -66,18 +115,6 @@ const httpRequestInputSchema = z.object({
 
 type HttpRequestInput = z.infer<typeof httpRequestInputSchema>;
 
-export type HttpRequestResult = {
-  success: boolean;
-  status: number;
-  statusText: string;
-  headers: Record<string, string>;
-  body: string;
-  url: string;
-  redirected: boolean;
-  error?: string;
-  method?: string;
-};
-
 type HttpRequestBody = string | PromptInjectionRef | undefined;
 
 /**
@@ -109,13 +146,22 @@ function containsPromptInjectionRef(value: unknown): boolean {
  * If `body` exceeds the inline limit, save the full text to a file under
  * this agent's log dir (`http-responses/`) and return truncated text + file
  * path. Scoped per-subagent via {@link agentLogsDir} so a host can reclaim a
- * finished subagent's response dumps mid-scan.
+ * finished subagent's response dumps mid-scan. An `incompleteNote` marks a
+ * known-partial capture — the inline text never claims a full response was
+ * saved when it wasn't.
  */
 function maybeSaveBody(
   body: string,
   ctx: ToolContext,
+  opts?: { incompleteNote?: string },
 ): { text: string; file?: string } {
-  if (body.length <= MAX_INLINE_BODY) return { text: body };
+  const incomplete = opts?.incompleteNote;
+
+  if (body.length <= MAX_INLINE_BODY) {
+    return {
+      text: incomplete ? `${body}\n\n(INCOMPLETE — ${incomplete})` : body,
+    };
+  }
 
   const outputDir = join(agentLogsDir(ctx), "http-responses");
   if (!existsSync(outputDir)) {
@@ -134,10 +180,116 @@ function maybeSaveBody(
     };
   }
 
+  const savedNote = incomplete
+    ? `INCOMPLETE — ${incomplete}; partial response saved to ${filePath}`
+    : `full response saved to ${filePath}`;
   return {
-    text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — full response saved to ${filePath}). Use read_file or grep to analyze.`,
+    text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — ${savedNote}). Use read_file or grep to analyze.`,
     file: filePath,
   };
+}
+
+/**
+ * Reads up to `maxBytes` into one owned buffer (per-chunk arrays are not a
+ * memory bound), cancelling the reader past the cap. Never awaits `cancel()`
+ * (it may never settle). A mid-read abort or stream error returns the partial
+ * capture plus a stop reason — the caller keeps status/headers and the
+ * bounded partial body instead of discarding them.
+ */
+type CappedBodyRead = {
+  text: string;
+  received: number;
+  stopReason: "end" | "byte-cap" | "aborted" | "error";
+  cause?: unknown;
+};
+
+async function readBodyCapped(
+  response: Response,
+  maxBytes: number,
+  signal?: AbortSignal,
+): Promise<CappedBodyRead> {
+  const captured = (): CappedBodyRead => ({
+    text: new TextDecoder().decode(buf.subarray(0, received)),
+    received,
+    stopReason,
+    cause,
+  });
+  // Assigned by the loop below; the closures above read them after it exits.
+  let buf = new Uint8Array(0);
+  let received = 0;
+  let stopReason: CappedBodyRead["stopReason"] = "end";
+  let cause: unknown;
+
+  if (signal?.aborted) {
+    response.body?.cancel().catch(() => {});
+    stopReason = "aborted";
+    return captured();
+  }
+  const body = response.body;
+  if (!body) return { text: "", received: 0, stopReason: "end" };
+
+  const reader = body.getReader();
+  const onAbort = () => {
+    reader.cancel().catch(() => {});
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+
+  buf = new Uint8Array(Math.min(maxBytes, 64 * 1024));
+  const truncatedAtCap = () => {
+    stopReason = "byte-cap";
+    reader.cancel().catch(() => {});
+  };
+
+  const append = (value: Uint8Array, take: number) => {
+    if (take <= 0) return;
+    if (received + take > buf.byteLength) {
+      // Geometric growth, hard-capped at maxBytes.
+      let size = buf.byteLength;
+      while (size < received + take && size < maxBytes) size *= 2;
+      const next = new Uint8Array(Math.min(size, maxBytes));
+      next.set(buf.subarray(0, received));
+      buf = next;
+    }
+    buf.set(value.subarray(0, take), received);
+    received += take;
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      const room = maxBytes - received;
+      if (value.byteLength > room) {
+        append(value, room);
+        truncatedAtCap();
+        break;
+      }
+      append(value, value.byteLength);
+      if (received === maxBytes) {
+        // Cap may coincide with end-of-stream; peek to tell complete from
+        // oversized. A body stalling here still fails via the deadline.
+        const peek = await reader.read();
+        if (!peek.done) truncatedAtCap();
+        break;
+      }
+    }
+  } catch (error) {
+    // The abort listener cancels the reader, surfacing as AbortError here;
+    // anything else is an ordinary stream failure (reset, TLS, protocol).
+    stopReason = signal?.aborted ? "aborted" : "error";
+    cause = error;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    try {
+      reader.releaseLock();
+    } catch {
+      // cancel()/read failure may have already released the lock
+    }
+  }
+
+  if (signal?.aborted) stopReason = "aborted";
+  return captured();
 }
 
 function parseHeaders(raw: string | undefined): Record<string, string> {
@@ -174,6 +326,14 @@ CORS TESTING (per Fetch specification browser enforcement rules):
 - ALWAYS actively test for origin reflection: send an OPTIONS or GET request with "Origin: https://evil.example.com" header and inspect whether Access-Control-Allow-Origin echoes it back. This is the most dangerous CORS pattern.
 - IMPORTANT: CORS is only relevant for endpoints that use cookie-based or token-based authentication. If the endpoint requires NO authentication at all, CORS configuration does not change the risk — the endpoint is directly callable from any client regardless of CORS headers. Do not document CORS misconfigurations on unauthenticated endpoints.
 
+RESPONSES ARE BOUNDED: bodies larger than 5 MiB are capped and marked
+INCOMPLETE — the saved partial file holds only the captured prefix, not the
+full body. For larger evidence, save it to a file and inspect bounded ranges:
+locally, redirect with execute_command (e.g. curl -o file) and page it with
+read_file byte windows; in a sandbox, execute_command runs remotely, so save
+AND inspect there (e.g. curl -o file, then head/dd on the file) — read_file
+only reads host-local files.
+
 COMMON TESTING PATTERNS:
 - Test with/without authentication
 - Try different user agents
@@ -191,21 +351,33 @@ COMMON TESTING PATTERNS:
     }): Promise<HttpRequestResult> => {
       let headers = parseHeaders(rawHeaders);
 
+      // Pre-dispatch failures: nothing was requested, so nothing was captured.
+      const notSent = (
+        error: string,
+        stopReason: BodyCaptureStopReason = "error",
+      ): HttpRequestResult => ({
+        success: false,
+        error,
+        url,
+        method,
+        status: 0,
+        statusText: "",
+        headers: {},
+        body: "",
+        redirected: false,
+        capture: {
+          complete: false,
+          stopReason,
+          capturedBytes: 0,
+          capturedBytesBasis: "raw",
+        },
+      });
+
       try {
         assertUrlInScope(url, ctx);
       } catch (e) {
         if (e instanceof ScopeViolationError) {
-          return {
-            success: false,
-            error: e.message,
-            url,
-            method,
-            status: 0,
-            statusText: "",
-            headers: {},
-            body: "",
-            redirected: false,
-          };
+          return notSent(e.message);
         }
         throw e;
       }
@@ -249,17 +421,7 @@ COMMON TESTING PATTERNS:
           ctx,
         );
       } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : String(e),
-          url,
-          method,
-          status: 0,
-          statusText: "",
-          headers: {},
-          body: "",
-          redirected: false,
-        };
+        return notSent(e instanceof Error ? e.message : String(e));
       }
 
       // Rate-limit chokepoint for both dispatch paths (no-op when unset).
@@ -267,17 +429,7 @@ COMMON TESTING PATTERNS:
         (await ctx.session._rateLimiter?.acquireSlot(ctx.abortSignal)) ?? false;
       if (ctx.abortSignal?.aborted) {
         if (slotAcquired) ctx.session._rateLimiter?.releaseSlot();
-        return {
-          success: false,
-          error: "Request aborted by user",
-          url,
-          method,
-          status: 0,
-          statusText: "",
-          headers: {},
-          body: "",
-          redirected: false,
-        };
+        return notSent("Request aborted by user", "aborted");
       }
 
       // Sandbox mode: build a curl command and run it inside the sandbox
@@ -315,44 +467,84 @@ COMMON TESTING PATTERNS:
           signal: combinedSignal,
         });
 
-        clearTimeout(timeoutId);
-
         const responseHeaders: Record<string, string> = {};
         response.headers.forEach((value, key) => {
           responseHeaders[key] = value;
         });
 
-        let responseBody = "";
-        try {
-          responseBody = await response.text();
-        } catch {
-          responseBody = "(unable to read response body)";
-        }
-
-        const redactedBody = redactPromptInjectionPayloads(
-          responseBody,
-          library,
+        // Deadline covers headers AND body — clearing it at the headers leaves the read unbounded (see readBodyCapped).
+        const read = await readBodyCapped(
+          response,
+          MAX_DOWNLOAD_BYTES,
+          combinedSignal,
         );
+        // The combined signal cannot say which source fired; the host signal
+        // decides between user abort and deadline.
+        const stopReason: BodyCaptureStopReason =
+          read.stopReason === "aborted"
+            ? ctx.abortSignal?.aborted
+              ? "aborted"
+              : "timeout"
+            : read.stopReason;
+        const complete = stopReason === "end";
+        const declaredRaw = response.headers.get("content-length");
+        const declared = declaredRaw ? Number.parseInt(declaredRaw, 10) : NaN;
+        const declaredBytes =
+          Number.isSafeInteger(declared) && declared >= 0
+            ? declared
+            : undefined;
+        const incompleteError =
+          stopReason === "timeout"
+            ? `Request timeout after ${timeout}ms — partial body captured`
+            : stopReason === "aborted"
+              ? "Request aborted by user — partial body captured"
+              : stopReason === "byte-cap"
+                ? `download capped at ${MAX_DOWNLOAD_BYTES} bytes — for larger evidence, save it with execute_command (curl -o file) and page it with read_file byte windows`
+                : read.cause instanceof Error
+                  ? read.cause.message
+                  : String(read.cause);
+
+        const redactedBody = redactPromptInjectionPayloads(read.text, library);
         const redactedHeaders = Object.fromEntries(
           Object.entries(responseHeaders).map(([key, value]) => [
             key,
             redactPromptInjectionPayloads(value, library),
           ]),
         );
-        const { text: truncatedBody } = maybeSaveBody(redactedBody, ctx);
+        // Advertised length is labeled, never a denominator: content-encoding
+        // decompression makes encoded Content-Length and captured bytes
+        // incomparable.
+        const { text: truncatedBody } = maybeSaveBody(redactedBody, ctx, {
+          incompleteNote: complete
+            ? undefined
+            : `${incompleteError} (captured ${read.received} bytes${
+                declaredBytes !== undefined
+                  ? `; advertised Content-Length: ${declaredBytes}`
+                  : ""
+              })`,
+        });
 
         return {
-          success: true,
+          // Complete capture — including a complete 4xx/5xx, which keeps the
+          // pre-existing local-path semantics (the sandbox path has always
+          // gated on status; that asymmetry predates this change).
+          success: complete,
+          error: complete ? undefined : incompleteError,
           status: response.status,
           statusText: response.statusText,
           headers: redactedHeaders,
           body: truncatedBody,
           url: response.url,
           redirected: response.redirected,
+          capture: {
+            complete,
+            stopReason,
+            capturedBytes: read.received,
+            capturedBytesBasis: "raw",
+            ...(declaredBytes !== undefined ? { declaredBytes } : {}),
+          },
         };
       } catch (error: unknown) {
-        if (timeoutId) clearTimeout(timeoutId);
-
         const isAbort = error instanceof Error && error.name === "AbortError";
         const errorMsg = isAbort
           ? ctx.abortSignal?.aborted
@@ -362,6 +554,7 @@ COMMON TESTING PATTERNS:
             ? error.message
             : String(error);
 
+        // The fetch itself failed — no headers or body ever arrived.
         return {
           success: false,
           error: errorMsg,
@@ -372,7 +565,19 @@ COMMON TESTING PATTERNS:
           headers: {},
           body: "",
           redirected: false,
+          capture: {
+            complete: false,
+            stopReason: isAbort
+              ? ctx.abortSignal?.aborted
+                ? "aborted"
+                : "timeout"
+              : "error",
+            capturedBytes: 0,
+            capturedBytesBasis: "raw",
+          },
         };
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
       }
     },
   });
@@ -442,6 +647,12 @@ async function executeSandboxHttpRequest(
           headers: {},
           body: "",
           redirected: false,
+          capture: {
+            complete: false,
+            stopReason: "error",
+            capturedBytes: 0,
+            capturedBytesBasis: "raw",
+          },
         };
       }
 
@@ -454,41 +665,71 @@ async function executeSandboxHttpRequest(
 
     const timeoutSeconds = Math.ceil(timeout / 1000);
     curlCommand += ` --max-time ${timeoutSeconds}`;
-    curlCommand += ` "${url}" 2>&1`;
+    curlCommand += ` "${url}"`;
+
+    // Bound the capture at the producer: `head -c` exits at the cap, curl
+    // SIGPIPEs on its next write, so endless/chunked output never reaches the
+    // adapter's buffers (--max-filesize's chunked behavior varies by curl
+    // version). The nonce'd marker carries curl's exit through the pipeline.
+    const nonce = randomBytes(8).toString("hex");
+    const exitMarker = `__APEX_${nonce}_CURL_EXIT_`;
+    const command = `( ${curlCommand}; printf '\\n${exitMarker}%s\\n' "$?" ) 2>&1 | head -c ${MAX_DOWNLOAD_BYTES}`;
 
     const ssmTimeout = Math.max(timeoutSeconds, 30);
-    const result = await sandbox.execute(curlCommand, {
+    const result = await sandbox.execute(command, {
       timeout: ssmTimeout,
     });
 
     const output = result.stdout || "";
-    const lines = output.split("\n");
+    // Marker absent = head cut the stream at the cap (curl SIGPIPE'd before
+    // writing it) or the pipeline was killed — either way incomplete. The
+    // random nonce keeps a hostile body from forging a clean exit.
+    const markerMatch = output.match(
+      new RegExp(`\\n?${exitMarker}(\\d+)\\n?$`),
+    );
+    const curlExit = markerMatch ? parseInt(markerMatch[1], 10) : null;
+    const boundedOutput =
+      markerMatch !== null ? output.slice(0, markerMatch.index) : output;
+
+    // Headers tolerate spec CRLF; the body is sliced raw from the original
+    // output — splitting the whole stream would normalize its line endings
+    // and corrupt evidence.
     let statusLine = "";
     const responseHeaders: Record<string, string> = {};
-    let bodyStartIndex = 0;
+    let bodyStart = -1;
+    let headerStart = 0;
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line.startsWith("HTTP/")) {
-        statusLine = line;
-        for (let j = i + 1; j < lines.length; j++) {
-          if (lines[j].trim() === "") {
-            bodyStartIndex = j + 1;
-            break;
-          }
-          const headerMatch = lines[j].match(/^([^:]+):\s*(.+)$/);
+    const statusLineMatch = boundedOutput.match(/(?:^|\r?\n)(HTTP\/[^\r\n]*)/);
+    if (statusLineMatch?.index !== undefined) {
+      statusLine = statusLineMatch[1];
+      headerStart = statusLineMatch.index + statusLineMatch[0].length;
+      const sepMatch = boundedOutput.slice(headerStart).match(/\r?\n\r?\n/);
+      if (sepMatch?.index !== undefined) {
+        const headerBlock = boundedOutput.slice(
+          headerStart,
+          headerStart + sepMatch.index,
+        );
+        for (const line of headerBlock.split(/\r?\n/)) {
+          if (line.trim() === "") continue;
+          const headerMatch = line.match(/^([^:]+):\s*(.+)$/);
           if (headerMatch) {
             responseHeaders[headerMatch[1].toLowerCase()] = headerMatch[2];
           }
         }
-        break;
+        bodyStart = headerStart + sepMatch.index + sepMatch[0].length;
       }
     }
 
     const statusMatch = statusLine.match(/HTTP\/[\d.]+\s+(\d+)\s+(.+)/);
     const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
     const statusText = statusMatch ? statusMatch[2] : "Unknown";
-    const responseBody = lines.slice(bodyStartIndex).join("\n");
+    // No HTTP line at all → the transport noise/error text is the body
+    // evidence; a status line without a blank separator keeps the raw
+    // remainder after it.
+    const responseBody =
+      bodyStart >= 0
+        ? boundedOutput.slice(bodyStart)
+        : boundedOutput.slice(headerStart);
 
     const redactedBody = redactPromptInjectionPayloads(responseBody, library);
     const redactedHeaders = Object.fromEntries(
@@ -497,16 +738,52 @@ async function executeSandboxHttpRequest(
         redactPromptInjectionPayloads(value, library),
       ]),
     );
-    const { text: truncatedBody } = maybeSaveBody(redactedBody, ctx);
+
+    // Transport outcome comes from curl's exit, not the parsed status line —
+    // a --max-time cutoff (exit 28) still writes "HTTP/1.1 200" plus a
+    // partial body. Partial status/headers/body are returned as evidence.
+    const sandboxTransportOk = result.success && result.exitCode === 0;
+    const transferComplete = sandboxTransportOk && curlExit === 0;
+    const stopReason: BodyCaptureStopReason = !sandboxTransportOk
+      ? "sandbox-exec"
+      : curlExit == null
+        ? "byte-cap"
+        : curlExit !== 0
+          ? "curl-exit"
+          : "end";
+    const capturedBytes = Buffer.byteLength(responseBody, "utf-8");
+    const declaredRaw = responseHeaders["content-length"];
+    const declared = declaredRaw ? Number.parseInt(declaredRaw, 10) : NaN;
+    const declaredBytes =
+      Number.isSafeInteger(declared) && declared >= 0 ? declared : undefined;
+    const incompleteNote = !sandboxTransportOk
+      ? `sandbox execution failed (exit ${result.exitCode}); output may be partial`
+      : curlExit == null
+        ? `output capped at ${MAX_DOWNLOAD_BYTES} bytes; curl exit unknown — for larger evidence, save and inspect it inside the sandbox with execute_command (curl -o file, then head/dd on the file); read_file only reads host-local files`
+        : curlExit !== 0
+          ? `curl exited ${curlExit}; output may be partial`
+          : undefined;
+
+    const { text: truncatedBody } = maybeSaveBody(redactedBody, ctx, {
+      incompleteNote,
+    });
 
     return {
-      success: status >= 200 && status < 400,
+      success: transferComplete && status >= 200 && status < 400,
+      error: incompleteNote,
       status,
       statusText,
       headers: redactedHeaders,
       body: truncatedBody,
       url,
       redirected: false,
+      capture: {
+        complete: transferComplete,
+        stopReason,
+        capturedBytes,
+        capturedBytesBasis: "decoded",
+        ...(declaredBytes !== undefined ? { declaredBytes } : {}),
+      },
     };
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -519,6 +796,12 @@ async function executeSandboxHttpRequest(
       body: "",
       url,
       redirected: false,
+      capture: {
+        complete: false,
+        stopReason: "error",
+        capturedBytes: 0,
+        capturedBytesBasis: "raw",
+      },
     };
   } finally {
     // Reclaim the request-body temp file now that curl has read it. Best-effort

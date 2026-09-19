@@ -44,7 +44,7 @@ import {
   createResponseTool,
   EMAIL_TOOL_NAMES_ACTIVE,
   FAST_STRIKE_EXCLUDED_TOOL_NAMES,
-  PersistentShell,
+  PerCommandShell,
   PLAN_MODE_TOOL_NAMES,
   PlaywrightMcpSession,
   RESPONSE_TOOL_NAME,
@@ -281,8 +281,8 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   private streamTextPartIndex = 0;
 
-  /** Persistent shell for local-mode command execution; disposed on consume() completion. */
-  private readonly persistentShell?: PersistentShell;
+  /** Per-command executor for local-mode command execution; disposed on consume() completion. */
+  private readonly commandShell?: PerCommandShell;
 
   /**
    * This agent's Playwright MCP browser session. Either constructed fresh
@@ -319,6 +319,9 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Guards against double force-kill across the drain-finally and result-capture paths. */
   private browserDisconnected = false;
   private shellDisposed = false;
+  // Cached dispose barrier — repeat disposeOwnedShell() calls return the
+  // same settlement wait instead of a fire-and-forget.
+  private shellDisposeBarrier: Promise<void> | null = null;
 
   private readonly abortSignal?: AbortSignal;
 
@@ -389,16 +392,16 @@ export class OffensiveSecurityAgent<TResult = void> {
     // -- Resolve agent working directory ----------------------------------------
     const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
 
-    // -- Persistent shell (local mode only) -----------------------------------
+    // -- Per-command executor (local mode only) -------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
     // stream ends, or when the agent is fully killed.
     if (!input.sandbox) {
-      this.persistentShell = new PersistentShell({
+      this.commandShell = new PerCommandShell({
         cwd: agentCwd,
         env: input.environmentVariables,
       });
       if (input.commandCancelHandle) {
-        const shell = this.persistentShell;
+        const shell = this.commandShell;
         input.commandCancelHandle.cancel = () => shell.cancelCurrentCommand();
       }
     }
@@ -499,7 +502,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       credentialManager,
       secretValues: input.secretValues,
       environmentVariables: input.environmentVariables,
-      persistentShell: this.persistentShell,
+      commandShell: this.commandShell,
       skillsRegistry: input.skillsRegistry,
       promptInjectionLibrary: input.promptInjectionLibrary,
       promptInjectionLibrarySource:
@@ -1183,9 +1186,11 @@ export class OffensiveSecurityAgent<TResult = void> {
     };
 
     try {
-      // Dispose first — don't block on persistence I/O.
+      // Dispose first — the 3s kill protocol is awaited, never
+      // fire-and-forget: hosts rely on drained before closeout, so an
+      // active command must settle (bounded) before finalization continues.
       try {
-        this.disposeOwnedShell();
+        await this.disposeOwnedShell();
       } catch (error) {
         recordFinalizationError(error);
       }
@@ -1247,11 +1252,21 @@ export class OffensiveSecurityAgent<TResult = void> {
   // without knowing the shell/browser implementations.
   // ---------------------------------------------------------------------------
 
-  /** Disposes the owned persistent shell exactly once; safe to call from multiple teardown paths. */
-  disposeOwnedShell(): void {
-    if (this.shellDisposed) return;
+  /**
+   * Disposes the owned per-command executor exactly once; safe to call from
+   * multiple teardown paths. Returns the same cached barrier on repeat
+   * calls; the barrier resolves once a killed invocation's bounded
+   * termination protocol has settled, so closeout never races an active
+   * command.
+   */
+  disposeOwnedShell(): Promise<void> {
+    if (this.shellDisposed) {
+      return this.shellDisposeBarrier ?? Promise.resolve();
+    }
     this.shellDisposed = true;
-    this.persistentShell?.dispose();
+    this.shellDisposeBarrier =
+      this.commandShell?.dispose() ?? Promise.resolve();
+    return this.shellDisposeBarrier;
   }
 
   /** Force-kills the owned Chromium child process exactly once; safe to call from multiple teardown paths. */
@@ -1265,11 +1280,12 @@ export class OffensiveSecurityAgent<TResult = void> {
   /**
    * Idempotent teardown for hosts that abort before `consume()` settles
    * (Console `settleOnAbort` on timeout/pause). Force-disconnects the owned
-   * browser, then awaits the drain so Camoufox is reaped before the next
-   * endpoint starts.
+   * browser, awaits the shell's bounded kill barrier, then awaits the drain
+   * so owned work settles before the host starts closeout.
    */
   async abortAndDrain(): Promise<void> {
     await this.disconnectOwnedBrowser();
+    await this.disposeOwnedShell().catch(() => {});
     await this.drained.catch(() => {});
   }
 

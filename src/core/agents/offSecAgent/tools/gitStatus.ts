@@ -22,10 +22,12 @@ async function runGit(
   args: string[],
 ): Promise<{ success: boolean; stdout: string; stderr: string }> {
   const command = `git ${args.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ")}`;
-  const full = `cd "${ctx.agentCwd}" && ${command}`;
 
   if (ctx.sandbox) {
-    const result = await ctx.sandbox.execute(full, { timeout: 30 });
+    const result = await ctx.sandbox.execute(command, {
+      timeout: 30,
+      cwd: ctx.agentCwd,
+    });
     return {
       success: result.success,
       stdout: result.stdout,
@@ -33,13 +35,12 @@ async function runGit(
     };
   }
 
-  if (ctx.persistentShell) {
-    const result = await ctx.persistentShell.execute(
-      full,
-      30,
-      undefined,
-      ctx.abortSignal,
-    );
+  if (ctx.commandShell) {
+    const result = await ctx.commandShell.execute(command, {
+      cwd: ctx.agentCwd,
+      timeoutSeconds: 30,
+      abortSignal: ctx.abortSignal,
+    });
     return {
       success: result.exitCode === 0,
       stdout: result.stdout,

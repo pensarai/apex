@@ -46,14 +46,13 @@ export { listFiles } from "./listFiles";
 export { listMemories } from "./listMemories";
 export { listPromptInjections } from "./listPromptInjections";
 export { listTasksTool } from "./listTasks";
-// Persistent shell — long-lived shell session shared across tool calls.
+// Per-command executor — one fresh process group per tool invocation.
 export {
-  extractFallbackStdout,
-  getApexTmpRoot,
-  PersistentShell,
-  readTempfileCapped,
+  PerCommandShell,
+  readSandboxAgentEnv,
+  type ShellExecuteOptions,
   type ShellExecuteResult,
-} from "./persistentShell";
+} from "./perCommandShell";
 // Playwright MCP browser session helpers.
 export {
   type BrowserClickResult,

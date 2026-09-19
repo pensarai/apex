@@ -28,6 +28,10 @@ function mergeBaselineHeaders(resolved: HeaderRecord): HeaderRecord {
 
 const MAX_CONTENT_LENGTH = 50_000;
 const REQUEST_TIMEOUT = 30_000;
+// Hard cap on response bytes actually buffered/decoded — `response.text()`
+// buffers the whole body before truncation, so an oversized page exhausts
+// memory first. 5 MiB is far beyond what a 50k-char text extraction needs.
+const MAX_DOWNLOAD_BYTES = 5 * 1024 * 1024;
 
 const getPageInputSchema = z.object({
   url: z
@@ -49,6 +53,10 @@ export interface GetPageResponse {
   title?: string;
   content?: string;
   error?: string;
+  /** True when the returned content is not the complete page text. */
+  contentTruncated?: boolean;
+  /** Why the content stopped: preview limit, capture cap, or a failed read. */
+  stopReason?: "content-limit" | "byte-cap" | "timeout" | "aborted" | "error";
 }
 
 function extractTitle(html: string): string | undefined {
@@ -92,6 +100,107 @@ function extractTextContent(html: string): string {
   return lines.join("\n");
 }
 
+/**
+ * Reads up to `maxBytes` into one owned buffer (per-chunk arrays are not a
+ * memory bound), cancelling the reader past the cap. Never awaits `cancel()`
+ * (it may never settle). A mid-read abort or stream error returns the partial
+ * capture plus a stop reason — the caller keeps the extracted partial content
+ * instead of discarding it.
+ */
+type CappedBodyRead = {
+  text: string;
+  stopReason: "end" | "byte-cap" | "aborted" | "error";
+  cause?: unknown;
+};
+
+async function readBodyCapped(
+  response: Response,
+  maxBytes: number,
+  signal?: AbortSignal,
+): Promise<CappedBodyRead> {
+  const captured = (): CappedBodyRead => ({
+    text: new TextDecoder().decode(buf.subarray(0, received)),
+    stopReason,
+    cause,
+  });
+  // Assigned by the loop below; the closures above read them after it exits.
+  let buf = new Uint8Array(0);
+  let received = 0;
+  let stopReason: CappedBodyRead["stopReason"] = "end";
+  let cause: unknown;
+
+  if (signal?.aborted) {
+    response.body?.cancel().catch(() => {});
+    stopReason = "aborted";
+    return captured();
+  }
+  const body = response.body;
+  if (!body) return { text: "", stopReason: "end" };
+
+  const reader = body.getReader();
+  const onAbort = () => {
+    reader.cancel().catch(() => {});
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+
+  buf = new Uint8Array(Math.min(maxBytes, 64 * 1024));
+  const truncatedAtCap = () => {
+    stopReason = "byte-cap";
+    reader.cancel().catch(() => {});
+  };
+
+  const append = (value: Uint8Array, take: number) => {
+    if (take <= 0) return;
+    if (received + take > buf.byteLength) {
+      // Geometric growth, hard-capped at maxBytes.
+      let size = buf.byteLength;
+      while (size < received + take && size < maxBytes) size *= 2;
+      const next = new Uint8Array(Math.min(size, maxBytes));
+      next.set(buf.subarray(0, received));
+      buf = next;
+    }
+    buf.set(value.subarray(0, take), received);
+    received += take;
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      const room = maxBytes - received;
+      if (value.byteLength > room) {
+        append(value, room);
+        truncatedAtCap();
+        break;
+      }
+      append(value, value.byteLength);
+      if (received === maxBytes) {
+        // Cap may coincide with end-of-stream; peek to tell complete from
+        // oversized. A body stalling here still fails via the deadline.
+        const peek = await reader.read();
+        if (!peek.done) truncatedAtCap();
+        break;
+      }
+    }
+  } catch (error) {
+    // The abort listener cancels the reader, surfacing as AbortError here;
+    // anything else is an ordinary stream failure (reset, TLS, protocol).
+    stopReason = signal?.aborted ? "aborted" : "error";
+    cause = error;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    try {
+      reader.releaseLock();
+    } catch {
+      // cancel()/read failure may have already released the lock
+    }
+  }
+
+  if (signal?.aborted) stopReason = "aborted";
+  return captured();
+}
+
 export function getPage(ctx: ToolContext) {
   return tool({
     description: `Fetch and extract readable content from a web page. Returns the page title and main text content.
@@ -109,9 +218,10 @@ BEST PRACTICES:
 - If content is truncated, the important information is usually near the beginning`,
     inputSchema: getPageInputSchema,
     execute: async ({ url }): Promise<GetPageResponse> => {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+        timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
         const combinedSignal = ctx.abortSignal
           ? AbortSignal.any([ctx.abortSignal, controller.signal])
@@ -132,9 +242,8 @@ BEST PRACTICES:
           redirect: "follow",
         });
 
-        clearTimeout(timeoutId);
-
         if (!response.ok) {
+          response.body?.cancel().catch(() => {});
           return {
             success: false,
             url,
@@ -148,6 +257,7 @@ BEST PRACTICES:
           !contentType.includes("text/plain") &&
           !contentType.includes("application/xhtml")
         ) {
+          response.body?.cancel().catch(() => {});
           return {
             success: false,
             url,
@@ -155,14 +265,61 @@ BEST PRACTICES:
           };
         }
 
-        const html = await response.text();
-        const title = extractTitle(html);
-        let content = extractTextContent(html);
+        // Deadline covers headers AND body — clearing it at the headers leaves the read unbounded (see readBodyCapped).
+        const read = await readBodyCapped(
+          response,
+          MAX_DOWNLOAD_BYTES,
+          combinedSignal,
+        );
+        // The combined signal cannot say which source fired; the host signal
+        // decides between user abort and deadline. undefined = clean end.
+        const producerStop: GetPageResponse["stopReason"] =
+          read.stopReason === "end"
+            ? undefined
+            : read.stopReason === "aborted"
+              ? ctx.abortSignal?.aborted
+                ? "aborted"
+                : "timeout"
+              : read.stopReason;
+        const downloadComplete = producerStop === undefined;
+        const title = extractTitle(read.text);
+        let content = extractTextContent(read.text);
 
-        if (content.length > MAX_CONTENT_LENGTH) {
+        // The preview cut applies to the bounded capture on EVERY path — an
+        // incomplete download never unlocks an unbounded inline extraction.
+        // Preview truncation and producer capture are independent facts: the
+        // marker below only says the 50k preview cut happened.
+        const previewTruncated = content.length > MAX_CONTENT_LENGTH;
+        if (previewTruncated) {
           content =
             content.substring(0, MAX_CONTENT_LENGTH) +
             "\n\n... (content truncated — page exceeded maximum length)";
+        }
+
+        // Completion and the producer stop cause come from the read outcome —
+        // a preview-truncated partial capture is still a failed capture, and
+        // the producer stopReason is never overwritten by 'content-limit'.
+        if (!downloadComplete) {
+          const incompleteError =
+            producerStop === "timeout"
+              ? `Request timeout after ${REQUEST_TIMEOUT / 1000}s — partial content extracted`
+              : producerStop === "aborted"
+                ? "Request aborted by user — partial content extracted"
+                : producerStop === "byte-cap"
+                  ? "page download capped — full page not fetched"
+                  : read.cause instanceof Error
+                    ? read.cause.message
+                    : String(read.cause);
+          content += `\n\n... (INCOMPLETE — ${incompleteError})`;
+          return {
+            success: false,
+            url,
+            title,
+            content,
+            error: incompleteError,
+            contentTruncated: true,
+            stopReason: producerStop,
+          };
         }
 
         return {
@@ -170,6 +327,9 @@ BEST PRACTICES:
           url,
           title,
           content,
+          ...(previewTruncated
+            ? { contentTruncated: true, stopReason: "content-limit" }
+            : {}),
         };
       } catch (error: unknown) {
         if (error instanceof Error && error.name === "AbortError") {
@@ -179,6 +339,8 @@ BEST PRACTICES:
             error: ctx.abortSignal?.aborted
               ? "Request aborted by user"
               : `Request timeout after ${REQUEST_TIMEOUT / 1000}s`,
+            contentTruncated: true,
+            stopReason: ctx.abortSignal?.aborted ? "aborted" : "timeout",
           };
         }
 
@@ -187,7 +349,11 @@ BEST PRACTICES:
           success: false,
           url,
           error: `Failed to fetch page: ${errorMsg}`,
+          contentTruncated: true,
+          stopReason: "error",
         };
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
       }
     },
   });
