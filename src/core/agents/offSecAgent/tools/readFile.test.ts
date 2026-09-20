@@ -529,3 +529,132 @@ describe("readFile file-kind and abort handling", () => {
     expect(readStats.totalBytesRead).toBe(64 * 1024);
   }, 10_000);
 });
+
+// EOF semantics for byte windows: an incomplete trailing multibyte sequence
+// at REAL EOF is invalid UTF-8, not a page split — finalizing the decoder
+// must fail it with the binary-tool guidance instead of a continuation
+// cursor that asks for more bytes forever.
+describe("readFile byte-window EOF semantics", () => {
+  // "ok-" (6f 6b 2d) + the first two bytes of a 3-byte sequence (e2 82) that
+  // the file never completes.
+  const tornTail = Buffer.concat([
+    Buffer.from("ok-"),
+    Buffer.from([0xe2, 0x82]),
+  ]);
+
+  it("fails an incomplete trailing sequence at EOF (read returned 0)", async () => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "torn.txt"), tornTail);
+
+    const result = await runRead(makeCtx({ agentCwd: dir }), {
+      path: "torn.txt",
+      byteOffset: 0,
+      byteCount: 64,
+      toolCallDescription: "window past the torn tail",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("invalid UTF-8");
+    expect(result.error).toContain("xxd");
+    expect(result.stoppedAtByte).toBeUndefined();
+  });
+
+  it("detects EOF when the window ends exactly at the file size", async () => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "torn-exact.txt"), tornTail);
+
+    // byteCount == remaining file size: the read loop fills the window and
+    // never observes a 0-byte read — a bounded probe must still see EOF.
+    const result = await runRead(makeCtx({ agentCwd: dir }), {
+      path: "torn-exact.txt",
+      byteOffset: 0,
+      byteCount: tornTail.length,
+      toolCallDescription: "window exactly the file size",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("invalid UTF-8");
+    expect(result.stoppedAtByte).toBeUndefined();
+  });
+
+  it("a continuation page at the torn cursor fails instead of looping forever", async () => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "torn-cursor.txt"), tornTail);
+
+    // The torn sequence starts at byte 3; a follow-up page from there must
+    // report invalid UTF-8 at EOF, never the "increase byteCount" guidance
+    // that can never succeed.
+    const result = await runRead(makeCtx({ agentCwd: dir }), {
+      path: "torn-cursor.txt",
+      byteOffset: 3,
+      byteCount: 524_288,
+      toolCallDescription: "continuation at the torn cursor",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("invalid UTF-8");
+    expect(result.error).not.toContain("increase byteCount");
+  });
+
+  it("a complete multibyte at EOF is not truncated (clean finalization)", async () => {
+    const dir = scratchDir();
+    const cleanTail = Buffer.from("ok-😀");
+    writeFileSync(join(dir, "clean-tail.txt"), cleanTail);
+
+    const result = await runRead(makeCtx({ agentCwd: dir }), {
+      path: "clean-tail.txt",
+      byteOffset: 0,
+      byteCount: 64,
+      toolCallDescription: "window over a clean tail",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.content).toBe("ok-😀");
+    expect(result.byteCaptured).toBe(cleanTail.length);
+    expect(result.truncated).toBeUndefined();
+  });
+
+  it("a valid sequence split across pages keeps its cursor (page split, not EOF)", async () => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "split.txt"), "a😀b");
+
+    const ctx = makeCtx({ agentCwd: dir });
+    const page1 = await runRead(ctx, {
+      path: "split.txt",
+      byteOffset: 0,
+      byteCount: 2,
+      toolCallDescription: "page splitting a multibyte",
+    });
+    expect(page1.success).toBe(true);
+    expect(page1.content).toBe("a");
+    expect(page1.stoppedAtByte).toBe(1);
+    expect(page1.truncated).toBe(true);
+
+    const page2 = await runRead(ctx, {
+      path: "split.txt",
+      byteOffset: page1.stoppedAtByte,
+      byteCount: 10,
+      toolCallDescription: "follow-up page completing the multibyte",
+    });
+    expect(page2.success).toBe(true);
+    expect(`${page1.content}${page2.content}`).toBe("a😀b");
+    expect(page2.truncated).toBeUndefined();
+  });
+
+  it("a window smaller than a split BOM still asks for a bigger window (page split)", async () => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "bom-split.txt"), "\uFEFFalpha");
+
+    // Only the first 2 of the BOM's 3 bytes fit: this is a page split (the
+    // file continues), so the too-small guidance is correct here.
+    const result = await runRead(makeCtx({ agentCwd: dir }), {
+      path: "bom-split.txt",
+      byteOffset: 0,
+      byteCount: 2,
+      toolCallDescription: "window splitting the BOM",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("increase byteCount");
+  });
+});

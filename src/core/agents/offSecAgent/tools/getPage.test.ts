@@ -563,4 +563,119 @@ describe("getPage preview-limit vs producer failure", () => {
     expect(result.content).toContain("content truncated");
     expect(result.content).not.toContain("INCOMPLETE");
   });
+
+  it("exact-cap + empty chunk + EOF is a complete capture (preview-limit only)", async () => {
+    const CAP = 5 * 1024 * 1024;
+    // [cap, empty, EOF]: an empty non-done chunk is not overflow evidence —
+    // the download completed exactly at the cap.
+    const full = new Uint8Array(CAP).fill(66); // "B" * cap
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(full);
+        c.enqueue(new Uint8Array(0));
+        c.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+
+    const result = (await getPage(makeCtx()).execute?.(
+      {
+        url: "https://example.com/exact-cap-empty-eof",
+        toolCallDescription:
+          "page landing exactly at the cap via an empty chunk",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(true);
+    // Complete producer capture: the only truncation is the 50k preview cut.
+    expect(result.stopReason).toBe("content-limit");
+    expect(result.contentTruncated).toBe(true);
+    expect(result.content).not.toContain("INCOMPLETE");
+    expect(result.content).toContain("content truncated");
+  }, 10_000);
+
+  it("exact-cap + empties + nonempty is a byte-cap overflow", async () => {
+    const CAP = 5 * 1024 * 1024;
+    const full = new Uint8Array(CAP).fill(68); // "D" * cap
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(full);
+        c.enqueue(new Uint8Array(0));
+        c.enqueue(new Uint8Array([88])); // "X"
+        c.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+
+    const result = (await getPage(makeCtx()).execute?.(
+      {
+        url: "https://example.com/exact-cap-empty-overflow",
+        toolCallDescription: "page with empties before real overflow",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(false);
+    expect(result.stopReason).toBe("byte-cap");
+    expect(result.content).toContain("INCOMPLETE");
+  }, 10_000);
+
+  it("a stalled peek at the exact cap dies by the deadline, not as overflow", async () => {
+    const CAP = 5 * 1024 * 1024;
+    const full = new Uint8Array(CAP).fill(69); // "E" * cap
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(full);
+        // then stall — no further chunk, no close
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+
+    vi.useFakeTimers();
+    try {
+      const pending = getPage(makeCtx()).execute?.(
+        {
+          url: "https://example.com/exact-cap-stall",
+          toolCallDescription: "page stalling at the exact cap",
+        },
+        { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      const result = (await pending) as GetPageResponse;
+
+      expect(result.success).toBe(false);
+      expect(result.stopReason).toBe("timeout");
+      expect(result.error).toContain("Request timeout after 30s");
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10_000);
 });

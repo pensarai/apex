@@ -1025,4 +1025,182 @@ describe("httpRequest body liveness", () => {
       declaredBytes: 999_999_999,
     });
   }, 10_000);
+
+  it("treats a zero-length chunk at the exact cap followed by EOF as complete", async () => {
+    const CAP = 5 * 1024 * 1024;
+    // [cap bytes, empty chunk, EOF]: an empty non-done chunk is not evidence
+    // of more bytes — the body is complete.
+    const full = new Uint8Array(CAP).fill(66); // "B" * cap
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(full);
+        c.enqueue(new Uint8Array(0));
+        c.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const result = (await httpRequest(ctxWithScratchLogs()).execute?.(
+      {
+        url: "https://example.com/exact-cap-empty-eof",
+        method: "GET",
+        followRedirects: false,
+        timeout: 5_000,
+        toolCallDescription:
+          "GET whose cap lands exactly at EOF via an empty chunk",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(true);
+    expect(result.capture).toMatchObject({
+      complete: true,
+      stopReason: "end",
+      capturedBytes: CAP,
+    });
+    expect(result.body.startsWith("BBBB")).toBe(true);
+  }, 10_000);
+
+  it("treats multiple zero-length chunks at the exact cap as still live until EOF", async () => {
+    const CAP = 5 * 1024 * 1024;
+    // [cap, empty, empty, EOF]: every empty is skipped, completion decided
+    // by the eventual EOF only.
+    const full = new Uint8Array(CAP).fill(67); // "C" * cap
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(full);
+        c.enqueue(new Uint8Array(0));
+        c.enqueue(new Uint8Array(0));
+        c.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const result = (await httpRequest(ctxWithScratchLogs()).execute?.(
+      {
+        url: "https://example.com/exact-cap-empties-eof",
+        method: "GET",
+        followRedirects: false,
+        timeout: 5_000,
+        toolCallDescription: "GET with empties before EOF at the cap",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(true);
+    expect(result.capture).toMatchObject({
+      complete: true,
+      stopReason: "end",
+    });
+  }, 10_000);
+
+  it("a nonempty chunk after empties at the exact cap is a byte-cap overflow", async () => {
+    const CAP = 5 * 1024 * 1024;
+    // [cap, empty, nonempty]: the empty is skipped; the nonempty chunk proves
+    // the body exceeded the cap.
+    const full = new Uint8Array(CAP).fill(68); // "D" * cap
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(full);
+        c.enqueue(new Uint8Array(0));
+        c.enqueue(new Uint8Array([88])); // "X"
+        c.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const result = (await httpRequest(ctxWithScratchLogs()).execute?.(
+      {
+        url: "https://example.com/exact-cap-empty-overflow",
+        method: "GET",
+        followRedirects: false,
+        timeout: 5_000,
+        toolCallDescription: "GET whose empties precede real overflow",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "byte-cap",
+      capturedBytes: CAP,
+    });
+    expect(result.body).toContain("INCOMPLETE");
+  }, 10_000);
+
+  it("a stalled peek at the exact cap dies by the deadline, not as overflow", async () => {
+    const CAP = 5 * 1024 * 1024;
+    // [cap, stall forever]: the next chunk never arrives and never EOfs —
+    // the deadline must classify the outcome, never a hang.
+    const full = new Uint8Array(CAP).fill(69); // "E" * cap
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(full);
+        // then stall — no further enqueue, no close
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const result = (await httpRequest(ctxWithScratchLogs()).execute?.(
+      {
+        url: "https://example.com/exact-cap-stall",
+        method: "GET",
+        followRedirects: false,
+        timeout: 100,
+        toolCallDescription: "GET stalling at the exact cap",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Request timeout after 100ms");
+    expect(result.capture.stopReason).toBe("timeout");
+  }, 5_000);
+
+  it("a user abort during the stalled peek reports aborted, not overflow", async () => {
+    const CAP = 5 * 1024 * 1024;
+    const full = new Uint8Array(CAP).fill(70); // "F" * cap
+    const ac = new AbortController();
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(full);
+        setTimeout(() => ac.abort(), 50);
+        // then stall
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const result = (await httpRequest(
+      ctxWithScratchLogs({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/exact-cap-abort",
+        method: "GET",
+        followRedirects: false,
+        timeout: 30_000,
+        toolCallDescription: "GET aborted at the stalled cap boundary",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Request aborted by user");
+    expect(result.capture.stopReason).toBe("aborted");
+  }, 5_000);
 });

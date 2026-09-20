@@ -175,13 +175,7 @@ async function readBodyCapped(
         break;
       }
       append(value, value.byteLength);
-      if (received === maxBytes) {
-        // Cap may coincide with end-of-stream; peek to tell complete from
-        // oversized. A body stalling here still fails via the deadline.
-        const peek = await reader.read();
-        if (!peek.done) truncatedAtCap();
-        break;
-      }
+      // At the exact cap, keep reading until EOF or a nonempty overflow chunk.
     }
   } catch (error) {
     // The abort listener cancels the reader, surfacing as AbortError here;

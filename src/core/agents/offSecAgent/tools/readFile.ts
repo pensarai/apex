@@ -390,15 +390,22 @@ async function readLocalByteWindow(
       got += bytesRead;
     }
 
-    // Streaming fatal decode: the decoder holds an incomplete trailing
-    // sequence instead of emitting a replacement, so the decoded prefix is
-    // exactly the complete codepoints and its byteLength is exact progress.
-    // ignoreBOM keeps the BOM in the output so its 3 bytes stay counted —
-    // stripping it would silently misalign the byte cursor.
+    // A window that filled exactly needs a one-byte probe to distinguish a
+    // page split from the file's actual end (a short read already proves EOF).
+    let atEof = got < byteCount;
+    if (!atEof) {
+      const probeBuf = Buffer.alloc(1);
+      const probe = await handle.read(probeBuf, 0, 1, byteOffset + got);
+      atEof = probe.bytesRead === 0;
+    }
+
+    // Streaming decode retains incomplete sequences only at page boundaries;
+    // at real EOF the decoder is finalized, so a torn tail fails as invalid
+    // UTF-8. BOM bytes stay counted so the cursor stays aligned.
     const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
     let content: string;
     try {
-      content = decoder.decode(out.subarray(0, got), { stream: true });
+      content = decoder.decode(out.subarray(0, got), { stream: !atEof });
     } catch {
       // Invalid bytes inside the window (not a boundary split): fail
       // explicitly — replacement characters would silently corrupt the
