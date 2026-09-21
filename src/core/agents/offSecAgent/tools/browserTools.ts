@@ -1,31 +1,36 @@
 /**
  * Browser tool wrappers for the general agent harness.
  *
- * Delegates to the existing {@link createBrowserTools} factory from
- * `browserTools/playwrightMcp.ts`, which provisions 8 Playwright MCP
- * tools. The mode is set to `"operator"` (generic reconnaissance) by
- * default — the descriptions are broad enough for recon, auth flows,
- * and pentest use-cases alike.
+ * Defines the eight `browser_*` tools' AI-facing schema and description once
+ * and executes them against `resolveBackends(ctx).browser` — `LocalBackends`
+ * drives Playwright-MCP (`./playwrightMcp`) for the CLI/TUI, a host-injected
+ * sandbox backend (`SandboxBrowserBackend`, `./sandboxPlaywright`) drives
+ * Playwright directly inside the box. Tools never branch on `ctx.sandbox`
+ * themselves.
  *
  * When a {@link CredentialManager} is present in the tool context,
  * `browser_fill` is wrapped so the agent can pass a `credentialId` +
  * `credentialField` instead of a raw secret value — the secret is
  * resolved at execution time and never appears in the agent prompt.
- *
- * Individual agents don't need to worry about Playwright initialisation
- * or MCP plumbing — they just list the browser tool names they want
- * in their `activeTools` array.
  */
 
-import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import {
   getPromptInjectionLibrary,
   redactPromptInjectionPayloads,
 } from "../../../prompt-injections";
-import { type BrowserFillResult, createBrowserTools } from "./playwrightMcp";
-import { createSandboxBrowserTools } from "./sandboxPlaywright";
+import { resolveBackends } from "../../../tools/backends/resolve";
+import type {
+  BrowserClickResult,
+  BrowserConsoleResult,
+  BrowserCookiesResult,
+  BrowserEvaluateResult,
+  BrowserFillResult,
+  BrowserNavigateResult,
+  BrowserScreenshotResult,
+  BrowserSnapshotResult,
+} from "../../../tools/backends/types";
 import type { ToolContext } from "./types";
 
 /**
@@ -42,40 +47,232 @@ export const BROWSER_TOOL_NAMES = [
   "browser_get_cookies",
 ] as const;
 
+const BrowserNavigateInput = z.object({
+  url: z.string().describe("Full URL to navigate to"),
+  toolCallDescription: z
+    .string()
+    .describe("Why you are navigating to this URL"),
+});
+
+const BrowserScreenshotInput = z.object({
+  filename: z
+    .string()
+    .describe("Descriptive filename for screenshot (without extension)"),
+  toolCallDescription: z
+    .string()
+    .describe("What evidence this screenshot captures"),
+});
+
+const BrowserSnapshotInput = z.object({
+  toolCallDescription: z
+    .string()
+    .describe("Why you need to get the page snapshot"),
+});
+
+const BrowserClickInput = z.object({
+  element: z
+    .string()
+    .describe(
+      "Description of element to click, e.g., 'Submit button' or 'Login link'",
+    ),
+  ref: z
+    .string()
+    .optional()
+    .describe(
+      "Element reference from browser_snapshot (e.g., 'e5'). If provided, uses exact element reference for precise clicking.",
+    ),
+  toolCallDescription: z.string().describe("Why you are clicking this element"),
+});
+
+const BrowserFillInput = z.object({
+  element: z
+    .string()
+    .describe(
+      "Description of form field, e.g., 'Username field' or 'Search input'",
+    ),
+  ref: z
+    .string()
+    .optional()
+    .describe(
+      "Element reference from browser_snapshot (e.g., 'e3'). If provided, uses exact element reference for precise filling.",
+    ),
+  value: z.string().describe("Value to fill into the field"),
+  toolCallDescription: z
+    .string()
+    .describe("Why you are filling this field with this value"),
+});
+
+const BrowserEvaluateInput = z.object({
+  script: z.string().describe("JavaScript code to execute in browser"),
+  toolCallDescription: z
+    .string()
+    .describe("What you are testing with this script"),
+});
+
+const BrowserConsoleInput = z.object({
+  toolCallDescription: z
+    .string()
+    .describe("Why you need to check console messages"),
+});
+
+const BrowserGetCookiesInput = z.object({
+  urls: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Optional list of URLs to get cookies for. If not provided, gets all cookies.",
+    ),
+  toolCallDescription: z
+    .string()
+    .describe("Why you need to extract cookies from the browser"),
+});
+
 /**
  * Create the full set of browser automation tools from a {@link ToolContext}.
  *
- * When `ctx.sandbox` is set, browser tools run inside the sandbox via direct
- * Playwright execution (no MCP). Playwright and Chromium are installed
- * on-demand in the sandbox on the first browser tool call.
- *
- * Otherwise, uses `"operator"` mode with the local Playwright MCP server.
- * The evidence directory is derived from `session.rootPath + "/evidence"`.
- * If `ctx.browserSession` is set, browser tools reuse that session instead
- * of opening a new Chromium — sub-agents inherit the parent's
- * authenticated context (cookies, localStorage, current page).
+ * Execution routes through `resolveBackends(ctx).browser` — `LocalBackends`
+ * for the CLI/TUI (Playwright-MCP, reusing `ctx.browserSession` when set), or
+ * whatever a host injected via `ctx.backends` (a sandbox-backed
+ * implementation among agent flows that run inside a Daytona sandbox).
  *
  * When `ctx.credentialManager` is set, `browser_fill` is replaced with a
  * credential-aware wrapper that resolves secrets from IDs at execution time.
  */
 export function createBrowserToolset(ctx: ToolContext) {
-  // Sandbox mode: use direct Playwright execution inside the sandbox.
-  // The sandbox path already shares browser state across tool calls via
-  // the per-sandbox user-data dir, so a sub-agent running in the same
-  // sandbox naturally inherits cookies / localStorage with no extra plumbing.
-  const tools = ctx.sandbox
-    ? createSandboxBrowserTools(ctx)
-    : createBrowserTools(
-        ctx.target ?? "",
-        join(ctx.session.rootPath, "evidence"),
-        "operator",
-        undefined,
-        ctx.abortSignal,
-        undefined,
-        undefined,
-        undefined,
-        ctx.browserSession,
-      );
+  const targetUrl = ctx.target ?? "";
+
+  const browser_navigate = tool({
+    description: `Navigate the browser to a URL to load and render a page.
+
+Use this to load SPAs, JavaScript-heavy pages, or any page that requires full browser rendering.
+The page will be fully loaded and JavaScript executed before returning.
+
+Target base URL: ${targetUrl}`,
+    inputSchema: BrowserNavigateInput,
+    execute: ({ url }): Promise<BrowserNavigateResult> =>
+      resolveBackends(ctx).browser.navigate(url),
+  });
+
+  const browser_screenshot = tool({
+    description: `Take a screenshot of the current page for evidence/documentation.
+
+Use this to document:
+- Exposed admin panels or sensitive pages
+- Interesting error pages or debug information
+- Visual proof of discovered vulnerabilities
+- Login pages and authentication flows`,
+    inputSchema: BrowserScreenshotInput,
+    execute: ({ filename }): Promise<BrowserScreenshotResult> =>
+      resolveBackends(ctx).browser.screenshot({ filename }),
+  });
+
+  const browser_snapshot = tool({
+    description: `Get the accessibility snapshot of the current page.
+
+IMPORTANT: Call this BEFORE using browser_click or browser_fill to get element references (refs).
+The snapshot returns an accessibility tree with elements marked like [ref=e5].
+Use these refs in browser_click and browser_fill for precise element targeting.
+
+Example workflow:
+1. Call browser_snapshot to get the page structure
+2. Find the element you need (e.g., "textbox 'Email'" with [ref=e3])
+3. Call browser_fill with ref="e3" to fill that specific element`,
+    inputSchema: BrowserSnapshotInput,
+    execute: (): Promise<BrowserSnapshotResult> =>
+      resolveBackends(ctx).browser.snapshot(),
+  });
+
+  const browser_click = tool({
+    description: `Click on an element in the page by describing it.
+
+Use this to:
+- Navigate through multi-step flows
+- Expand collapsed menus or sections
+- Click buttons, links, or interactive elements
+- Submit forms
+
+The element is identified by a natural language description.
+
+IMPORTANT: For reliable clicking, first call browser_snapshot to get element refs, then pass the ref parameter.`,
+    inputSchema: BrowserClickInput,
+    execute: ({ element, ref }): Promise<BrowserClickResult> =>
+      resolveBackends(ctx).browser.click({ element, ref }),
+  });
+
+  const browser_fill = tool({
+    description: `Fill a form field with a value.
+
+Use this to:
+- Enter credentials for authenticated reconnaissance
+- Fill search boxes or input fields
+- Enter test data into forms
+
+The field is identified by a natural language description.
+
+IMPORTANT: For reliable form filling, first call browser_snapshot to get element refs, then pass the ref parameter.`,
+    inputSchema: BrowserFillInput,
+    execute: ({ element, ref, value }): Promise<BrowserFillResult> =>
+      resolveBackends(ctx).browser.fill({ element, ref, value }),
+  });
+
+  const browser_evaluate = tool({
+    description: `Execute JavaScript in the browser context to extract information.
+
+CRITICAL for SPA reconnaissance - use this to extract:
+- React Router routes: window.__REACT_ROUTER_VERSION__
+- Next.js data: window.__NEXT_DATA__ (reveals all page routes and API endpoints)
+- Vue Router routes: window.__VUE_ROUTER__?.options?.routes
+- API configuration: window.API_URL, window.API_BASE_URL, window.config
+- Application state: window.__REDUX_STATE__, window.__INITIAL_STATE__
+- All links on page: Array.from(document.querySelectorAll('a')).map(a => a.href)
+- Service worker routes: navigator.serviceWorker?.controller
+
+The JavaScript is executed in the page context and the result is returned.`,
+    inputSchema: BrowserEvaluateInput,
+    execute: ({ script }): Promise<BrowserEvaluateResult> =>
+      resolveBackends(ctx).browser.evaluate({ script }),
+  });
+
+  const browser_console = tool({
+    description: `Get console messages from the browser.
+
+Use this to check for:
+- Leaked API keys or secrets in console output
+- Debug messages revealing internal URLs or endpoints
+- Error messages exposing application structure
+- Warnings about deprecated endpoints
+- Network request failures revealing API patterns`,
+    inputSchema: BrowserConsoleInput,
+    execute: (): Promise<BrowserConsoleResult> =>
+      resolveBackends(ctx).browser.console(),
+  });
+
+  const browser_get_cookies = tool({
+    description: `Extract cookies from the browser context, including httpOnly cookies.
+
+CRITICAL: Use this after successful browser authentication to get session cookies that can be used in HTTP requests.
+
+Returns all cookies including:
+- Session cookies (often httpOnly, not accessible via document.cookie)
+- Authentication tokens
+- CSRF tokens
+
+The returned cookies can be formatted as a Cookie header for use with http_request tool.`,
+    inputSchema: BrowserGetCookiesInput,
+    execute: ({ urls }): Promise<BrowserCookiesResult> =>
+      resolveBackends(ctx).browser.getCookies({ urls }),
+  });
+
+  const tools = {
+    browser_navigate,
+    browser_snapshot,
+    browser_screenshot,
+    browser_click,
+    browser_fill,
+    browser_evaluate,
+    browser_console,
+    browser_get_cookies,
+  };
 
   const cm = ctx.credentialManager;
   // A prompt-injection payload library lets the agent deliver hidden payloads

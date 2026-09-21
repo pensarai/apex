@@ -1715,6 +1715,8 @@ export interface GenerateObjectOpts<T extends z.ZodType> {
   authConfig?: AIAuthConfig;
   abortSignal?: AbortSignal;
   onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
+  /** Provider middleware applied only to this call's model. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
   /** Per-run usage recorder; when set it replaces the global usage callback. */
   usageRecorder?: UsageRecorder;
   /** Session id (`ses_…`) of the caller — stamped onto AI-span telemetry. */
@@ -1739,13 +1741,20 @@ export async function generateObjectResponse<T extends z.ZodType>(
     authConfig,
     abortSignal,
     onTokenUsage,
+    languageModelMiddleware,
     usageRecorder,
     sessionId,
   } = opts;
 
-  const providerModel = withModelCallDiagnostics(
+  const baseProviderModel = withModelCallDiagnostics(
     getProviderModel(model, authConfig),
   );
+  const providerModel = languageModelMiddleware
+    ? wrapLanguageModel({
+        model: baseProviderModel,
+        middleware: languageModelMiddleware,
+      })
+    : baseProviderModel;
   const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
     model,
     openAIReasoningEffort,

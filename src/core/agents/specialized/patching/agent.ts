@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { OffensiveSecurityAgent } from "../../offSecAgent";
+import { AgentRuntime } from "../../agentRuntime";
+import { defineAgent } from "../../defineAgent";
 import { buildPatchingPrompt, buildSystemPrompt } from "./prompts";
 import {
   type PatchingAgentInput,
@@ -94,18 +95,24 @@ export function readAgentsMd(cwd: string): string | undefined {
  * });
  * ```
  */
-export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
+export const patchingAgentDefinition = defineAgent<
+  PatchingAgentInput,
+  PatchResult
+>({
+  name: "patching-agent",
+  role: "worker",
+  system: () => buildSystemPrompt(),
+  activeTools: () => [...PATCHING_ACTIVE_TOOLS],
+  responseSchema: () => PatchResultSchema,
+  prompt: (opts) =>
+    buildPatchingPrompt(opts.vulnerability, opts.cwd, readAgentsMd(opts.cwd)),
+});
+
+export class PatchingAgent extends AgentRuntime<
+  PatchingAgentInput,
+  PatchResult
+> {
   constructor(opts: PatchingAgentInput) {
-    const { cwd, vulnerability, ...base } = opts;
-
-    const agentsMd = readAgentsMd(cwd);
-
-    super({
-      ...base,
-      system: buildSystemPrompt(),
-      activeTools: [...PATCHING_ACTIVE_TOOLS],
-      responseSchema: PatchResultSchema,
-      prompt: buildPatchingPrompt(vulnerability, cwd, agentsMd),
-    });
+    super(patchingAgentDefinition, opts);
   }
 }

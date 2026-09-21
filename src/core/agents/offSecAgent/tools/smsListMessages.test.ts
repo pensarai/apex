@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CredentialManager } from "../../../credentials";
 import type { SessionInfo } from "../../../session";
+import type { ToolBackends } from "../../../tools/backends/types";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import { ALL_TOOL_NAMES, PLAN_MODE_TOOL_NAMES } from "./index";
 import type { SmsInbox } from "./smsInbox";
@@ -200,11 +201,7 @@ describe("smsListMessages", () => {
 
     const tool = smsListMessages(makeCtx(undefined, inbox));
     const result = await tool.execute?.(
-      {
-        sinceMs: 1_760_000_000_000,
-        claim: true,
-        toolCallDescription: "claim",
-      },
+      { toolCallDescription: "test", sinceMs: 1_760_000_000_000, claim: true },
       executeOpts,
     );
 
@@ -220,6 +217,43 @@ describe("smsListMessages", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("prefers ctx.backends.inbox.sms over ctx.smsInbox", async () => {
+    vi.stubEnv("AGENT_API_URL", "");
+    vi.stubEnv("AGENT_API_TOKEN", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const staleInbox: SmsInbox = {
+      reserve: vi.fn(),
+      list: vi.fn(),
+    };
+    const backendInbox: SmsInbox = {
+      reserve: vi.fn(async () => ({ ok: true as const })),
+      list: vi.fn(async () => ({
+        ok: true as const,
+        messages: [],
+        claimed: null,
+      })),
+    };
+
+    const ctx = {
+      ...makeCtx(undefined, staleInbox),
+      backends: {
+        inbox: { email: () => null, sms: backendInbox },
+      } as never as ToolBackends,
+    };
+
+    const tool = smsListMessages(ctx);
+    await tool.execute?.(
+      { toolCallDescription: "test", sinceMs: 1 },
+      executeOpts,
+    );
+
+    expect(backendInbox.list).toHaveBeenCalled();
+    expect(staleInbox.list).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("surfaces an injected inbox refusal as a tool-level error", async () => {
     const inbox: SmsInbox = {
       reserve: vi.fn(async () => ({
@@ -231,7 +265,7 @@ describe("smsListMessages", () => {
 
     const tool = smsListMessages(makeCtx(undefined, inbox));
     const result = await tool.execute?.(
-      { reserve: true, toolCallDescription: "reserve" },
+      { toolCallDescription: "test", reserve: true },
       executeOpts,
     );
 

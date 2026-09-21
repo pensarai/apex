@@ -1,5 +1,3 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
@@ -8,21 +6,14 @@ import {
   type PromptInjectionLibrary,
   redactPromptInjectionPayloads,
 } from "../../../prompt-injections";
-import { agentLogsDir } from "./agentScratch";
+import { resolveBackends } from "../../../tools/backends";
 import {
-  assertCommandActionAllowed,
-  DestructiveActionError,
-} from "./destructiveGuard";
-import {
-  assertCommandInScope,
-  extractHostsFromCommand,
-  resolverSessionFromCtx,
-  ScopeViolationError,
-} from "./scopeGuard";
+  maybeSaveFullOutput,
+  redactSecretValues,
+} from "../../../tools/backends/helpers";
+import { extractHostsFromCommand, resolverSessionFromCtx } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
-const MAX_INLINE = 50_000;
-const MS_TIMEOUT_THRESHOLD = 10_000;
 const DEFAULT_PROMPT_INJECTION_FILE_ENV = "APEX_PROMPT_INJECTION_FILE";
 
 /**
@@ -112,103 +103,6 @@ export type ExecuteCommandResult = {
   outputFile?: string;
 };
 
-/**
- * Defensively normalize obviously-millisecond timeout values into seconds.
- *
- * The tool contract is seconds, but models sometimes emit JavaScript-style
- * millisecond values like 30000 or 120000. Without normalization, those become
- * multi-hour hangs instead of 30s / 120s command limits.
- */
-export function normalizeExecuteCommandTimeout(
-  timeout?: number,
-): number | undefined {
-  if (timeout == null || !Number.isFinite(timeout) || timeout <= 0) {
-    return undefined;
-  }
-
-  if (timeout >= MS_TIMEOUT_THRESHOLD) {
-    return Math.max(1, Math.ceil(timeout / 1_000));
-  }
-
-  return timeout;
-}
-
-/**
- * If `raw` exceeds the inline limit, save the full text to a file under this
- * agent's log dir (`cmd-output/`) and return truncated text + file path.
- * Otherwise return the text as-is with no file. Scoped per-subagent via
- * {@link agentLogsDir} so a host can reclaim a finished subagent's command
- * dumps mid-scan.
- */
-function maybeSaveFullOutput(
-  raw: string,
-  ctx: ToolContext,
-): { text: string; file?: string } {
-  if (raw.length <= MAX_INLINE) {
-    return { text: raw || "(no output)" };
-  }
-
-  const outputDir = join(agentLogsDir(ctx), "cmd-output");
-  if (!existsSync(outputDir)) {
-    mkdirSync(outputDir, { recursive: true });
-  }
-
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const filename = `output-${ts}.txt`;
-  const filePath = join(outputDir, filename);
-
-  try {
-    writeFileSync(filePath, raw);
-  } catch {
-    return {
-      text: `${raw.substring(0, MAX_INLINE)}...\n\n(truncated — failed to save full output to file)`,
-    };
-  }
-
-  const truncated = raw.substring(0, MAX_INLINE);
-  return {
-    text: `${truncated}...\n\n(truncated — full output saved to ${filePath}). Use read_file or grep to analyze.`,
-    file: filePath,
-  };
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-/**
- * Redact known secret values from command output. Longest-first to avoid
- * partial masking; skip values under 6 chars so they can't corrupt output.
- */
-export function redactSecretValues(text: string, secrets?: string[]): string {
-  if (!secrets?.length) return text;
-  let out = text;
-  for (const s of [...secrets]
-    .filter((v) => v && v.length >= 6)
-    .sort((a, b) => b.length - a.length)) {
-    out = out.split(s).join("[REDACTED]");
-  }
-  return out;
-}
-
-function wrapCommandWithEnv(
-  command: string,
-  envVars?: Record<string, string>,
-): string {
-  if (!envVars || Object.keys(envVars).length === 0) return command;
-
-  const assignments = Object.entries(envVars)
-    .map(([name, value]) => {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-        throw new Error(`Invalid environment variable name: ${name}`);
-      }
-      return `${name}=${shellQuote(value)}`;
-    })
-    .join(" ");
-
-  return `env ${assignments} bash -lc ${shellQuote(command)}`;
-}
-
 async function resolvePromptInjectionEnv(
   promptInjection: ExecuteCommandInput["promptInjection"],
   ctx: ToolContext,
@@ -216,13 +110,11 @@ async function resolvePromptInjectionEnv(
   | {
       envVars?: Record<string, string>;
       library?: PromptInjectionLibrary;
-      payloadContent?: string;
       error?: undefined;
     }
   | {
       envVars?: undefined;
       library?: PromptInjectionLibrary;
-      payloadContent?: undefined;
       error: string;
     }
 > {
@@ -254,7 +146,6 @@ async function resolvePromptInjectionEnv(
 
   return {
     library,
-    payloadContent,
     envVars: {
       [normalized.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV]: payloadFilePath,
     },
@@ -346,21 +237,6 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
-      try {
-        assertCommandInScope(command, ctx);
-      } catch (e) {
-        if (e instanceof ScopeViolationError) {
-          return {
-            success: false,
-            error: e.message,
-            stdout: "",
-            stderr: e.message,
-            command,
-          };
-        }
-        throw e;
-      }
-
       // Inject session headers into the shell command. Fail closed for
       // unknown tools / pipelines so configured headers aren't silently
       // dropped — agent can opt out with `allow_unprotected`.
@@ -386,30 +262,8 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       const commandWithHeaders =
         inject.status === "injected" ? inject.command : command;
 
-      // Enforce the destructive-action guard on the header-injected command so
-      // a method-override header (e.g. `X-HTTP-Method-Override: DELETE`) added
-      // by the session/credential layer is classified, not just agent-authored
-      // flags. (Prompt-injection payloads are written to a temp file and
-      // referenced by env var below — never inlined into the command string —
-      // so their content is out of scope for this string classifier.)
-      try {
-        assertCommandActionAllowed(commandWithHeaders, ctx);
-      } catch (e) {
-        if (e instanceof DestructiveActionError) {
-          return {
-            success: false,
-            error: e.message,
-            stdout: "",
-            stderr: e.message,
-            command,
-          };
-        }
-        throw e;
-      }
-
       let promptInjectionLibrary: PromptInjectionLibrary | undefined;
       let promptInjectionEnvVars: Record<string, string> | undefined;
-      let promptInjectionPayloadContent: string | undefined;
       try {
         const resolved = await resolvePromptInjectionEnv(promptInjection, ctx);
         if (resolved.error) {
@@ -423,7 +277,6 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         }
         promptInjectionLibrary = resolved.library;
         promptInjectionEnvVars = resolved.envVars;
-        promptInjectionPayloadContent = resolved.payloadContent;
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         return {
@@ -435,138 +288,77 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
-      const redact = (value: string) => {
-        const stripped = promptInjectionLibrary
+      const redact = (value: string) =>
+        promptInjectionLibrary
           ? redactPromptInjectionPayloads(value, promptInjectionLibrary)
           : value;
-        return redactSecretValues(stripped, ctx.secretValues);
-      };
 
-      // Sandbox mode: route execution through the sandbox
-      if (ctx.sandbox) {
-        try {
-          const ssmOpts: {
-            timeout?: number;
-            envVars?: Record<string, string>;
-          } = {};
-          const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
-          if (normalizedTimeout != null) {
-            ssmOpts.timeout = normalizedTimeout;
-          }
-
-          // If we have a prompt injection payload for sandbox mode, we need to write
-          // it to a temp file in the sandbox first, since the host file path won't
-          // be accessible from inside the sandbox.
-          if (promptInjectionPayloadContent && promptInjection) {
-            const envVarName =
-              promptInjection.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV;
-            const sandboxTempFile = `/tmp/apex_payload_${Date.now()}.txt`;
-
-            // Write the payload to a temp file in the sandbox
-            const escapedPayload = promptInjectionPayloadContent
-              .replace(/\\/g, "\\\\")
-              .replace(/'/g, "'\\''");
-            const writeCommand = `printf '%s' '${escapedPayload}' > ${sandboxTempFile}`;
-
-            const writeResult = await ctx.sandbox.execute(writeCommand, {
-              timeout: normalizedTimeout ?? 30,
-            });
-
-            if (!writeResult.success) {
-              const errorMsg = `Failed to write prompt injection payload to sandbox: ${writeResult.stderr || "unknown error"}`;
-              return {
-                success: false,
-                error: errorMsg,
-                stdout: writeResult.stdout,
-                stderr: writeResult.stderr || errorMsg,
-                command,
-              };
+      // Engagement scope and the destructive-action block run inside the
+      // backend's ToolPolicy (design §3.2, Appendix M) — the header-injected
+      // command is what gets checked, matching a method-override header
+      // added by the session/credential layer.
+      const backends = resolveBackends(ctx);
+      let exitCode = 0;
+      let timedOut = false;
+      const stdoutChunks: string[] = [];
+      const stderrChunks: string[] = [];
+      try {
+        for await (const event of backends.command.run(commandWithHeaders, {
+          timeoutSeconds: timeout,
+          envVars: promptInjectionEnvVars,
+          abortSignal: ctx.abortSignal,
+        })) {
+          if (event.type === "stdout") {
+            stdoutChunks.push(event.bytes);
+            if (ctx.eventBus) {
+              ctx.eventBus.emit("command-output", {
+                data: redact(event.bytes),
+              });
             }
-
-            // Update env vars to point to the sandbox temp file
-            ssmOpts.envVars = {
-              [envVarName]: sandboxTempFile,
-            };
-          } else if (promptInjectionEnvVars) {
-            ssmOpts.envVars = promptInjectionEnvVars;
+          } else if (event.type === "stderr") {
+            stderrChunks.push(event.bytes);
+          } else if (event.type === "end") {
+            exitCode = event.exitCode;
+            timedOut = event.timedOut;
           }
-
-          const result = await ctx.sandbox.execute(commandWithHeaders, ssmOpts);
-          const { text: stdout, file: outputFile } = maybeSaveFullOutput(
-            redact(result.stdout),
-            ctx,
-          );
-          const stderr = redact(result.stderr || "");
-          return {
-            success: result.success,
-            error: !result.success ? stderr || "Command failed" : "",
-            stdout,
-            stderr,
-            command,
-            outputFile,
-          };
-        } catch (error: unknown) {
-          const msg = error instanceof Error ? error.message : String(error);
-          return {
-            success: false,
-            error: msg,
-            stdout: "",
-            stderr: msg,
-            command,
-          };
         }
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return {
+          success: false,
+          error: msg,
+          stdout: "",
+          stderr: msg,
+          command,
+        };
       }
 
-      // Local mode: use the persistent shell
-      if (ctx.persistentShell) {
-        try {
-          const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
-          const onData = ctx.eventBus
-            ? (data: string) =>
-                ctx.eventBus?.emit("command-output", { data: redact(data) })
-            : undefined;
-          const result = await ctx.persistentShell.execute(
-            wrapCommandWithEnv(commandWithHeaders, promptInjectionEnvVars),
-            normalizedTimeout,
-            onData,
-            ctx.abortSignal,
-          );
-          const { text: stdout, file: outputFile } = maybeSaveFullOutput(
-            redact(result.stdout),
-            ctx,
-          );
-          const stderr = redact(result.stderr);
-          return {
-            success: result.exitCode === 0,
-            error:
-              result.exitCode === 124
-                ? "Command timed out"
-                : result.exitCode !== 0
-                  ? `Exit code: ${result.exitCode}`
-                  : "",
-            stdout,
-            stderr,
-            command,
-            outputFile,
-          };
-        } catch (error: unknown) {
-          const msg = error instanceof Error ? error.message : String(error);
-          return {
-            success: false,
-            error: msg,
-            stdout: "",
-            stderr: msg,
-            command,
-          };
-        }
-      }
+      // Chunks are redacted one at a time; a secret split across two only
+      // matches once they are joined.
+      const rawStdout = redactSecretValues(
+        redact(stdoutChunks.join("")),
+        ctx.secretValues,
+      );
+      const rawStderr = redactSecretValues(
+        redact(stderrChunks.join("")),
+        ctx.secretValues,
+      );
+      const { text: stdout, file: outputFile } = maybeSaveFullOutput(
+        rawStdout,
+        ctx,
+      );
 
       return {
-        success: false,
-        error: "No shell or sandbox available",
-        stdout: "",
-        stderr: "",
+        success: exitCode === 0,
+        error: timedOut
+          ? "Command timed out"
+          : exitCode !== 0
+            ? `Exit code: ${exitCode}`
+            : "",
+        stdout,
+        stderr: rawStderr,
         command,
+        outputFile,
       };
     },
   });

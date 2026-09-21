@@ -18,6 +18,7 @@ import type { FindingsRegistry } from "../../../findings/registry";
 import type { PromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
+import type { ToolBackends } from "../../../tools/backends/types";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
@@ -57,6 +58,12 @@ export type ToolContext = {
 
   /** Signal to cancel in-flight operations */
   abortSignal?: AbortSignal;
+
+  /**
+   * Execution backends for fs / command / http / browser / inbox. Unset means
+   * local execution; hosts inject sandbox-backed implementations.
+   */
+  backends?: ToolBackends;
 
   /** AI model — needed by tools that delegate to sub-agents */
   model?: AIModel;

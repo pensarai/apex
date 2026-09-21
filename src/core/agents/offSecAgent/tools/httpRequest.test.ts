@@ -5,9 +5,19 @@ import {
 } from "../../../prompt-injections";
 import { RateLimiter } from "../../../services/rateLimiter";
 import type { SessionInfo } from "../../../session";
+import type {
+  HttpOpts,
+  HttpRequest,
+  ToolBackends,
+} from "../../../tools/backends/types";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import { type HttpRequestResult, httpRequest } from "./httpRequest";
 import type { ToolContext } from "./types";
+
+// The host branch resolves hostnames before fetching; keep unit tests offline.
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]),
+}));
 
 const TEST_LIBRARY = new StaticPromptInjectionLibrary([
   {
@@ -167,68 +177,9 @@ describe("httpRequest rate limiting", () => {
     )) as HttpRequestResult;
 
     expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Scope violation/);
     expect(acquireSlot).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("acquires one slot before the sandbox curl dispatch", async () => {
-    const { ctx, acquireSlot } = ctxWithLimiter();
-    const execute = vi.fn(async () => ({
-      success: true,
-      exitCode: 0,
-      stdout: "HTTP/1.1 200 OK\n\n",
-      stderr: "",
-    }));
-    ctx.sandbox = { execute } as unknown as ToolContext["sandbox"];
-
-    const result = (await httpRequest(ctx).execute?.(
-      {
-        url: "https://example.com/api",
-        method: "GET",
-        followRedirects: false,
-        timeout: 1000,
-        toolCallDescription: "Sandbox GET",
-      },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
-    )) as HttpRequestResult;
-
-    expect(acquireSlot).toHaveBeenCalledTimes(1);
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(result.status).toBe(200);
-  });
-
-  it("deletes the request-body temp file after a sandbox POST", async () => {
-    const { ctx } = ctxWithLimiter();
-    const commands: string[] = [];
-    const execute = vi.fn(async (command: string) => {
-      commands.push(command);
-      return {
-        success: true,
-        exitCode: 0,
-        stdout: "HTTP/1.1 200 OK\n\n",
-        stderr: "",
-      };
-    });
-    ctx.sandbox = { execute } as unknown as ToolContext["sandbox"];
-
-    await httpRequest(ctx).execute?.(
-      {
-        url: "https://example.com/api",
-        method: "POST",
-        body: "hello=world",
-        followRedirects: false,
-        timeout: 1000,
-        toolCallDescription: "Sandbox POST",
-      },
-      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
-    );
-
-    const bodyFile = commands
-      .join("\n")
-      .match(/\/tmp\/apex_http_body_[^\s"']+\.txt/)?.[0];
-    expect(bodyFile).toBeDefined();
-    // The temp file is both written (curl --data-binary) and removed.
-    expect(commands.some((c) => c.includes(`rm -f ${bodyFile}`))).toBe(true);
   });
 
   it("returns an aborted result without dispatching when already aborted", async () => {
@@ -253,5 +204,92 @@ describe("httpRequest rate limiting", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("aborted");
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+describe("httpRequest routes through the injected HTTP backend", () => {
+  function fakeBackends(
+    respond: (
+      req: HttpRequest,
+      opts?: HttpOpts,
+    ) => ReturnType<ToolBackends["http"]["request"]>,
+  ): { backends: ToolBackends; calls: HttpRequest[] } {
+    const calls: HttpRequest[] = [];
+    const backends = {
+      http: {
+        request: async (req: HttpRequest, opts?: HttpOpts) => {
+          calls.push(req);
+          return respond(req, opts);
+        },
+      },
+    } as unknown as ToolBackends;
+    return { backends, calls };
+  }
+
+  it("calls backends.http.request with the resolved request, no host fetch/curl reference", async () => {
+    const { backends, calls } = fakeBackends(async () => ({
+      success: true,
+      status: 200,
+      statusText: "OK",
+      headers: { "x-test": "1" },
+      body: "hi",
+      url: "https://example.com/api",
+      redirected: false,
+    }));
+
+    const result = (await httpRequest(makeCtx({ backends })).execute?.(
+      {
+        url: "https://example.com/api",
+        method: "GET",
+        followRedirects: false,
+        timeout: 1000,
+        toolCallDescription: "d",
+      },
+      { toolCallId: "tc", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      url: "https://example.com/api",
+      method: "GET",
+    });
+    expect(result.status).toBe(200);
+    expect(result.body).toBe("hi");
+  });
+
+  it("routes extract: 'readability' through the backend and skips the rate limiter", async () => {
+    const { backends, calls } = fakeBackends(async () => ({
+      success: true,
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      body: "extracted text",
+      title: "A Page",
+      url: "https://example.com/advisory",
+      redirected: false,
+    }));
+    const limiter = new RateLimiter({ requestsPerSecond: 5 });
+    const acquireSlot = vi.spyOn(limiter, "acquireSlot");
+    const ctx = makeCtx({ backends });
+    ctx.session._rateLimiter = limiter;
+
+    const result = (await httpRequest(ctx).execute?.(
+      {
+        url: "https://example.com/advisory",
+        method: "GET",
+        followRedirects: false,
+        timeout: 1000,
+        extract: "readability",
+        toolCallDescription: "d",
+      },
+      { toolCallId: "tc", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(calls).toEqual([
+      { url: "https://example.com/advisory", extract: "readability" },
+    ]);
+    expect(acquireSlot).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(result.body).toBe("extracted text");
+    expect(result.title).toBe("A Page");
   });
 });

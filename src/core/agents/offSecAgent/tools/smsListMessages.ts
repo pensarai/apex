@@ -10,7 +10,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { SessionInfo } from "../../../session";
-import { HttpSmsInbox, type SmsInboxRefusal } from "./smsInbox";
+import { resolveBackends } from "../../../tools/backends/resolve";
+import type { SmsInboxRefusal } from "./smsInbox";
 import type { ToolContext } from "./types";
 
 export const SMS_LIST_MESSAGES_TOOL_NAME = "sms_list_messages" as const;
@@ -95,7 +96,7 @@ Requires a Console sandbox (AGENT_API_URL).`,
         }
       }),
     execute: async ({ reserve, sinceMs, claim }) => {
-      const inbox = ctx.smsInbox ?? new HttpSmsInbox();
+      const inbox = resolveBackends(ctx).inbox.sms;
 
       if (reserve) {
         const reserved = await inbox.reserve(ctx.abortSignal);

@@ -1,7 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import type { ToolContext } from "./types";
 
 const updateFileInputSchema = z.object({
@@ -36,6 +35,13 @@ export type UpdateFileResult = {
   replacements: number;
 };
 
+function replaceFirst(content: string, oldContent: string, newContent: string) {
+  const idx = content.indexOf(oldContent);
+  return (
+    content.slice(0, idx) + newContent + content.slice(idx + oldContent.length)
+  );
+}
+
 export function updateFile(ctx: ToolContext) {
   return tool({
     description: `Update a file by replacing exact string matches.
@@ -51,154 +57,58 @@ Returns the number of replacements made. If oldContent is not found, the
 operation fails with an error — double-check whitespace and indentation.`,
     inputSchema: updateFileInputSchema,
     execute: async ({
-      path: filePath,
+      path,
       oldContent,
       newContent,
       replaceAll = false,
     }): Promise<UpdateFileResult> => {
-      const resolved = isAbsolute(filePath)
-        ? filePath
-        : resolve(ctx.agentCwd, filePath);
-      if (ctx.sandbox) {
-        return executeSandboxUpdate(
-          ctx,
-          resolved,
-          oldContent,
-          newContent,
-          replaceAll,
-        );
+      const { fs } = resolveBackends(ctx);
+      const read = await fs.readRaw(path);
+      if (!read.success) {
+        return {
+          success: false,
+          error: read.error,
+          path: read.path,
+          replacements: 0,
+        };
       }
-      return executeLocalUpdate(resolved, oldContent, newContent, replaceAll);
+
+      if (!read.content.includes(oldContent)) {
+        return {
+          success: false,
+          error: `oldContent not found in ${read.path}. Ensure the string matches exactly, including whitespace and indentation.`,
+          path: read.path,
+          replacements: 0,
+        };
+      }
+
+      let updated: string;
+      let replacements: number;
+      if (replaceAll) {
+        const parts = read.content.split(oldContent);
+        replacements = parts.length - 1;
+        updated = parts.join(newContent);
+      } else {
+        replacements = 1;
+        updated = replaceFirst(read.content, oldContent, newContent);
+      }
+
+      const written = await fs.write(read.path, updated, { mode: "overwrite" });
+      if (!written.success) {
+        return {
+          success: false,
+          error: written.error,
+          path: written.path,
+          replacements: 0,
+        };
+      }
+
+      return {
+        success: true,
+        error: "",
+        path: written.path,
+        replacements,
+      };
     },
   });
-}
-
-function replaceFirst(content: string, oldContent: string, newContent: string) {
-  const idx = content.indexOf(oldContent);
-  return (
-    content.slice(0, idx) + newContent + content.slice(idx + oldContent.length)
-  );
-}
-
-async function executeLocalUpdate(
-  filePath: string,
-  oldContent: string,
-  newContent: string,
-  replaceAll: boolean,
-): Promise<UpdateFileResult> {
-  try {
-    const content = await readFile(filePath, "utf-8");
-
-    if (!content.includes(oldContent)) {
-      return {
-        success: false,
-        error: `oldContent not found in ${filePath}. Ensure the string matches exactly, including whitespace and indentation.`,
-        path: filePath,
-        replacements: 0,
-      };
-    }
-
-    let updated: string;
-    let replacements: number;
-
-    if (replaceAll) {
-      const parts = content.split(oldContent);
-      replacements = parts.length - 1;
-      updated = parts.join(newContent);
-    } else {
-      replacements = 1;
-      updated = replaceFirst(content, oldContent, newContent);
-    }
-
-    await writeFile(filePath, updated, "utf-8");
-
-    return {
-      success: true,
-      error: "",
-      path: filePath,
-      replacements,
-    };
-  } catch (err: unknown) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-      path: filePath,
-      replacements: 0,
-    };
-  }
-}
-
-async function executeSandboxUpdate(
-  ctx: ToolContext,
-  filePath: string,
-  oldContent: string,
-  newContent: string,
-  replaceAll: boolean,
-): Promise<UpdateFileResult> {
-  try {
-    const readResult = await ctx.sandbox!.execute(
-      `cat "${filePath}" | base64 -w 0`,
-    );
-    if (!readResult.success) {
-      return {
-        success: false,
-        error: readResult.stderr || `Failed to read file: ${filePath}`,
-        path: filePath,
-        replacements: 0,
-      };
-    }
-
-    const content = Buffer.from(readResult.stdout.trim(), "base64").toString(
-      "utf-8",
-    );
-
-    if (!content.includes(oldContent)) {
-      return {
-        success: false,
-        error: `oldContent not found in ${filePath}. Ensure the string matches exactly, including whitespace and indentation.`,
-        path: filePath,
-        replacements: 0,
-      };
-    }
-
-    let updated: string;
-    let replacements: number;
-
-    if (replaceAll) {
-      const parts = content.split(oldContent);
-      replacements = parts.length - 1;
-      updated = parts.join(newContent);
-    } else {
-      replacements = 1;
-      updated = replaceFirst(content, oldContent, newContent);
-    }
-
-    const base64Updated = Buffer.from(updated).toString("base64");
-    const writeResult = await ctx.sandbox!.execute(
-      `echo "${base64Updated}" | base64 -d > "${filePath}"`,
-    );
-
-    if (!writeResult.success) {
-      return {
-        success: false,
-        error: writeResult.stderr || "Failed to write file in sandbox",
-        path: filePath,
-        replacements: 0,
-      };
-    }
-
-    return {
-      success: true,
-      error: "",
-      path: filePath,
-      replacements,
-    };
-  } catch (err: unknown) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-      path: filePath,
-      replacements: 0,
-    };
-  }
 }

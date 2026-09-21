@@ -74,7 +74,8 @@ calling document_vulnerability.`,
       }
 
       try {
-        const profile = await profileCodebase(rootPath);
+        const command = ctx.backends?.command;
+        const profile = await profileCodebase(rootPath, command);
         const { adapters, unknownScannerIds } = selectScanAdaptersWithMeta({
           profile,
           kind: kind as ScanKind | undefined,
@@ -114,6 +115,7 @@ calling document_vulnerability.`,
               profile,
               session: ctx.session,
               timeoutSeconds,
+              command,
             }),
           );
         }

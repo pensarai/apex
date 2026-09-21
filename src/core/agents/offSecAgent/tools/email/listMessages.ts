@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveBackends } from "../../../../tools/backends/resolve";
 import type { ToolContext } from "../types";
 import { resolveEmailAdapter } from "./adapters";
 
@@ -45,7 +46,10 @@ get the inbox ID, then pass it here.`,
       }
 
       try {
-        const adapter = resolveEmailAdapter(inbox, ctx.emailAdapterFor);
+        const adapter = resolveEmailAdapter(
+          inbox,
+          resolveBackends(ctx).inbox.email,
+        );
         const result = await adapter.listMessages({
           folder,
           maxResults: Math.min(maxResults ?? 20, 50),

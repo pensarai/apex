@@ -1,3 +1,4 @@
+import type { LanguageModelMiddleware } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Finding } from "../agents/offSecAgent/types";
 import { generateObjectResponse } from "../ai";
@@ -1602,5 +1603,78 @@ describe("groupByRootCause", () => {
     const allFindings = registry.getFindings();
     expect(allFindings[0]?.rootCauseGroup).toBeUndefined();
     expect(allFindings[1]?.rootCauseGroup).toBeUndefined();
+  });
+});
+
+describe("FindingsRegistry model-call hooks", () => {
+  const mockedGenerate = vi.mocked(generateObjectResponse);
+  const languageModelMiddleware: LanguageModelMiddleware = {
+    specificationVersion: "v3",
+  };
+  const usageRecorder = vi.fn();
+
+  afterEach(() => {
+    mockedGenerate.mockReset();
+  });
+
+  it("forwards languageModelMiddleware and usageRecorder to semantic dedup", async () => {
+    mockedGenerate.mockResolvedValue({
+      isDuplicate: false,
+      reasoning: "Different vulnerabilities",
+    });
+
+    const registry = new FindingsRegistry({
+      model: "test-model",
+      languageModelMiddleware,
+      usageRecorder,
+    });
+    await registry.register(missingCspRoot);
+    await registry.register(
+      makeFinding({
+        title: "No CSP Header Configured",
+        endpoint: "https://target.com/admin",
+      }),
+    );
+
+    expect(mockedGenerate).toHaveBeenCalledOnce();
+    expect(mockedGenerate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "apex.finding.deduplicate",
+        languageModelMiddleware,
+        usageRecorder,
+      }),
+    );
+  });
+
+  it("forwards the hooks to root-cause grouping", async () => {
+    mockedGenerate.mockResolvedValue({ groups: [] });
+
+    const registry = FindingsRegistry.fromFindings(
+      [sqlInjectionProducts, missingCspRoot],
+      { model: "test-model", languageModelMiddleware, usageRecorder },
+    );
+    await registry.groupByRootCause();
+
+    expect(mockedGenerate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "apex.finding.root-cause",
+        languageModelMiddleware,
+        usageRecorder,
+      }),
+    );
+  });
+
+  it("passes no hooks when the registry was built without them", async () => {
+    mockedGenerate.mockResolvedValue({ groups: [] });
+
+    const registry = FindingsRegistry.fromFindings(
+      [sqlInjectionProducts, missingCspRoot],
+      { model: "test-model" },
+    );
+    await registry.groupByRootCause();
+
+    const call = mockedGenerate.mock.calls[0]?.[0];
+    expect(call?.languageModelMiddleware).toBeUndefined();
+    expect(call?.usageRecorder).toBeUndefined();
   });
 });

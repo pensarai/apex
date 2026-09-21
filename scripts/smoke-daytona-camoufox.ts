@@ -8,7 +8,7 @@
  * Dockerfile): everything the browser needs is baked into the image at BUILD
  * time, not installed at sandbox boot. Daytona builds offsec-camoufox.Dockerfile
  * into a cached snapshot, then this drives Apex's REAL shipping browser code
- * (`createSandboxBrowserTools` -> `sandboxPlaywright.ts`):
+ * (`SandboxBrowserBackend` -> `sandboxPlaywright.ts`):
  *   1. ensureSandboxPlaywright finds camoufox-js + playwright-core already
  *      present (baked) and skips the runtime install/fetch
  *   2. launch headless Camoufox and navigate to --target
@@ -25,8 +25,8 @@ import { Daytona, Image } from "@daytonaio/sdk";
 import { inProcessSubagentSpawner } from "../src/core/agents/offSecAgent/subagentSpawner";
 import type { UnifiedSandbox } from "../src/core/agents/offSecAgent/tools/sandbox";
 import {
-  createSandboxBrowserTools,
   ensureSandboxPlaywright,
+  SandboxBrowserBackend,
 } from "../src/core/agents/offSecAgent/tools/sandboxPlaywright";
 import type { ToolContext } from "../src/core/agents/offSecAgent/tools/types";
 import { sessions } from "../src/core/session";
@@ -151,34 +151,18 @@ try {
     target,
     sandbox: unified,
   };
-  const tools = createSandboxBrowserTools(ctx);
+  const browser = SandboxBrowserBackend(ctx);
 
   console.log(`🌐 Launching Camoufox and navigating to ${target}…`);
-  // Invoke the AI-SDK tool's execute directly; cast through a minimal fn type.
-  type ToolExec = (input: unknown) => Promise<unknown>;
-  const nav = (await (tools.browser_navigate.execute as ToolExec)({
-    url: target,
-  })) as {
-    success: boolean;
-    title?: string;
-    url?: string;
-    error?: string;
-  };
+  const nav = await browser.navigate(target);
   if (!nav.success) throw new Error(`navigate failed: ${nav.error}`);
   console.log(
     `✅ Navigated. Page title: ${JSON.stringify(nav.title)} (${nav.url})`,
   );
 
-  // browser_screenshot saves the PNG to the host session's evidence dir and
-  // returns its path (not base64 data).
-  const shot = (await (tools.browser_screenshot.execute as ToolExec)({
-    filename: "smoke",
-  })) as {
-    success: boolean;
-    path?: string;
-    message?: string;
-    error?: string;
-  };
+  // screenshot saves the PNG to the host session's evidence dir and returns
+  // its path (not base64 data).
+  const shot = await browser.screenshot({ filename: "smoke" });
   if (!shot.success) throw new Error(`screenshot failed: ${shot.error}`);
   console.log(`✅ Screenshot saved: ${shot.path}`);
 

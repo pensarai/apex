@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { PersistentShell } from "../agents/offSecAgent/tools/persistentShell";
+import type { ToolContext } from "../agents/offSecAgent/tools/types";
 import type { SessionInfo } from "../session";
+import { LocalBackends } from "../tools/backends";
+import type { CommandBackend } from "../tools/backends/types";
+import { runCommandBounded } from "./boundedProcess";
 import {
   createWhiteboxCandidate,
   listWhiteboxCandidates,
@@ -49,6 +54,23 @@ async function waitForJob(
   return pollWhiteboxJob(id);
 }
 
+/** A real, disposable `command` backend rooted at `root` for `profileCodebase`. */
+function commandBackendFor(root: string): {
+  command: CommandBackend;
+  dispose: () => void;
+} {
+  const shell = new PersistentShell({ cwd: root });
+  const ctx = {
+    agentCwd: root,
+    session: mockSession(root),
+    persistentShell: shell,
+  } as ToolContext;
+  return {
+    command: LocalBackends(ctx).command,
+    dispose: () => shell.dispose(),
+  };
+}
+
 describe("whitebox catalog", () => {
   it("returns focused sink records without requiring the whole playbook", () => {
     const records = queryWhiteboxCatalog({
@@ -73,7 +95,8 @@ describe("profileCodebase", () => {
     await mkdir(join(root, "src"), { recursive: true });
     await writeFile(join(root, "src", "routes.ts"), "app.get('/x', handler);");
 
-    const profile = await profileCodebase(root);
+    const { command, dispose } = commandBackendFor(root);
+    const profile = await profileCodebase(root, command).finally(dispose);
 
     expect(profile.languages).toContain("typescript");
     expect(profile.packageManagers).toContain("npm");
@@ -279,7 +302,8 @@ describe("selectScanAdaptersWithMeta", () => {
   it("reports unknown scanner ids separately", async () => {
     const root = await tempDir("apex-whitebox-scanmeta-");
     await writeFile(join(root, "go.mod"), "module x\ngo 1.22\n");
-    const profile = await profileCodebase(root);
+    const { command, dispose } = commandBackendFor(root);
+    const profile = await profileCodebase(root, command).finally(dispose);
     const { adapters, unknownScannerIds } = selectScanAdaptersWithMeta({
       profile,
       scannerIds: ["gosec", "definitely-not-a-scanner"],
@@ -322,5 +346,19 @@ describe("whitebox jobs", () => {
     });
     const polled = await waitForJob(record.id);
     expect(polled?.status).toBe("timed_out");
+  });
+});
+
+describe("runCommandBounded without an injected backend", () => {
+  it("spawns on the host: empty output stays empty and a missing binary has no exit code", async () => {
+    const opts = { cwd: tmpdir(), timeoutSeconds: 5, maxTotalBytes: 1_024 };
+    const empty = await runCommandBounded(undefined, ["true"], opts);
+    expect(empty).toMatchObject({ stdout: "", exitCode: 0 });
+    const missing = await runCommandBounded(
+      undefined,
+      ["apex-no-such-binary"],
+      opts,
+    );
+    expect(missing.exitCode).toBeNull();
   });
 });

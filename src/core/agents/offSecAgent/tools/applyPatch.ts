@@ -1,7 +1,6 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import type { ToolContext } from "./types";
 
 const applyPatchInputSchema = z.object({
@@ -149,17 +148,6 @@ export function parseUnifiedDiff(patch: string): FileDiff[] {
   return files;
 }
 
-function resolveUnderCwd(agentCwd: string, filePath: string): string {
-  const resolved = isAbsolute(filePath)
-    ? filePath
-    : resolve(agentCwd, filePath);
-  const rel = relative(agentCwd, resolved);
-  if (rel.startsWith("..") || isAbsolute(rel)) {
-    throw new Error(`Path escapes agent working directory: ${filePath}`);
-  }
-  return resolved;
-}
-
 /**
  * Apply hunks to file content. Throws if context does not match exactly.
  */
@@ -213,59 +201,6 @@ export function applyHunksToContent(content: string, hunks: Hunk[]): string {
   return `${lines.join("\n")}\n`;
 }
 
-async function readLocal(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, "utf-8");
-  } catch {
-    return null;
-  }
-}
-
-async function writeLocal(path: string, content: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, content, "utf-8");
-}
-
-async function readViaSandbox(
-  sandbox: NonNullable<ToolContext["sandbox"]>,
-  path: string,
-): Promise<string | null> {
-  const result = await sandbox.execute(
-    `test -f "${path}" && cat "${path}" | base64 -w 0`,
-  );
-  if (!result.success || !result.stdout.trim()) {
-    // Distinguish missing vs empty
-    const exists = await sandbox.execute(`test -f "${path}"`);
-    if (exists.exitCode !== 0) return null;
-    return "";
-  }
-  return Buffer.from(result.stdout.trim(), "base64").toString("utf-8");
-}
-
-async function writeViaSandbox(
-  sandbox: NonNullable<ToolContext["sandbox"]>,
-  path: string,
-  content: string,
-): Promise<void> {
-  const dir = dirname(path);
-  await sandbox.execute(`mkdir -p "${dir}"`);
-  const b64 = Buffer.from(content).toString("base64");
-  const result = await sandbox.execute(`echo "${b64}" | base64 -d > "${path}"`);
-  if (!result.success) {
-    throw new Error(result.stderr || `Failed to write ${path} in sandbox`);
-  }
-}
-
-async function deleteViaSandbox(
-  sandbox: NonNullable<ToolContext["sandbox"]>,
-  path: string,
-): Promise<void> {
-  const result = await sandbox.execute(`rm "${path}"`);
-  if (!result.success) {
-    throw new Error(result.stderr || `Failed to delete ${path} in sandbox`);
-  }
-}
-
 export function applyPatch(ctx: ToolContext) {
   return tool({
     description: `Apply a unified diff patch to one or more files.
@@ -290,100 +225,8 @@ Example:
 \`\`\``,
     inputSchema: applyPatchInputSchema,
     execute: async ({ patch }): Promise<ApplyPatchResult> => {
-      let files: FileDiff[];
-      try {
-        files = parseUnifiedDiff(patch);
-      } catch (err: unknown) {
-        return {
-          success: false,
-          error: err instanceof Error ? err.message : String(err),
-          files: [],
-        };
-      }
-
-      const results: FilePatchResult[] = [];
-
-      for (const file of files) {
-        const displayPath = file.newPath || file.oldPath;
-        try {
-          const targetPath = resolveUnderCwd(
-            ctx.agentCwd,
-            file.isDelete ? file.oldPath : file.newPath || file.oldPath,
-          );
-
-          if (file.isDelete) {
-            if (ctx.sandbox) {
-              await deleteViaSandbox(ctx.sandbox, targetPath);
-            } else {
-              await unlink(targetPath);
-            }
-            results.push({
-              path: displayPath,
-              success: true,
-              hunksApplied: 0,
-            });
-            continue;
-          }
-
-          const existing = ctx.sandbox
-            ? await readViaSandbox(ctx.sandbox, targetPath)
-            : await readLocal(targetPath);
-
-          if (file.isNew) {
-            if (existing !== null) {
-              throw new Error(
-                `Cannot create ${targetPath}: file already exists`,
-              );
-            }
-            const created = applyHunksToContent("", file.hunks);
-            if (ctx.sandbox) {
-              await writeViaSandbox(ctx.sandbox, targetPath, created);
-            } else {
-              await writeLocal(targetPath, created);
-            }
-            results.push({
-              path: displayPath,
-              success: true,
-              hunksApplied: file.hunks.length,
-            });
-            continue;
-          }
-
-          if (existing === null) {
-            throw new Error(`File not found: ${targetPath}`);
-          }
-
-          const updated = applyHunksToContent(existing, file.hunks);
-          if (ctx.sandbox) {
-            await writeViaSandbox(ctx.sandbox, targetPath, updated);
-          } else {
-            await writeLocal(targetPath, updated);
-          }
-          results.push({
-            path: displayPath,
-            success: true,
-            hunksApplied: file.hunks.length,
-          });
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          results.push({
-            path: displayPath,
-            success: false,
-            error: message,
-          });
-          return {
-            success: false,
-            error: `Failed applying patch to ${displayPath}: ${message}`,
-            files: results,
-          };
-        }
-      }
-
-      return {
-        success: true,
-        error: "",
-        files: results,
-      };
+      const { fs } = resolveBackends(ctx);
+      return fs.applyPatch(patch);
     },
   });
 }
