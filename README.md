@@ -84,6 +84,14 @@ pensar targeted-pentest --target https://example.com --objective "Test authentic
 | `--threat-model <text\|@file>` | pentest                   | Threat model to guide testing                  |
 | `--objective <text>`           | targeted-pentest          | Testing objective (repeatable)                 |
 
+### Custom inference endpoints
+
+Bring an OpenAI-compatible endpoint and bearer token through `customProviders`
+configuration or the `APEX_CUSTOM_PROVIDERS` worker environment variable. Select
+it with `--model-provider <id> --model <model>`, or choose its declared models in
+the operator's `/models` picker. See [custom inference setup](docs/custom-inference.md)
+for GLM settings, headless job configuration, and a live connection test.
+
 ### Logging
 
 Apex routes diagnostic/operational logging through a centralized structured logger
