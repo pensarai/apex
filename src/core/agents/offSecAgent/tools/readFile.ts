@@ -7,7 +7,7 @@ import type { ToolContext } from "./types";
 // Output stops at this many characters of numbered content — the reader never
 // buffers the whole file to serve a small window.
 const OUTPUT_BUDGET_CHARS = 100_000;
-// Any single line longer than this is capped with an explicit marker and the
+// Any returned line longer than this is capped with an explicit marker and the
 // read is marked truncated — never a silent 2k evidence loss. The bound is
 // independent of chunk/newline boundaries.
 const MAX_LINE_CHARS = 2_000;
@@ -63,7 +63,7 @@ export type ReadFileResult = {
   linesReturned?: number;
   /**
    * True when the read did not deliver everything it scanned: the output
-   * budget stopped it, or a line exceeded MAX_LINE_CHARS and was capped.
+   * budget stopped it, or a returned line exceeded MAX_LINE_CHARS and was capped.
    * totalLines is only reported when the scan reached EOF.
    */
   truncated?: boolean;
@@ -191,7 +191,7 @@ async function readLocalLines(
 
   const handle = await open(resolved, "r");
   try {
-    const decoder = new TextDecoder("utf-8");
+    const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
     const numbered: string[] = [];
     let outputChars = 0;
     let lineNo = 0;
@@ -220,6 +220,7 @@ async function readLocalLines(
         return "stop" as const;
       }
       numbered.push(numberedLine);
+      cappedAnyLine ||= lineDropped > 0;
       outputChars += numberedLine.length + 1;
       if (lineNo === end) {
         // Window satisfied — stop reading immediately instead of parsing the
@@ -253,7 +254,6 @@ async function readLocalLines(
           lineBuf += segment.slice(0, take);
           lineDropped += segment.length - take;
           capping = true;
-          cappedAnyLine = true;
         } else if (!capping) {
           lineBuf += segment;
         } else {
