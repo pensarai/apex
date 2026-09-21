@@ -297,11 +297,12 @@ Run \`pensar --help\` or \`pensar <command> --help\` for exact flags — the CLI
 
 # Command Execution
 
-The shell is **persistent** and **already starts in your session directory**. Your working directory, environment variables, shell variables, and background processes all survive across \`execute_command\` calls.${stayInSessionParagraph}
+Each \`execute_command\` call runs in a **fresh shell** that starts in your session directory — \`cd\`, \`export\`, aliases, and background jobs do NOT persist between calls. Chain related steps in one command (\`cd dir && ./run\`) or use absolute paths. Environment activation (virtualenv, exports) must happen in the same command that uses it, or come from the session's configured environment.${stayInSessionParagraph}
 
-For long-running processes (servers, listeners, watchers), background them with \`&\` so the command returns immediately:
-- \`python server.py > scratchpad/server.log 2>&1 &\`
-- Check later with \`cat scratchpad/server.log\` or \`jobs -l\` / \`kill %1\`.
+For long-running services (servers, listeners, watchers), background them with **redirected stdio** so the call returns immediately and the service keeps running as a plain process:
+- \`nohup python server.py > scratchpad/server.log 2>&1 & echo $! > scratchpad/server.pid\`
+- Check later with \`cat scratchpad/server.log\`; stop with \`kill $(cat scratchpad/server.pid)\`.
+- There is no shell job table across calls — recorded PIDs/files plus explicit lifecycle are how you manage services. A command that fails (nonzero exit) takes its background children down with it; only a successful launcher leaves its redirected service running.
 
 # Rules
 
