@@ -101,12 +101,17 @@ match count. Narrow the search with flags or a more specific directory.`,
         let stderrTruncated = false;
         let killedForCap = false;
         let killedByTimeout = false;
+        let killedByAbort = false;
         let resolved = false;
 
         // Wire up abort signal — clean up in safeResolve to cover all exit paths
         let abortCleanup: (() => void) | undefined;
         if (ctx.abortSignal) {
-          const abortHandler = () => child.kill("SIGTERM");
+          const abortHandler = () => {
+            killedByAbort = true;
+            stopCancellation();
+            child.kill("SIGTERM");
+          };
           ctx.abortSignal.addEventListener("abort", abortHandler, {
             once: true,
           });
@@ -114,18 +119,26 @@ match count. Narrow the search with flags or a more specific directory.`,
             ctx.abortSignal?.removeEventListener("abort", abortHandler);
         }
 
+        const stopCancellation = () => {
+          clearTimeout(timeout);
+          abortCleanup?.();
+        };
+
         const safeResolve = (result: GrepResult) => {
           if (resolved) return;
           resolved = true;
-          clearTimeout(timeout);
-          abortCleanup?.();
+          stopCancellation();
           resolve(result);
         };
 
         const timeout = setTimeout(() => {
           killedByTimeout = true;
+          stopCancellation();
           child.kill("SIGTERM");
         }, GREP_TIMEOUT_MS);
+
+        // Exit precedes stdio close; late cancellation must not relabel completed work.
+        child.once("exit", stopCancellation);
 
         // Accumulation is bounded at the producer: once past the cap the
         // stream is destroyed (grep SIGPIPEs) instead of buffering forever.
@@ -136,6 +149,7 @@ match count. Narrow the search with flags or a more specific directory.`,
             stdout += chunk.slice(0, MAX_OUTPUT_CHARS - stdout.length);
             stdoutTruncated = true;
             killedForCap = true;
+            stopCancellation();
             child.stdout.destroy();
             child.kill("SIGTERM");
             return;
@@ -155,7 +169,6 @@ match count. Narrow the search with flags or a more specific directory.`,
         });
 
         child.on("close", (code) => {
-          const killedByAbort = ctx.abortSignal?.aborted === true;
           const interrupted = killedForCap || killedByTimeout || killedByAbort;
           // grep exits 1 with no stderr only when it genuinely found nothing.
           const noMatch = !interrupted && code === 1 && stderr === "";
