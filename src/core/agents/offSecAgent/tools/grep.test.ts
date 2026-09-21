@@ -1,11 +1,19 @@
+import { type ChildProcess, spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { PassThrough } from "node:stream";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import { type GrepResult, grep } from "./grep";
 import type { ToolContext } from "./types";
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:child_process")>();
+  return { ...original, spawn: vi.fn(original.spawn) };
+});
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -45,9 +53,91 @@ async function runGrep(ctx: ToolContext, input: GrepCall): Promise<GrepResult> {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
+  vi.clearAllMocks();
   for (const dir of scratchDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+function controlledChild() {
+  const child = Object.assign(new EventEmitter(), {
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn(() => true),
+    exitCode: null as number | null,
+    signalCode: null as NodeJS.Signals | null,
+  });
+  vi.mocked(spawn).mockImplementationOnce(
+    () => child as unknown as ChildProcess,
+  );
+  return child;
+}
+
+describe("grep terminal ordering", () => {
+  it.each([
+    ["abort", 0],
+    ["timeout", 0],
+    ["abort", 1],
+    ["timeout", 1],
+  ] as const)("ignores late %s after exit %i while pipes drain", async (cause, code) => {
+    vi.useFakeTimers();
+    const child = controlledChild();
+    const ac = new AbortController();
+    const pending = runGrep(makeCtx({ abortSignal: ac.signal }), {
+      pattern: "match",
+      toolCallDescription: "completed search",
+    });
+
+    if (code === 0) child.stdout.emit("data", Buffer.from("first match\n"));
+    child.exitCode = code;
+    child.emit("exit", code, null);
+    if (cause === "abort") ac.abort();
+    else vi.advanceTimersByTime(30_000);
+    if (code === 0) child.stdout.emit("data", Buffer.from("last match\n"));
+    child.emit("close", code, null);
+
+    const result = await pending;
+    expect(child.kill).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(result.error).toBe("");
+    expect(result.truncated).toBeUndefined();
+    expect(result.matchCount).toBe(code === 0 ? 2 : 0);
+    expect(result.output).toBe(
+      code === 0 ? "first match\nlast match\n" : "(no matches)",
+    );
+  });
+
+  it.each([
+    "abort",
+    "timeout",
+  ] as const)("keeps an earlier %s incomplete even if the child later exits zero", async (cause) => {
+    vi.useFakeTimers();
+    const child = controlledChild();
+    const ac = new AbortController();
+    const pending = runGrep(makeCtx({ abortSignal: ac.signal }), {
+      pattern: "match",
+      toolCallDescription: "interrupted search",
+    });
+
+    child.stdout.emit("data", Buffer.from("partial match\n"));
+    if (cause === "abort") ac.abort();
+    else vi.advanceTimersByTime(30_000);
+    if (cause === "abort") vi.advanceTimersByTime(30_000);
+    else ac.abort();
+    child.exitCode = 0;
+    child.emit("exit", 0, null);
+    child.emit("close", 0, null);
+
+    const result = await pending;
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(child.kill).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain(cause === "abort" ? "aborted" : "timed out");
+    expect(result.truncated).toBe(true);
+    expect(result.matchCount).toBeUndefined();
+    expect(result.output).toBe("partial match\n");
+  });
 });
 
 describe("grep healthy paths", () => {

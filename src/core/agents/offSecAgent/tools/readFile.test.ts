@@ -139,6 +139,31 @@ describe("readFile healthy paths", () => {
     expect(result.truncated).toBeUndefined();
     expect(result.totalLines).toBeUndefined();
   });
+
+  it.each([
+    ["valid UTF-8", Buffer.from("alpha"), "alpha"],
+    ["invalid UTF-8", Buffer.from([0x61, 0xff, 0x62]), "a\uFFFDb"],
+  ])("preserves a leading BOM in line mode with %s", async (_label, body, expected) => {
+    const dir = scratchDir();
+    writeFileSync(
+      join(dir, "bom-lines.txt"),
+      Buffer.concat([Buffer.from("\uFEFF"), body]),
+    );
+
+    const result = await runRead(makeCtx({ agentCwd: dir }), {
+      path: "bom-lines.txt",
+      toolCallDescription: "read BOM-prefixed text",
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      error: "",
+      content: `     1|\uFEFF${expected}`,
+      totalLines: 1,
+      linesReturned: 1,
+    });
+    expect(result.truncated).toBeUndefined();
+  });
 });
 
 describe("readFile bounded streaming", () => {
@@ -212,6 +237,30 @@ describe("readFile bounded streaming", () => {
 });
 
 describe("readFile single-line bounds", () => {
+  it.each([
+    ["at EOF", undefined, "     2|second\n     3|third", 3, undefined],
+    ["at endLine", 2, "     2|second", undefined, 3],
+  ])("does not flag complete pages %s when a skipped line was capped", async (_label, endLine, content, totalLines, stoppedAtLine) => {
+    const dir = scratchDir();
+    writeFileSync(
+      join(dir, "skipped-long-line.txt"),
+      `${"x".repeat(128 * 1024)}\nsecond\nthird`,
+    );
+
+    const result = await runRead(makeCtx({ agentCwd: dir }), {
+      path: "skipped-long-line.txt",
+      startLine: 2,
+      endLine,
+      toolCallDescription: "read after a long line",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.content).toBe(content);
+    expect(result.totalLines).toBe(totalLines);
+    expect(result.stoppedAtLine).toBe(stoppedAtLine);
+    expect(result.truncated).toBeUndefined();
+  });
+
   it.each([
     ["with a trailing newline", "A".repeat(20_000) + "\n"],
     ["without a trailing newline", "A".repeat(20_000)],
