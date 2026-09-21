@@ -655,8 +655,8 @@ async function executeSandboxHttpRequest(
     const timeoutSeconds = Math.ceil(timeout / 1000);
     const nonce = randomBytes(8).toString("hex");
     const exitMarker = `__APEX_${nonce}_CURL_EXIT_`;
-    // Windows: +10s headroom — PowerShell startup plus the helper's bounded
-    // 5s child cleanup must fit before the adapter tears the call down.
+    // Windows: +15s headroom — 5s PowerShell startup, 5s EOF process-exit
+    // grace, 5s kill confirmation — before the adapter tears the call down.
     // Linux keeps the existing floor.
     const executeOpts: {
       timeout: number;
@@ -664,7 +664,7 @@ async function executeSandboxHttpRequest(
     } = {
       timeout:
         sandbox.type === "windows"
-          ? Math.max(timeoutSeconds + 10, 30)
+          ? Math.max(timeoutSeconds + 15, 30)
           : Math.max(timeoutSeconds, 30),
     };
 

@@ -1895,7 +1895,7 @@ describe("httpRequest body liveness", () => {
       { toolCallId: "tc_test", messages: [], abortSignal: undefined },
     );
 
-    expect(calls.at(-1)?.opts?.timeout).toBe(50);
+    expect(calls.at(-1)?.opts?.timeout).toBe(55);
   });
 
   it("windows sandbox: a negative curl exit marker is curl-exit, not byte-cap", async () => {

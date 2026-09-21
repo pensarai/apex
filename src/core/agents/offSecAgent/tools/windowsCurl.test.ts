@@ -267,10 +267,20 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
         exitCode: 0,
       };
     } catch (err: unknown) {
-      const e = err as { stdout?: Buffer; stderr?: Buffer; code?: number };
+      const e = err as {
+        stdout?: Buffer;
+        stderr?: Buffer;
+        code?: number | string;
+        killed?: boolean;
+        signal?: string;
+      };
+      // Surface how the child failed when stderr is empty (e.g. a timing
+      // kill) — exit code, kill status, and signal, without dumping env.
+      const diagnostics = `code=${e.code} killed=${e.killed} signal=${e.signal ?? "none"}`;
+      const stderrText = (e.stderr as Buffer)?.toString("utf8") ?? "";
       return {
         stdout: (e.stdout as Buffer) ?? Buffer.alloc(0),
-        stderr: (e.stderr as Buffer)?.toString("utf8") ?? "",
+        stderr: stderrText || `child failed without stderr (${diagnostics})`,
         exitCode: typeof e.code === "number" ? e.code : 1,
       };
     }
@@ -295,10 +305,18 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
         exitCode: 0,
       };
     } catch (err: unknown) {
-      const e = err as { stdout?: Buffer; stderr?: Buffer; code?: number };
+      const e = err as {
+        stdout?: Buffer;
+        stderr?: Buffer;
+        code?: number | string;
+        killed?: boolean;
+        signal?: string;
+      };
+      const diagnostics = `code=${e.code} killed=${e.killed} signal=${e.signal ?? "none"}`;
+      const stderrText = (e.stderr as Buffer)?.toString("utf8") ?? "";
       return {
         stdout: (e.stdout as Buffer) ?? Buffer.alloc(0),
-        stderr: (e.stderr as Buffer)?.toString("utf8") ?? "",
+        stderr: stderrText || `child failed without stderr (${diagnostics})`,
         exitCode: typeof e.code === "number" ? e.code : 1,
       };
     }
@@ -318,12 +336,16 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
       const port = await startRawServer((socket) => {
         socket.once("data", () => socket.end(wire));
       });
-      const { stdout, exitCode } = await runDirect({
+      const { stdout, stderr, exitCode } = await runDirect({
         ...BASE_OPTS,
         url: `http://127.0.0.1:${port}/raw`,
         timeoutSeconds: 15,
       });
-      expect(exitCode).toBe(0);
+      // Include stderr so a child timeout/kill is diagnosable from the
+      // assertion message instead of a bare expected-0-received-1.
+      if (exitCode !== 0) {
+        expect.fail(`wrapper exit ${exitCode}, stderr: ${stderr.slice(-300)}`);
+      }
       // stdout is exactly wire + '\n' + marker + '0' + '\n'.
       const expected = Buffer.concat([
         wire,
@@ -331,7 +353,7 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
       ]);
       expect(stdout.equals(expected)).toBe(true);
     },
-    30_000,
+    45_000,
   );
 
   it.skipIf(!isWin)(
@@ -351,7 +373,7 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
       expect(out).toContain("cmd-route-ok");
       expect(out).toMatch(new RegExp(`\\n${NONCE}0\\n$`));
     },
-    30_000,
+    45_000,
   );
 
   it.skipIf(!isWin)(
@@ -373,7 +395,7 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
       expect(exitCode).toBe(0);
       expect(received).toBe(evilValue);
     },
-    30_000,
+    45_000,
   );
 
   it.skipIf(!isWin)(
@@ -406,7 +428,7 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
       expect(receivedBody).toBe(requestBody);
       expect(readdirSync(tempDir)).toEqual([]);
     },
-    30_000,
+    45_000,
   );
 
   it.skipIf(!isWin)(
@@ -427,7 +449,7 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
       expect(stdout.toString("utf8")).not.toContain(NONCE);
       expect(stdout.length).toBe(CAP);
     },
-    30_000,
+    45_000,
   );
 
   it.skipIf(!isWin)(
@@ -457,7 +479,7 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
       ]);
       expect(stdout.equals(expected)).toBe(true);
     },
-    30_000,
+    45_000,
   );
 
   it.skipIf(!isWin)(
@@ -482,7 +504,7 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
       }
       expect(out).toContain("partial-response-data");
     },
-    30_000,
+    45_000,
   );
 
   it.skipIf(!isWin)(
@@ -502,7 +524,7 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
       // curl --show-error writes diagnostics to inherited stderr.
       expect(stderr).toMatch(/curl:\s*\(\d+\)/);
     },
-    30_000,
+    45_000,
   );
 
   it.skipIf(!isWin)(
@@ -528,17 +550,35 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
       );
       expect(readdirSync(tempDir)).toEqual([]);
     },
-    30_000,
+    45_000,
   );
 
   it.skipIf(!isWin)(
-    "cmd-route POST body >8191 base64: server receives exact body",
+    "cmd-route POST body: env block >32767 works; server receives exact body",
     async () => {
-      // Body large enough that its base64 exceeds one 6000-char chunk AND
-      // the cmd.exe 8191-char single-env-var limit.
-      const body = `{"data":"${"A".repeat(8000)}"}`;
-      const b64Len = Buffer.from(body, "utf8").toString("base64").length;
-      expect(b64Len).toBeGreaterThan(8191);
+      // Exercise a >32KiB Unicode environment through cmd.exe without
+      // exceeding its per-variable limit.
+      const body = `{"data":"${"A".repeat(80_000)}"}`;
+      const built = buildWindowsCurlCommand({
+        ...BASE_OPTS,
+        method: "POST",
+        url: "http://127.0.0.1:1/placeholder",
+        body,
+        headers: { "Content-Type": "application/json" },
+        timeoutSeconds: 15,
+      });
+      const envBlockLen = Object.entries(built.envVars).reduce(
+        (sum, [k, v]) => sum + k.length + v.length + 2,
+        0,
+      );
+      expect(envBlockLen).toBeGreaterThan(32_767);
+      // Every body chunk within the single-var 8191 limit.
+      for (const [k, v] of Object.entries(built.envVars)) {
+        if (k.startsWith("APEX_HTTP_BODY_") && k !== "APEX_HTTP_BODY_COUNT") {
+          expect(v.length).toBeLessThanOrEqual(6000);
+        }
+      }
+
       let receivedBody = "";
       let requestArrived = false;
       const port = await startServer((req, res) => {
@@ -564,7 +604,7 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
       expect(receivedBody).toBe(body);
       expect(stdout.toString("utf8")).toMatch(new RegExp(`\\n${NONCE}0\\n$`));
     },
-    30_000,
+    60_000,
   );
 
   it.skipIf(!isWin)(
@@ -601,6 +641,64 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
       });
       expect(requestArrived).toBe(false);
     },
-    30_000,
+    45_000,
+  );
+
+  it.skipIf(!isWin)(
+    "EOF with exhausted budget: marker emitted with curl exit 0 (not exit 1)",
+    async () => {
+      const port = await startServer((_req, res) => {
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end("eof-grace-test");
+      });
+
+      // Take the generated command, decode the script, inject a budget-zero
+      // at EOF (right after $n=$t.Result), re-encode. This exercises the real
+      // PS EOF path with an exhausted budget without timing sleeps.
+      const built = buildWindowsCurlCommand({
+        ...BASE_OPTS,
+        url: `http://127.0.0.1:${port}/eof-grace`,
+        timeoutSeconds: 15,
+      });
+      const b64 = built.command.replace(
+        /^powershell\.exe -NoProfile -NonInteractive -EncodedCommand /,
+        "",
+      );
+      const script = Buffer.from(b64, "base64").toString("utf16le");
+      const resultLine = "$n=$t.Result";
+      const idx = script.indexOf(resultLine);
+      expect(idx).toBeGreaterThan(-1);
+      const after = idx + resultLine.length;
+      const injected = `${script.slice(0, after)}\nif($n -eq 0){$budgetMs=0}${script.slice(after)}`;
+      const reEncoded = Buffer.from(injected, "utf16le").toString("base64");
+      const parts = [
+        "powershell.exe",
+        "-NoProfile",
+        "-NonInteractive",
+        "-EncodedCommand",
+        reEncoded,
+      ];
+
+      try {
+        const { stdout } = await execFileAsync(parts[0], parts.slice(1), {
+          timeout: 30_000,
+          maxBuffer: 16 * 1024 * 1024,
+          encoding: "buffer",
+          env: { ...process.env, ...built.envVars },
+        });
+        const out = (stdout as Buffer).toString("utf8");
+        // EOF observed + budget exhausted → marker with curl's real exit 0.
+        expect(out).toContain("eof-grace-test");
+        expect(out).toMatch(new RegExp(`\\n${NONCE}0\\n$`));
+      } catch (err: unknown) {
+        const e = err as { stdout?: Buffer; code?: number };
+        const out = (e.stdout as Buffer)?.toString("utf8") ?? "";
+        // Baseline (ec38f93) would fail here with exit 1 / no marker.
+        expect.fail(
+          `expected exit 0 with marker, got exit ${e.code}, output: ${out.slice(-200)}`,
+        );
+      }
+    },
+    45_000,
   );
 });
