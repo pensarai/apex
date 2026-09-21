@@ -347,11 +347,10 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   commandCancelHandle?: CommandCancelHandle;
 
   /**
-   * Environment variables to inject into the agent's persistent shell.
-   * Each key-value pair is set in the shell's process environment at
-   * spawn time, so they're available to every `execute_command` call.
-   * Scoped to this agent instance — other agents on the same machine
-   * never see them.
+   * Environment variables to inject into the agent's per-command executor.
+   * Each key-value pair is set in every invocation's process environment,
+   * so they're available to every `execute_command` call. Scoped to this
+   * agent instance — other agents on the same machine never see them.
    */
   environmentVariables?: Record<string, string>;
 
@@ -504,7 +503,7 @@ export interface SpecializedAgentInput {
   stopWhen?: StopCondition<ToolSet>;
 
   /**
-   * Environment variables to inject into the agent's persistent shell.
+   * Environment variables to inject into the agent's per-command executor.
    * Forwarded to the underlying {@link OffensiveSecurityAgentInput}.
    */
   environmentVariables?: Record<string, string>;

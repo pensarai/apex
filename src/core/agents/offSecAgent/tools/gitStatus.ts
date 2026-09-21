@@ -20,30 +20,38 @@ export type GitStatusResult = {
 async function runGit(
   ctx: ToolContext,
   args: string[],
-): Promise<{ success: boolean; stdout: string; stderr: string }> {
+): Promise<{
+  success: boolean;
+  stdout: string;
+  stderr: string;
+  stdoutTruncated: boolean;
+}> {
   const command = `git ${args.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ")}`;
-  const full = `cd "${ctx.agentCwd}" && ${command}`;
 
   if (ctx.sandbox) {
-    const result = await ctx.sandbox.execute(full, { timeout: 30 });
+    const result = await ctx.sandbox.execute(command, {
+      timeout: 30,
+      cwd: ctx.agentCwd,
+    });
     return {
       success: result.success,
       stdout: result.stdout,
       stderr: result.stderr,
+      stdoutTruncated: false,
     };
   }
 
-  if (ctx.persistentShell) {
-    const result = await ctx.persistentShell.execute(
-      full,
-      30,
-      undefined,
-      ctx.abortSignal,
-    );
+  if (ctx.commandShell) {
+    const result = await ctx.commandShell.execute(command, {
+      cwd: ctx.agentCwd,
+      timeoutSeconds: 30,
+      abortSignal: ctx.abortSignal,
+    });
     return {
       success: result.exitCode === 0,
       stdout: result.stdout,
       stderr: result.stderr,
+      stdoutTruncated: result.stdoutTruncated,
     };
   }
 
@@ -51,6 +59,7 @@ async function runGit(
     success: false,
     stdout: "",
     stderr: "No shell or sandbox available",
+    stdoutTruncated: false,
   };
 }
 
@@ -63,11 +72,26 @@ Does not commit, stage, push, or open a PR.`,
     inputSchema: gitStatusInputSchema,
     execute: async (): Promise<GitStatusResult> => {
       const result = await runGit(ctx, ["status", "--porcelain"]);
+      // A capped capture is partial evidence: keep the prefix, label it
+      // INCOMPLETE — an empty prefix can still hide entries past the cap,
+      // so it must never read as "(clean)".
+      const truncNote = result.stdoutTruncated
+        ? "git status capture truncated at the byte limit — the porcelain list is INCOMPLETE, not the full status"
+        : "";
       if (!result.success) {
+        const baseError = result.stderr || "git status failed";
         return {
           success: false,
-          error: result.stderr || "git status failed",
+          error: truncNote ? `${baseError}; ${truncNote}` : baseError,
           status: result.stdout,
+          cwd: ctx.agentCwd,
+        };
+      }
+      if (result.stdoutTruncated) {
+        return {
+          success: true,
+          error: truncNote,
+          status: `${result.stdout.trim()}\n${truncNote}`,
           cwd: ctx.agentCwd,
         };
       }
