@@ -24,6 +24,7 @@ import {
   ScopeViolationError,
 } from "./scopeGuard";
 import type { ToolContext } from "./types";
+import { buildWindowsCurlCommand } from "./windowsCurl";
 
 const MAX_INLINE_BODY = 5_000;
 // Cap on bytes buffered/decoded — response.text() buffers the whole body
@@ -229,16 +230,31 @@ async function readBodyCapped(
   if (!body) return { text: "", received: 0, stopReason: "end" };
 
   const reader = body.getReader();
-  const onAbort = () => {
-    reader.cancel().catch(() => {});
-  };
-  signal?.addEventListener("abort", onAbort, { once: true });
+  // Native-stream arbiter: ONE race, created before the first read. The abort
+  // listener resolves the sentinel BEFORE cancelling, and reader.closed
+  // stays raw inside the race — a reaction hop would reorder same-turn
+  // events. Whichever settles first is the terminal outcome.
+  let onAbort: (() => void) | undefined;
+  const aborted = signal
+    ? new Promise<"aborted">((resolve) => {
+        onAbort = () => {
+          resolve("aborted");
+          reader.cancel().catch(() => {});
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+      })
+    : null;
+  const ended = (
+    aborted ? Promise.race([reader.closed, aborted]) : reader.closed
+  ).then<
+    { kind: "end" } | { kind: "aborted" },
+    { kind: "error"; cause: unknown }
+  >(
+    (result) => ({ kind: result === "aborted" ? "aborted" : "end" }),
+    (error) => ({ kind: "error", cause: error }),
+  );
 
   buf = new Uint8Array(Math.min(maxBytes, 64 * 1024));
-  const truncatedAtCap = () => {
-    stopReason = "byte-cap";
-    reader.cancel().catch(() => {});
-  };
 
   const append = (value: Uint8Array, take: number) => {
     if (take <= 0) return;
@@ -256,25 +272,33 @@ async function readBodyCapped(
 
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      let result: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        result = await reader.read();
+      } catch {
+        // The arbiter carries the terminal cause; the read's rejection is
+        // the same event seen from the read side. Processing failures below
+        // propagate through the finally — they are not stream outcomes.
+        break;
+      }
+      const { done, value } = result;
       if (done) break;
       if (!value?.byteLength) continue;
       const room = maxBytes - received;
       if (value.byteLength > room) {
         append(value, room);
-        truncatedAtCap();
+        stopReason = "byte-cap";
+        reader.cancel().catch(() => {});
         break;
       }
       append(value, value.byteLength);
       // At the exact cap, keep reading until EOF or a nonempty overflow chunk.
     }
-  } catch (error) {
-    // The abort listener cancels the reader, surfacing as AbortError here;
-    // anything else is an ordinary stream failure (reset, TLS, protocol).
-    stopReason = signal?.aborted ? "aborted" : "error";
-    cause = error;
   } finally {
-    signal?.removeEventListener("abort", onAbort);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+    // Cancel before release: a processing exception escaping the loop must
+    // not leave the stream merely released while the producer keeps pulling.
+    reader.cancel().catch(() => {});
     try {
       reader.releaseLock();
     } catch {
@@ -282,7 +306,20 @@ async function readBodyCapped(
     }
   }
 
-  if (signal?.aborted) stopReason = "aborted";
+  // Cap is explicit and final — never awaited or overwritten by the arbiter.
+  if (stopReason === "byte-cap") return captured();
+
+  const end = await ended;
+  if (end.kind === "aborted") {
+    stopReason = "aborted";
+  } else if (end.kind === "error") {
+    // Identity, not name: native fetch cancellation rejects the body with
+    // the signal's own reason object; an unrelated AbortError-shaped error
+    // from an adapter stays an error even once the host signal aborts.
+    cause = end.cause;
+    stopReason =
+      signal?.aborted && end.cause === signal.reason ? "aborted" : "error";
+  }
   return captured();
 }
 
@@ -607,8 +644,6 @@ async function executeSandboxHttpRequest(
   let bodyTempFile: string | null = null;
 
   try {
-    let curlCommand = `curl -i -X ${method}`;
-
     // Resolve session/credential headers so the sandbox curl path matches
     // the local fetch path. Caller `headers` win as the request layer.
     const mergedHeaders = resolveEffectiveHeaders(
@@ -616,70 +651,107 @@ async function executeSandboxHttpRequest(
       url,
       headers,
     );
-    for (const [key, value] of Object.entries(mergedHeaders)) {
-      curlCommand += ` -H "${shellQuote(`${key}: ${value}`)}"`;
-    }
-
-    // If we have a body to send, write it to a temp file in the sandbox
-    // to avoid shell escaping issues with multiline content
-    if (body && ["POST", "PUT", "PATCH"].includes(method)) {
-      bodyTempFile = `/tmp/apex_http_body_${Date.now()}_${Math.random().toString(36).slice(2, 11)}.txt`;
-
-      // Use printf to safely write the body to the temp file
-      const escapedForPrintf = body.replace(/\\/g, "\\\\").replace(/%/g, "%%");
-      const writeCommand = `printf '%s' '${escapedForPrintf.replace(/'/g, "'\\''")}' > ${bodyTempFile}`;
-
-      const writeResult = await sandbox.execute(writeCommand, { timeout: 30 });
-      if (!writeResult.success || writeResult.exitCode !== 0) {
-        return {
-          success: false,
-          error: `Failed to write request body to sandbox temp file: ${writeResult.stderr || writeResult.stdout}`,
-          url,
-          method,
-          status: 0,
-          statusText: "",
-          headers: {},
-          body: "",
-          redirected: false,
-          capture: {
-            complete: false,
-            stopReason: "error",
-            capturedBytes: 0,
-            capturedBytesBasis: "raw",
-          },
-        };
-      }
-
-      curlCommand += ` --data-binary @${bodyTempFile}`;
-    }
-
-    if (followRedirects) {
-      curlCommand += " -L";
-    }
 
     const timeoutSeconds = Math.ceil(timeout / 1000);
-    curlCommand += ` --max-time ${timeoutSeconds}`;
-    curlCommand += ` "${url}"`;
-
-    // Bound the capture at the producer: `head -c` exits at the cap, curl
-    // SIGPIPEs on its next write, so endless/chunked output never reaches the
-    // adapter's buffers (--max-filesize's chunked behavior varies by curl
-    // version). The nonce'd marker carries curl's exit through the pipeline.
     const nonce = randomBytes(8).toString("hex");
     const exitMarker = `__APEX_${nonce}_CURL_EXIT_`;
-    const command = `( ${curlCommand}; printf '\\n${exitMarker}%s\\n' "$?" ) 2>&1 | head -c ${MAX_DOWNLOAD_BYTES}`;
+    // Windows: +10s headroom — PowerShell startup plus the helper's bounded
+    // 5s child cleanup must fit before the adapter tears the call down.
+    // Linux keeps the existing floor.
+    const executeOpts: {
+      timeout: number;
+      envVars?: Record<string, string>;
+    } = {
+      timeout:
+        sandbox.type === "windows"
+          ? Math.max(timeoutSeconds + 10, 30)
+          : Math.max(timeoutSeconds, 30),
+    };
 
-    const ssmTimeout = Math.max(timeoutSeconds, 30);
-    const result = await sandbox.execute(command, {
-      timeout: ssmTimeout,
-    });
+    let command: string;
+    if (sandbox.type === "windows") {
+      // Windows helper: fixed encoded script; request data (CRT-quoted argv,
+      // base64 body, marker, byte cap) travels in envVars. No POSIX printf
+      // /tmp body staging and no rm cleanup on this path.
+      const win = buildWindowsCurlCommand({
+        url,
+        method,
+        headers: mergedHeaders,
+        body:
+          body && ["POST", "PUT", "PATCH"].includes(method) ? body : undefined,
+        followRedirects,
+        timeoutSeconds,
+        maxBytes: MAX_DOWNLOAD_BYTES,
+        exitMarker,
+      });
+      command = win.command;
+      executeOpts.envVars = win.envVars;
+    } else {
+      let curlCommand = `curl -i -X ${method}`;
+      for (const [key, value] of Object.entries(mergedHeaders)) {
+        curlCommand += ` -H "${shellQuote(`${key}: ${value}`)}"`;
+      }
+
+      // If we have a body to send, write it to a temp file in the sandbox
+      // to avoid shell escaping issues with multiline content
+      if (body && ["POST", "PUT", "PATCH"].includes(method)) {
+        bodyTempFile = `/tmp/apex_http_body_${Date.now()}_${Math.random().toString(36).slice(2, 11)}.txt`;
+
+        // Use printf to safely write the body to the temp file
+        const escapedForPrintf = body
+          .replace(/\\/g, "\\\\")
+          .replace(/%/g, "%%");
+        const writeCommand = `printf '%s' '${escapedForPrintf.replace(/'/g, "'\\''")}' > ${bodyTempFile}`;
+
+        const writeResult = await sandbox.execute(writeCommand, {
+          timeout: 30,
+        });
+        if (!writeResult.success || writeResult.exitCode !== 0) {
+          return {
+            success: false,
+            error: `Failed to write request body to sandbox temp file: ${writeResult.stderr || writeResult.stdout}`,
+            url,
+            method,
+            status: 0,
+            statusText: "",
+            headers: {},
+            body: "",
+            redirected: false,
+            capture: {
+              complete: false,
+              stopReason: "error",
+              capturedBytes: 0,
+              capturedBytesBasis: "raw",
+            },
+          };
+        }
+
+        curlCommand += ` --data-binary @${bodyTempFile}`;
+      }
+
+      if (followRedirects) {
+        curlCommand += " -L";
+      }
+
+      curlCommand += ` --max-time ${timeoutSeconds}`;
+      curlCommand += ` "${url}"`;
+
+      // Bound the capture at the producer: `head -c` exits at the cap, curl
+      // SIGPIPEs on its next write, so endless/chunked output never reaches the
+      // adapter's buffers (--max-filesize's chunked behavior varies by curl
+      // version). The nonce'd marker carries curl's exit through the pipeline.
+      command = `( ${curlCommand}; printf '\\n${exitMarker}%s\\n' "$?" ) 2>&1 | head -c ${MAX_DOWNLOAD_BYTES}`;
+    }
+
+    const result = await sandbox.execute(command, executeOpts);
 
     const output = result.stdout || "";
     // Marker absent = head cut the stream at the cap (curl SIGPIPE'd before
     // writing it) or the pipeline was killed — either way incomplete. The
-    // random nonce keeps a hostile body from forging a clean exit.
+    // random nonce keeps a hostile body from forging a clean exit. Windows
+    // native termination can be negative, so the exit is parsed signed.
     const markerMatch = output.match(
-      new RegExp(`\\n?${exitMarker}(\\d+)\\n?$`),
+      new RegExp(`\\n?${exitMarker}(-?\\d+)\\n?$`),
     );
     const curlExit = markerMatch ? parseInt(markerMatch[1], 10) : null;
     const boundedOutput =
@@ -750,12 +822,18 @@ async function executeSandboxHttpRequest(
     const declared = declaredRaw ? Number.parseInt(declaredRaw, 10) : NaN;
     const declaredBytes =
       Number.isSafeInteger(declared) && declared >= 0 ? declared : undefined;
+    // Native curl/helper errors surface via sandbox stderr — include them in
+    // the failure diagnostics instead of suppressing them.
+    const redactedSandboxStderr = redactPromptInjectionPayloads(
+      result.stderr || "",
+      library,
+    );
     const incompleteNote = !sandboxTransportOk
-      ? `sandbox execution failed (exit ${result.exitCode}); output may be partial`
+      ? `sandbox execution failed (exit ${result.exitCode})${redactedSandboxStderr ? `: ${redactedSandboxStderr}` : ""}; output may be partial`
       : curlExit == null
         ? `output capped at ${MAX_DOWNLOAD_BYTES} bytes; curl exit unknown — for larger evidence, save and inspect it inside the sandbox with execute_command (curl -o file, then head/dd on the file); read_file only reads host-local files`
         : curlExit !== 0
-          ? `curl exited ${curlExit}; output may be partial`
+          ? `curl exited ${curlExit}${redactedSandboxStderr ? `: ${redactedSandboxStderr}` : ""}; output may be partial`
           : undefined;
 
     const { text: truncatedBody } = maybeSaveBody(redactedBody, ctx, {

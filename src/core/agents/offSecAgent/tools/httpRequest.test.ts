@@ -1203,4 +1203,767 @@ describe("httpRequest body liveness", () => {
     expect(result.error).toContain("Request aborted by user");
     expect(result.capture.stopReason).toBe("aborted");
   }, 5_000);
+
+  // --- First terminal outcome vs a same-turn abort (settlement ordering) ---
+  // HWM-0 pull fixtures: each pull serves a PENDING read, so the second pull
+  // fires the terminal event and the host abort in one turn — whichever
+  // settles first is the truthful outcome.
+
+  it("an EOF that settles before a same-turn abort stays complete", async () => {
+    const enc = new TextEncoder();
+    const ac = new AbortController();
+    let reads = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          c.close(); // settles FIRST
+          ac.abort(); // same turn, second — must not overwrite the EOF
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const result = (await httpRequest(
+      ctxWithScratchLogs({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/eof-then-abort",
+        method: "GET",
+        followRedirects: false,
+        timeout: 5_000,
+        toolCallDescription: "GET whose EOF beats a same-turn abort",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(true);
+    expect(result.body).toBe("part-1;");
+    expect(result.capture).toMatchObject({
+      complete: true,
+      stopReason: "end",
+    });
+  }, 5_000);
+
+  it("an abort that settles before the stream ends stays incomplete", async () => {
+    const enc = new TextEncoder();
+    const ac = new AbortController();
+    let reads = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          // No close: the abort's reader.cancel() provides the stream end,
+          // and the abort settled first — the capture is incomplete.
+          ac.abort();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const result = (await httpRequest(
+      ctxWithScratchLogs({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/abort-first",
+        method: "GET",
+        followRedirects: false,
+        timeout: 5_000,
+        toolCallDescription: "GET whose same-turn abort beats the end",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Request aborted by user");
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "aborted",
+    });
+    // Bytes that settled before the abort remain captured evidence.
+    expect(result.body).toContain("part-1;");
+  }, 5_000);
+
+  it("a byte-cap outcome survives an abort racing the cap cancellation", async () => {
+    const CAP = 5 * 1024 * 1024;
+    const chunk = new Uint8Array(64 * 1024).fill(65); // "A" * 64KiB
+    const ac = new AbortController();
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          c.enqueue(chunk);
+        },
+        cancel() {
+          // truncatedAtCap cancels the reader AFTER assigning byte-cap; the
+          // abort firing here must not overwrite the cap outcome.
+          ac.abort();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const result = (await httpRequest(
+      ctxWithScratchLogs({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/cap-then-abort",
+        method: "GET",
+        followRedirects: false,
+        timeout: 30_000,
+        toolCallDescription: "GET capped before a racing abort",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("capped");
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "byte-cap",
+      capturedBytes: CAP,
+    });
+  }, 10_000);
+
+  it("a stream error retains its outcome when the signal aborts in the same turn", async () => {
+    const enc = new TextEncoder();
+    const ac = new AbortController();
+    let reads = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          c.error(new TypeError("synthetic connection reset")); // settles FIRST
+          ac.abort(); // must not overwrite the error
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const result = (await httpRequest(
+      ctxWithScratchLogs({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/error-then-abort",
+        method: "GET",
+        followRedirects: false,
+        timeout: 5_000,
+        toolCallDescription: "GET whose stream error beats the abort",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("synthetic connection reset");
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "error",
+    });
+  }, 5_000);
+
+  it("an abort settling before a same-turn stream error stays aborted", async () => {
+    const enc = new TextEncoder();
+    const ac = new AbortController();
+    let reads = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          ac.abort(); // settles FIRST
+          c.error(new TypeError("synthetic connection reset"));
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const result = (await httpRequest(
+      ctxWithScratchLogs({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/abort-then-error",
+        method: "GET",
+        followRedirects: false,
+        timeout: 5_000,
+        toolCallDescription: "GET whose abort beats a same-turn error",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Request aborted by user");
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "aborted",
+    });
+  }, 5_000);
+
+  // --- Abort classification is identity-based, not name-based ---
+
+  it("an unrelated AbortError without a host abort stays an error", async () => {
+    const enc = new TextEncoder();
+    let reads = 0;
+    // An AbortError-shaped error that is NOT this signal's reason — e.g. an
+    // adapter-internal cancellation — must not be relabeled as our abort.
+    const unrelated = new Error("adapter-internal cancellation");
+    unrelated.name = "AbortError";
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          c.error(unrelated);
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const result = (await httpRequest(ctxWithScratchLogs()).execute?.(
+      {
+        url: "https://example.com/unrelated-abort-error",
+        method: "GET",
+        followRedirects: false,
+        timeout: 5_000,
+        toolCallDescription: "GET with an unrelated AbortError",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("adapter-internal cancellation");
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "error",
+    });
+  }, 5_000);
+
+  it("an unrelated AbortError stays an error even when the host aborts later", async () => {
+    const enc = new TextEncoder();
+    const ac = new AbortController();
+    let reads = 0;
+    const unrelated = new Error("adapter-internal cancellation");
+    unrelated.name = "AbortError";
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          c.error(unrelated); // settles FIRST
+          ac.abort(); // a later host abort must not relabel the cause
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const result = (await httpRequest(
+      ctxWithScratchLogs({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/unrelated-abort-then-host-abort",
+        method: "GET",
+        followRedirects: false,
+        timeout: 5_000,
+        toolCallDescription:
+          "GET with an unrelated AbortError before a host abort",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("adapter-internal cancellation");
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "error",
+    });
+  }, 5_000);
+
+  // Real fetch against a local loopback server: the native abort machinery
+  // rejects the body with the signal's own reason object — classification
+  // must match by identity. The barrier is a spy on the NATIVE body reader's
+  // read(): the first read captures the 19-byte prefix, the second read
+  // invocation fires the abort mid-consumption and returns the original
+  // pending native read. The Response, its body, and reader.closed stay
+  // untouched — no transform substitute.
+  const NATIVE_PREFIX = "streaming-body-start"; // 20 bytes
+
+  async function runNativeAbortCase(reason: undefined | Error) {
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.write(NATIVE_PREFIX);
+      // Keep the connection open — only the abort ends this read.
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const port = (server.address() as { port: number }).port;
+    const url = `http://127.0.0.1:${port}/endless`;
+    const ac = new AbortController();
+
+    try {
+      // Truly-native fetch: clear any prior stubs BEFORE capturing.
+      vi.unstubAllGlobals();
+      const realFetch = globalThis.fetch;
+      let readCalls = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (...args: Parameters<typeof realFetch>) => {
+          const res = await realFetch(...args);
+          if (res.body === null) throw new Error("native body missing");
+          const body = res.body;
+          const origGetReader = body.getReader.bind(body);
+          Object.defineProperty(body, "getReader", {
+            value: () => {
+              const reader = origGetReader();
+              const origRead = reader.read.bind(reader);
+              Object.defineProperty(reader, "read", {
+                value: () => {
+                  readCalls++;
+                  const pending = origRead();
+                  if (readCalls === 2) {
+                    // The prefix is already captured by the first read —
+                    // abort mid-consumption, handing back the native pending
+                    // read.
+                    ac.abort(reason);
+                  }
+                  return pending;
+                },
+              });
+              return reader;
+            },
+          });
+          return res;
+        }),
+      );
+
+      const base = makeCtx();
+      const ctx = ctxWithScratchLogs({
+        abortSignal: ac.signal,
+        target: url,
+        session: {
+          ...base.session,
+          targets: [url],
+        } as SessionInfo,
+      });
+      const result = (await httpRequest(ctx).execute?.(
+        {
+          url,
+          method: "GET",
+          followRedirects: false,
+          timeout: 30_000,
+          toolCallDescription: "GET cancelled natively mid-body",
+        },
+        { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+      )) as HttpRequestResult;
+
+      return { result, readCalls };
+    } finally {
+      // Bounded teardown: force the abort (a regression may exit before the
+      // read barrier fires), destroy any still-open connection, then await
+      // the server's close before unstubbing.
+      ac.abort();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it("a native fetch cancellation with the default reason is classified aborted mid-body", async () => {
+    const { result, readCalls } = await runNativeAbortCase(undefined);
+
+    // The abort fired on the second native read — after the prefix was
+    // captured, during body consumption (never before headers).
+    expect(readCalls).toBeGreaterThanOrEqual(2);
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(200);
+    expect(result.error).toContain("Request aborted by user");
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "aborted",
+    });
+    expect(result.body).toContain(NATIVE_PREFIX);
+    expect(result.capture.capturedBytes).toBe(NATIVE_PREFIX.length);
+  }, 15_000);
+
+  it("a native fetch cancellation with a custom reason object is classified aborted by identity", async () => {
+    const { result, readCalls } = await runNativeAbortCase(
+      new Error("host cancelled"),
+    );
+
+    expect(readCalls).toBeGreaterThanOrEqual(2);
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(200);
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "aborted",
+    });
+    expect(result.body).toContain(NATIVE_PREFIX);
+    expect(result.capture.capturedBytes).toBe(NATIVE_PREFIX.length);
+  }, 15_000);
+
+  it("an unexpected processing failure propagates instead of hanging or faking EOF", async () => {
+    const enc = new TextEncoder();
+    let reads = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          c.enqueue({
+            byteLength: 4,
+            subarray: undefined,
+          } as unknown as Uint8Array);
+        },
+        cancel() {
+          cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+
+    const result = (await httpRequest(ctxWithScratchLogs()).execute?.(
+      {
+        url: "https://example.com/processing-failure",
+        method: "GET",
+        followRedirects: false,
+        timeout: 5_000,
+        toolCallDescription: "GET whose chunk processing fails",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("subarray");
+    expect(result.capture.stopReason).toBe("error");
+    // The open stream was actually cancelled, not merely lock-released.
+    expect(cancelled).toBe(true);
+  }, 5_000);
+
+  // --- Windows sandbox boundary (mocked helper contract; runs on all OS) ---
+
+  type SandboxExecuteCall = {
+    command: string;
+    opts?: { timeout?: number; envVars?: Record<string, string>; cwd?: string };
+  };
+
+  function windowsSandboxMock(
+    respond: (call: SandboxExecuteCall) => {
+      stdout: string;
+      stderr?: string;
+      exitCode: number;
+      success: boolean;
+    },
+  ): { execute: ReturnType<typeof vi.fn>; calls: SandboxExecuteCall[] } {
+    const calls: SandboxExecuteCall[] = [];
+    const execute = vi.fn(async (command: string, opts?: unknown) => {
+      const call = { command, opts: opts as SandboxExecuteCall["opts"] };
+      calls.push(call);
+      const r = respond(call);
+      return {
+        success: r.success,
+        exitCode: r.exitCode,
+        stdout: r.stdout,
+        stderr: r.stderr ?? "",
+      };
+    });
+    return { execute, calls };
+  }
+
+  const windowsCtx = (execute: ReturnType<typeof vi.fn>): ToolContext =>
+    ctxWithScratchLogs({
+      sandbox: {
+        type: "windows",
+        execute,
+      } as unknown as ToolContext["sandbox"],
+    });
+
+  const callWindowsTool = async (
+    ctx: ToolContext,
+    input: {
+      method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "OPTIONS" | "HEAD";
+      body?: string;
+    },
+  ): Promise<HttpRequestResult> =>
+    (await httpRequest(ctx).execute?.(
+      {
+        url: "https://example.com/api",
+        followRedirects: false,
+        timeout: 1_000,
+        toolCallDescription: "Windows sandbox boundary",
+        ...input,
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+  it("windows sandbox: complete GET runs the helper command with env, one execute call", async () => {
+    const { execute, calls } = windowsSandboxMock((call) => {
+      const marker = call.opts?.envVars?.APEX_HTTP_MARKER ?? "";
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nok-body\n${marker}0\n`,
+      };
+    });
+    const result = await callWindowsTool(windowsCtx(execute), {
+      method: "GET",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.body).toBe("ok-body");
+    expect(result.capture).toMatchObject({
+      complete: true,
+      stopReason: "end",
+    });
+    // Exactly one dispatch: no POSIX printf staging, no rm cleanup.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.command).toContain("powershell.exe");
+    // Request data travels in envVars, including resolved headers in argv.
+    const env = calls[0]?.opts?.envVars ?? {};
+    expect(env.APEX_HTTP_CURL_ARGS).toContain("-X");
+    expect(env.APEX_HTTP_CURL_ARGS).toContain("GET");
+    expect(env.APEX_HTTP_CURL_ARGS).toContain("https://example.com/api");
+    expect(Number(env.APEX_HTTP_MAX_BYTES)).toBe(5 * 1024 * 1024);
+    expect(env.APEX_HTTP_MARKER).toMatch(/^__APEX_[0-9a-f]+_CURL_EXIT_$/);
+    // Chunked body contract: count/length always set, both 0 with no body.
+    expect(env.APEX_HTTP_BODY_COUNT).toBe("0");
+    expect(env.APEX_HTTP_BODY_LENGTH).toBe("0");
+    expect(env.APEX_HTTP_BODY_0).toBeUndefined();
+    expect(env.APEX_HTTP_BODY).toBeUndefined();
+  });
+
+  it("windows sandbox: POST forwards the body as base64 env with no POSIX setup or cleanup", async () => {
+    const { execute, calls } = windowsSandboxMock((call) => {
+      const marker = call.opts?.envVars?.APEX_HTTP_MARKER ?? "";
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: `HTTP/1.1 201 Created\r\nContent-Type: text/plain\r\n\r\ncreated\n${marker}0\n`,
+      };
+    });
+    const result = await callWindowsTool(windowsCtx(execute), {
+      method: "POST",
+      body: "hello=windows",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe(201);
+    expect(calls).toHaveLength(1);
+    // No /tmp staging write and no rm cleanup were dispatched.
+    expect(calls[0]?.command).not.toContain("/tmp");
+    expect(calls.join(" ")).not.toContain("rm -f");
+    // The body rides as chunked base64 env (small body: one chunk) for the
+    // helper's own temp-file staging; the legacy single var is gone.
+    const env = calls[0]?.opts?.envVars ?? {};
+    const encoded = Buffer.from("hello=windows", "utf8").toString("base64");
+    expect(env.APEX_HTTP_BODY_COUNT).toBe("1");
+    expect(env.APEX_HTTP_BODY_LENGTH).toBe(String(encoded.length));
+    expect(env.APEX_HTTP_BODY_0).toBe(encoded);
+    expect(env.APEX_HTTP_BODY_1).toBeUndefined();
+    expect(env.APEX_HTTP_BODY).toBeUndefined();
+  });
+
+  it("windows sandbox: marker-less output is classified as a cap", async () => {
+    const { execute } = windowsSandboxMock(() => ({
+      success: true,
+      exitCode: 0,
+      stdout:
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\npartial-until-cap",
+    }));
+    const result = await callWindowsTool(windowsCtx(execute), {
+      method: "GET",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "byte-cap",
+    });
+    expect(result.body).toContain("INCOMPLETE");
+  });
+
+  it("windows sandbox: nonzero helper exit surfaces redacted stderr alongside the partial response", async () => {
+    const { execute } = windowsSandboxMock(() => ({
+      success: false,
+      exitCode: 2,
+      stdout:
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\npartial-before-failure",
+      stderr: "powershell wrapper failed mid-transfer",
+    }));
+    const result = await callWindowsTool(windowsCtx(execute), {
+      method: "GET",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "sandbox-exec",
+    });
+    // Native helper stderr is surfaced in the failure diagnostics, not suppressed.
+    expect(result.error).toContain("powershell wrapper failed mid-transfer");
+    expect(result.body).toContain("partial-before-failure");
+  });
+
+  it("windows sandbox: curl nonzero with a partial 200 stays incomplete", async () => {
+    const { execute } = windowsSandboxMock((call) => {
+      const marker = call.opts?.envVars?.APEX_HTTP_MARKER ?? "";
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\npartial-download\n${marker}28\n`,
+      };
+    });
+    const result = await callWindowsTool(windowsCtx(execute), {
+      method: "GET",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(200);
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "curl-exit",
+    });
+    expect(result.body).toContain("partial-download");
+    expect(result.body).toContain("INCOMPLETE");
+  });
+
+  it("windows sandbox: execute timeout includes PowerShell startup and cleanup headroom", async () => {
+    const { execute, calls } = windowsSandboxMock((call) => {
+      const marker = call.opts?.envVars?.APEX_HTTP_MARKER ?? "";
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nok\n${marker}0\n`,
+      };
+    });
+    // 40s deadline: +10s Windows headroom must show past the 30s floor.
+    await httpRequest(windowsCtx(execute)).execute?.(
+      {
+        url: "https://example.com/api",
+        method: "GET",
+        followRedirects: false,
+        timeout: 40_000,
+        toolCallDescription: "Windows timeout headroom",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    );
+
+    expect(calls.at(-1)?.opts?.timeout).toBe(50);
+  });
+
+  it("windows sandbox: a negative curl exit marker is curl-exit, not byte-cap", async () => {
+    const { execute } = windowsSandboxMock((call) => {
+      const marker = call.opts?.envVars?.APEX_HTTP_MARKER ?? "";
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nterminated-output\n${marker}-1073741519\n`,
+      };
+    });
+    const result = await callWindowsTool(windowsCtx(execute), {
+      method: "GET",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.capture).toMatchObject({
+      complete: false,
+      stopReason: "curl-exit",
+    });
+    expect(result.error).toContain("-1073741519");
+  });
+
+  it("windows sandbox: curl-exit failures surface native curl stderr diagnostics", async () => {
+    const { execute } = windowsSandboxMock((call) => {
+      const marker = call.opts?.envVars?.APEX_HTTP_MARKER ?? "";
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\npartial\n${marker}28\n`,
+        stderr: "curl: (28) Operation timed out",
+      };
+    });
+    const result = await callWindowsTool(windowsCtx(execute), {
+      method: "GET",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.capture).toMatchObject({ stopReason: "curl-exit" });
+    // --show-error diagnostics ride stderr — surfaced, not suppressed.
+    expect(result.error).toContain("curl: (28) Operation timed out");
+  });
+
+  it("linux sandbox: execute timeout keeps the existing floor (no Windows headroom)", async () => {
+    const calls: { opts?: { timeout?: number } }[] = [];
+    const execute = vi.fn(async (_command: string, opts?: unknown) => {
+      calls.push({ opts: opts as { timeout?: number } });
+      return {
+        success: true,
+        exitCode: 0,
+        stdout: "HTTP/1.1 200 OK\n\n",
+        stderr: "",
+      };
+    });
+    const ctx = ctxWithScratchLogs({
+      sandbox: { type: "linux", execute } as unknown as ToolContext["sandbox"],
+    });
+    await httpRequest(ctx).execute?.(
+      {
+        url: "https://example.com/api",
+        method: "GET",
+        followRedirects: false,
+        timeout: 40_000,
+        toolCallDescription: "Linux timeout floor",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    );
+
+    expect(calls.at(-1)?.opts?.timeout).toBe(40);
+  });
 });

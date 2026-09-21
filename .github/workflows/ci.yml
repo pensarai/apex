@@ -26,3 +26,22 @@ jobs:
 
   build:
     uses: ./.github/workflows/build.yml
+
+  windows-http:
+    name: Windows HTTP capture
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Exercise Windows HTTP capture
+        run: bun run test src/core/agents/offSecAgent/tools/windowsCurl.test.ts

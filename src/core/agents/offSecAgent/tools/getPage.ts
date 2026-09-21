@@ -138,16 +138,31 @@ async function readBodyCapped(
   if (!body) return { text: "", stopReason: "end" };
 
   const reader = body.getReader();
-  const onAbort = () => {
-    reader.cancel().catch(() => {});
-  };
-  signal?.addEventListener("abort", onAbort, { once: true });
+  // Native-stream arbiter: ONE race, created before the first read. The abort
+  // listener resolves the sentinel BEFORE cancelling, and reader.closed
+  // stays raw inside the race — a reaction hop would reorder same-turn
+  // events. Whichever settles first is the terminal outcome.
+  let onAbort: (() => void) | undefined;
+  const aborted = signal
+    ? new Promise<"aborted">((resolve) => {
+        onAbort = () => {
+          resolve("aborted");
+          reader.cancel().catch(() => {});
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+      })
+    : null;
+  const ended = (
+    aborted ? Promise.race([reader.closed, aborted]) : reader.closed
+  ).then<
+    { kind: "end" } | { kind: "aborted" },
+    { kind: "error"; cause: unknown }
+  >(
+    (result) => ({ kind: result === "aborted" ? "aborted" : "end" }),
+    (error) => ({ kind: "error", cause: error }),
+  );
 
   buf = new Uint8Array(Math.min(maxBytes, 64 * 1024));
-  const truncatedAtCap = () => {
-    stopReason = "byte-cap";
-    reader.cancel().catch(() => {});
-  };
 
   const append = (value: Uint8Array, take: number) => {
     if (take <= 0) return;
@@ -165,25 +180,33 @@ async function readBodyCapped(
 
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      let result: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        result = await reader.read();
+      } catch {
+        // The arbiter carries the terminal cause; the read's rejection is
+        // the same event seen from the read side. Processing failures below
+        // propagate through the finally — they are not stream outcomes.
+        break;
+      }
+      const { done, value } = result;
       if (done) break;
       if (!value?.byteLength) continue;
       const room = maxBytes - received;
       if (value.byteLength > room) {
         append(value, room);
-        truncatedAtCap();
+        stopReason = "byte-cap";
+        reader.cancel().catch(() => {});
         break;
       }
       append(value, value.byteLength);
       // At the exact cap, keep reading until EOF or a nonempty overflow chunk.
     }
-  } catch (error) {
-    // The abort listener cancels the reader, surfacing as AbortError here;
-    // anything else is an ordinary stream failure (reset, TLS, protocol).
-    stopReason = signal?.aborted ? "aborted" : "error";
-    cause = error;
   } finally {
-    signal?.removeEventListener("abort", onAbort);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+    // Cancel before release: a processing exception escaping the loop must
+    // not leave the stream merely released while the producer keeps pulling.
+    reader.cancel().catch(() => {});
     try {
       reader.releaseLock();
     } catch {
@@ -191,7 +214,20 @@ async function readBodyCapped(
     }
   }
 
-  if (signal?.aborted) stopReason = "aborted";
+  // Cap is explicit and final — never awaited or overwritten by the arbiter.
+  if (stopReason === "byte-cap") return captured();
+
+  const end = await ended;
+  if (end.kind === "aborted") {
+    stopReason = "aborted";
+  } else if (end.kind === "error") {
+    // Identity, not name: native fetch cancellation rejects the body with
+    // the signal's own reason object; an unrelated AbortError-shaped error
+    // from an adapter stays an error even once the host signal aborts.
+    cause = end.cause;
+    stopReason =
+      signal?.aborted && end.cause === signal.reason ? "aborted" : "error";
+  }
   return captured();
 }
 

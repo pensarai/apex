@@ -678,4 +678,360 @@ describe("getPage preview-limit vs producer failure", () => {
       vi.useRealTimers();
     }
   }, 10_000);
+
+  // --- First terminal outcome vs a same-turn abort (settlement ordering) ---
+  // HWM-0 pull fixtures: each pull serves a PENDING read, so the second pull
+  // fires the terminal event and the host abort in one turn — whichever
+  // settles first is the truthful outcome.
+
+  it("an EOF that settles before a same-turn abort stays complete", async () => {
+    const enc = new TextEncoder();
+    const ac = new AbortController();
+    let reads = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          c.close(); // settles FIRST
+          ac.abort(); // same turn, second — must not overwrite the EOF
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+
+    const result = (await getPage(
+      makeCtx({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/eof-then-abort",
+        toolCallDescription: "page whose EOF beats a same-turn abort",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result.stopReason).toBeUndefined();
+    expect(result.content).toBe("part-1;");
+  }, 5_000);
+
+  it("an abort that settles before the stream ends stays incomplete", async () => {
+    const enc = new TextEncoder();
+    const ac = new AbortController();
+    let reads = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          // No close: the abort's reader.cancel() provides the stream end,
+          // and the abort settled first — the capture is incomplete.
+          ac.abort();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+
+    const result = (await getPage(
+      makeCtx({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/abort-first",
+        toolCallDescription: "page whose same-turn abort beats the end",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(false);
+    expect(result.stopReason).toBe("aborted");
+    expect(result.error).toContain("aborted");
+  }, 5_000);
+
+  it("a byte-cap outcome survives an abort racing the cap cancellation", async () => {
+    const CAP = 5 * 1024 * 1024;
+    const chunk = new Uint8Array(64 * 1024).fill(65); // "A" * 64KiB
+    const ac = new AbortController();
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          c.enqueue(chunk);
+        },
+        cancel() {
+          ac.abort();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+
+    const result = (await getPage(
+      makeCtx({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/cap-then-abort",
+        toolCallDescription: "page capped before a racing abort",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(false);
+    expect(result.stopReason).toBe("byte-cap");
+    expect(result.content).toContain("INCOMPLETE");
+  }, 10_000);
+
+  it("a stream error retains its outcome when the signal aborts in the same turn", async () => {
+    const enc = new TextEncoder();
+    const ac = new AbortController();
+    let reads = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          c.error(new TypeError("synthetic connection reset")); // settles FIRST
+          ac.abort(); // must not overwrite the error
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+
+    const result = (await getPage(
+      makeCtx({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/error-then-abort",
+        toolCallDescription: "page whose stream error beats the abort",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(false);
+    expect(result.stopReason).toBe("error");
+    expect(result.error).toContain("synthetic connection reset");
+  }, 5_000);
+
+  it("an abort settling before a same-turn stream error stays aborted", async () => {
+    const enc = new TextEncoder();
+    const ac = new AbortController();
+    let reads = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          ac.abort(); // settles FIRST
+          c.error(new TypeError("synthetic connection reset"));
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+
+    const result = (await getPage(
+      makeCtx({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/abort-then-error",
+        toolCallDescription: "page whose abort beats a same-turn error",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(false);
+    expect(result.stopReason).toBe("aborted");
+    expect(result.error).toContain("aborted");
+  }, 5_000);
+
+  // --- Abort classification is identity-based, not name-based ---
+
+  it("an unrelated AbortError without a host abort stays an error", async () => {
+    const enc = new TextEncoder();
+    let reads = 0;
+    const unrelated = new Error("adapter-internal cancellation");
+    unrelated.name = "AbortError";
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          c.error(unrelated);
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+
+    const result = (await getPage(makeCtx()).execute?.(
+      {
+        url: "https://example.com/unrelated-abort-error",
+        toolCallDescription: "page with an unrelated AbortError",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(false);
+    expect(result.stopReason).toBe("error");
+    expect(result.error).toContain("adapter-internal cancellation");
+  }, 5_000);
+
+  it("an unrelated AbortError stays an error even when the host aborts later", async () => {
+    const enc = new TextEncoder();
+    const ac = new AbortController();
+    let reads = 0;
+    const unrelated = new Error("adapter-internal cancellation");
+    unrelated.name = "AbortError";
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          c.error(unrelated); // settles FIRST
+          ac.abort(); // a later host abort must not relabel the cause
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+
+    const result = (await getPage(
+      makeCtx({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/unrelated-abort-then-host-abort",
+        toolCallDescription:
+          "page with an unrelated AbortError before a host abort",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(false);
+    expect(result.stopReason).toBe("error");
+    expect(result.error).toContain("adapter-internal cancellation");
+  }, 5_000);
+
+  it("an unexpected processing failure propagates instead of hanging or faking EOF", async () => {
+    const enc = new TextEncoder();
+    let reads = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (reads++ === 0) {
+            c.enqueue(enc.encode("part-1;"));
+            return;
+          }
+          c.enqueue({
+            byteLength: 4,
+            subarray: undefined,
+          } as unknown as Uint8Array);
+        },
+        cancel() {
+          cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+
+    const result = (await getPage(makeCtx()).execute?.(
+      {
+        url: "https://example.com/processing-failure",
+        toolCallDescription: "page whose chunk processing fails",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("subarray");
+    // The open stream was actually cancelled, not merely lock-released.
+    expect(cancelled).toBe(true);
+  }, 5_000);
 });
