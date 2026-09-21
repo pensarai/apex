@@ -102,9 +102,9 @@ export function parseCustomProviders(value: unknown): CustomProviders {
 export function loadCustomProviders(
   configured?: CustomProviders,
 ): CustomProviders {
-  const raw = process.env.APEX_CUSTOM_PROVIDERS;
+  const raw = process.env.APEX_CUSTOM_PROVIDERS?.trim();
   let fromEnv: unknown = {};
-  if (raw !== undefined) {
+  if (raw) {
     try {
       fromEnv = JSON.parse(raw);
     } catch {

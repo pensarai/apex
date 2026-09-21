@@ -75,6 +75,15 @@ describe("custom provider configuration", () => {
     );
   });
 
+  it.each([
+    "",
+    " \n\t ",
+  ])("treats a blank worker environment as unset: %j", (value) => {
+    vi.stubEnv("APEX_CUSTOM_PROVIDERS", value);
+    expect(loadCustomProviders()).toEqual({});
+    expect(loadCustomProviders(providers)).toEqual(providers);
+  });
+
   it("lists distinct models from multiple endpoints in the operator picker", () => {
     const cfg = {
       responsibleUseAccepted: true,
