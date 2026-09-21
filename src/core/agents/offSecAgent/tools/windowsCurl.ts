@@ -93,6 +93,7 @@ const SCRIPT = [
   "$buf=New-Object byte[] 65536",
   "$tot=[int64]0",
   "$ov=$false",
+  "$eof=$false",
   "while($true){",
   "$remain=[int]($budgetMs-$sw.ElapsedMilliseconds)",
   "if($remain -le 0){break}",
@@ -102,7 +103,7 @@ const SCRIPT = [
   "$t=$is.ReadAsync($buf,0,$toRead)",
   "if(-not $t.Wait($remain)){break}",
   "$n=$t.Result",
-  "if($n -eq 0){break}",
+  "if($n -eq 0){$eof=$true;break}",
   "$emit=[int]([Math]::Min($n,$maxB-$tot))",
   // Stream each chunk as read so timeout/error preserves partial evidence.
   "if($emit -gt 0){$os.Write($buf,0,$emit)}",
@@ -111,10 +112,14 @@ const SCRIPT = [
   "}",
   // Overflow: no marker — the parser labels marker-less output as byte-cap.
   "if($ov){exit 0}",
-  // Natural end: wait for exit within the remaining budget.
-  "$remain=[int]($budgetMs-$sw.ElapsedMilliseconds)",
-  "if($remain -le 0){exit 1}",
-  "if(-not $p.WaitForExit($remain)){exit 1}",
+  // Natural end: curl closed stdout, so the transfer is done (a 200 or curl's
+  // own --max-time exit 28). Wait for exit on a fixed grace — not the leftover
+  // request budget, which a deadline-hugging transfer exhausts — so the marker
+  // is emitted and the parser reads a truthful curl-exit/end, not sandbox-exec.
+  // A non-EOF break means the wrapper budget ran out mid-read (curl still
+  // running); exit without a marker so that stays a sandbox timeout.
+  "if(-not $eof){exit 1}",
+  "if(-not $p.WaitForExit(5000)){exit 1}",
   '$eb=[Text.Encoding]::UTF8.GetBytes("`n$mark$($p.ExitCode)`n")',
   "$os.Write($eb,0,$eb.Length)",
   "exit 0",
