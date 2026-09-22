@@ -746,7 +746,10 @@ export default function OperatorDashboard({
         if (stepUsage.inputTokens > 0) {
           usageStore.setRootContext(runSessionIdRef.current, {
             usedTokens: stepUsage.inputTokens,
-            contextLimit: getContextWindow(runModelId),
+            contextLimit: getContextWindow(
+              runModelId,
+              config.data.customProviders,
+            ),
             modelId: runModelId,
           });
         }

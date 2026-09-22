@@ -10,6 +10,7 @@ const PROVIDER_DISPLAY_NAMES: Record<AIModelProvider, string> = {
   "bedrock-mantle": "Bedrock Mantle",
   pensar: "Pensar",
   inception: "Inception",
+  custom: "Custom endpoints",
   local: "Local LLM",
 };
 

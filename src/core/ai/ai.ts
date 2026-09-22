@@ -19,6 +19,11 @@ import {
   wrapLanguageModel,
 } from "ai";
 import type { z } from "zod";
+import {
+  type CustomProviders,
+  parseCustomModelId,
+  resolveCustomModel,
+} from "../config/customProviders";
 import { createLogger } from "../logger/structured";
 import {
   type AiTelemetryOperation,
@@ -298,6 +303,7 @@ function resolveUsageSink(
 }
 
 export type AIModelProvider =
+  | "custom"
   | "anthropic"
   | "openai"
   | "google"
@@ -310,7 +316,12 @@ export type AIModelProvider =
   | "local";
 
 /** Conservative default when `getModelInfo` doesn't have a `contextLength`. */
-export function getContextWindow(modelId: string): number {
+export function getContextWindow(
+  modelId: string,
+  customProviders?: CustomProviders,
+): number {
+  if (parseCustomModelId(modelId))
+    return resolveCustomModel(modelId, customProviders).model.contextLength;
   return getModelInfo(modelId).contextLength ?? 200_000;
 }
 
@@ -726,8 +737,14 @@ function wrapStreamWithErrorHandler(
                 }
 
                 const fitted = fitMessagesToContext(currentMessages, {
-                  contextWindow: getContextWindow(opts.model),
-                  maxOutputTokens: getMaxOutputTokens(opts.model),
+                  contextWindow: getContextWindow(
+                    opts.model,
+                    opts.authConfig?.customProviders,
+                  ),
+                  maxOutputTokens: getMaxOutputTokens(
+                    opts.model,
+                    opts.authConfig?.customProviders,
+                  ),
                   system: applySequentialToolCallPolicy(
                     opts.system,
                     opts.tools,
@@ -1283,8 +1300,8 @@ export function streamResponse(
   let proactiveFitFailed = false;
   if (messages && messages.length > 0) {
     const fitted = fitMessagesToContext(messages, {
-      contextWindow: getContextWindow(model),
-      maxOutputTokens: getMaxOutputTokens(model),
+      contextWindow: getContextWindow(model, authConfig?.customProviders),
+      maxOutputTokens: getMaxOutputTokens(model, authConfig?.customProviders),
       system: systemWithToolPolicy,
       tools,
       sessionPath: opts.sessionPath,
@@ -1393,7 +1410,7 @@ export function streamResponse(
       // defaults that can exceed our budget — e.g. GPT-4o defaults to
       // 16K output but our messages were sized assuming a smaller
       // reservation. Making the value explicit closes that drift class.
-      maxOutputTokens: getMaxOutputTokens(model),
+      maxOutputTokens: getMaxOutputTokens(model, authConfig?.customProviders),
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
