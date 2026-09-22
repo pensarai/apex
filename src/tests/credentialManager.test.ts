@@ -246,6 +246,57 @@ describe("CredentialManager", () => {
     });
   });
 
+  describe("select()", () => {
+    it("creates an independent manager with only the selected credentials", () => {
+      const adminId = cm.add({
+        id: "cred-admin",
+        username: "admin",
+        password: "admin-secret",
+        role: "admin",
+      });
+      cm.add({
+        id: "cred-user",
+        username: "user",
+        password: "user-secret",
+        role: "user",
+      });
+
+      const selected = cm.select([adminId]);
+
+      expect(selected.listReferences()).toEqual([
+        expect.objectContaining({ id: adminId, role: "admin" }),
+      ]);
+      expect(selected.resolve(adminId)?.password).toBe("admin-secret");
+      expect(selected.resolve("cred-user")).toBeUndefined();
+
+      selected.remove(adminId);
+      expect(cm.resolve(adminId)?.password).toBe("admin-secret");
+    });
+
+    it("preserves input order while deduplicating IDs", () => {
+      cm.add({ id: "cred-a", username: "a", password: "a" });
+      cm.add({ id: "cred-b", username: "b", password: "b" });
+
+      expect(
+        cm.select(["cred-b", "cred-a", "cred-b"]).listReferences(),
+      ).toMatchObject([{ id: "cred-b" }, { id: "cred-a" }]);
+    });
+
+    it("returns an empty manager for an empty selection", () => {
+      cm.add({ username: "admin", password: "secret" });
+
+      expect(cm.select([]).size).toBe(0);
+    });
+
+    it("fails instead of returning a partial selection", () => {
+      cm.add({ id: "cred-admin", username: "admin", password: "secret" });
+
+      expect(() => cm.select(["cred-admin", "missing"])).toThrow(
+        "Unknown credential ID: missing",
+      );
+    });
+  });
+
   // =========================================================================
   // remove / clear / size
   // =========================================================================

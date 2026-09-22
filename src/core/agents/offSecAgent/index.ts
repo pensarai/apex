@@ -182,6 +182,7 @@ export {
   type CommandCancelHandle,
   type CreateAgentInput,
   type Finding,
+  type FindingJudgeModelConfig,
   type OffensiveSecurityAgentInput,
   type SpecializedAgentInput,
   type SystemPentestScope,

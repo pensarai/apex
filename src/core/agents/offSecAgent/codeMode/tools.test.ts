@@ -102,10 +102,13 @@ describe("createCodeModeTools", () => {
   test("instructions teach bounded program-first composition", () => {
     const instructions = buildCodeModeInstructions("schema-code");
     expect(instructions).toContain("mapLimitSettled");
+    expect(instructions).toContain("declare const ALL_TOOLS");
+    expect(instructions).toContain("do not guess or probe capability names");
     expect(instructions).toContain("single-lane shell");
     expect(instructions).toContain("never wrap them in Promise.all");
     expect(instructions).toContain("python3 probe.py");
     expect(instructions).toContain("persistent session workspace");
+    expect(instructions).toContain("exact nested toolCallId");
     expect(instructions).toContain("Guidance is process feedback");
   });
 });

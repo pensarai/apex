@@ -180,6 +180,27 @@ describe("judgeFinding", () => {
       ]),
     );
     expect(result.error?.message).toBe("provider overloaded");
+    expect(mocks.consume).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries once when the judge finishes without a response", async () => {
+    mocks.consume.mockResolvedValueOnce(undefined).mockResolvedValueOnce({
+      valid: true,
+      findingType: "vulnerability",
+      confidence: 0.9,
+      reasoning: "The second validation reproduced the finding.",
+      concerns: [],
+      verificationSteps: ["Reran the POC."],
+      toolEvidence: ["Observed the claimed response."],
+      reproducedPoc: true,
+      webResearchUsed: false,
+      limitations: [],
+    });
+
+    const result = await judgeFinding(makeInput(), makeContext());
+
+    expect(result.valid).toBe(true);
+    expect(mocks.consume).toHaveBeenCalledTimes(2);
   });
 
   it("creates explicit unverified rejection diagnostics", () => {

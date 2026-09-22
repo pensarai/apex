@@ -25,9 +25,16 @@ export type CodeModeCellMetrics = {
   maxConcurrency: number;
 };
 
+export type CodeModeEvidenceReference = {
+  toolCallId: string;
+  toolName: string;
+  status: "succeeded" | "failed";
+};
+
 export type CodeModeCellObservation = {
   metrics: CodeModeCellMetrics;
   guidance: string[];
+  evidence: CodeModeEvidenceReference[];
 };
 
 type CellStats = {
@@ -37,6 +44,7 @@ type CellStats = {
   toolNames: string[];
   repeatedCalls: number;
   maxIdenticalResultRepeats: number;
+  evidence: CodeModeEvidenceReference[];
 };
 
 type Repetition = {
@@ -102,6 +110,18 @@ function invocationInput(value: unknown): unknown {
   return input;
 }
 
+function normalizeCodeModeInput(toolName: string, value: unknown): unknown {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  const input = value as Record<string, unknown>;
+  if (input.toolCallDescription !== undefined) return value;
+  return {
+    ...input,
+    toolCallDescription: `Invoke ${toolName} from code mode`,
+  };
+}
+
 function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
   return (
     typeof value === "object" && value !== null && Symbol.asyncIterator in value
@@ -120,6 +140,23 @@ export class CanonicalCapabilityInvoker {
 
   constructor(private readonly options: CapabilityInvokerOptions) {
     this.allowedTools = new Set(options.allowedTools);
+  }
+
+  async describe(toolName: string): Promise<{
+    name: string;
+    description?: string;
+    inputSchema: unknown;
+  }> {
+    if (!this.allowedTools.has(toolName)) {
+      throw new Error(`Capability is not available in code mode: ${toolName}`);
+    }
+    const tool = this.options.tools[toolName] as Tool | undefined;
+    if (!tool) throw new Error(`Unknown capability: ${toolName}`);
+    return {
+      name: toolName,
+      description: tool.description,
+      inputSchema: await asSchema(tool.inputSchema).jsonSchema,
+    };
   }
 
   private recordResult(
@@ -151,6 +188,7 @@ export class CanonicalCapabilityInvoker {
       toolNames: [],
       repeatedCalls: 0,
       maxIdenticalResultRepeats: 0,
+      evidence: [],
     };
     this.cells.delete(parentToolCallId);
 
@@ -200,7 +238,7 @@ export class CanonicalCapabilityInvoker {
       );
     }
 
-    return { metrics, guidance };
+    return { metrics, guidance, evidence: structuredClone(stats.evidence) };
   }
 
   async invoke(
@@ -223,9 +261,10 @@ export class CanonicalCapabilityInvoker {
     }
 
     const schema = asSchema(tool.inputSchema);
+    const normalizedInput = normalizeCodeModeInput(toolName, input);
     const validation = schema.validate
-      ? await schema.validate(input)
-      : { success: true as const, value: input };
+      ? await schema.validate(normalizedInput)
+      : { success: true as const, value: normalizedInput };
     if (!validation.success) {
       throw new Error(
         `Invalid input for ${toolName}: ${validation.error.message}`,
@@ -244,6 +283,7 @@ export class CanonicalCapabilityInvoker {
       toolNames: [],
       repeatedCalls: 0,
       maxIdenticalResultRepeats: 0,
+      evidence: [],
     };
     this.cells.set(options.parentToolCallId, cell);
     const callFingerprint = fingerprint({
@@ -301,6 +341,7 @@ export class CanonicalCapabilityInvoker {
         ...eventIdentity,
         result: output,
       });
+      cell.evidence.push({ toolCallId, toolName, status: "succeeded" });
       this.recordResult(cell, callFingerprint, output);
       if (toolName === "response") this.terminal = true;
       return output;
@@ -310,6 +351,7 @@ export class CanonicalCapabilityInvoker {
         ...eventIdentity,
         result: { type: "error-text", value: message },
       });
+      cell.evidence.push({ toolCallId, toolName, status: "failed" });
       this.recordResult(cell, callFingerprint, {
         type: "error-text",
         value: message,

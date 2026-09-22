@@ -12,6 +12,9 @@ export interface EngagementMetrics {
   obligationsPerMission: number;
   avoidedPerCellWorkers: number;
   consolidatedAssociations: number;
+  canonicalRequirements: number;
+  singletonRequirements: number;
+  preflightBlockedAssociations: number;
   missionProgress: EngagementMissionProgress;
 }
 
@@ -103,6 +106,17 @@ export function summarizeEngagementCheckpoint(
         total + (mission.requirements?.length ?? mission.coverage.length),
       0,
     ) ?? 0;
+  const singletonRequirements =
+    checkpoint.missions?.missions.reduce(
+      (total, mission) =>
+        total +
+        (mission.requirements
+          ? mission.requirements.filter(
+              (requirement) => requirement.coverage.length === 1,
+            ).length
+          : mission.coverage.length),
+      0,
+    ) ?? 0;
   return {
     coverage: {
       total: checkpoint.coverage.length,
@@ -119,6 +133,13 @@ export function summarizeEngagementCheckpoint(
       0,
       checkpoint.coverage.length - canonicalRequirements,
     ),
+    canonicalRequirements,
+    singletonRequirements,
+    preflightBlockedAssociations: checkpoint.coverage.filter(
+      (cell) =>
+        cell.status === "blocked" &&
+        cell.evidence?.some((item) => item.startsWith("deployment-preflight:")),
+    ).length,
     missionProgress: projectEngagementMissionProgress(checkpoint),
   };
 }

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
@@ -7,6 +8,15 @@ import { createLogger } from "../logger/structured";
 import { scopedLogger } from "../util/lazyLogger";
 
 const log = scopedLogger(() => createLogger("findings:registry"));
+
+/** Stable relation key for findings created before durable IDs were persisted. */
+export function findingReferenceId(finding: Finding): string {
+  if (finding.id?.trim()) return finding.id;
+  return `finding_${createHash("sha256")
+    .update(`${finding.title}\0${finding.endpoint}`)
+    .digest("hex")
+    .slice(0, 16)}`;
+}
 
 // ---------------------------------------------------------------------------
 // Vuln class keyword mappings (order matters — first match wins)
@@ -212,6 +222,43 @@ Be conservative: when in doubt, mark as NOT a duplicate. It is better to allow a
 
 const MAX_SEMANTIC_DEDUP_FINDINGS = 25;
 
+const FindingConsolidationResultSchema = z.object({
+  duplicateSets: z.array(
+    z.object({
+      canonicalId: z.string().min(1),
+      aliasIds: z.array(z.string().min(1)).min(1),
+      rationale: z.string().min(1),
+    }),
+  ),
+  rootCauseGroups: z.array(
+    z.object({
+      groupId: z.string().min(1),
+      leadFindingId: z.string().min(1),
+      findingIds: z.array(z.string().min(1)).min(2),
+      rationale: z.string().min(1),
+    }),
+  ),
+});
+
+export type FindingConsolidation = z.infer<
+  typeof FindingConsolidationResultSchema
+> & { version: 1; completedAt: string; findingIds: string[] };
+
+const FINDING_CONSOLIDATION_SYSTEM = `You consolidate accepted security findings before attack-chain analysis.
+
+Return duplicate sets only when records describe the same underlying vulnerability and should count once. Pick the record with the strongest evidence as canonical. Related-but-distinct vulnerabilities are not duplicates.
+
+Return root-cause groups for distinct findings that share a control failure or where one enables another. Use only the supplied stable finding IDs. A finding may be an alias or a canonical member, but aliases must not be root-cause group leads.`;
+
+function buildFindingConsolidationPrompt(findings: readonly Finding[]): string {
+  return findings
+    .map(
+      (finding) =>
+        `${findingReferenceId(finding)} | ${finding.severity} | ${finding.title} | ${finding.endpoint}\n${finding.description.slice(0, 500)}`,
+    )
+    .join("\n\n");
+}
+
 function buildSemanticDedupPrompt(
   newFinding: Finding,
   existingFindings: readonly Finding[],
@@ -349,6 +396,7 @@ export class FindingsRegistry {
   private exactKeys = new Map<string, Finding>();
   private appWideKeys = new Map<string, Finding>();
   private findings: Finding[] = [];
+  private canonicalByAlias = new Map<string, string>();
 
   private model?: AIModel;
   private authConfig?: AIAuthConfig;
@@ -372,6 +420,114 @@ export class FindingsRegistry {
   /** Return a snapshot of all tracked findings. */
   getFindings(): readonly Finding[] {
     return [...this.findings];
+  }
+
+  /** Return only canonical records after final consolidation. */
+  getCanonicalFindings(): readonly Finding[] {
+    return this.findings.filter(
+      (finding) => !this.canonicalByAlias.has(findingReferenceId(finding)),
+    );
+  }
+
+  resolveFindingId(id: string): string {
+    let resolved = id;
+    const visited = new Set<string>();
+    while (this.canonicalByAlias.has(resolved)) {
+      if (visited.has(resolved))
+        throw new Error("Finding alias cycle detected");
+      visited.add(resolved);
+      resolved = this.canonicalByAlias.get(resolved) as string;
+    }
+    return resolved;
+  }
+
+  /**
+   * Perform the final semantic consolidation used by chain exploration.
+   * Original records stay in the audit registry; aliases resolve to one ID.
+   */
+  async consolidate(): Promise<FindingConsolidation> {
+    const findings = this.getFindings();
+    const completedAt = new Date().toISOString();
+    if (!this.model || findings.length < 2) {
+      return {
+        version: 1,
+        completedAt,
+        findingIds: findings.map(findingReferenceId),
+        duplicateSets: [],
+        rootCauseGroups: [],
+      };
+    }
+    const result = await generateObjectResponse({
+      model: this.model,
+      schema: FindingConsolidationResultSchema,
+      prompt: buildFindingConsolidationPrompt(findings),
+      system: FINDING_CONSOLIDATION_SYSTEM,
+      authConfig: this.authConfig,
+      abortSignal: this.abortSignal,
+    });
+    const consolidation: FindingConsolidation = {
+      version: 1,
+      completedAt,
+      findingIds: findings.map(findingReferenceId),
+      ...result,
+    };
+    this.applyConsolidation(consolidation);
+    return consolidation;
+  }
+
+  /** Restore and validate a previously sealed consolidation artifact. */
+  applyConsolidation(consolidation: FindingConsolidation): void {
+    const parsed = FindingConsolidationResultSchema.parse(consolidation);
+    const known = new Map(
+      this.findings.map((finding) => [findingReferenceId(finding), finding]),
+    );
+    const usedAliases = new Set<string>();
+    for (const set of parsed.duplicateSets) {
+      if (!known.has(set.canonicalId)) {
+        throw new Error(`Unknown canonical finding: ${set.canonicalId}`);
+      }
+      for (const aliasId of set.aliasIds) {
+        if (!known.has(aliasId))
+          throw new Error(`Unknown finding alias: ${aliasId}`);
+        if (aliasId === set.canonicalId)
+          throw new Error("A canonical finding cannot alias itself");
+        if (usedAliases.has(aliasId))
+          throw new Error(`Finding alias appears more than once: ${aliasId}`);
+        usedAliases.add(aliasId);
+      }
+    }
+    for (const group of parsed.rootCauseGroups) {
+      if (!group.findingIds.includes(group.leadFindingId)) {
+        throw new Error(`Root-cause lead is not a member: ${group.groupId}`);
+      }
+      for (const id of group.findingIds) {
+        if (!known.has(id)) throw new Error(`Unknown grouped finding: ${id}`);
+      }
+    }
+    this.canonicalByAlias.clear();
+    for (const set of parsed.duplicateSets) {
+      for (const aliasId of set.aliasIds) {
+        this.canonicalByAlias.set(aliasId, set.canonicalId);
+        const finding = known.get(aliasId);
+        if (finding) finding.canonicalFindingId = set.canonicalId;
+      }
+    }
+    for (const group of parsed.rootCauseGroups) {
+      const canonicalMembers = [
+        ...new Set(group.findingIds.map((id) => this.resolveFindingId(id))),
+      ];
+      if (canonicalMembers.length < 2) continue;
+      for (const id of canonicalMembers) {
+        const finding = known.get(id);
+        if (!finding) continue;
+        finding.rootCauseGroup = group.groupId;
+        finding.relatedFindings = canonicalMembers.filter(
+          (candidate) => candidate !== id,
+        );
+        finding.rootCauseLead =
+          id === this.resolveFindingId(group.leadFindingId);
+      }
+    }
   }
 
   // -----------------------------------------------------------------------

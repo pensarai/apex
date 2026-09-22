@@ -8,12 +8,17 @@ export interface TraceLinkedEvidenceReference {
 
 type ToolResultEvent = AgentEventMap["tool-result"];
 
-type ToolObservation = Pick<
+export type PersistedEvidenceObservation = Pick<
   ToolResultEvent,
   "toolCallId" | "toolName" | "subagentId" | "sessionId"
 > & {
   failed: boolean;
 };
+
+export interface FastStrikeEvidenceLedgerOptions {
+  initialObservations?: readonly PersistedEvidenceObservation[];
+  onObservation?: (observation: PersistedEvidenceObservation) => void;
+}
 
 function isErrorObservation(result: unknown): boolean {
   return (
@@ -24,41 +29,65 @@ function isErrorObservation(result: unknown): boolean {
   );
 }
 
-function observationScope(observation: ToolObservation): string | undefined {
+function observationScope(
+  observation: PersistedEvidenceObservation,
+): string | undefined {
   return observation.subagentId ?? observation.sessionId;
 }
 
-/** Verifies objective results against completed tool observations in this run. */
+/** Verifies objective results against completed observations in the engagement trace. */
 export class FastStrikeEvidenceLedger {
-  private readonly observations = new Map<string, ToolObservation[]>();
+  private readonly observations = new Map<
+    string,
+    PersistedEvidenceObservation[]
+  >();
+
+  private record(observation: PersistedEvidenceObservation): void {
+    const existing = this.observations.get(observation.toolCallId) ?? [];
+    const duplicate = existing.some(
+      (candidate) =>
+        candidate.toolName === observation.toolName &&
+        candidate.subagentId === observation.subagentId &&
+        candidate.sessionId === observation.sessionId &&
+        candidate.failed === observation.failed,
+    );
+    if (!duplicate) {
+      existing.push(observation);
+      this.observations.set(observation.toolCallId, existing);
+    }
+  }
 
   private readonly onToolResult = (event: ToolResultEvent): void => {
-    const observation: ToolObservation = {
+    const observation: PersistedEvidenceObservation = {
       toolCallId: event.toolCallId,
       toolName: event.toolName,
       subagentId: event.subagentId,
       sessionId: event.sessionId,
       failed: isErrorObservation(event.result),
     };
-    const existing = this.observations.get(observation.toolCallId) ?? [];
-    existing.push(observation);
-    this.observations.set(observation.toolCallId, existing);
+    this.record(observation);
+    this.options.onObservation?.(structuredClone(observation));
   };
 
-  constructor(private readonly eventBus: AgentEventBus) {
+  constructor(
+    private readonly eventBus: AgentEventBus,
+    private readonly options: FastStrikeEvidenceLedgerOptions = {},
+  ) {
+    for (const observation of options.initialObservations ?? []) {
+      this.record(structuredClone(observation));
+    }
     eventBus.on("tool-result", this.onToolResult);
   }
 
-  dispose(): void {
-    this.eventBus.off("tool-result", this.onToolResult);
-  }
-
-  validateImpactEvidence(
+  validateEvidence(
     references: TraceLinkedEvidenceReference[] | undefined,
     allowedScopes: ReadonlySet<string>,
+    required = false,
   ): string | undefined {
     if (!references?.length) {
-      return "An impact-proven result requires trace-linked evidence from a completed observation-producing tool call.";
+      return required
+        ? "An impact-proven result requires trace-linked evidence from a completed observation-producing tool call."
+        : undefined;
     }
 
     for (const reference of references) {
@@ -98,5 +127,16 @@ export class FastStrikeEvidenceLedger {
     }
 
     return undefined;
+  }
+
+  dispose(): void {
+    this.eventBus.off("tool-result", this.onToolResult);
+  }
+
+  validateImpactEvidence(
+    references: TraceLinkedEvidenceReference[] | undefined,
+    allowedScopes: ReadonlySet<string>,
+  ): string | undefined {
+    return this.validateEvidence(references, allowedScopes, true);
   }
 }

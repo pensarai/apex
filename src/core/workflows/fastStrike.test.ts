@@ -60,6 +60,29 @@ describe("Fast Strike objective contract", () => {
     );
     expect(rejection?.message).toContain("missing evidence");
   });
+
+  it("does not preserve stale evidence on non-impact results", () => {
+    const outcome = normalizeFastStrikeOutcome(
+      {
+        status: "blocked",
+        summary: "Credential unavailable",
+        evidence: [
+          {
+            description: "Old response",
+            toolCallId: "call-stale",
+            toolName: "http_request",
+          },
+        ],
+      },
+      { validateImpactEvidence: () => "not observed" },
+    );
+
+    expect(outcome).toMatchObject({
+      status: "blocked",
+      summary: expect.stringContaining("invalid trace-linked evidence"),
+    });
+    expect(outcome.evidence).toBeUndefined();
+  });
 });
 
 describe("competitive Fast Strike lanes", () => {

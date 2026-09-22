@@ -40,6 +40,33 @@ describe("CanonicalCapabilityInvoker", () => {
     expect(execute).toHaveBeenCalledOnce();
   });
 
+  it("adds a deterministic description for nested code-mode calls", async () => {
+    const execute = vi.fn(
+      async ({ toolCallDescription }: { toolCallDescription: string }) =>
+        toolCallDescription,
+    );
+    const invoker = new CanonicalCapabilityInvoker({
+      tools: {
+        described: tool({
+          inputSchema: z.object({ toolCallDescription: z.string().min(1) }),
+          execute,
+        }),
+      },
+      allowedTools: ["described"],
+      eventBus: new AgentEventBus(),
+      sessionId: "ses_test",
+      getMessageId: () => "msg_test",
+    });
+
+    await expect(
+      invoker.invoke(
+        "described",
+        {},
+        { parentToolCallId: "exec_1", messages: [] },
+      ),
+    ).resolves.toBe("Invoke described from code mode");
+  });
+
   it("emits the canonical tool lifecycle for Console", async () => {
     const { bus, invoker } = createInvoker();
     const events: string[] = [];
@@ -62,6 +89,22 @@ describe("CanonicalCapabilityInvoker", () => {
       "complete:example",
       "result:example",
     ]);
+  });
+
+  it("describes an allowed nested capability without executing it", async () => {
+    const { invoker, execute } = createInvoker();
+
+    await expect(invoker.describe("example")).resolves.toMatchObject({
+      name: "example",
+      inputSchema: {
+        type: "object",
+        required: ["value"],
+      },
+    });
+    expect(execute).not.toHaveBeenCalled();
+    await expect(invoker.describe("other")).rejects.toThrow(
+      "Capability is not available",
+    );
   });
 
   it("rejects invalid and unavailable capability calls", async () => {
@@ -117,6 +160,23 @@ describe("CanonicalCapabilityInvoker", () => {
       repeatedCalls: 1,
       maxConcurrency: 3,
     });
+    expect(observation.evidence).toEqual([
+      {
+        toolCallId: "exec_parallel:nested:1",
+        toolName: "example",
+        status: "succeeded",
+      },
+      {
+        toolCallId: "exec_parallel:nested:2",
+        toolName: "example",
+        status: "succeeded",
+      },
+      {
+        toolCallId: "exec_parallel:nested:3",
+        toolName: "example",
+        status: "succeeded",
+      },
+    ]);
     expect(observation.guidance).toEqual([]);
   });
 

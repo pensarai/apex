@@ -4,10 +4,13 @@ import type { ModelMessage, ToolSet } from "ai";
 import { z } from "zod";
 import {
   type Finding,
+  type FindingJudgeModelConfig,
   OffensiveSecurityAgent,
   type PlaywrightMcpSession,
   type UnifiedSandbox,
 } from "../agents/offSecAgent";
+import type { CodeCellResult } from "../agents/offSecAgent/codeMode/runtime";
+import type { CredentialManager } from "../credentials";
 import { AgentEventBus } from "../eventBus";
 import { FindingsRegistry } from "../findings/registry";
 import {
@@ -104,7 +107,9 @@ export function rejectUnverifiedFastStrikeResponse(
 ): { message: string } | undefined {
   const parsed = FastStrikeResult.safeParse(result);
   const evidenceRejection =
-    parsed.success && parsed.data.status === "impact-proven"
+    parsed.success &&
+    (parsed.data.status === "impact-proven" ||
+      Boolean(parsed.data.evidence?.length))
       ? options.validateImpactEvidence?.(parsed.data.evidence)
       : undefined;
 
@@ -147,14 +152,16 @@ export function normalizeFastStrikeOutcome(
   }
 
   const evidenceRejection =
-    parsed.data.status === "impact-proven"
+    parsed.data.status === "impact-proven" || parsed.data.evidence?.length
       ? options.validateImpactEvidence?.(parsed.data.evidence)
       : undefined;
   if (evidenceRejection) {
     return {
-      status: "exhausted",
-      summary: `Impact was claimed without valid trace-linked evidence: ${evidenceRejection} ${parsed.data.summary}`,
-      evidence: parsed.data.evidence,
+      status:
+        parsed.data.status === "impact-proven"
+          ? "exhausted"
+          : parsed.data.status,
+      summary: `The result included invalid trace-linked evidence: ${evidenceRejection} ${parsed.data.summary}`,
     };
   }
   if (
@@ -244,7 +251,7 @@ Use a tight observe → hypothesize → act → prune → exploit → verify loo
 
 Once a primitive is confirmed, drive it end to end and pivot through related in-scope services when the objective requires it. Preserve viable primitives and concrete observations so another operator can continue the chain. Load relevant exploit-family guidance on demand; do not execute a generic vulnerability checklist.
 
-Document a vulnerability only after proving an exploitable causal path and material impact. Return impact-proven only with trace-linked evidence from successful observation-producing tool calls. Return exhausted after bounded credible paths are tested without impact, or blocked only when an external prerequisite prevents safe in-scope progress. Stay within scope, preserve availability, and never perform destructive actions without explicit authorization.`;
+Document a vulnerability only after proving an exploitable causal path and material impact. Return impact-proven only with trace-linked evidence from successful observation-producing tool calls. Code-mode results include an evidence array with the exact nested toolCallId and toolName to cite; use those values verbatim, not the outer code-cell ID. Return exhausted after bounded credible paths are tested without impact, or blocked only when an external prerequisite prevents safe in-scope progress. Stay within scope, preserve availability, and never perform destructive actions without explicit authorization.`;
 
 export interface FastStrikeObjectiveInput
   extends Pick<
@@ -279,6 +286,13 @@ export interface FastStrikeObjectiveInput
   directTools?: string[];
   engagementTargetIds?: readonly string[];
   engagementContext?: EngagementContext;
+  findingJudgeConfig?: FindingJudgeModelConfig;
+  findingJudgeOnStepFinish?: PentestWorkflowInput["onStepFinish"];
+  findingJudgeOnCodeCellComplete?: (result: CodeCellResult) => void;
+  onCodeCellComplete?: (result: CodeCellResult) => void;
+  credentialManager?: CredentialManager;
+  /** Shared durable ledger supplied by engagement orchestration. */
+  evidenceLedger?: FastStrikeEvidenceLedger;
 }
 
 function findingReference(finding: Finding): FastStrikeFindingReference {
@@ -294,14 +308,16 @@ export async function runFastStrikeObjective(
   input: FastStrikeObjectiveInput,
 ): Promise<FastStrikeObjectiveOutcome> {
   const eventBus = input.eventBus ?? new AgentEventBus();
-  const evidenceLedger = new FastStrikeEvidenceLedger(eventBus);
+  const evidenceLedger =
+    input.evidenceLedger ?? new FastStrikeEvidenceLedger(eventBus);
+  const ownsEvidenceLedger = input.evidenceLedger === undefined;
   try {
     return await executeFastStrikeObjective(
       { ...input, eventBus },
       evidenceLedger,
     );
   } finally {
-    evidenceLedger.dispose();
+    if (ownsEvidenceLedger) evidenceLedger.dispose();
   }
 }
 
@@ -388,6 +404,11 @@ async function executeFastStrikeObjective(
             validateImpactEvidence,
           }),
         findingsRegistry,
+        findingJudgeConfig: input.findingJudgeConfig,
+        findingJudgeOnStepFinish: input.findingJudgeOnStepFinish,
+        findingJudgeOnCodeCellComplete: input.findingJudgeOnCodeCellComplete,
+        onCodeCellComplete: input.onCodeCellComplete,
+        credentialManager: input.credentialManager,
         messages: input.messages,
         subagentId: laneId,
         subagentName: `Fast Strike: ${input.objective.slice(0, 80)}`,

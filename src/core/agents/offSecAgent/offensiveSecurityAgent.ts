@@ -550,6 +550,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         : undefined,
       sandbox,
       findingsRegistry: input.findingsRegistry,
+      findingJudgeConfig: input.findingJudgeConfig,
+      findingJudgeOnStepFinish: input.findingJudgeOnStepFinish,
+      findingJudgeOnCodeCellComplete: input.findingJudgeOnCodeCellComplete,
       engagementTargetIds: input.engagementTargetIds
         ? new Set(input.engagementTargetIds)
         : undefined,
@@ -754,7 +757,11 @@ export class OffensiveSecurityAgent<TResult = void> {
         subagentId: this.subagentId,
         getMessageId: () => this.currentMessageId ?? undefined,
       });
-      this.codeModeRuntime = new CodeModeRuntime(invoker, allowedTools);
+      this.codeModeRuntime = new CodeModeRuntime(
+        invoker,
+        allowedTools,
+        input.onCodeCellComplete,
+      );
       tools = createCodeModeTools(
         runtimeProfile.protocol,
         this.codeModeRuntime,

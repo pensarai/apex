@@ -18,6 +18,14 @@ export interface EngagementMissionRequirement {
   id: string;
   description: string;
   rationale: string;
+  equivalenceBasis?: {
+    trustBoundary: string;
+    authenticationState: string;
+    expectedBehavior: string;
+    evidencePlan: string;
+  };
+  prerequisiteCapabilityIds?: string[];
+  nonConsolidationReason?: string;
   coverage: EngagementMissionCoverage[];
 }
 
@@ -32,6 +40,8 @@ export interface EngagementMission {
   requirements?: EngagementMissionRequirement[];
   supportingTargetIds: string[];
   prerequisiteMissionIds: string[];
+  /** Official actor roles assigned by the lead; absent only on legacy plans. */
+  requiredActorRoles?: string[];
   contextTargetIds: string[];
   status: "planned" | "queued" | "running" | "completed" | "failed";
   createdAt: string;
@@ -90,7 +100,7 @@ export const GROUPED_MISSION_SYSTEM_PROMPT = `You are a focused penetration-test
 
 You own only the canonical requirements in the mission contract. Each requirement lists the original endpoint/objective associations it represents. Assess the entire stated requirement across those targets and preserve distinctions in the summary. Record each canonical requirement once through report_engagement_mission_progress: impact-proven only with trace-linked successful evidence, exhausted only after meaningful bounded testing, or blocked with the concrete prerequisite that prevented testing. Older resumed missions may instead provide a legacy coverage contract and report_engagement_coverage. The final response is only a concise mission summary and is rejected while any assigned requirement remains unreported.
 
-Discover and validate net-new vulnerabilities and multi-step paths while executing the assigned flow. Document only reproducible exploitable findings through the shared finding judge. All network and finding tools enforce the engagement's authorized scope.`;
+Discover and validate net-new vulnerabilities and multi-step paths while executing the assigned flow. Document only reproducible exploitable findings through the shared finding judge. Code-mode results include an evidence array with the exact nested toolCallId and toolName to cite; use those values verbatim, not the outer code-cell ID. Persisted observation references remain valid when a mission resumes. All network and finding tools enforce the engagement's authorized scope.`;
 
 export function applyEngagementModel(
   workflow: PentestWorkflowInput,
