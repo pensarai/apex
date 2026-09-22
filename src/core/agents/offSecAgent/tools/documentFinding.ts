@@ -724,7 +724,8 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
               : `(CVSS ${cvssResult.score})`;
             const summaryEntry = `- [${finding.severity}] ${cvssTag}${cweTag} ${finding.title} - \`findings/${mdFilename}\`\n`;
 
-            const existingSummary = await resolveBackends(ctx).fs.readRaw(summaryPath);
+            const existingSummary =
+              await resolveBackends(ctx).fs.readRaw(summaryPath);
             const header = `# Findings Summary\n\n**Target:** ${session.targets[0]}  \n**Session:** ${session.id}\n\n## All Findings\n\n`;
             const summaryWrite = await resolveBackends(ctx).fs.write(
               summaryPath,
@@ -823,7 +824,10 @@ async function executePoc(
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function cleanupPocFiles(ctx: ToolContext, filename: string): Promise<void> {
+async function cleanupPocFiles(
+  ctx: ToolContext,
+  filename: string,
+): Promise<void> {
   const dir = pocsRoot(ctx);
   await deleteArtifact(ctx, join(dir, filename));
   await deleteArtifact(ctx, join(dir, `${filename}.output.json`));

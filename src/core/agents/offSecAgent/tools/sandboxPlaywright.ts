@@ -102,7 +102,9 @@ const bakedEnvCache = new WeakMap<UnifiedSandbox, boolean>();
  * permission-denied `npm init` against the root-owned baked dir) when that
  * env var isn't propagated to the command.
  */
-async function detectBakedPlaywright(sandbox: UnifiedSandbox): Promise<boolean> {
+async function detectBakedPlaywright(
+  sandbox: UnifiedSandbox,
+): Promise<boolean> {
   const cached = bakedEnvCache.get(sandbox);
   if (cached !== undefined) return cached;
   const result = await sandbox.execute(
