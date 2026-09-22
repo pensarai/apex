@@ -24,6 +24,7 @@ import {
   documentVulnerability,
   validatePocPortability,
 } from "./documentFinding";
+import { PersistentShell } from "./persistentShell";
 
 vi.mock("../../specialized/findingJudge", async (importOriginal) => {
   const actual =
@@ -108,6 +109,11 @@ function makeDocumentInput() {
   };
 }
 
+// PoC execution now runs through `ctx.backends.command` (LocalBackends when
+// unsandboxed), which requires a real persistentShell — created per context
+// and disposed in the module-level afterEach below.
+const createdShells: PersistentShell[] = [];
+
 function makeToolContext(rootPath: string) {
   const pocsPath = join(rootPath, "pocs");
   const findingsPath = join(rootPath, "findings");
@@ -115,6 +121,9 @@ function makeToolContext(rootPath: string) {
   mkdirSync(pocsPath, { recursive: true });
   mkdirSync(findingsPath, { recursive: true });
   mkdirSync(logsPath, { recursive: true });
+
+  const persistentShell = new PersistentShell({ cwd: rootPath });
+  createdShells.push(persistentShell);
 
   return {
     session: {
@@ -130,8 +139,15 @@ function makeToolContext(rootPath: string) {
     model: "test-model",
     target: "https://example.com",
     subagentSpawner: inProcessSubagentSpawner,
+    persistentShell,
   } as unknown as Parameters<typeof documentVulnerability>[0];
 }
+
+afterEach(() => {
+  while (createdShells.length > 0) {
+    createdShells.pop()?.dispose();
+  }
+});
 
 describe("documentVulnerability judge handling", () => {
   let rootPath: string;

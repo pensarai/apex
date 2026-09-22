@@ -113,13 +113,18 @@ describe("SandboxBrowserBackend", () => {
     const { sandbox, commands } = makeFakeSandbox({ success: true, url: "x" });
     const backend = SandboxBrowserBackend(makeCtx(sandbox, rootPath));
 
+    // The fake sandbox reports every command successful, so the baked-env
+    // detection (checked before the pw_check.js fallback) short-circuits
+    // the install check — its command is what should be cached, run once.
     await backend.navigate("https://target.example/a");
-    const afterFirst = commands.filter((c) => c.includes("pw_check.js")).length;
+    const afterFirst = commands.filter((c) =>
+      c.includes("node_modules/camoufox-js"),
+    ).length;
     expect(afterFirst).toBeGreaterThan(0);
 
     await backend.navigate("https://target.example/b");
     const afterSecond = commands.filter((c) =>
-      c.includes("pw_check.js"),
+      c.includes("node_modules/camoufox-js"),
     ).length;
     expect(afterSecond).toBe(afterFirst);
   });

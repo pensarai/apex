@@ -57,6 +57,8 @@ import type { ToolContext } from "./types";
 // ---------------------------------------------------------------------------
 
 const SANDBOX_PW_DIR = "/opt/sandbox-playwright";
+/** Where the Daytona image bakes the Camoufox browser build (see gen-purpose/Dockerfile). */
+const BAKED_CAMOUFOX_DIR = "/opt/camoufox";
 const SANDBOX_EVIDENCE_DIR = "/tmp/evidence";
 const SANDBOX_REFS_FILE = "/tmp/pw-refs.json";
 const SANDBOX_URL_FILE = "/tmp/pw-current-url";
@@ -85,6 +87,33 @@ const installationCache = new WeakMap<UnifiedSandbox, Promise<void>>();
 const browserSetupCache = new WeakMap<UnifiedSandbox, Promise<void>>();
 
 /**
+ * Per-sandbox cache of whether the Docker-image-baked install (node_modules
+ * under {@link SANDBOX_PW_DIR}, browser build under {@link BAKED_CAMOUFOX_DIR})
+ * was found. Populated by {@link checkSandboxPlaywright}; read by the browser
+ * launch script so it points at the baked build instead of the ambient
+ * `CAMOUFOX_INSTALL_DIR` default.
+ */
+const bakedEnvCache = new WeakMap<UnifiedSandbox, boolean>();
+
+/**
+ * Cheap shell-only check for the image bake, independent of whatever
+ * `CAMOUFOX_INSTALL_DIR` the sandbox's exec environment happens to carry —
+ * avoids the check spuriously failing (and falling through to a redundant,
+ * permission-denied `npm init` against the root-owned baked dir) when that
+ * env var isn't propagated to the command.
+ */
+async function detectBakedPlaywright(sandbox: UnifiedSandbox): Promise<boolean> {
+  const cached = bakedEnvCache.get(sandbox);
+  if (cached !== undefined) return cached;
+  const result = await sandbox.execute(
+    `test -d ${SANDBOX_PW_DIR}/node_modules/camoufox-js && test -d ${SANDBOX_PW_DIR}/node_modules/playwright-core && test -f ${BAKED_CAMOUFOX_DIR}/version.json`,
+    { timeout: 10 },
+  );
+  bakedEnvCache.set(sandbox, result.success);
+  return result.success;
+}
+
+/**
  * Check whether camoufox-js, playwright-core, **and** the Camoufox browser
  * binary are all present inside the sandbox. Without the binary check,
  * a snapshot that has the JS deps but no fetched build would pass, causing
@@ -94,6 +123,8 @@ const browserSetupCache = new WeakMap<UnifiedSandbox, Promise<void>>();
 export async function checkSandboxPlaywright(
   sandbox: UnifiedSandbox,
 ): Promise<boolean> {
+  if (await detectBakedPlaywright(sandbox)) return true;
+
   // camoufox-js is ESM-only — require() throws ERR_REQUIRE_ESM on Node < 20.19,
   // so probe it with dynamic import() (works on every Node version).
   // launchPath() returns the Camoufox binary path; existsSync confirms the
@@ -289,12 +320,17 @@ async function ensureSandboxReady(sandbox: UnifiedSandbox): Promise<void> {
  * @param body     - The *body* of the async IIFE. Has `context` and `page`
  *                   in scope. Must call `resolve(jsonValue)` to return a result.
  * @param timeout  - Sandbox execution timeout in seconds (default 60)
+ * @param installDirOverride - When the sandbox has the baked Camoufox build,
+ *   {@link BAKED_CAMOUFOX_DIR} — forces `launchOptions()` to resolve the
+ *   baked binary regardless of the exec environment's ambient
+ *   `CAMOUFOX_INSTALL_DIR`. Undefined lets camoufox-js use its own default.
  */
 async function runPlaywrightScript(
   sandbox: UnifiedSandbox,
   body: string,
   timeout = 60,
   extraHttpHeaders?: Record<string, string>,
+  installDirOverride?: string,
 ): Promise<unknown> {
   const headersJson =
     extraHttpHeaders && Object.keys(extraHttpHeaders).length > 0
@@ -433,8 +469,11 @@ const fs = require('fs');
 `;
 
   const b64 = Buffer.from(script).toString("base64");
+  const envPrefix = installDirOverride
+    ? `CAMOUFOX_INSTALL_DIR=${installDirOverride} `
+    : "";
   const result = await sandbox.execute(
-    `echo "${b64}" | base64 -d > ${SANDBOX_PW_DIR}/pw_action.js && node ${SANDBOX_PW_DIR}/pw_action.js`,
+    `echo "${b64}" | base64 -d > ${SANDBOX_PW_DIR}/pw_action.js && ${envPrefix}node ${SANDBOX_PW_DIR}/pw_action.js`,
     { timeout },
   );
 
@@ -525,8 +564,11 @@ export function SandboxBrowserBackend(
       ? resolveEffectiveHeaders(resolverSessionFromCtx(ctx), targetUrl)
       : ctx.session.config?.headers;
     const headers = stripBrowserManagedHeaders(resolved);
+    const installDirOverride = bakedEnvCache.get(sandbox)
+      ? BAKED_CAMOUFOX_DIR
+      : undefined;
     const next = scriptQueue.then(() =>
-      runPlaywrightScript(sandbox, body, timeout, headers),
+      runPlaywrightScript(sandbox, body, timeout, headers, installDirOverride),
     );
     scriptQueue = next.then(
       () => {},
