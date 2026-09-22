@@ -58,6 +58,7 @@ export {
 export {
   type BrowserClickResult,
   type BrowserConsoleResult,
+  type BrowserEngine,
   type BrowserEvaluateResult,
   type BrowserFillResult,
   type BrowserNavigateResult,

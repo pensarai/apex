@@ -25,4 +25,12 @@ describe("AUTH_SUBAGENT_SYSTEM_PROMPT", () => {
       "sms_list_messages` with `sinceMs` and `claim=true",
     );
   });
+
+  it("includes the Sign in with Google strategy", () => {
+    expect(AUTH_SUBAGENT_SYSTEM_PROMPT).toContain(
+      "Do NOT fill the target's native username or password form",
+    );
+    expect(AUTH_SUBAGENT_SYSTEM_PROMPT).toContain("accounts.google.com");
+    expect(AUTH_SUBAGENT_SYSTEM_PROMPT).toContain("Google employee ID");
+  });
 });

@@ -461,11 +461,18 @@ export function setViewportSize(viewportSize: string | undefined): void {
   defaultViewportSize = viewportSize;
 }
 
+export type BrowserEngine = "camoufox" | "chrome";
+
 export interface PlaywrightMcpSessionOptions {
   readonly headless?: boolean;
   readonly userAgent?: string | null;
   readonly viewportSize?: string | null;
   readonly extraHttpHeaders?: Record<string, string> | null;
+  /**
+   * Browser to launch. Camoufox (Firefox) is the default for pentest traffic.
+   * Chrome is required for Sign in with Google — Google blocks Camoufox.
+   */
+  readonly engine?: BrowserEngine;
   /**
    * X display for this session's spawned browser (e.g. `":11"`). Overrides
    * `process.env.DISPLAY` for THIS session only. Required for per-agent display
@@ -499,6 +506,7 @@ export class PlaywrightMcpSession {
   private readonly extraHttpHeaders: Record<string, string> | undefined;
   /** X display for the spawned browser; overrides `process.env.DISPLAY`. */
   private readonly display: string | undefined;
+  readonly engine: BrowserEngine;
   /** Temp config file written for MCP launch — deleted on disconnect. */
   private mcpConfigPath: string | null = null;
   /** Cached Camoufox launch options — resolved once, reused on reconnect. */
@@ -515,8 +523,15 @@ export class PlaywrightMcpSession {
    * hard floor of `HARDCODED_VIEWPORT_FALLBACK` to avoid Chromium's tiny built-in.
    */
   constructor(options: PlaywrightMcpSessionOptions = {}) {
-    const { headless, userAgent, viewportSize, extraHttpHeaders, display } =
-      options;
+    const {
+      headless,
+      userAgent,
+      viewportSize,
+      extraHttpHeaders,
+      display,
+      engine,
+    } = options;
+    this.engine = engine ?? "camoufox";
 
     // An explicit `display` option wins over the process-wide env (needed when
     // concurrent headed sessions each need their own display); fall back to
@@ -660,6 +675,84 @@ export class PlaywrightMcpSession {
     }
   }
 
+  private async buildMcpLaunch(launchId: string): Promise<{
+    cfg: unknown;
+    env: Record<string, string>;
+  }> {
+    const env: Record<string, string> = { [BROWSER_LAUNCH_ENV]: launchId };
+    if (this.display) env.DISPLAY = this.display;
+
+    if (this.engine === "chrome") {
+      const parsed = this.viewportSize
+        ? parseViewportSize(this.viewportSize)
+        : undefined;
+      const viewport = parsed
+        ? { width: parsed[0], height: parsed[1] }
+        : undefined;
+      return {
+        cfg: {
+          browser: {
+            browserName: "chromium",
+            launchOptions: {
+              channel: "chrome",
+              headless: this.headless,
+              args: ["--disable-dev-shm-usage"],
+            },
+            contextOptions: {
+              ...(this.extraHttpHeaders
+                ? { extraHTTPHeaders: this.extraHttpHeaders }
+                : {}),
+              ...(viewport ? { viewport } : {}),
+            },
+          },
+        },
+        env,
+      };
+    }
+
+    // Drive an anti-detect Camoufox (Firefox) instead of vanilla Chromium.
+    // camoufox-js produces the executablePath / args / firefoxUserPrefs / env
+    // that carry the fingerprint; MCP drives that browser through the same
+    // tool API. We pass these via a temp config file rather than CLI flags.
+    // Resolve once per session lifetime so reconnects keep the same fingerprint.
+    await ensureCamoufox();
+    if (!this.cachedCamouOptions) {
+      // Apply viewportSize as Camoufox `window` so the headed browser fills
+      // the bound Xvfb desktop (previously stored but never forwarded —
+      // Camoufox randomised the window and overflowed 720p endpoint streams).
+      const window = this.viewportSize
+        ? parseViewportSize(this.viewportSize)
+        : undefined;
+      this.cachedCamouOptions = await resolveCamoufoxLaunchOptions(
+        this.headless,
+        window ? { window } : undefined,
+      );
+    }
+    const camou = this.cachedCamouOptions;
+    return {
+      cfg: {
+        browser: {
+          browserName: "firefox",
+          launchOptions: {
+            executablePath: camou.executablePath,
+            args: camou.args,
+            firefoxUserPrefs: camou.firefoxUserPrefs,
+            headless: camou.headless,
+          },
+          ...(this.extraHttpHeaders
+            ? { contextOptions: { extraHTTPHeaders: this.extraHttpHeaders } }
+            : {}),
+        },
+      },
+      env: {
+        ...Object.fromEntries(
+          Object.entries(camou.env).map(([k, v]) => [k, String(v)]),
+        ),
+        ...env,
+      },
+    };
+  }
+
   /**
    * Initialize or return existing MCP client connection for this session.
    * Handles race conditions when multiple tools within the same agent
@@ -687,42 +780,12 @@ export class PlaywrightMcpSession {
 
         const args = [cliPath, "--isolated"];
 
-        // Drive an anti-detect Camoufox (Firefox) instead of vanilla Chromium.
-        // camoufox-js produces the executablePath / args / firefoxUserPrefs / env
-        // that carry the fingerprint; MCP drives that browser through the same
-        // tool API. We pass these via a temp config file rather than CLI flags.
-        // Resolve once per session lifetime so reconnects keep the same fingerprint.
-        await ensureCamoufox();
-        if (!this.cachedCamouOptions) {
-          // Apply viewportSize as Camoufox `window` so the headed browser fills
-          // the bound Xvfb desktop (previously stored but never forwarded —
-          // Camoufox randomised the window and overflowed 720p endpoint streams).
-          const window = this.viewportSize
-            ? parseViewportSize(this.viewportSize)
-            : undefined;
-          this.cachedCamouOptions = await resolveCamoufoxLaunchOptions(
-            this.headless,
-            window ? { window } : undefined,
-          );
-        }
-        const camou = this.cachedCamouOptions;
-
         const os = await import("node:os");
         const fsp = await import("node:fs/promises");
-        const cfg = {
-          browser: {
-            browserName: "firefox",
-            launchOptions: {
-              executablePath: camou.executablePath,
-              args: camou.args,
-              firefoxUserPrefs: camou.firefoxUserPrefs,
-              headless: camou.headless,
-            },
-            ...(this.extraHttpHeaders
-              ? { contextOptions: { extraHTTPHeaders: this.extraHttpHeaders } }
-              : {}),
-          },
-        };
+        const launchId = randomUUID();
+        this.currentLaunchId = launchId;
+
+        const { cfg, env } = await this.buildMcpLaunch(launchId);
         this.mcpConfigPath = join(
           os.tmpdir(),
           `pensar-mcp-${process.pid}-${Date.now()}.json`,
@@ -733,35 +796,11 @@ export class PlaywrightMcpSession {
         });
         args.push("--config", this.mcpConfigPath);
 
-        // NB: no --no-sandbox / --user-agent / --viewport-size. Those are
-        // Chromium-only flags (invalid for Firefox), and Camoufox owns the
-        // UA / viewport / fingerprint — a hand-set Chrome UA on Firefox would
-        // itself be a detection tell.
-
-        // Stamped before the process exists so a failure inside connect() can
-        // still sweep the tree.
-        const launchId = randomUUID();
-        this.currentLaunchId = launchId;
-
         const transport = new StdioClientTransport({
           command: "node",
           args,
           stderr: "pipe",
-          // CAMOU_CONFIG_* fingerprint chunks must reach the actual browser
-          // process. The MCP node child inherits them (the transport merges
-          // these over getDefaultEnvironment) and Firefox inherits in turn.
-          // `DISPLAY` is NOT in the transport's default-inherited set, so a
-          // headful launch on a virtual display needs it threaded explicitly
-          // — without it Firefox can't find the X server and headed mode
-          // fails to start. Use this session's `display` (an explicit
-          // per-session display wins over the process-wide env).
-          env: {
-            ...Object.fromEntries(
-              Object.entries(camou.env).map(([k, v]) => [k, String(v)]),
-            ),
-            ...(this.display ? { DISPLAY: this.display } : {}),
-            [BROWSER_LAUNCH_ENV]: launchId,
-          },
+          env,
         });
 
         const client = new Client({
