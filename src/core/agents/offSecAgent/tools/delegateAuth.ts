@@ -183,17 +183,20 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
         .string()
         .describe("A concise description of what this tool call is doing"),
     }),
-    execute: async ({
-      target,
-      credentialId,
-      loginUrl,
-      username,
-      password,
-      apiKey,
-      tokens,
-      authHints,
-      reason,
-    }) => {
+    execute: async (
+      {
+        target,
+        credentialId,
+        loginUrl,
+        username,
+        password,
+        apiKey,
+        tokens,
+        authHints,
+        reason,
+      },
+      { toolCallId },
+    ) => {
       // Resolved from a stored credential only — agents never pass raw secrets.
       let additionalFields: Record<string, string> | undefined;
       const subagentName = "Authentication Agent";
@@ -309,6 +312,7 @@ IMPORTANT: Pass protectedEndpoints in authHints when you've discovered 401/403 e
           subagentName,
           lifecycleInput: { target, reason },
           parentSubagentId: ctx.subagentId,
+          parentToolCallId: toolCallId,
           resolveStatus: (r) => (r.success ? "completed" : "failed"),
         });
 

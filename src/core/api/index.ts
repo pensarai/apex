@@ -8,6 +8,19 @@
 //    eliminate the split. The lint rule for module barriers exempts this.
 
 export type {
+  CreateNativeRolloutEvidenceCaptureInput,
+  NativeRolloutCaptureLimits,
+  NativeRolloutCaptureReportV1,
+  NativeRolloutEvidenceCapture,
+  NativeRolloutEvidenceEnvelopeV1,
+  NativeRolloutEvidenceSink,
+  NativeRolloutModelContext,
+} from "../ai";
+export {
+  createNativeRolloutEvidenceCapture,
+  DEFAULT_NATIVE_ROLLOUT_CAPTURE_LIMITS,
+} from "../ai";
+export type {
   AppDetail,
   ApplicationType,
   AppSummary,
@@ -121,6 +134,17 @@ export type {
   ThreatModelWorkflowResult,
 } from "./threatModel";
 export { runThreatModelWorkflow } from "./threatModel";
+export type {
+  TrajectoryEvidenceFile,
+  TrajectoryExportErrorCode,
+  TrajectoryExportFile,
+  TrajectoryExportInput,
+  TrajectoryExportResult,
+} from "./trajectoryExport";
+export {
+  exportTrajectoryBundle,
+  TrajectoryExportError,
+} from "./trajectoryExport";
 export type {
   VulnerabilityReportAnswerKey,
   VulnerabilityReproductionAgentInput,

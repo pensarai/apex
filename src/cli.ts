@@ -7,11 +7,13 @@
  * All modules are statically imported so Bun can bundle them.
  */
 
+import { resolve } from "node:path";
 import { config as loadEnv } from "dotenv";
 import packageJson from "../package.json";
 import { type AIModel, buildAuthConfig } from "./core/ai";
 import { setCurrentCommand } from "./core/api/clientIdentity";
 import { resolveCliLogLevel } from "./core/cli/logLevelArgs";
+import { resolveExplicitCliModel } from "./core/cli/model";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
@@ -29,8 +31,6 @@ import {
 
 const args = process.argv.slice(2);
 const version = packageJson.version;
-
-loadEnv();
 
 // Detect global --obfuscate flag and propagate to the TUI via env so the
 // flag works regardless of where it appears in argv. The flag is stripped
@@ -66,6 +66,8 @@ if (obfuscateRequested) {
 // are stripped, so `pensar --verbose pentest` still routes to `pentest`.
 const command = args[0];
 
+loadEnv({ quiet: command === "export-trajectory" });
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -96,6 +98,11 @@ function getAllArgs(flag: string, argv = args): string[] {
     }
   }
   return values;
+}
+
+function nativeRolloutEvidenceOutput(): string | undefined {
+  if (!hasFlag("--native-rollout-evidence")) return undefined;
+  return resolve(getArgRequired("--native-rollout-evidence"));
 }
 
 function attachCliAgentStreamListeners(bus: AgentEventBus): void {
@@ -178,12 +185,15 @@ async function resolveCliHeaders(): Promise<
  * a model that will fail at the API call level.
  */
 async function resolveCliModel(): Promise<AIModel> {
-  const explicit = getArg("--model");
-  if (explicit) return explicit as AIModel;
-
   const { config: appConfig } = await import("./core/config");
   const { getDefaultModelForConfig } = await import("./core/providers/utils");
   const pensarConfig = await appConfig.get();
+  const explicit = resolveExplicitCliModel({
+    model: getArg("--model"),
+    provider: getArg("--model-provider"),
+    customProviders: pensarConfig.customProviders,
+  });
+  if (explicit) return explicit;
   const defaultModel = getDefaultModelForConfig(pensarConfig);
 
   if (!defaultModel) {
@@ -194,12 +204,17 @@ async function resolveCliModel(): Promise<AIModel> {
         "  OPENAI_API_KEY     — OpenAI\n" +
         "  OPENROUTER_API_KEY — OpenRouter\n" +
         "  CONCENTRATE_API_KEY — Concentrate\n" +
+        "  APEX_CUSTOM_PROVIDERS — Custom OpenAI-compatible providers (JSON)\n" +
         "\nOr run 'pensar login' to connect to Pensar Console.",
     );
     process.exit(1);
   }
 
-  return defaultModel.id as AIModel;
+  resolveExplicitCliModel({
+    model: defaultModel.id,
+    customProviders: pensarConfig.customProviders,
+  });
+  return defaultModel.id;
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +239,7 @@ Usage:
   pensar fixes                        View security fixes
   pensar logs                         View agent execution logs
   pensar config headers               Manage global default HTTP headers
+  pensar export-trajectory            Convert saved rollout evidence to ATIF
   pensar upgrade                      Update pensar to the latest version
   pensar doctor                       Check dependencies and install missing tools
   pensar help                         Show this help message
@@ -237,6 +253,8 @@ operator options (-p):
   --header "Name: Value"     Custom HTTP header (repeatable)
   --headers-from <file>      Load headers from a JSON object or Name:Value file
   --no-global-headers        Skip the global defaultHeaders snapshot
+  --native-rollout-evidence <directory>
+                             Capture this invocation's model-boundary evidence
 
 pentest options:
   --target <url>           (required) Target URL / domain / IP
@@ -252,6 +270,8 @@ pentest options:
   --header "Name: Value"   Custom HTTP header (repeatable)
   --headers-from <file>    Load headers from a JSON object or Name:Value file
   --no-global-headers      Skip the global defaultHeaders snapshot
+  --native-rollout-evidence <directory>
+                           Capture this invocation's model-boundary evidence
 
 targeted-pentest options:
   --target <url>          (required) Target URL / domain / IP
@@ -260,12 +280,19 @@ targeted-pentest options:
   --header "Name: Value"  Custom HTTP header (repeatable)
   --headers-from <file>   Load headers from a JSON object or Name:Value file
   --no-global-headers     Skip the global defaultHeaders snapshot
+  --native-rollout-evidence <directory>
+                          Capture this invocation's model-boundary evidence
 
 threat-model options:
   --output, -o <path>  Output file path (default: ./threat-model.md)
   --model <model>      AI model (default: auto-selected from configured provider)
 
+export-trajectory options:
+  --input <path>   Version 1 export request with saved evidence paths and digests
+  --output <path>  Fresh output directory; existing paths are never overwritten
+
 Global options:
+  --model-provider <id>  Custom provider for --model (headless commands)
   -h, --help         Show this help message
   -v, --version      Show version number
   --log-level <lvl>  Diagnostic log level: debug|info|warn|error|silent
@@ -274,6 +301,11 @@ Global options:
   --obfuscate        Run the TUI in obfuscation mode — redacts hostnames,
                      IPs, UUIDs, emails, paths, tokens, and apparent
                      company names so screenshots are safe to share.
+
+Custom inference:
+  Configure customProviders in ~/.pensar/config.json or set APEX_CUSTOM_PROVIDERS
+  to the equivalent JSON object. API keys are read from each provider's apiKeyEnv.
+  Use --model-provider <id> --model <model>, or --model custom:<id>:<model>.
 `);
 }
 
@@ -294,6 +326,7 @@ async function runPentest() {
   const enableThinking = hasFlag("--extended-thinking");
   const taskDriven = hasFlag("--task-driven");
   const fastStrike = hasFlag("--fast-strike");
+  const evidenceOutput = nativeRolloutEvidenceOutput();
 
   // Resolve and combine threat model + prompt
   const resolvedTm = threatModelRaw
@@ -333,37 +366,51 @@ Model:   ${model}${enableThinking ? "\nThinking: enabled" : ""}${taskDriven ? "\
       ...(exfilMode ? { exfilMode: true } : {}),
       ...(prompt ? { prompt } : {}),
       ...(taskDriven ? { taskDriven: true } : {}),
+      ...(evidenceOutput
+        ? { nativeRolloutEvidence: { outputDirectory: evidenceOutput } }
+        : {}),
       ...(headers !== undefined ? { headers } : {}),
     },
   });
   console.log(`PENSAR_SESSION_PATH:${session.rootPath}`);
 
-  const { bus: pentestBus, cleanup: wandbCleanup } =
-    await createInstrumentedBus(session);
+  const { runWithCliNativeRolloutEvidence } = await import(
+    "./cli/native-rollout-evidence"
+  );
+  const evidence = await runWithCliNativeRolloutEvidence({
+    session,
+    outputDirectory: evidenceOutput,
+    run: async () => {
+      const { bus: pentestBus, cleanup: wandbCleanup } =
+        await createInstrumentedBus(session);
+      try {
+        const { findings, findingsPath, pocsPath, reportPath } =
+          await runPentestAgent({
+            target,
+            ...(cwd ? { cwd } : {}),
+            session,
+            model,
+            enableThinking,
+            ...(fastStrike ? { fastStrike: true } : {}),
+            surfaceIntegrationEnabled: pensarConfig.surfaceIntegrationEnabled,
+            authConfig: buildAuthConfig(pensarConfig),
+            eventBus: pentestBus,
+          });
 
-  try {
-    const { findings, findingsPath, pocsPath, reportPath } =
-      await runPentestAgent({
-        target,
-        ...(cwd ? { cwd } : {}),
-        session,
-        model,
-        enableThinking,
-        ...(fastStrike ? { fastStrike: true } : {}),
-        surfaceIntegrationEnabled: pensarConfig.surfaceIntegrationEnabled,
-        authConfig: buildAuthConfig(pensarConfig),
-        eventBus: pentestBus,
-      });
-
-    console.log(`
+        console.log(`
 ${sep}
 RESULTS
 ${sep}
 Findings:  ${findings.length}
 Path:      ${findingsPath}
 POCs:      ${pocsPath}${reportPath ? `\nReport:    ${reportPath}` : ""}`);
-  } finally {
-    await wandbCleanup();
+      } finally {
+        await wandbCleanup();
+      }
+    },
+  });
+  if (evidence.manifestPath) {
+    console.log(`Native evidence: ${evidence.manifestPath}`);
   }
 }
 
@@ -376,6 +423,7 @@ async function runTargetedPentest() {
 
   const target = getArgRequired("--target");
   const objectives = getAllArgs("--objective");
+  const evidenceOutput = nativeRolloutEvidenceOutput();
 
   const pensarConfig = await appConfig.get();
   const model = await resolveCliModel();
@@ -402,32 +450,53 @@ ${objectivesList}
   const session = await sessions.create({
     name: "Targeted Pentest",
     targets: [target],
-    ...(headers !== undefined ? { config: { headers } } : {}),
+    ...(headers !== undefined || evidenceOutput
+      ? {
+          config: {
+            ...(headers !== undefined ? { headers } : {}),
+            ...(evidenceOutput
+              ? { nativeRolloutEvidence: { outputDirectory: evidenceOutput } }
+              : {}),
+          },
+        }
+      : {}),
   });
   console.log(`PENSAR_SESSION_PATH:${session.rootPath}`);
 
-  const { bus: targetedBus, cleanup: wandbCleanup } =
-    await createInstrumentedBus(session);
+  const { runWithCliNativeRolloutEvidence } = await import(
+    "./cli/native-rollout-evidence"
+  );
+  const evidence = await runWithCliNativeRolloutEvidence({
+    session,
+    outputDirectory: evidenceOutput,
+    run: async () => {
+      const { bus: targetedBus, cleanup: wandbCleanup } =
+        await createInstrumentedBus(session);
+      try {
+        const { findings, findingsPath, pocsPath } =
+          await runTargetedPentestAgent({
+            target,
+            objectives,
+            session,
+            model,
+            authConfig: buildAuthConfig(pensarConfig),
+            eventBus: targetedBus,
+          });
 
-  try {
-    const { findings, findingsPath, pocsPath } = await runTargetedPentestAgent({
-      target,
-      objectives,
-      session,
-      model,
-      authConfig: buildAuthConfig(pensarConfig),
-      eventBus: targetedBus,
-    });
-
-    console.log(`
+        console.log(`
 ${sep}
 RESULTS
 ${sep}
 Findings:  ${findings.length}
 Path:      ${findingsPath}
 POCs:      ${pocsPath}`);
-  } finally {
-    await wandbCleanup();
+      } finally {
+        await wandbCleanup();
+      }
+    },
+  });
+  if (evidence.manifestPath) {
+    console.log(`Native evidence: ${evidence.manifestPath}`);
   }
 }
 
@@ -497,6 +566,7 @@ async function runOperator() {
   const systemRaw = getArg("-s") ?? getArg("--system");
   const systemPrompt = systemRaw ? resolveFlagValue(systemRaw) : undefined;
   const target = getArg("--target");
+  const evidenceOutput = nativeRolloutEvidenceOutput();
   const pensarConfig = await appConfig.get();
   const model = await resolveCliModel();
 
@@ -520,67 +590,83 @@ ${sep}\n`);
         enableSuggestions: false,
       },
       ...(headers !== undefined ? { headers } : {}),
+      ...(evidenceOutput
+        ? { nativeRolloutEvidence: { outputDirectory: evidenceOutput } }
+        : {}),
     },
   });
 
-  const { bus, cleanup: wandbCleanup } = await createInstrumentedBus(session);
+  const { runWithCliNativeRolloutEvidence } = await import(
+    "./cli/native-rollout-evidence"
+  );
+  const evidence = await runWithCliNativeRolloutEvidence({
+    session,
+    outputDirectory: evidenceOutput,
+    run: async () => {
+      const { bus, cleanup: wandbCleanup } =
+        await createInstrumentedBus(session);
 
-  let currentPrompt = prompt;
-  let messages: ModelMessage[] | undefined;
+      let currentPrompt = prompt;
+      let messages: ModelMessage[] | undefined;
 
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  const askFollowUp = (): Promise<string | null> =>
-    new Promise((resolve) => {
-      process.stdout.write(`\n${sep}\n`);
-      rl.question("follow-up (empty to exit): ", (answer) => {
-        const trimmed = answer.trim();
-        resolve(trimmed || null);
-      });
-    });
-
-  try {
-    for (;;) {
-      await runOffensiveSecurityAgent({
-        prompt: currentPrompt,
-        ...(systemPrompt ? { system: systemPrompt } : {}),
-        model,
-        target,
-        activeTools: [...ALL_TOOL_NAMES, ...SKILL_TOOL_NAMES] as string[],
-        stopWhen: stepCountIs(10000),
-        authConfig: buildAuthConfig(pensarConfig),
-        eventBus: bus,
-        session,
-        messages,
+      const rl = createInterface({
+        input: process.stdin,
+        output: process.stdout,
       });
 
-      // Read back persisted messages for the next turn
-      const messagesPath = path.join(session.rootPath, "messages.json");
-      if (existsSync(messagesPath)) {
-        const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
-        const allMessages: ModelMessage[] = Array.isArray(raw) ? raw : [];
-        messages = normalizeMessages(getResumeMessages(allMessages));
+      const askFollowUp = (): Promise<string | null> =>
+        new Promise((resolve) => {
+          process.stdout.write(`\n${sep}\n`);
+          rl.question("follow-up (empty to exit): ", (answer) => {
+            const trimmed = answer.trim();
+            resolve(trimmed || null);
+          });
+        });
+
+      try {
+        for (;;) {
+          await runOffensiveSecurityAgent({
+            prompt: currentPrompt,
+            ...(systemPrompt ? { system: systemPrompt } : {}),
+            model,
+            target,
+            activeTools: [...ALL_TOOL_NAMES, ...SKILL_TOOL_NAMES] as string[],
+            stopWhen: stepCountIs(10000),
+            authConfig: buildAuthConfig(pensarConfig),
+            eventBus: bus,
+            session,
+            messages,
+          });
+
+          // Read back persisted messages for the next turn
+          const messagesPath = path.join(session.rootPath, "messages.json");
+          if (existsSync(messagesPath)) {
+            const raw = JSON.parse(readFileSync(messagesPath, "utf-8"));
+            const allMessages: ModelMessage[] = Array.isArray(raw) ? raw : [];
+            messages = normalizeMessages(getResumeMessages(allMessages));
+          }
+
+          const followUp = await askFollowUp();
+          if (!followUp) break;
+          currentPrompt = followUp;
+          // Append the follow-up as a user message so the conversation
+          // ends with a user turn (required by Anthropic models).
+          messages = normalizeMessages([
+            ...(messages ?? []),
+            { role: "user" as const, content: followUp },
+          ]);
+        }
+      } finally {
+        rl.close();
+        await wandbCleanup();
       }
 
-      const followUp = await askFollowUp();
-      if (!followUp) break;
-      currentPrompt = followUp;
-      // Append the follow-up as a user message so the conversation
-      // ends with a user turn (required by Anthropic models).
-      messages = normalizeMessages([
-        ...(messages ?? []),
-        { role: "user" as const, content: followUp },
-      ]);
-    }
-  } finally {
-    rl.close();
-    await wandbCleanup();
+      console.log(`\nSession: ${session.rootPath}`);
+    },
+  });
+  if (evidence.manifestPath) {
+    console.log(`Native evidence: ${evidence.manifestPath}`);
   }
-
-  console.log(`\nSession: ${session.rootPath}`);
 }
 
 async function runUpgrade() {
@@ -602,12 +688,13 @@ async function runUpgrade() {
 // Standalone CLI entrypoint: own the optional OTel runtime. No-op unless an
 // OTLP endpoint is configured; the TUI branch below takes over the process
 // and manages the runtime's lifecycle in its own exit path.
-const observabilityRuntime = startObservabilityRuntime();
+const observabilityRuntime =
+  command === "export-trajectory" ? null : startObservabilityRuntime();
 // Signals and fatal errors flush traces (bounded) before exiting — headless
 // commands only; the TUI installs its own handlers alongside renderer
 // teardown.
 const exitAfterObservabilityShutdown =
-  args.length !== 0
+  observabilityRuntime !== null && args.length !== 0
     ? installObservabilityExitHandlers(observabilityRuntime, {
         onError: (error) => {
           console.error("Uncaught exception:", error);
@@ -630,6 +717,9 @@ try {
     console.log(`v${version}`);
   } else if (command === "help" || command === "--help" || command === "-h") {
     showHelp();
+  } else if (command === "export-trajectory") {
+    process.argv = [process.argv[0], process.argv[1], ...args.slice(1)];
+    await import("./cli/export-trajectory");
   } else if (command === "upgrade" || command === "update") {
     await runUpgrade();
   } else if (command === "pentest") {
@@ -676,7 +766,7 @@ try {
       console.error("All other commands work with Node — run 'pensar --help'.");
       // This branch owns the runtime lifecycle (the TUI never imported): the
       // bounded shutdown flushes any queued spans before the process exits.
-      await observabilityRuntime.shutdown().catch(() => {});
+      await observabilityRuntime?.shutdown().catch(() => {});
       process.exitCode = 1;
     } else {
       await import("./tui/index.tsx");
@@ -689,13 +779,19 @@ try {
     process.exitCode = 1;
   }
 } catch (error) {
-  if (exitAfterObservabilityShutdown !== null) {
+  if (
+    exitAfterObservabilityShutdown !== null &&
+    observabilityRuntime !== null
+  ) {
     await exitAfterObservabilityShutdown(1, error, "uncaughtException");
   }
   throw error;
 } finally {
   // The TUI owns its runtime lifecycle after import.
-  if (exitAfterObservabilityShutdown !== null) {
+  if (
+    exitAfterObservabilityShutdown !== null &&
+    observabilityRuntime !== null
+  ) {
     const shutdownResult = await observabilityRuntime
       .shutdown()
       .catch(() => "completed" as const);

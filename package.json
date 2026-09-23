@@ -22,7 +22,7 @@
     "@opentelemetry/resources": "^2.10.0",
     "@opentui/core": "^0.1.107",
     "@opentui/react": "^0.1.107",
-    "@pensar/surface": "0.3.0",
+    "@pensar/surface": "0.3.1",
     "@playwright/mcp": "^0.0.54",
     "ai": "^6.0.208",
     "camoufox-js": "^0.11.1",

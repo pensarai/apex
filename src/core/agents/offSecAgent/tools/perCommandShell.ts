@@ -176,6 +176,7 @@ export class PerCommandShell {
       let terminating = false;
       let killForcedExit: number | null = null;
       let naturalExit: number | null = null;
+      let leaderClosed = false;
       let spawnError: string | undefined;
 
       // Every timer this invocation arms — all fenced by `settled` and cleared
@@ -238,8 +239,15 @@ export class PerCommandShell {
       };
       this.active = invocation;
 
+      const finishUntrackedTermination = (): void => {
+        resolveFinish(killForcedExit ?? naturalExit ?? 1, {
+          unconfirmed: true,
+          note: "(descendant cleanup unsupported on this platform)",
+        });
+      };
+
       // The ONE terminating path, shared by timeout, caller abort, cancel,
-      // dispose, and completed-nonzero exits. Group TERM, SIGKILL escalation
+      // dispose, and completed-nonzero exits. On POSIX, group TERM, SIGKILL escalation
       // after the grace, then settle exactly once the group is observed gone
       // — the leader's close alone never settles, so a TERM-resistant
       // descendant cannot outlive the escalation.
@@ -248,26 +256,17 @@ export class PerCommandShell {
         terminating = true;
         const pid = child.pid;
         if (isWin || !pid) {
-          // No process groups on win32: leader-only TERM→KILL; descendants
-          // are untrackable, so kill outcomes are surfaced as unconfirmed.
+          if (leaderClosed) {
+            finishUntrackedTermination();
+            return;
+          }
+          // Windows terminates the leader immediately; descendants remain untracked.
           try {
             child.kill("SIGTERM");
           } catch {
             // already gone
           }
-          arm(() => {
-            try {
-              child.kill("SIGKILL");
-            } catch {
-              // already gone
-            }
-          }, TERM_GRACE_MS);
-          arm(() => {
-            resolveFinish(killForcedExit ?? naturalExit ?? 1, {
-              unconfirmed: true,
-              note: "(descendant cleanup unsupported on this platform)",
-            });
-          }, TERM_GRACE_MS + EXIT_ACK_MS);
+          if (!settled) arm(finishUntrackedTermination, EXIT_ACK_MS);
           return;
         }
         try {
@@ -338,6 +337,7 @@ export class PerCommandShell {
       // launcher settles immediately; a child that kept an inherited pipe
       // keeps the invocation pending (deadline/abort still bound it).
       child.on("close", (code) => {
+        leaderClosed = true;
         if (spawnError !== undefined) {
           // Spawn failure: nothing was spawned, so there is no group to
           // clean and no meaningful exit code (the close event may carry a
@@ -347,9 +347,9 @@ export class PerCommandShell {
           return;
         }
         if (terminating) {
-          // The kill protocol owns settlement from here — record the
-          // leader's close but stay pending until the group is gone.
           naturalExit = code;
+          if (isWin || !child.pid) finishUntrackedTermination();
+          // POSIX still waits for the owned group, including surviving descendants.
           return;
         }
         if (code === 0) {

@@ -20,6 +20,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   if (originalConcentrateAPIKey === undefined) {
     delete process.env.CONCENTRATE_API_KEY;
   } else {
@@ -35,6 +36,38 @@ describe("provider environment fallbacks", () => {
     const config = await get();
 
     expect(config.concentrateAPIKey).toBe("sk-cn-env");
+  });
+
+  it("loads custom worker configuration without persisting it or its key", async () => {
+    const providers = {
+      research: {
+        baseUrl: "https://inference.example/v1",
+        apiKeyEnv: "APEX_TEST_CUSTOM_KEY",
+        models: [
+          { id: "test-model", contextLength: 32_000, maxOutputTokens: 4_000 },
+        ],
+      },
+    };
+    vi.stubEnv("APEX_CUSTOM_PROVIDERS", JSON.stringify(providers));
+    vi.stubEnv("APEX_TEST_CUSTOM_KEY", "test-secret");
+    const loaded = await get();
+    expect(loaded.customProviders).toEqual(providers);
+    expect(JSON.stringify(loaded)).not.toContain("test-secret");
+    await update({ selectedModelId: "custom:research:test-model" });
+    const persisted = JSON.parse(
+      readFileSync(path.join(homeDirectory, ".pensar", "config.json"), "utf8"),
+    );
+    expect(persisted.customProviders).toBeUndefined();
+  });
+
+  it("validates custom providers before persisting configuration", async () => {
+    await init();
+    await expect(
+      update({
+        customProviders: { research: { baseUrl: "invalid" } } as never,
+      }),
+    ).rejects.toThrow("Invalid customProviders");
+    expect((await get()).customProviders).toEqual({});
   });
 });
 
