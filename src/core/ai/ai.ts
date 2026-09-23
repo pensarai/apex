@@ -922,6 +922,11 @@ function wrapStreamWithErrorHandler(
                     restartDepth: postReactiveDepth,
                     previous: opts._compaction?.last,
                   });
+                  reset?.capture("before", () => ({
+                    messages: messagesForSummary,
+                    system: opts.system,
+                    prompt: opts.prompt,
+                  }));
                   reset?.measure(
                     "before",
                     () => estimateMessageTokens(messagesForSummary),
@@ -935,6 +940,10 @@ function wrapStreamWithErrorHandler(
                       ]),
                     1,
                   );
+                  reset?.capture("after", () => ({
+                    messages: [{ role: "user", content: minimalPrompt }],
+                    system: opts.system,
+                  }));
                   reset?.finish("completed");
                   if (reset && opts._compaction)
                     opts._compaction.last = reset.link;

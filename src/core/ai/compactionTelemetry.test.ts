@@ -1,19 +1,22 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { trace } from "@opentelemetry/api";
 import { type ModelMessage, simulateReadableStream } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runWithAiPayloadCapture } from "../observability";
 import {
   type OtelTestHarness,
   requireSpan,
   startOtelTestHarness,
 } from "../observability/testkit";
+import { beginCompaction } from "./compactionTelemetry";
 import {
   estimateMessageTokens,
   fitMessagesToContext,
 } from "./contextManagement";
+import { createNativeRolloutEvidenceCapture } from "./native-rollout-evidence";
 
 const state: { model?: MockLanguageModelV3 } = {};
 vi.mock("./utils", async () => ({
@@ -61,8 +64,8 @@ async function drain(stream: { fullStream: AsyncIterable<unknown> }) {
   }
 }
 
-function toolHistory(): ModelMessage[] {
-  return Array.from({ length: 10 }, (_, i) => [
+function toolHistory(length = 10): ModelMessage[] {
+  return Array.from({ length }, (_, i) => [
     {
       role: "assistant",
       content: [
@@ -98,6 +101,7 @@ describe("compaction observability", () => {
   });
   afterEach(async () => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     await otel.shutdown();
     rmSync(directory, { recursive: true, force: true });
   });
@@ -230,7 +234,21 @@ describe("compaction observability", () => {
     otel = startOtelTestHarness();
     const observed = model();
     state.model = observed;
-    await drain(streamResponse(options));
+    const nativeOperations: string[] = [];
+    const native = createNativeRolloutEvidenceCapture({
+      enabled: true,
+      runId: "run-compaction-parity",
+      sink: {
+        write: (envelope) => {
+          nativeOperations.push(envelope.operationKind);
+        },
+      },
+    });
+    await native.run(() =>
+      runWithAiPayloadCapture(true, () => drain(streamResponse(options))),
+    );
+    await native.flush();
+    expect(nativeOperations).toEqual(["context.summarize", "agent.stream"]);
     expect(observed.doGenerateCalls.map((call) => call.prompt)).toEqual(
       baseline.doGenerateCalls.map((call) => call.prompt),
     );
@@ -242,16 +260,255 @@ describe("compaction observability", () => {
     );
   });
 
+  it("honors the run-scoped payload gate without reading context or result evidence", () => {
+    vi.stubEnv("AI_TRACE_RECORD_PAYLOADS", "true");
+    const evidence = vi.fn(() => {
+      throw new Error("must not read payloads");
+    });
+    runWithAiPayloadCapture(false, () => {
+      const telemetry = beginCompaction("fit", context);
+      telemetry?.capture("before", evidence);
+      telemetry?.capture("after", evidence);
+      telemetry?.result("1:0", evidence);
+      telemetry?.finish("completed");
+    });
+    expect(evidence).not.toHaveBeenCalled();
+    const span = requireSpan(otel.getFinishedSpans(), "apex.context.compact");
+    for (const phase of ["before", "after", "results"]) {
+      expect(span.attributes[`apex.compaction.evidence.${phase}.status`]).toBe(
+        "disabled",
+      );
+      expect(
+        span.attributes[`apex.compaction.evidence.${phase}.json`],
+      ).toBeUndefined();
+    }
+  });
+
+  it("captures the transformation and distinguishes successful saves from silent write failures", () => {
+    mkdirSync(join(directory, "tool-results", "c0.txt"), { recursive: true });
+    const messages = toolHistory();
+    const fitted = runWithAiPayloadCapture(true, () =>
+      fitMessagesToContext(messages, {
+        contextWindow: 400,
+        maxOutputTokens: 0,
+        overheadTokens: 0,
+        safetyMarginTokens: 0,
+        sessionPath: directory,
+        system: "research system",
+        telemetry: context,
+      }),
+    );
+    const { attributes } = requireSpan(
+      otel.getFinishedSpans(),
+      "apex.context.compact",
+    );
+    expect(
+      JSON.parse(String(attributes["apex.compaction.evidence.before.json"])),
+    ).toEqual({ messages, system: "research system" });
+    expect(
+      JSON.parse(String(attributes["apex.compaction.evidence.after.json"])),
+    ).toEqual({ messages: fitted.messages, system: "research system" });
+    expect(attributes["apex.compaction.persistence.written"]).toBe(9);
+    expect(attributes["apex.compaction.persistence.write_failed"]).toBe(1);
+    const results = JSON.parse(
+      String(attributes["apex.compaction.evidence.results.json"]),
+    );
+    expect(results).toHaveLength(10);
+    expect(results[0]).toMatchObject({
+      position: "1:0",
+      toolCallId: "c0",
+      method: "snip",
+      preservation: "write_failed",
+      originalChars: 18_000,
+      inputChars: 18_000,
+    });
+    expect(results[1]).toMatchObject({
+      toolCallId: "c1",
+      preservation: "written",
+    });
+    expect(
+      readFileSync(join(directory, "tool-results", "c1.txt"), "utf8"),
+    ).toBe("evidence ".repeat(2000));
+    expect(attributes["apex.compaction.evidence.capture_ms"]).toEqual(
+      expect.any(Number),
+    );
+  });
+
+  it("does not treat old archive references or snipped outputs as verified files", () => {
+    const options = {
+      contextWindow: 6000,
+      maxOutputTokens: 0,
+      overheadTokens: 0,
+      safetyMarginTokens: 0,
+      sessionPath: directory,
+    };
+    const earlier = fitMessagesToContext(toolHistory(), options);
+    runWithAiPayloadCapture(true, () =>
+      fitMessagesToContext(earlier.messages, {
+        ...options,
+        contextWindow: 400,
+        telemetry: context,
+      }),
+    );
+    const attributes = requireSpan(
+      otel.getFinishedSpans(),
+      "apex.context.compact",
+    ).attributes;
+    const results = JSON.parse(
+      String(attributes["apex.compaction.evidence.results.json"]),
+    );
+    expect(
+      results.every(
+        (result: { preservation: string }) =>
+          result.preservation === "referenced_unverified",
+      ),
+    ).toBe(true);
+    expect(attributes["apex.compaction.persistence.written"]).toBe(0);
+    otel.exporter.reset();
+    runWithAiPayloadCapture(true, () =>
+      fitMessagesToContext(toolHistory(), {
+        ...options,
+        sessionPath: undefined,
+        telemetry: context,
+      }),
+    );
+    const snipped = requireSpan(
+      otel.getFinishedSpans(),
+      "apex.context.compact",
+    );
+    const unsaved = JSON.parse(
+      String(snipped.attributes["apex.compaction.evidence.results.json"]),
+    );
+    expect(
+      unsaved.every(
+        (result: { preservation: string }) =>
+          result.preservation === "not_persisted",
+      ),
+    ).toBe(true);
+  });
+
+  it("preserves tool evidence omitted by the summarizer and links its actual request and response", async () => {
+    const summaryModel = model();
+    state.model = summaryModel;
+    const messages: ModelMessage[] = [
+      ...toolHistory(),
+      { role: "user", content: "continue researching" },
+    ];
+    await runWithAiPayloadCapture(true, () =>
+      drain(
+        createSummarizationStream(
+          messages,
+          {
+            prompt: "original task",
+            system: "research system",
+            model: MODEL,
+            silent: true,
+          },
+          summaryModel,
+        ),
+      ),
+    );
+    const spans = otel.getFinishedSpans();
+    const compact = requireSpan(spans, "apex.context.compact");
+    const before = JSON.parse(
+      String(compact.attributes["apex.compaction.evidence.before.json"]),
+    );
+    expect(before).toEqual({
+      messages,
+      prompt: "original task",
+      system: "research system",
+    });
+    const summary = requireSpan(spans, "ai.generateText.doGenerate");
+    expect(summary.attributes["ai.prompt.messages"]).toContain(
+      "continue researching",
+    );
+    expect(summary.attributes["ai.prompt.messages"]).not.toContain(
+      "evidence evidence",
+    );
+    expect(summary.attributes["ai.response.text"]).toBe("A compact summary");
+    expect(summary.attributes["ai.telemetry.metadata.compactionSpanId"]).toBe(
+      compact.spanContext().spanId,
+    );
+    const after = JSON.parse(
+      String(compact.attributes["apex.compaction.evidence.after.json"]),
+    );
+    expect(after.messages[0].content).toContain("A compact summary");
+    expect(summaryModel.doStreamCalls[0]?.prompt).toMatchObject([
+      { role: "system", content: after.system },
+      {
+        role: "user",
+        content: [{ type: "text", text: after.messages[0].content }],
+      },
+    ]);
+  });
+
+  it("marks withheld and failed evidence explicitly while allowing compaction to finish", () => {
+    runWithAiPayloadCapture(true, () => {
+      const compact = beginCompaction("summarize", context);
+      compact?.capture("before", () => ({
+        messages: "x".repeat(3 * 1024 * 1024),
+      }));
+      compact?.capture("after", () => {
+        throw new Error("sensitive capture failure");
+      });
+      compact?.finish("completed");
+    });
+    const { attributes } = requireSpan(
+      otel.getFinishedSpans(),
+      "apex.context.compact",
+    );
+    expect(attributes["apex.compaction.outcome"]).toBe("completed");
+    expect(attributes["apex.compaction.evidence.before.status"]).toBe(
+      "truncated",
+    );
+    expect(attributes["apex.compaction.evidence.before.reason"]).toBe(
+      "byte_limit",
+    );
+    expect(attributes["apex.compaction.evidence.before.json"]).toBeUndefined();
+    expect(attributes["apex.compaction.evidence.after.status"]).toBe("failed");
+    expect(JSON.stringify(attributes)).not.toContain(
+      "sensitive capture failure",
+    );
+  });
+
+  it("marks a partial affected-result list instead of claiming complete evidence", () => {
+    runWithAiPayloadCapture(true, () =>
+      fitMessagesToContext(toolHistory(300), {
+        contextWindow: 30_000,
+        maxOutputTokens: 0,
+        overheadTokens: 0,
+        safetyMarginTokens: 0,
+        telemetry: context,
+      }),
+    );
+    const { attributes } = requireSpan(
+      otel.getFinishedSpans(),
+      "apex.context.compact",
+    );
+    expect(attributes["apex.compaction.affected_results"]).toBeGreaterThan(256);
+    expect(attributes["apex.compaction.evidence.results.status"]).toBe(
+      "truncated",
+    );
+    expect(attributes["apex.compaction.evidence.results.reason"]).toBe(
+      "result_limit",
+    );
+    expect(
+      JSON.parse(String(attributes["apex.compaction.evidence.results.json"])),
+    ).toHaveLength(256);
+  });
+
   it("keeps concurrent subagent continuation links separate", async () => {
     const childModel = model();
     state.model = childModel;
     await Promise.all(
       ["ses_child_a", "ses_child_b"].map((sessionId) =>
-        drain(
-          createSummarizationStream(
-            [{ role: "user", content: sessionId }],
-            { prompt: "continue", model: MODEL, silent: true, sessionId },
-            childModel,
+        runWithAiPayloadCapture(sessionId === "ses_child_a", () =>
+          drain(
+            createSummarizationStream(
+              [{ role: "user", content: sessionId }],
+              { prompt: "continue", model: MODEL, silent: true, sessionId },
+              childModel,
+            ),
           ),
         ),
       ),
@@ -269,6 +526,9 @@ describe("compaction observability", () => {
           span.attributes["ai.telemetry.metadata.sessionId"] === sessionId,
       );
       expect(compact).toBeDefined();
+      expect(
+        compact?.attributes["apex.compaction.evidence.before.status"],
+      ).toBe(sessionId === "ses_child_a" ? "available" : "disabled");
       expect(
         resumed?.attributes["ai.telemetry.metadata.compactionSpanId"],
       ).toBe(compact?.spanContext().spanId);
@@ -314,14 +574,16 @@ describe("compaction observability", () => {
       },
       doStream: (options) => normal.doStream(options),
     });
-    await drain(
-      streamResponse({
-        prompt: "original task",
-        model: MODEL,
-        silent: true,
-        sessionId: "ses_fallback",
-        messages: [{ role: "user", content: "irreducible ".repeat(100_000) }],
-      }),
+    await runWithAiPayloadCapture(true, () =>
+      drain(
+        streamResponse({
+          prompt: "original task",
+          model: MODEL,
+          silent: true,
+          sessionId: "ses_fallback",
+          messages: [{ role: "user", content: "irreducible ".repeat(100_000) }],
+        }),
+      ),
     );
     const spans = otel.getFinishedSpans();
     const compact = spans.filter(
@@ -340,6 +602,16 @@ describe("compaction observability", () => {
       "summary_overflow",
     );
     expect(reset?.attributes["apex.compaction.previous_span_id"]).toBeTruthy();
+    expect(
+      compact.find(
+        (span) => span.attributes["apex.compaction.outcome"] === "failed",
+      )?.attributes["apex.compaction.evidence.after.status"],
+    ).toBe("unavailable");
+    expect(
+      JSON.parse(
+        String(reset?.attributes["apex.compaction.evidence.after.json"]),
+      )?.messages,
+    ).toEqual([{ role: "user", content: "original task" }]);
     expect(
       spans.find((span) => span.name === "ai.streamText")?.attributes[
         "ai.telemetry.metadata.compactionSpanId"
