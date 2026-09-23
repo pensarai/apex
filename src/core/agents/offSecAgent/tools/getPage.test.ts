@@ -44,6 +44,63 @@ describe("getPage body liveness", () => {
     });
   }
 
+  it.each([
+    {
+      status: 304,
+      contentType: "text/html",
+      abort: false,
+      error: "Failed to fetch page: 304 Not Modified",
+    },
+    {
+      status: 204,
+      contentType: "application/json",
+      abort: false,
+      error:
+        "Unsupported content type: application/json. This tool only supports HTML and text pages.",
+    },
+    {
+      status: 204,
+      contentType: "text/plain",
+      abort: true,
+      error: "Request aborted by user — partial content extracted",
+    },
+    { status: 204, contentType: "text/plain", abort: false, error: undefined },
+  ])("preserves the outcome for a null body: $status $contentType abort=$abort", async ({
+    status,
+    contentType,
+    abort,
+    error,
+  }) => {
+    const ac = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        const response = new Response(null, {
+          status,
+          statusText: status === 304 ? "Not Modified" : "No Content",
+          headers: { "content-type": contentType },
+        });
+        expect(response.body).toBeNull();
+        if (abort) ac.abort();
+        return response;
+      }),
+    );
+
+    const result = (await getPage(
+      makeCtx({ abortSignal: ac.signal }),
+    ).execute?.(
+      {
+        url: "https://example.com/null-body",
+        toolCallDescription: "Read a bodyless response",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: ac.signal },
+    )) as GetPageResponse;
+
+    expect(result.success).toBe(error === undefined);
+    expect(result.error).toBe(error);
+    expect(result.stopReason).toBe(abort ? "aborted" : undefined);
+  });
+
   it("fails with a bounded timeout when the body stalls after headers arrive", async () => {
     vi.useFakeTimers();
     vi.stubGlobal(
