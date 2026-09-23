@@ -1,6 +1,7 @@
 import { posix } from "node:path";
 import type { LanguageModelV3ToolApprovalRequest } from "@ai-sdk/provider";
 import { describe, expect, it } from "vitest";
+import type { JsonValue } from "../ai/native-rollout-evidence";
 import { convertNativeRolloutSourcesToAtif } from "./convert";
 import { serializeAtifExportBundle } from "./serialize";
 import { defaultPrompt, lookupTool, nativeSource } from "./test-fixtures";
@@ -11,6 +12,232 @@ const identity = {
 };
 
 describe("native rollout evidence to ATIF conversion", () => {
+  it.each([
+    42,
+    { text: "invented" },
+  ])("diagnoses malformed reasoning delta %j without inventing output", (delta) => {
+    const source = nativeSource({
+      normalizedOutput: {
+        parts: [{ type: "reasoning-delta", id: "r", delta }],
+      },
+    });
+    const bundle = serializeAtifExportBundle({
+      ...identity,
+      sources: [source],
+      rootSourceId: source.id,
+    });
+    expect(
+      bundle.documents.ses_fixture?.[0]?.steps.at(-1)?.reasoning_content,
+    ).toBeUndefined();
+    expect(bundle.manifest.completeness.status).toBe("partial");
+    expect(bundle.manifest.completeness.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "invalid_content_part" }),
+    );
+  });
+
+  it("preserves model-visible function tool settings in versioned agent metadata", () => {
+    const settings = {
+      strict: true,
+      inputExamples: [{ input: { id: "example" } }],
+      providerOptions: { fixture: { cache: "enabled" } },
+    };
+    const source = nativeSource({
+      tools: [
+        {
+          type: "function",
+          name: "lookup",
+          inputSchema: { type: "object" },
+          ...settings,
+        },
+      ],
+    });
+    const bundle = serializeAtifExportBundle({
+      ...identity,
+      sources: [source],
+      rootSourceId: source.id,
+    });
+    expect(
+      bundle.documents.ses_fixture?.[0]?.agent.extra?.apex_tool_settings,
+    ).toEqual({
+      version: 1,
+      tools: [{ index: 0, name: "lookup", ...settings }],
+    });
+    expect(bundle.manifest.completeness.status).toBe("complete");
+  });
+
+  it.each([
+    "same-session",
+    "other-session",
+    "copied-result",
+  ])("does not let a later %s result satisfy an earlier reused call id", (mode) => {
+    const call = {
+      type: "tool-call",
+      toolCallId: "call_reused",
+      toolName: "lookup",
+      input: {},
+    };
+    const result = {
+      type: "tool-result",
+      toolCallId: "call_reused",
+      output: { type: "text", value: "second result" },
+    };
+    const first = nativeSource({
+      id: "first",
+      attemptId: "atm_first",
+      outputContent: [call],
+    });
+    const second = nativeSource({
+      id: "second",
+      attemptId: "atm_second",
+      turnIndex: 2,
+      sessionId: mode === "other-session" ? "ses_other" : "ses_fixture",
+      outputContent: mode === "copied-result" ? [call] : [call, result],
+    });
+    const third = nativeSource({
+      id: "third",
+      attemptId: "atm_third",
+      turnIndex: 3,
+      prompt: [
+        ...defaultPrompt,
+        { role: "assistant", content: [call] },
+        { role: "tool", content: [result] },
+      ],
+    });
+    const bundle = serializeAtifExportBundle({
+      ...identity,
+      sources:
+        mode === "copied-result" ? [first, second, third] : [first, second],
+      rootSourceId: first.id,
+    });
+    expect(bundle.manifest.completeness.status).toBe("partial");
+    expect(bundle.manifest.completeness.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "missing_tool_result",
+        path: "atif_atm_first",
+      }),
+    );
+    if (mode !== "other-session")
+      expect(bundle.manifest.completeness.diagnostics).toContainEqual(
+        expect.objectContaining({ code: "reused_tool_call_id" }),
+      );
+  });
+
+  it.each([
+    "output",
+    "prompt",
+  ])("maps %s tool-result media to exact binary assets", (location) => {
+    const png = Buffer.from("fixture-png");
+    const audio = Buffer.from("fixture-audio");
+    const contentParts: JsonValue[] = [
+      {
+        type: "tool-call",
+        toolCallId: "media",
+        toolName: "lookup",
+        input: {},
+      },
+      {
+        type: "tool-result",
+        toolCallId: "media",
+        output: {
+          type: "content",
+          value: [
+            { type: "text", text: "media result" },
+            {
+              type: "image-data",
+              data: png.toString("base64"),
+              mediaType: "image/png",
+            },
+            {
+              type: "file-data",
+              data: audio.toString("base64"),
+              mediaType: "audio/wav",
+            },
+          ],
+        },
+      },
+    ];
+    const source = nativeSource(
+      location === "output"
+        ? { outputContent: contentParts }
+        : {
+            prompt: [
+              ...defaultPrompt,
+              { role: "assistant", content: [contentParts[0]] },
+              { role: "tool", content: [contentParts[1]] },
+            ],
+          },
+    );
+    const bundle = serializeAtifExportBundle({
+      ...identity,
+      sources: [source],
+      rootSourceId: source.id,
+    });
+    const content = bundle.documents.ses_fixture?.[0]?.steps.find(
+      (step) => step.observation,
+    )?.observation?.results[0]?.content;
+    expect(content).toEqual([
+      { type: "text", text: "media result" },
+      {
+        type: "image",
+        source: { media_type: "image/png", path: expect.any(String) },
+      },
+      {
+        type: "audio",
+        source: { media_type: "audio/wav", path: expect.any(String) },
+      },
+    ]);
+    expect(
+      bundle.files
+        .filter((file) => ["image/png", "audio/wav"].includes(file.mediaType))
+        .map((file) => Buffer.from(file.bytes).toString())
+        .sort(),
+    ).toEqual(["fixture-audio", "fixture-png"]);
+    expect(bundle.manifest.completeness.status).toBe("complete");
+  });
+
+  it("diagnoses unsupported tool-result content", () => {
+    const source = nativeSource({
+      outputContent: [
+        { type: "tool-call", toolCallId: "pdf", toolName: "lookup", input: {} },
+        {
+          type: "tool-result",
+          toolCallId: "pdf",
+          output: {
+            type: "content",
+            value: [
+              { type: "file-data", data: "cGRm", mediaType: "application/pdf" },
+            ],
+          },
+        },
+      ],
+    });
+    const bundle = serializeAtifExportBundle({
+      ...identity,
+      sources: [source],
+      rootSourceId: source.id,
+    });
+    expect(bundle.manifest.completeness.status).toBe("partial");
+    expect(bundle.manifest.completeness.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "unsupported_media_type" }),
+    );
+  });
+
+  it("states that completeness covers supplied evidence rather than the entire run", () => {
+    const source = nativeSource();
+    const bundle = serializeAtifExportBundle({
+      ...identity,
+      sources: [source],
+      rootSourceId: source.id,
+    });
+    expect(bundle.manifest.completeness.status).toBe("complete");
+    expect(bundle.manifest.completeness.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "source_relative_completeness",
+        message: expect.stringContaining("capture report"),
+      }),
+    );
+  });
+
   it("preserves exact context, tools, results, continuation, and native metrics", () => {
     const first = nativeSource({
       id: "turn-1",

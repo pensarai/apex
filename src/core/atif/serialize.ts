@@ -353,7 +353,16 @@ export function serializeAtifExportBundle(
       status: transcriptPartial ? "partial" : "complete",
       sftEligibility: "ineligible",
       rlEligibility: "ineligible",
-      diagnostics: [...diagnostics, ...eligibilityDiagnostics()],
+      diagnostics: [
+        ...diagnostics,
+        {
+          code: "source_relative_completeness",
+          severity: "warning",
+          message:
+            "Completeness describes only the supplied source files. The run capture report is not consumed, so dropped attempts, delivery uncertainty, and whole-run coverage are not assessed.",
+        },
+        ...eligibilityDiagnostics(),
+      ],
     },
     nativeSampling: {
       status: Object.values(draft.nativeSampling).some(

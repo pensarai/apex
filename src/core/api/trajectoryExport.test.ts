@@ -3,6 +3,7 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  type open,
   readdir,
   readFile,
   rm,
@@ -11,16 +12,28 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { nativeSource } from "../atif/test-fixtures";
 import {
   exportTrajectoryBundle,
   type TrajectoryExportInput,
 } from "./trajectoryExport";
 
+const fsMocks = vi.hoisted(() => ({
+  open: vi.fn(),
+  realOpen: undefined as typeof open | undefined,
+}));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  fsMocks.realOpen = actual.open;
+  fsMocks.open.mockImplementation(actual.open);
+  return { ...actual, open: fsMocks.open };
+});
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
+  if (fsMocks.realOpen) fsMocks.open.mockImplementation(fsMocks.realOpen);
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -67,6 +80,60 @@ async function exists(path: string): Promise<boolean> {
 }
 
 describe("exportTrajectoryBundle", () => {
+  it.each([
+    false,
+    true,
+  ])("keeps the final marker absent until a blocked manifest write succeeds (failure: %s)", async (fail) => {
+    const { input, outputDirectory } = await fixture();
+    let release!: () => void;
+    let started!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const writing = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const realOpen = fsMocks.realOpen;
+    if (!realOpen) throw new Error("missing real fs.open implementation");
+    fsMocks.open.mockImplementation(async (...args) => {
+      const handle = await realOpen(args[0], args[1], args[2]);
+      if (!String(args[0]).includes("trajectory-bundle.json")) return handle;
+      return {
+        close: handle.close.bind(handle),
+        sync: handle.sync.bind(handle),
+        writeFile: async (bytes: Uint8Array) => {
+          await handle.writeFile(bytes.subarray(0, 8));
+          started();
+          await blocked;
+          if (fail) throw new Error("interrupted manifest write");
+          await handle.writeFile(bytes.subarray(8));
+        },
+      } as Awaited<ReturnType<typeof open>>;
+    });
+    const result = exportTrajectoryBundle(input);
+    await writing;
+    const visible = await exists(
+      join(outputDirectory, "trajectory-bundle.json"),
+    );
+    release();
+    if (fail)
+      await expect(result).rejects.toMatchObject({ code: "PUBLISH_FAILED" });
+    else await result;
+    expect(visible).toBe(false);
+    expect(await exists(join(outputDirectory, "trajectory-bundle.json"))).toBe(
+      !fail,
+    );
+    if (!fail)
+      expect(
+        JSON.parse(
+          await readFile(
+            join(outputDirectory, "trajectory-bundle.json"),
+            "utf8",
+          ),
+        ),
+      ).toMatchObject({ rootTrajectoryId: "atif_atm_fixture_001" });
+  });
+
   it("publishes exact validated files with the manifest as the commit marker", async () => {
     const { source, outputDirectory, input } = await fixture();
 

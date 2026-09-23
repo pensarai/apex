@@ -270,6 +270,7 @@ export const TrajectoryBundleManifestSchema = z.strictObject({
     }),
     diagnostics: bundleDiagnostics,
   }),
+  // Status measures the supplied sources; it does not establish whole-run coverage.
   completeness: z.strictObject({
     status: z.enum(["complete", "partial", "unknown"]),
     sftEligibility: z.enum(["eligible", "ineligible"]),

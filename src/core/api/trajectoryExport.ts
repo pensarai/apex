@@ -1,6 +1,13 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { type FileHandle, mkdir, open, readFile, rm } from "node:fs/promises";
+import {
+  type FileHandle,
+  link,
+  mkdir,
+  open,
+  readFile,
+  rm,
+} from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import {
   ATIF_EXPORT_SOURCE_LIMITS,
@@ -21,6 +28,7 @@ export interface TrajectoryEvidenceFile {
 }
 
 export interface TrajectoryExportInput {
+  /** Completeness covers these supplied sources; the run capture report is not consumed. */
   sources: readonly TrajectoryEvidenceFile[];
   rootSourceId: string;
   agent: Pick<AtifTrajectoryV1_8["agent"], "name" | "version">;
@@ -299,7 +307,16 @@ async function publishBundle(
     for (const file of files) {
       if (file !== manifest) await persistFile(destination, file);
     }
-    await persistFile(destination, manifest);
+    const temporaryManifest = {
+      ...manifest,
+      path: `${manifest.path}.${randomUUID()}.tmp`,
+    };
+    await persistFile(destination, temporaryManifest);
+    await link(
+      join(destination, temporaryManifest.path),
+      join(destination, manifest.path),
+    );
+    await rm(join(destination, temporaryManifest.path));
     ownsDestination = false;
   } catch (error) {
     if (error instanceof TrajectoryExportError) throw error;

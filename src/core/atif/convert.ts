@@ -522,7 +522,11 @@ function toolCallFromPart(
   };
 }
 
-function toolResultContent(output: JsonValue | undefined): string {
+function toolResultContent(
+  output: JsonValue | undefined,
+  context: ConversionContext,
+  path: string,
+): string | AtifContentPart[] {
   const result = asObject(output);
   if (!result) return stringifyCanonicalJson(output ?? null);
   if (
@@ -538,6 +542,38 @@ function toolResultContent(output: JsonValue | undefined): string {
   }
   if (result.type === "json" || result.type === "error-json") {
     return stringifyCanonicalJson(result.value ?? null);
+  }
+  if (result.type === "content") {
+    if (!Array.isArray(result.value)) {
+      diagnostic(
+        context.diagnostics,
+        context.source.id,
+        "invalid_tool_result_content",
+        "tool result content is not an array and remains only in source evidence",
+        path,
+      );
+      return "";
+    }
+    const parts: AtifContentPart[] = [];
+    for (const [index, raw] of result.value.entries()) {
+      const part = asObject(raw);
+      const partPath = `${path}.value[${index}]`;
+      if (part?.type === "text" && typeof part.text === "string") {
+        parts.push({ type: "text", text: part.text });
+      } else if (part?.type === "image-data" || part?.type === "file-data") {
+        const converted = contentPartFromFile(part, context, partPath);
+        if (converted) parts.push(converted);
+      } else {
+        diagnostic(
+          context.diagnostics,
+          context.source.id,
+          "unsupported_tool_result_content",
+          "tool result content part remains only in source evidence",
+          partPath,
+        );
+      }
+    }
+    return messageFromParts(parts);
   }
   return stringifyCanonicalJson(result);
 }
@@ -559,7 +595,7 @@ function toolResultFromPart(
   }
   const content =
     part.output !== undefined
-      ? toolResultContent(part.output)
+      ? toolResultContent(part.output, context, `${path}.output`)
       : part.result !== undefined
         ? stringifyCanonicalJson(part.result)
         : "";
@@ -808,8 +844,9 @@ function promptSteps(
 function toolDefinitions(
   tools: JsonValue[] | undefined,
   context: ConversionContext,
-): AtifToolDefinition[] {
+): { definitions: AtifToolDefinition[]; settings: JsonObject[] } {
   const definitions: AtifToolDefinition[] = [];
+  const settings: JsonObject[] = [];
   for (const [index, raw] of (tools ?? []).entries()) {
     const tool = asObject(raw);
     const parameters = asObject(tool?.inputSchema);
@@ -818,6 +855,13 @@ function toolDefinitions(
       typeof tool.name === "string" &&
       parameters
     ) {
+      const preserved: JsonObject = {};
+      for (const key of ["strict", "inputExamples", "providerOptions"]) {
+        if (tool[key] !== undefined) preserved[key] = tool[key];
+      }
+      if (Object.keys(preserved).length > 0) {
+        settings.push({ index, name: tool.name, ...preserved });
+      }
       definitions.push({
         type: "function",
         function: {
@@ -838,7 +882,7 @@ function toolDefinitions(
       );
     }
   }
-  return definitions;
+  return { definitions, settings };
 }
 
 function evidenceAsset(
@@ -1005,10 +1049,17 @@ function collectStreamOutput(
         value.text += part.delta;
       }
     } else if (part.type === "reasoning-delta" && typeof part.id === "string") {
-      reasoning.set(
-        part.id,
-        `${reasoning.get(part.id) ?? ""}${part.delta ?? ""}`,
-      );
+      if (typeof part.delta !== "string") {
+        diagnostic(
+          context.diagnostics,
+          context.source.id,
+          "invalid_content_part",
+          "stream reasoning delta is not a string and remains only in source evidence",
+          path,
+        );
+        continue;
+      }
+      reasoning.set(part.id, `${reasoning.get(part.id) ?? ""}${part.delta}`);
     } else if (
       part.type === "tool-input-start" &&
       typeof part.id === "string" &&
@@ -1228,7 +1279,10 @@ function convertSource(
   const input = asObject(normalizedInput);
   const steps = promptSteps(asArray(input?.prompt), context);
   steps.push(outputStep(evidence, context, steps.length + 1));
-  const definitions = toolDefinitions(asArray(input?.tools), context);
+  const { definitions, settings } = toolDefinitions(
+    asArray(input?.tools),
+    context,
+  );
   const agent: AtifAgent = {
     ...agentIdentity,
     model_name: evidence.requested.modelId,
@@ -1236,6 +1290,9 @@ function convertSource(
     extra: {
       provider: evidence.requested.provider,
       operation_kind: evidence.operationKind,
+      ...(settings.length > 0
+        ? { apex_tool_settings: { version: 1, tools: settings } }
+        : {}),
     },
   };
   const outputMetrics = steps.at(-1)?.metrics;
@@ -1297,27 +1354,75 @@ function recordMissingAssociations(
   documents: Iterable<AtifTrajectoryV1_8>,
   diagnostics: AtifDiagnostic[],
 ): void {
-  const results = new Set<string>();
-  const calls = new Map<string, string>();
+  const sessions = new Map<
+    string,
+    Array<{ call: AtifToolCall; trajectoryId: string; resolved: boolean }>
+  >();
   for (const document of documents) {
+    const sessionId = document.session_id ?? "";
+    const calls = sessions.get(sessionId) ?? [];
+    sessions.set(sessionId, calls);
     for (const step of document.steps) {
-      for (const result of step.observation?.results ?? []) {
-        if (result.source_call_id) results.add(result.source_call_id);
+      const stepCalls = step.tool_calls ?? [];
+      if (step.is_copied_context) {
+        for (const result of step.observation?.results ?? []) {
+          const copiedCalls = stepCalls.filter(
+            (call) => call.tool_call_id === result.source_call_id,
+          );
+          if (copiedCalls.length !== 1) continue;
+          const copied = copiedCalls[0];
+          const candidates = calls.filter(
+            ({ call }) =>
+              call.tool_call_id === copied.tool_call_id &&
+              call.function_name === copied.function_name &&
+              stringifyCanonicalJson(call.arguments) ===
+                stringifyCanonicalJson(copied.arguments),
+          );
+          if (candidates.length === 1) candidates[0].resolved = true;
+          else if (candidates.length > 1)
+            diagnostics.push({
+              code: "ambiguous_tool_result",
+              severity: "warning",
+              message: `copied result for ${copied.tool_call_id} cannot identify one original call occurrence in session ${sessionId}`,
+              path: document.trajectory_id,
+            });
+        }
+        continue;
       }
-      if (step.is_copied_context) continue;
-      for (const call of step.tool_calls ?? []) {
-        calls.set(call.tool_call_id, document.trajectory_id ?? "trajectory");
+      for (const call of stepCalls) {
+        if (
+          calls.some((entry) => entry.call.tool_call_id === call.tool_call_id)
+        )
+          diagnostics.push({
+            code: "reused_tool_call_id",
+            severity: "warning",
+            message: `tool call id ${call.tool_call_id} appears in multiple original call occurrences in session ${sessionId}`,
+            path: document.trajectory_id,
+          });
+        calls.push({
+          call,
+          trajectoryId: document.trajectory_id ?? "trajectory",
+          resolved:
+            stepCalls.filter(
+              (entry) => entry.tool_call_id === call.tool_call_id,
+            ).length === 1 &&
+            (step.observation?.results.some(
+              (result) => result.source_call_id === call.tool_call_id,
+            ) ??
+              false),
+        });
       }
     }
   }
-  for (const [callId, id] of calls) {
-    if (!results.has(callId)) {
-      diagnostics.push({
-        code: "missing_tool_result",
-        severity: "warning",
-        message: `tool call ${callId} has no recorded result in this bundle`,
-        path: id,
-      });
+  for (const calls of sessions.values()) {
+    for (const { call, trajectoryId, resolved } of calls) {
+      if (!resolved)
+        diagnostics.push({
+          code: "missing_tool_result",
+          severity: "warning",
+          message: `tool call ${call.tool_call_id} has no recorded result for this occurrence in its session`,
+          path: trajectoryId,
+        });
     }
   }
 }

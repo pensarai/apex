@@ -54,6 +54,15 @@ contract and commit-marker semantics.
 
 The version 1 wire manifest uses `validation.status` (`valid`, `invalid`, or
 `unvalidated`) and `completeness.status` (`complete`, `partial`, or `unknown`).
+Completeness is relative to the supplied source files, not the whole execution.
+`complete` means those files were converted without a known transcript gap.
+The exporter does not consume the run capture manifest or report; dropped
+attempts, delivery uncertainty, and omitted source files are outside this status.
+Every bundle includes a `source_relative_completeness` diagnostic stating this
+boundary. For example, exporting the one surviving file from a capture with two
+attempts and one dropped record can be source-complete while the run remains
+incomplete. Consumers assessing run coverage must also inspect the capture report.
+
 Validator versions are strings. Native sampling carries an overall status,
 public payload paths, and a separate per-field count of availability states.
 Independent validation and producer training limitations remain explicit.
@@ -81,6 +90,10 @@ Text, exposed reasoning, parallel tool calls, tool results, usage, supported
 OpenAI log probabilities, and captured image/audio bytes are mapped when their
 recorded shapes are valid. Provider request and response bodies remain
 content-addressed source assets even when ATIF has no native field for them.
+Function-tool `strict`, `inputExamples`, and `providerOptions` fields are preserved
+under `agent.extra.apex_tool_settings` version 1, keyed by the original tool index
+and name. Tool-result content arrays map text and supported image/audio data to
+ATIF observations and binary assets; unsupported parts produce diagnostics.
 External media URLs remain references and make transcript completeness partial
 because their bytes are not archived in the bundle.
 

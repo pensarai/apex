@@ -32,8 +32,9 @@ from the input file's directory.
 
 The command validates every declared source identity and the complete bundle
 with bounded reads before creating the output directory. The destination must
-not exist. Files are created exclusively, and `trajectory-bundle.json` is written last
-as the commit marker. If a write fails, the command removes only the fresh
+not exist. Files are created exclusively. The manifest is written, synced, and
+verified at a temporary sibling path, then atomically linked to
+`trajectory-bundle.json` as the commit marker. If a write fails, the command removes only the fresh
 directory it created. A directory without `trajectory-bundle.json` is not a completed
 export.
 
@@ -44,3 +45,8 @@ caller. A `failed` result blocks publication, while omission is recorded as
 Success prints one JSON object containing `outputDirectory`, `manifestPath`,
 `rootTrajectoryId`, and `fileCount`. The bundle preserves exact source evidence
 alongside its ATIF documents and content-addressed assets.
+
+`completeness.status` describes only the supplied source files. It does not
+assert whole-run coverage: the command does not ingest the native capture report
+or account for dropped or omitted attempts. Each manifest records this boundary
+in its `source_relative_completeness` diagnostic.
