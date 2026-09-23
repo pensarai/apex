@@ -135,6 +135,17 @@ export type {
 } from "./threatModel";
 export { runThreatModelWorkflow } from "./threatModel";
 export type {
+  TrajectoryEvidenceFile,
+  TrajectoryExportErrorCode,
+  TrajectoryExportFile,
+  TrajectoryExportInput,
+  TrajectoryExportResult,
+} from "./trajectoryExport";
+export {
+  exportTrajectoryBundle,
+  TrajectoryExportError,
+} from "./trajectoryExport";
+export type {
   VulnerabilityReportAnswerKey,
   VulnerabilityReproductionAgentInput,
   VulnerabilityReproductionHandle,

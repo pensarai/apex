@@ -27,6 +27,7 @@
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts", "loader-demo.tsx"],
   "ignoreDependencies": ["@playwright/mcp"],
   "ignore": [
+    "src/core/atif/test-fixtures.ts",
     "**/*.test.{ts,tsx,js,jsx,mts,cts}",
     "**/*.spec.{ts,tsx,js,jsx,mts,cts}",
     "**/__tests__/**",
