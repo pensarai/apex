@@ -177,6 +177,7 @@ export class PerCommandShell {
       let killForcedExit: number | null = null;
       let naturalExit: number | null = null;
       let leaderClosed = false;
+      let groupGone = false;
       let spawnError: string | undefined;
 
       // Every timer this invocation arms — all fenced by `settled` and cleared
@@ -219,6 +220,9 @@ export class PerCommandShell {
             (spawnError !== undefined ? `${spawnError}\n` : "") +
             captureText(stderrCap) +
             (extra?.note ? `\n${extra.note}` : "") +
+            (leaderClosed
+              ? ""
+              : "\n(output drain unconfirmed: pipes did not close before the bounded drain window)") +
             (killForcedExit === 130 ? "\n(aborted)" : ""),
           exitCode,
           timedOut: killForcedExit === 124,
@@ -275,6 +279,7 @@ export class PerCommandShell {
           // already gone
         }
         arm(() => {
+          if (groupGone) return;
           try {
             process.kill(-pid, "SIGKILL");
           } catch {
@@ -287,7 +292,17 @@ export class PerCommandShell {
           // keeps the escalation pending; unknown is never reported as
           // confirmed cleanup.
           if (groupConfirmedGone(pid)) {
-            resolveFinish(killForcedExit ?? naturalExit ?? 1);
+            groupGone = true;
+            if (leaderClosed) {
+              resolveFinish(killForcedExit ?? naturalExit ?? 1);
+            } else {
+              // Group exit can precede pipe delivery. Drain until close, but
+              // bound the wait if an escaped process still owns a pipe.
+              arm(
+                () => resolveFinish(killForcedExit ?? naturalExit ?? 1),
+                EXIT_ACK_MS,
+              );
+            }
             return;
           }
           arm(pollGroupGone, GROUP_POLL_MS);
@@ -296,6 +311,7 @@ export class PerCommandShell {
         // Bounded hard cap: a group still present after the SIGKILL window
         // (unreapable/D-state members) settles with a truthful unconfirmed.
         arm(() => {
+          if (groupGone) return;
           resolveFinish(killForcedExit ?? naturalExit ?? 1, {
             unconfirmed: true,
             note: "(cleanup unconfirmed: process group still present after the bounded kill window)",
@@ -349,6 +365,7 @@ export class PerCommandShell {
         if (terminating) {
           naturalExit = code;
           if (isWin || !child.pid) finishUntrackedTermination();
+          else if (groupGone) resolveFinish(killForcedExit ?? naturalExit ?? 1);
           // POSIX still waits for the owned group, including surviving descendants.
           return;
         }
