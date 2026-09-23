@@ -231,4 +231,12 @@ export interface ToolBackends {
   http: HttpBackend;
   browser: BrowserBackend;
   inbox: InboxBackend;
+  /**
+   * True when these backends route through a real sandbox whose filesystem is
+   * the contained workspace root (not the host). Tools that write artifacts
+   * (e.g. `document_vulnerability`'s PoC/finding files) must target the sandbox
+   * workspace, not `session.rootPath`, when this is set. `LocalBackends` leaves
+   * it undefined (host paths); console's sandbox-routed backends set it true.
+   */
+  sandboxed?: boolean;
 }
