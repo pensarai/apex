@@ -165,7 +165,7 @@ describe("buildWindowsCurlCommand generation (any OS)", () => {
     expect(guardIdx).toBeGreaterThan(countBlockEnd);
   });
 
-  it("nested finally: process cleanup always runs then temp file always deleted", () => {
+  it("nested finally: process cleanup always runs then temp deletion is attempted", () => {
     const { command } = buildWindowsCurlCommand(BASE_OPTS);
     const b64 = command.replace(
       /^powershell\.exe -NoProfile -NonInteractive -EncodedCommand /,
@@ -177,7 +177,7 @@ describe("buildWindowsCurlCommand generation (any OS)", () => {
       "try{$p.Kill()}catch{if(-not $p.HasExited){throw}}",
     );
     expect(script).toContain("throw 'curl cleanup unconfirmed'");
-    // Dispose always runs (inner finally), temp file always deleted (outer).
+    // Dispose always runs (inner finally), temp deletion is attempted (outer).
     expect(script).toContain("$p.Dispose()");
     expect(script).toContain("[IO.File]::Delete($tf)");
     expect(script).not.toContain("Remove-Item $tf");
@@ -642,6 +642,69 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
       expect(requestArrived).toBe(false);
     },
     45_000,
+  );
+
+  it.skipIf(!isWin)(
+    "temp deletion failure preserves successful and failed curl outcomes",
+    async () => {
+      const port = await startServer((req, res) => {
+        req.resume();
+        req.on("end", () => {
+          if (req.url === "/curl-error") res.destroy();
+          else res.end("completed-post");
+        });
+      });
+      for (const path of ["/ok", "/curl-error"]) {
+        const tempDir = tempScratchDir();
+        const built = buildWindowsCurlCommand({
+          ...BASE_OPTS,
+          method: "POST",
+          url: `http://127.0.0.1:${port}${path}`,
+          body: "cleanup-test-body",
+          timeoutSeconds: 15,
+        });
+        const encoded = built.command.split(" ").at(-1) ?? "";
+        const script = Buffer.from(encoded, "base64").toString("utf16le");
+        // Inject the filesystem exception at the actual deletion, after curl
+        // has completed. The generated helper still owns exception handling.
+        expect(script).toContain("[IO.File]::Delete($tf)");
+        const injected = script.replace(
+          "[IO.File]::Delete($tf)",
+          "throw 'injected temp delete failure'",
+        );
+        const { stdout, stderr } = await execFileAsync(
+          "powershell.exe",
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+            Buffer.from(injected, "utf16le").toString("base64"),
+          ],
+          {
+            timeout: 30_000,
+            encoding: "utf8",
+            env: {
+              ...process.env,
+              ...built.envVars,
+              TEMP: tempDir,
+              TMP: tempDir,
+            },
+          },
+        );
+
+        expect(stderr).toContain("temp body cleanup failed:");
+        expect(stderr).toContain("injected temp delete failure");
+        expect(readdirSync(tempDir)).toHaveLength(1);
+        if (path === "/ok") {
+          expect(stdout).toContain("completed-post");
+          expect(stdout).toMatch(new RegExp(`\\n${NONCE}0\\n$`));
+        } else {
+          expect(stdout).toMatch(new RegExp(`\\n${NONCE}[1-9]\\d*\\n$`));
+          expect(stderr).toMatch(/curl:\s*\(\d+\)/);
+        }
+      }
+    },
+    60_000,
   );
 
   it.skipIf(!isWin)(

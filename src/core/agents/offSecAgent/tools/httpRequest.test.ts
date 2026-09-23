@@ -1,5 +1,11 @@
 import { exec } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -868,6 +874,61 @@ describe("httpRequest body liveness", () => {
     });
     expect(cancelled).toBe(true);
   }, 5_000);
+
+  it.each([
+    "end",
+    "byte-cap",
+    "timeout",
+  ])("preserves %s capture completeness when the response spill write fails", async (stopReason) => {
+    const ctx = ctxWithScratchLogs();
+    mkdirSync(ctx.session.logsPath, { recursive: true });
+    writeFileSync(join(ctx.session.logsPath, "http-responses"), "occupied");
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          enc.encode(
+            "x".repeat(stopReason === "byte-cap" ? 5 * 1024 * 1024 + 1 : 6_000),
+          ),
+        );
+        if (stopReason !== "timeout") controller.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body, { status: 200 })),
+    );
+    const result = (await httpRequest(ctx).execute?.(
+      {
+        url: "https://example.com/spill-failure",
+        method: "GET",
+        followRedirects: false,
+        timeout: stopReason === "timeout" ? 20 : 2_000,
+        toolCallDescription: "Read a response whose spill write fails",
+      },
+      { toolCallId: "tc_test", messages: [], abortSignal: undefined },
+    )) as HttpRequestResult;
+
+    expect(result.capture).toMatchObject({
+      complete: stopReason === "end",
+      stopReason,
+    });
+    expect(result.success).toBe(stopReason === "end");
+    expect(result.body.startsWith("x".repeat(5_000))).toBe(true);
+    expect(result.body).toContain("failed to save");
+    expect(result.body).not.toContain("response saved to");
+    if (stopReason === "end") {
+      expect(result.body).toContain("failed to save full response");
+      expect(result.body).not.toContain("INCOMPLETE");
+    } else {
+      expect(result.body).toContain("INCOMPLETE");
+      expect(result.body).toContain(
+        stopReason === "byte-cap"
+          ? "download capped at"
+          : "Request timeout after",
+      );
+      expect(result.body).not.toContain("full response");
+    }
+  });
 
   it("returns a successful body and preserves inline/save-file truncation", async () => {
     vi.stubGlobal(

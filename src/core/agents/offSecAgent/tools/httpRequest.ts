@@ -176,8 +176,11 @@ function maybeSaveBody(
   try {
     writeFileSync(filePath, body);
   } catch {
+    const failedNote = incomplete
+      ? `INCOMPLETE — ${incomplete}; failed to save partial response to file`
+      : "failed to save full response to file";
     return {
-      text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — failed to save full response to file)`,
+      text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — ${failedNote})`,
     };
   }
 

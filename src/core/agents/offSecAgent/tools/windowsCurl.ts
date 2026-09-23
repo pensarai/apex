@@ -139,9 +139,10 @@ const SCRIPT = [
   "$p.Dispose()",
   "}",
   "}",
-  // Temp file always deleted, even if process cleanup above threw.
+  // Attempt deletion even if process cleanup threw. A file lock must not
+  // replace a completed transfer's exit; preserve the warning on stderr.
   "}finally{",
-  "if($tf){[IO.File]::Delete($tf)}",
+  "if($tf){try{[IO.File]::Delete($tf)}catch{[Console]::Error.WriteLine('temp body cleanup failed: '+$_.Exception.Message)}}",
   "}",
   "}",
 ].join("\n");
