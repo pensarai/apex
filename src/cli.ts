@@ -13,6 +13,7 @@ import packageJson from "../package.json";
 import { type AIModel, buildAuthConfig } from "./core/ai";
 import { setCurrentCommand } from "./core/api/clientIdentity";
 import { resolveCliLogLevel } from "./core/cli/logLevelArgs";
+import { resolveExplicitCliModel } from "./core/cli/model";
 import { resolvePentestMode } from "./core/cli/pentestMode";
 import { AgentEventBus } from "./core/eventBus";
 import { getCurrentVersion, upgrade } from "./core/installation";
@@ -184,12 +185,15 @@ async function resolveCliHeaders(): Promise<
  * a model that will fail at the API call level.
  */
 async function resolveCliModel(): Promise<AIModel> {
-  const explicit = getArg("--model");
-  if (explicit) return explicit as AIModel;
-
   const { config: appConfig } = await import("./core/config");
   const { getDefaultModelForConfig } = await import("./core/providers/utils");
   const pensarConfig = await appConfig.get();
+  const explicit = resolveExplicitCliModel({
+    model: getArg("--model"),
+    provider: getArg("--model-provider"),
+    customProviders: pensarConfig.customProviders,
+  });
+  if (explicit) return explicit;
   const defaultModel = getDefaultModelForConfig(pensarConfig);
 
   if (!defaultModel) {
@@ -200,12 +204,17 @@ async function resolveCliModel(): Promise<AIModel> {
         "  OPENAI_API_KEY     — OpenAI\n" +
         "  OPENROUTER_API_KEY — OpenRouter\n" +
         "  CONCENTRATE_API_KEY — Concentrate\n" +
+        "  APEX_CUSTOM_PROVIDERS — Custom OpenAI-compatible providers (JSON)\n" +
         "\nOr run 'pensar login' to connect to Pensar Console.",
     );
     process.exit(1);
   }
 
-  return defaultModel.id as AIModel;
+  resolveExplicitCliModel({
+    model: defaultModel.id,
+    customProviders: pensarConfig.customProviders,
+  });
+  return defaultModel.id;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,6 +292,7 @@ export-trajectory options:
   --output <path>  Fresh output directory; existing paths are never overwritten
 
 Global options:
+  --model-provider <id>  Custom provider for --model (headless commands)
   -h, --help         Show this help message
   -v, --version      Show version number
   --log-level <lvl>  Diagnostic log level: debug|info|warn|error|silent
@@ -291,6 +301,11 @@ Global options:
   --obfuscate        Run the TUI in obfuscation mode — redacts hostnames,
                      IPs, UUIDs, emails, paths, tokens, and apparent
                      company names so screenshots are safe to share.
+
+Custom inference:
+  Configure customProviders in ~/.pensar/config.json or set APEX_CUSTOM_PROVIDERS
+  to the equivalent JSON object. API keys are read from each provider's apiKeyEnv.
+  Use --model-provider <id> --model <model>, or --model custom:<id>:<model>.
 `);
 }
 

@@ -19,6 +19,7 @@ import {
 import { getPensarGatewayUrl } from "../api/constants";
 import { ensureValidToken } from "../auth";
 import { config } from "../config";
+import type { CustomProviders } from "../config/customProviders";
 import { createLogger } from "../logger/structured";
 import { createAiTelemetrySettings } from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
@@ -36,6 +37,7 @@ import { MANTLE_REGION, mantleBaseUrl, stripMantlePrefix } from "./mantle";
 import { getModelInfo } from "./models";
 import { runWithNativeRolloutOperation } from "./native-rollout-evidence";
 import { createConcentrateModel } from "./providers/concentrate";
+import { createCustomModel } from "./providers/custom";
 import { createPensarModel } from "./providers/pensar";
 
 const log = scopedLogger(() => createLogger("ai:utils"));
@@ -70,6 +72,7 @@ export function buildStreamingFetchSignal(
 }
 
 export type AIAuthConfig = {
+  customProviders?: CustomProviders;
   openAiAPIKey?: string;
   anthropicAPIKey?: string;
   googleAPIKey?: string;
@@ -103,6 +106,7 @@ export type AIAuthConfig = {
  * and including Pensar/WorkOS fields alongside the standard provider keys.
  */
 export function buildAuthConfig(cfg: {
+  customProviders?: CustomProviders;
   anthropicAPIKey?: string | null;
   openAiAPIKey?: string | null;
   googleAPIKey?: string | null;
@@ -119,6 +123,7 @@ export function buildAuthConfig(cfg: {
   localModelUrl?: string | null;
 }): AIAuthConfig {
   return {
+    customProviders: cfg.customProviders,
     anthropicAPIKey: cfg.anthropicAPIKey ?? undefined,
     openAiAPIKey: cfg.openAiAPIKey ?? undefined,
     googleAPIKey: cfg.googleAPIKey ?? undefined,
@@ -170,6 +175,8 @@ export function getProviderModel(
   let providerModel: LanguageModelV3;
 
   switch (provider) {
+    case "custom":
+      return createCustomModel(model, authConfig?.customProviders);
     case "openai": {
       const openai = createOpenAI({
         apiKey: openAiAPIKey,
