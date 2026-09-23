@@ -191,7 +191,7 @@ describe("createAiTelemetrySettings", () => {
     expect(settings.recordInputs).toBe(false);
     expect(settings.recordOutputs).toBe(false);
     expect(settings.functionId).toBe("apex.agent.stream");
-    expect(settings.metadata).toBeUndefined();
+    expect(settings.metadata).toEqual({ compactionTelemetryVersion: "1" });
   });
 
   it("follows AI_TRACE_RECORD_PAYLOADS for full capture", () => {
@@ -208,7 +208,10 @@ describe("createAiTelemetrySettings", () => {
       operation: "apex.agent.stream",
       sessionId: "ses_1",
     });
-    expect(settings.metadata).toEqual({ sessionId: "ses_1" });
+    expect(settings.metadata).toEqual({
+      sessionId: "ses_1",
+      compactionTelemetryVersion: "1",
+    });
   });
 
   it("operation identifiers are a fixed low-cardinality set", () => {

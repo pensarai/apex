@@ -9,6 +9,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelMessage, ToolSet } from "ai";
+import {
+  beginCompaction,
+  type CompactionContext,
+  type CompactionLink,
+  type CompactionTelemetry,
+} from "./compactionTelemetry";
 
 /**
  * Truncate `text` so the returned string fits in **at most** `max` chars,
@@ -82,6 +88,7 @@ export function applyToolResultBudget(
     sessionPath: string;
     maxResultChars?: number;
     persistedIds?: Set<string>;
+    telemetry?: CompactionTelemetry;
   },
 ): ModelMessage[] {
   const maxChars = opts.maxResultChars ?? DEFAULT_MAX_RESULT_CHARS;
@@ -90,11 +97,11 @@ export function applyToolResultBudget(
   let dirCreated = false;
   let anyModified = false;
 
-  const result = messages.map((msg) => {
+  const result = messages.map((msg, messageIndex) => {
     if (!Array.isArray(msg.content)) return msg;
 
     let msgModified = false;
-    const newContent = (msg.content as unknown[]).map((part) => {
+    const newContent = (msg.content as unknown[]).map((part, partIndex) => {
       const p = part as Record<string, unknown>;
       if (p.type !== "tool-result") return part;
 
@@ -176,6 +183,7 @@ export function applyToolResultBudget(
       }
 
       msgModified = true;
+      opts.telemetry?.result(`${messageIndex}:${partIndex}`);
       return {
         ...p,
         output: {
@@ -207,7 +215,7 @@ const DEFAULT_KEEP_RECENT_STEPS = 6;
  */
 function snipOldSteps(
   messages: ModelMessage[],
-  opts?: { keepRecentSteps?: number },
+  opts?: { keepRecentSteps?: number; telemetry?: CompactionTelemetry },
 ): ModelMessage[] {
   const keepRecent = opts?.keepRecentSteps ?? DEFAULT_KEEP_RECENT_STEPS;
 
@@ -231,7 +239,7 @@ function snipOldSteps(
     if (!Array.isArray(msg.content)) return msg;
 
     let msgModified = false;
-    const newContent = (msg.content as unknown[]).map((part) => {
+    const newContent = (msg.content as unknown[]).map((part, partIndex) => {
       const p = part as Record<string, unknown>;
       if (p.type !== "tool-result") return part;
 
@@ -245,6 +253,7 @@ function snipOldSteps(
         return part;
 
       msgModified = true;
+      opts?.telemetry?.result(`${idx}:${partIndex}`);
       return {
         ...p,
         output: {
@@ -384,6 +393,7 @@ export interface FitContextResult {
   modified: boolean;
   /** `false` ⇒ caller must escalate to Layer 3 summarization. */
   fitsBudget: boolean;
+  compaction?: CompactionLink;
 }
 
 export interface FitContextOpts {
@@ -400,6 +410,7 @@ export interface FitContextOpts {
   safetyMarginTokens?: number;
   /** Required to enable Layer 1 (results persisted to disk). */
   sessionPath?: string;
+  telemetry?: CompactionContext;
 }
 
 /**
@@ -423,19 +434,9 @@ export function fitMessagesToContext(
     safety -
     systemTokens;
 
-  // Even an empty message list exceeds the budget — escalate.
-  if (messagesBudget <= 0) {
-    return {
-      messages,
-      estimatedInputTokens: estimateMessageTokens(messages),
-      modified: false,
-      fitsBudget: false,
-    };
-  }
-
   let current = messages;
   let estimate = estimateMessageTokens(current);
-  if (estimate <= messagesBudget) {
+  if (messagesBudget > 0 && estimate <= messagesBudget) {
     return {
       messages,
       estimatedInputTokens: estimate,
@@ -444,48 +445,85 @@ export function fitMessagesToContext(
     };
   }
 
+  const telemetry = beginCompaction("fit", opts.telemetry);
+  telemetry?.measure("before", () => estimate, messages.length);
+  telemetry?.attributes({
+    "apex.compaction.context_window": opts.contextWindow,
+    "apex.compaction.reserved_output_tokens": opts.maxOutputTokens,
+    "apex.compaction.overhead_tokens": overhead,
+    "apex.compaction.safety_margin_tokens": safety,
+    "apex.compaction.system_tokens": systemTokens,
+    "apex.compaction.message_budget_tokens": messagesBudget,
+    "apex.compaction.truncation_enabled": Boolean(opts.sessionPath),
+  });
+
+  const finish = (fitsBudget: boolean): FitContextResult => {
+    telemetry?.measure("after", () => estimate, current.length);
+    telemetry?.finish(fitsBudget ? "completed" : "insufficient_reduction", {
+      "apex.compaction.fits_budget": fitsBudget,
+      "apex.compaction.modified": current !== messages,
+    });
+    return {
+      messages: current,
+      estimatedInputTokens: estimate,
+      modified: current !== messages,
+      fitsBudget,
+      ...(telemetry ? { compaction: telemetry.link } : {}),
+    };
+  };
+
+  if (messagesBudget <= 0) return finish(false);
+
   // Shared across cascading Layer 1 thresholds so the same full tool result
   // is persisted to disk at most once, not 4× at progressively smaller
   // preview sizes.
   const persistedIds = opts.sessionPath ? new Set<string>() : undefined;
 
-  const fits = (): FitContextResult => ({
-    messages: current,
-    estimatedInputTokens: estimate,
-    modified: current !== messages,
-    fitsBudget: true,
-  });
+  try {
+    // Layer 1 requires sessionPath (results are persisted to disk).
+    if (opts.sessionPath) {
+      for (const maxResultChars of [10_000, 5_000, 2_000, 500]) {
+        const next = applyToolResultBudget(current, {
+          sessionPath: opts.sessionPath,
+          maxResultChars,
+          persistedIds,
+          telemetry,
+        });
+        // No-op layer ⇒ re-estimation would yield the same number.
+        if (next === current) continue;
+        current = next;
+        const before = estimate;
+        estimate = estimateMessageTokens(current);
+        telemetry?.layer({
+          method: "truncate",
+          threshold: maxResultChars,
+          tokensBefore: before,
+          tokensAfter: estimate,
+        });
+        if (estimate <= messagesBudget) return finish(true);
+      }
+    }
 
-  // Layer 1 requires sessionPath (results are persisted to disk).
-  if (opts.sessionPath) {
-    for (const maxResultChars of [10_000, 5_000, 2_000, 500]) {
-      const next = applyToolResultBudget(current, {
-        sessionPath: opts.sessionPath,
-        maxResultChars,
-        persistedIds,
-      });
-      // No-op layer ⇒ re-estimation would yield the same number.
+    for (const keepRecentSteps of [6, 3, 1]) {
+      const next = snipOldSteps(current, { keepRecentSteps, telemetry });
       if (next === current) continue;
       current = next;
+      const before = estimate;
       estimate = estimateMessageTokens(current);
-      if (estimate <= messagesBudget) return fits();
+      telemetry?.layer({
+        method: "snip",
+        threshold: keepRecentSteps,
+        tokensBefore: before,
+        tokensAfter: estimate,
+      });
+      if (estimate <= messagesBudget) return finish(true);
     }
-  }
 
-  for (const keepRecentSteps of [6, 3, 1]) {
-    const next = snipOldSteps(current, { keepRecentSteps });
-    if (next === current) continue;
-    current = next;
-    estimate = estimateMessageTokens(current);
-    if (estimate <= messagesBudget) return fits();
+    return finish(false);
+  } catch (error) {
+    telemetry?.fail(error);
+    throw error;
   }
-
-  return {
-    messages: current,
-    estimatedInputTokens: estimate,
-    modified: current !== messages,
-    fitsBudget: false,
-  };
 }
 
 function stringifyToolOutput(output: unknown): string {
