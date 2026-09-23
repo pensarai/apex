@@ -658,7 +658,7 @@ async function executeSandboxHttpRequest(
     const timeoutSeconds = Math.ceil(timeout / 1000);
     const nonce = randomBytes(8).toString("hex");
     const exitMarker = `__APEX_${nonce}_CURL_EXIT_`;
-    // Windows: +15s headroom — 5s PowerShell startup, 5s EOF process-exit
+    // Windows: +15s headroom — 5s PowerShell startup, 5s EOF/drain process-exit
     // grace, 5s kill confirmation — before the adapter tears the call down.
     // Linux keeps the existing floor.
     const executeOpts: {
@@ -690,7 +690,7 @@ async function executeSandboxHttpRequest(
       command = win.command;
       executeOpts.envVars = win.envVars;
     } else {
-      let curlCommand = `curl -i -X ${method}`;
+      let curlCommand = `curl -sS -i -X ${method}`;
       for (const [key, value] of Object.entries(mergedHeaders)) {
         curlCommand += ` -H "${shellQuote(`${key}: ${value}`)}"`;
       }
@@ -739,11 +739,10 @@ async function executeSandboxHttpRequest(
       curlCommand += ` --max-time ${timeoutSeconds}`;
       curlCommand += ` "${url}"`;
 
-      // Bound the capture at the producer: `head -c` exits at the cap, curl
-      // SIGPIPEs on its next write, so endless/chunked output never reaches the
-      // adapter's buffers (--max-filesize's chunked behavior varies by curl
-      // version). The nonce'd marker carries curl's exit through the pipeline.
-      command = `( ${curlCommand}; printf '\\n${exitMarker}%s\\n' "$?" ) 2>&1 | head -c ${MAX_DOWNLOAD_BYTES}`;
+      // Reserve metadata space so a completed exact-cap response keeps its
+      // exit marker. Any response bytes using that reserve are clipped below.
+      const markerBytes = Buffer.byteLength(`\n${exitMarker}255\n`);
+      command = `( ${curlCommand}; printf '\\n${exitMarker}%s\\n' "$?" ) 2>&1 | head -c ${MAX_DOWNLOAD_BYTES + markerBytes}`;
     }
 
     const result = await sandbox.execute(command, executeOpts);
@@ -757,8 +756,17 @@ async function executeSandboxHttpRequest(
       new RegExp(`\\n?${exitMarker}(-?\\d+)\\n?$`),
     );
     const curlExit = markerMatch ? parseInt(markerMatch[1], 10) : null;
-    const boundedOutput =
+    const unmarkedOutput =
       markerMatch !== null ? output.slice(0, markerMatch.index) : output;
+    const captureOverflow =
+      sandbox.type !== "windows" &&
+      Buffer.byteLength(unmarkedOutput, "utf8") > MAX_DOWNLOAD_BYTES;
+    const boundedOutput = captureOverflow
+      ? new TextDecoder("utf8", { ignoreBOM: true }).decode(
+          Buffer.from(unmarkedOutput, "utf8").subarray(0, MAX_DOWNLOAD_BYTES),
+          { stream: true },
+        )
+      : unmarkedOutput;
 
     // Headers tolerate spec CRLF; the body is sliced raw from the original
     // output — splitting the whole stream would normalize its line endings
@@ -812,10 +820,11 @@ async function executeSandboxHttpRequest(
     // a --max-time cutoff (exit 28) still writes "HTTP/1.1 200" plus a
     // partial body. Partial status/headers/body are returned as evidence.
     const sandboxTransportOk = result.success && result.exitCode === 0;
-    const transferComplete = sandboxTransportOk && curlExit === 0;
+    const transferComplete =
+      sandboxTransportOk && curlExit === 0 && !captureOverflow;
     const stopReason: BodyCaptureStopReason = !sandboxTransportOk
       ? "sandbox-exec"
-      : curlExit == null
+      : captureOverflow || curlExit == null
         ? "byte-cap"
         : curlExit !== 0
           ? "curl-exit"
@@ -833,8 +842,8 @@ async function executeSandboxHttpRequest(
     );
     const incompleteNote = !sandboxTransportOk
       ? `sandbox execution failed (exit ${result.exitCode})${redactedSandboxStderr ? `: ${redactedSandboxStderr}` : ""}; output may be partial`
-      : curlExit == null
-        ? `output capped at ${MAX_DOWNLOAD_BYTES} bytes; curl exit unknown — for larger evidence, save and inspect it inside the sandbox with execute_command (curl -o file, then head/dd on the file); read_file only reads host-local files`
+      : captureOverflow || curlExit == null
+        ? `output capped at ${MAX_DOWNLOAD_BYTES} bytes; ${curlExit == null ? "curl exit unknown" : `curl exited ${curlExit}`} — for larger evidence, save and inspect it inside the sandbox with execute_command (curl -o file, then head/dd on the file); read_file only reads host-local files`
         : curlExit !== 0
           ? `curl exited ${curlExit}${redactedSandboxStderr ? `: ${redactedSandboxStderr}` : ""}; output may be partial`
           : undefined;

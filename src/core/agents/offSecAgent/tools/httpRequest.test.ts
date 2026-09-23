@@ -7,6 +7,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import http from "node:http";
+import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -666,10 +667,11 @@ describe("httpRequest body liveness", () => {
     // head cut the stream at the cap: curl SIGPIPE'd before writing its exit
     // marker, so the output carries no trustworthy exit status.
     const CAP = 5 * 1024 * 1024;
+    const headers = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n";
     const execute = vi.fn(async () => ({
       success: true,
       exitCode: 0,
-      stdout: `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n${"A".repeat(CAP)}`,
+      stdout: `${headers}${"A".repeat(CAP)}`,
       stderr: "",
     }));
     const ctx = ctxWithScratchLogs({
@@ -690,8 +692,73 @@ describe("httpRequest body liveness", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("capped");
     expect(result.body).toContain("INCOMPLETE");
-    expect(readFileSync(savedPathFrom(result.body), "utf-8").length).toBe(CAP);
+    expect(readFileSync(savedPathFrom(result.body), "utf-8").length).toBe(
+      CAP - headers.length,
+    );
   }, 10_000);
+
+  it.each([
+    -1, 0, 1,
+  ])("preserves POSIX completion at the capture boundary (%s bytes)", async (delta) => {
+    const cap = 5 * 1024 * 1024;
+    const targetSize = cap + delta;
+    const headersFor = (bytes: number) =>
+      `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${bytes}\r\nConnection: close\r\n\r\n`;
+    const bodySize = targetSize - headersFor(targetSize).length;
+    const headers = headersFor(bodySize);
+    const wire = headers + "x".repeat(bodySize);
+    expect(wire.length).toBe(targetSize);
+    const server = createNetServer((socket) => {
+      socket.once("data", () => socket.end(wire));
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/boundary`;
+    const sandbox = {
+      type: "linux",
+      execute: (command: string) =>
+        new Promise((resolve) => {
+          exec(
+            command,
+            { maxBuffer: 8 * 1024 * 1024, timeout: 15_000 },
+            (error, stdout, stderr) => {
+              resolve({
+                success: !error,
+                exitCode: error ? 1 : 0,
+                stdout,
+                stderr,
+              });
+            },
+          );
+        }),
+    } as UnifiedSandbox;
+    try {
+      const base = makeCtx();
+      const ctx = ctxWithScratchLogs({
+        sandbox,
+        target: url,
+        session: { ...base.session, targets: [url] },
+      });
+      const result = (await httpRequest(ctx).execute?.(
+        {
+          url,
+          method: "GET",
+          followRedirects: false,
+          timeout: 10_000,
+          toolCallDescription: "Read a POSIX response at the byte cap",
+        },
+        { toolCallId: "boundary", messages: [], abortSignal: undefined },
+      )) as HttpRequestResult;
+      expect(result.success).toBe(delta <= 0);
+      expect(result.capture.complete).toBe(delta <= 0);
+      expect(result.capture.stopReason).toBe(delta <= 0 ? "end" : "byte-cap");
+      const saved = readFileSync(savedPathFrom(result.body), "utf8");
+      expect(saved).toBe("x".repeat(Math.min(bodySize, cap - headers.length)));
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }, 20_000);
 
   it("stops an oversized producer in the sandbox and returns bounded output (real loopback)", async () => {
     const CAP = 5 * 1024 * 1024;

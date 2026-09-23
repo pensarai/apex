@@ -708,6 +708,49 @@ describe("buildWindowsCurlCommand execution (Windows only)", () => {
   );
 
   it.skipIf(!isWin)(
+    "expired budget drains an already-exited curl before observing EOF",
+    async () => {
+      const port = await startServer((_req, res) => {
+        res.end("buffered-before-deadline");
+      });
+      const built = buildWindowsCurlCommand({
+        ...BASE_OPTS,
+        url: `http://127.0.0.1:${port}/buffered-eof`,
+        timeoutSeconds: 15,
+      });
+      const encoded = built.command.split(" ").at(-1) ?? "";
+      const script = Buffer.from(encoded, "base64").toString("utf16le");
+      const budgetLine = "$remain=[int]($budgetMs-$sw.ElapsedMilliseconds)";
+      expect(script).toContain(budgetLine);
+      // After actual bytes arrive, wait for the real process exit and expire
+      // the budget BEFORE the next read can observe the pipe's EOF.
+      const injected = script.replace(
+        budgetLine,
+        "if($tot -gt 0){if(-not $p.WaitForExit(5000)){throw 'fixture curl did not exit'};$budgetMs=0;[Console]::Error.WriteLine('fixture deadline after curl exit')}\n" +
+          budgetLine,
+      );
+      const { stdout, stderr } = await execFileAsync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-EncodedCommand",
+          Buffer.from(injected, "utf16le").toString("base64"),
+        ],
+        {
+          timeout: 30_000,
+          encoding: "utf8",
+          env: { ...process.env, ...built.envVars },
+        },
+      );
+      expect(stderr).toContain("fixture deadline after curl exit");
+      expect(stdout).toContain("buffered-before-deadline");
+      expect(stdout).toMatch(new RegExp(`\\n${NONCE}0\\n$`));
+    },
+    45_000,
+  );
+
+  it.skipIf(!isWin)(
     "EOF with exhausted budget: marker emitted with curl exit 0 (not exit 1)",
     async () => {
       const port = await startServer((_req, res) => {
