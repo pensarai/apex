@@ -381,7 +381,7 @@ describe("applyHeadersToShellCommand", () => {
 
   it("emits a literal `\\n` (not a raw newline) for nikto -headers", () => {
     // Regression: injectNikto previously embedded a 0x0A byte, which broke
-    // line-based persistent shells.
+    // line-based shell argument parsing.
     const session = makeSession({
       config: { headers: { "X-One": "1", "X-Two": "2" } },
     });

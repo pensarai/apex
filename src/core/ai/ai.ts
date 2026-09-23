@@ -502,8 +502,8 @@ function isStreamIdleTimeoutError(error: unknown): boolean {
  *
  * Parallel tool calls are tracked by `toolCallId`. Duplicate `tool-call`
  * chunks for the same id (defensive — should never happen in practice) are
- * deduplicated. `tool-result` chunks without a matching open call are
- * ignored so the counter can never go negative.
+ * deduplicated. Terminal chunks (`tool-result` / `tool-error`) without a
+ * matching open call are ignored so the counter can never go negative.
  *
  * EXCEPTION: `response` is never gated — its `execute` returns synchronously so
  * it's not a slow tool, but a Bedrock stream wedging mid-payload while
@@ -537,7 +537,10 @@ function createToolExecutionGate(): {
         } else {
           inFlight++;
         }
-      } else if (chunk.type === "tool-result") {
+      } else if (chunk.type === "tool-result" || chunk.type === "tool-error") {
+        // A failed tool is just as terminal for the gate as a successful one —
+        // without this, a tool-error leaves its slot open forever, suppressing
+        // the idle timeout for the rest of the run.
         const id = chunk.toolCallId;
         if (id) {
           if (open.delete(id)) {

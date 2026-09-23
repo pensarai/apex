@@ -1,7 +1,7 @@
 /**
  * Unit tests for OffensiveSecurityAgent.consume().
  *
- * Verifies that persistentShell.dispose() is called even when the
+ * Verifies that the command shell's dispose() is called even when the
  * fullStream throws — the shell-leak bug described in the PR.
  *
  * Heavy transitive dependencies (tools, AI SDK, zod) are stubbed so
@@ -67,7 +67,7 @@ vi.mock("./tools", () => ({
     "create_workspace_endpoint",
     "update_workspace_endpoint",
   ],
-  PersistentShell: class {},
+  PerCommandShell: class {},
 }));
 vi.mock("../../ai", () => ({
   streamResponse: (opts: Record<string, unknown>) => {
@@ -308,7 +308,7 @@ describe("tool context forwarding", () => {
  */
 function buildStubAgent(overrides: {
   fullStream: AsyncIterable<unknown>;
-  persistentShell?: { dispose: () => void };
+  commandShell?: { dispose: () => Promise<void> };
   abortSignal?: AbortSignal;
   resolveResult?: (sr: unknown) => unknown;
   browserSession?: { disconnect: () => Promise<void> };
@@ -358,8 +358,8 @@ function buildStubAgent(overrides: {
     value: null,
     writable: true,
   });
-  Object.defineProperty(agent, "persistentShell", {
-    value: overrides.persistentShell,
+  Object.defineProperty(agent, "commandShell", {
+    value: overrides.commandShell,
   });
   Object.defineProperty(agent, "abortSignal", {
     value: overrides.abortSignal,
@@ -745,12 +745,12 @@ describe("workspace tool access", () => {
 describe("OffensiveSecurityAgent.consume()", () => {
   const textDelta = { type: "text-delta", text: "hi" };
 
-  describe("persistentShell disposal on stream error (leak fix)", () => {
+  describe("command shell disposal on stream error (leak fix)", () => {
     it("disposes shell after a successful stream", async () => {
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldChunks([textDelta]),
-        persistentShell: { dispose },
+        commandShell: { dispose },
       });
 
       await agent.consume();
@@ -758,10 +758,10 @@ describe("OffensiveSecurityAgent.consume()", () => {
     });
 
     it("disposes shell when the stream throws mid-iteration", async () => {
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldThenThrow([textDelta], new Error("stream exploded")),
-        persistentShell: { dispose },
+        commandShell: { dispose },
       });
 
       await expect(agent.consume()).rejects.toThrow("stream exploded");
@@ -769,21 +769,57 @@ describe("OffensiveSecurityAgent.consume()", () => {
     });
 
     it("disposes shell when the stream throws immediately (no chunks)", async () => {
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldThenThrow([], new Error("instant failure")),
-        persistentShell: { dispose },
+        commandShell: { dispose },
       });
 
       await expect(agent.consume()).rejects.toThrow("instant failure");
       expect(dispose).toHaveBeenCalledOnce();
     });
 
+    it("drain does not settle before the shell's kill barrier resolves", async () => {
+      // Stream error while a command is still active: dispose() returns a
+      // pending barrier (bounded in production by the runner's kill
+      // protocol). Hosts rely on drained before closeout, so consume() must
+      // not settle while that barrier is pending.
+      let releaseBarrier: (() => void) | undefined;
+      const barrier = new Promise<void>((res) => {
+        releaseBarrier = res;
+      });
+      const dispose = vi.fn(() => barrier);
+      const agent = buildStubAgent({
+        fullStream: yieldThenThrow([textDelta], new Error("stream exploded")),
+        commandShell: { dispose },
+      });
+
+      let consumeSettled = false;
+      const consumeDone = agent.consume().then(
+        () => {
+          consumeSettled = true;
+        },
+        () => {
+          consumeSettled = true;
+        },
+      );
+
+      // finalizeRun has called dispose, but its barrier is pending — the
+      // drain must still be unsettled.
+      await vi.waitFor(() => expect(dispose).toHaveBeenCalledOnce());
+      await new Promise((r) => setTimeout(r, 50));
+      expect(consumeSettled).toBe(false);
+
+      releaseBarrier?.();
+      await consumeDone;
+      expect(consumeSettled).toBe(true);
+    });
+
     it("disposes shell when emitStreamPart throws", async () => {
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldChunks([textDelta]),
-        persistentShell: { dispose },
+        commandShell: { dispose },
       });
 
       vi.spyOn(agent.eventBus, "emitStreamPart").mockImplementation(() => {
@@ -850,7 +886,7 @@ describe("OffensiveSecurityAgent.consume()", () => {
     it("succeeds without shell when stream completes normally", async () => {
       const agent = buildStubAgent({
         fullStream: yieldChunks([textDelta]),
-        persistentShell: undefined,
+        commandShell: undefined,
       });
 
       await expect(agent.consume()).resolves.toBeUndefined();
@@ -859,7 +895,7 @@ describe("OffensiveSecurityAgent.consume()", () => {
     it("propagates stream error without shell (no dispose to call)", async () => {
       const agent = buildStubAgent({
         fullStream: yieldThenThrow([], new Error("sandbox boom")),
-        persistentShell: undefined,
+        commandShell: undefined,
       });
 
       await expect(agent.consume()).rejects.toThrow("sandbox boom");
@@ -870,7 +906,10 @@ describe("OffensiveSecurityAgent.consume()", () => {
     it("disposes shell before resolveResult runs", async () => {
       const callOrder: string[] = [];
 
-      const dispose = vi.fn(() => callOrder.push("dispose"));
+      const dispose = vi.fn(() => {
+        callOrder.push("dispose");
+        return Promise.resolve();
+      });
       const resolveResult = vi.fn(() => {
         callOrder.push("resolveResult");
         return "result";
@@ -878,7 +917,7 @@ describe("OffensiveSecurityAgent.consume()", () => {
 
       const agent = buildStubAgent({
         fullStream: yieldChunks([textDelta]),
-        persistentShell: { dispose },
+        commandShell: { dispose },
         resolveResult,
       });
 
@@ -895,10 +934,10 @@ describe("OffensiveSecurityAgent.consume()", () => {
       const controller = new AbortController();
       controller.abort();
 
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldChunks([textDelta]),
-        persistentShell: { dispose },
+        commandShell: { dispose },
         abortSignal: controller.signal,
       });
 
@@ -1507,10 +1546,10 @@ describe("OffensiveSecurityAgent.consume()", () => {
     });
 
     it("still disposes shell when emitSyntheticToolResults throws", async () => {
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldThenThrow([toolCallChunk], new Error("stream broke")),
-        persistentShell: { dispose },
+        commandShell: { dispose },
       });
 
       agent.eventBus.on("tool-result", () => {
@@ -1531,7 +1570,7 @@ describe("OffensiveSecurityAgent.consume()", () => {
       writeFileSync(messagesPath, JSON.stringify(existingMessages));
 
       const streamError = new Error("original stream error");
-      const dispose = vi.fn();
+      const dispose = vi.fn().mockResolvedValue(undefined);
       const disconnect = vi.fn().mockResolvedValue(undefined);
       const agent = buildStubAgent({
         fullStream: yieldThenThrow(
@@ -1545,7 +1584,7 @@ describe("OffensiveSecurityAgent.consume()", () => {
           ],
           streamError,
         ),
-        persistentShell: { dispose },
+        commandShell: { dispose },
         browserSession: { disconnect },
         ownsBrowserSession: true,
         messagesPath,
@@ -1586,17 +1625,20 @@ describe("owned-resource disposal", () => {
     toolName: "execute_command",
   };
 
-  it("disposeOwnedShell is idempotent across repeated calls", () => {
-    const dispose = vi.fn();
+  it("disposeOwnedShell is idempotent and returns the same cached barrier", async () => {
+    const dispose = vi.fn().mockResolvedValue(undefined);
     const agent = buildStubAgent({
       fullStream: yieldChunks([]),
-      persistentShell: { dispose },
+      commandShell: { dispose },
     });
 
-    agent.disposeOwnedShell();
-    agent.disposeOwnedShell();
-    agent.disposeOwnedShell();
+    const first = agent.disposeOwnedShell();
+    const second = agent.disposeOwnedShell();
+    const third = agent.disposeOwnedShell();
+    expect(second).toBe(first);
+    expect(third).toBe(first);
 
+    await first;
     expect(dispose).toHaveBeenCalledOnce();
   });
 
@@ -1834,10 +1876,13 @@ describe("root agent-run spans", () => {
       // span proves the span ended — and consume() resolving proves disposal
       // completed first (both are awaited in order inside runInSpan).
       const ordering: string[] = [];
-      const dispose = vi.fn(() => ordering.push("shell-disposed"));
+      const dispose = vi.fn(() => {
+        ordering.push("shell-disposed");
+        return Promise.resolve();
+      });
       const agent = buildStubAgent({
         fullStream: singleStepStream(),
-        persistentShell: { dispose },
+        commandShell: { dispose },
       });
       await agent.consume();
 

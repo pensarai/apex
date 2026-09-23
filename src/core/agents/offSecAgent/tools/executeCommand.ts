@@ -13,6 +13,7 @@ import {
   assertCommandActionAllowed,
   DestructiveActionError,
 } from "./destructiveGuard";
+import { readSandboxAgentEnv } from "./perCommandShell";
 import {
   assertCommandInScope,
   extractHostsFromCommand,
@@ -22,8 +23,44 @@ import {
 import type { ToolContext } from "./types";
 
 const MAX_INLINE = 50_000;
-const MS_TIMEOUT_THRESHOLD = 10_000;
 const DEFAULT_PROMPT_INJECTION_FILE_ENV = "APEX_PROMPT_INJECTION_FILE";
+
+/** Deadline applied when the model omits `timeout`. */
+export const DEFAULT_COMMAND_TIMEOUT_SECONDS = 120;
+export const MAX_COMMAND_TIMEOUT_SECONDS = 600;
+
+export type ExecuteCommandTimeoutValidation =
+  | { ok: true; seconds: number }
+  | { ok: false; error: string };
+
+/**
+ * Explicit timeouts are seconds, taken literally: nonfinite, nonpositive, and
+ * over-max values are rejected — never silently clamped or reinterpreted
+ * (millisecond-style values like 30000 fail as over-max, by design).
+ */
+export function validateExecuteCommandTimeout(
+  timeout: number,
+): ExecuteCommandTimeoutValidation {
+  if (!Number.isFinite(timeout)) {
+    return {
+      ok: false,
+      error: `Invalid timeout: must be a finite number of seconds (got ${timeout})`,
+    };
+  }
+  if (timeout <= 0) {
+    return {
+      ok: false,
+      error: `Invalid timeout: must be a positive number of seconds (got ${timeout})`,
+    };
+  }
+  if (timeout > MAX_COMMAND_TIMEOUT_SECONDS) {
+    return {
+      ok: false,
+      error: `Invalid timeout: ${timeout} exceeds the ${MAX_COMMAND_TIMEOUT_SECONDS}-second maximum — pass seconds, not milliseconds`,
+    };
+  }
+  return { ok: true, seconds: timeout };
+}
 
 /**
  * Placeholder ids models emit for the optional promptInjection pointer when
@@ -73,7 +110,7 @@ const executeCommandInputSchema = z.object({
     .number()
     .optional()
     .describe(
-      "Timeout in seconds. If omitted, the command runs until completion or abort.",
+      `Timeout in seconds (maximum ${MAX_COMMAND_TIMEOUT_SECONDS}; over-max and non-positive values are rejected, not clamped). If omitted, defaults to ${DEFAULT_COMMAND_TIMEOUT_SECONDS} seconds.`,
     ),
   allow_unprotected: z
     .boolean()
@@ -83,7 +120,7 @@ const executeCommandInputSchema = z.object({
     ),
 });
 
-type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
+export type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
 
 /**
  * Models sometimes fill the optional promptInjection pointer with placeholder
@@ -113,39 +150,26 @@ export type ExecuteCommandResult = {
 };
 
 /**
- * Defensively normalize obviously-millisecond timeout values into seconds.
- *
- * The tool contract is seconds, but models sometimes emit JavaScript-style
- * millisecond values like 30000 or 120000. Without normalization, those become
- * multi-hour hangs instead of 30s / 120s command limits.
- */
-export function normalizeExecuteCommandTimeout(
-  timeout?: number,
-): number | undefined {
-  if (timeout == null || !Number.isFinite(timeout) || timeout <= 0) {
-    return undefined;
-  }
-
-  if (timeout >= MS_TIMEOUT_THRESHOLD) {
-    return Math.max(1, Math.ceil(timeout / 1_000));
-  }
-
-  return timeout;
-}
-
-/**
  * If `raw` exceeds the inline limit, save the full text to a file under this
  * agent's log dir (`cmd-output/`) and return truncated text + file path.
- * Otherwise return the text as-is with no file. Scoped per-subagent via
+ * Otherwise return the text as-is with no file. An `incompleteNote` marks a
+ * capture that hit the byte cap — the saved artifact is the bounded capture
+ * and is never labeled as the full output. Scoped per-subagent via
  * {@link agentLogsDir} so a host can reclaim a finished subagent's command
  * dumps mid-scan.
  */
 function maybeSaveFullOutput(
   raw: string,
   ctx: ToolContext,
+  opts?: { incompleteNote?: string },
 ): { text: string; file?: string } {
+  const incompleteNote = opts?.incompleteNote;
   if (raw.length <= MAX_INLINE) {
-    return { text: raw || "(no output)" };
+    return {
+      text: incompleteNote
+        ? `${raw || "(no output)"}\n\n(INCOMPLETE — ${incompleteNote})`
+        : raw || "(no output)",
+    };
   }
 
   const outputDir = join(agentLogsDir(ctx), "cmd-output");
@@ -160,20 +184,22 @@ function maybeSaveFullOutput(
   try {
     writeFileSync(filePath, raw);
   } catch {
+    const failedNote = incompleteNote
+      ? `INCOMPLETE capture (${incompleteNote}); failed to save bounded capture to file`
+      : "failed to save full output to file";
     return {
-      text: `${raw.substring(0, MAX_INLINE)}...\n\n(truncated — failed to save full output to file)`,
+      text: `${raw.substring(0, MAX_INLINE)}...\n\n(truncated — ${failedNote})`,
     };
   }
 
   const truncated = raw.substring(0, MAX_INLINE);
+  const savedNote = incompleteNote
+    ? `INCOMPLETE capture (${incompleteNote}); saved output truncated at the byte limit to ${filePath}`
+    : `full output saved to ${filePath}`;
   return {
-    text: `${truncated}...\n\n(truncated — full output saved to ${filePath}). Use read_file or grep to analyze.`,
+    text: `${truncated}...\n\n(truncated — ${savedNote}). Use read_file or grep to analyze.`,
     file: filePath,
   };
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 /**
@@ -189,24 +215,6 @@ export function redactSecretValues(text: string, secrets?: string[]): string {
     out = out.split(s).join("[REDACTED]");
   }
   return out;
-}
-
-function wrapCommandWithEnv(
-  command: string,
-  envVars?: Record<string, string>,
-): string {
-  if (!envVars || Object.keys(envVars).length === 0) return command;
-
-  const assignments = Object.entries(envVars)
-    .map(([name, value]) => {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-        throw new Error(`Invalid environment variable name: ${name}`);
-      }
-      return `${name}=${shellQuote(value)}`;
-    })
-    .join(" ");
-
-  return `env ${assignments} bash -lc ${shellQuote(command)}`;
 }
 
 async function resolvePromptInjectionEnv(
@@ -265,9 +273,21 @@ export function executeCommand(ctx: ToolContext) {
   return tool({
     description: `Execute a shell command for penetration testing activities.
 
-The shell is persistent — environment variables, working directory (cd), and
-background processes survive across calls. You do NOT need nohup/& tricks to
-keep processes alive between calls; just background them normally with &.
+Each call runs in a FRESH shell in your working directory: cd, export,
+aliases, and background jobs do NOT persist between calls. Chain related
+steps in one command (cd dir && ./run) or use absolute paths. Environment
+activation (virtualenv, exports) must happen in the SAME command that uses
+it, or come from the session's configured environment.
+
+LOCAL SERVICES: to start a long-running service, background it WITH
+redirected stdio so the call returns immediately and the service survives as
+a plain process:
+  nohup python server.py > scratchpad/server.log 2>&1 & echo $! > scratchpad/server.pid
+Check later with cat scratchpad/server.log; stop with kill $(cat
+scratchpad/server.pid). There is no shell job table across calls — recorded
+PIDs/files plus explicit lifecycle are how you manage services. Note: a
+command that FAILS (nonzero exit) takes its background children down with it;
+only a successful launcher leaves its redirected service running.
 
 COMMON COMMANDS FOR BLACK BOX TESTING:
 
@@ -291,9 +311,16 @@ SSL/TLS TESTING:
 OUTPUT HANDLING:
 - Use 2>&1 to capture stderr
 - Use timeout command for long-running scans
-- The tool's timeout parameter is in SECONDS, not milliseconds
+- The tool's timeout parameter is in SECONDS (default ${DEFAULT_COMMAND_TIMEOUT_SECONDS}, maximum ${MAX_COMMAND_TIMEOUT_SECONDS})
 - Good timeout examples: 30, 60, 120
-- Do NOT pass millisecond values like 30000 or 120000
+- Values over ${MAX_COMMAND_TIMEOUT_SECONDS} (including millisecond-style values like 30000) are REJECTED, not reinterpreted
+- Each stream captures up to 1 MiB in memory; a verbose process is never
+  killed for output volume — capture keeps draining and reports truncation
+  honestly (capped output is labeled INCOMPLETE). For large evidence, redirect
+  the command's output directly to a file (e.g. \`... > scratchpad/scan.txt 2>&1\`)
+  and read targeted windows of it: with read_file/grep locally, or — when the
+  command ran in the sandbox, where those files live inside the sandbox — via
+  bounded execute_command reads like \`sed -n '1,200p' scratchpad/scan.txt\`.
 - If the tool's timeout is hit, the partial stdout the command had already
   produced is still returned (with exit code 124). It is safe to set a
   conservative timeout: you will not lose the bytes a fuzzer printed
@@ -344,6 +371,23 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           stderr: "",
           command,
         };
+      }
+
+      // Fail loud on invalid explicit timeouts — silently dropping or
+      // clamping them would reinterpret the caller's deadline.
+      let effectiveTimeout = DEFAULT_COMMAND_TIMEOUT_SECONDS;
+      if (timeout !== undefined) {
+        const validated = validateExecuteCommandTimeout(timeout);
+        if (!validated.ok) {
+          return {
+            success: false,
+            error: validated.error,
+            stdout: "",
+            stderr: validated.error,
+            command,
+          };
+        }
+        effectiveTimeout = validated.seconds;
       }
 
       try {
@@ -445,14 +489,23 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       // Sandbox mode: route execution through the sandbox
       if (ctx.sandbox) {
         try {
+          // Explicit default cwd + approved configured agent env every
+          // invocation, via the existing sandbox interface. Per-agent
+          // configured env overrides the workspace blob; the injection env
+          // (payload pointer) overrides both. Process ownership/termination
+          // parity is the adapter's, not claimed here.
           const ssmOpts: {
-            timeout?: number;
+            timeout: number;
+            cwd?: string;
             envVars?: Record<string, string>;
-          } = {};
-          const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
-          if (normalizedTimeout != null) {
-            ssmOpts.timeout = normalizedTimeout;
-          }
+          } = {
+            timeout: effectiveTimeout,
+            cwd: ctx.agentCwd,
+            envVars: {
+              ...readSandboxAgentEnv(),
+              ...ctx.environmentVariables,
+            },
+          };
 
           // If we have a prompt injection payload for sandbox mode, we need to write
           // it to a temp file in the sandbox first, since the host file path won't
@@ -468,8 +521,11 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
               .replace(/'/g, "'\\''");
             const writeCommand = `printf '%s' '${escapedPayload}' > ${sandboxTempFile}`;
 
+            // The payload-file write keeps its own 30s ceiling: 30s when the
+            // command timeout is omitted, and an explicit timeout can only
+            // tighten it — a printf must never outlive a 600s command cap.
             const writeResult = await ctx.sandbox.execute(writeCommand, {
-              timeout: normalizedTimeout ?? 30,
+              timeout: Math.min(effectiveTimeout, 30),
             });
 
             if (!writeResult.success) {
@@ -485,10 +541,11 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
 
             // Update env vars to point to the sandbox temp file
             ssmOpts.envVars = {
+              ...ssmOpts.envVars,
               [envVarName]: sandboxTempFile,
             };
           } else if (promptInjectionEnvVars) {
-            ssmOpts.envVars = promptInjectionEnvVars;
+            ssmOpts.envVars = { ...ssmOpts.envVars, ...promptInjectionEnvVars };
           }
 
           const result = await ctx.sandbox.execute(commandWithHeaders, ssmOpts);
@@ -517,33 +574,44 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         }
       }
 
-      // Local mode: use the persistent shell
-      if (ctx.persistentShell) {
+      // Local mode: per-command executor (fresh shell each invocation)
+      if (ctx.commandShell) {
         try {
-          const normalizedTimeout = normalizeExecuteCommandTimeout(timeout);
           const onData = ctx.eventBus
             ? (data: string) =>
                 ctx.eventBus?.emit("command-output", { data: redact(data) })
             : undefined;
-          const result = await ctx.persistentShell.execute(
-            wrapCommandWithEnv(commandWithHeaders, promptInjectionEnvVars),
-            normalizedTimeout,
+          const result = await ctx.commandShell.execute(commandWithHeaders, {
+            cwd: ctx.agentCwd,
+            env: promptInjectionEnvVars,
+            timeoutSeconds: effectiveTimeout,
+            abortSignal: ctx.abortSignal,
             onData,
-            ctx.abortSignal,
-          );
+          });
+          const stdoutNote = result.stdoutTruncated
+            ? "stdout capture truncated at the byte limit"
+            : undefined;
+          const stderrNote = result.stderrTruncated
+            ? "stderr capture truncated at the byte limit"
+            : undefined;
           const { text: stdout, file: outputFile } = maybeSaveFullOutput(
             redact(result.stdout),
             ctx,
+            { incompleteNote: stdoutNote },
           );
-          const stderr = redact(result.stderr);
+          const stderr =
+            redact(result.stderr) +
+            (stderrNote ? `\n\n(INCOMPLETE — ${stderrNote})` : "");
           return {
             success: result.exitCode === 0,
             error:
               result.exitCode === 124
                 ? "Command timed out"
-                : result.exitCode !== 0
-                  ? `Exit code: ${result.exitCode}`
-                  : "",
+                : result.exitCode === 130
+                  ? "Command aborted"
+                  : result.exitCode !== 0
+                    ? `Exit code: ${result.exitCode}`
+                    : "",
             stdout,
             stderr,
             command,
