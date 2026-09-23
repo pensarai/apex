@@ -60,10 +60,9 @@ export type HttpRequestResult = {
     complete: boolean;
     stopReason: BodyCaptureStopReason;
     /**
-     * Bytes captured at the producer. `raw` counts undecoded bytes (local
-     * path); `decoded` is the UTF-8 length of adapter-decoded text (sandbox
-     * path — the adapter returns a string, so raw precision is not
-     * recoverable there).
+     * `raw` counts undecoded body bytes on the local path. `decoded` counts
+     * the UTF-8 length of the sandbox body text, after decoding; replacement
+     * characters can make this larger than the raw capture limit.
      */
     capturedBytes: number;
     capturedBytesBasis: "raw" | "decoded";
