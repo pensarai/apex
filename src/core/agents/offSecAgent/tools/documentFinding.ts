@@ -156,9 +156,16 @@ const EVIDENCE_FILE_THRESHOLD = 20_000;
 // (`~/.pensar/sessions/...`), which the sandbox fs backend can't see.
 const SANDBOX_ARTIFACTS_ROOT = "/workspace/repo/.pensar";
 
-/** True when this call is executing against a real sandbox, not the LocalBackends fallback (CLI/tests). */
+/**
+ * True when this call executes against a real sandbox, not the LocalBackends
+ * fallback (CLI/tests). The durable runtime injects sandbox-routed `backends`
+ * (whose fs is the contained `/workspace/repo`) without the legacy in-process
+ * `ctx.sandbox`, so keying only off `ctx.sandbox` made artifacts write to the
+ * host `session` paths that the sandbox fs then rejects as "outside the
+ * workspace root" — silently failing every finding. Honour either signal.
+ */
 function isRealSandbox(ctx: ToolContext): boolean {
-  return ctx.sandbox !== undefined;
+  return ctx.sandbox !== undefined || ctx.backends?.sandboxed === true;
 }
 
 function artifactsRoot(ctx: ToolContext): string {
