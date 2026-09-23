@@ -128,7 +128,7 @@ interface AttemptCapture {
 
 interface PendingFailure {
   capture: AttemptCapture;
-  nativeInput?: unknown;
+  emit: (lifecycle?: "retried") => void;
   settle: () => void;
 }
 
@@ -687,6 +687,16 @@ function beginAttempt(
   return capture;
 }
 
+function isAborted(
+  options: LanguageModelV3CallOptions,
+  error: unknown,
+): boolean {
+  return (
+    options.abortSignal?.aborted === true ||
+    (error instanceof Error && error.name === "AbortError")
+  );
+}
+
 function errorRequestBody(error: unknown): unknown {
   return APICallError.isInstance(error) ? error.requestBodyValues : undefined;
 }
@@ -749,6 +759,16 @@ function emitAttempt(
           ? "the bounded collector omitted later output parts"
           : "the provider output ended before a complete terminal result",
       partial: normalizedOutputAvailability.value,
+    };
+  }
+
+  if (
+    input.lifecycle === "aborted" &&
+    normalizedOutputAvailability.state === "omitted"
+  ) {
+    normalizedOutputAvailability = {
+      state: "interrupted",
+      reason: "the provider call was cancelled before returning output",
     };
   }
 
@@ -927,7 +947,9 @@ function collectStreamPart(
 
   try {
     const normalized = toJsonValue(part);
-    const size = Buffer.byteLength(stringifyCanonicalJson(normalized));
+    const size =
+      Buffer.byteLength(stringifyCanonicalJson(normalized)) +
+      (collector.parts.length > 0 ? 1 : 0);
     if (
       !collector.truncated &&
       collector.byteLength + size <= store.limits.maxAssetBytes
@@ -939,7 +961,9 @@ function collectStreamPart(
     }
     if (part.type === "raw") {
       const raw = toJsonValue(part.rawValue);
-      const rawSize = Buffer.byteLength(stringifyCanonicalJson(raw));
+      const rawSize =
+        Buffer.byteLength(stringifyCanonicalJson(raw)) +
+        (collector.rawParts.length > 0 ? 1 : 0);
       if (
         !collector.rawTruncated &&
         collector.rawByteLength + rawSize <= store.limits.maxAssetBytes
@@ -961,12 +985,13 @@ function wrapCapturedStream(
   capture: AttemptCapture,
   result: LanguageModelV3StreamResult,
   options: LanguageModelV3CallOptions,
+  retainFailure: (emit: PendingFailure["emit"]) => void,
 ): LanguageModelV3StreamResult {
   const collector: StreamCollector = {
     parts: [],
     rawParts: [],
-    byteLength: 0,
-    rawByteLength: 0,
+    byteLength: Buffer.byteLength('{"parts":[]}'),
+    rawByteLength: Buffer.byteLength('{"chunks":[]}'),
     truncated: false,
     rawTruncated: false,
     sawError: false,
@@ -989,6 +1014,7 @@ function wrapCapturedStream(
   const finalize = (
     lifecycle: NativeRolloutAttemptLifecycle,
     outputState: "available" | "truncated" | "interrupted",
+    retryable = false,
   ) => {
     if (finalized) return;
     finalized = true;
@@ -1015,35 +1041,41 @@ function wrapCapturedStream(
         field: "boundary.output.normalized",
       });
     }
-    safeEmitAttempt(store, capture, {
-      lifecycle,
-      nativeInput: result.request?.body,
-      normalizedOutput: { parts: collector.parts },
-      normalizedOutputState: collector.truncated ? "truncated" : outputState,
-      nativeOutput:
-        collector.rawParts.length > 0
-          ? { chunks: collector.rawParts }
-          : undefined,
-      nativeOutputState:
-        outputState === "interrupted"
-          ? "interrupted"
-          : collector.rawTruncated
-            ? "truncated"
-            : "available",
-      nativeOutputAbsent: options.includeRawChunks ? "omitted" : "unsupported",
-      nativeOutputReason: options.includeRawChunks
-        ? "the provider emitted no raw response chunks"
-        : "raw provider chunks were not enabled for this existing call",
-      providerMetadata: collector.providerMetadata,
-      usage: collector.usage,
-      providerRequestId: collector.responseId,
-      effectiveModelId: collector.responseModelId,
-      limitations,
-    });
-    collector.parts.length = 0;
-    collector.rawParts.length = 0;
-    collector.byteLength = 0;
-    collector.rawByteLength = 0;
+    const emit: PendingFailure["emit"] = (retryLifecycle) => {
+      safeEmitAttempt(store, capture, {
+        lifecycle: retryLifecycle ?? lifecycle,
+        nativeInput: result.request?.body,
+        normalizedOutput: { parts: collector.parts },
+        normalizedOutputState: collector.truncated ? "truncated" : outputState,
+        nativeOutput:
+          collector.rawParts.length > 0
+            ? { chunks: collector.rawParts }
+            : undefined,
+        nativeOutputState:
+          outputState === "interrupted"
+            ? "interrupted"
+            : collector.rawTruncated
+              ? "truncated"
+              : "available",
+        nativeOutputAbsent: options.includeRawChunks
+          ? "omitted"
+          : "unsupported",
+        nativeOutputReason: options.includeRawChunks
+          ? "the provider emitted no raw response chunks"
+          : "raw provider chunks were not enabled for this existing call",
+        providerMetadata: collector.providerMetadata,
+        usage: collector.usage,
+        providerRequestId: collector.responseId,
+        effectiveModelId: collector.responseModelId,
+        limitations,
+      });
+      collector.parts.length = 0;
+      collector.rawParts.length = 0;
+      collector.byteLength = 0;
+      collector.rawByteLength = 0;
+    };
+    if (retryable) retainFailure(emit);
+    else emit();
   };
   const interrupt = () => {
     const terminal = terminalLifecycle();
@@ -1062,7 +1094,11 @@ function wrapCapturedStream(
           if (next.done) {
             const terminal = terminalLifecycle();
             controller.close();
-            finalize(terminal.lifecycle, terminal.outputState);
+            finalize(
+              terminal.lifecycle,
+              terminal.outputState,
+              collector.sawError,
+            );
             return;
           }
           if (!finalized) {
@@ -1072,12 +1108,22 @@ function wrapCapturedStream(
               collector.truncated = true;
             }
           }
+          if (next.value.type === "error") {
+            const aborted = isAborted(options, next.value.error);
+            finalize(aborted ? "aborted" : "partial", "interrupted", !aborted);
+          }
           controller.enqueue(next.value);
         } catch (error) {
           controller.error(error);
+          const aborted = isAborted(options, error);
           finalize(
-            collector.parts.length > 0 ? "partial" : "failed",
+            aborted
+              ? "aborted"
+              : collector.parts.length > 0
+                ? "partial"
+                : "failed",
             "interrupted",
+            !aborted,
           );
         }
       },
@@ -1131,17 +1177,6 @@ export function withNativeRolloutEvidenceModel(
       await Promise.all([...activeStore.pendingWrites]);
     }
   };
-  const emitFailed = (
-    pending: Pick<PendingFailure, "capture" | "nativeInput">,
-  ) => {
-    safeEmitAttempt(activeStore, pending.capture, {
-      lifecycle: "failed",
-      nativeInput: pending.nativeInput,
-      normalizedOutputState: "interrupted",
-      nativeOutputAbsent: "omitted",
-      nativeOutputReason: "the provider call failed before returning output",
-    });
-  };
   const removeScopeFinalizerIfIdle = (invocation: symbol) => {
     if (pendingFailures.has(invocation)) return;
     const registered = scopeFinalizers.get(invocation);
@@ -1162,7 +1197,7 @@ export function withNativeRolloutEvidenceModel(
     activeStore.retainedFailures.delete(pending.settle);
     pendingFailureCount -= 1;
     removeScopeFinalizerIfIdle(invocation);
-    if (emit) emitFailed(pending);
+    if (emit) pending.emit();
     releaseFlusherIfIdle();
   };
   const ensureScopeFinalizer = (operation: OperationContext) => {
@@ -1239,7 +1274,7 @@ export function withNativeRolloutEvidenceModel(
     operation?: OperationContext,
   ) => {
     if (!operation) {
-      emitFailed(failure);
+      failure.emit();
       return;
     }
     if (
@@ -1274,13 +1309,7 @@ export function withNativeRolloutEvidenceModel(
     const current = context();
     const retry = takePendingFailure(current.invocation);
     if (retry) {
-      safeEmitAttempt(activeStore, retry.capture, {
-        lifecycle: "retried",
-        nativeInput: retry.nativeInput,
-        normalizedOutputState: "interrupted",
-        nativeOutputAbsent: "omitted",
-        nativeOutputReason: "the provider call failed before a retry",
-      });
+      retry.emit("retried");
     }
     let capture: AttemptCapture;
     try {
@@ -1339,14 +1368,22 @@ export function withNativeRolloutEvidenceModel(
       });
       return result;
     } catch (error) {
-      addPendingFailure(
-        current.invocation,
-        {
-          capture,
+      const aborted = isAborted(options, error);
+      const emit: PendingFailure["emit"] = (lifecycle) =>
+        safeEmitAttempt(activeStore, capture, {
+          lifecycle: lifecycle ?? (aborted ? "aborted" : "failed"),
           nativeInput: errorRequestBody(error),
-        },
-        current.operation,
-      );
+          normalizedOutputState: "interrupted",
+          nativeOutputAbsent: "omitted",
+          nativeOutputReason: "the provider call ended before returning output",
+        });
+      if (aborted) emit();
+      else
+        addPendingFailure(
+          current.invocation,
+          { capture, emit },
+          current.operation,
+        );
       throw error;
     }
   }
@@ -1357,13 +1394,7 @@ export function withNativeRolloutEvidenceModel(
     const current = context();
     const retry = takePendingFailure(current.invocation);
     if (retry) {
-      safeEmitAttempt(activeStore, retry.capture, {
-        lifecycle: "retried",
-        nativeInput: retry.nativeInput,
-        normalizedOutputState: "interrupted",
-        nativeOutputAbsent: "omitted",
-        nativeOutputReason: "the provider call failed before a retry",
-      });
+      retry.emit("retried");
     }
     let capture: AttemptCapture;
     try {
@@ -1387,18 +1418,38 @@ export function withNativeRolloutEvidenceModel(
     try {
       result = await model.doStream(options);
     } catch (error) {
-      addPendingFailure(
-        current.invocation,
-        {
-          capture,
+      const aborted = isAborted(options, error);
+      const emit: PendingFailure["emit"] = (lifecycle) =>
+        safeEmitAttempt(activeStore, capture, {
+          lifecycle: lifecycle ?? (aborted ? "aborted" : "failed"),
           nativeInput: errorRequestBody(error),
-        },
-        current.operation,
-      );
+          normalizedOutputState: "interrupted",
+          nativeOutputAbsent: "omitted",
+          nativeOutputReason: "the provider call ended before returning output",
+        });
+      if (aborted) emit();
+      else
+        addPendingFailure(
+          current.invocation,
+          { capture, emit },
+          current.operation,
+        );
       throw error;
     }
     try {
-      return wrapCapturedStream(activeStore, capture, result, options);
+      return wrapCapturedStream(
+        activeStore,
+        capture,
+        result,
+        options,
+        (emit) => {
+          addPendingFailure(
+            current.invocation,
+            { capture, emit },
+            current.operation,
+          );
+        },
+      );
     } catch {
       addDiagnostic(activeStore, {
         code: "capture_failure",
