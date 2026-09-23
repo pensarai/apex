@@ -1,10 +1,11 @@
 import { relative } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import type { CommandBackend } from "../../../tools/backends/types";
 import {
   resolvePathWithinCodebaseRoot,
   resolveWhiteboxCodebaseRoot,
-  runSpawnBounded,
+  runCommandBounded,
   writeWhiteboxArtifact,
 } from "../../../whitebox";
 import type { ToolContext } from "./types";
@@ -50,6 +51,7 @@ async function runSingleQuery(input: {
   cwd: string;
   targetPath: string;
   timeoutSeconds: number;
+  command: CommandBackend | undefined;
 }): Promise<{
   stdout: string;
   stderr: string;
@@ -61,12 +63,10 @@ async function runSingleQuery(input: {
     input.engine,
     ...buildArgs(input.engine, input.pattern, input.targetPath),
   ];
-  return runSpawnBounded({
-    command: argv,
+  return runCommandBounded(input.command, argv, {
     cwd: input.cwd,
     timeoutSeconds: input.timeoutSeconds,
     maxTotalBytes: MAX_QUERY_CAPTURE_BYTES,
-    detached: false,
   });
 }
 
@@ -135,6 +135,7 @@ instead of flooding context with every match. Output size and runtime are bounde
         };
       }
 
+      const command = ctx.backends?.command;
       const results: QueryResult[] = [];
       for (const query of queries) {
         let targetPathForEngine = ".";
@@ -163,6 +164,7 @@ instead of flooding context with every match. Output size and runtime are bounde
           cwd: rootPath,
           targetPath: targetPathForEngine,
           timeoutSeconds,
+          command,
         });
         const lines = output.stdout.split("\n").filter(Boolean);
         const combined =

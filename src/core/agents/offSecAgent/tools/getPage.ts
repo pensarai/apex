@@ -1,33 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { resolveEffectiveHeaders } from "../../../http/targetHeaders";
-import type { HeaderRecord } from "../../../http/types";
-import { resolverSessionFromCtx } from "./scopeGuard";
+import { resolveBackends } from "../../../tools/backends";
 import type { ToolContext } from "./types";
-
-// Tool baselines used for out-of-scope research URLs (CVE writeups, vendor
-// docs) — a recognisable UA avoids Cloudflare/Akamai bot challenges on
-// `Bun/x.y` defaults. For in-scope URLs the resolver's values win.
-const GETPAGE_USER_AGENT =
-  "Mozilla/5.0 (compatible; PensarBot/1.0; +https://pensar.dev)";
-
-const BASELINE_FALLBACK_HEADERS: HeaderRecord = {
-  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "Accept-Language": "en-US,en;q=0.5",
-};
-
-function mergeBaselineHeaders(resolved: HeaderRecord): HeaderRecord {
-  const present = new Set(Object.keys(resolved).map((k) => k.toLowerCase()));
-  const out: HeaderRecord = { ...resolved };
-  out["User-Agent"] = GETPAGE_USER_AGENT;
-  for (const [name, value] of Object.entries(BASELINE_FALLBACK_HEADERS)) {
-    if (!present.has(name.toLowerCase())) out[name] = value;
-  }
-  return out;
-}
-
-const MAX_CONTENT_LENGTH = 50_000;
-const REQUEST_TIMEOUT = 30_000;
 
 const getPageInputSchema = z.object({
   url: z
@@ -41,8 +15,6 @@ const getPageInputSchema = z.object({
     ),
 });
 
-type GetPageInput = z.infer<typeof getPageInputSchema>;
-
 export interface GetPageResponse {
   success: boolean;
   url: string;
@@ -51,47 +23,13 @@ export interface GetPageResponse {
   error?: string;
 }
 
-function extractTitle(html: string): string | undefined {
-  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  return titleMatch?.[1]?.trim();
-}
-
-function extractTextContent(html: string): string {
-  let text = html;
-
-  // Remove script and style tags with their content
-  text = text.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
-  text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
-  text = text.replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, "");
-
-  // Remove HTML comments
-  text = text.replace(/<!--[\s\S]*?-->/g, "");
-
-  // Remove all HTML tags
-  text = text.replace(/<[^>]+>/g, " ");
-
-  // Decode common HTML entities
-  text = text
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'");
-
-  // Normalize whitespace
-  text = text.replace(/\s+/g, " ").trim();
-
-  // Split into lines and remove empty ones
-  const lines = text
-    .split(/[.\n]/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-
-  return lines.join("\n");
-}
-
+/**
+ * `get_page` — a thin alias over `http_request` with `extract: 'readability'`
+ * (design §5.4, Appendix L: the one safe tool-name merge). Kept as its own
+ * model-facing name because prompts and `activeTools` lists across the agent
+ * definitions still reference it by name; the fetch/extraction logic itself
+ * lives once in `LocalBackends.http` (`src/core/tools/backends/local.ts`).
+ */
 export function getPage(ctx: ToolContext) {
   return tool({
     description: `Fetch and extract readable content from a web page. Returns the page title and main text content.
@@ -109,86 +47,19 @@ BEST PRACTICES:
 - If content is truncated, the important information is usually near the beginning`,
     inputSchema: getPageInputSchema,
     execute: async ({ url }): Promise<GetPageResponse> => {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-
-        const combinedSignal = ctx.abortSignal
-          ? AbortSignal.any([ctx.abortSignal, controller.signal])
-          : controller.signal;
-
-        // Resolve once, then layer baselines so resolver values still win.
-        // Calling bare fetch (not targetFetch) avoids a second resolution
-        // pass that would promote baselines above credential headers.
-        const resolverSession = resolverSessionFromCtx(ctx);
-        const resolved = resolveEffectiveHeaders(resolverSession, url);
-        const headers = mergeBaselineHeaders(resolved);
-
-        // biome-ignore lint/style/noRestrictedGlobals: headers fully resolved above; targetFetch would re-resolve
-        const response = await fetch(url, {
-          method: "GET",
-          headers,
-          signal: combinedSignal,
-          redirect: "follow",
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          return {
-            success: false,
-            url,
-            error: `Failed to fetch page: ${response.status} ${response.statusText}`,
-          };
-        }
-
-        const contentType = response.headers.get("content-type") || "";
-        if (
-          !contentType.includes("text/html") &&
-          !contentType.includes("text/plain") &&
-          !contentType.includes("application/xhtml")
-        ) {
-          return {
-            success: false,
-            url,
-            error: `Unsupported content type: ${contentType}. This tool only supports HTML and text pages.`,
-          };
-        }
-
-        const html = await response.text();
-        const title = extractTitle(html);
-        let content = extractTextContent(html);
-
-        if (content.length > MAX_CONTENT_LENGTH) {
-          content =
-            content.substring(0, MAX_CONTENT_LENGTH) +
-            "\n\n... (content truncated — page exceeded maximum length)";
-        }
-
-        return {
-          success: true,
-          url,
-          title,
-          content,
-        };
-      } catch (error: unknown) {
-        if (error instanceof Error && error.name === "AbortError") {
-          return {
-            success: false,
-            url,
-            error: ctx.abortSignal?.aborted
-              ? "Request aborted by user"
-              : `Request timeout after ${REQUEST_TIMEOUT / 1000}s`,
-          };
-        }
-
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        return {
-          success: false,
-          url,
-          error: `Failed to fetch page: ${errorMsg}`,
-        };
+      const response = await resolveBackends(ctx).http.request(
+        { url, extract: "readability" },
+        { abortSignal: ctx.abortSignal },
+      );
+      if (!response.success) {
+        return { success: false, url, error: response.error };
       }
+      return {
+        success: true,
+        url: response.url,
+        title: response.title,
+        content: response.body,
+      };
     },
   });
 }

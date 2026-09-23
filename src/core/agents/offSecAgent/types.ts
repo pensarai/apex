@@ -31,6 +31,7 @@ import type { ApprovalGate } from "../../operator";
 import type { PromptInjectionLibrary } from "../../prompt-injections";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
+import type { ToolBackends } from "../../tools/backends/types";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { SubagentSpawner } from "./subagentSpawner";
 import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
@@ -116,6 +117,46 @@ export type StreamIdFactoryContext =
  * a factory that derives deterministic, replay-stable ids from the context.
  */
 export type StreamIdFactory = (context: StreamIdFactoryContext) => string;
+
+/**
+ * The hooks a host injects to control agent execution (design doc §3.5): tool
+ * backends, the sub-agent fan-out seam, model-call middleware/telemetry, the
+ * inbound-message transports, and the abort/extra-tools/sandbox escape
+ * hatches. Every specialized agent input extends this ONE type instead of
+ * re-declaring the fields, so a specialized agent can no longer drop a hook
+ * by forgetting to list it in a hand-written constructor.
+ */
+export interface AgentHooks {
+  /** Execution backends for fs / command / http / browser / inbox. Unset means local execution. */
+  backends?: ToolBackends;
+
+  /** Seam through which orchestration tools spawn sub-agents. Unset → the in-process spawner. */
+  subagentSpawner?: SubagentSpawner;
+
+  /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
+  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+
+  /** Per-run usage recorder. Unset → the process-global usage callback fires as today. */
+  usageRecorder?: UsageRecorder;
+
+  /** Factory for streamed message/part ids. Unset → random ULIDs, unchanged. */
+  streamIdFactory?: StreamIdFactory;
+
+  /** Transport for inbound SMS reads. Unset → the Console agent API over HTTP. */
+  smsInbox?: SmsInbox;
+
+  /** Supplies an adapter for a `pensar-managed` inbox. Unset → the config-driven factory. */
+  emailAdapterFor?: EmailAdapterResolver;
+
+  /** AbortSignal to cancel the agent mid-run. */
+  abortSignal?: AbortSignal;
+
+  /** Additional tools merged on top of the built-in toolset. */
+  extraTools?: ToolSet;
+
+  /** When set, tools route execution through this sandbox instead of running locally. */
+  sandbox?: UnifiedSandbox;
+}
 
 export type OffensiveSecurityAgentInput<TResult = void> = {
   /** System prompt defining agent persona and behavior. Defaults to BASE_SYSTEM_PROMPT when omitted. */
@@ -223,6 +264,13 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * route execution through this sandbox instead of running locally.
    */
   sandbox?: UnifiedSandbox;
+
+  /**
+   * Execution backends for fs / command / http / browser / inbox, forwarded into the
+   * {@link ToolContext}. Unset means local execution; a durable runtime injects
+   * sandbox-backed implementations.
+   */
+  backends?: ToolBackends;
 
   /**
    * Seam through which orchestration tools spawn sub-agents. Forwarded into the
@@ -437,8 +485,15 @@ export type CommandCancelHandle = {
  *
  * Specialized agent input interfaces should extend this to inherit
  * the common harness fields, then add only their agent-specific ones.
+ *
+ * Extends {@link AgentHooks} rather than re-declaring `backends` /
+ * `subagentSpawner` / `languageModelMiddleware` / `usageRecorder` /
+ * `streamIdFactory` / `smsInbox` / `emailAdapterFor` / `abortSignal` /
+ * `extraTools` / `sandbox` — that was the drop bug (design doc §3.5): a
+ * hand-rolled copy of this list silently omitted a field, and every hook
+ * lived past the constructor that forgot to forward it.
  */
-export interface SpecializedAgentInput {
+export interface SpecializedAgentInput extends AgentHooks {
   /** AI model to drive the agent */
   model: AIModel;
 
@@ -456,9 +511,6 @@ export interface SpecializedAgentInput {
 
   /** Called when Anthropic cache metrics are present in a step's providerMetadata */
   onCacheMetrics?: (metrics: CacheMetrics) => void;
-
-  /** AbortSignal to cancel the agent mid-run */
-  abortSignal?: AbortSignal;
 
   /** Event bus for streaming agent output */
   eventBus?: AgentEventBus;
@@ -480,52 +532,6 @@ export interface SpecializedAgentInput {
 
   /** In-memory credential store for secret-free agent prompts */
   credentialManager?: CredentialManager;
-
-  /**
-   * When set, tools route execution through this sandbox instead of running
-   * locally. Shared by every specialized agent so the runtime can forward it
-   * uniformly — individual agents no longer re-declare it.
-   */
-  sandbox?: UnifiedSandbox;
-
-  /** Provider middleware applied only to this agent's model calls. Forwarded to the runtime. */
-  languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
-
-  /** Per-run usage recorder. Forwarded to the runtime. */
-  usageRecorder?: UsageRecorder;
-
-  /** Factory for streamed message/part ids. Forwarded to the runtime. */
-  streamIdFactory?: StreamIdFactory;
-
-  /**
-   * Seam through which this agent's orchestration tools spawn sub-agents.
-   * Forwarded (into the OffensiveSecurityAgent constructor) into the ToolContext;
-   * unset → the in-process spawner, so behavior is unchanged. A durable runtime
-   * injects a child-workflow spawner here so a specialized agent's fan-out (e.g.
-   * spawn_coding_agent) becomes durable child workflows.
-   */
-  subagentSpawner?: SubagentSpawner;
-
-  /**
-   * Transport for inbound SMS reads, forwarded into the ToolContext. Unset →
-   * the Console agent API over HTTP, which needs sandbox dispatch; a durable
-   * runtime injects one that reads in-process.
-   */
-  smsInbox?: SmsInbox;
-
-  /**
-   * Supplies an adapter for a `pensar-managed` inbox, forwarded into the
-   * ToolContext. Unset → the config-driven factory, which rejects that provider.
-   */
-  emailAdapterFor?: EmailAdapterResolver;
-
-  /**
-   * Additional tools merged on top of the built-in toolset (same-named tools
-   * override the built-ins). Forwarded (into the OffensiveSecurityAgent constructor)
-   * so a durable runtime can swap `read_file`/`list_files`/`grep` for
-   * sandbox-backed versions without touching the shared tool registry.
-   */
-  extraTools?: ToolSet;
 
   /** Override the default stop condition */
   stopWhen?: StopCondition<ToolSet>;

@@ -12,6 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CredentialManager } from "../../../credentials";
 import { AgentEventBus, type AgentEventMap } from "../../../eventBus";
 import { setLogSink } from "../../../logger/structured";
+import { LocalBackends } from "../../../tools/backends/local";
+import type { ToolBackends } from "../../../tools/backends/types";
 import { scoreFindingWithCVSS } from "../../specialized/cvssScorer";
 import {
   type FindingJudgeResult,
@@ -926,5 +928,85 @@ describe("documentVulnerability CVSS fallback", () => {
     expect(
       logLines.some((line) => line.includes("fell back to estimated MEDIUM")),
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PoC + finding writes route through ctx.backends.fs, once, with no direct
+// host `pocsPath`/`findingsPath` write bypassing the backend.
+// ---------------------------------------------------------------------------
+
+describe("documentVulnerability writes through ctx.backends.fs", () => {
+  let rootPath: string;
+
+  beforeEach(() => {
+    rootPath = mkdtempSync(join(tmpdir(), "apex-document-finding-backend-"));
+    mockedJudgeFinding.mockReset();
+    mockedJudgeFinding.mockResolvedValue(makeAcceptedJudgeResult());
+  });
+
+  afterEach(() => {
+    rmSync(rootPath, { recursive: true, force: true });
+  });
+
+  it("writes the PoC and the finding json/md via the injected backend, not a second host write", async () => {
+    const base = makeToolContext(rootPath);
+    const local = LocalBackends(base);
+    const writeSpy = vi.fn(local.fs.write.bind(local.fs));
+    const backends = { ...local, fs: { ...local.fs, write: writeSpy } };
+    const ctx = { ...base, backends: backends as ToolBackends };
+
+    const result = (await documentVulnerability(ctx).execute?.(
+      makeDocumentInput(),
+      { toolCallId: "test", messages: [] },
+    )) as DocumentToolResult;
+
+    expect(result.success).toBe(true);
+
+    const pocPath = join(ctx.session.pocsPath, "poc_admin_data.sh");
+    const writtenPaths = writeSpy.mock.calls.map((c) => c[0]);
+    expect(writtenPaths).toContain(pocPath);
+    expect(writtenPaths.some((p) => p.endsWith(".json"))).toBe(true);
+    expect(writtenPaths.some((p) => p.endsWith(".md"))).toBe(true);
+
+    // The backend call actually produced the file — no separate host write.
+    expect(existsSync(pocPath)).toBe(true);
+    expect(readFileSync(pocPath, "utf8")).toContain("admin data leaked");
+  });
+
+  it("throws (and unregisters the finding) when the injected backend fails to write the finding json", async () => {
+    const findingsRegistry = {
+      isDuplicate: () => ({ duplicate: false }),
+      register: vi.fn(async () => ({ duplicate: false })),
+      unregister: vi.fn(async () => {}),
+    };
+    const base = {
+      ...makeToolContext(rootPath),
+      findingsRegistry: findingsRegistry as never,
+    };
+    const local = LocalBackends(base);
+    const writeSpy = vi.fn(
+      async (
+        path: string,
+        content: string,
+        o: { mode: "create" | "overwrite" },
+      ) => {
+        if (path.endsWith(".json")) {
+          return { success: false, error: "disk full", path };
+        }
+        return local.fs.write(path, content, o);
+      },
+    );
+    const backends = { ...local, fs: { ...local.fs, write: writeSpy } };
+    const ctx = { ...base, backends: backends as ToolBackends };
+
+    const result = (await documentVulnerability(ctx).execute?.(
+      makeDocumentInput(),
+      { toolCallId: "test", messages: [] },
+    )) as DocumentToolResult & { error?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("disk full");
+    expect(findingsRegistry.unregister).toHaveBeenCalled();
   });
 });

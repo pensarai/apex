@@ -16,6 +16,7 @@ import type {
 import { createLogger } from "../../../logger/structured";
 import type { SessionInfo } from "../../../session";
 import { scopedLogger } from "../../../util/lazyLogger";
+import type { AgentHooks } from "../../offSecAgent";
 import {
   inProcessSubagentSpawner,
   type SubagentSpawner,
@@ -79,6 +80,12 @@ interface SharedAgentOptions {
   agentLimiter?: AgentConcurrencyLimiter;
   /** Fan-out spawner. Defaults to the in-process spawner. */
   subagentSpawner?: SubagentSpawner;
+  /**
+   * The caller's full {@link AgentHooks} (backends, middleware, usage
+   * recorder, stream ids, inbox transports, extra tools, sandbox), forwarded
+   * to every per-endpoint CodeAgent this app documents.
+   */
+  hooks?: AgentHooks;
 }
 
 interface EndpointDocumentationInput extends SharedAgentOptions {
@@ -214,6 +221,7 @@ async function runEndpointDocumentationAgent(
     projectThreatModel,
     parentSubagentId,
     agentLimiter,
+    hooks,
   } = opts;
 
   const subagentId = newSessionId();
@@ -246,7 +254,6 @@ async function runEndpointDocumentationAgent(
     model,
     session,
     authConfig,
-    abortSignal,
     attackSurfaceRegistry,
     eventBus,
     subagentId,
@@ -264,6 +271,8 @@ async function runEndpointDocumentationAgent(
     //   and the agent orients-first, looking like a discovery pass.
     excludeTools: ["document_app", "list_files", "grep"],
     projectThreatModel,
+    ...hooks,
+    abortSignal,
   });
 
   try {

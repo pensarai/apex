@@ -17,14 +17,26 @@ import type { CredentialManager } from "../../credentials";
 import { AgentEventBus } from "../../eventBus";
 import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry";
 import type { FindingsRegistry } from "../../findings/registry";
-import { newSessionId } from "../../id/id";
 import type { SessionInfo } from "../../session";
 import { runWithBoundedConcurrency } from "../../utils/concurrency";
+import {
+  type BrowserSessionProvider,
+  inProcessSeams,
+  randomSessionIdFactory,
+  resolveItemHooks,
+  type SessionIdFactory,
+  type WorkflowSeams,
+} from "../../workflows/seams";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { AuthenticationAgentInput } from "../specialized/authenticationAgent/agent";
 import type { FindingJudgeInput } from "../specialized/findingJudge";
+// Type-only (erased) — the value is constructed inside runSpawnedPentestWorker.
+import type {
+  PentestResult,
+  TargetedPentestAgent,
+} from "../specialized/pentest/agent";
 import type { PlaywrightMcpSession, UnifiedSandbox } from "./tools";
-import type { StreamIdFactory, SystemPentestScope } from "./types";
+import type { AgentHooks, StreamIdFactory, SystemPentestScope } from "./types";
 
 /** Registry key selecting which child agent {@link SubagentSpawner.spawn} builds. */
 export type SubagentType =
@@ -184,6 +196,97 @@ export interface SubagentSpawner {
 }
 
 // ---------------------------------------------------------------------------
+// Spawned pentest worker (closure-free)
+// ---------------------------------------------------------------------------
+
+/**
+ * The serializable subset of a pentest {@link SubagentSpec} — everything a
+ * durable caller can carry across a child-workflow boundary. `findingsRegistry`
+ * and `browserSession` are live objects, not serializable, so they live on
+ * {@link SpawnedPentestWorkerInput} instead.
+ */
+export type SpawnedPentestWorkerSpec = Omit<
+  Extract<SubagentSpec, { type: "pentest" }>,
+  "type" | "findingsRegistry" | "browserSession"
+>;
+
+/**
+ * Explicit, serializable-by-the-caller input for {@link runSpawnedPentestWorker}
+ * — everything the `spawn_pentest_agent` worker path reads today, with no
+ * reads of the spawner's own enclosing scope. A durable caller rebuilds
+ * `hooks` and `seams` on its own side and runs the worker as a child workflow.
+ */
+export interface SpawnedPentestWorkerInput {
+  model: AIModel;
+  session: SessionInfo;
+  authConfig?: AIAuthConfig;
+  abortSignal?: AbortSignal;
+  eventBus?: AgentEventBus;
+  subagentId?: string;
+  subagentName?: string;
+  findingsRegistry?: FindingsRegistry;
+  browserSession?: PlaywrightMcpSession;
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onCacheMetrics?: (metrics: CacheMetrics) => void;
+  environmentVariables?: Record<string, string>;
+  secretValues?: string[];
+  enableThinking?: boolean;
+  thinkingEffort?: ThinkingEffort | null;
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  display?: string;
+  /** The caller's own {@link AgentHooks} — `backends` is the caller's object. */
+  hooks: AgentHooks;
+  /** Fan-out / hook seams (`../../workflows/seams.ts`); only `hooksForItem` is consulted here. */
+  seams: WorkflowSeams;
+  /** Lets the in-process spawner observe its drain promise; unused by a standalone/durable caller. */
+  onAgentConstructed?: (agent: TargetedPentestAgent) => void;
+}
+
+/**
+ * Construct one {@link TargetedPentestAgent} from a spawn spec and consume it —
+ * the exact mapping `spawn_pentest_agent`'s in-process worker path uses today,
+ * pulled out so a durable caller can run a spawned pentest worker as its own
+ * child workflow instead of hand-rolling the construction (design doc A13).
+ */
+export async function runSpawnedPentestWorker(
+  spec: SpawnedPentestWorkerSpec,
+  input: SpawnedPentestWorkerInput,
+): Promise<PentestResult> {
+  const { TargetedPentestAgent } = await import("../specialized/pentest/agent");
+  const hooks = resolveItemHooks(input.hooks, input.seams, spec, 0);
+
+  const agent = new TargetedPentestAgent({
+    target: spec.target,
+    grpc: spec.grpc,
+    systemScope: spec.systemScope,
+    objectives: spec.objectives,
+    context: spec.context,
+    role: spec.role,
+    findingsRegistry: input.findingsRegistry,
+    browserSession: input.browserSession,
+    model: input.model,
+    session: input.session,
+    authConfig: input.authConfig,
+    onStepFinish: input.onStepFinish,
+    onCacheMetrics: input.onCacheMetrics,
+    eventBus: input.eventBus,
+    subagentId: input.subagentId,
+    subagentName: input.subagentName,
+    environmentVariables: input.environmentVariables,
+    secretValues: input.secretValues,
+    enableThinking: input.enableThinking,
+    thinkingEffort: input.thinkingEffort,
+    openAIReasoningEffort: input.openAIReasoningEffort,
+    display: input.display,
+    ...hooks,
+    abortSignal: input.abortSignal,
+  });
+
+  input.onAgentConstructed?.(agent);
+  return agent.consume();
+}
+
+// ---------------------------------------------------------------------------
 // In-process implementation
 // ---------------------------------------------------------------------------
 
@@ -210,16 +313,18 @@ type AnyRunner = (
 ) => Promise<AgentHandle<unknown>>;
 
 const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
-  const { TargetedPentestAgent } = await import("../specialized/pentest/agent");
-  const agent = new TargetedPentestAgent({
+  // Delegates construction+consume to runSpawnedPentestWorker (see above);
+  // only stashes the constructed agent's `drained` for the drain-grace wait.
+  let constructed: TargetedPentestAgent | undefined;
+  const workerSpec: SpawnedPentestWorkerSpec = {
     target: spec.target,
     grpc: spec.grpc,
     systemScope: spec.systemScope,
     objectives: spec.objectives,
     context: spec.context,
     role: spec.role,
-    findingsRegistry: spec.findingsRegistry,
-    browserSession: spec.browserSession,
+  };
+  const workerInput: SpawnedPentestWorkerInput = {
     model: ctx.model,
     session: ctx.session,
     authConfig: ctx.authConfig,
@@ -229,18 +334,29 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
     eventBus: ctx.eventBus,
     subagentId: ctx.subagentId,
     subagentName: ctx.subagentName,
-    sandbox: ctx.sandbox,
+    findingsRegistry: spec.findingsRegistry,
+    browserSession: spec.browserSession,
     environmentVariables: ctx.environmentVariables,
     secretValues: ctx.secretValues,
     enableThinking: ctx.enableThinking,
     thinkingEffort: ctx.thinkingEffort,
     openAIReasoningEffort: ctx.openAIReasoningEffort,
     display: ctx.display,
-    languageModelMiddleware: ctx.languageModelMiddleware,
-    usageRecorder: ctx.usageRecorder,
-    streamIdFactory: ctx.streamIdFactory,
-  });
-  return { run: () => agent.consume(), drained: () => agent.drained };
+    hooks: {
+      sandbox: ctx.sandbox,
+      languageModelMiddleware: ctx.languageModelMiddleware,
+      usageRecorder: ctx.usageRecorder,
+      streamIdFactory: ctx.streamIdFactory,
+    },
+    seams: inProcessSeams(),
+    onAgentConstructed: (agent) => {
+      constructed = agent;
+    },
+  };
+  return {
+    run: () => runSpawnedPentestWorker(workerSpec, workerInput),
+    drained: () => constructed?.drained ?? Promise.resolve(),
+  };
 };
 
 const runCodeChild: SubagentRunner<"code"> = async (spec, ctx) => {
@@ -394,14 +510,28 @@ function drainBounded(
  * Default spawner: constructs the real agent and consumes it in-process — a
  * faithful extraction of the hand-rolled `newSessionId → new AgentEventBus →
  * attachChild → new Agent → consume` pattern the tools used before.
+ *
+ * Optionally takes the `ids` / `browser` {@link WorkflowSeams} (`../../workflows/seams.ts`)
+ * so a durable host can mint deterministic child ids and reattach a browser
+ * session by scope instead of the in-process defaults (random ULID, no
+ * session). Unconfigured, behavior is unchanged from before these seams existed.
  */
 class InProcessSubagentSpawner implements SubagentSpawner {
-  constructor(private readonly idFactory: () => string = newSessionId) {}
+  private ordinal = 0;
+
+  constructor(
+    private readonly ids: SessionIdFactory = randomSessionIdFactory,
+    private readonly browser?: BrowserSessionProvider,
+  ) {}
+
+  private mintChildId(name?: string): string {
+    return this.ids.newSessionId(name ?? "subagent", this.ordinal++);
+  }
 
   async spawn<TResult = unknown>(
     opts: SpawnOptions<TResult>,
   ): Promise<TResult> {
-    const childId = opts.subagentId ?? this.idFactory();
+    const childId = opts.subagentId ?? this.mintChildId(opts.subagentName);
     opts.onSpawned?.(childId);
 
     const lifecycleBase = {
@@ -426,8 +556,21 @@ class InProcessSubagentSpawner implements SubagentSpawner {
       const childBus = new AgentEventBus();
       AgentEventBus.attachChild(childBus, opts.parentBus, childId);
 
-      const runner = RUNNERS[opts.spec.type] as unknown as AnyRunner;
-      handle = await runner(opts.spec, {
+      const spec =
+        opts.spec.type === "pentest" &&
+        !opts.spec.browserSession &&
+        this.browser
+          ? {
+              ...opts.spec,
+              browserSession: this.browser.forChild({
+                subagentId: childId,
+                subagentName: opts.subagentName,
+              }),
+            }
+          : opts.spec;
+
+      const runner = RUNNERS[spec.type] as unknown as AnyRunner;
+      handle = await runner(spec, {
         ...opts.runtime,
         eventBus: childBus,
         subagentId: childId,
@@ -478,3 +621,14 @@ class InProcessSubagentSpawner implements SubagentSpawner {
 
 /** Shared default used by every spawn call site when none is injected. */
 export const inProcessSubagentSpawner = new InProcessSubagentSpawner();
+
+/**
+ * Build an in-process spawner wired to the `ids` / `browser` seams of a
+ * {@link WorkflowSeams} (`../../workflows/seams.ts`), e.g.
+ * `createInProcessSubagentSpawner(inProcessSeams({ ids: myFactory }))`.
+ */
+export function createInProcessSubagentSpawner(
+  seams?: Partial<Pick<WorkflowSeams, "ids" | "browser">>,
+): SubagentSpawner {
+  return new InProcessSubagentSpawner(seams?.ids, seams?.browser);
+}

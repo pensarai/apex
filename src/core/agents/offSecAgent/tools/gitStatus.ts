@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import type { ToolContext } from "./types";
 
 const gitStatusInputSchema = z.object({
@@ -17,7 +18,14 @@ export type GitStatusResult = {
   cwd: string;
 };
 
-async function runGit(
+/**
+ * Run a git command against `ctx.sandbox` / `ctx.persistentShell`. Shared
+ * low-level primitive: `LocalBackends.fs.git` (design §3.2) imports this
+ * directly as its `status`/`diff` implementation, so it stays here rather
+ * than being duplicated. Neither `gitStatus` nor `gitDiff` calls it anymore
+ * — both route through the backend.
+ */
+export async function runGit(
   ctx: ToolContext,
   args: string[],
 ): Promise<{ success: boolean; stdout: string; stderr: string }> {
@@ -62,24 +70,22 @@ Use this to self-check which files you changed before finalizing.
 Does not commit, stage, push, or open a PR.`,
     inputSchema: gitStatusInputSchema,
     execute: async (): Promise<GitStatusResult> => {
-      const result = await runGit(ctx, ["status", "--porcelain"]);
+      const { fs } = resolveBackends(ctx);
+      const result = await fs.git("status");
       if (!result.success) {
         return {
           success: false,
           error: result.stderr || "git status failed",
           status: result.stdout,
-          cwd: ctx.agentCwd,
+          cwd: result.cwd,
         };
       }
       return {
         success: true,
         error: "",
         status: result.stdout.trim() || "(clean)",
-        cwd: ctx.agentCwd,
+        cwd: result.cwd,
       };
     },
   });
 }
-
-// Re-export helper for git_diff tool
-export { runGit };

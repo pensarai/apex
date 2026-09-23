@@ -1,7 +1,7 @@
-import { unlink } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveContained } from "../../../tools/backends/helpers";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import type { ToolContext } from "./types";
 
 const deleteFileInputSchema = z.object({
@@ -19,17 +19,6 @@ export type DeleteFileResult = {
   path: string;
 };
 
-function resolveUnderCwd(agentCwd: string, filePath: string): string {
-  const resolved = isAbsolute(filePath)
-    ? filePath
-    : resolve(agentCwd, filePath);
-  const rel = relative(agentCwd, resolved);
-  if (rel.startsWith("..") || isAbsolute(rel)) {
-    throw new Error(`Path escapes agent working directory: ${filePath}`);
-  }
-  return resolved;
-}
-
 export function deleteFile(ctx: ToolContext) {
   return tool({
     description: `Delete a file from the filesystem.
@@ -37,54 +26,28 @@ export function deleteFile(ctx: ToolContext) {
 Only deletes files (not directories). Path must stay within the agent working directory.
 Fails loudly if the file does not exist.`,
     inputSchema: deleteFileInputSchema,
-    execute: async ({ path: filePath }): Promise<DeleteFileResult> => {
-      let target: string;
-      try {
-        target = resolveUnderCwd(ctx.agentCwd, filePath);
-      } catch (err: unknown) {
-        return {
-          success: false,
-          error: err instanceof Error ? err.message : String(err),
-          path: filePath,
-        };
-      }
-
-      if (ctx.sandbox) {
+    execute: async ({ path }): Promise<DeleteFileResult> => {
+      // Local runs echo the resolved path; a host backend resolves its own.
+      let echoed = path;
+      if (!ctx.backends) {
         try {
-          const check = await ctx.sandbox.execute(`test -f "${target}"`);
-          if (check.exitCode !== 0) {
-            return {
-              success: false,
-              error: `File not found: ${target}`,
-              path: target,
-            };
-          }
-          const result = await ctx.sandbox.execute(`rm "${target}"`);
-          if (!result.success) {
-            return {
-              success: false,
-              error: result.stderr || "Failed to delete file in sandbox",
-              path: target,
-            };
-          }
-          return { success: true, error: "", path: target };
+          echoed = resolveContained(ctx.agentCwd, path);
         } catch (err: unknown) {
           return {
             success: false,
             error: err instanceof Error ? err.message : String(err),
-            path: target,
+            path,
           };
         }
       }
-
       try {
-        await unlink(target);
-        return { success: true, error: "", path: target };
+        await resolveBackends(ctx).fs.delete(path);
+        return { success: true, error: "", path: echoed };
       } catch (err: unknown) {
         return {
           success: false,
           error: err instanceof Error ? err.message : String(err),
-          path: target,
+          path: echoed,
         };
       }
     },

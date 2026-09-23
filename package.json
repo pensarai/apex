@@ -59,6 +59,222 @@
     "bun": ">=1.0.0",
     "node": ">=18.0.0"
   },
+  "exports": {
+    ".": {
+      "default": "./build/lib/index.js",
+      "import": "./build/lib/index.js",
+      "types": "./build/lib/index.d.ts"
+    },
+    "./agents/offSecAgent": {
+      "default": "./build/lib/core/agents/offSecAgent/index.js",
+      "import": "./build/lib/core/agents/offSecAgent/index.js",
+      "types": "./build/lib/core/agents/offSecAgent/index.d.ts"
+    },
+    "./agents/offSecAgent/tools": {
+      "default": "./build/lib/core/agents/offSecAgent/tools/index.js",
+      "import": "./build/lib/core/agents/offSecAgent/tools/index.js",
+      "types": "./build/lib/core/agents/offSecAgent/tools/index.d.ts"
+    },
+    "./agents/offSecAgent/tools/email/adapters": {
+      "default": "./build/lib/core/agents/offSecAgent/tools/email/adapters.js",
+      "import": "./build/lib/core/agents/offSecAgent/tools/email/adapters.js",
+      "types": "./build/lib/core/agents/offSecAgent/tools/email/adapters.d.ts"
+    },
+    "./agents/offSecAgent/tools/email/types": {
+      "default": "./build/lib/core/agents/offSecAgent/tools/email/types.js",
+      "import": "./build/lib/core/agents/offSecAgent/tools/email/types.js",
+      "types": "./build/lib/core/agents/offSecAgent/tools/email/types.d.ts"
+    },
+    "./agents/offSecAgent/tools/smsInbox": {
+      "default": "./build/lib/core/agents/offSecAgent/tools/smsInbox.js",
+      "import": "./build/lib/core/agents/offSecAgent/tools/smsInbox.js",
+      "types": "./build/lib/core/agents/offSecAgent/tools/smsInbox.d.ts"
+    },
+    "./agents/offSecAgent/types": {
+      "default": "./build/lib/core/agents/offSecAgent/types.js",
+      "import": "./build/lib/core/agents/offSecAgent/types.js",
+      "types": "./build/lib/core/agents/offSecAgent/types.d.ts"
+    },
+    "./agents/specialized/attackSurface/blackboxAgent": {
+      "default": "./build/lib/core/agents/specialized/attackSurface/blackboxAgent.js",
+      "import": "./build/lib/core/agents/specialized/attackSurface/blackboxAgent.js",
+      "types": "./build/lib/core/agents/specialized/attackSurface/blackboxAgent.d.ts"
+    },
+    "./agents/specialized/attackSurface/schemas": {
+      "default": "./build/lib/core/agents/specialized/attackSurface/schemas.js",
+      "import": "./build/lib/core/agents/specialized/attackSurface/schemas.js",
+      "types": "./build/lib/core/agents/specialized/attackSurface/schemas.d.ts"
+    },
+    "./agents/specialized/authenticationAgent": {
+      "default": "./build/lib/core/agents/specialized/authenticationAgent/index.js",
+      "import": "./build/lib/core/agents/specialized/authenticationAgent/index.js",
+      "types": "./build/lib/core/agents/specialized/authenticationAgent/index.d.ts"
+    },
+    "./agents/specialized/codeAgent/agent": {
+      "default": "./build/lib/core/agents/specialized/codeAgent/agent.js",
+      "import": "./build/lib/core/agents/specialized/codeAgent/agent.js",
+      "types": "./build/lib/core/agents/specialized/codeAgent/agent.d.ts"
+    },
+    "./agents/specialized/codeAgent/schemas": {
+      "default": "./build/lib/core/agents/specialized/codeAgent/schemas.js",
+      "import": "./build/lib/core/agents/specialized/codeAgent/schemas.js",
+      "types": "./build/lib/core/agents/specialized/codeAgent/schemas.d.ts"
+    },
+    "./agents/specialized/findingJudge": {
+      "default": "./build/lib/core/agents/specialized/findingJudge/index.js",
+      "import": "./build/lib/core/agents/specialized/findingJudge/index.js",
+      "types": "./build/lib/core/agents/specialized/findingJudge/index.d.ts"
+    },
+    "./agents/specialized/findingJudge/agent": {
+      "default": "./build/lib/core/agents/specialized/findingJudge/agent.js",
+      "import": "./build/lib/core/agents/specialized/findingJudge/agent.js",
+      "types": "./build/lib/core/agents/specialized/findingJudge/agent.d.ts"
+    },
+    "./agents/specialized/patching": {
+      "default": "./build/lib/core/agents/specialized/patching/index.js",
+      "import": "./build/lib/core/agents/specialized/patching/index.js",
+      "types": "./build/lib/core/agents/specialized/patching/index.d.ts"
+    },
+    "./agents/specialized/pentest/agent": {
+      "default": "./build/lib/core/agents/specialized/pentest/agent.js",
+      "import": "./build/lib/core/agents/specialized/pentest/agent.js",
+      "types": "./build/lib/core/agents/specialized/pentest/agent.d.ts"
+    },
+    "./agents/specialized/whiteboxAttackSurface": {
+      "default": "./build/lib/core/agents/specialized/whiteboxAttackSurface/index.js",
+      "import": "./build/lib/core/agents/specialized/whiteboxAttackSurface/index.js",
+      "types": "./build/lib/core/agents/specialized/whiteboxAttackSurface/index.d.ts"
+    },
+    "./agents/specialized/whiteboxAttackSurface/types": {
+      "default": "./build/lib/core/agents/specialized/whiteboxAttackSurface/types.js",
+      "import": "./build/lib/core/agents/specialized/whiteboxAttackSurface/types.js",
+      "types": "./build/lib/core/agents/specialized/whiteboxAttackSurface/types.d.ts"
+    },
+    "./api/targetedPentest": {
+      "default": "./build/lib/core/api/targetedPentest.js",
+      "import": "./build/lib/core/api/targetedPentest.js",
+      "types": "./build/lib/core/api/targetedPentest.d.ts"
+    },
+    "./core/ai": {
+      "default": "./build/lib/core/ai/index.js",
+      "import": "./build/lib/core/ai/index.js",
+      "types": "./build/lib/core/ai/index.d.ts"
+    },
+    "./core/ai/ai": {
+      "default": "./build/lib/core/ai/ai.js",
+      "import": "./build/lib/core/ai/ai.js",
+      "types": "./build/lib/core/ai/ai.d.ts"
+    },
+    "./core/ai/utils": {
+      "default": "./build/lib/core/ai/utils.js",
+      "import": "./build/lib/core/ai/utils.js",
+      "types": "./build/lib/core/ai/utils.d.ts"
+    },
+    "./core/api": {
+      "default": "./build/lib/core/api/index.js",
+      "import": "./build/lib/core/api/index.js",
+      "types": "./build/lib/core/api/index.d.ts"
+    },
+    "./core/config": {
+      "default": "./build/lib/core/config/index.js",
+      "import": "./build/lib/core/config/index.js",
+      "types": "./build/lib/core/config/index.d.ts"
+    },
+    "./core/eventBus": {
+      "default": "./build/lib/core/eventBus.js",
+      "import": "./build/lib/core/eventBus.js",
+      "types": "./build/lib/core/eventBus.d.ts"
+    },
+    "./core/id": {
+      "default": "./build/lib/core/id/id.js",
+      "import": "./build/lib/core/id/id.js",
+      "types": "./build/lib/core/id/id.d.ts"
+    },
+    "./core/memory": {
+      "default": "./build/lib/core/memory/index.js",
+      "import": "./build/lib/core/memory/index.js",
+      "types": "./build/lib/core/memory/index.d.ts"
+    },
+    "./core/observability": {
+      "default": "./build/lib/core/observability/index.js",
+      "import": "./build/lib/core/observability/index.js",
+      "types": "./build/lib/core/observability/index.d.ts"
+    },
+    "./core/prompt-injections": {
+      "default": "./build/lib/core/prompt-injections/index.js",
+      "import": "./build/lib/core/prompt-injections/index.js",
+      "types": "./build/lib/core/prompt-injections/index.d.ts"
+    },
+    "./core/session": {
+      "default": "./build/lib/core/session/index.js",
+      "import": "./build/lib/core/session/index.js",
+      "types": "./build/lib/core/session/index.d.ts"
+    },
+    "./core/session/persistence": {
+      "default": "./build/lib/core/session/persistence.js",
+      "import": "./build/lib/core/session/persistence.js",
+      "types": "./build/lib/core/session/persistence.d.ts"
+    },
+    "./findings/attackSurfaceRegistry": {
+      "default": "./build/lib/core/findings/attackSurfaceRegistry.js",
+      "import": "./build/lib/core/findings/attackSurfaceRegistry.js",
+      "types": "./build/lib/core/findings/attackSurfaceRegistry.d.ts"
+    },
+    "./findings/registry": {
+      "default": "./build/lib/core/findings/registry.js",
+      "import": "./build/lib/core/findings/registry.js",
+      "types": "./build/lib/core/findings/registry.d.ts"
+    },
+    "./lib/cvss": {
+      "default": "./build/lib/lib/cvss/index.js",
+      "import": "./build/lib/lib/cvss/index.js",
+      "types": "./build/lib/lib/cvss/index.d.ts"
+    },
+    "./lib/cvss/types": {
+      "default": "./build/lib/lib/cvss/types.js",
+      "import": "./build/lib/lib/cvss/types.js",
+      "types": "./build/lib/lib/cvss/types.d.ts"
+    },
+    "./package.json": "./package.json",
+    "./src/*": "./src/*.ts",
+    "./src/core/agents/offSecAgent": "./src/core/agents/offSecAgent/index.ts",
+    "./src/core/agents/offSecAgent/tools": "./src/core/agents/offSecAgent/tools/index.ts",
+    "./src/core/agents/specialized/authenticationAgent": "./src/core/agents/specialized/authenticationAgent/index.ts",
+    "./src/core/agents/specialized/findingJudge": "./src/core/agents/specialized/findingJudge/index.ts",
+    "./src/core/agents/specialized/patching": "./src/core/agents/specialized/patching/index.ts",
+    "./src/core/agents/specialized/whiteboxAttackSurface": "./src/core/agents/specialized/whiteboxAttackSurface/index.ts",
+    "./src/core/ai": "./src/core/ai/index.ts",
+    "./src/core/api": "./src/core/api/index.ts",
+    "./src/core/observability": "./src/core/observability/index.ts",
+    "./src/core/prompt-injections": "./src/core/prompt-injections/index.ts",
+    "./src/core/session": "./src/core/session/index.ts",
+    "./src/lib/cvss": "./src/lib/cvss/index.ts",
+    "./subagentSpawner": {
+      "default": "./build/lib/core/agents/offSecAgent/subagentSpawner.js",
+      "import": "./build/lib/core/agents/offSecAgent/subagentSpawner.js",
+      "types": "./build/lib/core/agents/offSecAgent/subagentSpawner.d.ts"
+    },
+    "./tools/backends": {
+      "default": "./build/lib/core/tools/backends/index.js",
+      "import": "./build/lib/core/tools/backends/index.js",
+      "types": "./build/lib/core/tools/backends/index.d.ts"
+    },
+    "./workflows/pentest": {
+      "default": "./build/lib/core/workflows/pentest.js",
+      "import": "./build/lib/core/workflows/pentest.js",
+      "types": "./build/lib/core/workflows/pentest.d.ts"
+    },
+    "./workflows/seams": {
+      "default": "./build/lib/core/workflows/seams.js",
+      "import": "./build/lib/core/workflows/seams.js",
+      "types": "./build/lib/core/workflows/seams.d.ts"
+    },
+    "./workflows/whiteboxAttackSurface": {
+      "default": "./build/lib/core/workflows/whiteboxAttackSurface.js",
+      "import": "./build/lib/core/workflows/whiteboxAttackSurface.js",
+      "types": "./build/lib/core/workflows/whiteboxAttackSurface.d.ts"
+    }
+  },
   "files": [
     "build",
     "bin",
@@ -98,6 +314,7 @@
     "build:binary:linux-x64": "bun build src/cli.ts --compile --external electron --external chromium-bidi --external camoufox-js --target=bun-linux-x64 --outfile dist/pensar-linux-x64",
     "build:binary:macos-arm64": "bun build src/cli.ts --compile --external electron --external chromium-bidi --external camoufox-js --target=bun-darwin-arm64 --outfile dist/pensar-darwin-arm64",
     "build:binary:macos-x64": "bun build src/cli.ts --compile --external electron --external chromium-bidi --external camoufox-js --target=bun-darwin-x64 --outfile dist/pensar-darwin-x64",
+    "build:lib": "bun run scripts/build-lib.ts",
     "check": "biome check --write",
     "check:ci": "biome check",
     "daytona-benchmark": "bun run scripts/daytona-benchmark.ts",
@@ -115,6 +332,7 @@
     "prepublishOnly": "npm run build",
     "start": "bun run src/tui/index.tsx",
     "test": "vitest run",
+    "test:lib-exports": "bun run scripts/verify-lib-exports.ts",
     "test:watch": "vitest",
     "tsc": "tsc --noEmit"
   },

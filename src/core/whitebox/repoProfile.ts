@@ -1,8 +1,6 @@
-import { execFile } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, extname, join, relative, resolve } from "node:path";
-import { promisify } from "node:util";
+import { basename, extname } from "node:path";
+import type { CommandBackend } from "../tools/backends/types";
+import { runCommandBounded } from "./boundedProcess";
 import { DEFAULT_WHITEBOX_EXCLUDED_DIRS } from "./profiles";
 import type {
   LanguageId,
@@ -11,8 +9,12 @@ import type {
   ToolAvailability,
 } from "./types";
 
-const execFileAsync = promisify(execFile);
 const MAX_PROFILE_FILES = 5_000;
+const MAX_PROFILE_OUTPUT_BYTES = 2 * 1024 * 1024;
+const WALK_TIMEOUT_SECONDS = 30;
+const GIT_TIMEOUT_SECONDS = 5;
+const TOOL_DETECT_TIMEOUT_SECONDS = 2;
+const TOOL_DETECT_MAX_BYTES = 64 * 1024;
 
 const LANGUAGE_BY_EXTENSION: Record<string, LanguageId> = {
   ".ts": "typescript",
@@ -96,51 +98,6 @@ const TOOL_NAMES = [
   "spotbugs",
   "jazzer",
 ];
-
-function shouldSkipDir(name: string): boolean {
-  return DEFAULT_WHITEBOX_EXCLUDED_DIRS.includes(name);
-}
-
-async function walkFiles(rootPath: string): Promise<string[]> {
-  const files: string[] = [];
-  const absRoot = resolve(rootPath);
-
-  function isWithinRoot(path: string): boolean {
-    try {
-      const real = realpathSync(path);
-      return real === absRoot || real.startsWith(`${absRoot}/`);
-    } catch {
-      return false;
-    }
-  }
-
-  async function walk(current: string): Promise<void> {
-    if (files.length >= MAX_PROFILE_FILES) return;
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = await readdir(current, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      if (files.length >= MAX_PROFILE_FILES) return;
-      const fullPath = join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (shouldSkipDir(entry.name)) continue;
-        if (entry.isSymbolicLink() && !isWithinRoot(fullPath)) continue;
-        await walk(fullPath);
-        continue;
-      }
-      if (entry.isFile()) {
-        files.push(relative(rootPath, fullPath));
-      }
-    }
-  }
-
-  await walk(rootPath);
-  return files;
-}
 
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
@@ -227,18 +184,81 @@ function detectEntryHints(files: string[]): string[] {
   return hints.slice(0, 100);
 }
 
-async function readPackageScripts(rootPath: string): Promise<{
+/** `PersistentShell` substitutes this sentinel for genuinely empty stdout (see `result-registry.ts`'s same strip). */
+function stripNoOutputSentinel(stdout: string): string {
+  return stdout.replace(/^\(no output\)$/, "");
+}
+
+/** `cd`'d into `rootPath` and asserts it exists and is a directory — mirrors `stat(rootPath).isDirectory()`. */
+async function assertDirectory(
+  rootPath: string,
+  command: CommandBackend | undefined,
+): Promise<void> {
+  const result = await runCommandBounded(command, ["test", "-d", "."], {
+    cwd: rootPath,
+    timeoutSeconds: GIT_TIMEOUT_SECONDS,
+    maxTotalBytes: 1_024,
+  });
+  if (result.exitCode !== 0) {
+    throw new Error(`${rootPath} is not a directory`);
+  }
+}
+
+/**
+ * Prunes excluded dirs at any depth and lists files only — symlinks match
+ * neither `-type d` nor `-type f`, so they're skipped, same as the old
+ * `Dirent`-based walk (a `Dirent` for a symlink is neither). Sorted in the C
+ * locale to match Node's `readdir()` order (libuv sorts entries), which the
+ * old recursive walk relied on implicitly.
+ */
+function buildFindCommand(): string {
+  const prune = DEFAULT_WHITEBOX_EXCLUDED_DIRS.map(
+    (dir) => `-name '${dir}'`,
+  ).join(" -o ");
+  return `find . -mindepth 1 \\( -type d \\( ${prune} \\) -prune \\) -o -type f -print | LC_ALL=C sort`;
+}
+
+async function walkFiles(
+  rootPath: string,
+  command: CommandBackend | undefined,
+): Promise<string[]> {
+  const result = await runCommandBounded(
+    command,
+    ["bash", "-c", buildFindCommand()],
+    {
+      cwd: rootPath,
+      timeoutSeconds: WALK_TIMEOUT_SECONDS,
+      maxTotalBytes: MAX_PROFILE_OUTPUT_BYTES,
+    },
+  );
+  const stdout = stripNoOutputSentinel(result.stdout);
+  if (!stdout) return [];
+  return stdout
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => line.replace(/^\.\//, ""))
+    .slice(0, MAX_PROFILE_FILES);
+}
+
+async function readPackageScripts(
+  rootPath: string,
+  command: CommandBackend | undefined,
+): Promise<{
   buildCommands: string[];
   testCommands: string[];
   runCommands: string[];
 }> {
-  const packageJsonPath = join(rootPath, "package.json");
-  if (!existsSync(packageJsonPath)) {
-    return { buildCommands: [], testCommands: [], runCommands: [] };
-  }
+  const empty = { buildCommands: [], testCommands: [], runCommands: [] };
+  const result = await runCommandBounded(command, ["cat", "package.json"], {
+    cwd: rootPath,
+    timeoutSeconds: GIT_TIMEOUT_SECONDS,
+    maxTotalBytes: MAX_PROFILE_OUTPUT_BYTES,
+  });
+  const stdout = stripNoOutputSentinel(result.stdout);
+  if (result.exitCode !== 0 || !stdout.trim()) return empty;
 
   try {
-    const parsed = JSON.parse(await readFile(packageJsonPath, "utf-8")) as {
+    const parsed = JSON.parse(stdout) as {
       scripts?: Record<string, string>;
       packageManager?: string;
     };
@@ -258,49 +278,62 @@ async function readPackageScripts(rootPath: string): Promise<{
         .map((name) => `${runner} ${name}`),
     };
   } catch {
-    return { buildCommands: [], testCommands: [], runCommands: [] };
+    return empty;
   }
 }
 
-async function runGit(
+async function gitInfo(
   rootPath: string,
   args: string[],
+  command: CommandBackend | undefined,
 ): Promise<string | undefined> {
-  try {
-    const { stdout } = await execFileAsync("git", args, {
-      cwd: rootPath,
-      timeout: 5_000,
-      maxBuffer: 1024 * 1024,
-    });
-    return String(stdout).trim();
-  } catch {
-    return undefined;
-  }
+  const result = await runCommandBounded(command, ["git", ...args], {
+    cwd: rootPath,
+    timeoutSeconds: GIT_TIMEOUT_SECONDS,
+    maxTotalBytes: MAX_PROFILE_OUTPUT_BYTES,
+  });
+  return result.exitCode === 0
+    ? stripNoOutputSentinel(result.stdout).trim()
+    : undefined;
 }
 
-async function detectTool(name: string): Promise<ToolAvailability> {
-  const cmd = process.platform === "win32" ? "where" : "which";
-  try {
-    const { stdout } = await execFileAsync(cmd, [name], {
-      timeout: 2_000,
-      maxBuffer: 1024 * 64,
-    });
-    return { name, available: true, path: String(stdout).trim() };
-  } catch {
-    return { name, available: false };
+async function detectTool(
+  name: string,
+  rootPath: string,
+  command: CommandBackend | undefined,
+): Promise<ToolAvailability> {
+  const which = process.platform === "win32" ? "where" : "which";
+  const result = await runCommandBounded(command, [which, name], {
+    cwd: rootPath,
+    timeoutSeconds: TOOL_DETECT_TIMEOUT_SECONDS,
+    maxTotalBytes: TOOL_DETECT_MAX_BYTES,
+  });
+  const path = stripNoOutputSentinel(result.stdout).trim();
+  if (result.exitCode === 0 && path) {
+    return { name, available: true, path };
   }
+  return { name, available: false };
 }
 
-export async function profileCodebase(rootPath: string): Promise<RepoProfile> {
-  const rootStat = await stat(rootPath);
-  if (!rootStat.isDirectory()) {
-    throw new Error(`${rootPath} is not a directory`);
-  }
+/**
+ * Profile a repository through the resolved {@link CommandBackend} — no
+ * direct `node:fs` / `node:child_process` access, so this works identically
+ * whether `rootPath` is on the local host or inside a remote sandbox.
+ */
+export async function profileCodebase(
+  rootPath: string,
+  command: CommandBackend | undefined,
+): Promise<RepoProfile> {
+  await assertDirectory(rootPath, command);
 
-  const files = await walkFiles(rootPath);
-  const packageScripts = await readPackageScripts(rootPath);
-  const currentCommit = await runGit(rootPath, ["rev-parse", "HEAD"]);
-  const submodulesRaw = await runGit(rootPath, ["submodule", "status"]);
+  const files = await walkFiles(rootPath, command);
+  const packageScripts = await readPackageScripts(rootPath, command);
+  const currentCommit = await gitInfo(rootPath, ["rev-parse", "HEAD"], command);
+  const submodulesRaw = await gitInfo(
+    rootPath,
+    ["submodule", "status"],
+    command,
+  );
   const submodules = submodulesRaw
     ? submodulesRaw
         .split("\n")
@@ -310,7 +343,9 @@ export async function profileCodebase(rootPath: string): Promise<RepoProfile> {
 
   const languages = detectLanguages(files);
   const packageManagers = detectPackageManagers(files);
-  const toolAvailability = await Promise.all(TOOL_NAMES.map(detectTool));
+  const toolAvailability = await Promise.all(
+    TOOL_NAMES.map((name) => detectTool(name, rootPath, command)),
+  );
 
   return {
     rootPath,

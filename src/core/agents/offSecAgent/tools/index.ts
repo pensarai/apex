@@ -107,10 +107,10 @@ export type {
 // Sandbox Playwright helpers (check / install Playwright in a sandbox)
 export {
   checkSandboxPlaywright,
-  createSandboxBrowserTools,
   ensureSandboxBrowser,
   ensureSandboxPlaywright,
   installSandboxPlaywright,
+  SandboxBrowserBackend,
 } from "./sandboxPlaywright";
 // Scope guard utilities
 export {

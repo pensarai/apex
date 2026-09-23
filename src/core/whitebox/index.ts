@@ -7,7 +7,7 @@ export {
   readWhiteboxArtifact,
   writeWhiteboxArtifact,
 } from "./artifacts";
-export { runSpawnBounded } from "./boundedProcess";
+export { runCommandBounded, runSpawnBounded } from "./boundedProcess";
 export {
   createWhiteboxCandidate,
   type ListWhiteboxCandidatesOptions,

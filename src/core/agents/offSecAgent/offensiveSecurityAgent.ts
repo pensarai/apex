@@ -494,6 +494,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         ? input.onCacheMetrics
         : undefined,
       sandbox: input.sandbox,
+      backends: input.backends,
       findingsRegistry: input.findingsRegistry,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,

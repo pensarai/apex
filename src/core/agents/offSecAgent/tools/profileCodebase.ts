@@ -51,7 +51,7 @@ Full structured output is written to the session artifact; inline data is a comp
       }
 
       try {
-        const profile = await buildRepoProfile(rootPath);
+        const profile = await buildRepoProfile(rootPath, ctx.backends?.command);
         const selection = selectCatalogForProfile(profile);
         const artifact = await writeWhiteboxArtifact({
           session: ctx.session,

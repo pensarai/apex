@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import type { CommandBackend } from "../tools/backends/types";
 
 const KILL_ESCALATE_MS = 2_000;
 
@@ -141,4 +142,95 @@ export async function runSpawnBounded(input: {
       });
     });
   });
+}
+
+function shellQuoteArg(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/** `argv` joined into a single shell-quoted string, `cd`'d into `cwd` first — `CommandBackend.run` takes one command string, not argv + cwd. */
+export function buildShellCommand(
+  argv: readonly string[],
+  cwd: string,
+): string {
+  const quotedArgv = argv.map(shellQuoteArg).join(" ");
+  return `cd ${shellQuoteArg(cwd)} && ${quotedArgv}`;
+}
+
+/**
+ * {@link runSpawnBounded} on the host, or through a host-injected
+ * {@link CommandBackend} so the analyzer runs wherever that backend routes
+ * commands (the sandbox that holds the clone, on the durable path).
+ */
+export async function runCommandBounded(
+  command: CommandBackend | undefined,
+  argv: readonly string[],
+  input: {
+    cwd: string;
+    timeoutSeconds: number;
+    maxTotalBytes: number;
+    abortSignal?: AbortSignal;
+  },
+): Promise<{
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  outputTruncated: boolean;
+  timedOut: boolean;
+}> {
+  if (!command) {
+    return runSpawnBounded({
+      command: argv,
+      cwd: input.cwd,
+      timeoutSeconds: input.timeoutSeconds,
+      maxTotalBytes: input.maxTotalBytes,
+      detached: false,
+    });
+  }
+  if (!argv[0]) {
+    return {
+      stdout: "",
+      stderr: "Empty command",
+      exitCode: 1,
+      outputTruncated: false,
+      timedOut: false,
+    };
+  }
+
+  let stdout = "";
+  let stderr = "";
+  let totalBytes = 0;
+  let outputTruncated = false;
+  let exitCode = 0;
+  let timedOut = false;
+
+  const append = (target: "stdout" | "stderr", text: string): void => {
+    if (totalBytes >= input.maxTotalBytes) {
+      outputTruncated = true;
+      return;
+    }
+    const room = input.maxTotalBytes - totalBytes;
+    let bounded = text;
+    if (Buffer.byteLength(text) > room) {
+      bounded = Buffer.from(text).subarray(0, room).toString();
+      outputTruncated = true;
+    }
+    if (target === "stdout") stdout += bounded;
+    else stderr += bounded;
+    totalBytes += Buffer.byteLength(bounded);
+  };
+
+  for await (const event of command.run(buildShellCommand(argv, input.cwd), {
+    timeoutSeconds: input.timeoutSeconds,
+    abortSignal: input.abortSignal,
+  })) {
+    if (event.type === "stdout") append("stdout", event.bytes);
+    else if (event.type === "stderr") append("stderr", event.bytes);
+    else if (event.type === "end") {
+      exitCode = event.exitCode;
+      timedOut = event.timedOut;
+    }
+  }
+
+  return { stdout, stderr, exitCode, outputTruncated, timedOut };
 }

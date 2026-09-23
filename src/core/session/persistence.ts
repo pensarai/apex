@@ -259,14 +259,19 @@ export interface SwarmTarget {
 /**
  * Build initial manifest entries for a swarm of pentest agents.
  * All entries start with status "running".
+ *
+ * @param mintId Session id factory, `(name, ordinal) => id`. Defaults to a
+ * fresh random `ses_` id (ignoring both args) — see
+ * `WorkflowSeams.ids` in `../workflows/seams.ts`.
  */
 export function buildManifestEntries(
   targets: SwarmTarget[],
+  mintId: (name: string, ordinal: number) => string = () => newSessionId(),
 ): AgentManifestEntry[] {
   return targets.map((t, i) => {
     // Stable id, minted once and persisted; the swarm reuses it on resume so the
     // worker's on-disk dir/messages and `pensar.session.id` stay put.
-    const sessionId = newSessionId();
+    const sessionId = mintId(t.name ?? "pentest-worker", i);
     return {
       id: sessionId,
       sessionId,

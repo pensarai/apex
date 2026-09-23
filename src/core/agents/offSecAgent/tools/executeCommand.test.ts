@@ -1,15 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { StaticPromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
+import {
+  normalizeExecuteCommandTimeout,
+  redactSecretValues,
+} from "../../../tools/backends/helpers";
+import { ToolPolicyDeniedError } from "../../../tools/backends/policy";
+import type {
+  CommandEvent,
+  RunOpts,
+  ToolBackends,
+} from "../../../tools/backends/types";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import {
   type ExecuteCommandResult,
   executeCommand,
-  normalizeExecuteCommandTimeout,
   normalizePromptInjectionPointer,
-  redactSecretValues,
 } from "./executeCommand";
-import type { UnifiedSandbox } from "./sandbox";
 import type { ToolContext } from "./types";
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
@@ -101,7 +108,7 @@ describe("executeCommand prompt injection pointer", () => {
     expect(capturedCommand).toBe("echo hello");
   });
 
-  it("passes a payload file path pointer through env vars and redacts echoed payloads", async () => {
+  it("passes a payload file path pointer through env vars against the command backend", async () => {
     const payload = "TEST PAYLOAD: direct override";
     const payloadFilePath = "/tmp/apex-prompt-library/payloads/direct.txt";
     const library = new StaticPromptInjectionLibrary([
@@ -119,41 +126,19 @@ describe("executeCommand prompt injection pointer", () => {
     ]);
 
     let capturedCommand = "";
-    let capturedEnvVars: Record<string, string> | undefined;
-    let capturedSandboxFilePath = "";
-    let executionCount = 0;
-    const sandbox: UnifiedSandbox = {
-      type: "linux",
-      execute: async (command, opts) => {
-        executionCount++;
-        // First call writes the payload to a temp file in the sandbox
-        if (executionCount === 1) {
-          // Extract the temp file path from the write command
-          const match = command.match(/> (\/tmp\/apex_payload_\d+\.txt)/);
-          if (match) {
-            capturedSandboxFilePath = match[1];
-          }
-          return {
-            success: true,
-            exitCode: 0,
-            stdout: "",
-            stderr: "",
-          };
-        }
-        // Second call runs the actual command with env var pointing to sandbox temp file
+    const persistentShell = {
+      execute: async (command: string) => {
         capturedCommand = command;
-        capturedEnvVars = opts?.envVars;
         return {
-          success: true,
           exitCode: 0,
-          stdout: `using ${opts?.envVars?.APEX_PROMPT_INJECTION_FILE}: ${payload}`,
+          stdout: `using ${payloadFilePath}: ${payload}`,
           stderr: payload,
         };
       },
-    };
+    } as unknown as ToolContext["persistentShell"];
 
     const tool = executeCommand(
-      makeCtx({ promptInjectionLibrary: library, sandbox }),
+      makeCtx({ promptInjectionLibrary: library, persistentShell }),
     );
     const command =
       'python3 harness.py --payload-file "$APEX_PROMPT_INJECTION_FILE"';
@@ -167,15 +152,10 @@ describe("executeCommand prompt injection pointer", () => {
       { toolCallId: "tc_test", messages: [], abortSignal: undefined },
     )) as ExecuteCommandResult;
 
-    expect(capturedCommand).toBe(command);
-    expect(capturedCommand).not.toContain(payloadFilePath);
-    // In sandbox mode, env var points to the temp file in the sandbox
-    expect(capturedEnvVars).toEqual({
-      APEX_PROMPT_INJECTION_FILE: capturedSandboxFilePath,
-    });
-    expect(capturedSandboxFilePath).toMatch(/^\/tmp\/apex_payload_\d+\.txt$/);
+    expect(capturedCommand).toContain("bash -lc");
+    expect(capturedCommand).toContain(payloadFilePath);
     expect(result.command).toBe(command);
-    expect(result.stdout).toContain(capturedSandboxFilePath);
+    expect(result.command).not.toContain(payloadFilePath);
     expect(result.stdout).toContain("[PROMPT_INJECTION:pi.direct.override]");
     expect(result.stdout).not.toContain(payload);
     expect(result.stderr).toBe("[PROMPT_INJECTION:pi.direct.override]");
@@ -256,6 +236,85 @@ describe("executeCommand prompt injection pointer", () => {
     expect(result.command).toBe(command);
     expect(result.command).not.toContain(payloadFilePath);
     expect(result.stdout).toBe("[PROMPT_INJECTION:pi.shell.override]");
+  });
+});
+
+describe("executeCommand routes through the injected command backend", () => {
+  function fakeBackends(events: CommandEvent[]): {
+    backends: ToolBackends;
+    calls: Array<{ cmd: string; opts?: RunOpts }>;
+  } {
+    const calls: Array<{ cmd: string; opts?: RunOpts }> = [];
+    const backends = {
+      command: {
+        async *run(cmd: string, opts?: RunOpts) {
+          calls.push({ cmd, opts });
+          for (const event of events) yield event;
+        },
+      },
+    } as unknown as ToolBackends;
+    return { backends, calls };
+  }
+
+  it("calls backends.command.run with the command and timeout, no persistentShell/sandbox reference", async () => {
+    const { backends, calls } = fakeBackends([
+      { type: "start" },
+      { type: "stdout", seq: 0, bytes: "hello from backend" },
+      { type: "end", exitCode: 0, timedOut: false },
+    ]);
+
+    const tool = executeCommand(makeCtx({ backends }));
+    const result = (await tool.execute?.(
+      { command: "echo hello", timeout: 5, toolCallDescription: "d" },
+      { toolCallId: "tc", messages: [], abortSignal: undefined },
+    )) as ExecuteCommandResult;
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].cmd).toBe("echo hello");
+    expect(calls[0].opts?.timeoutSeconds).toBe(5);
+    expect(result).toEqual({
+      success: true,
+      error: "",
+      stdout: "hello from backend",
+      stderr: "",
+      command: "echo hello",
+      outputFile: undefined,
+    });
+  });
+
+  it("surfaces a timeout signaled by the backend", async () => {
+    const { backends } = fakeBackends([
+      { type: "start" },
+      { type: "end", exitCode: 124, timedOut: true },
+    ]);
+    const tool = executeCommand(makeCtx({ backends }));
+    const result = (await tool.execute?.(
+      { command: "sleep 100", toolCallDescription: "d" },
+      { toolCallId: "tc", messages: [], abortSignal: undefined },
+    )) as ExecuteCommandResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Command timed out");
+  });
+
+  it("surfaces a ToolPolicy denial as a failed result", async () => {
+    const backends = {
+      command: {
+        // biome-ignore lint/correctness/useYield: the generator must throw before its first event
+        async *run() {
+          throw new ToolPolicyDeniedError("command", "run", "out of scope");
+        },
+      },
+    } as unknown as ToolBackends;
+
+    const tool = executeCommand(makeCtx({ backends }));
+    const result = (await tool.execute?.(
+      { command: "curl http://evil.example.com", toolCallDescription: "d" },
+      { toolCallId: "tc", messages: [], abortSignal: undefined },
+    )) as ExecuteCommandResult;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("out of scope");
   });
 });
 

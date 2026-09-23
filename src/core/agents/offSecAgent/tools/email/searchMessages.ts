@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveBackends } from "../../../../tools/backends/resolve";
 import type { ToolContext } from "../types";
 import { resolveEmailAdapter } from "./adapters";
 
@@ -53,7 +54,10 @@ Returns message summaries matching the query.`,
       }
 
       try {
-        const adapter = resolveEmailAdapter(inbox, ctx.emailAdapterFor);
+        const adapter = resolveEmailAdapter(
+          inbox,
+          resolveBackends(ctx).inbox.email,
+        );
         const result = await adapter.searchMessages({
           query,
           folder,

@@ -12,6 +12,12 @@ import {
 } from "../report";
 import { createThreatModelPrompt } from "../utils/prompt";
 import type { PentestWorkflowInput, PentestWorkflowResult } from "./pentest";
+import {
+  assertDepth,
+  inMemoryRegistryProvider,
+  inProcessSeams,
+  withFindingPersistedHook,
+} from "./seams";
 
 const FastStrikeResult = z.object({
   solved: z
@@ -64,7 +70,26 @@ export async function runFastStrike(
     openAIReasoningEffort,
     prompt,
     threatModel,
+    seams: inputSeams,
   } = input;
+
+  // Default registries mirror today's `FindingsRegistry.fromDirectory` resume
+  // behavior (dedup against on-disk findings, model-backed semantic dedup).
+  const seams =
+    inputSeams ??
+    inProcessSeams({
+      registries: {
+        findings: () =>
+          FindingsRegistry.fromDirectory(session.findingsPath, {
+            model,
+            authConfig,
+            abortSignal,
+            sessionId: session.id,
+          }),
+        attackSurface: inMemoryRegistryProvider.attackSurface,
+      },
+    });
+  assertDepth(1, seams.limits);
 
   if (cwd) {
     if (!session.config) {
@@ -100,10 +125,13 @@ export async function runFastStrike(
     metadata: { target },
   });
 
-  const findingsRegistry = FindingsRegistry.fromDirectory(
-    session.findingsPath,
-    { model, authConfig, abortSignal, sessionId: session.id },
-  );
+  // Ops-typed by the seam; OffensiveSecurityAgent only calls the
+  // FindingsRegistryOps surface, so this cast is safe for any
+  // RegistryProvider implementation.
+  const findingsRegistry = withFindingPersistedHook(
+    seams.registries.findings(),
+    seams.hooks.onFindingPersisted,
+  ) as FindingsRegistry;
 
   const promptParts: string[] = [`Target: ${target}`];
   if (operatorGuidance) promptParts.push(operatorGuidance);
@@ -137,6 +165,12 @@ export async function runFastStrike(
     input: { target },
   });
 
+  await seams.hooks.onEndpointStart?.({
+    subagentId: "fast-strike",
+    subagentName: "Fast Strike",
+    target,
+  });
+
   let strikeResult: FastStrikeOutcome;
   try {
     strikeResult = await agent.consume();
@@ -144,11 +178,19 @@ export async function runFastStrike(
       subagentId: "fast-strike",
       status: "completed",
     });
+    await seams.hooks.onEndpointDone?.(
+      { subagentId: "fast-strike", subagentName: "Fast Strike", target },
+      strikeResult,
+    );
   } catch (e) {
     eventBus?.emit("subagent-complete", {
       subagentId: "fast-strike",
       status: "failed",
     });
+    await seams.hooks.onEndpointFailed?.(
+      { subagentId: "fast-strike", subagentName: "Fast Strike", target },
+      e,
+    );
     throw e;
   }
 

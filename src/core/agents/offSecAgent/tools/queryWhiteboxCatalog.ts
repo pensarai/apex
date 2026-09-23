@@ -45,7 +45,9 @@ async function getCachedRepoProfile(
     return hit.profile;
   }
   profileCache.delete(key);
-  const profile = await profileCodebase(rootPath).catch(() => undefined);
+  const profile = await profileCodebase(rootPath, ctx.backends?.command).catch(
+    () => undefined,
+  );
   if (profile) {
     evictExpiredProfileCache();
     if (profileCache.size >= PROFILE_CACHE_MAX_ENTRIES) {

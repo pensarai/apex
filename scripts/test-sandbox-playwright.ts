@@ -16,9 +16,9 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   checkSandboxPlaywright,
-  createSandboxBrowserTools,
   ensureSandboxBrowser,
   installSandboxPlaywright,
+  SandboxBrowserBackend,
   type SandboxExecuteOptions,
   type SandboxExecutionResult,
   type ToolContext,
@@ -283,49 +283,29 @@ async function main() {
       sandbox,
     };
 
-    const tools = createSandboxBrowserTools(ctx);
-    const callOpts = {
-      toolCallId: "t",
-      messages: [] as never[],
-      abortSignal: undefined as never,
-    };
+    const browser = SandboxBrowserBackend(ctx);
 
-    // 5a: browser_navigate
-    log("tool", "browser_navigate → https://example.com");
-    const browserNavigate = tools.browser_navigate.execute;
-    if (!browserNavigate) throw new Error("browser_navigate missing execute");
-    const nav = (await browserNavigate(
-      { url: "https://example.com", toolCallDescription: "test" },
-      callOpts,
-    )) as { success: boolean; url?: string; title?: string; error?: string };
+    // 5a: navigate
+    log("tool", "navigate → https://example.com");
+    const nav = await browser.navigate("https://example.com");
     if (nav.success) {
       pass(`navigate: url=${nav.url}, title="${nav.title}"`);
     } else {
       fail("navigate", nav.error);
     }
 
-    // 5b: browser_evaluate
-    log("tool", "browser_evaluate → document.title");
-    const browserEvaluate = tools.browser_evaluate.execute;
-    if (!browserEvaluate) throw new Error("browser_evaluate missing execute");
-    const evalR = (await browserEvaluate(
-      { script: "document.title", toolCallDescription: "test" },
-      callOpts,
-    )) as { success: boolean; result?: unknown; error?: string };
+    // 5b: evaluate
+    log("tool", "evaluate → document.title");
+    const evalR = await browser.evaluate({ script: "document.title" });
     if (evalR.success) {
       pass(`evaluate: title = "${evalR.result}"`);
     } else {
       fail("evaluate", evalR.error);
     }
 
-    // 5c: browser_snapshot
-    log("tool", "browser_snapshot");
-    const browserSnapshot = tools.browser_snapshot.execute;
-    if (!browserSnapshot) throw new Error("browser_snapshot missing execute");
-    const snap = (await browserSnapshot(
-      { toolCallDescription: "test" },
-      callOpts,
-    )) as { success: boolean; snapshot?: string; error?: string };
+    // 5c: snapshot
+    log("tool", "snapshot");
+    const snap = await browser.snapshot();
     if (snap.success && snap.snapshot) {
       console.log(
         `  snapshot (first 400 chars):\n${snap.snapshot.substring(0, 400)}`,
@@ -335,44 +315,27 @@ async function main() {
       fail("snapshot", snap.error);
     }
 
-    // 5d: browser_get_cookies
-    log("tool", "browser_get_cookies");
-    const browserGetCookies = tools.browser_get_cookies.execute;
-    if (!browserGetCookies)
-      throw new Error("browser_get_cookies missing execute");
-    const cookies = (await browserGetCookies(
-      { toolCallDescription: "test" },
-      callOpts,
-    )) as { success: boolean; cookies?: unknown[]; error?: string };
+    // 5d: getCookies
+    log("tool", "getCookies");
+    const cookies = await browser.getCookies();
     if (cookies.success) {
       pass(`cookies: ${cookies.cookies?.length ?? 0} cookie(s)`);
     } else {
       fail("cookies", cookies.error);
     }
 
-    // 5e: browser_screenshot
-    log("tool", "browser_screenshot");
-    const browserScreenshot = tools.browser_screenshot.execute;
-    if (!browserScreenshot)
-      throw new Error("browser_screenshot missing execute");
-    const ss = (await browserScreenshot(
-      { filename: "test_example_com", toolCallDescription: "test" },
-      callOpts,
-    )) as { success: boolean; path?: string; error?: string };
+    // 5e: screenshot
+    log("tool", "screenshot");
+    const ss = await browser.screenshot({ filename: "test_example_com" });
     if (ss.success) {
       pass(`screenshot: ${ss.path}`);
     } else {
       fail("screenshot", ss.error);
     }
 
-    // 5f: browser_console
-    log("tool", "browser_console");
-    const browserConsole = tools.browser_console.execute;
-    if (!browserConsole) throw new Error("browser_console missing execute");
-    const cons = (await browserConsole(
-      { toolCallDescription: "test" },
-      callOpts,
-    )) as { success: boolean; messages?: unknown[]; error?: string };
+    // 5f: console
+    log("tool", "console");
+    const cons = await browser.console();
     if (cons.success) {
       pass(`console: ${cons.messages?.length ?? 0} message(s)`);
     } else {

@@ -2,7 +2,6 @@ import { spawn } from "node:child_process";
 import {
   appendFileSync,
   chmodSync,
-  existsSync,
   mkdirSync,
   unlinkSync,
   writeFileSync,
@@ -14,6 +13,7 @@ import { AttackPathSchema } from "../../../../lib/attack-path/types";
 import { hasCanonicalName } from "../../../../lib/cwe/types";
 import type { EvidenceFileEntry } from "../../../../lib/evidence/types";
 import { createLogger } from "../../../logger/structured";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import { scopedLogger } from "../../../util/lazyLogger";
 import {
   type CVSSScorerInput,
@@ -297,9 +297,7 @@ CRITICAL RULES — READ BEFORE CALLING:
         }
 
         // Phase 1: Write & execute POC
-        const pocResult = ctx.sandbox
-          ? await executeSandboxPoc(ctx, input)
-          : await executeLocalPoc(ctx, input);
+        const pocResult = await executePoc(ctx, input);
 
         if (!pocResult.success) {
           return {
@@ -414,7 +412,16 @@ CRITICAL RULES — READ BEFORE CALLING:
         if (materializedEvidence.length > EVIDENCE_FILE_THRESHOLD) {
           const evidenceFilename = `${timestamp.split("T")[0]}-${slugify(input.title, 40)}-evidence.txt`;
           const evidenceFilePath = join(outputDir, evidenceFilename);
-          writeFileSync(evidenceFilePath, materializedEvidence);
+          const evidenceWrite = await resolveBackends(ctx).fs.write(
+            evidenceFilePath,
+            materializedEvidence,
+            { mode: "overwrite" },
+          );
+          if (!evidenceWrite.success) {
+            throw new Error(
+              evidenceWrite.error || `Failed to write ${evidenceFilePath}`,
+            );
+          }
           evidenceForPrompt =
             materializedEvidence.substring(0, EVIDENCE_FILE_THRESHOLD) +
             `\n... [truncated — full output saved to ${evidenceFilename}]`;
@@ -463,6 +470,10 @@ CRITICAL RULES — READ BEFORE CALLING:
               ctx.authConfig,
               ctx.abortSignal,
               ctx.session.id,
+              {
+                languageModelMiddleware: ctx.languageModelMiddleware,
+                usageRecorder: ctx.usageRecorder,
+              },
             );
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -565,7 +576,14 @@ CRITICAL RULES — READ BEFORE CALLING:
         const mdPath = join(outputDir, mdFilename);
 
         try {
-          writeFileSync(jsonPath, JSON.stringify(findingWithMeta, null, 2));
+          const jsonWrite = await resolveBackends(ctx).fs.write(
+            jsonPath,
+            JSON.stringify(findingWithMeta, null, 2),
+            { mode: "overwrite" },
+          );
+          if (!jsonWrite.success) {
+            throw new Error(jsonWrite.error || `Failed to write ${jsonPath}`);
+          }
 
           const cvssSection = cvssWarning
             ? `## CVSS 4.0 Assessment
@@ -654,7 +672,16 @@ ${finding.references ? `## References\n\n${finding.references}` : ""}
 *This finding was automatically documented by the Pensar penetration testing agent.*
 `;
 
-          writeFileSync(mdPath, markdown);
+          const mdWrite = await resolveBackends(ctx).fs.write(
+            mdPath,
+            markdown,
+            {
+              mode: "overwrite",
+            },
+          );
+          if (!mdWrite.success) {
+            throw new Error(mdWrite.error || `Failed to write ${mdPath}`);
+          }
 
           if (isVulnerability) {
             const summaryPath = join(session.rootPath, "findings-summary.md");
@@ -717,19 +744,25 @@ interface PocExecResult {
   exitCode?: number;
 }
 
-async function executeLocalPoc(
+/**
+ * Writes the POC through the backend (no host `pocsPath` write outside it, no
+ * base64 pipe into a sandbox) then executes it. Execution stays local — the
+ * PoC runner spawns its own isolated child process with its own timeout/kill
+ * handling, independent of `ctx.backends.command`.
+ */
+async function executePoc(
   ctx: ToolContext,
   input: DocumentVulnerabilityInput,
 ): Promise<PocExecResult> {
-  const pocsPath = ctx.session.pocsPath;
-  if (!existsSync(pocsPath)) {
-    mkdirSync(pocsPath, { recursive: true });
-  }
-
   const { filename, pocContent } = preparePoc(input);
-  const pocPath = join(pocsPath, filename);
+  const pocPath = join(ctx.session.pocsPath, filename);
 
-  writeFileSync(pocPath, pocContent);
+  const written = await resolveBackends(ctx).fs.write(pocPath, pocContent, {
+    mode: "overwrite",
+  });
+  if (!written.success) {
+    throw new Error(written.error || `Failed to write PoC ${pocPath}`);
+  }
   chmodSync(pocPath, 0o755);
 
   const { stdout, stderr, exitCode } = await runScript(
@@ -749,62 +782,6 @@ async function executeLocalPoc(
   }
 
   return { success: true, filename, stdout, stderr, exitCode };
-}
-
-async function executeSandboxPoc(
-  ctx: ToolContext,
-  input: DocumentVulnerabilityInput,
-): Promise<PocExecResult> {
-  const { filename, pocContent } = preparePoc(input);
-
-  const localPocsPath = ctx.session.pocsPath;
-  if (!existsSync(localPocsPath)) {
-    mkdirSync(localPocsPath, { recursive: true });
-  }
-  const localPocPath = join(localPocsPath, filename);
-
-  writeFileSync(localPocPath, pocContent);
-
-  // Pipeline sandbox setup into a single command to reduce round-trips
-  const sandboxPocPath = `/tmp/pocs/${filename}`;
-  const base64Content = Buffer.from(pocContent).toString("base64");
-  await ctx.sandbox!.execute(
-    `mkdir -p /tmp/pocs && echo "${base64Content}" | base64 -d > ${sandboxPocPath} && chmod +x ${sandboxPocPath}`,
-  );
-
-  const runner = POC_RUNNERS[input.pocType];
-  const result = await ctx.sandbox!.execute(
-    `cd /tmp && ${runner} ${sandboxPocPath}`,
-    { timeout: 60 },
-  );
-
-  const executionSuccess = result.success || result.exitCode === 0;
-
-  if (!executionSuccess) {
-    await ctx.sandbox!.execute(`rm -f ${sandboxPocPath}`);
-    try {
-      unlinkSync(localPocPath);
-    } catch {
-      /* cleanup best-effort */
-    }
-    return {
-      success: false,
-      filename,
-      stdout: result.stdout || "(no output)",
-      stderr:
-        (result.stderr || "POC execution failed") +
-        "\n\nPOC file has been deleted.",
-      exitCode: result.exitCode,
-    };
-  }
-
-  return {
-    success: true,
-    filename,
-    stdout: result.stdout || "(no output)",
-    stderr: result.stderr || "(no errors)",
-    exitCode: result.exitCode,
-  };
 }
 
 // ---------------------------------------------------------------------------

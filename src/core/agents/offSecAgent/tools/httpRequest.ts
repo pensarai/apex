@@ -2,11 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
-import {
-  resolveEffectiveHeaders,
-  shellQuote,
-  targetFetch,
-} from "../../../http/targetHeaders";
+import { resolveEffectiveHeaders } from "../../../http/targetHeaders";
 import {
   EMPTY_PROMPT_INJECTION_LIBRARY,
   getPromptInjectionLibrary,
@@ -15,6 +11,8 @@ import {
   redactPromptInjectionPayloads,
   resolvePromptInjectionRefs,
 } from "../../../prompt-injections";
+import { resolveBackends } from "../../../tools/backends";
+import type { HttpRequest } from "../../../tools/backends/types";
 import { agentLogsDir } from "./agentScratch";
 import { assertHttpActionAllowed } from "./destructiveGuard";
 import {
@@ -57,6 +55,12 @@ const httpRequestInputSchema = z.object({
       "Whether to follow HTTP redirects (3xx). Defaults to false so you can see redirect responses with Location and Set-Cookie headers.",
     ),
   timeout: z.number().default(10000),
+  extract: z
+    .enum(["readability"])
+    .optional()
+    .describe(
+      "Set to 'readability' to fetch a GET page and extract its title and main text content instead of the raw response — the same behavior as get_page. Ignores method/headers/body and is not scope- or destructive-action-checked; use it for CVE writeups, vendor docs and other research URLs.",
+    ),
   toolCallDescription: z
     .string()
     .describe(
@@ -76,6 +80,7 @@ export type HttpRequestResult = {
   redirected: boolean;
   error?: string;
   method?: string;
+  title?: string;
 };
 
 type HttpRequestBody = string | PromptInjectionRef | undefined;
@@ -153,6 +158,20 @@ function parseHeaders(raw: string | undefined): Record<string, string> {
   return {};
 }
 
+function emptyResult(
+  base: Partial<HttpRequestResult> & { url: string; method: string },
+): HttpRequestResult {
+  return {
+    success: false,
+    status: 0,
+    statusText: "",
+    headers: {},
+    body: "",
+    redirected: false,
+    ...base,
+  };
+}
+
 export function httpRequest(ctx: ToolContext) {
   return tool({
     description: `Make HTTP requests with detailed response analysis for web application testing.
@@ -179,7 +198,13 @@ COMMON TESTING PATTERNS:
 - Try different user agents
 - Check for API endpoints (/api/, /v1/, /graphql)
 - Look for admin panels (/admin, /administrator, /wp-admin)
-- Test for backup files (.bak, .old, ~, .swp)`,
+- Test for backup files (.bak, .old, ~, .swp)
+
+READABILITY EXTRACTION:
+- Set extract: 'readability' to fetch a page and read its title and main text
+  content instead of raw HTML — the same tool previously named get_page. Use
+  this after web_search to read CVE details, security advisories and
+  documentation. It is GET-only and ignores headers/body.`,
     inputSchema: httpRequestInputSchema,
     execute: async ({
       url,
@@ -188,24 +213,25 @@ COMMON TESTING PATTERNS:
       body,
       followRedirects,
       timeout,
+      extract,
     }): Promise<HttpRequestResult> => {
+      const backends = resolveBackends(ctx);
+
+      if (extract === "readability") {
+        const response = await backends.http.request(
+          { url, extract: "readability" },
+          { timeoutMs: timeout, abortSignal: ctx.abortSignal },
+        );
+        return { ...response, method };
+      }
+
       let headers = parseHeaders(rawHeaders);
 
       try {
         assertUrlInScope(url, ctx);
       } catch (e) {
         if (e instanceof ScopeViolationError) {
-          return {
-            success: false,
-            error: e.message,
-            url,
-            method,
-            status: 0,
-            statusText: "",
-            headers: {},
-            body: "",
-            redirected: false,
-          };
+          return emptyResult({ error: e.message, url, method });
         }
         throw e;
       }
@@ -233,12 +259,9 @@ COMMON TESTING PATTERNS:
                 resolvePromptInjectionRefs(body as HttpRequestBody, library),
               );
 
-        // Enforce the destructive-action guard on the fully resolved body and
-        // the EFFECTIVE headers (agent-supplied + session/credential headers
-        // merged in) — a prompt-injection ref expands to a concrete string only
-        // here, and a method-override header can be injected by the session
-        // layer, so classifying before this point (or on agent headers alone)
-        // would miss those.
+        // Classify the fully resolved body and the effective headers (agent
+        // headers merged with session/credential headers), before a rate-limit
+        // slot is taken.
         const effectiveHeaders = resolveEffectiveHeaders(
           resolverSessionFromCtx(ctx),
           url,
@@ -249,17 +272,11 @@ COMMON TESTING PATTERNS:
           ctx,
         );
       } catch (e) {
-        return {
-          success: false,
+        return emptyResult({
           error: e instanceof Error ? e.message : String(e),
           url,
           method,
-          status: 0,
-          statusText: "",
-          headers: {},
-          body: "",
-          redirected: false,
-        };
+        });
       }
 
       // Rate-limit chokepoint for both dispatch paths (no-op when unset).
@@ -267,74 +284,36 @@ COMMON TESTING PATTERNS:
         (await ctx.session._rateLimiter?.acquireSlot(ctx.abortSignal)) ?? false;
       if (ctx.abortSignal?.aborted) {
         if (slotAcquired) ctx.session._rateLimiter?.releaseSlot();
-        return {
-          success: false,
+        return emptyResult({
           error: "Request aborted by user",
           url,
           method,
-          status: 0,
-          statusText: "",
-          headers: {},
-          body: "",
-          redirected: false,
-        };
+        });
       }
 
-      // Sandbox mode: build a curl command and run it inside the sandbox
-      if (ctx.sandbox) {
-        return executeSandboxHttpRequest(
-          ctx,
-          {
-            url,
-            method,
-            headers,
-            body: resolvedBody,
-            followRedirects,
-            timeout,
-          },
-          library,
-        );
-      }
-
-      // Local mode: use native fetch
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const request: HttpRequest = {
+        url,
+        method,
+        headers,
+        body: resolvedBody,
+        followRedirects,
+      };
 
       try {
-        const timeoutController = new AbortController();
-        timeoutId = setTimeout(() => timeoutController.abort(), timeout);
-
-        const combinedSignal = ctx.abortSignal
-          ? AbortSignal.any([ctx.abortSignal, timeoutController.signal])
-          : timeoutController.signal;
-
-        const response = await targetFetch(resolverSessionFromCtx(ctx), url, {
-          method,
-          headers,
-          body: resolvedBody || undefined,
-          redirect: followRedirects ? "follow" : "manual",
-          signal: combinedSignal,
+        const response = await backends.http.request(request, {
+          timeoutMs: timeout,
+          abortSignal: ctx.abortSignal,
         });
-
-        clearTimeout(timeoutId);
-
-        const responseHeaders: Record<string, string> = {};
-        response.headers.forEach((value, key) => {
-          responseHeaders[key] = value;
-        });
-
-        let responseBody = "";
-        try {
-          responseBody = await response.text();
-        } catch {
-          responseBody = "(unable to read response body)";
+        if (!response.success) {
+          return { ...response, method };
         }
 
         const redactedBody = redactPromptInjectionPayloads(
-          responseBody,
+          response.body,
           library,
         );
         const redactedHeaders = Object.fromEntries(
-          Object.entries(responseHeaders).map(([key, value]) => [
+          Object.entries(response.headers).map(([key, value]) => [
             key,
             redactPromptInjectionPayloads(value, library),
           ]),
@@ -351,182 +330,12 @@ COMMON TESTING PATTERNS:
           redirected: response.redirected,
         };
       } catch (error: unknown) {
-        if (timeoutId) clearTimeout(timeoutId);
-
-        const isAbort = error instanceof Error && error.name === "AbortError";
-        const errorMsg = isAbort
-          ? ctx.abortSignal?.aborted
-            ? "Request aborted by user"
-            : `Request timeout after ${timeout}ms`
-          : error instanceof Error
-            ? error.message
-            : String(error);
-
-        return {
-          success: false,
-          error: errorMsg,
+        return emptyResult({
+          error: error instanceof Error ? error.message : String(error),
           url,
           method,
-          status: 0,
-          statusText: "",
-          headers: {},
-          body: "",
-          redirected: false,
-        };
+        });
       }
     },
   });
-}
-
-// ---------------------------------------------------------------------------
-// Sandbox HTTP helper (curl-based)
-// ---------------------------------------------------------------------------
-
-async function executeSandboxHttpRequest(
-  ctx: ToolContext,
-  opts: {
-    url: string;
-    method: string;
-    headers?: Record<string, string>;
-    body?: string;
-    followRedirects: boolean;
-    timeout: number;
-  },
-  library: PromptInjectionLibrary,
-): Promise<HttpRequestResult> {
-  const { url, method, headers, body, followRedirects, timeout } = opts;
-
-  const { sandbox } = ctx;
-  if (!sandbox) {
-    throw new Error("executeSandboxHttpRequest requires a sandbox");
-  }
-
-  // Hoisted so the `finally` can delete the request-body temp file on every
-  // path — otherwise every POST/PUT/PATCH leaves a `/tmp/apex_http_body_*`
-  // file behind for the life of the sandbox, and a body-heavy scan can fill
-  // the disk (ENOSPC).
-  let bodyTempFile: string | null = null;
-
-  try {
-    let curlCommand = `curl -i -X ${method}`;
-
-    // Resolve session/credential headers so the sandbox curl path matches
-    // the local fetch path. Caller `headers` win as the request layer.
-    const mergedHeaders = resolveEffectiveHeaders(
-      resolverSessionFromCtx(ctx),
-      url,
-      headers,
-    );
-    for (const [key, value] of Object.entries(mergedHeaders)) {
-      curlCommand += ` -H "${shellQuote(`${key}: ${value}`)}"`;
-    }
-
-    // If we have a body to send, write it to a temp file in the sandbox
-    // to avoid shell escaping issues with multiline content
-    if (body && ["POST", "PUT", "PATCH"].includes(method)) {
-      bodyTempFile = `/tmp/apex_http_body_${Date.now()}_${Math.random().toString(36).slice(2, 11)}.txt`;
-
-      // Use printf to safely write the body to the temp file
-      const escapedForPrintf = body.replace(/\\/g, "\\\\").replace(/%/g, "%%");
-      const writeCommand = `printf '%s' '${escapedForPrintf.replace(/'/g, "'\\''")}' > ${bodyTempFile}`;
-
-      const writeResult = await sandbox.execute(writeCommand, { timeout: 30 });
-      if (!writeResult.success || writeResult.exitCode !== 0) {
-        return {
-          success: false,
-          error: `Failed to write request body to sandbox temp file: ${writeResult.stderr || writeResult.stdout}`,
-          url,
-          method,
-          status: 0,
-          statusText: "",
-          headers: {},
-          body: "",
-          redirected: false,
-        };
-      }
-
-      curlCommand += ` --data-binary @${bodyTempFile}`;
-    }
-
-    if (followRedirects) {
-      curlCommand += " -L";
-    }
-
-    const timeoutSeconds = Math.ceil(timeout / 1000);
-    curlCommand += ` --max-time ${timeoutSeconds}`;
-    curlCommand += ` "${url}" 2>&1`;
-
-    const ssmTimeout = Math.max(timeoutSeconds, 30);
-    const result = await sandbox.execute(curlCommand, {
-      timeout: ssmTimeout,
-    });
-
-    const output = result.stdout || "";
-    const lines = output.split("\n");
-    let statusLine = "";
-    const responseHeaders: Record<string, string> = {};
-    let bodyStartIndex = 0;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line.startsWith("HTTP/")) {
-        statusLine = line;
-        for (let j = i + 1; j < lines.length; j++) {
-          if (lines[j].trim() === "") {
-            bodyStartIndex = j + 1;
-            break;
-          }
-          const headerMatch = lines[j].match(/^([^:]+):\s*(.+)$/);
-          if (headerMatch) {
-            responseHeaders[headerMatch[1].toLowerCase()] = headerMatch[2];
-          }
-        }
-        break;
-      }
-    }
-
-    const statusMatch = statusLine.match(/HTTP\/[\d.]+\s+(\d+)\s+(.+)/);
-    const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
-    const statusText = statusMatch ? statusMatch[2] : "Unknown";
-    const responseBody = lines.slice(bodyStartIndex).join("\n");
-
-    const redactedBody = redactPromptInjectionPayloads(responseBody, library);
-    const redactedHeaders = Object.fromEntries(
-      Object.entries(responseHeaders).map(([key, value]) => [
-        key,
-        redactPromptInjectionPayloads(value, library),
-      ]),
-    );
-    const { text: truncatedBody } = maybeSaveBody(redactedBody, ctx);
-
-    return {
-      success: status >= 200 && status < 400,
-      status,
-      statusText,
-      headers: redactedHeaders,
-      body: truncatedBody,
-      url,
-      redirected: false,
-    };
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    return {
-      success: false,
-      error: msg,
-      status: 0,
-      statusText: "Error",
-      headers: {},
-      body: "",
-      url,
-      redirected: false,
-    };
-  } finally {
-    // Reclaim the request-body temp file now that curl has read it. Best-effort
-    // — a failed cleanup must not change the request result.
-    if (bodyTempFile) {
-      await sandbox
-        .execute(`rm -f ${bodyTempFile}`, { timeout: 10 })
-        .catch(() => {});
-    }
-  }
 }

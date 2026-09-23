@@ -1,11 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { targetFetch } from "../../../http/targetHeaders";
-import {
-  assertUrlInScope,
-  resolverSessionFromCtx,
-  ScopeViolationError,
-} from "./scopeGuard";
+import { resolveBackends } from "../../../tools/backends";
+import type { HttpRequest } from "../../../tools/backends/types";
+import { assertUrlInScope, ScopeViolationError } from "./scopeGuard";
 import type { ToolContext } from "./types";
 
 /**
@@ -46,6 +43,7 @@ Use this to:
         throw e;
       }
 
+      const backends = resolveBackends(ctx);
       try {
         const { endpoints, sessionCookie } = params;
 
@@ -61,17 +59,27 @@ Use this to:
 
         for (const endpoint of endpoints) {
           try {
-            const request: RequestInit = { method: "GET" };
+            const request: HttpRequest = {
+              url: endpoint,
+              method: "GET",
+              followRedirects: true,
+            };
             if (sessionCookie) {
               request.headers = { Cookie: sessionCookie };
             }
 
-            const result = await targetFetch(
-              resolverSessionFromCtx(ctx),
-              endpoint,
-              request,
-            );
-            const body = await result.text();
+            const result = await backends.http.request(request);
+            if (!result.success) {
+              results.push({
+                endpoint,
+                status: 0,
+                accessible: false,
+                error: result.error ?? "Request failed",
+              });
+              inaccessible.push(endpoint);
+              continue;
+            }
+            const body = result.body;
 
             results.push({
               endpoint,

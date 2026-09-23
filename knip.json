@@ -5,6 +5,7 @@
     "loader-demo.tsx",
     "src/core/api/index.ts",
     "src/core/ai/index.ts",
+    "src/core/tools/backends/index.ts",
     "scripts/**/*.ts",
     "src/core/benchmark/**/*.ts",
     "src/core/agents/specialized/benchmark/**/*.{ts,tsx}",

@@ -1,7 +1,8 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { ToolBackends } from "../../../tools/backends/types";
 import {
   type ApplyPatchResult,
   applyHunksToContent,
@@ -120,5 +121,40 @@ describe("applyPatch tool", () => {
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/Failed applying patch/);
     expect(readFileSync(join(root, "file.ts"), "utf-8")).toBe("hello\n");
+  });
+});
+
+describe("applyPatch backend injection", () => {
+  it("calls the injected fs backend instead of touching disk", async () => {
+    const applyPatchFn = vi.fn().mockResolvedValue({
+      success: true,
+      error: "",
+      files: [{ path: "file.ts", success: true, hunksApplied: 1 }],
+    } satisfies ApplyPatchResult);
+    const backends = {
+      fs: { applyPatch: applyPatchFn },
+    } as unknown as ToolBackends;
+
+    // A directory that does not exist on the host filesystem — if the tool
+    // fell through to real I/O instead of the injected backend, applying
+    // the patch would fail (no such file) instead of returning the mock.
+    const ctx = {
+      agentCwd: "/nonexistent/apex-sandbox-path",
+      session: {
+        id: "ses_test",
+        rootPath: "/nonexistent/apex-sandbox-path",
+      },
+      backends,
+    } as ToolContext;
+
+    const patch = "--- a/file.ts\n+++ b/file.ts\n@@ -1,1 +1,1 @@\n-old\n+new\n";
+    const tool = applyPatch(ctx);
+    const result = (await tool.execute?.(
+      { toolCallDescription: "test", patch },
+      { toolCallId: "t1", messages: [] },
+    )) as ApplyPatchResult;
+
+    expect(applyPatchFn).toHaveBeenCalledWith(patch);
+    expect(result.files[0].path).toBe("file.ts");
   });
 });
