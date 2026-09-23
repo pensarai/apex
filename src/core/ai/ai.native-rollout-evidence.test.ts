@@ -237,7 +237,11 @@ describe("ai native rollout evidence boundary", () => {
     ]);
   });
 
-  it("links streamed rate-limit recovery within one physical operation", async () => {
+  it.each([
+    "rejection",
+    "error-part",
+    "read-error",
+  ])("links streamed rate-limit recovery after %s within one physical operation", async (failure) => {
     vi.useFakeTimers();
     const envelopes: Array<{
       attempt: {
@@ -250,13 +254,24 @@ describe("ai native rollout evidence boundary", () => {
       };
       turnId: string;
     }> = [];
-    mocks.baseModel.doStream
-      .mockRejectedValueOnce(
-        Object.assign(new Error("stream rate limited fixture"), {
-          statusCode: 429,
+    const error = Object.assign(new Error("stream rate limited fixture"), {
+      statusCode: 429,
+    });
+    if (failure === "rejection")
+      mocks.baseModel.doStream.mockRejectedValueOnce(error);
+    else
+      mocks.baseModel.doStream.mockResolvedValueOnce({
+        stream: new ReadableStream({
+          start(controller) {
+            if (failure === "read-error") controller.error(error);
+            else {
+              controller.enqueue({ type: "error", error });
+              controller.close();
+            }
+          },
         }),
-      )
-      .mockResolvedValueOnce(streamResult());
+      });
+    mocks.baseModel.doStream.mockResolvedValueOnce(streamResult());
     mocks.streamText.mockImplementation((input: { model: LanguageModelV3 }) => {
       const streamed = input.model.doStream(callOptions);
       return {
@@ -265,6 +280,7 @@ describe("ai native rollout evidence boundary", () => {
           for (;;) {
             const part = await reader.read();
             if (part.done) break;
+            if (part.value.type === "error") throw part.value.error;
           }
           yield { type: "text-delta", text: "done" };
         })(),

@@ -103,6 +103,210 @@ async function drain(stream: ReadableStream<LanguageModelV3StreamPart>) {
 }
 
 describe("native rollout capture", () => {
+  it.each([
+    "normalized",
+    "native",
+  ] as const)("retains a bounded %s stream prefix including its JSON envelope", async (boundary) => {
+    const envelopes: NativeRolloutEvidenceEnvelopeV1[] = [];
+    const part: LanguageModelV3StreamPart =
+      boundary === "native"
+        ? { type: "raw", rawValue: "x".repeat(120) }
+        : { type: "text-delta", id: "t", delta: "x".repeat(81) };
+    const capture = createNativeRolloutEvidenceCapture({
+      enabled: true,
+      runId: "run-envelope-limit",
+      limits: { maxAssetBytes: 256 },
+      sink: {
+        write: (envelope) => {
+          envelopes.push(envelope);
+        },
+      },
+    });
+    await capture.run(async () => {
+      const wrapped = withNativeRolloutEvidenceModel(
+        model({
+          doStream: async () => ({
+            stream: new ReadableStream({
+              start(controller) {
+                controller.enqueue(part);
+                controller.enqueue(part);
+                controller.enqueue({
+                  type: "finish",
+                  finishReason: { unified: "stop", raw: "stop" },
+                  usage: generated().usage,
+                });
+                controller.close();
+              },
+            }),
+          }),
+        }),
+        { requestedModelId: "fixture", operationKind: "agent.stream" },
+      );
+      expect(
+        await drain(
+          (await wrapped.doStream({ ...options, includeRawChunks: true }))
+            .stream,
+        ),
+      ).toEqual([
+        part,
+        part,
+        {
+          type: "finish",
+          finishReason: { unified: "stop", raw: "stop" },
+          usage: generated().usage,
+        },
+      ]);
+    });
+    await capture.flush();
+    const output = envelopes[0]?.boundary.output[boundary];
+    expect(output).toMatchObject({
+      state: "truncated",
+      partial: expect.any(Object),
+    });
+    const reference =
+      output?.state === "truncated" ? output.partial : undefined;
+    const asset = envelopes[0]?.assets.find(
+      (item) => item.ref === reference?.ref,
+    );
+    expect(asset?.content).toEqual(
+      boundary === "native" ? { chunks: ["x".repeat(120)] } : { parts: [part] },
+    );
+  });
+
+  it.each([
+    "doGenerate",
+    "doStream",
+  ] as const)("classifies cancellation before %s returns as aborted", async (method) => {
+    for (const signaled of [true, false]) {
+      const envelopes: NativeRolloutEvidenceEnvelopeV1[] = [];
+      const controller = new AbortController();
+      const error = signaled
+        ? new Error("cancelled")
+        : new DOMException("cancelled", "AbortError");
+      if (signaled) controller.abort(error);
+      const capture = createNativeRolloutEvidenceCapture({
+        enabled: true,
+        runId: "run-aborted",
+        sink: {
+          write: (envelope) => {
+            envelopes.push(envelope);
+          },
+        },
+      });
+      await capture.run(() =>
+        runWithNativeRolloutOperation(
+          { operationKind: "agent.stream" },
+          async () => {
+            const wrapped = withNativeRolloutEvidenceModel(
+              model({
+                [method]: async () => {
+                  throw error;
+                },
+              }),
+              {
+                requestedModelId: "fixture",
+                operationKind: "agent.stream",
+              },
+            );
+            await expect(
+              wrapped[method]({ ...options, abortSignal: controller.signal }),
+            ).rejects.toBe(error);
+          },
+        ),
+      );
+      await capture.flush();
+      expect(envelopes).toHaveLength(1);
+      expect(envelopes[0]).toMatchObject({
+        attempt: { lifecycle: "aborted" },
+        boundary: { output: { normalized: { state: "interrupted" } } },
+      });
+    }
+  });
+
+  it.each([
+    "error-part",
+    "read-error",
+  ])("retains retry lineage after a returned stream %s", async (failure) => {
+    const envelopes: NativeRolloutEvidenceEnvelopeV1[] = [];
+    const capture = createNativeRolloutEvidenceCapture({
+      enabled: true,
+      runId: "run-stream-failure",
+      sink: {
+        write: (envelope) => {
+          envelopes.push(envelope);
+        },
+      },
+    });
+    let calls = 0;
+    await capture.run(() =>
+      runWithNativeRolloutOperation(
+        { operationKind: "agent.stream" },
+        async () => {
+          const wrapped = withNativeRolloutEvidenceModel(
+            model({
+              doStream: async () => {
+                if (++calls > 1) return await model().doStream(options);
+                let read = false;
+                return {
+                  stream: new ReadableStream({
+                    pull(controller) {
+                      if (!read) {
+                        read = true;
+                        controller.enqueue({
+                          type: "text-delta",
+                          id: "t",
+                          delta: "prefix",
+                        });
+                      } else if (failure === "error-part") {
+                        controller.enqueue({
+                          type: "error",
+                          error: new Error("retry"),
+                        });
+                        controller.close();
+                      } else controller.error(new Error("retry"));
+                    },
+                  }),
+                };
+              },
+            }),
+            { requestedModelId: "fixture", operationKind: "agent.stream" },
+          );
+          const first = drain((await wrapped.doStream(options)).stream);
+          if (failure === "read-error")
+            await expect(first).rejects.toThrow("retry");
+          else await first;
+          await drain((await wrapped.doStream(options)).stream);
+        },
+      ),
+    );
+    await capture.flush();
+    expect(envelopes.map((entry) => entry.attempt.lifecycle)).toEqual([
+      "retried",
+      "completed",
+    ]);
+    expect(envelopes[1]?.turnId).toBe(envelopes[0]?.turnId);
+    expect(envelopes[1]?.attempt).toMatchObject({
+      sequence: 2,
+      previousAttemptId: envelopes[0]?.attempt.attemptId,
+      idempotencyKey: envelopes[0]?.attempt.idempotencyKey,
+    });
+    const output = envelopes[0]?.boundary.output.normalized;
+    expect(output).toMatchObject({
+      state: "interrupted",
+      partial: expect.any(Object),
+    });
+    const reference =
+      output?.state === "interrupted" ? output.partial : undefined;
+    expect(
+      envelopes[0]?.assets.find((asset) => asset.ref === reference?.ref)
+        ?.content,
+    ).toMatchObject({
+      parts: expect.arrayContaining([
+        { type: "text-delta", id: "t", delta: "prefix" },
+      ]),
+    });
+  });
+
   it("shares one physical-call identity with payload-free attempt events", async () => {
     const evidence: NativeRolloutEvidenceEnvelopeV1[] = [];
     const attempts: InferenceAttempt[] = [];

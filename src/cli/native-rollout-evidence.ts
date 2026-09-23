@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { mkdir, open, rm } from "node:fs/promises";
+import { link, mkdir, open, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import {
   createNativeRolloutEvidenceCapture,
@@ -117,6 +117,7 @@ export async function runWithCliNativeRolloutEvidence<T>(
   };
 
   try {
+    await mkdir(dirname(outputDirectory), { recursive: true, mode: 0o700 });
     await mkdir(outputDirectory, { recursive: false, mode: 0o700 });
     ownsDirectory = true;
 
@@ -166,10 +167,16 @@ export async function runWithCliNativeRolloutEvidence<T>(
       ),
     };
     const manifestPath = join(outputDirectory, "manifest.json");
-    await writeExclusive(
-      manifestPath,
-      Buffer.from(stringifyCanonicalJson(toJsonValue(manifest))),
-    );
+    const temporaryManifestPath = `${manifestPath}.${randomUUID()}.tmp`;
+    try {
+      await writeExclusive(
+        temporaryManifestPath,
+        Buffer.from(stringifyCanonicalJson(toJsonValue(manifest))),
+      );
+      await link(temporaryManifestPath, manifestPath);
+    } finally {
+      await rm(temporaryManifestPath, { force: true });
+    }
 
     if (runError !== undefined) throw runError;
     return {

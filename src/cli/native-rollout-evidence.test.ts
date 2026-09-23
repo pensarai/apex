@@ -84,6 +84,69 @@ function model(): LanguageModelV3 {
 const callOptions = { prompt: [] } as LanguageModelV3CallOptions;
 
 describe("CLI native rollout evidence", () => {
+  it("creates missing parents while reserving the destination exclusively", async () => {
+    const outputDirectory = join(await outputFixture(), "nested", "run");
+    await runWithCliNativeRolloutEvidence({
+      session: { id: "nested" },
+      outputDirectory,
+      run: async () => "done",
+    });
+    expect(await pathExists(join(outputDirectory, "manifest.json"))).toBe(true);
+  });
+
+  it.each([
+    false,
+    true,
+  ])("keeps the commit marker absent during a blocked write (failure: %s)", async (fail) => {
+    const outputDirectory = await outputFixture();
+    let release!: () => void;
+    let started!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const writing = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const realOpen = fsMocks.realOpen;
+    if (!realOpen) throw new Error("missing real fs.open implementation");
+    fsMocks.open.mockImplementation(async (...args) => {
+      const handle = await realOpen(args[0], args[1], args[2]);
+      if (!String(args[0]).includes("manifest.json")) return handle;
+      return {
+        close: handle.close.bind(handle),
+        sync: handle.sync.bind(handle),
+        writeFile: async (bytes: Uint8Array) => {
+          await handle.writeFile(bytes.subarray(0, 8));
+          started();
+          await blocked;
+          if (fail) throw new Error("interrupted manifest write");
+          await handle.writeFile(bytes.subarray(8));
+        },
+      } as Awaited<ReturnType<typeof open>>;
+    });
+    const result = runWithCliNativeRolloutEvidence({
+      session: { id: "atomic" },
+      outputDirectory,
+      run: async () => "done",
+    });
+    await writing;
+    const visible = await pathExists(join(outputDirectory, "manifest.json"));
+    release();
+    if (fail)
+      await expect(result).rejects.toThrow("interrupted manifest write");
+    else await result;
+    expect(visible).toBe(false);
+    expect(await pathExists(join(outputDirectory, "manifest.json"))).toBe(
+      !fail,
+    );
+    if (!fail)
+      expect(
+        JSON.parse(
+          await readFile(join(outputDirectory, "manifest.json"), "utf8"),
+        ),
+      ).toMatchObject({ runId: "atomic" });
+  });
+
   it("stays disabled without an explicit output directory", async () => {
     const run = vi.fn(async () => "done");
 
