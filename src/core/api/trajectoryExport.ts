@@ -316,8 +316,12 @@ async function publishBundle(
       join(destination, temporaryManifest.path),
       join(destination, manifest.path),
     );
-    await rm(join(destination, temporaryManifest.path));
     ownsDestination = false;
+    try {
+      await rm(join(destination, temporaryManifest.path));
+    } catch {
+      // Cleanup cannot invalidate a bundle after its commit marker is visible.
+    }
   } catch (error) {
     if (error instanceof TrajectoryExportError) throw error;
     throw new TrajectoryExportError(

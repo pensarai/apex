@@ -22,18 +22,23 @@ import {
 const fsMocks = vi.hoisted(() => ({
   open: vi.fn(),
   realOpen: undefined as typeof open | undefined,
+  rm: vi.fn(),
+  realRm: undefined as typeof rm | undefined,
 }));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   fsMocks.realOpen = actual.open;
   fsMocks.open.mockImplementation(actual.open);
-  return { ...actual, open: fsMocks.open };
+  fsMocks.realRm = actual.rm;
+  fsMocks.rm.mockImplementation(actual.rm);
+  return { ...actual, open: fsMocks.open, rm: fsMocks.rm };
 });
 
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   if (fsMocks.realOpen) fsMocks.open.mockImplementation(fsMocks.realOpen);
+  if (fsMocks.realRm) fsMocks.rm.mockImplementation(fsMocks.realRm);
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -80,6 +85,33 @@ async function exists(path: string): Promise<boolean> {
 }
 
 describe("exportTrajectoryBundle", () => {
+  it("keeps a committed bundle when temporary manifest cleanup fails", async () => {
+    const { input, outputDirectory } = await fixture();
+    const realRm = fsMocks.realRm;
+    if (!realRm) throw new Error("missing real fs.rm implementation");
+    fsMocks.rm.mockImplementation(async (...args) => {
+      if (String(args[0]).endsWith(".tmp")) {
+        throw Object.assign(new Error("read-only temporary manifest"), {
+          code: "EPERM",
+        });
+      }
+      return realRm(args[0], args[1]);
+    });
+
+    const result = await exportTrajectoryBundle(input);
+
+    expect(await exists(outputDirectory)).toBe(true);
+    expect(JSON.parse(await readFile(result.manifestPath, "utf8"))).toEqual(
+      result.manifest,
+    );
+    for (const file of result.files) {
+      const bytes = await readFile(join(outputDirectory, file.path));
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(
+        file.sha256,
+      );
+    }
+  });
+
   it.each([
     false,
     true,

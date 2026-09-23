@@ -38,6 +38,10 @@ verified at a temporary sibling path, then atomically linked to
 directory it created. A directory without `trajectory-bundle.json` is not a completed
 export.
 
+Once the marker is published, temporary-file cleanup cannot roll back the
+bundle. If cleanup fails, an unreferenced temporary manifest may remain beside
+the committed files.
+
 The optional `independentValidation` field records a result supplied by the
 caller. A `failed` result blocks publication, while omission is recorded as
 `not_run`. The command does not invoke an external validator.
