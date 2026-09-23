@@ -4,7 +4,13 @@ import {
   type SpanContext,
   SpanStatusCode,
 } from "@opentelemetry/api";
-import { getApexTracer } from "../observability";
+import { getApexTracer, shouldRecordAiPayloads } from "../observability";
+import {
+  CONTEXT_EVIDENCE_BYTES,
+  encodeCompactionEvidence,
+  MAX_RESULT_EVIDENCE,
+  RESULT_EVIDENCE_BYTES,
+} from "./compactionEvidence";
 
 export type CompactionLink = SpanContext;
 export type CompactionTrigger =
@@ -28,10 +34,31 @@ export interface CompactionLayer {
   tokensAfter: number;
 }
 
+interface ResultEvidence {
+  method: "truncate" | "snip";
+  toolCallId: string;
+  toolName: string;
+  inputChars: number;
+  outputChars: number;
+  originalChars: number;
+  preservation:
+    | "written"
+    | "write_failed"
+    | "referenced_unverified"
+    | "not_persisted";
+  path?: string;
+}
+
 export class CompactionTelemetry {
   private ended = false;
   private readonly results = new Set<string>();
   private readonly layers: CompactionLayer[] = [];
+  private readonly capturePayloads = shouldRecordAiPayloads();
+  private readonly resultEvidence = new Map<string, ResultEvidence>();
+  private resultEvidenceFailed = false;
+  private written = 0;
+  private writeFailed = 0;
+  private captureMs = 0;
   readonly link: CompactionLink;
 
   constructor(
@@ -39,6 +66,16 @@ export class CompactionTelemetry {
     private readonly method: CompactionMethod,
   ) {
     this.link = span.spanContext();
+    for (const phase of ["before", "after"]) {
+      this.attributes({
+        [`apex.compaction.evidence.${phase}.status`]: this.capturePayloads
+          ? "unavailable"
+          : "disabled",
+        ...(this.capturePayloads
+          ? { [`apex.compaction.evidence.${phase}.reason`]: "not_captured" }
+          : {}),
+      });
+    }
   }
 
   private record(fn: () => void): void {
@@ -67,8 +104,65 @@ export class CompactionTelemetry {
     );
   }
 
-  result(key: string): void {
-    this.record(() => this.results.add(key));
+  capture(phase: "before" | "after", value: () => unknown): void {
+    if (!this.capturePayloads) return;
+    this.record(() => this.captureValue(phase, value, CONTEXT_EVIDENCE_BYTES));
+  }
+
+  private captureValue(
+    name: string,
+    value: () => unknown,
+    limit: number,
+  ): void {
+    const start = performance.now();
+    const prefix = `apex.compaction.evidence.${name}`;
+    this.span.setAttribute(`${prefix}.limit_bytes`, limit);
+    try {
+      const encoded = encodeCompactionEvidence(value(), limit);
+      this.span.setAttributes({
+        [`${prefix}.status`]: encoded.status,
+        [`${prefix}.reason`]: encoded.reason ?? "",
+        [`${prefix}.bytes`]: encoded.bytes,
+        ...(encoded.json === undefined
+          ? {}
+          : { [`${prefix}.json`]: encoded.json }),
+      });
+    } catch {
+      this.span.setAttributes({
+        [`${prefix}.status`]: "failed",
+        [`${prefix}.reason`]: "capture_failed",
+      });
+    } finally {
+      this.captureMs += performance.now() - start;
+    }
+  }
+
+  persisted(status: "written" | "write_failed"): void {
+    if (status === "written") this.written++;
+    else this.writeFailed++;
+  }
+
+  result(key: string, evidence: () => ResultEvidence): void {
+    this.record(() => {
+      this.results.add(key);
+      if (!this.capturePayloads) return;
+      const previous = this.resultEvidence.get(key);
+      if (!previous && this.resultEvidence.size >= MAX_RESULT_EVIDENCE) return;
+      try {
+        const next = evidence();
+        this.resultEvidence.set(key, {
+          ...next,
+          inputChars: previous?.inputChars ?? next.inputChars,
+          ...(previous &&
+          previous.path === next.path &&
+          next.preservation === "referenced_unverified"
+            ? { preservation: previous.preservation }
+            : {}),
+        });
+      } catch {
+        this.resultEvidenceFailed = true;
+      }
+    });
   }
 
   layer(layer: CompactionLayer): void {
@@ -83,12 +177,6 @@ export class CompactionTelemetry {
       this.span.setAttributes({
         ...values,
         "apex.compaction.outcome": outcome,
-        ...(this.method === "fit"
-          ? {
-              "apex.compaction.affected_results": this.results.size,
-              "apex.compaction.layers": JSON.stringify(this.layers),
-            }
-          : {}),
       });
       this.span.setStatus({ code: SpanStatusCode.OK });
     });
@@ -112,6 +200,50 @@ export class CompactionTelemetry {
   }
 
   private end(): void {
+    this.record(() => {
+      if (this.method === "fit") {
+        this.span.setAttributes({
+          "apex.compaction.affected_results": this.results.size,
+          "apex.compaction.layers": JSON.stringify(this.layers),
+          "apex.compaction.persistence.written": this.written,
+          "apex.compaction.persistence.write_failed": this.writeFailed,
+          "apex.compaction.evidence.results.status": this.capturePayloads
+            ? "unavailable"
+            : "disabled",
+        });
+        if (this.capturePayloads) {
+          this.captureValue(
+            "results",
+            () =>
+              Array.from(this.resultEvidence, ([position, result]) => ({
+                position,
+                ...result,
+              })),
+            RESULT_EVIDENCE_BYTES,
+          );
+          if (
+            this.results.size > this.resultEvidence.size ||
+            this.resultEvidenceFailed
+          ) {
+            this.span.setAttributes({
+              "apex.compaction.evidence.results.status": this
+                .resultEvidenceFailed
+                ? "failed"
+                : "truncated",
+              "apex.compaction.evidence.results.reason": this
+                .resultEvidenceFailed
+                ? "capture_failed"
+                : "result_limit",
+            });
+          }
+        }
+      }
+      if (this.capturePayloads)
+        this.span.setAttribute(
+          "apex.compaction.evidence.capture_ms",
+          this.captureMs,
+        );
+    });
     this.record(() => this.span.end());
     this.ended = true;
   }
@@ -143,7 +275,10 @@ export function beginCompaction(
       },
       ...(context.previous ? { links: [{ context: context.previous }] } : {}),
     });
-    if (!span.isRecording()) return;
+    if (!span.isRecording()) {
+      span.end();
+      return;
+    }
     return new CompactionTelemetry(span, method);
   } catch {
     // Hosts own the SDK; an unavailable exporter must not prevent inference.
