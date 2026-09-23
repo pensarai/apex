@@ -741,13 +741,18 @@ async function executeSandboxHttpRequest(
 
       // Reserve metadata space so a completed exact-cap response keeps its
       // exit marker. Any response bytes using that reserve are clipped below.
+      // Base64 preserves raw bytes through the adapter's text-only stdout.
       const markerBytes = Buffer.byteLength(`\n${exitMarker}255\n`);
-      command = `( ${curlCommand}; printf '\\n${exitMarker}%s\\n' "$?" ) 2>&1 | head -c ${MAX_DOWNLOAD_BYTES + markerBytes}`;
+      command = `( ${curlCommand}; printf '\\n${exitMarker}%s\\n' "$?" ) 2>&1 | head -c ${MAX_DOWNLOAD_BYTES + markerBytes} | base64`;
     }
 
     const result = await sandbox.execute(command, executeOpts);
 
-    const output = result.stdout || "";
+    const rawOutput =
+      sandbox.type === "windows"
+        ? undefined
+        : Buffer.from(result.stdout || "", "base64");
+    const output = rawOutput?.toString("utf8") ?? result.stdout ?? "";
     // Marker absent = head cut the stream at the cap (curl SIGPIPE'd before
     // writing it) or the pipeline was killed — either way incomplete. The
     // random nonce keeps a hostile body from forging a clean exit. Windows
@@ -758,14 +763,15 @@ async function executeSandboxHttpRequest(
     const curlExit = markerMatch ? parseInt(markerMatch[1], 10) : null;
     const unmarkedOutput =
       markerMatch !== null ? output.slice(0, markerMatch.index) : output;
+    const responseBytes = rawOutput
+      ? rawOutput.length - (markerMatch ? Buffer.byteLength(markerMatch[0]) : 0)
+      : 0;
     const captureOverflow =
-      sandbox.type !== "windows" &&
-      Buffer.byteLength(unmarkedOutput, "utf8") > MAX_DOWNLOAD_BYTES;
-    const boundedOutput = captureOverflow
-      ? new TextDecoder("utf8", { ignoreBOM: true }).decode(
-          Buffer.from(unmarkedOutput, "utf8").subarray(0, MAX_DOWNLOAD_BYTES),
-          { stream: true },
-        )
+      rawOutput !== undefined && responseBytes > MAX_DOWNLOAD_BYTES;
+    const boundedOutput = rawOutput
+      ? rawOutput
+          .subarray(0, Math.min(responseBytes, MAX_DOWNLOAD_BYTES))
+          .toString("utf8")
       : unmarkedOutput;
 
     // Headers tolerate spec CRLF; the body is sliced raw from the original

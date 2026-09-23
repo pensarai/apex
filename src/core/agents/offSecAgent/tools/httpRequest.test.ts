@@ -189,7 +189,7 @@ describe("httpRequest rate limiting", () => {
     const execute = vi.fn(async () => ({
       success: true,
       exitCode: 0,
-      stdout: "HTTP/1.1 200 OK\n\n",
+      stdout: Buffer.from("HTTP/1.1 200 OK\n\n").toString("base64"),
       stderr: "",
     }));
     ctx.sandbox = { execute } as unknown as ToolContext["sandbox"];
@@ -218,7 +218,7 @@ describe("httpRequest rate limiting", () => {
       return {
         success: true,
         exitCode: 0,
-        stdout: "HTTP/1.1 200 OK\n\n",
+        stdout: Buffer.from("HTTP/1.1 200 OK\n\n").toString("base64"),
         stderr: "",
       };
     });
@@ -555,9 +555,10 @@ describe("httpRequest body liveness", () => {
       return {
         success: true,
         exitCode: 0,
-        stdout:
+        stdout: Buffer.from(
           "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\npartial" +
-          `\n__APEX_${nonce}_CURL_EXIT_28\n`,
+            `\n__APEX_${nonce}_CURL_EXIT_28\n`,
+        ).toString("base64"),
         stderr: "",
       };
     });
@@ -597,9 +598,10 @@ describe("httpRequest body liveness", () => {
       return {
         success: true,
         exitCode: 0,
-        stdout:
+        stdout: Buffer.from(
           "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nline1\r\nline2\r\n" +
-          `\n__APEX_${nonce}_CURL_EXIT_0\n`,
+            `\n__APEX_${nonce}_CURL_EXIT_0\n`,
+        ).toString("base64"),
         stderr: "",
       };
     });
@@ -638,7 +640,9 @@ describe("httpRequest body liveness", () => {
       return {
         success: true,
         exitCode: 0,
-        stdout: `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nok-body\n__APEX_${nonce}_CURL_EXIT_0\n`,
+        stdout: Buffer.from(
+          `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nok-body\n__APEX_${nonce}_CURL_EXIT_0\n`,
+        ).toString("base64"),
         stderr: "",
       };
     });
@@ -671,7 +675,7 @@ describe("httpRequest body liveness", () => {
     const execute = vi.fn(async () => ({
       success: true,
       exitCode: 0,
-      stdout: `${headers}${"A".repeat(CAP)}`,
+      stdout: Buffer.from(`${headers}${"A".repeat(CAP)}`).toString("base64"),
       stderr: "",
     }));
     const ctx = ctxWithScratchLogs({
@@ -698,15 +702,26 @@ describe("httpRequest body liveness", () => {
   }, 10_000);
 
   it.each([
-    -1, 0, 1,
-  ])("preserves POSIX completion at the capture boundary (%s bytes)", async (delta) => {
+    { delta: -1, byte: 0x78 },
+    { delta: 0, byte: 0x78 },
+    { delta: 1, byte: 0x78 },
+    { delta: -3 * 1024 * 1024, byte: 0xff },
+    { delta: 0, byte: 0xff },
+    { delta: 1, byte: 0xff },
+  ])("preserves POSIX completion at the capture boundary ($delta bytes, byte=$byte)", async ({
+    delta,
+    byte,
+  }) => {
     const cap = 5 * 1024 * 1024;
     const targetSize = cap + delta;
     const headersFor = (bytes: number) =>
       `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${bytes}\r\nConnection: close\r\n\r\n`;
     const bodySize = targetSize - headersFor(targetSize).length;
     const headers = headersFor(bodySize);
-    const wire = headers + "x".repeat(bodySize);
+    const wire = Buffer.concat([
+      Buffer.from(headers),
+      Buffer.alloc(bodySize, byte),
+    ]);
     expect(wire.length).toBe(targetSize);
     const server = createNetServer((socket) => {
       socket.once("data", () => socket.end(wire));
@@ -754,7 +769,11 @@ describe("httpRequest body liveness", () => {
       expect(result.capture.complete).toBe(delta <= 0);
       expect(result.capture.stopReason).toBe(delta <= 0 ? "end" : "byte-cap");
       const saved = readFileSync(savedPathFrom(result.body), "utf8");
-      expect(saved).toBe("x".repeat(Math.min(bodySize, cap - headers.length)));
+      expect(saved).toBe(
+        Buffer.alloc(Math.min(bodySize, cap - headers.length), byte).toString(
+          "utf8",
+        ),
+      );
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
