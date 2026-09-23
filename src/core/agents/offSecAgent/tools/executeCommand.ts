@@ -184,8 +184,11 @@ function maybeSaveFullOutput(
   try {
     writeFileSync(filePath, raw);
   } catch {
+    const failedNote = incompleteNote
+      ? `INCOMPLETE capture (${incompleteNote}); failed to save bounded capture to file`
+      : "failed to save full output to file";
     return {
-      text: `${raw.substring(0, MAX_INLINE)}...\n\n(truncated — failed to save full output to file)`,
+      text: `${raw.substring(0, MAX_INLINE)}...\n\n(truncated — ${failedNote})`,
     };
   }
 

@@ -141,6 +141,30 @@ describe("readFile healthy paths", () => {
   });
 
   it.each([
+    "one\ntwo",
+    "one\ntwo\n",
+    "",
+  ])("reports completion when endLine is the last split-line of %j", async (body) => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "final-page.txt"), body);
+    const lines = body.split("\n");
+    const result = await runRead(makeCtx({ agentCwd: dir }), {
+      path: "final-page.txt",
+      endLine: lines.length,
+      toolCallDescription: "read through the final line",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.content).toBe(
+      lines.map((line, i) => `${String(i + 1).padStart(6)}|${line}`).join("\n"),
+    );
+    expect(result.totalLines).toBe(lines.length);
+    expect(result.linesReturned).toBe(lines.length);
+    expect(result.stoppedAtLine).toBeUndefined();
+    expect(result.truncated).toBeUndefined();
+  });
+
+  it.each([
     ["valid UTF-8", Buffer.from("alpha"), "alpha"],
     ["invalid UTF-8", Buffer.from([0x61, 0xff, 0x62]), "a\uFFFDb"],
   ])("preserves a leading BOM in line mode with %s", async (_label, body, expected) => {
@@ -214,6 +238,37 @@ describe("readFile bounded streaming", () => {
       "     1|l1\n     2|l2\n     3|l3\n     4|l4\n     5|l5\n     6|l6\n     7|",
     );
     expect(page2.totalLines).toBe(7);
+  });
+
+  it("keeps a continuation when the output budget excludes the final line", async () => {
+    const dir = scratchDir();
+    writeFileSync(
+      join(dir, "budget.txt"),
+      Array(50).fill("x".repeat(2_000)).join("\n"),
+    );
+    const ctx = makeCtx({ agentCwd: dir });
+    const page1 = await runRead(ctx, {
+      path: "budget.txt",
+      endLine: 50,
+      toolCallDescription: "read a window exceeding the output budget",
+    });
+
+    expect(page1.success).toBe(true);
+    expect(page1.linesReturned).toBe(49);
+    expect(page1.stoppedAtLine).toBe(50);
+    expect(page1.totalLines).toBeUndefined();
+    expect(page1.truncated).toBe(true);
+
+    const page2 = await runRead(ctx, {
+      path: "budget.txt",
+      startLine: page1.stoppedAtLine,
+      endLine: 50,
+      toolCallDescription: "read the remaining final line",
+    });
+    expect(page2.content).toBe(`    50|${"x".repeat(2_000)}`);
+    expect(page2.totalLines).toBe(50);
+    expect(page2.stoppedAtLine).toBeUndefined();
+    expect(page2.truncated).toBeUndefined();
   });
 
   it("stops at endLine immediately instead of parsing the next huge line", async () => {

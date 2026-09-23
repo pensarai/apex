@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { StaticPromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
@@ -475,6 +478,51 @@ describe("executeCommand deadlines", () => {
     expect(truncated.stdout).toContain("INCOMPLETE");
     expect(truncated.stdout).not.toContain("full output saved");
     expect(truncated.stderr).toContain("INCOMPLETE");
+  });
+
+  it.each([
+    true,
+    false,
+  ])("preserves capture completeness when saving fails (capped: %s)", async (stdoutTruncated) => {
+    const logsPath = mkdtempSync(join(tmpdir(), "apex-save-failure-"));
+    try {
+      // An existing file at the output directory makes the spill write fail.
+      writeFileSync(join(logsPath, "cmd-output"), "occupied");
+      const ctx = makeCtx({
+        commandShell: {
+          execute: async () => ({
+            exitCode: 0,
+            stdout: "x".repeat(60_000),
+            stderr: "",
+            timedOut: false,
+            stdoutTruncated,
+            stderrTruncated: false,
+            cleanupUnconfirmed: false,
+          }),
+        } as unknown as ToolContext["commandShell"],
+      });
+      ctx.session.logsPath = logsPath;
+      const result = (await callTool(ctx, {
+        command: "verbose-tool",
+      })) as ExecuteCommandResult;
+
+      expect(result.success).toBe(true);
+      expect(result.outputFile).toBeUndefined();
+      expect(result.stdout).toContain("x".repeat(50_000));
+      expect(result.stdout).toContain("failed to save");
+      if (stdoutTruncated) {
+        expect(result.stdout).toContain("INCOMPLETE");
+        expect(result.stdout).toContain(
+          "stdout capture truncated at the byte limit",
+        );
+        expect(result.stdout).not.toContain("full output");
+      } else {
+        expect(result.stdout).not.toContain("INCOMPLETE");
+        expect(result.stdout).toContain("failed to save full output");
+      }
+    } finally {
+      rmSync(logsPath, { recursive: true, force: true });
+    }
   });
 
   it("terminates real process work on timeout (per-command executor integration)", async () => {

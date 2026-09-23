@@ -297,7 +297,9 @@ async function readLocalLines(
           ? `${lineBuf}… (+${lineDropped} chars dropped in this line — use byteOffset/byteCount)`
           : lineBuf,
       );
-      if (outcome !== "stop") reachedEof = true;
+      // Reaching endLine here also completes the file, unless the output
+      // budget prevented this final line from being included.
+      reachedEof = outcome !== "stop" || (lineNo === end && !hitBudget);
     }
 
     const content = numbered.join("\n");
