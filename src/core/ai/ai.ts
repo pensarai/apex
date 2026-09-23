@@ -38,7 +38,16 @@ import {
   withCachedLastMessage,
   withCachedSystemPrompt,
 } from "./caching";
-import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
+import {
+  beginCompaction,
+  type CompactionLink,
+  type CompactionTrigger,
+} from "./compactionTelemetry";
+import {
+  estimateMessageTokens,
+  fitMessagesToContext,
+  truncateWithMarker,
+} from "./contextManagement";
 import {
   getMaxOutputTokens,
   getModelInfo,
@@ -767,7 +776,17 @@ function wrapStreamWithErrorHandler(
                   ),
                   tools: opts.tools,
                   sessionPath: opts.sessionPath,
+                  telemetry: {
+                    trigger: "context_overflow",
+                    model: opts.model,
+                    sessionId: opts.sessionId,
+                    restartDepth: opts._restartDepth,
+                    previous: opts._compaction?.last,
+                  },
                 });
+
+                if (fitted.compaction && opts._compaction)
+                  opts._compaction.last = fitted.compaction;
 
                 messagesContainer.current = fitted.messages;
 
@@ -854,7 +873,11 @@ function wrapStreamWithErrorHandler(
                 try {
                   const summarizationStream = createSummarizationStream(
                     messagesForSummary,
-                    { ...opts, _restartDepth: postReactiveDepth },
+                    {
+                      ...opts,
+                      _restartDepth: postReactiveDepth,
+                      _compactionTrigger: "context_overflow",
+                    },
                     model,
                   );
                   for await (const chunk of summarizationStream.fullStream) {
@@ -892,6 +915,29 @@ function wrapStreamWithErrorHandler(
                     typeof opts.prompt === "string" && opts.prompt.length > 0
                       ? opts.prompt.slice(0, 4_000)
                       : MINIMAL_RESTART_PROMPT;
+                  const reset = beginCompaction("reset", {
+                    trigger: "summary_overflow",
+                    model: opts.model,
+                    sessionId: opts.sessionId,
+                    restartDepth: postReactiveDepth,
+                    previous: opts._compaction?.last,
+                  });
+                  reset?.measure(
+                    "before",
+                    () => estimateMessageTokens(messagesForSummary),
+                    messagesForSummary.length,
+                  );
+                  reset?.measure(
+                    "after",
+                    () =>
+                      estimateMessageTokens([
+                        { role: "user", content: minimalPrompt },
+                      ]),
+                    1,
+                  );
+                  reset?.finish("completed");
+                  if (reset && opts._compaction)
+                    opts._compaction.last = reset.link;
                   const fallback = streamResponse({
                     ...opts,
                     prompt: minimalPrompt,
@@ -1228,6 +1274,9 @@ export interface StreamResponseOpts {
    * boundary; throws `ContextLengthExhaustedError` past `MAX_RESTART_DEPTH`.
    */
   _restartDepth?: number;
+  /** Shared only by continuations of this stream, never across agents. */
+  _compaction?: { last?: CompactionLink };
+  _compactionTrigger?: CompactionTrigger;
 }
 
 const NATIVE_STREAM_RECOVERY = Symbol("native-stream-recovery");
@@ -1255,6 +1304,8 @@ function streamResponseWithinOperation(
   opts: StreamResponseOpts,
   nativeRecovery?: NativeStreamRecovery,
 ): StreamTextResult<ToolSet, never> {
+  const compactionState = opts._compaction ?? {};
+  opts = { ...opts, _compaction: compactionState };
   // Bound recovery recursion (summarize → resume → overflow → …).
   const restartDepth = opts._restartDepth ?? 0;
   if (restartDepth > MAX_RESTART_DEPTH) {
@@ -1351,7 +1402,15 @@ function streamResponseWithinOperation(
       system: systemWithToolPolicy,
       tools,
       sessionPath: opts.sessionPath,
+      telemetry: {
+        trigger: "proactive",
+        model,
+        sessionId,
+        restartDepth,
+        previous: opts._compaction?.last,
+      },
     });
+    if (fitted.compaction) compactionState.last = fitted.compaction;
     fittedMessages = fitted.messages;
     proactiveFitFailed = !fitted.fitsBudget;
     if (fitted.modified && !silent) {
@@ -1384,7 +1443,11 @@ function streamResponseWithinOperation(
     // entry points (proactive, outer-catch, reactive Layer 3) consume
     // exactly one depth slot per summarization attempt — symmetric.
     return wrapStreamWithErrorHandler(
-      createSummarizationStream(fittedMessages, opts, providerModel),
+      createSummarizationStream(
+        fittedMessages,
+        { ...opts, _compactionTrigger: "proactive" },
+        providerModel,
+      ),
       messagesContainer,
       opts,
       providerModel,
@@ -1448,6 +1511,7 @@ function streamResponseWithinOperation(
         ...createAiTelemetrySettings({
           operation: "apex.agent.stream",
           sessionId,
+          compaction: opts._compaction?.last,
         }),
         tracer: generationSpans.tracer,
       },
@@ -1719,7 +1783,7 @@ function streamResponseWithinOperation(
       return wrapStreamWithErrorHandler(
         createSummarizationStream(
           messagesContainer.current,
-          opts,
+          { ...opts, _compactionTrigger: "context_overflow" },
           providerModel,
         ),
         messagesContainer,

@@ -30,6 +30,11 @@ import {
   streamResponse,
 } from "./ai";
 import {
+  beginCompaction,
+  type CompactionTelemetry,
+} from "./compactionTelemetry";
+import {
+  estimateMessageTokens,
   extractTaskSummaryFromMessages,
   truncateWithMarker,
 } from "./contextManagement";
@@ -352,7 +357,10 @@ export function getProviderModel(
 async function summarizeConversation(
   messages: ModelMessage[],
   opts: StreamResponseOpts,
-  model: LanguageModel,
+  {
+    model,
+    compaction,
+  }: { model: LanguageModel; compaction?: CompactionTelemetry },
 ): Promise<StreamTextResult<ToolSet, never>> {
   // Filter and clean messages to remove tool calls/results
   // We only want conversational content for summarization
@@ -386,6 +394,12 @@ async function summarizeConversation(
   const MAX_PER_MESSAGE_CHARS = 4_000;
   const MAX_SLICED_TOTAL_CHARS = 25_000;
   const SYSTEM_PROMPT_SNIPPET_CHARS = 2_000;
+  compaction?.attributes({
+    "apex.compaction.summary.max_message_chars": MAX_PER_MESSAGE_CHARS,
+    "apex.compaction.summary.max_history_chars": MAX_SLICED_TOTAL_CHARS,
+    "apex.compaction.summary.max_system_chars": SYSTEM_PROMPT_SNIPPET_CHARS,
+    "apex.compaction.summary.max_messages": 20,
+  });
 
   const truncateMessageContent = (msg: ModelMessage): ModelMessage => {
     // Tool-role messages require array content; nothing to truncate by char count.
@@ -463,6 +477,7 @@ async function summarizeConversation(
         experimental_telemetry: createAiTelemetrySettings({
           operation: "apex.context.summarize",
           sessionId: opts.sessionId,
+          compaction: compaction?.link,
         }),
       }),
   );
@@ -521,6 +536,14 @@ async function summarizeConversation(
       ? `Context: The previous conversation contained very long content that was summarized.\n\nSummary: ${summaryWithTasks}\n\nOriginal task: Please respond based on this summary.`
       : `${opts.prompt}\n\nThe previous agent has summarized the conversation to pass to you to continue the task. Here is the summary: ${summaryWithTasks}`;
 
+  compaction?.measure(
+    "after",
+    () => estimateMessageTokens([{ role: "user", content: enhancedPrompt }]),
+    1,
+  );
+  // End before starting the resumed stream so its execution isn't compaction time.
+  compaction?.finish("completed");
+
   // Notify callers that context was reset so they can discard stale history.
   opts.onSummarized?.(summary);
 
@@ -568,6 +591,21 @@ export function createSummarizationStream(
   opts: StreamResponseOpts,
   model: LanguageModel,
 ): StreamTextResult<ToolSet, never> {
+  const compactionState = opts._compaction ?? {};
+  opts = { ...opts, _compaction: compactionState };
+  const compaction = beginCompaction("summarize", {
+    trigger: opts._compactionTrigger ?? "context_overflow",
+    model: opts.model,
+    sessionId: opts.sessionId,
+    restartDepth: opts._restartDepth,
+    previous: opts._compaction?.last,
+  });
+  compaction?.measure(
+    "before",
+    () => estimateMessageTokens(messages),
+    messages.length,
+  );
+  if (compaction) compactionState.last = compaction.link;
   // Generate a unique tool call ID
   const toolCallId = `summarize-${Date.now()}`;
 
@@ -575,7 +613,12 @@ export function createSummarizationStream(
   // Create a promise that will hold the resumed stream
   // Start the summarization process
   const resumedStreamPromise: Promise<StreamTextResult<ToolSet, never>> =
-    summarizeConversation(messages, opts, model);
+    summarizeConversation(messages, opts, { model, compaction }).catch(
+      (error) => {
+        compaction?.fail(error, opts.abortSignal?.aborted);
+        throw error;
+      },
+    );
 
   // Create a custom async generator that wraps the resumed stream
   const wrappedFullStream = (async function* () {
