@@ -11,6 +11,7 @@ import { registerBuiltinThemes, ThemeProvider } from "../../src/tui/theme";
 export async function runScrollingJourney(
   historySize: number,
   streamEvery: number,
+  initialReply = "LIVE_START",
 ) {
   registerBuiltinThemes();
   let layoutReads = 0;
@@ -35,7 +36,7 @@ export async function runScrollingJourney(
       }),
     ).concat({
       role: "assistant",
-      content: "LIVE_START",
+      content: initialReply,
       createdAt: new Date(1_700_001_000_000),
     }),
   );
@@ -112,12 +113,14 @@ export async function runScrollingJourney(
     for (const direction of ["up", "down"] as const) {
       for (let step = 0; step < 8; step++) await frame(() => wheel(direction));
     }
+    const historyFrame = setup.captureCharFrame();
+    const initialHeight = scroll.scrollHeight;
     layoutReads = 0;
     transcriptTraversals = 0;
     const cpuStart = process.cpuUsage();
     const wheelMs: number[] = [];
     const streamMs: number[] = [];
-    let text = "LIVE_START";
+    let text = initialReply;
     const initialTop = scroll.scrollTop;
     for (let step = 0; step < 120; step++) {
       const previous: number = scroll.scrollTop;
@@ -140,12 +143,22 @@ export async function runScrollingJourney(
       transcriptTraversals,
       streamEvery > 0 ? Math.ceil(120 / streamEvery) : 0,
     );
+    const growthRows = scroll.scrollHeight - initialHeight;
+    assert.equal(
+      growthRows,
+      transcriptTraversals * 2,
+      "Every streamed line must contribute to the scroll extent",
+    );
     const anchoredFrame = setup.captureCharFrame();
     const anchor = anchoredFrame
       .split("\n")
       .map((line, row) => ({ marker: line.match(/MSG_\d+/)?.[0], row }))
       .find(({ marker }) => marker);
     assert(anchor?.marker);
+    assert(
+      historyFrame.split("\n")[anchor.row].includes(anchor.marker),
+      "Streaming below the viewport must not move history",
+    );
     const anchoredTop = scroll.scrollTop;
     const previousHeight = scroll.scrollHeight;
     text += "\n\nLIVE_ANCHORED\n\nAdditional output while reading history.";
@@ -196,6 +209,7 @@ export async function runScrollingJourney(
       historySize,
       streamEvery,
       work,
+      growthRows,
       wheelToFrameMs: summarize(wheelMs),
       streamAndWheelToFrameMs: summarize(streamMs),
       cpuMs: (cpu.user + cpu.system) / 1000,

@@ -165,7 +165,8 @@ export const MessageRenderer = memo(function MessageRenderer({
     <box flexDirection="column" marginTop={1}>
       <box flexDirection="row">
         <text fg={colors.primary}>{"| "}</text>
-        <box flexDirection="column" flexShrink={1}>
+        {/* Fill the row so tall replies are not capped by intrinsic measurement. */}
+        <box flexDirection="column" flexGrow={1} flexShrink={1}>
           <text fg={colors.text} content={displayContent} />
           {isStreaming && !content.trim() && (
             <text fg={colors.textMuted}>...</text>
