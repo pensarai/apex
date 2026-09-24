@@ -468,7 +468,9 @@ export const PromptInput = forwardRef<PromptInputRef, PromptInputProps>(
     // suggestion list. Pressing up past the top of the list exits back
     // to history. Tab always accepts the highlighted suggestion.
     useKeyboard((key) => {
-      if (!focused) return;
+      // An earlier key listener can destroy the renderer during this dispatch.
+      const textarea = textareaRef.current;
+      if (!focused || !textarea || textarea.isDestroyed) return;
 
       // --- Ctrl+C: clear input ------------------------------------------
       if (key.ctrl && key.name === "c") {
