@@ -63,6 +63,19 @@ export function readAgentsMd(cwd: string): string | undefined {
 }
 
 /**
+ * Resolve the project instructions for a patching run.
+ *
+ * Sandbox runs must not import host-side files: the agent reads the repo's own
+ * instructions from the actual runtime via read_file instead.
+ */
+export function resolvePatchingAgentsMd(
+  cwd: string,
+  sandboxed: boolean,
+): string | undefined {
+  return sandboxed ? undefined : readAgentsMd(cwd);
+}
+
+/**
  * A security patching agent that analyzes vulnerabilities and applies fixes.
  *
  * Uses filesystem tools to read, search, and modify code directly, and
@@ -70,11 +83,12 @@ export function readAgentsMd(cwd: string): string | undefined {
  *
  * When an optional `sandbox` is provided, tools like `execute_command`,
  * `create_file`, and `update_file` automatically route operations through
- * the sandbox instead of the local filesystem.
+ * the sandbox instead of the local filesystem, and project instructions are
+ * read from the runtime rather than the host.
  *
- * Automatically reads AGENTS.md (or CLAUDE.md) from the repository root and
- * injects it into the prompt so the agent knows the project's build/test
- * commands and conventions.
+ * The repository (`cwd`) is the agent's working directory: commands start
+ * there and relative file-tool paths resolve against it — not against the
+ * session root.
  *
  * Returns a structured {@link PatchResult} with the list of changed files,
  * PR title, and PR description.
@@ -98,14 +112,17 @@ export class PatchingAgent extends OffensiveSecurityAgent<PatchResult> {
   constructor(opts: PatchingAgentInput) {
     const { cwd, vulnerability, ...base } = opts;
 
-    const agentsMd = readAgentsMd(cwd);
+    const agentsMd = resolvePatchingAgentsMd(cwd, Boolean(base.sandbox));
 
     super({
       ...base,
       system: buildSystemPrompt(),
       activeTools: [...PATCHING_ACTIVE_TOOLS],
       responseSchema: PatchResultSchema,
-      prompt: buildPatchingPrompt(vulnerability, cwd, agentsMd),
+      prompt: buildPatchingPrompt(vulnerability, cwd, agentsMd, {
+        runtimeInstructions: Boolean(base.sandbox),
+      }),
+      agentCwd: cwd,
     });
   }
 }
