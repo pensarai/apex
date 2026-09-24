@@ -44,4 +44,4 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Exercise Windows HTTP and coding tools
-        run: bun run test src/core/agents/offSecAgent/tools/windowsCurl.test.ts src/core/agents/offSecAgent/tools/fileWorkspace.test.ts
+        run: bun run test src/core/agents/offSecAgent/tools/windowsCurl.test.ts src/core/agents/offSecAgent/tools/fileWorkspace.test.ts src/core/agents/offSecAgent/tools/codingTools.windows.test.ts

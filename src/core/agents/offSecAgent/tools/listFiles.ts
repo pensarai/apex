@@ -1,7 +1,17 @@
+import { randomBytes } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join, relative } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveFilePath } from "./fileWorkspace";
+import type { UnifiedSandbox } from "./sandbox";
+import {
+  SANDBOX_OP_TIMEOUT_SECONDS,
+  sandboxOpError,
+  WIN_SCRIPT_COMMAND,
+  WIN_SCRIPT_PRELUDE,
+  winScriptEnv,
+} from "./sandboxScript";
 import type { ToolContext } from "./types";
 
 const listFilesInputSchema = z.object({
@@ -90,13 +100,23 @@ Each directory entry is suffixed with "/" for easy identification.`,
       directory,
       recursive = false,
     }): Promise<ListFilesResult> => {
-      const dir = directory
-        ? isAbsolute(directory)
-          ? directory
-          : resolve(ctx.agentCwd, directory)
-        : ctx.agentCwd;
+      let dir: string;
+      try {
+        dir = await resolveFilePath(ctx, directory ?? ".");
+      } catch (err: unknown) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+          files: [],
+          directory: directory ?? "",
+          count: 0,
+        };
+      }
 
       try {
+        if (ctx.sandbox) {
+          return await listSandbox(ctx.sandbox, dir, recursive);
+        }
         const info = await stat(dir);
         if (!info.isDirectory()) {
           return {
@@ -156,4 +176,161 @@ Each directory entry is suffixed with "/" for easy identification.`,
       }
     },
   });
+}
+
+// --- Sandbox listings ------------------------------------------------------
+//
+// A sandboxed agent's directories live inside the sandbox, so listings run
+// remotely and never touch the host filesystem. Both backends emit entry
+// lines (relative paths, "/" suffix for real directories, symlinks never
+// suffixed or descended) then a nonce marker carrying the total — the same
+// shape readdir-with-Dirents produces locally. The nonce keeps a hostile
+// entry name from impersonating the marker.
+
+function posixListCommand(
+  recursive: boolean,
+  cap: number,
+  nonce: string,
+): string {
+  const depth = recursive ? "" : " -maxdepth 1";
+  // Entries are emitted with their find-produced "./" prefix; the "./" is
+  // stripped host-side (see parseSandboxList) to match the other backend.
+  return [
+    'cd "$APEX_LIST_PATH" || exit 3',
+    `total=$(find . -mindepth 1${depth} | wc -l)`,
+    `find . -mindepth 1${depth} -print0 | while IFS= read -r -d '' e; do`,
+    '  if [ -L "$e" ]; then printf \'%s\\n\' "$e"',
+    '  elif [ -d "$e" ]; then printf \'%s/\\n\' "$e"',
+    "  else printf '%s\\n' \"$e\"; fi",
+    `done | head -n ${cap + 1}`,
+    `echo "APEXLS-${nonce} total=$total"`,
+  ].join("\n");
+}
+
+const WIN_LIST_SCRIPT = [
+  WIN_SCRIPT_PRELUDE,
+  "try{",
+  "$p=[Environment]::GetEnvironmentVariable('APEX_LIST_PATH')",
+  "$rec=([Environment]::GetEnvironmentVariable('APEX_LIST_RECURSIVE') -eq '1')",
+  "$cap=[int64][Environment]::GetEnvironmentVariable('APEX_LIST_CAP')",
+  "$nonce=[Environment]::GetEnvironmentVariable('APEX_LIST_NONCE')",
+  "$total=[int64]0",
+  "$emitted=[int64]0",
+  "$baseLen=$p.Length",
+  "$stack=New-Object 'System.Collections.Generic.Stack[string]'",
+  "$stack.Push($p)",
+  "while($stack.Count -gt 0){",
+  "$d=$stack.Pop()",
+  "try{",
+  "$di=New-Object IO.DirectoryInfo($d)",
+  "foreach($e in $di.EnumerateFileSystemInfos()){",
+  "$total++",
+  "$isLink=(($e.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)",
+  // FileSystemInfo from the raw .NET enumerator: container detection via
+  // Attributes, not the adapted PSIsContainer.
+  "$isDir=((($e.Attributes -band [IO.FileAttributes]::Directory) -ne 0) -and -not $isLink)",
+  "if($emitted -lt $cap){",
+  "$rel=$e.FullName.Substring($baseLen).TrimStart([char]92,[char]47)",
+  "if($isDir){[Console]::Out.WriteLine($rel + '/')}else{[Console]::Out.WriteLine($rel)}",
+  "$emitted++",
+  "}",
+  "if($rec -and $isDir){$stack.Push($e.FullName)}",
+  "}",
+  "}catch{continue}",
+  "}",
+  '[Console]::Out.WriteLine("APEXLS-$nonce total=$total")',
+  "}catch{",
+  "[Console]::Error.WriteLine($_.Exception.Message)",
+  "exit 2",
+  "}",
+].join("\n");
+
+type SandboxListFetch =
+  | { ok: true; entries: string[]; total: number }
+  | { ok: false; error: string };
+
+function parseSandboxList(stdout: string, nonce: string): SandboxListFetch {
+  const lines = stdout.split(/\r?\n/);
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  // wc -l pads its count with spaces on some platforms.
+  const marker = lines.pop();
+  const match = marker?.match(
+    new RegExp(`^APEXLS-${nonce} total=\\s*(\\d+)\\s*$`),
+  );
+  if (!match) {
+    return {
+      ok: false,
+      error: `sandbox listing missing APEXLS marker: ${stdout.slice(0, 200)}`,
+    };
+  }
+  // Strip the find-produced "./" prefix to match the Windows backend's bare
+  // relative paths.
+  const entries = lines.map((line) =>
+    line.startsWith("./") ? line.slice(2) : line,
+  );
+  return {
+    ok: true,
+    entries,
+    total: Number.parseInt(match[1], 10),
+  };
+}
+
+async function listSandbox(
+  sandbox: UnifiedSandbox,
+  dir: string,
+  recursive: boolean,
+): Promise<ListFilesResult> {
+  const maxEntries = recursive ? MAX_RECURSIVE : MAX_NON_RECURSIVE;
+  const nonce = randomBytes(8).toString("hex");
+  const result =
+    sandbox.type === "windows"
+      ? await sandbox.execute(WIN_SCRIPT_COMMAND, {
+          timeout: SANDBOX_OP_TIMEOUT_SECONDS,
+          retries: 0,
+          envVars: {
+            ...winScriptEnv(WIN_LIST_SCRIPT),
+            APEX_LIST_PATH: dir,
+            APEX_LIST_RECURSIVE: recursive ? "1" : "0",
+            APEX_LIST_CAP: String(maxEntries + 1),
+            APEX_LIST_NONCE: nonce,
+          },
+        })
+      : await sandbox.execute(posixListCommand(recursive, maxEntries, nonce), {
+          timeout: SANDBOX_OP_TIMEOUT_SECONDS,
+          retries: 0,
+          envVars: { APEX_LIST_PATH: dir },
+        });
+  if (!result.success || result.exitCode !== 0) {
+    return {
+      success: false,
+      error: sandboxOpError("listing", result),
+      files: [],
+      directory: dir,
+      count: 0,
+    };
+  }
+  const parsed = parseSandboxList(result.stdout, nonce);
+  if (!parsed.ok) {
+    return {
+      success: false,
+      error: parsed.error,
+      files: [],
+      directory: dir,
+      count: 0,
+    };
+  }
+  const files = parsed.entries.slice(0, maxEntries);
+  const overflow = parsed.total > maxEntries;
+  return {
+    success: true,
+    error: overflow
+      ? recursive
+        ? `Showing ${maxEntries} of ${parsed.total} entries — narrow the directory or use grep`
+        : `Showing ${maxEntries} of ${parsed.total} entries`
+      : "",
+    files,
+    directory: dir,
+    count: files.length,
+    totalFound: overflow ? parsed.total : undefined,
+  };
 }
