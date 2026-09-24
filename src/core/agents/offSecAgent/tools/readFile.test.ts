@@ -1,11 +1,13 @@
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
+import { winScriptFromEnv } from "./__tests__/sandboxScript";
 import { type ReadFileResult, readFile } from "./readFile";
+import type { UnifiedSandbox } from "./sandbox";
 import type { ToolContext } from "./types";
 
 // Counts every byte the reader pulls off the disk, so bounded-IO tests can
@@ -317,7 +319,7 @@ describe("readFile single-line bounds", () => {
   });
 
   it.each([
-    ["with a trailing newline", "A".repeat(20_000) + "\n"],
+    ["with a trailing newline", `${"A".repeat(20_000)}\n`],
     ["without a trailing newline", "A".repeat(20_000)],
   ])("a 20k-char single line %s is capped consistently and flagged truncated", async (_label, fileBody) => {
     const dir = scratchDir();
@@ -339,7 +341,7 @@ describe("readFile single-line bounds", () => {
     const dir = scratchDir();
     const file = join(dir, "chunky.txt");
     // 200k chars on one line — several 64k read chunks, capped at 2k.
-    writeFileSync(file, "B".repeat(200_000) + "\n");
+    writeFileSync(file, `${"B".repeat(200_000)}\n`);
 
     const result = await runRead(makeCtx({ agentCwd: dir }), {
       path: "chunky.txt",
@@ -760,5 +762,359 @@ describe("readFile byte-window EOF semantics", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("increase byteCount");
+  });
+});
+
+// Sandbox reads run the real transport scripts (bash executes the actual
+// pipeline; the resolve round trip runs the real remote helper), so these
+// tests exercise the commands that ship, not their expected outputs.
+describe("readFile sandbox routing (linux, real execution)", () => {
+  it("offers byte paging when a remote line exceeds the bounded window", async () => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "minified.js"), "a".repeat(200_000));
+    const result = await runRead(
+      makeCtx({ agentCwd: dir, sandbox: realLinuxSandbox() }),
+      {
+        path: "minified.js",
+        toolCallDescription: "inspect a large single line",
+      },
+    );
+    expect(result.success).toBe(false);
+    expect(result.truncated).toBe(true);
+    expect(result.error).toContain("byteOffset/byteCount");
+    expect(result.content).toContain("1|aaa");
+    expect(result.content.length).toBeLessThan(5_000);
+    expect(result.stoppedAtLine).toBeUndefined();
+  });
+
+  function realLinuxSandbox(): UnifiedSandbox {
+    return {
+      type: "linux",
+      execute: async (command, opts) => {
+        const res = spawnSync("bash", ["-c", command], {
+          encoding: "utf8",
+          timeout: 35_000,
+          env: { ...process.env, ...opts?.envVars },
+        });
+        return {
+          stdout: res.stdout ?? "",
+          stderr: res.stderr ?? "",
+          exitCode: res.status ?? 1,
+          success: res.status === 0,
+        };
+      },
+    };
+  }
+
+  it("line-mode sandbox read matches the local reader exactly", async () => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "notes.txt"), "alpha\nbeta\ngamma\n");
+
+    const local = await runRead(makeCtx({ agentCwd: dir }), {
+      path: "notes.txt",
+      toolCallDescription: "local baseline",
+    });
+    const remote = await runRead(
+      makeCtx({ agentCwd: dir, sandbox: realLinuxSandbox() }),
+      {
+        path: "notes.txt",
+        toolCallDescription: "sandbox read",
+      },
+    );
+
+    expect(remote).toEqual(local);
+    expect(local.content).toBe(
+      "     1|alpha\n     2|beta\n     3|gamma\n     4|",
+    );
+  });
+
+  it("sandbox window reads carry the local resume cursors", async () => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "lines.txt"), "one\ntwo\nthree\nfour\nfive\n");
+
+    const page = await runRead(
+      makeCtx({ agentCwd: dir, sandbox: realLinuxSandbox() }),
+      {
+        path: "lines.txt",
+        startLine: 2,
+        endLine: 3,
+        toolCallDescription: "sandbox window read",
+      },
+    );
+
+    expect(page.content).toBe("     2|two\n     3|three");
+    expect(page.stoppedAtLine).toBe(4);
+    expect(page.totalLines).toBeUndefined();
+    expect(page.truncated).toBeUndefined();
+  });
+
+  it("sandbox byte windows roundtrip multibyte content via stoppedAtByte", async () => {
+    const dir = scratchDir();
+    const body = "aé€😀ok\nsecond €line\n";
+    writeFileSync(join(dir, "bytes.txt"), body);
+
+    const ctx = makeCtx({
+      agentCwd: dir,
+      sandbox: realLinuxSandbox(),
+    });
+    let offset = 0;
+    let reassembled = "";
+    for (let i = 0; i < 60; i++) {
+      const page = await runRead(ctx, {
+        path: "bytes.txt",
+        byteOffset: offset,
+        byteCount: (i % 4) + 1,
+        toolCallDescription: "sandbox byte page",
+      });
+      if (!page.success && page.error.includes("too small")) {
+        const widened = await runRead(ctx, {
+          path: "bytes.txt",
+          byteOffset: offset,
+          byteCount: 4,
+          toolCallDescription: "sandbox byte page (widened)",
+        });
+        if (!widened.success) throw new Error(widened.error);
+        reassembled += widened.content;
+        if (widened.stoppedAtByte === undefined) break;
+        offset = widened.stoppedAtByte;
+        continue;
+      }
+      expect(page.success).toBe(true);
+      reassembled += page.content;
+      if (page.stoppedAtByte === undefined) break;
+      offset = page.stoppedAtByte;
+    }
+
+    expect(reassembled).toBe(body);
+  });
+
+  it("a full-window sandbox read at EOF reports completion, not truncation", async () => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "exact.txt"), "ok-😀");
+
+    const result = await runRead(
+      makeCtx({ agentCwd: dir, sandbox: realLinuxSandbox() }),
+      {
+        path: "exact.txt",
+        byteOffset: 0,
+        byteCount: 7,
+        toolCallDescription: "exact-size sandbox window",
+      },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.content).toBe("ok-😀");
+    expect(result.truncated).toBeUndefined();
+    expect(result.stoppedAtByte).toBe(7);
+  });
+
+  it.each([
+    ["missing file", "absent.txt", /sandbox read failed/],
+    ["directory", "sub", /not an ordinary file/],
+  ])("sandbox read of a %s fails explicitly", async (_label, target, pattern) => {
+    const dir = scratchDir();
+    mkdirSync(join(dir, "sub"));
+
+    const result = await runRead(
+      makeCtx({ agentCwd: dir, sandbox: realLinuxSandbox() }),
+      {
+        path: target,
+        toolCallDescription: `sandbox ${_label}`,
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(pattern);
+    expect(result.content).toBe("");
+  });
+
+  it("sandbox reads honor fileWorkspaceRoot confinement", async () => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "inside.txt"), "ok\n");
+
+    const ctx = makeCtx({
+      agentCwd: dir,
+      fileWorkspaceRoot: dir,
+      sandbox: realLinuxSandbox(),
+    });
+    const inside = await runRead(ctx, {
+      path: "inside.txt",
+      toolCallDescription: "read inside the workspace",
+    });
+    expect(inside.success).toBe(true);
+    expect(inside.content).toBe("     1|ok\n     2|");
+
+    const outside = await runRead(ctx, {
+      path: "../outside.txt",
+      toolCallDescription: "read outside the workspace",
+    });
+    expect(outside.success).toBe(false);
+    expect(outside.error).toMatch(/escapes/i);
+  });
+
+  it("a pre-aborted sandbox read fails before any remote call", async () => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "a.txt"), "data");
+    const ac = new AbortController();
+    ac.abort();
+    let calls = 0;
+    const sandbox: UnifiedSandbox = {
+      type: "linux",
+      execute: async () => {
+        calls++;
+        return { stdout: "", stderr: "", exitCode: 0, success: true };
+      },
+    };
+
+    const result = await runRead(
+      makeCtx({ agentCwd: dir, sandbox, abortSignal: ac.signal }),
+      {
+        path: "a.txt",
+        toolCallDescription: "pre-aborted sandbox read",
+      },
+    );
+
+    expect(result.error).toBe("Read file aborted by user");
+    expect(calls).toBe(0);
+  });
+});
+
+// Windows sandbox: no local PowerShell exists on this host, so these pin the
+// transport SHAPE — static command, env-only data, marker protocol — while the
+// real cmd.exe execution is covered by the shared remote-helper suite.
+describe("readFile sandbox transport shape (windows)", () => {
+  function windowsSandbox(
+    onRead: (envVars: Record<string, string>) => string,
+  ): {
+    sandbox: UnifiedSandbox;
+    calls: { command: string; envVars?: Record<string, string> }[];
+  } {
+    const calls: { command: string; envVars?: Record<string, string> }[] = [];
+    return {
+      calls,
+      sandbox: {
+        type: "windows",
+        execute: async (command, opts) => {
+          calls.push({ command, envVars: opts?.envVars });
+          if (opts?.envVars?.APEX_FILE_SCRIPT !== undefined) {
+            return {
+              stdout: JSON.stringify({ ok: true, path: "C:\\w\\f.txt" }),
+              stderr: "",
+              exitCode: 0,
+              success: true,
+            };
+          }
+          return {
+            stdout: onRead(opts?.envVars ?? {}),
+            stderr: "",
+            exitCode: 0,
+            success: true,
+          };
+        },
+      },
+    };
+  }
+
+  it("byte windows use a static command with env-only data and decode the payload", async () => {
+    const { sandbox, calls } = windowsSandbox(() =>
+      Buffer.from("hello", "utf8").toString("base64"),
+    );
+
+    const result = await runRead(makeCtx({ agentCwd: "C:\\w", sandbox }), {
+      path: "f.txt",
+      byteOffset: 0,
+      byteCount: 16,
+      toolCallDescription: "windows byte window",
+    });
+
+    const readCall = calls[calls.length - 1];
+    const command = readCall.command;
+    expect(command).toMatch(
+      /^powershell -NoProfile -NonInteractive -EncodedCommand [A-Za-z0-9+/=]+$/,
+    );
+    // The bootstrap is fixed and short — far under cmd.exe's 8191 limit.
+    expect(command.length).toBeLessThan(1000);
+    expect(readCall.command).not.toContain("f.txt");
+    expect(readCall.envVars?.APEX_READ_PATH).toBe("C:\\w\\f.txt");
+    expect(readCall.envVars?.APEX_READ_OFFSET).toBe("0");
+    expect(readCall.envVars?.APEX_READ_COUNT).toBe("17");
+    const script = winScriptFromEnv(readCall.envVars);
+    expect(script).toContain("[Console]::OutputEncoding");
+    expect(script).not.toContain("C:\\w\\f.txt");
+
+    expect(result.success).toBe(true);
+    expect(result.content).toBe("hello");
+    expect(result.truncated).toBeUndefined();
+  });
+
+  it("the read command is identical across different windows and paths", async () => {
+    const { sandbox, calls } = windowsSandbox(() =>
+      Buffer.from("hi", "utf8").toString("base64"),
+    );
+    const ctx = makeCtx({ agentCwd: "C:\\w", sandbox });
+    await runRead(ctx, {
+      path: "a.txt",
+      byteOffset: 0,
+      byteCount: 8,
+      toolCallDescription: "first window",
+    });
+    await runRead(ctx, {
+      path: "b.txt",
+      byteOffset: 99,
+      byteCount: 12,
+      toolCallDescription: "second window",
+    });
+
+    const readCalls = calls.filter((c) => c.envVars?.APEX_WIN_SCRIPT_COUNT);
+    expect(readCalls).toHaveLength(2);
+    expect(readCalls[0]?.command).toBe(readCalls[1]?.command);
+  });
+
+  it("line reads parse the APEXRL completion marker", async () => {
+    const { sandbox } = windowsSandbox(
+      () =>
+        `${Buffer.from("alpha\nbeta\n", "utf8").toString("base64")}\nAPEXRL total=2`,
+    );
+
+    const result = await runRead(makeCtx({ agentCwd: "C:\\w", sandbox }), {
+      path: "f.txt",
+      toolCallDescription: "windows line read",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.content).toBe("     1|alpha\n     2|beta\n     3|");
+    expect(result.totalLines).toBe(3);
+    expect(result.truncated).toBeUndefined();
+  });
+
+  it("line reads parse the APEXRL cut marker as truncation with a cursor", async () => {
+    const { sandbox } = windowsSandbox(
+      () =>
+        `${Buffer.from("alpha\n", "utf8").toString("base64")}\nAPEXRL cut=1`,
+    );
+
+    const result = await runRead(makeCtx({ agentCwd: "C:\\w", sandbox }), {
+      path: "f.txt",
+      toolCallDescription: "windows cut line read",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.content).toBe("     1|alpha");
+    expect(result.stoppedAtLine).toBe(2);
+    expect(result.truncated).toBe(true);
+  });
+
+  it("a missing APEXRL marker fails explicitly", async () => {
+    const { sandbox } = windowsSandbox(() =>
+      Buffer.from("orphan", "utf8").toString("base64"),
+    );
+
+    const result = await runRead(makeCtx({ agentCwd: "C:\\w", sandbox }), {
+      path: "f.txt",
+      toolCallDescription: "windows markerless read",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("APEXRL");
   });
 });

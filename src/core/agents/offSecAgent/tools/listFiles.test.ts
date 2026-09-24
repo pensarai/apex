@@ -1,513 +1,347 @@
+import { spawnSync } from "node:child_process";
 import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  readdir,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
-import { type ListFilesResult, listFiles, listRecursive } from "./listFiles";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import type { SessionInfo } from "../../../session";
+import { inProcessSubagentSpawner } from "../subagentSpawner";
+import { winScriptFromEnv } from "./__tests__/sandboxScript";
+import { type ListFilesResult, listFiles } from "./listFiles";
+import type { UnifiedSandbox } from "./sandbox";
 import type { ToolContext } from "./types";
 
-type ListFilesExecute = NonNullable<ReturnType<typeof listFiles>["execute"]>;
-type ExecuteOutput = Awaited<ReturnType<ListFilesExecute>>;
-
-/** The tool never streams; collapse the SDK's result union for assertions. */
-async function callListFiles(
-  ctx: ToolContext,
-  input: Record<string, unknown>,
-): Promise<ListFilesResult> {
-  const execute = listFiles(ctx).execute;
-  if (!execute) throw new Error("list_files tool has no execute");
-  const output: ExecuteOutput = await execute(
-    { toolCallDescription: "test", ...input } as never,
-    { toolCallId: "test" } as never,
-  );
-  return output as ListFilesResult;
-}
-
-const MAX_RECURSIVE = 200;
-const MAX_NON_RECURSIVE = 500;
-
-const fixtureRoots: string[] = [];
-
-async function tempRoot(prefix: string): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), prefix));
-  fixtureRoots.push(root);
-  return root;
-}
-
-afterAll(async () => {
-  await Promise.all(
-    fixtureRoots.map((root) => rm(root, { recursive: true, force: true })),
-  );
-});
-
-/**
- * Abort deterministically at the Nth cancellation checkpoint: the wrapped
- * signal schedules the abort in a microtask fired while the checkpoint's
- * next awaited filesystem call is still in flight. Checkpoint numbers count
- * checks that ran, including the one that threw.
- */
-function signalAbortingAtCheckpoint(checkpoint: number): {
-  signal: AbortSignal;
-  checkpoints: () => number;
-} {
-  const controller = new AbortController();
-  const original = controller.signal.throwIfAborted.bind(controller.signal);
-  let seen = 0;
-  controller.signal.throwIfAborted = () => {
-    if (++seen === checkpoint) {
-      queueMicrotask(() => controller.abort(new Error("test cancellation")));
-    }
-    original();
-  };
-  return { signal: controller.signal, checkpoints: () => seen };
-}
-
-function mockCtx(root: string, signal?: AbortSignal): ToolContext {
+function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
-    agentCwd: root,
-    abortSignal: signal,
+    subagentSpawner: inProcessSubagentSpawner,
     session: {
       id: "ses_test",
       version: "1.0.0",
-      targets: [],
+      targets: ["https://example.com"],
       time: { created: Date.now(), updated: Date.now() },
-      rootPath: root,
-      logsPath: join(root, "logs"),
-      findingsPath: join(root, "findings"),
-      scratchpadPath: join(root, "scratchpad"),
-      pocsPath: join(root, "pocs"),
-      config: {},
-    },
-  } as unknown as ToolContext;
+      rootPath: "/tmp/test",
+      logsPath: "/tmp/test/logs",
+      findingsPath: "/tmp/test/findings",
+      scratchpadPath: "/tmp/test/scratchpad",
+      pocsPath: "/tmp/test/pocs",
+    } as SessionInfo,
+    agentCwd: "/tmp/test",
+    target: "https://example.com",
+    ...overrides,
+  };
 }
 
-/**
- * The unbounded baseline walk: full-tree readdir DFS, exact total, first-N
- * cap applied after the fact. The bounded implementation must reproduce this
- * walk's first-N paths on the same runtime, where readdir order is shared.
- */
-async function referenceListing(
-  dir: string,
-  maxEntries: number,
-): Promise<{ paths: string[]; total: number }> {
-  const results: string[] = [];
-  let total = 0;
-
-  async function walk(current: string) {
-    let entries: import("fs").Dirent[];
-    try {
-      entries = await readdir(current, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      total++;
-      const fullPath = join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (results.length < maxEntries) results.push(`${fullPath}/`);
-        await walk(fullPath);
-      } else if (results.length < maxEntries) {
-        results.push(fullPath);
-      }
-    }
-  }
-
-  await walk(dir);
-  return { paths: results, total };
+const scratchDirs: string[] = [];
+function scratchDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "apex-listfiles-test-"));
+  scratchDirs.push(dir);
+  return dir;
 }
 
-function toRelative(base: string, paths: string[]): string[] {
-  return paths.map((p) => {
-    const isDir = p.endsWith("/");
-    const rel = relative(base, isDir ? p.slice(0, -1) : p);
-    return isDir ? `${rel}/` : rel;
-  });
-}
-
-async function makeFlat(
-  dir: string,
-  count: number,
-  prefix = "f",
-): Promise<void> {
-  for (let i = 0; i < count; i++) {
-    await writeFile(
-      join(dir, `${prefix}-${String(i).padStart(5, "0")}.txt`),
-      "",
-    );
-  }
-}
-
-describe("listFiles recursive listing", () => {
-  it("returns the same full listing as the unbounded walk for small trees", async () => {
-    const root = await tempRoot("apex-list-small-");
-    await mkdir(join(root, "a", "b"), { recursive: true });
-    await writeFile(join(root, "a", "b", "leaf.txt"), "");
-    await writeFile(join(root, "a", "mid.txt"), "");
-    await writeFile(join(root, ".hidden"), "");
-    await writeFile(join(root, "top.txt"), "");
-
-    const result = await callListFiles(mockCtx(root), {
-      directory: root,
-      recursive: true,
-    });
-
-    const reference = await referenceListing(root, MAX_RECURSIVE);
-    expect(result.success).toBe(true);
-    expect(result.files).toEqual(toRelative(root, reference.paths));
-    expect(result.truncated).toBeUndefined();
-    expect(result.totalFound).toBeUndefined();
-    expect(result.totalFoundLowerBound).toBeUndefined();
-    expect(result.count).toBe(reference.total);
-  });
-
-  it("stops at the 201st path witness and reports an explicit lower bound", async () => {
-    const root = await tempRoot("apex-list-witness-");
-    for (let d = 0; d < 10; d++) {
-      const dir = join(root, `d${String(d).padStart(2, "0")}`);
-      await mkdir(dir, { recursive: true });
-      await makeFlat(dir, 25);
-    }
-
-    const result = await callListFiles(mockCtx(root), {
-      directory: root,
-      recursive: true,
-    });
-
-    const reference = await referenceListing(root, MAX_RECURSIVE);
-    expect(reference.total).toBeGreaterThan(MAX_RECURSIVE);
-    expect(result.success).toBe(true);
-    expect(result.files).toEqual(
-      toRelative(root, reference.paths.slice(0, MAX_RECURSIVE)),
-    );
-    expect(result.count).toBe(MAX_RECURSIVE);
-    expect(result.truncated).toBe(true);
-    // The walk never learns the real total; 201 is the honest lower bound.
-    expect(result.totalFound).toBe(MAX_RECURSIVE + 1);
-    expect(result.totalFoundLowerBound).toBe(true);
-    expect(result.error).toBe(
-      "Listing truncated at 200 entries — narrow the directory or use grep",
-    );
-  });
-
-  it("lists exactly 200 entries without truncating, ending on a directory", async () => {
-    // A chain of 200 single-child directories: the 200th accepted path is a
-    // directory whose own (empty) readdir is the final enumeration, and no
-    // overflow witness is ever collected.
-    const root = await tempRoot("apex-list-exact200-");
-    let deep = root;
-    for (let i = 0; i < 200; i++) {
-      deep = join(deep, "d");
-      await mkdir(deep, { recursive: true });
-    }
-
-    const result = await callListFiles(mockCtx(root), {
-      directory: root,
-      recursive: true,
-    });
-    const reference = await referenceListing(root, MAX_RECURSIVE);
-    expect(reference.total).toBe(MAX_RECURSIVE);
-    expect(result.success).toBe(true);
-    expect(result.files).toEqual(toRelative(root, reference.paths));
-    expect(result.count).toBe(MAX_RECURSIVE);
-    expect(result.truncated).toBeUndefined();
-    expect(result.totalFound).toBeUndefined();
-    expect(result.error).toBe("");
-    expect(result.files.at(-1)?.endsWith("d/")).toBe(true);
-  });
-
-  it("rejects when cancellation lands during an empty final readdir", async () => {
-    const root = await tempRoot("apex-list-abort-empty-");
-    const { signal, checkpoints } = signalAbortingAtCheckpoint(1);
-    // Checkpoint 1 is the walk-entry check; the abort fires while the root's
-    // (empty) readdir is in flight, so only a post-enumeration check can
-    // observe it.
-    await expect(listRecursive(root, MAX_RECURSIVE, signal)).rejects.toThrow(
-      /test cancellation/,
-    );
-    expect(checkpoints()).toBe(2);
-  });
-
-  it("rejects when cancellation lands during a rejected readdir", async () => {
-    const root = await tempRoot("apex-list-abort-reject-");
-    const { signal, checkpoints } = signalAbortingAtCheckpoint(1);
-    // The missing directory makes readdir reject; the catch must not swallow
-    // the cancellation that landed alongside the error.
-    await expect(
-      listRecursive(join(root, "missing"), MAX_RECURSIVE, signal),
-    ).rejects.toThrow(/test cancellation/);
-    expect(checkpoints()).toBe(2);
-  });
-
-  it("fails the public listing when cancellation lands during its readdir", async () => {
-    const root = await tempRoot("apex-list-abort-public-");
-    // Checkpoints: 1 = execute entry, 2 = recursive-branch entry, 3 = the
-    // walk entry; the abort fires while the root's readdir is in flight and
-    // the post-enumeration check must turn it into a failed listing.
-    const { signal } = signalAbortingAtCheckpoint(3);
-    const result = await callListFiles(mockCtx(root, signal), {
-      directory: root,
-      recursive: true,
-    });
-    expect(result.success).toBe(false);
-    expect(result.files).toEqual([]);
-    expect(result.error).toMatch(/test cancellation/);
-  });
-
-  it("preserves first-200 parity for trees mixing deep chains, wide dirs, and hidden files", async () => {
-    const root = await tempRoot("apex-list-mixed-");
-    let deep = root;
-    for (let i = 0; i < 40; i++) {
-      deep = join(deep, `lvl${String(i).padStart(2, "0")}`);
-      await mkdir(deep, { recursive: true });
-      await writeFile(
-        join(deep, `chain-${String(i).padStart(2, "0")}.txt`),
-        "",
-      );
-    }
-    for (let d = 0; d < 3; d++) {
-      const dir = join(root, `wide-${String(d).padStart(2, "0")}`);
-      await mkdir(dir, { recursive: true });
-      await makeFlat(dir, 60, `w${d}`);
-    }
-    await writeFile(join(root, ".dotfile"), "");
-
-    const result = await callListFiles(mockCtx(root), {
-      directory: root,
-      recursive: true,
-    });
-    const reference = await referenceListing(root, MAX_RECURSIVE);
-    expect(result.truncated).toBe(true);
-    expect(result.files).toEqual(
-      toRelative(root, reference.paths.slice(0, MAX_RECURSIVE)),
-    );
-  });
-
-  it("walks deep chains without a depth cap and truncates at the witness", async () => {
-    const root = await tempRoot("apex-list-deep-");
-    let deep = root;
-    for (let i = 0; i < 150; i++) {
-      deep = join(deep, `d${String(i).padStart(3, "0")}`);
-      await mkdir(deep, { recursive: true });
-      await writeFile(join(deep, `f${String(i).padStart(3, "0")}.txt`), "");
-    }
-
-    const result = await callListFiles(mockCtx(root), {
-      directory: root,
-      recursive: true,
-    });
-    const reference = await referenceListing(root, MAX_RECURSIVE);
-    expect(reference.total).toBe(2 * 150);
-    expect(result.truncated).toBe(true);
-    expect(result.files).toEqual(
-      toRelative(root, reference.paths.slice(0, MAX_RECURSIVE)),
-    );
-  });
-
-  it.skipIf(process.platform === "win32")(
-    "lists symlinks as files without descending them",
-    async () => {
-      const root = await tempRoot("apex-list-symlink-");
-      const target = await tempRoot("apex-list-symlink-target-");
-      await makeFlat(target, 10);
-      await writeFile(join(root, "real.txt"), "");
-      await symlink(target, join(root, "link-to-dir"));
-      await symlink(join(target, "f-00000.txt"), join(root, "link-to-file"));
-
-      const result = await callListFiles(mockCtx(root), {
-        directory: root,
-        recursive: true,
+function realLinuxSandbox(): UnifiedSandbox {
+  return {
+    type: "linux",
+    execute: async (command, opts) => {
+      const res = spawnSync("bash", ["-c", command], {
+        encoding: "utf8",
+        timeout: 35_000,
+        env: { ...process.env, ...opts?.envVars },
       });
-      const reference = await referenceListing(root, MAX_RECURSIVE);
-      expect(result.files).toEqual(toRelative(root, reference.paths));
-      expect(result.files.some((f) => f === "link-to-dir/")).toBe(false);
-      expect(result.files).toContain("link-to-dir");
-      expect(result.files).toContain("link-to-file");
+      return {
+        stdout: res.stdout ?? "",
+        stderr: res.stderr ?? "",
+        exitCode: res.status ?? 1,
+        success: res.status === 0,
+      };
     },
-  );
+  };
+}
 
-  it.skipIf(process.platform === "win32" || (process.getuid?.() ?? 1) === 0)(
-    "skips unreadable directories and keeps walking",
-    async () => {
-      const root = await tempRoot("apex-list-eacces-");
-      const locked = join(root, "locked");
-      await mkdir(locked, { recursive: true });
-      await makeFlat(locked, 5);
-      await writeFile(join(root, "open.txt"), "");
-      await chmod(locked, 0o000);
-      try {
-        const result = await callListFiles(mockCtx(root), {
-          directory: root,
-          recursive: true,
-        });
-        const reference = await referenceListing(root, MAX_RECURSIVE);
-        expect(result.files).toEqual(toRelative(root, reference.paths));
-        expect(result.files).toContain("open.txt");
-        // The directory entry itself is reachable; only its contents are not.
-        expect(result.files).toContain("locked/");
-        expect(result.files.some((f) => f.startsWith("locked/f-"))).toBe(false);
-      } finally {
-        await chmod(locked, 0o755);
-      }
-    },
-  );
+type ListFilesCall = Parameters<
+  NonNullable<ReturnType<typeof listFiles>["execute"]>
+>[0];
 
-  it("returns an empty listing for an empty directory", async () => {
-    const root = await tempRoot("apex-list-empty-");
-    const result = await callListFiles(mockCtx(root), {
-      directory: root,
-      recursive: true,
+async function runList(
+  ctx: ToolContext,
+  input: ListFilesCall,
+): Promise<ListFilesResult> {
+  return (await listFiles(ctx).execute?.(input, {
+    toolCallId: "tc_test",
+    messages: [],
+    abortSignal: ctx.abortSignal,
+  })) as ListFilesResult;
+}
+
+afterEach(() => {
+  for (const dir of scratchDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function seedTree(dir: string) {
+  mkdirSync(join(dir, "src"));
+  mkdirSync(join(dir, ".hidden"));
+  writeFileSync(join(dir, "README.md"), "# readme");
+  writeFileSync(join(dir, ".env"), "SECRET=1");
+  writeFileSync(join(dir, "src", "a.ts"), "export {}");
+  writeFileSync(join(dir, ".hidden", "k.txt"), "k");
+}
+
+describe("listFiles local", () => {
+  it("lists immediate entries including dotfiles with dir suffixes", async () => {
+    const dir = scratchDir();
+    seedTree(dir);
+
+    const result = await runList(makeCtx({ agentCwd: dir }), {
+      toolCallDescription: "list root",
     });
+
     expect(result.success).toBe(true);
-    expect(result.files).toEqual([]);
-    expect(result.count).toBe(0);
-    expect(result.truncated).toBeUndefined();
-    expect(result.error).toBe("");
+    expect(result.files).toContain("src/");
+    expect(result.files).toContain(".hidden/");
+    expect(result.files).toContain("README.md");
+    expect(result.files).toContain(".env");
+    expect(result.count).toBe(4);
+    expect(result.totalFound).toBeUndefined();
   });
 
-  it("rejects before any work when the signal is already aborted", async () => {
-    const root = await tempRoot("apex-list-abort-pre-");
-    const controller = new AbortController();
-    controller.abort();
-    await expect(
-      callListFiles(mockCtx(root, controller.signal), {
-        directory: root,
-        recursive: true,
-      }),
-    ).rejects.toThrow(/abort/i);
-  });
+  it("lists recursively without descending or suffixing symlinked dirs", async () => {
+    const dir = scratchDir();
+    seedTree(dir);
+    const outside = scratchDir();
+    writeFileSync(join(outside, "secret.txt"), "target source");
+    symlinkSync(outside, join(dir, "link-out"));
 
-  it("stops between work units when aborted mid-walk", async () => {
-    const root = await tempRoot("apex-list-abort-mid-");
-    for (let d = 0; d < 10; d++) {
-      const dir = join(root, `d${String(d).padStart(2, "0")}`);
-      await mkdir(dir, { recursive: true });
-      await makeFlat(dir, 5);
-    }
-    const controller = new AbortController();
-
-    // Abort lands synchronously after the walk starts but before any awaited
-    // readdir or stat resolves, so the next checkpoint must cancel it.
-    const pending = callListFiles(mockCtx(root, controller.signal), {
-      directory: root,
+    const result = await runList(makeCtx({ agentCwd: dir }), {
       recursive: true,
+      toolCallDescription: "recursive listing",
     });
-    controller.abort();
-    const result = await pending;
-    expect(result.success).toBe(false);
-    expect(result.files).toEqual([]);
-    expect(result.error).toMatch(/abort/i);
 
-    const pendingWalk = listRecursive(root, MAX_RECURSIVE, controller.signal);
-    await expect(pendingWalk).rejects.toThrow(/abort/i);
-  });
-
-  it("ignores hostile limit parameters", async () => {
-    const root = await tempRoot("apex-list-hostile-");
-    for (let d = 0; d < 5; d++) {
-      const dir = join(root, `d${String(d).padStart(2, "0")}`);
-      await mkdir(dir, { recursive: true });
-      await makeFlat(dir, 50);
-    }
-    const result = await callListFiles(mockCtx(root), {
-      directory: root,
-      recursive: true,
-      maxEntries: 10_000_000,
-      limit: 10_000_000,
-      maxRecursiveEntries: 10_000_000,
-    });
     expect(result.success).toBe(true);
-    expect(result.count).toBe(MAX_RECURSIVE);
-    expect(result.truncated).toBe(true);
-    expect(result.totalFound).toBe(MAX_RECURSIVE + 1);
+    // The symlink appears as a plain entry; its target's bytes are not listed.
+    expect(result.files).toContain("link-out");
+    expect(result.files.some((f) => f.startsWith("link-out/"))).toBe(false);
+    expect(result.files).toContain("src/a.ts");
+    expect(result.files).toContain(".hidden/k.txt");
   });
 
-  it("fails with the baseline error for a non-directory path", async () => {
-    const root = await tempRoot("apex-list-notdir-");
-    await writeFile(join(root, "plain.txt"), "x");
-    const result = await callListFiles(mockCtx(root), {
-      directory: join(root, "plain.txt"),
-      recursive: true,
+  it("fails on a non-directory path", async () => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "file.txt"), "x");
+
+    const result = await runList(makeCtx({ agentCwd: dir }), {
+      directory: "file.txt",
+      toolCallDescription: "list a file",
     });
+
     expect(result.success).toBe(false);
-    expect(result.error).toContain("is not a directory");
+    expect(result.error).toContain("not a directory");
+  });
+
+  it("honors fileWorkspaceRoot confinement", async () => {
+    const dir = scratchDir();
+    seedTree(dir);
+
+    const ctx = makeCtx({ agentCwd: dir, fileWorkspaceRoot: dir });
+    const inside = await runList(ctx, {
+      directory: "src",
+      toolCallDescription: "list inside the workspace",
+    });
+    expect(inside.success).toBe(true);
+    expect(inside.files).toContain("a.ts");
+
+    const outside = scratchDir();
+    const outsideListing = await runList(ctx, {
+      directory: outside,
+      toolCallDescription: "list outside the workspace",
+    });
+    expect(outsideListing.success).toBe(false);
+    expect(outsideListing.error).toMatch(/escapes/i);
   });
 });
 
-describe("listFiles flat listing", () => {
-  it("lists a small directory exactly like before", async () => {
-    const root = await tempRoot("apex-list-flat-small-");
-    await mkdir(join(root, "sub"), { recursive: true });
-    await makeFlat(root, 5);
-    const result = await callListFiles(mockCtx(root), {
-      directory: root,
-      recursive: false,
-    });
-    const entries = await readdir(root, { withFileTypes: true });
-    const expected = entries.map((e) => {
-      const name = e.isDirectory() ? `${e.name}/` : e.name;
-      return name;
-    });
-    expect(result.success).toBe(true);
-    expect(result.files).toEqual(expected);
-    expect(result.truncated).toBeUndefined();
-    expect(result.totalFound).toBeUndefined();
-    expect(result.error).toBe("");
-  });
+// The linux sandbox fake executes the actual listing scripts through bash,
+// including the remote resolve round trip.
+describe("listFiles sandbox (linux, real execution)", () => {
+  it("non-recursive sandbox listing matches the local listing", async () => {
+    const dir = scratchDir();
+    seedTree(dir);
 
-  it("truncates at 500 with the exact total it already paid for", async () => {
-    const root = await tempRoot("apex-list-flat-600-");
-    await makeFlat(root, 600);
-    const result = await callListFiles(mockCtx(root), {
-      directory: root,
-      recursive: false,
+    const local = await runList(makeCtx({ agentCwd: dir }), {
+      toolCallDescription: "local baseline",
     });
-    const entries = await readdir(root, { withFileTypes: true });
-    const expected = entries.slice(0, MAX_NON_RECURSIVE).map((e) => e.name);
-    expect(result.success).toBe(true);
-    expect(result.files).toEqual(expected);
-    expect(result.count).toBe(MAX_NON_RECURSIVE);
-    expect(result.truncated).toBe(true);
-    expect(result.totalFound).toBe(600);
-    expect(result.totalFoundLowerBound).toBeUndefined();
-    expect(result.error).toBe("Showing 500 of 600 entries");
-  });
-
-  it("lists exactly 500 entries without truncating", async () => {
-    const root = await tempRoot("apex-list-flat-exact500-");
-    await makeFlat(root, MAX_NON_RECURSIVE);
-    const result = await callListFiles(mockCtx(root), {
-      directory: root,
-      recursive: false,
-    });
-    const entries = await readdir(root, { withFileTypes: true });
-    expect(result.success).toBe(true);
-    expect(result.files).toEqual(entries.map((e) => e.name));
-    expect(result.count).toBe(MAX_NON_RECURSIVE);
-    expect(result.truncated).toBeUndefined();
-    expect(result.totalFound).toBeUndefined();
-    expect(result.error).toBe("");
-  });
-
-  it("keeps huge flat directories' output identical to the uncap-then-slice baseline", async () => {
-    const root = await tempRoot("apex-list-flat-5000-");
-    await makeFlat(root, 5_000);
-    const result = await callListFiles(mockCtx(root), {
-      directory: root,
-      recursive: false,
-    });
-    const entries = await readdir(root, { withFileTypes: true });
-    expect(result.files).toEqual(
-      entries.slice(0, MAX_NON_RECURSIVE).map((e) => e.name),
+    const remote = await runList(
+      makeCtx({ agentCwd: dir, sandbox: realLinuxSandbox() }),
+      {
+        toolCallDescription: "sandbox listing",
+      },
     );
-    expect(result.truncated).toBe(true);
-    expect(result.totalFound).toBe(5_000);
-    expect(result.count).toBe(MAX_NON_RECURSIVE);
+
+    expect(remote.success).toBe(true);
+    expect([...remote.files].sort()).toEqual([...local.files].sort());
+    expect(remote.count).toBe(local.count);
+    expect(remote.totalFound).toBeUndefined();
+  });
+
+  it("recursive sandbox listing matches the local listing", async () => {
+    const dir = scratchDir();
+    seedTree(dir);
+    const outside = scratchDir();
+    writeFileSync(join(outside, "secret.txt"), "target source");
+    symlinkSync(outside, join(dir, "link-out"));
+
+    const local = await runList(makeCtx({ agentCwd: dir }), {
+      recursive: true,
+      toolCallDescription: "local baseline",
+    });
+    const remote = await runList(
+      makeCtx({ agentCwd: dir, sandbox: realLinuxSandbox() }),
+      {
+        recursive: true,
+        toolCallDescription: "sandbox recursive listing",
+      },
+    );
+
+    expect(remote.success).toBe(true);
+    expect([...remote.files].sort()).toEqual([...local.files].sort());
+    // The symlinked dir was neither descended nor suffixed remotely either.
+    expect(remote.files).toContain("link-out");
+    expect(remote.files.some((f) => f.startsWith("link-out/"))).toBe(false);
+  });
+
+  it("caps oversized recursive listings with the exact total", async () => {
+    const dir = scratchDir();
+    // 250 files > MAX_RECURSIVE (200).
+    for (let i = 0; i < 250; i++) {
+      writeFileSync(join(dir, `f${String(i).padStart(3, "0")}.txt`), "x");
+    }
+
+    const result = await runList(
+      makeCtx({ agentCwd: dir, sandbox: realLinuxSandbox() }),
+      {
+        recursive: true,
+        toolCallDescription: "oversized sandbox listing",
+      },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.count).toBe(200);
+    expect(result.totalFound).toBe(250);
+    expect(result.error).toContain("Showing 200 of 250");
+  });
+
+  it("fails explicitly for a missing directory", async () => {
+    const dir = scratchDir();
+
+    const result = await runList(
+      makeCtx({ agentCwd: dir, sandbox: realLinuxSandbox() }),
+      {
+        directory: "absent",
+        toolCallDescription: "missing directory",
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/sandbox listing failed/);
+  });
+});
+
+// No local PowerShell on this host: pin the windows transport shape — static
+// command, env-only data, marker protocol. Real cmd.exe execution is covered
+// by the shared remote-helper suite.
+describe("listFiles sandbox transport shape (windows)", () => {
+  function windowsSandbox(build: (envVars: Record<string, string>) => string): {
+    sandbox: UnifiedSandbox;
+    calls: { command: string; envVars?: Record<string, string> }[];
+  } {
+    const calls: { command: string; envVars?: Record<string, string> }[] = [];
+    return {
+      calls,
+      sandbox: {
+        type: "windows",
+        execute: async (command, opts) => {
+          calls.push({ command, envVars: opts?.envVars });
+          if (opts?.envVars?.APEX_FILE_SCRIPT !== undefined) {
+            return {
+              stdout: JSON.stringify({ ok: true, path: "C:\\w" }),
+              stderr: "",
+              exitCode: 0,
+              success: true,
+            };
+          }
+          return {
+            stdout: build(opts?.envVars ?? {}),
+            stderr: "",
+            exitCode: 0,
+            success: true,
+          };
+        },
+      },
+    };
+  }
+
+  it("uses the static command with env-only data and parses the marker", async () => {
+    const { sandbox, calls } = windowsSandbox(
+      (env) => `src/\nREADME.md\nAPEXLS-${env.APEX_LIST_NONCE} total=2\n`,
+    );
+
+    const result = await runList(makeCtx({ agentCwd: "C:\\w", sandbox }), {
+      toolCallDescription: "windows listing",
+    });
+
+    const listCall = calls[calls.length - 1];
+    const command = listCall.command;
+    expect(command).toMatch(
+      /^powershell -NoProfile -NonInteractive -EncodedCommand [A-Za-z0-9+/=]+$/,
+    );
+    // The bootstrap is fixed and short — far under cmd.exe's 8191 limit.
+    expect(command.length).toBeLessThan(1000);
+    expect(listCall.command).not.toContain("C:\\w");
+    expect(listCall.envVars?.APEX_LIST_PATH).toBe("C:\\w");
+    expect(listCall.envVars?.APEX_LIST_RECURSIVE).toBe("0");
+    expect(listCall.envVars?.APEX_WIN_SCRIPT_COUNT).toBeDefined();
+    const script = winScriptFromEnv(listCall.envVars);
+    expect(script).toContain("[Console]::OutputEncoding");
+    expect(script).not.toContain("C:\\w");
+
+    expect(result.success).toBe(true);
+    expect(result.files).toEqual(["src/", "README.md"]);
+    expect(result.totalFound).toBeUndefined();
+  });
+
+  it("reports overflow from the marker total", async () => {
+    const entries = Array.from(
+      { length: 501 },
+      (_, i) => `f${String(i).padStart(3, "0")}.txt`,
+    );
+    const { sandbox } = windowsSandbox(
+      (env) =>
+        `${entries.join("\n")}\nAPEXLS-${env.APEX_LIST_NONCE} total=501\n`,
+    );
+
+    const result = await runList(makeCtx({ agentCwd: "C:\\w", sandbox }), {
+      toolCallDescription: "windows overflow listing",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.count).toBe(500);
+    expect(result.totalFound).toBe(501);
+    expect(result.error).toContain("Showing 500 of 501");
+  });
+
+  it("fails explicitly when the marker is missing", async () => {
+    const { sandbox } = windowsSandbox(() => "orphan output\n");
+
+    const result = await runList(makeCtx({ agentCwd: "C:\\w", sandbox }), {
+      toolCallDescription: "windows markerless listing",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("APEXLS");
   });
 });
