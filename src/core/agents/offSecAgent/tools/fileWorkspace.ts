@@ -34,6 +34,25 @@ function contained(root: string, file: string, api: typeof path) {
   );
 }
 
+function validateWindowsPath(file: string) {
+  if (/^\\\\[?.]\\/.test(file))
+    throw new Error(
+      "Windows device paths are not supported by text file tools",
+    );
+  const parts = file.slice(path.win32.parse(file).root.length).split("\\");
+  if (
+    parts.some(
+      (part) =>
+        /[. ]$|:/.test(part) ||
+        /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i.test(part),
+    )
+  ) {
+    throw new Error(
+      "Windows file paths cannot contain device names, alternate streams, or trailing dots/spaces",
+    );
+  }
+}
+
 function isMissing(error: unknown) {
   return (error as NodeJS.ErrnoException).code === "ENOENT";
 }
@@ -77,6 +96,11 @@ export async function resolveFilePath(
   if (!api.isAbsolute(base))
     throw new Error("File workspace must be an absolute runtime path");
   const file = api.resolve(base, input);
+  if (
+    ctx.sandbox?.type === "windows" ||
+    (!ctx.sandbox && process.platform === "win32")
+  )
+    validateWindowsPath(file);
   const root =
     ctx.fileWorkspaceRoot ?? (options.confineToCwd ? ctx.agentCwd : undefined);
   if (ctx.sandbox) {
