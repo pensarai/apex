@@ -30,6 +30,7 @@ export const WIN_SCRIPT_COMMAND = `powershell -NoProfile -NonInteractive -Encode
 // decodable by the adapter's text-only stdout capture.
 export const WIN_SCRIPT_PRELUDE = [
   "$ErrorActionPreference = 'Stop'",
+  "$ProgressPreference = 'SilentlyContinue'",
   "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)",
 ].join("\n");
 
