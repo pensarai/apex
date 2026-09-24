@@ -1,8 +1,22 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import {
+  assertWorkspaceFileAbsent,
+  deleteWorkspaceFile,
+  readWorkspaceFile,
+  resolveFilePath,
+  validateWorkspaceFileContent,
+  writeWorkspaceFile,
+} from "./fileWorkspace";
+import {
+  applyFileDiff,
+  type EolAdaptation,
+  PatchApplyError,
+} from "./patchApply";
+import { type ParsedFileDiff, parseUnifiedDiff } from "./patchParse";
 import type { ToolContext } from "./types";
+
+export { parseUnifiedDiff } from "./patchParse";
 
 const applyPatchInputSchema = z.object({
   patch: z
@@ -17,11 +31,20 @@ const applyPatchInputSchema = z.object({
     ),
 });
 
+export type FilePatchStatus = "applied" | "failed" | "unapplied";
+
 export type FilePatchResult = {
   path: string;
+  /** Back-compat alias: true exactly when status is "applied". */
   success: boolean;
+  status: FilePatchStatus;
   error?: string;
+  /** Hunks committed for this file; only set when status is "applied". */
   hunksApplied?: number;
+  created?: boolean;
+  deleted?: boolean;
+  /** Set when line endings were adapted to the target file (LF patch on a CRLF file or vice versa). */
+  eolAdaptation?: Exclude<EolAdaptation, "none">;
 };
 
 export type ApplyPatchResult = {
@@ -30,240 +53,115 @@ export type ApplyPatchResult = {
   files: FilePatchResult[];
 };
 
-type Hunk = {
-  oldStart: number;
-  oldCount: number;
-  newStart: number;
-  newCount: number;
-  lines: string[];
+type PlannedFile = {
+  diff: ParsedFileDiff;
+  displayPath: string;
+  targetPath: string;
+  kind: "create" | "edit" | "delete";
+  /** Content read during preflight; the commit's conditional baseline. */
+  original?: string;
+  next: string;
+  eolAdaptation: EolAdaptation;
 };
+function describeError(err: unknown): string {
+  if (err instanceof PatchApplyError) {
+    const where = err.hunkIndex >= 0 ? `hunk ${err.hunkIndex + 1}: ` : "";
+    return `${where}${err.message}`;
+  }
+  return err instanceof Error ? err.message : String(err);
+}
 
-type FileDiff = {
-  oldPath: string;
-  newPath: string;
-  hunks: Hunk[];
-  isNew: boolean;
-  isDelete: boolean;
-};
+// Windows filesystems fold case, so patch entries differing only by case
+// are the same target; detect duplicates under the same rule the mutation
+// helpers use for lock keys.
+export function duplicateTargetKey(
+  ctx: ToolContext,
+  targetPath: string,
+): string {
+  const isWindows = ctx.sandbox
+    ? ctx.sandbox.type === "windows"
+    : process.platform === "win32";
+  return isWindows ? targetPath.toLowerCase() : targetPath;
+}
 
-function stripPrefix(p: string): string {
-  if (p.startsWith("a/") || p.startsWith("b/")) return p.slice(2);
-  return p;
+function receipt(
+  plan: PlannedFile,
+  status: FilePatchStatus,
+  error?: string,
+): FilePatchResult {
+  const result: FilePatchResult = {
+    path: plan.displayPath,
+    success: status === "applied",
+    status,
+  };
+  if (error !== undefined) result.error = error;
+  if (status === "applied") {
+    result.hunksApplied = plan.diff.hunks.length;
+    result.created = plan.kind === "create";
+    result.deleted = plan.kind === "delete";
+    if (plan.eolAdaptation !== "none") {
+      result.eolAdaptation = plan.eolAdaptation;
+    }
+  }
+  return result;
 }
 
 /**
- * Parse a unified diff into per-file diffs. Fails loudly on malformed input.
+ * Validate one file diff against current workspace state without mutating
+ * anything. Create targets are asserted absent and every prepared output is
+ * checked against the shared text/size limits here, so a predictable failure
+ * never follows an already-committed file.
  */
-export function parseUnifiedDiff(patch: string): FileDiff[] {
-  const lines = patch.replace(/\r\n/g, "\n").split("\n");
-  const files: FileDiff[] = [];
-  let i = 0;
+async function preflightFile(
+  ctx: ToolContext,
+  diff: ParsedFileDiff,
+): Promise<PlannedFile> {
+  const displayPath = diff.newPath || diff.oldPath;
+  const inputPath = diff.isDelete ? diff.oldPath : diff.newPath || diff.oldPath;
+  const targetPath = await resolveFilePath(ctx, inputPath, {
+    confineToCwd: true,
+  });
 
-  while (i < lines.length) {
-    // Skip empty / git headers until a --- line
-    while (
-      i < lines.length &&
-      !lines[i].startsWith("--- ") &&
-      !lines[i].startsWith("diff --git ")
-    ) {
-      i++;
-    }
-    if (i >= lines.length) break;
-
-    if (lines[i].startsWith("diff --git ")) {
-      i++;
-      continue;
-    }
-
-    const oldLine = lines[i];
-    if (!oldLine.startsWith("--- ")) {
-      throw new Error(`Expected "---" file header at line ${i + 1}`);
-    }
-    i++;
-    if (i >= lines.length || !lines[i].startsWith("+++ ")) {
-      throw new Error(`Expected "+++" file header after "---" at line ${i}`);
-    }
-    const newLine = lines[i];
-    i++;
-
-    const oldPathRaw = oldLine.slice(4).split("\t")[0].trim();
-    const newPathRaw = newLine.slice(4).split("\t")[0].trim();
-    const isNew = oldPathRaw === "/dev/null";
-    const isDelete = newPathRaw === "/dev/null";
-    const oldPath = isNew ? "" : stripPrefix(oldPathRaw);
-    const newPath = isDelete ? "" : stripPrefix(newPathRaw);
-
-    const hunks: Hunk[] = [];
-    while (i < lines.length && lines[i].startsWith("@@ ")) {
-      const header = lines[i];
-      const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(header);
-      if (!match) {
-        throw new Error(`Malformed hunk header: ${header}`);
-      }
-      i++;
-      const hunkLines: string[] = [];
-      while (
-        i < lines.length &&
-        !lines[i].startsWith("@@ ") &&
-        !lines[i].startsWith("--- ") &&
-        !lines[i].startsWith("diff --git ")
-      ) {
-        const l = lines[i];
-        if (
-          l.startsWith(" ") ||
-          l.startsWith("+") ||
-          l.startsWith("-") ||
-          l === "\\ No newline at end of file"
-        ) {
-          hunkLines.push(l);
-          i++;
-        } else if (l === "") {
-          // Trailing blank between files — stop hunk
-          break;
-        } else {
-          throw new Error(`Unexpected line in hunk: ${l}`);
-        }
-      }
-      hunks.push({
-        oldStart: Number(match[1]),
-        oldCount: match[2] !== undefined ? Number(match[2]) : 1,
-        newStart: Number(match[3]),
-        newCount: match[4] !== undefined ? Number(match[4]) : 1,
-        lines: hunkLines,
-      });
-    }
-
-    if (hunks.length === 0 && !isNew && !isDelete) {
-      throw new Error(
-        `No hunks found for file ${newPath || oldPath || "(unknown)"}`,
-      );
-    }
-
-    files.push({ oldPath, newPath, hunks, isNew, isDelete });
+  if (diff.isDelete) {
+    const original = await readWorkspaceFile(ctx, targetPath);
+    applyFileDiff(original, diff);
+    return {
+      diff,
+      displayPath,
+      targetPath,
+      kind: "delete",
+      original,
+      next: "",
+      eolAdaptation: "none",
+    };
   }
 
-  if (files.length === 0) {
-    throw new Error("Patch contained no file diffs");
+  if (diff.isNew) {
+    await assertWorkspaceFileAbsent(ctx, targetPath);
+    const applied = applyFileDiff("", diff);
+    validateWorkspaceFileContent(applied.content);
+    return {
+      diff,
+      displayPath,
+      targetPath,
+      kind: "create",
+      next: applied.content,
+      eolAdaptation: applied.eolAdaptation,
+    };
   }
 
-  return files;
-}
-
-function resolveUnderCwd(agentCwd: string, filePath: string): string {
-  const resolved = isAbsolute(filePath)
-    ? filePath
-    : resolve(agentCwd, filePath);
-  const rel = relative(agentCwd, resolved);
-  if (rel.startsWith("..") || isAbsolute(rel)) {
-    throw new Error(`Path escapes agent working directory: ${filePath}`);
-  }
-  return resolved;
-}
-
-/**
- * Apply hunks to file content. Throws if context does not match exactly.
- */
-export function applyHunksToContent(content: string, hunks: Hunk[]): string {
-  // Normalize to lines without retaining a trailing empty from final newline
-  // so index math matches unified-diff 1-based line numbers.
-  const endsWithNewline = content.endsWith("\n");
-  const lines =
-    content === ""
-      ? []
-      : content.endsWith("\n")
-        ? content.slice(0, -1).split("\n")
-        : content.split("\n");
-
-  // Apply from bottom to top so earlier line numbers stay valid.
-  const ordered = [...hunks].sort((a, b) => b.oldStart - a.oldStart);
-
-  for (const hunk of ordered) {
-    const startIdx = Math.max(0, hunk.oldStart - 1);
-    let cursor = startIdx;
-    const replacement: string[] = [];
-
-    for (const raw of hunk.lines) {
-      if (raw === "\\ No newline at end of file") continue;
-      const tag = raw[0];
-      const text = raw.slice(1);
-      if (tag === " " || tag === "-") {
-        if (cursor >= lines.length || lines[cursor] !== text) {
-          const actual = cursor < lines.length ? lines[cursor] : "<EOF>";
-          throw new Error(
-            `Hunk context mismatch at line ${cursor + 1}: expected ${JSON.stringify(text)}, got ${JSON.stringify(actual)}`,
-          );
-        }
-        if (tag === " ") {
-          replacement.push(text);
-        }
-        cursor++;
-      } else if (tag === "+") {
-        replacement.push(text);
-      } else {
-        throw new Error(`Invalid hunk line prefix: ${raw}`);
-      }
-    }
-
-    const endIdx = cursor;
-    lines.splice(startIdx, endIdx - startIdx, ...replacement);
-  }
-
-  // Unified diffs imply a trailing newline for non-empty text files.
-  if (lines.length === 0) return endsWithNewline ? "\n" : "";
-  return `${lines.join("\n")}\n`;
-}
-
-async function readLocal(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, "utf-8");
-  } catch {
-    return null;
-  }
-}
-
-async function writeLocal(path: string, content: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, content, "utf-8");
-}
-
-async function readViaSandbox(
-  sandbox: NonNullable<ToolContext["sandbox"]>,
-  path: string,
-): Promise<string | null> {
-  const result = await sandbox.execute(
-    `test -f "${path}" && cat "${path}" | base64 -w 0`,
-  );
-  if (!result.success || !result.stdout.trim()) {
-    // Distinguish missing vs empty
-    const exists = await sandbox.execute(`test -f "${path}"`);
-    if (exists.exitCode !== 0) return null;
-    return "";
-  }
-  return Buffer.from(result.stdout.trim(), "base64").toString("utf-8");
-}
-
-async function writeViaSandbox(
-  sandbox: NonNullable<ToolContext["sandbox"]>,
-  path: string,
-  content: string,
-): Promise<void> {
-  const dir = dirname(path);
-  await sandbox.execute(`mkdir -p "${dir}"`);
-  const b64 = Buffer.from(content).toString("base64");
-  const result = await sandbox.execute(`echo "${b64}" | base64 -d > "${path}"`);
-  if (!result.success) {
-    throw new Error(result.stderr || `Failed to write ${path} in sandbox`);
-  }
-}
-
-async function deleteViaSandbox(
-  sandbox: NonNullable<ToolContext["sandbox"]>,
-  path: string,
-): Promise<void> {
-  const result = await sandbox.execute(`rm "${path}"`);
-  if (!result.success) {
-    throw new Error(result.stderr || `Failed to delete ${path} in sandbox`);
-  }
+  const original = await readWorkspaceFile(ctx, targetPath);
+  const applied = applyFileDiff(original, diff);
+  validateWorkspaceFileContent(applied.content);
+  return {
+    diff,
+    displayPath,
+    targetPath,
+    kind: "edit",
+    original,
+    next: applied.content,
+    eolAdaptation: applied.eolAdaptation,
+  };
 }
 
 export function applyPatch(ctx: ToolContext) {
@@ -273,116 +171,155 @@ export function applyPatch(ctx: ToolContext) {
 Use this for multi-hunk or multi-file edits. For a single small string replace,
 prefer update_file.
 
-The patch must be a standard unified diff with ---/+++ headers and @@ hunks.
-Context lines must match the current file contents exactly — the tool fails
-loudly on mismatch and does not partially apply remaining files after a failure
-within a file. Paths must stay under the agent working directory.
+The entire patch is validated against current file contents before anything is
+changed: if any file's context does not match, a create target already exists,
+or a prepared result violates the text/size limits, nothing is written. Context
+must match at exactly one position in the file — matches at multiple positions
+are rejected; add more context lines to disambiguate. Commits are conditional —
+if a file changed since the preflight read, that file fails and later files are
+left unapplied (already-applied files stay applied; there is no rollback). Each
+file gets a receipt: applied, failed, or unapplied.
 
-Example:
-\`\`\`
---- a/src/auth.ts
-+++ b/src/auth.ts
-@@ -10,7 +10,7 @@
-  function login(user, pass) {
--   query = "SELECT * FROM users WHERE name='" + user + "'"
-+   query = db.prepare("SELECT * FROM users WHERE name=?")
-  }
-\`\`\``,
+Create files with a "--- /dev/null" header; delete with "+++ /dev/null" (the
+hunks must cover the whole file). Renames, copies, mode changes, and binary
+patches are rejected. Final newlines, BOMs, and CRLF line endings are preserved;
+an LF patch applied to a CRLF file is adapted and reported in the receipt.
+Paths resolve under the agent working directory (or file workspace when scoped).`,
     inputSchema: applyPatchInputSchema,
     execute: async ({ patch }): Promise<ApplyPatchResult> => {
-      let files: FileDiff[];
+      let diffs: ParsedFileDiff[];
       try {
-        files = parseUnifiedDiff(patch);
+        diffs = parseUnifiedDiff(patch);
       } catch (err: unknown) {
         return {
           success: false,
-          error: err instanceof Error ? err.message : String(err),
+          error: describeError(err),
           files: [],
         };
       }
 
-      const results: FilePatchResult[] = [];
-
-      for (const file of files) {
-        const displayPath = file.newPath || file.oldPath;
+      // Preflight every file before mutating anything.
+      const plans: PlannedFile[] = [];
+      const targets = new Set<string>();
+      for (const diff of diffs) {
+        let plan: PlannedFile;
         try {
-          const targetPath = resolveUnderCwd(
-            ctx.agentCwd,
-            file.isDelete ? file.oldPath : file.newPath || file.oldPath,
-          );
-
-          if (file.isDelete) {
-            if (ctx.sandbox) {
-              await deleteViaSandbox(ctx.sandbox, targetPath);
-            } else {
-              await unlink(targetPath);
-            }
-            results.push({
-              path: displayPath,
-              success: true,
-              hunksApplied: 0,
-            });
-            continue;
-          }
-
-          const existing = ctx.sandbox
-            ? await readViaSandbox(ctx.sandbox, targetPath)
-            : await readLocal(targetPath);
-
-          if (file.isNew) {
-            if (existing !== null) {
-              throw new Error(
-                `Cannot create ${targetPath}: file already exists`,
-              );
-            }
-            const created = applyHunksToContent("", file.hunks);
-            if (ctx.sandbox) {
-              await writeViaSandbox(ctx.sandbox, targetPath, created);
-            } else {
-              await writeLocal(targetPath, created);
-            }
-            results.push({
-              path: displayPath,
-              success: true,
-              hunksApplied: file.hunks.length,
-            });
-            continue;
-          }
-
-          if (existing === null) {
-            throw new Error(`File not found: ${targetPath}`);
-          }
-
-          const updated = applyHunksToContent(existing, file.hunks);
-          if (ctx.sandbox) {
-            await writeViaSandbox(ctx.sandbox, targetPath, updated);
-          } else {
-            await writeLocal(targetPath, updated);
-          }
-          results.push({
-            path: displayPath,
-            success: true,
-            hunksApplied: file.hunks.length,
-          });
+          plan = await preflightFile(ctx, diff);
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          results.push({
-            path: displayPath,
-            success: false,
-            error: message,
+          const message = describeError(err);
+          const displayPath = diff.newPath || diff.oldPath;
+          const unappliedFor = (later: ParsedFileDiff): PlannedFile => ({
+            diff: later,
+            displayPath: later.newPath || later.oldPath,
+            targetPath: "",
+            kind: later.isNew ? "create" : later.isDelete ? "delete" : "edit",
+            next: "",
+            eolAdaptation: "none",
           });
+          if (ctx.abortSignal?.aborted) {
+            return {
+              success: false,
+              error:
+                "Patch application aborted during preflight; no files were changed",
+              files: [
+                ...plans.map((p) => receipt(p, "unapplied")),
+                receipt(unappliedFor(diff), "unapplied", "Aborted"),
+                ...diffs
+                  .slice(plans.length + 1)
+                  .map((later) => receipt(unappliedFor(later), "unapplied")),
+              ],
+            };
+          }
+          const files = [
+            ...plans.map((p) => receipt(p, "unapplied")),
+            receipt(unappliedFor(diff), "failed", message),
+            ...diffs
+              .slice(plans.length + 1)
+              .map((later) => receipt(unappliedFor(later), "unapplied")),
+          ];
           return {
             success: false,
             error: `Failed applying patch to ${displayPath}: ${message}`,
-            files: results,
+            files,
+          };
+        }
+        if (targets.has(duplicateTargetKey(ctx, plan.targetPath))) {
+          const message = `Patch targets the same file twice: ${plan.displayPath}`;
+          return {
+            success: false,
+            error: message,
+            files: [
+              ...plans.map((p) => receipt(p, "unapplied")),
+              receipt(plan, "failed", message),
+              ...diffs.slice(plans.length + 1).map((later) =>
+                receipt(
+                  {
+                    diff: later,
+                    displayPath: later.newPath || later.oldPath,
+                    targetPath: "",
+                    kind: later.isNew
+                      ? "create"
+                      : later.isDelete
+                        ? "delete"
+                        : "edit",
+                    next: "",
+                    eolAdaptation: "none",
+                  },
+                  "unapplied",
+                ),
+              ),
+            ],
+          };
+        }
+        targets.add(duplicateTargetKey(ctx, plan.targetPath));
+        plans.push(plan);
+      }
+
+      // Commit: every write is conditional on the preflight read, so a file
+      // changed in between fails loudly instead of clobbering.
+      const files: FilePatchResult[] = [];
+      let aborted = false;
+      for (const plan of plans) {
+        if (ctx.abortSignal?.aborted) {
+          aborted = true;
+          files.push(receipt(plan, "unapplied", "Aborted before commit"));
+          continue;
+        }
+        try {
+          if (plan.kind === "delete") {
+            await deleteWorkspaceFile(ctx, plan.targetPath, {
+              expected: plan.original,
+            });
+          } else if (plan.kind === "create") {
+            await writeWorkspaceFile(ctx, plan.targetPath, plan.next, {
+              expected: null,
+            });
+          } else {
+            await writeWorkspaceFile(ctx, plan.targetPath, plan.next, {
+              expected: plan.original,
+            });
+          }
+          files.push(receipt(plan, "applied"));
+        } catch (err: unknown) {
+          const message = describeError(err);
+          files.push(receipt(plan, "failed", message));
+          for (const remaining of plans.slice(files.length)) {
+            files.push(receipt(remaining, "unapplied"));
+          }
+          return {
+            success: false,
+            error: `Failed applying patch to ${plan.displayPath}: ${message} (earlier files remain applied; no rollback)`,
+            files,
           };
         }
       }
 
       return {
-        success: true,
-        error: "",
-        files: results,
+        success: !aborted,
+        error: aborted
+          ? "Patch application aborted after preflight; files not committed are marked unapplied"
+          : "",
+        files,
       };
     },
   });
