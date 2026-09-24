@@ -35,11 +35,18 @@ export function getModelInfo(model: AIModel): ModelInfo {
   const custom = parseCustomModelId(model);
   if (custom) return { id: model, name: custom.modelId, provider: "custom" };
   return (
-    AVAILABLE_MODELS.find((m) => m.id === model) ?? {
-      id: model,
-      name: model,
-      provider: "local",
-    }
+    AVAILABLE_MODELS.find((m) => m.id === model) ??
+    (model.includes("/")
+      ? {
+          id: model,
+          name: model,
+          provider: "openrouter",
+        }
+      : {
+          id: model,
+          name: model,
+          provider: "local",
+        })
   );
 }
 

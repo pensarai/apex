@@ -214,6 +214,20 @@ describe("getMaxOutputTokens", () => {
   });
 });
 
+describe("getModelInfo", () => {
+  it("routes an unknown author/name id through OpenRouter", () => {
+    expect(getModelInfo("acme/brand-new-model")).toEqual({
+      id: "acme/brand-new-model",
+      name: "acme/brand-new-model",
+      provider: "openrouter",
+    });
+  });
+
+  it("keeps an unknown non-OpenRouter id on the local provider", () => {
+    expect(getModelInfo("not-a-known-model").provider).toBe("local");
+  });
+});
+
 describe("prefersSequentialToolCalls", () => {
   it("is true for DeepSeek models (Bedrock mis-parses parallel tool calls)", () => {
     expect(prefersSequentialToolCalls("deepseek.v3-v1:0")).toBe(true);
