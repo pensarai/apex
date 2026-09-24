@@ -144,9 +144,9 @@ export interface DisplayEventAdapter {
   resetPartialText(): void;
   /** Flush buffered command output into the display immediately. */
   flushCommandOutput(): void;
-  /** Stop the throttled command-output flush timer. */
+  /** Stop the flush timer without flushing or discarding buffered output. */
   stopCommandOutputFlush(): void;
-  /** Clear the flush timer (unmount). */
+  /** Clear the flush timer and discard buffered output (unmount). */
   dispose(): void;
 }
 
@@ -164,9 +164,10 @@ export function createDisplayEventHandlers(
   let partialText = "";
   const toolArgsDeltas = new Map<string, { accumulated: string }>();
   let commandOutputBuf = "";
-  let flushTimer: ReturnType<typeof setInterval> | null = null;
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
   const flushCommandOutput = (): void => {
+    stopCommandOutputFlush();
     if (!commandOutputBuf) return;
     const buf = commandOutputBuf;
     commandOutputBuf = "";
@@ -174,8 +175,8 @@ export function createDisplayEventHandlers(
   };
 
   const stopCommandOutputFlush = (): void => {
-    if (flushTimer) {
-      clearInterval(flushTimer);
+    if (flushTimer !== null) {
+      clearTimeout(flushTimer);
       flushTimer = null;
     }
   };
@@ -226,7 +227,6 @@ export function createDisplayEventHandlers(
     },
     onToolResult(e) {
       flushCommandOutput();
-      stopCommandOutputFlush();
       sink.setThinking(true);
       partialText = "";
       sink.updateMessages((messages) =>
@@ -234,12 +234,14 @@ export function createDisplayEventHandlers(
       );
     },
     onCommandOutput(e) {
+      if (!e.data) return;
       commandOutputBuf += e.data;
-      if (!flushTimer) {
-        flushTimer = setInterval(flushCommandOutput, COMMAND_OUTPUT_FLUSH_MS);
+      if (flushTimer === null) {
+        flushTimer = setTimeout(flushCommandOutput, COMMAND_OUTPUT_FLUSH_MS);
       }
     },
     onError(e) {
+      flushCommandOutput();
       console.error("Agent error:", e.error);
       const errorMessage =
         e.error instanceof Error ? e.error.message : "Unknown error";
@@ -256,7 +258,10 @@ export function createDisplayEventHandlers(
     },
     flushCommandOutput,
     stopCommandOutputFlush,
-    dispose: stopCommandOutputFlush,
+    dispose() {
+      stopCommandOutputFlush();
+      commandOutputBuf = "";
+    },
   };
 }
 
