@@ -1,7 +1,7 @@
 import type { ToolContext } from "./types";
 
 interface Request {
-  action: "resolve" | "read" | "write" | "delete";
+  action: "resolve" | "read" | "write" | "delete" | "assert_absent";
   path: string;
   root?: string;
   content?: string;
@@ -37,6 +37,9 @@ def run(q):
     if root and os.path.commonpath([canonical(root), p]) != canonical(root):
         raise ValueError('Path escapes file workspace')
     if q['action'] == 'resolve': return {'path': p}
+    if q['action'] == 'assert_absent':
+        if os.path.lexists(p): raise FileExistsError('File already exists: ' + p)
+        return {}
     if q['action'] == 'read': return {'content': base64.b64encode(read_text(p)).decode('ascii')}
     def check():
         expected = q.get('expectedHash')
@@ -156,6 +159,7 @@ try {
   $result = @{ok = $true}
   switch ($q.action) {
     'resolve' { $result.path = $p }
+    'assert_absent' { if (Test-Path -LiteralPath $p) { throw ('File already exists: ' + $p) } }
     'read' { $result.content = [Convert]::ToBase64String((ReadText $p)) }
     'delete' {
       CheckExpected $q $p

@@ -15,9 +15,11 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  assertWorkspaceFileAbsent,
   deleteWorkspaceFile,
   readWorkspaceFile,
   resolveFilePath,
+  validateWorkspaceFileContent,
   withWorkspaceFileLock,
   writeWorkspaceFile,
 } from "./fileWorkspace";
@@ -146,6 +148,19 @@ describe.each([
     );
   });
 
+  it("preflights absent targets without creating anything", async () => {
+    const { ctx, workspace } = await fixture(sandbox);
+    const file = await resolveFilePath(ctx, "pending/new.txt");
+    await expect(assertWorkspaceFileAbsent(ctx, file)).resolves.toBeUndefined();
+    await expect(stat(join(workspace, "pending"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await writeWorkspaceFile(ctx, file, "existing", { expected: null });
+    await expect(assertWorkspaceFileAbsent(ctx, file)).rejects.toThrow(
+      /already exists/i,
+    );
+  });
+
   it("bounds reads and refuses binary, invalid UTF-8, and directories", async () => {
     const { workspace, ctx } = await fixture(sandbox);
     for (const [name, content] of [
@@ -226,6 +241,14 @@ it("releases failed locks and rejects cancelled queued operations", async () => 
   await expect(stat(file)).rejects.toMatchObject({ code: "ENOENT" });
 });
 
+it("rejects invalid prepared output before a write is attempted", () => {
+  expect(() => validateWorkspaceFileContent("valid\n")).not.toThrow();
+  expect(() => validateWorkspaceFileContent("binary\0")).toThrow(/Binary/i);
+  expect(() =>
+    validateWorkspaceFileContent("x".repeat(1024 * 1024 + 1)),
+  ).toThrow(/limit/i);
+});
+
 it("does not read or write a host decoy after a sandbox failure", async () => {
   const { workspace, ctx } = await fixture({
     type: "linux",
@@ -250,16 +273,14 @@ it.each([
   "\\\\.\\NUL",
 ])("rejects Windows special path %s before execution", async (input) => {
   let calls = 0;
-  const ctx = {
-    agentCwd: "C:\\helpers",
-    sandbox: {
-      type: "windows",
-      execute: async () => {
-        calls++;
-        throw new Error("Unexpected execution");
-      },
+  const sandbox: UnifiedSandbox = {
+    type: "windows",
+    execute: async () => {
+      calls++;
+      throw new Error("Unexpected execution");
     },
-  } as ToolContext;
+  };
+  const ctx = { agentCwd: "C:\\helpers", sandbox } as ToolContext;
   await expect(resolveFilePath(ctx, input)).rejects.toThrow(/Windows/);
   expect(calls).toBe(0);
 });
