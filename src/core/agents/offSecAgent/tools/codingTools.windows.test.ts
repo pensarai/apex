@@ -125,10 +125,11 @@ describe.skipIf(process.platform !== "win32")(
         { pattern: "no-such-text", toolCallDescription },
         callOptions,
       )) as GrepResult;
+      expect(absent.error).toBe("");
       expect(absent).toMatchObject({
         success: true,
         matchCount: 0,
-        output: "",
+        output: "(no matches)",
       });
 
       await writeFile(
