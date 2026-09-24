@@ -28,11 +28,18 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
 
 export function getModelInfo(model: AIModel): ModelInfo {
   return (
-    AVAILABLE_MODELS.find((m) => m.id === model) ?? {
-      id: model,
-      name: model,
-      provider: "local",
-    }
+    AVAILABLE_MODELS.find((m) => m.id === model) ??
+    (model.includes("/")
+      ? {
+          id: model,
+          name: model,
+          provider: "openrouter",
+        }
+      : {
+          id: model,
+          name: model,
+          provider: "local",
+        })
   );
 }
 
