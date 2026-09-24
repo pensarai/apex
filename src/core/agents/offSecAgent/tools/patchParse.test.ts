@@ -359,3 +359,17 @@ describe("no-newline markers", () => {
     );
   });
 });
+
+it.each([
+  "new file mode 100755",
+  "new file mode 120000",
+  "new file mode 160000",
+  "deleted file mode 120000",
+  "index 123..456 120000",
+])("rejects unsupported file semantics in %s", (metadata) => {
+  expect(() =>
+    parseUnifiedDiff(
+      `${metadata}\n--- /dev/null\n+++ b/new\n@@ -0,0 +1 @@\n+content\n`,
+    ),
+  ).toThrow(/not supported/);
+});
