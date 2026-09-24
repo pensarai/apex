@@ -162,6 +162,29 @@ describe.each([
     );
   });
 
+  it("transports a code file larger than one environment chunk", async () => {
+    const { ctx } = await fixture(sandbox);
+    const file = await resolveFilePath(ctx, "large-helper.txt");
+    const content = "const message = 'café';\n".repeat(3000);
+    await writeWorkspaceFile(ctx, file, content, { expected: null });
+    expect(await readWorkspaceFile(ctx, file)).toBe(content);
+    expect(await readFile(file, "utf8")).toBe(content);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "rejects a dangling parent symlink",
+    async () => {
+      const { ctx, workspace } = await fixture(sandbox);
+      await symlink(join(workspace, "missing"), join(workspace, "dangling"));
+      await expect(resolveFilePath(ctx, "dangling/new.txt")).rejects.toThrow(
+        /Dangling/i,
+      );
+      await expect(stat(join(workspace, "missing"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    },
+  );
+
   it.skipIf(process.platform === "win32")(
     "preserves executable permissions on replacement",
     async () => {
@@ -217,4 +240,26 @@ it("does not read or write a host decoy after a sandbox failure", async () => {
     writeWorkspaceFile(ctx, file, "remote contents"),
   ).rejects.toThrow("remote offline");
   expect(await readFile(file, "utf8")).toBe("host decoy");
+});
+
+it.each([
+  "CON",
+  "NUL.txt",
+  "file.txt:stream",
+  "folder.\\file.txt",
+  "\\\\.\\NUL",
+])("rejects Windows special path %s before execution", async (input) => {
+  let calls = 0;
+  const ctx = {
+    agentCwd: "C:\\helpers",
+    sandbox: {
+      type: "windows",
+      execute: async () => {
+        calls++;
+        throw new Error("Unexpected execution");
+      },
+    },
+  } as ToolContext;
+  await expect(resolveFilePath(ctx, input)).rejects.toThrow(/Windows/);
+  expect(calls).toBe(0);
 });

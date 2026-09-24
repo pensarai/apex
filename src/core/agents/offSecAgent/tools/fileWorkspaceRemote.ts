@@ -23,7 +23,12 @@ def read_text(p):
     data.decode('utf-8', errors='strict')
     return data
 def canonical(p):
-    if os.path.lexists(p) and not os.path.exists(p):
+    cursor = p
+    while not os.path.lexists(cursor):
+        parent = os.path.dirname(cursor)
+        if parent == cursor: break
+        cursor = parent
+    if os.path.lexists(cursor) and not os.path.exists(cursor):
         raise ValueError('Dangling symlink')
     return os.path.realpath(p)
 def run(q):
@@ -59,7 +64,11 @@ def run(q):
     try:
         with os.fdopen(fd, 'wb') as f:
             f.write(data)
-            if mode is not None: os.fchmod(f.fileno(), mode)
+            if mode is None:
+                mask = os.umask(0)
+                os.umask(mask)
+                mode = 0o666 & ~mask
+            os.fchmod(f.fileno(), mode)
         check()
         if q.get('exclusive'):
             os.link(temporary, p)
@@ -82,6 +91,12 @@ $ErrorActionPreference = 'Stop'
 $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
 function Canonical([string]$p, [bool]$confined) {
   $full = [IO.Path]::GetFullPath($p)
+  if ($full -match '^\\\\[?.]\\') { throw 'Windows device paths are not supported' }
+  foreach ($part in $full.Substring([IO.Path]::GetPathRoot($full).Length).Split('\')) {
+    if ($part -match '[. ]$|:' -or $part -match '^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)') {
+      throw 'Windows device names, alternate streams, and trailing dots/spaces are not supported'
+    }
+  }
   if ($confined) {
     $cursor = $full
     while ($cursor) {
@@ -148,6 +163,7 @@ try {
       [IO.File]::Delete($p)
     }
     'write' {
+      if ($q.exclusive -and (Test-Path -LiteralPath $p)) { throw ('File already exists: ' + $p) }
       CheckExpected $q $p
       $bytes = [Convert]::FromBase64String($q.content)
       if ($bytes.Length -gt 1048576) { throw 'Text mutation limit is 1048576 bytes' }
@@ -180,7 +196,8 @@ export async function remoteFileOperation(
   const payload = Buffer.from(
     JSON.stringify({ ...request, root: request.root ?? ctx.fileWorkspaceRoot }),
   ).toString("base64");
-  const chunks = payload.match(/.{1,8192}/g) ?? [];
+  // cmd.exe drops environment values above 8191 characters.
+  const chunks = payload.match(/.{1,6000}/g) ?? [];
   const envVars: Record<string, string> = {
     APEX_FILE_PAYLOAD_COUNT: String(chunks.length),
   };
