@@ -135,6 +135,35 @@ typecheck, lint, format, dead-code, and build checks. Platform-gated Windows
 contracts run separately in CI. Local subprocess adapters validate the commands
 we send; they do not prove compatibility with a live cloud sandbox service.
 
+## Provider argument verification
+
+The 17 tool contracts above call factories directly; they do not test how a
+provider constrains model-generated arguments. A September 24 smoke test exposed
+that gap: Responses normalized the four optional numeric read bounds into
+required fields, forcing both line and byte bounds into every call. The reader
+correctly rejected the conflict, but the model had no valid way to select one
+mode.
+
+Unused read bounds now accept `null`, which the reader treats as omitted. The
+tool descriptions explain which fields to leave inactive, while genuinely
+conflicting numeric ranges remain errors. This preserves strict provider
+validation without inventing sentinel numbers or silently choosing one range.
+
+Five deterministic regressions exercise the real SDK request serializer and
+tool execution with mocked HTTP: line, byte, default, omitted-field, and
+conflicting-range calls. Run them with the other reader tests:
+
+```sh
+bun run test src/core/agents/offSecAgent/tools/readFile.test.ts
+```
+
+A live GPT-5.6-sol Responses request reproduced the failure before the fix;
+the response confirmed `strict: true` and all bounds required. After the fix,
+three direct requests passed (line, byte, default), followed by all three reads
+in one live Apex streaming loop, including parallel tool calls. These checks
+used synthetic local files. They demonstrate recovery from this specific
+provider-contract bug, not a measured increase in overall coding success.
+
 ## Explaining the change on a whiteboard
 
 Start with the existing pentest worker, then draw four boxes beneath it:
