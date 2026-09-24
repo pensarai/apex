@@ -365,3 +365,71 @@ describe("globFiles sandbox transport shape (windows)", () => {
     expect(result.error).toContain("APEXGL");
   });
 });
+
+it("keeps regular files whose names match ignored directory names", async () => {
+  const root = scratchDir();
+  writeFileSync(join(root, "dist"), "ordinary file");
+  for (const sandbox of [undefined, realLinuxSandbox()]) {
+    const result = await runGlob(makeCtx({ agentCwd: root, sandbox }), {
+      pattern: "**/dist",
+      toolCallDescription: "find a regular file",
+    });
+    expect(result.success).toBe(true);
+    expect(result.files).toEqual(["dist"]);
+  }
+});
+
+it("character classes cannot consume a path separator", async () => {
+  const root = scratchDir();
+  mkdirSync(join(root, "a"));
+  writeFileSync(join(root, "a", "b"), "nested");
+  const result = await runGlob(makeCtx({ agentCwd: root }), {
+    pattern: "a[!x]b",
+    toolCallDescription: "match one path segment",
+  });
+  expect(result.success).toBe(true);
+  expect(result.files).toEqual([]);
+  const invalid = await runGlob(makeCtx({ agentCwd: root }), {
+    pattern: "[z-a]",
+    toolCallDescription: "reject an invalid range",
+  });
+  expect(invalid.success).toBe(false);
+  expect(invalid.error).toBeTruthy();
+});
+
+it("reports scan overflow even when the extra entry ends the last directory", async () => {
+  const root = scratchDir();
+  for (let i = 0; i < 20_001; i++) writeFileSync(join(root, `f${i}`), "");
+  const result = await runGlob(makeCtx({ agentCwd: root }), {
+    pattern: "*",
+    toolCallDescription: "inspect a capped scan",
+  });
+  expect(result.success).toBe(true);
+  expect(result.error).toContain("may be incomplete");
+  expect(result.totalFound).toBeUndefined();
+  expect(result.files.length).toBeLessThanOrEqual(200);
+});
+
+it("does not report a remote enumeration as completed after cancellation", async () => {
+  const root = scratchDir();
+  writeFileSync(join(root, "f.txt"), "contents");
+  const abort = new AbortController();
+  const real = realLinuxSandbox();
+  const sandbox: UnifiedSandbox = {
+    type: "linux",
+    execute: async (command, options) => {
+      const result = await real.execute(command, options);
+      if (options?.envVars?.APEX_GLOB_PATH) abort.abort();
+      return result;
+    },
+  };
+  const result = await runGlob(
+    makeCtx({ agentCwd: root, sandbox, abortSignal: abort.signal }),
+    {
+      pattern: "*",
+      toolCallDescription: "cancel a directory scan",
+    },
+  );
+  expect(result.success).toBe(false);
+  expect(result.files).toEqual([]);
+});
