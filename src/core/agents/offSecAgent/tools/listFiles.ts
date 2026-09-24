@@ -141,8 +141,11 @@ Each directory entry is suffixed with "/" for easy identification.`,
       }
 
       try {
+        ctx.abortSignal?.throwIfAborted();
         if (ctx.sandbox) {
-          return await listSandbox(ctx.sandbox, dir, recursive);
+          const result = await listSandbox(ctx.sandbox, dir, recursive);
+          ctx.abortSignal?.throwIfAborted();
+          return result;
         }
         const info = await stat(dir);
         if (!info.isDirectory()) {

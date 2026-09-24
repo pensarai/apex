@@ -249,7 +249,8 @@ active, because following symlinks can read files outside the scope.
 
 Output is capped at ${MAX_OUTPUT_CHARS} characters at the producer — a search
 that exceeds it reports truncated=true and an approximate window instead of a
-match count. Narrow the search with flags or a more specific directory.`,
+match count. Narrow the search with flags or a more specific directory.
+${ctx.sandbox?.type === "windows" ? "Windows supports -r, -n, -i, -l, -F, -E, and -P; regex patterns use .NET syntax. Use read_file line windows for surrounding context." : ""}`,
     inputSchema: grepInputSchema,
     execute: async ({ pattern, directory, flags }): Promise<GrepResult> => {
       if (ctx.abortSignal?.aborted) {

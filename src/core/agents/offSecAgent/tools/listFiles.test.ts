@@ -345,3 +345,27 @@ describe("listFiles sandbox transport shape (windows)", () => {
     expect(result.error).toContain("APEXLS");
   });
 });
+
+it("does not report a remote listing as completed after cancellation", async () => {
+  const root = scratchDir();
+  writeFileSync(join(root, "f.txt"), "contents");
+  const abort = new AbortController();
+  const real = realLinuxSandbox();
+  const sandbox: UnifiedSandbox = {
+    type: "linux",
+    execute: async (command, options) => {
+      const result = await real.execute(command, options);
+      if (options?.envVars?.APEX_LIST_PATH) abort.abort();
+      return result;
+    },
+  };
+  const result = await runList(
+    makeCtx({ agentCwd: root, sandbox, abortSignal: abort.signal }),
+    {
+      recursive: true,
+      toolCallDescription: "cancel a listing",
+    },
+  );
+  expect(result.success).toBe(false);
+  expect(result.files).toEqual([]);
+});
