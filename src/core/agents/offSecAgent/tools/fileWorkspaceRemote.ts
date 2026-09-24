@@ -177,7 +177,7 @@ try {
         [IO.File]::WriteAllBytes($temporary, $bytes)
         CheckExpected $q $p
         if ($q.exclusive -or -not [IO.File]::Exists($p)) { [IO.File]::Move($temporary, $p) }
-        else { [IO.File]::Replace($temporary, $p, $null) }
+        else { [IO.File]::Replace($temporary, $p, [NullString]::Value) }
       } finally { if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) } }
     }
     default { throw 'Unsupported file operation' }
