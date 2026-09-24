@@ -251,9 +251,9 @@ export default function OperatorDashboard({
   const commandCancelledRef = useRef(false);
 
   const subagentStore = useMemo(() => createSubagentStore(), []);
-  const subagentSessions = useSyncExternalStore(
-    subagentStore.subscribe,
-    subagentStore.getSnapshot,
+  const subagentCounts = useSyncExternalStore(
+    subagentStore.subscribeCounts,
+    subagentStore.getCountsSnapshot,
   );
   const subagentHelpers = useMemo(
     () => createSubagentSessionHelpers(subagentStore.setState),
@@ -263,13 +263,9 @@ export default function OperatorDashboard({
   // Track the message count when subagents last finished so the status bar
   // knows whether the main agent has produced new output since then.
   const messageCountAtSubagentDoneRef = useRef<number | null>(null);
-  const hasRunningSubagent = useMemo(
-    () =>
-      Array.from(subagentSessions.values()).some((s) => s.status === "running"),
-    [subagentSessions],
-  );
+  const hasRunningSubagent = subagentCounts.running > 0;
   useEffect(() => {
-    if (subagentSessions.size > 0 && !hasRunningSubagent) {
+    if (subagentCounts.total > 0 && !hasRunningSubagent) {
       if (messageCountAtSubagentDoneRef.current === null) {
         messageCountAtSubagentDoneRef.current =
           displayMessagesRef.current.length;
@@ -277,7 +273,7 @@ export default function OperatorDashboard({
     } else if (hasRunningSubagent) {
       messageCountAtSubagentDoneRef.current = null;
     }
-  }, [subagentSessions, hasRunningSubagent]);
+  }, [subagentCounts, hasRunningSubagent]);
 
   const openSubagentDialog = useCallback(() => {
     replaceDialog(<SubagentDialog store={subagentStore} />, {
@@ -1709,7 +1705,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     if (
       key.ctrl &&
       key.name === "a" &&
-      subagentSessions.size > 0 &&
+      subagentCounts.total > 0 &&
       !dialogOpen
     ) {
       key.preventDefault?.();
@@ -1885,7 +1881,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       />
 
       <SubagentStatusBar
-        sessions={subagentSessions}
+        counts={subagentCounts}
         agentMovedOn={
           messageCountAtSubagentDoneRef.current !== null &&
           messages.length > messageCountAtSubagentDoneRef.current

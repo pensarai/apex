@@ -5,6 +5,9 @@ import {
   markSubagentsInterrupted,
 } from "../../src/tui/components/operator-dashboard/subagent-state";
 
+const subscription = process.argv[2] ?? "counts";
+assert.ok(subscription === "counts" || subscription === "full");
+
 // Callback counts, not timings: assertions deliberately inspect every live snapshot.
 for (const agents of [1, 8, 32]) {
   const store = createSubagentStore();
@@ -22,7 +25,9 @@ for (const agents of [1, 8, 32]) {
       );
     }
   });
-  const unsubscribeDashboard = store.subscribe(() => {
+  const subscribeDashboard =
+    subscription === "counts" ? store.subscribeCounts : store.subscribe;
+  const unsubscribeDashboard = subscribeDashboard(() => {
     dashboard[phase]++;
   });
   for (let agent = 0; agent < agents; agent++) {
@@ -95,8 +100,9 @@ for (const agents of [1, 8, 32]) {
     lifecycle: 2 * agents + 1,
     stream: 123 * agents,
   });
-  assert.deepEqual(dashboard, fullMap);
-  console.log(
-    JSON.stringify({ agents, subscription: "full", fullMap, dashboard }),
-  );
+  assert.deepEqual(dashboard, {
+    lifecycle: fullMap.lifecycle,
+    stream: subscription === "counts" ? 0 : fullMap.stream,
+  });
+  console.log(JSON.stringify({ agents, subscription, fullMap, dashboard }));
 }
