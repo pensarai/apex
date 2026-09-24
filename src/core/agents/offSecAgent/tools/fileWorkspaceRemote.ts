@@ -209,7 +209,10 @@ export async function remoteFileOperation(
     );
   const command =
     sandbox.type === "windows"
-      ? 'powershell -NoProfile -NonInteractive -Command "& ([scriptblock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:APEX_FILE_SCRIPT))))"'
+      ? `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(
+          "& ([scriptblock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:APEX_FILE_SCRIPT))))",
+          "utf16le",
+        ).toString("base64")}`
       : `python3 -c '${PYTHON.replaceAll("'", "'\\''")}'`;
   const result = await sandbox.execute(command, {
     envVars,
