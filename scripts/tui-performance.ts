@@ -62,8 +62,14 @@ try {
       const group = results.filter(
         (r) => r.historySize === historySize && r.streamEvery === streamEvery,
       );
-      const median = (values: number[]) =>
-        [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+      const median = (values: number[]) => {
+        const sorted = [...values].sort((a, b) => a - b);
+        return (
+          (sorted[Math.floor((sorted.length - 1) / 2)] +
+            sorted[Math.floor(sorted.length / 2)]) /
+          2
+        );
+      };
       return {
         historySize,
         streamEvery,
