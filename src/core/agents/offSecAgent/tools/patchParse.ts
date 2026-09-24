@@ -125,6 +125,18 @@ export function parseUnifiedDiff(patch: string): ParsedFileDiff[] {
     if (MODE_CHANGE_RE.test(line)) {
       fail(i + 1, "file mode changes are not supported");
     }
+    if (
+      line.startsWith("new file mode ") &&
+      stripTransportCr(line) !== "new file mode 100644"
+    ) {
+      fail(
+        i + 1,
+        "creating executable files, symlinks, or submodules through mode metadata is not supported",
+      );
+    }
+    if (/^(?:index .* |deleted file mode )(?:120000|160000)\r?$/.test(line)) {
+      fail(i + 1, "symlink and submodule patches are not supported");
+    }
     if (line.startsWith("diff --git ") || GIT_NOISE_RE.test(line)) {
       i++;
       continue;
