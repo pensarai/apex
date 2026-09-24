@@ -66,11 +66,14 @@ export type GlobResult = {
 type Enumeration = { entries: string[]; overflow: boolean };
 
 /** Local walk: files only, ignore-named dirs pruned, symlink dirs not followed. */
-async function enumerateLocal(root: string): Promise<Enumeration> {
+async function enumerateLocal(
+  root: string,
+  signal?: AbortSignal,
+): Promise<Enumeration> {
   const entries: string[] = [];
-  let overflow = false;
 
   async function walk(dir: string, prefix: string): Promise<void> {
+    signal?.throwIfAborted();
     if (entries.length > MAX_SCAN_ENTRIES) return;
     let dirents: import("fs").Dirent[];
     try {
@@ -79,13 +82,13 @@ async function enumerateLocal(root: string): Promise<Enumeration> {
       return;
     }
     for (const entry of dirents) {
+      signal?.throwIfAborted();
       if (entry.isDirectory()) {
         if (IGNORED_DIR_NAMES.includes(entry.name)) continue;
         await walk(join(dir, entry.name), `${prefix}${entry.name}/`);
         continue;
       }
       if (entries.length > MAX_SCAN_ENTRIES) {
-        overflow = true;
         return;
       }
       entries.push(`${prefix}${entry.name}`);
@@ -93,7 +96,7 @@ async function enumerateLocal(root: string): Promise<Enumeration> {
   }
 
   await walk(root, "");
-  return { entries, overflow };
+  return { entries, overflow: entries.length > MAX_SCAN_ENTRIES };
 }
 
 function posixGlobCommand(nonce: string): string {
@@ -102,7 +105,7 @@ function posixGlobCommand(nonce: string): string {
   );
   return [
     'cd "$APEX_GLOB_PATH" || exit 3',
-    `find . -mindepth 1 \\( ${prune} \\) -prune -o -type d -o -print | head -n ${MAX_SCAN_ENTRIES + 1}`,
+    `find . -mindepth 1 -type d \\( ${prune} \\) -prune -o -type d -o -print | head -n ${MAX_SCAN_ENTRIES + 1}`,
     `echo "APEXGL-${nonce} end"`,
   ].join("\n");
 }
@@ -233,23 +236,25 @@ coverage, venv) and dotfiles. Results are capped at ${MAX_RESULTS}; narrow the
 pattern if truncated.`,
     inputSchema: globInputSchema,
     execute: async ({ pattern, path }): Promise<GlobResult> => {
-      const compiled = compileGlobPattern(pattern);
-      if ("error" in compiled) {
-        return {
-          success: false,
-          error: compiled.error,
-          files: [],
-          count: 0,
-          pattern,
-          cwd: ctx.agentCwd,
-        };
-      }
-
-      let root: string;
+      let root = ctx.agentCwd;
       try {
-        // Glob has always been confined to the agent's tree; confineToCwd
-        // preserves that when no file workspace root scopes it further.
+        ctx.abortSignal?.throwIfAborted();
+        const compiled = compileGlobPattern(pattern);
+        if ("error" in compiled) throw new Error(compiled.error);
         root = await resolveFilePath(ctx, path ?? ".", { confineToCwd: true });
+        ctx.abortSignal?.throwIfAborted();
+        const enumeration = ctx.sandbox
+          ? await enumerateSandbox(ctx.sandbox, root)
+          : await enumerateLocal(root, ctx.abortSignal);
+        ctx.abortSignal?.throwIfAborted();
+        if ("error" in enumeration) throw new Error(enumeration.error);
+        return matchEntries(
+          enumeration.entries,
+          compiled.regexes,
+          enumeration.overflow,
+          pattern,
+          root,
+        );
       } catch (err: unknown) {
         return {
           success: false,
@@ -257,30 +262,9 @@ pattern if truncated.`,
           files: [],
           count: 0,
           pattern,
-          cwd: ctx.agentCwd,
-        };
-      }
-
-      const enumeration = ctx.sandbox
-        ? await enumerateSandbox(ctx.sandbox, root)
-        : await enumerateLocal(root);
-      if ("error" in enumeration) {
-        return {
-          success: false,
-          error: enumeration.error,
-          files: [],
-          count: 0,
-          pattern,
           cwd: root,
         };
       }
-      return matchEntries(
-        enumeration.entries,
-        compiled.regexes,
-        enumeration.overflow,
-        pattern,
-        root,
-      );
     },
   });
 }

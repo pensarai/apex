@@ -111,7 +111,7 @@ function segmentToRegex(segment: string): string | { error: string } {
       if (close === -1) return { error: "unterminated [ in glob pattern" };
       const cls = classToRegex(segment.slice(i + 1, close));
       if (typeof cls !== "string") return cls;
-      out += cls;
+      out += `(?!/)${cls}`;
       i = close;
       continue;
     }
@@ -121,9 +121,7 @@ function segmentToRegex(segment: string): string | { error: string } {
     }
     out += escapeLiteral(ch);
   }
-  return startsWithWildcard
-    ? out.replace(/^(\[\^\/\]\*|\[\^\/\]|\[)/, "(?!\\.)$1")
-    : out;
+  return startsWithWildcard ? `(?!\\.)${out}` : out;
 }
 
 function variantToRegex(variant: string): RegExp | { error: string } {

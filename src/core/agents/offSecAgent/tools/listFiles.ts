@@ -49,11 +49,13 @@ const MAX_NON_RECURSIVE = 500;
 async function listRecursive(
   dir: string,
   maxEntries: number,
+  signal?: AbortSignal,
 ): Promise<{ paths: string[]; total: number }> {
   const results: string[] = [];
   let total = 0;
 
   async function walk(current: string) {
+    signal?.throwIfAborted();
     let entries: import("fs").Dirent[];
     try {
       entries = await readdir(current, { withFileTypes: true });
@@ -61,6 +63,7 @@ async function listRecursive(
       return;
     }
     for (const entry of entries) {
+      signal?.throwIfAborted();
       total++;
       const fullPath = join(current, entry.name);
       if (entry.isDirectory()) {
@@ -114,8 +117,11 @@ Each directory entry is suffixed with "/" for easy identification.`,
       }
 
       try {
+        ctx.abortSignal?.throwIfAborted();
         if (ctx.sandbox) {
-          return await listSandbox(ctx.sandbox, dir, recursive);
+          const result = await listSandbox(ctx.sandbox, dir, recursive);
+          ctx.abortSignal?.throwIfAborted();
+          return result;
         }
         const info = await stat(dir);
         if (!info.isDirectory()) {
@@ -129,7 +135,11 @@ Each directory entry is suffixed with "/" for easy identification.`,
         }
 
         if (recursive) {
-          const { paths, total } = await listRecursive(dir, MAX_RECURSIVE);
+          const { paths, total } = await listRecursive(
+            dir,
+            MAX_RECURSIVE,
+            ctx.abortSignal,
+          );
           const relPaths = toRelative(dir, paths);
           return {
             success: true,
@@ -145,6 +155,7 @@ Each directory entry is suffixed with "/" for easy identification.`,
         }
 
         const entries = await readdir(dir, { withFileTypes: true });
+        ctx.abortSignal?.throwIfAborted();
         const fullPaths = entries.map((e) => {
           const name = join(dir, e.name);
           return e.isDirectory() ? `${name}/` : name;
