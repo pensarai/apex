@@ -221,6 +221,33 @@ function digest(content: string) {
   return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
+export function validateWorkspaceFileContent(content: string): void {
+  const bytes = Buffer.from(content, "utf8");
+  if (bytes.length > MAX_FILE_BYTES)
+    throw new Error(`Text mutation limit is ${MAX_FILE_BYTES} bytes`);
+  decodeText(bytes);
+}
+
+export async function assertWorkspaceFileAbsent(
+  ctx: ToolContext,
+  file: string,
+): Promise<void> {
+  ctx.abortSignal?.throwIfAborted();
+  if (ctx.sandbox) {
+    await remoteFileOperation(ctx, { action: "assert_absent", path: file });
+    return;
+  }
+  const target = await scopedLocal(ctx, file);
+  const exists = await lstat(target).then(
+    () => true,
+    (error: unknown) => {
+      if (!isMissing(error)) throw error;
+      return false;
+    },
+  );
+  if (exists) throw new Error(`File already exists: ${target}`);
+}
+
 export async function writeWorkspaceFile(
   ctx: ToolContext,
   file: string,
@@ -228,9 +255,7 @@ export async function writeWorkspaceFile(
   options: { expected?: string | null } = {},
 ): Promise<void> {
   const bytes = Buffer.from(content, "utf8");
-  if (bytes.length > MAX_FILE_BYTES)
-    throw new Error(`Text mutation limit is ${MAX_FILE_BYTES} bytes`);
-  decodeText(bytes);
+  validateWorkspaceFileContent(content);
   await withWorkspaceFileLock(ctx, file, async () => {
     if (ctx.sandbox) {
       await remoteFileOperation(ctx, {
