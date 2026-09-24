@@ -228,26 +228,6 @@ export function validateWorkspaceFileContent(content: string): void {
   decodeText(bytes);
 }
 
-export async function assertWorkspaceFileAbsent(
-  ctx: ToolContext,
-  file: string,
-): Promise<void> {
-  ctx.abortSignal?.throwIfAborted();
-  if (ctx.sandbox) {
-    await remoteFileOperation(ctx, { action: "assert_absent", path: file });
-    return;
-  }
-  const target = await scopedLocal(ctx, file);
-  const exists = await lstat(target).then(
-    () => true,
-    (error: unknown) => {
-      if (!isMissing(error)) throw error;
-      return false;
-    },
-  );
-  if (exists) throw new Error(`File already exists: ${target}`);
-}
-
 export async function writeWorkspaceFile(
   ctx: ToolContext,
   file: string,
