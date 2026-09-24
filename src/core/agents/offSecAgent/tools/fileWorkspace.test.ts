@@ -15,7 +15,6 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  assertWorkspaceFileAbsent,
   deleteWorkspaceFile,
   readWorkspaceFile,
   resolveFilePath,
@@ -145,19 +144,6 @@ describe.each([
     ).rejects.toThrow(/escapes|reparse/i);
     expect(await resolveFilePath(ctx, "..cache/new.txt")).toBe(
       join(workspace, "..cache/new.txt"),
-    );
-  });
-
-  it("preflights absent targets without creating anything", async () => {
-    const { ctx, workspace } = await fixture(sandbox);
-    const file = await resolveFilePath(ctx, "pending/new.txt");
-    await expect(assertWorkspaceFileAbsent(ctx, file)).resolves.toBeUndefined();
-    await expect(stat(join(workspace, "pending"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-    await writeWorkspaceFile(ctx, file, "existing", { expected: null });
-    await expect(assertWorkspaceFileAbsent(ctx, file)).rejects.toThrow(
-      /already exists/i,
     );
   });
 

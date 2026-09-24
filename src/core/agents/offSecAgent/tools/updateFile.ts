@@ -13,9 +13,13 @@ const updateFileInputSchema = z.object({
     .string()
     .min(1)
     .describe(
-      "Exact nonempty text to replace; include enough context for a unique match",
+      "Nonempty text to replace; include unique context. LF is adapted to CRLF in uniformly CRLF files",
     ),
-  newContent: z.string().describe("Literal replacement text"),
+  newContent: z
+    .string()
+    .describe(
+      "Literal replacement text, with LF adapted to CRLF in uniformly CRLF files",
+    ),
   replaceAll: z
     .boolean()
     .optional()
@@ -36,13 +40,15 @@ export type UpdateFileResult = {
 
 export function updateFile(ctx: ToolContext) {
   return tool({
-    description: `Replace exact text in a UTF-8 file in the agent's file workspace and runtime.
+    description: `Replace exact text in a UTF-8 file in the agent's runtime.
+Relative paths use the configured file workspace, otherwise the working directory.
+A configured file workspace confines all paths; otherwise absolute paths are allowed.
 The default requires a unique match. Ambiguous or empty searches change nothing:
 read the relevant lines and include more context, or explicitly set replaceAll.
 Replacement text is literal. For uniformly CRLF files, LF input is converted to
 CRLF; untouched content and BOM are preserved. Mixed line endings require an
 exact match. If the file changes while preparing the edit, re-read and retry.
-Maximum file size: 1 MiB.`,
+An unchanged replacement succeeds with zero replacements. Maximum file size: 1 MiB.`,
     inputSchema: updateFileInputSchema,
     execute: async ({
       path,

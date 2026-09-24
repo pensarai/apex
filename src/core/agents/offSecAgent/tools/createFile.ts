@@ -23,7 +23,9 @@ export type CreateFileResult = {
 
 export function createFile(ctx: ToolContext) {
   return tool({
-    description: `Create a UTF-8 text file in the agent's file workspace and runtime.
+    description: `Create a UTF-8 text file in the agent's runtime.
+Relative paths use the configured file workspace, otherwise the working directory.
+A configured file workspace confines all paths; otherwise absolute paths are allowed.
 Parent directories are created as needed. Existing files are preserved unless
 overwrite=true. Concurrent exclusive creation has one winner. Maximum: 1 MiB.
 Use update_file or apply_patch for changes to an existing file.`,
