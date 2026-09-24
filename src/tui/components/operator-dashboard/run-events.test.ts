@@ -390,6 +390,28 @@ describe("createDisplayEventHandlers", () => {
       display.dispose();
     });
 
+    it("preserves newline-leading fragments across scheduled flush boundaries", () => {
+      const recording = createRecordingSink();
+      const display = createDisplayEventHandlers(recording.sink);
+      display.onToolCallStart({ toolCallId: "tc-1", toolName: "t" });
+
+      for (const [atMs, data] of [
+        [0, "x"],
+        [170, "a"],
+        [310, "b"],
+        [350, "\nc"],
+      ] as const) {
+        vi.advanceTimersByTime(atMs - Date.now());
+        display.onCommandOutput({ data });
+      }
+      vi.advanceTimersByTime(150);
+
+      expect(recording.getMessages()[0].logs).toEqual(["xab", "c"]);
+      expect(recording.sink.updateMessages).toHaveBeenCalledTimes(4);
+      expect(vi.getTimerCount()).toBe(0);
+      display.dispose();
+    });
+
     it("manual flush cancels the scheduled flush and a later burst gets its own deadline", () => {
       const recording = createRecordingSink();
       const display = createDisplayEventHandlers(recording.sink);

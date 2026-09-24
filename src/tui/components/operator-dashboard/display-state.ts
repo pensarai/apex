@@ -117,9 +117,9 @@ export function mergeCommandOutput(
   const msg = messages[idx];
   const existing = msg.logs ?? [];
   const incoming = buf.split("\n");
-  // If last existing line was partial (no trailing newline), merge it
+  // The last entry is the current line, including an empty one after a newline.
   let merged: string[];
-  if (existing.length > 0 && !buf.startsWith("\n")) {
+  if (existing.length > 0) {
     merged = [...existing];
     merged[merged.length - 1] += incoming[0];
     merged.push(...incoming.slice(1));

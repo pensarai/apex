@@ -295,11 +295,45 @@ describe("mergeCommandOutput", () => {
     expect(result[0].logs).toEqual(["partial continued", "next"]);
   });
 
-  it("does not merge the last line when the buffer starts with a newline", () => {
+  it("ends the last line without adding a blank when the buffer starts with a newline", () => {
     const withLine: DisplayMessage = { ...pendingTool, logs: ["complete"] };
     const result = mergeCommandOutput([withLine], "\nnext");
 
-    expect(result[0].logs).toEqual(["complete", "", "next"]);
+    expect(result[0].logs).toEqual(["complete", "next"]);
+  });
+
+  it.each([
+    0,
+    MAX_LOG_LINES,
+    MAX_LOG_LINES + 1,
+  ])("matches concatenated output for every chunk split with %i initial lines", (initialLines) => {
+    const prefix = Array.from(
+      { length: initialLines },
+      (_, i) => `line-${i}`,
+    ).join("\n");
+    const initial = prefix
+      ? mergeCommandOutput([pendingTool], prefix)
+      : [pendingTool];
+
+    for (const text of ["", "\n", "\n\n", "ab", "xab\nc", "\na\n\nb\n"]) {
+      const expected = (prefix + text).split("\n").slice(-MAX_LOG_LINES);
+      for (let cuts = 0; cuts < 2 ** Math.max(0, text.length - 1); cuts++) {
+        let messages = initial;
+        let start = 0;
+        // Each bit selects a character boundary at which a flush splits the text.
+        for (let end = 1; end < text.length; end++) {
+          if (cuts & (1 << (end - 1))) {
+            messages = mergeCommandOutput(messages, text.slice(start, end));
+            start = end;
+          }
+        }
+        messages = mergeCommandOutput(messages, text.slice(start));
+
+        expect(messages[0].logs, JSON.stringify({ text, cuts })).toEqual(
+          expected,
+        );
+      }
+    }
   });
 
   it("returns the input unchanged when no tool is active", () => {
