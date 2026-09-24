@@ -2,6 +2,8 @@ import { execSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createOpenAI } from "@ai-sdk/openai";
+import { generateText } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
@@ -99,6 +101,96 @@ afterEach(() => {
 });
 
 describe("readFile healthy paths", () => {
+  it.each([
+    {
+      name: "line window with inactive byte fields",
+      paging: { startLine: 2, endLine: 3, byteOffset: null, byteCount: null },
+      content: "     2|beta\n     3|gamma",
+      success: true,
+    },
+    {
+      name: "byte window with inactive line fields",
+      paging: { startLine: null, endLine: null, byteOffset: 0, byteCount: 5 },
+      content: "alpha",
+      success: true,
+    },
+    {
+      name: "default read with all paging fields null",
+      paging: {
+        startLine: null,
+        endLine: null,
+        byteOffset: null,
+        byteCount: null,
+      },
+      content: "     1|alpha\n     2|beta\n     3|gamma",
+      success: true,
+    },
+    {
+      name: "default read with omitted paging fields",
+      paging: {},
+      content: "     1|alpha\n     2|beta\n     3|gamma",
+      success: true,
+    },
+    {
+      name: "rejects conflicting numeric bounds from a failed smoke read",
+      paging: { startLine: 1, endLine: 260, byteOffset: 0, byteCount: 1 },
+      content: "",
+      success: false,
+    },
+  ])("executes Responses tool calls: $name", async ({
+    paging,
+    content,
+    success,
+  }) => {
+    const dir = scratchDir();
+    writeFileSync(join(dir, "sample.txt"), "alpha\nbeta\ngamma");
+    const input = {
+      path: "sample.txt",
+      ...paging,
+      toolCallDescription: "Read sample",
+    };
+    const fetchMock = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      const schema = body.tools[0].parameters;
+      // Responses can require every property, so inactive fields must allow null.
+      for (const field of ["startLine", "endLine", "byteOffset", "byteCount"]) {
+        expect(schema.properties[field].anyOf).toContainEqual({ type: "null" });
+      }
+      return new Response(
+        JSON.stringify({
+          id: "resp_read",
+          created_at: 1,
+          model: "gpt-5.6-sol",
+          output: [
+            {
+              type: "function_call",
+              id: "fc_read",
+              call_id: "call_read",
+              name: "read_file",
+              arguments: JSON.stringify(input),
+            },
+          ],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    });
+    const result = await generateText({
+      model: createOpenAI({
+        apiKey: "test-key",
+        fetch: Object.assign(fetchMock, { preconnect: vi.fn() }),
+      }).responses("gpt-5.6-sol"),
+      tools: { read_file: readFile(makeCtx({ agentCwd: dir })) },
+      prompt: "Read sample.txt",
+      maxRetries: 0,
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(result.toolResults[0]?.output).toMatchObject({
+      success,
+      content,
+    });
+  });
+
   it("returns the numbered format with split-semantics line counts", async () => {
     const dir = scratchDir();
     const file = join(dir, "notes.txt");
