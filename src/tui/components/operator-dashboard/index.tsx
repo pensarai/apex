@@ -95,7 +95,10 @@ import {
   recoverAbortedTranscript,
   rewriteToolResultOutput,
 } from "./conversation";
-import { markInFlightToolsErrored } from "./display-state";
+import {
+  createDisplayMessageUpdater,
+  markInFlightToolsErrored,
+} from "./display-state";
 import {
   buildOperatorSystemPrompt,
   type DashboardStatus,
@@ -284,12 +287,12 @@ export default function OperatorDashboard({
   }, [replaceDialog, subagentStore]);
 
   // Messages — same pattern as pentest component
-  const [messages, setMessages] = useState<DisplayMessage[]>([]);
-  // Mirror of `messages` as a ref so handleAbort can read the current display
-  // messages synchronously (React state isn't accessible inside event handlers
-  // without a ref).
-  const displayMessagesRef = useRef<DisplayMessage[]>([]);
-  displayMessagesRef.current = messages;
+  const [messages, setRenderedMessages] = useState<DisplayMessage[]>([]);
+  const displayMessagesRef = useRef<DisplayMessage[]>(messages);
+  const setMessages = useMemo(
+    () => createDisplayMessageUpdater(displayMessagesRef, setRenderedMessages),
+    [],
+  );
   // AI SDK conversation history for multi-turn continuity
   const conversationRef = useRef<ModelMessage[]>([]);
   // Input state
@@ -513,6 +516,7 @@ export default function OperatorDashboard({
     subagentStore.setState,
     initialConfig?.operatorMode,
     setSessionCwd,
+    setMessages,
   ]);
 
   useEffect(() => {
@@ -563,15 +567,18 @@ export default function OperatorDashboard({
         setThinking,
         setError,
       }),
-    [setThinking],
+    [setThinking, setMessages],
   );
 
-  // Clean up the command-output flush timer when the component unmounts
   useEffect(() => {
     return () => {
+      // Invalidate ingress before disposal so late events cannot rearm UI timers.
+      generationRef.current++;
       displayEvents.dispose();
+      setThinking(false);
+      setIsExecuting(false);
     };
-  }, [displayEvents]);
+  }, [displayEvents, setThinking, setIsExecuting]);
 
   // ---------------------------------------------------------------------------
   // Run event projections — subagent routing, questions interception, and
@@ -583,7 +590,7 @@ export default function OperatorDashboard({
     (updater: (wd: WorkflowData) => WorkflowData) => {
       setMessages((prev) => updateWorkflowDataMessage(prev, updater));
     },
-    [],
+    [setMessages],
   );
 
   const runEventProjections = useMemo(
@@ -648,13 +655,14 @@ export default function OperatorDashboard({
 
   const runAgent = useCallback(
     async (prompt: string | null) => {
+      const gen = ++generationRef.current;
+      displayEvents.finish();
       // Abort any previous run before starting a new one
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
       }
 
-      const gen = ++generationRef.current;
       runSessionIdRef.current = sessionRef.current?.id ?? session?.id ?? null;
 
       setStatus("running");
@@ -939,6 +947,7 @@ export default function OperatorDashboard({
         }
       } catch (e) {
         if (gen !== generationRef.current) return;
+        displayEvents.finish();
         if ((e as Error).name !== "AbortError") {
           // Roll back the eagerly-appended user message so the conversation
           // state stays clean.  Without this, a schema validation failure
@@ -974,6 +983,7 @@ export default function OperatorDashboard({
         // Detach run-event listeners on all paths (abort, error, success) —
         // post-run stragglers must not mutate display state.
         unbindRunEvents();
+        if (gen === generationRef.current) displayEvents.finish();
         // Detach trace listeners and flush the uploader on all paths
         // (abort, error, success).
         await runTrace.cleanupRun();
@@ -1000,6 +1010,7 @@ export default function OperatorDashboard({
       agentMode,
       displayEvents,
       runEventProjections,
+      setMessages,
       setThinking,
       setIsExecuting,
       initialConfig?.sandbox,
@@ -1181,12 +1192,15 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
     runAgentRef.current("Proceed with the approved plan.");
   }, [operatorMode]);
 
-  const addSystemMessage = useCallback((content: string) => {
-    setMessages((prev) => [
-      ...prev,
-      { role: "system" as const, content, createdAt: new Date() },
-    ]);
-  }, []);
+  const addSystemMessage = useCallback(
+    (content: string) => {
+      setMessages((prev) => [
+        ...prev,
+        { role: "system" as const, content, createdAt: new Date() },
+      ]);
+    },
+    [setMessages],
+  );
 
   const showModelPicker = useCallback(() => {
     executeCommand("/models");
@@ -1398,6 +1412,8 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
 
     // Kill the agent
     generationRef.current++;
+    displayEvents.finish();
+    const recoveryMessages = displayMessagesRef.current;
     abortControllerRef.current.abort();
     abortControllerRef.current = null;
     commandCancelledRef.current = false;
@@ -1432,7 +1448,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         rootPath: activeSession.rootPath,
         conversation: conversationRef.current,
         partialText: displayEvents.getPartialText(),
-        displayMessages: displayMessagesRef.current,
+        displayMessages: recoveryMessages,
       });
     }
 
@@ -1451,7 +1467,13 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         },
       ];
     });
-  }, [setThinking, setIsExecuting, subagentStore.setState, displayEvents]);
+  }, [
+    setThinking,
+    setIsExecuting,
+    subagentStore.setState,
+    displayEvents,
+    setMessages,
+  ]);
 
   const resumeWithQuestionResult = useCallback(
     (result: AskUserQuestionsResult) => {
@@ -1587,8 +1609,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
           setQueuedMessages((prev) => prev.filter((_, i) => i !== removeIdx));
           setSelectedQueueIndex(-1);
 
-          displayEvents.flushCommandOutput();
-          displayEvents.stopCommandOutputFlush();
+          displayEvents.finish();
           setMessages((prev) =>
             prev.map((m) =>
               isToolMessage(m) && m.status === "pending"
@@ -1772,7 +1793,7 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
         planContent,
       },
     ]);
-  }, [showPlanReview]);
+  }, [showPlanReview, setMessages]);
 
   // Loading state
   if (loading) {

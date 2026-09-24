@@ -75,3 +75,31 @@ output, swarm subscriptions, cancellation/restart, session restoration, and a
 separate real-launch/PTY probe. Keep screenshots and profiles synthetic. Expand
 coverage before claiming those journeys are measured; this fixture does not
 cover them yet.
+
+## Tool-argument projection
+
+```sh
+bun run test src/tui/components/operator-dashboard/tool-arguments.perf.test.ts
+```
+
+This adapter-level replay exercises 282 64-character JSON fragments per tool over
+a 1,000-message history. It covers synchronous bursts, 4 ms chunk intervals for
+one/eight concurrent root tools, and a sparse 40 ms control. Five trials report
+actual partial-parser calls, input characters processed, display-sink updates,
+process CPU, and wall-clock work duration. Event time is virtual; CPU and work
+duration are real. Timing includes fake-clock and spy overhead, excludes module
+loading, and is not stream latency or rendering performance. CI asserts exact
+work counts, final authoritative arguments, and no pending timers, not timing.
+
+Root argument previews coalesce on a 33 ms timer; additional chunks do not move
+its deadline. Final arguments and results remain immediate. Run settlement,
+replacement, and full interruption publish pending previews before changing
+terminal state; unmount discards them. The message writer updates the recovery
+snapshot synchronously rather than waiting for React to commit. Text deltas,
+subagent argument streams, canonical model messages, and tool execution are not
+throttled. Slow or blocked event loops can exceed the scheduled 33 ms delay.
+
+Use the benchmark-only commit preceding the optimization for an unchanged-source
+baseline. Keep absolute values, reduction percentages, slow-stream controls, and
+all timing regressions in the PR. Parser-input characters count repeated prefixes,
+not network traffic or bytes retained in memory.

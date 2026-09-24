@@ -5,6 +5,20 @@ import { isToolMessage } from "../shared/type-guards";
 /** Cap on retained command-output lines per tool message. */
 export const MAX_LOG_LINES = 200;
 
+export function createDisplayMessageUpdater(
+  snapshot: { current: DisplayMessage[] },
+  publish: (messages: DisplayMessage[]) => void,
+) {
+  return (
+    next: DisplayMessage[] | ((previous: DisplayMessage[]) => DisplayMessage[]),
+  ) => {
+    // Abort recovery must see the same snapshot before React's next commit.
+    snapshot.current =
+      typeof next === "function" ? next(snapshot.current) : next;
+    publish(snapshot.current);
+  };
+}
+
 export function appendStreamedText(
   messages: readonly DisplayMessage[],
   accumulated: string,

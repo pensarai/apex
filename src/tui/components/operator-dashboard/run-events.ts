@@ -146,11 +146,15 @@ export interface DisplayEventAdapter {
   flushCommandOutput(): void;
   /** Stop the flush timer without flushing or discarding buffered output. */
   stopCommandOutputFlush(): void;
-  /** Clear the flush timer and discard buffered output (unmount). */
+  /** Publish pending previews/output before settling or replacing the run. */
+  finish(): void;
+  /** Discard pending previews/output without publishing (unmount). */
   dispose(): void;
 }
 
 const COMMAND_OUTPUT_FLUSH_MS = 150;
+// Partial previews need at most one publication per 30 Hz display frame.
+const TOOL_ARGS_FLUSH_MS = 33;
 
 /**
  * Root display projections with their accumulation state: the partial text
@@ -162,7 +166,11 @@ export function createDisplayEventHandlers(
   sink: DisplayEventSink,
 ): DisplayEventAdapter {
   let partialText = "";
-  const toolArgsDeltas = new Map<string, { accumulated: string }>();
+  const toolArgsDeltas = new Map<
+    string,
+    { accumulated: string; dirty: boolean }
+  >();
+  let argsTimer: ReturnType<typeof setTimeout> | null = null;
   let commandOutputBuf = "";
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -181,6 +189,37 @@ export function createDisplayEventHandlers(
     }
   };
 
+  const stopArgsTimer = (): void => {
+    if (argsTimer !== null) clearTimeout(argsTimer);
+    argsTimer = null;
+  };
+
+  const flushToolArgs = (): void => {
+    stopArgsTimer();
+    for (const [toolCallId, entry] of toolArgsDeltas) {
+      if (!entry.dirty) continue;
+      entry.dirty = false;
+      const parsed = tryParsePartialJson(entry.accumulated);
+      if (parsed) {
+        sink.updateMessages((messages) =>
+          applyToolCallDelta(messages, toolCallId, parsed),
+        );
+      }
+    }
+  };
+
+  const finishToolArgs = (toolCallId: string): void => {
+    toolArgsDeltas.delete(toolCallId);
+    if (![...toolArgsDeltas.values()].some((entry) => entry.dirty))
+      stopArgsTimer();
+  };
+
+  const finish = (): void => {
+    flushToolArgs();
+    toolArgsDeltas.clear();
+    flushCommandOutput();
+  };
+
   return {
     onTextDelta(e) {
       sink.setThinking(false);
@@ -193,27 +232,23 @@ export function createDisplayEventHandlers(
     onToolCallStart(e) {
       sink.setThinking(false);
       partialText = "";
-      toolArgsDeltas.set(e.toolCallId, { accumulated: "" });
+      toolArgsDeltas.set(e.toolCallId, { accumulated: "", dirty: false });
       sink.updateMessages((messages) =>
         startStreamingToolCall(messages, e.toolCallId, e.toolName),
       );
     },
     onToolCallDelta(e) {
       const entry = toolArgsDeltas.get(e.toolCallId);
-      const accumulated = (entry?.accumulated ?? "") + e.argsTextDelta;
-      toolArgsDeltas.set(e.toolCallId, { accumulated });
-
-      const parsed = tryParsePartialJson(accumulated);
-      if (!parsed) return;
-
-      sink.updateMessages((messages) =>
-        applyToolCallDelta(messages, e.toolCallId, parsed),
-      );
+      if (!entry || !e.argsTextDelta) return;
+      entry.accumulated += e.argsTextDelta;
+      entry.dirty = true;
+      if (argsTimer === null)
+        argsTimer = setTimeout(flushToolArgs, TOOL_ARGS_FLUSH_MS);
     },
     onToolCallComplete(e) {
       sink.setThinking(false);
       partialText = "";
-      toolArgsDeltas.delete(e.toolCallId);
+      finishToolArgs(e.toolCallId);
       const args =
         e.args &&
         typeof e.args === "object" &&
@@ -226,6 +261,8 @@ export function createDisplayEventHandlers(
       );
     },
     onToolResult(e) {
+      if (toolArgsDeltas.has(e.toolCallId)) flushToolArgs();
+      finishToolArgs(e.toolCallId);
       flushCommandOutput();
       sink.setThinking(true);
       partialText = "";
@@ -241,7 +278,7 @@ export function createDisplayEventHandlers(
       }
     },
     onError(e) {
-      flushCommandOutput();
+      finish();
       console.error("Agent error:", e.error);
       const errorMessage =
         e.error instanceof Error ? e.error.message : "Unknown error";
@@ -258,7 +295,10 @@ export function createDisplayEventHandlers(
     },
     flushCommandOutput,
     stopCommandOutputFlush,
+    finish,
     dispose() {
+      stopArgsTimer();
+      toolArgsDeltas.clear();
       stopCommandOutputFlush();
       commandOutputBuf = "";
     },

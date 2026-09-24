@@ -83,7 +83,11 @@ it.each([
         ),
         displayUpdates,
       };
-      expect(metrics.parserCalls).toBe(chunks.length * tools);
+      const batches =
+        intervalMs === 0
+          ? 0
+          : Math.floor((chunks.length - 1) / Math.ceil(33 / intervalMs));
+      expect(metrics.parserCalls).toBe(batches * tools);
       expect(metrics.displayUpdates).toBe(metrics.parserCalls + tools);
       for (let tool = 0; tool < tools; tool++) {
         expect(messages[1000 + tool]).toMatchObject({
