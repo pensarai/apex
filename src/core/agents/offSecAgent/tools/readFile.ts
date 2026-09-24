@@ -30,28 +30,32 @@ const readFileInputSchema = z.object({
     ),
   startLine: z
     .number()
-    .optional()
-    .describe("1-based line number to start reading from (inclusive)"),
+    .nullish()
+    .describe(
+      "1-based start line (inclusive). Omit or set null for byte mode or the beginning of the file.",
+    ),
   endLine: z
     .number()
-    .optional()
-    .describe("1-based line number to stop reading at (inclusive)"),
+    .nullish()
+    .describe(
+      "1-based end line (inclusive). Omit or set null for byte mode or the end of the file.",
+    ),
   byteOffset: z
     .number()
     .int()
     .min(0)
-    .optional()
+    .nullish()
     .describe(
-      "Read a raw byte window starting at this 0-based UTF-8 codepoint-aligned offset instead of lines. Use for minified single-line files where line paging cannot split the content.",
+      "0-based UTF-8 codepoint-aligned byte offset, paired with byteCount. Omit or set null for line reads. Use byte mode for minified single-line files; startLine and endLine must be omitted or null.",
     ),
   byteCount: z
     .number()
     .int()
     .min(1)
     .max(MAX_BYTE_WINDOW)
-    .optional()
+    .nullish()
     .describe(
-      `Bytes to read from byteOffset (max ${MAX_BYTE_WINDOW}). Requires byteOffset.`,
+      `Bytes to read from byteOffset (max ${MAX_BYTE_WINDOW}). Requires byteOffset. Omit or set null for line reads.`,
     ),
   toolCallDescription: z
     .string()
@@ -90,6 +94,10 @@ export function readFile(ctx: ToolContext) {
 You can read the entire file or specify a line range using startLine / endLine
 (both 1-based, inclusive). If only startLine is given, reads from that line to
 the end. If only endLine is given, reads from the beginning to that line.
+Choose one paging mode: omit or set byteOffset and byteCount to null for line
+reads; omit or set startLine and endLine to null for byte reads. Never fill
+inactive fields with placeholder numbers. Omit or set all four to null to
+read from the beginning using the default bounded line reader.
 
 Output lines are prefixed with their line number for easy reference. Reads are
 bounded: a huge file returns a window plus truncation metadata instead of
@@ -99,13 +107,13 @@ byteOffset / byteCount for the dropped bytes). Byte windows must start on a
 UTF-8 codepoint boundary and never split one: stoppedAtByte is the exact
 resume cursor.`,
     inputSchema: readFileInputSchema,
-    execute: async ({
-      path,
-      startLine,
-      endLine,
-      byteOffset,
-      byteCount,
-    }): Promise<ReadFileResult> => {
+    execute: async (input): Promise<ReadFileResult> => {
+      const { path } = input;
+      // Strict providers require every field; null represents an unused bound.
+      const startLine = input.startLine ?? undefined;
+      const endLine = input.endLine ?? undefined;
+      const byteOffset = input.byteOffset ?? undefined;
+      const byteCount = input.byteCount ?? undefined;
       if (ctx.abortSignal?.aborted) {
         return {
           success: false,
@@ -146,7 +154,7 @@ resume cursor.`,
         return {
           success: false,
           error:
-            "byteOffset/byteCount cannot be combined with startLine/endLine",
+            "byteOffset/byteCount cannot be combined with startLine/endLine. For line reads, omit byteOffset and byteCount or set both to null. For byte reads, omit startLine and endLine or set both to null.",
           content: "",
           path,
         };
