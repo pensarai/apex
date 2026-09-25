@@ -34,6 +34,7 @@ export type AiTelemetryOperation =
 export interface CreateAiTelemetryInput {
   operation: AiTelemetryOperation;
   sessionId?: string;
+  compaction?: { traceId: string; spanId: string };
 }
 
 /**
@@ -51,6 +52,12 @@ export function createAiTelemetrySettings(
   const recordPayloads = shouldRecordAiPayloads();
   const metadata: Record<string, string> = {};
   if (input.sessionId) metadata.sessionId = input.sessionId;
+  if (input.operation === "apex.agent.stream")
+    metadata.compactionTelemetryVersion = "1";
+  if (input.compaction) {
+    metadata.compactionTraceId = input.compaction.traceId;
+    metadata.compactionSpanId = input.compaction.spanId;
+  }
   return {
     isEnabled: true,
     recordInputs: recordPayloads,
