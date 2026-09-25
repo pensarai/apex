@@ -103,3 +103,32 @@ Use the benchmark-only commit preceding the optimization for an unchanged-source
 baseline. Keep absolute values, reduction percentages, slow-stream controls, and
 all timing regressions in the PR. Parser-input characters count repeated prefixes,
 not network traffic or bytes retained in memory.
+
+## Swarm count subscriptions
+
+```sh
+bun --no-env-file scripts/tui-performance/swarm-counts.ts full
+bun --no-env-file scripts/tui-performance/swarm-counts.ts counts
+bun run test:tui
+```
+
+The benchmark-only commit before this optimization supports `full` to reproduce
+the unchanged store subscription. The candidate supports both modes, replaying the
+same production store/session helpers for 1, 8, and 32 agents. Each agent receives
+100 text deltas, 20 tool-argument deltas, and tool start/finalization/result events.
+Spawn, completion, failure, interruption, and clear exercise lifecycle delivery.
+The replay asserts exact live text, arguments, results, and final statuses.
+
+Report dashboard subscriber callbacks by lifecycle and stream phase, not inferred
+React renders. Total callbacks fall from 126/1,001/4,001 to 3/17/65 for the three
+workloads (97.62%/98.30%/98.38% reductions). Lifecycle delivery stays at 3/17/65;
+stream-only count notifications fall to zero. Full-map subscriptions retain every
+notification, keeping the hub/detail views live.
+
+The renderer test mounts the production status bar in a small count-subscribing
+host. It checks that streamed content causes no host renders while lifecycle,
+clear, restore, and main-agent-moved-on changes update visibility and status text.
+It does not mount the full dashboard or test physical-terminal latency. Counts
+still scan each new session map; these results do not establish a CPU, memory, or
+end-to-end latency improvement. Count callbacks invalidate a snapshot and are not
+an exactly-once lifecycle event log.

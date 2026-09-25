@@ -10,42 +10,29 @@
 import { memo } from "react";
 import { useTheme } from "../../theme";
 import { AsciiSpinner } from "../shared";
-import type { SubagentSession } from "./subagent-state";
+import type { SubagentCounts } from "./subagent-state";
 
 interface SubagentStatusBarProps {
-  sessions: Map<string, SubagentSession>;
+  counts: SubagentCounts;
   /** Whether the main agent has produced new messages since subagents finished */
   agentMovedOn: boolean;
   onOpen: () => void;
 }
 
 export const SubagentStatusBar = memo(function SubagentStatusBar({
-  sessions,
+  counts,
   agentMovedOn,
   onOpen,
 }: SubagentStatusBarProps) {
   const { colors } = useTheme();
 
-  if (sessions.size === 0) return null;
-
-  let running = 0;
-  let completed = 0;
-  let failed = 0;
-  let cancelled = 0;
-
-  for (const session of sessions.values()) {
-    if (session.status === "running") running++;
-    else if (session.status === "completed") completed++;
-    else if (session.status === "failed") failed++;
-    else if (session.status === "cancelled") cancelled++;
-  }
+  const { total, running, completed, failed, cancelled } = counts;
+  if (total === 0) return null;
 
   const allDone = running === 0;
 
   // Hide once the main agent has moved on past the subagent work
   if (allDone && agentMovedOn) return null;
-
-  const total = sessions.size;
 
   const parts: Array<{ label: string; color: typeof colors.warning }> = [];
   if (running > 0)
