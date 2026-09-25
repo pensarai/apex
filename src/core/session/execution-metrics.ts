@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const EXECUTION_METRICS_FILENAME = "execution-metrics.json";
@@ -157,11 +158,10 @@ export function writeExecutionMetrics(
     updatedAt: new Date().toISOString(),
   };
 
-  writeFileSync(
-    metricsPath(input.sessionRootPath),
-    JSON.stringify(next, null, 2),
-    "utf-8",
-  );
+  const path = metricsPath(input.sessionRootPath);
+  const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  writeFileSync(temporaryPath, JSON.stringify(next, null, 2), "utf-8");
+  renameSync(temporaryPath, path);
   writeSessionJsonTokenTotals(input.sessionRootPath, next.tokenUsage);
 
   return next;
