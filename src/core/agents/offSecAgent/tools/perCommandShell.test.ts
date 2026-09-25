@@ -407,9 +407,21 @@ describe("PerCommandShell — termination guarantees", () => {
 
   it("dispose returns a bounded idempotent barrier that awaits the active invocation's settlement", async () => {
     const shell = new PerCommandShell();
-    const pending = shell.execute("printf dispose-hit; sleep 30");
-    // Let the invocation start before disposing.
-    await new Promise((r) => setTimeout(r, 150));
+    let output = "";
+    const pending = shell.execute("printf dispose-hit; sleep 30", {
+      onData: (chunk) => {
+        output += chunk;
+      },
+    });
+    // Process startup can exceed a fixed delay when the full suite is busy.
+    try {
+      await vi.waitFor(() => expect(output).toContain("dispose-hit"), {
+        timeout: 5000,
+      });
+    } catch (error) {
+      await shell.dispose();
+      throw error;
+    }
 
     const barrier = shell.dispose();
     const sameBarrier = shell.dispose();

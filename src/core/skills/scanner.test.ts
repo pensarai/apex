@@ -1,11 +1,32 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { scanSkillRoots } from "./scanner";
 
-const SKILLS_DIR = path.join(os.homedir(), ".pensar", "skills");
+const { userRoot } = await vi.hoisted(async () => {
+  const { mkdtemp } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  return { userRoot: await mkdtemp(join(tmpdir(), "apex-skill-scanner-")) };
+});
+vi.mock("./utils", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./utils")>()),
+  SKILLS_DIR: path.join(userRoot, ".pensar", "skills"),
+  AGENTS_SKILLS_DIR: path.join(userRoot, ".agents", "skills"),
+}));
+
+const SKILLS_DIR = path.join(userRoot, ".pensar", "skills");
 const TEST_PREFIX = "zzscantest-";
+afterAll(() => fs.rm(userRoot, { recursive: true, force: true }));
 
 describe("scanSkillRoots", () => {
   const cleanup: string[] = [];
@@ -130,9 +151,7 @@ describe("scanSkillRoots", () => {
     await fs.mkdir(tmpDir, { recursive: true });
     cleanup.push(tmpDir);
 
-    // Only scan the empty project dir (global skills may exist)
     const entries = await scanSkillRoots({ projectRoot: tmpDir });
-    // Just verify it doesn't crash
-    expect(Array.isArray(entries)).toBe(true);
+    expect(entries).toEqual([]);
   });
 });
