@@ -1,10 +1,13 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const CLI = join(import.meta.dirname, "issues.ts");
 
-// Every case below prints help and exits before any API call, so these stay offline.
+// Cases run through this exit before any API call, so they stay offline.
 function runIssues(args: string[]) {
   const result = spawnSync("bun", [CLI, ...args], { encoding: "utf8" });
   return {
@@ -12,6 +15,52 @@ function runIssues(args: string[]) {
     stdout: result.stdout ?? "",
     stderr: result.stderr ?? "",
   };
+}
+
+// Runs the CLI against a local stand-in for the Console API and returns the one request it sent.
+async function captureRequest(args: string[]) {
+  let request:
+    | { method?: string; url?: string; body: Record<string, unknown> }
+    | undefined;
+  const server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => chunks.push(c));
+    req.on("end", () => {
+      request = {
+        method: req.method,
+        url: req.url,
+        body: JSON.parse(Buffer.concat(chunks).toString("utf-8")),
+      };
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ success: true, issue: {} }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("no port");
+  }
+  const home = mkdtempSync(join(tmpdir(), "pensar-issues-"));
+  try {
+    const status = await new Promise<number | null>((resolve) => {
+      const child = spawn("bun", [CLI, ...args], {
+        env: {
+          ...process.env,
+          HOME: home,
+          PENSAR_API_KEY: "test-key",
+          PENSAR_API_URL: `http://127.0.0.1:${address.port}`,
+        },
+        stdio: "ignore",
+      });
+      child.on("exit", resolve);
+    });
+    expect(status).toBe(0);
+  } finally {
+    server.close();
+    rmSync(home, { recursive: true, force: true });
+  }
+  if (!request) throw new Error("CLI sent no request");
+  return request;
 }
 
 describe("pensar issues CLI", () => {
@@ -44,7 +93,8 @@ describe("pensar issues CLI", () => {
 
     expect(status).toBe(0);
     expect(stdout).toContain("--disposition <value>");
-    expect(stdout).toContain("resolved, wont-fix, out-of-scope");
+    expect(stdout).toContain("resolved, duplicate, wont-fix");
+    expect(stdout).toContain("--duplicate-of <issueId>");
   });
 
   it("rejects a disposition outside the accepted set, naming the set", () => {
@@ -57,7 +107,65 @@ describe("pensar issues CLI", () => {
 
     expect(status).toBe(1);
     expect(stderr).toContain('invalid --disposition "other"');
-    expect(stderr).toContain("resolved, wont-fix, out-of-scope, risk-accepted");
+    expect(stderr).toContain(
+      "resolved, duplicate, wont-fix, out-of-scope, risk-accepted",
+    );
+  });
+
+  it("requires --duplicate-of to close as a duplicate", () => {
+    const { status, stderr } = runIssues([
+      "update",
+      "VULN-000001",
+      "--status",
+      "closed",
+      "--disposition",
+      "duplicate",
+    ]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain(
+      "--disposition duplicate requires --duplicate-of <issueId>",
+    );
+  });
+
+  it.each([
+    [["--status", "closed", "--duplicate-of", "VULN-000002"]],
+    [
+      [
+        "--status",
+        "closed",
+        "--disposition",
+        "resolved",
+        "--duplicate-of",
+        "VULN-000002",
+      ],
+    ],
+  ])("rejects --duplicate-of without the duplicate disposition (%j)", (flags) => {
+    const { status, stderr } = runIssues(["update", "VULN-000001", ...flags]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain("--duplicate-of requires --disposition duplicate");
+  });
+
+  it("sends the original as duplicateOf on a duplicate close", async () => {
+    const request = await captureRequest([
+      "update",
+      "VULN-000001",
+      "--status",
+      "closed",
+      "--disposition",
+      "duplicate",
+      "--duplicate-of",
+      "VULN-000002",
+    ]);
+
+    expect(request.method).toBe("PATCH");
+    expect(request.url).toBe("/issues/VULN-000001");
+    expect(request.body).toEqual({
+      status: "closed",
+      closedDisposition: "duplicate",
+      duplicateOf: "VULN-000002",
+    });
   });
 
   it("prints help for `-h` on a subcommand", () => {
