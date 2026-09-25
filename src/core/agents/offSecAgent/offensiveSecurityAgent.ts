@@ -10,7 +10,11 @@ import type {
   ToolChoice,
   ToolSet,
 } from "ai";
-import { resolveModelRuntimeProfile, streamResponse } from "../../ai";
+import {
+  requiresAutoToolChoice,
+  resolveModelRuntimeProfile,
+  streamResponse,
+} from "../../ai";
 import { validateLatestCompactionArchive } from "../../ai/contextCompaction";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
 import {
@@ -208,7 +212,9 @@ function envEnabled(value: string | undefined): boolean {
 export function resolveAgentToolChoice(
   requested: ToolChoice<ToolSet> | undefined,
   hasResponseTool: boolean,
+  model?: string,
 ): ToolChoice<ToolSet> {
+  if (model && requiresAutoToolChoice(model)) return "auto";
   if (requested && requested !== "auto") return requested;
   if (
     hasResponseTool &&
@@ -533,6 +539,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         : undefined,
       sandbox,
       findingsRegistry: input.findingsRegistry,
+      engagementTargetIds: input.engagementTargetIds
+        ? new Set(input.engagementTargetIds)
+        : undefined,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
       secretValues: input.secretValues,
@@ -824,6 +833,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     const resolvedToolChoice = resolveAgentToolChoice(
       input.toolChoice,
       tools[RESPONSE_TOOL_NAME] !== undefined,
+      input.model,
     );
     this.createStream = () =>
       streamResponse({

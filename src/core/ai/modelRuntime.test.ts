@@ -15,8 +15,11 @@ describe("resolveModelRuntimeProfile", () => {
     ).toBe("schema-code");
   });
 
-  it("uses schema code mode for GLM-5.2 on OpenRouter", () => {
+  it("uses schema code mode for GLM-5 models on OpenRouter", () => {
     expect(resolveModelRuntimeProfile("z-ai/glm-5.2").protocol).toBe(
+      "schema-code",
+    );
+    expect(resolveModelRuntimeProfile("z-ai/glm-5.3").protocol).toBe(
       "schema-code",
     );
   });

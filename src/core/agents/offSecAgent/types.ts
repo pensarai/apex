@@ -54,6 +54,8 @@ export const ApexFindingObject = z.object({
   impact: z.string(),
   evidence: z.string(),
   endpoint: z.string(),
+  /** Host-owned scope target that produced this finding. */
+  sourceTargetId: z.string().optional(),
   pocPath: z.string(),
   remediation: z.string(),
   references: z.string().optional(),
@@ -201,6 +203,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * When present, `document_vulnerability` checks for duplicates before writing.
    */
   findingsRegistry?: FindingsRegistry;
+
+  /** When present, findings must identify one of these host-owned scope targets. */
+  engagementTargetIds?: readonly string[];
 
   /**
    * Shared attack surface registry for cross-agent asset dedup.
@@ -491,6 +496,18 @@ export interface SpecializedAgentInput {
    * pentests can each run headed on their own virtual desktop.
    */
   display?: string;
+
+  /** Model-facing tool protocol inherited by specialized workers. */
+  toolProtocol?: AgentToolProtocolPreference;
+
+  /** Workflow-specific tools inherited by specialized workers. */
+  extraTools?: ToolSet;
+
+  /** Workflow tools that stay directly visible when code mode is active. */
+  directTools?: string[];
+
+  /** When present, findings must identify one of these host-owned scope targets. */
+  engagementTargetIds?: readonly string[];
 }
 
 /**

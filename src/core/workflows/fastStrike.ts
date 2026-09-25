@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ModelMessage, ToolSet } from "ai";
 import { z } from "zod";
 import {
   type Finding,
@@ -261,6 +262,8 @@ export interface FastStrikeObjectiveInput
     | "toolProtocol"
   > {
   objective: string;
+  /** Existing lane conversation when resuming a durable worker. */
+  messages?: ModelMessage[];
   findingsRegistry?: FindingsRegistry;
   laneCount?: number;
   laneTimeoutMs?: number;
@@ -268,8 +271,12 @@ export interface FastStrikeObjectiveInput
   singleLaneId?: string;
   sandbox?: UnifiedSandbox;
   browserSession?: PlaywrightMcpSession;
+  environmentVariables?: Record<string, string>;
   secretValues?: string[];
   display?: string;
+  extraTools?: ToolSet;
+  directTools?: string[];
+  engagementTargetIds?: readonly string[];
 }
 
 function findingReference(finding: Finding): FastStrikeFindingReference {
@@ -366,6 +373,9 @@ async function executeFastStrikeObjective(
         target: input.target,
         mode: "fast-strike",
         toolProtocol: input.toolProtocol,
+        extraTools: input.extraTools,
+        directTools: input.directTools,
+        engagementTargetIds: input.engagementTargetIds,
         activeTools: [],
         responseSchema: FastStrikeResult,
         responseGuard: (result, { rejectionCount }) =>
@@ -375,6 +385,7 @@ async function executeFastStrikeObjective(
             validateImpactEvidence,
           }),
         findingsRegistry,
+        messages: input.messages,
         subagentId: laneId,
         subagentName: `Fast Strike: ${input.objective.slice(0, 80)}`,
         agentCwd: workspace,
@@ -388,6 +399,7 @@ async function executeFastStrikeObjective(
         openAIReasoningEffort: input.openAIReasoningEffort,
         sandbox: input.sandbox,
         browserSession: input.browserSession,
+        environmentVariables: input.environmentVariables,
         secretValues: input.secretValues,
         display: input.display,
       });

@@ -54,6 +54,18 @@ export function prefersSequentialToolCalls(model: AIModel): boolean {
 }
 
 /**
+ * Whether a model endpoint only accepts automatic tool selection.
+ *
+ * Z.AI's OpenRouter endpoint rejects `required`, `none`, and named tool
+ * choices at request validation time. Keep the response contract enforced by
+ * Apex's response guard, but let these models choose the next tool with the
+ * only provider-supported setting.
+ */
+export function requiresAutoToolChoice(model: AIModel): boolean {
+  return /^z-ai\//i.test(model);
+}
+
+/**
  * Single source of truth for a model's default `max_tokens`. Both
  * `streamResponse`'s budget and the Pensar gateway formatter must agree,
  * so the lookup lives next to the registry it queries against.

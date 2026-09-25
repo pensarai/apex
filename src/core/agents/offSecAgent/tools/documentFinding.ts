@@ -64,6 +64,10 @@ export const documentVulnerabilityInputSchema = z.object({
       "Materiality checklist proving this is more than a low-signal observation",
     ),
   endpoint: z.string().describe("The affected endpoint or URL"),
+  sourceTargetId: z
+    .string()
+    .optional()
+    .describe("The host-owned engagement target id that produced this finding"),
   remediation: z.string().describe("Steps to fix the issue"),
   references: z.string().optional().describe("CVE, CWE, or related references"),
   vulnerabilityClass: z
@@ -194,6 +198,18 @@ CRITICAL RULES — READ BEFORE CALLING:
       }
 
       try {
+        if (ctx.engagementTargetIds) {
+          if (
+            !input.sourceTargetId ||
+            !ctx.engagementTargetIds.has(input.sourceTargetId)
+          ) {
+            return {
+              success: false,
+              message:
+                "A finding from an engagement must include an authorized sourceTargetId.",
+            };
+          }
+        }
         // Early dedup check — avoid POC execution + LLM calls for known vulns
         const materializedEvidence = formatMateriality(input);
 
@@ -463,6 +479,7 @@ CRITICAL RULES — READ BEFORE CALLING:
           impact: input.impact,
           evidence: materializedEvidence,
           endpoint: input.endpoint,
+          ...(input.sourceTargetId && { sourceTargetId: input.sourceTargetId }),
           pocPath,
           remediation: input.remediation,
           ...(input.references && { references: input.references }),
