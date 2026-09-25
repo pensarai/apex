@@ -6,6 +6,7 @@ import type {
 } from "ai";
 import type { z } from "zod";
 import type {
+  AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
   CacheMetrics,
@@ -24,6 +25,7 @@ import { runWithBoundedConcurrency } from "../../utils/concurrency";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { AuthenticationAgentInput } from "../specialized/authenticationAgent/agent";
 import type { FindingJudgeInput } from "../specialized/findingJudge";
+import type { CodeCellResult } from "./codeMode/runtime";
 import type { PlaywrightMcpSession, UnifiedSandbox } from "./tools";
 import type { StreamIdFactory, SystemPentestScope } from "./types";
 
@@ -40,6 +42,7 @@ export type SubagentType =
 export type SubagentSpec =
   | {
       type: "pentest";
+      executionMode?: "targeted" | "fast-strike";
       target: string;
       objectives: string[];
       context?: string;
@@ -86,6 +89,8 @@ export type SubagentSpec =
  * @public Consumed by Console's durable subagent runtime.
  */
 export interface SpawnRuntime {
+  toolProtocol?: AgentToolProtocolPreference;
+  onCodeCellComplete?: (result: CodeCellResult) => void;
   session: SessionInfo;
   model: AIModel;
   authConfig?: AIAuthConfig;
@@ -214,8 +219,38 @@ type AnyRunner = (
 ) => Promise<AgentHandle<unknown>>;
 
 const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
+  if (spec.executionMode === "fast-strike") {
+    if (spec.objectives.length !== 1) {
+      throw new Error("Fast Strike delegation requires exactly one objective");
+    }
+    const { runFastStrikeObjective } = await import(
+      "../../workflows/fastStrike"
+    );
+    return {
+      run: () =>
+        runFastStrikeObjective({
+          ...ctx,
+          target: spec.target,
+          objective: [
+            spec.objectives[0],
+            spec.context ? `Supporting context:\n${spec.context}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+          findingsRegistry: spec.findingsRegistry,
+          browserSession: spec.browserSession,
+          laneCount: 1,
+          laneTimeoutMs:
+            ctx.session.config?.fastStrikeLaneTimeoutMs ?? 30 * 60_000,
+          subagentPrefix: ctx.subagentId,
+          singleLaneId: ctx.subagentId,
+        }),
+    };
+  }
   const { TargetedPentestAgent } = await import("../specialized/pentest/agent");
   const agent = new TargetedPentestAgent({
+    toolProtocol: ctx.toolProtocol,
+    onCodeCellComplete: ctx.onCodeCellComplete,
     target: spec.target,
     grpc: spec.grpc,
     systemScope: spec.systemScope,
@@ -354,6 +389,9 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
   return {
     run: () =>
       judgeFinding(spec.judgeInput, {
+        toolProtocol: ctx.toolProtocol,
+        onStepFinish: ctx.onStepFinish,
+        onCodeCellComplete: ctx.onCodeCellComplete,
         model: ctx.model,
         session: ctx.session,
         authConfig: ctx.authConfig,

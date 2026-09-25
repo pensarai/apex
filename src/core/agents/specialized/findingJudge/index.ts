@@ -9,6 +9,7 @@
 import type { AIModel } from "../../../ai";
 import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
+import type { CodeCellResult } from "../../offSecAgent/codeMode/runtime";
 import type { ToolContext } from "../../offSecAgent/tools";
 import type {
   FindingJudgeAgentOutput,
@@ -36,11 +37,14 @@ export type FindingJudgeRuntimeContext = Pick<
   | "enableThinking"
   | "thinkingEffort"
   | "openAIReasoningEffort"
+  | "toolProtocol"
+  | "onStepFinish"
   | "languageModelMiddleware"
   | "usageRecorder"
   | "streamIdFactory"
 > & {
   model: AIModel;
+  onCodeCellComplete?: (result: CodeCellResult) => void;
   /**
    * Subagent id used to tag the judge's own stream events. Callers that
    * spawn the judge as a nested subagent must pass the same id they
@@ -62,44 +66,58 @@ export async function judgeFinding(
   input: FindingJudgeInput,
   ctx: FindingJudgeRuntimeContext,
 ): Promise<FindingJudgeResult> {
-  try {
-    // Lazy import avoids the tool-registry cycle:
-    // offSec tools -> documentFinding -> findingJudge -> OffensiveSecurityAgent.
-    const { FindingJudgeAgent } = await import("./agent");
-    const agent = new FindingJudgeAgent({
-      finding: input,
-      model: ctx.model,
-      session: ctx.session,
-      authConfig: ctx.authConfig,
-      abortSignal: ctx.abortSignal,
-      eventBus: ctx.eventBus,
-      subagentId: ctx.subagentId,
-      subagentName: ctx.subagentName,
-      sandbox: ctx.sandbox,
-      target: input.target ?? ctx.target ?? ctx.session.targets[0],
-      enableThinking: ctx.enableThinking,
-      thinkingEffort: ctx.thinkingEffort,
-      openAIReasoningEffort: ctx.openAIReasoningEffort,
-      languageModelMiddleware: ctx.languageModelMiddleware,
-      usageRecorder: ctx.usageRecorder,
-      streamIdFactory: ctx.streamIdFactory,
-    });
+  let failure: unknown;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      // Lazy import avoids the tool-registry cycle:
+      // offSec tools -> documentFinding -> findingJudge -> OffensiveSecurityAgent.
+      const { FindingJudgeAgent } = await import("./agent");
+      const agent = new FindingJudgeAgent({
+        finding: input,
+        model: ctx.model,
+        session: ctx.session,
+        authConfig: ctx.authConfig,
+        abortSignal: ctx.abortSignal,
+        eventBus: ctx.eventBus,
+        subagentId: ctx.subagentId,
+        subagentName: ctx.subagentName,
+        sandbox: ctx.sandbox,
+        target: input.target ?? ctx.target ?? ctx.session.targets[0],
+        enableThinking: ctx.enableThinking,
+        thinkingEffort: ctx.thinkingEffort,
+        openAIReasoningEffort: ctx.openAIReasoningEffort,
+        languageModelMiddleware: ctx.languageModelMiddleware,
+        usageRecorder: ctx.usageRecorder,
+        streamIdFactory: ctx.streamIdFactory,
+        toolProtocol: ctx.toolProtocol,
+        onStepFinish: ctx.onStepFinish,
+        onCodeCellComplete: ctx.onCodeCellComplete,
+      });
 
-    const result = await agent.consume();
-    if (!result) {
-      throw new Error("Finding judge agent finished without a response.");
+      const result = await agent.consume();
+      if (!result) {
+        throw new Error("Finding judge agent finished without a response.");
+      }
+
+      return normalizeJudgeResult(result);
+    } catch (error: unknown) {
+      failure = error;
+      if (ctx.abortSignal?.aborted) break;
+      if (attempt === 1) {
+        log.warn("Finding validation failed; retrying once", {
+          model: ctx.model,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
-
-    return normalizeJudgeResult(result);
-  } catch (err: unknown) {
-    const fallback = createJudgeFailureResult(err, ctx.model);
-    log.warn("Agentic validation failed", {
-      model: fallback.error?.model,
-      type: fallback.error?.type,
-      message: fallback.error?.message,
-    });
-    return fallback;
   }
+  const fallback = createJudgeFailureResult(failure, ctx.model);
+  log.warn("Agentic validation failed", {
+    model: fallback.error?.model,
+    type: fallback.error?.type,
+    message: fallback.error?.message,
+  });
+  return fallback;
 }
 
 function normalizeJudgeResult(

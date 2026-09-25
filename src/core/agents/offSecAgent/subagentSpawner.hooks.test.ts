@@ -99,4 +99,30 @@ describe("subagentSpawner durable-hook forwarding", () => {
     expect(mocks.authInput?.usageRecorder).toBeUndefined();
     expect(mocks.authInput?.streamIdFactory).toBeUndefined();
   });
+
+  it("forwards code-mode metrics to the judge", async () => {
+    const onStepFinish = vi.fn();
+    const onCodeCellComplete = vi.fn();
+    await inProcessSubagentSpawner.spawn({
+      spec: {
+        type: "finding-judge",
+        judgeInput: {} as never,
+      },
+      runtime: {
+        ...runtime,
+        toolProtocol: "schema-code",
+        onStepFinish,
+        onCodeCellComplete,
+      },
+    });
+
+    expect(mocks.judgeCtx).toEqual(
+      expect.objectContaining({
+        toolProtocol: "schema-code",
+        onStepFinish,
+        onCodeCellComplete,
+        usageRecorder,
+      }),
+    );
+  });
 });

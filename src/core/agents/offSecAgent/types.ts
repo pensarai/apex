@@ -36,6 +36,7 @@ import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema
 import type { CodeCellResult } from "./codeMode/runtime";
 import type { SubagentSpawner } from "./subagentSpawner";
 import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
+import type { ResponseGuard } from "./tools/response";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -100,6 +101,14 @@ export type Finding = Omit<
  */
 /** Agent operating mode that controls which tools are available. */
 export type AgentMode = "default" | "plan" | "fast-strike";
+
+/** Independent model selection for finding adjudication. */
+export interface FindingJudgeModelConfig {
+  model: AIModel;
+  enableThinking?: boolean;
+  thinkingEffort?: ThinkingEffort | null;
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
+}
 
 /** Structured authorization envelope for a multi-application System pentest. */
 export type SystemPentestScope = {
@@ -251,7 +260,17 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * When present, `document_vulnerability` checks for duplicates before writing.
    */
   findingsRegistry?: FindingsRegistry;
+
+  /** Optional finding-judge override. Defaults to this agent's model. */
+  findingJudgeConfig?: FindingJudgeModelConfig;
+
+  /** Usage callback for the independently configured finding judge. */
+  findingJudgeOnStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  findingJudgeOnCodeCellComplete?: (result: CodeCellResult) => void;
   onCodeCellComplete?: (result: CodeCellResult) => void;
+
+  /** When present, findings must identify one of these host-owned scope targets. */
+  engagementTargetIds?: readonly string[];
 
   /**
    * Shared attack surface registry for cross-agent asset dedup.
@@ -284,6 +303,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Display label for the OTel span name / `gen_ai.agent.name`. */
   subagentName?: string;
+
+  /** Trusted per-agent workspace override. */
+  agentCwd?: string;
 
   /**
    * Override the auto-computed task directory. When set, takes precedence
@@ -327,6 +349,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * `activeTools` to get typed structured output from `consume()`.
    */
   responseSchema?: z.ZodSchema;
+
+  /** Reject an incomplete terminal response while keeping the agent running. */
+  responseGuard?: ResponseGuard;
 
   /**
    * Skills registry for on-demand skill loading.
@@ -478,6 +503,13 @@ export interface SpecializedAgentInput {
 
   /** Shared findings registry for cross-agent dedup */
   findingsRegistry?: FindingsRegistry;
+
+  /** Optional finding-judge override. Defaults to this agent's model. */
+  findingJudgeConfig?: FindingJudgeModelConfig;
+
+  /** Usage callback for the independently configured finding judge. */
+  findingJudgeOnStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  findingJudgeOnCodeCellComplete?: (result: CodeCellResult) => void;
   onCodeCellComplete?: (result: CodeCellResult) => void;
 
   /** Shared attack surface registry for cross-agent asset dedup */
@@ -577,6 +609,9 @@ export interface SpecializedAgentInput {
 
   /** Workflow tools that stay directly visible when code mode is active. */
   directTools?: string[];
+
+  /** When present, findings must identify one of these host-owned scope targets. */
+  engagementTargetIds?: readonly string[];
 }
 
 /**

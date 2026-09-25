@@ -23,7 +23,11 @@ import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSch
 import type { CodeCellResult } from "../codeMode/runtime";
 import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
-import type { StreamIdFactory, SystemPentestScope } from "../types";
+import type {
+  FindingJudgeModelConfig,
+  StreamIdFactory,
+  SystemPentestScope,
+} from "../types";
 import type { OffensiveExecutionPolicy } from "./executionPolicy";
 import type { PerCommandShell } from "./perCommandShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
@@ -87,7 +91,15 @@ export type ToolContext = {
    * When present, `document_vulnerability` checks for duplicates before writing.
    */
   findingsRegistry?: FindingsRegistry;
+
+  /** Optional model selection used only by the finding judge. */
+  findingJudgeConfig?: FindingJudgeModelConfig;
+  findingJudgeOnStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  findingJudgeOnCodeCellComplete?: (result: CodeCellResult) => void;
   onCodeCellComplete?: (result: CodeCellResult) => void;
+
+  /** Authorized host-owned target ids for engagement finding provenance. */
+  engagementTargetIds?: ReadonlySet<string>;
 
   /**
    * Shared attack surface registry for cross-agent asset dedup.

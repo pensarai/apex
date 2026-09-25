@@ -1,6 +1,11 @@
-import type { LanguageModelMiddleware } from "ai";
-import { stepCountIs } from "ai";
+import {
+  type LanguageModelMiddleware,
+  type StreamTextOnStepFinishCallback,
+  stepCountIs,
+  type ToolSet,
+} from "ai";
 import type {
+  AgentToolProtocolPreference,
   AIModel,
   OpenAIReasoningEffort,
   ThinkingEffort,
@@ -10,6 +15,7 @@ import type { AIAuthConfig } from "../../../ai/utils";
 import type { AgentEventBus } from "../../../eventBus";
 import type { SessionInfo } from "../../../session";
 import { OffensiveSecurityAgent } from "../../offSecAgent";
+import type { CodeCellResult } from "../../offSecAgent/codeMode/runtime";
 import type { UnifiedSandbox } from "../../offSecAgent/tools";
 import type { StreamIdFactory } from "../../offSecAgent/types";
 import { detectOSAndEnhancePrompt } from "../utils";
@@ -39,6 +45,9 @@ export interface FindingJudgeAgentInput {
   enableThinking?: boolean;
   thinkingEffort?: ThinkingEffort | null;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  toolProtocol?: AgentToolProtocolPreference;
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onCodeCellComplete?: (result: CodeCellResult) => void;
   /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
   languageModelMiddleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
   /** Per-run usage recorder. Unset → the process-global usage callback fires as today. */
