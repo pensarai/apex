@@ -79,6 +79,7 @@ export type {
 } from "./domains";
 export { createDomain, listDomains } from "./domains";
 export type {
+  DeploymentCapability,
   EngagementCheckpoint,
   EngagementMetrics,
   EngagementMissionProgress,

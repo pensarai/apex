@@ -15,6 +15,7 @@ import {
 import type { EngagementContext } from "./engagementSurface";
 import type { EngagementWorkerPool } from "./engagementWorkerPool";
 import { runFastStrikeObjective } from "./fastStrike";
+import { FastStrikeEvidenceLedger } from "./fastStrikeEvidence";
 import type { PentestWorkflowInput } from "./pentest";
 
 export const ENGAGEMENT_COVERAGE_BATCH_SIZE = 6;
@@ -145,6 +146,11 @@ export async function runDeterministicEngagementCoverage(input: {
     });
     const childBus = new AgentEventBus();
     AgentEventBus.attachChild(childBus, input.eventBus, workerId);
+    const evidenceLedger = new FastStrikeEvidenceLedger(childBus, {
+      initialObservations: input.store.snapshot().evidenceObservations,
+      onObservation: (observation) =>
+        input.store.recordEvidenceObservation(observation),
+    });
     input.eventBus.emit("subagent-spawn", {
       subagentId: workerId,
       sessionId: workerId,
@@ -182,6 +188,7 @@ export async function runDeterministicEngagementCoverage(input: {
           laneCount: 1,
           engagementContext: workerContext,
           engagementTargetIds: input.engagementTargetIds,
+          evidenceLedger,
         });
         input.store.settleCoverageCell({
           targetId: cell.targetId,
@@ -299,6 +306,8 @@ export async function runDeterministicEngagementCoverage(input: {
                 coverage.status === "needs-lead",
             ),
         );
+    } finally {
+      evidenceLedger.dispose();
     }
     if (shouldNotifyLead) {
       mailbox.send({
