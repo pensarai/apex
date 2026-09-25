@@ -20,6 +20,13 @@ export {
   normalizeOpenAIReasoningEffort,
   streamResponse,
 } from "./ai";
+export type {
+  ContextCompactionConfig,
+  ContextCompactionMetadata,
+  ContextCompactionResult,
+  ContextCompactionState,
+  SemanticCapsule,
+} from "./contextCompaction";
 export {
   addRecentModelId,
   getRecentModels,
