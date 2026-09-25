@@ -35,7 +35,13 @@ export {
   getRecentModels,
   MAX_RECENT_MODELS,
 } from "./model-history";
-export { AVAILABLE_MODELS } from "./models";
+export type {
+  AgentToolProtocol,
+  AgentToolProtocolPreference,
+  ModelRuntimeProfile,
+} from "./modelRuntime";
+export { resolveModelRuntimeProfile } from "./modelRuntime";
+export { AVAILABLE_MODELS, requiresAutoToolChoice } from "./models";
 export type {
   CreateNativeRolloutEvidenceCaptureInput,
   NativeRolloutCaptureLimits,

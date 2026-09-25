@@ -70,6 +70,12 @@ vi.mock("./tools", () => ({
   PerCommandShell: class {},
 }));
 vi.mock("../../ai", () => ({
+  resolveModelRuntimeProfile: () => ({
+    protocol: "direct",
+    provider: "anthropic",
+    supportsParallelNestedCalls: false,
+  }),
+  requiresAutoToolChoice: (model: string) => /^z-ai\//i.test(model),
   streamResponse: (opts: Record<string, unknown>) => {
     streamResponseCalls.push(opts);
     return { fullStream: (async function* () {})() };

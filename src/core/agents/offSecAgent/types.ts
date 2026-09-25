@@ -16,6 +16,7 @@ import {
 } from "../../../lib/cwe/types";
 import { EvidenceFileEntrySchema } from "../../../lib/evidence/types";
 import type {
+  AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
   CacheMetrics,
@@ -32,6 +33,7 @@ import type { PromptInjectionLibrary } from "../../prompt-injections";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
+import type { CodeCellResult } from "./codeMode/runtime";
 import type { SubagentSpawner } from "./subagentSpawner";
 import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
 
@@ -140,6 +142,10 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * @default "default"
    */
   mode?: AgentMode;
+  toolProtocol?: AgentToolProtocolPreference;
+  directTools?: string[];
+  nestedTools?: string[];
+  onCodeCellComplete?: (result: CodeCellResult) => void;
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;

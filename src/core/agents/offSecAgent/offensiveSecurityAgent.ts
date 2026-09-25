@@ -9,7 +9,12 @@ import type {
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
-import { normalizeStepUsage, streamResponse } from "../../ai";
+import {
+  normalizeStepUsage,
+  requiresAutoToolChoice,
+  resolveModelRuntimeProfile,
+  streamResponse,
+} from "../../ai";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
 import {
   resolveEffectiveHeaders,
@@ -29,6 +34,13 @@ import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
 import { scopedLogger } from "../../util/lazyLogger";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
+import {
+  buildCodeModeInstructions,
+  CanonicalCapabilityInvoker,
+  CodeModeRuntime,
+  createCodeModeTools,
+  resolveCodeModeToolPresentation,
+} from "./codeMode";
 import {
   createInterruptedStepFinalizer,
   type FinalizeInterruptedStepInput,
@@ -283,6 +295,9 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** Per-command executor for local-mode command execution; disposed on consume() completion. */
   private readonly commandShell?: PerCommandShell;
+
+  /** Isolated JavaScript orchestration runtime used by compact code-mode profiles. */
+  private codeModeRuntime?: CodeModeRuntime;
 
   /**
    * This agent's Playwright MCP browser session. Either constructed fresh
@@ -649,6 +664,61 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.approvalGate !== undefined,
     );
 
+    // A code-mode browser stage operates against the same managed Camoufox
+    // context as the ordinary browser tools. Make it available whenever this
+    // workflow selected any browser capability.
+    if (
+      activeTools.some((name) => name.startsWith("browser_")) &&
+      tools.browser_run_code &&
+      !activeTools.includes("browser_run_code")
+    ) {
+      activeTools.push("browser_run_code");
+    }
+
+    // -- Model-facing tool protocol -------------------------------------------
+    // Canonical tools and their event identities remain stable. Only their
+    // presentation changes. Provider capabilities choose freeform vs schema
+    // exec; model names and agent roles do not choose the architecture.
+    const runtimeProfile = resolveModelRuntimeProfile(
+      input.model,
+      input.toolProtocol ?? "auto",
+    );
+    let codeModeInstructions = "";
+    if (runtimeProfile.protocol !== "direct") {
+      const canonicalTools = tools;
+      const canonicalActiveTools = activeTools.filter(
+        (name) => canonicalTools[name] !== undefined,
+      );
+      const { direct: presentedDirectTools, nested: allowedTools } =
+        resolveCodeModeToolPresentation({
+          activeTools: canonicalActiveTools,
+          extraTools: Object.keys(input.extraTools ?? {}),
+          directTools: input.directTools,
+          nestedTools: input.nestedTools,
+        });
+      const invoker = new CanonicalCapabilityInvoker({
+        tools: canonicalTools,
+        allowedTools,
+        eventBus: this.eventBus,
+        sessionId: this.busSessionId,
+        subagentId: this.subagentId,
+        getMessageId: () => this.currentMessageId ?? undefined,
+      });
+      this.codeModeRuntime = new CodeModeRuntime(
+        invoker,
+        allowedTools,
+        input.onCodeCellComplete,
+      );
+      tools = createCodeModeTools(
+        runtimeProfile.protocol,
+        this.codeModeRuntime,
+        canonicalTools,
+        presentedDirectTools,
+      );
+      activeTools = Object.keys(tools);
+      codeModeInstructions = buildCodeModeInstructions(runtimeProfile.protocol);
+    }
+
     // -- Messages persistence -------------------------------------------------
     if (!existsSync(messagesDir)) {
       mkdirSync(messagesDir, { recursive: true });
@@ -693,13 +763,14 @@ export class OffensiveSecurityAgent<TResult = void> {
           sandboxMode: agentCwd === input.session.rootPath,
         }),
       );
+    const effectiveBaseSystemPrompt = baseSystemPrompt + codeModeInstructions;
     const systemPrompt =
-      baseSystemPrompt +
+      effectiveBaseSystemPrompt +
       buildSessionWorkspaceSection(input.session, agentCwd, activeTools);
 
     traceWriter.writeInit({
       model: input.model,
-      systemPrompt: baseSystemPrompt,
+      systemPrompt: effectiveBaseSystemPrompt,
       activeTools,
       sessionId: input.session.id,
       target: input.target,
@@ -717,7 +788,9 @@ export class OffensiveSecurityAgent<TResult = void> {
         tools,
         activeTools,
         stopWhen,
-        toolChoice: "auto",
+        toolChoice: requiresAutoToolChoice(input.model)
+          ? "auto"
+          : (input.toolChoice ?? "auto"),
         languageModelMiddleware: input.languageModelMiddleware,
         usageRecorder: input.usageRecorder,
         // Per-subagent so the overflow tool-result dumps land next to this
@@ -1189,6 +1262,11 @@ export class OffensiveSecurityAgent<TResult = void> {
       // Dispose first — the 3s kill protocol is awaited, never
       // fire-and-forget: hosts rely on drained before closeout, so an
       // active command must settle (bounded) before finalization continues.
+      try {
+        await this.codeModeRuntime?.dispose();
+      } catch (error) {
+        recordFinalizationError(error);
+      }
       try {
         await this.disposeOwnedShell();
       } catch (error) {
