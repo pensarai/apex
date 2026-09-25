@@ -7,6 +7,7 @@ const constructorCalls: Array<Record<string, unknown>> = [];
 const fastStrikeCalls: Array<Record<string, unknown>> = [];
 const groupedCalls: Array<Record<string, unknown>> = [];
 let groupedFailureAfterReport: unknown;
+let groupedFailureBeforeReport: unknown;
 
 vi.mock("../agents/offSecAgent", () => ({
   OffensiveSecurityAgent: class {
@@ -42,6 +43,7 @@ vi.mock("../agents/offSecAgent", () => ({
       const report = canonical
         ? extraTools.report_engagement_mission_progress
         : extraTools.report_engagement_coverage;
+      if (groupedFailureBeforeReport) throw groupedFailureBeforeReport;
       await report?.execute(
         canonical
           ? {
@@ -120,11 +122,15 @@ vi.mock("./fastStrike", () => ({
   },
 }));
 
+import type { Finding } from "../agents/offSecAgent";
 import type { AIModel } from "../ai";
 import { AgentEventBus } from "../eventBus";
 import type { FindingsRegistry } from "../findings/registry";
 import type { SessionInfo } from "../session";
-import { createEngagementPlanningTools } from "./engagementPlanning";
+import type {
+  EngagementMissionCoverage,
+  EngagementMissionRequirement,
+} from "./engagementMissions";
 import { buildEngagementState, EngagementStore } from "./engagementState";
 import {
   createEngagementTools,
@@ -138,12 +144,13 @@ afterEach(() => {
   fastStrikeCalls.length = 0;
   groupedCalls.length = 0;
   groupedFailureAfterReport = undefined;
+  groupedFailureBeforeReport = undefined;
   for (const directory of directories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-function makeRuntime(grouped = false) {
+function makeRuntime(grouped = false, findings: Finding[] = []) {
   const rootPath = mkdtempSync(join(tmpdir(), "apex-engagement-tools-"));
   directories.push(rootPath);
   const session = {
@@ -169,7 +176,10 @@ function makeRuntime(grouped = false) {
   ]);
   const store = EngagementStore.open(rootPath, seed);
   const findingsRegistry = {
-    getFindings: () => [],
+    getFindings: () => findings,
+    getCanonicalFindings: () => findings,
+    resolveFindingId: (id: string) => id,
+    applyConsolidation: () => undefined,
   } as unknown as FindingsRegistry;
   const runtime = createEngagementTools({
     input: {
@@ -192,7 +202,44 @@ function makeRuntime(grouped = false) {
   return {
     tools: runtime.tools,
     startPlannedMissions: runtime.startPlannedMissions,
-    planningTools: createEngagementPlanningTools(store),
+    planMissions: (
+      definitions: Array<{
+        purpose: string;
+        rationale: string;
+        singletonJustification?: string;
+        coverage?: EngagementMissionCoverage[];
+        requirements?: EngagementMissionRequirement[];
+        supportingTargetIds?: string[];
+        prerequisiteMissionIds?: string[];
+        contextTargetIds?: string[];
+      }>,
+    ) => {
+      store.saveMissions({ planningStatus: "pending", missions: [] });
+      store.recordInspectedTargets(seed.targets.map((target) => target.id));
+      definitions.forEach((definition, index) => {
+        const coverage =
+          definition.requirements?.flatMap(
+            (requirement) => requirement.coverage,
+          ) ??
+          definition.coverage ??
+          [];
+        store.defineMission({
+          id: `mission-${index + 1}`,
+          workerId: `worker-${index + 1}`,
+          purpose: definition.purpose,
+          rationale: definition.rationale,
+          singletonJustification: definition.singletonJustification,
+          coverage,
+          requirements: definition.requirements,
+          supportingTargetIds: definition.supportingTargetIds ?? [],
+          prerequisiteMissionIds: definition.prerequisiteMissionIds ?? [],
+          contextTargetIds: definition.contextTargetIds ?? [],
+          status: "planned",
+          createdAt: new Date().toISOString(),
+        });
+      });
+      return store.setMissionPlanningComplete();
+    },
     store,
     seed,
   };
@@ -209,6 +256,14 @@ async function executeTool(
     ) => Promise<Record<string, unknown>>;
   };
   return executable.execute(input, { toolCallId: "call-1", messages: [] });
+}
+
+async function waitForWorker(tools: Record<string, unknown>, workerId: string) {
+  await executeTool(tools.wait_for_engagement_workers, {
+    workerIds: [workerId],
+    timeoutMs: 100,
+    toolCallDescription: "wait for resumed worker",
+  });
 }
 
 describe("engagement worker tools", () => {
@@ -238,6 +293,8 @@ describe("engagement worker tools", () => {
       serviceTotal: 1,
       objectiveTotal: 1,
       workerTotal: 0,
+      findingTotal: 0,
+      chainTotal: 0,
     });
     expect(result.state).toMatchObject({
       services: seed.services,
@@ -248,6 +305,216 @@ describe("engagement worker tools", () => {
     expect(result.state).not.toHaveProperty("targets");
     expect(result.state).not.toHaveProperty("workers");
     expect(result.inbox).toEqual([]);
+  });
+
+  it("records a durable chain linked to accepted findings", async () => {
+    const finding: Finding = {
+      id: "finding-1",
+      title: "Cross-user file disclosure",
+      severity: "HIGH",
+      description: "A user can read another user's file.",
+      impact: "Non-public file disclosure.",
+      evidence: "HTTP 200 with the victim file.",
+      endpoint: "/api/v1/files/{id}",
+      pocPath: "pocs/file.sh",
+      remediation: "Enforce ownership.",
+    };
+    const { tools, store, seed } = makeRuntime(false, [finding]);
+    const result = await executeTool(tools.record_engagement_chain, {
+      title: "Low-privilege user reaches another user's files",
+      status: "impact-proven",
+      severity: "HIGH",
+      description:
+        "An authenticated user enumerates and retrieves a peer file.",
+      impact: "Cross-tenant data disclosure.",
+      remediation: "Enforce object ownership on file reads.",
+      findingIds: ["finding-1"],
+      capabilityIds: [],
+      impactProofIds: [],
+      objectiveIds: [seed.objectives[0]?.id],
+      serviceIds: [seed.services[0]?.id],
+      targetIds: [seed.targets[0]?.id],
+      evidence: ["finding-1"],
+      steps: [
+        {
+          title: "Authenticate as the low-privilege actor",
+          description: "Establish the source-user session.",
+          findingIds: [],
+          capabilityIds: [],
+          evidence: ["authenticated-session"],
+        },
+        {
+          title: "Read peer file",
+          description: "Request a file ID owned by another user.",
+          findingIds: ["finding-1"],
+          capabilityIds: [],
+          evidence: ["HTTP 200"],
+        },
+      ],
+      toolCallDescription: "record the proven file-access chain",
+    });
+
+    expect(result.success).toBe(true);
+    expect(store.snapshot().chains).toMatchObject([
+      {
+        title: "Low-privilege user reaches another user's files",
+        status: "impact-proven",
+        findingIds: ["finding-1"],
+      },
+    ]);
+    expect(result).not.toHaveProperty("chain.toolCallDescription");
+  });
+
+  it("rejects chain relations to unknown findings", async () => {
+    const { tools } = makeRuntime();
+    await expect(
+      executeTool(tools.record_engagement_chain, {
+        title: "Unknown finding chain",
+        status: "exhausted",
+        description: "A test relation.",
+        impact: "No impact reached.",
+        findingIds: ["missing-finding"],
+        steps: [],
+        toolCallDescription: "record chain",
+      }),
+    ).rejects.toThrow("unknown findings");
+  });
+
+  it("requires a dedicated chain for every canonical finding before closing chain exploration", async () => {
+    const findings: Finding[] = [
+      {
+        id: "finding-1",
+        title: "Session survives logout",
+        severity: "HIGH",
+        description: "A stolen token remains valid after logout.",
+        impact: "Persistent account access.",
+        evidence: "The old token returned HTTP 200.",
+        endpoint: "/api/v1/auths/signout",
+        pocPath: "pocs/logout.sh",
+        remediation: "Revoke sessions server-side.",
+      },
+      {
+        id: "finding-2",
+        title: "Weak passwords accepted",
+        severity: "MEDIUM",
+        description: "Accounts accept empty passwords.",
+        impact: "Guessable account credentials.",
+        evidence: "Empty-password signin returned HTTP 200.",
+        endpoint: "/api/v1/auths/signin",
+        pocPath: "pocs/password.sh",
+        remediation: "Enforce password strength.",
+      },
+    ];
+    const { tools, store, seed } = makeRuntime(false, findings);
+    for (const service of seed.services) {
+      store.markServiceBaseline(service.id, "explored", "Baseline complete");
+    }
+    for (const cell of seed.coverage) {
+      store.markObjectiveCoverage({
+        ...cell,
+        status: "exhausted",
+        summary: "Testing complete",
+      });
+    }
+    const proof = store.addImpactProof({
+      description: "The signed-out token still reads the account",
+      objectiveIds: [],
+      serviceIds: [],
+      targetIds: [],
+      findingIds: ["finding-1"],
+      capabilityIds: [],
+      artifactPaths: [],
+      observationRefs: [],
+    });
+
+    await executeTool(tools.record_engagement_chain, {
+      title: "Weak password to persistent session",
+      status: "blocked",
+      description: "Combines both accepted findings.",
+      impact: "Persistent access if a victim uses a weak password.",
+      findingIds: ["finding-1", "finding-2"],
+      capabilityIds: [],
+      impactProofIds: [],
+      objectiveIds: [],
+      serviceIds: [],
+      targetIds: [],
+      evidence: ["finding-1", "finding-2"],
+      steps: [
+        {
+          title: "Use both primitives",
+          description: "Attempt the composite path.",
+          findingIds: ["finding-1", "finding-2"],
+          evidence: ["finding-1", "finding-2"],
+        },
+      ],
+      blocker: "No weak-password victim account exists.",
+      toolCallDescription: "record composite chain",
+    });
+
+    await expect(
+      executeTool(tools.update_engagement_coverage, {
+        kind: "chain",
+        chainStatus: "exhausted",
+        summary: "Chain exploration complete",
+        evidence: [],
+        toolCallDescription: "close chain exploration",
+      }),
+    ).rejects.toThrow(
+      "Canonical findings without a dedicated attacker-path chain: finding-1, finding-2",
+    );
+    await expect(
+      executeTool(tools.update_engagement_coverage, {
+        kind: "chain",
+        chainStatus: "exhausted",
+        summary: "Chain exploration complete",
+        evidence: [],
+        toolCallDescription: "close chain exploration",
+      }),
+    ).rejects.toThrow("Impact proofs not represented in a chain");
+
+    for (const finding of findings) {
+      const impactProofIds = finding.id === "finding-1" ? [proof.id] : [];
+      await executeTool(tools.record_engagement_chain, {
+        title: `${finding.title} attacker path`,
+        status: "impact-proven",
+        severity: finding.severity,
+        description: finding.description,
+        impact: finding.impact,
+        findingIds: [finding.id],
+        capabilityIds: [],
+        impactProofIds,
+        objectiveIds: [],
+        serviceIds: [],
+        targetIds: [],
+        evidence: [finding.id],
+        steps: [
+          {
+            title: "Meet the prerequisite",
+            description: "Establish the attacker position.",
+            findingIds: [finding.id],
+            impactProofIds,
+            evidence: [finding.id],
+          },
+          {
+            title: "Exercise the finding",
+            description: finding.impact,
+            findingIds: [finding.id],
+            evidence: [finding.id],
+          },
+        ],
+        toolCallDescription: "record dedicated finding chain",
+      });
+    }
+
+    const closed = await executeTool(tools.update_engagement_coverage, {
+      kind: "chain",
+      chainStatus: "impact-proven",
+      summary: "Every accepted finding has an attacker path",
+      evidence: ["finding-1", "finding-2"],
+      toolCallDescription: "close chain exploration",
+    });
+    expect(closed.success).toBe(true);
+    expect(store.snapshot().chains).toHaveLength(3);
   });
 
   it("persists objective coverage and resumes the same worker thread", async () => {
@@ -274,6 +541,8 @@ describe("engagement worker tools", () => {
       toolCallDescription: "resume authorization worker",
     });
     expect(followedUp.success).toBe(true);
+    expect(followedUp.accepted).toBe(true);
+    await waitForWorker(tools, workerId);
     expect(constructorCalls).toHaveLength(2);
     expect(constructorCalls[0]).toMatchObject({
       toolProtocol: undefined,
@@ -311,6 +580,7 @@ describe("engagement worker tools", () => {
       message: "Reuse the first attempt and try the sibling account.",
       toolCallDescription: "resume impact worker",
     });
+    await waitForWorker(tools, workerId);
 
     expect(fastStrikeCalls).toHaveLength(2);
     const resumedMessages = fastStrikeCalls[1]?.messages as Array<{
@@ -331,32 +601,20 @@ describe("engagement worker tools", () => {
   });
 
   it("runs one model-planned grouped mission with exact per-target results", async () => {
-    const { planningTools, startPlannedMissions, store, seed } =
+    const { planMissions, startPlannedMissions, store, seed } =
       makeRuntime(true);
-    store.saveMissions({ planningStatus: "pending", missions: [] });
-    await executeTool(planningTools.read_engagement_manifest, {
-      offset: 0,
-      limit: 25,
-      toolCallDescription: "read all targets",
-    });
     const coverage = seed.coverage.map(({ targetId, objectiveId }) => ({
       targetId,
       objectiveId,
     }));
-    const planned = await executeTool(planningTools.define_engagement_mission, {
-      purpose: "Test the user authorization and MFA flow",
-      rationale: "The endpoints share authentication and user state",
-      coverage,
-      supportingTargetIds: [],
-      prerequisiteMissionIds: [],
-      contextTargetIds: seed.targets.map((target) => target.id),
-      toolCallDescription: "define related flow mission",
-    });
-
-    expect(planned).toMatchObject({ success: true });
-    await executeTool(planningTools.complete_engagement_mission_plan, {
-      toolCallDescription: "seal complete mission plan",
-    });
+    planMissions([
+      {
+        purpose: "Test the user authorization and MFA flow",
+        rationale: "The endpoints share authentication and user state",
+        coverage,
+        contextTargetIds: seed.targets.map((target) => target.id),
+      },
+    ]);
     await startPlannedMissions();
 
     expect(groupedCalls[0]).toMatchObject({
@@ -374,14 +632,8 @@ describe("engagement worker tools", () => {
   });
 
   it("reports one canonical requirement while preserving its source coverage", async () => {
-    const { planningTools, startPlannedMissions, store, seed } =
+    const { planMissions, startPlannedMissions, store, seed } =
       makeRuntime(true);
-    store.saveMissions({ planningStatus: "pending", missions: [] });
-    await executeTool(planningTools.read_engagement_manifest, {
-      offset: 0,
-      limit: 25,
-      toolCallDescription: "read all targets",
-    });
     for (const target of seed.targets) {
       store.recordContextRead(target.id, {
         status: "read",
@@ -394,26 +646,23 @@ describe("engagement worker tools", () => {
       targetId,
       objectiveId,
     }));
-    await executeTool(planningTools.define_engagement_mission, {
-      purpose: "Review the shared user authorization boundary",
-      rationale: "Both endpoints share documented ownership semantics",
-      requirements: [
-        {
-          id: "user-owner-boundary",
-          description: "User resources enforce their documented owner boundary",
-          rationale:
-            "Same identity, resource, and expected authorization behavior",
-          coverage,
-        },
-      ],
-      supportingTargetIds: [],
-      prerequisiteMissionIds: [],
-      contextTargetIds: seed.targets.map((target) => target.id),
-      toolCallDescription: "define consolidated mission",
-    });
-    await executeTool(planningTools.complete_engagement_mission_plan, {
-      toolCallDescription: "seal complete mission plan",
-    });
+    planMissions([
+      {
+        purpose: "Review the shared user authorization boundary",
+        rationale: "Both endpoints share documented ownership semantics",
+        requirements: [
+          {
+            id: "user-owner-boundary",
+            description:
+              "User resources enforce their documented owner boundary",
+            rationale:
+              "Same identity, resource, and expected authorization behavior",
+            coverage,
+          },
+        ],
+        contextTargetIds: seed.targets.map((target) => target.id),
+      },
+    ]);
     await startPlannedMissions();
 
     expect(groupedCalls[0]?.extraTools).toHaveProperty(
@@ -433,29 +682,18 @@ describe("engagement worker tools", () => {
       code: "stream_terminated",
       message: "Stream terminated unexpectedly",
     };
-    const { planningTools, startPlannedMissions, store, seed } =
+    const { planMissions, startPlannedMissions, store, seed } =
       makeRuntime(true);
-    store.saveMissions({ planningStatus: "pending", missions: [] });
-    await executeTool(planningTools.read_engagement_manifest, {
-      offset: 0,
-      limit: 25,
-      toolCallDescription: "read all targets",
-    });
-    await executeTool(planningTools.define_engagement_mission, {
-      purpose: "Test the related authentication flow",
-      rationale: "The endpoints share authentication state",
-      coverage: seed.coverage.map(({ targetId, objectiveId }) => ({
-        targetId,
-        objectiveId,
-      })),
-      supportingTargetIds: [],
-      prerequisiteMissionIds: [],
-      contextTargetIds: [],
-      toolCallDescription: "define grouped mission",
-    });
-    await executeTool(planningTools.complete_engagement_mission_plan, {
-      toolCallDescription: "seal the plan",
-    });
+    planMissions([
+      {
+        purpose: "Test the related authentication flow",
+        rationale: "The endpoints share authentication state",
+        coverage: seed.coverage.map(({ targetId, objectiveId }) => ({
+          targetId,
+          objectiveId,
+        })),
+      },
+    ]);
 
     await startPlannedMissions();
 
@@ -468,34 +706,63 @@ describe("engagement worker tools", () => {
     );
   });
 
-  it("refuses to seal a grouped plan that omits coverage", async () => {
-    const { planningTools, store, seed } = makeRuntime(true);
-    store.saveMissions({ planningStatus: "pending", missions: [] });
-    await executeTool(planningTools.read_engagement_manifest, {
-      offset: 0,
-      limit: 25,
-      toolCallDescription: "read all targets",
-    });
-    await executeTool(planningTools.define_engagement_mission, {
-      purpose: "Test only one part of the flow",
-      rationale: "Initial bounded mission",
-      singletonJustification: "This test intentionally exercises one target",
-      coverage: [
-        {
-          targetId: seed.targets[0]?.id as string,
-          objectiveId: seed.objectives[0]?.id as string,
-        },
-      ],
-      supportingTargetIds: [],
-      prerequisiteMissionIds: [],
-      contextTargetIds: [],
-      toolCallDescription: "define partial mission",
-    });
+  it("reclaims needs-lead coverage when a failed grouped worker resumes", async () => {
+    groupedFailureBeforeReport = {
+      code: "provider_unavailable",
+      message: "Provider connection interrupted",
+    };
+    const { tools, planMissions, startPlannedMissions, store, seed } =
+      makeRuntime(true);
+    const coverage = seed.coverage.map(({ targetId, objectiveId }) => ({
+      targetId,
+      objectiveId,
+    }));
+    planMissions([
+      {
+        purpose: "Test the related authentication flow",
+        rationale: "The endpoints share authentication state",
+        coverage,
+      },
+    ]);
 
-    await expect(
-      executeTool(planningTools.complete_engagement_mission_plan, {
-        toolCallDescription: "attempt incomplete plan",
-      }),
-    ).rejects.toThrow("omits 1 required coverage obligation");
+    await startPlannedMissions();
+
+    expect(
+      store.snapshot().coverage.every((cell) => cell.status === "needs-lead"),
+    ).toBe(true);
+    expect(store.snapshot().missions?.missions[0]?.status).toBe("failed");
+
+    groupedFailureBeforeReport = undefined;
+    await executeTool(tools.follow_up_engagement_worker, {
+      workerId: "worker-1",
+      message: "Resume the interrupted mission and finish its requirements.",
+      toolCallDescription: "resume failed grouped worker",
+    });
+    await waitForWorker(tools, "worker-1");
+
+    expect(
+      store.snapshot().coverage.every((cell) => cell.status === "exhausted"),
+    ).toBe(true);
+    expect(store.snapshot().missions?.missions[0]?.status).toBe("completed");
+  });
+
+  it("refuses to seal a grouped plan that omits coverage", async () => {
+    const { planMissions, seed } = makeRuntime(true);
+    expect(() =>
+      planMissions([
+        {
+          purpose: "Test only one part of the flow",
+          rationale: "Initial bounded mission",
+          singletonJustification:
+            "This test intentionally exercises one target",
+          coverage: [
+            {
+              targetId: seed.targets[0]?.id as string,
+              objectiveId: seed.objectives[0]?.id as string,
+            },
+          ],
+        },
+      ]),
+    ).toThrow("omits 1 required coverage obligation");
   });
 });

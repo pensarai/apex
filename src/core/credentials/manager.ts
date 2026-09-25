@@ -181,6 +181,25 @@ export class CredentialManager {
   }
 
   /**
+   * Create an independent manager containing only the requested credentials.
+   * IDs are preserved so prompt references remain valid across scopes.
+   *
+   * Fails loudly when any ID is unknown; silently returning a partial scope
+   * could make an agent use the wrong actor or misreport an auth barrier.
+   */
+  select(credentialIds: readonly string[]): CredentialManager {
+    const selected = new CredentialManager();
+    for (const credentialId of new Set(credentialIds)) {
+      const stored = this.store.get(credentialId);
+      if (!stored) {
+        throw new Error(`Unknown credential ID: ${credentialId}`);
+      }
+      selected.store.set(credentialId, structuredClone(stored));
+    }
+    return selected;
+  }
+
+  /**
    * Stored credentials with their `customHeaders` intact. Consumed ONLY
    * by the target-HTTP resolver — agent-facing code must use
    * `listReferences()` which omits values.
