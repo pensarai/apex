@@ -186,8 +186,13 @@ function maybeSaveBody(
   const savedNote = incomplete
     ? `INCOMPLETE — ${incomplete}; partial response saved to ${filePath}`
     : `full response saved to ${filePath}`;
+  const inspection = ctx.sandbox
+    ? "This retained artifact is on the Apex host. For evidence readable by sandbox file tools, save it with execute_command inside your file workspace."
+    : ctx.fileWorkspaceRoot
+      ? "This retained artifact is outside your native file workspace. Use execute_command to inspect it, or save subsequent evidence inside your file workspace."
+      : "Use read_file or grep to analyze.";
   return {
-    text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — ${savedNote}). Use read_file or grep to analyze.`,
+    text: `${body.substring(0, MAX_INLINE_BODY)}...\n\n(truncated — ${savedNote}). ${inspection}`,
     file: filePath,
   };
 }
@@ -361,11 +366,11 @@ CORS TESTING (per Fetch specification browser enforcement rules):
 
 RESPONSES ARE BOUNDED: bodies larger than 5 MiB are capped and marked
 INCOMPLETE — the saved partial file holds only the captured prefix, not the
-full body. For larger evidence, save it to a file and inspect bounded ranges:
-locally, redirect with execute_command (e.g. curl -o file) and page it with
-read_file byte windows; in a sandbox, execute_command runs remotely, so save
-AND inspect there (e.g. curl -o file, then head/dd on the file) — read_file
-only reads host-local files.
+full body. For larger evidence, use execute_command to save it inside your
+file workspace (e.g. curl -o file), then page it with read_file byte windows.
+When a sandbox is configured, command execution and native file tools both
+operate there. Retained HTTP artifacts are stored on the Apex host; their
+location is separate from files created by a sandbox command.
 
 COMMON TESTING PATTERNS:
 - Test with/without authentication
@@ -848,7 +853,7 @@ async function executeSandboxHttpRequest(
     const incompleteNote = !sandboxTransportOk
       ? `sandbox execution failed (exit ${result.exitCode})${redactedSandboxStderr ? `: ${redactedSandboxStderr}` : ""}; output may be partial`
       : captureOverflow || curlExit == null
-        ? `output capped at ${MAX_DOWNLOAD_BYTES} bytes; ${curlExit == null ? "curl exit unknown" : `curl exited ${curlExit}`} — for larger evidence, save and inspect it inside the sandbox with execute_command (curl -o file, then head/dd on the file); read_file only reads host-local files`
+        ? `output capped at ${MAX_DOWNLOAD_BYTES} bytes; ${curlExit == null ? "curl exit unknown" : `curl exited ${curlExit}`} — for larger evidence, save it inside your sandbox file workspace with execute_command (curl -o file), then inspect read_file byte windows`
         : curlExit !== 0
           ? `curl exited ${curlExit}${redactedSandboxStderr ? `: ${redactedSandboxStderr}` : ""}; output may be partial`
           : undefined;

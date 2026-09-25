@@ -1,7 +1,15 @@
 import { open, stat } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { resolveFilePath } from "./fileWorkspace";
+import type { SandboxExecutionResult, UnifiedSandbox } from "./sandbox";
+import {
+  SANDBOX_OP_TIMEOUT_SECONDS,
+  sandboxOpError,
+  WIN_SCRIPT_COMMAND,
+  WIN_SCRIPT_PRELUDE,
+  winScriptEnv,
+} from "./sandboxScript";
 import type { ToolContext } from "./types";
 
 // Output stops at this many characters of numbered content — the reader never
@@ -22,28 +30,32 @@ const readFileInputSchema = z.object({
     ),
   startLine: z
     .number()
-    .optional()
-    .describe("1-based line number to start reading from (inclusive)"),
+    .nullish()
+    .describe(
+      "1-based start line (inclusive). Omit or set null for byte mode or the beginning of the file.",
+    ),
   endLine: z
     .number()
-    .optional()
-    .describe("1-based line number to stop reading at (inclusive)"),
+    .nullish()
+    .describe(
+      "1-based end line (inclusive). Omit or set null for byte mode or the end of the file.",
+    ),
   byteOffset: z
     .number()
     .int()
     .min(0)
-    .optional()
+    .nullish()
     .describe(
-      "Read a raw byte window starting at this 0-based UTF-8 codepoint-aligned offset instead of lines. Use for minified single-line files where line paging cannot split the content.",
+      "0-based UTF-8 codepoint-aligned byte offset, paired with byteCount. Omit or set null for line reads. Use byte mode for minified single-line files; startLine and endLine must be omitted or null.",
     ),
   byteCount: z
     .number()
     .int()
     .min(1)
     .max(MAX_BYTE_WINDOW)
-    .optional()
+    .nullish()
     .describe(
-      `Bytes to read from byteOffset (max ${MAX_BYTE_WINDOW}). Requires byteOffset.`,
+      `Bytes to read from byteOffset (max ${MAX_BYTE_WINDOW}). Requires byteOffset. Omit or set null for line reads.`,
     ),
   toolCallDescription: z
     .string()
@@ -82,6 +94,10 @@ export function readFile(ctx: ToolContext) {
 You can read the entire file or specify a line range using startLine / endLine
 (both 1-based, inclusive). If only startLine is given, reads from that line to
 the end. If only endLine is given, reads from the beginning to that line.
+Choose one paging mode: omit or set byteOffset and byteCount to null for line
+reads; omit or set startLine and endLine to null for byte reads. Never fill
+inactive fields with placeholder numbers. Omit or set all four to null to
+read from the beginning using the default bounded line reader.
 
 Output lines are prefixed with their line number for easy reference. Reads are
 bounded: a huge file returns a window plus truncation metadata instead of
@@ -91,18 +107,28 @@ byteOffset / byteCount for the dropped bytes). Byte windows must start on a
 UTF-8 codepoint boundary and never split one: stoppedAtByte is the exact
 resume cursor.`,
     inputSchema: readFileInputSchema,
-    execute: async ({
-      path,
-      startLine,
-      endLine,
-      byteOffset,
-      byteCount,
-    }): Promise<ReadFileResult> => {
-      const resolved = isAbsolute(path) ? path : resolve(ctx.agentCwd, path);
+    execute: async (input): Promise<ReadFileResult> => {
+      const { path } = input;
+      // Strict providers require every field; null represents an unused bound.
+      const startLine = input.startLine ?? undefined;
+      const endLine = input.endLine ?? undefined;
+      const byteOffset = input.byteOffset ?? undefined;
+      const byteCount = input.byteCount ?? undefined;
       if (ctx.abortSignal?.aborted) {
         return {
           success: false,
           error: "Read file aborted by user",
+          content: "",
+          path,
+        };
+      }
+      let resolved: string;
+      try {
+        resolved = await resolveFilePath(ctx, path);
+      } catch (err: unknown) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
           content: "",
           path,
         };
@@ -128,12 +154,23 @@ resume cursor.`,
         return {
           success: false,
           error:
-            "byteOffset/byteCount cannot be combined with startLine/endLine",
+            "byteOffset/byteCount cannot be combined with startLine/endLine. For line reads, omit byteOffset and byteCount or set both to null. For byte reads, omit startLine and endLine or set both to null.",
           content: "",
           path,
         };
       }
       try {
+        // Sandbox agents' files live inside the sandbox: fetch bounded bytes
+        // remotely instead of touching the host filesystem.
+        if (ctx.sandbox) {
+          return await readSandboxFile(ctx, resolved, {
+            path,
+            startLine,
+            endLine,
+            byteOffset,
+            byteCount,
+          });
+        }
         // Ordinary-file contract before any read: a FIFO or device would turn
         // the bounded reader back into an unbounded blocking read.
         const stats = await stat(resolved);
@@ -336,6 +373,77 @@ function isContinuationByte(byte: number): boolean {
   return (byte & 0xc0) === 0x80;
 }
 
+/**
+ * Decodes a fetched byte window (local read or sandbox fetch) into a result:
+ * boundary alignment, fatal decode, exact byte cursors. `raw` may carry one
+ * probe byte past byteCount (sandbox EOF detection) — it is trimmed here.
+ */
+function decodeByteWindow(
+  raw: Buffer,
+  byteOffset: number,
+  byteCount: number,
+  path: string,
+  atEof: boolean,
+): ReadFileResult {
+  // Never decode a window that starts mid-codepoint into replacement chars.
+  if (raw.length > 0 && isContinuationByte(raw[0]) && byteOffset > 0) {
+    return {
+      success: false,
+      error:
+        "byteOffset starts inside a UTF-8 sequence — align it to a codepoint boundary (use a previous page's stoppedAtByte)",
+      content: "",
+      path,
+    };
+  }
+  const got = Math.min(raw.length, byteCount);
+
+  // Streaming decode retains incomplete sequences only at page boundaries;
+  // at real EOF the decoder is finalized, so a torn tail fails as invalid
+  // UTF-8. BOM bytes stay counted so the cursor stays aligned.
+  const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+  let content: string;
+  try {
+    content = decoder.decode(raw.subarray(0, got), { stream: !atEof });
+  } catch {
+    // Invalid bytes inside the window (not a boundary split): fail
+    // explicitly — replacement characters would silently corrupt the
+    // evidence while advertising a successful byte retrieval.
+    return {
+      success: false,
+      error:
+        "window contains invalid UTF-8 — read_file pages text; use execute_command with a byte-oriented tool (e.g. xxd) for binary ranges",
+      content: "",
+      path,
+    };
+  }
+
+  const consumed = Buffer.byteLength(content, "utf-8");
+  if (consumed === 0 && got > 0) {
+    // The window is too small to hold the next codepoint — say so instead
+    // of succeeding with zero progress.
+    return {
+      success: false,
+      error: `byte window of ${got} byte(s) is too small for the next UTF-8 sequence — increase byteCount`,
+      content: "",
+      path,
+    };
+  }
+
+  const partial = got - consumed;
+  // Every page with progress carries a continuation cursor — including a
+  // fully-served aligned window, whose next page starts where this one
+  // ended. Only a zero-progress page at EOF has nothing to continue.
+  return {
+    success: true,
+    error: "",
+    content,
+    path,
+    byteCaptured: consumed,
+    ...(consumed > 0 ? { stoppedAtByte: byteOffset + consumed } : {}),
+    ...(partial > 0 ? { truncated: true } : {}),
+  };
+}
+
 async function readLocalByteWindow(
   resolved: string,
   path: string,
@@ -349,23 +457,6 @@ async function readLocalByteWindow(
       return {
         success: false,
         error: "Read file aborted by user",
-        content: "",
-        path,
-      };
-    }
-    // Validate the leading boundary before reading — never decode a window
-    // that starts mid-codepoint into replacement characters.
-    const probe = Buffer.alloc(Math.min(4, byteCount));
-    const probeRead = await handle.read(probe, 0, probe.length, byteOffset);
-    if (
-      probeRead.bytesRead > 0 &&
-      isContinuationByte(probe[0]) &&
-      byteOffset > 0
-    ) {
-      return {
-        success: false,
-        error:
-          "byteOffset starts inside a UTF-8 sequence — align it to a codepoint boundary (use a previous page's stoppedAtByte)",
         content: "",
         path,
       };
@@ -401,52 +492,462 @@ async function readLocalByteWindow(
       atEof = probe.bytesRead === 0;
     }
 
-    // Streaming decode retains incomplete sequences only at page boundaries;
-    // at real EOF the decoder is finalized, so a torn tail fails as invalid
-    // UTF-8. BOM bytes stay counted so the cursor stays aligned.
-    const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
-    let content: string;
-    try {
-      content = decoder.decode(out.subarray(0, got), { stream: !atEof });
-    } catch {
-      // Invalid bytes inside the window (not a boundary split): fail
-      // explicitly — replacement characters would silently corrupt the
-      // evidence while advertising a successful byte retrieval.
-      return {
-        success: false,
-        error:
-          "window contains invalid UTF-8 — read_file pages text; use execute_command with a byte-oriented tool (e.g. xxd) for binary ranges",
-        content: "",
-        path,
-      };
-    }
-
-    const consumed = Buffer.byteLength(content, "utf-8");
-    if (consumed === 0 && got > 0) {
-      // The window is too small to hold the next codepoint — say so instead
-      // of succeeding with zero progress.
-      return {
-        success: false,
-        error: `byte window of ${got} byte(s) is too small for the next UTF-8 sequence — increase byteCount`,
-        content: "",
-        path,
-      };
-    }
-
-    const partial = got - consumed;
-    // Every page with progress carries a continuation cursor — including a
-    // fully-served aligned window, whose next page starts where this one
-    // ended. Only a zero-progress page at EOF has nothing to continue.
-    return {
-      success: true,
-      error: "",
-      content,
+    return decodeByteWindow(
+      out.subarray(0, got),
+      byteOffset,
+      byteCount,
       path,
-      byteCaptured: consumed,
-      ...(consumed > 0 ? { stoppedAtByte: byteOffset + consumed } : {}),
-      ...(partial > 0 ? { truncated: true } : {}),
-    };
+      atEof,
+    );
   } finally {
     await handle.close();
   }
+}
+
+// --- Sandbox reads ---------------------------------------------------------
+//
+// A sandboxed agent's files live inside the sandbox, so reads route through
+// sandbox.execute and never touch the host filesystem. Raw bytes travel as
+// base64 so the adapter's text-only stdout cannot mangle them, then the same
+// decoders as local reads produce identical results and cursors.
+//
+// Transport follows the remote file-operation conventions: the fixed helper
+// script arrives via the APEX_WIN_SCRIPT env var (base64 UTF-8) behind a
+// short static powershell command — never an oversized EncodedCommand — and
+// paths/parameters travel in env vars, never interpolated into the command.
+
+function sandboxReadError(result: SandboxExecutionResult): string {
+  return sandboxOpError("read", result);
+}
+
+function abortedReadResult(path: string): ReadFileResult {
+  return {
+    success: false,
+    error: "Read file aborted by user",
+    content: "",
+    path,
+  };
+}
+
+// Windows byte-window helper: emits the window as base64. The container
+// check mirrors the local ordinary-file contract; file symlinks resolve.
+const WIN_BYTE_READ_SCRIPT = [
+  WIN_SCRIPT_PRELUDE,
+  "try{",
+  "$p=[Environment]::GetEnvironmentVariable('APEX_READ_PATH')",
+  "$item=Get-Item -LiteralPath $p -Force",
+  "if($item.PSIsContainer){throw 'Not an ordinary file'}",
+  "$off=[int64][Environment]::GetEnvironmentVariable('APEX_READ_OFFSET')",
+  "$cnt=[int64][Environment]::GetEnvironmentVariable('APEX_READ_COUNT')",
+  "$fs=[IO.File]::OpenRead($p)",
+  "try{",
+  "$null=$fs.Seek($off,[IO.SeekOrigin]::Begin)",
+  "$buf=New-Object byte[] $cnt",
+  "$got=0",
+  "while($got -lt $cnt){$n=$fs.Read($buf,$got,$cnt-$got);if($n -le 0){break};$got+=$n}",
+  "[Console]::Out.Write([Convert]::ToBase64String($buf,0,$got))",
+  "}finally{$fs.Dispose()}",
+  "}catch{",
+  "[Console]::Error.WriteLine($_.Exception.Message)",
+  "exit 2",
+  "}",
+].join("\n");
+
+type SandboxByteFetch =
+  | { ok: true; bytes: Buffer; atEof: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Fetches byteOffset..byteOffset+byteCount plus one probe byte — the probe
+ * distinguishes a full page from EOF without a second round trip.
+ */
+async function fetchSandboxByteWindow(
+  sandbox: UnifiedSandbox,
+  filePath: string,
+  byteOffset: number,
+  byteCount: number,
+): Promise<SandboxByteFetch> {
+  const probeCount = byteCount + 1;
+  const result =
+    sandbox.type === "windows"
+      ? await sandbox.execute(WIN_SCRIPT_COMMAND, {
+          timeout: SANDBOX_OP_TIMEOUT_SECONDS,
+          retries: 0,
+          envVars: {
+            ...winScriptEnv(WIN_BYTE_READ_SCRIPT),
+            APEX_READ_PATH: filePath,
+            APEX_READ_OFFSET: String(byteOffset),
+            APEX_READ_COUNT: String(probeCount),
+          },
+        })
+      : await sandbox.execute(
+          [
+            '[ -f "$APEX_READ_PATH" ] || { echo "not an ordinary file (directory, FIFO, or device): $APEX_READ_PATH" >&2; exit 3; }',
+            `tail -c +${byteOffset + 1} "$APEX_READ_PATH" | head -c ${probeCount} | base64`,
+          ].join("; "),
+          {
+            timeout: SANDBOX_OP_TIMEOUT_SECONDS,
+            retries: 0,
+            envVars: { APEX_READ_PATH: filePath },
+          },
+        );
+  if (!result.success || result.exitCode !== 0) {
+    return { ok: false, error: sandboxReadError(result) };
+  }
+  const parsed = parseSandboxBase64(result.stdout);
+  if (!parsed.ok) return parsed;
+  const bytes = parsed.bytes;
+  return { ok: true, bytes, atEof: bytes.length <= byteCount };
+}
+
+async function readSandboxFile(
+  ctx: ToolContext,
+  resolved: string,
+  input: {
+    path: string;
+    startLine?: number;
+    endLine?: number;
+    byteOffset?: number;
+    byteCount?: number;
+  },
+): Promise<ReadFileResult> {
+  if (!ctx.sandbox) throw new Error("readSandboxFile requires a sandbox");
+  if (ctx.abortSignal?.aborted) return abortedReadResult(input.path);
+  if (input.byteOffset !== undefined && input.byteCount !== undefined) {
+    const fetch = await fetchSandboxByteWindow(
+      ctx.sandbox,
+      resolved,
+      input.byteOffset,
+      input.byteCount,
+    );
+    if (ctx.abortSignal?.aborted) return abortedReadResult(input.path);
+    if (!fetch.ok) {
+      return {
+        success: false,
+        error: fetch.error,
+        content: "",
+        path: input.path,
+      };
+    }
+    return decodeByteWindow(
+      fetch.bytes,
+      input.byteOffset,
+      input.byteCount,
+      input.path,
+      fetch.atEof,
+    );
+  }
+  return readSandboxLines(
+    ctx,
+    ctx.sandbox,
+    resolved,
+    input.path,
+    input.startLine,
+    input.endLine,
+  );
+}
+
+// Line windows fetch bounded RAW bytes (terminators intact) and are numbered,
+// capped, and budgeted locally, so sandbox reads return exactly the shape and
+// cursors local reads do.
+const LINE_FETCH_CAP_BYTES = 128 * 1024;
+
+type SandboxLineFetch =
+  | { ok: false; error: string }
+  | { ok: true; bytes: Buffer; cut: true }
+  | { ok: true; bytes: Buffer; cut: false; totalNewlines: number };
+
+function parseSandboxBase64(
+  stdout: string,
+): { ok: true; bytes: Buffer } | { ok: false; error: string } {
+  const b64 = stdout.replace(/\s+/g, "");
+  if (!/^[A-Za-z0-9+/=]*$/.test(b64) || b64.length % 4 !== 0) {
+    return {
+      ok: false,
+      error: `sandbox read returned non-base64 output: ${stdout.slice(0, 200)}`,
+    };
+  }
+  return { ok: true, bytes: Buffer.from(b64, "base64") };
+}
+
+async function fetchSandboxLinesLinux(
+  sandbox: UnifiedSandbox,
+  filePath: string,
+  start: number,
+  end: number,
+): Promise<SandboxLineFetch> {
+  const notOrdinary =
+    '[ -f "$APEX_READ_PATH" ] || { echo "not an ordinary file (directory, FIFO, or device): $APEX_READ_PATH" >&2; exit 3; }';
+  // One probe byte past the cap distinguishes a complete window from a cut.
+  const window =
+    end === Number.POSITIVE_INFINITY
+      ? `tail -n +${start} "$APEX_READ_PATH" | head -c ${LINE_FETCH_CAP_BYTES + 1}`
+      : `tail -n +${start} "$APEX_READ_PATH" | head -n ${Math.max(0, end - start + 1)} | head -c ${LINE_FETCH_CAP_BYTES + 1}`;
+  const fetch = await sandbox.execute(
+    `${notOrdinary}; ( ${window} ) | base64`,
+    {
+      timeout: SANDBOX_OP_TIMEOUT_SECONDS,
+      retries: 0,
+      envVars: { APEX_READ_PATH: filePath },
+    },
+  );
+  if (!fetch.success || fetch.exitCode !== 0) {
+    return { ok: false, error: sandboxReadError(fetch) };
+  }
+  const parsed = parseSandboxBase64(fetch.stdout);
+  if (!parsed.ok) return parsed;
+  if (parsed.bytes.length > LINE_FETCH_CAP_BYTES) {
+    return { ok: true, bytes: parsed.bytes, cut: true };
+  }
+  // A complete window still needs the whole-file line count to report
+  // totalLines and decide EOF exactly like the local scanner would.
+  const wc = await sandbox.execute('wc -l < "$APEX_READ_PATH"', {
+    timeout: SANDBOX_OP_TIMEOUT_SECONDS,
+    retries: 0,
+    envVars: { APEX_READ_PATH: filePath },
+  });
+  if (!wc.success || wc.exitCode !== 0) {
+    return { ok: false, error: sandboxReadError(wc) };
+  }
+  const totalNewlines = Number.parseInt(wc.stdout.trim(), 10);
+  if (!Number.isInteger(totalNewlines) || totalNewlines < 0) {
+    return {
+      ok: false,
+      error: `sandbox wc -l returned non-numeric output: ${wc.stdout.slice(0, 200)}`,
+    };
+  }
+  return { ok: true, bytes: parsed.bytes, cut: false, totalNewlines };
+}
+
+// Windows single-pass scanner: streams raw bytes, counts every newline, and
+// emits only the in-window lines' bytes (capped) as base64 plus a trailing
+// APEXRL marker carrying the newline count (or the cut flag). Data travels in
+// env vars; APEX_READ_END is empty for "no endLine".
+const WIN_LINE_READ_SCRIPT = [
+  WIN_SCRIPT_PRELUDE,
+  "try{",
+  "$p=[Environment]::GetEnvironmentVariable('APEX_READ_PATH')",
+  "$item=Get-Item -LiteralPath $p -Force",
+  "if($item.PSIsContainer){throw 'Not an ordinary file'}",
+  "$start=[int64][Environment]::GetEnvironmentVariable('APEX_READ_START')",
+  "$endS=[Environment]::GetEnvironmentVariable('APEX_READ_END')",
+  "$cap=[int64][Environment]::GetEnvironmentVariable('APEX_READ_CAP')",
+  "$hasEnd=($endS -ne '')",
+  "$end=[int64]0",
+  "if($hasEnd){$end=[int64]$endS}",
+  "$fs=[IO.File]::OpenRead($p)",
+  "try{",
+  "$buf=New-Object byte[] 65536",
+  "$ms=New-Object IO.MemoryStream",
+  "$nl=[int64]0",
+  "$cut=$false",
+  "while(-not $cut){",
+  "$n=$fs.Read($buf,0,65536)",
+  "if($n -le 0){break}",
+  "$i=0",
+  "while($i -lt $n){",
+  "$cur=$nl+1",
+  "$win=($cur -ge $start) -and ((-not $hasEnd) -or ($cur -le $end))",
+  "if(-not $win){",
+  "$j=[Array]::IndexOf($buf,[byte]10,$i,$n-$i)",
+  "if($j -lt 0){$i=$n}else{$nl++;$i=$j+1}",
+  "continue",
+  "}",
+  "$j=[Array]::IndexOf($buf,[byte]10,$i,$n-$i)",
+  "if($j -lt 0){",
+  "$fit=($cap+1)-$ms.Length",
+  "if(($n-$i) -le $fit){$ms.Write($buf,$i,($n-$i));$i=$n}else{if($fit -gt 0){$ms.Write($buf,$i,$fit)};$cut=$true}",
+  "}else{",
+  "$len=$j-$i+1",
+  "$fit=($cap+1)-$ms.Length",
+  "if($len -le $fit){$ms.Write($buf,$i,$len);$nl++;$i=$j+1}else{if($fit -gt 0){$ms.Write($buf,$i,$fit)};$cut=$true}",
+  "}",
+  "if($cut){break}",
+  "}",
+  "}",
+  "[Console]::Out.Write([Convert]::ToBase64String($ms.ToArray()))",
+  'if($cut){[Console]::Out.Write("`nAPEXRL cut=1")}else{[Console]::Out.Write("`nAPEXRL total=$nl")}',
+  "exit 0",
+  "}finally{$fs.Dispose()}",
+  "}catch{",
+  "[Console]::Error.WriteLine($_.Exception.Message)",
+  "exit 2",
+  "}",
+].join("\n");
+async function fetchSandboxLinesWindows(
+  sandbox: UnifiedSandbox,
+  filePath: string,
+  start: number,
+  end: number,
+): Promise<SandboxLineFetch> {
+  const result = await sandbox.execute(WIN_SCRIPT_COMMAND, {
+    timeout: SANDBOX_OP_TIMEOUT_SECONDS,
+    retries: 0,
+    envVars: {
+      ...winScriptEnv(WIN_LINE_READ_SCRIPT),
+      APEX_READ_PATH: filePath,
+      APEX_READ_START: String(start),
+      APEX_READ_END: end === Number.POSITIVE_INFINITY ? "" : String(end),
+      APEX_READ_CAP: String(LINE_FETCH_CAP_BYTES),
+    },
+  });
+  if (!result.success || result.exitCode !== 0) {
+    return { ok: false, error: sandboxReadError(result) };
+  }
+  const markerIdx = result.stdout.lastIndexOf("\nAPEXRL ");
+  if (markerIdx === -1) {
+    return {
+      ok: false,
+      error: `sandbox line read missing APEXRL marker: ${result.stdout.slice(0, 200)}`,
+    };
+  }
+  const marker = result.stdout.slice(markerIdx + "\nAPEXRL ".length);
+  const parsed = parseSandboxBase64(result.stdout.slice(0, markerIdx));
+  if (!parsed.ok) return parsed;
+  if (marker === "cut=1") {
+    return { ok: true, bytes: parsed.bytes, cut: true };
+  }
+  const totalMatch = marker.match(/^total=(\d+)$/);
+  if (!totalMatch) {
+    return {
+      ok: false,
+      error: `sandbox line read returned a malformed APEXRL marker: ${marker.slice(0, 200)}`,
+    };
+  }
+  return {
+    ok: true,
+    bytes: parsed.bytes,
+    cut: false,
+    totalNewlines: Number.parseInt(totalMatch[1], 10),
+  };
+}
+
+/**
+ * Turns a fetched line window into the same result the local streaming reader
+ * produces: identical numbering, per-line cap markers, output budget, and
+ * resume cursors. Semantics mirror readLocalLines.
+ */
+function processSandboxLines(
+  raw: Buffer,
+  opts: {
+    path: string;
+    start: number;
+    end: number;
+    cut: boolean;
+    totalNewlines?: number;
+  },
+): ReadFileResult {
+  // Non-fatal decode matches local line mode: invalid bytes surface as
+  // U+FFFD. A cut window keeps its trailing partial sequence out (stream
+  // mode never finalizes); a complete window finalizes at EOF.
+  const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
+  let text = decoder.decode(raw, { stream: opts.cut });
+  if (!opts.cut) text += decoder.decode();
+
+  const totalLines =
+    opts.totalNewlines !== undefined ? opts.totalNewlines + 1 : undefined;
+  // EOF was reached when the window covers the file's last split-line or
+  // starts past it — the same conditions the local scanner uses.
+  const eof =
+    totalLines !== undefined &&
+    (opts.end === Number.POSITIVE_INFINITY ||
+      opts.end >= totalLines ||
+      opts.start > totalLines);
+
+  let segments = text.split("\n");
+  if (opts.cut || !eof) {
+    // The segment after the last fetched newline is not a delivered line:
+    // for a cut it is a partial line, for a line-boundary window end it is
+    // an artifact of split("\n").
+    segments.pop();
+  } else if (text === "" && opts.start > totalLines) {
+    // Window entirely past EOF: no lines exist there, not one empty line.
+    segments = [];
+  }
+
+  if (opts.cut && segments.length === 0) {
+    return {
+      success: false,
+      error:
+        "The requested line exceeds the bounded read window; use byteOffset/byteCount to page its contents",
+      content: `${String(opts.start).padStart(6)}|${text.slice(0, MAX_LINE_CHARS)}…`,
+      path: opts.path,
+      linesReturned: 0,
+      truncated: true,
+    };
+  }
+  const numbered: string[] = [];
+  let outputChars = 0;
+  let cappedAny = false;
+  let budgetStopLine: number | undefined;
+  for (let i = 0; i < segments.length; i++) {
+    const line = segments[i];
+    const lineNo = opts.start + i;
+    const display =
+      line.length > MAX_LINE_CHARS
+        ? `${line.slice(0, MAX_LINE_CHARS)}… (+${line.length - MAX_LINE_CHARS} chars dropped in this line — use byteOffset/byteCount)`
+        : line;
+    cappedAny ||= display !== line;
+    const numberedLine = `${String(lineNo).padStart(6)}|${display}`;
+    if (outputChars + numberedLine.length > OUTPUT_BUDGET_CHARS) {
+      budgetStopLine = lineNo;
+      break;
+    }
+    numbered.push(numberedLine);
+    outputChars += numberedLine.length + 1;
+  }
+
+  const hitBudget = budgetStopLine !== undefined;
+  const content = numbered.join("\n");
+  const result: ReadFileResult = {
+    success: true,
+    error: "",
+    content:
+      hitBudget && numbered.length > 0
+        ? `${content}\n\n(truncated — use startLine/endLine or byteOffset/byteCount to continue)`
+        : content,
+    path: opts.path,
+    linesReturned: numbered.length,
+  };
+  if (hitBudget) {
+    result.stoppedAtLine = budgetStopLine;
+  } else if (eof && totalLines !== undefined) {
+    result.totalLines = totalLines;
+  } else if (opts.cut) {
+    result.stoppedAtLine = opts.start + segments.length;
+  } else {
+    result.stoppedAtLine = opts.end >= opts.start ? opts.end + 1 : opts.start;
+  }
+  if (hitBudget || cappedAny || opts.cut) {
+    result.truncated = true;
+  }
+  return result;
+}
+
+async function readSandboxLines(
+  ctx: ToolContext,
+  sandbox: UnifiedSandbox,
+  resolved: string,
+  path: string,
+  startLine?: number,
+  endLine?: number,
+): Promise<ReadFileResult> {
+  const start = startLine ? Math.max(1, Math.floor(startLine)) : 1;
+  const end = endLine ? Math.floor(endLine) : Number.POSITIVE_INFINITY;
+  if (ctx.abortSignal?.aborted) return abortedReadResult(path);
+  const fetch =
+    sandbox.type === "windows"
+      ? await fetchSandboxLinesWindows(sandbox, resolved, start, end)
+      : await fetchSandboxLinesLinux(sandbox, resolved, start, end);
+  if (ctx.abortSignal?.aborted) return abortedReadResult(path);
+  if (!fetch.ok) {
+    return { success: false, error: fetch.error, content: "", path };
+  }
+  return processSandboxLines(fetch.bytes, {
+    path,
+    start,
+    end,
+    cut: fetch.cut,
+    ...(fetch.cut ? {} : { totalNewlines: fetch.totalNewlines }),
+  });
 }
