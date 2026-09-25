@@ -323,6 +323,28 @@ export async function runEngagementLead(input: {
       store,
       [preflightArtifacts.path],
     );
+    const sealPlan = () => {
+      const checkpointBeforeSeal = store.checkpoint();
+      try {
+        sealEngagementPlanArtifact(planningArtifacts, store);
+        const requirements =
+          store.snapshot().missions?.missions.flatMap((mission) =>
+            (mission.requirements ?? []).map((requirement) => ({
+              id: requirement.id,
+              coverage: requirement.coverage,
+              prerequisiteCapabilityIds:
+                requirement.prerequisiteCapabilityIds ?? [],
+            })),
+          ) ?? [];
+        store.applyDeploymentPreflight(
+          preflight,
+          evaluateDeploymentPrerequisites(requirements, preflight),
+        );
+      } catch (error) {
+        store.restore(checkpointBeforeSeal);
+        throw error;
+      }
+    };
     const planner = new OffensiveSecurityAgent<
       z.infer<typeof EngagementPlanResult>
     >({
@@ -356,25 +378,10 @@ export async function runEngagementLead(input: {
         if (!parsed.success || !parsed.data.planComplete) {
           return "The response must acknowledge that the mission plan artifact is ready.";
         }
-        const checkpointBeforeSeal = store.checkpoint();
         try {
-          sealEngagementPlanArtifact(planningArtifacts, store);
-          const requirements =
-            store.snapshot().missions?.missions.flatMap((mission) =>
-              (mission.requirements ?? []).map((requirement) => ({
-                id: requirement.id,
-                coverage: requirement.coverage,
-                prerequisiteCapabilityIds:
-                  requirement.prerequisiteCapabilityIds ?? [],
-              })),
-            ) ?? [];
-          store.applyDeploymentPreflight(
-            preflight,
-            evaluateDeploymentPrerequisites(requirements, preflight),
-          );
+          sealPlan();
           return undefined;
         } catch (error) {
-          store.restore(checkpointBeforeSeal);
           return `Plan artifact validation failed: ${error instanceof Error ? error.message : String(error)}`;
         }
       },
@@ -398,8 +405,17 @@ export async function runEngagementLead(input: {
       sandbox: workflow.sandbox,
       display: workflow.display,
     });
-    await planner.consume();
-    await input.onCheckpoint?.(store.checkpoint());
+    try {
+      await planner.consume();
+      if (store.snapshot().missions?.planningStatus !== "complete") sealPlan();
+      await input.onCheckpoint?.(store.checkpoint());
+    } catch (error) {
+      internalAbort.abort();
+      engagementRuntime.dispose(error);
+      runMetrics.finish("failed");
+      await planner.abortAndDrain();
+      throw error;
+    }
   }
   const state = store.snapshot();
   const failedMissionResume = state.missions?.missions
