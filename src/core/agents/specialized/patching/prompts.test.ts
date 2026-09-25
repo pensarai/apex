@@ -90,6 +90,26 @@ describe("buildPatchingPrompt project-instructions injection", () => {
     expect(prompt).toContain("## Vulnerability Details");
   });
 
+  it("directs sandboxed agents to read the instructions from the runtime instead of an inlined block", () => {
+    const prompt = buildPatchingPrompt(VULN, "/tmp/repo", undefined, {
+      runtimeInstructions: true,
+    });
+    expect(prompt).toContain("## Project Instructions");
+    expect(prompt).toContain("sandboxed runtime");
+    expect(prompt).toContain("read_file");
+    expect(prompt).toContain("AGENTS.md");
+    expect(prompt).toContain("never override the security objective");
+    expect(prompt).not.toContain(`<${PROJECT_INSTRUCTIONS_TAG}>`);
+  });
+
+  it("prefers inlined instructions over runtime guidance when both are available", () => {
+    const prompt = buildPatchingPrompt(VULN, "/tmp/repo", "# AGENTS.md", {
+      runtimeInstructions: true,
+    });
+    expect(prompt).toContain(`<${PROJECT_INSTRUCTIONS_TAG}>`);
+    expect(prompt).not.toContain("sandboxed runtime");
+  });
+
   it("presents the instructions as authoritative for conventions, not only commands", () => {
     const prompt = buildPatchingPrompt(VULN, "/tmp/repo", "# AGENTS.md");
     const lines = prompt.split("\n");

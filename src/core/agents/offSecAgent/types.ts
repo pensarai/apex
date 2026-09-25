@@ -144,6 +144,21 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;
 
+  /**
+   * Explicit working directory for this agent instance. Overrides
+   * `session.config.agentCwd`; defaults to `session.rootPath`. Drives command
+   * cwd and relative-path resolution for tools that have no
+   * {@link OffensiveSecurityAgentInput.fileWorkspaceRoot}.
+   */
+  agentCwd?: string;
+
+  /**
+   * Root that scopes this agent's native file tools when resolving relative
+   * paths and enforcing confinement. File-tool scoping only — command cwd and
+   * shell/OS permissions are not restricted by this value.
+   */
+  fileWorkspaceRoot?: string;
+
   /** The target URL / host — passed to browser tools for context */
   target?: string;
 
