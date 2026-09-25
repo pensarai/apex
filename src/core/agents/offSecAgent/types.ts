@@ -33,7 +33,12 @@ import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { SubagentSpawner } from "./subagentSpawner";
-import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
+import type {
+  BrowserEngine,
+  PlaywrightMcpSession,
+  ToolName,
+  UnifiedSandbox,
+} from "./tools";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
@@ -407,6 +412,13 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * process-wide `DISPLAY`.
    */
   display?: string;
+
+  /**
+   * Browser engine for the session this agent constructs. Chrome is required
+   * for Sign in with Google; Camoufox is the default. Ignored when
+   * `browserSession` is supplied.
+   */
+  browserEngine?: BrowserEngine;
 };
 
 /**
@@ -549,6 +561,12 @@ export interface SpecializedAgentInput {
    * pentests can each run headed on their own virtual desktop.
    */
   display?: string;
+
+  /**
+   * Browser engine forwarded to {@link OffensiveSecurityAgentInput}. Chrome
+   * when any session credential is Sign in with Google; Camoufox otherwise.
+   */
+  browserEngine?: BrowserEngine;
 }
 
 /**

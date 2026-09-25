@@ -174,6 +174,7 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
     userAgent: string | undefined;
     viewportSize: string | undefined;
     display: string | undefined;
+    engine: string;
   };
 
   it("defaults to headless + desktop UA + 1920x1080 when constructed with no args and no display (regression: don't fall back to Chromium's tiny default viewport)", () => {
@@ -187,6 +188,7 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
       expect(session.headless).toBe(true);
       expect(session.viewportSize).toBe("1920,1080");
       expect(session.userAgent).toContain("Chrome/");
+      expect(session.engine).toBe("camoufox");
     } finally {
       if (originalDisplay === undefined) delete process.env.DISPLAY;
       else process.env.DISPLAY = originalDisplay;
@@ -198,10 +200,12 @@ describe("PlaywrightMcpSession — constructor defaults", () => {
       headless: false,
       userAgent: "MyAgent/1.0",
       viewportSize: "800,600",
+      engine: "chrome",
     }) as unknown as InternalShape;
     expect(session.headless).toBe(false);
     expect(session.userAgent).toBe("MyAgent/1.0");
     expect(session.viewportSize).toBe("800,600");
+    expect(session.engine).toBe("chrome");
   });
 
   it("treats explicit null as 'opt out of the default' (let Chromium pick its built-in)", () => {

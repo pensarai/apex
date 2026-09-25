@@ -426,6 +426,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         new PlaywrightMcpSession({
           extraHttpHeaders: stripBrowserManagedHeaders(sessionHeaders),
           display: input.display,
+          engine: input.browserEngine,
         });
       // Owned sessions aren't wired through createBrowserTools' abort path
       // (existingSession skips that listener). Disconnect on abort so timeout/
