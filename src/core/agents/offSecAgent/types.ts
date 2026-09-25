@@ -59,6 +59,8 @@ export const ApexFindingObject = z.object({
   impact: z.string(),
   evidence: z.string(),
   endpoint: z.string(),
+  /** Host-owned scope target that produced this finding. */
+  sourceTargetId: z.string().optional(),
   pocPath: z.string(),
   remediation: z.string(),
   references: z.string().optional(),
