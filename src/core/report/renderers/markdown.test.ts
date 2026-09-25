@@ -363,4 +363,97 @@ describe("renderMarkdown", () => {
   it("omits the Attack Path section when no path was captured", () => {
     expect(renderMarkdown(makeSampleReport())).not.toContain("## Attack Path");
   });
+
+  it("renders concise findings, proven chains, and exhausted paths", () => {
+    const timestamp = "2026-09-16T12:00:00.000Z";
+    const report = makeSampleReport({
+      findings: [
+        {
+          id: "finding-1",
+          title: "Cross-user file disclosure",
+          severity: "HIGH",
+          description: "A user can read a peer file.",
+          impact:
+            "An attacker can retrieve non-public files. Additional detail follows.",
+          evidence: "HTTP 200",
+          endpoint: "/api/v1/files/{id}",
+          pocPath: "pocs/file.sh",
+          remediation: "Enforce ownership.",
+        },
+      ],
+      chains: [
+        {
+          id: "chain-proven",
+          title: "User session to peer file",
+          status: "impact-proven",
+          severity: "HIGH",
+          description: "A low-privilege session reaches another user's file.",
+          impact: "Cross-user disclosure.",
+          remediation: "Enforce ownership.",
+          findingIds: ["finding-1"],
+          capabilityIds: [],
+          impactProofIds: [],
+          objectiveIds: [],
+          serviceIds: [],
+          targetIds: [],
+          evidence: ["HTTP 200 with peer content"],
+          steps: [
+            {
+              title: "Retrieve peer file",
+              description: "Request a sibling file ID.",
+              findingIds: ["finding-1"],
+              capabilityIds: [],
+              evidence: ["HTTP 200"],
+            },
+          ],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: "chain-blocked",
+          title: "OAuth account pivot",
+          status: "blocked",
+          description: "The OAuth pivot could not be exercised.",
+          impact: "Account-boundary impact was not established.",
+          findingIds: [],
+          capabilityIds: [],
+          impactProofIds: [],
+          objectiveIds: [],
+          serviceIds: [],
+          targetIds: [],
+          evidence: [],
+          steps: [],
+          blocker: "OAuth was not configured.",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      engagement: {
+        planningStatus: "complete",
+        missions: { total: 2, completed: 2, failed: 0, active: 0 },
+        coverage: {
+          total: 3,
+          impactProven: 1,
+          exhausted: 2,
+          blocked: 0,
+          open: 0,
+        },
+        chainExplore: {
+          status: "impact-proven",
+          summary: "One material chain was proven.",
+          evidence: ["chain-proven"],
+        },
+      },
+    });
+
+    const output = renderMarkdown(report);
+    expect(output).toContain("## Findings at a glance");
+    expect(output).toContain(
+      "| HIGH | Cross-user file disclosure | /api/v1/files/{id} | An attacker can retrieve non-public files. |",
+    );
+    expect(output).toContain("## Proven attack chains");
+    expect(output).toContain("**Linked findings:** Cross-user file disclosure");
+    expect(output).toContain("## Exhausted or blocked chains");
+    expect(output).toContain("**Blocker:** OAuth was not configured.");
+  });
 });
