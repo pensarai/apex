@@ -6,6 +6,7 @@ import type {
   StopCondition,
   StreamTextResult,
   TextStreamPart,
+  ToolChoice,
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
@@ -52,6 +53,7 @@ import { inProcessSubagentSpawner } from "./subagentSpawner";
 import { ToolLifecycleTracker } from "./toolLifecycle";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
+  buildExecutionPolicyPrompt,
   createAllTools,
   createResponseTool,
   EMAIL_TOOL_NAMES_ACTIVE,
@@ -60,6 +62,7 @@ import {
   PLAN_MODE_TOOL_NAMES,
   PlaywrightMcpSession,
   RESPONSE_TOOL_NAME,
+  resolveExecutionPolicy,
   SEND_EMAIL_TOOL_NAME,
   SMS_TOOL_NAMES_ACTIVE,
   sessionHasSmsPasswordless,
@@ -202,6 +205,26 @@ export function filterWorkspaceToolsForRun(
     if (WORKSPACE_TOOL_NAME_SET.has(name)) return readRequested;
     return true;
   });
+}
+
+function envEnabled(value: string | undefined): boolean {
+  return value === "1" || value?.toLowerCase() === "true";
+}
+
+export function resolveAgentToolChoice(
+  requested: ToolChoice<ToolSet> | undefined,
+  hasResponseTool: boolean,
+  model?: string,
+): ToolChoice<ToolSet> {
+  if (model && requiresAutoToolChoice(model)) return "auto";
+  if (requested && requested !== "auto") return requested;
+  if (
+    hasResponseTool &&
+    envEnabled(process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE)
+  ) {
+    return "required";
+  }
+  return requested ?? "auto";
 }
 
 /**
@@ -403,17 +426,22 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.streamIdFactory = input.streamIdFactory;
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
+    const sandbox = input.sandbox;
 
     // -- Resolve agent working directory ----------------------------------------
     const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
+    const executionPolicy = resolveExecutionPolicy(input.session);
+    const executionPolicyEnv = {
+      APEX_EXECUTION_POLICY_JSON: JSON.stringify(executionPolicy),
+    };
 
     // -- Per-command executor (local mode only) -------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
     // stream ends, or when the agent is fully killed.
-    if (!input.sandbox) {
+    if (!sandbox) {
       this.commandShell = new PerCommandShell({
         cwd: agentCwd,
-        env: input.environmentVariables,
+        env: { ...input.environmentVariables, ...executionPolicyEnv },
       });
       if (input.commandCancelHandle) {
         const shell = this.commandShell;
@@ -429,7 +457,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     // for agents that never use browser tools. Sandbox-mode agents already
     // share browser state via the sandbox's per-sandbox Playwright user-data
     // dir, so they don't need a session object on the host.
-    if (!input.sandbox) {
+    if (!sandbox) {
       // Snapshot resolved headers into the browser session. Later mutations
       // require a browser restart to take effect.
       const sessionHeaders = input.target
@@ -497,6 +525,7 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     const builtinTools = createAllTools({
       session: input.session,
+      executionPolicy,
       agentCwd,
       target: input.target,
       grpc: input.grpc,
@@ -511,8 +540,9 @@ export class OffensiveSecurityAgent<TResult = void> {
       onCacheMetrics: input.forwardUsageCallbacksToSpawnedAgents
         ? input.onCacheMetrics
         : undefined,
-      sandbox: input.sandbox,
+      sandbox,
       findingsRegistry: input.findingsRegistry,
+      onCodeCellComplete: input.onCodeCellComplete,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
       secretValues: input.secretValues,
@@ -642,6 +672,18 @@ export class OffensiveSecurityAgent<TResult = void> {
       return hasEmail;
     });
 
+    // Response and checkpoint are harness contracts, not workflow-selected
+    // conveniences. Keep them reachable whenever their implementations exist.
+    for (const contractName of [
+      RESPONSE_TOOL_NAME,
+      "checkpoint_state",
+      ...Object.keys(input.extraTools ?? {}),
+    ]) {
+      if (tools[contractName] && !activeTools.includes(contractName)) {
+        activeTools.push(contractName);
+      }
+    }
+
     // -- Plan mode: restrict to read-only tools -----------------------------
     if (input.mode === "plan") {
       const planSet = new Set<string>(PLAN_MODE_TOOL_NAMES);
@@ -763,7 +805,10 @@ export class OffensiveSecurityAgent<TResult = void> {
           sandboxMode: agentCwd === input.session.rootPath,
         }),
       );
-    const effectiveBaseSystemPrompt = baseSystemPrompt + codeModeInstructions;
+    const effectiveBaseSystemPrompt =
+      baseSystemPrompt +
+      codeModeInstructions +
+      buildExecutionPolicyPrompt(executionPolicy);
     const systemPrompt =
       effectiveBaseSystemPrompt +
       buildSessionWorkspaceSection(input.session, agentCwd, activeTools);
@@ -779,6 +824,11 @@ export class OffensiveSecurityAgent<TResult = void> {
     // -- Stream ---------------------------------------------------------------
     // Deferred so the AI SDK telemetry binds to this agent's span (entered in
     // consume()) rather than the construction-time context. See `streamResult`.
+    const resolvedToolChoice = resolveAgentToolChoice(
+      input.toolChoice,
+      tools[RESPONSE_TOOL_NAME] !== undefined,
+      input.model,
+    );
     this.createStream = () =>
       streamResponse({
         prompt: input.prompt,
@@ -788,9 +838,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         tools,
         activeTools,
         stopWhen,
-        toolChoice: requiresAutoToolChoice(input.model)
-          ? "auto"
-          : (input.toolChoice ?? "auto"),
+        toolChoice: resolvedToolChoice,
         languageModelMiddleware: input.languageModelMiddleware,
         usageRecorder: input.usageRecorder,
         // Per-subagent so the overflow tool-result dumps land next to this

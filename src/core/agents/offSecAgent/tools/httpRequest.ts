@@ -457,6 +457,7 @@ COMMON TESTING PATTERNS:
         return notSent(e instanceof Error ? e.message : String(e));
       }
 
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       // Rate-limit chokepoint for both dispatch paths (no-op when unset).
       const slotAcquired =
         (await ctx.session._rateLimiter?.acquireSlot(ctx.abortSignal)) ?? false;
@@ -465,26 +466,23 @@ COMMON TESTING PATTERNS:
         return notSent("Request aborted by user", "aborted");
       }
 
-      // Sandbox mode: build a curl command and run it inside the sandbox
-      if (ctx.sandbox) {
-        return executeSandboxHttpRequest(
-          ctx,
-          {
-            url,
-            method,
-            headers,
-            body: resolvedBody,
-            followRedirects,
-            timeout,
-          },
-          library,
-        );
-      }
-
-      // Local mode: use native fetch
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
       try {
+        // Sandbox mode: build a curl command and run it inside the sandbox
+        if (ctx.sandbox) {
+          return executeSandboxHttpRequest(
+            ctx,
+            {
+              url,
+              method,
+              headers,
+              body: resolvedBody,
+              followRedirects,
+              timeout,
+            },
+            library,
+          );
+        }
+
         const timeoutController = new AbortController();
         timeoutId = setTimeout(() => timeoutController.abort(), timeout);
 
@@ -611,6 +609,7 @@ COMMON TESTING PATTERNS:
         };
       } finally {
         if (timeoutId) clearTimeout(timeoutId);
+        if (slotAcquired) ctx.session._rateLimiter?.releaseSlot();
       }
     },
   });

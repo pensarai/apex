@@ -4,6 +4,7 @@ import type {
   ToolSet,
 } from "ai";
 import type {
+  AgentToolProtocolPreference,
   AIAuthConfig,
   AIModel,
   CacheMetrics,
@@ -19,9 +20,11 @@ import type { PromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
+import type { CodeCellResult } from "../codeMode/runtime";
 import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
 import type { StreamIdFactory, SystemPentestScope } from "../types";
+import type { OffensiveExecutionPolicy } from "./executionPolicy";
 import type { PerCommandShell } from "./perCommandShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
 import type { UnifiedSandbox } from "./sandbox";
@@ -34,8 +37,12 @@ import type { UnifiedSandbox } from "./sandbox";
  * session or agent internals directly.
  */
 export type ToolContext = {
+  toolProtocol?: AgentToolProtocolPreference;
   /** Session providing paths for findings, POCs, logs, scratchpad, etc. */
   session: SessionInfo;
+
+  /** Immutable engagement policy shared by tools, scripts, and browser code. */
+  executionPolicy?: OffensiveExecutionPolicy;
 
   /** The agent's operational working directory. Defaults to session.rootPath. */
   agentCwd: string;
@@ -80,6 +87,7 @@ export type ToolContext = {
    * When present, `document_vulnerability` checks for duplicates before writing.
    */
   findingsRegistry?: FindingsRegistry;
+  onCodeCellComplete?: (result: CodeCellResult) => void;
 
   /**
    * Shared attack surface registry for cross-agent asset dedup.

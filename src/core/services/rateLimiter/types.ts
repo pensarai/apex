@@ -7,4 +7,8 @@ export interface RateLimiterConfig {
    * @default undefined (unlimited)
    */
   requestsPerSecond?: number;
+  /** Maximum simultaneous in-flight requests. */
+  maxConcurrency?: number;
+  /** Token-bucket burst capacity. Defaults to one. */
+  burst?: number;
 }
