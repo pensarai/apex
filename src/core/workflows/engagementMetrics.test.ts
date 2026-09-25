@@ -49,6 +49,9 @@ describe("summarizeEngagementCheckpoint", () => {
       obligationsPerMission: 2,
       avoidedPerCellWorkers: 2,
       consolidatedAssociations: 1,
+      canonicalRequirements: 3,
+      singletonRequirements: 2,
+      preflightBlockedAssociations: 0,
       missionProgress: {
         planningStatus: "complete",
         total: 2,
