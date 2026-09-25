@@ -78,6 +78,13 @@ type DocumentToolResult = {
       confidence: number;
       concerns: string[];
       error?: { message: string };
+      contextReceipt?: {
+        targetId: string;
+        status: "read" | "unavailable";
+        version?: string;
+        complete: boolean;
+        hasProductContext: boolean;
+      };
     };
   };
 };
@@ -252,7 +259,7 @@ describe("documentVulnerability judge handling", () => {
     );
   });
 
-  it("preserves a PoC-backed finding when the judge returns degraded unverified status", async () => {
+  it("rejects a PoC-backed finding when judge infrastructure did not complete", async () => {
     mockedJudgeFinding.mockResolvedValue({
       valid: true,
       findingType: "vulnerability",
@@ -281,15 +288,11 @@ describe("documentVulnerability judge handling", () => {
       messages: [],
     })) as DocumentToolResult;
 
-    expect(result.success).toBe(true);
-    expect(result.judgeRejected).toBeUndefined();
-    expect(result.finding?.judge.confidence).toBe(0.4);
-    expect(result.finding?.judge.error?.message).toBe("provider overloaded");
-    expect(result.finding?.judge.concerns[0]).toContain(
-      "infrastructure failed",
-    );
+    expect(result.success).toBe(false);
+    expect(result.judgeRejected).toBe(true);
+    expect(result.judgeReasoning).toContain("could not complete");
     expect(existsSync(join(ctx.session.pocsPath, "poc_admin_data.sh"))).toBe(
-      true,
+      false,
     );
   });
 
@@ -489,6 +492,50 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
     });
     expect(textDeltas).toHaveLength(1);
     expect(textDeltas[0].subagentId).toBe(spawns[0].subagentId);
+  });
+
+  it("scopes read-only target context and code mode to the finding judge", async () => {
+    const contextReceipt = {
+      targetId: "target-1",
+      status: "read" as const,
+      version: "context-v1",
+      complete: true,
+      hasProductContext: true,
+    };
+    mockedJudgeFinding.mockResolvedValue({
+      ...makeAcceptedJudgeResult(),
+      contextReceipt,
+    });
+    const scopedContext = { receipts: () => [] };
+    const engagementContext = {
+      scope: vi.fn(() => scopedContext),
+    };
+    const ctx = {
+      ...makeToolContext(rootPath),
+      engagementTargetIds: new Set(["target-1"]),
+      engagementContext,
+      toolProtocol: "schema-code" as const,
+    } as unknown as Parameters<typeof documentVulnerability>[0];
+
+    const tool = documentVulnerability(ctx);
+    const result = (await tool.execute?.(
+      { ...makeDocumentInput(), sourceTargetId: "target-1" },
+      { toolCallId: "test", messages: [] },
+    )) as DocumentToolResult;
+
+    expect(result.success).toBe(true);
+    expect(result.finding?.judge.contextReceipt).toEqual(contextReceipt);
+    expect(engagementContext.scope).toHaveBeenCalledWith(["target-1"]);
+    expect(mockedJudgeFinding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceTargetId: "target-1",
+        contextAvailability: "available",
+      }),
+      expect.objectContaining({
+        toolProtocol: "schema-code",
+        engagementContext: scopedContext,
+      }),
+    );
   });
 
   it("allocates a fresh judge subagent id per invocation", async () => {

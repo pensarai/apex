@@ -334,6 +334,12 @@ CRITICAL RULES — READ BEFORE CALLING:
 
         // Phase 2: LLM Finding Judge
         const judgeInput: FindingJudgeInput = {
+          sourceTargetId: input.sourceTargetId,
+          contextAvailability: ctx.engagementContext
+            ? "available"
+            : input.sourceTargetId
+              ? "unavailable"
+              : undefined,
           pocScript: input.pocContent,
           pocType: input.pocType,
           pocPath,
@@ -360,12 +366,17 @@ CRITICAL RULES — READ BEFORE CALLING:
         // rejected the finding still counts as "completed".
         const spawner = ctx.subagentSpawner;
         const judgeConfig = ctx.findingJudgeConfig;
+        const judgeContext =
+          input.sourceTargetId && ctx.engagementContext
+            ? ctx.engagementContext.scope([input.sourceTargetId])
+            : undefined;
         const judgeResult: FindingJudgeResult =
           await spawner.spawn<FindingJudgeResult>({
             spec: {
               type: "finding-judge",
               judgeInput,
               target: ctx.target,
+              engagementContext: judgeContext,
             },
             runtime: {
               session: ctx.session,
@@ -392,7 +403,7 @@ CRITICAL RULES — READ BEFORE CALLING:
             resolveStatus: (r) => (r.error ? "failed" : "completed"),
           });
 
-        if (!judgeResult.valid) {
+        if (!judgeResult.valid || judgeResult.error) {
           cleanupPocFiles(ctx, filename);
           return {
             success: false,
@@ -585,7 +596,9 @@ CRITICAL RULES — READ BEFORE CALLING:
             reproducedPoc: judgeResult.reproducedPoc,
             webResearchUsed: judgeResult.webResearchUsed,
             limitations: judgeResult.limitations,
-            ...(judgeResult.error && { error: judgeResult.error }),
+            ...(judgeResult.contextReceipt && {
+              contextReceipt: judgeResult.contextReceipt,
+            }),
           },
         };
 

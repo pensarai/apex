@@ -10,9 +10,16 @@ import {
 import { dirname, join } from "node:path";
 import type { ModelMessage } from "ai";
 import type { SwarmTarget } from "../session/persistence";
+import type {
+  EngagementMission,
+  EngagementMissionCoverage,
+  EngagementMissionState,
+  EngagementModelConfig,
+} from "./engagementMissions";
 
 export type CoverageStatus =
   | "pending"
+  | "assigned"
   | "running"
   | "needs-lead"
   | "impact-proven"
@@ -32,6 +39,7 @@ export type ChainExploreStatus =
 export type EngagementWorkerMode =
   | "targeted"
   | "fast-strike"
+  | "grouped"
   | "explore"
   | "chain";
 
@@ -63,6 +71,7 @@ export interface ObjectiveCoverage {
   status: CoverageStatus;
   attempts: number;
   workerId?: string;
+  missionId?: string;
   summary?: string;
   evidence: string[];
 }
@@ -101,14 +110,27 @@ export interface EngagementWorkerRecord {
   targetIds: string[];
   objectiveIds: string[];
   capabilityIds: string[];
-  status: "running" | "completed" | "failed";
+  model?: EngagementModelConfig;
+  status: "queued" | "running" | "completed" | "failed";
   summary?: string;
-  startedAt: string;
+  startedAt?: string;
   completedAt?: string;
 }
 
 export interface EngagementState {
-  version: 2;
+  version: 3;
+  contextReads?: Record<
+    string,
+    {
+      status: "read" | "unavailable";
+      version?: string;
+      complete: boolean;
+      hasProductContext: boolean;
+    }
+  >;
+  concurrency?: number;
+  missions?: EngagementMissionState;
+  models?: { lead: EngagementModelConfig; worker: EngagementModelConfig };
   rootTarget: string;
   operatorContext?: string;
   targets: EngagementTargetRecord[];
@@ -133,11 +155,23 @@ export interface EngagementCompletion {
   missingServiceIds: string[];
   unresolvedCapabilityIds: string[];
   chainExplorePending: boolean;
+  missionPlanningPending: boolean;
+  activeMissionIds: string[];
+  coverageSummary: {
+    tested: number;
+    blocked: number;
+    untested: number;
+    total: number;
+  };
 }
 
 /** Compact durable state embedded in coordination tool results for host resume. */
 export interface EngagementCheckpoint {
-  version: 2;
+  version: 2 | 3;
+  contextReads?: EngagementState["contextReads"];
+  concurrency?: number;
+  missions?: EngagementMissionState;
+  models?: { lead: EngagementModelConfig; worker: EngagementModelConfig };
   targets?: EngagementTargetRecord[];
   objectives: EngagementObjective[];
   services: Array<Pick<EngagementService, "id" | "baselineStatus" | "summary">>;
@@ -272,7 +306,7 @@ export function buildEngagementState(
     })),
   );
   return {
-    version: 2,
+    version: 3,
     rootTarget,
     operatorContext,
     targets: targetRecords,
@@ -329,7 +363,7 @@ function isEngagementCheckpoint(
 ): value is RestorableEngagementCheckpoint {
   return (
     isRecord(value) &&
-    (value.version === 1 || value.version === 2) &&
+    (value.version === 1 || value.version === 2 || value.version === 3) &&
     (value.version === 1 || Array.isArray(value.objectives)) &&
     Array.isArray(value.services) &&
     Array.isArray(value.coverage) &&
@@ -345,7 +379,7 @@ function isEngagementState(value: unknown): value is EngagementState {
   const record = value as Record<string, unknown>;
   return (
     isEngagementCheckpoint(value) &&
-    value.version === 2 &&
+    (value.version === 2 || value.version === 3) &&
     typeof record.rootTarget === "string" &&
     Array.isArray(record.objectives)
   );
@@ -361,6 +395,14 @@ function applyCheckpoint(
   const isLegacy = checkpoint.version === 1;
   return {
     ...structuredClone(seed),
+    version: 3,
+    concurrency: checkpoint.concurrency,
+    contextReads:
+      "contextReads" in checkpoint
+        ? structuredClone(checkpoint.contextReads)
+        : undefined,
+    missions: structuredClone(checkpoint.missions),
+    models: structuredClone(checkpoint.models),
     services: seed.services.map((service) => ({
       ...service,
       ...serviceUpdates.get(service.id),
@@ -449,9 +491,344 @@ export class EngagementStore {
     return structuredClone(this.state);
   }
 
+  restore(checkpoint: EngagementCheckpoint): void {
+    if (
+      checkpoint.targets &&
+      JSON.stringify(checkpoint.targets) !== JSON.stringify(this.state.targets)
+    ) {
+      throw new Error(
+        "Engagement checkpoint does not match the authorized target contract",
+      );
+    }
+    if (
+      JSON.stringify(checkpoint.objectives) !==
+      JSON.stringify(this.state.objectives)
+    ) {
+      throw new Error(
+        "Engagement checkpoint does not match the authorized objective contract",
+      );
+    }
+    const expectedServices = new Map(
+      this.state.coverage.map((cell) => [
+        engagementCoverageCellId(cell.targetId, cell.objectiveId),
+        cell.serviceId,
+      ]),
+    );
+    const expected = new Set(
+      this.state.coverage.map((cell) =>
+        engagementCoverageCellId(cell.targetId, cell.objectiveId),
+      ),
+    );
+    const actual = new Set(
+      checkpoint.coverage.map((cell) =>
+        engagementCoverageCellId(cell.targetId, cell.objectiveId),
+      ),
+    );
+    if (
+      expected.size !== actual.size ||
+      checkpoint.coverage.length !== expected.size ||
+      [...actual].some((id) => !expected.has(id))
+    ) {
+      throw new Error("Engagement checkpoint changed the coverage contract");
+    }
+    for (const cell of checkpoint.coverage) {
+      if (
+        expectedServices.get(
+          engagementCoverageCellId(cell.targetId, cell.objectiveId),
+        ) !== cell.serviceId
+      ) {
+        throw new Error("Engagement checkpoint changed coverage ownership");
+      }
+    }
+    this.state = applyCheckpoint(this.state, checkpoint);
+    this.persist();
+  }
+
+  saveMissions(missions: EngagementMissionState): void {
+    this.state.missions = structuredClone(missions);
+    this.persist();
+  }
+
+  saveConcurrency(concurrency: number): void {
+    if (!Number.isInteger(concurrency) || concurrency < 1)
+      throw new Error("Invalid engagement concurrency");
+    this.state.concurrency = concurrency;
+    this.persist();
+  }
+
+  recordInspectedTargets(targetIds: string[]): void {
+    const missions = this.state.missions;
+    if (!missions || missions.planningStatus === "complete") return;
+    for (const id of targetIds) this.getTarget(id);
+    missions.inspectedTargetIds = unique([
+      ...(missions.inspectedTargetIds ?? []),
+      ...targetIds,
+    ]);
+    this.persist();
+  }
+
+  defineMission(mission: EngagementMission): void {
+    const state = this.state.missions;
+    if (!state || state.planningStatus === "complete")
+      throw new Error("Mission definitions require an unsealed grouped plan");
+    if (
+      !mission.purpose.trim() ||
+      !mission.rationale.trim() ||
+      !mission.coverage.length
+    )
+      throw new Error("Missions require purpose, rationale, and coverage");
+    for (const cell of mission.coverage) {
+      if (
+        !this.getTarget(cell.targetId).objectiveIds.includes(cell.objectiveId)
+      )
+        throw new Error(
+          `Objective ${cell.objectiveId} is not assigned to target ${cell.targetId}`,
+        );
+    }
+    if (mission.requirements?.length) {
+      const requirementIds = mission.requirements.map((item) => item.id);
+      if (new Set(requirementIds).size !== requirementIds.length) {
+        throw new Error("Mission requirement IDs must be unique");
+      }
+      const requirementCoverage = mission.requirements.flatMap(
+        (requirement) => requirement.coverage,
+      );
+      const requirementCells = requirementCoverage.map((cell) =>
+        engagementCoverageCellId(cell.targetId, cell.objectiveId),
+      );
+      const missionCells = mission.coverage.map((cell) =>
+        engagementCoverageCellId(cell.targetId, cell.objectiveId),
+      );
+      if (
+        new Set(requirementCells).size !== requirementCells.length ||
+        requirementCells.length !== missionCells.length ||
+        requirementCells.some((cell) => !missionCells.includes(cell))
+      ) {
+        throw new Error(
+          "Canonical requirements must partition the mission source coverage exactly once",
+        );
+      }
+    }
+    for (const id of [
+      ...mission.supportingTargetIds,
+      ...mission.contextTargetIds,
+    ])
+      this.getTarget(id);
+    const index = state.missions.findIndex((item) => item.id === mission.id);
+    if (index >= 0 && state.missions[index]?.status !== "planned")
+      throw new Error("An executed mission cannot be edited");
+    if (index >= 0) state.missions[index] = structuredClone(mission);
+    else state.missions.push(structuredClone(mission));
+    state.planningStatus = "partial";
+    this.persist();
+  }
+
+  deletePlannedMission(id: string): void {
+    const state = this.state.missions;
+    const mission = state?.missions.find((item) => item.id === id);
+    if (
+      !state ||
+      state.planningStatus === "complete" ||
+      mission?.status !== "planned"
+    )
+      throw new Error("Only unsealed planned missions can be deleted");
+    state.missions = state.missions.filter((item) => item.id !== id);
+    this.persist();
+  }
+
+  saveModels(input: {
+    lead: EngagementModelConfig;
+    worker: EngagementModelConfig;
+  }): void {
+    this.state.models = structuredClone(input);
+    this.persist();
+  }
+
+  addMission(mission: EngagementMission): void {
+    const missions = this.state.missions ?? {
+      planningStatus: "pending" as const,
+      missions: [],
+    };
+    if (missions.missions.some((candidate) => candidate.id === mission.id)) {
+      throw new Error(`Duplicate engagement mission: ${mission.id}`);
+    }
+    missions.missions.push(structuredClone(mission));
+    missions.planningStatus = "partial";
+    this.state.missions = missions;
+    this.persist();
+  }
+
+  setMissionPlanningComplete(): EngagementMissionState {
+    const missions = this.state.missions ?? {
+      planningStatus: "pending" as const,
+      missions: [],
+    };
+    const assignments = missions.missions.flatMap((mission) =>
+      mission.coverage.map((cell) =>
+        engagementCoverageCellId(cell.targetId, cell.objectiveId),
+      ),
+    );
+    const assigned = new Set(assignments);
+    if (assigned.size !== assignments.length) {
+      throw new Error(
+        "Mission plan assigns a coverage obligation more than once",
+      );
+    }
+    const missing = this.state.coverage.filter(
+      (cell) =>
+        !assigned.has(
+          engagementCoverageCellId(cell.targetId, cell.objectiveId),
+        ),
+    );
+    if (missing.length > 0) {
+      throw new Error(
+        `Mission plan omits ${missing.length} required coverage obligation(s)`,
+      );
+    }
+    const expected = new Set(
+      this.state.coverage.map((cell) =>
+        engagementCoverageCellId(cell.targetId, cell.objectiveId),
+      ),
+    );
+    if (assignments.some((id) => !expected.has(id)))
+      throw new Error("Mission plan contains unknown coverage obligations");
+    const visited = new Set<string>();
+    const visiting = new Set<string>();
+    const visit = (id: string): void => {
+      if (visiting.has(id))
+        throw new Error("Mission prerequisites contain a cycle");
+      if (visited.has(id)) return;
+      const mission = missions.missions.find((item) => item.id === id);
+      if (!mission) throw new Error(`Unknown prerequisite mission: ${id}`);
+      visiting.add(id);
+      for (const prerequisite of mission.prerequisiteMissionIds)
+        visit(prerequisite);
+      visiting.delete(id);
+      visited.add(id);
+    };
+    for (const mission of missions.missions) visit(mission.id);
+    const singletonTargets = new Set<string>();
+    let primaryTargetCount = 0;
+    for (const mission of missions.missions) {
+      const targets = unique(mission.coverage.map((cell) => cell.targetId));
+      primaryTargetCount += targets.length;
+      if (targets.length === 1) {
+        if (!mission.singletonJustification?.trim())
+          throw new Error(
+            `Singleton mission ${mission.id} requires justification`,
+          );
+        singletonTargets.add(targets[0] as string);
+      }
+    }
+    const average = missions.missions.length
+      ? primaryTargetCount / missions.missions.length
+      : 0;
+    if (
+      this.state.targets.length >= 8 &&
+      (singletonTargets.size / this.state.targets.length > 0.25 || average < 2)
+    )
+      throw new Error(
+        "Regroup the plan: at most 25% singleton targets and at least two primary targets per mission on average are required",
+      );
+    const inspected = new Set(missions.inspectedTargetIds ?? []);
+    if (this.state.targets.some((target) => !inspected.has(target.id)))
+      throw new Error(
+        "Read the complete target manifest before sealing the mission plan",
+      );
+    for (const mission of missions.missions) {
+      for (const requirement of mission.requirements ?? []) {
+        if (requirement.coverage.length < 2) continue;
+        const missingContext = unique(
+          requirement.coverage.map((cell) => cell.targetId),
+        ).filter((targetId) => !this.state.contextReads?.[targetId]?.complete);
+        if (missingContext.length > 0) {
+          throw new Error(
+            `Read complete target context before consolidating requirement ${requirement.id}: ${missingContext.join(", ")}`,
+          );
+        }
+      }
+    }
+    missions.metrics = {
+      primaryTargetsPerMission: average,
+      singletonTargets: singletonTargets.size,
+    };
+    for (const mission of missions.missions) {
+      if (mission.status === "planned") mission.status = "queued";
+      for (const assignment of mission.coverage) {
+        const cell = this.state.coverage.find(
+          (candidate) =>
+            candidate.targetId === assignment.targetId &&
+            candidate.objectiveId === assignment.objectiveId,
+        );
+        if (!cell) throw new Error("Missing mission coverage");
+        cell.missionId = mission.id;
+        if (cell.status === "pending") cell.status = "assigned";
+      }
+    }
+    missions.planningStatus = "complete";
+    this.state.missions = missions;
+    this.persist();
+    return structuredClone(missions);
+  }
+
+  setMissionStatus(
+    missionId: string,
+    status: EngagementMission["status"],
+  ): EngagementMission {
+    const mission = this.state.missions?.missions.find(
+      (candidate) => candidate.id === missionId,
+    );
+    if (!mission) throw new Error(`Unknown engagement mission: ${missionId}`);
+    mission.status = status;
+    if (status === "running") mission.startedAt = new Date().toISOString();
+    if (status === "completed" || status === "failed") {
+      mission.completedAt = new Date().toISOString();
+    }
+    this.persist();
+    return structuredClone(mission);
+  }
+
+  settleMissionRequirement(input: {
+    workerId: string;
+    coverage: EngagementMissionCoverage[];
+    status: Extract<CoverageStatus, "impact-proven" | "exhausted" | "blocked">;
+    summary: string;
+    evidence: string[];
+  }): ObjectiveCoverage[] {
+    const cells = input.coverage.map(({ targetId, objectiveId }) => {
+      const cell = this.state.coverage.find(
+        (candidate) =>
+          candidate.targetId === targetId &&
+          candidate.objectiveId === objectiveId,
+      );
+      if (
+        !cell ||
+        cell.workerId !== input.workerId ||
+        cell.status !== "running"
+      ) {
+        throw new Error(
+          `Worker no longer owns running coverage ${targetId}:${objectiveId}`,
+        );
+      }
+      return cell;
+    });
+    for (const cell of cells) {
+      cell.status = input.status;
+      cell.summary = input.summary;
+      cell.evidence = unique([...cell.evidence, ...input.evidence]);
+    }
+    this.refreshServiceBaselines();
+    this.persist();
+    return structuredClone(cells);
+  }
+
   checkpoint(): EngagementCheckpoint {
     return structuredClone({
-      version: 2,
+      version: 3,
+      contextReads: this.state.contextReads,
+      concurrency: this.state.concurrency,
+      missions: this.state.missions,
+      models: this.state.models,
       targets: this.state.targets,
       objectives: this.state.objectives,
       services: this.state.services.map(({ id, baselineStatus, summary }) => ({
@@ -466,6 +843,32 @@ export class EngagementStore {
       chainExplore: this.state.chainExplore,
       updatedAt: this.state.updatedAt,
     });
+  }
+
+  recordContextRead(
+    targetId: string,
+    receipt: NonNullable<EngagementState["contextReads"]>[string],
+  ): void {
+    this.getTarget(targetId);
+    const previous = this.state.contextReads?.[targetId];
+    if (
+      previous?.version &&
+      receipt.version &&
+      previous.version !== receipt.version
+    )
+      throw new Error(
+        "Target context changed since the engagement checkpoint; review the snapshot before resuming",
+      );
+    const next = {
+      ...receipt,
+      complete: Boolean(previous?.complete || receipt.complete),
+    };
+    if (JSON.stringify(previous) === JSON.stringify(next)) return;
+    this.state.contextReads = {
+      ...this.state.contextReads,
+      [targetId]: next,
+    };
+    this.persist();
   }
 
   getService(id: string): EngagementService {
@@ -575,7 +978,7 @@ export class EngagementStore {
         (candidate) =>
           candidate.targetId === cell.targetId &&
           candidate.objectiveId === cell.objectiveId &&
-          candidate.status === "pending",
+          (candidate.status === "pending" || candidate.status === "assigned"),
       );
       if (!coverage) continue;
       coverage.status = "running";
@@ -719,10 +1122,23 @@ export class EngagementStore {
       targetIds: unique(input.targetIds),
       objectiveIds: unique(input.objectiveIds),
       capabilityIds: unique(input.capabilityIds),
-      status: "running",
-      startedAt: new Date().toISOString(),
+      status: "queued",
     };
     this.state.workers.push(worker);
+    this.persist();
+    return structuredClone(worker);
+  }
+
+  startWorker(workerId: string): EngagementWorkerRecord {
+    const worker = this.state.workers.find(
+      (candidate) => candidate.id === workerId,
+    );
+    if (!worker) throw new Error(`Unknown engagement worker: ${workerId}`);
+    if (worker.status !== "queued") {
+      throw new Error(`Worker ${workerId} is not queued`);
+    }
+    worker.status = "running";
+    worker.startedAt = new Date().toISOString();
     this.persist();
     return structuredClone(worker);
   }
@@ -774,6 +1190,13 @@ export class EngagementStore {
       worker.summary =
         "Interrupted before completion; any preserved conversation is available for follow-up.";
       worker.completedAt = interruptedAt;
+      const mission = this.state.missions?.missions.find(
+        (candidate) => candidate.workerId === worker.id,
+      );
+      if (mission) {
+        mission.status = "failed";
+        mission.completedAt = interruptedAt;
+      }
     }
     for (const coverage of this.state.coverage) {
       if (
@@ -825,18 +1248,47 @@ export class EngagementStore {
     const chainExplorePending = !TERMINAL_CHAIN.has(
       this.state.chainExplore.status,
     );
+    const missionPlanningPending =
+      this.state.missions !== undefined &&
+      this.state.missions.planningStatus !== "complete";
+    const activeMissionIds =
+      this.state.missions?.missions
+        .filter(
+          (mission) =>
+            mission.status === "planned" ||
+            mission.status === "queued" ||
+            mission.status === "running",
+        )
+        .map((mission) => mission.id) ?? [];
+    const tested = this.state.coverage.filter(
+      (coverage) =>
+        coverage.status === "impact-proven" || coverage.status === "exhausted",
+    ).length;
+    const blocked = this.state.coverage.filter(
+      (coverage) => coverage.status === "blocked",
+    ).length;
     return {
       complete:
         missingObjectiveIds.length === 0 &&
         missingCoverageCellIds.length === 0 &&
         missingServiceIds.length === 0 &&
         unresolvedCapabilityIds.length === 0 &&
+        !missionPlanningPending &&
+        activeMissionIds.length === 0 &&
         !chainExplorePending,
       missingObjectiveIds,
       missingCoverageCellIds,
       missingServiceIds,
       unresolvedCapabilityIds,
       chainExplorePending,
+      missionPlanningPending,
+      activeMissionIds,
+      coverageSummary: {
+        tested,
+        blocked,
+        untested: this.state.coverage.length - tested - blocked,
+        total: this.state.coverage.length,
+      },
     };
   }
 

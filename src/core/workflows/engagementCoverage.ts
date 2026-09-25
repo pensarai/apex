@@ -1,4 +1,4 @@
-import type { ModelMessage, ToolSet } from "ai";
+import type { ModelMessage } from "ai";
 import { TargetedPentestAgent } from "../agents/specialized/pentest/agent";
 import { AgentEventBus } from "../eventBus";
 import type { FindingsRegistry } from "../findings/registry";
@@ -12,6 +12,7 @@ import {
   engagementCoverageCellId,
   type ObjectiveCoverage,
 } from "./engagementState";
+import type { EngagementContext } from "./engagementSurface";
 import type { EngagementWorkerPool } from "./engagementWorkerPool";
 import { runFastStrikeObjective } from "./fastStrike";
 import type { PentestWorkflowInput } from "./pentest";
@@ -97,7 +98,7 @@ export async function runDeterministicEngagementCoverage(input: {
   findingsRegistry: FindingsRegistry;
   eventBus: AgentEventBus;
   leadAgentId: string;
-  surfaceTools?: ToolSet;
+  engagementContext?: EngagementContext;
   engagementTargetIds: string[];
   mode?: EngagementCoverageMode;
   onCheckpoint?: (checkpoint: EngagementCheckpoint) => void | Promise<void>;
@@ -114,6 +115,7 @@ export async function runDeterministicEngagementCoverage(input: {
     });
     if (claimed.length === 0) return;
     const targetIds = claimed.map((cell) => cell.targetId);
+    const workerContext = input.engagementContext?.scope(targetIds);
     const targets = targetIds.map((targetId) =>
       input.store.getTarget(targetId),
     );
@@ -178,10 +180,7 @@ export async function runDeterministicEngagementCoverage(input: {
             input.workflow.onStepFinish?.(event);
           },
           laneCount: 1,
-          extraTools: input.surfaceTools,
-          directTools: input.surfaceTools
-            ? Object.keys(input.surfaceTools)
-            : undefined,
+          engagementContext: workerContext,
           engagementTargetIds: input.engagementTargetIds,
         });
         input.store.settleCoverageCell({
@@ -230,10 +229,7 @@ export async function runDeterministicEngagementCoverage(input: {
           display: input.workflow.display,
           role: "worker",
           toolProtocol: input.workflow.toolProtocol,
-          extraTools: input.surfaceTools,
-          directTools: input.surfaceTools
-            ? Object.keys(input.surfaceTools)
-            : undefined,
+          engagementContext: workerContext,
           engagementTargetIds: input.engagementTargetIds,
         });
         const outcome = await agent.consume();

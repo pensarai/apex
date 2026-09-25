@@ -19,6 +19,7 @@ import type { FindingsRegistry } from "../../../findings/registry";
 import type { PromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
+import type { EngagementContext } from "../../../workflows/engagementSurface";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { CodeCellResult } from "../codeMode/runtime";
 import type { SubagentSpawner } from "../subagentSpawner";
@@ -41,7 +42,6 @@ import type { UnifiedSandbox } from "./sandbox";
  * session or agent internals directly.
  */
 export type ToolContext = {
-  toolProtocol?: AgentToolProtocolPreference;
   /** Session providing paths for findings, POCs, logs, scratchpad, etc. */
   session: SessionInfo;
 
@@ -100,6 +100,8 @@ export type ToolContext = {
 
   /** Authorized host-owned target ids for engagement finding provenance. */
   engagementTargetIds?: ReadonlySet<string>;
+  engagementContext?: EngagementContext;
+  toolProtocol?: AgentToolProtocolPreference;
 
   /**
    * Shared attack surface registry for cross-agent asset dedup.

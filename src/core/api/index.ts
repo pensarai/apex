@@ -80,9 +80,17 @@ export type {
 export { createDomain, listDomains } from "./domains";
 export type {
   EngagementCheckpoint,
+  EngagementMetrics,
+  EngagementMissionProgress,
+  EngagementMissionProgressItem,
+  EngagementMissionProgressStatus,
   EngagementPentestInput,
 } from "./engagementPentest";
-export { runEngagementPentestAgent } from "./engagementPentest";
+export {
+  projectEngagementMissionProgress,
+  runEngagementPentestAgent,
+  summarizeEngagementCheckpoint,
+} from "./engagementPentest";
 export type { EnvironmentAgentInput, EnvironmentResult } from "./environment";
 export { runEnvironmentAgent } from "./environment";
 export type {

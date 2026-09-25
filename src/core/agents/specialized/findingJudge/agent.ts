@@ -14,6 +14,7 @@ import type {
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { AgentEventBus } from "../../../eventBus";
 import type { SessionInfo } from "../../../session";
+import type { EngagementContext } from "../../../workflows/engagementSurface";
 import { OffensiveSecurityAgent } from "../../offSecAgent";
 import type { CodeCellResult } from "../../offSecAgent/codeMode/runtime";
 import type { UnifiedSandbox } from "../../offSecAgent/tools";
@@ -46,6 +47,7 @@ export interface FindingJudgeAgentInput {
   thinkingEffort?: ThinkingEffort | null;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
   toolProtocol?: AgentToolProtocolPreference;
+  engagementContext?: EngagementContext;
   onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
   onCodeCellComplete?: (result: CodeCellResult) => void;
   /** Provider middleware applied only to this agent's model calls. Unset → raw model. */
@@ -83,6 +85,18 @@ export class FindingJudgeAgent extends OffensiveSecurityAgent<FindingJudgeAgentO
       system: detectOSAndEnhancePrompt(FINDING_JUDGE_SYSTEM_PROMPT),
       activeTools: [...FINDING_JUDGE_ACTIVE_TOOLS],
       responseSchema: FindingJudgeOutputSchema,
+      responseGuard: () => {
+        if (!opts.engagementContext || !opts.finding.sourceTargetId) return;
+        const receipt = opts.engagementContext
+          .receipts()
+          .find((item) => item.targetId === opts.finding.sourceTargetId);
+        if (!receipt) {
+          return `Read the complete authorized target context for ${opts.finding.sourceTargetId} before deciding.`;
+        }
+        if (receipt.status === "read" && !receipt.complete) {
+          return `Read every target-context page for ${opts.finding.sourceTargetId} before deciding.`;
+        }
+      },
       stopWhen: stepCountIs(60),
       target,
       prompt: buildFindingJudgePrompt({ ...finding, target }),
