@@ -9,6 +9,9 @@ export const FINDING_TYPES = [
 export type FindingType = (typeof FINDING_TYPES)[number];
 
 export interface FindingJudgeInput {
+  /** Host-validated target identifier for engagement context lookup. */
+  sourceTargetId?: string;
+  contextAvailability?: "available" | "unavailable";
   /** The full POC script content */
   pocScript: string;
   /** Script language */
@@ -45,6 +48,13 @@ interface FindingJudgeVerificationDetails {
   webResearchUsed?: boolean;
   /** Known gaps in verification */
   limitations?: string[];
+  contextReceipt?: {
+    targetId: string;
+    status: "read" | "unavailable";
+    version?: string;
+    complete: boolean;
+    hasProductContext: boolean;
+  };
 }
 
 export interface FindingJudgeResult extends FindingJudgeVerificationDetails {

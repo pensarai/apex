@@ -1,5 +1,6 @@
 import { stepCountIs } from "ai";
 import type {
+  AgentToolProtocolPreference,
   AIModel,
   OpenAIReasoningEffort,
   ThinkingEffort,
@@ -7,6 +8,7 @@ import type {
 import type { AIAuthConfig } from "../../../ai/utils";
 import type { AgentEventBus } from "../../../eventBus";
 import type { SessionInfo } from "../../../session";
+import type { EngagementContext } from "../../../workflows/engagementSurface";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { UnifiedSandbox } from "../../offSecAgent/tools";
 import { detectOSAndEnhancePrompt } from "../utils";
@@ -36,6 +38,8 @@ export interface FindingJudgeAgentInput {
   enableThinking?: boolean;
   thinkingEffort?: ThinkingEffort | null;
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
+  toolProtocol?: AgentToolProtocolPreference;
+  engagementContext?: EngagementContext;
 }
 
 const FINDING_JUDGE_ACTIVE_TOOLS = [
@@ -67,10 +71,24 @@ export class FindingJudgeAgent extends OffensiveSecurityAgent<FindingJudgeAgentO
       enableThinking: opts.enableThinking,
       thinkingEffort: opts.thinkingEffort,
       openAIReasoningEffort: opts.openAIReasoningEffort,
+      toolProtocol: opts.toolProtocol,
+      engagementContext: opts.engagementContext,
       subagentId: opts.subagentId ?? "finding-judge",
       subagentName: opts.subagentName ?? "Finding Judge",
       activeTools: [...FINDING_JUDGE_ACTIVE_TOOLS],
       responseSchema: FindingJudgeOutputSchema,
+      responseGuard: () => {
+        if (!opts.engagementContext || !opts.finding.sourceTargetId) return;
+        const receipt = opts.engagementContext
+          .receipts()
+          .find((item) => item.targetId === opts.finding.sourceTargetId);
+        if (!receipt) {
+          return `Read the complete authorized target context for ${opts.finding.sourceTargetId} before deciding.`;
+        }
+        if (receipt.status === "read" && !receipt.complete) {
+          return `Read every target-context page for ${opts.finding.sourceTargetId} before deciding.`;
+        }
+      },
       stopWhen: stepCountIs(60),
     });
   }

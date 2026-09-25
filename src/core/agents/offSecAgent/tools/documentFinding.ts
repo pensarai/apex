@@ -261,6 +261,12 @@ CRITICAL RULES — READ BEFORE CALLING:
 
         // Phase 2: LLM Finding Judge
         const judgeInput: FindingJudgeInput = {
+          sourceTargetId: input.sourceTargetId,
+          contextAvailability: ctx.engagementContext
+            ? "available"
+            : input.sourceTargetId
+              ? "unavailable"
+              : undefined,
           pocScript: input.pocContent,
           pocType: input.pocType,
           pocPath,
@@ -300,6 +306,10 @@ CRITICAL RULES — READ BEFORE CALLING:
 
         let judgeResult: FindingJudgeResult;
         try {
+          const judgeContext =
+            input.sourceTargetId && ctx.engagementContext
+              ? ctx.engagementContext.scope([input.sourceTargetId])
+              : undefined;
           judgeResult = await judgeFinding(judgeInput, {
             model: ctx.model!,
             session: ctx.session,
@@ -313,6 +323,8 @@ CRITICAL RULES — READ BEFORE CALLING:
             enableThinking: ctx.enableThinking,
             thinkingEffort: ctx.thinkingEffort,
             openAIReasoningEffort: ctx.openAIReasoningEffort,
+            toolProtocol: ctx.toolProtocol,
+            engagementContext: judgeContext,
           });
         } catch (error) {
           ctx.eventBus?.emit("subagent-complete", {
@@ -331,7 +343,7 @@ CRITICAL RULES — READ BEFORE CALLING:
           parentSubagentId: ctx.subagentId,
         });
 
-        if (!judgeResult.valid) {
+        if (!judgeResult.valid || judgeResult.error) {
           cleanupPocFiles(ctx, filename);
           return {
             success: false,
@@ -540,7 +552,9 @@ CRITICAL RULES — READ BEFORE CALLING:
             reproducedPoc: judgeResult.reproducedPoc,
             webResearchUsed: judgeResult.webResearchUsed,
             limitations: judgeResult.limitations,
-            ...(judgeResult.error && { error: judgeResult.error }),
+            ...(judgeResult.contextReceipt && {
+              contextReceipt: judgeResult.contextReceipt,
+            }),
           },
         };
 

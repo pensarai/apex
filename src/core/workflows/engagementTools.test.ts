@@ -5,6 +5,72 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const constructorCalls: Array<Record<string, unknown>> = [];
 const fastStrikeCalls: Array<Record<string, unknown>> = [];
+const groupedCalls: Array<Record<string, unknown>> = [];
+let groupedFailureAfterReport: unknown;
+
+vi.mock("../agents/offSecAgent", () => ({
+  OffensiveSecurityAgent: class {
+    constructor(private readonly input: Record<string, unknown>) {
+      groupedCalls.push(input);
+    }
+    async consume() {
+      const prompt = this.input.prompt as string;
+      const extraTools = this.input.extraTools as Record<
+        string,
+        {
+          execute: (
+            input: Record<string, unknown>,
+            context: { toolCallId: string; messages: never[] },
+          ) => Promise<unknown>;
+        }
+      >;
+      const canonical = prompt.includes("Canonical mission requirements:");
+      const serialized = prompt
+        .split(
+          canonical
+            ? "Canonical mission requirements:\n\n"
+            : "Legacy coverage contract:\n\n",
+        )[1]
+        ?.split("\n\nAuthorized target")[0];
+      const contract = JSON.parse(serialized ?? "[]") as Array<
+        | { targetId: string; objectiveId: string }
+        | {
+            id: string;
+            coverage: Array<{ targetId: string; objectiveId: string }>;
+          }
+      >;
+      const report = canonical
+        ? extraTools.report_engagement_mission_progress
+        : extraTools.report_engagement_coverage;
+      await report?.execute(
+        canonical
+          ? {
+              requirementResults: contract.map((requirement) => ({
+                requirementId: "id" in requirement ? requirement.id : "missing",
+                status: "exhausted",
+                summary: "Bounded flow checks completed",
+                evidence: [],
+              })),
+              toolCallDescription: "record canonical mission progress",
+            }
+          : {
+              obligationResults: contract.map((cell) => ({
+                ...cell,
+                status: "exhausted",
+                summary: "Bounded flow checks completed",
+                evidence: [],
+              })),
+              toolCallDescription: "record completed grouped coverage",
+            },
+        { toolCallId: "report-1", messages: [] },
+      );
+      if (groupedFailureAfterReport) throw groupedFailureAfterReport;
+      return {
+        summary: "Related flow tested",
+      };
+    }
+  },
+}));
 
 vi.mock("../agents/specialized/pentest/agent", () => ({
   TargetedPentestAgent: class {
@@ -58,20 +124,26 @@ import type { AIModel } from "../ai";
 import { AgentEventBus } from "../eventBus";
 import type { FindingsRegistry } from "../findings/registry";
 import type { SessionInfo } from "../session";
+import { createEngagementPlanningTools } from "./engagementPlanning";
 import { buildEngagementState, EngagementStore } from "./engagementState";
-import { createEngagementTools } from "./engagementTools";
+import {
+  createEngagementTools,
+  formatEngagementError,
+} from "./engagementTools";
 
 const directories: string[] = [];
 
 afterEach(() => {
   constructorCalls.length = 0;
   fastStrikeCalls.length = 0;
+  groupedCalls.length = 0;
+  groupedFailureAfterReport = undefined;
   for (const directory of directories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-function makeRuntime() {
+function makeRuntime(grouped = false) {
   const rootPath = mkdtempSync(join(tmpdir(), "apex-engagement-tools-"));
   directories.push(rootPath);
   const session = {
@@ -79,19 +151,27 @@ function makeRuntime() {
     rootPath,
     findingsPath: join(rootPath, "findings"),
     pocsPath: join(rootPath, "pocs"),
-    config: {},
+    config: grouped ? { engagementCoverageMode: "grouped" } : {},
   } as unknown as SessionInfo;
   const seed = buildEngagementState("https://example.test", [
     {
       target: "https://example.test/api/users/{id}",
       objectives: ["Test authorization"],
     },
+    ...(grouped
+      ? [
+          {
+            target: "https://example.test/api/users/{id}/mfa",
+            objectives: ["Test authorization"],
+          },
+        ]
+      : []),
   ]);
   const store = EngagementStore.open(rootPath, seed);
   const findingsRegistry = {
     getFindings: () => [],
   } as unknown as FindingsRegistry;
-  const tools = createEngagementTools({
+  const runtime = createEngagementTools({
     input: {
       target: "https://example.test",
       model: "test-model" as AIModel,
@@ -101,12 +181,21 @@ function makeRuntime() {
     findingsRegistry,
     eventBus: new AgentEventBus(),
     leadAgentId: "engagement-lead",
+    workerModel: grouped
+      ? { model: "worker-model" as AIModel, enableThinking: false }
+      : undefined,
     engagementTargetIds: ["target-1"],
     surfaceTools: {
       search_engagement_surface: { execute: vi.fn() } as never,
     },
   });
-  return { tools, store, seed };
+  return {
+    tools: runtime.tools,
+    startPlannedMissions: runtime.startPlannedMissions,
+    planningTools: createEngagementPlanningTools(store),
+    store,
+    seed,
+  };
 }
 
 async function executeTool(
@@ -123,6 +212,17 @@ async function executeTool(
 }
 
 describe("engagement worker tools", () => {
+  it("preserves structured worker errors without object coercion", () => {
+    expect(
+      formatEngagementError({
+        code: "stream_terminated",
+        message: "Stream terminated unexpectedly",
+      }),
+    ).toBe(
+      '{"code":"stream_terminated","message":"Stream terminated unexpectedly"}',
+    );
+  });
+
   it("pages the coordination state while preserving objective coverage", async () => {
     const { tools, seed } = makeRuntime();
     const result = await executeTool(tools.read_engagement_state, {
@@ -178,7 +278,6 @@ describe("engagement worker tools", () => {
     expect(constructorCalls[0]).toMatchObject({
       toolProtocol: undefined,
       engagementTargetIds: ["target-1"],
-      directTools: ["search_engagement_surface"],
     });
     const resumedMessages = constructorCalls[1]?.messages as Array<{
       role: string;
@@ -229,5 +328,174 @@ describe("engagement worker tools", () => {
     expect(store.snapshot().workers).toMatchObject([
       { id: workerId, status: "completed" },
     ]);
+  });
+
+  it("runs one model-planned grouped mission with exact per-target results", async () => {
+    const { planningTools, startPlannedMissions, store, seed } =
+      makeRuntime(true);
+    store.saveMissions({ planningStatus: "pending", missions: [] });
+    await executeTool(planningTools.read_engagement_manifest, {
+      offset: 0,
+      limit: 25,
+      toolCallDescription: "read all targets",
+    });
+    const coverage = seed.coverage.map(({ targetId, objectiveId }) => ({
+      targetId,
+      objectiveId,
+    }));
+    const planned = await executeTool(planningTools.define_engagement_mission, {
+      purpose: "Test the user authorization and MFA flow",
+      rationale: "The endpoints share authentication and user state",
+      coverage,
+      supportingTargetIds: [],
+      prerequisiteMissionIds: [],
+      contextTargetIds: seed.targets.map((target) => target.id),
+      toolCallDescription: "define related flow mission",
+    });
+
+    expect(planned).toMatchObject({ success: true });
+    await executeTool(planningTools.complete_engagement_mission_plan, {
+      toolCallDescription: "seal complete mission plan",
+    });
+    await startPlannedMissions();
+
+    expect(groupedCalls[0]).toMatchObject({
+      model: "worker-model",
+      enableThinking: false,
+    });
+    expect(store.snapshot().coverage).toHaveLength(2);
+    expect(
+      store.snapshot().coverage.every((cell) => cell.status === "exhausted"),
+    ).toBe(true);
+    expect(store.snapshot().missions).toMatchObject({
+      planningStatus: "complete",
+      missions: [{ status: "completed", coverage }],
+    });
+  });
+
+  it("reports one canonical requirement while preserving its source coverage", async () => {
+    const { planningTools, startPlannedMissions, store, seed } =
+      makeRuntime(true);
+    store.saveMissions({ planningStatus: "pending", missions: [] });
+    await executeTool(planningTools.read_engagement_manifest, {
+      offset: 0,
+      limit: 25,
+      toolCallDescription: "read all targets",
+    });
+    for (const target of seed.targets) {
+      store.recordContextRead(target.id, {
+        status: "read",
+        version: `version-${target.id}`,
+        complete: true,
+        hasProductContext: true,
+      });
+    }
+    const coverage = seed.coverage.map(({ targetId, objectiveId }) => ({
+      targetId,
+      objectiveId,
+    }));
+    await executeTool(planningTools.define_engagement_mission, {
+      purpose: "Review the shared user authorization boundary",
+      rationale: "Both endpoints share documented ownership semantics",
+      requirements: [
+        {
+          id: "user-owner-boundary",
+          description: "User resources enforce their documented owner boundary",
+          rationale:
+            "Same identity, resource, and expected authorization behavior",
+          coverage,
+        },
+      ],
+      supportingTargetIds: [],
+      prerequisiteMissionIds: [],
+      contextTargetIds: seed.targets.map((target) => target.id),
+      toolCallDescription: "define consolidated mission",
+    });
+    await executeTool(planningTools.complete_engagement_mission_plan, {
+      toolCallDescription: "seal complete mission plan",
+    });
+    await startPlannedMissions();
+
+    expect(groupedCalls[0]?.extraTools).toHaveProperty(
+      "report_engagement_mission_progress",
+    );
+    expect(store.snapshot().coverage).toHaveLength(2);
+    expect(
+      store.snapshot().coverage.every((cell) => cell.status === "exhausted"),
+    ).toBe(true);
+    expect(store.snapshot().missions?.missions[0]?.requirements).toMatchObject([
+      { id: "user-owner-boundary", coverage },
+    ]);
+  });
+
+  it("preserves reported coverage when the final worker stream fails", async () => {
+    groupedFailureAfterReport = {
+      code: "stream_terminated",
+      message: "Stream terminated unexpectedly",
+    };
+    const { planningTools, startPlannedMissions, store, seed } =
+      makeRuntime(true);
+    store.saveMissions({ planningStatus: "pending", missions: [] });
+    await executeTool(planningTools.read_engagement_manifest, {
+      offset: 0,
+      limit: 25,
+      toolCallDescription: "read all targets",
+    });
+    await executeTool(planningTools.define_engagement_mission, {
+      purpose: "Test the related authentication flow",
+      rationale: "The endpoints share authentication state",
+      coverage: seed.coverage.map(({ targetId, objectiveId }) => ({
+        targetId,
+        objectiveId,
+      })),
+      supportingTargetIds: [],
+      prerequisiteMissionIds: [],
+      contextTargetIds: [],
+      toolCallDescription: "define grouped mission",
+    });
+    await executeTool(planningTools.complete_engagement_mission_plan, {
+      toolCallDescription: "seal the plan",
+    });
+
+    await startPlannedMissions();
+
+    expect(
+      store.snapshot().coverage.every((cell) => cell.status === "exhausted"),
+    ).toBe(true);
+    expect(store.snapshot().missions?.missions[0]?.status).toBe("completed");
+    expect(store.snapshot().workers[0]?.summary).toContain(
+      '"code":"stream_terminated"',
+    );
+  });
+
+  it("refuses to seal a grouped plan that omits coverage", async () => {
+    const { planningTools, store, seed } = makeRuntime(true);
+    store.saveMissions({ planningStatus: "pending", missions: [] });
+    await executeTool(planningTools.read_engagement_manifest, {
+      offset: 0,
+      limit: 25,
+      toolCallDescription: "read all targets",
+    });
+    await executeTool(planningTools.define_engagement_mission, {
+      purpose: "Test only one part of the flow",
+      rationale: "Initial bounded mission",
+      singletonJustification: "This test intentionally exercises one target",
+      coverage: [
+        {
+          targetId: seed.targets[0]?.id as string,
+          objectiveId: seed.objectives[0]?.id as string,
+        },
+      ],
+      supportingTargetIds: [],
+      prerequisiteMissionIds: [],
+      contextTargetIds: [],
+      toolCallDescription: "define partial mission",
+    });
+
+    await expect(
+      executeTool(planningTools.complete_engagement_mission_plan, {
+        toolCallDescription: "attempt incomplete plan",
+      }),
+    ).rejects.toThrow("omits 1 required coverage obligation");
   });
 });
