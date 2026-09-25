@@ -14,6 +14,7 @@ import type { FindingsRegistry } from "../../../findings/registry";
 import type { PromptInjectionLibrary } from "../../../prompt-injections";
 import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
+import type { SourceProvider } from "../../../source";
 import type { EngagementContext } from "../../../workflows/engagementSurface";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
 import type { CodeCellResult } from "../codeMode/runtime";
@@ -90,6 +91,7 @@ export type ToolContext = {
   /** Authorized host-owned target ids for engagement finding provenance. */
   engagementTargetIds?: ReadonlySet<string>;
   engagementContext?: EngagementContext;
+  sourceProvider?: SourceProvider;
   toolProtocol?: AgentToolProtocolPreference;
 
   /**

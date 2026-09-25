@@ -7,6 +7,18 @@
 //    produces per-feature chunks. Routing those through this barrel would
 //    eliminate the split. The lint rule for module barriers exempts this.
 
+export { LocalSourceProvider } from "../localSource";
+export type {
+  SourceDescriptor,
+  SourceFilePage,
+  SourceProvider,
+  SourceReadInput,
+  SourceRequestOptions,
+  SourceSearchInput,
+  SourceSearchResult,
+  SourceTreeInput,
+  SourceTreePage,
+} from "../source";
 export type {
   AppDetail,
   ApplicationType,

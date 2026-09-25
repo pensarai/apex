@@ -20,6 +20,7 @@ import {
   renderJson,
   renderMarkdown,
 } from "../report";
+import { PENTEST_SOURCE_GUIDANCE } from "../source";
 import { createThreatModelPrompt } from "../utils/prompt";
 import type { EngagementContext } from "./engagementSurface";
 import { FastStrikeEvidenceLedger } from "./fastStrikeEvidence";
@@ -247,6 +248,8 @@ export async function runCompetitiveLanes<T>(
 
 export const FAST_STRIKE_SYSTEM_PROMPT = `You are a focused offensive security operator executing one authorized impact objective.
 
+${PENTEST_SOURCE_GUIDANCE}
+
 Use a tight observe → hypothesize → act → prune → exploit → verify loop. Start with the strongest evidence-backed hypotheses, test them with discriminating requests, and retire disproven paths. When work becomes stateful, repetitive, protocol-heavy, or multi-stage, externalize it into an editable script in the session scratchpad and iterate there.
 
 Once a primitive is confirmed, drive it end to end and pivot through related in-scope services when the objective requires it. Preserve viable primitives and concrete observations so another operator can continue the chain. Load relevant exploit-family guidance on demand; do not execute a generic vulnerability checklist.
@@ -268,6 +271,7 @@ export interface FastStrikeObjectiveInput
     | "thinkingEffort"
     | "openAIReasoningEffort"
     | "toolProtocol"
+    | "sourceProvider"
   > {
   objective: string;
   /** Existing lane conversation when resuming a durable worker. */
@@ -395,6 +399,7 @@ async function executeFastStrikeObjective(
         directTools: input.directTools,
         engagementTargetIds: input.engagementTargetIds,
         engagementContext: input.engagementContext,
+        sourceProvider: input.sourceProvider,
         activeTools: [],
         responseSchema: FastStrikeResult,
         responseGuard: (result, { rejectionCount }) =>

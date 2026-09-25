@@ -174,6 +174,12 @@ const GUEST_PRELUDE = `
     shell,
     process: Object.freeze({ exec: shell }),
     browser,
+    source: Object.freeze({
+      describe: () => invoke("source_describe", {}),
+      listTree: (input = {}) => invoke("source_list_tree", input),
+      search: (input) => invoke("source_search", input),
+      readFile: (input) => invoke("source_read_file", input),
+    }),
   });
   globalThis.ALL_TOOLS = Object.freeze(__APEX_ALL_TOOLS__);
   globalThis.text = (value) => __apexText(JSON.stringify(value));

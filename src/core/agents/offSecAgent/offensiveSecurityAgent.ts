@@ -22,11 +22,13 @@ import {
   stripBrowserManagedHeaders,
 } from "../../http/targetHeaders";
 import { newMessageId, newPartId, newRunId } from "../../id/id";
+import { LocalSourceProvider } from "../../localSource";
 import { createLogger } from "../../logger/structured";
 import { getApexTracer, withSubagentSessionBaggage } from "../../observability";
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
+import { createSourceTools } from "../../source";
 import { listTasks } from "../../tasks";
 import { scopedLogger } from "../../util/lazyLogger";
 import { createEngagementSurfaceTools } from "../../workflows/engagementSurface";
@@ -521,6 +523,11 @@ export class OffensiveSecurityAgent<TResult = void> {
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
 
+    const sourceProvider =
+      input.sourceProvider ??
+      (input.session.config?.codebasePath
+        ? new LocalSourceProvider(input.session.config.codebasePath)
+        : undefined);
     const builtinTools = createAllTools({
       session: input.session,
       executionPolicy,
@@ -533,6 +540,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       authConfig: input.authConfig,
       toolProtocol: input.toolProtocol,
       engagementContext: input.engagementContext,
+      sourceProvider,
       eventBus: this.eventBus,
       onStepFinish: input.forwardUsageCallbacksToSpawnedAgents
         ? input.onStepFinish
@@ -577,7 +585,8 @@ export class OffensiveSecurityAgent<TResult = void> {
     const contextTools = input.engagementContext
       ? createEngagementSurfaceTools(input.engagementContext, false)
       : {};
-    const extraTools = { ...input.extraTools, ...contextTools };
+    const sourceTools = sourceProvider ? createSourceTools(sourceProvider) : {};
+    const extraTools = { ...input.extraTools, ...contextTools, ...sourceTools };
     let tools: ToolSet = { ...builtinTools, ...extraTools };
 
     // -- Approval gate wrapping -----------------------------------------------
@@ -687,6 +696,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     // -- Plan mode: restrict to read-only tools -----------------------------
     if (input.mode === "plan") {
       const planSet = new Set<string>(PLAN_MODE_TOOL_NAMES);
+      for (const name of Object.keys(sourceTools)) planSet.add(name);
       activeTools = activeTools.filter((t) => planSet.has(t));
     } else if (input.mode === "fast-strike") {
       // Registry minus orchestration tools; email gating matches default mode.
@@ -739,6 +749,7 @@ export class OffensiveSecurityAgent<TResult = void> {
           nestedTools: [
             ...(input.nestedTools ?? []),
             ...Object.keys(contextTools),
+            ...Object.keys(sourceTools),
           ],
         });
       const invoker = new CanonicalCapabilityInvoker({
@@ -761,7 +772,10 @@ export class OffensiveSecurityAgent<TResult = void> {
         presentedDirectTools,
       );
       activeTools = Object.keys(tools);
-      codeModeInstructions = buildCodeModeInstructions(runtimeProfile.protocol);
+      codeModeInstructions = buildCodeModeInstructions(
+        runtimeProfile.protocol,
+        Boolean(sourceProvider),
+      );
     }
 
     // -- Messages persistence -------------------------------------------------

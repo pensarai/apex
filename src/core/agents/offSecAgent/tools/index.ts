@@ -536,6 +536,8 @@ export const FAST_STRIKE_EXCLUDED_TOOL_NAMES: ToolName[] = [
   "run_pentest_workflow",
   "delegate_to_auth_subagent",
   // Whitebox jobs
+  "profile_codebase",
+  "run_code_query",
   "run_whitebox_scan",
   "create_whitebox_candidate",
   "update_whitebox_candidate",

@@ -4,8 +4,10 @@ import { z } from "zod";
 import { OffensiveSecurityAgent } from "../agents/offSecAgent";
 import { AgentEventBus } from "../eventBus";
 import type { FindingsRegistry } from "../findings/registry";
+import { LocalSourceProvider } from "../localSource";
 import { getResumeMessages, normalizeMessages } from "../session";
 import type { SwarmTarget } from "../session/persistence";
+import { PENTEST_SOURCE_GUIDANCE } from "../source";
 import { runDeterministicEngagementCoverage } from "./engagementCoverage";
 import {
   applyEngagementModel,
@@ -67,6 +69,8 @@ export const DEFAULT_ENGAGEMENT_WORKER_CONCURRENCY = 4;
 
 export const ENGAGEMENT_LEAD_SYSTEM_PROMPT = `You are the durable lead penetration tester for one authorized engagement. You own the complete attack surface, threat-model objectives, coverage ledger, finding quality, and final chain-and-explore pass.
 
+${PENTEST_SOURCE_GUIDANCE}
+
 When grouped coverage is enabled, a restricted planning pass has already designed and sealed coherent missions from the complete attack surface. The bounded scheduler launches those missions. Check worker status and direct running workers as evidence changes. Preserve promising state: resume the same worker for stateful follow-ups.
 
 In code mode, inspect ALL_TOOLS once and use exact capability names instead of guessing. Resume failed durable missions with follow_up_engagement_worker and their preserved worker IDs before doing replacement testing yourself.
@@ -95,9 +99,7 @@ const LEAD_TOOL_NAMES = [
   "list_files",
   "glob",
   "grep",
-  "profile_codebase",
   "query_whitebox_catalog",
-  "run_code_query",
   "web_search",
   "get_page",
   "checkpoint_state",
@@ -154,7 +156,15 @@ export async function runEngagementLead(input: {
   const abortSignal = input.workflow.abortSignal
     ? AbortSignal.any([input.workflow.abortSignal, internalAbort.signal])
     : internalAbort.signal;
-  const baseWorkflow = { ...input.workflow, abortSignal };
+  const baseWorkflow = {
+    ...input.workflow,
+    sourceProvider:
+      input.workflow.sourceProvider ??
+      (input.workflow.cwd
+        ? new LocalSourceProvider(input.workflow.cwd)
+        : undefined),
+    abortSignal,
+  };
   const runMetrics = new EngagementRunMetrics(input.workflow.session.rootPath);
   const leadAgentId = input.workflow.session.id;
   const seed = restoreEngagementState(
@@ -477,6 +487,7 @@ export async function runEngagementLead(input: {
         z.infer<typeof EngagementLeadResult>
       >({
         system: ENGAGEMENT_LEAD_SYSTEM_PROMPT,
+        sourceProvider: workflow.sourceProvider,
         prompt,
         model: workflow.model,
         session: workflow.session,

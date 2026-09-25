@@ -207,6 +207,7 @@ export async function runDeterministicEngagementCoverage(input: {
           outcome.findings.length > 0;
       } else {
         const agent = new TargetedPentestAgent({
+          sourceProvider: input.workflow.sourceProvider,
           target: targets[0]?.target ?? input.workflow.target,
           objectives: assignments,
           context: [
