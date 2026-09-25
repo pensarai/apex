@@ -277,6 +277,17 @@ const SessionConfigObject = z.object({
   smtpConfig: SmtpConfigObject.optional(),
   /** Enable exfiltration mode — allows internal pivoting and flag extraction through confirmed vulnerabilities */
   exfilMode: z.boolean().optional(),
+  /** Allow bounded correction when Fast Strike claims impact without proof. */
+  requireSuccessfulResponse: z.boolean().optional(),
+  /** Explicit benchmark-only competitive lane count. Production defaults to one. */
+  fastStrikeLanes: z.number().int().min(1).max(3).optional(),
+  /** Deadline for each explicitly enabled competitive lane. */
+  fastStrikeLaneTimeoutMs: z
+    .number()
+    .int()
+    .min(60_000)
+    .max(3_600_000)
+    .optional(),
   /** Agent working directory — resolved to process.cwd() by default, undefined in sandbox mode */
   agentCwd: z.string().optional(),
   /** Operator-provided guidance injected into the orchestrator/agent system prompts */
