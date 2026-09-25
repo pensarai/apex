@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEventBus, AgentEventMap } from "../../../core/eventBus";
 import { AgentEventBus as Bus } from "../../../core/eventBus";
 import type { DisplayMessage, WorkflowData } from "../agent-display";
@@ -254,9 +254,11 @@ describe("createDisplayEventHandlers", () => {
     const thinking: boolean[] = [];
     const errors: string[] = [];
     const sink = {
-      updateMessages: (updater: (m: typeof messages) => typeof messages) => {
-        messages = updater(messages);
-      },
+      updateMessages: vi.fn(
+        (updater: (m: typeof messages) => typeof messages) => {
+          messages = updater(messages);
+        },
+      ),
       setThinking: (v: boolean) => thinking.push(v),
       setError: (m: string) => errors.push(m),
     };
@@ -346,73 +348,278 @@ describe("createDisplayEventHandlers", () => {
     display.dispose();
   });
 
-  it("buffers command output and flushes on the 150ms throttle timer", () => {
-    vi.useFakeTimers();
-    try {
+  describe("command-output timer", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    });
+
+    it("flushes within 150ms of the first chunk without postponing for later chunks", () => {
       const recording = createRecordingSink();
       const display = createDisplayEventHandlers(recording.sink);
       display.onToolCallStart({ toolCallId: "tc-1", toolName: "t" });
 
       display.onCommandOutput({ data: "line-1\n" });
+      vi.advanceTimersByTime(149);
       display.onCommandOutput({ data: "line-2\n" });
-      expect(recording.getMessages()).toHaveLength(1);
+      expect(recording.getMessages()[0].logs).toBeUndefined();
+      expect(vi.getTimerCount()).toBe(1);
 
-      vi.advanceTimersByTime(150);
-      const messages = recording.getMessages();
-      expect(messages).toHaveLength(1);
-      expect(messages[0].logs).toEqual(["line-1", "line-2", ""]);
+      vi.advanceTimersByTime(1);
+      expect(recording.getMessages()[0].logs).toEqual(["line-1", "line-2", ""]);
+      expect(vi.getTimerCount()).toBe(0);
 
-      // Buffer drained — a later timer tick flushes nothing new.
-      vi.advanceTimersByTime(150);
-      expect(recording.getMessages()).toHaveLength(1);
-
+      vi.advanceTimersByTime(1000);
+      display.onCommandOutput({ data: "line-3\n" });
+      vi.advanceTimersByTime(149);
+      expect(recording.sink.updateMessages).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(1);
+      expect(recording.getMessages()[0].logs).toEqual([
+        "line-1",
+        "line-2",
+        "line-3",
+        "",
+      ]);
+      expect(recording.sink.updateMessages).toHaveBeenCalledTimes(3);
+      expect(vi.getTimerCount()).toBe(0);
       display.dispose();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    });
 
-  it("stopCommandOutputFlush halts the throttle; dispose clears the timer", () => {
-    vi.useFakeTimers();
-    try {
+    it("preserves newline-leading fragments across scheduled flush boundaries", () => {
       const recording = createRecordingSink();
       const display = createDisplayEventHandlers(recording.sink);
       display.onToolCallStart({ toolCallId: "tc-1", toolName: "t" });
 
-      display.onCommandOutput({ data: "buffered\n" });
+      for (const [atMs, data] of [
+        [0, "x"],
+        [170, "a"],
+        [310, "b"],
+        [350, "\nc"],
+      ] as const) {
+        vi.advanceTimersByTime(atMs - Date.now());
+        display.onCommandOutput({ data });
+      }
+      vi.advanceTimersByTime(150);
+
+      expect(recording.getMessages()[0].logs).toEqual(["xab", "c"]);
+      expect(recording.sink.updateMessages).toHaveBeenCalledTimes(4);
+      expect(vi.getTimerCount()).toBe(0);
+      display.dispose();
+    });
+
+    it("manual flush cancels the scheduled flush and a later burst gets its own deadline", () => {
+      const recording = createRecordingSink();
+      const display = createDisplayEventHandlers(recording.sink);
+      display.onToolCallStart({ toolCallId: "tc-1", toolName: "t" });
+
+      display.onCommandOutput({ data: "first\n" });
+      vi.advanceTimersByTime(75);
+      display.flushCommandOutput();
+      display.flushCommandOutput();
+      expect(recording.getMessages()[0].logs).toEqual(["first", ""]);
+      expect(vi.getTimerCount()).toBe(0);
+
+      display.onCommandOutput({ data: "second\n" });
+      vi.advanceTimersByTime(149);
+      expect(recording.sink.updateMessages).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(1);
+      expect(recording.getMessages()[0].logs).toEqual(["first", "second", ""]);
+      expect(recording.sink.updateMessages).toHaveBeenCalledTimes(3);
+      expect(vi.getTimerCount()).toBe(0);
+      display.dispose();
+    });
+
+    it.each([
+      "manual flush",
+      "new output",
+    ])("stop retains the buffer without flushing, recoverable by %s", (recovery) => {
+      const recording = createRecordingSink();
+      const display = createDisplayEventHandlers(recording.sink);
+      display.onToolCallStart({ toolCallId: "tc-1", toolName: "t" });
+
+      display.onCommandOutput({ data: "buffered" });
       display.stopCommandOutputFlush();
+      display.stopCommandOutputFlush();
+      expect(vi.getTimerCount()).toBe(0);
       vi.advanceTimersByTime(1000);
-      // Timer stopped — nothing flushed into the active tool's logs.
       expect(recording.getMessages()[0].logs).toBeUndefined();
 
-      // Explicit flush still drains the buffer.
-      display.flushCommandOutput();
-      expect(recording.getMessages()[0].logs).toEqual(["buffered", ""]);
-
-      // dispose clears an active timer without flushing.
-      display.onCommandOutput({ data: "more\n" });
+      if (recovery === "manual flush") {
+        display.flushCommandOutput();
+      } else {
+        display.onCommandOutput({ data: " tail" });
+        vi.advanceTimersByTime(150);
+      }
+      expect(recording.getMessages()[0].logs).toEqual([
+        recovery === "manual flush" ? "buffered" : "buffered tail",
+      ]);
+      expect(vi.getTimerCount()).toBe(0);
       display.dispose();
-      vi.advanceTimersByTime(1000);
-      expect(recording.getMessages()[0].logs).toEqual(["buffered", ""]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("error projection sets the error and marks in-flight tools errored", () => {
-    const recording = createRecordingSink();
-    const display = createDisplayEventHandlers(recording.sink);
-    display.onToolCallStart({ toolCallId: "tc-1", toolName: "t" });
-
-    display.onError({ error: new Error("stream died") });
-
-    expect(recording.getErrors()).toEqual(["stream died"]);
-    const messages = recording.getMessages();
-    expect(messages[0]).toMatchObject({
-      status: "error",
-      result: "stream died",
     });
-    display.dispose();
+
+    it.each([
+      false,
+      true,
+    ])("dispose discards pending output (stopped=%s)", (stopped) => {
+      const recording = createRecordingSink();
+      const display = createDisplayEventHandlers(recording.sink);
+      display.onToolCallStart({ toolCallId: "tc-1", toolName: "t" });
+      display.onCommandOutput({ data: "discarded\n" });
+      if (stopped) display.stopCommandOutputFlush();
+      display.dispose();
+      display.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(60_000);
+      display.flushCommandOutput();
+      expect(recording.getMessages()[0].logs).toBeUndefined();
+      expect(recording.sink.updateMessages).toHaveBeenCalledTimes(1);
+    });
+
+    it("flushes the error tail before setting the root error and failing the tool", () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const recording = createRecordingSink();
+      const display = createDisplayEventHandlers({
+        ...recording.sink,
+        setError: (message) => {
+          expect(recording.getMessages()[0]).toMatchObject({
+            status: "streaming",
+            logs: ["error tail"],
+          });
+          recording.sink.setError(message);
+        },
+      });
+      display.onToolCallStart({ toolCallId: "tc-1", toolName: "t" });
+      display.onCommandOutput({ data: "error tail" });
+      vi.advanceTimersByTime(75);
+
+      display.onError({ error: new Error("stream died") });
+
+      expect(recording.getErrors()).toEqual(["stream died"]);
+      expect(recording.getMessages()[0]).toMatchObject({
+        status: "error",
+        result: "stream died",
+        logs: ["error tail"],
+      });
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(60_000);
+      expect(recording.sink.updateMessages).toHaveBeenCalledTimes(3);
+      display.dispose();
+    });
+
+    it("does not schedule a flush for empty output", () => {
+      const recording = createRecordingSink();
+      const display = createDisplayEventHandlers(recording.sink);
+      expect(vi.getTimerCount()).toBe(0);
+      display.onCommandOutput({ data: "" });
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(60_000);
+      expect(recording.sink.updateMessages).not.toHaveBeenCalled();
+      display.dispose();
+    });
+
+    it.each([
+      {
+        name: "sparse",
+        everyMs: 60_000,
+        resultAtMs: undefined,
+        expectedCallbacks: 1,
+      },
+      {
+        name: "repeated bursts",
+        everyMs: 10_000,
+        resultAtMs: undefined,
+        expectedCallbacks: 6,
+      },
+      {
+        name: "onToolResult control",
+        everyMs: 60_000,
+        resultAtMs: 50,
+        expectedCallbacks: 0,
+      },
+      {
+        name: "sustained 50ms",
+        everyMs: 50,
+        resultAtMs: undefined,
+        expectedCallbacks: 400,
+      },
+      {
+        name: "sustained 40ms",
+        everyMs: 40,
+        resultAtMs: undefined,
+        expectedCallbacks: 375,
+      },
+    ])("60s command-output replay: $name", ({
+      name,
+      everyMs,
+      resultAtMs,
+      expectedCallbacks,
+    }) => {
+      let timerCallbacks = 0;
+      // Count actual callback executions, including empty-buffer interval ticks on the baseline.
+      for (const timer of ["setTimeout", "setInterval"] as const) {
+        const schedule = globalThis[timer];
+        vi.spyOn(globalThis, timer).mockImplementation(
+          (callback, delay = 0, ...args) =>
+            schedule(() => {
+              timerCallbacks++;
+              callback(...args);
+            }, delay),
+        );
+      }
+
+      const recording = createRecordingSink();
+      const display = createDisplayEventHandlers(recording.sink);
+      display.onToolCallComplete({
+        toolCallId: "tc-1",
+        toolName: "execute_command",
+        args: { command: "replay" },
+      });
+      const initialMessage = recording.getMessages()[0];
+      const chunks: string[] = [];
+      for (let atMs = 0; atMs < 60_000; atMs += everyMs) {
+        vi.advanceTimersByTime(atMs - Date.now());
+        const data = `line-${chunks.length}\n`;
+        chunks.push(data);
+        display.onCommandOutput({ data });
+      }
+      if (resultAtMs !== undefined) {
+        vi.advanceTimersByTime(resultAtMs - Date.now());
+        display.onToolResult({
+          toolCallId: "tc-1",
+          toolName: "execute_command",
+          result: { exitCode: 0 },
+        });
+      }
+      vi.advanceTimersByTime(60_000 - Date.now());
+
+      expect(recording.getMessages()).toEqual([
+        {
+          ...initialMessage,
+          logs: chunks.join("").split("\n").slice(-200),
+          ...(resultAtMs !== undefined && {
+            status: "completed",
+            result: { exitCode: 0 },
+          }),
+        },
+      ]);
+      console.info("command-output replay", {
+        name,
+        windowMs: 60_000,
+        chunks: chunks.length,
+        timerCallbacks,
+        displayUpdates: recording.sink.updateMessages.mock.calls.length - 1,
+        pendingTimers: vi.getTimerCount(),
+        finalDisplay: "matches expected",
+      });
+      expect(timerCallbacks).toBe(expectedCallbacks);
+      expect(vi.getTimerCount()).toBe(0);
+      display.dispose();
+    });
   });
 
   it("unparseable args deltas do not touch the display", () => {
