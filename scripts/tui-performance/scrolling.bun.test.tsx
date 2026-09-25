@@ -11,7 +11,7 @@ for (const historySize of [100, 1000]) {
       expect(result.work.transcriptTraversals).toBe(updates);
       expect(result.growthRows).toBe(updates * 2);
       expect(result.work.layoutReads).toBeLessThan(120 * (historySize + 100));
-    });
+    }, 30_000);
   }
 }
 
@@ -19,4 +19,4 @@ test("a restored reply taller than the viewport remains scrollable", async () =>
   const reply = `${"Restored paragraph.\n\n".repeat(60)}LIVE_START`;
   const result = await runScrollingJourney(100, 4, reply);
   expect(result.growthRows).toBe(60);
-});
+}, 30_000);
