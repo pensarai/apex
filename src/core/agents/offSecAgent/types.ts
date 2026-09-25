@@ -32,6 +32,7 @@ import type { ApprovalGate } from "../../operator";
 import type { PromptInjectionLibrary } from "../../prompt-injections";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
+import type { EngagementContext } from "../../workflows/engagementSurface";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { CodeCellResult } from "./codeMode/runtime";
 import type { SubagentSpawner } from "./subagentSpawner";
@@ -156,7 +157,6 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * @default "default"
    */
   mode?: AgentMode;
-  nestedTools?: string[];
 
   /**
    * Model-facing tool protocol. `auto` selects the provider's freeform custom
@@ -169,6 +169,12 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Additional workflow-specific tools that must remain directly model-visible in code mode. */
   directTools?: (ToolName | (string & {}))[];
+
+  /** Injected tools presented through the governed code bridge instead of top-level schemas. */
+  nestedTools?: string[];
+
+  /** Host-scoped, read-only context used for evidence adjudication. */
+  engagementContext?: EngagementContext;
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;
@@ -206,6 +212,8 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Existing conversation history (for resumption / multi-turn) */
   messages?: Array<ModelMessage>;
+  /** Durable directed handoffs delivered between model steps. */
+  getPendingMessages?: () => Promise<ModelMessage[]>;
 
   /** Condition(s) under which the agent should stop */
   stopWhen?:
@@ -607,6 +615,7 @@ export interface SpecializedAgentInput {
   /** Model-facing tool protocol inherited by specialized workers. */
   toolProtocol?: AgentToolProtocolPreference;
 
+  engagementContext?: EngagementContext;
   nestedTools?: string[];
 
   /** Workflow tools that stay directly visible when code mode is active. */

@@ -124,6 +124,47 @@ describe("judgeFinding", () => {
     );
   });
 
+  it("forwards code mode and records the target-context receipt", async () => {
+    mocks.consume.mockResolvedValue({
+      valid: true,
+      findingType: "vulnerability",
+      confidence: 0.9,
+      reasoning: "The behavior contradicts the documented authorization model.",
+      concerns: [],
+      verificationSteps: ["Read target context and reran the POC."],
+      toolEvidence: ["The sibling account returned private data."],
+      reproducedPoc: true,
+      webResearchUsed: false,
+      limitations: [],
+    });
+    const contextReceipt = {
+      targetId: "target-1",
+      status: "read" as const,
+      version: "context-v1",
+      complete: true,
+      hasProductContext: true,
+    };
+
+    const result = await judgeFinding(
+      { ...makeInput(), sourceTargetId: "target-1" },
+      {
+        ...makeContext(),
+        toolProtocol: "schema-code",
+        engagementContext: {
+          receipts: () => [contextReceipt],
+        } as Parameters<typeof judgeFinding>[1]["engagementContext"],
+      },
+    );
+
+    expect(mocks.constructorArgs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolProtocol: "schema-code",
+        engagementContext: expect.any(Object),
+      }),
+    );
+    expect(result.contextReceipt).toEqual(contextReceipt);
+  });
+
   it("rejects the finding as unverified when the judge agent fails", async () => {
     mocks.consume.mockRejectedValue(new Error("provider overloaded"));
 

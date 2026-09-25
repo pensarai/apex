@@ -22,6 +22,7 @@ import type { FindingsRegistry } from "../../findings/registry";
 import { newSessionId } from "../../id/id";
 import type { SessionInfo } from "../../session";
 import { runWithBoundedConcurrency } from "../../utils/concurrency";
+import type { EngagementContext } from "../../workflows/engagementSurface";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { AuthenticationAgentInput } from "../specialized/authenticationAgent/agent";
 import type { FindingJudgeInput } from "../specialized/findingJudge";
@@ -80,6 +81,7 @@ export type SubagentSpec =
       type: "finding-judge";
       judgeInput: FindingJudgeInput;
       target?: string;
+      engagementContext?: EngagementContext;
     };
 
 /**
@@ -390,6 +392,7 @@ const runJudgeChild: SubagentRunner<"finding-judge"> = async (spec, ctx) => {
     run: () =>
       judgeFinding(spec.judgeInput, {
         toolProtocol: ctx.toolProtocol,
+        engagementContext: spec.engagementContext,
         onStepFinish: ctx.onStepFinish,
         onCodeCellComplete: ctx.onCodeCellComplete,
         model: ctx.model,

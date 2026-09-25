@@ -195,6 +195,7 @@ describe("EngagementStore", () => {
       objectiveIds: [objectiveId],
       capabilityIds: [],
     });
+    store.startWorker("worker-objective");
     store.markObjectiveCoverage({
       targetId: seed.targets[0]?.id as string,
       objectiveId,
@@ -212,6 +213,7 @@ describe("EngagementStore", () => {
       objectiveIds: [],
       capabilityIds: [],
     });
+    store.startWorker("worker-explore");
     store.markServiceBaseline(serviceId, "running", "Exploring");
 
     expect(store.reconcileInterruptedWorkers()).toEqual([
@@ -329,7 +331,7 @@ describe("restoreEngagementState", () => {
 
     const restored = restoreEngagementState(original, messages);
 
-    expect(restored.version).toBe(2);
+    expect(restored.version).toBe(3);
     expect(restored.coverage).toHaveLength(original.coverage.length);
     expect(restored.coverage).toEqual(
       expect.arrayContaining(

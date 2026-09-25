@@ -38,6 +38,7 @@ export type FindingJudgeRuntimeContext = Pick<
   | "thinkingEffort"
   | "openAIReasoningEffort"
   | "toolProtocol"
+  | "engagementContext"
   | "onStepFinish"
   | "languageModelMiddleware"
   | "usageRecorder"
@@ -90,6 +91,7 @@ export async function judgeFinding(
         usageRecorder: ctx.usageRecorder,
         streamIdFactory: ctx.streamIdFactory,
         toolProtocol: ctx.toolProtocol,
+        engagementContext: ctx.engagementContext,
         onStepFinish: ctx.onStepFinish,
         onCodeCellComplete: ctx.onCodeCellComplete,
       });
@@ -99,7 +101,12 @@ export async function judgeFinding(
         throw new Error("Finding judge agent finished without a response.");
       }
 
-      return normalizeJudgeResult(result);
+      const contextReceipt = input.sourceTargetId
+        ? ctx.engagementContext
+            ?.receipts()
+            .find((receipt) => receipt.targetId === input.sourceTargetId)
+        : undefined;
+      return normalizeJudgeResult(result, contextReceipt);
     } catch (error: unknown) {
       failure = error;
       if (ctx.abortSignal?.aborted) break;
@@ -122,6 +129,7 @@ export async function judgeFinding(
 
 function normalizeJudgeResult(
   result: FindingJudgeAgentOutput,
+  contextReceipt?: FindingJudgeResult["contextReceipt"],
 ): FindingJudgeResult {
   return {
     valid: result.valid,
@@ -134,6 +142,7 @@ function normalizeJudgeResult(
     reproducedPoc: result.reproducedPoc,
     webResearchUsed: result.webResearchUsed,
     limitations: result.limitations,
+    ...(contextReceipt && { contextReceipt }),
   };
 }
 

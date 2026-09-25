@@ -1,23 +1,38 @@
 import type { ModelMessage, ToolSet } from "ai";
 import { tool } from "ai";
 import { z } from "zod";
+import { OffensiveSecurityAgent } from "../agents/offSecAgent";
 import { TargetedPentestAgent } from "../agents/specialized/pentest/agent";
 import { AgentEventBus } from "../eventBus";
 import type { FindingsRegistry } from "../findings/registry";
 import { newSessionId } from "../id/id";
 import { loadSubagentMessages, saveSubagentData } from "../session/persistence";
 import {
+  applyEngagementModel,
+  type EngagementMission,
+  type EngagementMissionCoverage,
+  type EngagementMissionRequirement,
+  type EngagementModelConfig,
+  GROUPED_MISSION_SYSTEM_PROMPT,
+  GroupedMissionCoverageBatch,
+  GroupedMissionRequirementBatch,
+  GroupedMissionResult,
+} from "./engagementMissions";
+import {
   AgentMailbox,
   type EngagementCheckpoint,
   type EngagementStore,
   type EngagementWorkerMode,
 } from "./engagementState";
+import type { EngagementContext } from "./engagementSurface";
 import { EngagementWorkerPool } from "./engagementWorkerPool";
 import { runFastStrikeObjective } from "./fastStrike";
+import { FastStrikeEvidenceLedger } from "./fastStrikeEvidence";
 import type { PentestWorkflowInput } from "./pentest";
 
 const COVERAGE_STATUSES = [
   "pending",
+  "assigned",
   "running",
   "needs-lead",
   "impact-proven",
@@ -32,12 +47,20 @@ const CHAIN_STATUSES = [
   "exhausted",
   "blocked",
 ] as const;
-const WORKER_MODES = ["targeted", "fast-strike", "explore", "chain"] as const;
+const WORKER_MODES = [
+  "targeted",
+  "fast-strike",
+  "grouped",
+  "explore",
+  "chain",
+] as const;
 
 export const ENGAGEMENT_TOOL_NAMES = [
   "read_engagement_state",
   "spawn_engagement_worker",
   "follow_up_engagement_worker",
+  "send_engagement_worker_message",
+  "wait_for_engagement_workers",
   "update_engagement_coverage",
   "record_engagement_capability",
   "record_impact_proof",
@@ -45,14 +68,36 @@ export const ENGAGEMENT_TOOL_NAMES = [
 
 interface EngagementToolRuntime {
   input: PentestWorkflowInput;
+  workerModel?: EngagementModelConfig;
   store: EngagementStore;
   findingsRegistry: FindingsRegistry;
   eventBus: AgentEventBus;
   leadAgentId: string;
   surfaceTools?: ToolSet;
   engagementTargetIds?: string[];
+  engagementContext?: EngagementContext;
   workerPool?: EngagementWorkerPool;
+  onWorkerJob?: (job: Promise<unknown>) => void;
   onCheckpoint?: (checkpoint: EngagementCheckpoint) => void | Promise<void>;
+}
+
+export function formatEngagementError(error: unknown): string {
+  if (error instanceof Error) {
+    const cause = error.cause ? `: ${formatEngagementError(error.cause)}` : "";
+    return `${error.message || error.name}${cause}`;
+  }
+  if (typeof error === "string") return error;
+  try {
+    const serialized = JSON.stringify(error, (_key, value) =>
+      value instanceof Error
+        ? { name: value.name, message: value.message, cause: value.cause }
+        : value,
+    );
+    if (serialized && serialized !== "{}") return serialized;
+  } catch {
+    // Fall through to the stable generic description.
+  }
+  return "Unknown engagement worker error";
 }
 
 function unique(values: readonly string[]): string[] {
@@ -131,7 +176,7 @@ function validateAssignment(
         `Objective ${objectiveId} is not relevant to the selected services`,
       );
     }
-    if (mode === "targeted" || mode === "fast-strike") {
+    if (mode === "targeted" || mode === "fast-strike" || mode === "grouped") {
       for (const targetId of targetIds) {
         const coverage = store
           .snapshot()
@@ -159,7 +204,10 @@ function validateAssignment(
       "Fast Strike workers require exactly one service, target, and objective",
     );
   }
-  if (mode === "targeted" && objectiveIds.length === 0) {
+  if (
+    (mode === "targeted" || mode === "grouped") &&
+    objectiveIds.length === 0
+  ) {
     throw new Error("Targeted workers require at least one objectiveId");
   }
   if (mode === "chain" && capabilityIds.length === 0) {
@@ -167,20 +215,59 @@ function validateAssignment(
   }
 }
 
+const WorkerAssignmentSchema = z.object({
+  mission: z.string().min(1).max(4_000),
+  serviceIds: z.array(z.string()).min(1).max(100),
+  targetIds: z.array(z.string()).min(1).max(100),
+  objectiveIds: z.array(z.string()).max(100).default([]),
+  capabilityIds: z.array(z.string()).max(100).default([]),
+  rationale: z.string().min(1).max(4_000).optional(),
+  coverage: z
+    .array(
+      z.object({
+        targetId: z.string().min(1),
+        objectiveId: z.string().min(1),
+      }),
+    )
+    .max(100)
+    .optional(),
+  supportingTargetIds: z.array(z.string()).max(100).default([]),
+  prerequisiteMissionIds: z.array(z.string()).max(100).default([]),
+  contextTargetIds: z.array(z.string()).max(100).default([]),
+  mode: z.enum(WORKER_MODES),
+  toolCallDescription: z.string(),
+});
+type WorkerAssignment = z.infer<typeof WorkerAssignmentSchema>;
+
 export function createEngagementTools(runtime: EngagementToolRuntime) {
   const {
     input,
+    workerModel,
     store,
     findingsRegistry,
     eventBus,
     leadAgentId,
     surfaceTools,
     engagementTargetIds = [],
+    engagementContext,
     workerPool = new EngagementWorkerPool(4),
+    onWorkerJob,
     onCheckpoint,
   } = runtime;
   const mailbox = new AgentMailbox(input.session.rootPath);
   const activeWorkers = new Set<string>();
+  const workerJobs = new Map<string, Promise<Record<string, unknown>>>();
+  const boundedCompletion = () => {
+    const completion = store.completion();
+    return {
+      ...completion,
+      missingObjectiveIds: completion.missingObjectiveIds.slice(0, 100),
+      missingCoverageCellIds: completion.missingCoverageCellIds.slice(0, 100),
+      missingServiceIds: completion.missingServiceIds.slice(0, 100),
+      unresolvedCapabilityIds: completion.unresolvedCapabilityIds.slice(0, 100),
+      activeMissionIds: completion.activeMissionIds.slice(0, 100),
+    };
+  };
   const withCheckpoint = async <T extends Record<string, unknown>>(
     result: T,
   ) => {
@@ -189,7 +276,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     return {
       ...result,
       stateVersion: checkpoint.updatedAt,
-      completion: store.completion(),
+      completion: boundedCompletion(),
     };
   };
 
@@ -201,6 +288,9 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     targetIds: string[];
     objectiveIds: string[];
     capabilityIds: string[];
+    missionId?: string;
+    coverage?: EngagementMissionCoverage[];
+    requirements?: EngagementMissionRequirement[];
     messages?: ModelMessage[];
     followUp?: boolean;
   }) => {
@@ -208,77 +298,117 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
       throw new Error(`Worker ${options.workerId} is already running`);
     }
     activeWorkers.add(options.workerId);
-    if (options.followUp) {
-      store.restartWorker(options.workerId);
-      if (options.mode === "explore") {
-        for (const serviceId of options.serviceIds) {
-          store.markServiceBaseline(serviceId, "running", options.mission);
+    let latestMessages: ModelMessage[] = [];
+    let lastTarget = input.target;
+    try {
+      if (!options.followUp) store.startWorker(options.workerId);
+      if (options.missionId)
+        store.setMissionStatus(options.missionId, "running");
+      if (options.mode === "grouped" && !options.followUp) {
+        const claimed = store.claimCoverageCells({
+          workerId: options.workerId,
+          cells: options.coverage ?? [],
+        });
+        if (claimed.length !== (options.coverage ?? []).length) {
+          throw new Error("Failed to claim grouped mission coverage");
         }
-      } else {
-        for (const objectiveId of options.objectiveIds) {
-          for (const targetId of options.targetIds) {
-            const target = store.getTarget(targetId);
-            if (!target.objectiveIds.includes(objectiveId)) continue;
-            store.markObjectiveCoverage({
-              targetId,
-              objectiveId,
-              serviceId: target.serviceId,
-              status: "running",
-              workerId: options.workerId,
-              summary: options.mission,
-            });
+      }
+      if (options.followUp) {
+        store.restartWorker(options.workerId);
+        if (options.mode === "explore") {
+          for (const serviceId of options.serviceIds) {
+            store.markServiceBaseline(serviceId, "running", options.mission);
+          }
+        } else if (options.mode === "grouped") {
+          const pending = (options.coverage ?? []).filter((cell) =>
+            store
+              .snapshot()
+              .coverage.some(
+                (candidate) =>
+                  candidate.targetId === cell.targetId &&
+                  candidate.objectiveId === cell.objectiveId &&
+                  candidate.status === "pending",
+              ),
+          );
+          const claimed = store.claimCoverageCells({
+            workerId: options.workerId,
+            cells: pending,
+          });
+          if (claimed.length !== pending.length) {
+            throw new Error("Failed to reclaim interrupted grouped coverage");
+          }
+        } else {
+          for (const objectiveId of options.objectiveIds) {
+            for (const targetId of options.targetIds) {
+              const target = store.getTarget(targetId);
+              if (!target.objectiveIds.includes(objectiveId)) continue;
+              store.markObjectiveCoverage({
+                targetId,
+                objectiveId,
+                serviceId: target.serviceId,
+                status: "running",
+                workerId: options.workerId,
+                summary: options.mission,
+              });
+            }
           }
         }
       }
-    }
-    const services = options.serviceIds.map((id) => store.getService(id));
-    const objectives = options.objectiveIds.map((id) => store.getObjective(id));
-    const targets = options.targetIds.map((id) => store.getTarget(id));
-    const target =
-      targets[0]?.target ?? services[0]?.targets[0] ?? input.target;
-    const context = buildWorkerContext(
-      store,
-      options.mission,
-      options.serviceIds,
-      options.targetIds,
-      options.objectiveIds,
-      options.capabilityIds,
-    );
-    const childBus = new AgentEventBus();
-    AgentEventBus.attachChild(childBus, eventBus, options.workerId);
-    eventBus.emit("subagent-spawn", {
-      subagentId: options.workerId,
-      sessionId: options.workerId,
-      name: options.followUp
-        ? `Follow-up: ${options.mission.slice(0, 70)}`
-        : options.mission.slice(0, 80),
-      input: {
-        mission: options.mission,
-        mode: options.mode,
-        serviceIds: options.serviceIds,
-        targetIds: options.targetIds,
-        objectiveIds: options.objectiveIds,
-        capabilityIds: options.capabilityIds,
-      },
-      parentSubagentId: leadAgentId,
-      parentSessionId: leadAgentId,
-    });
+      const services = options.serviceIds.map((id) => store.getService(id));
+      const objectives = options.objectiveIds.map((id) =>
+        store.getObjective(id),
+      );
+      const targets = options.targetIds.map((id) => store.getTarget(id));
+      const workerWorkflow =
+        options.mode === "chain"
+          ? input
+          : applyEngagementModel(input, workerModel);
+      const target =
+        targets[0]?.target ?? services[0]?.targets[0] ?? input.target;
+      lastTarget = target;
+      const context = buildWorkerContext(
+        store,
+        options.mission,
+        options.serviceIds,
+        options.targetIds,
+        options.objectiveIds,
+        options.capabilityIds,
+      );
+      const childBus = new AgentEventBus();
+      AgentEventBus.attachChild(childBus, eventBus, options.workerId);
+      const workerContext = engagementContext?.scope(options.targetIds);
+      eventBus.emit("subagent-spawn", {
+        subagentId: options.workerId,
+        sessionId: options.workerId,
+        name: options.followUp
+          ? `Follow-up: ${options.mission.slice(0, 70)}`
+          : options.mission.slice(0, 80),
+        input: {
+          missionId: options.missionId,
+          mission: options.mission,
+          mode: options.mode,
+          serviceIds: options.serviceIds,
+          targetIds: options.targetIds,
+          objectiveIds: options.objectiveIds,
+          capabilityIds: options.capabilityIds,
+        },
+        parentSubagentId: leadAgentId,
+        parentSessionId: leadAgentId,
+      });
 
-    let latestMessages: ModelMessage[] = [];
-    const handleStepFinish = (
-      event: Parameters<NonNullable<PentestWorkflowInput["onStepFinish"]>>[0],
-    ) => {
-      if (event.response.messages) latestMessages = event.response.messages;
-      input.onStepFinish?.(event);
-    };
-    try {
+      const handleStepFinish = (
+        event: Parameters<NonNullable<PentestWorkflowInput["onStepFinish"]>>[0],
+      ) => {
+        if (event.response.messages) latestMessages = event.response.messages;
+        input.onStepFinish?.(event);
+      };
       let summary: string;
       let result: Record<string, unknown>;
       if (options.mode === "fast-strike") {
         const objective = objectives[0];
         if (!objective) throw new Error("Fast Strike objective is missing");
         const outcome = await runFastStrikeObjective({
-          ...input,
+          ...workerWorkflow,
           target,
           objective: `${objective.text}\n\n${context}`,
           messages: options.messages,
@@ -291,9 +421,8 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           sandbox: input.sandbox,
           secretValues: input.secretValues,
           display: input.display,
-          extraTools: surfaceTools,
-          directTools: surfaceTools ? Object.keys(surfaceTools) : undefined,
           engagementTargetIds,
+          engagementContext: workerContext,
         });
         summary = outcome.summary;
         result = {
@@ -313,6 +442,210 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             (reference) => `${reference.toolName}:${reference.toolCallId}`,
           ),
         });
+      } else if (options.mode === "grouped") {
+        const assigned = options.coverage ?? [];
+        const requirements = options.requirements ?? [];
+        const evidenceLedger = new FastStrikeEvidenceLedger(childBus);
+        try {
+          const expected = new Set(
+            assigned.map((cell) => `${cell.targetId}:${cell.objectiveId}`),
+          );
+          const reportCoverage = tool({
+            description:
+              "Durably record completed coverage obligations in batches. Call this as testing progresses so results survive a later worker interruption.",
+            inputSchema: GroupedMissionCoverageBatch,
+            execute: async ({ obligationResults }) => {
+              const returned = obligationResults.map(
+                (cell) => `${cell.targetId}:${cell.objectiveId}`,
+              );
+              if (
+                new Set(returned).size !== returned.length ||
+                returned.some((cell) => !expected.has(cell))
+              ) {
+                throw new Error(
+                  "Coverage reports must contain unique obligations from this mission contract",
+                );
+              }
+              for (const obligation of obligationResults) {
+                if (obligation.status === "impact-proven") {
+                  const rejection = evidenceLedger.validateImpactEvidence(
+                    obligation.evidence,
+                    new Set([options.workerId]),
+                  );
+                  if (rejection) throw new Error(rejection);
+                }
+                const settled = store.settleCoverageCell({
+                  targetId: obligation.targetId,
+                  objectiveId: obligation.objectiveId,
+                  workerId: options.workerId,
+                  status: obligation.status,
+                  summary: obligation.summary,
+                  evidence: obligation.evidence.map(
+                    (reference) =>
+                      `${reference.toolName}:${reference.toolCallId}`,
+                  ),
+                });
+                if (!settled) {
+                  throw new Error(
+                    `Worker no longer owns coverage ${obligation.targetId}:${obligation.objectiveId}`,
+                  );
+                }
+              }
+              const remaining = store
+                .snapshot()
+                .coverage.filter(
+                  (cell) =>
+                    cell.workerId === options.workerId &&
+                    cell.status === "running" &&
+                    expected.has(`${cell.targetId}:${cell.objectiveId}`),
+                )
+                .map((cell) => ({
+                  targetId: cell.targetId,
+                  objectiveId: cell.objectiveId,
+                }));
+              return withCheckpoint({
+                success: true,
+                recorded: obligationResults.length,
+                remaining,
+              });
+            },
+          });
+          const requirementsById = new Map(
+            requirements.map((requirement) => [requirement.id, requirement]),
+          );
+          const reportMissionProgress = tool({
+            description:
+              "Durably record completed canonical mission requirements. Each result settles all reviewed source associations represented by that requirement.",
+            inputSchema: GroupedMissionRequirementBatch,
+            execute: async ({ requirementResults }) => {
+              const returned = requirementResults.map(
+                (result) => result.requirementId,
+              );
+              if (
+                new Set(returned).size !== returned.length ||
+                returned.some((id) => !requirementsById.has(id))
+              ) {
+                throw new Error(
+                  "Mission progress must contain unique requirements from this mission contract",
+                );
+              }
+              for (const result of requirementResults) {
+                const requirement = requirementsById.get(result.requirementId);
+                if (!requirement)
+                  throw new Error("Unknown mission requirement");
+                if (result.status === "impact-proven") {
+                  const rejection = evidenceLedger.validateImpactEvidence(
+                    result.evidence,
+                    new Set([options.workerId]),
+                  );
+                  if (rejection) throw new Error(rejection);
+                }
+                store.settleMissionRequirement({
+                  workerId: options.workerId,
+                  coverage: requirement.coverage,
+                  status: result.status,
+                  summary: result.summary,
+                  evidence: result.evidence.map(
+                    (reference) =>
+                      `${reference.toolName}:${reference.toolCallId}`,
+                  ),
+                });
+              }
+              const snapshot = store.snapshot();
+              const remainingRequirementIds = requirements
+                .filter((requirement) =>
+                  requirement.coverage.some(({ targetId, objectiveId }) =>
+                    snapshot.coverage.some(
+                      (cell) =>
+                        cell.targetId === targetId &&
+                        cell.objectiveId === objectiveId &&
+                        cell.status === "running",
+                    ),
+                  ),
+                )
+                .map((requirement) => requirement.id);
+              return withCheckpoint({
+                success: true,
+                recorded: requirementResults.length,
+                remainingRequirementIds,
+              });
+            },
+          });
+          const reportToolName = requirements.length
+            ? "report_engagement_mission_progress"
+            : "report_engagement_coverage";
+          const reportTool = requirements.length
+            ? reportMissionProgress
+            : reportCoverage;
+          const agent = new OffensiveSecurityAgent({
+            system: GROUPED_MISSION_SYSTEM_PROMPT,
+            prompt: [
+              `Mission: ${options.mission}`,
+              requirements.length
+                ? "Canonical mission requirements:"
+                : "Legacy coverage contract:",
+              JSON.stringify(requirements.length ? requirements : assigned),
+              "Authorized target and threat-model context:",
+              context,
+            ].join("\n\n"),
+            model: workerWorkflow.model,
+            session: input.session,
+            target,
+            mode: "fast-strike",
+            activeTools: [reportToolName],
+            extraTools: { [reportToolName]: reportTool },
+            directTools: [reportToolName],
+            engagementTargetIds,
+            responseSchema: GroupedMissionResult,
+            responseGuard: (candidate) => {
+              const parsed = GroupedMissionResult.safeParse(candidate);
+              if (!parsed.success) return "Return a concise mission summary.";
+              const remaining = store
+                .snapshot()
+                .coverage.filter(
+                  (cell) =>
+                    cell.workerId === options.workerId &&
+                    cell.status === "running" &&
+                    expected.has(`${cell.targetId}:${cell.objectiveId}`),
+                );
+              if (remaining.length > 0)
+                return `Report the ${remaining.length} remaining coverage obligations before responding.`;
+              return undefined;
+            },
+            findingsRegistry,
+            messages: options.messages,
+            subagentId: options.workerId,
+            subagentName: options.mission.slice(0, 80),
+            authConfig: input.authConfig,
+            abortSignal: input.abortSignal,
+            eventBus: childBus,
+            onStepFinish: handleStepFinish,
+            getPendingMessages: async () =>
+              mailbox.take(options.workerId).map((message) => ({
+                role: "user" as const,
+                content: [
+                  {
+                    type: "text" as const,
+                    text: `Directed message from engagement lead: ${message.payload}`,
+                  },
+                ],
+              })),
+            enableThinking: workerWorkflow.enableThinking,
+            thinkingEffort: workerWorkflow.thinkingEffort,
+            openAIReasoningEffort: workerWorkflow.openAIReasoningEffort,
+            toolProtocol: input.toolProtocol,
+            engagementContext: workerContext,
+            environmentVariables: input.environmentVariables,
+            secretValues: input.secretValues,
+            sandbox: input.sandbox,
+            display: input.display,
+          });
+          const outcome = GroupedMissionResult.parse(await agent.consume());
+          summary = outcome.summary;
+          result = outcome;
+        } finally {
+          evidenceLedger.dispose();
+        }
       } else {
         const agent = new TargetedPentestAgent({
           target,
@@ -321,7 +654,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
               ? objectives.map((objective) => objective.text)
               : [options.mission],
           context,
-          model: input.model,
+          model: workerWorkflow.model,
           session: input.session,
           authConfig: input.authConfig,
           abortSignal: input.abortSignal,
@@ -331,18 +664,17 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           subagentName: options.mission.slice(0, 80),
           messages: options.messages,
           onStepFinish: handleStepFinish,
-          enableThinking: input.enableThinking,
-          thinkingEffort: input.thinkingEffort,
-          openAIReasoningEffort: input.openAIReasoningEffort,
+          enableThinking: workerWorkflow.enableThinking,
+          thinkingEffort: workerWorkflow.thinkingEffort,
+          openAIReasoningEffort: workerWorkflow.openAIReasoningEffort,
           environmentVariables: input.environmentVariables,
           secretValues: input.secretValues,
           sandbox: input.sandbox,
           display: input.display,
           role: "worker",
           toolProtocol: input.toolProtocol,
-          extraTools: surfaceTools,
-          directTools: surfaceTools ? Object.keys(surfaceTools) : undefined,
           engagementTargetIds,
+          engagementContext: workerContext,
         });
         const outcome = await agent.consume();
         summary =
@@ -384,6 +716,8 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
       }
 
       store.completeWorker(options.workerId, "completed", summary);
+      if (options.missionId)
+        store.setMissionStatus(options.missionId, "completed");
       mailbox.send({
         type: "FINAL_ANSWER",
         recipientAgentId: leadAgentId,
@@ -413,7 +747,49 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         ...result,
       });
     } catch (error) {
-      const summary = error instanceof Error ? error.message : String(error);
+      const summary = formatEngagementError(error);
+      const unfinishedCoverage = store
+        .snapshot()
+        .coverage.filter(
+          (coverage) =>
+            coverage.workerId === options.workerId &&
+            coverage.status === "running",
+        );
+      if (options.mode === "grouped" && unfinishedCoverage.length === 0) {
+        const recoveredSummary = `All assigned coverage was recorded before the result stream ended: ${summary}`;
+        store.completeWorker(options.workerId, "completed", recoveredSummary);
+        if (options.missionId)
+          store.setMissionStatus(options.missionId, "completed");
+        mailbox.send({
+          type: "FINAL_ANSWER",
+          recipientAgentId: leadAgentId,
+          senderAgentId: options.workerId,
+          taskName: options.mission,
+          payload: recoveredSummary,
+          status: "completed",
+        });
+        saveSubagentData(input.session, {
+          agentName: options.workerId,
+          target: lastTarget,
+          objective: options.mission,
+          status: "completed",
+          messages: [...(options.messages ?? []), ...latestMessages],
+          findingsCount: findingsRegistry.getFindings().length,
+        });
+        eventBus.emit("subagent-complete", {
+          subagentId: options.workerId,
+          sessionId: options.workerId,
+          status: "completed",
+          parentSubagentId: leadAgentId,
+          parentSessionId: leadAgentId,
+        });
+        return withCheckpoint({
+          success: true,
+          recovered: true,
+          workerId: options.workerId,
+          summary: recoveredSummary,
+        });
+      }
       for (const coverage of store.snapshot().coverage) {
         if (
           coverage.workerId === options.workerId &&
@@ -430,6 +806,8 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         }
       }
       store.completeWorker(options.workerId, "failed", summary);
+      if (options.missionId)
+        store.setMissionStatus(options.missionId, "failed");
       mailbox.send({
         type: "FINAL_ANSWER",
         recipientAgentId: leadAgentId,
@@ -455,7 +833,213 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     }
   };
 
-  return {
+  const dispatchWorker = async (
+    {
+      mission,
+      serviceIds,
+      targetIds,
+      objectiveIds,
+      capabilityIds,
+      rationale,
+      coverage,
+      supportingTargetIds,
+      contextTargetIds,
+      mode,
+    }: WorkerAssignment,
+    plannedMission?: EngagementMission,
+  ) => {
+    const configuredMode = input.session.config?.engagementCoverageMode;
+    if (
+      configuredMode === "grouped" &&
+      (mode === "targeted" || mode === "fast-strike")
+    ) {
+      throw new Error(
+        "Grouped coverage requires mode=grouped with explicit coverage obligations",
+      );
+    }
+    if (mode === "grouped" && configuredMode !== "grouped") {
+      throw new Error("Grouped workers require grouped engagement coverage");
+    }
+    const selectedServiceIds = unique(serviceIds);
+    const selectedCoverage = coverage ?? [];
+    const selectedTargetIds = unique([
+      ...targetIds,
+      ...(supportingTargetIds ?? []),
+      ...(contextTargetIds ?? []),
+      ...selectedCoverage.map((cell) => cell.targetId),
+    ]);
+    const selectedObjectiveIds = unique(objectiveIds);
+    const selectedCapabilityIds = unique(capabilityIds);
+    validateAssignment(
+      store,
+      mode,
+      selectedServiceIds,
+      selectedTargetIds,
+      selectedObjectiveIds,
+      selectedCapabilityIds,
+    );
+    if (mode === "grouped") {
+      if (!rationale || selectedCoverage.length === 0) {
+        throw new Error(
+          "Grouped missions require rationale and explicit coverage obligations",
+        );
+      }
+      const uniqueCells = new Set(
+        selectedCoverage.map((cell) => `${cell.targetId}:${cell.objectiveId}`),
+      );
+      if (uniqueCells.size !== selectedCoverage.length) {
+        throw new Error("Grouped mission coverage contains duplicates");
+      }
+      for (const cell of selectedCoverage) {
+        const targetRecord = store.getTarget(cell.targetId);
+        if (!targetRecord.objectiveIds.includes(cell.objectiveId)) {
+          throw new Error(
+            `Objective ${cell.objectiveId} is not assigned to target ${cell.targetId}`,
+          );
+        }
+        if (!selectedObjectiveIds.includes(cell.objectiveId)) {
+          throw new Error(
+            `Coverage objective ${cell.objectiveId} is missing from objectiveIds`,
+          );
+        }
+        const coverageCell = store
+          .snapshot()
+          .coverage.find(
+            (candidate) =>
+              candidate.targetId === cell.targetId &&
+              candidate.objectiveId === cell.objectiveId,
+          );
+        if (
+          coverageCell?.status !== "pending" &&
+          coverageCell?.status !== "assigned"
+        ) {
+          throw new Error(
+            `Coverage ${cell.targetId}:${cell.objectiveId} is already assigned or terminal`,
+          );
+        }
+      }
+    }
+    const selectedCoverageIds = new Set(
+      selectedCoverage.map((cell) => `${cell.targetId}:${cell.objectiveId}`),
+    );
+    const selectedRequirements = plannedMission?.requirements?.filter(
+      (requirement) =>
+        requirement.coverage.some((cell) =>
+          selectedCoverageIds.has(`${cell.targetId}:${cell.objectiveId}`),
+        ),
+    );
+    if (
+      selectedRequirements?.some((requirement) =>
+        requirement.coverage.some(
+          (cell) =>
+            !selectedCoverageIds.has(`${cell.targetId}:${cell.objectiveId}`),
+        ),
+      )
+    ) {
+      throw new Error(
+        "A canonical mission requirement cannot be partially resumed",
+      );
+    }
+    const workerId = plannedMission?.workerId ?? (newSessionId() as string);
+    const existingWorker = store
+      .snapshot()
+      .workers.find((worker) => worker.id === workerId);
+    if (!existingWorker)
+      store.registerWorker({
+        id: workerId,
+        mission,
+        mode,
+        serviceIds: selectedServiceIds,
+        targetIds: selectedTargetIds,
+        objectiveIds: selectedObjectiveIds,
+        capabilityIds: selectedCapabilityIds,
+        model:
+          mode === "chain"
+            ? {
+                model: input.model,
+                enableThinking: input.enableThinking,
+                thinkingEffort: input.thinkingEffort,
+                openAIReasoningEffort: input.openAIReasoningEffort,
+              }
+            : workerModel,
+      });
+    const missionId = plannedMission?.id;
+    if (mode === "explore") {
+      for (const serviceId of selectedServiceIds) {
+        store.markServiceBaseline(serviceId, "running", mission);
+      }
+    } else if (mode === "grouped") {
+      // Coverage is claimed only after scheduler admission.
+    } else {
+      for (const objectiveId of selectedObjectiveIds) {
+        for (const targetId of selectedTargetIds) {
+          const target = store.getTarget(targetId);
+          if (!target.objectiveIds.includes(objectiveId)) continue;
+          store.markObjectiveCoverage({
+            targetId,
+            objectiveId,
+            serviceId: target.serviceId,
+            status: "running",
+            workerId,
+            summary: mission,
+          });
+        }
+      }
+    }
+    const run = () =>
+      workerPool.run(mode === "chain" ? "chain" : "baseline", () =>
+        runWorker({
+          workerId,
+          mission,
+          mode,
+          serviceIds: selectedServiceIds,
+          targetIds: selectedTargetIds,
+          objectiveIds: selectedObjectiveIds,
+          capabilityIds: selectedCapabilityIds,
+          missionId,
+          coverage: selectedCoverage,
+          requirements: selectedRequirements,
+          messages: existingWorker
+            ? loadSubagentMessages(input.session, workerId)
+            : undefined,
+        }),
+      );
+    const job = run();
+    if (mode !== "grouped") return job;
+    const resilientJob = job.catch(async (error) => {
+      const summary = formatEngagementError(error);
+      const worker = store
+        .snapshot()
+        .workers.find((candidate) => candidate.id === workerId);
+      if (worker?.status === "running") {
+        for (const cell of store.snapshot().coverage) {
+          if (cell.workerId !== workerId || cell.status !== "running") continue;
+          store.markObjectiveCoverage({
+            targetId: cell.targetId,
+            objectiveId: cell.objectiveId,
+            serviceId: cell.serviceId,
+            status: "needs-lead",
+            workerId: null,
+            summary,
+          });
+        }
+        store.completeWorker(workerId, "failed", summary);
+        if (missionId) store.setMissionStatus(missionId, "failed");
+      }
+      return withCheckpoint({ success: false, workerId, message: summary });
+    });
+    const tracked = resilientJob.finally(() => workerJobs.delete(workerId));
+    workerJobs.set(workerId, tracked);
+    onWorkerJob?.(tracked);
+    return withCheckpoint({
+      success: true,
+      accepted: true,
+      missionId,
+      workerId,
+    });
+  };
+
+  const tools = {
     ...surfaceTools,
     read_engagement_state: tool({
       description:
@@ -475,7 +1059,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             counts[worker.status] += 1;
             return counts;
           },
-          { running: 0, completed: 0, failed: 0 },
+          { queued: 0, running: 0, completed: 0, failed: 0 },
         );
         return {
           success: true,
@@ -487,8 +1071,17 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             coverage: state.coverage.filter((item) =>
               objectiveIds.has(item.objectiveId),
             ),
-            capabilities: state.capabilities,
-            impactProofs: state.impactProofs,
+            capabilities: state.capabilities.slice(offset, offset + limit),
+            impactProofs: state.impactProofs.slice(offset, offset + limit),
+            missions: state.missions
+              ? {
+                  planningStatus: state.missions.planningStatus,
+                  missions: state.missions.missions.slice(
+                    offset,
+                    offset + limit,
+                  ),
+                }
+              : undefined,
             workerCounts,
             chainExplore: state.chainExplore,
             updatedAt: state.updatedAt,
@@ -500,7 +1093,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             objectiveTotal: state.objectives.length,
             workerTotal: state.workers.length,
           },
-          completion: store.completion(),
+          completion: boundedCompletion(),
           inbox: includeInbox ? mailbox.take(leadAgentId) : [],
         };
       },
@@ -508,77 +1101,82 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
 
     spawn_engagement_worker: tool({
       description:
-        "Start a durable focused worker. Use targeted for assigned objective coverage, fast-strike for one concrete impact goal, and explore for baseline service discovery or net-new vulnerability paths. Independent calls may run in parallel.",
+        "Delegate focused exploration or chain work after planning. Grouped baseline missions are launched only by the scheduler.",
+      inputSchema: WorkerAssignmentSchema,
+      execute: async (assignment) => {
+        if (
+          input.session.config?.engagementCoverageMode === "grouped" &&
+          store.snapshot().missions?.planningStatus !== "complete"
+        )
+          throw new Error("Seal the mission plan before delegating workers");
+        if (assignment.mode === "grouped")
+          throw new Error(
+            "Grouped missions are launched only from the sealed plan",
+          );
+        return dispatchWorker(assignment);
+      },
+    }),
+
+    send_engagement_worker_message: tool({
+      description:
+        "Send a durable directed message to a running grouped worker. It is injected at the next model-step boundary.",
       inputSchema: z.object({
-        mission: z.string().min(1),
-        serviceIds: z.array(z.string()).min(1),
-        targetIds: z.array(z.string()).min(1),
-        objectiveIds: z.array(z.string()).default([]),
-        capabilityIds: z.array(z.string()).default([]),
-        mode: z.enum(WORKER_MODES),
+        workerId: z.string().min(1),
+        message: z.string().min(1),
         toolCallDescription: z.string(),
       }),
-      execute: async ({
-        mission,
-        serviceIds,
-        targetIds,
-        objectiveIds,
-        capabilityIds,
-        mode,
-      }) => {
-        const selectedServiceIds = unique(serviceIds);
-        const selectedTargetIds = unique(targetIds);
-        const selectedObjectiveIds = unique(objectiveIds);
-        const selectedCapabilityIds = unique(capabilityIds);
-        validateAssignment(
-          store,
-          mode,
-          selectedServiceIds,
-          selectedTargetIds,
-          selectedObjectiveIds,
-          selectedCapabilityIds,
-        );
-        const workerId = newSessionId() as string;
-        store.registerWorker({
-          id: workerId,
-          mission,
-          mode,
-          serviceIds: selectedServiceIds,
-          targetIds: selectedTargetIds,
-          objectiveIds: selectedObjectiveIds,
-          capabilityIds: selectedCapabilityIds,
-        });
-        if (mode === "explore") {
-          for (const serviceId of selectedServiceIds) {
-            store.markServiceBaseline(serviceId, "running", mission);
-          }
-        } else {
-          for (const objectiveId of selectedObjectiveIds) {
-            for (const targetId of selectedTargetIds) {
-              const target = store.getTarget(targetId);
-              if (!target.objectiveIds.includes(objectiveId)) continue;
-              store.markObjectiveCoverage({
-                targetId,
-                objectiveId,
-                serviceId: target.serviceId,
-                status: "running",
-                workerId,
-                summary: mission,
-              });
-            }
-          }
+      execute: async ({ workerId, message }) => {
+        const worker = store
+          .snapshot()
+          .workers.find((candidate) => candidate.id === workerId);
+        if (!worker) throw new Error(`Unknown engagement worker: ${workerId}`);
+        if (worker.status !== "running") {
+          throw new Error(`Worker ${workerId} is not running`);
         }
-        return workerPool.run("chain", () =>
-          runWorker({
-            workerId,
-            mission,
-            mode,
-            serviceIds: selectedServiceIds,
-            targetIds: selectedTargetIds,
-            objectiveIds: selectedObjectiveIds,
-            capabilityIds: selectedCapabilityIds,
-          }),
-        );
+        const delivered = mailbox.send({
+          type: "MESSAGE",
+          recipientAgentId: workerId,
+          senderAgentId: leadAgentId,
+          taskName: worker.mission,
+          payload: message,
+        });
+        return withCheckpoint({ success: true, messageId: delivered.id });
+      },
+    }),
+
+    wait_for_engagement_workers: tool({
+      description:
+        "Wait briefly for grouped worker progress, then return bounded worker status and unread handoffs.",
+      inputSchema: z.object({
+        workerIds: z.array(z.string()).max(100).default([]),
+        timeoutMs: z.number().int().min(100).max(10_000).default(2_000),
+        toolCallDescription: z.string(),
+      }),
+      execute: async ({ workerIds, timeoutMs }) => {
+        const selected =
+          workerIds.length > 0
+            ? workerIds
+            : [...workerJobs.keys()].slice(0, 100);
+        const jobs = selected
+          .map((id) => workerJobs.get(id))
+          .filter((job): job is Promise<Record<string, unknown>> =>
+            Boolean(job),
+          );
+        if (jobs.length > 0) {
+          await Promise.race([
+            Promise.race(jobs).catch(() => undefined),
+            new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+          ]);
+        }
+        const selectedIds = new Set(selected);
+        return {
+          success: true,
+          workers: store
+            .snapshot()
+            .workers.filter((worker) => selectedIds.has(worker.id))
+            .slice(0, 100),
+          inbox: mailbox.take(leadAgentId, 100),
+        };
       },
     }),
 
@@ -610,6 +1208,11 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           role: "user",
           content: [{ type: "text", text: message }],
         });
+        const mission = store
+          .snapshot()
+          .missions?.missions.find(
+            (candidate) => candidate.workerId === workerId,
+          );
         return workerPool.run("chain", () =>
           runWorker({
             workerId,
@@ -619,6 +1222,8 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             targetIds: worker.targetIds,
             objectiveIds: worker.objectiveIds,
             capabilityIds: worker.capabilityIds,
+            missionId: mission?.id,
+            coverage: mission?.coverage,
             messages,
             followUp: true,
           }),
@@ -740,5 +1345,104 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           proof: store.addImpactProof(proof),
         }),
     }),
+  };
+  const startPlannedMissions = async (): Promise<void> => {
+    const state = store.snapshot();
+    if (state.missions?.planningStatus !== "complete")
+      throw new Error("Cannot execute an unsealed mission plan");
+    const jobs = new Map<string, Promise<Record<string, unknown>>>();
+    const schedule = (
+      mission: EngagementMission,
+    ): Promise<Record<string, unknown>> => {
+      const existing = jobs.get(mission.id);
+      if (existing) return existing;
+      const prerequisites = mission.prerequisiteMissionIds.map((id) => {
+        const dependency = state.missions?.missions.find(
+          (candidate) => candidate.id === id,
+        );
+        if (!dependency) throw new Error(`Unknown prerequisite mission: ${id}`);
+        return schedule(dependency);
+      });
+      const job = Promise.all(prerequisites).then(async () => {
+        if (mission.status === "completed") return { success: true };
+        if (mission.status === "failed") return { success: false };
+        if (input.abortSignal?.aborted) throw input.abortSignal.reason;
+        const failed = mission.prerequisiteMissionIds.some(
+          (id) =>
+            store.snapshot().missions?.missions.find((item) => item.id === id)
+              ?.status !== "completed",
+        );
+        if (failed) {
+          store.setMissionStatus(mission.id, "failed");
+          for (const cell of mission.coverage)
+            store.markObjectiveCoverage({
+              ...cell,
+              serviceId: store.getTarget(cell.targetId).serviceId,
+              status: "needs-lead",
+              summary: "Prerequisite mission did not complete",
+            });
+          return withCheckpoint({ success: false, missionId: mission.id });
+        }
+        const coverage = mission.coverage.filter((cell) =>
+          store
+            .snapshot()
+            .coverage.some(
+              (item) =>
+                item.targetId === cell.targetId &&
+                item.objectiveId === cell.objectiveId &&
+                (item.status === "pending" || item.status === "assigned"),
+            ),
+        );
+        if (!coverage.length) {
+          store.setMissionStatus(mission.id, "completed");
+          return withCheckpoint({ success: true, missionId: mission.id });
+        }
+        const targetIds = unique([
+          ...coverage.map((cell) => cell.targetId),
+          ...mission.supportingTargetIds,
+          ...mission.contextTargetIds,
+        ]);
+        await dispatchWorker(
+          {
+            mission: mission.purpose,
+            rationale: mission.rationale,
+            coverage,
+            serviceIds: unique(
+              targetIds.map((id) => store.getTarget(id).serviceId),
+            ),
+            targetIds,
+            objectiveIds: unique(coverage.map((cell) => cell.objectiveId)),
+            capabilityIds: [],
+            supportingTargetIds: mission.supportingTargetIds,
+            contextTargetIds: mission.contextTargetIds,
+            prerequisiteMissionIds: [],
+            mode: "grouped",
+            toolCallDescription: "Run sealed mission",
+          },
+          mission,
+        );
+        const workerJob = workerJobs.get(mission.workerId);
+        if (!workerJob) {
+          throw new Error(`Mission ${mission.id} did not create a worker job`);
+        }
+        return workerJob;
+      });
+      jobs.set(mission.id, job);
+      return job;
+    };
+    await Promise.all(state.missions.missions.map(schedule));
+  };
+  const takeLeadHandoffs = () => mailbox.take(leadAgentId, 100);
+  const waitForWorkerActivity = async () => {
+    const jobs = [...workerJobs.values()];
+    if (jobs.length === 0) return;
+    await Promise.race(jobs.map((job) => job.catch(() => undefined)));
+  };
+  return {
+    tools,
+    startPlannedMissions,
+    takeLeadHandoffs,
+    waitForWorkerActivity,
+    hasActiveWorkers: () => workerJobs.size > 0,
   };
 }

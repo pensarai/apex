@@ -100,13 +100,15 @@ describe("subagentSpawner durable-hook forwarding", () => {
     expect(mocks.authInput?.streamIdFactory).toBeUndefined();
   });
 
-  it("forwards code-mode metrics to the judge", async () => {
+  it("forwards code-mode metrics and engagement authorization to the judge", async () => {
+    const engagementContext = { target: "https://example.com" } as never;
     const onStepFinish = vi.fn();
     const onCodeCellComplete = vi.fn();
     await inProcessSubagentSpawner.spawn({
       spec: {
         type: "finding-judge",
         judgeInput: {} as never,
+        engagementContext,
       },
       runtime: {
         ...runtime,
@@ -118,6 +120,7 @@ describe("subagentSpawner durable-hook forwarding", () => {
 
     expect(mocks.judgeCtx).toEqual(
       expect.objectContaining({
+        engagementContext,
         toolProtocol: "schema-code",
         onStepFinish,
         onCodeCellComplete,

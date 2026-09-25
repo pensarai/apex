@@ -18,6 +18,7 @@ import {
   renderMarkdown,
 } from "../report";
 import { createThreatModelPrompt } from "../utils/prompt";
+import type { EngagementContext } from "./engagementSurface";
 import { FastStrikeEvidenceLedger } from "./fastStrikeEvidence";
 import type { PentestWorkflowInput, PentestWorkflowResult } from "./pentest";
 
@@ -277,6 +278,7 @@ export interface FastStrikeObjectiveInput
   extraTools?: ToolSet;
   directTools?: string[];
   engagementTargetIds?: readonly string[];
+  engagementContext?: EngagementContext;
 }
 
 function findingReference(finding: Finding): FastStrikeFindingReference {
@@ -376,6 +378,7 @@ async function executeFastStrikeObjective(
         extraTools: input.extraTools,
         directTools: input.directTools,
         engagementTargetIds: input.engagementTargetIds,
+        engagementContext: input.engagementContext,
         activeTools: [],
         responseSchema: FastStrikeResult,
         responseGuard: (result, { rejectionCount }) =>
