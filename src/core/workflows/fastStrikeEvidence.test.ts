@@ -3,6 +3,43 @@ import { AgentEventBus } from "../eventBus";
 import { FastStrikeEvidenceLedger } from "./fastStrikeEvidence";
 
 describe("FastStrikeEvidenceLedger", () => {
+  it("accepts source as supporting context but requires live observations for impact", () => {
+    const bus = new AgentEventBus();
+    const ledger = new FastStrikeEvidenceLedger(bus);
+    const scopes = new Set(["worker-1"]);
+    const source = {
+      description: "Possible missing authorization",
+      toolCallId: "source-1",
+      toolName: "source_read_file",
+    };
+    const live = {
+      description: "Unauthorized record returned",
+      toolCallId: "live-1",
+      toolName: "http_request",
+    };
+    for (const reference of [source, live])
+      bus.emit("tool-result", {
+        ...reference,
+        result: {},
+        subagentId: "worker-1",
+      });
+    expect(ledger.validateEvidence([source], scopes)).toBeUndefined();
+    expect(ledger.validateImpactEvidence([source], scopes)).toContain(
+      "cannot prove live impact",
+    );
+    expect(ledger.validateEvidence([source], scopes, true)).toContain(
+      "cannot prove live impact",
+    );
+    expect(
+      ledger.validateImpactEvidence([source, live], scopes),
+    ).toBeUndefined();
+    const wrapper = { ...source, toolCallId: "cell-1", toolName: "exec" };
+    bus.emit("tool-result", { ...wrapper, result: {}, subagentId: "worker-1" });
+    expect(ledger.validateImpactEvidence([source, wrapper], scopes)).toContain(
+      "cannot prove live impact",
+    );
+    ledger.dispose();
+  });
   it("accepts successful observations from the assigned execution scope", () => {
     const bus = new AgentEventBus();
     const ledger = new FastStrikeEvidenceLedger(bus);

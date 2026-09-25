@@ -32,6 +32,7 @@ import type { ApprovalGate } from "../../operator";
 import type { PromptInjectionLibrary } from "../../prompt-injections";
 import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
+import type { SourceProvider } from "../../source";
 import type { EngagementContext } from "../../workflows/engagementSurface";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
 import type { CodeCellResult } from "./codeMode/runtime";
@@ -175,6 +176,9 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
 
   /** Host-scoped, read-only context used for evidence adjudication. */
   engagementContext?: EngagementContext;
+
+  /** Host-bound local repository or remote snapshot, accessed through code mode. */
+  sourceProvider?: SourceProvider;
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;
@@ -478,6 +482,8 @@ export type CommandCancelHandle = {
  * the common harness fields, then add only their agent-specific ones.
  */
 export interface SpecializedAgentInput {
+  sourceProvider?: SourceProvider;
+
   /** AI model to drive the agent */
   model: AIModel;
 

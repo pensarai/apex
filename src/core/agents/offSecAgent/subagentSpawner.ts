@@ -21,6 +21,7 @@ import type { AttackSurfaceRegistry } from "../../findings/attackSurfaceRegistry
 import type { FindingsRegistry } from "../../findings/registry";
 import { newSessionId } from "../../id/id";
 import type { SessionInfo } from "../../session";
+import type { SourceProvider } from "../../source";
 import { runWithBoundedConcurrency } from "../../utils/concurrency";
 import type { EngagementContext } from "../../workflows/engagementSurface";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
@@ -92,6 +93,7 @@ export type SubagentSpec =
  */
 export interface SpawnRuntime {
   toolProtocol?: AgentToolProtocolPreference;
+  sourceProvider?: SourceProvider;
   onCodeCellComplete?: (result: CodeCellResult) => void;
   session: SessionInfo;
   model: AIModel;
@@ -251,6 +253,7 @@ const runPentestChild: SubagentRunner<"pentest"> = async (spec, ctx) => {
   }
   const { TargetedPentestAgent } = await import("../specialized/pentest/agent");
   const agent = new TargetedPentestAgent({
+    sourceProvider: ctx.sourceProvider,
     toolProtocol: ctx.toolProtocol,
     onCodeCellComplete: ctx.onCodeCellComplete,
     target: spec.target,

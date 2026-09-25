@@ -20,6 +20,18 @@ export {
   createNativeRolloutEvidenceCapture,
   DEFAULT_NATIVE_ROLLOUT_CAPTURE_LIMITS,
 } from "../ai";
+export { LocalSourceProvider } from "../localSource";
+export type {
+  SourceDescriptor,
+  SourceFilePage,
+  SourceProvider,
+  SourceReadInput,
+  SourceRequestOptions,
+  SourceSearchInput,
+  SourceSearchResult,
+  SourceTreeInput,
+  SourceTreePage,
+} from "../source";
 export type {
   AppDetail,
   ApplicationType,

@@ -726,6 +726,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           : reportCoverage;
         const agent = new OffensiveSecurityAgent({
           system: GROUPED_MISSION_SYSTEM_PROMPT,
+          sourceProvider: input.sourceProvider,
           prompt: [
             `Mission: ${options.mission}`,
             requirements.length
@@ -799,6 +800,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         result = outcome;
       } else {
         const agent = new TargetedPentestAgent({
+          sourceProvider: input.sourceProvider,
           target,
           objectives:
             objectives.length > 0

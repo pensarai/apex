@@ -15,6 +15,12 @@ describe("Fast Strike objective contract", () => {
     );
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("editable script");
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("trace-linked evidence");
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "Source exploration is optional",
+    );
+    expect(FAST_STRIKE_SYSTEM_PROMPT).toContain(
+      "Live validation against the assigned target is the final oracle",
+    );
     expect(FAST_STRIKE_SYSTEM_PROMPT).toContain("destructive actions");
     expect(FAST_STRIKE_SYSTEM_PROMPT).not.toContain("Argus");
   });
