@@ -1,13 +1,20 @@
-/** Canonical report filenames — use these instead of hardcoding strings. */
-export const REPORT_FILENAME_MD = "pentest-report.md";
-export const REPORT_FILENAME_JSON = "pentest-report.json";
-
-export { buildPentestReport, type ReportContext } from "./builder";
+export {
+  loadEngagementReportContext,
+  REPORT_FILENAME_JSON,
+  REPORT_FILENAME_MD,
+  writePentestReportArtifacts,
+} from "./artifacts";
+export {
+  buildPentestReport,
+  type ReportContext,
+  type ReportEngagementContext,
+} from "./builder";
 export { renderJson } from "./renderers/json";
 
 // Renderers
 export { renderMarkdown } from "./renderers/markdown";
 export type {
   PentestReport,
+  PentestReportChain,
   PentestReportFinding,
 } from "./schemas";
