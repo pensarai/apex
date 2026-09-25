@@ -9,6 +9,7 @@ describe("engagement lead contract", () => {
     expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain("every objective");
     expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain("crown-jewel impact");
     expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain("finding judge");
+    expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain("external ledger");
     expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).not.toContain("Argus");
   });
 });
