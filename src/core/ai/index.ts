@@ -29,6 +29,13 @@ export {
   runWithStepContext,
   streamResponse,
 } from "./ai";
+export type {
+  ContextCompactionConfig,
+  ContextCompactionMetadata,
+  ContextCompactionResult,
+  ContextCompactionState,
+  SemanticCapsule,
+} from "./contextCompaction";
 export type { InferenceAttempt } from "./inference-attempt";
 export {
   addRecentModelId,

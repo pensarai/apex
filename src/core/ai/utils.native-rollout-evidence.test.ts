@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => {
       if (!state.callOptions) throw new Error("missing fixture call options");
       await input.model.doGenerate(state.callOptions);
       return {
-        text: "bounded summary",
+        text: '{"currentPhase":"testing"}',
         usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
         providerMetadata: undefined,
       };
@@ -46,6 +46,9 @@ vi.mock("ai", async () => {
 
 vi.mock("./ai", () => ({
   buildOpenRouterProviderOptions: vi.fn(() => undefined),
+  buildReasoningProviderOptions: vi.fn(() => undefined),
+  getContextWindow: vi.fn(() => 1_000),
+  reportAuxiliaryUsage: vi.fn(),
   streamResponse: mocks.streamResponse,
 }));
 
@@ -90,7 +93,10 @@ describe("summarization native rollout evidence boundary", () => {
     mocks.state.resumedCall = undefined;
   });
 
-  it("labels only the summary inference and restores the resumed agent label", async () => {
+  it.each([
+    false,
+    true,
+  ])("labels summary inference and restores the agent label (semantic=%s)", async (semantic) => {
     const envelopes: Array<{ operationKind: string }> = [];
     const capture = createNativeRolloutEvidenceCapture({
       enabled: true,
@@ -110,11 +116,15 @@ describe("summarization native rollout evidence boundary", () => {
       });
       mocks.state.resumedModel = wrapped;
       const stream = createSummarizationStream(
-        [{ role: "user", content: "history" }],
+        [
+          { role: "user", content: "history ".repeat(100) },
+          { role: "assistant", content: "recent evidence ".repeat(100) },
+        ],
         {
           model: "openai/gpt-5",
           prompt: "resume",
           sessionId: "ses_summary_boundary",
+          contextCompaction: { enabled: semantic },
         },
         wrapped,
       );
