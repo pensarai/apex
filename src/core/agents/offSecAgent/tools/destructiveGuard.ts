@@ -354,6 +354,11 @@ const SCRIPT_HTTP_CLIENT_HINT =
   /\b(?:fetch|axios|got|ky|superagent|needle|node-fetch|undici|phin|XMLHttpRequest|xhr|requests|httpx|urllib3|page|apiContext|apiRequestContext|request)\b\s*(?:\.\s*\w+\s*)*\(/i;
 const JS_CLIENT_DELETE_CALL =
   /\b(?:axios|got|ky|superagent|needle|supertest|phin|page|apiContext|apiRequestContext|request)\s*(?:\.\s*\w+)*\.\s*delete\s*\(/i;
+const PY_HTTP_CLIENT_HINT =
+  /\b(?:requests|httpx|aiohttp|urllib3|client|session)\b/i;
+const PY_METHOD_DELETE = /\bmethod\s*=\s*['"]\s*delete\b/i;
+const PY_CLIENT_DELETE_CALL =
+  /\b(?:requests|httpx|aiohttp|client|session)\s*(?:\.\s*\w+)*\.\s*delete\s*\(/i;
 const SCRIPT_CLIENT_WRITE_CALL = /\.(?:post|put|patch)\s*\(/i;
 const SCRIPT_POSITIONAL_WRITE_CALL =
   /\.request\s*\(\s*['"`](?:post|put|patch)['"`]/i;
@@ -413,6 +418,7 @@ function classifyCommandHttp(command: string): DestructiveClassification {
   const hasScriptHttpClient = SCRIPT_HTTP_CLIENT_HINT.test(command);
   const shellRequestContent = extractShellRequestContent(decoded);
   const scriptRequestContent = extractScriptRequestContent(decoded);
+  const hasPythonHttpClient = PY_HTTP_CLIENT_HINT.test(command);
 
   // Explicit DELETE via curl flag or httpie positional method.
   if (
@@ -430,7 +436,9 @@ function classifyCommandHttp(command: string): DestructiveClassification {
   // In-script HTTP DELETE (fetch/axios/Playwright) run via a JS runtime.
   if (
     (JS_METHOD_DELETE.test(command) && hasScriptHttpClient) ||
-    JS_CLIENT_DELETE_CALL.test(command)
+    JS_CLIENT_DELETE_CALL.test(command) ||
+    (PY_METHOD_DELETE.test(command) && hasPythonHttpClient) ||
+    PY_CLIENT_DELETE_CALL.test(command)
   ) {
     return {
       destructive: true,
@@ -473,7 +481,10 @@ function classifyCommandHttp(command: string): DestructiveClassification {
 
   // Destructive SQL / NoSQL carried in an HTTP client's URL or data body — the
   // same statement `http_request` blocks, but delivered through curl/wget.
-  if (hasShellHttpClient && httpCarriesDestructiveSql(decoded)) {
+  if (
+    (hasShellHttpClient || hasScriptHttpClient || hasPythonHttpClient) &&
+    httpCarriesDestructiveSql(decoded)
+  ) {
     return {
       destructive: true,
       category: "sql-destructive",
@@ -482,7 +493,10 @@ function classifyCommandHttp(command: string): DestructiveClassification {
         "command sends a destructive SQL statement in an HTTP request (DROP/TRUNCATE/DELETE FROM/ALTER…DROP)",
     };
   }
-  if (hasShellHttpClient && NOSQL_HTTP_DESTRUCTIVE.test(decoded)) {
+  if (
+    (hasShellHttpClient || hasScriptHttpClient || hasPythonHttpClient) &&
+    NOSQL_HTTP_DESTRUCTIVE.test(decoded)
+  ) {
     return {
       destructive: true,
       category: "nosql-destructive",
@@ -698,7 +712,10 @@ export class DestructiveActionError extends Error {
  * false → destructive actions are blocked (fail-closed, off by default).
  */
 export function isDestructiveTestingAllowed(ctx: ToolContext): boolean {
-  return ctx.session?.config?.allowDestructiveActions === true;
+  return (
+    ctx.executionPolicy?.destructive.allowed ??
+    ctx.session?.config?.allowDestructiveActions === true
+  );
 }
 
 /**

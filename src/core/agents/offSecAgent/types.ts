@@ -39,6 +39,7 @@ import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
+  id: z.string().optional(),
   title: z.string(),
   severity: z.preprocess(
     (val) => {
@@ -63,6 +64,8 @@ export const ApexFindingObject = z.object({
   toolCallDescription: z.string().optional(), // Optional for backward compatibility
   cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
   rootCauseGroup: z.string().optional(),
+  /** Canonical finding ID when this record is retained as a duplicate alias. */
+  canonicalFindingId: z.string().optional(),
   relatedFindings: z.array(z.string()).optional(),
   /** True for the single lead finding of a root-cause group (the one that should anchor the consolidated write-up). */
   rootCauseLead: z.boolean().optional(),
@@ -142,10 +145,19 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * @default "default"
    */
   mode?: AgentMode;
-  toolProtocol?: AgentToolProtocolPreference;
-  directTools?: string[];
   nestedTools?: string[];
-  onCodeCellComplete?: (result: CodeCellResult) => void;
+
+  /**
+   * Model-facing tool protocol. `auto` selects the provider's freeform custom
+   * tool transport when available and otherwise uses the portable schema-based
+   * code interface. Model names do not affect selection.
+   *
+   * @default "auto"
+   */
+  toolProtocol?: AgentToolProtocolPreference;
+
+  /** Additional workflow-specific tools that must remain directly model-visible in code mode. */
+  directTools?: (ToolName | (string & {}))[];
 
   /** Session providing paths for findings, POCs, logs, etc. */
   session: SessionInfo;
@@ -239,6 +251,7 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * When present, `document_vulnerability` checks for duplicates before writing.
    */
   findingsRegistry?: FindingsRegistry;
+  onCodeCellComplete?: (result: CodeCellResult) => void;
 
   /**
    * Shared attack surface registry for cross-agent asset dedup.
@@ -465,6 +478,7 @@ export interface SpecializedAgentInput {
 
   /** Shared findings registry for cross-agent dedup */
   findingsRegistry?: FindingsRegistry;
+  onCodeCellComplete?: (result: CodeCellResult) => void;
 
   /** Shared attack surface registry for cross-agent asset dedup */
   attackSurfaceRegistry?: AttackSurfaceRegistry;
@@ -555,6 +569,14 @@ export interface SpecializedAgentInput {
    * pentests can each run headed on their own virtual desktop.
    */
   display?: string;
+
+  /** Model-facing tool protocol inherited by specialized workers. */
+  toolProtocol?: AgentToolProtocolPreference;
+
+  nestedTools?: string[];
+
+  /** Workflow tools that stay directly visible when code mode is active. */
+  directTools?: string[];
 }
 
 /**
