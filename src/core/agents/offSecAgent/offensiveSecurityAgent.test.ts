@@ -65,7 +65,14 @@ vi.mock("./tools", () => ({
   ],
   PersistentShell: class {},
 }));
-vi.mock("../../ai", () => ({ streamResponse: () => {} }));
+vi.mock("../../ai", () => ({
+  resolveModelRuntimeProfile: () => ({
+    protocol: "direct",
+    provider: "anthropic",
+    supportsParallelNestedCalls: false,
+  }),
+  streamResponse: () => {},
+}));
 vi.mock("../../session", () => ({ create: () => {} }));
 vi.mock("../specialized/utils", () => ({
   detectOSAndEnhancePrompt: (p: string) => p,

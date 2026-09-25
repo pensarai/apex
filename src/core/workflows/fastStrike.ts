@@ -62,6 +62,7 @@ export async function runFastStrike(
     onCacheMetrics,
     enableThinking,
     openAIReasoningEffort,
+    toolProtocol,
     prompt,
     threatModel,
   } = input;
@@ -118,6 +119,7 @@ export async function runFastStrike(
     session,
     target,
     mode: "fast-strike",
+    toolProtocol,
     activeTools: [],
     responseSchema: FastStrikeResult,
     findingsRegistry,

@@ -7,6 +7,13 @@ export type { AgentEventMap } from "../../eventBus";
 // Event Bus
 // ---------------------------------------------------------------------------
 export { AgentEventBus } from "../../eventBus";
+export {
+  buildCodeModeInstructions,
+  CanonicalCapabilityInvoker,
+  CODE_MODE_NESTED_TOOL_NAMES,
+  CodeModeRuntime,
+  createCodeModeTools,
+} from "./codeMode";
 export { OffensiveSecurityAgent } from "./offensiveSecurityAgent";
 // ---------------------------------------------------------------------------
 // System prompts
