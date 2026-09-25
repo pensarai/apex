@@ -1,12 +1,17 @@
+import { join } from "node:path";
 import type { ModelMessage, ToolSet } from "ai";
 import { tool } from "ai";
 import { z } from "zod";
 import { OffensiveSecurityAgent } from "../agents/offSecAgent";
 import { TargetedPentestAgent } from "../agents/specialized/pentest/agent";
 import { AgentEventBus } from "../eventBus";
-import type { FindingsRegistry } from "../findings/registry";
+import {
+  type FindingsRegistry,
+  findingReferenceId,
+} from "../findings/registry";
 import { newSessionId } from "../id/id";
 import { loadSubagentMessages, saveSubagentData } from "../session/persistence";
+import { EngagementActivityBroker } from "./engagementActivity";
 import {
   applyEngagementModel,
   type EngagementMission,
@@ -18,9 +23,12 @@ import {
   GroupedMissionRequirementBatch,
   GroupedMissionResult,
 } from "./engagementMissions";
+import { ENGAGEMENT_PLAN_RELATIVE_PATH } from "./engagementPlanning";
+import type { EngagementRunMetrics } from "./engagementRunMetrics";
 import {
   AgentMailbox,
   type EngagementCheckpoint,
+  type EngagementState,
   type EngagementStore,
   type EngagementWorkerMode,
 } from "./engagementState";
@@ -28,6 +36,7 @@ import type { EngagementContext } from "./engagementSurface";
 import { EngagementWorkerPool } from "./engagementWorkerPool";
 import { runFastStrikeObjective } from "./fastStrike";
 import { FastStrikeEvidenceLedger } from "./fastStrikeEvidence";
+import { ensureFindingConsolidation } from "./findingConsolidation";
 import type { PentestWorkflowInput } from "./pentest";
 
 const COVERAGE_STATUSES = [
@@ -55,20 +64,77 @@ const WORKER_MODES = [
   "chain",
 ] as const;
 
+export interface EngagementChainCoverageGaps {
+  missingFindingChainIds: string[];
+  missingImpactProofChainIds: string[];
+}
+
+export function findEngagementChainCoverageGaps(
+  state: Pick<EngagementState, "chains" | "impactProofs">,
+  findingsRegistry: FindingsRegistry,
+): EngagementChainCoverageGaps {
+  const findings =
+    typeof findingsRegistry.getCanonicalFindings === "function"
+      ? findingsRegistry.getCanonicalFindings()
+      : findingsRegistry.getFindings();
+  const dedicatedFindingIds = new Set(
+    state.chains
+      .filter((chain) => chain.findingIds.length === 1)
+      .map((chain) => chain.findingIds[0]),
+  );
+  const representedImpactProofIds = new Set(
+    state.chains.flatMap((chain) => [
+      ...chain.impactProofIds,
+      ...chain.evidence,
+      ...chain.steps.flatMap((step) => [
+        ...step.impactProofIds,
+        ...step.evidence,
+      ]),
+    ]),
+  );
+
+  return {
+    missingFindingChainIds: findings
+      .map(findingReferenceId)
+      .filter((id) => !dedicatedFindingIds.has(id)),
+    missingImpactProofChainIds: state.impactProofs
+      .map((proof) => proof.id)
+      .filter((id) => !representedImpactProofIds.has(id)),
+  };
+}
+
+export function formatEngagementChainCoverageGaps(
+  gaps: EngagementChainCoverageGaps,
+): string | undefined {
+  const messages = [
+    gaps.missingFindingChainIds.length > 0
+      ? `Canonical findings without a dedicated attacker-path chain: ${gaps.missingFindingChainIds.join(", ")}`
+      : "",
+    gaps.missingImpactProofChainIds.length > 0
+      ? `Impact proofs not represented in a chain: ${gaps.missingImpactProofChainIds.join(", ")}`
+      : "",
+  ].filter(Boolean);
+  return messages.length > 0 ? messages.join(" ") : undefined;
+}
+
 export const ENGAGEMENT_TOOL_NAMES = [
   "read_engagement_state",
   "spawn_engagement_worker",
   "follow_up_engagement_worker",
   "send_engagement_worker_message",
   "wait_for_engagement_workers",
+  "configure_engagement_actors",
   "update_engagement_coverage",
   "record_engagement_capability",
   "record_impact_proof",
+  "record_engagement_chain",
 ] as const;
 
 interface EngagementToolRuntime {
   input: PentestWorkflowInput;
   workerModel?: EngagementModelConfig;
+  findingJudgeModel?: EngagementModelConfig;
+  runMetrics?: EngagementRunMetrics;
   store: EngagementStore;
   findingsRegistry: FindingsRegistry;
   eventBus: AgentEventBus;
@@ -237,12 +303,17 @@ const WorkerAssignmentSchema = z.object({
   mode: z.enum(WORKER_MODES),
   toolCallDescription: z.string(),
 });
-type WorkerAssignment = z.infer<typeof WorkerAssignmentSchema>;
+type WorkerAssignment = z.infer<typeof WorkerAssignmentSchema> & {
+  actorIds?: string[];
+  requiredActorRoles?: string[];
+};
 
 export function createEngagementTools(runtime: EngagementToolRuntime) {
   const {
     input,
     workerModel,
+    findingJudgeModel,
+    runMetrics,
     store,
     findingsRegistry,
     eventBus,
@@ -255,6 +326,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     onCheckpoint,
   } = runtime;
   const mailbox = new AgentMailbox(input.session.rootPath);
+  const activity = new EngagementActivityBroker();
   const activeWorkers = new Set<string>();
   const workerJobs = new Map<string, Promise<Record<string, unknown>>>();
   const boundedCompletion = () => {
@@ -266,6 +338,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
       missingServiceIds: completion.missingServiceIds.slice(0, 100),
       unresolvedCapabilityIds: completion.unresolvedCapabilityIds.slice(0, 100),
       activeMissionIds: completion.activeMissionIds.slice(0, 100),
+      activeWorkerIds: completion.activeWorkerIds.slice(0, 100),
     };
   };
   const withCheckpoint = async <T extends Record<string, unknown>>(
@@ -279,6 +352,24 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
       completion: boundedCompletion(),
     };
   };
+  const ensureConsolidatedFindings = async () => {
+    const artifact = await ensureFindingConsolidation(
+      input.session.rootPath,
+      findingsRegistry,
+    );
+    const aliasCount = artifact.duplicateSets.reduce(
+      (total, set) => total + set.aliasIds.length,
+      0,
+    );
+    store.recordFindingConsolidation({
+      completedAt: artifact.completedAt,
+      sourceFindingCount: artifact.findingIds.length,
+      canonicalFindingCount: artifact.findingIds.length - aliasCount,
+      aliasCount,
+      rootCauseGroupCount: artifact.rootCauseGroups.length,
+    });
+    return artifact;
+  };
 
   const runWorker = async (options: {
     workerId: string;
@@ -288,6 +379,8 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     targetIds: string[];
     objectiveIds: string[];
     capabilityIds: string[];
+    actorIds?: string[];
+    requiredActorRoles?: string[];
     missionId?: string;
     coverage?: EngagementMissionCoverage[];
     requirements?: EngagementMissionRequirement[];
@@ -298,8 +391,27 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
       throw new Error(`Worker ${options.workerId} is already running`);
     }
     activeWorkers.add(options.workerId);
+    const selectedActors =
+      options.actorIds === undefined
+        ? undefined
+        : (store.snapshot().actors?.actors ?? []).filter((actor) =>
+            options.actorIds?.includes(actor.id),
+          );
+    if (
+      options.actorIds !== undefined &&
+      selectedActors?.length !== options.actorIds.length
+    ) {
+      throw new Error("Worker references an unknown engagement actor");
+    }
+    const scopedCredentialManager =
+      options.actorIds === undefined
+        ? input.session.credentialManager
+        : input.session.credentialManager?.select(
+            selectedActors?.flatMap((actor) => actor.credentialIds) ?? [],
+          );
     let latestMessages: ModelMessage[] = [];
     let lastTarget = input.target;
+    let disposeEvidenceLedger: (() => void) | undefined;
     try {
       if (!options.followUp) store.startWorker(options.workerId);
       if (options.missionId)
@@ -320,21 +432,23 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             store.markServiceBaseline(serviceId, "running", options.mission);
           }
         } else if (options.mode === "grouped") {
-          const pending = (options.coverage ?? []).filter((cell) =>
+          const resumable = (options.coverage ?? []).filter((cell) =>
             store
               .snapshot()
               .coverage.some(
                 (candidate) =>
                   candidate.targetId === cell.targetId &&
                   candidate.objectiveId === cell.objectiveId &&
-                  candidate.status === "pending",
+                  (candidate.status === "pending" ||
+                    candidate.status === "needs-lead"),
               ),
           );
           const claimed = store.claimCoverageCells({
             workerId: options.workerId,
-            cells: pending,
+            cells: resumable,
+            includeNeedsLead: true,
           });
-          if (claimed.length !== pending.length) {
+          if (claimed.length !== resumable.length) {
             throw new Error("Failed to reclaim interrupted grouped coverage");
           }
         } else {
@@ -374,8 +488,19 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         options.objectiveIds,
         options.capabilityIds,
       );
+      const actorContext = [
+        `Required actor roles: ${options.requiredActorRoles?.join(", ") || "none (anonymous work)"}.`,
+        `Official assigned actors: ${selectedActors?.map((actor) => `${actor.id}:${actor.role}`).join(", ") || "none"}.`,
+        "Prior-session memory may inform testing, but state its provenance before relying on a rediscovered identity.",
+      ].join(" ");
       const childBus = new AgentEventBus();
       AgentEventBus.attachChild(childBus, eventBus, options.workerId);
+      const evidenceLedger = new FastStrikeEvidenceLedger(childBus, {
+        initialObservations: store.snapshot().evidenceObservations,
+        onObservation: (observation) =>
+          store.recordEvidenceObservation(observation),
+      });
+      disposeEvidenceLedger = () => evidenceLedger.dispose();
       const workerContext = engagementContext?.scope(options.targetIds);
       eventBus.emit("subagent-spawn", {
         subagentId: options.workerId,
@@ -400,8 +525,29 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         event: Parameters<NonNullable<PentestWorkflowInput["onStepFinish"]>>[0],
       ) => {
         if (event.response.messages) latestMessages = event.response.messages;
+        runMetrics?.record("worker", workerWorkflow.model, event);
         input.onStepFinish?.(event);
       };
+      const handleJudgeStepFinish = (
+        event: Parameters<NonNullable<PentestWorkflowInput["onStepFinish"]>>[0],
+      ) => {
+        runMetrics?.record(
+          "judge",
+          findingJudgeModel?.model ?? workerWorkflow.model,
+          event,
+        );
+      };
+      const handleWorkerCodeCell = (
+        result: Parameters<EngagementRunMetrics["recordCode"]>[2],
+      ) => runMetrics?.recordCode("worker", workerWorkflow.model, result);
+      const handleJudgeCodeCell = (
+        result: Parameters<EngagementRunMetrics["recordCode"]>[2],
+      ) =>
+        runMetrics?.recordCode(
+          "judge",
+          findingJudgeModel?.model ?? workerWorkflow.model,
+          result,
+        );
       let summary: string;
       let result: Record<string, unknown>;
       if (options.mode === "fast-strike") {
@@ -410,9 +556,14 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         const outcome = await runFastStrikeObjective({
           ...workerWorkflow,
           target,
-          objective: `${objective.text}\n\n${context}`,
+          objective: `${objective.text}\n\n${context}\n\n${actorContext}`,
           messages: options.messages,
           findingsRegistry,
+          findingJudgeConfig: findingJudgeModel,
+          findingJudgeOnStepFinish: handleJudgeStepFinish,
+          findingJudgeOnCodeCellComplete: handleJudgeCodeCell,
+          onCodeCellComplete: handleWorkerCodeCell,
+          credentialManager: scopedCredentialManager,
           eventBus: childBus,
           onStepFinish: handleStepFinish,
           laneCount: 1,
@@ -423,6 +574,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           display: input.display,
           engagementTargetIds,
           engagementContext: workerContext,
+          evidenceLedger,
         });
         summary = outcome.summary;
         result = {
@@ -445,207 +597,206 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
       } else if (options.mode === "grouped") {
         const assigned = options.coverage ?? [];
         const requirements = options.requirements ?? [];
-        const evidenceLedger = new FastStrikeEvidenceLedger(childBus);
-        try {
-          const expected = new Set(
-            assigned.map((cell) => `${cell.targetId}:${cell.objectiveId}`),
-          );
-          const reportCoverage = tool({
-            description:
-              "Durably record completed coverage obligations in batches. Call this as testing progresses so results survive a later worker interruption.",
-            inputSchema: GroupedMissionCoverageBatch,
-            execute: async ({ obligationResults }) => {
-              const returned = obligationResults.map(
-                (cell) => `${cell.targetId}:${cell.objectiveId}`,
+        const expected = new Set(
+          assigned.map((cell) => `${cell.targetId}:${cell.objectiveId}`),
+        );
+        const reportCoverage = tool({
+          description:
+            "Durably record completed coverage obligations in batches. Call this as testing progresses so results survive a later worker interruption.",
+          inputSchema: GroupedMissionCoverageBatch,
+          execute: async ({ obligationResults }) => {
+            const returned = obligationResults.map(
+              (cell) => `${cell.targetId}:${cell.objectiveId}`,
+            );
+            if (
+              new Set(returned).size !== returned.length ||
+              returned.some((cell) => !expected.has(cell))
+            ) {
+              throw new Error(
+                "Coverage reports must contain unique obligations from this mission contract",
               );
-              if (
-                new Set(returned).size !== returned.length ||
-                returned.some((cell) => !expected.has(cell))
-              ) {
-                throw new Error(
-                  "Coverage reports must contain unique obligations from this mission contract",
-                );
-              }
-              for (const obligation of obligationResults) {
-                if (obligation.status === "impact-proven") {
-                  const rejection = evidenceLedger.validateImpactEvidence(
-                    obligation.evidence,
-                    new Set([options.workerId]),
-                  );
-                  if (rejection) throw new Error(rejection);
-                }
-                const settled = store.settleCoverageCell({
-                  targetId: obligation.targetId,
-                  objectiveId: obligation.objectiveId,
-                  workerId: options.workerId,
-                  status: obligation.status,
-                  summary: obligation.summary,
-                  evidence: obligation.evidence.map(
-                    (reference) =>
-                      `${reference.toolName}:${reference.toolCallId}`,
-                  ),
-                });
-                if (!settled) {
-                  throw new Error(
-                    `Worker no longer owns coverage ${obligation.targetId}:${obligation.objectiveId}`,
-                  );
-                }
-              }
-              const remaining = store
-                .snapshot()
-                .coverage.filter(
-                  (cell) =>
-                    cell.workerId === options.workerId &&
-                    cell.status === "running" &&
-                    expected.has(`${cell.targetId}:${cell.objectiveId}`),
-                )
-                .map((cell) => ({
-                  targetId: cell.targetId,
-                  objectiveId: cell.objectiveId,
-                }));
-              return withCheckpoint({
-                success: true,
-                recorded: obligationResults.length,
-                remaining,
-              });
-            },
-          });
-          const requirementsById = new Map(
-            requirements.map((requirement) => [requirement.id, requirement]),
-          );
-          const reportMissionProgress = tool({
-            description:
-              "Durably record completed canonical mission requirements. Each result settles all reviewed source associations represented by that requirement.",
-            inputSchema: GroupedMissionRequirementBatch,
-            execute: async ({ requirementResults }) => {
-              const returned = requirementResults.map(
-                (result) => result.requirementId,
+            }
+            const allowedScopes = new Set([options.workerId]);
+            for (const obligation of obligationResults) {
+              const rejection = evidenceLedger.validateEvidence(
+                obligation.evidence,
+                allowedScopes,
+                obligation.status === "impact-proven",
               );
-              if (
-                new Set(returned).size !== returned.length ||
-                returned.some((id) => !requirementsById.has(id))
-              ) {
-                throw new Error(
-                  "Mission progress must contain unique requirements from this mission contract",
-                );
-              }
-              for (const result of requirementResults) {
-                const requirement = requirementsById.get(result.requirementId);
-                if (!requirement)
-                  throw new Error("Unknown mission requirement");
-                if (result.status === "impact-proven") {
-                  const rejection = evidenceLedger.validateImpactEvidence(
-                    result.evidence,
-                    new Set([options.workerId]),
-                  );
-                  if (rejection) throw new Error(rejection);
-                }
-                store.settleMissionRequirement({
-                  workerId: options.workerId,
-                  coverage: requirement.coverage,
-                  status: result.status,
-                  summary: result.summary,
-                  evidence: result.evidence.map(
-                    (reference) =>
-                      `${reference.toolName}:${reference.toolCallId}`,
-                  ),
-                });
-              }
-              const snapshot = store.snapshot();
-              const remainingRequirementIds = requirements
-                .filter((requirement) =>
-                  requirement.coverage.some(({ targetId, objectiveId }) =>
-                    snapshot.coverage.some(
-                      (cell) =>
-                        cell.targetId === targetId &&
-                        cell.objectiveId === objectiveId &&
-                        cell.status === "running",
-                    ),
-                  ),
-                )
-                .map((requirement) => requirement.id);
-              return withCheckpoint({
-                success: true,
-                recorded: requirementResults.length,
-                remainingRequirementIds,
-              });
-            },
-          });
-          const reportToolName = requirements.length
-            ? "report_engagement_mission_progress"
-            : "report_engagement_coverage";
-          const reportTool = requirements.length
-            ? reportMissionProgress
-            : reportCoverage;
-          const agent = new OffensiveSecurityAgent({
-            system: GROUPED_MISSION_SYSTEM_PROMPT,
-            prompt: [
-              `Mission: ${options.mission}`,
-              requirements.length
-                ? "Canonical mission requirements:"
-                : "Legacy coverage contract:",
-              JSON.stringify(requirements.length ? requirements : assigned),
-              "Authorized target and threat-model context:",
-              context,
-            ].join("\n\n"),
-            model: workerWorkflow.model,
-            session: input.session,
-            target,
-            mode: "fast-strike",
-            activeTools: [reportToolName],
-            extraTools: { [reportToolName]: reportTool },
-            directTools: [reportToolName],
-            engagementTargetIds,
-            responseSchema: GroupedMissionResult,
-            responseGuard: (candidate) => {
-              const parsed = GroupedMissionResult.safeParse(candidate);
-              if (!parsed.success) return "Return a concise mission summary.";
-              const remaining = store
-                .snapshot()
-                .coverage.filter(
-                  (cell) =>
-                    cell.workerId === options.workerId &&
-                    cell.status === "running" &&
-                    expected.has(`${cell.targetId}:${cell.objectiveId}`),
-                );
-              if (remaining.length > 0)
-                return `Report the ${remaining.length} remaining coverage obligations before responding.`;
-              return undefined;
-            },
-            findingsRegistry,
-            messages: options.messages,
-            subagentId: options.workerId,
-            subagentName: options.mission.slice(0, 80),
-            authConfig: input.authConfig,
-            abortSignal: input.abortSignal,
-            eventBus: childBus,
-            onStepFinish: handleStepFinish,
-            getPendingMessages: async () =>
-              mailbox.take(options.workerId).map((message) => ({
-                role: "user" as const,
-                content: [
-                  {
-                    type: "text" as const,
-                    text: `Directed message from engagement lead: ${message.payload}`,
-                  },
-                ],
+              if (rejection) throw new Error(rejection);
+            }
+            store.settleCoverageCells(
+              obligationResults.map((obligation) => ({
+                targetId: obligation.targetId,
+                objectiveId: obligation.objectiveId,
+                workerId: options.workerId,
+                status: obligation.status,
+                summary: obligation.summary,
+                evidence: obligation.evidence.map(
+                  (reference) =>
+                    `${reference.toolName}:${reference.toolCallId}`,
+                ),
               })),
-            enableThinking: workerWorkflow.enableThinking,
-            thinkingEffort: workerWorkflow.thinkingEffort,
-            openAIReasoningEffort: workerWorkflow.openAIReasoningEffort,
-            toolProtocol: input.toolProtocol,
-            engagementContext: workerContext,
-            environmentVariables: input.environmentVariables,
-            secretValues: input.secretValues,
-            sandbox: input.sandbox,
-            display: input.display,
-          });
-          const outcome = GroupedMissionResult.parse(await agent.consume());
-          summary = outcome.summary;
-          result = outcome;
-        } finally {
-          evidenceLedger.dispose();
-        }
+            );
+            const remaining = store
+              .snapshot()
+              .coverage.filter(
+                (cell) =>
+                  cell.workerId === options.workerId &&
+                  cell.status === "running" &&
+                  expected.has(`${cell.targetId}:${cell.objectiveId}`),
+              )
+              .map((cell) => ({
+                targetId: cell.targetId,
+                objectiveId: cell.objectiveId,
+              }));
+            return withCheckpoint({
+              success: true,
+              recorded: obligationResults.length,
+              remaining,
+            });
+          },
+        });
+        const requirementsById = new Map(
+          requirements.map((requirement) => [requirement.id, requirement]),
+        );
+        const reportMissionProgress = tool({
+          description:
+            "Durably record completed canonical mission requirements. Each result settles all reviewed source associations represented by that requirement.",
+          inputSchema: GroupedMissionRequirementBatch,
+          execute: async ({ requirementResults }) => {
+            const returned = requirementResults.map(
+              (result) => result.requirementId,
+            );
+            if (
+              new Set(returned).size !== returned.length ||
+              returned.some((id) => !requirementsById.has(id))
+            ) {
+              throw new Error(
+                "Mission progress must contain unique requirements from this mission contract",
+              );
+            }
+            const allowedScopes = new Set([options.workerId]);
+            const settlements = requirementResults.map((result) => {
+              const requirement = requirementsById.get(result.requirementId);
+              if (!requirement) throw new Error("Unknown mission requirement");
+              const rejection = evidenceLedger.validateEvidence(
+                result.evidence,
+                allowedScopes,
+                result.status === "impact-proven",
+              );
+              if (rejection) throw new Error(rejection);
+              return {
+                workerId: options.workerId,
+                coverage: requirement.coverage,
+                status: result.status,
+                summary: result.summary,
+                evidence: result.evidence.map(
+                  (reference) =>
+                    `${reference.toolName}:${reference.toolCallId}`,
+                ),
+              };
+            });
+            store.settleMissionRequirements(settlements);
+            const snapshot = store.snapshot();
+            const remainingRequirementIds = requirements
+              .filter((requirement) =>
+                requirement.coverage.some(({ targetId, objectiveId }) =>
+                  snapshot.coverage.some(
+                    (cell) =>
+                      cell.targetId === targetId &&
+                      cell.objectiveId === objectiveId &&
+                      cell.status === "running",
+                  ),
+                ),
+              )
+              .map((requirement) => requirement.id);
+            return withCheckpoint({
+              success: true,
+              recorded: requirementResults.length,
+              remainingRequirementIds,
+            });
+          },
+        });
+        const reportToolName = requirements.length
+          ? "report_engagement_mission_progress"
+          : "report_engagement_coverage";
+        const reportTool = requirements.length
+          ? reportMissionProgress
+          : reportCoverage;
+        const agent = new OffensiveSecurityAgent({
+          system: GROUPED_MISSION_SYSTEM_PROMPT,
+          prompt: [
+            `Mission: ${options.mission}`,
+            requirements.length
+              ? "Canonical mission requirements:"
+              : "Legacy coverage contract:",
+            JSON.stringify(requirements.length ? requirements : assigned),
+            "Authorized target and threat-model context:",
+            context,
+            actorContext,
+            `The sealed engagement plan is available at ${join(input.session.rootPath, ENGAGEMENT_PLAN_RELATIVE_PATH)}. Read it only when dependency or cross-mission context is relevant; the assigned mission contract above remains authoritative.`,
+          ].join("\n\n"),
+          model: workerWorkflow.model,
+          session: input.session,
+          target,
+          mode: "fast-strike",
+          activeTools: [reportToolName],
+          extraTools: { [reportToolName]: reportTool },
+          directTools: [reportToolName],
+          engagementTargetIds,
+          responseSchema: GroupedMissionResult,
+          responseGuard: (candidate) => {
+            const parsed = GroupedMissionResult.safeParse(candidate);
+            if (!parsed.success) return "Return a concise mission summary.";
+            const remaining = store
+              .snapshot()
+              .coverage.filter(
+                (cell) =>
+                  cell.workerId === options.workerId &&
+                  cell.status === "running" &&
+                  expected.has(`${cell.targetId}:${cell.objectiveId}`),
+              );
+            if (remaining.length > 0)
+              return `Report the ${remaining.length} remaining coverage obligations before responding.`;
+            return undefined;
+          },
+          findingsRegistry,
+          findingJudgeConfig: findingJudgeModel,
+          findingJudgeOnStepFinish: handleJudgeStepFinish,
+          findingJudgeOnCodeCellComplete: handleJudgeCodeCell,
+          onCodeCellComplete: handleWorkerCodeCell,
+          credentialManager: scopedCredentialManager,
+          messages: options.messages,
+          subagentId: options.workerId,
+          subagentName: options.mission.slice(0, 80),
+          authConfig: input.authConfig,
+          abortSignal: input.abortSignal,
+          eventBus: childBus,
+          onStepFinish: handleStepFinish,
+          getPendingMessages: async () =>
+            mailbox.take(options.workerId).map((message) => ({
+              role: "user" as const,
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Directed message from engagement lead: ${message.payload}`,
+                },
+              ],
+            })),
+          enableThinking: workerWorkflow.enableThinking,
+          thinkingEffort: workerWorkflow.thinkingEffort,
+          openAIReasoningEffort: workerWorkflow.openAIReasoningEffort,
+          toolProtocol: input.toolProtocol,
+          engagementContext: workerContext,
+          environmentVariables: input.environmentVariables,
+          secretValues: input.secretValues,
+          sandbox: input.sandbox,
+          display: input.display,
+        });
+        const outcome = GroupedMissionResult.parse(await agent.consume());
+        summary = outcome.summary;
+        result = outcome;
       } else {
         const agent = new TargetedPentestAgent({
           target,
@@ -653,12 +804,17 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             objectives.length > 0
               ? objectives.map((objective) => objective.text)
               : [options.mission],
-          context,
+          context: `${context}\n\n${actorContext}`,
           model: workerWorkflow.model,
           session: input.session,
           authConfig: input.authConfig,
           abortSignal: input.abortSignal,
           findingsRegistry,
+          findingJudgeConfig: findingJudgeModel,
+          findingJudgeOnStepFinish: handleJudgeStepFinish,
+          findingJudgeOnCodeCellComplete: handleJudgeCodeCell,
+          onCodeCellComplete: handleWorkerCodeCell,
+          credentialManager: scopedCredentialManager,
           eventBus: childBus,
           subagentId: options.workerId,
           subagentName: options.mission.slice(0, 80),
@@ -726,6 +882,11 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         payload: summary,
         status: "completed",
       });
+      activity.publish({
+        kind: "worker-completed",
+        workerId: options.workerId,
+        missionId: options.missionId,
+      });
       saveSubagentData(input.session, {
         agentName: options.workerId,
         target,
@@ -767,6 +928,11 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           taskName: options.mission,
           payload: recoveredSummary,
           status: "completed",
+        });
+        activity.publish({
+          kind: "worker-completed",
+          workerId: options.workerId,
+          missionId: options.missionId,
         });
         saveSubagentData(input.session, {
           agentName: options.workerId,
@@ -816,6 +982,11 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         payload: summary,
         status: "failed",
       });
+      activity.publish({
+        kind: "worker-failed",
+        workerId: options.workerId,
+        missionId: options.missionId,
+      });
       eventBus.emit("subagent-complete", {
         subagentId: options.workerId,
         sessionId: options.workerId,
@@ -829,6 +1000,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         message: summary,
       });
     } finally {
+      disposeEvidenceLedger?.();
       activeWorkers.delete(options.workerId);
     }
   };
@@ -844,6 +1016,8 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
       coverage,
       supportingTargetIds,
       contextTargetIds,
+      actorIds,
+      requiredActorRoles,
       mode,
     }: WorkerAssignment,
     plannedMission?: EngagementMission,
@@ -953,6 +1127,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         targetIds: selectedTargetIds,
         objectiveIds: selectedObjectiveIds,
         capabilityIds: selectedCapabilityIds,
+        actorIds,
         model:
           mode === "chain"
             ? {
@@ -996,9 +1171,11 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           targetIds: selectedTargetIds,
           objectiveIds: selectedObjectiveIds,
           capabilityIds: selectedCapabilityIds,
+          actorIds,
           missionId,
           coverage: selectedCoverage,
           requirements: selectedRequirements,
+          requiredActorRoles,
           messages: existingWorker
             ? loadSubagentMessages(input.session, workerId)
             : undefined,
@@ -1043,7 +1220,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     ...surfaceTools,
     read_engagement_state: tool({
       description:
-        "Read a compact page of persisted engagement services, objectives, and coverage plus high-signal capabilities, impact proofs, worker counts, completion gate, and unread worker handoffs.",
+        "Read a compact page of persisted engagement services, objectives, and coverage plus findings, capabilities, impact proofs, chains, worker counts, completion gate, and unread worker handoffs.",
       inputSchema: z.object({
         includeInbox: z.boolean().optional().default(true),
         limit: z.number().int().min(1).max(100).default(25),
@@ -1061,6 +1238,14 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           },
           { queued: 0, running: 0, completed: 0, failed: 0 },
         );
+        const findings =
+          typeof findingsRegistry.getCanonicalFindings === "function"
+            ? findingsRegistry.getCanonicalFindings()
+            : findingsRegistry.getFindings();
+        const chainCoverage = findEngagementChainCoverageGaps(
+          state,
+          findingsRegistry,
+        );
         return {
           success: true,
           state: {
@@ -1073,6 +1258,14 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             ),
             capabilities: state.capabilities.slice(offset, offset + limit),
             impactProofs: state.impactProofs.slice(offset, offset + limit),
+            chains: state.chains.slice(offset, offset + limit),
+            findings: findings.slice(offset, offset + limit).map((finding) => ({
+              id: findingReferenceId(finding),
+              title: finding.title,
+              severity: finding.severity,
+              endpoint: finding.endpoint,
+              sourceTargetId: finding.sourceTargetId,
+            })),
             missions: state.missions
               ? {
                   planningStatus: state.missions.planningStatus,
@@ -1082,8 +1275,13 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
                   ),
                 }
               : undefined,
+            actors: state.actors,
+            deploymentPreflight: state.deploymentPreflight,
+            findingConsolidation: state.findingConsolidation,
+            chainCoverage,
             workerCounts,
             chainExplore: state.chainExplore,
+            activityCursor: activity.currentCursor(),
             updatedAt: state.updatedAt,
           },
           pagination: {
@@ -1092,10 +1290,61 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             serviceTotal: state.services.length,
             objectiveTotal: state.objectives.length,
             workerTotal: state.workers.length,
+            findingTotal: findings.length,
+            chainTotal: state.chains.length,
           },
           completion: boundedCompletion(),
           inbox: includeInbox ? mailbox.take(leadAgentId) : [],
         };
+      },
+    }),
+
+    configure_engagement_actors: tool({
+      description:
+        "Configure the authoritative actor registry in one batch using safe credential IDs. Prior-session discoveries remain usable as evidence but become official actors only through this explicit registration.",
+      inputSchema: z.object({
+        actors: z
+          .array(
+            z.object({
+              id: z.string().min(1),
+              label: z.string().min(1),
+              role: z.string().min(1),
+              status: z.enum(["ready", "unavailable"]),
+              credentialIds: z.array(z.string()).default([]),
+              targetIds: z.array(z.string()).default([]),
+              serviceIds: z.array(z.string()).default([]),
+              provenance: z.enum([
+                "operator",
+                "authentication",
+                "prior-session",
+              ]),
+              verificationSummary: z.string().min(1),
+              unavailableReason: z.string().optional(),
+            }),
+          )
+          .min(1)
+          .max(100),
+        toolCallDescription: z.string(),
+      }),
+      execute: async ({ actors }) => {
+        for (const actor of actors) {
+          for (const credentialId of actor.credentialIds) {
+            if (!input.session.credentialManager?.getReference(credentialId)) {
+              throw new Error(
+                `Unknown engagement credential reference: ${credentialId}`,
+              );
+            }
+          }
+        }
+        return withCheckpoint({
+          success: true,
+          actors: store.configureActors(
+            actors.map((actor) => ({
+              ...actor,
+              verifiedAt: new Date().toISOString(),
+            })),
+          ),
+        });
       },
     }),
 
@@ -1146,31 +1395,30 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
 
     wait_for_engagement_workers: tool({
       description:
-        "Wait briefly for grouped worker progress, then return bounded worker status and unread handoffs.",
+        "Yield until material grouped-worker activity occurs (completion, failure, or directed handoff), then return bounded worker status and unread handoffs. Progress writes stay in the durable ledger without waking the lead. Use this instead of polling or code-mode sleeps.",
       inputSchema: z.object({
         workerIds: z.array(z.string()).max(100).default([]),
-        timeoutMs: z.number().int().min(100).max(10_000).default(2_000),
+        afterCursor: z.string().optional(),
+        timeoutMs: z.number().int().min(100).max(600_000).default(300_000),
         toolCallDescription: z.string(),
       }),
-      execute: async ({ workerIds, timeoutMs }) => {
+      execute: async ({ workerIds, afterCursor, timeoutMs }) => {
         const selected =
           workerIds.length > 0
             ? workerIds
             : [...workerJobs.keys()].slice(0, 100);
-        const jobs = selected
-          .map((id) => workerJobs.get(id))
-          .filter((job): job is Promise<Record<string, unknown>> =>
-            Boolean(job),
-          );
-        if (jobs.length > 0) {
-          await Promise.race([
-            Promise.race(jobs).catch(() => undefined),
-            new Promise((resolve) => setTimeout(resolve, timeoutMs)),
-          ]);
-        }
+        const wake = await activity.wait({
+          afterCursor,
+          workerIds: selected,
+          timeoutMs,
+          abortSignal: input.abortSignal,
+        });
         const selectedIds = new Set(selected);
         return {
           success: true,
+          activityCursor: wake.cursor,
+          wakeReason: wake.reason,
+          activity: wake.activity,
           workers: store
             .snapshot()
             .workers.filter((worker) => selectedIds.has(worker.id))
@@ -1182,7 +1430,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
 
     follow_up_engagement_worker: tool({
       description:
-        "Resume a completed durable worker with its preserved conversation and a directed follow-up. Use this for stateful chains instead of spawning a fresh worker.",
+        "Resume a completed or failed durable worker with its preserved conversation and a directed follow-up. Use this for stateful chains instead of spawning a fresh worker.",
       inputSchema: z.object({
         workerId: z.string().min(1),
         message: z.string().min(1),
@@ -1213,7 +1461,7 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           .missions?.missions.find(
             (candidate) => candidate.workerId === workerId,
           );
-        return workerPool.run("chain", () =>
+        const job = workerPool.run("chain", () =>
           runWorker({
             workerId,
             mission: worker.mission,
@@ -1222,12 +1470,22 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             targetIds: worker.targetIds,
             objectiveIds: worker.objectiveIds,
             capabilityIds: worker.capabilityIds,
+            actorIds: worker.actorIds,
             missionId: mission?.id,
             coverage: mission?.coverage,
             messages,
             followUp: true,
           }),
         );
+        const tracked = job.finally(() => workerJobs.delete(workerId));
+        workerJobs.set(workerId, tracked);
+        onWorkerJob?.(tracked);
+        return withCheckpoint({
+          success: true,
+          accepted: true,
+          missionId: mission?.id,
+          workerId,
+        });
       },
     }),
 
@@ -1290,6 +1548,19 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
         if (!update.chainStatus) {
           throw new Error("Chain coverage requires chainStatus");
         }
+        if (update.chainStatus !== "pending") {
+          await ensureConsolidatedFindings();
+        }
+        if (
+          update.chainStatus === "impact-proven" ||
+          update.chainStatus === "exhausted" ||
+          update.chainStatus === "blocked"
+        ) {
+          const gapMessage = formatEngagementChainCoverageGaps(
+            findEngagementChainCoverageGaps(store.snapshot(), findingsRegistry),
+          );
+          if (gapMessage) throw new Error(gapMessage);
+        }
         return withCheckpoint({
           success: true,
           chainExplore: store.setChainExplore(
@@ -1344,6 +1615,86 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           success: true,
           proof: store.addImpactProof(proof),
         }),
+    }),
+
+    record_engagement_chain: tool({
+      description:
+        "Create or update a durable terminal attack-chain record for reporting and frontend use. Every canonical finding requires its own dedicated attacker-path chain, including single-finding paths, even when it also participates in a composite chain, and every impact proof must be represented in a chain. Link accepted findings by the IDs returned from document_vulnerability or read_engagement_state; an accepted finding ID is durable evidence when transient trace handles are unavailable after resume. Record meaningful exhausted and blocked paths too, but not individual payload attempts.",
+      inputSchema: z.object({
+        id: z.string().optional(),
+        title: z.string().min(1),
+        status: z.enum(["impact-proven", "exhausted", "blocked"]),
+        severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]).optional(),
+        description: z.string().min(1),
+        impact: z.string().min(1),
+        remediation: z.string().optional(),
+        findingIds: z.array(z.string()).default([]),
+        capabilityIds: z.array(z.string()).default([]),
+        impactProofIds: z.array(z.string()).default([]),
+        objectiveIds: z.array(z.string()).default([]),
+        serviceIds: z.array(z.string()).default([]),
+        targetIds: z.array(z.string()).default([]),
+        evidence: z.array(z.string()).default([]),
+        steps: z
+          .array(
+            z.object({
+              id: z.string().optional(),
+              title: z.string().min(1),
+              description: z.string().min(1),
+              findingIds: z.array(z.string()).default([]),
+              capabilityIds: z.array(z.string()).default([]),
+              impactProofIds: z.array(z.string()).default([]),
+              objectiveIds: z.array(z.string()).default([]),
+              serviceIds: z.array(z.string()).default([]),
+              targetIds: z.array(z.string()).default([]),
+              artifactPaths: z.array(z.string()).default([]),
+              observationRefs: z.array(z.string()).default([]),
+              evidence: z.array(z.string()).default([]),
+            }),
+          )
+          .default([]),
+        blocker: z.string().optional(),
+        toolCallDescription: z.string(),
+      }),
+      execute: async ({ toolCallDescription, ...chain }) => {
+        void toolCallDescription;
+        await ensureConsolidatedFindings();
+        const canonicalFindings =
+          typeof findingsRegistry.getCanonicalFindings === "function"
+            ? findingsRegistry.getCanonicalFindings()
+            : findingsRegistry.getFindings();
+        const resolveFindingId = (id: string) =>
+          typeof findingsRegistry.resolveFindingId === "function"
+            ? findingsRegistry.resolveFindingId(id)
+            : id;
+        const knownFindingIds = new Set(
+          canonicalFindings.map(findingReferenceId),
+        );
+        const canonicalChain = {
+          ...chain,
+          findingIds: unique(chain.findingIds.map(resolveFindingId)),
+          steps: chain.steps.map((step) => ({
+            ...step,
+            findingIds: unique(step.findingIds.map(resolveFindingId)),
+          })),
+        };
+        const referencedFindingIds = unique([
+          ...canonicalChain.findingIds,
+          ...canonicalChain.steps.flatMap((step) => step.findingIds),
+        ]);
+        const unknownFindingIds = referencedFindingIds.filter(
+          (id) => !knownFindingIds.has(id),
+        );
+        if (unknownFindingIds.length > 0) {
+          throw new Error(
+            `Chain references unknown findings: ${unknownFindingIds.join(", ")}`,
+          );
+        }
+        return withCheckpoint({
+          success: true,
+          chain: store.upsertChain(canonicalChain),
+        });
+      },
     }),
   };
   const startPlannedMissions = async (): Promise<void> => {
@@ -1402,6 +1753,25 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
           ...mission.supportingTargetIds,
           ...mission.contextTargetIds,
         ]);
+        const requiredRoles = mission.requiredActorRoles;
+        const actorIds =
+          requiredRoles === undefined
+            ? undefined
+            : unique(
+                (state.actors?.actors ?? [])
+                  .filter(
+                    (actor) =>
+                      actor.status === "ready" &&
+                      (requiredRoles.length === 0
+                        ? actor.role === "anonymous"
+                        : requiredRoles.includes(actor.role)) &&
+                      (actor.targetIds.length === 0 ||
+                        coverage.some((cell) =>
+                          actor.targetIds.includes(cell.targetId),
+                        )),
+                  )
+                  .map((actor) => actor.id),
+              );
         await dispatchWorker(
           {
             mission: mission.purpose,
@@ -1416,6 +1786,8 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
             supportingTargetIds: mission.supportingTargetIds,
             contextTargetIds: mission.contextTargetIds,
             prerequisiteMissionIds: [],
+            actorIds,
+            requiredActorRoles: requiredRoles,
             mode: "grouped",
             toolCallDescription: "Run sealed mission",
           },
@@ -1433,10 +1805,16 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     await Promise.all(state.missions.missions.map(schedule));
   };
   const takeLeadHandoffs = () => mailbox.take(leadAgentId, 100);
+  let activityCursor = activity.currentCursor();
   const waitForWorkerActivity = async () => {
-    const jobs = [...workerJobs.values()];
-    if (jobs.length === 0) return;
-    await Promise.race(jobs.map((job) => job.catch(() => undefined)));
+    if (workerJobs.size === 0) return;
+    const wake = await activity.wait({
+      afterCursor: activityCursor,
+      workerIds: [...workerJobs.keys()],
+      timeoutMs: 600_000,
+      abortSignal: input.abortSignal,
+    });
+    activityCursor = wake.cursor;
   };
   return {
     tools,
@@ -1444,5 +1822,6 @@ export function createEngagementTools(runtime: EngagementToolRuntime) {
     takeLeadHandoffs,
     waitForWorkerActivity,
     hasActiveWorkers: () => workerJobs.size > 0,
+    dispose: (reason?: unknown) => activity.dispose(reason),
   };
 }

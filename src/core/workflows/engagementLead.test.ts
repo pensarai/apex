@@ -6,8 +6,18 @@ describe("engagement lead contract", () => {
     expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain("complete attack surface");
     expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain("Work directly");
     expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain("resume the same worker");
+    expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain(
+      "follow_up_engagement_worker",
+    );
+    expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain("ALL_TOOLS");
     expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain("every objective");
     expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain("crown-jewel impact");
+    expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain(
+      "Every canonical finding must have a dedicated attacker-path chain",
+    );
+    expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain(
+      "prior authorized context is not a reason to omit it",
+    );
     expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain("finding judge");
     expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).toContain("external ledger");
     expect(ENGAGEMENT_LEAD_SYSTEM_PROMPT).not.toContain("Argus");
