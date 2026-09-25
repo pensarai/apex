@@ -226,4 +226,64 @@ describe("buildPentestReport", () => {
     expect(report.findings[0].references).toBe("https://owasp.org/top10");
     expect(report.findings[1].references).toBeUndefined();
   });
+
+  it("adds stable finding relations and engagement summaries", () => {
+    const finding = makeFinding({
+      id: "finding-1",
+      title: "Cross-user file disclosure",
+      severity: "HIGH",
+    });
+    const timestamp = "2026-09-16T12:00:00.000Z";
+    const report = buildPentestReport([finding], defaultContext, {
+      coverage: [
+        { status: "impact-proven" },
+        { status: "exhausted" },
+        { status: "blocked" },
+      ],
+      missions: {
+        planningStatus: "complete",
+        missions: [{ status: "completed" }, { status: "failed" }],
+      },
+      chainExplore: {
+        status: "impact-proven",
+        summary: "A material chain was proven.",
+        evidence: ["chain-1"],
+      },
+      chains: [
+        {
+          id: "chain-1",
+          title: "User session to peer file",
+          status: "impact-proven",
+          severity: "HIGH",
+          description: "A low-privilege user retrieves a peer file.",
+          impact: "Cross-user disclosure.",
+          remediation: "Enforce ownership.",
+          findingIds: ["finding-1"],
+          capabilityIds: [],
+          impactProofIds: [],
+          objectiveIds: [],
+          serviceIds: [],
+          targetIds: [],
+          evidence: ["finding-1"],
+          steps: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+    });
+
+    expect(PentestReportSchema.safeParse(report).success).toBe(true);
+    expect(report.findings[0]?.id).toBe("finding-1");
+    expect(report.chains?.[0]?.findingIds).toEqual(["finding-1"]);
+    expect(report.engagement).toMatchObject({
+      missions: { total: 2, completed: 1, failed: 1, active: 0 },
+      coverage: {
+        total: 3,
+        impactProven: 1,
+        exhausted: 1,
+        blocked: 1,
+        open: 0,
+      },
+    });
+  });
 });
