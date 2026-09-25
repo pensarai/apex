@@ -163,6 +163,8 @@ export function applyToolResultBudget(
       // another shot at it.
       if (newValue.length >= text.length) return part;
 
+      let preservation: "written" | "write_failed" | "referenced_unverified" =
+        "referenced_unverified";
       if (!persistedIds?.has(toolCallId)) {
         // If this entry already carried a truncation tail, the full
         // output was persisted by an earlier pass — `text` is just the
@@ -175,7 +177,11 @@ export function applyToolResultBudget(
           }
           try {
             writeFileSync(filePath, text, "utf-8");
+            preservation = "written";
+            opts.telemetry?.persisted("written");
           } catch {
+            preservation = "write_failed";
+            opts.telemetry?.persisted("write_failed");
             // Non-critical: full output may be lost.
           }
         }
@@ -183,7 +189,16 @@ export function applyToolResultBudget(
       }
 
       msgModified = true;
-      opts.telemetry?.result(`${messageIndex}:${partIndex}`);
+      opts.telemetry?.result(`${messageIndex}:${partIndex}`, () => ({
+        method: "truncate",
+        toolCallId,
+        toolName,
+        inputChars: text.length,
+        outputChars: newValue.length,
+        originalChars: originalLength,
+        preservation,
+        path: filePath,
+      }));
       return {
         ...p,
         output: {
@@ -253,12 +268,27 @@ function snipOldSteps(
         return part;
 
       msgModified = true;
-      opts?.telemetry?.result(`${idx}:${partIndex}`);
+      const summary = generateToolResultSummary(toolName, text);
+      opts?.telemetry?.result(`${idx}:${partIndex}`, () => {
+        const tail = text.match(TOOL_RESULT_TRUNCATION_TAIL);
+        return {
+          method: "snip",
+          toolCallId: String(p.toolCallId ?? "unknown"),
+          toolName,
+          inputChars: text.length,
+          outputChars: summary.length,
+          originalChars: tail
+            ? (tail.index ?? 0) + Number(tail[1])
+            : text.length,
+          preservation: tail ? "referenced_unverified" : "not_persisted",
+          ...(tail ? { path: tail[2] } : {}),
+        };
+      });
       return {
         ...p,
         output: {
           type: "text" as const,
-          value: generateToolResultSummary(toolName, text),
+          value: summary,
         },
       };
     });
@@ -446,6 +476,7 @@ export function fitMessagesToContext(
   }
 
   const telemetry = beginCompaction("fit", opts.telemetry);
+  telemetry?.capture("before", () => ({ messages, system: opts.system }));
   telemetry?.measure("before", () => estimate, messages.length);
   telemetry?.attributes({
     "apex.compaction.context_window": opts.contextWindow,
@@ -458,6 +489,10 @@ export function fitMessagesToContext(
   });
 
   const finish = (fitsBudget: boolean): FitContextResult => {
+    telemetry?.capture("after", () => ({
+      messages: current,
+      system: opts.system,
+    }));
     telemetry?.measure("after", () => estimate, current.length);
     telemetry?.finish(fitsBudget ? "completed" : "insufficient_reduction", {
       "apex.compaction.fits_budget": fitsBudget,
