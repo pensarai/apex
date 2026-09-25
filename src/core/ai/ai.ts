@@ -135,6 +135,7 @@ const OPENAI_REASONING_MODEL_IDS = new Set([
   "gpt-5.4-pro-2026-03-05",
   "gpt-5.5",
   "gpt-5.5-2026-04-23",
+  "gpt-5.5-cyber-preview",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-luna",
@@ -1040,6 +1041,7 @@ export function normalizeOpenAIReasoningEffort(
  *     requested when this key is present. `display: 'summarized'` makes the
  *     model actually return reasoning text (adaptive can otherwise omit it).
  *   - `openai.reasoningEffort` — OpenAI/o-series reasoning models.
+ *   - `openrouter.reasoning` — OpenRouter reasoning models.
  */
 export type ReasoningProviderOptions = {
   anthropic?: {
@@ -1058,6 +1060,9 @@ export type ReasoningProviderOptions = {
     };
   };
   openai?: OpenAIResponsesProviderOptions;
+  openrouter?: {
+    reasoning: { enabled: true; effort?: ThinkingEffort };
+  };
 };
 
 export type OpenRouterProviderOptions = {
@@ -1129,9 +1134,8 @@ export function buildReasoningProviderOptions(
   opts: {
     enableThinking?: boolean;
     /**
-     * Adaptive-thinking effort hint for Anthropic models that support it
-     * (Opus/Sonnet 4.6+). Ignored on models without adaptive support. When
-     * omitted the model uses its own default (`high`).
+     * Reasoning effort for OpenRouter or adaptive Anthropic models.
+     * When omitted, the provider uses its default.
      */
     thinkingEffort?: ThinkingEffort | null;
     openAIReasoningEffort?: OpenAIReasoningEffort | null;
@@ -1147,8 +1151,11 @@ export function buildReasoningProviderOptions(
   );
   // The effort hint only rides along when adaptive thinking is actually used.
   const effort = useThinking ? (opts.thinkingEffort ?? undefined) : undefined;
+  const useOpenRouterThinking =
+    !!opts.enableThinking && getModelInfo(model).provider === "openrouter";
 
-  if (!useThinking && !normalizedOpenAIEffort) return undefined;
+  if (!useThinking && !normalizedOpenAIEffort && !useOpenRouterThinking)
+    return undefined;
 
   return {
     ...(useThinking
@@ -1168,6 +1175,16 @@ export function buildReasoningProviderOptions(
       : {}),
     ...(normalizedOpenAIEffort
       ? { openai: { reasoningEffort: normalizedOpenAIEffort } }
+      : {}),
+    ...(useOpenRouterThinking
+      ? {
+          openrouter: {
+            reasoning: {
+              enabled: true as const,
+              ...(opts.thinkingEffort ? { effort: opts.thinkingEffort } : {}),
+            },
+          },
+        }
       : {}),
   };
 }
