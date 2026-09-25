@@ -130,7 +130,10 @@ vi.mock("./trace", () => ({
 vi.mock("../../operator", () => ({
   ApprovalDeniedError: class extends Error {},
 }));
-vi.mock("ai", () => ({ hasToolCall: () => () => false }));
+vi.mock("ai", () => ({
+  hasToolCall: () => () => false,
+  tool: (definition: unknown) => definition,
+}));
 
 import { AgentEventBus } from "../../eventBus";
 import { createInterruptedStepFinalizer } from "./interruptedStepFinalization";
@@ -285,6 +288,24 @@ describe("auxiliary model events", () => {
 });
 
 describe("tool context forwarding", () => {
+  it("passes the configured source provider to delegation tools", () => {
+    toolContexts.length = 0;
+    const sourceProvider = {
+      describe: vi.fn(),
+      listTree: vi.fn(),
+      search: vi.fn(),
+      readFile: vi.fn(),
+    };
+    new OffensiveSecurityAgent({
+      prompt: "test",
+      model: "test-model",
+      session: { id: "ses_test", rootPath: "/tmp/apex-source-forwarding-test" },
+      activeTools: [],
+      sandbox: {},
+      sourceProvider,
+    } as never);
+    expect(toolContexts[0]?.sourceProvider).toBe(sourceProvider);
+  });
   it("forwards structured System scope to spawning tools", () => {
     toolContexts.length = 0;
     const systemScope = {

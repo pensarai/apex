@@ -1,4 +1,22 @@
 import type { AgentEventBus, AgentEventMap } from "../eventBus";
+import { SOURCE_TOOL_NAMES } from "../source";
+
+const NON_LIVE_OBSERVATION_TOOLS = new Set<string>([
+  ...SOURCE_TOOL_NAMES,
+  "exec",
+  "wait",
+  "read_file",
+  "list_files",
+  "grep",
+  "glob",
+  "read_whitebox_artifact",
+  "profile_codebase",
+  "run_code_query",
+  "run_whitebox_scan",
+  "query_whitebox_catalog",
+  "get_engagement_target",
+  "search_engagement_surface",
+]);
 
 export interface TraceLinkedEvidenceReference {
   description: string;
@@ -126,6 +144,14 @@ export class FastStrikeEvidenceLedger {
       }
     }
 
+    if (
+      required &&
+      references.every((reference) =>
+        NON_LIVE_OBSERVATION_TOOLS.has(reference.toolName),
+      )
+    ) {
+      return "Source and context observations alone cannot prove live impact. Cite a successful live validation observation.";
+    }
     return undefined;
   }
 
