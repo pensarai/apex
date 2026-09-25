@@ -112,9 +112,11 @@
     "lint:fix": "biome lint --write src/",
     "local-benchmark": "bun run scripts/local-benchmark.ts",
     "pensar": "node bin/pensar.js",
+    "perf:tui": "bun --no-env-file scripts/tui-performance.ts",
     "prepublishOnly": "npm run build",
     "start": "bun run src/tui/index.tsx",
     "test": "vitest run",
+    "test:tui": "bun --no-env-file test scripts/tui-performance/",
     "test:watch": "vitest",
     "tsc": "tsc --noEmit"
   },

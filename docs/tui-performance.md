@@ -1,0 +1,77 @@
+# TUI performance journeys
+
+Every performance PR should show the workload, baseline and changed revision,
+before/after metrics, correctness checks, and measurement limitations. A lower
+work count is useful only when it protects correctness or correlates with less
+user-visible waiting. Do not gate shared-runner CI on wall-clock milliseconds.
+
+## Run
+
+```sh
+bun install --frozen-lockfile
+bun run test:tui
+bun run perf:tui 5 .cache/tui-baseline.json
+```
+
+Run the same command on the candidate revision, writing a different report.
+Run base and candidate on the same quiet machine, without concurrent builds or
+tests. Repeat in reverse order when interpreting small differences. The optional
+JSON path retains every trial; stdout prints the summary. Without a path, stdout
+contains the full report. The run count defaults to five and accepts 1 through 30.
+
+## Current fixture
+
+`transcript-typing-v1` mounts the production `MessageList` and `PromptInput` in
+OpenTUI's native test renderer, with the real theme, focus, input, and obfuscation
+providers. The small host owns input above the transcript, as the dashboard does;
+it is not a copy of the dashboard lifecycle. Text updates use the production
+`appendStreamedText` projection.
+
+- 100 or 1,000 alternating user/Markdown assistant messages, plus one live tail.
+- Eight warm-up keystrokes, then 36 individually dispatched measured keystrokes.
+- Either no transcript updates or one update before every fourth keystroke.
+- Fixed 100x30 geometry, dark theme, obfuscation off, native render thread off.
+- Frozen renderer clock with exactly one explicit frame per action, asserted
+  against the renderer's frame ID. Wall-clock measurements remain real-time.
+- Every key and streamed tail must appear in the captured character frame.
+- After measurement: edit in the middle, resize to 80x24, submit, then paste and
+  submit multiline text. Assert exact text and caret-sensitive insertion.
+- Always destroy the renderer, including after assertion failures.
+
+The command runs every trial in a fresh Bun subprocess, with an isolated temporary
+home, an allowlisted environment, and dotenv loading disabled. No agent is run,
+no provider is contacted, and no real session or credential data is used.
+
+## Metrics
+
+| Metric                                 | Meaning                                                                                                                                                               |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Typing/stream to captured frame        | Injection through stdin dispatch, React `act`, an explicit renderer frame, and character-frame capture. Per-trial p75, p95 and maximum, in milliseconds.              |
+| Transcript traversals / message visits | Calls to the fixture array's instrumented `map`, executing the native array implementation. Measures production list traversal, not React commits or Markdown parses. |
+| CPU milliseconds                       | Process user plus system CPU during the measured replay, excluding initial mount, warm-up, and post-measurement correctness checks.                                   |
+| RSS start/end                          | Process resident memory at measured replay boundaries, not peak memory, JS heap, or proof of a leak.                                                                  |
+
+The summary reports the median and range of **per-trial p95s**, not a pooled p95.
+Record Bun/OpenTUI/React versions, OS, architecture, CPU, revision, and dirty status
+from the report. Compare each workload separately. The tiny array counter is
+present in both base and candidate measurements and does not ship with the app.
+Positive controls require it to observe mounting and every changed message array;
+silently disconnecting the counter must not appear to improve performance.
+
+These are component-level, development-React measurements with explicitly driven
+frames, not production terminal latency, renderer FPS, or full-dashboard latency.
+Animation, tool rendering, model/network latency, disk persistence, terminal
+transport, and automatic frame scheduling are not represented by this fixture.
+Do not describe a result here as a whole-application speedup.
+
+## Regression checks and expansion
+
+The pinned-Bun Linux CI replay gates exact interaction correctness and transcript
+work ceilings. It does not gate timing, CPU, or RSS. Only lower a work ceiling when
+the same fixture still performs and validates the intended interaction.
+
+Add focused fixtures with the optimization they support: tool arguments and
+output, swarm subscriptions, cancellation/restart, session restoration, and a
+separate real-launch/PTY probe. Keep screenshots and profiles synthetic. Expand
+coverage before claiming those journeys are measured; this fixture does not
+cover them yet.
