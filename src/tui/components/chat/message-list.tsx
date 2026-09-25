@@ -5,6 +5,7 @@
  * Unified for both chat and operator modes.
  */
 
+import { memo } from "react";
 import type { PendingApproval } from "../../../core/operator";
 import { useTheme } from "../../theme";
 import type { DisplayMessage } from "../agent-display";
@@ -100,7 +101,7 @@ export interface MessageListProps {
 /**
  * Message list with auto-scroll and empty state handling
  */
-export function MessageList({
+export const MessageList = memo(function MessageList({
   messages,
   streamingMessageIndex = -1,
   isRunning = false,
@@ -255,4 +256,4 @@ export function MessageList({
       )}
     </scrollbox>
   );
-}
+});
