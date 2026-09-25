@@ -85,4 +85,45 @@ describe("FastStrikeEvidenceLedger", () => {
     ).toContain("not observed");
     ledger.dispose();
   });
+
+  it("rehydrates persisted observations and publishes new ones", () => {
+    const bus = new AgentEventBus();
+    const recorded: Array<{ toolCallId: string }> = [];
+    const ledger = new FastStrikeEvidenceLedger(bus, {
+      initialObservations: [
+        {
+          toolCallId: "call-before-resume",
+          toolName: "http_request",
+          subagentId: "worker-1",
+          failed: false,
+        },
+      ],
+      onObservation: (observation) => recorded.push(observation),
+    });
+
+    expect(
+      ledger.validateImpactEvidence(
+        [
+          {
+            description: "Persisted successful response",
+            toolCallId: "call-before-resume",
+            toolName: "http_request",
+          },
+        ],
+        new Set(["worker-1"]),
+      ),
+    ).toBeUndefined();
+    expect(ledger.validateEvidence([], new Set(["worker-1"]))).toBeUndefined();
+
+    bus.emit("tool-result", {
+      toolCallId: "call-after-resume",
+      toolName: "http_request",
+      result: { status: 200 },
+      subagentId: "worker-1",
+    });
+    expect(recorded.map((observation) => observation.toolCallId)).toEqual([
+      "call-after-resume",
+    ]);
+    ledger.dispose();
+  });
 });
