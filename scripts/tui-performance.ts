@@ -3,11 +3,22 @@ import { cpus, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import reactPackage from "react/package.json";
 import type { runTypingJourney } from "./tui-performance/journey";
+import type { runScrollingJourney } from "./tui-performance/scrolling";
 
 const runs = Number(process.argv[2] ?? 5);
-if (!Number.isSafeInteger(runs) || runs < 1 || runs > 30) {
-  throw new Error("Usage: bun run perf:tui [runs: 1..30] [report.json]");
+const journey = process.argv[4] ?? "typing";
+if (
+  !Number.isSafeInteger(runs) ||
+  runs < 1 ||
+  runs > 30 ||
+  !["typing", "scrolling", "scrolling-idle"].includes(journey)
+) {
+  throw new Error(
+    "Usage: bun run perf:tui [runs: 1..30] [report.json] [typing|scrolling|scrolling-idle]",
+  );
 }
+const scrolling = journey !== "typing";
+const streamIntervals = journey === "scrolling-idle" ? [0] : [0, 4];
 const corePackage = await Bun.file(
   join(
     dirname(Bun.resolveSync("@opentui/core", import.meta.dir)),
@@ -15,18 +26,26 @@ const corePackage = await Bun.file(
   ),
 ).json();
 const home = await mkdtemp(join(tmpdir(), "apex-tui-perf-"));
-const results: (Awaited<ReturnType<typeof runTypingJourney>> & {
+const results: ((
+  | Awaited<ReturnType<typeof runTypingJourney>>
+  | Awaited<ReturnType<typeof runScrollingJourney>>
+) & {
   run: number;
 })[] = [];
 try {
   for (let run = 0; run < runs; run++) {
     for (const historySize of [100, 1000]) {
-      for (const streamEvery of [0, 4]) {
+      for (const streamEvery of streamIntervals) {
         const child = Bun.spawn(
           [
             process.execPath,
             "--no-env-file",
-            join(import.meta.dir, "tui-performance/journey.tsx"),
+            join(
+              import.meta.dir,
+              scrolling
+                ? "tui-performance/scrolling.tsx"
+                : "tui-performance/journey.tsx",
+            ),
             String(historySize),
             String(streamEvery),
           ],
@@ -58,7 +77,7 @@ try {
     .stdout.toString()
     .trim();
   const summary = [100, 1000].flatMap((historySize) =>
-    [0, 4].map((streamEvery) => {
+    streamIntervals.map((streamEvery) => {
       const group = results.filter(
         (r) => r.historySize === historySize && r.streamEvery === streamEvery,
       );
@@ -70,23 +89,45 @@ try {
           2
         );
       };
+      const inputP95s = group.map(
+        (r) =>
+          ("wheelToFrameMs" in r ? r.wheelToFrameMs : r.typingToCapturedFrameMs)
+            .p95 ?? 0,
+      );
       return {
         historySize,
         streamEvery,
         transcriptTraversals: group.map((r) => r.work.transcriptTraversals),
-        typingP95MsMedian: median(
-          group.map((r) => r.typingToCapturedFrameMs.p95 ?? 0),
-        ),
-        typingP95MsRange: [
-          Math.min(...group.map((r) => r.typingToCapturedFrameMs.p95 ?? 0)),
-          Math.max(...group.map((r) => r.typingToCapturedFrameMs.p95 ?? 0)),
+        [scrolling ? "wheelP95MsMedian" : "typingP95MsMedian"]:
+          median(inputP95s),
+        [scrolling ? "wheelP95MsRange" : "typingP95MsRange"]: [
+          Math.min(...inputP95s),
+          Math.max(...inputP95s),
         ],
+        ...(scrolling
+          ? {
+              layoutReads: group.map((r) =>
+                "layoutReads" in r.work ? r.work.layoutReads : 0,
+              ),
+              streamAndWheelP95MsMedian:
+                streamEvery > 0
+                  ? median(
+                      group.map((r) =>
+                        "streamAndWheelToFrameMs" in r
+                          ? (r.streamAndWheelToFrameMs.p95 ?? 0)
+                          : 0,
+                      ),
+                    )
+                  : null,
+            }
+          : {}),
         cpuMsMedian: median(group.map((r) => r.cpuMs)),
       };
     }),
   );
   const report = {
     revision,
+    journey,
     dirty: Bun.spawnSync(["git", "status", "--porcelain"]).stdout.length > 0,
     bun: Bun.version,
     opentui: corePackage.version,

@@ -132,3 +132,36 @@ It does not mount the full dashboard or test physical-terminal latency. Counts
 still scan each new session map; these results do not establish a CPU, memory, or
 end-to-end latency improvement. Count callbacks invalidate a snapshot and are not
 an exactly-once lifecycle event log.
+
+## Chat scrolling
+
+```sh
+bun run perf:tui 5 .cache/scrolling.json scrolling
+bun run perf:tui 5 .cache/scrolling-idle.json scrolling-idle
+bun run test:tui
+```
+
+`transcript-scrolling-v1` uses the production message list and text projection,
+100/1,000-message histories, and actual mouse-wheel input. After 16 warm-up
+notches, it measures 60 upward and 60 downward notches, with either no updates or
+30 interleaved text updates below the viewport. Each notch must move one row.
+It reports wheel-to-explicit-frame p95, combined stream/wheel p95, CPU, transcript
+traversals, and actual `Renderable.updateFromLayout` calls. The geometry counter
+is installed only in the fixture and restored on cleanup. Captures and post-replay
+correctness checks are outside the measured loop. There is no physical-terminal
+presentation measurement, automatic-frame scheduling, active spinner, or tool-heavy
+history in this fixture.
+
+Checks cover the visible history anchor, exact height growth, returning to bottom
+by wheel, resuming follow, and wrapped output at 100x30, 80x24, and 40x15. A separate
+case starts with an already-tall reply. CI gates these invariants and work ceilings,
+not timing. It does not test loading a real persisted session.
+
+Operator/subagent assistant bodies fill the remaining row width. Without that
+constraint, OpenTUI 0.1.107 can height-clamp intrinsic text measurement: a reply
+growing by 60 rows contributes only 26 rows to the scroll extent at 100x30, moving
+history and hiding the end of tall replies. The mixed replay deliberately fails
+on the benchmark-only baseline. Use `scrolling-idle` for valid before/after timing;
+do not compare timings from a replay that violates scrolling correctness. This
+fix does not virtualize history, change wheel acceleration, or remove the existing
+history-sized geometry pass.
