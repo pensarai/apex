@@ -6,6 +6,7 @@ import type {
   StopCondition,
   StreamTextResult,
   TextStreamPart,
+  ToolChoice,
   ToolSet,
 } from "ai";
 import { hasToolCall } from "ai";
@@ -26,7 +27,7 @@ import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import {
   buildCodeModeInstructions,
   CanonicalCapabilityInvoker,
-  CODE_MODE_NESTED_TOOL_NAMES,
+  CODE_MODE_DIRECT_TOOL_NAMES,
   CodeModeRuntime,
   createCodeModeTools,
 } from "./codeMode";
@@ -40,6 +41,7 @@ import { responseArgBytes, StreamDiagnostics } from "./streamDiagnostics";
 import { ToolLifecycleTracker } from "./toolLifecycle";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
+  buildExecutionPolicyPrompt,
   createAllTools,
   createResponseTool,
   EMAIL_TOOL_NAMES_ACTIVE,
@@ -48,12 +50,18 @@ import {
   PLAN_MODE_TOOL_NAMES,
   PlaywrightMcpSession,
   RESPONSE_TOOL_NAME,
+  resolveExecutionPolicy,
   SEND_EMAIL_TOOL_NAME,
   SMS_TOOL_NAMES_ACTIVE,
   sessionHasSmsPasswordless,
   WORKSPACE_TOOL_NAMES,
   WORKSPACE_WRITE_TOOL_NAMES,
 } from "./tools";
+import {
+  buildSandboxSecurityPrompt,
+  createSandboxSessionSecurity,
+  type SandboxSessionSecurity,
+} from "./tools/sandboxSecurity";
 import { StepTraceWriter } from "./trace";
 import type {
   AgentMode,
@@ -191,6 +199,24 @@ export function filterWorkspaceToolsForRun(
   });
 }
 
+function envEnabled(value: string | undefined): boolean {
+  return value === "1" || value?.toLowerCase() === "true";
+}
+
+export function resolveAgentToolChoice(
+  requested: ToolChoice<ToolSet> | undefined,
+  hasResponseTool: boolean,
+): ToolChoice<ToolSet> {
+  if (requested && requested !== "auto") return requested;
+  if (
+    hasResponseTool &&
+    envEnabled(process.env.APEX_REQUIRE_SUCCESSFUL_RESPONSE)
+  ) {
+    return "required";
+  }
+  return requested ?? "auto";
+}
+
 /**
  * General-purpose offensive security agent harness.
  *
@@ -278,6 +304,9 @@ export class OffensiveSecurityAgent<TResult = void> {
 
   /** Isolated JavaScript orchestration runtime used by compact code-mode profiles. */
   private codeModeRuntime?: CodeModeRuntime;
+
+  /** Ref-counted externally-enforced egress and callback lease. */
+  private readonly sandboxSecurity?: SandboxSessionSecurity;
 
   /**
    * This agent's Playwright MCP browser session. Either constructed fresh
@@ -378,16 +407,27 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
 
+    this.sandboxSecurity = createSandboxSessionSecurity(
+      input.sandbox,
+      input.session,
+      input.target,
+    );
+    const sandbox = this.sandboxSecurity?.sandbox ?? input.sandbox;
+
     // -- Resolve agent working directory ----------------------------------------
     const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
+    const executionPolicy = resolveExecutionPolicy(input.session);
+    const executionPolicyEnv = {
+      APEX_EXECUTION_POLICY_JSON: JSON.stringify(executionPolicy),
+    };
 
     // -- Persistent shell (local mode only) -----------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
     // stream ends, or when the agent is fully killed.
-    if (!input.sandbox) {
+    if (!sandbox) {
       this.persistentShell = new PersistentShell({
         cwd: agentCwd,
-        env: input.environmentVariables,
+        env: { ...input.environmentVariables, ...executionPolicyEnv },
       });
       if (input.commandCancelHandle) {
         const shell = this.persistentShell;
@@ -403,7 +443,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     // for agents that never use browser tools. Sandbox-mode agents already
     // share browser state via the sandbox's per-sandbox Playwright user-data
     // dir, so they don't need a session object on the host.
-    if (!input.sandbox) {
+    if (!sandbox) {
       // Snapshot resolved headers into the browser session. Later mutations
       // require a browser restart to take effect.
       const sessionHeaders = input.target
@@ -471,6 +511,7 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     const builtinTools = createAllTools({
       session: input.session,
+      executionPolicy,
       agentCwd,
       target: input.target,
       grpc: input.grpc,
@@ -485,7 +526,7 @@ export class OffensiveSecurityAgent<TResult = void> {
       onCacheMetrics: input.forwardUsageCallbacksToSpawnedAgents
         ? input.onCacheMetrics
         : undefined,
-      sandbox: input.sandbox,
+      sandbox,
       findingsRegistry: input.findingsRegistry,
       attackSurfaceRegistry: input.attackSurfaceRegistry,
       credentialManager,
@@ -594,37 +635,6 @@ export class OffensiveSecurityAgent<TResult = void> {
       }
     }
 
-    // -- Model-facing tool protocol -------------------------------------------
-    // Canonical tools and their event identities remain stable. Only the
-    // presentation to the model changes: direct schemas, schema-based exec, or
-    // OpenAI's native freeform custom tool.
-    const runtimeProfile = resolveModelRuntimeProfile(
-      input.model,
-      input.toolProtocol ?? (input.mode === "fast-strike" ? "auto" : "direct"),
-    );
-    let codeModeInstructions = "";
-    if (runtimeProfile.protocol !== "direct") {
-      const canonicalTools = tools;
-      const allowedTools = CODE_MODE_NESTED_TOOL_NAMES.filter(
-        (name) => canonicalTools[name] !== undefined,
-      );
-      const invoker = new CanonicalCapabilityInvoker({
-        tools: canonicalTools,
-        allowedTools,
-        eventBus: this.eventBus,
-        sessionId: this.busSessionId,
-        subagentId: this.subagentId,
-        getMessageId: () => this.currentMessageId ?? undefined,
-      });
-      this.codeModeRuntime = new CodeModeRuntime(invoker);
-      tools = createCodeModeTools(
-        runtimeProfile.protocol,
-        this.codeModeRuntime,
-        canonicalTools,
-      );
-      codeModeInstructions = buildCodeModeInstructions(runtimeProfile.protocol);
-    }
-
     // -- Filter email tools when no inboxes / SMTP are configured -----------
     const hasEmail =
       (input.session.config?.emailIntegration?.inboxes?.length ?? 0) > 0;
@@ -639,6 +649,18 @@ export class OffensiveSecurityAgent<TResult = void> {
       if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
       return hasEmail;
     });
+
+    // Response and checkpoint are harness contracts, not workflow-selected
+    // conveniences. Keep them reachable whenever their implementations exist.
+    for (const contractName of [
+      RESPONSE_TOOL_NAME,
+      "checkpoint_state",
+      ...Object.keys(input.extraTools ?? {}),
+    ]) {
+      if (tools[contractName] && !activeTools.includes(contractName)) {
+        activeTools.push(contractName);
+      }
+    }
 
     // -- Plan mode: restrict to read-only tools -----------------------------
     if (input.mode === "plan") {
@@ -661,6 +683,61 @@ export class OffensiveSecurityAgent<TResult = void> {
       input.prompt,
       input.approvalGate !== undefined,
     );
+
+    // A code-mode browser stage operates against the same managed Camoufox
+    // context as the ordinary browser tools. Make it available whenever this
+    // workflow selected any browser capability.
+    if (
+      activeTools.some((name) => name.startsWith("browser_")) &&
+      tools.browser_run_code &&
+      !activeTools.includes("browser_run_code")
+    ) {
+      activeTools.push("browser_run_code");
+    }
+
+    // -- Model-facing tool protocol -------------------------------------------
+    // Canonical tools and their event identities remain stable. Only their
+    // presentation changes. Provider capabilities choose freeform vs schema
+    // exec; model names and agent roles do not choose the architecture.
+    const runtimeProfile = resolveModelRuntimeProfile(
+      input.model,
+      input.toolProtocol ?? "auto",
+    );
+    let codeModeInstructions = "";
+    if (runtimeProfile.protocol !== "direct") {
+      const canonicalTools = tools;
+      const canonicalActiveTools = activeTools.filter(
+        (name) => canonicalTools[name] !== undefined,
+      );
+      const directToolNames = new Set<string>([
+        ...CODE_MODE_DIRECT_TOOL_NAMES,
+        ...(input.directTools ?? []),
+        ...Object.keys(input.extraTools ?? {}),
+      ]);
+      const presentedDirectTools = canonicalActiveTools.filter((name) =>
+        directToolNames.has(name),
+      );
+      const allowedTools = canonicalActiveTools.filter(
+        (name) => !directToolNames.has(name),
+      );
+      const invoker = new CanonicalCapabilityInvoker({
+        tools: canonicalTools,
+        allowedTools,
+        eventBus: this.eventBus,
+        sessionId: this.busSessionId,
+        subagentId: this.subagentId,
+        getMessageId: () => this.currentMessageId ?? undefined,
+      });
+      this.codeModeRuntime = new CodeModeRuntime(invoker, allowedTools);
+      tools = createCodeModeTools(
+        runtimeProfile.protocol,
+        this.codeModeRuntime,
+        canonicalTools,
+        presentedDirectTools,
+      );
+      activeTools = Object.keys(tools);
+      codeModeInstructions = buildCodeModeInstructions(runtimeProfile.protocol);
+    }
 
     // -- Messages persistence -------------------------------------------------
     if (!existsSync(messagesDir)) {
@@ -706,7 +783,11 @@ export class OffensiveSecurityAgent<TResult = void> {
           sandboxMode: agentCwd === input.session.rootPath,
         }),
       );
-    const effectiveBaseSystemPrompt = baseSystemPrompt + codeModeInstructions;
+    const effectiveBaseSystemPrompt =
+      baseSystemPrompt +
+      codeModeInstructions +
+      buildExecutionPolicyPrompt(executionPolicy) +
+      buildSandboxSecurityPrompt(input.session);
     const systemPrompt =
       effectiveBaseSystemPrompt +
       buildSessionWorkspaceSection(input.session, agentCwd, activeTools);
@@ -729,6 +810,10 @@ export class OffensiveSecurityAgent<TResult = void> {
 
     // Deferred so the AI SDK telemetry binds to this agent's span (entered in
     // consume()) rather than the construction-time context. See `streamResult`.
+    const resolvedToolChoice = resolveAgentToolChoice(
+      input.toolChoice,
+      tools[RESPONSE_TOOL_NAME] !== undefined,
+    );
     this.createStream = () =>
       streamResponse({
         prompt: input.prompt,
@@ -738,7 +823,7 @@ export class OffensiveSecurityAgent<TResult = void> {
         tools,
         activeTools,
         stopWhen,
-        toolChoice: "auto",
+        toolChoice: resolvedToolChoice,
         // Per-subagent so the overflow tool-result dumps land next to this
         // agent's messages.json (`subagents/{id}/tool-results/`) and a host
         // can reclaim them when the subagent finishes, instead of piling up
@@ -1152,6 +1237,11 @@ export class OffensiveSecurityAgent<TResult = void> {
       // Dispose first — don't block on persistence I/O.
       try {
         await this.codeModeRuntime?.dispose();
+      } catch (error) {
+        recordFinalizationError(error);
+      }
+      try {
+        await this.sandboxSecurity?.dispose();
       } catch (error) {
         recordFinalizationError(error);
       }

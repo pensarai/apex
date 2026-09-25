@@ -79,17 +79,36 @@ describe("RateLimiter", () => {
     expect(performance.now() - start).toBeGreaterThanOrEqual(800);
   });
 
-  it("releaseSlot restores a consumed token", async () => {
+  it("releaseSlot frees concurrency without restoring a rate token", async () => {
     const rl = new RateLimiter({ requestsPerSecond: 50 }); // 20ms / token
     await rl.acquireSlot(); // drain the initial token
 
-    // Without release, the next acquire would wait ~20ms for a refill.
     rl.releaseSlot();
 
-    // Token was restored — next acquire should be near-instant.
+    // Releasing an in-flight request must not refund its request-rate token.
     const start = performance.now();
     await rl.acquireSlot();
-    expect(performance.now() - start).toBeLessThan(10);
+    expect(performance.now() - start).toBeGreaterThanOrEqual(10);
+    rl.releaseSlot();
+  });
+
+  it("bounds in-flight concurrency independently from request rate", async () => {
+    const rl = new RateLimiter({
+      requestsPerSecond: 1000,
+      burst: 10,
+      maxConcurrency: 1,
+    });
+    await rl.acquireSlot();
+    let acquired = false;
+    const second = rl.acquireSlot().then(() => {
+      acquired = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(acquired).toBe(false);
+    rl.releaseSlot();
+    await second;
+    expect(acquired).toBe(true);
+    rl.releaseSlot();
   });
 
   it("keeps the queue flowing for the next request after an abort", async () => {

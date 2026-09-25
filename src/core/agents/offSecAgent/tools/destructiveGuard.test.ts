@@ -246,6 +246,19 @@ describe("classifyHttpAction", () => {
 // ---------------------------------------------------------------------------
 
 describe("classifyCommandAction", () => {
+  it("flags Python HTTP DELETE programs", () => {
+    expect(
+      classifyCommandAction(
+        'python3 probe.py\nrequests.delete("https://example.com/users/1")',
+      ).category,
+    ).toBe("http-delete-method");
+    expect(
+      classifyCommandAction(
+        'uv run probe.py\nhttpx.request(method="DELETE", url=target)',
+      ).category,
+    ).toBe("http-delete-method");
+  });
+
   it("flags destructive SQL run through a db client", () => {
     expect(
       classifyCommandAction('psql -h db.example.com -c "DROP TABLE users"')

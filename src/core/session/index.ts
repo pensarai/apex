@@ -68,6 +68,22 @@ const ScopeConstraintsObject = z.object({
 
 type ScopeConstraints = z.infer<typeof ScopeConstraintsObject>;
 
+const NetworkSecurityConfigObject = z.object({
+  /** `strict` requires externally-attested default-deny process egress. */
+  egress: z.enum(["unrestricted", "strict"]).optional(),
+  /** Permit DNS through a controller-owned resolver. Defaults to true. */
+  allowDns: z.boolean().optional(),
+  /** Allocate an opaque session callback route and reserved listener port. */
+  oast: z
+    .object({
+      enabled: z.boolean().default(true),
+      callbackPort: z.number().int().min(1024).max(65535).default(4000),
+    })
+    .optional(),
+});
+
+export type NetworkSecurityConfig = z.infer<typeof NetworkSecurityConfigObject>;
+
 // The header map IS the state — empty record means "send no custom headers".
 const SessionHeadersRecord = z.record(z.string(), z.string());
 
@@ -214,11 +230,13 @@ const SessionConfigObject = z.object({
   mode: z.enum(["auto", "driver", "operator"]).optional(),
   outcomeGuidance: z.string().optional(),
   scopeConstraints: ScopeConstraintsObject.optional(),
+  /** Sandbox control-plane policy. Strict mode fails closed without attestation. */
+  networkSecurity: NetworkSecurityConfigObject.optional(),
   authCredentials: z
     .union([AuthCredentialsObject, z.array(AuthCredentialsObject)])
     .optional(),
   authenticationInstructions: z.string().optional(),
-  requestsPerSecond: z.number().optional(),
+  requestsPerSecond: z.number().positive().max(1000).optional(),
   /**
    * Opt-in: the client has authorized destructive testing (DB deletes/drops,
    * API write-deletes, catastrophic host operations). Defaults to off — when
@@ -525,8 +543,17 @@ export async function create(input: CreateInputProps) {
   const logsPath = path.join(rootPath, "logs");
   const pocsPath = path.join(rootPath, "pocs");
 
+  const requestsPerSecond = Math.min(
+    1000,
+    Math.max(1, Math.round(normalizedConfig?.requestsPerSecond ?? 50)),
+  );
+  const rateTestingAllowed = normalizedConfig?.allowRateLimitTesting === true;
   const rateLimiter = new RateLimiter({
-    requestsPerSecond: normalizedConfig?.requestsPerSecond,
+    requestsPerSecond,
+    burst: rateTestingAllowed ? requestsPerSecond : 1,
+    maxConcurrency: rateTestingAllowed
+      ? Math.min(requestsPerSecond, 32)
+      : Math.min(requestsPerSecond, 4),
   });
 
   // Auto-create CredentialManager when authCredentials are provided.
@@ -618,9 +645,18 @@ export const get = async (id: string) => {
 
   // Reconstruct RateLimiter instance (it gets serialized as plain object)
   // This ensures the session has a proper RateLimiter with methods
-  if (read.config?.requestsPerSecond) {
+  if (read.config) {
+    const requestsPerSecond = Math.min(
+      1000,
+      Math.max(1, Math.round(read.config.requestsPerSecond ?? 50)),
+    );
+    const rateTestingAllowed = read.config.allowRateLimitTesting === true;
     read._rateLimiter = new RateLimiter({
-      requestsPerSecond: read.config.requestsPerSecond,
+      requestsPerSecond,
+      burst: rateTestingAllowed ? requestsPerSecond : 1,
+      maxConcurrency: rateTestingAllowed
+        ? Math.min(requestsPerSecond, 32)
+        : Math.min(requestsPerSecond, 4),
     });
   } else {
     // Remove any stale serialized _rateLimiter data (plain object without methods)

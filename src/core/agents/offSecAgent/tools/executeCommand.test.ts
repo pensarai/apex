@@ -168,8 +168,17 @@ describe("executeCommand prompt injection pointer", () => {
     expect(capturedCommand).toBe(command);
     expect(capturedCommand).not.toContain(payloadFilePath);
     // In sandbox mode, env var points to the temp file in the sandbox
-    expect(capturedEnvVars).toEqual({
-      APEX_PROMPT_INJECTION_FILE: capturedSandboxFilePath,
+    expect(capturedEnvVars).toEqual(
+      expect.objectContaining({
+        APEX_PROMPT_INJECTION_FILE: capturedSandboxFilePath,
+        APEX_EXECUTION_POLICY_JSON: expect.any(String),
+      }),
+    );
+    expect(
+      JSON.parse(capturedEnvVars?.APEX_EXECUTION_POLICY_JSON ?? "{}"),
+    ).toMatchObject({
+      destructive: { allowed: false },
+      traffic: { rateLimitTestingAllowed: false },
     });
     expect(capturedSandboxFilePath).toMatch(/^\/tmp\/apex_payload_\d+\.txt$/);
     expect(result.command).toBe(command);

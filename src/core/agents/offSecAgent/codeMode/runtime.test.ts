@@ -47,6 +47,207 @@ describe("CodeModeRuntime", () => {
     await runtime.dispose();
   });
 
+  test("mapLimit bounds nested capability concurrency", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const runtime = createRuntime({
+      inspect: tool({
+        inputSchema: z.object({ value: z.number() }),
+        execute: async ({ value }) => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          active -= 1;
+          return value * 2;
+        },
+      }),
+    });
+
+    const result = await runtime.execute(
+      `
+        const values = await mapLimit([1, 2, 3, 4, 5, 6], 2, value =>
+          tools.call("inspect", { value })
+        );
+        text(values);
+      `,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toBe("[2,4,6,8,10,12]");
+    expect(maxActive).toBe(2);
+    expect(result.metrics).toMatchObject({
+      nestedCalls: 6,
+      uniqueCalls: 6,
+      maxConcurrency: 2,
+    });
+    await runtime.dispose();
+  });
+
+  test("rejects overlapping calls to the single-lane shell", async () => {
+    let calls = 0;
+    const runtime = createRuntime({
+      execute_command: tool({
+        inputSchema: z.object({ command: z.string() }),
+        execute: async () => {
+          calls += 1;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return { stdout: "ok" };
+        },
+      }),
+    });
+
+    const result = await runtime.execute(
+      `
+        const results = await Promise.allSettled([
+          tools.shell({ command: "first" }),
+          tools.call("execute_command", { command: "second" }),
+        ]);
+        text(results);
+      `,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toContain("tools.shell is single-lane");
+    expect(calls).toBe(1);
+    await runtime.dispose();
+  });
+
+  test("rejects overlapping shell calls across concurrent exec cells", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const runtime = createRuntime({
+      execute_command: tool({
+        inputSchema: z.object({ command: z.string() }),
+        execute: async () => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          active -= 1;
+          return { stdout: "ok" };
+        },
+      }),
+    });
+
+    const [first, second] = await Promise.all([
+      runtime.execute(
+        `text(await tools.shell({ command: "first" }));`,
+        context,
+        5_000,
+      ),
+      runtime.execute(
+        `text(await tools.shell({ command: "second" }));`,
+        { ...context, parentToolCallId: "exec_2" },
+        5_000,
+      ),
+    ]);
+
+    expect([first.status, second.status].sort()).toEqual([
+      "completed",
+      "failed",
+    ]);
+    expect(`${first.output}\n${second.output}`).toContain(
+      "single-lane across exec cells",
+    );
+    expect(maxActive).toBe(1);
+    await runtime.dispose();
+  });
+
+  test("keeps the VM alive until an in-flight host call settles after Promise.all rejects", async () => {
+    let firstCompleted = false;
+    const runtime = createRuntime({
+      execute_command: tool({
+        inputSchema: z.object({ command: z.string() }),
+        execute: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          firstCompleted = true;
+          return { stdout: "ok" };
+        },
+      }),
+    });
+
+    const result = await runtime.execute(
+      `
+        await Promise.all([
+          tools.shell({ command: "first" }),
+          tools.shell({ command: "second" }),
+        ]);
+      `,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.output).toContain("tools.shell is single-lane");
+    expect(firstCompleted).toBe(true);
+    await runtime.dispose();
+  });
+
+  test("bounds shell calls by default without overriding explicit timeouts", async () => {
+    const timeouts: Array<number | undefined> = [];
+    const runtime = createRuntime({
+      execute_command: tool({
+        inputSchema: z.object({
+          command: z.string(),
+          timeout: z.number().optional(),
+        }),
+        execute: async ({ timeout }) => {
+          timeouts.push(timeout);
+          return { stdout: "ok" };
+        },
+      }),
+    });
+
+    const result = await runtime.execute(
+      `
+        await tools.shell({ command: "default" });
+        await tools.shell({ command: "explicit", timeout: 300 });
+      `,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("completed");
+    expect(timeouts).toEqual([120, 300]);
+    await runtime.dispose();
+  });
+
+  test("shares one lane across browser operations", async () => {
+    let calls = 0;
+    const browserTool = tool({
+      inputSchema: z.object({}),
+      execute: async () => {
+        calls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return { ok: true };
+      },
+    });
+    const runtime = createRuntime({
+      browser_navigate: browserTool,
+      browser_snapshot: browserTool,
+    });
+
+    const result = await runtime.execute(
+      `
+        const results = await Promise.allSettled([
+          tools.browser.navigate({}),
+          tools.browser.snapshot({}),
+        ]);
+        text(results);
+      `,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toContain("Browser operations are single-lane");
+    expect(calls).toBe(1);
+    await runtime.dispose();
+  });
+
   test("persists explicitly stored values without exposing host globals", async () => {
     const runtime = createRuntime({});
     const first = await runtime.execute(
@@ -69,6 +270,30 @@ describe("CodeModeRuntime", () => {
     await runtime.dispose();
   });
 
+  test("provides bounded base64, Buffer, require, and timer compatibility", async () => {
+    const runtime = createRuntime({});
+    const result = await runtime.execute(
+      `
+        const { Buffer: RequiredBuffer } = require("buffer");
+        text(Buffer.from("hello").toString("base64"));
+        text(RequiredBuffer.from("aGVsbG8=", "base64").toString("utf8"));
+        text(btoa("Apex"));
+        text(atob("QXBleA=="));
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        await require("timers/promises").setTimeout(5);
+        text("timer-complete");
+      `,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toBe(
+      "aGVsbG8=\nhello\nQXBleA==\nApex\ntimer-complete",
+    );
+    await runtime.dispose();
+  });
+
   test("prevents capability calls after terminal response", async () => {
     const runtime = createRuntime({
       response: tool({
@@ -83,7 +308,7 @@ describe("CodeModeRuntime", () => {
 
     const result = await runtime.execute(
       `
-        await tools.response.submit({ solved: true });
+        await tools.call("response", { result: { solved: true } });
         await tools.call("execute_command", { command: "id" });
       `,
       context,

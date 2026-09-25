@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { resolveModelRuntimeProfile } from "./modelRuntime";
 
 describe("resolveModelRuntimeProfile", () => {
-  it("uses native code mode for GPT-5.6 Sol on OpenAI", () => {
+  it("uses native code mode for any OpenAI Responses model", () => {
     expect(resolveModelRuntimeProfile("gpt-5.6-sol").protocol).toBe(
       "native-code",
     );
+    expect(resolveModelRuntimeProfile("gpt-5.5").protocol).toBe("native-code");
   });
 
   it("uses schema code mode for Opus 4.8 on Bedrock", () => {
@@ -20,8 +21,10 @@ describe("resolveModelRuntimeProfile", () => {
     );
   });
 
-  it("keeps unknown models on the direct tool protocol", () => {
-    expect(resolveModelRuntimeProfile("local-model").protocol).toBe("direct");
+  it("uses the portable schema protocol for unknown and local models", () => {
+    expect(resolveModelRuntimeProfile("local-model").protocol).toBe(
+      "schema-code",
+    );
   });
 
   it("allows forcing schema code mode for any provider", () => {
