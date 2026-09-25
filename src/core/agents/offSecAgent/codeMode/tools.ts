@@ -151,6 +151,8 @@ export function buildCodeModeInstructions(
 You have a compact code-oriented interface. Prefer writing JavaScript in exec to compose work over issuing repetitive one-off calls. The exec runtime is isolated: it has no direct filesystem, process, or network APIs. All effects go through governed nested capabilities.
 
 Available globals inside exec:
+- ALL_TOOLS, the exact allowed nested capability names for this run
+- tools.describe(name), which returns one allowed capability's description and exact input JSON Schema without executing it
 - tools.shell({ toolCallDescription, command, timeout?, allow_unprotected? })
 - tools.call(name, input) for any allowed capability listed in ALL_TOOLS
 - tools.browser.navigate({ url, toolCallDescription })
@@ -161,10 +163,11 @@ Available globals inside exec:
 - tools.browser.evaluate({ script, toolCallDescription })
 - tools.browser.console({ toolCallDescription })
 - tools.browser.getCookies({ urls?, toolCallDescription })
-- text(value) to return intermediate output; store(key, value) and load(key) across cells
+- text(value) to return intermediate output; store(key, value) and load(key) across cells for compact state only (1,000,000 serialized characters per value and per-cell load budget); page and persist larger artifacts with governed file tools
 - Buffer, btoa/atob, sleep(ms), and setTimeout for bounded encoding and delays; require supports only "buffer" and "timers/promises"
 - mapLimit(items, concurrency, worker) for bounded fail-fast concurrency across concurrency-safe capabilities
 - mapLimitSettled(items, concurrency, worker) for bounded concurrency across concurrency-safe capabilities when partial results are useful
+- completed and failed exec/wait results include evidence entries with the exact nested toolCallId and toolName; cite those values verbatim when another tool requests trace-linked evidence
 
 Nested capability declarations:
 
@@ -176,6 +179,7 @@ type ShellInput = {
   allow_unprotected?: boolean;
 };
 declare const tools: {
+  describe(name: string): Promise<{ name: string; description?: string; inputSchema: unknown }>;
   shell(input: ShellInput): Promise<unknown>;
   call(name: string, input: unknown): Promise<unknown>;
   browser: {
@@ -189,6 +193,7 @@ declare const tools: {
     getCookies(input: { urls?: string[]; toolCallDescription: string }): Promise<unknown>;
   };
 };
+declare const ALL_TOOLS: readonly string[];
 declare function mapLimit<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]>;
 declare function mapLimitSettled<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>): Promise<PromiseSettledResult<R>[]>;
 declare const Buffer: {
@@ -203,13 +208,14 @@ declare function require(name: "timers/promises"): { setTimeout: typeof sleep };
 \`\`\`
 
 Program-first execution policy:
-1. \`tools.shell\` and \`execute_command\` share one persistent, single-lane shell. Call them at most once at a time and never wrap them in Promise.all, mapLimit, or mapLimitSettled. Omitted timeouts default to 120 seconds so one command cannot monopolize the shell.
-2. Put concurrent HTTP requests, scans, payload generation, and result filtering inside one Python, JavaScript, or shell program in the persistent session workspace, then run that program with one shell call. Reuse the program as the exploit evolves.
+1. Inspect ALL_TOOLS once before coordinating nested capabilities. Use its exact names; do not guess or probe capability names. Call tools.describe(name) before first use when a nested capability's input shape is not already shown here.
+2. \`tools.shell\` and \`execute_command\` share one persistent, single-lane shell. Call them at most once at a time and never wrap them in Promise.all, mapLimit, or mapLimitSettled. Omitted timeouts default to 120 seconds so one command cannot monopolize the shell.
+3. Put concurrent HTTP requests, scans, payload generation, and result filtering inside one Python, JavaScript, or shell program in the persistent session workspace, then run that program with one shell call. Reuse the program as the exploit evolves.
    Every program inherits APEX_EXECUTION_POLICY_JSON. Parse it, declare an explicit concurrency, and apply its requests-per-second, burst, concurrency, destructive-action, and availability-impact limits before issuing target traffic. Preflight enforcement inspects referenced Bun, Python, and shell source before launch.
-3. Browser operations and Console contract tools are stateful and single-lane. Await them sequentially.
-4. Persist tokens, identifiers, attempted hypotheses, and useful artifacts once. Do not paste or reconstruct the same state in later cells.
-5. Use mapLimit only for independent capabilities that are explicitly safe to invoke concurrently. Parallelism is for executing a chosen experiment faster, not for expanding reconnaissance scope.
-6. When APEX_OAST_HTTP_BASE_URL and APEX_OAST_HTTP_PORT are present in the shell environment, they are the engagement's isolated HTTP callback ingress. Write your own correlated listener on 0.0.0.0:$APEX_OAST_HTTP_PORT and use the base URL in payloads. Do not send target data or synthetic flags to third-party callback services.
+4. Browser operations and Console contract tools are stateful and single-lane. Await them sequentially.
+5. Persist compact tokens, identifiers, and hypothesis state once. Do not reconstruct multi-megabyte artifacts through store/load; page them and maintain authoritative state with the governed file tools.
+6. Use mapLimit only for independent capabilities that are explicitly safe to invoke concurrently. Parallelism is for executing a chosen experiment faster, not for expanding reconnaissance scope.
+7. When APEX_OAST_HTTP_BASE_URL and APEX_OAST_HTTP_PORT are present in the shell environment, they are the engagement's isolated HTTP callback ingress. Write your own correlated listener on 0.0.0.0:$APEX_OAST_HTTP_PORT and use the base URL in payloads. Do not send target data or synthetic flags to third-party callback services.
 
 Example program-first stage:
 

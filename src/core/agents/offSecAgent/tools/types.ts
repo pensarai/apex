@@ -16,8 +16,9 @@ import type { SessionInfo } from "../../../session";
 import type { SkillsRegistry } from "../../../skills/registry";
 import type { EngagementContext } from "../../../workflows/engagementSurface";
 import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSchema";
+import type { CodeCellResult } from "../codeMode/runtime";
 import type { StepTraceWriter } from "../trace";
-import type { SystemPentestScope } from "../types";
+import type { FindingJudgeModelConfig, SystemPentestScope } from "../types";
 import type { OffensiveExecutionPolicy } from "./executionPolicy";
 import type { PersistentShell } from "./persistentShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
@@ -80,6 +81,11 @@ export type ToolContext = {
    * When present, `document_vulnerability` checks for duplicates before writing.
    */
   findingsRegistry?: FindingsRegistry;
+
+  /** Optional model selection used only by the finding judge. */
+  findingJudgeConfig?: FindingJudgeModelConfig;
+  findingJudgeOnStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  findingJudgeOnCodeCellComplete?: (result: CodeCellResult) => void;
 
   /** Authorized host-owned target ids for engagement finding provenance. */
   engagementTargetIds?: ReadonlySet<string>;

@@ -32,11 +32,13 @@ import type { SessionConfig, SessionInfo } from "../../session";
 import type { SkillsRegistry } from "../../skills/registry";
 import type { EngagementContext } from "../../workflows/engagementSurface";
 import type { GrpcPentestContext } from "../specialized/attackSurface/grpcSchema";
+import type { CodeCellResult } from "./codeMode/runtime";
 import type { PlaywrightMcpSession, ToolName, UnifiedSandbox } from "./tools";
 import type { ResponseGuard } from "./tools/response";
 
 // Backward-compatible Finding schema (toolCallDescription is optional for parsing old findings)
 export const ApexFindingObject = z.object({
+  id: z.string().optional(),
   title: z.string(),
   severity: z.preprocess(
     (val) => {
@@ -63,6 +65,8 @@ export const ApexFindingObject = z.object({
   toolCallDescription: z.string().optional(), // Optional for backward compatibility
   cwes: z.array(ValidatedCweEntrySchema.or(CweEntrySchema)).optional(),
   rootCauseGroup: z.string().optional(),
+  /** Canonical finding ID when this record is retained as a duplicate alias. */
+  canonicalFindingId: z.string().optional(),
   relatedFindings: z.array(z.string()).optional(),
   /** True for the single lead finding of a root-cause group (the one that should anchor the consolidated write-up). */
   rootCauseLead: z.boolean().optional(),
@@ -82,6 +86,14 @@ export type Finding = z.infer<typeof ApexFindingObject>;
  */
 /** Agent operating mode that controls which tools are available. */
 export type AgentMode = "default" | "plan" | "fast-strike";
+
+/** Independent model selection for finding adjudication. */
+export interface FindingJudgeModelConfig {
+  model: AIModel;
+  enableThinking?: boolean;
+  thinkingEffort?: ThinkingEffort | null;
+  openAIReasoningEffort?: OpenAIReasoningEffort | null;
+}
 
 /** Structured authorization envelope for a multi-application System pentest. */
 export type SystemPentestScope = {
@@ -212,6 +224,14 @@ export type OffensiveSecurityAgentInput<TResult = void> = {
    * When present, `document_vulnerability` checks for duplicates before writing.
    */
   findingsRegistry?: FindingsRegistry;
+
+  /** Optional finding-judge override. Defaults to this agent's model. */
+  findingJudgeConfig?: FindingJudgeModelConfig;
+
+  /** Usage callback for the independently configured finding judge. */
+  findingJudgeOnStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  findingJudgeOnCodeCellComplete?: (result: CodeCellResult) => void;
+  onCodeCellComplete?: (result: CodeCellResult) => void;
 
   /** When present, findings must identify one of these host-owned scope targets. */
   engagementTargetIds?: readonly string[];
@@ -448,6 +468,14 @@ export interface SpecializedAgentInput {
 
   /** Shared findings registry for cross-agent dedup */
   findingsRegistry?: FindingsRegistry;
+
+  /** Optional finding-judge override. Defaults to this agent's model. */
+  findingJudgeConfig?: FindingJudgeModelConfig;
+
+  /** Usage callback for the independently configured finding judge. */
+  findingJudgeOnStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  findingJudgeOnCodeCellComplete?: (result: CodeCellResult) => void;
+  onCodeCellComplete?: (result: CodeCellResult) => void;
 
   /** Shared attack surface registry for cross-agent asset dedup */
   attackSurfaceRegistry?: AttackSurfaceRegistry;

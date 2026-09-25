@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
   chmodSync,
@@ -306,12 +307,13 @@ CRITICAL RULES — READ BEFORE CALLING:
 
         let judgeResult: FindingJudgeResult;
         try {
+          const judgeConfig = ctx.findingJudgeConfig;
           const judgeContext =
             input.sourceTargetId && ctx.engagementContext
               ? ctx.engagementContext.scope([input.sourceTargetId])
               : undefined;
           judgeResult = await judgeFinding(judgeInput, {
-            model: ctx.model!,
+            model: judgeConfig?.model ?? ctx.model!,
             session: ctx.session,
             authConfig: ctx.authConfig,
             abortSignal: ctx.abortSignal,
@@ -320,11 +322,14 @@ CRITICAL RULES — READ BEFORE CALLING:
             subagentName: judgeSubagentName,
             sandbox: ctx.sandbox,
             target: ctx.target,
-            enableThinking: ctx.enableThinking,
-            thinkingEffort: ctx.thinkingEffort,
-            openAIReasoningEffort: ctx.openAIReasoningEffort,
+            enableThinking: judgeConfig?.enableThinking ?? ctx.enableThinking,
+            thinkingEffort: judgeConfig?.thinkingEffort ?? ctx.thinkingEffort,
+            openAIReasoningEffort:
+              judgeConfig?.openAIReasoningEffort ?? ctx.openAIReasoningEffort,
             toolProtocol: ctx.toolProtocol,
             engagementContext: judgeContext,
+            onStepFinish: ctx.findingJudgeOnStepFinish,
+            onCodeCellComplete: ctx.findingJudgeOnCodeCellComplete,
           });
         } catch (error) {
           ctx.eventBus?.emit("subagent-complete", {
@@ -485,7 +490,9 @@ CRITICAL RULES — READ BEFORE CALLING:
           cvssResult.severity === "NONE" ? "LOW" : cvssResult.severity;
 
         // Phase 4: Build finding and register with dedup
+        const findingId = `finding_${randomUUID().replaceAll("-", "")}`;
         const finding: Finding = {
+          id: findingId,
           title: input.title,
           description: input.description,
           impact: input.impact,
@@ -542,6 +549,7 @@ CRITICAL RULES — READ BEFORE CALLING:
             reasoning: cvssResult.reasoning,
           },
           judge: {
+            model: String(ctx.findingJudgeConfig?.model ?? ctx.model),
             valid: judgeResult.valid,
             findingType: judgeResult.findingType,
             confidence: judgeResult.confidence,
@@ -558,7 +566,6 @@ CRITICAL RULES — READ BEFORE CALLING:
           },
         };
 
-        const findingId = `${timestamp.split("T")[0]}-${slugify(finding.title, 50)}`;
         const jsonFilename = `${findingId}.json`;
         const mdFilename = `${findingId}.md`;
         const jsonPath = join(outputDir, jsonFilename);

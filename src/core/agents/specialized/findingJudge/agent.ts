@@ -1,4 +1,8 @@
-import { stepCountIs } from "ai";
+import {
+  type StreamTextOnStepFinishCallback,
+  stepCountIs,
+  type ToolSet,
+} from "ai";
 import type {
   AgentToolProtocolPreference,
   AIModel,
@@ -9,6 +13,7 @@ import type { AIAuthConfig } from "../../../ai/utils";
 import type { AgentEventBus } from "../../../eventBus";
 import type { SessionInfo } from "../../../session";
 import type { EngagementContext } from "../../../workflows/engagementSurface";
+import type { CodeCellResult } from "../../offSecAgent/codeMode/runtime";
 import { OffensiveSecurityAgent } from "../../offSecAgent/offensiveSecurityAgent";
 import type { UnifiedSandbox } from "../../offSecAgent/tools";
 import { detectOSAndEnhancePrompt } from "../utils";
@@ -40,6 +45,8 @@ export interface FindingJudgeAgentInput {
   openAIReasoningEffort?: OpenAIReasoningEffort | null;
   toolProtocol?: AgentToolProtocolPreference;
   engagementContext?: EngagementContext;
+  onStepFinish?: StreamTextOnStepFinishCallback<ToolSet>;
+  onCodeCellComplete?: (result: CodeCellResult) => void;
 }
 
 const FINDING_JUDGE_ACTIVE_TOOLS = [
@@ -73,6 +80,8 @@ export class FindingJudgeAgent extends OffensiveSecurityAgent<FindingJudgeAgentO
       openAIReasoningEffort: opts.openAIReasoningEffort,
       toolProtocol: opts.toolProtocol,
       engagementContext: opts.engagementContext,
+      onStepFinish: opts.onStepFinish,
+      onCodeCellComplete: opts.onCodeCellComplete,
       subagentId: opts.subagentId ?? "finding-judge",
       subagentName: opts.subagentName ?? "Finding Judge",
       activeTools: [...FINDING_JUDGE_ACTIVE_TOOLS],

@@ -4,6 +4,7 @@ import { getQuickJS } from "quickjs-emscripten";
 import type {
   CanonicalCapabilityInvoker,
   CodeModeCellMetrics,
+  CodeModeEvidenceReference,
 } from "./capabilityInvoker";
 
 const DEFAULT_YIELD_MS = 10_000;
@@ -13,6 +14,8 @@ const MAX_CPU_SLICE_MS = 2_000;
 const DISPOSE_GRACE_MS = 5_000;
 const MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
 const MAX_OUTPUT_CHARS = 30_000;
+const MAX_STORED_VALUE_CHARS = 1_000_000;
+const MAX_NESTED_RESULT_CHARS = 1_000_000;
 
 export type CodeCellStatus = "completed" | "failed" | "running" | "terminated";
 
@@ -21,6 +24,7 @@ export type CodeCellResult = {
   status: CodeCellStatus;
   output: string;
   metrics?: CodeModeCellMetrics & { durationMs: number };
+  evidence?: CodeModeEvidenceReference[];
   guidance?: string[];
 };
 
@@ -152,6 +156,7 @@ const GUEST_PRELUDE = `
       if (lane) activeLanes.delete(lane);
     }
   };
+  const describe = async (name) => JSON.parse(await __apexDescribe(String(name)));
   const shell = (input) => invoke("execute_command", input);
   const browser = Object.freeze({
     runCode: (input) => invoke("browser_run_code", input),
@@ -165,13 +170,20 @@ const GUEST_PRELUDE = `
   });
   globalThis.tools = Object.freeze({
     call: invoke,
+    describe,
     shell,
     process: Object.freeze({ exec: shell }),
     browser,
   });
   globalThis.ALL_TOOLS = Object.freeze(__APEX_ALL_TOOLS__);
   globalThis.text = (value) => __apexText(JSON.stringify(value));
-  globalThis.store = (key, value) => __apexStore(key, JSON.stringify(value));
+  globalThis.store = (key, value) => {
+    const encoded = JSON.stringify(value);
+    if (encoded.length > 1000000) {
+      throw new Error("Stored code-mode values are limited to 1000000 characters; persist large artifacts with create_file instead");
+    }
+    return __apexStore(key, encoded);
+  };
   globalThis.load = (key) => {
     const value = __apexLoad(key);
     return value === undefined ? undefined : JSON.parse(value);
@@ -218,12 +230,15 @@ const GUEST_PRELUDE = `
 export class CodeModeRuntime {
   private readonly cells = new Map<string, Cell>();
   private readonly storedValues = new Map<string, string>();
+  private disposePromise?: Promise<void>;
+  private disposed = false;
 
   private readonly guestPrelude: string;
 
   constructor(
     private readonly invoker: CanonicalCapabilityInvoker,
     availableTools: Iterable<string> = [],
+    private readonly onCellComplete?: (result: CodeCellResult) => void,
   ) {
     this.guestPrelude = GUEST_PRELUDE.replace(
       "__APEX_ALL_TOOLS__",
@@ -236,6 +251,7 @@ export class CodeModeRuntime {
     context: ExecutionContext,
     yieldTimeMs = DEFAULT_YIELD_MS,
   ): Promise<CodeCellResult> {
+    if (this.disposed) throw new Error("Code-mode runtime is disposed");
     if (!code.trim()) throw new Error("exec requires non-empty JavaScript");
 
     const cellId = `cell_${randomUUID()}`;
@@ -265,6 +281,12 @@ export class CodeModeRuntime {
   }
 
   async dispose(): Promise<void> {
+    this.disposePromise ??= this.disposeCells();
+    return this.disposePromise;
+  }
+
+  private async disposeCells(): Promise<void> {
+    this.disposed = true;
     const cells = [...this.cells.values()];
     for (const cell of cells)
       cell.controller.abort("Code-mode runtime disposed");
@@ -305,7 +327,9 @@ export class CodeModeRuntime {
   ): Promise<CodeCellResult> {
     const startedAt = Date.now();
     const output: string[] = [];
-    const hostCalls = new Set<Promise<unknown>>();
+    const hostCalls = new Set<Promise<void>>();
+    let nestedResultChars = 0;
+    let loadedValueChars = 0;
     const deadline = Date.now() + MAX_CELL_RUNTIME_MS;
     let cpuDeadline = Date.now() + MAX_CPU_SLICE_MS;
     const QuickJS = await getQuickJS();
@@ -332,41 +356,112 @@ export class CodeModeRuntime {
       return pendingJobs;
     };
 
+    const bridgePromise = <T>(
+      deferred: ReturnType<typeof vm.newPromise>,
+      operation: Promise<T>,
+      serialize: (value: T) => string | undefined,
+      onAbort?: () => void,
+    ) => {
+      let settled = false;
+      const operationState: {
+        finish?: (kind: "resolve" | "reject", value?: unknown) => void;
+      } = {};
+      let completeBridge: () => void = () => {};
+      const bridge = new Promise<void>((resolve) => {
+        completeBridge = resolve;
+      });
+      hostCalls.add(bridge);
+
+      const finish = (kind: "resolve" | "reject", value?: unknown) => {
+        if (settled) return;
+        settled = true;
+        operationState.finish = undefined;
+        context.abortSignal?.removeEventListener("abort", abort);
+
+        const encoded =
+          kind === "resolve"
+            ? serialize(value as T)
+            : value instanceof Error
+              ? value.message
+              : String(value);
+        const handle =
+          encoded === undefined ? vm.undefined : vm.newString(encoded);
+        if (kind === "resolve") deferred.resolve(handle);
+        else deferred.reject(handle);
+        if (handle !== vm.undefined) handle.dispose();
+
+        void pumpJobs()
+          .catch(() => undefined)
+          .finally(() => {
+            hostCalls.delete(bridge);
+            completeBridge();
+          });
+      };
+      operationState.finish = finish;
+      const abort = () => {
+        onAbort?.();
+        finish(
+          "reject",
+          context.abortSignal?.reason ?? "Code-mode execution aborted",
+        );
+      };
+
+      if (context.abortSignal?.aborted) abort();
+      else
+        context.abortSignal?.addEventListener("abort", abort, { once: true });
+
+      void operation.then(
+        (value) => operationState.finish?.("resolve", value),
+        (error) => operationState.finish?.("reject", error),
+      );
+      return deferred.handle;
+    };
+    const drainHostCalls = async () => {
+      while (hostCalls.size > 0) {
+        await Promise.allSettled([...hostCalls]);
+        await pendingJobs.catch(() => undefined);
+      }
+      await pendingJobs.catch(() => undefined);
+    };
+
     const invokeHandle = vm.newFunction(
       "__apexInvoke",
       (nameHandle, inputHandle) => {
         const name = vm.getString(nameHandle);
         const input = JSON.parse(vm.getString(inputHandle)) as unknown;
         const deferred = vm.newPromise();
-        const call = this.invoker.invoke(name, input, {
-          parentToolCallId: context.parentToolCallId,
-          messages: context.messages,
-          abortSignal: context.abortSignal,
-        });
-        let bridgedCall: Promise<void>;
-        bridgedCall = call
+        const call = this.invoker
+          .invoke(name, input, {
+            parentToolCallId: context.parentToolCallId,
+            messages: context.messages,
+            abortSignal: context.abortSignal,
+          })
           .then((result) => {
-            const value = vm.newString(JSON.stringify(result ?? null));
-            deferred.resolve(value);
-            value.dispose();
-          })
-          .catch((error) => {
-            const value = vm.newString(
-              error instanceof Error ? error.message : String(error),
-            );
-            deferred.reject(value);
-            value.dispose();
-          })
-          .finally(async () => {
-            hostCalls.delete(bridgedCall);
-            await pumpJobs();
+            const encoded = JSON.stringify(result ?? null);
+            if (nestedResultChars + encoded.length > MAX_NESTED_RESULT_CHARS) {
+              throw new Error(
+                `Code-mode nested results are limited to ${MAX_NESTED_RESULT_CHARS} characters per cell; split large reads across cells and persist only compact state or artifacts with create_file`,
+              );
+            }
+            nestedResultChars += encoded.length;
+            return encoded;
           });
-        hostCalls.add(bridgedCall);
-        return deferred.handle;
+        return bridgePromise(deferred, call, (result) => result);
       },
     );
     vm.setProp(vm.global, "__apexInvoke", invokeHandle);
     invokeHandle.dispose();
+
+    const describeHandle = vm.newFunction("__apexDescribe", (nameHandle) => {
+      const deferred = vm.newPromise();
+      return bridgePromise(
+        deferred,
+        this.invoker.describe(vm.getString(nameHandle)),
+        (result) => JSON.stringify(result),
+      );
+    });
+    vm.setProp(vm.global, "__apexDescribe", describeHandle);
+    describeHandle.dispose();
 
     const sleepHandle = vm.newFunction("__apexSleep", (durationHandle) => {
       const durationMs = Math.min(
@@ -374,17 +469,21 @@ export class CodeModeRuntime {
         Math.max(0, Math.floor(vm.getNumber(durationHandle))),
       );
       const deferred = vm.newPromise();
-      let bridgedCall: Promise<void>;
-      bridgedCall = new Promise<void>((resolve) => {
-        setTimeout(resolve, durationMs);
-      })
-        .then(() => deferred.resolve(vm.undefined))
-        .finally(async () => {
-          hostCalls.delete(bridgedCall);
-          await pumpJobs();
-        });
-      hostCalls.add(bridgedCall);
-      return deferred.handle;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let finishSleep: () => void = () => {};
+      const sleep = new Promise<void>((resolve) => {
+        finishSleep = resolve;
+        timer = setTimeout(resolve, durationMs);
+      });
+      return bridgePromise(
+        deferred,
+        sleep,
+        () => undefined,
+        () => {
+          if (timer) clearTimeout(timer);
+          finishSleep();
+        },
+      );
     });
     vm.setProp(vm.global, "__apexSleep", sleepHandle);
     sleepHandle.dispose();
@@ -399,10 +498,13 @@ export class CodeModeRuntime {
     const storeHandle = vm.newFunction(
       "__apexStore",
       (keyHandle, valueHandle) => {
-        this.storedValues.set(
-          vm.getString(keyHandle),
-          vm.getString(valueHandle),
-        );
+        const value = vm.getString(valueHandle);
+        if (value.length > MAX_STORED_VALUE_CHARS) {
+          throw new Error(
+            `Stored code-mode values are limited to ${MAX_STORED_VALUE_CHARS} characters; persist large artifacts with create_file instead`,
+          );
+        }
+        this.storedValues.set(vm.getString(keyHandle), value);
       },
     );
     vm.setProp(vm.global, "__apexStore", storeHandle);
@@ -410,7 +512,14 @@ export class CodeModeRuntime {
 
     const loadHandle = vm.newFunction("__apexLoad", (keyHandle) => {
       const value = this.storedValues.get(vm.getString(keyHandle));
-      return value === undefined ? vm.undefined : vm.newString(value);
+      if (value === undefined) return vm.undefined;
+      if (loadedValueChars + value.length > MAX_STORED_VALUE_CHARS) {
+        throw new Error(
+          `Loaded code-mode values are limited to ${MAX_STORED_VALUE_CHARS} characters per cell; load compact state and page large artifacts with read_file`,
+        );
+      }
+      loadedValueChars += value.length;
+      return vm.newString(value);
     });
     vm.setProp(vm.global, "__apexLoad", loadHandle);
     loadHandle.dispose();
@@ -436,11 +545,11 @@ export class CodeModeRuntime {
       const resultHandle = vm.unwrapResult(resolved);
       const returned = vm.dump(resultHandle);
       resultHandle.dispose();
-      await Promise.allSettled([...hostCalls]);
+      await drainHostCalls();
       await pumpJobs();
       if (returned !== undefined) output.push(serializeOutput(returned));
       const observation = this.invoker.completeCell(context.parentToolCallId);
-      return {
+      const result: CodeCellResult = {
         cellId,
         status: "completed",
         output: truncateOutput(output.filter(Boolean).join("\n")),
@@ -448,21 +557,25 @@ export class CodeModeRuntime {
           ...observation.metrics,
           durationMs: Date.now() - startedAt,
         },
+        ...(observation.evidence.length > 0
+          ? { evidence: observation.evidence }
+          : {}),
         ...(observation.guidance.length > 0
           ? { guidance: observation.guidance }
           : {}),
       };
+      this.notifyCellComplete(result);
+      return result;
     } catch (error) {
       // A guest Promise.all can reject immediately while an earlier nested
       // capability is still running (for example, the single-lane shell
       // rejects its second overlapping call). Keep the VM alive until every
       // host-to-guest bridge callback and its QuickJS jobs have settled.
       // Disposing first lets a late callback allocate into a freed context.
-      await Promise.allSettled([...hostCalls]);
-      await pendingJobs.catch(() => undefined);
+      await drainHostCalls();
       const terminated = context.abortSignal?.aborted === true;
       const observation = this.invoker.completeCell(context.parentToolCallId);
-      return {
+      const result: CodeCellResult = {
         cellId,
         status: terminated ? "terminated" : "failed",
         output: truncateOutput(
@@ -472,13 +585,26 @@ export class CodeModeRuntime {
           ...observation.metrics,
           durationMs: Date.now() - startedAt,
         },
+        ...(observation.evidence.length > 0
+          ? { evidence: observation.evidence }
+          : {}),
         ...(observation.guidance.length > 0
           ? { guidance: observation.guidance }
           : {}),
       };
+      this.notifyCellComplete(result);
+      return result;
     } finally {
       vm.dispose();
       runtime.dispose();
+    }
+  }
+
+  private notifyCellComplete(result: CodeCellResult): void {
+    try {
+      this.onCellComplete?.(result);
+    } catch {
+      // Metrics callbacks must not change the execution result or VM teardown.
     }
   }
 }

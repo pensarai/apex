@@ -1,5 +1,5 @@
 import { type ToolSet, tool } from "ai";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { AgentEventBus } from "../../../eventBus";
 import { CanonicalCapabilityInvoker } from "./capabilityInvoker";
@@ -44,6 +44,18 @@ describe("CodeModeRuntime", () => {
 
     expect(result.status).toBe("completed");
     expect(result.output).toBe("[4,8]");
+    expect(result.evidence).toEqual([
+      {
+        toolCallId: "exec_1:nested:1",
+        toolName: "double",
+        status: "succeeded",
+      },
+      {
+        toolCallId: "exec_1:nested:2",
+        toolName: "double",
+        status: "succeeded",
+      },
+    ]);
     await runtime.dispose();
   });
 
@@ -82,6 +94,57 @@ describe("CodeModeRuntime", () => {
       uniqueCalls: 6,
       maxConcurrency: 2,
     });
+    await runtime.dispose();
+  });
+
+  test("rejects oversized stored host-call results without leaking the runtime", async () => {
+    const payload = "x".repeat(100_000);
+    const runtime = createRuntime({
+      read_chunk: tool({
+        inputSchema: z.object({ index: z.number() }),
+        execute: async ({ index }) => ({ index, payload }),
+      }),
+    });
+
+    const result = await runtime.execute(
+      `
+        const chunks = await mapLimit(
+          Array.from({ length: 48 }, (_, index) => index),
+          4,
+          index => tools.call("read_chunk", { index }),
+        );
+        store("large-results", chunks);
+        text(chunks.map(({ index, payload }) => ({ index, length: payload.length })));
+      `,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.output).toContain("split large reads across cells");
+    expect(result.metrics?.nestedCalls).toBeLessThan(48);
+    await runtime.dispose();
+  });
+
+  test("rejects loading oversized cumulative stored state without leaking the runtime", async () => {
+    const runtime = createRuntime({});
+    for (let index = 0; index < 4; index += 1) {
+      const stored = await runtime.execute(
+        `store("part-${index}", "x".repeat(400_000));`,
+        { ...context, parentToolCallId: `store_${index}` },
+        5_000,
+      );
+      expect(stored.status).toBe("completed");
+    }
+
+    const result = await runtime.execute(
+      `text([load("part-0"), load("part-1"), load("part-2"), load("part-3")].length);`,
+      { ...context, parentToolCallId: "load_all" },
+      5_000,
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.output).toContain("load compact state");
     await runtime.dispose();
   });
 
@@ -329,4 +392,114 @@ describe("CodeModeRuntime", () => {
     expect(Date.now() - startedAt).toBeLessThan(3_500);
     await runtime.dispose();
   }, 5_000);
+
+  test("releases bridge resources across repeated sequential async cells", async () => {
+    const runtime = createRuntime({
+      read_chunk: tool({
+        inputSchema: z.object({ index: z.number() }),
+        execute: async ({ index }) => ({
+          content: JSON.stringify({ index, value: "x".repeat(2_000) }),
+        }),
+      }),
+    });
+
+    for (let round = 0; round < 20; round++) {
+      const result = await runtime.execute(
+        `
+          const chunks = [];
+          for (let index = 0; index < 30; index++) {
+            const result = await tools.call("read_chunk", { index });
+            chunks.push(JSON.parse(result.content));
+          }
+          store("manifest", chunks);
+          text(chunks.length);
+        `,
+        { ...context, parentToolCallId: `exec_${round}` },
+        5_000,
+      );
+
+      expect(result.status).toBe("completed");
+      expect(result.output).toBe("30");
+      expect(result.metrics?.nestedCalls).toBe(30);
+    }
+
+    await runtime.dispose();
+  });
+
+  test("exposes nested capability schemas without executing them", async () => {
+    const execute = vi.fn(async () => "executed");
+    const runtime = createRuntime({
+      schema_example: tool({
+        inputSchema: z.object({ targetId: z.string() }),
+        execute,
+      }),
+    });
+
+    const result = await runtime.execute(
+      `const schema = await tools.describe("schema_example"); text(schema.inputSchema.required);`,
+      context,
+      5_000,
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toContain("targetId");
+    expect(execute).not.toHaveBeenCalled();
+    await runtime.dispose();
+  });
+
+  test("aborts a guest sleep without waiting for its timer", async () => {
+    const runtime = createRuntime({});
+    const controller = new AbortController();
+    const initial = await runtime.execute(
+      `await sleep(30_000);`,
+      { ...context, abortSignal: controller.signal },
+      25,
+    );
+
+    expect(initial.status).toBe("running");
+    const startedAt = Date.now();
+    controller.abort("test abort");
+    const result = await runtime.wait(initial.cellId, { yieldTimeMs: 2_000 });
+
+    expect(result.status).toBe("terminated");
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    await runtime.dispose();
+  });
+
+  test("aborts a host bridge even when the host operation does not settle", async () => {
+    const runtime = createRuntime({
+      never_returns: tool({
+        inputSchema: z.object({}),
+        execute: async () => new Promise(() => {}),
+      }),
+    });
+    const controller = new AbortController();
+    const initial = await runtime.execute(
+      `await tools.call("never_returns", {});`,
+      { ...context, abortSignal: controller.signal },
+      25,
+    );
+
+    expect(initial.status).toBe("running");
+    controller.abort("test abort");
+    const result = await runtime.wait(initial.cellId, { yieldTimeMs: 2_000 });
+
+    expect(result.status).toBe("terminated");
+    await runtime.dispose();
+  });
+
+  test("dispose is idempotent and rejects new cells", async () => {
+    const runtime = createRuntime({});
+
+    await Promise.all([
+      runtime.dispose(),
+      runtime.dispose(),
+      runtime.dispose(),
+    ]);
+    await runtime.dispose();
+
+    await expect(runtime.execute(`text("late");`, context)).rejects.toThrow(
+      "Code-mode runtime is disposed",
+    );
+  });
 });

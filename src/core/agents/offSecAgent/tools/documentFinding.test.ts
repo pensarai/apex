@@ -59,6 +59,7 @@ type DocumentToolResult = {
   judgeRejected?: boolean;
   judgeReasoning?: string;
   finding?: {
+    id: string;
     judge: {
       confidence: number;
       concerns: string[];
@@ -282,6 +283,11 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
       ...makeToolContext(rootPath),
       eventBus: parentBus,
       subagentId: "pentest-agent-worker-1",
+      findingJudgeConfig: {
+        model: "judge-model",
+        enableThinking: true,
+        openAIReasoningEffort: "high" as const,
+      },
     };
     const tool = documentVulnerability(ctx);
     const result = (await tool.execute?.(makeDocumentInput(), {
@@ -290,6 +296,7 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
     })) as DocumentToolResult;
 
     expect(result.success).toBe(true);
+    expect(result.finding?.id).toMatch(/^finding_[a-f0-9]{32}$/);
 
     // Lifecycle: one spawn + one complete, anchored to the worker.
     expect(spawns).toHaveLength(1);
@@ -307,6 +314,11 @@ describe("documentVulnerability finding-judge subagent lifecycle", () => {
     expect(judgeCtx?.subagentId).toBe(spawns[0].subagentId);
     expect(judgeCtx?.eventBus).toBeDefined();
     expect(judgeCtx?.eventBus).not.toBe(parentBus);
+    expect(judgeCtx).toMatchObject({
+      model: "judge-model",
+      enableThinking: true,
+      openAIReasoningEffort: "high",
+    });
     expect(textDeltas).toHaveLength(1);
     expect(textDeltas[0].subagentId).toBe(spawns[0].subagentId);
   });
