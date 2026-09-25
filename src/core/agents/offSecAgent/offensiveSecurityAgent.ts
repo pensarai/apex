@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs";
+import { rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { SpanStatusCode } from "@opentelemetry/api";
 import type {
@@ -16,6 +17,7 @@ import {
   resolveModelRuntimeProfile,
   streamResponse,
 } from "../../ai";
+import { validateLatestCompactionArchive } from "../../ai/contextCompaction";
 import { AgentEventBus, type StreamIdContext } from "../../eventBus";
 import {
   resolveEffectiveHeaders,
@@ -33,6 +35,7 @@ import {
 import type { ApprovalGate } from "../../operator";
 import { ApprovalDeniedError } from "../../operator";
 import { create as createSession, type SessionInfo } from "../../session";
+import { listTasks } from "../../tasks";
 import { scopedLogger } from "../../util/lazyLogger";
 import { detectOSAndEnhancePrompt } from "../specialized/utils";
 import {
@@ -780,6 +783,12 @@ export class OffensiveSecurityAgent<TResult = void> {
       mkdirSync(messagesDir, { recursive: true });
     }
     this.messagesPath = join(messagesDir, "messages.json");
+    const messagesPath = this.messagesPath;
+    if (!validateLatestCompactionArchive(messagesDir)) {
+      log.warn(
+        `Latest context compaction archive failed hash validation: ${messagesDir}`,
+      );
+    }
 
     // Mutable so that summarization can clear stale history.
     const initialMessagesRef: { current: ModelMessage[] } = {
@@ -863,6 +872,55 @@ export class OffensiveSecurityAgent<TResult = void> {
         // to the session root for the root/operator agent.
         sessionPath: messagesDir,
         sessionId: this.busSessionId,
+        contextCompaction: input.session.config?.contextCompaction,
+        secretValues: input.secretValues,
+        getContextCompactionState: () => ({
+          objective: input.prompt,
+          currentPhase: input.mode ?? "auto",
+          confirmedFindings: input.findingsRegistry
+            ?.getFindings()
+            .map((finding) => ({
+              title: finding.title,
+              severity: finding.severity,
+              endpoint: finding.endpoint,
+              description: finding.description,
+            })),
+          tasks: tasksDir ? listTasks(tasksDir) : undefined,
+          latestCheckpoint: traceWriter.latestCheckpoint ?? undefined,
+          scope: input.session.config?.scopeConstraints,
+          executionPolicy,
+          artifacts: [
+            input.session.findingsPath,
+            input.session.pocsPath,
+            input.session.scratchpadPath,
+          ],
+        }),
+        onCompacted: async ({ messages, metadata }) => {
+          this.writer.cancelTimer();
+          const tempPath = `${messagesPath}.compacting-${process.pid}`;
+          try {
+            await writeFile(tempPath, JSON.stringify(messages), {
+              mode: 0o600,
+            });
+            await rename(tempPath, messagesPath);
+          } finally {
+            await unlink(tempPath).catch(() => {});
+          }
+          initialMessagesRef.current = messages;
+          this.writer.setLatest(messages);
+          traceWriter.markSummarized();
+          this.eventBus.emit("context-compacted", {
+            sequence: metadata.sequence,
+            archivedMessageCount: metadata.archivedMessageCount,
+            retainedMessageCount: metadata.retainedMessageCount,
+            beforeTokens: metadata.beforeTokens,
+            afterTokens: metadata.afterTokens,
+            compactionModel: metadata.compactionModel,
+            semanticModelSucceeded: metadata.semanticModelSucceeded,
+            subagentId: this.subagentId,
+            sessionId: this.busSessionId,
+          });
+        },
         onStepFinish: async (event) => {
           const auxiliaryModelEvent =
             event.response.id === "summarization" ||

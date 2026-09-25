@@ -118,6 +118,17 @@ export type AgentEventMap = {
     /** The assistant message (`msg_…`) that just closed this step. */
     messageId?: string;
   };
+  "context-compacted": {
+    sequence: number;
+    archivedMessageCount: number;
+    retainedMessageCount: number;
+    beforeTokens: number;
+    afterTokens: number;
+    compactionModel: string;
+    semanticModelSucceeded: boolean;
+    subagentId?: string;
+    sessionId?: string;
+  };
   "command-output": { data: string; subagentId?: string };
   error: { error: unknown; subagentId?: string };
   "trace-record": {
@@ -159,6 +170,7 @@ const CHILD_BUS_FORWARD_POLICY: {
   "subagent-spawn": "forward",
   "subagent-complete": "forward",
   "step-finish": "forward",
+  "context-compacted": "forward",
   "command-output": "forward",
   error: "forward",
   "trace-record": "forward",
