@@ -57,6 +57,58 @@ const sqlInjectionProducts = makeFinding({
   ],
 });
 
+describe("finding consolidation", () => {
+  it("preserves aliases for audit while exposing canonical findings", () => {
+    const canonical = makeFinding({
+      id: "finding-canonical",
+      title: "Session remains valid after logout",
+      endpoint: "https://target.com/logout",
+    });
+    const alias = makeFinding({
+      id: "finding-alias",
+      title: "Logout does not revoke the session",
+      endpoint: "https://target.com/api/session",
+    });
+    const related = makeFinding({
+      id: "finding-related",
+      title: "Session cookie lacks rotation",
+      endpoint: "https://target.com/login",
+    });
+    const registry = FindingsRegistry.fromFindings([canonical, alias, related]);
+
+    registry.applyConsolidation({
+      version: 1,
+      completedAt: new Date().toISOString(),
+      findingIds: [canonical.id!, alias.id!, related.id!],
+      duplicateSets: [
+        {
+          canonicalId: canonical.id!,
+          aliasIds: [alias.id!],
+          rationale: "Both records describe the same revocation failure.",
+        },
+      ],
+      rootCauseGroups: [
+        {
+          groupId: "session-lifecycle",
+          leadFindingId: canonical.id!,
+          findingIds: [canonical.id!, alias.id!, related.id!],
+          rationale: "The session lifecycle controls are incomplete.",
+        },
+      ],
+    });
+
+    expect(registry.getFindings()).toHaveLength(3);
+    expect(
+      registry.getCanonicalFindings().map((finding) => finding.id),
+    ).toEqual(["finding-canonical", "finding-related"]);
+    expect(registry.resolveFindingId("finding-alias")).toBe(
+      "finding-canonical",
+    );
+    expect(alias.canonicalFindingId).toBe("finding-canonical");
+    expect(canonical.relatedFindings).toEqual(["finding-related"]);
+  });
+});
+
 const sqlInjectionProductsId = makeFinding({
   title: "SQL Injection in /api/products Endpoint (GET id parameter)",
   severity: "CRITICAL",
