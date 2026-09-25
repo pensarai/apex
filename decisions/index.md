@@ -28,6 +28,7 @@ Apex serves three audiences:
 | [PDR-006](./PDR-006-public-api.md)                  | Public API layer separate from the TUI                                       |
 | [PDR-007](./PDR-007-multi-provider.md)              | Multi-provider AI model support                                              |
 | [PDR-008](./PDR-008-provider-attempt-envelope.md)   | Inference telemetry is a physical-attempt contract, not a billing ledger     |
+| [PDR-009](./PDR-009-session-network-security.md)    | Harness-owned session network security and OAST routing                      |
 | [PDR-012](./PDR-012-model-agnostic-code-runtime.md) | Model-agnostic code-oriented agent runtime                                   |
 
 ---

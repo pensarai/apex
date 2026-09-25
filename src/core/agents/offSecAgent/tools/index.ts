@@ -46,13 +46,27 @@ export { gitDiff } from "./gitDiff";
 export { gitStatus } from "./gitStatus";
 export { globFiles } from "./glob";
 export { grep } from "./grep";
-
+export {
+  HarnessSandboxSecurityController,
+  type ProcessEgressEnforcementLease,
+  type ProcessEgressEnforcer,
+} from "./harnessSandboxSecurityController";
 export { httpRequest } from "./httpRequest";
 export { listFiles } from "./listFiles";
 export { listMemories } from "./listMemories";
 export { listPromptInjections } from "./listPromptInjections";
 export { listTasksTool } from "./listTasks";
-
+export {
+  createHttpOastForwarder,
+  type OastForwarder,
+  type OastForwardRequest,
+  type OastForwardResponse,
+  type OastIngressRequest,
+  type RegisteredOastSession,
+  type RegisterOastSessionInput,
+  SessionOastRouter,
+  type SessionOastRouterOptions,
+} from "./oastRouter";
 // Per-command executor — one fresh process group per tool invocation.
 export {
   PerCommandShell,
@@ -105,8 +119,15 @@ export { runCodeQuery } from "./runCodeQuery";
 export { runPentestWorkflow } from "./runPentestWorkflow";
 export { runWhiteboxScan } from "./runWhiteboxScan";
 export type {
+  SandboxAllowedDestination,
   SandboxExecuteOptions,
   SandboxExecutionResult,
+  SandboxOastLease,
+  SandboxOastRequest,
+  SandboxSecurityAttestation,
+  SandboxSecurityController,
+  SandboxSessionSecurityLease,
+  SandboxSessionSecurityRequest,
   SandboxType,
   UnifiedSandbox,
 } from "./sandbox";
@@ -118,7 +139,12 @@ export {
   ensureSandboxPlaywright,
   installSandboxPlaywright,
 } from "./sandboxPlaywright";
-
+export {
+  buildSandboxSecurityPrompt,
+  buildSandboxSessionSecurityRequest,
+  createSandboxSessionSecurity,
+  SandboxSessionSecurity,
+} from "./sandboxSecurity";
 // Scope guard utilities
 export {
   assertCommandInScope,

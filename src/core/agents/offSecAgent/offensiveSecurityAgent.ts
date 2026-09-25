@@ -69,6 +69,11 @@ import {
   WORKSPACE_TOOL_NAMES,
   WORKSPACE_WRITE_TOOL_NAMES,
 } from "./tools";
+import {
+  buildSandboxSecurityPrompt,
+  createSandboxSessionSecurity,
+  type SandboxSessionSecurity,
+} from "./tools/sandboxSecurity";
 import { StepTraceWriter } from "./trace";
 import type {
   AgentMode,
@@ -322,6 +327,9 @@ export class OffensiveSecurityAgent<TResult = void> {
   /** Isolated JavaScript orchestration runtime used by compact code-mode profiles. */
   private codeModeRuntime?: CodeModeRuntime;
 
+  /** Ref-counted externally-enforced egress and callback lease. */
+  private readonly sandboxSecurity?: SandboxSessionSecurity;
+
   /**
    * This agent's Playwright MCP browser session. Either constructed fresh
    * by this agent (when no `browserSession` was passed in) or supplied by
@@ -426,7 +434,13 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.streamIdFactory = input.streamIdFactory;
     this.userPrompt = input.prompt;
     this.eventBus = input.eventBus ?? new AgentEventBus();
-    const sandbox = input.sandbox;
+
+    this.sandboxSecurity = createSandboxSessionSecurity(
+      input.sandbox,
+      input.session,
+      input.target,
+    );
+    const sandbox = this.sandboxSecurity?.sandbox ?? input.sandbox;
 
     // -- Resolve agent working directory ----------------------------------------
     const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
@@ -808,7 +822,8 @@ export class OffensiveSecurityAgent<TResult = void> {
     const effectiveBaseSystemPrompt =
       baseSystemPrompt +
       codeModeInstructions +
-      buildExecutionPolicyPrompt(executionPolicy);
+      buildExecutionPolicyPrompt(executionPolicy) +
+      buildSandboxSecurityPrompt(input.session);
     const systemPrompt =
       effectiveBaseSystemPrompt +
       buildSessionWorkspaceSection(input.session, agentCwd, activeTools);
@@ -1312,6 +1327,11 @@ export class OffensiveSecurityAgent<TResult = void> {
       // active command must settle (bounded) before finalization continues.
       try {
         await this.codeModeRuntime?.dispose();
+      } catch (error) {
+        recordFinalizationError(error);
+      }
+      try {
+        await this.sandboxSecurity?.dispose();
       } catch (error) {
         recordFinalizationError(error);
       }
