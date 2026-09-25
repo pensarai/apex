@@ -421,6 +421,50 @@ function applySequentialToolCallPolicy(
   return system;
 }
 
+// The structured-output `response` tool is injected by the caller alongside its
+// own tools, so an allowlist of those tools must not hide it from the model.
+export function withResponseToolActive(
+  tools: ToolSet | undefined,
+  activeTools: string[] | undefined,
+): string[] | undefined {
+  if (
+    !tools ||
+    !activeTools ||
+    activeTools.length === 0 ||
+    !(RESPONSE_TOOL_NAME in tools) ||
+    activeTools.includes(RESPONSE_TOOL_NAME)
+  ) {
+    return activeTools;
+  }
+  return [...activeTools, RESPONSE_TOOL_NAME];
+}
+
+// Restrict the SDK `tools` map to the `activeTools` allowlist so advertising,
+// execution, and NoSuchToolError enumeration all agree. The AI SDK treats
+// `activeTools` as advertise-only: it still executes any tool present in the
+// full `tools` map and enumerates every key in its NoSuchToolError, so a model
+// that names an un-advertised tool (e.g. learned from an error) still runs it,
+// and the full arsenal leaks into error messages. Passing only the allowlisted
+// tools makes `activeTools` authoritative for all three. No-op when
+// `activeTools` is empty/undefined (some callers pass `[]` meaning "all") or
+// when `tools` is undefined.
+export function restrictToolsToActive(
+  tools: ToolSet | undefined,
+  activeTools: string[] | undefined,
+): ToolSet | undefined {
+  if (!tools || !activeTools || activeTools.length === 0) {
+    return tools;
+  }
+  const allow = new Set(activeTools);
+  const restricted: ToolSet = {};
+  for (const [name, tool] of Object.entries(tools)) {
+    if (allow.has(name)) {
+      restricted[name] = tool;
+    }
+  }
+  return restricted;
+}
+
 const MAX_RATE_LIMIT_RETRIES = 20;
 const MAX_IDLE_RESUME_RETRIES = 3;
 const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -1428,6 +1472,11 @@ function streamResponseWithinOperation(
 
   let rateLimitRetryCount = 0;
 
+  // Make `activeTools` authoritative: advertise, execute, and enumerate only
+  // the allowlisted tools. A no-op when `activeTools` is empty/undefined.
+  const allowedTools = withResponseToolActive(tools, activeTools);
+  const effectiveTools = restrictToolsToActive(tools, allowedTools);
+
   try {
     // Create the appropriate provider instance. The span tracker captures
     // the SDK's root generation span for error marking (see below).
@@ -1438,7 +1487,7 @@ function streamResponseWithinOperation(
       ...(effectiveMessages ? { messages: effectiveMessages } : { prompt }),
       stopWhen,
       toolChoice,
-      tools,
+      tools: effectiveTools,
       maxRetries: 3,
       providerOptions,
       // The forwarding tracer keeps a handle on the SDK's root generation
@@ -1489,7 +1538,7 @@ function streamResponseWithinOperation(
       },
       onStepFinish,
       abortSignal,
-      activeTools,
+      activeTools: allowedTools,
       experimental_repairToolCall: async ({
         toolCall,
         inputSchema,
