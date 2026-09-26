@@ -12,6 +12,7 @@ import {
   SEQUENTIAL_TOOL_CALL_INSTRUCTION,
   streamResponse,
 } from "./ai";
+import { AVAILABLE_MODELS } from "./models";
 import { consumeStream } from "./utils";
 
 // Skip tests if API keys are not available (e.g., in CI)
@@ -78,6 +79,48 @@ describe("isRepairFailClosedTool", () => {
 });
 
 describe("buildReasoningProviderOptions", () => {
+  it("honors reasoning effort for a registered cyber-preview model", () => {
+    const entry = {
+      id: "gpt-5.5-cyber-preview",
+      name: "Cyber preview",
+      provider: "openai" as const,
+    };
+    AVAILABLE_MODELS.push(entry);
+    try {
+      expect(
+        buildReasoningProviderOptions(entry.id, {
+          openAIReasoningEffort: "high",
+        }),
+      ).toEqual({ openai: { reasoningEffort: "high" } });
+    } finally {
+      AVAILABLE_MODELS.splice(AVAILABLE_MODELS.indexOf(entry), 1);
+    }
+  });
+
+  it("sends the requested GLM reasoning effort to OpenRouter", () => {
+    expect(
+      buildReasoningProviderOptions("z-ai/glm-5.3", {
+        enableThinking: true,
+        thinkingEffort: "high",
+      }),
+    ).toEqual({ openrouter: { reasoning: { enabled: true, effort: "high" } } });
+  });
+
+  it("keeps the OpenRouter effort default when no effort is requested", () => {
+    expect(
+      buildReasoningProviderOptions("z-ai/glm-5.3", { enableThinking: true }),
+    ).toEqual({ openrouter: { reasoning: { enabled: true } } });
+  });
+
+  it("does not enable OpenRouter reasoning from an effort hint alone", () => {
+    expect(
+      buildReasoningProviderOptions("z-ai/glm-5.3", {
+        enableThinking: false,
+        thinkingEffort: "high",
+      }),
+    ).toBeUndefined();
+  });
+
   it("sets the bedrock reasoningConfig (and anthropic.thinking) for a Bedrock Claude model when thinking is enabled", () => {
     // Console sandbox agents run on Bedrock; this is the path the bug starved.
     const result = buildReasoningProviderOptions(
