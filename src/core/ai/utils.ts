@@ -541,6 +541,10 @@ async function summarizeConversation(
     () => estimateMessageTokens([{ role: "user", content: enhancedPrompt }]),
     1,
   );
+  compaction?.capture("after", () => ({
+    messages: [{ role: "user", content: enhancedPrompt }],
+    system: opts.system,
+  }));
   // End before starting the resumed stream so its execution isn't compaction time.
   compaction?.finish("completed");
 
@@ -600,6 +604,11 @@ export function createSummarizationStream(
     restartDepth: opts._restartDepth,
     previous: opts._compaction?.last,
   });
+  compaction?.capture("before", () => ({
+    messages,
+    system: opts.system,
+    prompt: opts.prompt,
+  }));
   compaction?.measure(
     "before",
     () => estimateMessageTokens(messages),
