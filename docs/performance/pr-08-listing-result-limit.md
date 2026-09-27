@@ -33,23 +33,30 @@ reference implementing the old unbounded walk in the same process.
 
 ## Bounds and the remaining O(width) cost
 
-- Work is bounded by the witness: at most 201 entries examined by the JS
-  walk loop per recursive call (deterministic CI assertion via a passthrough
-  readdir spy on the public execute path), and at most 201 readdir attempts
-  — the root plus up to 200 accepted directories — regardless of tree size.
+- JS work is O(L + D): at most L = 201 processed entries (entry construction,
+  path joins, isDirectory checks after the loop guard) and at most
+  D = 201 directory attempts (the root plus up to 200 accepted directories)
+  per recursive call, regardless of tree size. The for-of iterator can pull
+  one extra value per unwinding directory before its guard returns — an
+  independent probe measures 203 pulls for the 10×25 tree fixture and 202
+  for the flat fixture — so the passthrough spy measures pulls, not exactly
+  201; both bounds are deterministic CI assertions on the public execute
+  path (readdir calls, native enumeration, consumed pulls).
 - **Memory is not globally bounded.** Every visited directory still pays its
   full `readdir` enumeration — the runtime materializes each directory's
-  entire width before the JS loop reads its prefix, so total work is
-  O(sum of visited directory widths), not O(201). A hostile huge flat
-  directory retains its existing O(width) allocation on every runtime this
-  code runs on; the public-path passthrough counter measures that native
-  enumeration (2,000 materialized entries for the 2,000-file fixture)
-  alongside the bounded JS consumption. This is a deliberate limitation:
-  streaming directory access (`opendir`) was prototyped and rejected because
-  Bun 1.3.10 and 1.3.14 implement `Dir.read()` as an eager full `readdir`
-  (retaining ~507 KB after the first entry of a 20k-entry directory in the
-  reviewer's probe), so it would not bound Bun deployments. Native
-  per-directory streaming is deferred until the deployed runtime provides it.
+  entire width before the JS loop reads its prefix, so native enumeration
+  work is O(sum of visited directory widths) and retained arrays depend on
+  the widths along the active recursive ancestry, not O(201). A hostile huge
+  flat directory retains its existing O(width) allocation on every runtime
+  this code runs on; the public-path passthrough counter measures it
+  (2,000 materialized entries for the 2,000-file fixture, 20,000 in the
+  benchmark) alongside the bounded JS consumption. This is a deliberate
+  limitation: streaming directory access (`opendir`) was prototyped and
+  rejected because Bun 1.3.10 and 1.3.14 implement `Dir.read()` as an eager
+  full `readdir` (retaining ~507 KB after the first entry of a 20k-entry
+  directory in the reviewer's probe), so it would not bound Bun deployments.
+  Native per-directory streaming is deferred until the deployed runtime
+  provides it.
 
 ## Evidence
 
@@ -76,7 +83,13 @@ the shared validation lock are recorded in
   the ordered JSON path array, not filename-length checksums.
 
 Runtime: bun 1.3.14 on macOS arm64 (local evidence machine). CI asserts the
-deterministic work counts, not timings. Baseline Canary suite is green at
-`be2e4b81`; of the new tests, 11 fail on baseline (truncation contract,
-lower-bound rendering, abort, and work-count instrumentation) and the pure
-parity tests pass on both, by design.
+deterministic work counts and cancellation semantics, not timings. Baseline
+Canary suite is green at `be2e4b81`; on exact baseline source, 15 of the 27
+new focused tests fail — 2 because the exported helper is absent, 13 on the
+truncation contract, cancellation, lower-bound rendering, and measured
+public-path work — while the pure first-N parity tests pass on both, by
+design. The reviewer's independent probe
+(`reviews/pr08-final-public-resource-probe.*`) confirms the counters on
+baseline, candidate, and the public-revert mutant: candidate 9 calls /
+210 native / 203 pulls (tree) and 1 / 2,000 / 202 (flat); baseline and
+mutant fail with 11 calls / 260 pulls (tree) and 2,000 pulls (flat).

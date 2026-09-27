@@ -53,12 +53,8 @@ export async function listRecursive(
 ): Promise<{
   paths: string[];
   truncated: boolean;
-  dirsOpened: number;
-  entriesExamined: number;
 }> {
   const results: string[] = [];
-  let dirsOpened = 0;
-  let entriesExamined = 0;
 
   async function walk(current: string): Promise<void> {
     if (results.length > maxEntries) return;
@@ -77,11 +73,9 @@ export async function listRecursive(
     // for an empty result; the walk must never unwind into a "complete"
     // listing after an abort was observed here.
     signal?.throwIfAborted();
-    dirsOpened++;
     for (const entry of entries) {
       if (results.length > maxEntries) return;
       signal?.throwIfAborted();
-      entriesExamined++;
       const fullPath = join(current, entry.name);
       if (entry.isDirectory()) {
         results.push(`${fullPath}/`);
@@ -96,8 +90,6 @@ export async function listRecursive(
   return {
     paths: results,
     truncated: results.length > maxEntries,
-    dirsOpened,
-    entriesExamined,
   };
 }
 
