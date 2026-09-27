@@ -159,10 +159,15 @@ describe("streamResponse SDK request-body retention", () => {
               output: outputTokens,
               context,
             });
+            events.push(`usage:${context?.stepSeq}`);
           },
-          onStepFinish: (step) => {
+          onStepFinish: async (step) => {
             stepRequests.push(step.request.body);
-            events.push(`step:${step.stepNumber}`);
+            events.push(`stepBegin:${step.stepNumber}`);
+            // Async completion must be awaited: the next request cannot
+            // start until this resolves.
+            await new Promise((resolve) => setTimeout(resolve, 1));
+            events.push(`stepEnd:${step.stepNumber}`);
           },
           onFinish: (event) => {
             events.push("finish");
@@ -240,8 +245,9 @@ describe("streamResponse SDK request-body retention", () => {
       ),
     ).toBe(0);
 
-    // Callbacks fire once per step, awaited before the next request, and the
-    // final callback sees every completed step.
+    // Each step's async callback completes before the next request starts;
+    // usage is reported per step between them, and the final (synchronous)
+    // callback sees every completed step.
     expect(usageCalls).toHaveLength(TOTAL_STEPS);
     for (let i = 0; i < TOTAL_STEPS; i++) {
       expect(usageCalls[i]).toEqual({
@@ -259,7 +265,9 @@ describe("streamResponse SDK request-body retention", () => {
     expect(events).toEqual([
       ...Array.from({ length: TOTAL_STEPS }, (_, i) => [
         `fetch:${i}`,
-        `step:${i}`,
+        `stepBegin:${i}`,
+        `stepEnd:${i}`,
+        `usage:${i}`,
       ]).flat(),
       "finish",
     ]);

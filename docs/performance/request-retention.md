@@ -18,8 +18,10 @@ with a tool loop of five steps and 8 KiB tool results. It asserts:
   callback view of each step),
 - wire requests still grow with the conversation and carry the tool results,
 - tool runs, finish reasons, text, per-step usage, `usageRecorder` calls
-  (100/10 per step, `stepSeq` 0–4), `onFinish` aggregate (500/50/550), and
-  awaited callback ordering between requests,
+  (100/10 per step, `stepSeq` 0–4), and `onFinish` aggregate (500/50/550),
+- each step's async `onStepFinish` completion is awaited: the next request
+  starts only after it resolves; the synchronous `onFinish` fires last and
+  sees every completed step,
 - native capture emits one completed envelope per request whose recorded
   input equals each wire body.
 
