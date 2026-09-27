@@ -20,12 +20,19 @@ whole. The public return shape is unchanged from Canary.
 
 - File bytes consumed for the 32 MiB **ASCII** fixture: exactly 49,152
   (three 16 KiB chunks — one byte per UTF-16 unit is the cheapest case).
-- General worst case: one chunk more than the prefix needs, where the
-  per-unit cost is at most 3 UTF-8 bytes per UTF-16 unit (e.g. CJK). For the
-  40,000-unit cap that is 16,384 × ceil(3 × 40,001 / 16,384) = 131,072 file
-  bytes — measured exactly on a 30 MB (30,000,000 bytes) pure-CJK artifact.
-  Anything cheaper per unit (ASCII, astral pairs at 2 bytes/unit) consumes
-  fewer file bytes.
+- General worst case under any legal positive read sizes:
+  `min(file bytes, 3·K + 3 + B)` — before the final read at most K UTF-16
+  units are decoded (at most 3 input bytes each) plus at most 3 pending
+  decoder bytes, and the final read is at most B. At the K = 40,000 cap and
+  B = 16,384 that is 136,387 file bytes. A legal short-read sequence
+  (16,384 × 7 + 5,315 + 16,384) consumes exactly 136,387 with unchanged
+  public shape and exact content parity (probe:
+  `reviews/pr07-final-short-read-*` in the performance-stack reviews
+  directory).
+- Full-chunk regular files (every read returns the whole 16 KiB buffer):
+  16,384 × ceil(3 × 40,001 / 16,384) = 131,072 file bytes — measured exactly
+  on a 30 MB (30,000,000 bytes) pure-CJK artifact. Anything cheaper per unit
+  (ASCII, astral pairs at 2 bytes/unit) consumes fewer file bytes.
 - Retained storage is prefix-sized, O(cap + chunk): the decoded prefix plus
   one 16 KiB buffer and fixed decoder state, independent of file size.
   Runtime allocation bytes are not inferred from code-unit counts.
