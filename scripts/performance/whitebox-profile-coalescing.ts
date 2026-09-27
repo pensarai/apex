@@ -8,11 +8,12 @@
  * tool. The tree under test decides the behavior: the baseline runs one
  * profileCodebase walk per request; the coalescing tree shares one attempt.
  *
- * Parent CPU (the tool process itself) is measured in-process and excludes
- * the profile's `git`/`which` subprocesses; total CPU is captured by
- * wrapping each fresh child in /usr/bin/time, whose wait4 rusage rolls up
- * waited-for descendants. childCpu = total − parent is therefore an
- * approximation at the host `time` granularity (10 ms on macOS).
+ * Two separately-scoped CPU numbers are reported; they are never subtracted.
+ * `lookupParentCpuMs` is measured in-process around the lookup wave and
+ * excludes the profile's `git`/`which` subprocesses. `wholeProcessCpuMs` is
+ * captured by wrapping each fresh child in /usr/bin/time and covers the whole
+ * child process lifetime — module imports, fixture build, lookups, and
+ * cleanup, plus the waited-for subprocesses rolled up by wait4 rusage.
  *
  * Usage (single measurement, current tree):
  *   bun run scripts/performance/whitebox-profile-coalescing.ts \
@@ -56,9 +57,8 @@ interface Measurement {
   requests: number;
   trial: number;
   wallMs: number;
-  parentCpuMs: number;
-  timeTotalMs: number;
-  childCpuMs: number;
+  lookupParentCpuMs: number;
+  wholeProcessCpuMs: number;
   hash: string;
   recordsCount: number;
   sourceHash: string;
@@ -161,9 +161,8 @@ async function measure(
     return {
       ...base,
       wallMs,
-      parentCpuMs: (cpu.user + cpu.system) / 1000,
-      timeTotalMs: 0,
-      childCpuMs: 0,
+      lookupParentCpuMs: (cpu.user + cpu.system) / 1000,
+      wholeProcessCpuMs: 0,
       hash: createHash("sha256").update(JSON.stringify(outputs)).digest("hex"),
       recordsCount: outputs[0]?.data.records.length ?? 0,
     };
@@ -211,11 +210,9 @@ function measureInChild(
     /([\d.]+)\s+real\s+([\d.]+)\s+user\s+([\d.]+)\s+sys/,
   );
   if (!time) throw new Error("could not parse /usr/bin/time output");
-  const timeTotalMs = (Number(time[2]) + Number(time[3])) * 1000;
   return {
     ...measurement,
-    timeTotalMs,
-    childCpuMs: Math.max(0, timeTotalMs - measurement.parentCpuMs),
+    wholeProcessCpuMs: (Number(time[2]) + Number(time[3])) * 1000,
   };
 }
 
@@ -303,12 +300,12 @@ async function main(): Promise<void> {
       `trial=${trial} requests=${requests} ` +
         `baseline[rev=${baseline?.revision.slice(0, 8)} ` +
         `wallMs=${baseline?.wallMs.toFixed(1)} ` +
-        `parentCpuMs=${baseline?.parentCpuMs.toFixed(1)} ` +
-        `childCpuMs=${baseline?.childCpuMs.toFixed(1)}] ` +
+        `lookupParentCpuMs=${baseline?.lookupParentCpuMs.toFixed(1)} ` +
+        `wholeProcessCpuMs=${baseline?.wholeProcessCpuMs.toFixed(1)}] ` +
         `candidate[rev=${candidate?.revision.slice(0, 8)} ` +
         `wallMs=${candidate?.wallMs.toFixed(1)} ` +
-        `parentCpuMs=${candidate?.parentCpuMs.toFixed(1)} ` +
-        `childCpuMs=${candidate?.childCpuMs.toFixed(1)}] ` +
+        `lookupParentCpuMs=${candidate?.lookupParentCpuMs.toFixed(1)} ` +
+        `wholeProcessCpuMs=${candidate?.wholeProcessCpuMs.toFixed(1)}] ` +
         `hashesEqual=${hashesEqual} records=${candidate?.recordsCount}`,
     );
     if (!hashesEqual) parityFailed = true;
@@ -322,11 +319,11 @@ async function main(): Promise<void> {
     );
   console.log(
     `medians baseline[wallMs=${byLabel("baseline", "wallMs").toFixed(1)} ` +
-      `parentCpuMs=${byLabel("baseline", "parentCpuMs").toFixed(1)} ` +
-      `childCpuMs=${byLabel("baseline", "childCpuMs").toFixed(1)}] ` +
+      `lookupParentCpuMs=${byLabel("baseline", "lookupParentCpuMs").toFixed(1)} ` +
+      `wholeProcessCpuMs=${byLabel("baseline", "wholeProcessCpuMs").toFixed(1)}] ` +
       `candidate[wallMs=${byLabel("candidate", "wallMs").toFixed(1)} ` +
-      `parentCpuMs=${byLabel("candidate", "parentCpuMs").toFixed(1)} ` +
-      `childCpuMs=${byLabel("candidate", "childCpuMs").toFixed(1)}]`,
+      `lookupParentCpuMs=${byLabel("candidate", "lookupParentCpuMs").toFixed(1)} ` +
+      `wholeProcessCpuMs=${byLabel("candidate", "wholeProcessCpuMs").toFixed(1)}]`,
   );
 
   console.log(
