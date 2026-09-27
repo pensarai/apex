@@ -40,16 +40,11 @@ const MAX_RECURSIVE = 200;
 const MAX_NON_RECURSIVE = 500;
 
 /**
- * Depth-first readdir walk that stops at the first overflow witness — the
- * (maxEntries + 1)-th collected path — instead of walking the whole tree for
- * an exact total. The first `maxEntries` paths match the unbounded walk's on
- * the same runtime because both consume identical readdir order.
- *
- * Work is bounded by the witness: at most maxEntries + 1 entries are examined
- * and each examined entry contributes exactly one path. Memory is NOT
- * globally bounded: every visited directory still pays its full readdir
- * enumeration, so a hostile huge flat directory retains its O(width) cost —
- * see docs/performance/pr-08-listing-result-limit.md.
+ * Depth-first readdir walk that stops at the (maxEntries + 1)-th collected
+ * path — the overflow witness — instead of walking the whole tree for an
+ * exact total. First `maxEntries` paths match the unbounded walk on the same
+ * runtime (shared readdir order); visited directories still pay their full
+ * native width enumeration (docs/performance/pr-08-listing-result-limit.md).
  */
 export async function listRecursive(
   dir: string,

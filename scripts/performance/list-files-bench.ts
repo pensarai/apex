@@ -13,8 +13,7 @@
  *
  * Usage: bun run scripts/performance/list-files-bench.ts --label candidate
  * Emits one JSON line per run. The coordinating harness alternates this
- * against the same script on the baseline commit in fresh processes; the
- * candidate additionally reports instrumented work counts.
+ * against the same script on the baseline commit in fresh processes.
  */
 
 import { spawnSync } from "node:child_process";
@@ -105,8 +104,7 @@ async function measureFixture(
     iterations.push({ ms, rssBefore, rssAfter });
   }
   if (!last || last.success !== true) {
-    console.error("listing failed", name, last?.error);
-    process.exit(1);
+    throw new Error(`listing failed: ${name}: ${last?.error ?? "no result"}`);
   }
   const filesSha256 = createHash("sha256")
     .update(JSON.stringify(last.files))
@@ -129,43 +127,48 @@ function argLabel(): string {
   return idx > 0 ? (process.argv[idx + 1] ?? "unlabeled") : "unlabeled";
 }
 
-const deepRoot = await mkdtemp(join(tmpdir(), "apex-pr08-deep-"));
-const flatRoot = await mkdtemp(join(tmpdir(), "apex-pr08-flat-"));
 const DEEP_LEVELS = 400;
 const FLAT_FILES = 20_000;
-await buildDeepChain(deepRoot, DEEP_LEVELS);
-await buildHugeFlat(flatRoot, FLAT_FILES);
+const deepRoot = await mkdtemp(join(tmpdir(), "apex-pr08-deep-"));
+const flatRoot = await mkdtemp(join(tmpdir(), "apex-pr08-flat-"));
+try {
+  await buildDeepChain(deepRoot, DEEP_LEVELS);
+  await buildHugeFlat(flatRoot, FLAT_FILES);
 
-const deepRecursive = await measureFixture(
-  "deep-400-recursive",
-  deepRoot,
-  true,
-);
-const flatRecursive = await measureFixture(
-  "hugeFlat-20000-recursive",
-  flatRoot,
-  true,
-);
-const flatListing = await measureFixture(
-  "hugeFlat-20000-flat",
-  flatRoot,
-  false,
-);
+  const deepRecursive = await measureFixture(
+    "deep-400-recursive",
+    deepRoot,
+    true,
+  );
+  const flatRecursive = await measureFixture(
+    "hugeFlat-20000-recursive",
+    flatRoot,
+    true,
+  );
+  const flatListing = await measureFixture(
+    "hugeFlat-20000-flat",
+    flatRoot,
+    false,
+  );
 
-const runtime =
-  typeof Bun !== "undefined" ? `bun ${Bun.version}` : `node ${process.version}`;
-console.log(
-  JSON.stringify({
-    label: argLabel(),
-    runtime,
-    commit: spawnSync("git", ["rev-parse", "HEAD"], {
-      encoding: "utf8",
-    }).stdout.trim(),
-    fixtures: { deepLevels: DEEP_LEVELS, flatFiles: FLAT_FILES },
-    deepRecursive,
-    flatRecursive,
-    flatListing,
-  }),
-);
-await rm(deepRoot, { recursive: true, force: true });
-await rm(flatRoot, { recursive: true, force: true });
+  const runtime =
+    typeof Bun !== "undefined"
+      ? `bun ${Bun.version}`
+      : `node ${process.version}`;
+  console.log(
+    JSON.stringify({
+      label: argLabel(),
+      runtime,
+      commit: spawnSync("git", ["rev-parse", "HEAD"], {
+        encoding: "utf8",
+      }).stdout.trim(),
+      fixtures: { deepLevels: DEEP_LEVELS, flatFiles: FLAT_FILES },
+      deepRecursive,
+      flatRecursive,
+      flatListing,
+    }),
+  );
+} finally {
+  await rm(deepRoot, { recursive: true, force: true });
+  await rm(flatRoot, { recursive: true, force: true });
+}
