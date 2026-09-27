@@ -58,11 +58,19 @@ interface Measurement {
   trial: number;
   wallMs: number;
   lookupParentCpuMs: number;
-  wholeProcessCpuMs: number;
+  // Null in the single-measurement path: whole-process CPU comes from the
+  // /usr/bin/time wrapper, which only the comparator path runs under.
+  wholeProcessCpuMs: number | null;
   hash: string;
   recordsCount: number;
   sourceHash: string;
   bunVersion: string;
+}
+
+// A comparator measurement: the child ran under /usr/bin/time, so
+// wholeProcessCpuMs is present.
+interface TimedMeasurement extends Measurement {
+  wholeProcessCpuMs: number;
 }
 
 function parseArgs(argv: string[]): Map<string, string> {
@@ -162,7 +170,7 @@ async function measure(
       ...base,
       wallMs,
       lookupParentCpuMs: (cpu.user + cpu.system) / 1000,
-      wholeProcessCpuMs: 0,
+      wholeProcessCpuMs: null,
       hash: createHash("sha256").update(JSON.stringify(outputs)).digest("hex"),
       recordsCount: outputs[0]?.data.records.length ?? 0,
     };
@@ -177,7 +185,7 @@ function measureInChild(
   revision: string,
   requests: number,
   trial: number,
-): Measurement {
+): TimedMeasurement {
   const child = spawnSync(
     "/usr/bin/time",
     [
@@ -210,10 +218,11 @@ function measureInChild(
     /([\d.]+)\s+real\s+([\d.]+)\s+user\s+([\d.]+)\s+sys/,
   );
   if (!time) throw new Error("could not parse /usr/bin/time output");
-  return {
+  const timed: TimedMeasurement = {
     ...measurement,
     wholeProcessCpuMs: (Number(time[2]) + Number(time[3])) * 1000,
   };
+  return timed;
 }
 
 function median(values: number[]): number {
@@ -253,7 +262,7 @@ async function main(): Promise<void> {
   const requests = Number(flags.get("requests") ?? REQUESTS_DEFAULT);
   const trials = Number(flags.get("trials") ?? TRIALS_DEFAULT);
 
-  const measurements: Measurement[] = [];
+  const measurements: TimedMeasurement[] = [];
   for (let trial = 1; trial <= trials; trial++) {
     const order: Array<{ root: string; label: string; revision: string }> =
       trial % 2 === 1
