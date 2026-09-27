@@ -71,16 +71,18 @@ Alternating fresh-process runs on baseline `be2e4b81` and the PR head under
 the shared validation lock are recorded in
 `apex-performance-stack-20260927/evidence/pr-08/`:
 
-- Deep fixture: ~27–33 ms → ~4 ms (~7×) with identical first-200 path
-  checksums; baseline walked all 800 entries for its exact total, candidate
-  stops at 201.
-- Huge flat recursive: ~9–10 ms → ~6 ms with identical first-200 SHA-256
-  path digests — the retained per-directory readdir allocation keeps both
-  sides close (measured RSS comparable, no regression).
-- Flat listing: ~9–14 ms → ~6–8 ms with identical first-500 SHA-256 path
-  digests (slice-before-mapping avoids building 20k path strings).
-- Every record carries the exact head commit; parity claims are SHA-256 over
-  the ordered JSON path array, not filename-length checksums.
+- Deep fixture: baseline 31–56 ms → candidate 4–6.5 ms with identical
+  first-200 SHA-256 path digests; baseline walked all 800 entries for its
+  exact total, candidate stops at 201.
+- Huge flat recursive: baseline 9.4–12.9 ms → candidate 6.5–6.8 ms with
+  identical first-200 digests — the retained per-directory readdir
+  allocation keeps both sides close (measured RSS comparable, no regression).
+- Flat listing: baseline 9.5–10.9 ms → candidate 6.1–7.2 ms with identical
+  first-500 digests (slice-before-mapping avoids building 20k path strings).
+- Every record carries the exact head commit (`6dec60f5` candidate,
+  `be2e4b81` baseline, worktree-verified via git blob SHAs in
+  `baseline-provenance.json`); parity claims are SHA-256 over the ordered
+  JSON path array, not filename-length checksums.
 
 Runtime: bun 1.3.14 on macOS arm64 (local evidence machine). CI asserts the
 deterministic work counts and cancellation semantics, not timings. Baseline
