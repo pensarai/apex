@@ -440,15 +440,8 @@ function applySequentialToolCallPolicy(
  * fitting. The AI SDK treats `activeTools` as advertise-only — it still
  * parses, executes, and enumerates every tool in the full map — so the
  * executable map itself must be filtered here for budgeting, provider
- * exposure, execution, and repair to agree. Overlaps #1023's post-fit
- * restriction; unlike #1023, filtering happens before fitting and no tool
- * (including `response`) is activated automatically.
- *
- * Returns an empty patch when nothing changes (`activeTools` undefined, or
- * no tools bound), preserving the caller's ToolSet identity and the
- * schema-overhead WeakMap cache. Nonempty selections drop `activeTools`
- * from the result so re-entering continuations see `undefined` (= all of
- * the already-filtered map) instead of re-filtering a fresh map per retry.
+ * exposure, execution, and repair to agree. Built with DefineOwnProperty
+ * semantics so prototype-shaped names like `__proto__` survive as own keys.
  */
 export function resolveEffectiveTools(
   tools: ToolSet | undefined,
@@ -457,11 +450,12 @@ export function resolveEffectiveTools(
   if (!tools || !activeTools) return {};
   if (activeTools.length === 0) return { tools: {}, activeTools: undefined };
   const allow = new Set(activeTools);
-  const effective: ToolSet = {};
-  for (const [name, tool] of Object.entries(tools)) {
-    if (allow.has(name)) effective[name] = tool;
-  }
-  return { tools: effective, activeTools: undefined };
+  return {
+    tools: Object.fromEntries(
+      Object.entries(tools).filter(([name]) => allow.has(name)),
+    ),
+    activeTools: undefined,
+  };
 }
 
 const MAX_RATE_LIMIT_RETRIES = 20;

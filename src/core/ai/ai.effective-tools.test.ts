@@ -1,10 +1,12 @@
 // Pins the effective-toolset contract: `activeTools` resolves ONCE, before
 // context fitting, into a single map used for schema budgeting, provider
-// exposure, execution, and repair — on the initial call and on every
-// continuation (rate-limit retry, idle resume, reactive overflow recovery,
-// summarization resume). Baseline counted every catalog schema toward the
-// budget (an unnecessary summary for tool-light agents) while the SDK could
-// still execute un-advertised tools; see resolveEffectiveTools in ./ai.
+// exposure, execution, and repair — and, on the runtime-covered paths
+// (initial call and reactive overflow recovery), that SAME map reference.
+// Rate-limit/idle-resume/summary-resume identity follows from the same opts
+// normalization by code reasoning, not a runtime-tested case. Baseline
+// counted every catalog schema toward the budget (an unnecessary summary for
+// tool-light agents) while the SDK could still execute un-advertised tools;
+// see resolveEffectiveTools in ./ai.
 
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -219,6 +221,30 @@ describe("resolveEffectiveTools", () => {
     };
     const result = resolveEffectiveTools(withResponse, ["a"]);
     expect(Object.keys(result.tools ?? {})).toEqual(["a"]);
+  });
+
+  it("keeps prototype-shaped own names as own keys, not the object prototype", () => {
+    const dangerous = Object.fromEntries([
+      ["__proto__", { description: "proto tool", inputSchema: z.object({}) }],
+      ["constructor", { description: "ctor tool", inputSchema: z.object({}) }],
+      ["a", tools.a],
+    ]) as ToolSet;
+    expect(Object.keys(dangerous)).toEqual(["__proto__", "constructor", "a"]);
+
+    const selected = resolveEffectiveTools(dangerous, [
+      "__proto__",
+      "constructor",
+    ]).tools as ToolSet;
+    expect(Object.keys(selected)).toEqual(["__proto__", "constructor"]);
+    expect(Object.hasOwn(selected, "__proto__")).toBe(true);
+    expect(Object.hasOwn(selected, "constructor")).toBe(true);
+    expect(Object.getPrototypeOf(selected)).toBe(Object.prototype);
+    expect(selected.__proto__?.description).toBe("proto tool");
+
+    const inactive = resolveEffectiveTools(dangerous, ["a"]).tools as ToolSet;
+    expect(Object.keys(inactive)).toEqual(["a"]);
+    expect(Object.hasOwn(inactive, "__proto__")).toBe(false);
+    expect(Object.getPrototypeOf(inactive)).toBe(Object.prototype);
   });
 });
 
@@ -587,5 +613,127 @@ describe("effective toolset advertisement and execution", () => {
     // no execution — the invalid call surfaces instead.
     expect(state.generated).toEqual([]);
     expect(executions).toEqual({ a: 0, b: 0, response: 0 });
+  });
+
+  it("advertises and executes a selected tool named __proto__ through the real SDK", async () => {
+    const protoTool = {
+      description: "prototype-shaped own name",
+      inputSchema: z.object({ q: z.string() }),
+      execute: async () => "proto ok",
+    };
+    const tools = Object.fromEntries([
+      ["__proto__", protoTool],
+      [
+        "a",
+        {
+          description: "a fixture",
+          inputSchema: z.object({ q: z.string() }),
+          execute: async () => {
+            executions.a++;
+            return "a ok";
+          },
+        },
+      ],
+    ]) as ToolSet;
+    // The fixture must carry __proto__ as an OWN key; a plain object literal
+    // would instead mutate the prototype.
+    expect(Object.hasOwn(tools, "__proto__")).toBe(true);
+
+    state.model = mockModel({
+      steps: [{ kind: "tool-call", toolName: "__proto__", input: '{"q":"x"}' }],
+    });
+    const parts = await drain(
+      streamResponse({
+        model: MODEL,
+        prompt: "fixture",
+        tools,
+        activeTools: ["__proto__", "a"],
+        silent: true,
+      }),
+    );
+
+    expect(state.providerTools).toEqual([["__proto__", "a"]]);
+    expect(parts.some((p) => p.type === "error")).toBe(false);
+    const protoResult = parts.find(
+      (p) => p.type === "tool-result" && p.toolName === "__proto__",
+    );
+    expect(protoResult).toBeDefined();
+    expect(executions.a).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Continuation reuse: every fit sees the SAME effective map (object identity),
+// so the schema-overhead WeakMap in contextManagement stays warm across the
+// initial call and the reactive overflow retry.
+// ---------------------------------------------------------------------------
+
+describe("effective toolset reuse across recovery", () => {
+  it("passes one effective map reference to the initial and reactive fits", async () => {
+    const fixture = catalogFixture();
+    const between = Math.floor((fixture.fullBudget + fixture.activeBudget) / 2);
+    const bigResultTool = {
+      description: "grows the context past the effective budget",
+      inputSchema: z.object({}),
+      execute: async () => "y".repeat((fixture.activeBudget + 5_000) * 4),
+    };
+    const tools: ToolSet = { ...fixture.all, grep: bigResultTool };
+
+    const contextManagement = await import("./contextManagement");
+    const realFit = contextManagement.fitMessagesToContext;
+    // Record EVERY invocation — including undefined/empty tools — so a bad
+    // reactive map cannot hide behind the filter. Synchronous passthrough:
+    // the production function is sync and ai.ts reads the result sync.
+    const recorded: Array<{ tools?: ToolSet; trigger?: string }> = [];
+    const spy = vi.spyOn(contextManagement, "fitMessagesToContext");
+    spy.mockImplementation((messages, opts) => {
+      recorded.push({ tools: opts.tools, trigger: opts.telemetry?.trigger });
+      return realFit(messages, opts);
+    });
+
+    state.summaries = 0;
+    state.providerTools = [];
+    state.model = mockModel({
+      steps: [
+        { kind: "tool-call", toolName: "grep", input: "{}" },
+        { kind: "error" },
+        { kind: "text" },
+      ],
+    });
+
+    try {
+      await drain(
+        streamResponse({
+          model: MODEL,
+          prompt: "fixture",
+          messages: boundaryMessages(between),
+          tools,
+          activeTools: [...JUDGE_TOOLS],
+          stopWhen: stepCountIs(5),
+          silent: true,
+          sessionPath: fixture.root,
+        }),
+      );
+    } finally {
+      spy.mockRestore();
+      rmSync(fixture.root, { recursive: true, force: true });
+      state.model = null;
+    }
+
+    // Reactive overflow recovery actually ran: the provider error was
+    // classified as a context overflow (ai.ts supplies this trigger on the
+    // reactive fit) and the recovery fit executed without summarizing.
+    expect(state.summaries).toBe(0);
+    expect(recorded.some((call) => call.trigger === "context_overflow")).toBe(
+      true,
+    );
+    const judgeKey = JUDGE_TOOLS.join(",");
+    expect(recorded.length).toBeGreaterThanOrEqual(2);
+    // EVERY recorded fit (proactive and reactive alike) carries the seven
+    // selected keys and the SAME map reference.
+    for (const call of recorded) {
+      expect(Object.keys(call.tools ?? {}).join(",")).toBe(judgeKey);
+      expect(call.tools).toBe(recorded[0]?.tools);
+    }
   });
 });
