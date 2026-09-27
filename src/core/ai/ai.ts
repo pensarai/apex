@@ -1528,6 +1528,12 @@ function streamResponseWithinOperation(
       tools,
       maxRetries: 3,
       providerOptions,
+      // Keep step history free of serialized request bodies. Later steps
+      // re-send the whole conversation, so retained bodies accumulate
+      // quadratically with step count. Wire requests are unchanged: native
+      // capture reads the request from the provider stream result, which
+      // this SDK filter never touches.
+      experimental_include: { requestBody: false },
       // The forwarding tracer keeps a handle on the SDK's root generation
       // span: error-part runs complete normally in the SDK, so nothing
       // marks the span failed — the wrapper's catch does.
