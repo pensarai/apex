@@ -65,8 +65,7 @@ export async function writeWhiteboxArtifact(input: {
  * prefix bytes. Indistinguishable from `readFile(path, "utf8")` followed by
  * `.slice(0, maxChars)` — malformed or truncated byte sequences decode to the
  * same replacement characters, and a slice landing inside a surrogate pair
- * keeps the lone half exactly like String#slice. `bytesRead` reports the bytes
- * consumed, for bounded-work tests.
+ * keeps the lone half exactly like String#slice.
  */
 export async function readTextPrefix(
   path: string,
@@ -109,24 +108,21 @@ export async function readWhiteboxArtifact(input: {
   content: string;
   truncated: boolean;
   absolutePath: string;
-  /** Bytes this read actually pulled from disk — the bounded-preview gate. */
-  bytesRead: number;
 }> {
   const absolutePath = resolveSessionWhiteboxArtifactPath({
     sessionRootPath: input.session.rootPath,
     artifactRelativePath: input.path,
   });
-  const { content, truncated, bytesRead } = await readTextPrefix(
+  const { content, truncated } = await readTextPrefix(
     absolutePath,
     MAX_ARTIFACT_INLINE_CHARS,
   );
   if (!truncated) {
-    return { content, truncated: false, absolutePath, bytesRead };
+    return { content, truncated: false, absolutePath };
   }
   return {
     content: `${content}\n\n(truncated - read the artifact in smaller chunks if needed)`,
     truncated: true,
     absolutePath,
-    bytesRead,
   };
 }

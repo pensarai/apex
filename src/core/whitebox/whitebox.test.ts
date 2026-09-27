@@ -1,8 +1,8 @@
 import { readdirSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../session";
 import { readTextPrefix } from "./artifacts";
 import {
@@ -20,6 +20,59 @@ import {
   updateWhiteboxCandidate,
   writeWhiteboxArtifact,
 } from "./index";
+
+// Passthrough fs/promises instrumentation: counts accrue only while armed
+// around a public reader call, so fixture setup and parity checks stay
+// uncounted. Counts real bytes returned by FileHandle.read and whole-file
+// readFile calls — never a helper's self-report.
+const io = vi.hoisted(() => ({
+  active: false,
+  handleReadBytes: 0,
+  readFileCalls: 0,
+  readFileBytes: 0,
+}));
+
+vi.mock("node:fs/promises", async () => {
+  const actual =
+    await vi.importActual<typeof import("node:fs/promises")>(
+      "node:fs/promises",
+    );
+  return {
+    ...actual,
+    open: async (...args: Parameters<typeof actual.open>) => {
+      const handle = await actual.open(...args);
+      if (!io.active) return handle;
+      const originalRead = handle.read.bind(handle);
+      handle.read = (async (...readArgs: unknown[]) => {
+        const result = await originalRead(
+          ...(readArgs as Parameters<typeof originalRead>),
+        );
+        io.handleReadBytes += result.bytesRead;
+        return result;
+      }) as typeof handle.read;
+      return handle;
+    },
+    readFile: async (...args: Parameters<typeof actual.readFile>) => {
+      const result = await actual.readFile(...args);
+      if (io.active) {
+        io.readFileCalls++;
+        io.readFileBytes +=
+          typeof result === "string"
+            ? Buffer.byteLength(result)
+            : result.byteLength;
+      }
+      return result;
+    },
+  };
+});
+
+const cleanupRoots: string[] = [];
+
+afterAll(async () => {
+  for (const root of cleanupRoots) {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 async function tempDir(prefix: string): Promise<string> {
   return mkdtemp(join(tmpdir(), prefix));
@@ -262,8 +315,35 @@ describe("readTextPrefix", () => {
 });
 
 describe("readWhiteboxArtifact bounded previews", () => {
-  it("reads only 48 KiB of a 32 MiB ASCII artifact for the 40k-char preview", async () => {
+  async function readArtifactCountingIo(
+    session: SessionInfo,
+    path: string,
+  ): Promise<{
+    read: Awaited<ReturnType<typeof readWhiteboxArtifact>>;
+    handleReadBytes: number;
+    readFileCalls: number;
+    readFileBytes: number;
+  }> {
+    io.active = true;
+    io.handleReadBytes = 0;
+    io.readFileCalls = 0;
+    io.readFileBytes = 0;
+    try {
+      const read = await readWhiteboxArtifact({ session, path });
+      return {
+        read,
+        handleReadBytes: io.handleReadBytes,
+        readFileCalls: io.readFileCalls,
+        readFileBytes: io.readFileBytes,
+      };
+    } finally {
+      io.active = false;
+    }
+  }
+
+  it("consumes only 49,152 file bytes of a 32 MiB ASCII artifact for the 40k-char preview", async () => {
     const root = await tempDir("apex-whitebox-preview-32m-");
+    cleanupRoots.push(root);
     const session = mockSession(root);
     const big = "a".repeat(32 * 1024 * 1024);
     const ref = await writeWhiteboxArtifact({
@@ -274,40 +354,50 @@ describe("readWhiteboxArtifact bounded previews", () => {
       description: "32 MiB fixture",
     });
 
-    const read = await readWhiteboxArtifact({ session, path: ref.path });
-    expect(read.truncated).toBe(true);
-    expect(read.content).toBe(`${"a".repeat(40_000)}${TRUNCATION_MARKER}`);
-    // The public reader reports its own disk I/O: three 16 KiB chunks.
-    expect(read.bytesRead).toBe(49_152);
-    expect(read.bytesRead).toBeLessThanOrEqual(48 * 1024);
+    const observed = await readArtifactCountingIo(session, ref.path);
+
+    // Resource gate first: three 16 KiB chunks of file bytes consumed, and
+    // no whole-file read through the public reader.
+    expect(observed.handleReadBytes + observed.readFileBytes).toBe(49_152);
+    expect(observed.readFileCalls).toBe(0);
+
+    expect(observed.read.truncated).toBe(true);
+    expect(observed.read.content).toBe(
+      `${"a".repeat(40_000)}${TRUNCATION_MARKER}`,
+    );
+    const whole = await readFile(observed.read.absolutePath, "utf-8");
+    expect(whole.length).toBe(32 * 1024 * 1024);
+    expect(whole).toBe(big);
   });
 
-  it("bounds the CJK worst case to 8 chunks for the same 32 MiB artifact", async () => {
+  it("bounds the CJK worst case to 131,072 file bytes of a 30 MB artifact", async () => {
     const root = await tempDir("apex-whitebox-preview-cjk-");
+    cleanupRoots.push(root);
     const session = mockSession(root);
     // 3 UTF-8 bytes per UTF-16 unit is the worst per-unit cost, so the
-    // 40,000-unit prefix needs at most 16,384 * ceil(3 * 40,001 / 16,384)
-    // = 131,072 bytes — and exactly that many for a pure-CJK file.
+    // 40,000-unit preview consumes at most
+    // 16,384 * ceil(3 * 40,001 / 16,384) = 131,072 file bytes — exactly that
+    // on a pure-CJK file. 30 MB decimal: 10,000,000 three-byte chars.
     const cjk = "漢".repeat(10_000_000);
     const ref = await writeWhiteboxArtifact({
       session,
       type: "raw-output",
       name: "cjk",
       content: cjk,
-      description: "30 MiB CJK fixture",
+      description: "30 MB CJK fixture",
     });
 
-    const read = await readWhiteboxArtifact({ session, path: ref.path });
-    expect(read.truncated).toBe(true);
-    expect(read.bytesRead).toBe(131_072);
-    expect(read.bytesRead).toBeLessThanOrEqual(131_072);
-    const artifactFile = join(
-      session.logsPath,
-      "whitebox",
-      ref.path.split("/").pop() ?? "",
+    const observed = await readArtifactCountingIo(session, ref.path);
+
+    expect(observed.handleReadBytes + observed.readFileBytes).toBe(131_072);
+    expect(observed.readFileCalls).toBe(0);
+
+    expect(observed.read.truncated).toBe(true);
+    const whole = await readFile(observed.read.absolutePath, "utf-8");
+    expect(whole.length).toBe(10_000_000);
+    expect(observed.read.content).toBe(
+      `${whole.slice(0, 40_000)}${TRUNCATION_MARKER}`,
     );
-    const whole = await readFile(artifactFile, "utf-8");
-    expect(read.content).toBe(`${whole.slice(0, 40_000)}${TRUNCATION_MARKER}`);
   });
 
   it("returns the full artifact when it exactly fits the inline limit", async () => {
@@ -390,9 +480,11 @@ describe("readWhiteboxArtifact bounded previews", () => {
     },
   );
 
-  it.skipIf(process.platform === "win32")(
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "propagates read errors without leaking file descriptors",
     async () => {
+      // chmod 000 is still readable for root, so the EACCES fixture needs an
+      // unprivileged POSIX user.
       const root = await tempDir("apex-whitebox-preview-eacces-");
       const session = mockSession(root);
       const { chmod } = await import("node:fs/promises");
