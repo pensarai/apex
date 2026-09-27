@@ -104,8 +104,6 @@ describe("list_files public-path readdir work", () => {
       recursive: true,
     });
 
-    expect(result.truncated).toBe(true);
-    expect(result.count).toBe(MAX_RECURSIVE);
     // The walk examined exactly maxEntries + 1 entries, then stopped. The
     // passthrough counter sees iterator pulls, which include the one boundary
     // pull each active for-of loop performs before its return check — the
@@ -114,6 +112,8 @@ describe("list_files public-path readdir work", () => {
     expect(counters.consumed).toBe(MAX_RECURSIVE + 3);
     expect(counters.readdirCalls).toBe(9);
     expect(counters.nativeEnumerated).toBe(210);
+    expect(result.truncated).toBe(true);
+    expect(result.count).toBe(MAX_RECURSIVE);
   });
 
   it("measures the retained width cost of a hostile huge flat directory", async () => {
@@ -129,13 +129,13 @@ describe("list_files public-path readdir work", () => {
       recursive: true,
     });
 
-    expect(result.truncated).toBe(true);
     // One readdir materializes the whole directory (2,000 entries — the
     // runtime's eager enumeration, retained cost by design); the JS loop
     // examines the witness (201) plus one boundary pull before returning.
     expect(counters.readdirCalls).toBe(1);
     expect(counters.nativeEnumerated).toBe(2_000);
     expect(counters.consumed).toBe(MAX_RECURSIVE + 2);
+    expect(result.truncated).toBe(true);
   });
 
   it("enumerates exactly its own directories for an untruncated walk", async () => {
@@ -152,12 +152,12 @@ describe("list_files public-path readdir work", () => {
       recursive: true,
     });
 
-    expect(result.truncated).toBeUndefined();
-    expect(result.count).toBe(MAX_RECURSIVE);
     expect(counters.consumed).toBe(MAX_RECURSIVE);
     // 201 readdirs: root plus 200 accepted directories, including the final
     // (empty) one — at most maxEntries + 1 attempts.
     expect(counters.readdirCalls).toBe(MAX_RECURSIVE + 1);
     expect(counters.nativeEnumerated).toBe(MAX_RECURSIVE);
+    expect(result.truncated).toBeUndefined();
+    expect(result.count).toBe(MAX_RECURSIVE);
   });
 });
