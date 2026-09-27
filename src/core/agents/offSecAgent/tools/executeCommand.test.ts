@@ -17,6 +17,7 @@ import {
 } from "./executeCommand";
 import { PerCommandShell } from "./perCommandShell";
 import type { UnifiedSandbox } from "./sandbox";
+import { toolOutputForModel } from "./toolOutput";
 import type { ToolContext } from "./types";
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
@@ -487,7 +488,7 @@ describe("executeCommand deadlines", () => {
     const logsPath = mkdtempSync(join(tmpdir(), "apex-save-failure-"));
     try {
       // An existing file at the output directory makes the spill write fail.
-      writeFileSync(join(logsPath, "cmd-output"), "occupied");
+      writeFileSync(join(logsPath, "tool-output"), "occupied");
       const ctx = makeCtx({
         commandShell: {
           execute: async () => ({
@@ -507,19 +508,18 @@ describe("executeCommand deadlines", () => {
       })) as ExecuteCommandResult;
 
       expect(result.success).toBe(true);
-      expect(result.outputFile).toBeUndefined();
-      expect(result.stdout).toContain("x".repeat(50_000));
-      expect(result.stdout).toContain("failed to save");
-      if (stdoutTruncated) {
-        expect(result.stdout).toContain("INCOMPLETE");
-        expect(result.stdout).toContain(
-          "stdout capture truncated at the byte limit",
-        );
-        expect(result.stdout).not.toContain("full output");
-      } else {
-        expect(result.stdout).not.toContain("INCOMPLETE");
-        expect(result.stdout).toContain("failed to save full output");
-      }
+      expect(result.stdout).toContain("x".repeat(60_000));
+      const projected = await toolOutputForModel(ctx, result);
+      expect(projected.type).toBe("text");
+      const text = String(projected.value);
+      expect(text).toContain("Failed to save captured result");
+      expect(text).not.toMatch(/tool-output:[0-9a-f-]+/);
+      expect(Buffer.byteLength(text)).toBeLessThanOrEqual(50 * 1024);
+      expect(text).toContain(
+        stdoutTruncated
+          ? "capture=INCOMPLETE"
+          : "capture=as returned by executor",
+      );
     } finally {
       rmSync(logsPath, { recursive: true, force: true });
     }

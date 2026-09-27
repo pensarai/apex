@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { dirname } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import { resolveFilePath } from "./fileWorkspace";
@@ -11,6 +12,7 @@ import {
   WIN_SCRIPT_PRELUDE,
   winScriptEnv,
 } from "./sandboxScript";
+import { resolveToolOutput, toolOutputForModel } from "./toolOutput";
 import type { ToolContext } from "./types";
 
 // Producer bound: accumulation stops once this many characters are buffered —
@@ -227,7 +229,9 @@ export function grep(ctx: ToolContext) {
   return tool({
     description: `Search file contents using grep.
 
-Runs grep with the given pattern and optional flags. When searching a
+Runs grep with the given pattern and optional flags. The directory parameter
+also accepts this agent's tool-output: references, which search retained output
+on the Apex host even when command execution uses a remote sandbox. When searching a
 directory, -r (recursive) is included automatically unless you explicitly
 provide flags that already contain it.
 
@@ -252,6 +256,8 @@ that exceeds it reports truncated=true and an approximate window instead of a
 match count. Narrow the search with flags or a more specific directory.
 ${ctx.sandbox?.type === "windows" ? "Windows supports -r, -n, -i, -l, -F, -E, and -P; regex patterns use .NET syntax. Use read_file line windows for surrounding context." : ""}`,
     inputSchema: grepInputSchema,
+    toModelOutput: ({ output }) =>
+      toolOutputForModel(ctx, output as GrepResult),
     execute: async ({ pattern, directory, flags }): Promise<GrepResult> => {
       if (ctx.abortSignal?.aborted) {
         return {
@@ -273,8 +279,10 @@ ${ctx.sandbox?.type === "windows" ? "Windows supports -r, -n, -i, -l, -F, -E, an
       }
 
       let dir: string;
+      let artifact: string | undefined;
       try {
-        dir = await resolveFilePath(ctx, directory || ".");
+        artifact = await resolveToolOutput(ctx, directory || ".");
+        dir = artifact ?? (await resolveFilePath(ctx, directory || "."));
       } catch (err: unknown) {
         return {
           success: false,
@@ -311,7 +319,7 @@ ${ctx.sandbox?.type === "windows" ? "Windows supports -r, -n, -i, -l, -F, -E, an
         };
       }
 
-      if (ctx.sandbox) {
+      if (ctx.sandbox && !artifact) {
         return runSandboxGrep(ctx, ctx.sandbox, dir, pattern, validated.flags);
       }
 
@@ -327,7 +335,7 @@ ${ctx.sandbox?.type === "windows" ? "Windows supports -r, -n, -i, -l, -F, -E, an
 
       return new Promise((resolve) => {
         const child = spawn("grep", args, {
-          cwd: ctx.agentCwd,
+          cwd: artifact ? dirname(artifact) : ctx.agentCwd,
           stdio: ["ignore", "pipe", "pipe"],
         });
 
