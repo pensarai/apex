@@ -109,21 +109,24 @@ export async function readWhiteboxArtifact(input: {
   content: string;
   truncated: boolean;
   absolutePath: string;
+  /** Bytes this read actually pulled from disk — the bounded-preview gate. */
+  bytesRead: number;
 }> {
   const absolutePath = resolveSessionWhiteboxArtifactPath({
     sessionRootPath: input.session.rootPath,
     artifactRelativePath: input.path,
   });
-  const { content, truncated } = await readTextPrefix(
+  const { content, truncated, bytesRead } = await readTextPrefix(
     absolutePath,
     MAX_ARTIFACT_INLINE_CHARS,
   );
   if (!truncated) {
-    return { content, truncated: false, absolutePath };
+    return { content, truncated: false, absolutePath, bytesRead };
   }
   return {
     content: `${content}\n\n(truncated - read the artifact in smaller chunks if needed)`,
     truncated: true,
     absolutePath,
+    bytesRead,
   };
 }

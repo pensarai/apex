@@ -277,16 +277,37 @@ describe("readWhiteboxArtifact bounded previews", () => {
     const read = await readWhiteboxArtifact({ session, path: ref.path });
     expect(read.truncated).toBe(true);
     expect(read.content).toBe(`${"a".repeat(40_000)}${TRUNCATION_MARKER}`);
+    // The public reader reports its own disk I/O: three 16 KiB chunks.
+    expect(read.bytesRead).toBe(49_152);
+    expect(read.bytesRead).toBeLessThanOrEqual(48 * 1024);
+  });
 
+  it("bounds the CJK worst case to 8 chunks for the same 32 MiB artifact", async () => {
+    const root = await tempDir("apex-whitebox-preview-cjk-");
+    const session = mockSession(root);
+    // 3 UTF-8 bytes per UTF-16 unit is the worst per-unit cost, so the
+    // 40,000-unit prefix needs at most 16,384 * ceil(3 * 40,001 / 16,384)
+    // = 131,072 bytes — and exactly that many for a pure-CJK file.
+    const cjk = "漢".repeat(10_000_000);
+    const ref = await writeWhiteboxArtifact({
+      session,
+      type: "raw-output",
+      name: "cjk",
+      content: cjk,
+      description: "30 MiB CJK fixture",
+    });
+
+    const read = await readWhiteboxArtifact({ session, path: ref.path });
+    expect(read.truncated).toBe(true);
+    expect(read.bytesRead).toBe(131_072);
+    expect(read.bytesRead).toBeLessThanOrEqual(131_072);
     const artifactFile = join(
       session.logsPath,
       "whitebox",
       ref.path.split("/").pop() ?? "",
     );
-    const prefix = await readTextPrefix(artifactFile, 40_000);
-    // Three 16 KiB chunks: 16,384 + 16,384 + 16,384 = 49,152 bytes.
-    expect(prefix.bytesRead).toBe(49_152);
-    expect(prefix.bytesRead).toBeLessThanOrEqual(48 * 1024);
+    const whole = await readFile(artifactFile, "utf-8");
+    expect(read.content).toBe(`${whole.slice(0, 40_000)}${TRUNCATION_MARKER}`);
   });
 
   it("returns the full artifact when it exactly fits the inline limit", async () => {

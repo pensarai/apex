@@ -72,6 +72,9 @@ const artifactFile = join(
   "whitebox",
   ref.path.split("/").pop() ?? "",
 );
+// The public reader reports its own disk I/O; baseline (no field) reports
+// null instead of faking a bounded number.
+let publicBytesRead: number | null = null;
 for (let i = 0; i < ITERATIONS; i++) {
   gc();
   const rssBefore = process.memoryUsage.rss();
@@ -91,16 +94,28 @@ for (let i = 0; i < ITERATIONS; i++) {
     );
     process.exit(1);
   }
+  publicBytesRead = read.bytesRead ?? null;
   iterations.push({ ms, rssBefore, rssAfter });
 }
 
-let bytesRead: number | null = null;
-try {
-  const { readTextPrefix } = await import("../../src/core/whitebox/artifacts");
-  bytesRead = (await readTextPrefix(artifactFile, 40_000)).bytesRead;
-} catch {
-  bytesRead = null; // baseline: internal helper absent
+// CJK worst case: 3 UTF-8 bytes per UTF-16 unit costs more bytes than ASCII
+// for the same 40k-unit prefix; the bound is 8 chunks = 131,072 bytes.
+const cjkRef = await writeWhiteboxArtifact({
+  session,
+  type: "raw-output",
+  name: "bench-cjk",
+  content: "漢".repeat(10_000_000),
+  description: "CJK preview benchmark fixture",
+});
+gc();
+const cjkStart = performance.now();
+const cjkRead = await readWhiteboxArtifact({ session, path: cjkRef.path });
+const cjkMs = performance.now() - cjkStart;
+if (!cjkRead.truncated) {
+  console.error("CJK fixture unexpectedly untruncated");
+  process.exit(1);
 }
+const cjkBytesRead = cjkRead.bytesRead ?? null;
 
 const parityWhole = await readFile(artifactFile, "utf-8");
 if (parityWhole.length !== FIXTURE_CHARS) {
@@ -119,7 +134,8 @@ console.log(
     medianMs: iterations.map((i) => i.ms).sort((a, b) => a - b)[
       Math.floor(ITERATIONS / 2)
     ],
-    bytesRead,
+    bytesRead: publicBytesRead,
+    cjk: { ms: cjkMs, bytesRead: cjkBytesRead },
   }),
 );
 await rm(root, { recursive: true, force: true });
