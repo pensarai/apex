@@ -174,12 +174,8 @@ export const MessageList = memo(function MessageList({
               <text fg={colors.primary}>Shift+Tab</text>
               <text fg={colors.textMuted}>
                 {" "}
-                - Switch between Plan or Default mode
+                - Cycle Approvals On, Approvals Off, and Plan
               </text>
-            </box>
-            <box flexDirection="row">
-              <text fg={colors.primary}>Option+Shift+Tab</text>
-              <text fg={colors.textMuted}> - Toggle approval on/off</text>
             </box>
           </box>
         </box>
