@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { type HoonifyModel, loadHoonifyModels } from "../hoonify";
 import { getCurrentVersion } from "../installation";
 import {
   type CustomProviders,
@@ -22,6 +23,10 @@ export interface Config {
   openRouterAPIKey?: string | null;
   concentrateAPIKey?: string | null;
   inceptionAPIKey?: string | null;
+  hoonifyAPIKey?: string | null;
+  /** Runtime catalog; fetched using the current key and never persisted. */
+  hoonifyModels?: HoonifyModel[];
+  hoonifyCatalogError?: string;
   bedrockAPIKey?: string | null;
   pensarAPIKey?: string | null;
   customProviders?: CustomProviders;
@@ -136,6 +141,9 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
       parsedConfig.concentrateAPIKey ?? process.env.CONCENTRATE_API_KEY,
     inceptionAPIKey:
       parsedConfig.inceptionAPIKey ?? process.env.INCEPTION_API_KEY,
+    hoonifyAPIKey: parsedConfig.hoonifyAPIKey ?? process.env.HOONIFY_API_KEY,
+    hoonifyModels: undefined,
+    hoonifyCatalogError: undefined,
     bedrockAPIKey: parsedConfig.bedrockAPIKey ?? process.env.BEDROCK_API_KEY,
     pensarAPIKey: parsedConfig.pensarAPIKey ?? process.env.PENSAR_API_KEY,
     daytonaAPIKey: parsedConfig.daytonaAPIKey ?? process.env.DAYTONA_API_KEY,
@@ -152,13 +160,22 @@ export async function get(): Promise<Config> {
     .access(file)
     .then(() => true)
     .catch(() => false);
-  if (!exists) {
-    await init();
-    return applyEnvFallbacks(DEFAULT_CONFIG);
+  if (!exists) await init();
+  const parsedConfig = exists
+    ? JSON.parse(await fs.readFile(file, "utf8"))
+    : DEFAULT_CONFIG;
+  const loaded = applyEnvFallbacks(parsedConfig);
+  if (loaded.hoonifyAPIKey?.trim()) {
+    try {
+      loaded.hoonifyModels = await loadHoonifyModels(loaded.hoonifyAPIKey);
+    } catch (error) {
+      loaded.hoonifyCatalogError =
+        error instanceof Error
+          ? error.message
+          : "Could not load Hoonify models.";
+    }
   }
-  const config = await fs.readFile(file, "utf8");
-  const parsedConfig = JSON.parse(config);
-  return applyEnvFallbacks(parsedConfig);
+  return loaded;
 }
 
 export async function update(config: Partial<Config>) {
@@ -178,5 +195,7 @@ export async function update(config: Partial<Config>) {
     ? JSON.parse(await fs.readFile(file, "utf8"))
     : DEFAULT_CONFIG;
   const newConfig = { ...currentConfig, ...config };
+  delete newConfig.hoonifyModels;
+  delete newConfig.hoonifyCatalogError;
   await fs.writeFile(file, JSON.stringify(newConfig));
 }

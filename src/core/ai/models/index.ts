@@ -3,6 +3,7 @@ import {
   parseCustomModelId,
   resolveCustomModel,
 } from "../../config/customProviders";
+import { type HoonifyModel, resolveHoonifyModel } from "../../hoonify";
 import type { AIModel, ModelInfo } from "../ai";
 
 // Anthropic, OpenAI, Google, Bedrock — auto-generated from SDK type definitions.
@@ -32,6 +33,12 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
 ];
 
 export function getModelInfo(model: AIModel): ModelInfo {
+  if (model.startsWith("hoonify:"))
+    return {
+      id: model,
+      name: model.slice("hoonify:".length),
+      provider: "hoonify",
+    };
   const custom = parseCustomModelId(model);
   if (custom) return { id: model, name: custom.modelId, provider: "custom" };
   return (
@@ -71,7 +78,10 @@ export function prefersSequentialToolCalls(model: AIModel): boolean {
 export function getMaxOutputTokens(
   modelId: string,
   customProviders?: CustomProviders,
+  hoonifyModels?: HoonifyModel[],
 ): number {
+  if (modelId.startsWith("hoonify:"))
+    return resolveHoonifyModel(modelId, hoonifyModels).maxOutputTokens;
   if (parseCustomModelId(modelId))
     return resolveCustomModel(modelId, customProviders).model.maxOutputTokens;
   const fromPattern = lookupOutputBudgetByPattern(modelId);

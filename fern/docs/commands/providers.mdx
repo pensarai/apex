@@ -35,6 +35,10 @@ Apex supports the following AI providers:
   <Card title="AWS Bedrock" icon="aws" iconType="brands">
     Amazon Bedrock AI models for enterprise deployments.
   </Card>
+  <Card title="Hoonify" icon="microchip">
+    Open models served by Hoonify. Available models are discovered using your
+    API key.
+  </Card>
   <Card title="Pensar Console" icon="shield-check">
     Managed inference — connect via `/login` instead, no API key needed.
   </Card>
@@ -60,6 +64,7 @@ Apex supports the following AI providers:
     <Callout intent="info">
       Selecting **Pensar Console** from the provider list routes you to the `/login` device-flow login instead of the API key input screen.
     </Callout>
+
   </Step>
   <Step title="Select Model">
     After configuring, you'll be redirected to `/models` to select a model
@@ -67,6 +72,16 @@ Apex supports the following AI providers:
 </Steps>
 
 ## Provider Setup
+
+For Hoonify, create a subscription key at [app.hoonify.ai](https://app.hoonify.ai),
+select **Hoonify** in `/providers`, and choose a discovered model in `/models`.
+You can also launch Apex with `HOONIFY_API_KEY` set. Apex uses the exact model IDs
+returned by Hoonify's catalog and any reported context windows. When context
+metadata is absent, GLM-5.2 uses Hoonify's published 1,000,000-token window;
+other models without known limits use a 32,768-token context budget.
+Set `HOONIFY_CONTEXT_WINDOWS` to a JSON object mapping exact model IDs to
+context windows to override a limit. Responses are capped at 4,096 tokens
+(lower for small context windows).
 
 <AccordionGroup>
   <Accordion title="Anthropic" icon="sparkles">
@@ -266,7 +281,11 @@ You can also access providers from the models screen:
   <Card title="/pentest" icon="play" href="/apex/tui-slash-commands/pentest">
     Start a penetration test
   </Card>
-  <Card title="/help" icon="circle-question" href="/apex/tui-slash-commands/help">
+  <Card
+    title="/help"
+    icon="circle-question"
+    href="/apex/tui-slash-commands/help"
+  >
     View all available commands
   </Card>
 </CardGroup>

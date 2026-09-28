@@ -40,6 +40,7 @@ const providerOrder: AIModelProvider[] = [
   "bedrock",
   "bedrock-mantle",
   "inception",
+  "hoonify",
   "custom",
   "local",
 ];
@@ -552,6 +553,14 @@ export function ModelPicker({
       overflow="hidden"
     >
       {/* Search input */}
+      {config?.hoonifyCatalogError && (
+        <box flexShrink={0} overflow="hidden" marginBottom={1}>
+          <text fg={colors.error}>
+            {config.hoonifyCatalogError} Reconnect Hoonify in /providers to
+            retry.
+          </text>
+        </box>
+      )}
       <box flexShrink={0} marginBottom={1}>
         <PickerRow>
           <text fg={colors.primary}>Search </text>
