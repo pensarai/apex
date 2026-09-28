@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
+import type { BoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { hasToolCall, type ModelMessage, stepCountIs } from "ai";
 import {
@@ -133,6 +134,11 @@ import {
   markSubagentsInterrupted,
 } from "./subagent-state";
 import { SubagentStatusBar } from "./subagent-status-bar";
+import {
+  WELCOME_LOGO_HEIGHT,
+  WELCOME_LOGO_WIDTH,
+  WelcomeLogo,
+} from "./welcome-logo";
 import { updateWorkflowDataMessage } from "./workflow-data";
 
 /**
@@ -293,6 +299,16 @@ export default function OperatorDashboard({
   const conversationRef = useRef<ModelMessage[]>([]);
   // Input state
   const [inputValue, setInputValue] = useState("");
+  const [welcomeLogoTop, setWelcomeLogoTop] = useState(0);
+  const [messageAreaSize, setMessageAreaSize] = useState({
+    width: 0,
+    height: 0,
+  });
+  const handleMessageAreaSizeChange = useCallback(function (
+    this: BoxRenderable,
+  ) {
+    setMessageAreaSize({ width: this.width, height: this.height });
+  }, []);
 
   // Queued follow-up messages
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
@@ -1827,6 +1843,17 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
   const currentPending =
     pendingApprovals.length > 0 ? pendingApprovals[0] : undefined;
 
+  const showWelcomeLogo =
+    welcomeLogoTop > 0 &&
+    messageAreaSize.width >= WELCOME_LOGO_WIDTH + 8 &&
+    messageAreaSize.height >= welcomeLogoTop + WELCOME_LOGO_HEIGHT + 2 &&
+    messages.length === 0 &&
+    inputValue.length === 0 &&
+    status === "idle" &&
+    !initialMessage &&
+    !(route.data.type === "operator" && route.data.initialSkill) &&
+    !error;
+
   return (
     <box
       flexDirection="column"
@@ -1867,18 +1894,28 @@ This three-phase flow is specific to the TUI \`/threat-model\` command. The same
       )}
 
       {/* Message display */}
-      <MessageList
-        messages={messages}
-        isRunning={
-          (status === "running" || status === "waiting") && !pendingQuestions
-        }
-        variant="operator"
-        focused={true}
-        verbose={verboseMode}
-        expandedLogs={expandedLogs}
-        pendingApprovals={pendingApprovals}
-        lastApprovedAction={lastApprovedAction}
-      />
+      <box
+        flexGrow={1}
+        flexShrink={1}
+        minHeight={0}
+        overflow="hidden"
+        onSizeChange={handleMessageAreaSizeChange}
+      >
+        <MessageList
+          messages={messages}
+          isRunning={
+            (status === "running" || status === "waiting") && !pendingQuestions
+          }
+          variant="operator"
+          focused={true}
+          verbose={verboseMode}
+          expandedLogs={expandedLogs}
+          pendingApprovals={pendingApprovals}
+          lastApprovedAction={lastApprovedAction}
+          onOperatorWelcomeHeightChange={setWelcomeLogoTop}
+        />
+        {showWelcomeLogo && <WelcomeLogo top={welcomeLogoTop} />}
+      </box>
 
       <SubagentStatusBar
         counts={subagentCounts}
