@@ -200,8 +200,8 @@ function isolateRealStreams() {
 
 // Isolation and fake timers span mount through destroy: the seam's escape
 // writes and the animation's interval both happen inside. The renderer is
-// torn down while fake timers still own scheduling, so timer counts stay
-// observable, and real time is only restored afterwards.
+// torn down while fake timers still own scheduling, and the outer finally
+// restores real time and the TTY flags even when mount or teardown rejects.
 async function withTestHarness(
   mount: () => Promise<FixtureSetup>,
   fn: (setup: FixtureSetup) => Promise<void>,
@@ -209,18 +209,20 @@ async function withTestHarness(
   const restoreStreams = isolateRealStreams();
   try {
     jest.useFakeTimers();
-    const setup = await mount();
+    let setup: FixtureSetup | null = null;
     try {
+      setup = await mount();
       await fn(setup);
     } finally {
-      if (!setup.renderer.isDestroyed) {
+      const mounted = setup;
+      if (mounted && !mounted.renderer.isDestroyed) {
         await act(() => {
-          setup.renderer.destroy();
+          mounted.renderer.destroy();
         });
       }
-      jest.useRealTimers();
     }
   } finally {
+    jest.useRealTimers();
     restoreStreams();
   }
 }
