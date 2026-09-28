@@ -66,18 +66,65 @@ they invalidate parity and are never coerced into digests.
   **sum of the selected factories' individual costs** (O(S) only under the
   assumption that each factory's cost is bounded); storage is
   O(A + S + selected objects) for the selected set.
+- Browser selection still creates one shared group state plus a fixed set
+  of 8 lazy member closures; only the selected member's `tool()` object
+  builds. Sibling **construction** is zero, but this is not a global
+  zero-sibling-memory claim — module-level schemas remain eager in both
+  designs.
 - Construction avoidance applies to **selection** only. A builtin
   overridden by `extraTools` is still constructed and then replaced by the
   extra; the overwrite is not an avoided construction.
 
-## Measurement protocol
+## Measurement protocol and results
 
-Final numbers come from five counterbalanced fresh-process pairs run
-under the shared validation lock, only after root approves the exact
-commit; raw records and exit codes land under the coordination evidence
-directory (`evidence/pr-03/`). Before that, the script is exercised only
-by small locked smoke runs that verify plumbing (mode routing, throw-path
-cleanup, digest agreement across modes), with no numerical claims shipped.
+Final numbers: five counterbalanced blocks (odd blocks parent-first, even
+blocks candidate-first — net 3 parent-first / 2 candidate-first), 15 fresh
+processes total, 32 sets each, run under the shared validation lock with a
+clean environment. Measured at candidate commit
+`0f44b116b74dc551fb586cdde2213ca9c98f1cac` (clean tree
+`fd23bda3d99cd1e177cbf4059f7fccf7e9936305`) against the exact PR02 parent
+`8c5b46c88063455af3f837b254ba1351a7574177` (tracked-clean); runner
+`scripts/performance/selective-tool-factories.ts`
+(SHA-256 `8eec4b33…73f27f9`, verified before, per-record, and after);
+runtime bun 1.3.14 on macOS arm64. Raw records, exit codes, and per-run
+stdout/stderr are unchanged under the coordination evidence directory
+(`evidence/pr-03/final-pairs/`).
+
+Medians (n = 5 per class) and observed ranges (all runs retained; ranges
+varied substantially within classes and the cause is undetermined):
+
+| Class                                |                     Wall |       CPU | Heap (post-GC observed) | RSS (observed) |
+| ------------------------------------ | -----------------------: | --------: | ----------------------: | -------------: |
+| parent all-mode                      | 115.12 ms (97.13–380.90) | 166.66 ms |  50.68 MB (47.23–53.47) |       78.68 MB |
+| candidate all-mode (matched control) | 120.64 ms (79.56–655.93) | 177.95 ms |  54.35 MB (42.77–71.75) |       80.08 MB |
+| candidate selected-7                 |      0.55 ms (0.50–0.74) |   0.65 ms |                 0.00 MB |        0.08 MB |
+
+Schema parity held across the batch: the full-map digest
+(`c0284e0c5e22…a9b1cee`) is identical for every all-mode record on both
+trees, and the selected-7 projection digest
+(`13364626f076…4d353317d0`) is identical across all 15 records. Tool
+counts pinned: 74/74 keys per set for the all-mode classes, 7 for the
+selected fixture, with retained-key totals (2368/2368/224) proving every
+set stayed live through the post-construction GC.
+
+Reading: the primary result is the specialist path — the candidate's
+selected-7 construction (median 0.55 ms) replaces a construction that
+cost the parent 115.12 ms (median) for the full catalog, a large
+reduction in construction work for agents that run with small tool
+selections. The matched all-mode control medians differ by +4.8 % wall,
++6.8 % CPU, and +7.2 % observed heap in the candidate's direction, and
+within-class ranges varied substantially (single runs of 380.90 ms and
+655.93 ms against class medians of 115.12 ms and 120.64 ms); the cause of
+the variance is undetermined and this sample does not demonstrate
+statistical equivalence or a regression between the all-mode controls —
+only that both construct the full 74-tool catalog. The all-mode control
+does not establish equivalence or isolate a regression; no all-mode
+performance improvement is claimed. The selected mode's observed net heap
+change was 0.00 MB despite 224 retained tool definitions; this is not an
+allocation count or proof of zero retained memory. All 15 recorded runs
+are kept; none were excluded or re-run. This is a constructor-level
+retention fixture — no startup, end-to-end, billing, or
+deployed-performance claim.
 
 ## Limitations
 
