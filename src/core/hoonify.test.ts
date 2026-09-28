@@ -54,9 +54,10 @@ describe("Hoonify catalog", () => {
   });
 
   it.each([
-    { context_window: undefined, expected: 1_000_000 },
+    { context_window: undefined, expected: 512_000 },
     { context_window: 131_072, expected: 131_072 },
-  ])("uses the published GLM-5.2 limit only when the API omits it: $context_window", async ({
+    { context_window: 524_288, expected: 524_288 },
+  ])("uses the provisional GLM-5.2 budget only when the API omits it: $context_window", async ({
     context_window,
     expected,
   }) => {
@@ -66,7 +67,7 @@ describe("Hoonify catalog", () => {
         Response.json({ data: [{ id: "zai-org/GLM-5.2", context_window }] }),
       ),
     );
-    expect(await loadHoonifyModels("published-context-key", true)).toEqual([
+    expect(await loadHoonifyModels("deployment-context-key", true)).toEqual([
       {
         id: "zai-org/GLM-5.2",
         contextLength: expected,
@@ -96,7 +97,7 @@ describe("Hoonify catalog", () => {
     ]);
     vi.stubEnv("HOONIFY_CONTEXT_WINDOWS", "  ");
     expect(await loadHoonifyModels("context-override-key")).toEqual(original);
-    expect(original[0].contextLength).toBe(1_000_000);
+    expect(original[0].contextLength).toBe(512_000);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

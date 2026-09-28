@@ -2,10 +2,10 @@ import { z } from "zod";
 
 export const HOONIFY_BASE_URL = "https://api.hoonify.ai/v1";
 
-// Published at https://hoonify.ai/catalog?mode=inference; API metadata wins.
-const DOCUMENTED_CONTEXT_WINDOWS = new Map([["zai-org/GLM-5.2", 1_000_000]]);
+// Provisional deployment budget until Hoonify confirms the exact token limit.
+const MODEL_CONTEXT_DEFAULTS = new Map([["zai-org/GLM-5.2", 512_000]]);
 
-// Used only when both API metadata and a documented model limit are missing.
+// Used only when both API metadata and a model-specific default are missing.
 const FALLBACK_CONTEXT_WINDOW = 32_768;
 
 export interface HoonifyModel {
@@ -137,7 +137,7 @@ async function fetchHoonifyModels(apiKey: string): Promise<HoonifyModel[]> {
   return parsed.data.data.map((model) => {
     const contextLength =
       model.context_window ??
-      DOCUMENTED_CONTEXT_WINDOWS.get(model.id) ??
+      MODEL_CONTEXT_DEFAULTS.get(model.id) ??
       FALLBACK_CONTEXT_WINDOW;
     return {
       id: model.id,
