@@ -18,7 +18,8 @@ const catalogSchema = z.object({
   data: z.array(
     z.object({
       id: z.string().trim().min(1),
-      context_window: z.number().int().min(4).optional(),
+      // Treat explicit null metadata like a missing field when choosing fallbacks.
+      context_window: z.number().int().min(4).nullish(),
     }),
   ),
 });

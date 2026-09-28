@@ -76,6 +76,24 @@ describe("Hoonify catalog", () => {
     ]);
   });
 
+  it("treats null context windows as missing instead of rejecting the catalog", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          data: [
+            { id: "zai-org/GLM-5.2", context_window: null },
+            { id: "partner-model", context_window: null },
+          ],
+        }),
+      ),
+    );
+    await expect(loadHoonifyModels("null-context-key", true)).resolves.toEqual([
+      { id: "zai-org/GLM-5.2", contextLength: 500_000, maxOutputTokens: 4096 },
+      { id: "partner-model", contextLength: 32_768, maxOutputTokens: 4096 },
+    ]);
+  });
+
   it("applies per-model context overrides without changing the cached catalog", async () => {
     const fetchMock = vi.fn(async () =>
       Response.json({
@@ -181,7 +199,6 @@ describe("Hoonify catalog", () => {
     { data: [{ object: "model" }] },
     { data: [{ id: " " }] },
     { data: [{ id: "test", context_window: 0 }] },
-    { data: [{ id: "test", context_window: null }] },
     { data: [{ id: "test", context_window: "32768" }] },
     { data: [] },
     {
