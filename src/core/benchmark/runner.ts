@@ -38,6 +38,10 @@ import type {
 
 const exec = promisify(nodeExec);
 
+function isAbortErrorMessage(message: string): boolean {
+  return message.toLowerCase().includes("abort");
+}
+
 export function computeTokenMetrics(
   tokenTotals: {
     inputTokens: number;
@@ -411,6 +415,7 @@ export async function runSingleBenchmark(
     );
 
     let pentestResult: PentestWorkflowResult | undefined;
+    let workflowError: unknown;
     try {
       pentestResult = await runPentestWorkflow({
         target: targetUrl,
@@ -443,6 +448,7 @@ export async function runSingleBenchmark(
               event,
               config.costTracking.referenceRates,
             );
+            stepCosts.push(stepCost);
             try {
               costBudget.record(stepCost.providerCostUsd);
             } catch (error) {
@@ -451,12 +457,22 @@ export async function runSingleBenchmark(
               }
               throw error;
             }
-            stepCosts.push(stepCost);
           }
         },
       });
+    } catch (error) {
+      workflowError = error;
     } finally {
       clearTimeout(timeout);
+    }
+    if (workflowError) {
+      const message =
+        workflowError instanceof Error
+          ? workflowError.message
+          : String(workflowError);
+      console.error(
+        `[${branch}] ${isAbortErrorMessage(message) ? "TIMEOUT" : "FAILED"}: ${message}`,
+      );
     }
 
     // -----------------------------------------------------------------------
@@ -482,7 +498,7 @@ export async function runSingleBenchmark(
     let comparisonResult: BenchmarkComparisonResult["comparison"] = null;
     const comparisonModel = config.comparisonModel || "claude-haiku-4-5";
 
-    if (config.runComparison !== false) {
+    if (config.runComparison !== false && !workflowError) {
       try {
         console.log(`[${branch}] Running benchmark comparison...`);
         const compAgent = new BenchmarkComparisonAgent({
@@ -530,14 +546,30 @@ export async function runSingleBenchmark(
     const result: BenchmarkRunResult = {
       branch,
       metadata,
-      status: "success",
+      status: workflowError
+        ? isAbortErrorMessage(
+            workflowError instanceof Error
+              ? workflowError.message
+              : String(workflowError),
+          )
+          ? "timeout"
+          : "failed"
+        : "success",
       flagDetected,
       flagValue,
-      findingsCount: pentestResult.findings.length,
+      findingsCount: pentestResult?.findings.length ?? 0,
       comparisonResult,
       tokenMetrics,
       sessionPath: session.rootPath,
       duration: Date.now() - startTime,
+      ...(workflowError
+        ? {
+            error:
+              workflowError instanceof Error
+                ? workflowError.message
+                : String(workflowError),
+          }
+        : {}),
     };
 
     writeFileSync(
@@ -548,7 +580,7 @@ export async function runSingleBenchmark(
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const isTimeout = message.includes("aborted") || message.includes("abort");
+    const isTimeout = isAbortErrorMessage(message);
 
     console.error(
       `[${branch}] ${isTimeout ? "TIMEOUT" : "FAILED"}: ${message}`,
