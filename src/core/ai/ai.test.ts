@@ -230,19 +230,23 @@ describe("buildReasoningProviderOptions", () => {
 });
 
 describe("buildOpenRouterProviderOptions", () => {
-  it("pins GLM 5.2 to Z.ai without provider fallbacks", () => {
-    expect(buildOpenRouterProviderOptions("z-ai/glm-5.2")).toEqual({
-      openrouter: {
-        provider: {
-          only: ["z-ai"],
-          allow_fallbacks: false,
+  it("pins GLM 5.2 and 5.3 to Z.ai by default", () => {
+    for (const model of ["z-ai/glm-5.2", "z-ai/glm-5.3"]) {
+      expect(buildOpenRouterProviderOptions(model)).toEqual({
+        openrouter: {
+          provider: {
+            only: ["z-ai"],
+            allow_fallbacks: false,
+          },
         },
-      },
-    });
+      });
+    }
   });
 
-  it("leaves GLM 5.3 on OpenRouter's default routing", () => {
-    expect(buildOpenRouterProviderOptions("z-ai/glm-5.3")).toBeUndefined();
+  it("allows benchmarks to opt into OpenRouter's default routing", () => {
+    expect(
+      buildOpenRouterProviderOptions("z-ai/glm-5.3", "default"),
+    ).toBeUndefined();
   });
 
   it("leaves other OpenRouter models unchanged", () => {
@@ -253,20 +257,24 @@ describe("buildOpenRouterProviderOptions", () => {
 });
 
 describe("buildOpenRouterStructuredProviderOptions", () => {
-  it("prefers Z.ai for GLM 5.2 but requires schema enforcement", () => {
-    expect(buildOpenRouterStructuredProviderOptions("z-ai/glm-5.2")).toEqual({
-      openrouter: {
-        provider: {
-          order: ["z-ai"],
-          allow_fallbacks: true,
-          require_parameters: true,
+  it("prefers Z.ai by default but requires schema enforcement", () => {
+    for (const model of ["z-ai/glm-5.2", "z-ai/glm-5.3"]) {
+      expect(buildOpenRouterStructuredProviderOptions(model)).toEqual({
+        openrouter: {
+          provider: {
+            order: ["z-ai"],
+            allow_fallbacks: true,
+            require_parameters: true,
+          },
         },
-      },
-    });
+      });
+    }
   });
 
-  it("keeps GLM 5.3 default routing among schema-capable providers", () => {
-    expect(buildOpenRouterStructuredProviderOptions("z-ai/glm-5.3")).toEqual({
+  it("keeps benchmark routing default among schema-capable providers", () => {
+    expect(
+      buildOpenRouterStructuredProviderOptions("z-ai/glm-5.3", "default"),
+    ).toEqual({
       openrouter: {
         provider: {
           allow_fallbacks: true,

@@ -340,7 +340,7 @@ async function runSample(params: {
       maxOutputTokens: scenario.maxOutputTokens,
       authConfig:
         gateway === "openrouter"
-          ? { openRouterAPIKey: apiKey }
+          ? { openRouterAPIKey: apiKey, openRouterRouting: "default" }
           : { concentrateAPIKey: apiKey },
       tools,
       stopWhen: tools ? stepCountIs(3) : stepCountIs(1),

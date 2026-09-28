@@ -53,6 +53,54 @@ function completedResponse(): Response {
   );
 }
 
+function streamedResponse(): Response {
+  const events = [
+    {
+      type: "response.created",
+      response: {
+        id: "resp_stream",
+        created_at: 1_786_665_600,
+        model: "fireworks/glm-5.3",
+      },
+    },
+    {
+      type: "response.output_text.delta",
+      item_id: "msg_1",
+      delta: "ok",
+    },
+    {
+      type: "response.completed",
+      response: {
+        model: "fireworks/glm-5.3",
+        usage: {
+          input_tokens: 12,
+          input_tokens_details: { cached_tokens: 4 },
+          output_tokens: 8,
+          output_tokens_details: { reasoning_tokens: 3 },
+        },
+        cost: {
+          total: 0.000019,
+          byok: false,
+          breakdown: {
+            "fireworks/glm-5.3": {
+              input_tokens: 12,
+              output_tokens: 8,
+              total_tokens: 20,
+            },
+          },
+        },
+      },
+    },
+  ];
+  return new Response(
+    `${events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("")}data: [DONE]\n\n`,
+    {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    },
+  );
+}
+
 describe("createConcentrateModel", () => {
   it("uses the Responses API with the bare model slug and safe defaults", async () => {
     const fetchMock = vi.fn(
@@ -102,6 +150,33 @@ describe("createConcentrateModel", () => {
     expect(() =>
       createConcentrateModel("concentrate:glm-5.3", { apiKey: " " }),
     ).toThrow(/CONCENTRATE_API_KEY/);
+  });
+
+  it("retains billed cost and route metadata on streamed responses", async () => {
+    const model = createConcentrateModel("concentrate:glm-5.3", {
+      apiKey: "sk-cn-test",
+      fetch: vi.fn(async () => streamedResponse()),
+    });
+    const result = await model.doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "Say ok" }] }],
+    } satisfies LanguageModelV3CallOptions);
+    const parts = [];
+    const reader = result.stream.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+    }
+    const finish = parts.find((part) => part.type === "finish");
+
+    expect(finish?.providerMetadata?.concentrate).toMatchObject({
+      model: "fireworks/glm-5.3",
+      cost: {
+        total: 0.000019,
+        byok: false,
+      },
+    });
+    expect(parts.some((part) => part.type === "raw")).toBe(false);
   });
 
   it("rejects non-namespaced and empty model IDs", () => {

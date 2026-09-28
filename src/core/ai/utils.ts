@@ -82,6 +82,8 @@ export type AIAuthConfig = {
   anthropicAPIKey?: string;
   googleAPIKey?: string;
   openRouterAPIKey?: string;
+  /** Override curated provider pins for gateway-comparison runs. */
+  openRouterRouting?: "default" | "pinned";
   concentrateAPIKey?: string;
   inceptionAPIKey?: string;
   pensarAPIKey?: string;

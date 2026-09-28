@@ -133,8 +133,7 @@ async function runLocalMode(
 ): Promise<BenchmarkRunResult[]> {
   const results: BenchmarkRunResult[] = [];
 
-  for (let i = 0; i < config.branches.length; i++) {
-    const branch = config.branches[i]!;
+  for (const [i, branch] of config.branches.entries()) {
     console.log(
       `\n${"=".repeat(60)}\n[${i + 1}/${config.branches.length}] Running benchmark: ${branch}\n${"=".repeat(60)}`,
     );
@@ -416,6 +415,15 @@ export async function runSingleBenchmark(
         target: targetUrl,
         model: config.model,
         session,
+        authConfig:
+          config.costTracking?.gateway === "openrouter"
+            ? {
+                openRouterAPIKey: process.env.OPENROUTER_API_KEY,
+                openRouterRouting: "default",
+              }
+            : config.costTracking?.gateway === "concentrate"
+              ? { concentrateAPIKey: process.env.CONCENTRATE_API_KEY }
+              : undefined,
         abortSignal: controller.signal,
         eventBus: benchBus,
         onStepFinish: (event) => {

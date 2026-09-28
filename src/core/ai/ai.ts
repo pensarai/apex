@@ -1132,12 +1132,14 @@ export type OpenRouterProviderOptions = {
 };
 
 function isZaiPinnedModel(model: AIModel): boolean {
-  return model === "z-ai/glm-5.2";
+  return model === "z-ai/glm-5.2" || model === "z-ai/glm-5.3";
 }
 
 export function buildOpenRouterProviderOptions(
   model: AIModel,
+  routing: "default" | "pinned" = "pinned",
 ): OpenRouterProviderOptions | undefined {
+  if (routing === "default") return undefined;
   if (!isZaiPinnedModel(model)) return undefined;
   return {
     openrouter: {
@@ -1157,8 +1159,9 @@ export function buildOpenRouterProviderOptions(
  */
 export function buildOpenRouterStructuredProviderOptions(
   model: AIModel,
+  routing: "default" | "pinned" = "pinned",
 ): OpenRouterProviderOptions | undefined {
-  if (model === "z-ai/glm-5.3") {
+  if (routing === "default" && isZaiPinnedModel(model)) {
     return {
       openrouter: {
         provider: {
@@ -1523,7 +1526,10 @@ function streamResponseWithinOperation(
     thinkingEffort,
     openAIReasoningEffort,
   });
-  const openRouterProviderOptions = buildOpenRouterProviderOptions(model);
+  const openRouterProviderOptions = buildOpenRouterProviderOptions(
+    model,
+    authConfig?.openRouterRouting,
+  );
   const providerOptions =
     reasoningProviderOptions || openRouterProviderOptions
       ? { ...reasoningProviderOptions, ...openRouterProviderOptions }
@@ -1894,8 +1900,10 @@ export async function generateObjectResponse<T extends z.ZodType>(
     model,
     openAIReasoningEffort,
   );
-  const openRouterProviderOptions =
-    buildOpenRouterStructuredProviderOptions(model);
+  const openRouterProviderOptions = buildOpenRouterStructuredProviderOptions(
+    model,
+    authConfig?.openRouterRouting,
+  );
 
   return runWithNativeRolloutOperation(
     {
