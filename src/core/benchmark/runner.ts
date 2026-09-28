@@ -211,14 +211,8 @@ export async function runSingleBenchmark(
     // -----------------------------------------------------------------------
     if (config.repoDir) {
       benchmarkPath = config.repoDir;
-      // If a shared repo dir is provided, checkout the branch
       console.log(`[${branch}] Using repo dir: ${benchmarkPath}`);
-      try {
-        await exec(`git checkout ${branch}`, { cwd: benchmarkPath });
-      } catch {
-        // May already be on the branch or using worktrees
-        console.log(`[${branch}] Note: git checkout failed, continuing...`);
-      }
+      await exec(`git checkout --force ${branch}`, { cwd: benchmarkPath });
     } else {
       clonedDir = path.join("/tmp", `apex-bench-${branch}-${Date.now()}`);
       console.log(`[${branch}] Cloning ${config.repoUrl} branch ${branch}...`);
