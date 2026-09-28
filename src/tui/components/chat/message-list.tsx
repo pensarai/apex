@@ -5,6 +5,7 @@
  * Unified for both chat and operator modes.
  */
 
+import type { BoxRenderable } from "@opentui/core";
 import { memo } from "react";
 import type { PendingApproval } from "../../../core/operator";
 import { useTheme } from "../../theme";
@@ -84,6 +85,7 @@ export interface MessageListProps {
   username?: string;
   /** Empty state message */
   emptyMessage?: string;
+  onOperatorWelcomeHeightChange?: (height: number) => void;
   /** Whether scroll is focused */
   focused?: boolean;
   /** Verbose mode for tool display */
@@ -108,6 +110,7 @@ export const MessageList = memo(function MessageList({
   variant = "operator",
   username = "user",
   emptyMessage,
+  onOperatorWelcomeHeightChange,
   focused = true,
   verbose = false,
   expandedLogs = false,
@@ -149,7 +152,13 @@ export const MessageList = memo(function MessageList({
     >
       {/* Empty state - Operator mode */}
       {!hasMessages && variant === "operator" && (
-        <box flexDirection="column" gap={1} marginTop={2}>
+        <box
+          flexDirection="column"
+          marginTop={1}
+          onSizeChange={function (this: BoxRenderable) {
+            onOperatorWelcomeHeightChange?.(this.height + 2);
+          }}
+        >
           <text fg={colors.primary}>Operator Mode Active</text>
           <text fg={colors.textMuted}>
             {emptyMessage ||
