@@ -158,6 +158,17 @@ describe("applyFileDiff — matching", () => {
     );
   });
 
+  it.each([
+    false,
+    true,
+  ])("inserts before an adjacent edit regardless of hunk order (reversed: %s)", (reversed) => {
+    const hunks = ["@@ -1,0 +2 @@\n+inserted\n", "@@ -2 +3 @@\n-b\n+B\n"];
+    if (reversed) hunks.reverse();
+    expect(
+      apply(`--- a/f\n+++ b/f\n${hunks.join("")}`, "a\nb\nc\n").content,
+    ).toBe("a\ninserted\nB\nc\n");
+  });
+
   it("inserts mid-file at the declared anchor", () => {
     const result = apply(
       `--- a/f
@@ -184,6 +195,42 @@ describe("applyFileDiff — matching", () => {
 });
 
 describe("applyFileDiff — formatting invariants", () => {
+  it.each([
+    false,
+    true,
+  ])("validates old EOF before an append and preserves the appended newline state (%s)", (unterminated) => {
+    const marker = unterminated ? "\\ No newline at end of file\n" : "";
+    const result = apply(
+      `--- a/f\n+++ b/f\n@@ -2 +2 @@\n-b\n\\ No newline at end of file\n+B\n@@ -2,0 +3 @@\n+tail\n${marker}`,
+      "a\nb",
+    );
+    expect(result.content).toBe(`a\nB\ntail${unterminated ? "" : "\n"}`);
+  });
+
+  it("rejects a new-side no-newline marker before appended content", () => {
+    expectApplyError(
+      "--- a/f\n+++ b/f\n@@ -2 +2 @@\n-b\n+B\n\\ No newline at end of file\n@@ -2,0 +3 @@\n+tail\n",
+      "a\nb\n",
+      /does not reach end of file/,
+    );
+  });
+
+  it("rejects an old-side no-newline marker before a deleted tail", () => {
+    expectApplyError(
+      "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+A\n@@ -2 +1,0 @@\n-b\n",
+      "a\nb\n",
+      /does not reach end of file/,
+    );
+  });
+
+  it("accepts a new-side no-newline marker when a later hunk deletes the tail", () => {
+    const result = apply(
+      "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+A\n\\ No newline at end of file\n@@ -2 +1,0 @@\n-b\n",
+      "a\nb\n",
+    );
+    expect(result.content).toBe("A");
+  });
+
   it("preserves a final newline when the hunk does not touch EOF", () => {
     const result = apply(
       `--- a/f

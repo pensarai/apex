@@ -1,8 +1,7 @@
 // Pure patch application on in-memory content — no filesystem, no locks.
 // Formatting invariants: per-line EOLs (CRLF \r survives in matched text),
 // the file BOM, and the final newline all survive unless the patch itself
-// changes them; a hunk whose old span reaches EOF sets the result's final
-// newline to its new-side marker state.
+// changes them; a hunk reaching the resulting EOF sets its final newline.
 
 import type { ParsedFileDiff, ParsedHunk, PatchLine } from "./patchParse";
 
@@ -145,6 +144,7 @@ export function applyFileDiff(
   }
 
   const shape = analyzeContent(content);
+  const originalLineCount = shape.lines.length;
   const bomPlans = file.hunks.map((hunk) => planBom(hunk, shape.bom !== ""));
 
   // Raw context takes precedence over line-ending adaptation.
@@ -154,13 +154,15 @@ export function applyFileDiff(
   const outcomes: AppliedHunkOutcome[] = new Array(file.hunks.length);
 
   for (const { hunk, index, start } of [...located].sort(
-    (a, b) => b.start - a.start,
+    (a, b) => b.start - a.start || b.hunk.oldCount - a.hunk.oldCount,
   )) {
     const expected = hunkOldLines(hunk);
-    const reachesEof = start + expected.length === shape.lines.length;
+    const oldEndLine = start + expected.length;
+    const reachesOldEof = oldEndLine === originalLineCount;
+    const reachesNewEof = oldEndLine === shape.lines.length;
     if (
-      (hunk.oldEndsWithoutNewline || hunk.newEndsWithoutNewline) &&
-      !reachesEof
+      (hunk.oldEndsWithoutNewline && !reachesOldEof) ||
+      (hunk.newEndsWithoutNewline && !reachesNewEof)
     ) {
       throw new PatchApplyError(
         "No-newline marker on a hunk that does not reach end of file",
@@ -181,7 +183,7 @@ export function applyFileDiff(
     shape.lines.splice(start, oldEnd - start, ...replacement);
 
     if (bomPlans[index].dropFileBom) shape.bom = "";
-    if (reachesEof) {
+    if (reachesNewEof) {
       shape.endsWithNewline = !hunk.newEndsWithoutNewline;
     }
     outcomes[index] = {
@@ -380,7 +382,9 @@ function locateAllHunks(
     ...locateHunk(fileLines, hunk, index),
   }));
 
-  const byPosition = [...located].sort((a, b) => a.start - b.start);
+  const byPosition = [...located].sort(
+    (a, b) => a.start - b.start || a.hunk.oldCount - b.hunk.oldCount,
+  );
   for (let i = 1; i < byPosition.length; i++) {
     const prev = byPosition[i - 1];
     const cur = byPosition[i];
@@ -391,7 +395,11 @@ function locateAllHunks(
         cur.index,
       );
     }
-    if (cur.start === prev.start && cur.start === prevEnd) {
+    if (
+      cur.start === prev.start &&
+      prev.hunk.oldCount === 0 &&
+      cur.hunk.oldCount === 0
+    ) {
       throw new PatchApplyError(
         `Hunks ${prev.index + 1} and ${cur.index + 1} insert at the same point; order is ambiguous`,
         cur.index,
