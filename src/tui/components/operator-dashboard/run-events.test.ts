@@ -561,16 +561,22 @@ describe("createDisplayEventHandlers", () => {
     }) => {
       let timerCallbacks = 0;
       // Count actual callback executions, including empty-buffer interval ticks on the baseline.
-      for (const timer of ["setTimeout", "setInterval"] as const) {
-        const schedule = globalThis[timer];
-        vi.spyOn(globalThis, timer).mockImplementation(
-          (callback, delay = 0, ...args) =>
-            schedule(() => {
-              timerCallbacks++;
-              callback(...args);
-            }, delay),
-        );
-      }
+      const scheduleTimeout = globalThis.setTimeout;
+      const scheduleInterval = globalThis.setInterval;
+      vi.spyOn(globalThis, "setTimeout").mockImplementation(
+        (callback, delay = 0, ...args) =>
+          scheduleTimeout(() => {
+            timerCallbacks++;
+            callback(...args);
+          }, delay),
+      );
+      vi.spyOn(globalThis, "setInterval").mockImplementation(
+        (callback, delay = 0, ...args) =>
+          scheduleInterval(() => {
+            timerCallbacks++;
+            callback(...args);
+          }, delay),
+      );
 
       const recording = createRecordingSink();
       const display = createDisplayEventHandlers(recording.sink);
