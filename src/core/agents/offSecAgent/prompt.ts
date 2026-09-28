@@ -86,8 +86,7 @@ export function buildSessionWorkspaceSection(
   const sourceAssessmentSection = buildSourceAssessmentSection(
     session,
     agentCwd,
-    sandboxMode,
-    activeTools,
+    { sandboxMode, activeTools, fileWorkspaceRoot },
   );
 
   if (fileWorkspaceRoot) {
@@ -149,12 +148,7 @@ const SOURCE_ASSESSMENT_TOOL_NAMES = [
   "run_whitebox_scan",
 ] as const;
 
-/**
- * Tools that exist to rewrite the target repository. An agent holding one was
- * dispatched to edit the repo (the patching agent, say), so the assessment
- * default of "do not modify the target repo" contradicts its task and is
- * dropped for it.
- */
+// Helper-confined mutation tools do not imply permission to edit target source.
 const REPO_MUTATION_TOOL_NAMES = [
   "update_file",
   "apply_patch",
@@ -165,8 +159,15 @@ const REPO_MUTATION_TOOL_NAMES = [
 function buildSourceAssessmentSection(
   session: SessionPaths,
   agentCwd: string,
-  sandboxMode: boolean,
-  activeTools?: readonly string[],
+  {
+    sandboxMode,
+    activeTools,
+    fileWorkspaceRoot,
+  }: {
+    sandboxMode: boolean;
+    activeTools?: readonly string[];
+    fileWorkspaceRoot?: string;
+  },
 ): string {
   const codebasePath = session.config?.codebasePath;
   const hasSourceAccess = Boolean(codebasePath) || !sandboxMode;
@@ -186,12 +187,16 @@ function buildSourceAssessmentSection(
       : "";
 
   const mayEditRepo =
-    activeTools?.some((name) =>
+    !fileWorkspaceRoot &&
+    (activeTools?.some((name) =>
       (REPO_MUTATION_TOOL_NAMES as readonly string[]).includes(name),
-    ) ?? false;
-  const repoEditBullet = mayEditRepo
-    ? `\n- Keep harnesses, generated inputs, and scratch scripts at ${session.scratchpadPath} (an absolute session path, not a repo-relative path). Limit repo edits to the change you were dispatched to make.`
-    : `\n- Do not modify the target repo by default. Put harnesses, generated inputs, and scratch scripts at ${session.scratchpadPath} unless the operator approves repo edits.`;
+    ) ??
+      false);
+  const repoEditBullet = fileWorkspaceRoot
+    ? `\n- Source access is read-only. Keep harnesses, generated inputs, and scratch scripts inside ${fileWorkspaceRoot}. Helper-file tools do not authorize target repository changes. Do not use shell commands to edit target source or bypass the helper workspace.`
+    : mayEditRepo
+      ? `\n- Keep harnesses, generated inputs, and scratch scripts at ${session.scratchpadPath} (an absolute session path, not a repo-relative path). Limit repo edits to the change you were dispatched to make.`
+      : `\n- Do not modify the target repo by default. Put harnesses, generated inputs, and scratch scripts at ${session.scratchpadPath} unless the operator approves repo edits.`;
   const hasTool = (name: string) => !activeTools || activeTools.includes(name);
   const toolGuidance = [
     hasTool("profile_codebase") &&

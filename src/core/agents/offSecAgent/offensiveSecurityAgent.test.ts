@@ -65,6 +65,7 @@ vi.mock("./tools", () => ({
   SMS_TOOL_NAMES_ACTIVE: [],
   sessionHasSmsPasswordless: () => false,
   PLAN_MODE_TOOL_NAMES: [],
+  FAST_STRIKE_EXCLUDED_TOOL_NAMES: [],
   createResponseTool: () => {},
   RESPONSE_TOOL_NAME: "response",
   ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
@@ -153,6 +154,49 @@ import {
 } from "./offensiveSecurityAgent";
 
 describe("assembled file-workspace instructions", () => {
+  it("does not treat Fast Strike helper tools as permission to edit target source", () => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-fast-strike-scope-"));
+    const helperRoot = join(rootPath, "subagents", "worker", "helpers");
+    streamResponseCalls.length = 0;
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        system: "Worker instructions",
+        model: "test-model",
+        mode: "fast-strike",
+        session: {
+          id: "ses_fast_strike_scope",
+          rootPath,
+          scratchpadPath: join(rootPath, "scratchpad"),
+          config: { codebasePath: join(rootPath, "target-repo") },
+        },
+        fileWorkspaceRoot: helperRoot,
+        activeTools: [],
+        extraTools: { profile_codebase: {}, create_file: {} },
+        sandbox: {},
+      } as never);
+      void agent.streamResult;
+      const request = streamResponseCalls[0];
+      expect(request.activeTools).toContain("profile_codebase");
+      expect(request.activeTools).toContain("create_file");
+      const assessment = (request.system as string).split(
+        "# Source Code Assessment",
+      )[1];
+      expect(assessment).toBeDefined();
+      expect(assessment).toContain("Source access is read-only");
+      expect(assessment).toContain(helperRoot);
+      expect(assessment).toContain(
+        "Do not use shell commands to edit target source",
+      );
+      expect(assessment).not.toContain(
+        "Limit repo edits to the change you were dispatched to make",
+      );
+      expect(assessment).not.toContain(join(rootPath, "scratchpad"));
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     "spawned",
     "root",
