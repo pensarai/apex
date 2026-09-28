@@ -190,8 +190,30 @@ function buildSourceAssessmentSection(
       (REPO_MUTATION_TOOL_NAMES as readonly string[]).includes(name),
     ) ?? false;
   const repoEditBullet = mayEditRepo
-    ? `\n- Keep harnesses, generated inputs, and scratch scripts under the session scratchpad. Limit repo edits to the change you were dispatched to make.`
-    : `\n- Do not modify the target repo by default. Put harnesses, generated inputs, and scratch scripts under the session scratchpad unless the operator approves repo edits.`;
+    ? `\n- Keep harnesses, generated inputs, and scratch scripts at ${session.scratchpadPath} (an absolute session path, not a repo-relative path). Limit repo edits to the change you were dispatched to make.`
+    : `\n- Do not modify the target repo by default. Put harnesses, generated inputs, and scratch scripts at ${session.scratchpadPath} unless the operator approves repo edits.`;
+  const hasTool = (name: string) => !activeTools || activeTools.includes(name);
+  const toolGuidance = [
+    hasTool("profile_codebase") &&
+      "- Start with `profile_codebase` when the repo is unfamiliar.",
+    hasTool("query_whitebox_catalog") &&
+      "- Query only relevant playbook slices with `query_whitebox_catalog`; do not carry the whole methodology in context.",
+    hasTool("run_code_query") &&
+      "- Use `run_code_query` for batched source searches.",
+    hasTool("run_whitebox_scan") &&
+      "- Use `run_whitebox_scan` for installed scanners.",
+    hasTool("spawn_coding_agent") &&
+      "- Use `spawn_coding_agent` for independent deep dives.",
+    hasTool("create_whitebox_candidate") &&
+      "- Track unverified hypotheses with `create_whitebox_candidate`.",
+    hasTool("document_vulnerability") &&
+      "- Only call `document_vulnerability` after a PoC, crash reproducer, or dynamic check confirms exploitability.",
+    hasTool("start_whitebox_job") &&
+      hasTool("poll_whitebox_job") &&
+      "- Run builds, local servers, sanitizer runs, and microfuzzers through bounded whitebox jobs so logs and crashes are preserved as artifacts.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return `
 
@@ -200,12 +222,8 @@ function buildSourceAssessmentSection(
 Source code is in scope at ${sourceRoot}.${alignmentNote}
 
 Use source access as a force multiplier, not as a rigid workflow:
-- Start with \`profile_codebase\` when the repo is unfamiliar.
-- Query only relevant playbook slices with \`query_whitebox_catalog\`; do not carry the whole methodology in context.
 - Prefer sink-first analysis: find dangerous operations, then trace backward to attacker-controlled entry points and trust boundaries.
-- Use \`run_code_query\` for batched source searches, \`run_whitebox_scan\` for installed scanners, and \`spawn_coding_agent\` for independent deep dives.
-- Track unverified hypotheses with whitebox candidates. Only call \`document_vulnerability\` after a PoC, crash reproducer, or dynamic check confirms exploitability.
-- Run builds, local servers, sanitizer runs, and microfuzzers through bounded whitebox jobs so logs and crashes are preserved as artifacts.${repoEditBullet}`;
+${toolGuidance}${repoEditBullet}`;
 }
 
 /** Options for building the base system prompt. */
