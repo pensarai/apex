@@ -8,6 +8,7 @@ import {
   type ConcentrateFetch,
   createConcentrateFetch,
   createConcentrateModel,
+  extractConcentrateResponseMetadata,
 } from "./concentrate";
 
 function completedResponse(): Response {
@@ -29,6 +30,17 @@ function completedResponse(): Response {
         input_tokens_details: { cached_tokens: 4 },
         output_tokens: 8,
         output_tokens_details: { reasoning_tokens: 3 },
+      },
+      cost: {
+        total: 0.000019,
+        byok: false,
+        breakdown: {
+          "fireworks/glm-5.3": {
+            input_tokens: 12,
+            output_tokens: 8,
+            total_tokens: 20,
+          },
+        },
       },
     }),
     {
@@ -52,7 +64,7 @@ describe("createConcentrateModel", () => {
       fetch: fetchMock,
     });
 
-    await model.doGenerate({
+    const result = await model.doGenerate({
       prompt: [{ role: "user", content: [{ type: "text", text: "Say ok" }] }],
       providerOptions: { openai: { reasoningEffort: "high", store: true } },
     } satisfies LanguageModelV3CallOptions);
@@ -77,6 +89,13 @@ describe("createConcentrateModel", () => {
         },
       ],
     });
+    expect(result.providerMetadata?.concentrate).toMatchObject({
+      model: "fireworks/glm-5.3",
+      cost: {
+        total: 0.000019,
+        byok: false,
+      },
+    });
   });
 
   it("fails before constructing a request when the key is missing", () => {
@@ -92,6 +111,50 @@ describe("createConcentrateModel", () => {
     expect(() =>
       createConcentrateModel("concentrate:", { apiKey: "sk-cn-test" }),
     ).toThrow(/cannot be empty/);
+  });
+});
+
+describe("extractConcentrateResponseMetadata", () => {
+  it("reads metadata from completed streaming events", () => {
+    expect(
+      extractConcentrateResponseMetadata({
+        type: "response.completed",
+        response: {
+          model: "fireworks/glm-5.3",
+          cost: {
+            total: 0.42,
+            byok: false,
+            breakdown: {
+              "fireworks/glm-5.3": {
+                input_tokens: 10,
+                output_tokens: 20,
+              },
+            },
+          },
+        },
+      }),
+    ).toEqual({
+      model: "fireworks/glm-5.3",
+      cost: {
+        total: 0.42,
+        byok: false,
+        breakdown: {
+          "fireworks/glm-5.3": {
+            input_tokens: 10,
+            output_tokens: 20,
+          },
+        },
+      },
+    });
+  });
+
+  it("rejects malformed cost metadata while retaining the served model", () => {
+    expect(
+      extractConcentrateResponseMetadata({
+        model: "fireworks/glm-5.3",
+        cost: { total: "free", byok: false, breakdown: {} },
+      }),
+    ).toEqual({ model: "fireworks/glm-5.3", cost: undefined });
   });
 });
 

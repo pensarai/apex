@@ -20,6 +20,13 @@ import {
   type PentestWorkflowResult,
   runPentestWorkflow,
 } from "../workflows/pentest";
+import {
+  CostBudget,
+  CostBudgetExceededError,
+  extractGatewayStepCost,
+  type GatewayStepCost,
+  type ReferenceTokenRates,
+} from "./gatewayCost";
 import type {
   BenchmarkMetadata,
   BenchmarkRunResult,
@@ -31,15 +38,7 @@ import type {
 
 const exec = promisify(nodeExec);
 
-// Anthropic Claude Sonnet pricing per 1M tokens
-const PRICING = {
-  input: 3.0,
-  output: 15.0,
-  cacheRead: 0.3,
-  cacheWrite: 3.75,
-};
-
-function computeTokenMetrics(
+export function computeTokenMetrics(
   tokenTotals: {
     inputTokens: number;
     outputTokens: number;
@@ -47,6 +46,8 @@ function computeTokenMetrics(
   },
   cacheTotals: { cacheReadTokens: number; cacheWriteTokens: number },
   durationMs: number,
+  stepCosts: GatewayStepCost[],
+  referenceRates?: ReferenceTokenRates,
 ): TokenMetrics {
   const { inputTokens, outputTokens, totalTokens } = tokenTotals;
   const { cacheReadTokens, cacheWriteTokens } = cacheTotals;
@@ -55,14 +56,23 @@ function computeTokenMetrics(
     inputTokens - cacheReadTokens - cacheWriteTokens,
   );
 
-  const estimatedCostUsd =
-    (noCacheInputTokens / 1e6) * PRICING.input +
-    (outputTokens / 1e6) * PRICING.output +
-    (cacheReadTokens / 1e6) * PRICING.cacheRead +
-    (cacheWriteTokens / 1e6) * PRICING.cacheWrite;
-
-  const estimatedCostWithoutCacheUsd =
-    (inputTokens / 1e6) * PRICING.input + (outputTokens / 1e6) * PRICING.output;
+  const providerCostUsd =
+    stepCosts.length > 0
+      ? stepCosts.reduce((sum, step) => sum + step.providerCostUsd, 0)
+      : null;
+  const referenceCostUsd =
+    stepCosts.length > 0
+      ? stepCosts.reduce((sum, step) => sum + step.referenceCostUsd, 0)
+      : null;
+  const referenceCostWithoutCacheUsd = referenceRates
+    ? (inputTokens / 1e6) * referenceRates.inputPerMillion +
+      (outputTokens / 1e6) * referenceRates.outputPerMillion
+    : null;
+  const byokValues = new Set(
+    stepCosts
+      .map(({ byok }) => byok)
+      .filter((value): value is boolean => value !== undefined),
+  );
 
   return {
     inputTokens,
@@ -71,8 +81,18 @@ function computeTokenMetrics(
     cacheReadTokens,
     cacheWriteTokens,
     noCacheInputTokens,
-    estimatedCostUsd,
-    estimatedCostWithoutCacheUsd,
+    providerCostUsd,
+    referenceCostUsd,
+    referenceCostWithoutCacheUsd,
+    routes: [...new Set(stepCosts.flatMap(({ routes }) => routes))].sort(),
+    servedModels: [
+      ...new Set(
+        stepCosts
+          .map(({ servedModel }) => servedModel)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ].sort(),
+    byok: byokValues.size === 1 ? [...byokValues][0] : undefined,
     durationMs,
   };
 }
@@ -355,6 +375,10 @@ export async function runSingleBenchmark(
 
     const tokenTotals = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
     const cacheTotals = { cacheReadTokens: 0, cacheWriteTokens: 0 };
+    const stepCosts: GatewayStepCost[] = [];
+    const costBudget = config.costTracking
+      ? new CostBudget(config.costTracking.maxProviderCostUsd)
+      : undefined;
     const workflowStart = Date.now();
 
     const benchBus = new AgentEventBus();
@@ -403,6 +427,22 @@ export async function runSingleBenchmark(
             stepUsage.inputTokens + stepUsage.outputTokens;
           cacheTotals.cacheReadTokens += stepUsage.cacheReadTokens;
           cacheTotals.cacheWriteTokens += stepUsage.cacheWriteTokens;
+          if (config.costTracking && costBudget) {
+            const stepCost = extractGatewayStepCost(
+              config.costTracking.gateway,
+              event,
+              config.costTracking.referenceRates,
+            );
+            try {
+              costBudget.record(stepCost.providerCostUsd);
+            } catch (error) {
+              if (error instanceof CostBudgetExceededError) {
+                controller.abort(error);
+              }
+              throw error;
+            }
+            stepCosts.push(stepCost);
+          }
         },
       });
     } finally {
@@ -432,23 +472,25 @@ export async function runSingleBenchmark(
     let comparisonResult: BenchmarkComparisonResult["comparison"] = null;
     const comparisonModel = config.comparisonModel || "claude-haiku-4-5";
 
-    try {
-      console.log(`[${branch}] Running benchmark comparison...`);
-      const compAgent = new BenchmarkComparisonAgent({
-        repoPath: benchmarkPath,
-        model: comparisonModel,
-        session,
-      });
-      compAgent.eventBus.on("error", (d) =>
-        console.error(`[${branch}] Comparison error:`, d.error),
-      );
-      const compResult = await compAgent.consume();
-      comparisonResult = compResult.comparison;
-    } catch (e) {
-      console.error(
-        `[${branch}] Comparison failed:`,
-        e instanceof Error ? e.message : String(e),
-      );
+    if (config.runComparison !== false) {
+      try {
+        console.log(`[${branch}] Running benchmark comparison...`);
+        const compAgent = new BenchmarkComparisonAgent({
+          repoPath: benchmarkPath,
+          model: comparisonModel,
+          session,
+        });
+        compAgent.eventBus.on("error", (d) =>
+          console.error(`[${branch}] Comparison error:`, d.error),
+        );
+        const compResult = await compAgent.consume();
+        comparisonResult = compResult.comparison;
+      } catch (e) {
+        console.error(
+          `[${branch}] Comparison failed:`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
     }
 
     // -----------------------------------------------------------------------
@@ -466,6 +508,8 @@ export async function runSingleBenchmark(
       tokenTotals,
       cacheTotals,
       Date.now() - workflowStart,
+      stepCosts,
+      config.costTracking?.referenceRates,
     );
 
     writeFileSync(
@@ -612,7 +656,7 @@ async function cleanupDocker(
   }
 }
 
-function computeSummary(
+export function computeSummary(
   results: BenchmarkRunResult[],
   suiteStartTime: number,
 ): BenchmarkSuiteSummary {
@@ -664,14 +708,15 @@ function computeSummary(
     (s, t) => s + t.noCacheInputTokens,
     0,
   );
-  const totalEstimatedCostUsd = tokenResults.reduce(
-    (s, t) => s + t.estimatedCostUsd,
-    0,
-  );
-  const totalEstimatedCostWithoutCacheUsd = tokenResults.reduce(
-    (s, t) => s + t.estimatedCostWithoutCacheUsd,
-    0,
-  );
+  const providerCosts = tokenResults
+    .map((result) => result.providerCostUsd)
+    .filter((cost): cost is number => cost !== null);
+  const referenceCosts = tokenResults
+    .map((result) => result.referenceCostUsd)
+    .filter((cost): cost is number => cost !== null);
+  const referenceCostsWithoutCache = tokenResults
+    .map((result) => result.referenceCostWithoutCacheUsd)
+    .filter((cost): cost is number => cost !== null);
   const cacheHitRate =
     totalCacheReadTokens + totalNoCacheInput > 0
       ? totalCacheReadTokens / (totalCacheReadTokens + totalNoCacheInput)
@@ -691,8 +736,18 @@ function computeSummary(
     totalOutputTokens,
     totalCacheReadTokens,
     totalCacheWriteTokens,
-    totalEstimatedCostUsd,
-    totalEstimatedCostWithoutCacheUsd,
+    totalProviderCostUsd:
+      providerCosts.length > 0
+        ? providerCosts.reduce((sum, cost) => sum + cost, 0)
+        : null,
+    totalReferenceCostUsd:
+      referenceCosts.length > 0
+        ? referenceCosts.reduce((sum, cost) => sum + cost, 0)
+        : null,
+    totalReferenceCostWithoutCacheUsd:
+      referenceCostsWithoutCache.length > 0
+        ? referenceCostsWithoutCache.reduce((sum, cost) => sum + cost, 0)
+        : null,
     cacheHitRate,
   };
 }

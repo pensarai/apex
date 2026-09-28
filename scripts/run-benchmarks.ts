@@ -15,8 +15,13 @@
  *   bun run scripts/run-benchmarks.ts --all --mode daytona --model claude-sonnet-4-5
  */
 
+import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import {
+  type CostBenchGateway,
+  parseOpenRouterReferenceRates,
+} from "../src/core/benchmark/gatewayCost";
 import {
   generateJsonReport,
   generateTextReport,
@@ -37,6 +42,53 @@ const ALL_BRANCHES = Array.from({ length: 60 }, (_, i) => {
   const num = String(i + 1).padStart(3, "0");
   return `APEX-${num}-25`;
 });
+
+function parseSstSecret(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as { value?: unknown };
+    return typeof parsed.value === "string" && parsed.value.trim()
+      ? parsed.value
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function configureGatewaySecrets(): void {
+  process.env.OPENROUTER_API_KEY ??= parseSstSecret(
+    process.env.SST_RESOURCE_OpenrouterApiKey,
+  );
+  process.env.CONCENTRATE_API_KEY ??= parseSstSecret(
+    process.env.SST_RESOURCE_ConcentrateApiKey,
+  );
+}
+
+function costGatewayForModel(model: string): CostBenchGateway {
+  if (model === "z-ai/glm-5.3") return "openrouter";
+  if (model === "concentrate:glm-5.3") return "concentrate";
+  throw new Error(
+    `Provider-cost tracking currently supports GLM 5.3 only, received ${model}`,
+  );
+}
+
+async function loadReferenceRates() {
+  const source = "https://openrouter.ai/api/v1/models";
+  const capturedAt = new Date().toISOString();
+  const response = await fetch(source, {
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `OpenRouter model catalog returned HTTP ${response.status}`,
+    );
+  }
+  return parseOpenRouterReferenceRates(
+    (await response.json()) as unknown,
+    capturedAt,
+    source,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -64,6 +116,9 @@ Options:
   --skip <n>                  Skip first N benchmarks
   --limit <n>                 Max benchmarks to run
   --daytona-batch-size <n>    Parallel Daytona sandboxes (default: 4)
+  --track-provider-cost       Require provider-billed GLM 5.3 cost metadata
+  --max-provider-cost <usd>   Abort a run after this billed-cost ceiling (default: 40)
+  --no-comparison             Skip the separate LLM comparison scorer
   --no-cleanup                Don't remove temp clone directories
   --help, -h                  Show this help message
 
@@ -102,6 +157,9 @@ async function main(): Promise<void> {
   let limit = Infinity;
   let daytonaBatchSize = DEFAULT_BATCH_SIZE;
   let cleanupTempDirs = true;
+  let runComparison = true;
+  let trackProviderCost = false;
+  let maxProviderCostUsd = 40;
 
   // Parse arguments
   for (let i = 0; i < args.length; i++) {
@@ -143,6 +201,14 @@ async function main(): Promise<void> {
     } else if (arg === "--daytona-batch-size" && value) {
       i++;
       daytonaBatchSize = parseInt(value, 10);
+    } else if (arg === "--track-provider-cost") {
+      trackProviderCost = true;
+    } else if (arg === "--max-provider-cost" && value) {
+      i++;
+      maxProviderCostUsd = Number(value);
+      trackProviderCost = true;
+    } else if (arg === "--no-comparison") {
+      runComparison = false;
     } else if (arg === "--no-cleanup") {
       cleanupTempDirs = false;
     }
@@ -168,9 +234,36 @@ async function main(): Promise<void> {
   }
 
   // Validate environment
-  if (!process.env.ANTHROPIC_API_KEY && !process.env.OPENROUTER_API_KEY) {
+  configureGatewaySecrets();
+  if (model.startsWith("concentrate:") && !process.env.CONCENTRATE_API_KEY) {
+    console.error("Error: CONCENTRATE_API_KEY environment variable required.");
+    process.exit(1);
+  }
+  if (model.startsWith("z-ai/") && !process.env.OPENROUTER_API_KEY) {
+    console.error("Error: OPENROUTER_API_KEY environment variable required.");
+    process.exit(1);
+  }
+  if (
+    !model.startsWith("concentrate:") &&
+    !model.startsWith("z-ai/") &&
+    !process.env.ANTHROPIC_API_KEY &&
+    !process.env.OPENROUTER_API_KEY
+  ) {
     console.error(
       "Error: ANTHROPIC_API_KEY or OPENROUTER_API_KEY environment variable required.",
+    );
+    process.exit(1);
+  }
+  if (
+    trackProviderCost &&
+    (!Number.isFinite(maxProviderCostUsd) || maxProviderCostUsd <= 0)
+  ) {
+    console.error("Error: --max-provider-cost must be a positive number.");
+    process.exit(1);
+  }
+  if (trackProviderCost && mode !== "local") {
+    console.error(
+      "Error: provider-cost tracking requires local mode because Daytona does not return token metrics.",
     );
     process.exit(1);
   }
@@ -178,7 +271,6 @@ async function main(): Promise<void> {
   if (mode === "local") {
     // Verify docker is available
     try {
-      const { execSync } = await import("node:child_process");
       execSync("docker compose version", { stdio: "pipe" });
     } catch {
       console.error(
@@ -200,6 +292,14 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const costTracking = trackProviderCost
+    ? {
+        gateway: costGatewayForModel(model),
+        referenceRates: await loadReferenceRates(),
+        maxProviderCostUsd,
+      }
+    : undefined;
+
   // Print run configuration
   console.log("═".repeat(55));
   console.log("        ARGUS BENCHMARK RUNNER");
@@ -209,6 +309,12 @@ async function main(): Promise<void> {
   console.log(`Repo:       ${repoDir || repoUrl}`);
   console.log(`Benchmarks: ${branches.length}`);
   console.log(`Timeout:    ${timeoutMinutes}m per benchmark`);
+  console.log(`Comparison: ${runComparison ? "enabled" : "disabled"}`);
+  if (costTracking) {
+    console.log(
+      `Cost guard:  $${costTracking.maxProviderCostUsd.toFixed(2)} provider-billed`,
+    );
+  }
   if (mode === "daytona") {
     console.log(`Batch Size: ${daytonaBatchSize}`);
   }
@@ -226,6 +332,8 @@ async function main(): Promise<void> {
     timeoutMinutes,
     daytonaBatchSize,
     cleanupTempDirs,
+    runComparison,
+    costTracking,
   };
 
   // Run suite

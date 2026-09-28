@@ -162,22 +162,32 @@ export function generateTextReport(result: BenchmarkSuiteResult): string {
     );
     lines.push("");
 
-    const savings =
-      summary.totalEstimatedCostWithoutCacheUsd - summary.totalEstimatedCostUsd;
-    const savingsPct =
-      summary.totalEstimatedCostWithoutCacheUsd > 0
-        ? (savings / summary.totalEstimatedCostWithoutCacheUsd) * 100
-        : 0;
-
-    lines.push(
-      `Estimated Cost:        $${summary.totalEstimatedCostUsd.toFixed(2)}`,
-    );
-    lines.push(
-      `Cost Without Caching:  $${summary.totalEstimatedCostWithoutCacheUsd.toFixed(2)}`,
-    );
-    lines.push(
-      `Savings:               $${savings.toFixed(2)} (${savingsPct.toFixed(1)}%)`,
-    );
+    if (summary.totalProviderCostUsd !== null) {
+      lines.push(
+        `Provider-billed Cost: $${summary.totalProviderCostUsd.toFixed(6)}`,
+      );
+    }
+    if (
+      summary.totalReferenceCostUsd !== null &&
+      summary.totalReferenceCostWithoutCacheUsd !== null
+    ) {
+      const savings =
+        summary.totalReferenceCostWithoutCacheUsd -
+        summary.totalReferenceCostUsd;
+      const savingsPct =
+        summary.totalReferenceCostWithoutCacheUsd > 0
+          ? (savings / summary.totalReferenceCostWithoutCacheUsd) * 100
+          : 0;
+      lines.push(
+        `Reference-rate Cost:  $${summary.totalReferenceCostUsd.toFixed(6)}`,
+      );
+      lines.push(
+        `Reference no Cache:   $${summary.totalReferenceCostWithoutCacheUsd.toFixed(6)}`,
+      );
+      lines.push(
+        `Reference Savings:    $${savings.toFixed(6)} (${savingsPct.toFixed(1)}%)`,
+      );
+    }
     lines.push("");
 
     // Per-benchmark token table
@@ -190,7 +200,8 @@ export function generateTextReport(result: BenchmarkSuiteResult): string {
           padRight("Input", 10) +
           padRight("Cache Rd", 10) +
           padRight("Hit%", 8) +
-          "Cost",
+          padRight("Billed", 12) +
+          "Reference",
       );
 
       for (const r of tokenResults) {
@@ -209,8 +220,19 @@ export function generateTextReport(result: BenchmarkSuiteResult): string {
             padRight(formatTokenCount(t.inputTokens), 10) +
             padRight(formatTokenCount(t.cacheReadTokens), 10) +
             padRight(hitRate, 8) +
-            `$${t.estimatedCostUsd.toFixed(2)}`,
+            padRight(
+              t.providerCostUsd === null
+                ? "-"
+                : `$${t.providerCostUsd.toFixed(6)}`,
+              12,
+            ) +
+            (t.referenceCostUsd === null
+              ? "-"
+              : `$${t.referenceCostUsd.toFixed(6)}`),
         );
+        if (t.routes.length > 0) {
+          lines.push(`  Routes: ${t.routes.join(", ")}`);
+        }
       }
       lines.push("");
     }

@@ -1,5 +1,6 @@
 import type { ComparisonResult } from "../agents/specialized/benchmark";
 import type { AIModel } from "../ai";
+import type { CostBenchGateway, ReferenceTokenRates } from "./gatewayCost";
 
 export type { ComparisonResult } from "../agents/specialized/benchmark";
 
@@ -24,6 +25,12 @@ export interface BenchmarkSuiteConfig {
   timeoutMinutes: number;
   daytonaBatchSize: number;
   cleanupTempDirs: boolean;
+  runComparison?: boolean;
+  costTracking?: {
+    gateway: CostBenchGateway;
+    referenceRates: ReferenceTokenRates;
+    maxProviderCostUsd: number;
+  };
 }
 
 export interface TokenMetrics {
@@ -33,8 +40,12 @@ export interface TokenMetrics {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   noCacheInputTokens: number;
-  estimatedCostUsd: number;
-  estimatedCostWithoutCacheUsd: number;
+  providerCostUsd: number | null;
+  referenceCostUsd: number | null;
+  referenceCostWithoutCacheUsd: number | null;
+  routes: string[];
+  servedModels: string[];
+  byok: boolean | undefined;
   durationMs: number;
 }
 
@@ -74,7 +85,8 @@ export interface BenchmarkSuiteSummary {
   totalOutputTokens: number;
   totalCacheReadTokens: number;
   totalCacheWriteTokens: number;
-  totalEstimatedCostUsd: number;
-  totalEstimatedCostWithoutCacheUsd: number;
+  totalProviderCostUsd: number | null;
+  totalReferenceCostUsd: number | null;
+  totalReferenceCostWithoutCacheUsd: number | null;
   cacheHitRate: number;
 }

@@ -765,10 +765,7 @@ function wrapStreamWithErrorHandler(
                     opts.model,
                     opts.authConfig?.customProviders,
                   ),
-                  maxOutputTokens: getMaxOutputTokens(
-                    opts.model,
-                    opts.authConfig?.customProviders,
-                  ),
+                  maxOutputTokens: resolveMaxOutputTokens(opts),
                   system: applySequentialToolCallPolicy(
                     opts.system,
                     opts.tools,
@@ -1126,12 +1123,16 @@ export type OpenRouterProviderOptions = {
           order: ["z-ai"];
           allow_fallbacks: true;
           require_parameters: true;
+        }
+      | {
+          allow_fallbacks: true;
+          require_parameters: true;
         };
   };
 };
 
 function isZaiPinnedModel(model: AIModel): boolean {
-  return model === "z-ai/glm-5.2" || model === "z-ai/glm-5.3";
+  return model === "z-ai/glm-5.2";
 }
 
 export function buildOpenRouterProviderOptions(
@@ -1157,6 +1158,16 @@ export function buildOpenRouterProviderOptions(
 export function buildOpenRouterStructuredProviderOptions(
   model: AIModel,
 ): OpenRouterProviderOptions | undefined {
+  if (model === "z-ai/glm-5.3") {
+    return {
+      openrouter: {
+        provider: {
+          allow_fallbacks: true,
+          require_parameters: true,
+        },
+      },
+    };
+  }
   if (!isZaiPinnedModel(model)) return undefined;
   return {
     openrouter: {
@@ -1237,6 +1248,8 @@ export interface StreamResponseOpts {
   prompt: string;
   system?: string;
   model: AIModel;
+  /** Optional per-run output cap. Must not exceed the model's declared limit. */
+  maxOutputTokens?: number;
   messages?: Array<ModelMessage>;
   stopWhen?:
     | StopCondition<NoInfer<ToolSet>>
@@ -1286,6 +1299,24 @@ export interface StreamResponseOpts {
   /** Shared only by continuations of this stream, never across agents. */
   _compaction?: { last?: CompactionLink };
   _compactionTrigger?: CompactionTrigger;
+}
+
+function resolveMaxOutputTokens(opts: StreamResponseOpts): number {
+  const modelLimit = getMaxOutputTokens(
+    opts.model,
+    opts.authConfig?.customProviders,
+  );
+  const requested = opts.maxOutputTokens ?? modelLimit;
+  if (
+    !Number.isSafeInteger(requested) ||
+    requested <= 0 ||
+    requested > modelLimit
+  ) {
+    throw new Error(
+      `maxOutputTokens must be a positive safe integer no greater than ${modelLimit} for ${opts.model}`,
+    );
+  }
+  return requested;
 }
 
 const NATIVE_STREAM_RECOVERY = Symbol("native-stream-recovery");
@@ -1407,7 +1438,7 @@ function streamResponseWithinOperation(
   if (messages && messages.length > 0) {
     const fitted = fitMessagesToContext(messages, {
       contextWindow: getContextWindow(model, authConfig?.customProviders),
-      maxOutputTokens: getMaxOutputTokens(model, authConfig?.customProviders),
+      maxOutputTokens: resolveMaxOutputTokens(opts),
       system: systemWithToolPolicy,
       tools,
       sessionPath: opts.sessionPath,
@@ -1529,7 +1560,7 @@ function streamResponseWithinOperation(
       // defaults that can exceed our budget — e.g. GPT-4o defaults to
       // 16K output but our messages were sized assuming a smaller
       // reservation. Making the value explicit closes that drift class.
-      maxOutputTokens: getMaxOutputTokens(model, authConfig?.customProviders),
+      maxOutputTokens: resolveMaxOutputTokens(opts),
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
