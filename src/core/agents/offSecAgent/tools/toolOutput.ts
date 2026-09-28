@@ -62,6 +62,9 @@ export function boundedOutputPreview(
   maxBytes = TOOL_OUTPUT_MAX_BYTES,
   maxLines = TOOL_OUTPUT_MAX_LINES,
 ): string {
+  const allLines = text.split("\n");
+  if (allLines.length <= maxLines && Buffer.byteLength(text) <= maxBytes)
+    return text;
   const bytes = maxBytes - Buffer.byteLength(marker) - 4;
   const lines = maxLines - lineCount(marker) - 3;
   if (bytes <= 0 || lines <= 0) {
@@ -69,10 +72,6 @@ export function boundedOutputPreview(
       .split("\n")
       .slice(0, maxLines)
       .join("\n");
-  }
-  const allLines = text.split("\n");
-  if (allLines.length <= lines && Buffer.byteLength(text) <= bytes) {
-    return `${text}\n\n${marker}`;
   }
   const headLines = Math.ceil(lines / 2);
   const tailLines = Math.floor(lines / 2);

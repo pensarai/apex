@@ -58,6 +58,11 @@ describe("bounded model output", () => {
         value: output,
       });
     }
+    const escaped = { success: true, error: "", stdout: "\\".repeat(26_000) };
+    const projected = await toolOutputForModel(ctx, escaped);
+    expect(projected.type).toBe("text");
+    expect(String(projected.value).includes(escaped.stdout)).toBe(true);
+    expect(String(projected.value).includes("output omitted")).toBe(false);
   });
 
   it("bounds bytes and lines, preserves both ends, and never splits Unicode", () => {
@@ -76,9 +81,7 @@ describe("bounded model output", () => {
       expect(preview.endsWith("last")).toBe(true);
       expect(preview).not.toContain("�");
     }
-    expect(boundedOutputPreview("short", "[omitted]", 100, 20)).toBe(
-      "short\n\n[omitted]",
-    );
+    expect(boundedOutputPreview("short", "[omitted]", 100, 20)).toBe("short");
   });
 
   it("retains middle evidence, stderr, and incomplete status without mutating the original", async () => {
