@@ -25,8 +25,8 @@ const LOGO_ROWS = [
 export const WELCOME_LOGO_WIDTH = LOGO_ROWS[0].length;
 export const WELCOME_LOGO_HEIGHT = LOGO_ROWS.length;
 const LOGO_SHADES: Record<ColorMode, string[]> = {
-  dark: ["#989898", "#707070", "#505050"],
-  light: ["#606060", "#808080", "#a0a0a0"],
+  dark: ["#838383", "#616161", "#464646"],
+  light: ["#777777", "#929292", "#aeaeae"],
 };
 const LOGO_RUNS = LOGO_ROWS.flatMap((row, y) => {
   const runs = ["", "", ""];
