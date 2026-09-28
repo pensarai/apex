@@ -247,6 +247,7 @@ const WIN_LIST_SCRIPT = [
   WIN_SCRIPT_PRELUDE,
   "try{",
   "$p=[Environment]::GetEnvironmentVariable('APEX_LIST_PATH')",
+  'if(-not [IO.Directory]::Exists($p)){throw "$p is not a directory"}',
   "$rec=([Environment]::GetEnvironmentVariable('APEX_LIST_RECURSIVE') -eq '1')",
   "$cap=[int64][Environment]::GetEnvironmentVariable('APEX_LIST_CAP')",
   "$nonce=[Environment]::GetEnvironmentVariable('APEX_LIST_NONCE')",

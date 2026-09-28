@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { winScriptFromEnv } from "./__tests__/sandboxScript";
 import { applyPatch } from "./applyPatch";
 import { createFile } from "./createFile";
 import { deleteFile } from "./deleteFile";
@@ -18,6 +19,7 @@ import { type GrepResult, grep } from "./grep";
 import { type ListFilesResult, listFiles } from "./listFiles";
 import { readFile } from "./readFile";
 import type { UnifiedSandbox } from "./sandbox";
+import { winScriptEnv } from "./sandboxScript";
 import type { ToolContext } from "./types";
 import { updateFile } from "./updateFile";
 
@@ -75,6 +77,83 @@ afterEach(async () => {
 describe.skipIf(process.platform !== "win32")(
   "Windows coding tool runtime",
   () => {
+    it("matches glob path segments without letting stars cross directories", async () => {
+      const { workspace, ctx } = await fixture();
+      await mkdir(join(workspace, "src", "nested"), { recursive: true });
+      for (const name of ["root.ts", "src/a.ts", "src/nested/b.ts"]) {
+        await writeFile(join(workspace, name), "source\n");
+      }
+      for (const [pattern, files] of [
+        ["*.ts", ["root.ts"]],
+        ["src/*.ts", ["src/a.ts"]],
+        ["**/*.ts", ["root.ts", "src/a.ts", "src/nested/b.ts"]],
+      ] as const) {
+        expect(
+          await globFiles(ctx).execute?.(
+            { pattern, toolCallDescription },
+            callOptions,
+          ),
+        ).toMatchObject({ success: true, files });
+      }
+    }, 60_000);
+
+    it("rejects listing a regular file but accepts an empty directory", async () => {
+      const { workspace, ctx } = await fixture();
+      await writeFile(join(workspace, "file.txt"), "content\n");
+      await mkdir(join(workspace, "empty"));
+      for (const recursive of [false, true]) {
+        const result = (await listFiles(ctx).execute?.(
+          { directory: "file.txt", recursive, toolCallDescription },
+          callOptions,
+        )) as ListFilesResult;
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("not a directory");
+        expect(
+          await listFiles(ctx).execute?.(
+            { directory: "empty", recursive, toolCallDescription },
+            callOptions,
+          ),
+        ).toMatchObject({ success: true, files: [], count: 0 });
+      }
+    }, 60_000);
+
+    it("stops line-window reads before scanning the remaining bytes", async () => {
+      const { workspace, ctx } = await fixture();
+      await writeFile(
+        join(workspace, "large.txt"),
+        `first\nsecond\n${"tail\n".repeat(100_000)}`,
+      );
+      const boundedSandbox: UnifiedSandbox = {
+        ...sandbox,
+        execute(command, options) {
+          if (options?.envVars?.APEX_READ_START !== undefined) {
+            const script = winScriptFromEnv(options.envVars);
+            const read = "$n=$fs.Read($buf,0,65536)";
+            expect(script).toContain(read);
+            const measured = script.replace(
+              read,
+              `${read}; if($fs.Position -gt 131072){throw 'Line window scanned the file tail'}`,
+            );
+            return sandbox.execute(command, {
+              ...options,
+              envVars: { ...options.envVars, ...winScriptEnv(measured) },
+            });
+          }
+          return sandbox.execute(command, options);
+        },
+      };
+      expect(
+        await readFile({ ...ctx, sandbox: boundedSandbox }).execute?.(
+          { path: "large.txt", startLine: 1, endLine: 2, toolCallDescription },
+          callOptions,
+        ),
+      ).toMatchObject({
+        success: true,
+        content: "     1|first\n     2|second",
+        stoppedAtLine: 3,
+      });
+    }, 60_000);
+
     it("searches nested files, reports no-match and capped results, and skips junctions", async () => {
       const { root, workspace, ctx } = await fixture();
       await mkdir(join(workspace, "nested"));

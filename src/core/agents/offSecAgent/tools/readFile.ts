@@ -655,7 +655,7 @@ const LINE_FETCH_CAP_BYTES = 128 * 1024;
 type SandboxLineFetch =
   | { ok: false; error: string }
   | { ok: true; bytes: Buffer; cut: true }
-  | { ok: true; bytes: Buffer; cut: false; totalNewlines: number };
+  | { ok: true; bytes: Buffer; cut: false; totalNewlines?: number };
 
 function parseSandboxBase64(
   stdout: string,
@@ -699,8 +699,14 @@ async function fetchSandboxLinesLinux(
   if (parsed.bytes.length > LINE_FETCH_CAP_BYTES) {
     return { ok: true, bytes: parsed.bytes, cut: true };
   }
-  // A complete window still needs the whole-file line count to report
-  // totalLines and decide EOF exactly like the local scanner would.
+  const windowNewlines = parsed.bytes.reduce(
+    (count, byte) => count + (byte === 10 ? 1 : 0),
+    0,
+  );
+  if (Number.isFinite(end) && windowNewlines === end - start + 1) {
+    return { ok: true, bytes: parsed.bytes, cut: false };
+  }
+  // Only a window reaching EOF needs a total, including starts beyond EOF.
   const wc = await sandbox.execute('wc -l < "$APEX_READ_PATH"', {
     timeout: SANDBOX_OP_TIMEOUT_SECONDS,
     retries: 0,
@@ -719,7 +725,7 @@ async function fetchSandboxLinesLinux(
   return { ok: true, bytes: parsed.bytes, cut: false, totalNewlines };
 }
 
-// Windows single-pass scanner: streams raw bytes, counts every newline, and
+// Windows single-pass scanner: stops at the requested end or byte cap and
 // emits only the in-window lines' bytes (capped) as base64 plus a trailing
 // APEXRL marker carrying the newline count (or the cut flag). Data travels in
 // env vars; APEX_READ_END is empty for "no endLine".
@@ -741,12 +747,14 @@ const WIN_LINE_READ_SCRIPT = [
   "$ms=New-Object IO.MemoryStream",
   "$nl=[int64]0",
   "$cut=$false",
-  "while(-not $cut){",
+  "$windowDone=$false",
+  "while(-not $cut -and -not $windowDone){",
   "$n=$fs.Read($buf,0,65536)",
   "if($n -le 0){break}",
   "$i=0",
   "while($i -lt $n){",
   "$cur=$nl+1",
+  "if($hasEnd -and $cur -gt $end){$windowDone=$true;break}",
   "$win=($cur -ge $start) -and ((-not $hasEnd) -or ($cur -le $end))",
   "if(-not $win){",
   "$j=[Array]::IndexOf($buf,[byte]10,$i,$n-$i)",
@@ -766,7 +774,7 @@ const WIN_LINE_READ_SCRIPT = [
   "}",
   "}",
   "[Console]::Out.Write([Convert]::ToBase64String($ms.ToArray()))",
-  'if($cut){[Console]::Out.Write("`nAPEXRL cut=1")}else{[Console]::Out.Write("`nAPEXRL total=$nl")}',
+  'if($cut){[Console]::Out.Write("`nAPEXRL cut=1")}elseif($windowDone){[Console]::Out.Write("`nAPEXRL window=1")}else{[Console]::Out.Write("`nAPEXRL total=$nl")}',
   "exit 0",
   "}finally{$fs.Dispose()}",
   "}catch{",
@@ -806,6 +814,9 @@ async function fetchSandboxLinesWindows(
   if (!parsed.ok) return parsed;
   if (marker === "cut=1") {
     return { ok: true, bytes: parsed.bytes, cut: true };
+  }
+  if (marker === "window=1") {
+    return { ok: true, bytes: parsed.bytes, cut: false };
   }
   const totalMatch = marker.match(/^total=(\d+)$/);
   if (!totalMatch) {

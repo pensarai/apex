@@ -184,9 +184,13 @@ async function enumerateSandbox(
     };
   }
   return {
-    // POSIX find prints "./"-prefixed paths; matching uses bare relative paths.
+    // Match relative paths with glob separators without changing POSIX filenames.
     entries: lines.map((line) =>
-      line.startsWith("./") ? line.slice(2) : line,
+      sandbox.type === "windows"
+        ? line.replaceAll("\\", "/")
+        : line.startsWith("./")
+          ? line.slice(2)
+          : line,
     ),
     overflow: lines.length > MAX_SCAN_ENTRIES,
   };

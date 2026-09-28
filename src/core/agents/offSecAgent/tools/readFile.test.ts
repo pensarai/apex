@@ -861,6 +861,36 @@ describe("readFile byte-window EOF semantics", () => {
 // pipeline; the resolve round trip runs the real remote helper), so these
 // tests exercise the commands that ship, not their expected outputs.
 describe("readFile sandbox routing (linux, real execution)", () => {
+  it("finishes a bounded line window without counting the rest of the file", async () => {
+    const dir = scratchDir();
+    writeFileSync(
+      join(dir, "window.txt"),
+      `first\nsecond\n${"tail\n".repeat(50_000)}`,
+    );
+    const real = realLinuxSandbox();
+    const sandbox: UnifiedSandbox = {
+      type: "linux",
+      execute: (command, opts) => {
+        if (command.includes("wc -l")) {
+          throw new Error("A bounded window must not count the remaining file");
+        }
+        return real.execute(command, opts);
+      },
+    };
+    const result = await runRead(makeCtx({ agentCwd: dir, sandbox }), {
+      path: "window.txt",
+      startLine: 1,
+      endLine: 2,
+      toolCallDescription: "Read just the first two lines",
+    });
+    expect(result).toMatchObject({
+      success: true,
+      content: "     1|first\n     2|second",
+      linesReturned: 2,
+      stoppedAtLine: 3,
+    });
+    expect(result.totalLines).toBeUndefined();
+  });
   it("offers byte paging when a remote line exceeds the bounded window", async () => {
     const dir = scratchDir();
     writeFileSync(join(dir, "minified.js"), "a".repeat(200_000));

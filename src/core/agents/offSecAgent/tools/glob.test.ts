@@ -306,6 +306,23 @@ describe("globFiles sandbox transport shape (windows)", () => {
     };
   }
 
+  it.each([
+    ["src/*.ts", ["src/a.ts"]],
+    ["*.ts", ["root.ts"]],
+    ["**/*.ts", ["root.ts", "src/a.ts", "src/deep/b.ts"]],
+  ])("matches Windows separators for %s", async (pattern, files) => {
+    const { sandbox } = windowsSandbox([
+      "root.ts",
+      "src\\a.ts",
+      "src\\deep\\b.ts",
+    ]);
+    const result = await runGlob(makeCtx({ agentCwd: "C:\\w", sandbox }), {
+      pattern: pattern as string,
+      toolCallDescription: "Match Windows path segments",
+    });
+    expect(result).toMatchObject({ success: true, files });
+  });
+
   it("uses the static command with env-only data and matches enumerated entries", async () => {
     // The fake returns post-pruning entries, as the real script emits them.
     const { sandbox, calls } = windowsSandbox([
