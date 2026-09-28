@@ -7,7 +7,14 @@
  * Heavy transitive dependencies (tools, AI SDK, zod) are stubbed so
  * the test loads cleanly without external provider keys.
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
@@ -119,9 +126,9 @@ vi.mock("../../session", () => ({ create: () => {} }));
 vi.mock("../specialized/utils", () => ({
   detectOSAndEnhancePrompt: (p: string) => p,
 }));
-vi.mock("./prompt", () => ({
+vi.mock("./prompt", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./prompt")>()),
   buildBaseSystemPrompt: () => "system",
-  buildSessionWorkspaceSection: () => "",
 }));
 vi.mock("./trace", () => ({
   StepTraceWriter: class {
@@ -144,6 +151,61 @@ import {
   filterWorkspaceToolsForRun,
   OffensiveSecurityAgent,
 } from "./offensiveSecurityAgent";
+
+describe("assembled file-workspace instructions", () => {
+  it.each([
+    "spawned",
+    "root",
+    "custom-cwd",
+  ])("keeps %s worker file paths separate from shell and provided-file paths", (kind) => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-workspace-prompt-"));
+    const scratchpadPath = join(rootPath, "scratchpad");
+    const fileWorkspaceRoot =
+      kind === "root"
+        ? scratchpadPath
+        : join(rootPath, "subagents", "worker", "helpers");
+    const agentCwd =
+      kind === "custom-cwd" ? join(rootPath, "commands") : rootPath;
+    const providedPath = join(rootPath, "provided_files");
+    mkdirSync(providedPath);
+    writeFileSync(join(providedPath, "sample.txt"), "user-supplied input");
+    streamResponseCalls.length = 0;
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        system: "Worker instructions",
+        model: "test-model",
+        session: { id: "ses_workspace", rootPath, scratchpadPath },
+        agentCwd,
+        fileWorkspaceRoot,
+        activeTools: [
+          "read_file",
+          "list_files",
+          "create_file",
+          "execute_command",
+        ],
+        sandbox: {},
+      } as never);
+      void agent.streamResult;
+      const system = streamResponseCalls[0].system as string;
+      expect(system).toContain(`Your shell starts in ${agentCwd}`);
+      expect(system).toContain(
+        `Native file tools are confined to ${fileWorkspaceRoot}`,
+      );
+      expect(system).toContain(
+        "Use absolute helper paths with `execute_command`",
+      );
+      expect(system).toContain(providedPath);
+      expect(system).toContain("sample.txt");
+      expect(system).toContain("copy inputs into the file workspace");
+      expect(system).not.toContain("Use relative paths for everything");
+      expect(system).not.toContain("temporary scripts");
+      expect(system).not.toContain("`list_files provided_files/`");
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("spawned-agent usage callbacks", () => {
   it("requires explicit forwarding when trace events own subagent accounting", () => {

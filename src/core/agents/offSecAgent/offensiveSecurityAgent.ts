@@ -722,7 +722,12 @@ export class OffensiveSecurityAgent<TResult = void> {
       );
     const systemPrompt =
       baseSystemPrompt +
-      buildSessionWorkspaceSection(input.session, agentCwd, activeTools);
+      buildSessionWorkspaceSection(
+        input.session,
+        agentCwd,
+        activeTools,
+        input.fileWorkspaceRoot,
+      );
 
     traceWriter.writeInit({
       model: input.model,

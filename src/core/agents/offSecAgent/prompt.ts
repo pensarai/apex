@@ -23,7 +23,10 @@ interface SessionPaths {
  * uploaded at the project level, and may contain a generated
  * `README.md` manifest.
  */
-export function buildProvidedFilesSection(sessionRootPath: string): string {
+export function buildProvidedFilesSection(
+  sessionRootPath: string,
+  fileWorkspaceRoot?: string,
+): string {
   const providedDir = join(sessionRootPath, "provided_files");
   if (!existsSync(providedDir)) return "";
 
@@ -54,6 +57,9 @@ export function buildProvidedFilesSection(sessionRootPath: string): string {
   const lines = fileEntries.map(
     (f) => `- \`provided_files/${f.name}\` (${f.size} bytes)`,
   );
+  const readGuidance = fileWorkspaceRoot
+    ? "Use `execute_command` with the absolute directory above to inspect these files, or copy inputs into the file workspace before using `read_file` / `list_files`."
+    : "Read these with `read_file` and list directory contents with `list_files provided_files/` as needed.";
 
   return `
 
@@ -63,22 +69,38 @@ The user has uploaded the following files for this session. They are available a
 
 ${lines.join("\n")}
 
-Read these with \`read_file\` and list directory contents with \`list_files provided_files/\` as needed. A \`README.md\` inside \`provided_files/\` may include per-file descriptions supplied by the user — check it first before diving into individual files.`;
+${readGuidance} A \`README.md\` inside \`provided_files/\` may include per-file descriptions supplied by the user — check it first before diving into individual files.`;
 }
 
 export function buildSessionWorkspaceSection(
   session: SessionPaths,
   agentCwd: string,
   activeTools?: readonly string[],
+  fileWorkspaceRoot?: string,
 ): string {
   const sandboxMode = agentCwd === session.rootPath;
-  const providedFilesSection = buildProvidedFilesSection(session.rootPath);
+  const providedFilesSection = buildProvidedFilesSection(
+    session.rootPath,
+    fileWorkspaceRoot,
+  );
   const sourceAssessmentSection = buildSourceAssessmentSection(
     session,
     agentCwd,
     sandboxMode,
     activeTools,
   );
+
+  if (fileWorkspaceRoot) {
+    return `
+
+# Working Directory and File Workspace
+
+Your shell starts in ${agentCwd}. Native file tools are confined to ${fileWorkspaceRoot}; their relative paths resolve inside that directory, independently of the shell's working directory.
+
+Create and edit helper scripts inside the file workspace. Use absolute helper paths with \`execute_command\` to check and run them. Do not prefix native file-tool paths with \`scratchpad/\` or \`provided_files/\` to reach session directories outside the file workspace.
+
+Session artifacts live at ${session.rootPath}. Findings and published PoCs are written by \`document_vulnerability\`, and browser tools save their own evidence. Session logs and provided files outside the file workspace must be inspected through command tools or copied into the file workspace before native file tools can read them.${providedFilesSection}${sourceAssessmentSection}`;
+  }
 
   if (sandboxMode) {
     return `
