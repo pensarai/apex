@@ -77,7 +77,7 @@ For Hoonify, create a subscription key at [app.hoonify.ai](https://app.hoonify.a
 select **Hoonify** in `/providers`, and choose a discovered model in `/models`.
 You can also launch Apex with `HOONIFY_API_KEY` set. Apex uses the exact model IDs
 returned by Hoonify's catalog and any reported context windows. When context
-metadata is absent, GLM-5.2 uses a provisional 512,000-token context budget;
+metadata is absent, GLM-5.2 uses its deployed 500,000-token context budget;
 other models without known limits use a 32,768-token context budget.
 Set `HOONIFY_CONTEXT_WINDOWS` to a JSON object mapping exact model IDs to
 context windows to override a limit. Responses are capped at 4,096 tokens

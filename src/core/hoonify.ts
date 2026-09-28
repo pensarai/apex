@@ -2,8 +2,8 @@ import { z } from "zod";
 
 export const HOONIFY_BASE_URL = "https://api.hoonify.ai/v1";
 
-// Provisional deployment budget until Hoonify confirms the exact token limit.
-const MODEL_CONTEXT_DEFAULTS = new Map([["zai-org/GLM-5.2", 512_000]]);
+// Hoonify's deployed context limit is lower than its advertised model capacity.
+const MODEL_CONTEXT_DEFAULTS = new Map([["zai-org/GLM-5.2", 500_000]]);
 
 // Used only when both API metadata and a model-specific default are missing.
 const FALLBACK_CONTEXT_WINDOW = 32_768;

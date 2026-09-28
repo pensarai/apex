@@ -59,10 +59,9 @@ When supplied, the catalog's `context_window` is the total input-plus-output
 window, and Apex uses it for context fitting and compaction. The live API can
 also return the standard OpenAI model-list fields (`id`, `object`, `created`,
 `owned_by`) without limits. When metadata is absent for `zai-org/GLM-5.2`, Apex
-uses a **provisional 512,000-token context budget** pending confirmation of the
-deployment's exact limit. The public catalog's model capacity can differ from
-the deployed limit. An API-supplied `context_window` takes precedence over this
-default, including an exact 524,288-token value if returned by the service.
+uses a **500,000-token context budget**, matching Hoonify's confirmed deployment
+limit. The public catalog's model capacity can differ from the deployed limit.
+An API-supplied `context_window` takes precedence over this default.
 Model discovery still comes from the authenticated API; this default does not
 add models to the picker. No manual override is needed for GLM-5.2.
 
