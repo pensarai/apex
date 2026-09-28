@@ -68,6 +68,7 @@ type Enumeration = { entries: string[]; overflow: boolean };
 /** Local walk: files only, ignore-named dirs pruned, symlink dirs not followed. */
 async function enumerateLocal(
   root: string,
+  includeHidden: boolean,
   signal?: AbortSignal,
 ): Promise<Enumeration> {
   const entries: string[] = [];
@@ -83,6 +84,7 @@ async function enumerateLocal(
     }
     for (const entry of dirents) {
       signal?.throwIfAborted();
+      if (!includeHidden && entry.name.startsWith(".")) continue;
       if (entry.isDirectory()) {
         if (IGNORED_DIR_NAMES.includes(entry.name)) continue;
         await walk(join(dir, entry.name), `${prefix}${entry.name}/`);
@@ -99,13 +101,14 @@ async function enumerateLocal(
   return { entries, overflow: entries.length > MAX_SCAN_ENTRIES };
 }
 
-function posixGlobCommand(nonce: string): string {
+function posixGlobCommand(nonce: string, includeHidden: boolean): string {
   const prune = IGNORED_DIR_NAMES.map((n) => `-name ${JSON.stringify(n)}`).join(
     " -o ",
   );
+  const hidden = includeHidden ? "" : ' -o -name ".*"';
   return [
     'cd "$APEX_GLOB_PATH" || exit 3',
-    `find . -mindepth 1 -type d \\( ${prune} \\) -prune -o -type d -o -print | head -n ${MAX_SCAN_ENTRIES + 1}`,
+    `find . -mindepth 1 \\( -type d \\( ${prune} \\)${hidden} \\) -prune -o -type d -o -print | head -n ${MAX_SCAN_ENTRIES + 1}`,
     `echo "APEXGL-${nonce} end"`,
   ].join("\n");
 }
@@ -118,6 +121,7 @@ const WIN_GLOB_SCRIPT = [
   "$p=[Environment]::GetEnvironmentVariable('APEX_GLOB_PATH')",
   "$cap=[int64][Environment]::GetEnvironmentVariable('APEX_GLOB_CAP')",
   "$nonce=[Environment]::GetEnvironmentVariable('APEX_GLOB_NONCE')",
+  "$includeHidden=([Environment]::GetEnvironmentVariable('APEX_GLOB_INCLUDE_HIDDEN') -eq '1')",
   `$ignore=@(${IGNORED_DIR_NAMES.map((n) => `'${n}'`).join(",")})`,
   "$baseLen=$p.Length",
   "$emitted=[int64]0",
@@ -128,6 +132,7 @@ const WIN_GLOB_SCRIPT = [
   "try{",
   "$di=New-Object IO.DirectoryInfo($d)",
   "foreach($e in $di.EnumerateFileSystemInfos()){",
+  "if(-not $includeHidden -and $e.Name.StartsWith('.')){continue}",
   "$isLink=(($e.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)",
   // FileSystemInfo from the raw .NET enumerator: container detection via
   // Attributes, not the adapted PSIsContainer.
@@ -153,6 +158,7 @@ const WIN_GLOB_SCRIPT = [
 async function enumerateSandbox(
   sandbox: UnifiedSandbox,
   root: string,
+  includeHidden: boolean,
 ): Promise<Enumeration | { error: string }> {
   const nonce = randomBytes(8).toString("hex");
   const result =
@@ -165,9 +171,10 @@ async function enumerateSandbox(
             APEX_GLOB_PATH: root,
             APEX_GLOB_CAP: String(MAX_SCAN_ENTRIES),
             APEX_GLOB_NONCE: nonce,
+            APEX_GLOB_INCLUDE_HIDDEN: includeHidden ? "1" : "0",
           },
         })
-      : await sandbox.execute(posixGlobCommand(nonce), {
+      : await sandbox.execute(posixGlobCommand(nonce, includeHidden), {
           timeout: SANDBOX_OP_TIMEOUT_SECONDS,
           retries: 0,
           envVars: { APEX_GLOB_PATH: root },
@@ -248,8 +255,8 @@ pattern if truncated.`,
         root = await resolveFilePath(ctx, path ?? ".", { confineToCwd: true });
         ctx.abortSignal?.throwIfAborted();
         const enumeration = ctx.sandbox
-          ? await enumerateSandbox(ctx.sandbox, root)
-          : await enumerateLocal(root, ctx.abortSignal);
+          ? await enumerateSandbox(ctx.sandbox, root, compiled.includeHidden)
+          : await enumerateLocal(root, compiled.includeHidden, ctx.abortSignal);
         ctx.abortSignal?.throwIfAborted();
         if ("error" in enumeration) throw new Error(enumeration.error);
         return matchEntries(

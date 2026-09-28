@@ -80,6 +80,8 @@ describe.skipIf(process.platform !== "win32")(
     it("matches glob path segments without letting stars cross directories", async () => {
       const { workspace, ctx } = await fixture();
       await mkdir(join(workspace, "src", "nested"), { recursive: true });
+      await mkdir(join(workspace, ".config"));
+      await writeFile(join(workspace, ".config", "settings.ts"), "config\n");
       for (const name of ["root.ts", "src/a.ts", "src/nested/b.ts"]) {
         await writeFile(join(workspace, name), "source\n");
       }
@@ -87,6 +89,7 @@ describe.skipIf(process.platform !== "win32")(
         ["*.ts", ["root.ts"]],
         ["src/*.ts", ["src/a.ts"]],
         ["**/*.ts", ["root.ts", "src/a.ts", "src/nested/b.ts"]],
+        ["{src,.config}/*.ts", [".config/settings.ts", "src/a.ts"]],
       ] as const) {
         expect(
           await globFiles(ctx).execute?.(

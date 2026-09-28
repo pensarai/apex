@@ -7,7 +7,9 @@
 
 const MAX_BRACE_VARIANTS = 64;
 
-export type GlobPattern = { regexes: RegExp[] } | { error: string };
+export type GlobPattern =
+  | { regexes: RegExp[]; includeHidden: boolean }
+  | { error: string };
 
 function expandBraces(pattern: string): string[] | { error: string } {
   const open = pattern.indexOf("{");
@@ -176,10 +178,14 @@ export function compileGlobPattern(pattern: string): GlobPattern {
   const variants = expandBraces(pattern);
   if ("error" in variants) return variants;
   const regexes: RegExp[] = [];
+  let includeHidden = false;
   for (const variant of variants) {
     const regex = variantToRegex(variant);
     if ("error" in regex) return regex;
     regexes.push(regex);
+    includeHidden ||= variant
+      .split(/[\\/]/)
+      .some((segment) => segment.startsWith(".") && segment.length > 1);
   }
-  return { regexes };
+  return { regexes, includeHidden };
 }

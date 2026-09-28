@@ -427,6 +427,46 @@ it("reports scan overflow even when the extra entry ends the last directory", as
   expect(result.files.length).toBeLessThanOrEqual(200);
 });
 
+it("prunes hidden trees before they consume a wildcard scan budget", async () => {
+  const root = scratchDir();
+  mkdirSync(join(root, ".cache"));
+  mkdirSync(join(root, "src"));
+  writeFileSync(join(root, "src", "visible.ts"), "visible");
+  for (let i = 0; i < 20_001; i++) {
+    writeFileSync(join(root, ".cache", `f${i}`), "");
+  }
+  for (const sandbox of [undefined, realLinuxSandbox()]) {
+    const result = await runGlob(makeCtx({ agentCwd: root, sandbox }), {
+      pattern: "**/*.ts",
+      toolCallDescription:
+        "Find visible sources without scanning a hidden cache",
+    });
+    expect(result).toMatchObject({
+      success: true,
+      error: "",
+      files: ["src/visible.ts"],
+    });
+  }
+});
+
+it("still searches hidden directories when the pattern names them", async () => {
+  const root = scratchDir();
+  mkdirSync(join(root, ".config"));
+  writeFileSync(join(root, ".config", "settings.ts"), "config");
+  for (const sandbox of [undefined, realLinuxSandbox()]) {
+    for (const pattern of [".config/*.ts", "{src,.config}/**/*.ts"]) {
+      const result = await runGlob(makeCtx({ agentCwd: root, sandbox }), {
+        pattern,
+        toolCallDescription: "Find explicitly requested hidden configuration",
+      });
+      expect(result).toMatchObject({
+        success: true,
+        files: [".config/settings.ts"],
+      });
+    }
+  }
+});
+
 it("does not report a remote enumeration as completed after cancellation", async () => {
   const root = scratchDir();
   writeFileSync(join(root, "f.txt"), "contents");
