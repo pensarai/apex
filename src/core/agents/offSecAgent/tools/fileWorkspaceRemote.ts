@@ -7,6 +7,7 @@ interface Request {
   content?: string;
   exclusive?: boolean;
   expectedHash?: string;
+  followFinal?: boolean;
 }
 
 const PYTHON = String.raw`
@@ -31,9 +32,16 @@ def canonical(p):
     if os.path.lexists(cursor) and not os.path.exists(cursor):
         raise ValueError('Dangling symlink')
     return os.path.realpath(p)
+def canonical_entry(p):
+    parent = os.path.dirname(p)
+    if parent == p: return p
+    return os.path.join(canonical(parent), os.path.basename(p))
 def run(q):
-    p = canonical(q['path'])
     root = q.get('root')
+    if q['action'] == 'delete' or not q.get('followFinal', True):
+        p = canonical_entry(q['path'])
+    else:
+        p = canonical(q['path'])
     if root and os.path.commonpath([canonical(root), p]) != canonical(root):
         raise ValueError('Path escapes file workspace')
     if q['action'] == 'resolve': return {'path': p}
@@ -42,11 +50,13 @@ def run(q):
         expected = q.get('expectedHash')
         if expected is not None and hashlib.sha256(read_text(p)).hexdigest() != expected:
             raise ValueError('File changed since it was read; re-read and prepare the change again')
-    check()
     if q['action'] == 'delete':
-        read_text(p)
+        if not os.path.islink(p):
+            check()
+            read_text(p)
         os.unlink(p)
         return {}
+    check()
     data = base64.b64decode(q['content'], validate=True)
     if len(data) > LIMIT: raise ValueError('Text mutation limit is 1048576 bytes')
     if b'\0' in data: raise ValueError('Binary file is not supported')

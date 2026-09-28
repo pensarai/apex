@@ -1,10 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import {
-  deleteWorkspaceFile,
-  readWorkspaceFile,
-  resolveFilePath,
-} from "./fileWorkspace";
+import { deleteWorkspaceFile, resolveFilePath } from "./fileWorkspace";
 import type { ToolContext } from "./types";
 
 const deleteFileInputSchema = z.object({
@@ -29,9 +25,11 @@ If contents change while preparing the deletion, re-read before retrying.`,
     execute: async ({ path }): Promise<DeleteFileResult> => {
       let resolved = path;
       try {
-        resolved = await resolveFilePath(ctx, path, { confineToCwd: true });
-        const expected = await readWorkspaceFile(ctx, resolved);
-        await deleteWorkspaceFile(ctx, resolved, { expected });
+        resolved = await resolveFilePath(ctx, path, {
+          confineToCwd: true,
+          followFinal: false,
+        });
+        await deleteWorkspaceFile(ctx, resolved);
         return { success: true, error: "", path: resolved };
       } catch (error: unknown) {
         return {

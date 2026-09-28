@@ -74,9 +74,22 @@ async function canonicalLocal(file: string): Promise<string> {
   }
 }
 
-async function scopedLocal(ctx: ToolContext, file: string, root?: string) {
-  const canonical = await canonicalLocal(file);
-  const boundary = root ?? ctx.fileWorkspaceRoot;
+async function canonicalLocalEntry(file: string): Promise<string> {
+  const parent = path.dirname(file);
+  if (parent === file) return file;
+  return path.join(await canonicalLocal(parent), path.basename(file));
+}
+
+async function scopedLocal(
+  ctx: ToolContext,
+  file: string,
+  options: { root?: string; followFinal?: boolean } = {},
+) {
+  const canonical =
+    options.followFinal === false
+      ? await canonicalLocalEntry(file)
+      : await canonicalLocal(file);
+  const boundary = options.root ?? ctx.fileWorkspaceRoot;
   if (boundary && !contained(await canonicalLocal(boundary), canonical, path)) {
     throw new Error(`Path escapes file workspace: ${file}`);
   }
@@ -86,7 +99,7 @@ async function scopedLocal(ctx: ToolContext, file: string, root?: string) {
 export async function resolveFilePath(
   ctx: ToolContext,
   input: string,
-  options: { confineToCwd?: boolean } = {},
+  options: { confineToCwd?: boolean; followFinal?: boolean } = {},
 ): Promise<string> {
   ctx.abortSignal?.throwIfAborted();
   if (!input || input.includes("\0"))
@@ -108,12 +121,13 @@ export async function resolveFilePath(
       action: "resolve",
       path: file,
       root,
+      followFinal: options.followFinal,
     });
     if (typeof result.path !== "string")
       throw new Error("Sandbox returned no resolved file path");
     return result.path;
   }
-  return scopedLocal(ctx, file, root);
+  return scopedLocal(ctx, file, { root, followFinal: options.followFinal });
 }
 
 function decodeText(bytes: Uint8Array): string {
@@ -316,12 +330,16 @@ export async function deleteWorkspaceFile(
       });
       return;
     }
-    const target = await scopedLocal(ctx, file);
-    const actual = await readLocal(target);
-    if (options.expected !== undefined && actual !== options.expected) {
-      throw new Error(
-        "File changed since it was read; re-read it before deleting",
-      );
+    const target = await scopedLocal(ctx, file, { followFinal: false });
+    // Never dereference a final symlink: unlink the named entry, not its target.
+    const entry = await lstat(target);
+    if (!entry.isSymbolicLink()) {
+      const actual = await readLocal(target);
+      if (options.expected !== undefined && actual !== options.expected) {
+        throw new Error(
+          "File changed since it was read; re-read it before deleting",
+        );
+      }
     }
     ctx.abortSignal?.throwIfAborted();
     await unlink(target);
