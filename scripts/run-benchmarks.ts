@@ -47,12 +47,13 @@ function parseSstSecret(value: string | undefined): string | undefined {
   if (!value) return undefined;
   try {
     const parsed = JSON.parse(value) as { value?: unknown };
-    return typeof parsed.value === "string" && parsed.value.trim()
-      ? parsed.value
-      : undefined;
+    if (typeof parsed.value === "string" && parsed.value.trim()) {
+      return parsed.value;
+    }
   } catch {
-    return undefined;
+    // SST can also inject the secret as a bare string.
   }
+  return value.trim() || undefined;
 }
 
 function configureGatewaySecrets(): void {
