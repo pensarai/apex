@@ -550,7 +550,11 @@ describe("executeCommand deadlines", () => {
     setTimeout(() => ac.abort(), 300);
     try {
       const result = (await callTool(
-        makeCtx({ commandShell: shell, abortSignal: ac.signal }),
+        makeCtx({
+          commandShell: shell,
+          abortSignal: ac.signal,
+          agentCwd: process.cwd(),
+        }),
         { command: "sleep 30" },
       )) as ExecuteCommandResult;
 
