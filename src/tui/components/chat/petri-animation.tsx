@@ -2,54 +2,16 @@
  * Wave Animation Component
  *
  * Smooth gradient wave animation for the home screen.
- * Renders at ~20fps using global tick system.
+ * Steps ~20fps; suspends the interval while the terminal is blurred.
  */
 
 import { RGBA } from "@opentui/core";
+import { useRenderer } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDimensions } from "../../context/dimensions";
+import { getTerminalFocusState } from "../../terminal-focus";
 import { useTheme } from "../../theme";
 import { WaveSimulation } from "./lib/wave-simulation";
-
-// Global tick system for animations (shared across components)
-let globalTick = 0;
-const globalListeners = new Set<() => void>();
-let globalInterval: ReturnType<typeof setInterval> | null = null;
-
-function startGlobalTick() {
-  if (!globalInterval) {
-    globalInterval = setInterval(() => {
-      globalTick = (globalTick + 1) % 1000;
-      globalListeners.forEach((listener) => {
-        listener();
-      });
-    }, 50); // ~20fps
-  }
-}
-
-function stopGlobalTick() {
-  if (globalInterval && globalListeners.size === 0) {
-    clearInterval(globalInterval);
-    globalInterval = null;
-  }
-}
-
-function useGlobalTick() {
-  const [, setTick] = useState(0);
-
-  useEffect(() => {
-    const listener = () => setTick((t) => t + 1);
-    globalListeners.add(listener);
-    startGlobalTick();
-
-    return () => {
-      globalListeners.delete(listener);
-      stopGlobalTick();
-    };
-  }, []);
-
-  return globalTick;
-}
 
 /**
  * Generate a gradient array of N RGBA steps from a dim version of `base`
@@ -91,10 +53,15 @@ export function PetriAnimation({
   width = "100%",
 }: PetriAnimationProps) {
   const dimensions = useDimensions();
-  const tick = useGlobalTick();
+  const renderer = useRenderer();
   const { colors } = useTheme();
   const simulationRef = useRef<WaveSimulation | null>(null);
   const [frame, setFrame] = useState<string[]>([]);
+  // The always-mounted terminal focus seam tracks the renderer's reported
+  // state, so mounting while already blurred starts paused.
+  const [focused, setFocused] = useState(
+    () => getTerminalFocusState(renderer) !== false,
+  );
 
   // Theme-derived gradient (dim → bright primary)
   const gradientColors = useMemo(
@@ -136,14 +103,41 @@ export function PetriAnimation({
     }
   }, [actualWidth, actualHeight]);
 
-  // Step simulation on each tick
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` is an intentional trigger — drives the animation frame even though it isn't read inside the effect.
+  // The renderer reports terminal blur/focus itself; track it only to
+  // suspend the animation while the user is elsewhere.
   useEffect(() => {
-    if (simulationRef.current) {
-      simulationRef.current.step();
-      setFrame(simulationRef.current.render());
-    }
-  }, [tick]);
+    const onBlur = () => setFocused(false);
+    const onFocus = () => setFocused(true);
+    renderer.on("blur", onBlur);
+    renderer.on("focus", onFocus);
+    return () => {
+      renderer.off("blur", onBlur);
+      renderer.off("focus", onFocus);
+    };
+  }, [renderer]);
+
+  // One state update per animation tick while focused; the interval is
+  // suspended while blurred so the idle terminal does no animation work.
+  useEffect(() => {
+    if (!focused) return;
+    const tick = () => {
+      const simulation = simulationRef.current;
+      if (!simulation) return;
+      simulation.step();
+      setFrame(simulation.render());
+    };
+    const interval = setInterval(tick, 50); // ~20fps
+    return () => clearInterval(interval);
+  }, [focused]);
+
+  // While suspended, a resize still repaints once so the frame matches the
+  // simulation's new dimensions; ticking resumes on refocus.
+  useEffect(() => {
+    if (focused) return;
+    const simulation = simulationRef.current;
+    if (!simulation || actualWidth <= 0 || actualHeight <= 0) return;
+    setFrame(simulation.render());
+  }, [focused, actualWidth, actualHeight]);
 
   if (frame.length === 0 || actualWidth <= 0 || actualHeight <= 0) {
     return null;
