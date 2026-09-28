@@ -76,6 +76,8 @@ const { values } = parseArgs({
     live: { type: "boolean", default: false },
     stages: { type: "string", default: "32" },
     repetitions: { type: "string", default: "3" },
+    "start-repetition": { type: "string", default: "1" },
+    profile: { type: "string" },
     seed: { type: "string", default: "apex-scaling-v1" },
     "budget-usd": { type: "string", default: "15" },
   },
@@ -84,6 +86,18 @@ if (!values.baseline || !values.candidate || !values.output)
   throw new Error("--baseline, --candidate and --output are required");
 const stages = Number(values.stages);
 const repetitions = Number(values.repetitions);
+const startRepetition = Number(values["start-repetition"]);
+if (
+  !Number.isInteger(startRepetition) ||
+  startRepetition < 1 ||
+  startRepetition + repetitions - 1 > 10
+)
+  throw new Error("Invalid repetition range (1-10)");
+if (values.profile && !Object.hasOwn(PROFILES, values.profile))
+  throw new Error("--profile must be occasional or frequent");
+const selectedProfiles: Profile[] = values.profile
+  ? [values.profile as Profile]
+  : ["occasional", "frequent"];
 const budget = Number(values["budget-usd"]);
 if (
   !Number.isInteger(stages) ||
@@ -107,6 +121,7 @@ const roots: string[] = [];
 let spent = 0;
 let reserved = 0;
 let billingUnknown = false;
+let budgetStopped = false;
 const rates = { input: 0.0000014, cached: 0.00000026, output: 0.0000044 };
 
 async function checkpoint(record: unknown) {
@@ -294,8 +309,18 @@ async function run(variant: Variant, profile: Profile, repetition: number) {
     const reservation =
       (Buffer.byteLength(JSON.stringify(request)) + 10000) * rates.input +
       OUTPUT_LIMIT * rates.output;
-    if (billingUnknown || spent + reserved + reservation > budget)
-      throw new Error("BenchmarkSpendLimit");
+    if (
+      billingUnknown ||
+      budgetStopped ||
+      spent + reserved + reservation > budget
+    ) {
+      budgetStopped = true;
+      const error = new Error(
+        "No new requests allowed within the remaining budget",
+      );
+      error.name = "BenchmarkSpendLimit";
+      throw error;
+    }
     reserved += reservation;
     const started = performance.now();
     let record: Wire = { task: current, httpStatus: 0, elapsedMs: 0 };
@@ -412,6 +437,7 @@ async function run(variant: Variant, profile: Profile, repetition: number) {
         finishReason: result.finishReason,
         responseFormat: result.text
           .replace(/EVIDENCE_TOKEN_[A-Za-z0-9_-]+/g, "[token]")
+          .replaceAll("EVIDENCE_TOKEN_", "[token-prefix]")
           .slice(-1000),
         correct,
         recallCorrect,
@@ -466,7 +492,7 @@ async function run(variant: Variant, profile: Profile, repetition: number) {
 
 async function offline(variants: Variant[]) {
   const records: Record<string, unknown>[] = [];
-  for (const profile of Object.keys(PROFILES) as Profile[]) {
+  for (const profile of selectedProfiles) {
     for (const variant of variants) {
       const { ctx, shell, fixtures } = await setup(variant, profile, 1);
       try {
@@ -579,8 +605,11 @@ try {
     provider: "Z.AI",
     stages,
     repetitions,
+    startRepetition,
     seed: values.seed,
-    profiles: PROFILES,
+    profiles: Object.fromEntries(
+      selectedProfiles.map((profile) => [profile, PROFILES[profile]]),
+    ),
     budgetUsd: budget,
     rates,
     rateSource: "https://openrouter.ai/api/v1/models/z-ai/glm-5.3/endpoints",
@@ -605,14 +634,22 @@ try {
   await checkpoint({ type: "offline", records: offlineRecords });
   const runs: Awaited<ReturnType<typeof run>>[] = [];
   if (values.live) {
-    for (let repetition = 1; repetition <= repetitions; repetition++) {
-      for (const profile of Object.keys(PROFILES) as Profile[]) {
-        if (billingUnknown || spent >= budget) break;
+    experiment: for (
+      let repetition = startRepetition;
+      repetition < startRepetition + repetitions;
+      repetition++
+    ) {
+      for (const profile of selectedProfiles) {
+        if (billingUnknown || budgetStopped || spent >= budget)
+          break experiment;
         const order = repetition % 2 === 1 ? variants : [...variants].reverse();
-        const pair = await Promise.all(
+        const pair = await Promise.allSettled(
           order.map((variant) => run(variant, profile, repetition)),
         );
-        runs.push(...pair);
+        // Both runs must settle before the outer cleanup can remove their workspaces.
+        for (const result of pair) {
+          if (result.status === "fulfilled") runs.push(result.value);
+        }
         await writeFile(
           outputPath,
           JSON.stringify(
@@ -622,12 +659,15 @@ try {
               runs,
               spent,
               billingUnknown,
+              budgetStopped,
               complete: false,
             },
             null,
             2,
           ),
         );
+        const rejected = pair.find((result) => result.status === "rejected");
+        if (rejected?.status === "rejected") throw rejected.reason;
       }
     }
   }
@@ -638,9 +678,10 @@ try {
     runs,
     spent,
     billingUnknown,
+    budgetStopped,
     complete:
       !values.live ||
-      (runs.length === repetitions * 4 &&
+      (runs.length === repetitions * selectedProfiles.length * 2 &&
         runs.every((r) => r.completedTasks === stages)),
   };
   await writeFile(outputPath, JSON.stringify(report, null, 2));
