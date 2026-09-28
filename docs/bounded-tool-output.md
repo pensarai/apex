@@ -151,3 +151,171 @@ OpenRouter reported $0.438330 across the 18 trials. Local validation passed 3,32
 tests with 45 skipped, plus typecheck, lint, format, dead-code, and build checks.
 Lint reports the same 183 warnings and 10 infos as the parent checkout, including
 existing non-null assertions in the email adapters and CLI.
+
+## Measuring longer conversations
+
+The single-capture comparison above charges the retrieval overhead but stops
+before measuring the cost of retaining that result through later tasks. The
+companion scaling benchmark measures both in one continuous SDK conversation:
+
+```sh
+bun scripts/bench-tool-output-scaling.ts \
+  --baseline /path/to/baseline --candidate /path/to/candidate \
+  --output /tmp/tool-output-scaling.json --stages 32 --repetitions 3 \
+  --budget-usd 20 --live
+```
+
+Omit `--live` for the offline capture, omission, and recovery checks. The output
+path must be new, preventing checkpoints from different experiments from being
+combined accidentally. The paid mode verifies the current Z.AI endpoint prices
+before starting, reserves a conservative cost allowance before each request,
+and stops new requests if billing becomes unknown or the budget is insufficient.
+For a separately recorded replacement of an administratively interrupted pair,
+use `--profile frequent --start-repetition 3 --repetitions 1` and a new output
+path. Keep the interrupted report and its charges; do not replace an unfavorable
+completed result with a retry.
+
+Two workloads alternate large stderr and many-line stdout captures, with small
+results between them: one oversized result every eight tasks, or every four
+tasks. All oversized results deliberately bury the required evidence outside
+the preview. Each baseline/candidate pair uses identical fixture bytes and task
+instructions. There are three paired repetitions per workload, with both
+variants running concurrently and the pair launch order alternating. Each task
+executes a real harmless local process through Apex's command tool; omitted
+evidence is retrieved through its real file/search tools. No delays are added
+to make inference overhead appear smaller.
+
+The same conversation persists for all 32 tasks. Each task requests its own
+evidence and exit status, plus the first task's evidence, to check retention.
+Both variants have a twelve-call, 2,048-output-token-per-call, 240-second limit
+per task, without SDK retries. Incorrect or unfinished answers remain in the
+results; later tasks continue unless the request itself fails. Exploratory
+pilots used an eight-call limit. One diagnosed bounded-output pilot found the
+evidence but exhausted that limit while verifying it, before returning a final
+answer; the main protocol increases the limit for both variants. Pilot results
+are separate from the main comparison.
+
+Per-request checkpoints record generation ID, provider, cached/uncached input,
+output, actual billed cost, and timing. Per-task checkpoints record cumulative
+cost, input, time, retrieval count, correctness, and first-task recall. A unique
+nonce at the start of each run's system message reduces cross-run prefix reuse;
+automatic caching within each run remains enabled. The report checks actual
+bills against the recorded rates. `modeledNoCacheCost` prices the observed token
+counts without cache discounts: it is a pricing counterfactual, not a separately
+executed cold-cache latency test.
+
+This is a controlled retained-context workload using Apex tools and the AI SDK,
+not a complete Apex pentest. It does not invoke Apex's pressure compaction,
+summarizer, remote sandbox, or vulnerability verifier. Fixture density, repetitive
+filler, and recovery difficulty are selected experimental conditions, not a
+measured distribution of production pentests. Checkpoints at 1, 4, 8, 16, and 32
+tasks show observed scaling without extrapolating to longer runs. Tasks within
+a trajectory are correlated; the independent repetition count is three per
+workload and variant. The model knows the evidence marker's prefix; recovering
+that marker is different from discovering an unknown vulnerability indicator.
+
+## Recorded scaling comparison
+
+Measured September 27 EDT / September 28 UTC, 2026, using GLM-5.3 through
+OpenRouter's Z.AI endpoint. Both runtime checkouts were clean: baseline
+`2cd0b86c8fb676ac6343b37389400dcbddb77cd8` and candidate
+`07d448cbb09b85b47629b0e1ac067ea1f78a8887`. The candidate's tool behavior is
+unchanged from the published `fd4d377c` implementation; the newer commit adds
+the scaling runner. A later runner-only fix improves checkpoint cleanup,
+sanitization, budget stopping, and selection of a replacement pair. It changes
+neither the tools under test nor the model/task protocol.
+
+The balanced comparison contains **12 trajectories, 384 scored tasks, and 847
+inference calls**: three paired repetitions per workload. All rows below are
+medians across those repetitions, including the trajectory with an unfinished
+answer. Percentage differences compare the displayed medians; the columns do
+not describe one selected run.
+
+| Oversized output frequency | Tasks | Billed USD, baseline → bounded | Cost change | Seconds, baseline → bounded | Total input tokens, baseline → bounded |
+| -------------------------- | ----: | -----------------------------: | ----------: | --------------------------: | -------------------------------------: |
+| Every 8 tasks              |     1 |              $0.0302 → $0.0562 |      +86.4% |                  9.2 → 62.6 |                       26,863 → 101,131 |
+| Every 8 tasks              |     4 |              $0.0880 → $0.0877 |       −0.4% |                 30.5 → 90.3 |                      157,355 → 172,993 |
+| Every 8 tasks              |     8 |              $0.1374 → $0.1170 |      −14.8% |                52.2 → 115.4 |                      335,950 → 274,100 |
+| Every 8 tasks              |    16 |              $0.4019 → $0.2421 |      −39.8% |                98.1 → 180.4 |                    1,188,721 → 681,341 |
+| Every 8 tasks              |    32 |              $1.2255 → $0.6212 |  **−49.3%** |               200.8 → 292.2 |                  4,084,232 → 2,008,863 |
+| Every 4 tasks              |     1 |              $0.0303 → $0.0242 |      −20.1% |                 15.8 → 17.4 |                        26,845 → 37,612 |
+| Every 4 tasks              |     4 |              $0.0883 → $0.0573 |      −35.0% |                 30.3 → 37.3 |                      157,438 → 111,754 |
+| Every 4 tasks              |     8 |              $0.2351 → $0.1276 |      −45.7% |                 62.3 → 78.8 |                      560,601 → 315,853 |
+| Every 4 tasks              |    16 |              $0.6644 → $0.3292 |      −50.4% |               132.0 → 147.8 |                    1,953,570 → 978,771 |
+| Every 4 tasks              |    32 |              $2.1763 → $1.0093 |  **−53.6%** |               257.9 → 265.3 |                  7,245,543 → 3,372,937 |
+
+At 32 tasks, median input fell **50.8% and 53.4%**. Median elapsed time increased
+**45.5% (91.4 seconds)** and **2.9% (7.4 seconds)**, respectively. Every completed
+pair cost less with bounded output, with savings from **25.9% to 55.8%**.
+Individual paired time differences ranged from **12.8 seconds faster to 119.9
+seconds slower**. The first task after which cumulative billed cost remained
+lower through task 32 ranged from task **1 to 15** across pairs. There is no
+single proven crossover point for pentests.
+
+| Frequency     | Variant  | 32-task cost range | Elapsed seconds range | Fully correct trajectories | Correct evidence/exit and recall checks | Cost per fully correct trajectory |
+| ------------- | -------- | -----------------: | --------------------: | -------------------------: | --------------------------------------: | --------------------------------: |
+| Every 8 tasks | Baseline |    $1.2218–$1.2356 |           180.9–236.5 |                        3/3 |                                   96/96 |                           $1.2276 |
+| Every 8 tasks | Bounded  |    $0.5982–$0.8471 |           209.8–299.2 |                        2/3 |                                   95/96 |                           $1.0333 |
+| Every 4 tasks | Baseline |    $2.1656–$2.1933 |           196.4–285.5 |                        3/3 |                                   96/96 |                           $2.1784 |
+| Every 4 tasks | Bounded  |    $0.9625–$1.6246 |           183.6–405.4 |                        3/3 |                                   96/96 |                           $1.1988 |
+
+Cost per fully correct trajectory divides **all** selected spending, including
+the unsuccessful trajectory, by the number with all 32 checks correct. It is
+not cost per successful pentest. The bounded variant returned correct evidence,
+exit status, and recall in **191/192 tasks**, versus **192/192** for baseline.
+Its one unfinished answer was task 1 of occasional repetition 2: it reported
+finding the token, made nine retrieval calls and three command attempts, and
+reached the twelve-call ceiling before returning the required final answer.
+The following 31 tasks passed. That result stays in both cost and accuracy
+statistics; these data do not establish capability parity.
+
+Caching is material to the bill but does not explain away the longer-run token
+reduction. Cached input represented 96.9% versus 97.1% of aggregate input in
+the occasional workload, and 96.7% versus 97.3% in the frequent workload.
+Every recorded bill reconciled to the verified rates of $1.40/M uncached input,
+$0.26/M cached input, and $4.40/M output. Pricing the observed trajectories with
+zero cache discounts gives median modeled costs of **$5.7356 → $2.8451** and
+**$10.1631 → $4.7474**. These are counterfactual prices, not measured cold-cache
+runs. Prices were checked against the [OpenRouter Z.AI endpoint
+catalog](https://openrouter.ai/api/v1/models/z-ai/glm-5.3/endpoints).
+
+The result supports a cost/context benefit in these longer retrieval workloads:
+smaller retained results reduce the recurring input paid on subsequent calls.
+It does not establish a general speedup, an optimal threshold, or unchanged
+pentest effectiveness. Three repetitions and variable retrieval strategies are
+too little evidence to call the latency penalty negligible.
+
+### Accounting and provenance
+
+The initial batch's $15 reservation ceiling interrupted both members of frequent
+repetition 3, after 21 baseline tasks and 16 bounded tasks. Those attempts and
+all their charges remain in the raw evidence. With the collection ceiling raised
+to $20, the entire pair was repeated with identical runtime commits, fixture
+seed, inference settings, and concurrency. The interrupted pair is excluded
+from the balanced 32-task statistics for that administrative reason; no
+unfavorable completed trajectory was discarded. All recorded HTTP responses
+were successful, and all request billing was present.
+
+| Component                                      |       Actual reported USD |
+| ---------------------------------------------- | ------------------------: |
+| Twelve complete trajectories in the comparison |              $15.88092092 |
+| Administratively interrupted pair              |               $1.43743336 |
+| Exploratory eight-call pilots                  |               $0.38869276 |
+| **Total collection spend / approved ceiling**  | **$17.70704704 / $20.00** |
+
+The original and replacement reports, their per-request JSONL ledgers, and the
+exploratory pilots are retained separately. Generated raw artifacts stay outside
+the repository. Digests identify the exact reports:
+
+| Report                  | SHA-256                                                            |
+| ----------------------- | ------------------------------------------------------------------ |
+| Main batch              | `c42372959737e92f8568e59dcdbd2ed0c59b91ef3751bf947f380ffcc3edda48` |
+| Replacement pair        | `a6b06a6276c03183acf6f96b0e119276e456c96ca28bb8e5e12bb5ebea396159` |
+| First exploratory pilot | `b570814ba8d7eb0252cfd5bf347e679d8c86c62a594726c0a57f12495d2d8ce7` |
+| Diagnostic pilot        | `0f12a02a9615b6071cfa9aafeb752bda8627aa6a58fcb8fd030e1f7e996ad943` |
+
+The runner's regression tests use a mocked transport to verify bare-prefix
+sanitization, safe sibling completion after a checkpoint failure, scoped pair
+selection, and stopping before paid requests when the budget is insufficient.
+The full suite passes **3,329 tests, with 45 skipped**; typecheck, lint, and format
+checks pass with the same pre-existing lint diagnostics as the parent.

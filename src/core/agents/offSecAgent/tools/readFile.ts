@@ -197,13 +197,24 @@ resume cursor.`,
           };
         }
         if (byteOffset !== undefined && byteCount !== undefined) {
-          return await readLocalByteWindow(
+          const result = await readLocalByteWindow(
             resolved,
             path,
             byteOffset,
             byteCount,
             ctx.abortSignal,
           );
+          if (
+            artifact &&
+            input.byteCount !== undefined &&
+            input.byteCount !== null &&
+            input.byteCount > byteCount &&
+            result.success &&
+            byteOffset + byteCount < stats.size
+          ) {
+            result.truncated = true;
+          }
+          return result;
         }
         return await readLocalLines(
           resolved,

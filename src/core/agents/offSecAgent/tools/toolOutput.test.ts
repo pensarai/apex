@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyToolResultBudget } from "../../../ai/contextManagement";
 import { executeCommand } from "./executeCommand";
 import { grep } from "./grep";
-import { readFile } from "./readFile";
+import { type ReadFileResult, readFile } from "./readFile";
 import {
   boundedOutputPreview,
   resolveToolOutput,
@@ -219,6 +219,56 @@ describe("bounded model output", () => {
       offset = page.stoppedAtByte;
     }
     expect(reconstructed).toBe(await read(file as string, "utf8"));
+  });
+
+  it("marks artifact byte pages truncated only when the output cap omits requested bytes", async () => {
+    const ctx = await context();
+    const projected = await toolOutputForModel(ctx, {
+      success: true,
+      error: "",
+      stdout: "x".repeat(TOOL_OUTPUT_MAX_BYTES * 2),
+    });
+    const ref = reference(String(projected.value));
+    const capped = await readFile(ctx).execute?.(
+      {
+        path: ref,
+        byteOffset: 0,
+        byteCount: TOOL_OUTPUT_MAX_BYTES * 3,
+        toolCallDescription: "Read oversized artifact window",
+      },
+      options,
+    );
+    expect(capped).toMatchObject({
+      success: true,
+      truncated: true,
+      byteCaptured: TOOL_OUTPUT_MAX_BYTES,
+      stoppedAtByte: TOOL_OUTPUT_MAX_BYTES,
+    });
+    const requested = (await readFile(ctx).execute?.(
+      {
+        path: ref,
+        byteOffset: 0,
+        byteCount: 100,
+        toolCallDescription: "Read small artifact window",
+      },
+      options,
+    )) as ReadFileResult;
+    expect(requested).toMatchObject({ success: true, byteCaptured: 100 });
+    expect(requested?.truncated).toBeUndefined();
+    const file = await resolveToolOutput(ctx, ref);
+    const bytes = Buffer.byteLength(await read(file as string, "utf8"));
+    const final = (await readFile(ctx).execute?.(
+      {
+        path: ref,
+        byteOffset: bytes - 100,
+        byteCount: TOOL_OUTPUT_MAX_BYTES * 3,
+        toolCallDescription: "Read remaining artifact bytes",
+      },
+      options,
+    )) as ReadFileResult;
+    expect(final).toMatchObject({ success: true, byteCaptured: 100 });
+    expect(final?.truncated).toBeUndefined();
+    expect(final?.stoppedAtByte).toBe(bytes);
   });
 
   it("uses distinct exclusive files and rejects traversal and symlinks", async () => {
