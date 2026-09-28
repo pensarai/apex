@@ -5,6 +5,8 @@
  * Unified for both chat and operator modes.
  */
 
+import type { BoxRenderable } from "@opentui/core";
+import { memo } from "react";
 import type { PendingApproval } from "../../../core/operator";
 import { useTheme } from "../../theme";
 import type { DisplayMessage } from "../agent-display";
@@ -83,6 +85,7 @@ export interface MessageListProps {
   username?: string;
   /** Empty state message */
   emptyMessage?: string;
+  onOperatorWelcomeHeightChange?: (height: number) => void;
   /** Whether scroll is focused */
   focused?: boolean;
   /** Verbose mode for tool display */
@@ -100,13 +103,14 @@ export interface MessageListProps {
 /**
  * Message list with auto-scroll and empty state handling
  */
-export function MessageList({
+export const MessageList = memo(function MessageList({
   messages,
   streamingMessageIndex = -1,
   isRunning = false,
   variant = "operator",
   username = "user",
   emptyMessage,
+  onOperatorWelcomeHeightChange,
   focused = true,
   verbose = false,
   expandedLogs = false,
@@ -148,7 +152,13 @@ export function MessageList({
     >
       {/* Empty state - Operator mode */}
       {!hasMessages && variant === "operator" && (
-        <box flexDirection="column" gap={1} marginTop={2}>
+        <box
+          flexDirection="column"
+          marginTop={1}
+          onSizeChange={function (this: BoxRenderable) {
+            onOperatorWelcomeHeightChange?.(this.height + 2);
+          }}
+        >
           <text fg={colors.primary}>Operator Mode Active</text>
           <text fg={colors.textMuted}>
             {emptyMessage ||
@@ -164,12 +174,8 @@ export function MessageList({
               <text fg={colors.primary}>Shift+Tab</text>
               <text fg={colors.textMuted}>
                 {" "}
-                - Switch between Plan or Default mode
+                - Cycle Approvals On, Approvals Off, and Plan
               </text>
-            </box>
-            <box flexDirection="row">
-              <text fg={colors.primary}>Option+Shift+Tab</text>
-              <text fg={colors.textMuted}> - Toggle approval on/off</text>
             </box>
           </box>
         </box>
@@ -255,4 +261,4 @@ export function MessageList({
       )}
     </scrollbox>
   );
-}
+});

@@ -2,6 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { getCurrentVersion } from "../installation";
+import {
+  type CustomProviders,
+  loadCustomProviders,
+  parseCustomProviders,
+} from "./customProviders";
 
 const DEFAULT_CONFIG: Config = {
   responsibleUseAccepted: false,
@@ -19,6 +24,7 @@ export interface Config {
   inceptionAPIKey?: string | null;
   bedrockAPIKey?: string | null;
   pensarAPIKey?: string | null;
+  customProviders?: CustomProviders;
   responsibleUseAccepted: boolean;
   // Remote execution providers
   daytonaAPIKey?: string | null;
@@ -118,6 +124,7 @@ function applyEnvFallbacks(parsedConfig: Partial<Config>): Config {
       parsedConfig.surfaceIntegrationEnabled ??
       parseBoolEnv(process.env.PENSAR_SURFACE_INTEGRATION),
     version,
+    customProviders: loadCustomProviders(parsedConfig.customProviders),
     openAiAPIKey: parsedConfig.openAiAPIKey ?? process.env.OPENAI_API_KEY,
     anthropicAPIKey:
       parsedConfig.anthropicAPIKey ?? process.env.ANTHROPIC_API_KEY,
@@ -155,6 +162,12 @@ export async function get(): Promise<Config> {
 }
 
 export async function update(config: Partial<Config>) {
+  if (config.customProviders !== undefined) {
+    config = {
+      ...config,
+      customProviders: parseCustomProviders(config.customProviders),
+    };
+  }
   const folder = path.join(os.homedir(), ".pensar");
   const file = path.join(folder, "config.json");
   const exists = await fs

@@ -1,4 +1,4 @@
-import { AsyncLocalStorage } from "node:async_hooks";
+import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import type { AnthropicMessagesModelId } from "@ai-sdk/anthropic/internal";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { OpenAIChatModelId } from "@ai-sdk/openai/internal";
@@ -19,6 +19,11 @@ import {
   wrapLanguageModel,
 } from "ai";
 import type { z } from "zod";
+import {
+  type CustomProviders,
+  parseCustomModelId,
+  resolveCustomModel,
+} from "../config/customProviders";
 import { createLogger } from "../logger/structured";
 import {
   type AiTelemetryOperation,
@@ -33,12 +38,25 @@ import {
   withCachedLastMessage,
   withCachedSystemPrompt,
 } from "./caching";
-import { fitMessagesToContext, truncateWithMarker } from "./contextManagement";
+import {
+  beginCompaction,
+  type CompactionLink,
+  type CompactionTrigger,
+} from "./compactionTelemetry";
+import {
+  estimateMessageTokens,
+  fitMessagesToContext,
+  truncateWithMarker,
+} from "./contextManagement";
 import {
   getMaxOutputTokens,
   getModelInfo,
   prefersSequentialToolCalls,
 } from "./models";
+import {
+  runWithNativeRolloutOperation,
+  withNativeRolloutEvidenceModel,
+} from "./native-rollout-evidence";
 import { CONCENTRATE_GLM_5_3_MODEL_ID } from "./providers/concentrate";
 import { STREAM_DEBUG } from "./streamTelemetry";
 import {
@@ -55,6 +73,14 @@ const log = scopedLogger(() => createLogger("ai"));
 const RESPONSE_DEBUG =
   process.env.RESPONSE_DEBUG === "1" || process.env.RESPONSE_DEBUG === "true";
 const RESPONSE_TOOL_NAME = "response";
+
+function nativeRolloutOperation(
+  operation?: AiTelemetryOperation,
+): "structured.generate" | "context.summarize" | "tool.repair" {
+  if (operation === "apex.context.summarize") return "context.summarize";
+  if (operation === "apex.tool.repair") return "tool.repair";
+  return "structured.generate";
+}
 
 /**
  * Tools whose arguments carry a security-authorization boundary the model must
@@ -298,6 +324,7 @@ function resolveUsageSink(
 }
 
 export type AIModelProvider =
+  | "custom"
   | "anthropic"
   | "openai"
   | "google"
@@ -310,7 +337,12 @@ export type AIModelProvider =
   | "local";
 
 /** Conservative default when `getModelInfo` doesn't have a `contextLength`. */
-export function getContextWindow(modelId: string): number {
+export function getContextWindow(
+  modelId: string,
+  customProviders?: CustomProviders,
+): number {
+  if (parseCustomModelId(modelId))
+    return resolveCustomModel(modelId, customProviders).model.contextLength;
   return getModelInfo(modelId).contextLength ?? 200_000;
 }
 
@@ -479,8 +511,8 @@ function isStreamIdleTimeoutError(error: unknown): boolean {
  *
  * Parallel tool calls are tracked by `toolCallId`. Duplicate `tool-call`
  * chunks for the same id (defensive — should never happen in practice) are
- * deduplicated. `tool-result` chunks without a matching open call are
- * ignored so the counter can never go negative.
+ * deduplicated. Terminal chunks (`tool-result` / `tool-error`) without a
+ * matching open call are ignored so the counter can never go negative.
  *
  * EXCEPTION: `response` is never gated — its `execute` returns synchronously so
  * it's not a slow tool, but a Bedrock stream wedging mid-payload while
@@ -514,7 +546,10 @@ function createToolExecutionGate(): {
         } else {
           inFlight++;
         }
-      } else if (chunk.type === "tool-result") {
+      } else if (chunk.type === "tool-result" || chunk.type === "tool-error") {
+        // A failed tool is just as terminal for the gate as a successful one —
+        // without this, a tool-error leaves its slot open forever, suppressing
+        // the idle timeout for the rest of the run.
         const id = chunk.toolCallId;
         if (id) {
           if (open.delete(id)) {
@@ -726,8 +761,14 @@ function wrapStreamWithErrorHandler(
                 }
 
                 const fitted = fitMessagesToContext(currentMessages, {
-                  contextWindow: getContextWindow(opts.model),
-                  maxOutputTokens: getMaxOutputTokens(opts.model),
+                  contextWindow: getContextWindow(
+                    opts.model,
+                    opts.authConfig?.customProviders,
+                  ),
+                  maxOutputTokens: getMaxOutputTokens(
+                    opts.model,
+                    opts.authConfig?.customProviders,
+                  ),
                   system: applySequentialToolCallPolicy(
                     opts.system,
                     opts.tools,
@@ -735,7 +776,17 @@ function wrapStreamWithErrorHandler(
                   ),
                   tools: opts.tools,
                   sessionPath: opts.sessionPath,
+                  telemetry: {
+                    trigger: "context_overflow",
+                    model: opts.model,
+                    sessionId: opts.sessionId,
+                    restartDepth: opts._restartDepth,
+                    previous: opts._compaction?.last,
+                  },
                 });
+
+                if (fitted.compaction && opts._compaction)
+                  opts._compaction.last = fitted.compaction;
 
                 messagesContainer.current = fitted.messages;
 
@@ -822,7 +873,11 @@ function wrapStreamWithErrorHandler(
                 try {
                   const summarizationStream = createSummarizationStream(
                     messagesForSummary,
-                    { ...opts, _restartDepth: postReactiveDepth },
+                    {
+                      ...opts,
+                      _restartDepth: postReactiveDepth,
+                      _compactionTrigger: "context_overflow",
+                    },
                     model,
                   );
                   for await (const chunk of summarizationStream.fullStream) {
@@ -860,6 +915,38 @@ function wrapStreamWithErrorHandler(
                     typeof opts.prompt === "string" && opts.prompt.length > 0
                       ? opts.prompt.slice(0, 4_000)
                       : MINIMAL_RESTART_PROMPT;
+                  const reset = beginCompaction("reset", {
+                    trigger: "summary_overflow",
+                    model: opts.model,
+                    sessionId: opts.sessionId,
+                    restartDepth: postReactiveDepth,
+                    previous: opts._compaction?.last,
+                  });
+                  reset?.capture("before", () => ({
+                    messages: messagesForSummary,
+                    system: opts.system,
+                    prompt: opts.prompt,
+                  }));
+                  reset?.measure(
+                    "before",
+                    () => estimateMessageTokens(messagesForSummary),
+                    messagesForSummary.length,
+                  );
+                  reset?.measure(
+                    "after",
+                    () =>
+                      estimateMessageTokens([
+                        { role: "user", content: minimalPrompt },
+                      ]),
+                    1,
+                  );
+                  reset?.capture("after", () => ({
+                    messages: [{ role: "user", content: minimalPrompt }],
+                    system: opts.system,
+                  }));
+                  reset?.finish("completed");
+                  if (reset && opts._compaction)
+                    opts._compaction.last = reset.link;
                   const fallback = streamResponse({
                     ...opts,
                     prompt: minimalPrompt,
@@ -1196,11 +1283,38 @@ export interface StreamResponseOpts {
    * boundary; throws `ContextLengthExhaustedError` past `MAX_RESTART_DEPTH`.
    */
   _restartDepth?: number;
+  /** Shared only by continuations of this stream, never across agents. */
+  _compaction?: { last?: CompactionLink };
+  _compactionTrigger?: CompactionTrigger;
 }
+
+const NATIVE_STREAM_RECOVERY = Symbol("native-stream-recovery");
+
+interface NativeStreamRecovery {
+  model: LanguageModel;
+  run<T>(fn: () => T): T;
+}
+
+type InternalStreamResponseOpts = StreamResponseOpts & {
+  [NATIVE_STREAM_RECOVERY]?: NativeStreamRecovery;
+};
 
 export function streamResponse(
   opts: StreamResponseOpts,
 ): StreamTextResult<ToolSet, never> {
+  const recovery = (opts as InternalStreamResponseOpts)[NATIVE_STREAM_RECOVERY];
+  if (recovery) {
+    return recovery.run(() => streamResponseWithinOperation(opts, recovery));
+  }
+  return streamResponseWithinOperation(opts);
+}
+
+function streamResponseWithinOperation(
+  opts: StreamResponseOpts,
+  nativeRecovery?: NativeStreamRecovery,
+): StreamTextResult<ToolSet, never> {
+  const compactionState = opts._compaction ?? {};
+  opts = { ...opts, _compaction: compactionState };
   // Bound recovery recursion (summarize → resume → overflow → …).
   const restartDepth = opts._restartDepth ?? 0;
   if (restartDepth > MAX_RESTART_DEPTH) {
@@ -1252,15 +1366,24 @@ export function streamResponse(
     await userOnStepFinish?.(step);
     await emitUsage(model, stepUsage, resolveUsageSink(usageRecorder));
   };
-  const baseProviderModel = withModelCallDiagnostics(
-    getProviderModel(model, authConfig),
-  );
-  const providerModel = languageModelMiddleware
-    ? wrapLanguageModel({
-        model: baseProviderModel,
-        middleware: languageModelMiddleware,
-      })
-    : baseProviderModel;
+  const providerModel =
+    nativeRecovery?.model ??
+    (() => {
+      const baseProviderModel = withNativeRolloutEvidenceModel(
+        withModelCallDiagnostics(getProviderModel(model, authConfig)),
+        {
+          requestedModelId: model,
+          operationKind: "agent.stream",
+          sessionId,
+        },
+      );
+      return languageModelMiddleware
+        ? wrapLanguageModel({
+            model: baseProviderModel,
+            middleware: languageModelMiddleware,
+          })
+        : baseProviderModel;
+    })();
   // Undefined when the model has no cache breakpoint we can express (non-Claude
   // Bedrock models, OpenAI/Google/OpenRouter) — those run uncached.
   const cacheBreakpoint = cacheBreakpointFor(model);
@@ -1283,12 +1406,20 @@ export function streamResponse(
   let proactiveFitFailed = false;
   if (messages && messages.length > 0) {
     const fitted = fitMessagesToContext(messages, {
-      contextWindow: getContextWindow(model),
-      maxOutputTokens: getMaxOutputTokens(model),
+      contextWindow: getContextWindow(model, authConfig?.customProviders),
+      maxOutputTokens: getMaxOutputTokens(model, authConfig?.customProviders),
       system: systemWithToolPolicy,
       tools,
       sessionPath: opts.sessionPath,
+      telemetry: {
+        trigger: "proactive",
+        model,
+        sessionId,
+        restartDepth,
+        previous: opts._compaction?.last,
+      },
     });
+    if (fitted.compaction) compactionState.last = fitted.compaction;
     fittedMessages = fitted.messages;
     proactiveFitFailed = !fitted.fitsBudget;
     if (fitted.modified && !silent) {
@@ -1321,7 +1452,11 @@ export function streamResponse(
     // entry points (proactive, outer-catch, reactive Layer 3) consume
     // exactly one depth slot per summarization attempt — symmetric.
     return wrapStreamWithErrorHandler(
-      createSummarizationStream(fittedMessages, opts, providerModel),
+      createSummarizationStream(
+        fittedMessages,
+        { ...opts, _compactionTrigger: "proactive" },
+        providerModel,
+      ),
       messagesContainer,
       opts,
       providerModel,
@@ -1369,7 +1504,7 @@ export function streamResponse(
     // Create the appropriate provider instance. The span tracker captures
     // the SDK's root generation span for error marking (see below).
     const generationSpans = createGenerationSpanTracker();
-    const response = streamText({
+    const responseOptions: Parameters<typeof streamText>[0] = {
       model: providerModel,
       system: effectiveSystem,
       ...(effectiveMessages ? { messages: effectiveMessages } : { prompt }),
@@ -1385,6 +1520,7 @@ export function streamResponse(
         ...createAiTelemetrySettings({
           operation: "apex.agent.stream",
           sessionId,
+          compaction: opts._compaction?.last,
         }),
         tracer: generationSpans.tracer,
       },
@@ -1393,7 +1529,7 @@ export function streamResponse(
       // defaults that can exceed our budget — e.g. GPT-4o defaults to
       // 16K output but our messages were sized assuming a smaller
       // reservation. Making the value explicit closes that drift class.
-      maxOutputTokens: getMaxOutputTokens(model),
+      maxOutputTokens: getMaxOutputTokens(model, authConfig?.customProviders),
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
@@ -1505,30 +1641,34 @@ export function streamResponse(
             output: repairedArgs,
             usage: repairUsage,
             providerMetadata: repairProviderMetadata,
-          } = await generateText({
-            model: providerModel,
-            providerOptions: openRouterProviderOptions,
-            output: Output.object({
-              schema: tool.inputSchema, // Use the actual Zod schema from the tool
-            }),
-            prompt: [
-              `The model tried to call the tool "${toolCall.toolName}"` +
-                ` with the following inputs:`,
-              boundedInput,
-              `The tool accepts the following schema:`,
-              boundedSchema,
-              `Error encountered: ${error}`,
-              "Please fix the inputs to match the schema.",
-              "",
-              "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
-              "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
-            ].join("\n"),
-            abortSignal,
-            experimental_telemetry: createAiTelemetrySettings({
-              operation: "apex.tool.repair",
-              sessionId,
-            }),
-          });
+          } = await runWithNativeRolloutOperation(
+            { operationKind: "tool.repair", sessionId },
+            () =>
+              generateText({
+                model: providerModel,
+                providerOptions: openRouterProviderOptions,
+                output: Output.object({
+                  schema: tool.inputSchema, // Use the actual Zod schema from the tool
+                }),
+                prompt: [
+                  `The model tried to call the tool "${toolCall.toolName}"` +
+                    ` with the following inputs:`,
+                  boundedInput,
+                  `The tool accepts the following schema:`,
+                  boundedSchema,
+                  `Error encountered: ${error}`,
+                  "Please fix the inputs to match the schema.",
+                  "",
+                  "IMPORTANT: For enum fields like 'severity' or 'riskLevel', use ONLY the exact values from the enum (e.g., 'HIGH', 'CRITICAL', 'MEDIUM', 'LOW').",
+                  "Do not add prefixes, suffixes, or formatting characters like '>', '-', '!', etc.",
+                ].join("\n"),
+                abortSignal,
+                experimental_telemetry: createAiTelemetrySettings({
+                  operation: "apex.tool.repair",
+                  sessionId,
+                }),
+              }),
+          );
 
           // Report tool repair token usage if onStepFinish callback is
           // provided. Awaited: the callback persists messages and records
@@ -1596,13 +1736,30 @@ export function streamResponse(
         }
       },
       onFinish,
-    });
+    };
+    let recovery = nativeRecovery;
+    const response = recovery
+      ? streamText(responseOptions)
+      : runWithNativeRolloutOperation(
+          { operationKind: "agent.stream", sessionId },
+          () => {
+            const operation = new AsyncResource("apex.native-stream-recovery");
+            recovery = {
+              model: providerModel,
+              run: (fn) => operation.runInAsyncScope(fn),
+            };
+            return streamText(responseOptions);
+          },
+        );
 
     // Wrap the stream to catch async errors during consumption
+    const recoveryOpts: InternalStreamResponseOpts = recovery
+      ? { ...opts, [NATIVE_STREAM_RECOVERY]: recovery }
+      : opts;
     return wrapStreamWithErrorHandler(
       response,
       messagesContainer,
-      opts,
+      recoveryOpts,
       providerModel,
       silent,
       0,
@@ -1635,7 +1792,7 @@ export function streamResponse(
       return wrapStreamWithErrorHandler(
         createSummarizationStream(
           messagesContainer.current,
-          opts,
+          { ...opts, _compactionTrigger: "context_overflow" },
           providerModel,
         ),
         messagesContainer,
@@ -1694,8 +1851,13 @@ export async function generateObjectResponse<T extends z.ZodType>(
     sessionId,
   } = opts;
 
-  const providerModel = withModelCallDiagnostics(
-    getProviderModel(model, authConfig),
+  const providerModel = withNativeRolloutEvidenceModel(
+    withModelCallDiagnostics(getProviderModel(model, authConfig)),
+    {
+      requestedModelId: model,
+      operationKind: nativeRolloutOperation(opts.operation),
+      sessionId,
+    },
   );
   const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
     model,
@@ -1704,80 +1866,92 @@ export async function generateObjectResponse<T extends z.ZodType>(
   const openRouterProviderOptions =
     buildOpenRouterStructuredProviderOptions(model);
 
-  let lastError: unknown;
+  return runWithNativeRolloutOperation(
+    {
+      operationKind: nativeRolloutOperation(opts.operation),
+      sessionId,
+    },
+    async () => {
+      let lastError: unknown;
 
-  for (let attempt = 0; attempt <= MAX_OBJECT_RATE_LIMIT_RETRIES; attempt++) {
-    try {
-      const { output, usage, providerMetadata } = await generateText({
-        model: providerModel,
-        output: Output.object({
-          schema,
-        }),
-        prompt,
-        system,
-        maxOutputTokens: maxTokens,
-        temperature,
-        providerOptions:
-          normalizedOpenAIEffort || openRouterProviderOptions
-            ? {
-                ...(normalizedOpenAIEffort
-                  ? {
-                      openai: {
-                        reasoningEffort: normalizedOpenAIEffort,
-                      },
-                    }
-                  : {}),
-                ...openRouterProviderOptions,
-              }
-            : undefined,
-        maxRetries: 0,
-        abortSignal,
-        experimental_telemetry: createAiTelemetrySettings({
-          operation: opts.operation ?? "apex.structured.generate",
-          sessionId,
-        }),
-      });
-
-      if (onTokenUsage && usage) {
-        onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
-      }
-
-      if (usage) {
-        await emitUsage(
-          model,
-          normalizeStepUsage({ usage, providerMetadata }),
-          resolveUsageSink(usageRecorder),
-        );
-      }
-
-      // zod v4: the AI SDK's `Output.object` no longer carries the schema's
-      // inferred type through `output` (it widens to `unknown`), so restore it
-      // from the schema generic for callers.
-      return output as z.infer<T>;
-    } catch (error) {
-      lastError = error;
-
-      if (checkIfContextLengthError(error)) {
-        const msg = error instanceof Error ? error.message : String(error);
-        throw new ContextLengthError(
-          `Prompt exceeds model context window: ${msg}`,
-        );
-      }
-
-      if (
-        checkIfRateLimitError(error) &&
-        attempt < MAX_OBJECT_RATE_LIMIT_RETRIES
+      for (
+        let attempt = 0;
+        attempt <= MAX_OBJECT_RATE_LIMIT_RETRIES;
+        attempt++
       ) {
-        const delayMs = Math.min(1000 * 2 ** attempt, 60_000);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        continue;
+        try {
+          const { output, usage, providerMetadata } = await generateText({
+            model: providerModel,
+            output: Output.object({
+              schema,
+            }),
+            prompt,
+            system,
+            maxOutputTokens: maxTokens,
+            temperature,
+            providerOptions:
+              normalizedOpenAIEffort || openRouterProviderOptions
+                ? {
+                    ...(normalizedOpenAIEffort
+                      ? {
+                          openai: {
+                            reasoningEffort: normalizedOpenAIEffort,
+                          },
+                        }
+                      : {}),
+                    ...openRouterProviderOptions,
+                  }
+                : undefined,
+            maxRetries: 0,
+            abortSignal,
+            experimental_telemetry: createAiTelemetrySettings({
+              operation: opts.operation ?? "apex.structured.generate",
+              sessionId,
+            }),
+          });
+
+          if (onTokenUsage && usage) {
+            onTokenUsage(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
+          }
+
+          if (usage) {
+            await emitUsage(
+              model,
+              normalizeStepUsage({ usage, providerMetadata }),
+              resolveUsageSink(usageRecorder),
+            );
+          }
+
+          // zod v4: the AI SDK's `Output.object` no longer carries the schema's
+          // inferred type through `output` (it widens to `unknown`), so restore it
+          // from the schema generic for callers.
+          return output as z.infer<T>;
+        } catch (error) {
+          lastError = error;
+
+          if (checkIfContextLengthError(error)) {
+            const msg = error instanceof Error ? error.message : String(error);
+            throw new ContextLengthError(
+              `Prompt exceeds model context window: ${msg}`,
+            );
+          }
+
+          if (
+            checkIfRateLimitError(error) &&
+            attempt < MAX_OBJECT_RATE_LIMIT_RETRIES
+          ) {
+            const delayMs = Math.min(1000 * 2 ** attempt, 60_000);
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            continue;
+          }
+
+          throw error;
+        }
       }
 
-      throw error;
-    }
-  }
-
-  throw lastError;
+      throw lastError;
+    },
+  );
 }
 
 class ContextLengthError extends Error {

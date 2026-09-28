@@ -1,3 +1,8 @@
+import {
+  type CustomProviders,
+  parseCustomModelId,
+  resolveCustomModel,
+} from "../../config/customProviders";
 import type { AIModel, ModelInfo } from "../ai";
 
 // Anthropic, OpenAI, Google, Bedrock — auto-generated from SDK type definitions.
@@ -27,6 +32,8 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
 ];
 
 export function getModelInfo(model: AIModel): ModelInfo {
+  const custom = parseCustomModelId(model);
+  if (custom) return { id: model, name: custom.modelId, provider: "custom" };
   return (
     AVAILABLE_MODELS.find((m) => m.id === model) ?? {
       id: model,
@@ -61,7 +68,12 @@ export function prefersSequentialToolCalls(model: AIModel): boolean {
  * Adding a Claude model? Add a pattern AND a regression row in
  * `models.test.ts:"recognizes Claude tier-specific budgets"`.
  */
-export function getMaxOutputTokens(modelId: string): number {
+export function getMaxOutputTokens(
+  modelId: string,
+  customProviders?: CustomProviders,
+): number {
+  if (parseCustomModelId(modelId))
+    return resolveCustomModel(modelId, customProviders).model.maxOutputTokens;
   const fromPattern = lookupOutputBudgetByPattern(modelId);
   const ctx = AVAILABLE_MODELS.find((m) => m.id === modelId)?.contextLength;
   // Reserve ≥25% of the window for input on tiny-context legacy models.
