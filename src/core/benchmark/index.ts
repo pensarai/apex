@@ -1,4 +1,13 @@
 export type {
+  ArgusProviderComparison,
+  ArgusProviderSummary,
+} from "./argusProviderComparison";
+export {
+  generateArgusProviderComparisonJson,
+  generateArgusProviderComparisonMarkdown,
+  summarizeArgusProvider,
+} from "./argusProviderComparison";
+export type {
   CostBenchCaseId,
   CostBenchConfig,
   CostBenchResult,

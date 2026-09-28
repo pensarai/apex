@@ -24,10 +24,10 @@ Each sample records:
 - time to first token, total latency, and output throughput
 - deterministic pass/fail status
 
-The production-shaped layer runs Argus `APEX-005-25` once per gateway. The
-separate LLM comparison scorer is disabled so evaluator spend does not
-contaminate the gateway totals; flag capture is the deterministic quality
-gate.
+The production-shaped layer can run the same Argus branches through each
+gateway in Fast Strike mode. The separate LLM comparison scorer is disabled so
+evaluator spend does not contaminate the gateway totals; flag capture is the
+deterministic quality gate.
 
 ## Cost model
 
@@ -94,50 +94,50 @@ bun sst shell -- bash -lc \
     --output ~/.pensar/benchmark-reports/glm-5.3-gateways'
 ```
 
-Run the matched Argus target in local mode. Each invocation has its own $40
-provider-cost ceiling:
+Run the matched Argus branches in local Fast Strike mode. The cost ceiling is
+applied independently to every branch:
 
 ```bash
 bun sst shell -- bash -lc \
   'cd packages/apex && bun run scripts/run-benchmarks.ts \
-    --branches APEX-005-25 \
+    --branches APEX-050-25,APEX-051-25,APEX-052-25,APEX-053-25,APEX-054-25,APEX-055-25 \
     --model z-ai/glm-5.3 \
     --mode local \
+    --fast-strike \
     --track-provider-cost \
-    --max-provider-cost 40 \
+    --max-provider-cost 25 \
     --no-comparison \
     --output ~/.pensar/benchmark-reports/glm-5.3-argus/openrouter'
 
 bun sst shell -- bash -lc \
   'cd packages/apex && bun run scripts/run-benchmarks.ts \
-    --branches APEX-005-25 \
+    --branches APEX-050-25,APEX-051-25,APEX-052-25,APEX-053-25,APEX-054-25,APEX-055-25 \
     --model concentrate:glm-5.3 \
     --mode local \
+    --fast-strike \
     --track-provider-cost \
-    --max-provider-cost 40 \
+    --max-provider-cost 25 \
     --no-comparison \
     --output ~/.pensar/benchmark-reports/glm-5.3-argus/concentrate'
 ```
 
-The allocation is $10 for the microbenchmark, $40 for each Argus run, and
-$10 headroom beneath the approved $100 ceiling. Argus checks the budget after
-every completed model step and aborts before starting another step.
+The twelve Argus runs have a maximum provider-billed spend of $300. Argus checks
+the budget after every completed model step and aborts before starting another
+step.
 
 ## Combine the reports
 
 ```bash
-bun run packages/apex/scripts/compare-glm-cost-results.ts \
-  --micro <micro-comparison.json> \
-  --openrouter-argus <openrouter-benchmark-results.json> \
-  --concentrate-argus <concentrate-benchmark-results.json> \
+bun run scripts/compare-argus-provider-results.ts \
+  --openrouter <openrouter-benchmark-results.json> \
+  --concentrate <concentrate-benchmark-results.json> \
   --output <comparison-directory> \
-  --budget 100
+  --per-run-budget 25
 ```
 
-The combined JSON retains the raw sample rows and both Argus suite results.
-The Markdown report includes cost per passing micro case, route distribution,
-cache behavior, latency, funding-fee sensitivity, Argus flag capture, and
-combined spend.
+The combined JSON retains both Argus suite results. The Markdown report includes
+per-branch status, flag capture, findings, billed and normalized cost, route
+distribution, duration, token usage, cost per captured flag, and combined spend.
 
 ## Interpretation limits
 
@@ -146,7 +146,7 @@ combined spend.
 - Provider availability, discounts, and route quality change over time.
   Re-run before making a purchasing decision.
 - Three micro repetitions characterize a pilot, not a long-term latency SLO.
-- One Argus target verifies production-shaped behavior but cannot establish a
-  broad security-quality ranking.
+- Six Argus targets improve coverage but still do not establish a broad
+  security-quality ranking.
 - Reasoning is billed as output. A separate reasoning count is shown only when
   the serving route reports it.

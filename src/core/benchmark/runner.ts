@@ -121,6 +121,7 @@ export async function runBenchmarkSuite(
     timestamp: new Date().toISOString(),
     model: config.model,
     repoUrl: config.repoUrl,
+    ...(config.fastStrike ? { fastStrike: true } : {}),
   };
 }
 
@@ -415,6 +416,7 @@ export async function runSingleBenchmark(
         target: targetUrl,
         model: config.model,
         session,
+        fastStrike: config.fastStrike,
         authConfig:
           config.costTracking?.gateway === "openrouter"
             ? {

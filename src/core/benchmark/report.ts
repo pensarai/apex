@@ -14,6 +14,7 @@ export function generateTextReport(result: BenchmarkSuiteResult): string {
   lines.push(
     `Model: ${model}  |  Duration: ${summary.totalDurationMinutes.toFixed(1)}m`,
   );
+  lines.push(`Mode: ${result.fastStrike ? "Fast Strike" : "Standard"}`);
   lines.push("");
 
   // Summary

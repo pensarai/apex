@@ -120,6 +120,7 @@ Options:
   --daytona-batch-size <n>    Parallel Daytona sandboxes (default: 4)
   --track-provider-cost       Require provider-billed GLM 5.3 cost metadata
   --max-provider-cost <usd>   Abort a run after this billed-cost ceiling (default: 40)
+  --fast-strike               Use one focused worker without attack-surface/swarm phases
   --no-comparison             Skip the separate LLM comparison scorer
   --no-cleanup                Don't remove temp clone directories
   --help, -h                  Show this help message
@@ -162,6 +163,7 @@ async function main(): Promise<void> {
   let runComparison = true;
   let trackProviderCost = false;
   let maxProviderCostUsd = 40;
+  let fastStrike = false;
 
   // Parse arguments
   for (let i = 0; i < args.length; i++) {
@@ -209,6 +211,8 @@ async function main(): Promise<void> {
       i++;
       maxProviderCostUsd = Number(value);
       trackProviderCost = true;
+    } else if (arg === "--fast-strike") {
+      fastStrike = true;
     } else if (arg === "--no-comparison") {
       runComparison = false;
     } else if (arg === "--no-cleanup") {
@@ -311,6 +315,7 @@ async function main(): Promise<void> {
   console.log(`Repo:       ${repoDir || repoUrl}`);
   console.log(`Benchmarks: ${branches.length}`);
   console.log(`Timeout:    ${timeoutMinutes}m per benchmark`);
+  console.log(`Fast strike: ${fastStrike ? "enabled" : "disabled"}`);
   console.log(`Comparison: ${runComparison ? "enabled" : "disabled"}`);
   if (costTracking) {
     console.log(
@@ -334,6 +339,7 @@ async function main(): Promise<void> {
     timeoutMinutes,
     daytonaBatchSize,
     cleanupTempDirs,
+    fastStrike,
     runComparison,
     costTracking,
   };

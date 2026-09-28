@@ -25,6 +25,7 @@ export interface BenchmarkSuiteConfig {
   timeoutMinutes: number;
   daytonaBatchSize: number;
   cleanupTempDirs: boolean;
+  fastStrike?: boolean;
   runComparison?: boolean;
   costTracking?: {
     gateway: CostBenchGateway;
@@ -69,6 +70,7 @@ export interface BenchmarkSuiteResult {
   timestamp: string;
   model: AIModel;
   repoUrl: string;
+  fastStrike?: boolean;
 }
 
 export interface BenchmarkSuiteSummary {
