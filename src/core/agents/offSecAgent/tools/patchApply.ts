@@ -182,7 +182,7 @@ export function applyFileDiff(
     }
     shape.lines.splice(start, oldEnd - start, ...replacement);
 
-    if (bomPlans[index].dropFileBom) shape.bom = "";
+    if (start === 0 && bomPlans[index].dropFileBom) shape.bom = "";
     if (reachesNewEof) {
       shape.endsWithNewline = !hunk.newEndsWithoutNewline;
     }

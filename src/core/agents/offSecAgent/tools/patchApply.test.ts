@@ -393,6 +393,18 @@ describe("applyFileDiff — formatting invariants", () => {
     expect(result.content).toBe("FIRST\nsecond\n");
   });
 
+  it.each([
+    "\n",
+    "\r\n",
+  ])("preserves the file BOM when a BOM-dropping hunk relocates (%j)", (eol) => {
+    const result = apply(
+      "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-\uFEFFold\n+new\n",
+      `\uFEFFunchanged${eol}old${eol}`,
+    );
+    expect(result.content).toBe(`\uFEFFunchanged${eol}new${eol}`);
+    expect(result.outcomes).toEqual([{ matchedAt: 2, offset: 1 }]);
+  });
+
   it("adds a BOM when a git-style diff introduces it on line 1", () => {
     const result = apply(
       `--- a/f

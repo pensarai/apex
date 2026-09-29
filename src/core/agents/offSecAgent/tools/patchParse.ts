@@ -286,7 +286,7 @@ function parseHunk(
     }
     const line = lines[i];
     if (stripTransportCr(line) === NO_NEWLINE_MARKER) {
-      annotate(i);
+      annotate(i + 1);
       i++;
       continue;
     }
@@ -327,7 +327,7 @@ function parseHunk(
   }
 
   while (i < lines.length && stripTransportCr(lines[i]) === NO_NEWLINE_MARKER) {
-    annotate(i);
+    annotate(i + 1);
     i++;
   }
 

@@ -341,7 +341,7 @@ describe("no-newline markers", () => {
 +b
 `;
     expect(() => parseUnifiedDiff(patch)).toThrow(
-      /marker must follow the hunk line/,
+      /Patch line 4: no-newline marker must follow the hunk line/,
     );
   });
 
@@ -355,8 +355,16 @@ describe("no-newline markers", () => {
 +new
 `;
     expect(() => parseUnifiedDiff(patch)).toThrow(
-      /duplicate no-newline marker/,
+      /Patch line 6: duplicate no-newline marker/,
     );
+  });
+
+  it("reports one-based line numbers for duplicate trailing markers", () => {
+    expect(() =>
+      parseUnifiedDiff(
+        "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\n+new\n\\ No newline at end of file\n\\ No newline at end of file\n",
+      ),
+    ).toThrow(/Patch line 7: duplicate no-newline marker for the new side/);
   });
 });
 
