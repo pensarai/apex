@@ -19,6 +19,10 @@ import type { SessionInfo } from "../../../session";
 import { scopedLogger } from "../../../util/lazyLogger";
 import { OffensiveSecurityAgent } from "../../offSecAgent";
 import type { StreamIdFactory } from "../../offSecAgent/types";
+import {
+  browserEngineForGoogleSignIn,
+  GOOGLE_SIGNIN_PROMPT_GUIDANCE,
+} from "../googleSignInPrompt";
 import { MOBILE_OTP_PROMPT_GUIDANCE } from "../mobileOtpPrompt";
 import { detectOSAndEnhancePrompt } from "../utils";
 import { AUTH_SUBAGENT_SYSTEM_PROMPT } from "./prompts";
@@ -165,10 +169,16 @@ export class AuthenticationAgent extends OffensiveSecurityAgent<AuthenticationRe
     const { session } = base;
 
     const cm = session.credentialManager;
+    const googleSignIn = cm?.hasGoogleSignIn() === true;
 
     super({
       ...base,
-      system: detectOSAndEnhancePrompt(AUTH_SUBAGENT_SYSTEM_PROMPT),
+      browserEngine: browserEngineForGoogleSignIn(googleSignIn),
+      system: detectOSAndEnhancePrompt(
+        googleSignIn
+          ? `${AUTH_SUBAGENT_SYSTEM_PROMPT}\n\n${GOOGLE_SIGNIN_PROMPT_GUIDANCE}`
+          : AUTH_SUBAGENT_SYSTEM_PROMPT,
+      ),
       activeTools: [
         // Auth flow tools
         "execute_command",
@@ -315,6 +325,9 @@ function buildAuthPrompt(
     const smsInstructions = hasMobileOtp
       ? `\n${MOBILE_OTP_PROMPT_GUIDANCE}\n`
       : "";
+    const googleInstructions = credentialManager?.hasGoogleSignIn()
+      ? `\n${GOOGLE_SIGNIN_PROMPT_GUIDANCE}\n`
+      : "";
     parts.push(`INSTRUCTIONS:
 You have credentials available via credential IDs — authenticate immediately.
 1. For API/form logins, use execute_command (curl) to submit credentials and capture the Set-Cookie / token response
@@ -322,7 +335,7 @@ You have credentials available via credential IDs — authenticate immediately.
    pass credentialId + credentialField (e.g. credentialField="password") instead of the raw value —
    the secret is resolved securely at execution time. NEVER type a password directly.
 3. Call complete_authentication with exported cookies/headers to persist credentials and end the run
-${smsInstructions}
+${smsInstructions}${googleInstructions}
 The credentials above were provided to you and have already been verified — they are SHARED across runs, so
 do not modify them or their account settings. NEVER change the password, complete a password reset /
 forced-password-change / account-recovery flow, or modify MFA/2FA settings (enrolling, disabling, or

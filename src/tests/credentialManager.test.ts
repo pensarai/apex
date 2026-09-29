@@ -458,6 +458,33 @@ describe("CredentialManager", () => {
       expect(prompt).not.toContain("email-otp");
       expect(prompt).not.toContain("hidden-recovery");
     });
+
+    it("marks Sign in with Google without leaking the password", () => {
+      cm.addFromAuthCredentials({
+        username: "agent@agents.example.com",
+        password: "google-secret",
+        loginUrl: "https://app.example.com/login",
+        googleSignIn: true,
+        additionalFields: { "Google employee ID": "deadbeef" },
+      });
+
+      expect(cm.hasGoogleSignIn()).toBe(true);
+      const prompt = cm.formatForPrompt();
+      expect(prompt).toContain("Sign-in: Google");
+      expect(prompt).toContain("accounts.google.com");
+      expect(prompt).toContain("Google employee ID");
+      expect(prompt).not.toContain("google-secret");
+      expect(prompt).not.toContain("deadbeef");
+      const id = cm.listReferences()[0]?.id;
+      expect(id).toBeDefined();
+      expect(cm.listReferences()[0]?.googleSignIn).toBe(true);
+      expect(cm.toAuthCredentials(id ?? "")?.googleSignIn).toBe(true);
+    });
+
+    it("hasGoogleSignIn is false without a Google credential", () => {
+      cm.addFromAuthCredentials({ username: "a", password: "b" });
+      expect(cm.hasGoogleSignIn()).toBe(false);
+    });
   });
 
   describe("additional secret fields", () => {

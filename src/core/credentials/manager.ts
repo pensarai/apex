@@ -74,6 +74,7 @@ function toReference(stored: StoredCredential): CredentialReference {
   }
   const ctx = stored.metadata?.context;
   if (typeof ctx === "string" && ctx) ref.context = ctx;
+  if (stored.googleSignIn) ref.googleSignIn = true;
   return ref;
 }
 
@@ -155,6 +156,7 @@ export class CredentialManager {
       loginUrl: creds.loginUrl,
       additionalFields: creds.additionalFields,
       tokens: creds.tokens,
+      googleSignIn: creds.googleSignIn,
       label: extra?.label,
       role: extra?.role ?? creds.role,
       metadata: creds.context ? { context: creds.context } : undefined,
@@ -198,6 +200,11 @@ export class CredentialManager {
    */
   listReferences(): CredentialReference[] {
     return Array.from(this.store.values()).map(toReference);
+  }
+
+  /** True when any stored credential is Sign in with Google. */
+  hasGoogleSignIn(): boolean {
+    return Array.from(this.store.values()).some((s) => s.googleSignIn === true);
   }
 
   /**
@@ -254,6 +261,7 @@ export class CredentialManager {
     if (stored.additionalFields)
       result.additionalFields = stored.additionalFields;
     if (stored.tokens) result.tokens = { ...stored.tokens };
+    if (stored.googleSignIn) result.googleSignIn = true;
     return result;
   }
 
@@ -282,6 +290,11 @@ export class CredentialManager {
       }
       if (ref.authMethod) {
         parts.push(`  Authentication method: ${ref.authMethod}`);
+      }
+      if (ref.googleSignIn) {
+        parts.push(
+          "  Sign-in: Google — click the target's Google button; fill identifier, password, and Google employee ID on accounts.google.com via browser_fill + credentialId/credentialField. Do not fill the target's native username/password form.",
+        );
       }
       if (ref.context) parts.push(`  Context: ${ref.context}`);
       return parts.join("\n");

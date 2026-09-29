@@ -24,6 +24,7 @@ export type {
   AskUserQuestionsResult,
   BrowserClickResult,
   BrowserConsoleResult,
+  BrowserEngine,
   BrowserEvaluateResult,
   BrowserFillResult,
   BrowserNavigateResult,
