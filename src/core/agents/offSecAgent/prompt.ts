@@ -170,7 +170,10 @@ function buildSourceAssessmentSection(
   },
 ): string {
   const codebasePath = session.config?.codebasePath;
-  const hasSourceAccess = Boolean(codebasePath) || !sandboxMode;
+  // A helper workspace does not make the shell's cwd an authorized target
+  // repository. Such workers need an explicitly configured codebase.
+  const hasSourceAccess =
+    Boolean(codebasePath) || (!sandboxMode && !fileWorkspaceRoot);
   if (!hasSourceAccess) return "";
 
   if (
