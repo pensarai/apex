@@ -1,10 +1,12 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, open, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import type { SessionInfo } from "../session";
 import { resolveSessionWhiteboxArtifactPath } from "./paths";
 import type { WhiteboxArtifactRef, WhiteboxArtifactType } from "./types";
 
 const MAX_ARTIFACT_INLINE_CHARS = 40_000;
+const PREVIEW_READ_CHUNK_BYTES = 16_384;
 
 function safeName(value: string): string {
   return value
@@ -58,6 +60,47 @@ export async function writeWhiteboxArtifact(input: {
   };
 }
 
+/**
+ * Read at most `maxChars` UTF-16 code units of a UTF-8 file, touching only the
+ * prefix bytes. Indistinguishable from `readFile(path, "utf8")` followed by
+ * `.slice(0, maxChars)` — malformed or truncated byte sequences decode to the
+ * same replacement characters, and a slice landing inside a surrogate pair
+ * keeps the lone half exactly like String#slice.
+ */
+export async function readTextPrefix(
+  path: string,
+  maxChars: number,
+): Promise<{ content: string; truncated: boolean; bytesRead: number }> {
+  if (!Number.isInteger(maxChars) || maxChars < 0) {
+    throw new RangeError(
+      `maxChars must be a non-negative integer: ${maxChars}`,
+    );
+  }
+  const file = await open(path, "r");
+  const decoder = new StringDecoder("utf8");
+  const chunk = Buffer.allocUnsafe(PREVIEW_READ_CHUNK_BYTES);
+  let decoded = "";
+  let bytesRead = 0;
+  try {
+    while (decoded.length <= maxChars) {
+      const { bytesRead: read } = await file.read(chunk, 0, chunk.length, null);
+      if (read === 0) {
+        decoded += decoder.end();
+        break;
+      }
+      bytesRead += read;
+      decoded += decoder.write(chunk.subarray(0, read));
+    }
+    return {
+      content: decoded.slice(0, maxChars),
+      truncated: decoded.length > maxChars,
+      bytesRead,
+    };
+  } finally {
+    await file.close();
+  }
+}
+
 export async function readWhiteboxArtifact(input: {
   session: SessionInfo;
   path: string;
@@ -70,12 +113,15 @@ export async function readWhiteboxArtifact(input: {
     sessionRootPath: input.session.rootPath,
     artifactRelativePath: input.path,
   });
-  const raw = await readFile(absolutePath, "utf-8");
-  if (raw.length <= MAX_ARTIFACT_INLINE_CHARS) {
-    return { content: raw, truncated: false, absolutePath };
+  const { content, truncated } = await readTextPrefix(
+    absolutePath,
+    MAX_ARTIFACT_INLINE_CHARS,
+  );
+  if (!truncated) {
+    return { content, truncated: false, absolutePath };
   }
   return {
-    content: `${raw.slice(0, MAX_ARTIFACT_INLINE_CHARS)}\n\n(truncated - read the artifact in smaller chunks if needed)`,
+    content: `${content}\n\n(truncated - read the artifact in smaller chunks if needed)`,
     truncated: true,
     absolutePath,
   };
