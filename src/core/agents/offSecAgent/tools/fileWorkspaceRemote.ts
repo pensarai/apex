@@ -99,24 +99,12 @@ const POWERSHELL = String.raw`
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
-function Canonical([string]$p, [bool]$confined) {
+function Canonical([string]$p) {
   $full = [IO.Path]::GetFullPath($p)
   if ($full -match '^\\\\[?.]\\') { throw 'Windows device paths are not supported' }
   foreach ($part in $full.Substring([IO.Path]::GetPathRoot($full).Length).Split('\')) {
     if ($part -match '[. ]$|:' -or $part -match '^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)') {
       throw 'Windows device names, alternate streams, and trailing dots/spaces are not supported'
-    }
-  }
-  if ($confined) {
-    $cursor = $full
-    while ($cursor) {
-      $item = Get-Item -LiteralPath $cursor -Force -ErrorAction SilentlyContinue
-      if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-        throw 'Reparse points are not supported in a confined file workspace'
-      }
-      $parent = [IO.Path]::GetDirectoryName($cursor)
-      if ($parent -eq $cursor) { break }
-      $cursor = $parent
     }
   }
   return $full
@@ -156,11 +144,21 @@ try {
     $null = $payload.Append([Environment]::GetEnvironmentVariable('APEX_FILE_PAYLOAD_' + $i))
   }
   $q = $utf8.GetString([Convert]::FromBase64String($payload.ToString())) | ConvertFrom-Json
-  $p = Canonical $q.path ([bool]$q.root)
+  $p = Canonical $q.path
   if ($q.root) {
-    $root = (Canonical $q.root $true).TrimEnd('\', '/')
+    $root = (Canonical $q.root).TrimEnd('\', '/')
     if (-not ($p.Equals($root, [StringComparison]::OrdinalIgnoreCase) -or $p.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase))) {
       throw 'Path escapes file workspace'
+    }
+    # The configured root and its ancestors are trusted; links below it may escape.
+    $cursor = $p.TrimEnd('\', '/')
+    while ($cursor -and -not $cursor.Equals($root, [StringComparison]::OrdinalIgnoreCase)) {
+      $item = Get-Item -LiteralPath $cursor -Force -ErrorAction SilentlyContinue
+      if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'Reparse points are not supported inside a confined file workspace'
+      }
+      $cursor = [IO.Path]::GetDirectoryName($cursor)
+      if ($cursor) { $cursor = $cursor.TrimEnd('\', '/') }
     }
   }
   $result = @{ok = $true}

@@ -117,6 +117,40 @@ describe.each([
     );
   });
 
+  it.each([
+    "root",
+    "ancestor",
+  ])("supports a workspace with a linked %s while rejecting links below it", async (location) => {
+    const { root, workspace, ctx } = await fixture(sandbox);
+    const alias = join(root, "alias");
+    const linkType = process.platform === "win32" ? "junction" : "dir";
+    await symlink(location === "root" ? workspace : root, alias, linkType);
+    ctx.fileWorkspaceRoot =
+      location === "root" ? alias : join(alias, "helpers");
+    const file = await resolveFilePath(ctx, "nested/helper.txt");
+    await writeWorkspaceFile(ctx, file, "before", { expected: null });
+    expect(await readWorkspaceFile(ctx, file)).toBe("before");
+    await writeWorkspaceFile(ctx, file, "after", { expected: "before" });
+    expect(await readFile(join(workspace, "nested/helper.txt"), "utf8")).toBe(
+      "after",
+    );
+    await deleteWorkspaceFile(ctx, file, { expected: "after" });
+    await expect(readFile(file)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const outside = join(root, "outside");
+    await mkdir(outside);
+    await symlink(outside, join(workspace, "escape"), linkType);
+    await expect(resolveFilePath(ctx, "escape/new.txt")).rejects.toThrow(
+      /escapes|reparse/i,
+    );
+
+    ctx.agentCwd = ctx.fileWorkspaceRoot;
+    ctx.fileWorkspaceRoot = undefined;
+    await expect(
+      resolveFilePath(ctx, "nested/helper.txt", { confineToCwd: true }),
+    ).resolves.toBe(file);
+  });
+
   it("refuses traversal and an existing symlink to an outside directory", async () => {
     const { root, workspace, ctx } = await fixture(sandbox);
     const outside = join(root, "target");
