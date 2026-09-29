@@ -20,6 +20,7 @@ import { getPensarGatewayUrl } from "../api/constants";
 import { ensureValidToken } from "../auth";
 import { config } from "../config";
 import type { CustomProviders } from "../config/customProviders";
+import type { HoonifyModel } from "../hoonify";
 import { createLogger } from "../logger/structured";
 import { createAiTelemetrySettings } from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
@@ -43,6 +44,7 @@ import { getModelInfo } from "./models";
 import { runWithNativeRolloutOperation } from "./native-rollout-evidence";
 import { createConcentrateModel } from "./providers/concentrate";
 import { createCustomModel } from "./providers/custom";
+import { createHoonifyModel } from "./providers/hoonify";
 import { createPensarModel } from "./providers/pensar";
 
 const log = scopedLogger(() => createLogger("ai:utils"));
@@ -84,6 +86,8 @@ export type AIAuthConfig = {
   openRouterAPIKey?: string;
   concentrateAPIKey?: string;
   inceptionAPIKey?: string;
+  hoonifyAPIKey?: string;
+  hoonifyModels?: HoonifyModel[];
   pensarAPIKey?: string;
   // WorkOS CLI auth
   accessToken?: string;
@@ -118,6 +122,8 @@ export function buildAuthConfig(cfg: {
   openRouterAPIKey?: string | null;
   concentrateAPIKey?: string | null;
   inceptionAPIKey?: string | null;
+  hoonifyAPIKey?: string | null;
+  hoonifyModels?: HoonifyModel[];
   pensarAPIKey?: string | null;
   accessToken?: string | null;
   refreshToken?: string | null;
@@ -135,6 +141,8 @@ export function buildAuthConfig(cfg: {
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
     concentrateAPIKey: cfg.concentrateAPIKey ?? undefined,
     inceptionAPIKey: cfg.inceptionAPIKey ?? undefined,
+    hoonifyAPIKey: cfg.hoonifyAPIKey ?? undefined,
+    hoonifyModels: cfg.hoonifyModels,
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
     accessToken: cfg.accessToken ?? undefined,
     refreshToken: cfg.refreshToken ?? undefined,
@@ -182,6 +190,11 @@ export function getProviderModel(
   switch (provider) {
     case "custom":
       return createCustomModel(model, authConfig?.customProviders);
+    case "hoonify":
+      return createHoonifyModel(model, {
+        apiKey: authConfig?.hoonifyAPIKey,
+        models: authConfig?.hoonifyModels,
+      });
     case "openai": {
       const openai = createOpenAI({
         apiKey: openAiAPIKey,

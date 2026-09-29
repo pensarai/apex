@@ -35,7 +35,7 @@ export {
   getRecentModels,
   MAX_RECENT_MODELS,
 } from "./model-history";
-export { AVAILABLE_MODELS } from "./models";
+export { AVAILABLE_MODELS, getModelInfo } from "./models";
 export type {
   CreateNativeRolloutEvidenceCaptureInput,
   NativeRolloutCaptureLimits,

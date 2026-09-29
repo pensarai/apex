@@ -24,6 +24,7 @@ import {
   parseCustomModelId,
   resolveCustomModel,
 } from "../config/customProviders";
+import { type HoonifyModel, resolveHoonifyModel } from "../hoonify";
 import { createLogger } from "../logger/structured";
 import {
   type AiTelemetryOperation,
@@ -334,13 +335,17 @@ export type AIModelProvider =
   | "bedrock-mantle"
   | "pensar"
   | "inception"
+  | "hoonify"
   | "local";
 
 /** Conservative default when `getModelInfo` doesn't have a `contextLength`. */
 export function getContextWindow(
   modelId: string,
   customProviders?: CustomProviders,
+  hoonifyModels?: HoonifyModel[],
 ): number {
+  if (modelId.startsWith("hoonify:"))
+    return resolveHoonifyModel(modelId, hoonifyModels).contextLength;
   if (parseCustomModelId(modelId))
     return resolveCustomModel(modelId, customProviders).model.contextLength;
   return getModelInfo(modelId).contextLength ?? 200_000;
@@ -764,10 +769,12 @@ function wrapStreamWithErrorHandler(
                   contextWindow: getContextWindow(
                     opts.model,
                     opts.authConfig?.customProviders,
+                    opts.authConfig?.hoonifyModels,
                   ),
                   maxOutputTokens: getMaxOutputTokens(
                     opts.model,
                     opts.authConfig?.customProviders,
+                    opts.authConfig?.hoonifyModels,
                   ),
                   system: applySequentialToolCallPolicy(
                     opts.system,
@@ -1406,8 +1413,16 @@ function streamResponseWithinOperation(
   let proactiveFitFailed = false;
   if (messages && messages.length > 0) {
     const fitted = fitMessagesToContext(messages, {
-      contextWindow: getContextWindow(model, authConfig?.customProviders),
-      maxOutputTokens: getMaxOutputTokens(model, authConfig?.customProviders),
+      contextWindow: getContextWindow(
+        model,
+        authConfig?.customProviders,
+        authConfig?.hoonifyModels,
+      ),
+      maxOutputTokens: getMaxOutputTokens(
+        model,
+        authConfig?.customProviders,
+        authConfig?.hoonifyModels,
+      ),
       system: systemWithToolPolicy,
       tools,
       sessionPath: opts.sessionPath,
@@ -1529,7 +1544,11 @@ function streamResponseWithinOperation(
       // defaults that can exceed our budget — e.g. GPT-4o defaults to
       // 16K output but our messages were sized assuming a smaller
       // reservation. Making the value explicit closes that drift class.
-      maxOutputTokens: getMaxOutputTokens(model, authConfig?.customProviders),
+      maxOutputTokens: getMaxOutputTokens(
+        model,
+        authConfig?.customProviders,
+        authConfig?.hoonifyModels,
+      ),
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;

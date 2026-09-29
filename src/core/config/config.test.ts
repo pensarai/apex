@@ -38,6 +38,68 @@ describe("provider environment fallbacks", () => {
     expect(config.concentrateAPIKey).toBe("sk-cn-env");
   });
 
+  it("discovers the live Hoonify catalog from an environment key without persisting runtime data", async () => {
+    vi.stubEnv("HOONIFY_API_KEY", "config-env-key");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        object: "list",
+        data: [
+          {
+            id: "Qwen/Qwen3.6-27B",
+            object: "model",
+            created: 1,
+            owned_by: "hoonify",
+          },
+        ],
+      }),
+    );
+    const loaded = await get();
+    expect(loaded.hoonifyAPIKey).toBe("config-env-key");
+    expect(loaded.hoonifyModels).toEqual([
+      { id: "Qwen/Qwen3.6-27B", contextLength: 32_768, maxOutputTokens: 4096 },
+    ]);
+    expect(loaded.hoonifyCatalogError).toBeUndefined();
+    await update({
+      selectedModelId: "hoonify:Qwen/Qwen3.6-27B",
+      hoonifyModels: loaded.hoonifyModels,
+    });
+    const persisted = JSON.parse(
+      readFileSync(path.join(homeDirectory, ".pensar", "config.json"), "utf8"),
+    );
+    expect(persisted.hoonifyModels).toBeUndefined();
+    expect(persisted.hoonifyAPIKey).toBeUndefined();
+  });
+
+  it("honors the saved Hoonify key over an environment key and discards a stale catalog", async () => {
+    vi.stubEnv("HOONIFY_API_KEY", "must-not-use");
+    await init();
+    await update({ hoonifyAPIKey: "config-saved-key" });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        data: [{ id: "saved-model", context_window: 32_768 }],
+      }),
+    );
+    const loaded = await get();
+    expect(
+      new Headers(fetchMock.mock.calls[0][1]?.headers).get("Authorization"),
+    ).toBe("Bearer config-saved-key");
+    expect(loaded.hoonifyModels?.[0].id).toBe("saved-model");
+    await update({ hoonifyAPIKey: "changed-key" });
+    fetchMock.mockResolvedValue(new Response("private error", { status: 403 }));
+    const failed = await get();
+    expect(failed.hoonifyModels).toBeUndefined();
+    expect(failed.hoonifyCatalogError).toContain("rejected the API key");
+    expect(failed.responsibleUseAccepted).toBe(false);
+  });
+
+  it("makes no catalog request when Hoonify is not configured", async () => {
+    vi.stubEnv("HOONIFY_API_KEY", "");
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const loaded = await get();
+    expect(loaded.hoonifyModels).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("loads custom worker configuration without persisting it or its key", async () => {
     const providers = {
       research: {

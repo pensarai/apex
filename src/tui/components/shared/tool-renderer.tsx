@@ -72,7 +72,8 @@ export const ToolRenderer = memo(function ToolRenderer({
   const isPending = message.status === "pending" || isStreaming;
   const isCompleted = message.status === "completed";
   const isError = message.status === "error";
-  const { toolName, args, result, logs } = message;
+  const { toolName, result, logs } = message;
+  const args = message.args ?? {};
 
   const summary = getToolDisplayLabel(toolName, args, {
     preferDescription: isPending,

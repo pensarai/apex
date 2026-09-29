@@ -192,11 +192,15 @@ async function resolveCliModel(): Promise<AIModel> {
     model: getArg("--model"),
     provider: getArg("--model-provider"),
     customProviders: pensarConfig.customProviders,
+    hoonifyModels: pensarConfig.hoonifyModels,
+    hoonifyCatalogError: pensarConfig.hoonifyCatalogError,
   });
   if (explicit) return explicit;
   const defaultModel = getDefaultModelForConfig(pensarConfig);
 
   if (!defaultModel) {
+    if (pensarConfig.hoonifyCatalogError)
+      throw new Error(pensarConfig.hoonifyCatalogError);
     console.error(
       "Error: No AI provider configured. Set one of:\n" +
         "  PENSAR_API_KEY     — Pensar Console (recommended)\n" +
@@ -204,6 +208,7 @@ async function resolveCliModel(): Promise<AIModel> {
         "  OPENAI_API_KEY     — OpenAI\n" +
         "  OPENROUTER_API_KEY — OpenRouter\n" +
         "  CONCENTRATE_API_KEY — Concentrate\n" +
+        "  HOONIFY_API_KEY    — Hoonify\n" +
         "  APEX_CUSTOM_PROVIDERS — Custom OpenAI-compatible providers (JSON)\n" +
         "\nOr run 'pensar login' to connect to Pensar Console.",
     );
@@ -213,6 +218,8 @@ async function resolveCliModel(): Promise<AIModel> {
   resolveExplicitCliModel({
     model: defaultModel.id,
     customProviders: pensarConfig.customProviders,
+    hoonifyModels: pensarConfig.hoonifyModels,
+    hoonifyCatalogError: pensarConfig.hoonifyCatalogError,
   });
   return defaultModel.id;
 }
@@ -292,7 +299,7 @@ export-trajectory options:
   --output <path>  Fresh output directory; existing paths are never overwritten
 
 Global options:
-  --model-provider <id>  Custom provider for --model (headless commands)
+  --model-provider <id>  Hoonify or custom provider for --model (headless commands)
   -h, --help         Show this help message
   -v, --version      Show version number
   --log-level <lvl>  Diagnostic log level: debug|info|warn|error|silent
@@ -301,6 +308,10 @@ Global options:
   --obfuscate        Run the TUI in obfuscation mode — redacts hostnames,
                      IPs, UUIDs, emails, paths, tokens, and apparent
                      company names so screenshots are safe to share.
+
+Hoonify inference:
+  Set HOONIFY_API_KEY, then use --model-provider hoonify --model <catalog-model-id>
+  or --model hoonify:<catalog-model-id>. Models are discovered from Hoonify.
 
 Custom inference:
   Configure customProviders in ~/.pensar/config.json or set APEX_CUSTOM_PROVIDERS
