@@ -286,16 +286,27 @@ function getResultSummaryRaw(
             };
           }
           const files = Array.isArray(obj.files) ? (obj.files as string[]) : [];
+          const truncated = obj.truncated === true;
+          const lowerBound = obj.totalFoundLowerBound === true;
           const total = Number(obj.totalFound || obj.count || files.length);
+          // totalFound is exact unless the producer marks it a lower bound
+          // (recursive walks stop at the limit and never learn the real
+          // total). A bare truncated flag without a count gets a "+" suffix
+          // rather than posing as an exact number.
+          const totalLabel = lowerBound
+            ? `at least ${total}`
+            : truncated && !obj.totalFound
+              ? `${total}+`
+              : `${total}`;
           const preview = files.slice(0, 15).join("\n");
           const suffix =
             files.length < total
-              ? `\n… (${total} total)`
+              ? `\n… (${totalLabel} total)`
               : files.length > 15
                 ? `\n… (${files.length} files)`
                 : "";
           return {
-            text: `${total} file${total !== 1 ? "s" : ""}`,
+            text: `${totalLabel} file${total !== 1 ? "s" : ""}`,
             isError: false,
             fullText: preview + suffix,
           };

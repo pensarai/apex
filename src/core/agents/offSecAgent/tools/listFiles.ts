@@ -31,39 +31,66 @@ export type ListFilesResult = {
   directory: string;
   count: number;
   totalFound?: number;
+  /** Set when `totalFound` is a lower bound (the walk stopped early), not an exact count. */
+  totalFoundLowerBound?: boolean;
+  truncated?: boolean;
 };
 
 const MAX_RECURSIVE = 200;
 const MAX_NON_RECURSIVE = 500;
 
-async function listRecursive(
+/**
+ * Depth-first readdir walk that stops at the (maxEntries + 1)-th collected
+ * path — the overflow witness — instead of walking the whole tree for an
+ * exact total. First `maxEntries` paths match the unbounded walk on the same
+ * runtime (shared readdir order); visited directories still pay their full
+ * native width enumeration (docs/performance/pr-08-listing-result-limit.md).
+ */
+export async function listRecursive(
   dir: string,
   maxEntries: number,
-): Promise<{ paths: string[]; total: number }> {
+  signal?: AbortSignal,
+): Promise<{
+  paths: string[];
+  truncated: boolean;
+}> {
   const results: string[] = [];
-  let total = 0;
 
-  async function walk(current: string) {
+  async function walk(current: string): Promise<void> {
+    if (results.length > maxEntries) return;
+    signal?.throwIfAborted();
     let entries: import("fs").Dirent[];
     try {
       entries = await readdir(current, { withFileTypes: true });
     } catch {
+      // Unreadable or vanished directories are skipped like before — but
+      // cancellation that landed during the failed read must not be
+      // swallowed with the filesystem error.
+      signal?.throwIfAborted();
       return;
     }
+    // Cancellation can land while the enumeration is in flight, including
+    // for an empty result; the walk must never unwind into a "complete"
+    // listing after an abort was observed here.
+    signal?.throwIfAborted();
     for (const entry of entries) {
-      total++;
+      if (results.length > maxEntries) return;
+      signal?.throwIfAborted();
       const fullPath = join(current, entry.name);
       if (entry.isDirectory()) {
-        if (results.length < maxEntries) results.push(`${fullPath}/`);
+        results.push(`${fullPath}/`);
         await walk(fullPath);
       } else {
-        if (results.length < maxEntries) results.push(fullPath);
+        results.push(fullPath);
       }
     }
   }
 
   await walk(dir);
-  return { paths: results, total };
+  return {
+    paths: results,
+    truncated: results.length > maxEntries,
+  };
 }
 
 function toRelative(base: string, paths: string[]): string[] {
@@ -90,6 +117,7 @@ Each directory entry is suffixed with "/" for easy identification.`,
       directory,
       recursive = false,
     }): Promise<ListFilesResult> => {
+      ctx.abortSignal?.throwIfAborted();
       const dir = directory
         ? isAbsolute(directory)
           ? directory
@@ -109,41 +137,47 @@ Each directory entry is suffixed with "/" for easy identification.`,
         }
 
         if (recursive) {
-          const { paths, total } = await listRecursive(dir, MAX_RECURSIVE);
-          const relPaths = toRelative(dir, paths);
+          ctx.abortSignal?.throwIfAborted();
+          const { paths, truncated } = await listRecursive(
+            dir,
+            MAX_RECURSIVE,
+            ctx.abortSignal,
+          );
+          const relPaths = toRelative(dir, paths.slice(0, MAX_RECURSIVE));
           return {
             success: true,
-            error:
-              total > MAX_RECURSIVE
-                ? `Showing ${MAX_RECURSIVE} of ${total} entries — narrow the directory or use grep`
-                : "",
+            error: truncated
+              ? `Listing truncated at ${MAX_RECURSIVE} entries — narrow the directory or use grep`
+              : "",
             files: relPaths,
             directory: dir,
             count: relPaths.length,
-            totalFound: total > MAX_RECURSIVE ? total : undefined,
+            totalFound: truncated ? paths.length : undefined,
+            totalFoundLowerBound: truncated || undefined,
+            truncated: truncated || undefined,
           };
         }
 
         const entries = await readdir(dir, { withFileTypes: true });
-        const fullPaths = entries.map((e) => {
+        ctx.abortSignal?.throwIfAborted();
+        const truncated = entries.length > MAX_NON_RECURSIVE;
+        // Slice before mapping so only the returned paths are materialized.
+        const fullPaths = entries.slice(0, MAX_NON_RECURSIVE).map((e) => {
           const name = join(dir, e.name);
           return e.isDirectory() ? `${name}/` : name;
         });
-
-        const capped = fullPaths.slice(0, MAX_NON_RECURSIVE);
-        const relPaths = toRelative(dir, capped);
+        const relPaths = toRelative(dir, fullPaths);
 
         return {
           success: true,
-          error:
-            entries.length > MAX_NON_RECURSIVE
-              ? `Showing ${MAX_NON_RECURSIVE} of ${entries.length} entries`
-              : "",
+          error: truncated
+            ? `Showing ${MAX_NON_RECURSIVE} of ${entries.length} entries`
+            : "",
           files: relPaths,
           directory: dir,
           count: relPaths.length,
-          totalFound:
-            entries.length > MAX_NON_RECURSIVE ? entries.length : undefined,
+          totalFound: truncated ? entries.length : undefined,
+          truncated: truncated || undefined,
         };
       } catch (err: unknown) {
         return {
