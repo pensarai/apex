@@ -391,7 +391,12 @@ export class OffensiveSecurityAgent<TResult = void> {
     this.eventBus = input.eventBus ?? new AgentEventBus();
 
     // -- Resolve agent working directory ----------------------------------------
-    const agentCwd = input.session.config?.agentCwd ?? input.session.rootPath;
+    // Explicit input wins over session config; command cwd and file-tool
+    // scoping (fileWorkspaceRoot) are independent and resolved separately.
+    const agentCwd =
+      input.agentCwd ??
+      input.session.config?.agentCwd ??
+      input.session.rootPath;
 
     // -- Per-command executor (local mode only) -------------------------------
     // Shell survives command cancellation; only disposed in consume() after the
@@ -485,6 +490,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     const toolCtx = {
       session: input.session,
       agentCwd,
+      fileWorkspaceRoot: input.fileWorkspaceRoot,
       target: input.target,
       grpc: input.grpc,
       systemScope: input.systemScope,
@@ -716,7 +722,12 @@ export class OffensiveSecurityAgent<TResult = void> {
       );
     const systemPrompt =
       baseSystemPrompt +
-      buildSessionWorkspaceSection(input.session, agentCwd, activeTools);
+      buildSessionWorkspaceSection(
+        input.session,
+        agentCwd,
+        activeTools,
+        input.fileWorkspaceRoot,
+      );
 
     traceWriter.writeInit({
       model: input.model,

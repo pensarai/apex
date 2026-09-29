@@ -122,12 +122,21 @@ export async function resolveFilePath(
       path: file,
       root,
       followFinal: options.followFinal,
+      createRoot: ctx.fileWorkspaceRoot !== undefined,
     });
     if (typeof result.path !== "string")
       throw new Error("Sandbox returned no resolved file path");
     return result.path;
   }
-  return scopedLocal(ctx, file, { root, followFinal: options.followFinal });
+  const resolved = await scopedLocal(ctx, file, {
+    root,
+    followFinal: options.followFinal,
+  });
+  ctx.abortSignal?.throwIfAborted();
+  if (ctx.fileWorkspaceRoot) {
+    await mkdir(ctx.fileWorkspaceRoot, { recursive: true });
+  }
+  return resolved;
 }
 
 function decodeText(bytes: Uint8Array): string {

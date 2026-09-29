@@ -23,7 +23,10 @@ interface SessionPaths {
  * uploaded at the project level, and may contain a generated
  * `README.md` manifest.
  */
-export function buildProvidedFilesSection(sessionRootPath: string): string {
+export function buildProvidedFilesSection(
+  sessionRootPath: string,
+  fileWorkspaceRoot?: string,
+): string {
   const providedDir = join(sessionRootPath, "provided_files");
   if (!existsSync(providedDir)) return "";
 
@@ -54,6 +57,9 @@ export function buildProvidedFilesSection(sessionRootPath: string): string {
   const lines = fileEntries.map(
     (f) => `- \`provided_files/${f.name}\` (${f.size} bytes)`,
   );
+  const readGuidance = fileWorkspaceRoot
+    ? "Use `execute_command` with the absolute directory above to inspect these files, or copy inputs into the file workspace before using `read_file` / `list_files`."
+    : "Read these with `read_file` and list directory contents with `list_files provided_files/` as needed.";
 
   return `
 
@@ -63,22 +69,37 @@ The user has uploaded the following files for this session. They are available a
 
 ${lines.join("\n")}
 
-Read these with \`read_file\` and list directory contents with \`list_files provided_files/\` as needed. A \`README.md\` inside \`provided_files/\` may include per-file descriptions supplied by the user — check it first before diving into individual files.`;
+${readGuidance} A \`README.md\` inside \`provided_files/\` may include per-file descriptions supplied by the user — check it first before diving into individual files.`;
 }
 
 export function buildSessionWorkspaceSection(
   session: SessionPaths,
   agentCwd: string,
   activeTools?: readonly string[],
+  fileWorkspaceRoot?: string,
 ): string {
   const sandboxMode = agentCwd === session.rootPath;
-  const providedFilesSection = buildProvidedFilesSection(session.rootPath);
+  const providedFilesSection = buildProvidedFilesSection(
+    session.rootPath,
+    fileWorkspaceRoot,
+  );
   const sourceAssessmentSection = buildSourceAssessmentSection(
     session,
     agentCwd,
-    sandboxMode,
-    activeTools,
+    { sandboxMode, activeTools, fileWorkspaceRoot },
   );
+
+  if (fileWorkspaceRoot) {
+    return `
+
+# Working Directory and File Workspace
+
+Your shell starts in ${agentCwd}. Native file tools are confined to ${fileWorkspaceRoot}; their relative paths resolve inside that directory, independently of the shell's working directory.
+
+Create and edit helper scripts inside the file workspace. Use absolute helper paths with \`execute_command\` to check and run them. Do not prefix native file-tool paths with \`scratchpad/\` or \`provided_files/\` to reach session directories outside the file workspace.
+
+Session artifacts live at ${session.rootPath}. Findings and published PoCs are written by \`document_vulnerability\`, and browser tools save their own evidence. Session logs and provided files outside the file workspace must be inspected through command tools or copied into the file workspace before native file tools can read them.${providedFilesSection}${sourceAssessmentSection}`;
+  }
 
   if (sandboxMode) {
     return `
@@ -127,12 +148,7 @@ const SOURCE_ASSESSMENT_TOOL_NAMES = [
   "run_whitebox_scan",
 ] as const;
 
-/**
- * Tools that exist to rewrite the target repository. An agent holding one was
- * dispatched to edit the repo (the patching agent, say), so the assessment
- * default of "do not modify the target repo" contradicts its task and is
- * dropped for it.
- */
+// Helper-confined mutation tools do not imply permission to edit target source.
 const REPO_MUTATION_TOOL_NAMES = [
   "update_file",
   "apply_patch",
@@ -143,11 +159,21 @@ const REPO_MUTATION_TOOL_NAMES = [
 function buildSourceAssessmentSection(
   session: SessionPaths,
   agentCwd: string,
-  sandboxMode: boolean,
-  activeTools?: readonly string[],
+  {
+    sandboxMode,
+    activeTools,
+    fileWorkspaceRoot,
+  }: {
+    sandboxMode: boolean;
+    activeTools?: readonly string[];
+    fileWorkspaceRoot?: string;
+  },
 ): string {
   const codebasePath = session.config?.codebasePath;
-  const hasSourceAccess = Boolean(codebasePath) || !sandboxMode;
+  // A helper workspace does not make the shell's cwd an authorized target
+  // repository. Such workers need an explicitly configured codebase.
+  const hasSourceAccess =
+    Boolean(codebasePath) || (!sandboxMode && !fileWorkspaceRoot);
   if (!hasSourceAccess) return "";
 
   if (
@@ -164,12 +190,38 @@ function buildSourceAssessmentSection(
       : "";
 
   const mayEditRepo =
-    activeTools?.some((name) =>
+    !fileWorkspaceRoot &&
+    (activeTools?.some((name) =>
       (REPO_MUTATION_TOOL_NAMES as readonly string[]).includes(name),
-    ) ?? false;
-  const repoEditBullet = mayEditRepo
-    ? `\n- Keep harnesses, generated inputs, and scratch scripts under the session scratchpad. Limit repo edits to the change you were dispatched to make.`
-    : `\n- Do not modify the target repo by default. Put harnesses, generated inputs, and scratch scripts under the session scratchpad unless the operator approves repo edits.`;
+    ) ??
+      false);
+  const repoEditBullet = fileWorkspaceRoot
+    ? `\n- Source access is read-only. Keep harnesses, generated inputs, and scratch scripts inside ${fileWorkspaceRoot}. Helper-file tools do not authorize target repository changes. Do not use shell commands to edit target source or bypass the helper workspace.`
+    : mayEditRepo
+      ? `\n- Keep harnesses, generated inputs, and scratch scripts at ${session.scratchpadPath} (an absolute session path, not a repo-relative path). Limit repo edits to the change you were dispatched to make.`
+      : `\n- Do not modify the target repo by default. Put harnesses, generated inputs, and scratch scripts at ${session.scratchpadPath} unless the operator approves repo edits.`;
+  const hasTool = (name: string) => !activeTools || activeTools.includes(name);
+  const toolGuidance = [
+    hasTool("profile_codebase") &&
+      "- Start with `profile_codebase` when the repo is unfamiliar.",
+    hasTool("query_whitebox_catalog") &&
+      "- Query only relevant playbook slices with `query_whitebox_catalog`; do not carry the whole methodology in context.",
+    hasTool("run_code_query") &&
+      "- Use `run_code_query` for batched source searches.",
+    hasTool("run_whitebox_scan") &&
+      "- Use `run_whitebox_scan` for installed scanners.",
+    hasTool("spawn_coding_agent") &&
+      "- Use `spawn_coding_agent` for independent deep dives.",
+    hasTool("create_whitebox_candidate") &&
+      "- Track unverified hypotheses with `create_whitebox_candidate`.",
+    hasTool("document_vulnerability") &&
+      "- Only call `document_vulnerability` after a PoC, crash reproducer, or dynamic check confirms exploitability.",
+    hasTool("start_whitebox_job") &&
+      hasTool("poll_whitebox_job") &&
+      "- Run builds, local servers, sanitizer runs, and microfuzzers through bounded whitebox jobs so logs and crashes are preserved as artifacts.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return `
 
@@ -178,12 +230,8 @@ function buildSourceAssessmentSection(
 Source code is in scope at ${sourceRoot}.${alignmentNote}
 
 Use source access as a force multiplier, not as a rigid workflow:
-- Start with \`profile_codebase\` when the repo is unfamiliar.
-- Query only relevant playbook slices with \`query_whitebox_catalog\`; do not carry the whole methodology in context.
 - Prefer sink-first analysis: find dangerous operations, then trace backward to attacker-controlled entry points and trust boundaries.
-- Use \`run_code_query\` for batched source searches, \`run_whitebox_scan\` for installed scanners, and \`spawn_coding_agent\` for independent deep dives.
-- Track unverified hypotheses with whitebox candidates. Only call \`document_vulnerability\` after a PoC, crash reproducer, or dynamic check confirms exploitability.
-- Run builds, local servers, sanitizer runs, and microfuzzers through bounded whitebox jobs so logs and crashes are preserved as artifacts.${repoEditBullet}`;
+${toolGuidance}${repoEditBullet}`;
 }
 
 /** Options for building the base system prompt. */

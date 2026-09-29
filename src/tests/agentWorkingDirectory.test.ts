@@ -110,6 +110,19 @@ describe("buildSessionWorkspaceSection", () => {
     expect(result).toContain(
       "Limit repo edits to the change you were dispatched to make",
     );
+    expect(result).toContain("`profile_codebase`");
+    expect(result).toContain("`run_code_query`");
+    const assessment = result.split("# Source Code Assessment")[1];
+    for (const unavailable of [
+      "query_whitebox_catalog",
+      "run_whitebox_scan",
+      "spawn_coding_agent",
+      "document_vulnerability",
+      "whitebox jobs",
+    ]) {
+      expect(assessment).not.toContain(unavailable);
+    }
+    expect(assessment).toContain(mockSession.scratchpadPath);
   });
 
   it("omits source-assessment guidance for agents without the whitebox tools", () => {
