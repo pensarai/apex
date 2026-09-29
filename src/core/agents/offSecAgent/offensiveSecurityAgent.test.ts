@@ -38,6 +38,17 @@ vi.mock("zod", () => {
 });
 
 vi.mock("./tools", () => ({
+  // The agent constructs via the selective entrypoint; record the tool
+  // context there (createAllTools kept for any direct legacy callers).
+  createToolsForNames: (
+    ctx: Record<string, unknown>,
+    requested: readonly string[] | undefined,
+  ) => {
+    toolContexts.push(ctx);
+    void requested;
+    return {};
+  },
+  listToolRegistryNames: () => [],
   createAllTools: (ctx: Record<string, unknown>) => {
     toolContexts.push(ctx);
     return {};
@@ -68,6 +79,8 @@ vi.mock("./tools", () => ({
     "update_workspace_endpoint",
   ],
   PerCommandShell: class {},
+  PlaywrightMcpSession: class {},
+  FAST_STRIKE_EXCLUDED_TOOL_NAMES: [],
 }));
 vi.mock("../../ai", () => ({
   streamResponse: (opts: Record<string, unknown>) => {

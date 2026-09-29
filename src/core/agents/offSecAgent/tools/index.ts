@@ -9,7 +9,12 @@ export {
   type AskUserQuestionsResult,
 } from "./askUserQuestions";
 // Browser automation tools
-export { BROWSER_TOOL_NAMES, createBrowserToolset } from "./browserTools";
+export {
+  BROWSER_TOOL_NAMES,
+  type BrowserToolsetFactories,
+  createBrowserToolset,
+  createBrowserToolsetFactories,
+} from "./browserTools";
 // Observability tools
 export { checkpointState } from "./checkpointState";
 // Authentication tools
@@ -171,13 +176,18 @@ export { writePlan } from "./writePlan";
 // Tool registry
 // ---------------------------------------------------------------------------
 
+import type { ToolSet } from "ai";
 import { addMemory } from "./addMemory";
 import { applyPatch } from "./applyPatch";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
   askUserQuestions,
 } from "./askUserQuestions";
-import { createBrowserToolset } from "./browserTools";
+import {
+  type BrowserToolsetFactories,
+  type createBrowserToolset,
+  createBrowserToolsetFactories,
+} from "./browserTools";
 import { checkpointState } from "./checkpointState";
 import { completeAuthentication } from "./completeAuthentication";
 import { crawlAuthenticated } from "./crawlAuthenticated";
@@ -191,11 +201,13 @@ import { documentApp } from "./documentApp";
 import { documentEndpoint } from "./documentEndpoint";
 import { documentVulnerability } from "./documentFinding";
 import {
-  createEmailToolset,
+  emailGetAttachments,
   emailGetMessage,
   emailListInboxes,
   emailListMessages,
+  emailMarkRead,
   emailSearchMessages,
+  sendEmail,
 } from "./email";
 import { executeCommand } from "./executeCommand";
 import { extractJsEndpoints } from "./extractJsEndpoints";
@@ -260,126 +272,273 @@ import { writePlan } from "./writePlan";
 export { ASK_USER_QUESTIONS_TOOL_NAME } from "./askUserQuestions";
 
 /**
- * Create the full toolset for the OffensiveSecurityAgent.
- *
- * Every tool the harness knows about is created here. Specific agents
- * pick which ones to activate via the `activeTools` string array — the
- * AI SDK handles the filtering at the model level.
+ * Canonical ordered tool registry: entry order is the provider schema order
+ * and must match the historical `createAllTools` layout. Browser members
+ * share one group state per construction call; each member's tool is built
+ * individually, so an unselected sibling is never constructed.
  */
-export function createAllTools(ctx: ToolContext) {
+type ToolFactoryEntry = {
+  name: string;
+  factory?: (ctx: ToolContext) => unknown;
+  /** Group provider for member tools that share construction state. */
+  group?: (ctx: ToolContext) => Record<string, () => unknown>;
+  member?: string;
+  /** When false the factory is never invoked (conditional availability). */
+  available?: (ctx: ToolContext) => boolean;
+};
+
+function browserEntry<N extends string & keyof BrowserToolsetFactories>(
+  name: N,
+) {
   return {
-    // Browser automation tools (8 tools from Playwright MCP)
-    ...createBrowserToolset(ctx),
-
-    // Core pentest tools
-    execute_command: executeCommand(ctx),
-    http_request: httpRequest(ctx),
-    document_vulnerability: documentVulnerability(ctx),
-
-    // Filesystem / search tools
-    read_file: readFile(ctx),
-    list_files: listFiles(ctx),
-    glob: globFiles(ctx),
-    grep: grep(ctx),
-    profile_codebase: profileCodebase(ctx),
-    query_whitebox_catalog: queryWhiteboxCatalog(ctx),
-    run_code_query: runCodeQuery(ctx),
-    create_file: createFile(ctx),
-    update_file: updateFile(ctx),
-    delete_file: deleteFile(ctx),
-    apply_patch: applyPatch(ctx),
-    git_status: gitStatus(ctx),
-    git_diff: gitDiff(ctx),
-
-    // Attack surface / recon tools
-    document_app: documentApp(ctx),
-    document_endpoint: documentEndpoint(ctx),
-    list_workspace_domains: listWorkspaceDomains(ctx),
-    create_workspace_domain: createWorkspaceDomain(ctx),
-    list_workspace_apps: listWorkspaceApps(ctx),
-    create_workspace_app: createWorkspaceApp(ctx),
-    update_workspace_app: updateWorkspaceApp(ctx),
-    list_workspace_endpoints: listWorkspaceEndpoints(ctx),
-    create_workspace_endpoint: createWorkspaceEndpoint(ctx),
-    update_workspace_endpoint: updateWorkspaceEndpoint(ctx),
-    delegate_to_auth_subagent: delegateAuth(ctx),
-    extract_js_endpoints: extractJsEndpoints(ctx),
-    crawl_authenticated_area: crawlAuthenticated(ctx),
-    test_endpoint_variations: testEndpointVariations(ctx),
-    validate_discovery_completeness: validateDiscovery(ctx),
-    create_attack_surface_report: createAttackSurfaceReport(ctx),
-
-    // Authentication tools
-    complete_authentication: completeAuthentication(ctx),
-    detect_auth_scheme: detectAuthScheme(ctx),
-    probe_auth_endpoints: probeAuthEndpoints(ctx),
-
-    // Orchestration tools
-    run_attack_surface: runAttackSurface(ctx),
-    spawn_pentest_swarm: spawnPentestSwarm(ctx),
-    spawn_pentest_agent: spawnPentestAgent(ctx),
-    spawn_coding_agent: spawnCodingAgent(ctx),
-    run_pentest_workflow: runPentestWorkflow(ctx),
-    run_whitebox_scan: runWhiteboxScan(ctx),
-    create_whitebox_candidate: createWhiteboxCandidate(ctx),
-    update_whitebox_candidate: updateWhiteboxCandidate(ctx),
-    list_whitebox_candidates: listWhiteboxCandidates(ctx),
-    start_whitebox_job: startWhiteboxJob(ctx),
-    poll_whitebox_job: pollWhiteboxJob(ctx),
-    stop_whitebox_job: stopWhiteboxJob(ctx),
-    read_whitebox_artifact: readWhiteboxArtifact(ctx),
-
-    // Reporting / benchmark tools
-    // generate_report: generateReport(ctx),
-    provide_comparison_results: provideComparisonResults(ctx),
-
-    // Memory tools (persistent cross-session knowledge)
-    add_memory: addMemory(ctx),
-    list_memories: listMemories(ctx),
-    get_memory: getMemory(ctx),
-
-    // Prompt-injection test catalog (safe metadata only; no raw payloads)
-    list_prompt_injections: listPromptInjections(ctx),
-
-    // Email tools (inbox + outbound — gated at activeTools level by base class)
-    ...createEmailToolset(ctx),
-    email_list_inboxes: emailListInboxes(ctx),
-    email_list_messages: emailListMessages(ctx),
-    email_search_messages: emailSearchMessages(ctx),
-    email_get_message: emailGetMessage(ctx),
-
-    // Inbound SMS list (gated at activeTools level when no Mobile OTP cred)
-    sms_list_messages: smsListMessages(ctx),
-
-    // Web search tools (requires Pensar account)
-    web_search: webSearch(ctx),
-    get_page: getPage(ctx),
-
-    // Skill tools (conditional — only when registry is provided)
-    ...(ctx.skillsRegistry ? { read_skill: readSkill(ctx) } : {}),
-
-    [ASK_USER_QUESTIONS_TOOL_NAME]: askUserQuestions(ctx),
-
-    // Observability tools (conditional — only when trace writer is provided)
-    ...(ctx.traceWriter ? { checkpoint_state: checkpointState(ctx) } : {}),
-
-    // Task decomposition tools (conditional — only when tasksDir is configured)
-    ...(ctx.tasksDir
-      ? {
-          create_task: createTask(ctx),
-          update_task: updateTask(ctx),
-          list_tasks: listTasksTool(ctx),
-        }
-      : {}),
-
-    // Plan mode tools
-    write_plan: writePlan(ctx),
-    submit_plan: submitPlan(ctx),
-  } as const;
+    name,
+    group: createBrowserToolsetFactories,
+    member: name,
+  };
 }
 
-/** Union of all available tool names. */
-export type ToolName = keyof ReturnType<typeof createAllTools>;
+const TOOL_REGISTRY = [
+  // Browser automation tools (8 tools from Playwright MCP)
+  browserEntry("browser_navigate"),
+  browserEntry("browser_snapshot"),
+  browserEntry("browser_screenshot"),
+  browserEntry("browser_click"),
+  browserEntry("browser_fill"),
+  browserEntry("browser_evaluate"),
+  browserEntry("browser_console"),
+  browserEntry("browser_get_cookies"),
+
+  // Core pentest tools
+  { name: "execute_command", factory: executeCommand },
+  { name: "http_request", factory: httpRequest },
+  { name: "document_vulnerability", factory: documentVulnerability },
+
+  // Filesystem / search tools
+  { name: "read_file", factory: readFile },
+  { name: "list_files", factory: listFiles },
+  { name: "glob", factory: globFiles },
+  { name: "grep", factory: grep },
+  { name: "profile_codebase", factory: profileCodebase },
+  { name: "query_whitebox_catalog", factory: queryWhiteboxCatalog },
+  { name: "run_code_query", factory: runCodeQuery },
+  { name: "create_file", factory: createFile },
+  { name: "update_file", factory: updateFile },
+  { name: "delete_file", factory: deleteFile },
+  { name: "apply_patch", factory: applyPatch },
+  { name: "git_status", factory: gitStatus },
+  { name: "git_diff", factory: gitDiff },
+
+  // Attack surface / recon tools
+  { name: "document_app", factory: documentApp },
+  { name: "document_endpoint", factory: documentEndpoint },
+  { name: "list_workspace_domains", factory: listWorkspaceDomains },
+  { name: "create_workspace_domain", factory: createWorkspaceDomain },
+  { name: "list_workspace_apps", factory: listWorkspaceApps },
+  { name: "create_workspace_app", factory: createWorkspaceApp },
+  { name: "update_workspace_app", factory: updateWorkspaceApp },
+  { name: "list_workspace_endpoints", factory: listWorkspaceEndpoints },
+  { name: "create_workspace_endpoint", factory: createWorkspaceEndpoint },
+  { name: "update_workspace_endpoint", factory: updateWorkspaceEndpoint },
+  { name: "delegate_to_auth_subagent", factory: delegateAuth },
+  { name: "extract_js_endpoints", factory: extractJsEndpoints },
+  { name: "crawl_authenticated_area", factory: crawlAuthenticated },
+  { name: "test_endpoint_variations", factory: testEndpointVariations },
+  { name: "validate_discovery_completeness", factory: validateDiscovery },
+  { name: "create_attack_surface_report", factory: createAttackSurfaceReport },
+
+  // Authentication tools
+  { name: "complete_authentication", factory: completeAuthentication },
+  { name: "detect_auth_scheme", factory: detectAuthScheme },
+  { name: "probe_auth_endpoints", factory: probeAuthEndpoints },
+
+  // Orchestration tools
+  { name: "run_attack_surface", factory: runAttackSurface },
+  { name: "spawn_pentest_swarm", factory: spawnPentestSwarm },
+  { name: "spawn_pentest_agent", factory: spawnPentestAgent },
+  { name: "spawn_coding_agent", factory: spawnCodingAgent },
+  { name: "run_pentest_workflow", factory: runPentestWorkflow },
+  { name: "run_whitebox_scan", factory: runWhiteboxScan },
+  { name: "create_whitebox_candidate", factory: createWhiteboxCandidate },
+  { name: "update_whitebox_candidate", factory: updateWhiteboxCandidate },
+  { name: "list_whitebox_candidates", factory: listWhiteboxCandidates },
+  { name: "start_whitebox_job", factory: startWhiteboxJob },
+  { name: "poll_whitebox_job", factory: pollWhiteboxJob },
+  { name: "stop_whitebox_job", factory: stopWhiteboxJob },
+  { name: "read_whitebox_artifact", factory: readWhiteboxArtifact },
+
+  // Reporting / benchmark tools
+  { name: "provide_comparison_results", factory: provideComparisonResults },
+
+  // Memory tools (persistent cross-session knowledge)
+  { name: "add_memory", factory: addMemory },
+  { name: "list_memories", factory: listMemories },
+  { name: "get_memory", factory: getMemory },
+
+  // Prompt-injection test catalog (safe metadata only; no raw payloads)
+  { name: "list_prompt_injections", factory: listPromptInjections },
+
+  // Email tools (inbox + outbound — gated at activeTools level by base class)
+  { name: "email_list_inboxes", factory: emailListInboxes },
+  { name: "email_list_messages", factory: emailListMessages },
+  { name: "email_get_message", factory: emailGetMessage },
+  { name: "email_search_messages", factory: emailSearchMessages },
+  { name: "email_get_attachments", factory: emailGetAttachments },
+  { name: "email_mark_read", factory: emailMarkRead },
+  { name: "send_email", factory: sendEmail },
+
+  // Inbound SMS list (gated at activeTools level when no Mobile OTP cred)
+  { name: "sms_list_messages", factory: smsListMessages },
+
+  // Web search tools (requires Pensar account)
+  { name: "web_search", factory: webSearch },
+  { name: "get_page", factory: getPage },
+
+  // Skill tools (conditional — only when registry is provided)
+  {
+    name: "read_skill",
+    factory: readSkill,
+    available: (ctx) => Boolean(ctx.skillsRegistry),
+  },
+
+  { name: ASK_USER_QUESTIONS_TOOL_NAME, factory: askUserQuestions },
+
+  // Observability tools (conditional — only when trace writer is provided)
+  {
+    name: "checkpoint_state",
+    factory: checkpointState,
+    available: (ctx) => Boolean(ctx.traceWriter),
+  },
+
+  // Task decomposition tools (conditional — only when tasksDir is configured)
+  {
+    name: "create_task",
+    factory: createTask,
+    available: (ctx) => Boolean(ctx.tasksDir),
+  },
+  {
+    name: "update_task",
+    factory: updateTask,
+    available: (ctx) => Boolean(ctx.tasksDir),
+  },
+  {
+    name: "list_tasks",
+    factory: listTasksTool,
+    available: (ctx) => Boolean(ctx.tasksDir),
+  },
+
+  // Plan mode tools
+  { name: "write_plan", factory: writePlan },
+  { name: "submit_plan", factory: submitPlan },
+] as const satisfies readonly ToolFactoryEntry[];
+
+/** Registry order is the canonical schema order; grouped factories appear once per member. */
+const REGISTRY_VIEW: readonly ToolFactoryEntry[] = TOOL_REGISTRY;
+
+export function listToolRegistryNames(ctx: ToolContext): string[] {
+  return REGISTRY_VIEW.filter((entry) =>
+    entry.available ? entry.available(ctx) : true,
+  ).map((entry) => entry.name);
+}
+
+/** Per-entry tool type: direct factories keep their ReturnType; group members resolve through the group. */
+type ToolOf<E extends ToolFactoryEntry> = E extends {
+  group: (ctx: ToolContext) => infer G;
+  member: infer M;
+}
+  ? G extends Record<string, () => unknown>
+    ? M extends keyof G
+      ? ReturnType<G[M]>
+      : never
+    : never
+  : E extends { factory: (ctx: ToolContext) => infer T }
+    ? T
+    : never;
+
+type RegistryEntry = (typeof TOOL_REGISTRY)[number];
+
+type EntryName<E> = E extends { name: infer N extends string } ? N : never;
+
+/** Unconditional entries: always present with their factory's tool type. */
+type UnconditionalTools = {
+  [E in Exclude<
+    RegistryEntry,
+    { available: (ctx: ToolContext) => boolean }
+  > as EntryName<E>]: ToolOf<E>;
+};
+
+/**
+ * Full catalog record. Conditional entries are optional keys, matching the
+ * parent's conditional spreads; the browser block comes from the compat
+ * wrapper's inferred record so it stays assignable to the baseline shape.
+ */
+export type AllToolsRecord = Omit<
+  UnconditionalTools,
+  keyof ReturnType<typeof createBrowserToolset>
+> &
+  ReturnType<typeof createBrowserToolset> &
+  Partial<{
+    [E in Extract<
+      RegistryEntry,
+      { available: (ctx: ToolContext) => boolean }
+    > as EntryName<E>]: ToolOf<E>;
+  }>;
+
+export function createAllTools(ctx: ToolContext): AllToolsRecord {
+  return createToolsForNames(ctx, undefined) as AllToolsRecord;
+}
+
+/**
+ * Construct only the requested tools, in registry order; duplicates and
+ * unknown names are ignored, unavailable entries are never constructed, and
+ * DefineOwnProperty keeps prototype-shaped names own keys.
+ */
+export function createToolsForNames(
+  ctx: ToolContext,
+  requested: readonly string[] | undefined,
+): ToolSet {
+  const groupCache = new Map<
+    (ctx: ToolContext) => Record<string, () => unknown>,
+    Record<string, () => unknown>
+  >();
+  const wanted = requested ? new Set(requested) : null;
+  const tools: Record<string, unknown> = {};
+  for (const entry of REGISTRY_VIEW) {
+    if (wanted && !wanted.has(entry.name)) continue;
+    if (entry.available && !entry.available(ctx)) continue;
+    const tool = entry.group
+      ? memberTool(groupCache, entry.group, ctx, entry.member ?? entry.name)
+      : entry.factory?.(ctx);
+    if (tool !== undefined) {
+      Object.defineProperty(tools, entry.name, {
+        value: tool,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
+  }
+  return tools as ToolSet;
+}
+
+function memberTool(
+  groupCache: Map<
+    (ctx: ToolContext) => Record<string, () => unknown>,
+    Record<string, () => unknown>
+  >,
+  group: (ctx: ToolContext) => Record<string, () => unknown>,
+  ctx: ToolContext,
+  member: string,
+): unknown {
+  let members = groupCache.get(group);
+  if (!members) {
+    members = group(ctx);
+    groupCache.set(group, members);
+  }
+  return members[member]?.();
+}
+
+/** Union of all registered tool names (finite literal union). */
+export type ToolName = RegistryEntry["name"];
 
 export const WORKSPACE_TOOL_NAMES: readonly ToolName[] = [
   "list_workspace_domains",

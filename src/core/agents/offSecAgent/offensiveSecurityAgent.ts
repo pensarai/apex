@@ -40,10 +40,11 @@ import { inProcessSubagentSpawner } from "./subagentSpawner";
 import { ToolLifecycleTracker } from "./toolLifecycle";
 import {
   ASK_USER_QUESTIONS_TOOL_NAME,
-  createAllTools,
   createResponseTool,
+  createToolsForNames,
   EMAIL_TOOL_NAMES_ACTIVE,
   FAST_STRIKE_EXCLUDED_TOOL_NAMES,
+  listToolRegistryNames,
   PerCommandShell,
   PLAN_MODE_TOOL_NAMES,
   PlaywrightMcpSession,
@@ -481,7 +482,7 @@ export class OffensiveSecurityAgent<TResult = void> {
     const credentialManager =
       input.credentialManager ?? input.session.credentialManager;
 
-    const builtinTools = createAllTools({
+    const toolCtx = {
       session: input.session,
       agentCwd,
       target: input.target,
@@ -529,7 +530,63 @@ export class OffensiveSecurityAgent<TResult = void> {
       languageModelMiddleware: input.languageModelMiddleware,
       usageRecorder: input.usageRecorder,
       streamIdFactory: input.streamIdFactory,
-    });
+    };
+
+    // -- Effective tool selection (names only — factories run below) ---------
+    // Resolved BEFORE construction so inactive factories never run. Fast
+    // strike enumerates the live registry (conditional availability plus
+    // any extra tools) exactly as Object.keys on the merged map did.
+    const hasEmail =
+      (input.session.config?.emailIntegration?.inboxes?.length ?? 0) > 0;
+    const hasSmtp = !!input.session.config?.smtpConfig;
+    const emailToolSet = new Set<string>(EMAIL_TOOL_NAMES_ACTIVE);
+    const smsToolSet = new Set<string>(SMS_TOOL_NAMES_ACTIVE);
+    const hasSms = sessionHasSmsPasswordless(input.session);
+    const passesEmailSmsGates = (t: string): boolean => {
+      if (smsToolSet.has(t)) return hasSms;
+      if (!emailToolSet.has(t)) return true;
+      if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
+      return hasEmail;
+    };
+
+    let activeTools = (input.activeTools as string[]).filter(
+      passesEmailSmsGates,
+    );
+    if (input.mode === "plan") {
+      const planSet = new Set<string>(PLAN_MODE_TOOL_NAMES);
+      activeTools = activeTools.filter((t) => planSet.has(t));
+    } else if (input.mode === "fast-strike") {
+      const excluded = new Set<string>(FAST_STRIKE_EXCLUDED_TOOL_NAMES);
+      // Mirror Object.keys({...builtins, ...extras}): an own extra replaces
+      // the builtin's value but keeps its insertion position; new extras
+      // append. Object.keys already yields own enumerable keys only.
+      const mergedNames = input.extraTools
+        ? Object.keys({
+            ...Object.fromEntries(
+              listToolRegistryNames(toolCtx).map((n) => [n, null]),
+            ),
+            ...input.extraTools,
+          })
+        : listToolRegistryNames(toolCtx);
+      activeTools = mergedNames.filter((t) => {
+        if (excluded.has(t)) return false;
+        return passesEmailSmsGates(t);
+      });
+      // Baseline enumerated Object.keys(tools) AFTER response injection, so
+      // fast-strike + responseSchema activates the injected response tool
+      // even when the input list omits it. Default mode stays caller-explicit.
+      if (input.responseSchema && !activeTools.includes(RESPONSE_TOOL_NAME)) {
+        activeTools = [...activeTools, RESPONSE_TOOL_NAME];
+      }
+    }
+
+    activeTools = filterWorkspaceToolsForRun(
+      activeTools,
+      input.prompt,
+      input.approvalGate !== undefined,
+    );
+
+    const builtinTools = createToolsForNames(toolCtx, activeTools);
 
     let tools: ToolSet = input.extraTools
       ? { ...builtinTools, ...input.extraTools }
@@ -612,43 +669,6 @@ export class OffensiveSecurityAgent<TResult = void> {
         stopWhen = [stopWhen, responseStop];
       }
     }
-
-    // -- Filter email tools when no inboxes / SMTP are configured -----------
-    const hasEmail =
-      (input.session.config?.emailIntegration?.inboxes?.length ?? 0) > 0;
-    const hasSmtp = !!input.session.config?.smtpConfig;
-
-    const emailToolSet = new Set<string>(EMAIL_TOOL_NAMES_ACTIVE);
-    const smsToolSet = new Set<string>(SMS_TOOL_NAMES_ACTIVE);
-    const hasSms = sessionHasSmsPasswordless(input.session);
-    let activeTools = (input.activeTools as string[]).filter((t) => {
-      if (smsToolSet.has(t)) return hasSms;
-      if (!emailToolSet.has(t)) return true;
-      if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
-      return hasEmail;
-    });
-
-    // -- Plan mode: restrict to read-only tools -----------------------------
-    if (input.mode === "plan") {
-      const planSet = new Set<string>(PLAN_MODE_TOOL_NAMES);
-      activeTools = activeTools.filter((t) => planSet.has(t));
-    } else if (input.mode === "fast-strike") {
-      // Registry minus orchestration tools; email gating matches default mode.
-      const excluded = new Set<string>(FAST_STRIKE_EXCLUDED_TOOL_NAMES);
-      activeTools = Object.keys(tools).filter((t) => {
-        if (excluded.has(t)) return false;
-        if (smsToolSet.has(t)) return hasSms;
-        if (!emailToolSet.has(t)) return true;
-        if (t === SEND_EMAIL_TOOL_NAME) return hasSmtp;
-        return hasEmail;
-      });
-    }
-
-    activeTools = filterWorkspaceToolsForRun(
-      activeTools,
-      input.prompt,
-      input.approvalGate !== undefined,
-    );
 
     // -- Messages persistence -------------------------------------------------
     if (!existsSync(messagesDir)) {

@@ -1298,7 +1298,13 @@ Use this to check for:
  *   the session owns disconnect, so `abortSignal` is NOT wired to disconnect
  *   when reusing a session.
  */
-export function createBrowserTools(
+/**
+ * Lazy per-member browser tool factories. Shared state (the MCP session,
+ * evidence dir, mode descriptions) is built once per call; each member's
+ * tool object is constructed only when its factory is invoked, so a
+ * selection of one member never allocates sibling tool schemas.
+ */
+export function createBrowserToolFactories(
   targetUrl: string,
   evidenceDir: string,
   mode: BrowserToolMode = "pentest",
@@ -1346,107 +1352,113 @@ export function createBrowserTools(
         ? AUTH_DESCRIPTIONS
         : OPERATOR_DESCRIPTIONS;
 
-  const browser_navigate = tool({
-    description: `${descriptions.navigate}\n\nTarget base URL: ${targetUrl}`,
-    inputSchema: BrowserNavigateInput,
-    execute: async ({
-      url,
-      toolCallDescription,
-    }): Promise<BrowserNavigateResult> => {
-      try {
-        const result = await session.callTool(
-          "browser_navigate",
-          { url },
-          abortSignal,
-        );
-        return {
-          success: true,
+  return {
+    browser_navigate: () =>
+      tool({
+        description: `${descriptions.navigate}\n\nTarget base URL: ${targetUrl}`,
+        inputSchema: BrowserNavigateInput,
+        execute: async ({
           url,
-          result,
-        };
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger?.error(`browser_navigate failed: ${message}`);
-        return { success: false, url, error: message };
-      }
-    },
-  });
-
-  const browser_screenshot = tool({
-    description: descriptions.screenshot,
-    inputSchema: BrowserScreenshotInput,
-    execute: async ({
-      filename,
-      toolCallDescription,
-    }): Promise<BrowserScreenshotResult> => {
-      try {
-        const result = await session.callTool(
-          "browser_take_screenshot",
-          {},
-          abortSignal,
-        );
-
-        // Extract base64 image data from various response formats
-        let base64Data: string | undefined;
-
-        if (result && typeof result === "object") {
-          const r = result as Record<string, unknown>;
-
-          // Format 1: { type: "image", data: "<base64>" } — from callTool's image extraction
-          if ("data" in r && typeof r.data === "string") {
-            base64Data = r.data;
-          }
-
-          // Format 2: Raw MCP content array — [{type:"image", data:"...", mimeType:"..."}]
-          if (!base64Data && Array.isArray(result)) {
-            const imgItem = (result as Array<Record<string, unknown>>).find(
-              (c) => c.type === "image" && typeof c.data === "string",
+          toolCallDescription,
+        }): Promise<BrowserNavigateResult> => {
+          try {
+            const result = await session.callTool(
+              "browser_navigate",
+              { url },
+              abortSignal,
             );
-            if (imgItem) {
-              base64Data = imgItem.data as string;
+            return {
+              success: true,
+              url,
+              result,
+            };
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            logger?.error(`browser_navigate failed: ${message}`);
+            return { success: false, url, error: message };
+          }
+        },
+      }),
+
+    browser_screenshot: () =>
+      tool({
+        description: descriptions.screenshot,
+        inputSchema: BrowserScreenshotInput,
+        execute: async ({
+          filename,
+          toolCallDescription,
+        }): Promise<BrowserScreenshotResult> => {
+          try {
+            const result = await session.callTool(
+              "browser_take_screenshot",
+              {},
+              abortSignal,
+            );
+
+            // Extract base64 image data from various response formats
+            let base64Data: string | undefined;
+
+            if (result && typeof result === "object") {
+              const r = result as Record<string, unknown>;
+
+              // Format 1: { type: "image", data: "<base64>" } — from callTool's image extraction
+              if ("data" in r && typeof r.data === "string") {
+                base64Data = r.data;
+              }
+
+              // Format 2: Raw MCP content array — [{type:"image", data:"...", mimeType:"..."}]
+              if (!base64Data && Array.isArray(result)) {
+                const imgItem = (result as Array<Record<string, unknown>>).find(
+                  (c) => c.type === "image" && typeof c.data === "string",
+                );
+                if (imgItem) {
+                  base64Data = imgItem.data as string;
+                }
+              }
             }
+
+            if (base64Data) {
+              const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+              const screenshotFilename = `${filename}_${timestamp}.png`;
+              const screenshotPath = join(evidenceDir, screenshotFilename);
+              const dir = dirname(screenshotPath);
+              if (!existsSync(dir)) {
+                mkdirSync(dir, { recursive: true });
+              }
+              writeFileSync(screenshotPath, Buffer.from(base64Data, "base64"));
+              return {
+                success: true,
+                path: screenshotPath,
+                message: `Screenshot saved to ${screenshotPath}`,
+              };
+            }
+
+            // Log the actual response shape to aid debugging
+            const resultShape =
+              result === null
+                ? "null"
+                : Array.isArray(result)
+                  ? `array(${(result as unknown[]).length})`
+                  : typeof result === "object"
+                    ? `object(${Object.keys(result as Record<string, unknown>).join(",")})`
+                    : typeof result;
+            return {
+              success: false,
+              error: `No screenshot data returned (response type: ${resultShape})`,
+            };
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            logger?.error(`browser_screenshot failed: ${message}`);
+            return { success: false, error: message };
           }
-        }
+        },
+      }),
 
-        if (base64Data) {
-          const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-          const screenshotFilename = `${filename}_${timestamp}.png`;
-          const screenshotPath = join(evidenceDir, screenshotFilename);
-          const dir = dirname(screenshotPath);
-          if (!existsSync(dir)) {
-            mkdirSync(dir, { recursive: true });
-          }
-          writeFileSync(screenshotPath, Buffer.from(base64Data, "base64"));
-          return {
-            success: true,
-            path: screenshotPath,
-            message: `Screenshot saved to ${screenshotPath}`,
-          };
-        }
-
-        // Log the actual response shape to aid debugging
-        const resultShape =
-          result === null
-            ? "null"
-            : Array.isArray(result)
-              ? `array(${(result as unknown[]).length})`
-              : typeof result === "object"
-                ? `object(${Object.keys(result as Record<string, unknown>).join(",")})`
-                : typeof result;
-        return {
-          success: false,
-          error: `No screenshot data returned (response type: ${resultShape})`,
-        };
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger?.error(`browser_screenshot failed: ${message}`);
-        return { success: false, error: message };
-      }
-    },
-  });
-
-  const browser_snapshot = tool({
-    description: `Get the accessibility snapshot of the current page.
+    browser_snapshot: () =>
+      tool({
+        description: `Get the accessibility snapshot of the current page.
 
 IMPORTANT: Call this BEFORE using browser_click or browser_fill to get element references (refs).
 The snapshot returns an accessibility tree with elements marked like [ref=e5].
@@ -1456,149 +1468,165 @@ Example workflow:
 1. Call browser_snapshot to get the page structure
 2. Find the element you need (e.g., "textbox 'Email'" with [ref=e3])
 3. Call browser_fill with ref="e3" to fill that specific element`,
-    inputSchema: BrowserSnapshotInput,
-    execute: async ({
-      toolCallDescription,
-    }): Promise<{ success: boolean; snapshot?: string; error?: string }> => {
-      try {
-        const result = await session.callTool(
-          "browser_snapshot",
-          {},
-          abortSignal,
-        );
-        return {
-          success: true,
-          snapshot:
-            typeof result === "string"
-              ? result
-              : JSON.stringify(result, null, 2),
-        };
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger?.error(`browser_snapshot failed: ${message}`);
-        return { success: false, error: message };
-      }
-    },
-  });
-
-  const browser_click = tool({
-    description:
-      descriptions.click +
-      `\n\nIMPORTANT: For reliable clicking, first call browser_snapshot to get element refs, then pass the ref parameter.`,
-    inputSchema: BrowserClickInput,
-    execute: async ({
-      element,
-      ref,
-      toolCallDescription,
-    }): Promise<BrowserClickResult> => {
-      try {
-        const args: Record<string, unknown> = { element };
-        if (ref) {
-          args.ref = ref;
-        }
-        const result = await session.callTool(
-          "browser_click",
-          args,
-          abortSignal,
-        );
-        return { success: true, element, result };
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger?.error(`browser_click failed: ${message}`);
-        return { success: false, error: message };
-      }
-    },
-  });
-
-  const browser_fill = tool({
-    description:
-      descriptions.fill +
-      `\n\nIMPORTANT: For reliable form filling, first call browser_snapshot to get element refs, then pass the ref parameter.`,
-    inputSchema: BrowserFillInput,
-    execute: async ({
-      element,
-      ref,
-      value,
-      toolCallDescription,
-    }): Promise<BrowserFillResult> => {
-      try {
-        // Note: Playwright MCP uses "browser_type" for filling fields
-        const args: Record<string, unknown> = { element, text: value };
-        if (ref) {
-          args.ref = ref;
-        }
-        const result = await session.callTool(
-          "browser_type",
-          args,
-          abortSignal,
-        );
-        return { success: true, element, result };
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger?.error(`browser_fill failed: ${message}`);
-        return { success: false, error: message };
-      }
-    },
-  });
-
-  const browser_evaluate = tool({
-    description: descriptions.evaluate,
-    inputSchema: BrowserEvaluateInput,
-    execute: async ({
-      script,
-      toolCallDescription,
-    }): Promise<BrowserEvaluateResult> => {
-      try {
-        const fnScript = transformScriptToFunction(script);
-
-        const result = await session.callTool(
-          "browser_evaluate",
-          { function: fnScript },
-          abortSignal,
-        );
-        return { success: true, script, result };
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger?.error(`browser_evaluate failed: ${message}`);
-        return { success: false, error: message };
-      }
-    },
-  });
-
-  const browser_console = tool({
-    description: descriptions.console,
-    inputSchema: BrowserConsoleInput,
-    execute: async ({ toolCallDescription }): Promise<BrowserConsoleResult> => {
-      try {
-        const result = await session.callTool(
-          "browser_console_messages",
-          {},
-          abortSignal,
-        );
-
-        // Parse console messages if they're in JSON format
-        let messages: Array<{ type: string; text: string }> | undefined;
-        if (typeof result === "string") {
+        inputSchema: BrowserSnapshotInput,
+        execute: async ({
+          toolCallDescription,
+        }): Promise<{
+          success: boolean;
+          snapshot?: string;
+          error?: string;
+        }> => {
           try {
-            messages = JSON.parse(result);
-          } catch {
-            messages = [{ type: "log", text: result }];
+            const result = await session.callTool(
+              "browser_snapshot",
+              {},
+              abortSignal,
+            );
+            return {
+              success: true,
+              snapshot:
+                typeof result === "string"
+                  ? result
+                  : JSON.stringify(result, null, 2),
+            };
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            logger?.error(`browser_snapshot failed: ${message}`);
+            return { success: false, error: message };
           }
-        } else if (Array.isArray(result)) {
-          messages = result as Array<{ type: string; text: string }>;
-        }
+        },
+      }),
 
-        return { success: true, messages, result };
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger?.error(`browser_console failed: ${message}`);
-        return { success: false, error: message };
-      }
-    },
-  });
+    browser_click: () =>
+      tool({
+        description:
+          descriptions.click +
+          `\n\nIMPORTANT: For reliable clicking, first call browser_snapshot to get element refs, then pass the ref parameter.`,
+        inputSchema: BrowserClickInput,
+        execute: async ({
+          element,
+          ref,
+          toolCallDescription,
+        }): Promise<BrowserClickResult> => {
+          try {
+            const args: Record<string, unknown> = { element };
+            if (ref) {
+              args.ref = ref;
+            }
+            const result = await session.callTool(
+              "browser_click",
+              args,
+              abortSignal,
+            );
+            return { success: true, element, result };
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            logger?.error(`browser_click failed: ${message}`);
+            return { success: false, error: message };
+          }
+        },
+      }),
 
-  const browser_get_cookies = tool({
-    description: `Extract cookies from the browser context, including httpOnly cookies.
+    browser_fill: () =>
+      tool({
+        description:
+          descriptions.fill +
+          `\n\nIMPORTANT: For reliable form filling, first call browser_snapshot to get element refs, then pass the ref parameter.`,
+        inputSchema: BrowserFillInput,
+        execute: async ({
+          element,
+          ref,
+          value,
+          toolCallDescription,
+        }): Promise<BrowserFillResult> => {
+          try {
+            // Note: Playwright MCP uses "browser_type" for filling fields
+            const args: Record<string, unknown> = { element, text: value };
+            if (ref) {
+              args.ref = ref;
+            }
+            const result = await session.callTool(
+              "browser_type",
+              args,
+              abortSignal,
+            );
+            return { success: true, element, result };
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            logger?.error(`browser_fill failed: ${message}`);
+            return { success: false, error: message };
+          }
+        },
+      }),
+
+    browser_evaluate: () =>
+      tool({
+        description: descriptions.evaluate,
+        inputSchema: BrowserEvaluateInput,
+        execute: async ({
+          script,
+          toolCallDescription,
+        }): Promise<BrowserEvaluateResult> => {
+          try {
+            const fnScript = transformScriptToFunction(script);
+
+            const result = await session.callTool(
+              "browser_evaluate",
+              { function: fnScript },
+              abortSignal,
+            );
+            return { success: true, script, result };
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            logger?.error(`browser_evaluate failed: ${message}`);
+            return { success: false, error: message };
+          }
+        },
+      }),
+
+    browser_console: () =>
+      tool({
+        description: descriptions.console,
+        inputSchema: BrowserConsoleInput,
+        execute: async ({
+          toolCallDescription,
+        }): Promise<BrowserConsoleResult> => {
+          try {
+            const result = await session.callTool(
+              "browser_console_messages",
+              {},
+              abortSignal,
+            );
+
+            // Parse console messages if they're in JSON format
+            let messages: Array<{ type: string; text: string }> | undefined;
+            if (typeof result === "string") {
+              try {
+                messages = JSON.parse(result);
+              } catch {
+                messages = [{ type: "log", text: result }];
+              }
+            } else if (Array.isArray(result)) {
+              messages = result as Array<{ type: string; text: string }>;
+            }
+
+            return { success: true, messages, result };
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            logger?.error(`browser_console failed: ${message}`);
+            return { success: false, error: message };
+          }
+        },
+      }),
+
+    browser_get_cookies: () =>
+      tool({
+        description: `Extract cookies from the browser context, including httpOnly cookies.
 
 CRITICAL: Use this after successful browser authentication to get session cookies that can be used in HTTP requests.
 
@@ -1608,105 +1636,132 @@ Returns all cookies including:
 - CSRF tokens
 
 The returned cookies can be formatted as a Cookie header for use with http_request tool.`,
-    inputSchema: BrowserGetCookiesInput,
-    execute: async ({
-      urls,
-      toolCallDescription,
-    }): Promise<{
-      success: boolean;
-      cookies?: Array<{
-        name: string;
-        value: string;
-        domain: string;
-        path: string;
-        httpOnly: boolean;
-        secure: boolean;
-      }>;
-      cookieHeader?: string;
-      error?: string;
-    }> => {
-      try {
-        // Playwright MCP doesn't expose a dedicated cookie tool, so we use
-        // browser_run_code to call the Playwright context API directly.
-        // This gets ALL cookies including httpOnly ones.
-        const urlFilter =
-          urls && urls.length > 0 ? JSON.stringify(urls) : "undefined";
-        const code = `async (page) => { const cookies = await page.context().cookies(${urlFilter === "undefined" ? "" : urlFilter}); return cookies; }`;
-
-        const result = await session.callTool(
-          "browser_run_code",
-          { code },
-          abortSignal,
-        );
-
-        let cookies: Array<{
-          name: string;
-          value: string;
-          domain: string;
-          path: string;
-          httpOnly: boolean;
-          secure: boolean;
-        }> = [];
-
-        if (typeof result === "string") {
-          // Playwright MCP wraps results as "### Result\n<value>\n\n### Ran Playwright code\n...".
-          // Strip the prefix and any trailing Playwright output sections.
-          const stripped = result
-            .replace(/^###\s*Result\s*\n?/, "")
-            .replace(/\n\n###[\s\S]*$/, "")
-            .trim();
+        inputSchema: BrowserGetCookiesInput,
+        execute: async ({
+          urls,
+          toolCallDescription,
+        }): Promise<{
+          success: boolean;
+          cookies?: Array<{
+            name: string;
+            value: string;
+            domain: string;
+            path: string;
+            httpOnly: boolean;
+            secure: boolean;
+          }>;
+          cookieHeader?: string;
+          error?: string;
+        }> => {
           try {
-            const parsed = JSON.parse(stripped);
-            if (Array.isArray(parsed)) {
-              cookies = parsed;
-            } else if (typeof parsed === "string") {
-              cookies = JSON.parse(parsed);
-            }
-          } catch {
-            const jsonMatch = stripped.match(/\[[\s\S]*\]/);
-            if (jsonMatch) {
+            // Playwright MCP doesn't expose a dedicated cookie tool, so we use
+            // browser_run_code to call the Playwright context API directly.
+            // This gets ALL cookies including httpOnly ones.
+            const urlFilter =
+              urls && urls.length > 0 ? JSON.stringify(urls) : "undefined";
+            const code = `async (page) => { const cookies = await page.context().cookies(${urlFilter === "undefined" ? "" : urlFilter}); return cookies; }`;
+
+            const result = await session.callTool(
+              "browser_run_code",
+              { code },
+              abortSignal,
+            );
+
+            let cookies: Array<{
+              name: string;
+              value: string;
+              domain: string;
+              path: string;
+              httpOnly: boolean;
+              secure: boolean;
+            }> = [];
+
+            if (typeof result === "string") {
+              // Playwright MCP wraps results as "### Result\n<value>\n\n### Ran Playwright code\n...".
+              // Strip the prefix and any trailing Playwright output sections.
+              const stripped = result
+                .replace(/^###\s*Result\s*\n?/, "")
+                .replace(/\n\n###[\s\S]*$/, "")
+                .trim();
               try {
-                cookies = JSON.parse(jsonMatch[0]);
+                const parsed = JSON.parse(stripped);
+                if (Array.isArray(parsed)) {
+                  cookies = parsed;
+                } else if (typeof parsed === "string") {
+                  cookies = JSON.parse(parsed);
+                }
               } catch {
-                // Could not parse
+                const jsonMatch = stripped.match(/\[[\s\S]*\]/);
+                if (jsonMatch) {
+                  try {
+                    cookies = JSON.parse(jsonMatch[0]);
+                  } catch {
+                    // Could not parse
+                  }
+                }
               }
+            } else if (Array.isArray(result)) {
+              cookies = result as typeof cookies;
+            } else if (
+              result &&
+              typeof result === "object" &&
+              "cookies" in result
+            ) {
+              cookies = (result as { cookies: typeof cookies }).cookies;
             }
+
+            const cookieHeader = cookies
+              .map((c) => `${c.name}=${c.value}`)
+              .join("; ");
+
+            return {
+              success: true,
+              cookies,
+              cookieHeader,
+            };
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            logger?.error(`browser_get_cookies failed: ${message}`);
+            return { success: false, error: message };
           }
-        } else if (Array.isArray(result)) {
-          cookies = result as typeof cookies;
-        } else if (
-          result &&
-          typeof result === "object" &&
-          "cookies" in result
-        ) {
-          cookies = (result as { cookies: typeof cookies }).cookies;
-        }
+        },
+      }),
+  };
+}
 
-        const cookieHeader = cookies
-          .map((c) => `${c.name}=${c.value}`)
-          .join("; ");
-
-        return {
-          success: true,
-          cookies,
-          cookieHeader,
-        };
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger?.error(`browser_get_cookies failed: ${message}`);
-        return { success: false, error: message };
-      }
-    },
-  });
-
+export function createBrowserTools(
+  targetUrl: string,
+  evidenceDir: string,
+  mode: BrowserToolMode = "pentest",
+  logger?: Logger,
+  abortSignal?: AbortSignal,
+  headless?: boolean,
+  userAgent?: string | null,
+  viewportSize?: string | null,
+  existingSession?: PlaywrightMcpSession,
+  extraHttpHeaders?: Record<string, string> | null,
+) {
+  const factories = createBrowserToolFactories(
+    targetUrl,
+    evidenceDir,
+    mode,
+    logger,
+    abortSignal,
+    headless,
+    userAgent,
+    viewportSize,
+    existingSession,
+    extraHttpHeaders,
+  );
   return {
-    browser_navigate,
-    browser_snapshot,
-    browser_screenshot,
-    browser_click,
-    browser_fill,
-    browser_evaluate,
-    browser_console,
-    browser_get_cookies,
+    browser_navigate: factories.browser_navigate(),
+    browser_snapshot: factories.browser_snapshot(),
+    browser_screenshot: factories.browser_screenshot(),
+    browser_click: factories.browser_click(),
+    browser_fill: factories.browser_fill(),
+    browser_evaluate: factories.browser_evaluate(),
+    browser_console: factories.browser_console(),
+    browser_get_cookies: factories.browser_get_cookies(),
   };
 }

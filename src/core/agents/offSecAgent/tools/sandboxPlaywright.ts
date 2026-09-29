@@ -552,7 +552,12 @@ const BrowserGetCookiesInput = z.object({
  * The factory lazily installs Playwright and launches Chromium in the sandbox
  * on the first tool invocation.
  */
-export function createSandboxBrowserTools(ctx: ToolContext) {
+/**
+ * Lazy per-member sandbox browser tool factories. Shared state (sandbox
+ * handle, setup gate, serialized script queue) is built once per call; each
+ * member's tool object is constructed only when its factory is invoked.
+ */
+export function createSandboxBrowserToolFactories(ctx: ToolContext) {
   const sandbox = ctx.sandbox!;
   const evidenceDir = join(ctx.session.rootPath, "evidence");
   const targetUrl = ctx.target ?? "";
@@ -589,21 +594,21 @@ export function createSandboxBrowserTools(ctx: ToolContext) {
     return next;
   }
 
-  // ------- browser_navigate -------------------------------------------------
-
-  const browser_navigate = tool({
-    description: `Navigate the browser to a URL to load and render a page.
+  return {
+    browser_navigate: () =>
+      tool({
+        description: `Navigate the browser to a URL to load and render a page.
 
 Use this to load SPAs, JavaScript-heavy pages, or any page that requires full browser rendering.
 The page will be fully loaded and JavaScript executed before returning.
 
 Target base URL: ${targetUrl}`,
-    inputSchema: BrowserNavigateInput,
-    execute: async ({ url }): Promise<BrowserNavigateResult> => {
-      try {
-        await setup();
-        const result = (await runScript(
-          `
+        inputSchema: BrowserNavigateInput,
+        execute: async ({ url }): Promise<BrowserNavigateResult> => {
+          try {
+            await setup();
+            const result = (await runScript(
+              `
     await page.goto(${JSON.stringify(url)}, { waitUntil: 'domcontentloaded', timeout: 30000 });
     // Persist current URL so subsequent tool calls can restore the page
     require('fs').writeFileSync('${SANDBOX_URL_FILE}', page.url());
@@ -611,84 +616,91 @@ Target base URL: ${targetUrl}`,
 
     resolve({ success: true, url: page.url(), title });
           `,
-          60,
-        )) as BrowserNavigateResult;
-        return result;
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return { success: false, url, error: message };
-      }
-    },
-  });
+              60,
+            )) as BrowserNavigateResult;
+            return result;
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            return { success: false, url, error: message };
+          }
+        },
+      }),
 
-  // ------- browser_screenshot -----------------------------------------------
+    // ------- browser_screenshot -----------------------------------------------
 
-  const browser_screenshot = tool({
-    description: `Take a screenshot of the current page for evidence/documentation.
+    browser_screenshot: () =>
+      tool({
+        description: `Take a screenshot of the current page for evidence/documentation.
 
 Use this to document:
 - Exposed admin panels or sensitive pages
 - Interesting error pages or debug information
 - Visual proof of discovered vulnerabilities
 - Login pages and authentication flows`,
-    inputSchema: BrowserScreenshotInput,
-    execute: async ({ filename }): Promise<BrowserScreenshotResult> => {
-      try {
-        await setup();
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        const screenshotFilename = `${filename}_${timestamp}.png`;
-        const sandboxPath = `${SANDBOX_EVIDENCE_DIR}/${screenshotFilename}`;
+        inputSchema: BrowserScreenshotInput,
+        execute: async ({ filename }): Promise<BrowserScreenshotResult> => {
+          try {
+            await setup();
+            const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+            const screenshotFilename = `${filename}_${timestamp}.png`;
+            const sandboxPath = `${SANDBOX_EVIDENCE_DIR}/${screenshotFilename}`;
 
-        const result = (await runScript(
-          `
+            const result = (await runScript(
+              `
     const buf = await page.screenshot({ fullPage: false });
     const b64 = buf.toString('base64');
     require('fs').mkdirSync(${JSON.stringify(SANDBOX_EVIDENCE_DIR)}, { recursive: true });
     require('fs').writeFileSync(${JSON.stringify(sandboxPath)}, buf);
     resolve({ success: true, data: b64, sandboxPath: ${JSON.stringify(sandboxPath)} });
           `,
-          30,
-        )) as {
-          success: boolean;
-          data?: string;
-          sandboxPath?: string;
-          error?: string;
-        };
+              30,
+            )) as {
+              success: boolean;
+              data?: string;
+              sandboxPath?: string;
+              error?: string;
+            };
 
-        if (result.success && result.data) {
-          const localPath = join(evidenceDir, screenshotFilename);
-          const dir = dirname(localPath);
-          if (!existsSync(dir)) {
-            mkdirSync(dir, { recursive: true });
+            if (result.success && result.data) {
+              const localPath = join(evidenceDir, screenshotFilename);
+              const dir = dirname(localPath);
+              if (!existsSync(dir)) {
+                mkdirSync(dir, { recursive: true });
+              }
+              writeFileSync(localPath, Buffer.from(result.data, "base64"));
+              // The PNG bytes are already back on the host (via base64) and
+              // written to `evidenceDir`; the sandbox-side staging copy in
+              // `/tmp/evidence` is never read again. Drop it so a
+              // screenshot-heavy scan doesn't accumulate them until teardown
+              // (ENOSPC). Best-effort — a failed cleanup must not fail the tool.
+              void sandbox
+                .execute(`rm -f ${sandboxPath}`, { timeout: 10 })
+                .catch(() => {});
+              return {
+                success: true,
+                path: localPath,
+                message: `Screenshot saved to ${localPath}`,
+              };
+            }
+
+            return {
+              success: false,
+              error: result.error || "No screenshot data",
+            };
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            return { success: false, error: message };
           }
-          writeFileSync(localPath, Buffer.from(result.data, "base64"));
-          // The PNG bytes are already back on the host (via base64) and
-          // written to `evidenceDir`; the sandbox-side staging copy in
-          // `/tmp/evidence` is never read again. Drop it so a
-          // screenshot-heavy scan doesn't accumulate them until teardown
-          // (ENOSPC). Best-effort — a failed cleanup must not fail the tool.
-          void sandbox
-            .execute(`rm -f ${sandboxPath}`, { timeout: 10 })
-            .catch(() => {});
-          return {
-            success: true,
-            path: localPath,
-            message: `Screenshot saved to ${localPath}`,
-          };
-        }
+        },
+      }),
 
-        return { success: false, error: result.error || "No screenshot data" };
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return { success: false, error: message };
-      }
-    },
-  });
+    // ------- browser_snapshot -------------------------------------------------
 
-  // ------- browser_snapshot -------------------------------------------------
-
-  const browser_snapshot = tool({
-    description: `Get the accessibility snapshot of the current page.
+    browser_snapshot: () =>
+      tool({
+        description: `Get the accessibility snapshot of the current page.
 
 IMPORTANT: Call this BEFORE using browser_click or browser_fill to get element references (refs).
 The snapshot returns an accessibility tree with elements marked like [ref=e5].
@@ -698,16 +710,16 @@ Example workflow:
 1. Call browser_snapshot to get the page structure
 2. Find the element you need (e.g., "textbox 'Email'" with [ref=e3])
 3. Call browser_fill with ref="e3" to fill that specific element`,
-    inputSchema: BrowserSnapshotInput,
-    execute: async (): Promise<{
-      success: boolean;
-      snapshot?: string;
-      error?: string;
-    }> => {
-      try {
-        await setup();
-        const result = (await runScript(
-          `
+        inputSchema: BrowserSnapshotInput,
+        execute: async (): Promise<{
+          success: boolean;
+          snapshot?: string;
+          error?: string;
+        }> => {
+          try {
+            await setup();
+            const result = (await runScript(
+              `
     // Build accessibility snapshot via page.evaluate — works on all
     // Playwright versions and doesn't depend on the deprecated
     // page.accessibility.snapshot() API.
@@ -794,21 +806,23 @@ Example workflow:
     require('fs').writeFileSync(${JSON.stringify(SANDBOX_REFS_FILE)}, JSON.stringify(refMap));
     resolve({ success: true, snapshot: text });
           `,
-          30,
-        )) as { success: boolean; snapshot?: string; error?: string };
+              30,
+            )) as { success: boolean; snapshot?: string; error?: string };
 
-        return result;
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return { success: false, error: message };
-      }
-    },
-  });
+            return result;
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            return { success: false, error: message };
+          }
+        },
+      }),
 
-  // ------- browser_click ----------------------------------------------------
+    // ------- browser_click ----------------------------------------------------
 
-  const browser_click = tool({
-    description: `Click on an element in the page by describing it.
+    browser_click: () =>
+      tool({
+        description: `Click on an element in the page by describing it.
 
 Use this to:
 - Navigate through multi-step flows
@@ -817,12 +831,12 @@ Use this to:
 - Submit forms
 
 IMPORTANT: For reliable clicking, first call browser_snapshot to get element refs, then pass the ref parameter.`,
-    inputSchema: BrowserClickInput,
-    execute: async ({ element, ref }): Promise<BrowserClickResult> => {
-      try {
-        await setup();
-        const result = (await runScript(
-          `
+        inputSchema: BrowserClickInput,
+        execute: async ({ element, ref }): Promise<BrowserClickResult> => {
+          try {
+            await setup();
+            const result = (await runScript(
+              `
     const ref = ${JSON.stringify(ref || "")};
     const element = ${JSON.stringify(element)};
 
@@ -872,21 +886,23 @@ IMPORTANT: For reliable clicking, first call browser_snapshot to get element ref
     await page.locator('text=' + element).first().click({ timeout: 10000 });
     resolve({ success: true, element, result: 'Clicked via text locator: ' + element });
           `,
-          30,
-        )) as BrowserClickResult;
+              30,
+            )) as BrowserClickResult;
 
-        return result;
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return { success: false, error: message };
-      }
-    },
-  });
+            return result;
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            return { success: false, error: message };
+          }
+        },
+      }),
 
-  // ------- browser_fill -----------------------------------------------------
+    // ------- browser_fill -----------------------------------------------------
 
-  const browser_fill = tool({
-    description: `Fill a form field with a value.
+    browser_fill: () =>
+      tool({
+        description: `Fill a form field with a value.
 
 Use this to:
 - Enter credentials for authenticated reconnaissance
@@ -894,12 +910,16 @@ Use this to:
 - Enter test data into forms
 
 IMPORTANT: For reliable form filling, first call browser_snapshot to get element refs, then pass the ref parameter.`,
-    inputSchema: BrowserFillInput,
-    execute: async ({ element, ref, value }): Promise<BrowserFillResult> => {
-      try {
-        await setup();
-        const result = (await runScript(
-          `
+        inputSchema: BrowserFillInput,
+        execute: async ({
+          element,
+          ref,
+          value,
+        }): Promise<BrowserFillResult> => {
+          try {
+            await setup();
+            const result = (await runScript(
+              `
     const ref = ${JSON.stringify(ref || "")};
     const element = ${JSON.stringify(element)};
     const value = ${JSON.stringify(value)};
@@ -950,21 +970,23 @@ IMPORTANT: For reliable form filling, first call browser_snapshot to get element
     await page.locator('[placeholder*="' + element.replace(/"/g, '') + '" i]').first().fill(value, { timeout: 10000 });
     resolve({ success: true, element, result: 'Filled via placeholder locator: ' + element });
           `,
-          30,
-        )) as BrowserFillResult;
+              30,
+            )) as BrowserFillResult;
 
-        return result;
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return { success: false, error: message };
-      }
-    },
-  });
+            return result;
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            return { success: false, error: message };
+          }
+        },
+      }),
 
-  // ------- browser_evaluate -------------------------------------------------
+    // ------- browser_evaluate -------------------------------------------------
 
-  const browser_evaluate = tool({
-    description: `Execute JavaScript in the browser context to extract information.
+    browser_evaluate: () =>
+      tool({
+        description: `Execute JavaScript in the browser context to extract information.
 
 CRITICAL for SPA reconnaissance - use this to extract:
 - React Router routes: window.__REACT_ROUTER_VERSION__
@@ -976,38 +998,40 @@ CRITICAL for SPA reconnaissance - use this to extract:
 - Service worker routes: navigator.serviceWorker?.controller
 
 The JavaScript is executed in the page context and the result is returned.`,
-    inputSchema: BrowserEvaluateInput,
-    execute: async ({ script }): Promise<BrowserEvaluateResult> => {
-      try {
-        await setup();
+        inputSchema: BrowserEvaluateInput,
+        execute: async ({ script }): Promise<BrowserEvaluateResult> => {
+          try {
+            await setup();
 
-        const isFunction =
-          /^\s*(async\s+)?\(/.test(script) ||
-          /^\s*(async\s+)?function\s*\(/.test(script);
-        const fnScript = isFunction ? script : `() => (${script})`;
+            const isFunction =
+              /^\s*(async\s+)?\(/.test(script) ||
+              /^\s*(async\s+)?function\s*\(/.test(script);
+            const fnScript = isFunction ? script : `() => (${script})`;
 
-        const result = (await runScript(
-          `
+            const result = (await runScript(
+              `
     const fnStr = ${JSON.stringify(fnScript)};
     const fn = new Function('return (' + fnStr + ')')();
     const evalResult = await page.evaluate(fn);
     resolve({ success: true, script: ${JSON.stringify(script)}, result: evalResult });
           `,
-          30,
-        )) as BrowserEvaluateResult;
+              30,
+            )) as BrowserEvaluateResult;
 
-        return result;
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return { success: false, error: message };
-      }
-    },
-  });
+            return result;
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            return { success: false, error: message };
+          }
+        },
+      }),
 
-  // ------- browser_console --------------------------------------------------
+    // ------- browser_console --------------------------------------------------
 
-  const browser_console = tool({
-    description: `Get console messages from the browser.
+    browser_console: () =>
+      tool({
+        description: `Get console messages from the browser.
 
 Use this to check for:
 - Leaked API keys or secrets in console output
@@ -1015,12 +1039,12 @@ Use this to check for:
 - Error messages exposing application structure
 - Warnings about deprecated endpoints
 - Network request failures revealing API patterns`,
-    inputSchema: BrowserConsoleInput,
-    execute: async (): Promise<BrowserConsoleResult> => {
-      try {
-        await setup();
-        const result = (await runScript(
-          `
+        inputSchema: BrowserConsoleInput,
+        execute: async (): Promise<BrowserConsoleResult> => {
+          try {
+            await setup();
+            const result = (await runScript(
+              `
     const fs = require('fs');
     let persisted = [];
     try { persisted = JSON.parse(fs.readFileSync('${SANDBOX_CONSOLE_FILE}', 'utf-8')); } catch {}
@@ -1029,21 +1053,23 @@ Use this to check for:
     __consoleMessages.length = 0;
     resolve({ success: true, messages: allMessages, result: allMessages });
           `,
-          15,
-        )) as BrowserConsoleResult;
+              15,
+            )) as BrowserConsoleResult;
 
-        return result;
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return { success: false, error: message };
-      }
-    },
-  });
+            return result;
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            return { success: false, error: message };
+          }
+        },
+      }),
 
-  // ------- browser_get_cookies ----------------------------------------------
+    // ------- browser_get_cookies ----------------------------------------------
 
-  const browser_get_cookies = tool({
-    description: `Extract cookies from the browser context, including httpOnly cookies.
+    browser_get_cookies: () =>
+      tool({
+        description: `Extract cookies from the browser context, including httpOnly cookies.
 
 CRITICAL: Use this after successful browser authentication to get session cookies that can be used in HTTP requests.
 
@@ -1053,35 +1079,10 @@ Returns all cookies including:
 - CSRF tokens
 
 The returned cookies can be formatted as a Cookie header for use with http_request tool.`,
-    inputSchema: BrowserGetCookiesInput,
-    execute: async ({
-      urls,
-    }): Promise<{
-      success: boolean;
-      cookies?: Array<{
-        name: string;
-        value: string;
-        domain: string;
-        path: string;
-        httpOnly: boolean;
-        secure: boolean;
-      }>;
-      cookieHeader?: string;
-      error?: string;
-    }> => {
-      try {
-        await setup();
-        const result = (await runScript(
-          `
-    const urls = ${JSON.stringify(urls || [])};
-    const cookies = urls.length > 0
-      ? await context.cookies(urls)
-      : await context.cookies();
-    const cookieHeader = cookies.map(c => c.name + '=' + c.value).join('; ');
-    resolve({ success: true, cookies, cookieHeader });
-          `,
-          15,
-        )) as {
+        inputSchema: BrowserGetCookiesInput,
+        execute: async ({
+          urls,
+        }): Promise<{
           success: boolean;
           cookies?: Array<{
             name: string;
@@ -1093,24 +1094,54 @@ The returned cookies can be formatted as a Cookie header for use with http_reque
           }>;
           cookieHeader?: string;
           error?: string;
-        };
+        }> => {
+          try {
+            await setup();
+            const result = (await runScript(
+              `
+    const urls = ${JSON.stringify(urls || [])};
+    const cookies = urls.length > 0
+      ? await context.cookies(urls)
+      : await context.cookies();
+    const cookieHeader = cookies.map(c => c.name + '=' + c.value).join('; ');
+    resolve({ success: true, cookies, cookieHeader });
+          `,
+              15,
+            )) as {
+              success: boolean;
+              cookies?: Array<{
+                name: string;
+                value: string;
+                domain: string;
+                path: string;
+                httpOnly: boolean;
+                secure: boolean;
+              }>;
+              cookieHeader?: string;
+              error?: string;
+            };
 
-        return result;
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return { success: false, error: message };
-      }
-    },
-  });
+            return result;
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            return { success: false, error: message };
+          }
+        },
+      }),
+  };
+}
 
+export function createSandboxBrowserTools(ctx: ToolContext) {
+  const factories = createSandboxBrowserToolFactories(ctx);
   return {
-    browser_navigate,
-    browser_snapshot,
-    browser_screenshot,
-    browser_click,
-    browser_fill,
-    browser_evaluate,
-    browser_console,
-    browser_get_cookies,
+    browser_navigate: factories.browser_navigate(),
+    browser_snapshot: factories.browser_snapshot(),
+    browser_screenshot: factories.browser_screenshot(),
+    browser_click: factories.browser_click(),
+    browser_fill: factories.browser_fill(),
+    browser_evaluate: factories.browser_evaluate(),
+    browser_console: factories.browser_console(),
+    browser_get_cookies: factories.browser_get_cookies(),
   };
 }
