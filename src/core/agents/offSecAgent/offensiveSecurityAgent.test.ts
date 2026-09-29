@@ -88,7 +88,6 @@ vi.mock("./tools", () => ({
   ],
   PerCommandShell: class {},
   PlaywrightMcpSession: class {},
-  FAST_STRIKE_EXCLUDED_TOOL_NAMES: [],
 }));
 vi.mock("../../ai", () => ({
   streamResponse: (opts: Record<string, unknown>) => {
