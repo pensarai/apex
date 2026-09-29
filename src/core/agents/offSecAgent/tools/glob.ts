@@ -89,9 +89,9 @@ async function enumerateLocal(
     for (const entry of dirents) {
       signal?.throwIfAborted();
       const relative = `${prefix}${entry.name}`;
-      if (entry.name.startsWith(".")) {
+      if (entry.isDirectory() || entry.name.startsWith(".")) {
         const allowed = entry.isDirectory()
-          ? pattern.hiddenDirectoryRegexes
+          ? pattern.directoryRegexes
           : pattern.regexes;
         if (!allowed.some((regex) => regex.test(relative))) continue;
       }
@@ -138,7 +138,7 @@ while stack and emitted <= cap:
             for entry in entries:
                 relative = prefix + entry.name
                 is_directory = entry.is_dir(follow_symlinks=False)
-                if entry.name.startswith('.'):
+                if is_directory or entry.name.startswith('.'):
                     allowed = directories if is_directory else files
                     if not any(regex.search(utf16_units(relative)) for regex in allowed):
                         continue
@@ -181,7 +181,7 @@ const WIN_GLOB_SCRIPT = [
   "foreach($e in $di.EnumerateFileSystemInfos()){",
   "$rel=$e.FullName.Substring($baseLen).TrimStart([char]92,[char]47).Replace([char]92,[char]47)",
   "$isDirectory=(($e.Attributes -band [IO.FileAttributes]::Directory) -ne 0)",
-  "if($e.Name.StartsWith('.')){",
+  "if($isDirectory -or $e.Name.StartsWith('.')){",
   "$allowed=$files; if($isDirectory){$allowed=$directories}",
   "$allowedMatch=$false; foreach($regex in $allowed){if($regex.IsMatch($rel)){$allowedMatch=$true; break}}",
   "if(-not $allowedMatch){continue}",
@@ -217,7 +217,7 @@ async function enumerateSandbox(
   // cmd.exe's per-variable limit, and patterns must never enter shell source.
   const rules = Buffer.from(
     JSON.stringify({
-      directories: pattern.hiddenDirectoryRegexes.map((regex) => regex.source),
+      directories: pattern.directoryRegexes.map((regex) => regex.source),
       files: pattern.regexes.map((regex) => regex.source),
     }),
   ).toString("base64");

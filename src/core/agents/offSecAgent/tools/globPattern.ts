@@ -8,7 +8,7 @@
 const MAX_BRACE_VARIANTS = 64;
 
 export type GlobPattern =
-  | { regexes: RegExp[]; hiddenDirectoryRegexes: RegExp[] }
+  | { regexes: RegExp[]; directoryRegexes: RegExp[] }
   | { error: string };
 
 function expandBraces(pattern: string): string[] | { error: string } {
@@ -181,24 +181,23 @@ export function compileGlobPattern(pattern: string): GlobPattern {
   const variants = expandBraces(pattern);
   if ("error" in variants) return variants;
   const regexes: RegExp[] = [];
-  const hiddenDirectoryRegexes = new Map<string, RegExp>();
+  const directoryRegexes = new Map<string, RegExp>();
   for (const variant of variants) {
     const regex = variantToRegex(variant);
     if ("error" in regex) return regex;
     regexes.push(regex);
     const segments = variant.split(/[\\/]/);
-    // A final hidden segment names a file; only earlier hidden segments may
-    // open a directory. Keep the full prefix so brace alternatives and **
-    // cannot enable unrelated hidden trees elsewhere in the search root.
-    for (let i = 0; i < segments.length - 1; i++) {
-      if (!segments[i].startsWith(".") || segments[i].length <= 1) continue;
+    // Only prefixes that can lead to a match may open directories; a final
+    // ** also permits descent at arbitrary depth.
+    for (let i = 0; i < segments.length; i++) {
+      if (i === segments.length - 1 && segments[i] !== "**") continue;
       const prefix = variantToRegex(segments.slice(0, i + 1).join("/"));
       if ("error" in prefix) return prefix;
-      hiddenDirectoryRegexes.set(prefix.source, prefix);
+      directoryRegexes.set(prefix.source, prefix);
     }
   }
   return {
     regexes,
-    hiddenDirectoryRegexes: [...hiddenDirectoryRegexes.values()],
+    directoryRegexes: [...directoryRegexes.values()],
   };
 }

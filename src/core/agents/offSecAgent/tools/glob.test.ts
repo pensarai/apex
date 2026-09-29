@@ -548,6 +548,40 @@ it("prunes hidden trees before they consume a wildcard scan budget", async () =>
   }
 });
 
+it("prunes directories beyond the pattern depth before they consume the scan budget", async () => {
+  const root = scratchDir();
+  mkdirSync(join(root, "aaa-cache"));
+  mkdirSync(join(root, "src", "deep"), { recursive: true });
+  writeFileSync(join(root, "z.ts"), "root");
+  writeFileSync(join(root, "src", "z.ts"), "source");
+  writeFileSync(join(root, "src", "deep", "nested.ts"), "nested");
+  for (let i = 0; i < 20_001; i++)
+    writeFileSync(join(root, "aaa-cache", `f${i}`), "");
+  for (const sandbox of [undefined, realLinuxSandbox()]) {
+    for (const [pattern, files] of [
+      ["*.ts", ["z.ts"]],
+      ["src/*.ts", ["src/z.ts"]],
+      ["{src,lib}/**/*.ts", ["src/deep/nested.ts", "src/z.ts"]],
+      ["src/**", ["src/deep/nested.ts", "src/z.ts"]],
+    ] as const) {
+      vi.mocked(readdir).mockClear();
+      const result = await runGlob(makeCtx({ agentCwd: root, sandbox }), {
+        pattern,
+        toolCallDescription: "Search only reachable pattern paths",
+      });
+      expect(result).toMatchObject({ success: true, error: "", files });
+      if (!sandbox) {
+        const visited = vi.mocked(readdir).mock.calls.map(([dir]) => dir);
+        expect(visited).not.toContain(join(root, "aaa-cache"));
+        if (pattern === "*.ts")
+          expect(visited).not.toContain(join(root, "src"));
+        if (pattern === "src/*.ts")
+          expect(visited).not.toContain(join(root, "src", "deep"));
+      }
+    }
+  }
+});
+
 it("still searches hidden directories when the pattern names them", async () => {
   const root = scratchDir();
   mkdirSync(join(root, ".config"));

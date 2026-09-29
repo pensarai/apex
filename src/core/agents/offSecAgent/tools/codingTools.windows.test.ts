@@ -217,6 +217,48 @@ describe.skipIf(process.platform !== "win32")(
       }
     }, 60_000);
 
+    it("does not enter Windows directories outside a shallow glob pattern", async () => {
+      const { workspace, ctx } = await fixture();
+      await mkdir(join(workspace, "cache"));
+      await mkdir(join(workspace, "src", "deep"), { recursive: true });
+      await writeFile(join(workspace, "root.ts"), "root");
+      await writeFile(join(workspace, "src", "source.ts"), "source");
+      for (const [pattern, files] of [
+        ["*.ts", ["root.ts"]],
+        ["src/*.ts", ["src/source.ts"]],
+      ] as const) {
+        const measuredSandbox: UnifiedSandbox = {
+          ...sandbox,
+          execute(command, options) {
+            if (options?.envVars?.APEX_GLOB_PATH !== undefined) {
+              const script = winScriptFromEnv(options.envVars);
+              const visit = "$d=$stack.Pop()";
+              expect(script).toContain(visit);
+              const measured = script.replace(
+                visit,
+                `${visit}\nif($d.EndsWith('\\cache') -or $d.EndsWith('\\deep') -or ($env:APEX_TEST_ROOT_ONLY -eq '1' -and $d.EndsWith('\\src'))){throw 'Glob entered an unreachable directory'}`,
+              );
+              return sandbox.execute(command, {
+                ...options,
+                envVars: {
+                  ...options.envVars,
+                  ...winScriptEnv(measured),
+                  APEX_TEST_ROOT_ONLY: pattern === "*.ts" ? "1" : "0",
+                },
+              });
+            }
+            return sandbox.execute(command, options);
+          },
+        };
+        expect(
+          await globFiles({ ...ctx, sandbox: measuredSandbox }).execute?.(
+            { pattern, toolCallDescription },
+            callOptions,
+          ),
+        ).toMatchObject({ success: true, error: "", files });
+      }
+    }, 60_000);
+
     it("rejects listing a regular file but accepts an empty directory", async () => {
       const { workspace, ctx } = await fixture();
       await writeFile(join(workspace, "file.txt"), "content\n");
