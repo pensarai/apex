@@ -22,7 +22,7 @@ import type { GrpcPentestContext } from "../../specialized/attackSurface/grpcSch
 import type { SubagentSpawner } from "../subagentSpawner";
 import type { StepTraceWriter } from "../trace";
 import type { StreamIdFactory, SystemPentestScope } from "../types";
-import type { PersistentShell } from "./persistentShell";
+import type { PerCommandShell } from "./perCommandShell";
 import type { PlaywrightMcpSession } from "./playwrightMcp";
 import type { UnifiedSandbox } from "./sandbox";
 
@@ -104,11 +104,11 @@ export type ToolContext = {
   environmentVariables?: Record<string, string>;
 
   /**
-   * Long-lived bash process shared across execute_command calls.
-   * Environment variables, working directory, and background processes
-   * persist between invocations. Only used in local (non-sandbox) mode.
+   * Per-command executor: every invocation runs in a fresh process group
+   * with this agent's working directory and configured environment. Nothing
+   * carries across calls. Only used in local (non-sandbox) mode.
    */
-  persistentShell?: PersistentShell;
+  commandShell?: PerCommandShell;
 
   /**
    * Skills registry for on-demand skill loading.

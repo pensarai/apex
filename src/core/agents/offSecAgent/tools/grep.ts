@@ -3,6 +3,14 @@ import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 
+// Producer bound: accumulation stops once this many characters are buffered —
+// results are never collected unbounded and sliced afterwards.
+const MAX_OUTPUT_CHARS = 50_000;
+// One chunk of slack past the cap before the child is killed, so the cap
+// boundary itself is captured exactly.
+const KILL_SLACK_CHARS = 8_192;
+const GREP_TIMEOUT_MS = 30_000;
+
 const grepInputSchema = z.object({
   pattern: z.string().describe("The pattern to search for"),
   directory: z
@@ -30,8 +38,11 @@ export type GrepResult = {
   success: boolean;
   error: string;
   output: string;
-  matchCount: number;
+  /** Exact only for a complete run; omitted for every incomplete outcome. */
+  matchCount?: number;
   command: string;
+  /** True when the producer bound stopped collection before grep finished. */
+  truncated?: boolean;
 };
 
 export function grep(ctx: ToolContext) {
@@ -42,7 +53,7 @@ Runs grep with the given pattern and optional flags. When searching a
 directory, -r (recursive) is included automatically unless you explicitly
 provide flags that already contain it.
 
-USEFUL FLAG COMBOS:
+USEFUL FLAG COMBINATIONS:
   -rn           recursive + line numbers (default for dirs)
   -rni          recursive + line numbers + case-insensitive
   -rl           recursive, file names only
@@ -51,8 +62,9 @@ USEFUL FLAG COMBOS:
   -C 3          show 3 lines of context around matches
   --include="*.js"  restrict to certain file types
 
-Output is capped at 50 000 characters to avoid context overflow — narrow your
-search with flags or a more specific directory if results are truncated.`,
+Output is capped at ${MAX_OUTPUT_CHARS} characters at the producer — a search
+that exceeds it reports truncated=true and an approximate window instead of a
+match count. Narrow the search with flags or a more specific directory.`,
     inputSchema: grepInputSchema,
     execute: async ({ pattern, directory, flags }): Promise<GrepResult> => {
       if (ctx.abortSignal?.aborted) {
@@ -60,7 +72,6 @@ search with flags or a more specific directory if results are truncated.`,
           success: false,
           error: "Grep aborted by user",
           output: "",
-          matchCount: 0,
           command: "",
         };
       }
@@ -86,12 +97,21 @@ search with flags or a more specific directory if results are truncated.`,
 
         let stdout = "";
         let stderr = "";
+        let stdoutTruncated = false;
+        let stderrTruncated = false;
+        let killedForCap = false;
+        let killedByTimeout = false;
+        let killedByAbort = false;
         let resolved = false;
 
         // Wire up abort signal — clean up in safeResolve to cover all exit paths
         let abortCleanup: (() => void) | undefined;
         if (ctx.abortSignal) {
-          const abortHandler = () => child.kill("SIGTERM");
+          const abortHandler = () => {
+            killedByAbort = true;
+            stopCancellation();
+            child.kill("SIGTERM");
+          };
           ctx.abortSignal.addEventListener("abort", abortHandler, {
             once: true,
           });
@@ -99,42 +119,93 @@ search with flags or a more specific directory if results are truncated.`,
             ctx.abortSignal?.removeEventListener("abort", abortHandler);
         }
 
+        const stopCancellation = () => {
+          clearTimeout(timeout);
+          abortCleanup?.();
+        };
+
         const safeResolve = (result: GrepResult) => {
           if (resolved) return;
           resolved = true;
-          clearTimeout(timeout);
-          abortCleanup?.();
+          stopCancellation();
           resolve(result);
         };
 
         const timeout = setTimeout(() => {
+          killedByTimeout = true;
+          stopCancellation();
           child.kill("SIGTERM");
-        }, 30_000);
+        }, GREP_TIMEOUT_MS);
 
+        // Exit precedes stdio close; late cancellation must not relabel completed work.
+        child.once("exit", stopCancellation);
+
+        // Accumulation is bounded at the producer: once past the cap the
+        // stream is destroyed (grep SIGPIPEs) instead of buffering forever.
         child.stdout.on("data", (data) => {
-          stdout += data.toString();
+          if (stdoutTruncated) return;
+          const chunk = data.toString();
+          if (stdout.length + chunk.length > MAX_OUTPUT_CHARS) {
+            stdout += chunk.slice(0, MAX_OUTPUT_CHARS - stdout.length);
+            stdoutTruncated = true;
+            killedForCap = true;
+            stopCancellation();
+            child.stdout.destroy();
+            child.kill("SIGTERM");
+            return;
+          }
+          stdout += chunk;
         });
 
         child.stderr.on("data", (data) => {
-          stderr += data.toString();
+          if (stderrTruncated) return;
+          const chunk = data.toString();
+          if (stderr.length + chunk.length > KILL_SLACK_CHARS) {
+            stderr += chunk.slice(0, KILL_SLACK_CHARS - stderr.length);
+            stderrTruncated = true;
+            return;
+          }
+          stderr += chunk;
         });
 
         child.on("close", (code) => {
-          // grep exits 1 when no matches — that's not an error
-          const noMatch = code === 1 && stderr === "";
-          const matchCount = stdout ? stdout.trimEnd().split("\n").length : 0;
+          const interrupted = killedForCap || killedByTimeout || killedByAbort;
+          // grep exits 1 with no stderr only when it genuinely found nothing.
+          const noMatch = !interrupted && code === 1 && stderr === "";
 
-          const truncated = stdout.length > 50_000;
-          const output = truncated
-            ? `${stdout.substring(0, 50_000)}\n\n(truncated — narrow your search)`
-            : stdout || "(no matches)";
+          const output = killedForCap
+            ? `${stdout}\n\n(truncated at ${MAX_OUTPUT_CHARS} characters — narrow your search; match count omitted because the full result was not captured)`
+            : interrupted
+              ? stdout
+              : noMatch || (code === 0 && stdout === "")
+                ? "(no matches)"
+                : stdout;
+
+          const error = killedByAbort
+            ? "Grep aborted by user"
+            : killedByTimeout
+              ? `Grep timed out after ${GREP_TIMEOUT_MS / 1000}s — partial output only`
+              : killedForCap
+                ? `output capped at ${MAX_OUTPUT_CHARS} characters before grep finished`
+                : noMatch || code === 0
+                  ? ""
+                  : stderr || `Exit code: ${code}`;
 
           safeResolve({
-            success: code === 0 || noMatch,
-            error: noMatch || code === 0 ? "" : stderr || `Exit code: ${code}`,
+            // An interrupted or failed search is never a clean success, and
+            // its (possibly empty) output is partial evidence, not a verdict.
+            success: !interrupted && (code === 0 || noMatch),
+            error,
             output,
-            matchCount,
+            // An exact count needs a complete run — omitted for every
+            // incomplete or nonzero-error outcome.
+            ...(interrupted || (code !== 0 && !noMatch)
+              ? {}
+              : {
+                  matchCount: stdout ? stdout.trimEnd().split("\n").length : 0,
+                }),
             command,
+            ...(interrupted ? { truncated: true } : {}),
           });
         });
 
@@ -143,7 +214,6 @@ search with flags or a more specific directory if results are truncated.`,
             success: false,
             error: err.message,
             output: "",
-            matchCount: 0,
             command,
           });
         });

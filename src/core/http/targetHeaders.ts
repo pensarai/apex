@@ -317,7 +317,7 @@ const injectNikto: ShellInjector = (command, headers) => {
   }
   if (lines.length === 0) return command;
   // Literal `\n`, not 0x0A — nikto wants the two-char escape and a real
-  // newline would break line-based persistent shells.
+  // newline would break line-based shell argument parsing.
   const arg = `-headers "${shellQuote(lines.join("\\n"))}"`;
   return command.replace(/(?<!\/)(\bnikto\b)/, (m) => `${m} ${arg}`);
 };

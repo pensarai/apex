@@ -40,6 +40,7 @@ const providerOrder: AIModelProvider[] = [
   "bedrock",
   "bedrock-mantle",
   "inception",
+  "custom",
   "local",
 ];
 

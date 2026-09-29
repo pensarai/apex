@@ -64,6 +64,9 @@ export interface StoredCredential {
   /** Extra form fields (e.g. CSRF tokens, account IDs) */
   additionalFields?: Record<string, string>;
 
+  /** Target uses Sign in with Google (Chrome + accounts.google.com). */
+  googleSignIn?: boolean;
+
   /** Arbitrary metadata consumers can attach */
   metadata?: Record<string, unknown>;
 }
@@ -103,4 +106,7 @@ export interface CredentialReference {
 
   /** Usage context / notes about when and how to use this credential */
   context?: string;
+
+  /** Target uses Sign in with Google — fill Google, not the native form. */
+  googleSignIn?: boolean;
 }

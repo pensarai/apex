@@ -217,7 +217,7 @@ CRITICAL RULES — READ BEFORE CALLING:
 - Do NOT use this for: positive observations, informational notes, testing limitations, or anything that is not an exploitable security vulnerability
 - If you could not exploit a vulnerability, do NOT call this tool — mention it in your final response summary instead`,
     inputSchema: documentVulnerabilityInputSchema,
-    execute: async (input) => {
+    execute: async (input, { toolCallId }) => {
       // Defense in depth: reject findings whose endpoint host is outside the
       // immutable engagement scope so a routing error can't write
       // infrastructure findings into the shared customer registry.
@@ -362,6 +362,7 @@ CRITICAL RULES — READ BEFORE CALLING:
             subagentName: "Finding Judge",
             lifecycleInput: { title: input.title, endpoint: input.endpoint },
             parentSubagentId: ctx.subagentId,
+            parentToolCallId: toolCallId,
             resolveStatus: (r) => (r.error ? "failed" : "completed"),
           });
 

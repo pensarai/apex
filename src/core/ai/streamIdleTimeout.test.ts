@@ -7,7 +7,7 @@ import {
 
 // Minimal chunk shape used by the gate — mirrors what the wrapper sees
 // from the AI SDK's `fullStream` (only the fields we actually inspect).
-type Chunk = { type: string; toolCallId?: string };
+type Chunk = { type: string; toolCallId?: string; toolName?: string };
 
 describe("withIdleTimeout", () => {
   it("passes through chunks when stream is healthy", async () => {
@@ -184,6 +184,58 @@ describe("createToolExecutionGate", () => {
     gate.observe({ type: "tool-input-start", toolCallId: "tc_1" });
     gate.observe({ type: "tool-input-delta", toolCallId: "tc_1" });
     gate.observe({ type: "step-finish" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(true);
+  });
+
+  it("closes on a tool-error for a matching open tool-call", () => {
+    const gate = createToolExecutionGate();
+    gate.observe({ type: "tool-call", toolCallId: "tc_1" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(false);
+    gate.observe({ type: "tool-error", toolCallId: "tc_1" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(true);
+  });
+
+  it("releases parallel tool calls independently when each errors", () => {
+    const gate = createToolExecutionGate();
+    gate.observe({ type: "tool-call", toolCallId: "tc_a" });
+    gate.observe({ type: "tool-call", toolCallId: "tc_b" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(false);
+
+    gate.observe({ type: "tool-error", toolCallId: "tc_a" });
+    // tc_b is still executing — the idle timeout must stay suppressed.
+    expect(gate.shouldEnforceIdleTimeout()).toBe(false);
+
+    gate.observe({ type: "tool-error", toolCallId: "tc_b" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(true);
+  });
+
+  it("ignores duplicate tool-error terminals for the same id", () => {
+    const gate = createToolExecutionGate();
+    gate.observe({ type: "tool-call", toolCallId: "tc_1" });
+    gate.observe({ type: "tool-error", toolCallId: "tc_1" });
+    gate.observe({ type: "tool-error", toolCallId: "tc_1" });
+    gate.observe({ type: "tool-result", toolCallId: "tc_1" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(true);
+  });
+
+  it("ignores an unknown tool-error with no open call", () => {
+    const gate = createToolExecutionGate();
+    gate.observe({ type: "tool-error", toolCallId: "tc_orphan" });
+    gate.observe({ type: "tool-error", toolCallId: "tc_orphan" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(true);
+
+    gate.observe({ type: "tool-call", toolCallId: "tc_1" });
+    expect(gate.shouldEnforceIdleTimeout()).toBe(false);
+  });
+
+  it("does not release a gated slot for a non-gated tool-error", () => {
+    const gate = createToolExecutionGate();
+    // `response` is never gated — its errors must not decrement anything.
+    gate.observe({
+      type: "tool-error",
+      toolCallId: "tc_r",
+      toolName: "response",
+    });
     expect(gate.shouldEnforceIdleTimeout()).toBe(true);
   });
 });

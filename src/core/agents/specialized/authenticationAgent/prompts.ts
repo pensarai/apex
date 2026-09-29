@@ -1,3 +1,4 @@
+import { GOOGLE_SIGNIN_PROMPT_GUIDANCE } from "../googleSignInPrompt";
 import { MOBILE_OTP_PROMPT_GUIDANCE } from "../mobileOtpPrompt";
 
 /**
@@ -131,6 +132,8 @@ retry once (you may have crossed a period boundary). Only report an MFA barrier 
 or two fresh codes are both rejected.
 
 ${MOBILE_OTP_PROMPT_GUIDANCE}
+
+${GOOGLE_SIGNIN_PROMPT_GUIDANCE}
 
 TOTP-via-environment-variable above is unchanged and still applies when the login asks for an authenticator
 app code.

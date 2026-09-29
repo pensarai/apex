@@ -59,6 +59,9 @@ const AuthCredentialsObject = z.object({
       customHeaders: z.record(z.string(), z.string()).optional(),
     })
     .optional(),
+  // Target uses Sign in with Google; the auth agent must use Chrome and
+  // fill accounts.google.com rather than the target's native login form.
+  googleSignIn: z.boolean().optional(),
 });
 
 export type AuthCredentials = z.infer<typeof AuthCredentialsObject>;
@@ -260,6 +263,10 @@ const SessionConfigObject = z.object({
   prompt: z.string().optional(),
   /** Enable task-driven architecture — agents decompose objectives into tracked tasks (default: false) */
   taskDriven: z.boolean().optional(),
+  /** Explicit per-invocation destination for native model-boundary evidence. */
+  nativeRolloutEvidence: z
+    .object({ outputDirectory: z.string().min(1) })
+    .optional(),
   /** When true, pentest agents run a plan phase before execution (default: false) */
   requirePlan: z.boolean().optional(),
   /**

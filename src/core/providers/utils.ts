@@ -82,7 +82,8 @@ export function hasAnyProviderConfigured(config: Config): boolean {
     !!config.localModelName ||
     !!process.env.LOCAL_MODEL_URL ||
     !!config.pensarAPIKey ||
-    !!config.accessToken
+    !!config.accessToken ||
+    Object.keys(config.customProviders ?? {}).length > 0
   );
 }
 
@@ -94,6 +95,19 @@ export function getAvailableModels(config: Config): ModelInfo[] {
   const models = AVAILABLE_MODELS.filter((model) => {
     return isProviderConfigured(model.provider as ProviderType, config);
   });
+
+  for (const [providerId, provider] of Object.entries(
+    config.customProviders ?? {},
+  )) {
+    for (const model of provider.models) {
+      models.push({
+        id: `custom:${providerId}:${model.id}`,
+        name: `${provider.name ?? providerId} / ${model.name ?? model.id}`,
+        provider: "custom",
+        contextLength: model.contextLength,
+      });
+    }
+  }
 
   if (isProviderConfigured("local", config) && config.localModelName) {
     models.push({
