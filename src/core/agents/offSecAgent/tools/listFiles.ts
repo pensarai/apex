@@ -219,27 +219,36 @@ Each directory entry is suffixed with "/" for easy identification.`,
 // A sandboxed agent's directories live inside the sandbox, so listings run
 // remotely and never touch the host filesystem. Both backends emit entry
 // lines (relative paths, "/" suffix for real directories, symlinks never
-// suffixed or descended) then a nonce marker carrying the total — the same
-// shape readdir-with-Dirents produces locally. The nonce keeps a hostile
+// suffixed or descended) then a nonce marker carrying the observed count.
+// Entries have the same shape as local Dirents. The nonce keeps a hostile
 // entry name from impersonating the marker.
 
-function posixListCommand(
-  recursive: boolean,
-  cap: number,
-  nonce: string,
-): string {
-  const depth = recursive ? "" : " -maxdepth 1";
-  // Entries are emitted with their find-produced "./" prefix; the "./" is
-  // stripped host-side (see parseSandboxList) to match the other backend.
+function posixListCommand(): string {
   return [
-    'cd "$APEX_LIST_PATH" || exit 3',
-    `total=$(find . -mindepth 1${depth} | wc -l)`,
-    `find . -mindepth 1${depth} -print0 | while IFS= read -r -d '' e; do`,
-    '  if [ -L "$e" ]; then printf \'%s\\n\' "$e"',
-    '  elif [ -d "$e" ]; then printf \'%s/\\n\' "$e"',
-    "  else printf '%s\\n' \"$e\"; fi",
-    `done | head -n ${cap + 1}`,
-    `echo "APEXLS-${nonce} total=$total"`,
+    "python3 - <<'APEX_LIST_PY'",
+    "import os, sys",
+    "sys.stdout.reconfigure(encoding='utf-8', errors='surrogateescape')",
+    "root = os.environ['APEX_LIST_PATH']",
+    "recursive = os.environ['APEX_LIST_RECURSIVE'] == '1'",
+    "cap = int(os.environ['APEX_LIST_CAP'])",
+    "nonce = os.environ['APEX_LIST_NONCE']",
+    "if not os.path.isdir(root): raise NotADirectoryError(root)",
+    "total = 0",
+    "def walk(directory, prefix=''):",
+    "    global total",
+    "    with os.scandir(directory) as entries:",
+    "        for entry in entries:",
+    "            is_directory = entry.is_dir(follow_symlinks=False)",
+    "            total += 1",
+    "            print(prefix + entry.name + ('/' if is_directory else ''))",
+    "            if total >= cap: return",
+    "            if recursive and is_directory:",
+    "                try: walk(entry.path, prefix + entry.name + '/')",
+    "                except OSError: pass",
+    "                if total >= cap: return",
+    "walk(root)",
+    "print(f'APEXLS-{nonce} total={total}')",
+    "APEX_LIST_PY",
   ].join("\n");
 }
 
@@ -256,7 +265,7 @@ const WIN_LIST_SCRIPT = [
   "$baseLen=$p.Length",
   "$stack=New-Object 'System.Collections.Generic.Stack[string]'",
   "$stack.Push($p)",
-  "while($stack.Count -gt 0){",
+  "while($stack.Count -gt 0 -and $total -lt $cap){",
   "$d=$stack.Pop()",
   "try{",
   "$di=New-Object IO.DirectoryInfo($d)",
@@ -271,6 +280,8 @@ const WIN_LIST_SCRIPT = [
   "if($isDir){[Console]::Out.WriteLine($rel + '/')}else{[Console]::Out.WriteLine($rel)}",
   "$emitted++",
   "}",
+  // The cap includes the overflow witness; never schedule its subtree.
+  "if($total -ge $cap){break}",
   "if($rec -and $isDir){$stack.Push($e.FullName)}",
   "}",
   "}catch{continue}",
@@ -289,7 +300,6 @@ type SandboxListFetch =
 function parseSandboxList(stdout: string, nonce: string): SandboxListFetch {
   const lines = stdout.split(/\r?\n/);
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-  // wc -l pads its count with spaces on some platforms.
   const marker = lines.pop();
   const match = marker?.match(
     new RegExp(`^APEXLS-${nonce} total=\\s*(\\d+)\\s*$`),
@@ -300,8 +310,6 @@ function parseSandboxList(stdout: string, nonce: string): SandboxListFetch {
       error: `sandbox listing missing APEXLS marker: ${stdout.slice(0, 200)}`,
     };
   }
-  // Strip the find-produced "./" prefix to match the Windows backend's bare
-  // relative paths.
   const entries = lines.map((line) =>
     line.startsWith("./") ? line.slice(2) : line,
   );
@@ -319,6 +327,12 @@ async function listSandbox(
 ): Promise<ListFilesResult> {
   const maxEntries = recursive ? MAX_RECURSIVE : MAX_NON_RECURSIVE;
   const nonce = randomBytes(8).toString("hex");
+  const envVars = {
+    APEX_LIST_PATH: dir,
+    APEX_LIST_RECURSIVE: recursive ? "1" : "0",
+    APEX_LIST_CAP: String(maxEntries + 1),
+    APEX_LIST_NONCE: nonce,
+  };
   const result =
     sandbox.type === "windows"
       ? await sandbox.execute(WIN_SCRIPT_COMMAND, {
@@ -326,16 +340,13 @@ async function listSandbox(
           retries: 0,
           envVars: {
             ...winScriptEnv(WIN_LIST_SCRIPT),
-            APEX_LIST_PATH: dir,
-            APEX_LIST_RECURSIVE: recursive ? "1" : "0",
-            APEX_LIST_CAP: String(maxEntries + 1),
-            APEX_LIST_NONCE: nonce,
+            ...envVars,
           },
         })
-      : await sandbox.execute(posixListCommand(recursive, maxEntries, nonce), {
+      : await sandbox.execute(posixListCommand(), {
           timeout: SANDBOX_OP_TIMEOUT_SECONDS,
           retries: 0,
-          envVars: { APEX_LIST_PATH: dir },
+          envVars,
         });
   if (!result.success || result.exitCode !== 0) {
     return {
@@ -361,13 +372,13 @@ async function listSandbox(
   return {
     success: true,
     error: overflow
-      ? recursive
-        ? `Showing ${maxEntries} of ${parsed.total} entries — narrow the directory or use grep`
-        : `Showing ${maxEntries} of ${parsed.total} entries`
+      ? `Listing truncated at ${maxEntries} entries — narrow the directory or use grep`
       : "",
     files,
     directory: dir,
     count: files.length,
     totalFound: overflow ? parsed.total : undefined,
+    totalFoundLowerBound: overflow || undefined,
+    truncated: overflow || undefined,
   };
 }

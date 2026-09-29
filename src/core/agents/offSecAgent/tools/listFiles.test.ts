@@ -168,6 +168,37 @@ describe("listFiles local", () => {
 // The linux sandbox fake executes the actual listing scripts through bash,
 // including the remote resolve round trip.
 describe("listFiles sandbox (linux, real execution)", () => {
+  it("preserves literal Unicode paths and filenames", async () => {
+    const dir = join(scratchDir(), "literal 'quoted' $folder");
+    mkdirSync(dir);
+    writeFileSync(join(dir, "résumé 🔐.txt"), "");
+    expect(
+      await runList(makeCtx({ agentCwd: dir, sandbox: realLinuxSandbox() }), {
+        toolCallDescription: "List literal Unicode paths",
+      }),
+    ).toMatchObject({ success: true, files: ["résumé 🔐.txt"] });
+  });
+
+  it.skipIf(process.platform !== "linux")(
+    "lists POSIX filenames with non-UTF-8 bytes",
+    async () => {
+      const dir = scratchDir();
+      writeFileSync(
+        Buffer.concat([
+          Buffer.from(`${dir}/bad`),
+          Buffer.from([0xff]),
+          Buffer.from("name"),
+        ]),
+        "",
+      );
+      expect(
+        await runList(makeCtx({ agentCwd: dir, sandbox: realLinuxSandbox() }), {
+          toolCallDescription: "List non-UTF-8 filename",
+        }),
+      ).toMatchObject({ success: true, files: ["bad\ufffdname"] });
+    },
+  );
+
   it("non-recursive sandbox listing matches the local listing", async () => {
     const dir = scratchDir();
     seedTree(dir);
@@ -214,7 +245,7 @@ describe("listFiles sandbox (linux, real execution)", () => {
     expect(remote.files.some((f) => f.startsWith("link-out/"))).toBe(false);
   });
 
-  it("caps oversized recursive listings with the exact total", async () => {
+  it("caps oversized recursive listings with a lower-bound total", async () => {
     const dir = scratchDir();
     // 250 files > MAX_RECURSIVE (200).
     for (let i = 0; i < 250; i++) {
@@ -231,8 +262,100 @@ describe("listFiles sandbox (linux, real execution)", () => {
 
     expect(result.success).toBe(true);
     expect(result.count).toBe(200);
-    expect(result.totalFound).toBe(250);
-    expect(result.error).toContain("Showing 200 of 250");
+    expect(result.totalFound).toBe(201);
+    expect(result.totalFoundLowerBound).toBe(true);
+    expect(result.truncated).toBe(true);
+    expect(result.error).toContain("Listing truncated at 200");
+  });
+
+  it.each([
+    false,
+    true,
+  ])("distinguishes exact-cap and overflow listings (recursive=%s)", async (recursive) => {
+    const limit = recursive ? 200 : 500;
+    for (const size of [0, limit, limit + 1]) {
+      const dir = scratchDir();
+      for (let i = 0; i < size; i++) writeFileSync(join(dir, `f${i}.txt`), "");
+      const result = await runList(
+        makeCtx({ agentCwd: dir, sandbox: realLinuxSandbox() }),
+        {
+          recursive,
+          toolCallDescription: "Check listing boundary",
+        },
+      );
+      expect(result).toMatchObject({
+        success: true,
+        count: Math.min(size, limit),
+      });
+      expect(result.files).toHaveLength(Math.min(size, limit));
+      expect(result.truncated).toBe(size > limit ? true : undefined);
+      expect(result.totalFoundLowerBound).toBe(size > limit ? true : undefined);
+      expect(result.totalFound).toBe(size > limit ? limit + 1 : undefined);
+      if (size <= limit) expect(result.error).toBe("");
+    }
+  });
+
+  it("stops native POSIX enumeration at the overflow witness", async () => {
+    for (const shape of ["flat", "recursive-flat", "deep"] as const) {
+      const dir = scratchDir();
+      const recursive = shape !== "flat";
+      const limit = recursive ? 200 : 500;
+      let parent = dir;
+      for (let i = 0; i < limit + 20; i++) {
+        if (shape === "deep") {
+          parent = join(parent, "d");
+          mkdirSync(parent);
+        } else {
+          writeFileSync(join(dir, `f${i}.txt`), "");
+        }
+      }
+      const real = realLinuxSandbox();
+      const sandbox: UnifiedSandbox = {
+        ...real,
+        execute(command, opts) {
+          if (opts?.envVars?.APEX_LIST_NONCE !== undefined) {
+            expect(opts.envVars.APEX_LIST_CAP).toBe(String(limit + 1));
+            const anchor = "def walk(directory, prefix=''):";
+            expect(command).toContain(anchor);
+            const guard = [
+              "_scandir = os.scandir",
+              "_pulled = 0",
+              "_opened = 0",
+              "class GuardedScandir:",
+              "    def __init__(self, directory):",
+              "        global _opened",
+              "        _opened += 1",
+              `        if _opened > ${limit + 1}: raise RuntimeError('Opened a directory past the overflow witness')`,
+              "        self.iterator = _scandir(directory)",
+              "    def __enter__(self): return self",
+              "    def __exit__(self, *args): self.iterator.close()",
+              "    def __iter__(self): return self",
+              "    def __next__(self):",
+              "        global _pulled",
+              "        entry = next(self.iterator)",
+              "        _pulled += 1",
+              `        if _pulled > ${limit + 1}: raise RuntimeError('Enumerated past the overflow witness')`,
+              "        return entry",
+              "os.scandir = GuardedScandir",
+            ].join("\n");
+            command = command.replace(anchor, `${guard}\n${anchor}`);
+          }
+          return real.execute(command, opts);
+        },
+      };
+      expect(
+        await runList(makeCtx({ agentCwd: dir, sandbox }), {
+          recursive,
+          toolCallDescription: "Check bounded native work",
+        }),
+      ).toMatchObject({
+        success: true,
+        count: limit,
+        totalFound: limit + 1,
+        totalFoundLowerBound: true,
+        truncated: true,
+      });
+    }
   });
 
   it("fails explicitly for a missing directory", async () => {
@@ -331,7 +454,34 @@ describe("listFiles sandbox transport shape (windows)", () => {
     expect(result.success).toBe(true);
     expect(result.count).toBe(500);
     expect(result.totalFound).toBe(501);
-    expect(result.error).toContain("Showing 500 of 501");
+    expect(result.error).toContain("Listing truncated at 500");
+    expect(result.truncated).toBe(true);
+    expect(result.totalFoundLowerBound).toBe(true);
+  });
+
+  it.each([
+    false,
+    true,
+  ])("keeps exact-cap Windows listings complete (recursive=%s)", async (recursive) => {
+    const limit = recursive ? 200 : 500;
+    for (const size of [0, limit]) {
+      const { sandbox, calls } = windowsSandbox((env) => {
+        const entries = Array.from(
+          { length: size },
+          (_, i) => `f${i}.txt\n`,
+        ).join("");
+        return `${entries}APEXLS-${env.APEX_LIST_NONCE} total=${size}\n`;
+      });
+      const result = await runList(makeCtx({ agentCwd: "C:\\w", sandbox }), {
+        recursive,
+        toolCallDescription: "Check complete Windows listing",
+      });
+      expect(calls.at(-1)?.envVars?.APEX_LIST_CAP).toBe(String(limit + 1));
+      expect(result).toMatchObject({ success: true, error: "", count: size });
+      expect(result.truncated).toBeUndefined();
+      expect(result.totalFoundLowerBound).toBeUndefined();
+      expect(result.totalFound).toBeUndefined();
+    }
   });
 
   it("fails explicitly when the marker is missing", async () => {

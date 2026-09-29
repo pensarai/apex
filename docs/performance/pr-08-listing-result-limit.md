@@ -1,6 +1,6 @@
 # PR08 — Stop recursive listing after its result limit
 
-`list_files` capped its output (200 recursive / 500 flat entries) but still
+The local `list_files` path capped its output (200 recursive / 500 flat entries) but still
 walked the entire tree to compute an exact `total`, and mapped every entry of
 a directory to full path strings before slicing. On a pentest target with a
 large tree, most of that work was discarded. This change stops the recursive
@@ -14,7 +14,7 @@ bounded; see the limitation below.
   `totalFound: 201, totalFoundLowerBound: true` — an explicit lower bound,
   never a fake exact total. Untruncated recursive listings are unchanged
   (no extra fields, empty `error`).
-- Non-recursive listings keep the exact `totalFound` they already paid for
+- Non-recursive local listings keep the exact `totalFound` they already paid for
   (readdir enumerated the whole directory) and add `truncated: true`.
 - The TUI summary (`result-registry.ts`) displays lower-bound counts as
   "at least N files" and a bare truncation flag as "N+ files", instead of
@@ -22,9 +22,14 @@ bounded; see the limitation below.
 - `ctx.abortSignal` is honored before the walk starts and between work units;
   an aborted walk stops and surfaces the abort reason.
 
+Sandbox listings use streaming directory enumeration and stop at the overflow
+witness for both recursive and flat listings. Their truncated results report
+`totalFoundLowerBound: true`; the local measurements below do not measure the
+sandbox implementations.
+
 ## Order
 
-The first 200 paths are byte-identical to the previous unbounded walk on the
+For local listings, the first 200 paths are byte-identical to the previous unbounded walk on the
 same runtime because both consume the same `readdir` order. Directory
 enumeration order is OS/runtime-defined and unspecified across runtimes
 (reviewer-verified: Node readdir and opendir prefixes differ); no cross-
@@ -47,8 +52,8 @@ reference implementing the old unbounded walk in the same process.
   entire width before the JS loop reads its prefix, so native enumeration
   work is O(sum of visited directory widths) and retained arrays depend on
   the widths along the active recursive ancestry, not O(201). A hostile huge
-  flat directory retains its existing O(width) allocation on every runtime
-  this code runs on; the public-path passthrough counter measures it
+  flat directory retains its existing O(width) allocation in the local Node/Bun
+  walker; the public-path passthrough counter measures it
   (2,000 materialized entries for the 2,000-file fixture, 20,000 in the
   benchmark) alongside the bounded JS consumption. This is a deliberate
   limitation: streaming directory access (`opendir`) was prototyped and
