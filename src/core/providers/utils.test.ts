@@ -15,6 +15,7 @@ describe("saved Hoonify selections", () => {
     const config = makeConfig({
       selectedModelId: "hoonify:partner-model",
       anthropicAPIKey: "other-key",
+      hoonifyAPIKey: "key",
       hoonifyCatalogError: "Catalog unavailable",
     });
     const model = getSavedModelForConfig(config);
@@ -24,6 +25,32 @@ describe("saved Hoonify selections", () => {
       provider: "hoonify",
     });
     expect(getDefaultModelForConfig(config)?.provider).toBe("anthropic");
+  });
+
+  it.each([
+    undefined,
+    "",
+    "   ",
+  ])("falls back from a saved Hoonify selection without a configured key (%s)", (hoonifyAPIKey) => {
+    const config = makeConfig({
+      selectedModelId: "hoonify:partner-model",
+      anthropicAPIKey: "other-key",
+      hoonifyAPIKey,
+    });
+    expect(getSavedModelForConfig(config)).toBeNull();
+    expect(getDefaultModelForConfig(config)?.provider).toBe("anthropic");
+  });
+
+  it("does not preserve a model missing from a successfully loaded catalog", () => {
+    expect(
+      getSavedModelForConfig(
+        makeConfig({
+          selectedModelId: "hoonify:removed-model",
+          hoonifyAPIKey: "key",
+          hoonifyModels: [],
+        }),
+      ),
+    ).toBeNull();
   });
 
   it("uses the refreshed context window for an available saved model", () => {

@@ -139,7 +139,14 @@ export function getSavedModelForConfig(config: Config): ModelInfo | null {
   if (!id) return null;
   const available = getAvailableModels(config).find((model) => model.id === id);
   // A catalog outage must not silently switch a saved Hoonify selection.
-  return available ?? (id.startsWith("hoonify:") ? getModelInfo(id) : null);
+  return (
+    available ??
+    (id.startsWith("hoonify:") &&
+    isProviderConfigured("hoonify", config) &&
+    config.hoonifyCatalogError
+      ? getModelInfo(id)
+      : null)
+  );
 }
 
 /**
