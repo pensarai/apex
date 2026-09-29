@@ -12,6 +12,42 @@ function expectApplyError(patch: string, content: string, message: RegExp) {
 }
 
 describe("applyFileDiff — matching", () => {
+  it.each([
+    { patchEol: "\n", fileEol: "\r\n" },
+    { patchEol: "\r\n", fileEol: "\n" },
+  ])("preserves ambiguity and overlap diagnostics after EOL adaptation ($patchEol, $fileEol)", ({
+    patchEol,
+    fileEol,
+  }) => {
+    const ambiguous = [
+      "--- a/f",
+      "+++ b/f",
+      "@@ -1 +1 @@",
+      "-same",
+      "+new",
+      "",
+    ].join(patchEol);
+    expectApplyError(
+      ambiguous,
+      `same${fileEol}same${fileEol}`,
+      /multiple positions.*add context/i,
+    );
+    const overlap = [
+      "--- a/f",
+      "+++ b/f",
+      "@@ -1,2 +1,2 @@",
+      " a",
+      "-b",
+      "+B",
+      "@@ -2,2 +2,2 @@",
+      "-b",
+      "+B",
+      " c",
+      "",
+    ].join(patchEol);
+    expectApplyError(overlap, `a${fileEol}b${fileEol}c${fileEol}`, /overlaps/i);
+  });
+
   it("applies a simple replacement", () => {
     const result = apply(
       `--- a/f

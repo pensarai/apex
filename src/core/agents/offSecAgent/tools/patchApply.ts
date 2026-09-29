@@ -24,6 +24,7 @@ export class PatchApplyError extends Error {
   constructor(
     message: string,
     readonly hunkIndex: number,
+    readonly kind: "no-context-match" | "invalid-hunk" = "invalid-hunk",
   ) {
     super(message);
     this.name = "PatchApplyError";
@@ -120,6 +121,7 @@ function locateHunk(
     throw new PatchApplyError(
       `Context does not match anywhere in the file (hunk declared line ${hunk.oldStart})`,
       hunkIndex,
+      "no-context-match",
     );
   }
   return { start: first };
@@ -281,7 +283,7 @@ function firstAdaptationThatFits(
 ): AdaptedFile {
   const fileLines = shape.lines;
   const modes: EolAdaptation[] = ["none", "stripped-cr"];
-  const attempts: { mode: EolAdaptation; error: PatchApplyError }[] = [];
+  const errors: PatchApplyError[] = [];
   const fallbackCr = fileLines.some((line) => line.endsWith("\r"));
   const endingAt = (index: number): boolean => {
     if (
@@ -331,7 +333,7 @@ function firstAdaptationThatFits(
       return { mode: effectiveMode, lines: adaptedLines, located };
     } catch (err) {
       if (!(err instanceof PatchApplyError)) throw err;
-      attempts.push({ mode, error: err });
+      errors.push(err);
     }
   }
 
@@ -381,9 +383,13 @@ function firstAdaptationThatFits(
     return { mode: mixed ? "matched-lines" : "added-cr", lines, located };
   } catch (err) {
     if (!(err instanceof PatchApplyError)) throw err;
+    errors.push(err);
   }
-  const none = attempts.find((a) => a.mode === "none");
-  throw none?.error ?? new PatchApplyError("Patch does not fit the file", -1);
+  throw (
+    errors.find((error) => error.kind !== "no-context-match") ??
+    errors[0] ??
+    new PatchApplyError("Patch does not fit the file", -1)
+  );
 }
 
 function locateAllHunks(
