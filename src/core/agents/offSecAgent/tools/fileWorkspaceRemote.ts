@@ -8,6 +8,7 @@ interface Request {
   exclusive?: boolean;
   expectedHash?: string;
   followFinal?: boolean;
+  createRoot?: boolean;
 }
 
 const PYTHON = String.raw`
@@ -44,7 +45,9 @@ def run(q):
         p = canonical(q['path'])
     if root and os.path.commonpath([canonical(root), p]) != canonical(root):
         raise ValueError('Path escapes file workspace')
-    if q['action'] == 'resolve': return {'path': p}
+    if q['action'] == 'resolve':
+        if root and q.get('createRoot'): os.makedirs(canonical(root), exist_ok=True)
+        return {'path': p}
     if q['action'] == 'assert_absent':
         if os.path.lexists(p): raise FileExistsError('File already exists: ' + p)
         return {}
@@ -166,7 +169,10 @@ try {
   }
   $result = @{ok = $true}
   switch ($q.action) {
-    'resolve' { $result.path = $p }
+    'resolve' {
+      if ($q.root -and $q.createRoot) { $null = [IO.Directory]::CreateDirectory((Canonical $q.root)) }
+      $result.path = $p
+    }
     'assert_absent' { if (Test-Path -LiteralPath $p) { throw ('File already exists: ' + $p) } }
     'read' { $result.content = [Convert]::ToBase64String((ReadText $p)) }
     'delete' {

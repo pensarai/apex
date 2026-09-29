@@ -278,9 +278,14 @@ ${ctx.sandbox?.type === "windows" ? "Windows supports -r, -n, -i, -l, -F, -E, an
       } catch (err: unknown) {
         return {
           success: false,
-          error: err instanceof Error ? err.message : String(err),
+          error: ctx.abortSignal?.aborted
+            ? "Grep aborted by user"
+            : err instanceof Error
+              ? err.message
+              : String(err),
           output: "",
           command: "",
+          ...(ctx.abortSignal?.aborted ? { truncated: true } : {}),
         };
       }
       // The resolve await can straddle an abort; without this check the

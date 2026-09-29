@@ -84,6 +84,43 @@ describe.each([
     ? [{ name: "Windows process adapter", sandbox: windows }]
     : [{ name: "Linux process adapter", sandbox: linux }]),
 ])("file workspace: $name", ({ sandbox }) => {
+  it("creates a configured workspace before resolving its first read path", async () => {
+    const { root, workspace, ctx } = await fixture(sandbox);
+    await rm(workspace, { recursive: true });
+    expect(await resolveFilePath(ctx, ".")).toBe(workspace);
+    expect((await stat(workspace)).isDirectory()).toBe(true);
+    expect(await resolveFilePath(ctx, "missing.txt")).toBe(
+      join(workspace, "missing.txt"),
+    );
+    await expect(stat(join(workspace, "missing.txt"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(stat(join(root, "unrelated"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("does not create an unscoped working directory during a read", async () => {
+    const { root } = await fixture(sandbox);
+    const agentCwd = join(root, "absent-cwd");
+    await resolveFilePath({ agentCwd, sandbox } as ToolContext, ".", {
+      confineToCwd: true,
+    });
+    await expect(stat(agentCwd)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("does not initialize the workspace for an escaping or aborted request", async () => {
+    const { workspace, ctx } = await fixture(sandbox);
+    await rm(workspace, { recursive: true });
+    await expect(resolveFilePath(ctx, "../outside.txt")).rejects.toThrow(
+      /escapes/i,
+    );
+    await expect(stat(workspace)).rejects.toMatchObject({ code: "ENOENT" });
+    ctx.abortSignal = AbortSignal.abort();
+    await expect(resolveFilePath(ctx, ".")).rejects.toThrow(/abort/i);
+    await expect(stat(workspace)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("resolves relative paths in the file workspace, preserves bytes, and checks stale edits", async () => {
     const { ctx, workspace } = await fixture(sandbox);
     const file = await resolveFilePath(ctx, "nested/helper's café.txt");
