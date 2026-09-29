@@ -1,3 +1,4 @@
+import { constants } from "node:fs";
 import { open, stat } from "node:fs/promises";
 import { tool } from "ai";
 import { z } from "zod";
@@ -10,6 +11,12 @@ import {
   WIN_SCRIPT_PRELUDE,
   winScriptEnv,
 } from "./sandboxScript";
+import {
+  resolveToolOutput,
+  TOOL_OUTPUT_MAX_BYTES,
+  TOOL_OUTPUT_MAX_LINES,
+  unavailableToolOutputMessage,
+} from "./toolOutput";
 import type { ToolContext } from "./types";
 
 // Output stops at this many characters of numbered content — the reader never
@@ -91,6 +98,10 @@ export function readFile(ctx: ToolContext) {
   return tool({
     description: `Read the contents of a file from the filesystem. This tool only works on files, NOT directories. To list directory contents, use the list_files tool instead.
 
+Read tool-output: references returned by execute_command or grep to inspect saved
+output. These references address only this agent's retained output, including
+when commands run in a remote sandbox.
+
 You can read the entire file or specify a line range using startLine / endLine
 (both 1-based, inclusive). If only startLine is given, reads from that line to
 the end. If only endLine is given, reads from the beginning to that line.
@@ -113,7 +124,7 @@ resume cursor.`,
       const startLine = input.startLine ?? undefined;
       const endLine = input.endLine ?? undefined;
       const byteOffset = input.byteOffset ?? undefined;
-      const byteCount = input.byteCount ?? undefined;
+      let byteCount = input.byteCount ?? undefined;
       if (ctx.abortSignal?.aborted) {
         return {
           success: false,
@@ -123,8 +134,12 @@ resume cursor.`,
         };
       }
       let resolved: string;
+      let artifact: string | undefined;
       try {
-        resolved = await resolveFilePath(ctx, path);
+        artifact = await resolveToolOutput(ctx, path);
+        resolved = artifact ?? (await resolveFilePath(ctx, path));
+        if (artifact && byteCount !== undefined)
+          byteCount = Math.min(byteCount, TOOL_OUTPUT_MAX_BYTES);
       } catch (err: unknown) {
         return {
           success: false,
@@ -162,7 +177,7 @@ resume cursor.`,
       try {
         // Sandbox agents' files live inside the sandbox: fetch bounded bytes
         // remotely instead of touching the host filesystem.
-        if (ctx.sandbox) {
+        if (ctx.sandbox && !artifact) {
           return await readSandboxFile(ctx, resolved, {
             path,
             startLine,
@@ -183,13 +198,24 @@ resume cursor.`,
           };
         }
         if (byteOffset !== undefined && byteCount !== undefined) {
-          return await readLocalByteWindow(
+          const result = await readLocalByteWindow(
             resolved,
             path,
             byteOffset,
             byteCount,
             ctx.abortSignal,
           );
+          if (
+            artifact &&
+            input.byteCount !== undefined &&
+            input.byteCount !== null &&
+            input.byteCount > byteCount &&
+            result.success &&
+            byteOffset + byteCount < stats.size
+          ) {
+            result.truncated = true;
+          }
+          return result;
         }
         return await readLocalLines(
           resolved,
@@ -197,11 +223,18 @@ resume cursor.`,
           startLine,
           endLine,
           ctx.abortSignal,
+          Boolean(artifact),
         );
       } catch (err: unknown) {
         return {
           success: false,
-          error: err instanceof Error ? err.message : String(err),
+          // Artifact reads fail on host paths the model must not see;
+          // ordinary workspace reads keep their raw diagnostics.
+          error: artifact
+            ? unavailableToolOutputMessage(err)
+            : err instanceof Error
+              ? err.message
+              : String(err),
           content: "",
           path,
         };
@@ -222,11 +255,18 @@ async function readLocalLines(
   startLine?: number,
   endLine?: number,
   abortSignal?: AbortSignal,
+  artifact = false,
 ): Promise<ReadFileResult> {
   const start = startLine ? Math.max(1, Math.floor(startLine)) : 1;
-  const end = endLine ? Math.floor(endLine) : Number.POSITIVE_INFINITY;
+  const requestedEnd = endLine ? Math.floor(endLine) : Number.POSITIVE_INFINITY;
+  const end = artifact
+    ? Math.min(requestedEnd, start + TOOL_OUTPUT_MAX_LINES - 1)
+    : requestedEnd;
 
-  const handle = await open(resolved, "r");
+  const handle = await open(
+    resolved,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+  );
   try {
     const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
     const numbered: string[] = [];
@@ -251,14 +291,20 @@ async function readLocalLines(
         return "stop" as const;
       }
       const numberedLine = `${String(lineNo).padStart(6)}|${line}`;
-      if (outputChars + numberedLine.length > OUTPUT_BUDGET_CHARS) {
+      const lineSize = artifact
+        ? Buffer.byteLength(numberedLine)
+        : numberedLine.length;
+      const budget = artifact
+        ? TOOL_OUTPUT_MAX_BYTES - 256
+        : OUTPUT_BUDGET_CHARS;
+      if (outputChars + lineSize > budget) {
         hitBudget = true;
         stoppedAtLine = lineNo;
         return "stop" as const;
       }
       numbered.push(numberedLine);
       cappedAnyLine ||= lineDropped > 0;
-      outputChars += numberedLine.length + 1;
+      outputChars += lineSize + 1;
       if (lineNo === end) {
         // Window satisfied — stop reading immediately instead of parsing the
         // next (possibly huge) line just to discover it is excluded.
@@ -356,7 +402,12 @@ async function readLocalLines(
     } else {
       result.stoppedAtLine = stoppedAtLine;
     }
-    if (hitBudget || cappedAnyLine || abortedMidRead) {
+    if (
+      hitBudget ||
+      cappedAnyLine ||
+      abortedMidRead ||
+      (artifact && end < requestedEnd && !reachedEof)
+    ) {
       result.truncated = true;
     }
     return result;
@@ -451,7 +502,10 @@ async function readLocalByteWindow(
   byteCount: number,
   abortSignal?: AbortSignal,
 ): Promise<ReadFileResult> {
-  const handle = await open(resolved, "r");
+  const handle = await open(
+    resolved,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+  );
   try {
     if (abortSignal?.aborted) {
       return {

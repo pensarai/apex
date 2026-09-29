@@ -6,6 +6,10 @@ reproducible test script during its existing mission. These operations belong in
 the shared tool layer; they do not require a separate coding agent or a new
 task router.
 
+Oversized command and search results use [bounded previews with recoverable
+evidence](./bounded-tool-output.md); the companion report measures output size,
+live provider cost, retrieval correctness, and latency tradeoffs.
+
 ## The execution path
 
 ```mermaid
