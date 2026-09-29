@@ -98,6 +98,46 @@ afterEach(() => {
   }
 });
 
+describe.each([
+  "local",
+  "linux",
+] as const)("glob root validation (%s)", (runtime) => {
+  it.each([
+    "file.txt",
+    "missing",
+  ])("rejects a non-directory root: %s", async (path) => {
+    const root = scratchDir();
+    writeFileSync(join(root, "file.txt"), "source");
+    const result = await runGlob(
+      makeCtx({
+        agentCwd: root,
+        sandbox: runtime === "linux" ? realLinuxSandbox() : undefined,
+      }),
+      { path, pattern: "**/*", toolCallDescription: "Validate glob root" },
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/not a directory|ENOENT/i);
+    expect(result.files).toEqual([]);
+  });
+
+  it("accepts an empty directory", async () => {
+    const root = scratchDir();
+    const result = await runGlob(
+      makeCtx({
+        agentCwd: root,
+        sandbox: runtime === "linux" ? realLinuxSandbox() : undefined,
+      }),
+      { pattern: "**/*", toolCallDescription: "Search empty directory" },
+    );
+    expect(result).toMatchObject({
+      success: true,
+      error: "",
+      files: [],
+      count: 0,
+    });
+  });
+});
+
 describe("globFiles local", () => {
   it("matches files by pattern, skipping node_modules and dotfiles", async () => {
     const root = scratchDir();

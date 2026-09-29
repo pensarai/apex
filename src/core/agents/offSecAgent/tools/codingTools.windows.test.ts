@@ -77,6 +77,46 @@ afterEach(async () => {
 describe.skipIf(process.platform !== "win32")(
   "Windows coding tool runtime",
   () => {
+    it("marks completed grep output above the response limit as truncated", async () => {
+      const { workspace, ctx } = await fixture();
+      await writeFile(
+        join(workspace, "overflow.txt"),
+        `needle${"x".repeat(52_000)}\n`,
+      );
+      const result = (await grep(ctx).execute?.(
+        { pattern: "needle", toolCallDescription },
+        callOptions,
+      )) as GrepResult;
+      expect(result.success).toBe(false);
+      expect(result.truncated).toBe(true);
+      expect(result.matchCount).toBeUndefined();
+      expect(result.output).toContain("truncated at");
+      expect(result.output.length).toBeLessThan(50_200);
+    });
+
+    it("rejects non-directory glob roots and accepts an empty directory", async () => {
+      const { workspace, ctx } = await fixture();
+      await writeFile(join(workspace, "file.txt"), "source");
+      await mkdir(join(workspace, "empty"));
+      for (const runtimeCtx of [ctx, { ...ctx, sandbox: undefined }]) {
+        for (const path of ["file.txt", "missing"]) {
+          const result = (await globFiles(runtimeCtx).execute?.(
+            { pattern: "**/*", path, toolCallDescription },
+            callOptions,
+          )) as GlobResult;
+          expect(result.success).toBe(false);
+          expect(result.error).toMatch(/not a directory|ENOENT/i);
+          expect(result.files).toEqual([]);
+        }
+        expect(
+          await globFiles(runtimeCtx).execute?.(
+            { pattern: "**/*", path: "empty", toolCallDescription },
+            callOptions,
+          ),
+        ).toMatchObject({ success: true, error: "", files: [], count: 0 });
+      }
+    });
+
     it("searches UTF-8 file bodies with non-ASCII patterns", async () => {
       const { workspace, ctx } = await fixture();
       await writeFile(join(workspace, "unicode.txt"), "café 東京 🔐\n");

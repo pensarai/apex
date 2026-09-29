@@ -49,7 +49,7 @@ export type GrepResult = {
   /** Exact only for a complete run; omitted for every incomplete outcome. */
   matchCount?: number;
   command: string;
-  /** True when the producer bound stopped collection before grep finished. */
+  /** True when the returned output is incomplete. */
   truncated?: boolean;
 };
 
@@ -698,13 +698,16 @@ async function runSandboxGrep(
       command,
     };
   }
-  if (outcome.kind === "truncated") {
+  if (
+    outcome.kind === "truncated" ||
+    outcome.output.length > MAX_OUTPUT_CHARS
+  ) {
     return {
       success: false,
-      error: `output capped at ${MAX_OUTPUT_CHARS} characters before the search finished`,
+      error: `output capped at ${MAX_OUTPUT_CHARS} characters — partial results only`,
       output:
         outcome.output.length > 0
-          ? `${outcome.output}\n\n(truncated at ${MAX_OUTPUT_CHARS} characters — narrow your search; match count omitted because the full result was not captured)`
+          ? `${outcome.output.slice(0, MAX_OUTPUT_CHARS)}\n\n(truncated at ${MAX_OUTPUT_CHARS} characters — narrow your search; match count omitted because the full result was not captured)`
           : outcome.output,
       command,
       truncated: true,

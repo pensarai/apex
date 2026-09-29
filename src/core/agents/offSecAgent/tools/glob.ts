@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
@@ -72,6 +72,9 @@ async function enumerateLocal(
   pattern: CompiledPattern,
   signal?: AbortSignal,
 ): Promise<Enumeration> {
+  if (!(await stat(root)).isDirectory()) {
+    throw new Error(`${root} is not a directory`);
+  }
   const entries: string[] = [];
 
   async function walk(dir: string, prefix: string): Promise<void> {
@@ -123,7 +126,10 @@ directories = [re.compile(utf16_units(source)) for source in rules['directories'
 files = [re.compile(utf16_units(source)) for source in rules['files']]
 ignored = set(${JSON.stringify(IGNORED_DIR_NAMES)})
 cap = int(os.environ['APEX_GLOB_CAP'])
-stack = [(os.environ['APEX_GLOB_PATH'], '')]
+root = os.environ['APEX_GLOB_PATH']
+if not os.path.isdir(root):
+    raise NotADirectoryError(root + ' is not a directory')
+stack = [(root, '')]
 emitted = 0
 while stack and emitted <= cap:
     directory, prefix = stack.pop()
@@ -155,6 +161,7 @@ const WIN_GLOB_SCRIPT = [
   WIN_SCRIPT_PRELUDE,
   "try{",
   "$p=[Environment]::GetEnvironmentVariable('APEX_GLOB_PATH')",
+  'if(-not [IO.Directory]::Exists($p)){throw "$p is not a directory"}',
   "$cap=[int64][Environment]::GetEnvironmentVariable('APEX_GLOB_CAP')",
   "$nonce=[Environment]::GetEnvironmentVariable('APEX_GLOB_NONCE')",
   "$payload=''",

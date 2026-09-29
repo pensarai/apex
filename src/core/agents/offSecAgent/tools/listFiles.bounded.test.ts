@@ -371,16 +371,17 @@ describe("listFiles recursive listing", () => {
     expect(result.error).toBe("");
   });
 
-  it("rejects before any work when the signal is already aborted", async () => {
+  it("reports failure before any work when the signal is already aborted", async () => {
     const root = await tempRoot("apex-list-abort-pre-");
     const controller = new AbortController();
     controller.abort();
-    await expect(
-      callListFiles(mockCtx(root, controller.signal), {
-        directory: root,
-        recursive: true,
-      }),
-    ).rejects.toThrow(/abort/i);
+    const result = await callListFiles(mockCtx(root, controller.signal), {
+      directory: join(root, "missing"),
+      recursive: true,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/abort/i);
+    expect(result.files).toEqual([]);
   });
 
   it("stops between work units when aborted mid-walk", async () => {

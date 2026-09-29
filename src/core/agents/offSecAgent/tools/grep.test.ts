@@ -481,6 +481,35 @@ describe("grep scope confinement", () => {
 // The linux sandbox fake executes the real search scripts through bash,
 // including the remote resolve round trip.
 describe("grep sandbox (linux, real execution)", () => {
+  it.each([
+    50_000, 50_001, 54_000,
+  ])("reports response overflow even with a complete exit marker (%i chars)", async (length) => {
+    const dir = scratchDir();
+    const content = `needle${"x".repeat(length - 7)}\n`;
+    writeFileSync(join(dir, "boundary.txt"), content);
+    const result = await runGrep(
+      makeCtx({ agentCwd: dir, sandbox: realLinuxSandbox() }),
+      {
+        pattern: "needle",
+        directory: "boundary.txt",
+        flags: "-h",
+        toolCallDescription: "Search at output boundary",
+      },
+    );
+    expect(result.success).toBe(length <= 50_000);
+    if (length > 50_000) {
+      expect(result.truncated).toBe(true);
+      expect(result.matchCount).toBeUndefined();
+      expect(result.error).toContain("capped");
+      expect(result.output).toContain("truncated at");
+      expect(result.output.length).toBeLessThan(50_200);
+    } else {
+      expect(result.output).toBe(content);
+      expect(result.truncated).toBeUndefined();
+      expect(result.matchCount).toBe(1);
+    }
+  });
+
   it("returns exact matches with an exact count, matching local output shape", async () => {
     const dir = scratchDir();
     writeFileSync(join(dir, "a.txt"), "keep this line\nskip\nkeep also\n");
@@ -652,6 +681,31 @@ describe("grep sandbox transport shape (windows)", () => {
     expect(result.success).toBe(true);
     expect(result.matchCount).toBe(2);
     expect(result.output).toContain("keep this line");
+  });
+
+  it.each([
+    50_000, 50_001, 54_000,
+  ])("checks the response bound after the Windows exit marker (%i chars)", async (length) => {
+    const content = `${"x".repeat(length - 1)}\n`;
+    const { sandbox } = windowsSandbox(
+      (env) => `${content}\n${env.APEX_GREP_MARKER}0\n`,
+    );
+    const result = await runGrep(makeCtx({ agentCwd: "C:\\w", sandbox }), {
+      pattern: "x",
+      toolCallDescription: "Search at Windows output boundary",
+    });
+    expect(result.success).toBe(length <= 50_000);
+    if (length > 50_000) {
+      expect(result.truncated).toBe(true);
+      expect(result.matchCount).toBeUndefined();
+      expect(result.error).toContain("capped");
+      expect(result.output).toContain("truncated at");
+      expect(result.output.length).toBeLessThan(50_200);
+    } else {
+      expect(result.output).toBe(content);
+      expect(result.truncated).toBeUndefined();
+      expect(result.matchCount).toBe(1);
+    }
   });
 
   it("parses the no-match exit code as (no matches)", async () => {
