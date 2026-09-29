@@ -50,93 +50,7 @@ export async function extractJavascriptEndpoints(
     const pageResult = await fetch(url, fetchRequest);
     const html = await pageResult.text();
 
-    // Regex patterns to extract endpoints
-    const endpointPatterns = [
-      // jQuery AJAX
-      /\$\.ajax\s*\(\s*\{\s*url\s*:\s*['"]([^'"]+)['"]/g,
-      /\$\.get\s*\(\s*['"]([^'"]+)['"]/g,
-      /\$\.post\s*\(\s*['"]([^'"]+)['"]/g,
-      /\$\.getJSON\s*\(\s*['"]([^'"]+)['"]/g,
-      // Fetch API
-      /fetch\s*\(\s*['"]([^'"]+)['"]/g,
-      /fetch\s*\(\s*`([^`]+)`/g,
-      // Axios
-      /axios\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]/g,
-      // XMLHttpRequest
-      /\.open\s*\(\s*['"](?:GET|POST|PUT|DELETE|PATCH)['"]\s*,\s*['"]([^'"]+)['"]/gi,
-      // URL construction
-      /url\s*[:=]\s*['"]([^'"]+)['"]/gi,
-      /href\s*[:=]\s*['"]([^'"]+)['"]/gi,
-      /action\s*[:=]\s*['"]([^'"]+)['"]/gi,
-    ];
-
-    const endpoints: EndpointInfo[] = [];
-    const jsFiles: string[] = [];
-
-    // Extract inline script content
-    const scriptTagRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
-    for (
-      let scriptMatch = scriptTagRegex.exec(html);
-      scriptMatch !== null;
-      scriptMatch = scriptTagRegex.exec(html)
-    ) {
-      const scriptContent = scriptMatch[1];
-
-      // Apply all patterns to script content
-      for (const pattern of endpointPatterns) {
-        const patternCopy = new RegExp(pattern.source, pattern.flags);
-        for (
-          let match = patternCopy.exec(scriptContent);
-          match !== null;
-          match = patternCopy.exec(scriptContent)
-        ) {
-          const endpoint = match[1] || match[2];
-          if (endpoint?.startsWith("/")) {
-            endpoints.push({
-              endpoint,
-              pattern: `${pattern.source.substring(0, 30)}...`,
-              source: "inline-script",
-            });
-          }
-        }
-      }
-    }
-
-    // Extract external JS file URLs
-    if (includeExternalJS) {
-      const scriptSrcRegex = /<script[^>]+src=['"]([^'"]+)['"]/gi;
-      for (
-        let srcMatch = scriptSrcRegex.exec(html);
-        srcMatch !== null;
-        srcMatch = scriptSrcRegex.exec(html)
-      ) {
-        jsFiles.push(srcMatch[1]);
-      }
-    }
-
-    // Deduplicate endpoints
-    const uniqueEndpoints = Array.from(
-      new Set(endpoints.map((e) => e.endpoint)),
-    ).map((ep) => endpoints.find((e) => e.endpoint === ep)!);
-
-    // Parameterize endpoints (replace numeric IDs with {id})
-    const parameterizedEndpoints = uniqueEndpoints.map((e) => ({
-      ...e,
-      pattern: e.endpoint.replace(/\/\d+/g, "/{id}"),
-    }));
-
-    return {
-      success: true,
-      url,
-      endpoints: uniqueEndpoints,
-      parameterizedPatterns: Array.from(
-        new Set(parameterizedEndpoints.map((e) => e.pattern)),
-      ),
-      totalAjaxCalls: endpoints.length,
-      externalJSFiles: jsFiles,
-      filesAnalyzed: 1 + jsFiles.length,
-      message: `Found ${uniqueEndpoints.length} unique endpoints in JavaScript (${endpoints.length} total calls).`,
-    };
+    return extractJavascriptEndpointsFromHtml(html, url, includeExternalJS);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
@@ -144,4 +58,106 @@ export async function extractJavascriptEndpoints(
       message: `JavaScript extraction error: ${message}`,
     };
   }
+}
+
+/**
+ * Pure HTML variant of {@link extractJavascriptEndpoints} for callers that
+ * already hold the page body — no second fetch of the page.
+ */
+export function extractJavascriptEndpointsFromHtml(
+  html: string,
+  url: string,
+  includeExternalJS = true,
+): ExtractJavascriptEndpointsResult {
+  // Regex patterns to extract endpoints
+  const endpointPatterns = [
+    // jQuery AJAX
+    /\$\.ajax\s*\(\s*\{\s*url\s*:\s*['"]([^'"]+)['"]/g,
+    /\$\.get\s*\(\s*['"]([^'"]+)['"]/g,
+    /\$\.post\s*\(\s*['"]([^'"]+)['"]/g,
+    /\$\.getJSON\s*\(\s*['"]([^'"]+)['"]/g,
+    // Fetch API
+    /fetch\s*\(\s*['"]([^'"]+)['"]/g,
+    /fetch\s*\(\s*`([^`]+)`/g,
+    // Axios
+    /axios\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]/g,
+    // XMLHttpRequest
+    /\.open\s*\(\s*['"](?:GET|POST|PUT|DELETE|PATCH)['"]\s*,\s*['"]([^'"]+)['"]/gi,
+    // URL construction
+    /url\s*[:=]\s*['"]([^'"]+)['"]/gi,
+    /href\s*[:=]\s*['"]([^'"]+)['"]/gi,
+    /action\s*[:=]\s*['"]([^'"]+)['"]/gi,
+  ];
+
+  const endpoints: EndpointInfo[] = [];
+  const jsFiles: string[] = [];
+
+  // Extract inline script content
+  const scriptTagRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+  for (
+    let scriptMatch = scriptTagRegex.exec(html);
+    scriptMatch !== null;
+    scriptMatch = scriptTagRegex.exec(html)
+  ) {
+    const scriptContent = scriptMatch[1];
+
+    // Apply all patterns to script content
+    for (const pattern of endpointPatterns) {
+      const patternCopy = new RegExp(pattern.source, pattern.flags);
+      for (
+        let match = patternCopy.exec(scriptContent);
+        match !== null;
+        match = patternCopy.exec(scriptContent)
+      ) {
+        const endpoint = match[1] || match[2];
+        if (endpoint?.startsWith("/")) {
+          endpoints.push({
+            endpoint,
+            pattern: `${pattern.source.substring(0, 30)}...`,
+            source: "inline-script",
+          });
+        }
+      }
+    }
+  }
+
+  // Extract external JS file URLs
+  if (includeExternalJS) {
+    const scriptSrcRegex = /<script[^>]+src=['"]([^'"]+)['"]/gi;
+    for (
+      let srcMatch = scriptSrcRegex.exec(html);
+      srcMatch !== null;
+      srcMatch = scriptSrcRegex.exec(html)
+    ) {
+      jsFiles.push(srcMatch[1]);
+    }
+  }
+
+  // Deduplicate, keeping the first record and first-seen order (O(n))
+  const byEndpoint = new Map<string, EndpointInfo>();
+  for (const record of endpoints) {
+    if (!byEndpoint.has(record.endpoint)) {
+      byEndpoint.set(record.endpoint, record);
+    }
+  }
+  const uniqueEndpoints = Array.from(byEndpoint.values());
+
+  // Parameterize endpoints (replace numeric IDs with {id})
+  const parameterizedEndpoints = uniqueEndpoints.map((e) => ({
+    ...e,
+    pattern: e.endpoint.replace(/\/\d+/g, "/{id}"),
+  }));
+
+  return {
+    success: true,
+    url,
+    endpoints: uniqueEndpoints,
+    parameterizedPatterns: Array.from(
+      new Set(parameterizedEndpoints.map((e) => e.pattern)),
+    ),
+    totalAjaxCalls: endpoints.length,
+    externalJSFiles: jsFiles,
+    filesAnalyzed: 1 + jsFiles.length,
+    message: `Found ${uniqueEndpoints.length} unique endpoints in JavaScript (${endpoints.length} total calls).`,
+  };
 }
