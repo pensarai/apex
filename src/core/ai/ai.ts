@@ -435,6 +435,29 @@ function applySequentialToolCallPolicy(
   return system;
 }
 
+/**
+ * Resolve the effective toolset from `activeTools` before any context
+ * fitting. The AI SDK treats `activeTools` as advertise-only — it still
+ * parses, executes, and enumerates every tool in the full map — so the
+ * executable map itself must be filtered here for budgeting, provider
+ * exposure, execution, and repair to agree. Built with DefineOwnProperty
+ * semantics so prototype-shaped names like `__proto__` survive as own keys.
+ */
+export function resolveEffectiveTools(
+  tools: ToolSet | undefined,
+  activeTools: string[] | undefined,
+): Pick<StreamResponseOpts, "tools" | "activeTools"> {
+  if (!tools || !activeTools) return {};
+  if (activeTools.length === 0) return { tools: {}, activeTools: undefined };
+  const allow = new Set(activeTools);
+  return {
+    tools: Object.fromEntries(
+      Object.entries(tools).filter(([name]) => allow.has(name)),
+    ),
+    activeTools: undefined,
+  };
+}
+
 const MAX_RATE_LIMIT_RETRIES = 20;
 const MAX_IDLE_RESUME_RETRIES = 3;
 const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -1321,7 +1344,15 @@ function streamResponseWithinOperation(
   nativeRecovery?: NativeStreamRecovery,
 ): StreamTextResult<ToolSet, never> {
   const compactionState = opts._compaction ?? {};
-  opts = { ...opts, _compaction: compactionState };
+  // One effective tool selection per stream, before any fitting: proactive
+  // fit, provider schemas, execution, repair, and every continuation path
+  // below spread this same opts object, so they must all see the filtered
+  // map. Re-entry is identity (`activeTools` already consumed).
+  opts = {
+    ...opts,
+    _compaction: compactionState,
+    ...resolveEffectiveTools(opts.tools, opts.activeTools),
+  };
   // Bound recovery recursion (summarize → resume → overflow → …).
   const restartDepth = opts._restartDepth ?? 0;
   if (restartDepth > MAX_RESTART_DEPTH) {
