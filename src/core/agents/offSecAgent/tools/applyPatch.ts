@@ -120,9 +120,19 @@ async function preflightFile(
   const inputPath = diff.isDelete ? diff.oldPath : diff.newPath || diff.oldPath;
   const targetPath = await resolveFilePath(ctx, inputPath, {
     confineToCwd: true,
+    followFinal: !diff.isDelete,
   });
 
   if (diff.isDelete) {
+    const contentPath = await resolveFilePath(ctx, targetPath, {
+      confineToCwd: true,
+    });
+    if (
+      duplicateTargetKey(ctx, contentPath) !==
+      duplicateTargetKey(ctx, targetPath)
+    ) {
+      throw new Error("Deletion patches require a regular file, not a symlink");
+    }
     const original = await readWorkspaceFile(ctx, targetPath);
     applyFileDiff(original, diff);
     return {
@@ -181,7 +191,8 @@ left unapplied (already-applied files stay applied; there is no rollback). Each
 file gets a receipt: applied, failed, or unapplied.
 
 Create files with a "--- /dev/null" header; delete with "+++ /dev/null" (the
-hunks must cover the whole file). Renames, copies, mode changes, and binary
+hunks must cover the whole file; symlink deletion patches are rejected).
+Renames, copies, mode changes, and binary
 patches are rejected. Final newlines, BOMs, and CRLF line endings are preserved;
 an LF patch applied to a CRLF file is adapted and reported in the receipt.
 Paths resolve under the agent working directory (or file workspace when scoped).`,

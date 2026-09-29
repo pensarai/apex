@@ -322,6 +322,23 @@ describe("applyFileDiff — formatting invariants", () => {
     expect(result.eolAdaptation).toBe("stripped-cr");
   });
 
+  it.each([
+    ["before the first line", 0, "inserted\none\ntwo\n"],
+    ["between lines", 1, "one\ninserted\ntwo\n"],
+    ["at EOF", 2, "one\ntwo\ninserted\n"],
+  ])("strips transport CR from a pure insertion %s", (_label, start, expected) => {
+    const patch = `--- a/f\r\n+++ b/f\r\n@@ -${start},0 +${Number(start) + 1},1 @@\r\n+inserted\r\n`;
+    const result = apply(patch, "one\ntwo\n");
+    expect(result.content).toBe(expected);
+    expect(result.eolAdaptation).toBe("stripped-cr");
+  });
+
+  it("strips transport CR from an insertion beside an unchanged LF hunk", () => {
+    const patch =
+      "--- a/f\r\n+++ b/f\r\n@@ -1,1 +1,1 @@\r\n one\n@@ -1,0 +2,1 @@\r\n+inserted\r\n";
+    expect(apply(patch, "one\ntwo\n").content).toBe("one\ninserted\ntwo\n");
+  });
+
   it("preserves mixed line endings across an LF-authored patch", () => {
     const result = apply(
       `--- a/f
@@ -489,4 +506,20 @@ it("uses surrounding CRLF for a pure insertion", () => {
     apply("--- a/f\n+++ b/f\n@@ -1,0 +2,1 @@\n+inserted\n", "one\r\ntwo\r\n")
       .content,
   ).toBe("one\r\ninserted\r\ntwo\r\n");
+});
+
+it("retains exact mixed-ending context when another hunk is an insertion", () => {
+  const patch =
+    "--- a/f\n+++ b/f\n@@ -1,1 +1,1 @@\n-same\r\n+changed\r\n@@ -3,0 +4,1 @@\n+inserted\n";
+  expect(apply(patch, "same\r\nsame\nend\r\n").content).toBe(
+    "changed\r\nsame\nend\r\ninserted\r\n",
+  );
+});
+
+it("reports ambiguous context when a patch also contains a pure insertion", () => {
+  const patch =
+    "--- a/f\n+++ b/f\n@@ -1,1 +1,1 @@\n-same\r\n+changed\r\n@@ -3,0 +4,1 @@\n+inserted\n";
+  expect(() => apply(patch, "same\r\nsame\r\nend\r\n")).toThrow(
+    /multiple positions/,
+  );
 });

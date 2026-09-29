@@ -1,5 +1,13 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -207,6 +215,47 @@ describe("applyPatch tool — preflight", () => {
 });
 
 describe("applyPatch tool — create and delete", () => {
+  describe.each([
+    { name: "local", sandbox: undefined },
+    { name: "Linux process adapter", sandbox: linuxSandbox },
+  ])("symlink deletion: $name", ({ sandbox }) => {
+    it.skipIf(process.platform === "win32").each(["inside", "outside"])(
+      "rejects a link to an %s target before committing any file",
+      async (location) => {
+        const root = mkdtempSync(join(tmpdir(), "apex-patch-symlink-"));
+        try {
+          const workspace = join(root, "helpers");
+          mkdirSync(workspace);
+          const target = join(
+            location === "inside" ? workspace : root,
+            "target.txt",
+          );
+          writeFileSync(target, "target\n");
+          writeFileSync(join(workspace, "keep.txt"), "keep\n");
+          const link = join(workspace, "link.txt");
+          symlinkSync(target, link);
+          const result = await run(
+            makeCtx(workspace, { fileWorkspaceRoot: workspace, sandbox }),
+            "--- a/keep.txt\n+++ b/keep.txt\n@@ -1 +1 @@\n-keep\n+changed\n--- a/link.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-target\n",
+          );
+          expect(result.success).toBe(false);
+          expect(result.error).toMatch(/symlink|escapes/i);
+          expect(result.files.map((file) => file.status)).toEqual([
+            "unapplied",
+            "failed",
+          ]);
+          expect(readFileSync(target, "utf8")).toBe("target\n");
+          expect(readFileSync(join(workspace, "keep.txt"), "utf8")).toBe(
+            "keep\n",
+          );
+          expect(lstatSync(link).isSymbolicLink()).toBe(true);
+        } finally {
+          rmSync(root, { recursive: true, force: true });
+        }
+      },
+    );
+  });
+
   it("creates a file via /dev/null and refuses to create it twice", async () => {
     const root = mkdtempSync(join(tmpdir(), "apex-patch-new-"));
 

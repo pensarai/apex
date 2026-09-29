@@ -282,13 +282,20 @@ function firstAdaptationThatFits(
   const fileLines = shape.lines;
   const modes: EolAdaptation[] = ["none", "stripped-cr"];
   const attempts: { mode: EolAdaptation; error: PatchApplyError }[] = [];
+  const fallbackCr = fileLines.some((line) => line.endsWith("\r"));
+  const endingAt = (index: number): boolean => {
+    if (
+      index >= fileLines.length ||
+      (index === fileLines.length - 1 && !shape.endsWithNewline)
+    ) {
+      return index > 0
+        ? (fileLines[index - 1]?.endsWith("\r") ?? fallbackCr)
+        : fallbackCr;
+    }
+    return fileLines[index].endsWith("\r");
+  };
 
   for (const mode of modes) {
-    if (
-      file.hunks.some((hunk) => hunk.oldCount === 0) &&
-      fileLines.some((line) => line.endsWith("\r"))
-    )
-      continue;
     const adaptedLines = file.hunks.map((hunk, h) =>
       hunk.lines.map((line, i) => ({
         tag: line.tag,
@@ -302,7 +309,26 @@ function firstAdaptationThatFits(
 
     try {
       const located = locateAllHunks(fileLines, adaptedHunks);
-      return { mode, lines: adaptedLines, located };
+      let effectiveMode: EolAdaptation = mode;
+      // Insertions have no matching context; adapt their endings independently.
+      for (const { hunk, index, start } of located) {
+        if (hunk.oldCount !== 0 || fileLines.length === 0) continue;
+        adaptedLines[index] = adaptedLines[index].map((line, i, lines) => {
+          const unterminated =
+            i === lines.length - 1 && hunk.newEndsWithoutNewline;
+          const cr = endingAt(start) && !unterminated;
+          const text = line.text.replace(/\r$/, "") + (cr ? "\r" : "");
+          if (text !== line.text) {
+            const adaptation = cr ? "added-cr" : "stripped-cr";
+            effectiveMode =
+              effectiveMode === "none" || effectiveMode === adaptation
+                ? adaptation
+                : "matched-lines";
+          }
+          return { ...line, text };
+        });
+      }
+      return { mode: effectiveMode, lines: adaptedLines, located };
     } catch (err) {
       if (!(err instanceof PatchApplyError)) throw err;
       attempts.push({ mode, error: err });
@@ -323,18 +349,6 @@ function firstAdaptationThatFits(
       fileLines.map((line) => line.replace(/\r$/, "")),
       hunks,
     );
-    const fallbackCr = fileLines.some((line) => line.endsWith("\r"));
-    const endingAt = (index: number): boolean => {
-      if (
-        index >= fileLines.length ||
-        (index === fileLines.length - 1 && !shape.endsWithNewline)
-      ) {
-        return index > 0
-          ? (fileLines[index - 1]?.endsWith("\r") ?? fallbackCr)
-          : fallbackCr;
-      }
-      return fileLines[index].endsWith("\r");
-    };
     const lines = located.map(({ hunk, start }) => {
       let cursor = start;
       let removed: boolean[] = [];
