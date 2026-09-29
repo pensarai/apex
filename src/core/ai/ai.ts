@@ -1528,6 +1528,10 @@ function streamResponseWithinOperation(
       tools,
       maxRetries: 3,
       providerOptions,
+      // Step history would retain a serialized request body per step, and
+      // later steps re-send the whole conversation, so they accumulate.
+      // Native capture reads the provider stream result, not this filter.
+      experimental_include: { requestBody: false },
       // The forwarding tracer keeps a handle on the SDK's root generation
       // span: error-part runs complete normally in the SDK, so nothing
       // marks the span failed — the wrapper's catch does.
