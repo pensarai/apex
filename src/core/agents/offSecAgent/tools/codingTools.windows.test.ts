@@ -77,11 +77,44 @@ afterEach(async () => {
 describe.skipIf(process.platform !== "win32")(
   "Windows coding tool runtime",
   () => {
+    it("searches UTF-8 file bodies with non-ASCII patterns", async () => {
+      const { workspace, ctx } = await fixture();
+      await writeFile(join(workspace, "unicode.txt"), "café 東京 🔐\n");
+      for (const pattern of ["café", "東京", "🔐"]) {
+        const result = (await grep(ctx).execute?.(
+          { pattern, flags: "-nF", toolCallDescription },
+          callOptions,
+        )) as GrepResult;
+        expect(result).toMatchObject({ success: true, matchCount: 1 });
+        expect(result.output).toContain(":1:café 東京 🔐");
+      }
+    }, 60_000);
+
+    it("does not descend directory junctions in the local runtime", async () => {
+      const { root, workspace, ctx } = await fixture();
+      const outside = join(root, "outside");
+      await mkdir(outside);
+      await writeFile(join(outside, "secret.txt"), "outside source\n");
+      await writeFile(join(workspace, "inside.txt"), "helper\n");
+      await symlink(outside, join(workspace, "escape"), "junction");
+      await symlink(workspace, join(workspace, "cycle"), "junction");
+      expect(
+        await globFiles({ ...ctx, sandbox: undefined }).execute?.(
+          { pattern: "**/*.txt", toolCallDescription },
+          callOptions,
+        ),
+      ).toMatchObject({ success: true, files: ["inside.txt"] });
+    });
+
     it("matches glob path segments without letting stars cross directories", async () => {
       const { workspace, ctx } = await fixture();
       await mkdir(join(workspace, "src", "nested"), { recursive: true });
       await mkdir(join(workspace, ".config"));
       await writeFile(join(workspace, ".config", "settings.ts"), "config\n");
+      for (const dir of [".🔐", ".["]) {
+        await mkdir(join(workspace, dir));
+        await writeFile(join(workspace, dir, "settings.ts"), "config\n");
+      }
       for (const name of ["root.ts", "src/a.ts", "src/nested/b.ts"]) {
         await writeFile(join(workspace, name), "source\n");
       }
@@ -90,6 +123,10 @@ describe.skipIf(process.platform !== "win32")(
         ["src/*.ts", ["src/a.ts"]],
         ["**/*.ts", ["root.ts", "src/a.ts", "src/nested/b.ts"]],
         ["{src,.config}/*.ts", [".config/settings.ts", "src/a.ts"]],
+        [".??/*.ts", [".🔐/settings.ts"]],
+        [".[!]/*.ts", [".[/settings.ts"]],
+        [".[[a]/*.ts", [".[/settings.ts"]],
+        [".[]/*.ts", []],
       ] as const) {
         expect(
           await globFiles(ctx).execute?.(
@@ -97,6 +134,46 @@ describe.skipIf(process.platform !== "win32")(
             callOptions,
           ),
         ).toMatchObject({ success: true, files });
+      }
+    }, 60_000);
+
+    it("prunes hidden directories unrelated to explicitly hidden glob patterns", async () => {
+      const { workspace, ctx } = await fixture();
+      for (const dir of [".cache", ".config", "src/.config", ".env"]) {
+        await mkdir(join(workspace, dir), { recursive: true });
+      }
+      await writeFile(join(workspace, ".config", "settings.ts"), "config");
+      await writeFile(join(workspace, "src", "visible.ts"), "source");
+      await writeFile(join(workspace, "src", ".env"), "config");
+      const measuredSandbox: UnifiedSandbox = {
+        ...sandbox,
+        execute(command, options) {
+          if (options?.envVars?.APEX_GLOB_PATH !== undefined) {
+            const script = winScriptFromEnv(options.envVars);
+            const visit = "$d=$stack.Pop()";
+            expect(script).toContain(visit);
+            const measured = script.replace(
+              visit,
+              `${visit}\nif($d.EndsWith('\\.cache') -or $d.EndsWith('\\.env') -or $d.EndsWith('\\src\\.config')){throw 'Glob entered an unrelated hidden directory'}`,
+            );
+            return sandbox.execute(command, {
+              ...options,
+              envVars: { ...options.envVars, ...winScriptEnv(measured) },
+            });
+          }
+          return sandbox.execute(command, options);
+        },
+      };
+      for (const [pattern, files] of [
+        ["**/.env", ["src/.env"]],
+        ["{src,.config}/*.ts", [".config/settings.ts", "src/visible.ts"]],
+      ] as const) {
+        expect(
+          await globFiles({ ...ctx, sandbox: measuredSandbox }).execute?.(
+            { pattern, toolCallDescription },
+            callOptions,
+          ),
+        ).toMatchObject({ success: true, error: "", files });
       }
     }, 60_000);
 

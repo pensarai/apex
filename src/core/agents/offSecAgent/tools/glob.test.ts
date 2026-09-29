@@ -1,20 +1,27 @@
 import { spawnSync } from "node:child_process";
 import {
+  type Dirent,
   mkdirSync,
   mkdtempSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../../../session";
 import { inProcessSubagentSpawner } from "../subagentSpawner";
 import { winScriptFromEnv } from "./__tests__/sandboxScript";
 import { type GlobResult, globFiles } from "./glob";
 import type { UnifiedSandbox } from "./sandbox";
 import type { ToolContext } from "./types";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, readdir: vi.fn(actual.readdir) };
+});
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -133,6 +140,30 @@ describe("globFiles local", () => {
     });
 
     expect(result.files.some((f) => f.startsWith("link-out/"))).toBe(false);
+  });
+
+  it("does not descend a link also reported as a directory", async () => {
+    const root = scratchDir();
+    const outside = scratchDir();
+    writeFileSync(join(root, "inside.ts"), "helper");
+    writeFileSync(join(outside, "secret.ts"), "target source");
+    symlinkSync(outside, join(root, "link-out"), "dir");
+    const entries = await readdir(root, { withFileTypes: true });
+    const linked = entries.find((entry) => entry.name === "link-out");
+    expect(linked?.isSymbolicLink()).toBe(true);
+    Object.defineProperty(linked, "isDirectory", { value: () => true });
+    vi.mocked<
+      (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>
+    >(readdir).mockResolvedValueOnce(entries);
+    try {
+      const result = await runGlob(makeCtx({ agentCwd: root }), {
+        pattern: "**/*.ts",
+        toolCallDescription: "Check directory-link classification",
+      });
+      expect(result).toMatchObject({ success: true, files: ["inside.ts"] });
+    } finally {
+      vi.mocked(readdir).mockClear();
+    }
   });
 
   it.each([
@@ -381,6 +412,34 @@ describe("globFiles sandbox transport shape (windows)", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("APEXGL");
   });
+
+  it("chunks expanded traversal rules below Windows environment limits", async () => {
+    const { sandbox, calls } = windowsSandbox([".config/settings.ts"]);
+    const alternatives = [
+      ".config",
+      ...Array.from({ length: 63 }, (_, i) => `.${"x".repeat(100)}${i}`),
+    ];
+    const result = await runGlob(makeCtx({ agentCwd: "C:\\w", sandbox }), {
+      pattern: `{${alternatives.join(",")}}/*.ts`,
+      toolCallDescription: "Transport a large brace-expanded hidden pattern",
+    });
+    expect(result).toMatchObject({
+      success: true,
+      files: [".config/settings.ts"],
+    });
+    const env = calls.at(-1)?.envVars ?? {};
+    const count = Number(env.APEX_GLOB_RULES_COUNT);
+    expect(count).toBeGreaterThan(1);
+    let payload = "";
+    for (let i = 0; i < count; i++) {
+      const chunk = env[`APEX_GLOB_RULES_${i}`];
+      expect(chunk.length).toBeLessThanOrEqual(6000);
+      payload += chunk;
+    }
+    const rules = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+    expect(rules.directories).toHaveLength(64);
+    expect(rules.files).toHaveLength(64);
+  });
 });
 
 it("keeps regular files whose names match ignored directory names", async () => {
@@ -463,6 +522,76 @@ it("still searches hidden directories when the pattern names them", async () => 
         success: true,
         files: [".config/settings.ts"],
       });
+    }
+  }
+});
+
+it("keeps unrelated hidden caches out of explicitly hidden searches", async () => {
+  const root = scratchDir();
+  for (const dir of [".cache", ".config", "src", "src/.config", ".env"]) {
+    mkdirSync(join(root, dir), { recursive: true });
+  }
+  writeFileSync(join(root, ".config", "settings.ts"), "config");
+  writeFileSync(join(root, "src", "visible.ts"), "source");
+  writeFileSync(join(root, "src", ".env"), "config");
+  for (let i = 0; i < 20_001; i++) {
+    writeFileSync(join(root, ".cache", `f${i}`), "");
+  }
+  for (const sandbox of [undefined, realLinuxSandbox()]) {
+    for (const [pattern, files] of [
+      ["**/.env", ["src/.env"]],
+      ["{src,.config}/*.ts", [".config/settings.ts", "src/visible.ts"]],
+    ] as const) {
+      vi.mocked(readdir).mockClear();
+      const result = await runGlob(makeCtx({ agentCwd: root, sandbox }), {
+        pattern,
+        toolCallDescription:
+          "Find requested hidden paths without scanning caches",
+      });
+      expect(result).toMatchObject({ success: true, error: "", files });
+      if (!sandbox) {
+        const visited = vi.mocked(readdir).mock.calls.map(([dir]) => dir);
+        for (const excluded of [".cache", "src/.config", ".env"]) {
+          expect(visited).not.toContain(join(root, excluded));
+        }
+      }
+    }
+  }
+});
+
+it("preserves explicit hidden prefixes through recursive and class patterns", async () => {
+  const root = scratchDir();
+  for (const name of [
+    ".config/root.ts",
+    "src/.config/nested/.secrets/key.ts",
+    "src/.env",
+    "src/.extra",
+    ".🔐/unicode.ts",
+    ".[/bracket.ts",
+  ]) {
+    mkdirSync(join(root, name, ".."), { recursive: true });
+    writeFileSync(join(root, name), "config");
+  }
+  for (const sandbox of [undefined, realLinuxSandbox()]) {
+    for (const [pattern, files] of [
+      ["**/.config/**/*.ts", [".config/root.ts"]],
+      [
+        "s[c-r]c/.config/**/.secrets/*.ts",
+        ["src/.config/nested/.secrets/key.ts"],
+      ],
+      ["src/.e[nx]*", ["src/.env", "src/.extra"]],
+      [".??/*.ts", [".🔐/unicode.ts"]],
+      [".🔐/*.ts", [".🔐/unicode.ts"]],
+      [".[[a]/*.ts", [".[/bracket.ts"]],
+      [".[!]/*.ts", [".[/bracket.ts"]],
+      [".[]/*.ts", []],
+    ] as const) {
+      const result = await runGlob(makeCtx({ agentCwd: root, sandbox }), {
+        pattern,
+        toolCallDescription:
+          "Match explicit hidden segments at the right depth",
+      });
+      expect(result).toMatchObject({ success: true, error: "", files });
     }
   }
 });

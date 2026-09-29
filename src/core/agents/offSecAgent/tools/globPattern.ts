@@ -8,7 +8,7 @@
 const MAX_BRACE_VARIANTS = 64;
 
 export type GlobPattern =
-  | { regexes: RegExp[]; includeHidden: boolean }
+  | { regexes: RegExp[]; hiddenDirectoryRegexes: RegExp[] }
   | { error: string };
 
 function expandBraces(pattern: string): string[] | { error: string } {
@@ -75,6 +75,9 @@ function classToRegex(body: string): string | { error: string } {
     negated = true;
     rest = rest.slice(1);
   }
+  // Empty JS classes have different syntax in Python and .NET, which use
+  // these same expressions to prune sandbox walks.
+  if (!rest) return negated ? "[\\s\\S]" : "(?!)";
   let out = "";
   for (let i = 0; i < rest.length; i++) {
     const ch = rest[i];
@@ -83,7 +86,7 @@ function classToRegex(body: string): string | { error: string } {
       continue;
     }
     // Ranges keep their meaning; regex metachars are literal inside a class.
-    out += /[\\\]^]/.test(ch) ? `\\${ch}` : ch;
+    out += /[\\[\]^]/.test(ch) ? `\\${ch}` : ch;
   }
   return negated ? `[^${out}]` : `[${out}]`;
 }
@@ -178,14 +181,24 @@ export function compileGlobPattern(pattern: string): GlobPattern {
   const variants = expandBraces(pattern);
   if ("error" in variants) return variants;
   const regexes: RegExp[] = [];
-  let includeHidden = false;
+  const hiddenDirectoryRegexes = new Map<string, RegExp>();
   for (const variant of variants) {
     const regex = variantToRegex(variant);
     if ("error" in regex) return regex;
     regexes.push(regex);
-    includeHidden ||= variant
-      .split(/[\\/]/)
-      .some((segment) => segment.startsWith(".") && segment.length > 1);
+    const segments = variant.split(/[\\/]/);
+    // A final hidden segment names a file; only earlier hidden segments may
+    // open a directory. Keep the full prefix so brace alternatives and **
+    // cannot enable unrelated hidden trees elsewhere in the search root.
+    for (let i = 0; i < segments.length - 1; i++) {
+      if (!segments[i].startsWith(".") || segments[i].length <= 1) continue;
+      const prefix = variantToRegex(segments.slice(0, i + 1).join("/"));
+      if ("error" in prefix) return prefix;
+      hiddenDirectoryRegexes.set(prefix.source, prefix);
+    }
   }
-  return { regexes, includeHidden };
+  return {
+    regexes,
+    hiddenDirectoryRegexes: [...hiddenDirectoryRegexes.values()],
+  };
 }

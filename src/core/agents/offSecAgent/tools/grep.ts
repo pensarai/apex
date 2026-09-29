@@ -557,7 +557,7 @@ const WIN_GREP_SCRIPT = [
   "$script:emitted=[int64]0",
   "$script:capped=$false",
   "function Search-File([string]$f){",
-  "$sp=@{LiteralPath=$f;Pattern=$pattern}",
+  "$sp=@{LiteralPath=$f;Pattern=$pattern;Encoding='UTF8'}",
   "if($caseSensitive){$sp.CaseSensitive=$true}",
   "if($simple){$sp.SimpleMatch=$true}",
   "if($listOnly){$sp.List=$true}",
