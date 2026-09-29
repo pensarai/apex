@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readFile as read,
@@ -145,7 +146,7 @@ describe("bounded model output", () => {
       {
         directory: ref,
         pattern: "MIDDLE_EVIDENCE",
-        flags: "-n",
+        flags: "-Hn",
         toolCallDescription: "Find evidence",
       },
       options,
@@ -153,7 +154,11 @@ describe("bounded model output", () => {
     expect(found).toMatchObject({
       success: true,
       output: expect.stringContaining("MIDDLE_EVIDENCE"),
+      command: `grep -r -Hn -- MIDDLE_EVIDENCE ${ref}`,
     });
+    expect(JSON.stringify(found)).toContain(ref);
+    expect(JSON.stringify(found)).not.toContain(ctx.session.rootPath);
+    expect(JSON.stringify(found)).not.toContain("logs/tool-output");
     const page = await readFile(ctx).execute?.(
       {
         path: ref,
@@ -186,6 +191,111 @@ describe("bounded model output", () => {
         options,
       ),
     ).toMatchObject({ success: false });
+  });
+
+  it("keeps missing artifact errors behind the opaque reference", async () => {
+    const ctx = await context();
+    for (const createDirectory of [false, true]) {
+      if (createDirectory)
+        await mkdir(join(ctx.session.logsPath, "tool-output"), {
+          recursive: true,
+        });
+      const ref = `tool-output:${randomUUID()}`;
+      const results = [
+        await readFile(ctx).execute?.(
+          { path: ref, toolCallDescription: "Read missing artifact" },
+          options,
+        ),
+        await grep(ctx).execute?.(
+          {
+            directory: ref,
+            pattern: "needle",
+            toolCallDescription: "Search missing artifact",
+          },
+          options,
+        ),
+      ];
+      for (const result of results) {
+        expect(result).toMatchObject({
+          success: false,
+          error: expect.stringContaining("unavailable"),
+        });
+        expect(JSON.stringify(result)).not.toContain(ctx.session.rootPath);
+        expect(JSON.stringify(result)).not.toContain("logs/tool-output");
+      }
+    }
+  });
+
+  it.skipIf(process.platform === "win32" || (process.getuid?.() ?? 1) === 0)(
+    "sanitizes artifact read failures that surface after resolution",
+    async () => {
+      const ctx = await context();
+      const projected = await toolOutputForModel(ctx, {
+        success: true,
+        error: "",
+        stdout: "x".repeat(80_000),
+      });
+      const ref = reference(String(projected.value));
+      const file = (await resolveToolOutput(ctx, ref)) as string;
+      await chmod(file, 0o0000);
+      try {
+        const page = await readFile(ctx).execute?.(
+          { path: ref, toolCallDescription: "Read unreadable artifact" },
+          options,
+        );
+        expect(page).toMatchObject({
+          success: false,
+          error: expect.stringContaining("unavailable"),
+        });
+        expect(JSON.stringify(page)).not.toContain(ctx.session.rootPath);
+        expect(JSON.stringify(page)).not.toContain("logs/tool-output");
+      } finally {
+        await chmod(file, 0o600).catch(() => {});
+      }
+    },
+  );
+
+  it("returns artifact grep evidence verbatim and prefixes it with only the artifact name", async () => {
+    const ctx = await context();
+    const id = randomUUID();
+    await mkdir(join(ctx.session.logsPath, "tool-output"), {
+      recursive: true,
+    });
+    // A retained line shaped exactly like grep's own filename:line prefix —
+    // a -h search must return it byte-identical, with no output rewriting.
+    const lookalike = `${id}.txt:NEEDLE_LINE`;
+    await writeFile(
+      join(ctx.session.logsPath, "tool-output", `${id}.txt`),
+      `${"noise\n".repeat(100)}${lookalike}\n${"noise\n".repeat(100)}`,
+    );
+    const ref = `tool-output:${id}`;
+    const plain = (await grep(ctx).execute?.(
+      {
+        directory: ref,
+        pattern: "NEEDLE",
+        flags: "-h",
+        toolCallDescription: "Search without filenames",
+      },
+      options,
+    )) as { output: string; matchCount?: number };
+    expect(plain).toMatchObject({ success: true, matchCount: 1 });
+    expect(plain.output.trim()).toBe(lookalike);
+    const labeled = (await grep(ctx).execute?.(
+      {
+        directory: ref,
+        pattern: "NEEDLE",
+        flags: "-Hn",
+        toolCallDescription: "Search with filenames",
+      },
+      options,
+    )) as { output: string; matchCount?: number };
+    expect(labeled).toMatchObject({ success: true, matchCount: 1 });
+    expect(labeled.output.trim()).toBe(`${id}.txt:101:${lookalike}`);
+    for (const result of [plain, labeled]) {
+      expect(JSON.stringify(result)).toContain(ref);
+      expect(JSON.stringify(result)).not.toContain(ctx.session.rootPath);
+      expect(JSON.stringify(result)).not.toContain("logs/tool-output");
+    }
   });
 
   it("provides bounded byte continuation through a giant Unicode line", async () => {

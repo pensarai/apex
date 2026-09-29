@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { agentLogsDir } from "./agentScratch";
 import type { ToolContext } from "./types";
 
-// OpenCode's ToolOutputStore defaults; the notice consumes the same budget.
+// Results within these bounds stay inline; the reference notice is bounded
+// by the same budget.
 export const TOOL_OUTPUT_MAX_BYTES = 50 * 1024;
 export const TOOL_OUTPUT_MAX_LINES = 2_000;
 const REFERENCE_PREFIX = "tool-output:";
@@ -15,6 +16,21 @@ function outputDirectory(ctx: ToolContext): string {
   return join(agentLogsDir(ctx), "tool-output");
 }
 
+// Retained-output failures surface in model-visible tool results, so the
+// host outputDirectory must never appear in them — only the errno survives.
+export function unavailableToolOutputMessage(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code;
+  return `Referenced tool output is unavailable${code ? ` (${code})` : ""}`;
+}
+
+async function rethrowUnavailable<T>(op: () => Promise<T>): Promise<T> {
+  try {
+    return await op();
+  } catch (err: unknown) {
+    throw new Error(unavailableToolOutputMessage(err));
+  }
+}
+
 export async function resolveToolOutput(
   ctx: ToolContext,
   reference: string,
@@ -23,12 +39,15 @@ export async function resolveToolOutput(
   const id = reference.slice(REFERENCE_PREFIX.length);
   if (!UUID.test(id)) throw new Error("Invalid tool-output reference");
   const directory = outputDirectory(ctx);
-  const dirInfo = await lstat(directory);
+  const dirInfo = await rethrowUnavailable(() => lstat(directory));
   if (!dirInfo.isDirectory() || dirInfo.isSymbolicLink()) {
     throw new Error("Tool-output directory is not an ordinary directory");
   }
-  const file = join(await realpath(directory), `${id}.txt`);
-  const info = await lstat(file);
+  const file = join(
+    await rethrowUnavailable(() => realpath(directory)),
+    `${id}.txt`,
+  );
+  const info = await rethrowUnavailable(() => lstat(file));
   if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) {
     throw new Error("Tool-output reference is not an ordinary owned file");
   }

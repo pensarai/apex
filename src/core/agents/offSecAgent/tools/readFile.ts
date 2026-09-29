@@ -15,6 +15,7 @@ import {
   resolveToolOutput,
   TOOL_OUTPUT_MAX_BYTES,
   TOOL_OUTPUT_MAX_LINES,
+  unavailableToolOutputMessage,
 } from "./toolOutput";
 import type { ToolContext } from "./types";
 
@@ -227,7 +228,13 @@ resume cursor.`,
       } catch (err: unknown) {
         return {
           success: false,
-          error: err instanceof Error ? err.message : String(err),
+          // Artifact reads fail on host paths the model must not see;
+          // ordinary workspace reads keep their raw diagnostics.
+          error: artifact
+            ? unavailableToolOutputMessage(err)
+            : err instanceof Error
+              ? err.message
+              : String(err),
           content: "",
           path,
         };

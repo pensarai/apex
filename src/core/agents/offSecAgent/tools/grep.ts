@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import { resolveFilePath } from "./fileWorkspace";
@@ -330,8 +330,19 @@ ${ctx.sandbox?.type === "windows" ? "Windows supports -r, -n, -i, -l, -F, -E, an
       );
       const defaultFlags = hasRecursive ? [] : ["-r"];
 
-      const args = [...defaultFlags, ...userFlags, "--", pattern, dir];
-      const command = `grep ${args.join(" ")}`;
+      // Artifact searches grep the basename from inside the artifact's
+      // directory, so grep's own prefixes and diagnostics never carry the
+      // host path; the echoed command shows the reference the model used.
+      const artifactName = artifact ? basename(artifact) : undefined;
+      const displayTarget = artifact && directory ? directory : dir;
+      const args = [
+        ...defaultFlags,
+        ...userFlags,
+        "--",
+        pattern,
+        artifactName ?? dir,
+      ];
+      const command = `grep ${[...defaultFlags, ...userFlags, "--", pattern, displayTarget].join(" ")}`;
 
       return new Promise((resolve) => {
         const child = spawn("grep", args, {
