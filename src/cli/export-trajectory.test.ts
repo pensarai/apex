@@ -163,8 +163,7 @@ describe("pensar export-trajectory", () => {
     const result = run(["--quiet", "version"], rootCli, fixture);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("injected env");
-    expect(result.stdout).toMatch(/\nv\d+\.\d+\.\d+\n$/);
+    expect(result.stdout).toMatch(/^v\d+\.\d+\.\d+\n$/);
   });
 
   it("rejects missing and unknown options without creating output", async () => {

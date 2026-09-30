@@ -66,7 +66,7 @@ if (obfuscateRequested) {
 // are stripped, so `pensar --verbose pentest` still routes to `pentest`.
 const command = args[0];
 
-loadEnv({ quiet: command === "export-trajectory" });
+loadEnv({ quiet: true });
 
 // ---------------------------------------------------------------------------
 // Helpers
