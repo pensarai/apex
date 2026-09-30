@@ -1,4 +1,13 @@
-// Mantle uses the OpenAI Responses API; model availability is region-specific.
+/**
+ * AWS Bedrock Mantle routing helpers (apex copy — apex is a standalone package
+ * and cannot import from @console/ai).
+ *
+ * GPT-5.x on Bedrock is served ONLY through the Mantle endpoint's OpenAI
+ * Responses API (Chat Completions / Converse / Invoke are not supported for
+ * these models), on a distinct `/openai/v1` path, and is currently region-
+ * locked to us-east-2. Routed model IDs carry a `mantle:` prefix so dispatch is
+ * unambiguous vs standard Bedrock.
+ */
 
 const MANTLE_PREFIX = "mantle:";
 
@@ -11,19 +20,6 @@ export const MANTLE_GPT_5_5_ROUTED_ID = `${MANTLE_PREFIX}${MANTLE_GPT_5_5_MODEL_
  * widens availability; never fall back to the app's default AWS_REGION.
  */
 export const MANTLE_REGION = process.env.BEDROCK_MANTLE_REGION || "us-east-2";
-
-const MANTLE_MODEL_REGIONS: Record<string, string> = {
-  "openai.gpt-6-sol": "us-east-1",
-  "openai.gpt-6-astra": "us-west-2",
-};
-
-export function getMantleRegion(modelId: string): string {
-  return (
-    process.env.BEDROCK_MANTLE_REGION ||
-    MANTLE_MODEL_REGIONS[stripMantlePrefix(modelId)] ||
-    MANTLE_REGION
-  );
-}
 
 export function stripMantlePrefix(modelId: string): string {
   return modelId.startsWith(MANTLE_PREFIX)
