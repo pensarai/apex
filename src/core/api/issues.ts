@@ -253,16 +253,6 @@ export interface DispatchPentestInput {
   branch?: string;
   scanLevel?: "priority" | "full";
   endpointIds?: string[];
-  [field: string]: unknown;
-}
-
-export interface PentestCapabilities {
-  launchInputVersion: number;
-  endpointIds: boolean;
-}
-
-export async function getPentestCapabilities(): Promise<PentestCapabilities> {
-  return apiRequest<PentestCapabilities>("GET", "/pentests/capabilities");
 }
 
 export async function dispatchPentest(

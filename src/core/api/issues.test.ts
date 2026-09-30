@@ -5,13 +5,7 @@ const apiRequest = vi.hoisted(() => vi.fn());
 vi.mock("./apiClient", () => ({ apiRequest }));
 
 import type { IssueDetail, IssueSummary } from "./issues";
-import {
-  dispatchPentest,
-  getIssue,
-  getPentestCapabilities,
-  listIssues,
-  retestIssue,
-} from "./issues";
+import { dispatchPentest, getIssue, listIssues, retestIssue } from "./issues";
 
 const ISSUE_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -80,15 +74,8 @@ describe("issue label and url", () => {
 describe("hosted pentest launch API", () => {
   beforeEach(() => apiRequest.mockReset());
 
-  it("reads capabilities from the dedicated endpoint", async () => {
-    const capabilities = { launchInputVersion: 1, endpointIds: true };
-    apiRequest.mockResolvedValue(capabilities);
-    expect(await getPentestCapabilities()).toEqual(capabilities);
-    expect(apiRequest).toHaveBeenCalledWith("GET", "/pentests/capabilities");
-  });
-
-  it("preserves all JSON fields in the launch request", async () => {
-    const input = { endpointIds: [ISSUE_ID], futureOption: { value: true } };
+  it("sends exact endpoint scope in the launch request", async () => {
+    const input = { endpointIds: [ISSUE_ID], scanLevel: "full" as const };
     await dispatchPentest(input);
     expect(apiRequest).toHaveBeenCalledWith("POST", "/pentests", input);
   });
