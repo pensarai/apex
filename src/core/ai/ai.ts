@@ -1997,10 +1997,9 @@ export async function generateObjectResponse<T extends z.ZodType>(
       sessionId,
     },
   );
-  const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
-    model,
+  const reasoningProviderOptions = buildReasoningProviderOptions(model, {
     openAIReasoningEffort,
-  );
+  });
   const openRouterProviderOptions =
     buildOpenRouterStructuredProviderOptions(model);
 
@@ -2028,16 +2027,17 @@ export async function generateObjectResponse<T extends z.ZodType>(
             maxOutputTokens: maxTokens,
             temperature,
             providerOptions:
-              normalizedOpenAIEffort || openRouterProviderOptions
+              reasoningProviderOptions || openRouterProviderOptions
                 ? {
-                    ...(normalizedOpenAIEffort
+                    ...reasoningProviderOptions,
+                    ...(openRouterProviderOptions
                       ? {
-                          openai: {
-                            reasoningEffort: normalizedOpenAIEffort,
+                          openrouter: {
+                            ...reasoningProviderOptions?.openrouter,
+                            ...openRouterProviderOptions.openrouter,
                           },
                         }
                       : {}),
-                    ...openRouterProviderOptions,
                   }
                 : undefined,
             maxRetries: 0,
