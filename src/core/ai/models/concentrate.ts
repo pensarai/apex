@@ -4,6 +4,12 @@ import type { ModelInfo } from "../ai";
 // gateway selections distinct from direct-provider models and is not sent.
 export const CONCENTRATE_MODELS: ModelInfo[] = [
   {
+    id: "concentrate:gpt-5.4-mini",
+    name: "GPT-5.4 Mini",
+    provider: "concentrate",
+    contextLength: 400000,
+  },
+  {
     id: "concentrate:claude-opus-4-6",
     name: "Claude Opus 4.6",
     provider: "concentrate",
