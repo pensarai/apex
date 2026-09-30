@@ -11,7 +11,10 @@ import {
 import { getMaxOutputTokens } from "../models";
 import { getProviderModel } from "../utils";
 
-const models = [{ id: "claude-fable-5", required: true }];
+const models = [
+  { id: "claude-sonnet-5", required: false },
+  { id: "claude-fable-5", required: true },
+];
 
 function completion(model: string) {
   return Response.json({
