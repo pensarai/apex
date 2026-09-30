@@ -84,6 +84,7 @@ export type {
   AgentLogEntry,
   ClosedDisposition,
   CommentAuthor,
+  DispatchPentestInput,
   DispatchPentestResult,
   FixDetail,
   FixSummary,

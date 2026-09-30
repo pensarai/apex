@@ -34,6 +34,7 @@ export interface ScanDetail extends ScanSummary {
  */
 export const CLOSED_DISPOSITIONS = [
   "resolved",
+  "duplicate",
   "wont-fix",
   "out-of-scope",
   "risk-accepted",
@@ -69,6 +70,8 @@ export interface IssueDetail extends IssueSummary {
   closedReason?: string | null;
   closedComments?: string | null;
   closedDisposition?: ClosedDisposition | null;
+  /** UUID of the original issue when closed as a duplicate. */
+  duplicateOf?: string | null;
 }
 
 /** Who wrote a comment. Null when the author's user record is gone. */
@@ -115,6 +118,7 @@ export interface UpdateIssueResult {
     closedMethod?: string | null;
     closedComments?: string | null;
     closedDisposition?: ClosedDisposition | null;
+    duplicateOf?: string | null;
   };
 }
 
@@ -249,10 +253,15 @@ export async function listPentestTargets(
   );
 }
 
-export async function dispatchPentest(opts?: {
+export interface DispatchPentestInput {
   branch?: string;
   scanLevel?: "priority" | "full";
-}): Promise<DispatchPentestResult> {
+  endpointIds?: string[];
+}
+
+export async function dispatchPentest(
+  opts?: DispatchPentestInput,
+): Promise<DispatchPentestResult> {
   return apiRequest<DispatchPentestResult>("POST", "/pentests", opts);
 }
 
@@ -286,6 +295,8 @@ export async function updateIssue(
     closedReason?: string;
     closedComments?: string;
     closedDisposition?: ClosedDisposition;
+    /** UUID or label of the original; sent only with the `duplicate` disposition. */
+    duplicateOf?: string;
   },
 ): Promise<UpdateIssueResult> {
   return apiRequest<UpdateIssueResult>("PATCH", `/issues/${issueId}`, data);
