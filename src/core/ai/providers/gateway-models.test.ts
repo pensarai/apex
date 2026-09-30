@@ -1,10 +1,12 @@
 import type { LanguageModelV3CallOptions } from "@ai-sdk/provider";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { getVisiblePickerModels } from "../../../tui/components/model-picker/model-visibility";
 import { resolveExplicitCliModel } from "../../cli/model";
 import { getAvailableModels } from "../../providers/utils";
 import {
   buildReasoningProviderOptions,
+  generateObjectResponse,
   getOpenAIReasoningEfforts,
 } from "../ai";
 import { getMaxOutputTokens } from "../models";
@@ -244,6 +246,33 @@ describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
         : nativeEfforts,
     );
   });
+
+  if (!upstream.includes("claude")) {
+    it("preserves reasoning through the application's structured-output path", async () => {
+      const fetchMock = vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) =>
+          completedResponse(upstream, openrouter),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const output = await generateObjectResponse({
+        model: id,
+        authConfig: credentials,
+        prompt: "Check",
+        schema: z.object({ ok: z.boolean() }),
+        maxTokens: 128_000,
+        openAIReasoningEffort: "high",
+      });
+      expect(output).toEqual({ ok: true });
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Expected structured gateway request");
+      const body = JSON.parse(String(call[1]?.body));
+      expect(body.model).toBe(upstream);
+      expect(body.reasoning).toMatchObject({ effort: "high" });
+      expect(
+        openrouter ? body.response_format.type : body.text.format.type,
+      ).toBe("json_schema");
+    });
+  }
 
   it("sends the upstream ID, credentials, output budget, tools, schema and reasoning", async () => {
     const fetchMock = vi.fn(
