@@ -11,9 +11,14 @@ import {
 import { getMaxOutputTokens } from "../models";
 import { getProviderModel } from "../utils";
 
-const boundModels = new Set(["claude-opus-5-5", "claude-fable-5-1"]);
+const boundModels = new Set([
+  "claude-sonnet-5-5",
+  "claude-opus-5-5",
+  "claude-fable-5-1",
+]);
 
 const models = [
+  { id: "claude-sonnet-5-5", required: true },
   { id: "claude-opus-5-5", required: true },
   { id: "claude-fable-5-1", required: true },
   { id: "claude-opus-5", required: false },

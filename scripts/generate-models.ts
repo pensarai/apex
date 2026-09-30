@@ -46,6 +46,7 @@ function extractUnionMembers(dtsPath: string, typeName: string): string[] {
 // ---------------------------------------------------------------------------
 
 const CONTEXT_LENGTHS: Record<string, number> = {
+  "claude-sonnet-5-5": 1000000,
   "claude-opus-5-5": 1000000,
   "claude-fable-5-1": 1000000,
   "claude-opus-5": 1000000,
@@ -610,6 +611,7 @@ function main() {
 
   // Models available on the Anthropic API but not yet in the AI SDK type definitions
   appendMissing(anthropicIds, [
+    "claude-sonnet-5-5",
     "claude-opus-5-5",
     "claude-fable-5-1",
     "claude-opus-5",
