@@ -54,7 +54,10 @@ export interface MemoryBackend {
 
 const memoryBackend = new AsyncLocalStorage<MemoryBackend>();
 
-/** The backend is inherited by async child work and restored when the scope exits. */
+/**
+ * The backend is inherited by async child work and restored when the scope exits.
+ * @public
+ */
 export function withMemoryBackend<T>(backend: MemoryBackend, run: () => T): T {
   return memoryBackend.run(backend, run);
 }
