@@ -12,17 +12,13 @@ import type {
   WorkflowData,
 } from "../agent-display";
 
-/**
- * Tool message with required tool-specific fields.
- * This interface represents a message where role === "tool" and all tool fields are present.
- */
 export interface ToolDisplayMessage {
   role: "tool";
   content: string | unknown[];
   createdAt: Date;
   toolCallId: string;
   toolName: string;
-  args: Record<string, unknown>;
+  args?: Record<string, unknown>;
   result?: unknown;
   status: ToolStatus;
   logs?: string[];

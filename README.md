@@ -84,6 +84,13 @@ pensar targeted-pentest --target https://example.com --objective "Test authentic
 | `--threat-model <text\|@file>` | pentest                   | Threat model to guide testing                  |
 | `--objective <text>`           | targeted-pentest          | Testing objective (repeatable)                 |
 
+### Hoonify inference
+
+Connect **Hoonify** in `/providers` or set `HOONIFY_API_KEY`, then select a
+discovered model in `/models`. Headless commands accept
+`--model-provider hoonify --model <catalog-model-id>`. See
+[Hoonify setup](docs/hoonify.md) for model discovery, token budgets, and live checks.
+
 ### Custom inference endpoints
 
 Bring an OpenAI-compatible endpoint and bearer token through `customProviders`

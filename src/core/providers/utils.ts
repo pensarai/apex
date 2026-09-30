@@ -1,4 +1,4 @@
-import { AVAILABLE_MODELS, type ModelInfo } from "../ai";
+import { AVAILABLE_MODELS, getModelInfo, type ModelInfo } from "../ai";
 import type { Config } from "../config/config";
 import {
   AVAILABLE_PROVIDERS,
@@ -54,6 +54,8 @@ function isProviderConfigured(
       return !!config.concentrateAPIKey;
     case "inception":
       return !!config.inceptionAPIKey;
+    case "hoonify":
+      return !!config.hoonifyAPIKey?.trim();
     case "bedrock":
       return !!config.bedrockAPIKey;
     case "local":
@@ -77,6 +79,7 @@ export function hasAnyProviderConfigured(config: Config): boolean {
     !!config.openRouterAPIKey ||
     !!config.concentrateAPIKey ||
     !!config.inceptionAPIKey ||
+    !!config.hoonifyAPIKey?.trim() ||
     !!config.bedrockAPIKey ||
     !!config.localModelUrl ||
     !!config.localModelName ||
@@ -117,7 +120,33 @@ export function getAvailableModels(config: Config): ModelInfo[] {
     });
   }
 
+  if (isProviderConfigured("hoonify", config)) {
+    for (const model of config.hoonifyModels ?? []) {
+      models.push({
+        id: `hoonify:${model.id}`,
+        name: model.id,
+        provider: "hoonify",
+        contextLength: model.contextLength,
+      });
+    }
+  }
+
   return models;
+}
+
+export function getSavedModelForConfig(config: Config): ModelInfo | null {
+  const id = config.selectedModelId;
+  if (!id) return null;
+  const available = getAvailableModels(config).find((model) => model.id === id);
+  // A catalog outage must not silently switch a saved Hoonify selection.
+  return (
+    available ??
+    (id.startsWith("hoonify:") &&
+    isProviderConfigured("hoonify", config) &&
+    config.hoonifyCatalogError
+      ? getModelInfo(id)
+      : null)
+  );
 }
 
 /**

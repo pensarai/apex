@@ -7,12 +7,15 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
+  defaultSettingsMiddleware,
   generateText,
   type LanguageModel,
   type ModelMessage,
   type StreamTextResult,
+  simulateStreamingMiddleware,
   type TextStreamPart,
   type ToolSet,
+  wrapLanguageModel,
 } from "ai";
 // Importing through the api barrel would cycle: api → offesecAgent → offSecAgent
 // → ai → api. Use the leaf constants module directly.
@@ -20,6 +23,7 @@ import { getPensarGatewayUrl } from "../api/constants";
 import { ensureValidToken } from "../auth";
 import { config } from "../config";
 import type { CustomProviders } from "../config/customProviders";
+import type { HoonifyModel } from "../hoonify";
 import { createLogger } from "../logger/structured";
 import { createAiTelemetrySettings } from "../observability";
 import { scopedLogger } from "../util/lazyLogger";
@@ -41,8 +45,11 @@ import {
 import { MANTLE_REGION, mantleBaseUrl, stripMantlePrefix } from "./mantle";
 import { getModelInfo } from "./models";
 import { runWithNativeRolloutOperation } from "./native-rollout-evidence";
+import { createAnthropicModel } from "./providers/anthropic";
 import { createConcentrateModel } from "./providers/concentrate";
 import { createCustomModel } from "./providers/custom";
+import { createHoonifyModel } from "./providers/hoonify";
+import { fetchOpenAIPro } from "./providers/openai-pro-fetch";
 import { createPensarModel } from "./providers/pensar";
 
 const log = scopedLogger(() => createLogger("ai:utils"));
@@ -84,6 +91,8 @@ export type AIAuthConfig = {
   openRouterAPIKey?: string;
   concentrateAPIKey?: string;
   inceptionAPIKey?: string;
+  hoonifyAPIKey?: string;
+  hoonifyModels?: HoonifyModel[];
   pensarAPIKey?: string;
   // WorkOS CLI auth
   accessToken?: string;
@@ -118,6 +127,8 @@ export function buildAuthConfig(cfg: {
   openRouterAPIKey?: string | null;
   concentrateAPIKey?: string | null;
   inceptionAPIKey?: string | null;
+  hoonifyAPIKey?: string | null;
+  hoonifyModels?: HoonifyModel[];
   pensarAPIKey?: string | null;
   accessToken?: string | null;
   refreshToken?: string | null;
@@ -135,6 +146,8 @@ export function buildAuthConfig(cfg: {
     openRouterAPIKey: cfg.openRouterAPIKey ?? undefined,
     concentrateAPIKey: cfg.concentrateAPIKey ?? undefined,
     inceptionAPIKey: cfg.inceptionAPIKey ?? undefined,
+    hoonifyAPIKey: cfg.hoonifyAPIKey ?? undefined,
+    hoonifyModels: cfg.hoonifyModels,
     pensarAPIKey: cfg.pensarAPIKey ?? undefined,
     accessToken: cfg.accessToken ?? undefined,
     refreshToken: cfg.refreshToken ?? undefined,
@@ -182,17 +195,44 @@ export function getProviderModel(
   switch (provider) {
     case "custom":
       return createCustomModel(model, authConfig?.customProviders);
+    case "hoonify":
+      return createHoonifyModel(model, {
+        apiKey: authConfig?.hoonifyAPIKey,
+        models: authConfig?.hoonifyModels,
+      });
     case "openai": {
       const openai = createOpenAI({
         apiKey: openAiAPIKey,
+        fetch: /^gpt-5\.5-pro(?:-|$)/.test(model) ? fetchOpenAIPro : undefined,
       });
-      providerModel = openai(model);
+      providerModel = openai.responses(model);
+      if (/^gpt-6[.-]/.test(model)) {
+        // The pinned SDK recognizes reasoning models only through GPT-5.
+        providerModel = wrapLanguageModel({
+          model: providerModel,
+          middleware: defaultSettingsMiddleware({
+            settings: {
+              providerOptions: {
+                openai: { forceReasoning: true, reasoningEffort: "medium" },
+              },
+            },
+          }),
+        });
+      }
+      if (/^gpt-5\.5-pro(?:-|$)/.test(model)) {
+        // Pro supports Responses tool calls but cannot stream from the API.
+        providerModel = wrapLanguageModel({
+          model: providerModel,
+          middleware: simulateStreamingMiddleware(),
+        });
+      }
       break;
     }
 
     case "openrouter": {
       const openrouter = createOpenRouter({
         apiKey: openRouterAPIKey,
+        fetch: model === "openai/gpt-5.5-pro" ? fetchOpenAIPro : undefined,
       });
       providerModel = openrouter(model);
       break;
@@ -272,9 +312,7 @@ export function getProviderModel(
     }
 
     case "anthropic":
-      providerModel = createAnthropic({
-        apiKey: anthropicAPIKey,
-      }).chat(model);
+      providerModel = createAnthropicModel(model, anthropicAPIKey);
       break;
 
     case "google": {

@@ -5,7 +5,7 @@ import { createLogger } from "../../../logger/structured";
 import { scopedLogger } from "../../../util/lazyLogger";
 import {
   type EndpointInfo,
-  extractJavascriptEndpoints,
+  extractJavascriptEndpointsFromHtml,
 } from "../../specialized/attackSurface/jsExtraction";
 import {
   assertUrlInScope,
@@ -116,12 +116,12 @@ export function crawlAuthenticated(ctx: ToolContext) {
                 forms.push(formMatch[1]);
               }
 
-              // Extract JavaScript endpoints
-              const jsEndpoints = await extractJavascriptEndpoints({
+              // Extract JavaScript endpoints from the already-downloaded HTML
+              const jsEndpoints = extractJavascriptEndpointsFromHtml(
+                html,
                 url,
-                sessionCookie,
-                includeExternalJS: false,
-              });
+                false,
+              );
 
               if (jsEndpoints.endpoints) {
                 jsEndpoints.endpoints.forEach((ep: EndpointInfo) => {

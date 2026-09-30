@@ -7,7 +7,14 @@
  * Heavy transitive dependencies (tools, AI SDK, zod) are stubbed so
  * the test loads cleanly without external provider keys.
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
@@ -38,6 +45,17 @@ vi.mock("zod", () => {
 });
 
 vi.mock("./tools", () => ({
+  // The agent constructs via the selective entrypoint; record the tool
+  // context there (createAllTools kept for any direct legacy callers).
+  createToolsForNames: (
+    ctx: Record<string, unknown>,
+    requested: readonly string[] | undefined,
+  ) => {
+    toolContexts.push(ctx);
+    void requested;
+    return {};
+  },
+  listToolRegistryNames: () => [],
   createAllTools: (ctx: Record<string, unknown>) => {
     toolContexts.push(ctx);
     return {};
@@ -47,6 +65,7 @@ vi.mock("./tools", () => ({
   SMS_TOOL_NAMES_ACTIVE: [],
   sessionHasSmsPasswordless: () => false,
   PLAN_MODE_TOOL_NAMES: [],
+  FAST_STRIKE_EXCLUDED_TOOL_NAMES: [],
   createResponseTool: () => {},
   RESPONSE_TOOL_NAME: "response",
   ASK_USER_QUESTIONS_TOOL_NAME: "ask_user_questions",
@@ -68,6 +87,7 @@ vi.mock("./tools", () => ({
     "update_workspace_endpoint",
   ],
   PerCommandShell: class {},
+  PlaywrightMcpSession: class {},
 }));
 vi.mock("../../ai", () => ({
   streamResponse: (opts: Record<string, unknown>) => {
@@ -106,9 +126,9 @@ vi.mock("../../session", () => ({ create: () => {} }));
 vi.mock("../specialized/utils", () => ({
   detectOSAndEnhancePrompt: (p: string) => p,
 }));
-vi.mock("./prompt", () => ({
+vi.mock("./prompt", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./prompt")>()),
   buildBaseSystemPrompt: () => "system",
-  buildSessionWorkspaceSection: () => "",
 }));
 vi.mock("./trace", () => ({
   StepTraceWriter: class {
@@ -131,6 +151,104 @@ import {
   filterWorkspaceToolsForRun,
   OffensiveSecurityAgent,
 } from "./offensiveSecurityAgent";
+
+describe("assembled file-workspace instructions", () => {
+  it("does not treat Fast Strike helper tools as permission to edit target source", () => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-fast-strike-scope-"));
+    const helperRoot = join(rootPath, "subagents", "worker", "helpers");
+    streamResponseCalls.length = 0;
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        system: "Worker instructions",
+        model: "test-model",
+        mode: "fast-strike",
+        session: {
+          id: "ses_fast_strike_scope",
+          rootPath,
+          scratchpadPath: join(rootPath, "scratchpad"),
+          config: { codebasePath: join(rootPath, "target-repo") },
+        },
+        fileWorkspaceRoot: helperRoot,
+        activeTools: [],
+        extraTools: { profile_codebase: {}, create_file: {} },
+        sandbox: {},
+      } as never);
+      void agent.streamResult;
+      const request = streamResponseCalls[0];
+      expect(request.activeTools).toContain("profile_codebase");
+      expect(request.activeTools).toContain("create_file");
+      const assessment = (request.system as string).split(
+        "# Source Code Assessment",
+      )[1];
+      expect(assessment).toBeDefined();
+      expect(assessment).toContain("Source access is read-only");
+      expect(assessment).toContain(helperRoot);
+      expect(assessment).toContain(
+        "Do not use shell commands to edit target source",
+      );
+      expect(assessment).not.toContain(
+        "Limit repo edits to the change you were dispatched to make",
+      );
+      expect(assessment).not.toContain(join(rootPath, "scratchpad"));
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    "spawned",
+    "root",
+    "custom-cwd",
+  ])("keeps %s worker file paths separate from shell and provided-file paths", (kind) => {
+    const rootPath = mkdtempSync(join(tmpdir(), "apex-workspace-prompt-"));
+    const scratchpadPath = join(rootPath, "scratchpad");
+    const fileWorkspaceRoot =
+      kind === "root"
+        ? scratchpadPath
+        : join(rootPath, "subagents", "worker", "helpers");
+    const agentCwd =
+      kind === "custom-cwd" ? join(rootPath, "commands") : rootPath;
+    const providedPath = join(rootPath, "provided_files");
+    mkdirSync(providedPath);
+    writeFileSync(join(providedPath, "sample.txt"), "user-supplied input");
+    streamResponseCalls.length = 0;
+    try {
+      const agent = new OffensiveSecurityAgent({
+        prompt: "test",
+        system: "Worker instructions",
+        model: "test-model",
+        session: { id: "ses_workspace", rootPath, scratchpadPath },
+        agentCwd,
+        fileWorkspaceRoot,
+        activeTools: [
+          "read_file",
+          "list_files",
+          "create_file",
+          "execute_command",
+        ],
+        sandbox: {},
+      } as never);
+      void agent.streamResult;
+      const system = streamResponseCalls[0].system as string;
+      expect(system).toContain(`Your shell starts in ${agentCwd}`);
+      expect(system).toContain(
+        `Native file tools are confined to ${fileWorkspaceRoot}`,
+      );
+      expect(system).toContain(
+        "Use absolute helper paths with `execute_command`",
+      );
+      expect(system).toContain(providedPath);
+      expect(system).toContain("sample.txt");
+      expect(system).toContain("copy inputs into the file workspace");
+      expect(system).not.toContain("Use relative paths for everything");
+      expect(system).not.toContain("temporary scripts");
+      expect(system).not.toContain("`list_files provided_files/`");
+    } finally {
+      rmSync(rootPath, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("spawned-agent usage callbacks", () => {
   it("requires explicit forwarding when trace events own subagent accounting", () => {

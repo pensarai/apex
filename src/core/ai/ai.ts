@@ -24,6 +24,7 @@ import {
   parseCustomModelId,
   resolveCustomModel,
 } from "../config/customProviders";
+import { type HoonifyModel, resolveHoonifyModel } from "../hoonify";
 import { createLogger } from "../logger/structured";
 import {
   type AiTelemetryOperation,
@@ -49,6 +50,7 @@ import {
   truncateWithMarker,
 } from "./contextManagement";
 import {
+  getClaudeCapabilities,
   getMaxOutputTokens,
   getModelInfo,
   prefersSequentialToolCalls,
@@ -58,6 +60,7 @@ import {
   withNativeRolloutEvidenceModel,
 } from "./native-rollout-evidence";
 import { CONCENTRATE_GLM_5_3_MODEL_ID } from "./providers/concentrate";
+import { OPENAI_PRO_TIMEOUT_MS } from "./providers/openai-pro-fetch";
 import { STREAM_DEBUG } from "./streamTelemetry";
 import {
   type AIAuthConfig,
@@ -130,6 +133,16 @@ export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 export type ThinkingEffort = "low" | "medium" | "high";
 
 const OPENAI_REASONING_MODEL_IDS = new Set([
+  "gpt-6.1-sol",
+  "gpt-6-luna",
+  "gpt-6-sol",
+  "gpt-6-astra",
+  "gpt-5.5-pro",
+  "gpt-5.5-pro-2026-04-23",
+  "gpt-5.4-nano",
+  "gpt-5.4-nano-2026-03-17",
+  "gpt-5.4-mini",
+  "gpt-5.4-mini-2026-03-17",
   "gpt-5",
   "gpt-5-2025-08-07",
   "gpt-5.1",
@@ -334,13 +347,17 @@ export type AIModelProvider =
   | "bedrock-mantle"
   | "pensar"
   | "inception"
+  | "hoonify"
   | "local";
 
 /** Conservative default when `getModelInfo` doesn't have a `contextLength`. */
 export function getContextWindow(
   modelId: string,
   customProviders?: CustomProviders,
+  hoonifyModels?: HoonifyModel[],
 ): number {
+  if (modelId.startsWith("hoonify:"))
+    return resolveHoonifyModel(modelId, hoonifyModels).contextLength;
   if (parseCustomModelId(modelId))
     return resolveCustomModel(modelId, customProviders).model.contextLength;
   return getModelInfo(modelId).contextLength ?? 200_000;
@@ -430,9 +447,39 @@ function applySequentialToolCallPolicy(
   return system;
 }
 
+/**
+ * Resolve the effective toolset from `activeTools` before any context
+ * fitting. The AI SDK treats `activeTools` as advertise-only — it still
+ * parses, executes, and enumerates every tool in the full map — so the
+ * executable map itself must be filtered here for budgeting, provider
+ * exposure, execution, and repair to agree. Built with DefineOwnProperty
+ * semantics so prototype-shaped names like `__proto__` survive as own keys.
+ */
+export function resolveEffectiveTools(
+  tools: ToolSet | undefined,
+  activeTools: string[] | undefined,
+): Pick<StreamResponseOpts, "tools" | "activeTools"> {
+  if (!tools || !activeTools) return {};
+  if (activeTools.length === 0) return { tools: {}, activeTools: undefined };
+  const allow = new Set(activeTools);
+  return {
+    tools: Object.fromEntries(
+      Object.entries(tools).filter(([name]) => allow.has(name)),
+    ),
+    activeTools: undefined,
+  };
+}
+
 const MAX_RATE_LIMIT_RETRIES = 20;
 const MAX_IDLE_RESUME_RETRIES = 3;
 const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+function getStreamIdleTimeoutMs(model: AIModel): number {
+  // Pro cannot stream progress while reasoning; wait for its completed response.
+  return /^(?:openai\/)?gpt-5\.5-pro(?:-|$)/.test(model)
+    ? OPENAI_PRO_TIMEOUT_MS
+    : STREAM_IDLE_TIMEOUT_MS;
+}
 
 class StreamIdleTimeoutError extends Error {
   constructor(idleMs: number) {
@@ -595,7 +642,7 @@ function wrapStreamWithErrorHandler(
             try {
               for await (const chunk of withIdleTimeout(
                 originalStream.fullStream,
-                STREAM_IDLE_TIMEOUT_MS,
+                getStreamIdleTimeoutMs(opts.model),
                 toolGate.shouldEnforceIdleTimeout,
               )) {
                 toolGate.observe(chunk);
@@ -764,10 +811,12 @@ function wrapStreamWithErrorHandler(
                   contextWindow: getContextWindow(
                     opts.model,
                     opts.authConfig?.customProviders,
+                    opts.authConfig?.hoonifyModels,
                   ),
                   maxOutputTokens: getMaxOutputTokens(
                     opts.model,
                     opts.authConfig?.customProviders,
+                    opts.authConfig?.hoonifyModels,
                   ),
                   system: applySequentialToolCallPolicy(
                     opts.system,
@@ -989,6 +1038,10 @@ export interface ModelInfo {
   contextLength?: number;
 }
 
+export function modelRequiresThinking(modelId: string): boolean {
+  return getClaudeCapabilities(modelId)?.alwaysOnThinking ?? false;
+}
+
 /**
  * Check whether a model supports extended thinking based on its ID.
  *
@@ -997,6 +1050,7 @@ export interface ModelInfo {
  * Pensar provider IDs.
  */
 export function modelSupportsThinking(modelId: string): boolean {
+  if (getClaudeCapabilities(modelId)) return true;
   // Normalize: strip provider prefixes so we match the base Claude model ID
   const normalized = modelId
     .replace(/^pensar:/, "")
@@ -1017,6 +1071,7 @@ export function modelSupportsThinking(modelId: string): boolean {
  * them at all.
  */
 export function modelSupportsAdaptiveThinking(modelId: string): boolean {
+  if (getClaudeCapabilities(modelId)) return true;
   const normalized = modelId
     .replace(/^pensar:/, "")
     .replace(/^(us\.|eu\.|global\.|ap\.)?anthropic\./, "");
@@ -1030,7 +1085,8 @@ export function modelSupportsAdaptiveThinking(modelId: string): boolean {
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
   if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) return true;
   const { provider } = getModelInfo(modelId);
-  if (provider !== "openai") return false;
+  if (!["openai", "openrouter", "concentrate"].includes(provider)) return false;
+  modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
   return (
     OPENAI_REASONING_MODEL_IDS.has(modelId) || /^o[134](?:\b|-)/.test(modelId)
   );
@@ -1046,6 +1102,22 @@ export function getOpenAIReasoningEfforts(
   if (!modelSupportsOpenAIReasoning(modelId)) return [];
   if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) {
     return ["low", "high", "max"];
+  }
+  if (/^concentrate:gpt-5\.4-(?:mini|nano)$/.test(modelId)) {
+    return ["none", "low", "medium", "high"];
+  }
+  modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
+  if (modelId === "gpt-6-sol" || modelId === "gpt-6-luna") {
+    return ["none", "low", "medium", "high", "xhigh", "max"];
+  }
+  if (/^gpt-6[.-]/.test(modelId)) {
+    return ["low", "medium", "high", "xhigh", "max"];
+  }
+  if (/^gpt-5\.5-pro(?:-|$)/.test(modelId)) {
+    return ["medium", "high", "xhigh"];
+  }
+  if (/^gpt-5\.4-(?:mini|nano)(?:-|$)/.test(modelId)) {
+    return ["none", "low", "medium", "high", "xhigh"];
   }
   if (/^gpt-5\.6(?:\b|-)/.test(modelId)) {
     return ["low", "medium", "high", "xhigh", "max", "ultra"];
@@ -1097,8 +1169,13 @@ export function normalizeOpenAIReasoningEffort(
  *   - `openai.reasoningEffort` — OpenAI/o-series reasoning models.
  */
 export type ReasoningProviderOptions = {
+  openrouter?: {
+    reasoning: { effort: OpenAIReasoningEffort; enabled?: boolean };
+  };
   anthropic?: {
-    thinking: { type: "adaptive" };
+    thinking:
+      | { type: "adaptive"; display?: "summarized" }
+      | { type: "disabled" };
     // Soft effort hint for adaptive thinking; omitted when no level requested
     // (model defaults to "high"). Sibling of `thinking` per the AI SDK.
     effort?: ThinkingEffort;
@@ -1192,6 +1269,39 @@ export function buildReasoningProviderOptions(
     openAIReasoningEffort?: OpenAIReasoningEffort | null;
   },
 ): ReasoningProviderOptions | undefined {
+  const claude = getClaudeCapabilities(model);
+  if (claude) {
+    const provider = getModelInfo(model).provider;
+    const thinking = !!opts.enableThinking || claude.alwaysOnThinking;
+    if (provider === "openrouter") {
+      return {
+        openrouter: {
+          reasoning: {
+            effort: thinking ? (opts.thinkingEffort ?? "high") : "none",
+            enabled: thinking,
+          },
+        },
+      };
+    }
+    if (provider === "concentrate") {
+      return {
+        openai: {
+          forceReasoning: true,
+          reasoningEffort: thinking ? (opts.thinkingEffort ?? "high") : "none",
+          reasoningSummary: "auto",
+        },
+      };
+    }
+    return {
+      anthropic: {
+        thinking:
+          opts.enableThinking || claude.alwaysOnThinking
+            ? { type: "adaptive", display: "summarized" }
+            : { type: "disabled" },
+        ...(opts.thinkingEffort ? { effort: opts.thinkingEffort } : {}),
+      },
+    };
+  }
   const useThinking =
     !!opts.enableThinking &&
     isAnthropicProvider(model) &&
@@ -1204,6 +1314,10 @@ export function buildReasoningProviderOptions(
   const effort = useThinking ? (opts.thinkingEffort ?? undefined) : undefined;
 
   if (!useThinking && !normalizedOpenAIEffort) return undefined;
+
+  if (getModelInfo(model).provider === "openrouter" && normalizedOpenAIEffort) {
+    return { openrouter: { reasoning: { effort: normalizedOpenAIEffort } } };
+  }
 
   return {
     ...(useThinking
@@ -1314,7 +1428,15 @@ function streamResponseWithinOperation(
   nativeRecovery?: NativeStreamRecovery,
 ): StreamTextResult<ToolSet, never> {
   const compactionState = opts._compaction ?? {};
-  opts = { ...opts, _compaction: compactionState };
+  // One effective tool selection per stream, before any fitting: proactive
+  // fit, provider schemas, execution, repair, and every continuation path
+  // below spread this same opts object, so they must all see the filtered
+  // map. Re-entry is identity (`activeTools` already consumed).
+  opts = {
+    ...opts,
+    _compaction: compactionState,
+    ...resolveEffectiveTools(opts.tools, opts.activeTools),
+  };
   // Bound recovery recursion (summarize → resume → overflow → …).
   const restartDepth = opts._restartDepth ?? 0;
   if (restartDepth > MAX_RESTART_DEPTH) {
@@ -1406,8 +1528,16 @@ function streamResponseWithinOperation(
   let proactiveFitFailed = false;
   if (messages && messages.length > 0) {
     const fitted = fitMessagesToContext(messages, {
-      contextWindow: getContextWindow(model, authConfig?.customProviders),
-      maxOutputTokens: getMaxOutputTokens(model, authConfig?.customProviders),
+      contextWindow: getContextWindow(
+        model,
+        authConfig?.customProviders,
+        authConfig?.hoonifyModels,
+      ),
+      maxOutputTokens: getMaxOutputTokens(
+        model,
+        authConfig?.customProviders,
+        authConfig?.hoonifyModels,
+      ),
       system: systemWithToolPolicy,
       tools,
       sessionPath: opts.sessionPath,
@@ -1513,6 +1643,10 @@ function streamResponseWithinOperation(
       tools,
       maxRetries: 3,
       providerOptions,
+      // Step history would retain a serialized request body per step, and
+      // later steps re-send the whole conversation, so they accumulate.
+      // Native capture reads the provider stream result, not this filter.
+      experimental_include: { requestBody: false },
       // The forwarding tracer keeps a handle on the SDK's root generation
       // span: error-part runs complete normally in the SDK, so nothing
       // marks the span failed — the wrapper's catch does.
@@ -1529,7 +1663,11 @@ function streamResponseWithinOperation(
       // defaults that can exceed our budget — e.g. GPT-4o defaults to
       // 16K output but our messages were sized assuming a smaller
       // reservation. Making the value explicit closes that drift class.
-      maxOutputTokens: getMaxOutputTokens(model, authConfig?.customProviders),
+      maxOutputTokens: getMaxOutputTokens(
+        model,
+        authConfig?.customProviders,
+        authConfig?.hoonifyModels,
+      ),
       prepareStep: (opts) => {
         // Update the container with the latest messages
         messagesContainer.current = opts.messages;
@@ -1859,10 +1997,9 @@ export async function generateObjectResponse<T extends z.ZodType>(
       sessionId,
     },
   );
-  const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
-    model,
+  const reasoningProviderOptions = buildReasoningProviderOptions(model, {
     openAIReasoningEffort,
-  );
+  });
   const openRouterProviderOptions =
     buildOpenRouterStructuredProviderOptions(model);
 
@@ -1890,16 +2027,17 @@ export async function generateObjectResponse<T extends z.ZodType>(
             maxOutputTokens: maxTokens,
             temperature,
             providerOptions:
-              normalizedOpenAIEffort || openRouterProviderOptions
+              reasoningProviderOptions || openRouterProviderOptions
                 ? {
-                    ...(normalizedOpenAIEffort
+                    ...reasoningProviderOptions,
+                    ...(openRouterProviderOptions
                       ? {
-                          openai: {
-                            reasoningEffort: normalizedOpenAIEffort,
+                          openrouter: {
+                            ...reasoningProviderOptions?.openrouter,
+                            ...openRouterProviderOptions.openrouter,
                           },
                         }
                       : {}),
-                    ...openRouterProviderOptions,
                   }
                 : undefined,
             maxRetries: 0,
@@ -1985,6 +2123,7 @@ const MINIMAL_RESTART_PROMPT =
 export {
   applySequentialToolCallPolicy,
   createToolExecutionGate,
+  getStreamIdleTimeoutMs,
   SEQUENTIAL_TOOL_CALL_INSTRUCTION,
   StreamIdleTimeoutError,
   withIdleTimeout,

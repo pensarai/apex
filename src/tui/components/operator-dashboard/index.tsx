@@ -769,6 +769,7 @@ export default function OperatorDashboard({
             contextLimit: getContextWindow(
               runModelId,
               config.data.customProviders,
+              config.data.hoonifyModels,
             ),
             modelId: runModelId,
           });

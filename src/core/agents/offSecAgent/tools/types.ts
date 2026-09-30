@@ -40,6 +40,15 @@ export type ToolContext = {
   /** The agent's operational working directory. Defaults to session.rootPath. */
   agentCwd: string;
 
+  /**
+   * Root that scopes this agent's native file tools (read_file, list_files,
+   * glob, grep, create_file, update_file, delete_file, apply_patch) when they
+   * resolve relative paths and enforce confinement. Only file-tool path
+   * resolution is affected — command cwd and shell/OS permissions are NOT
+   * restricted by this value.
+   */
+  fileWorkspaceRoot?: string;
+
   /** The target URL / host — needed by browser tools for context */
   target?: string;
 

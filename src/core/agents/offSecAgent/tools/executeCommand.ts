@@ -1,5 +1,3 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import { applyHeadersToShellCommand } from "../../../http/targetHeaders";
@@ -8,7 +6,6 @@ import {
   type PromptInjectionLibrary,
   redactPromptInjectionPayloads,
 } from "../../../prompt-injections";
-import { agentLogsDir } from "./agentScratch";
 import {
   assertCommandActionAllowed,
   DestructiveActionError,
@@ -20,9 +17,9 @@ import {
   resolverSessionFromCtx,
   ScopeViolationError,
 } from "./scopeGuard";
+import { toolOutputForModel } from "./toolOutput";
 import type { ToolContext } from "./types";
 
-const MAX_INLINE = 50_000;
 const DEFAULT_PROMPT_INJECTION_FILE_ENV = "APEX_PROMPT_INJECTION_FILE";
 
 /** Deadline applied when the model omits `timeout`. */
@@ -146,61 +143,10 @@ export type ExecuteCommandResult = {
   stdout: string;
   stderr: string;
   command: string;
-  outputFile?: string;
+  exitCode?: number;
+  stdoutTruncated?: boolean;
+  stderrTruncated?: boolean;
 };
-
-/**
- * If `raw` exceeds the inline limit, save the full text to a file under this
- * agent's log dir (`cmd-output/`) and return truncated text + file path.
- * Otherwise return the text as-is with no file. An `incompleteNote` marks a
- * capture that hit the byte cap — the saved artifact is the bounded capture
- * and is never labeled as the full output. Scoped per-subagent via
- * {@link agentLogsDir} so a host can reclaim a finished subagent's command
- * dumps mid-scan.
- */
-function maybeSaveFullOutput(
-  raw: string,
-  ctx: ToolContext,
-  opts?: { incompleteNote?: string },
-): { text: string; file?: string } {
-  const incompleteNote = opts?.incompleteNote;
-  if (raw.length <= MAX_INLINE) {
-    return {
-      text: incompleteNote
-        ? `${raw || "(no output)"}\n\n(INCOMPLETE — ${incompleteNote})`
-        : raw || "(no output)",
-    };
-  }
-
-  const outputDir = join(agentLogsDir(ctx), "cmd-output");
-  if (!existsSync(outputDir)) {
-    mkdirSync(outputDir, { recursive: true });
-  }
-
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const filename = `output-${ts}.txt`;
-  const filePath = join(outputDir, filename);
-
-  try {
-    writeFileSync(filePath, raw);
-  } catch {
-    const failedNote = incompleteNote
-      ? `INCOMPLETE capture (${incompleteNote}); failed to save bounded capture to file`
-      : "failed to save full output to file";
-    return {
-      text: `${raw.substring(0, MAX_INLINE)}...\n\n(truncated — ${failedNote})`,
-    };
-  }
-
-  const truncated = raw.substring(0, MAX_INLINE);
-  const savedNote = incompleteNote
-    ? `INCOMPLETE capture (${incompleteNote}); saved output truncated at the byte limit to ${filePath}`
-    : `full output saved to ${filePath}`;
-  return {
-    text: `${truncated}...\n\n(truncated — ${savedNote}). Use read_file or grep to analyze.`,
-    file: filePath,
-  };
-}
 
 /**
  * Redact known secret values from command output. Longest-first to avoid
@@ -357,6 +303,8 @@ PROMPT-INJECTION PAYLOADS:
 
 IMPORTANT: Always analyze results and adjust your approach based on findings.`,
     inputSchema: executeCommandInputSchema,
+    toModelOutput: ({ output }) =>
+      toolOutputForModel(ctx, output as ExecuteCommandResult),
     execute: async ({
       command,
       promptInjection,
@@ -549,18 +497,15 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           }
 
           const result = await ctx.sandbox.execute(commandWithHeaders, ssmOpts);
-          const { text: stdout, file: outputFile } = maybeSaveFullOutput(
-            redact(result.stdout),
-            ctx,
-          );
+          const stdout = redact(result.stdout) || "(no output)";
           const stderr = redact(result.stderr || "");
           return {
             success: result.success,
             error: !result.success ? stderr || "Command failed" : "",
             stdout,
             stderr,
-            command,
-            outputFile,
+            command: redact(command),
+            exitCode: result.exitCode,
           };
         } catch (error: unknown) {
           const msg = error instanceof Error ? error.message : String(error);
@@ -594,11 +539,9 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
           const stderrNote = result.stderrTruncated
             ? "stderr capture truncated at the byte limit"
             : undefined;
-          const { text: stdout, file: outputFile } = maybeSaveFullOutput(
-            redact(result.stdout),
-            ctx,
-            { incompleteNote: stdoutNote },
-          );
+          const stdout =
+            (redact(result.stdout) || "(no output)") +
+            (stdoutNote ? `\n\n(INCOMPLETE — ${stdoutNote})` : "");
           const stderr =
             redact(result.stderr) +
             (stderrNote ? `\n\n(INCOMPLETE — ${stderrNote})` : "");
@@ -614,8 +557,10 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
                     : "",
             stdout,
             stderr,
-            command,
-            outputFile,
+            command: redact(command),
+            exitCode: result.exitCode,
+            stdoutTruncated: result.stdoutTruncated,
+            stderrTruncated: result.stderrTruncated,
           };
         } catch (error: unknown) {
           const msg = error instanceof Error ? error.message : String(error);

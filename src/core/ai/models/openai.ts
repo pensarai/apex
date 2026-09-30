@@ -5,6 +5,30 @@ import type { ModelInfo } from "../ai";
 
 export const OPENAI_MODELS: ModelInfo[] = [
   {
+    id: "gpt-6.1-sol",
+    name: "GPT-6.1-sol",
+    provider: "openai",
+    contextLength: 1050000,
+  },
+  {
+    id: "gpt-6-luna",
+    name: "GPT-6-luna",
+    provider: "openai",
+    contextLength: 1050000,
+  },
+  {
+    id: "gpt-6-sol",
+    name: "GPT-6-sol",
+    provider: "openai",
+    contextLength: 1050000,
+  },
+  {
+    id: "gpt-6-astra",
+    name: "GPT-6-astra",
+    provider: "openai",
+    contextLength: 1050000,
+  },
+  {
     id: "gpt-5.6-sol",
     name: "GPT-5.6-sol",
     provider: "openai",
@@ -19,6 +43,18 @@ export const OPENAI_MODELS: ModelInfo[] = [
   {
     id: "gpt-5.6-luna",
     name: "GPT-5.6-luna",
+    provider: "openai",
+    contextLength: 1050000,
+  },
+  {
+    id: "gpt-5.5-pro",
+    name: "GPT-5.5-pro",
+    provider: "openai",
+    contextLength: 1050000,
+  },
+  {
+    id: "gpt-5.5-pro-2026-04-23",
+    name: "GPT-5.5-pro-2026-04-23",
     provider: "openai",
     contextLength: 1050000,
   },
@@ -57,6 +93,30 @@ export const OPENAI_MODELS: ModelInfo[] = [
     name: "GPT-5.4-2026-03-05",
     provider: "openai",
     contextLength: 200000,
+  },
+  {
+    id: "gpt-5.4-nano",
+    name: "GPT-5.4-nano",
+    provider: "openai",
+    contextLength: 400000,
+  },
+  {
+    id: "gpt-5.4-nano-2026-03-17",
+    name: "GPT-5.4-nano-2026-03-17",
+    provider: "openai",
+    contextLength: 400000,
+  },
+  {
+    id: "gpt-5.4-mini",
+    name: "GPT-5.4-mini",
+    provider: "openai",
+    contextLength: 400000,
+  },
+  {
+    id: "gpt-5.4-mini-2026-03-17",
+    name: "GPT-5.4-mini-2026-03-17",
+    provider: "openai",
+    contextLength: 400000,
   },
   {
     id: "gpt-5.3-chat-latest",
@@ -339,5 +399,11 @@ export const OPENAI_MODELS: ModelInfo[] = [
     name: "O1",
     provider: "openai",
     contextLength: 200000,
+  },
+  {
+    id: "chat-latest",
+    name: "chat (Latest)",
+    provider: "openai",
+    contextLength: 400000,
   },
 ];
