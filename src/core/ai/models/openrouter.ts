@@ -4,6 +4,12 @@
 import type { ModelInfo } from "../ai";
 export const OPENROUTER_MODELS: ModelInfo[] = [
   {
+    id: "openai/gpt-6-sol",
+    name: "GPT-6 Sol",
+    provider: "openrouter",
+    contextLength: 1050000,
+  },
+  {
     id: "openai/gpt-6-astra",
     name: "GPT-6 Astra",
     provider: "openrouter",

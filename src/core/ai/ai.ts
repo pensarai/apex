@@ -132,6 +132,7 @@ export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 export type ThinkingEffort = "low" | "medium" | "high";
 
 const OPENAI_REASONING_MODEL_IDS = new Set([
+  "gpt-6-sol",
   "gpt-6-astra",
   "gpt-5.5-pro",
   "gpt-5.5-pro-2026-04-23",
@@ -1097,6 +1098,9 @@ export function getOpenAIReasoningEfforts(
     return ["none", "low", "medium", "high"];
   }
   modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
+  if (modelId === "gpt-6-sol") {
+    return ["none", "low", "medium", "high", "xhigh", "max"];
+  }
   if (/^gpt-6[.-]/.test(modelId)) {
     return ["low", "medium", "high", "xhigh", "max"];
   }

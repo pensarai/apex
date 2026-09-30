@@ -22,6 +22,11 @@ vi.mock("undici", async (importOriginal) => {
 
 const models = [
   {
+    ids: ["gpt-6-sol"],
+    context: 1050000,
+    efforts: ["none", "low", "medium", "high", "xhigh", "max"],
+  },
+  {
     ids: ["gpt-6-astra"],
     context: 1050000,
     efforts: ["low", "medium", "high", "xhigh", "max"],
