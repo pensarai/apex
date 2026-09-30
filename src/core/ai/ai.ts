@@ -1077,13 +1077,8 @@ export function modelSupportsAdaptiveThinking(modelId: string): boolean {
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
   if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) return true;
   const { provider } = getModelInfo(modelId);
-  if (
-    !["openai", "openrouter", "concentrate", "bedrock-mantle"].includes(
-      provider,
-    )
-  )
-    return false;
-  modelId = modelId.replace(/^(openai\/|concentrate:|mantle:openai\.)/, "");
+  if (!["openai", "openrouter", "concentrate"].includes(provider)) return false;
+  modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
   return (
     OPENAI_REASONING_MODEL_IDS.has(modelId) || /^o[134](?:\b|-)/.test(modelId)
   );
@@ -1103,7 +1098,7 @@ export function getOpenAIReasoningEfforts(
   if (/^concentrate:gpt-5\.4-(?:mini|nano)$/.test(modelId)) {
     return ["none", "low", "medium", "high"];
   }
-  modelId = modelId.replace(/^(openai\/|concentrate:|mantle:openai\.)/, "");
+  modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
   if (modelId === "gpt-6-sol" || modelId === "gpt-6-luna") {
     return ["none", "low", "medium", "high", "xhigh", "max"];
   }
