@@ -131,6 +131,8 @@ export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 export type ThinkingEffort = "low" | "medium" | "high";
 
 const OPENAI_REASONING_MODEL_IDS = new Set([
+  "gpt-5.5-pro",
+  "gpt-5.5-pro-2026-04-23",
   "gpt-5.4-nano",
   "gpt-5.4-nano-2026-03-17",
   "gpt-5.4-mini",
@@ -466,6 +468,13 @@ const MAX_RATE_LIMIT_RETRIES = 20;
 const MAX_IDLE_RESUME_RETRIES = 3;
 const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+function getStreamIdleTimeoutMs(model: AIModel): number {
+  // Pro cannot stream progress while reasoning; wait for its completed response.
+  return /^gpt-5\.5-pro(?:-|$)/.test(model)
+    ? 35 * 60 * 1000
+    : STREAM_IDLE_TIMEOUT_MS;
+}
+
 class StreamIdleTimeoutError extends Error {
   constructor(idleMs: number) {
     super(`Stream idle for ${Math.round(idleMs / 1000)}s — no chunks received`);
@@ -627,7 +636,7 @@ function wrapStreamWithErrorHandler(
             try {
               for await (const chunk of withIdleTimeout(
                 originalStream.fullStream,
-                STREAM_IDLE_TIMEOUT_MS,
+                getStreamIdleTimeoutMs(opts.model),
                 toolGate.shouldEnforceIdleTimeout,
               )) {
                 toolGate.observe(chunk);
@@ -1078,6 +1087,9 @@ export function getOpenAIReasoningEfforts(
   modelId: string,
 ): OpenAIReasoningEffort[] {
   if (!modelSupportsOpenAIReasoning(modelId)) return [];
+  if (/^gpt-5\.5-pro(?:-|$)/.test(modelId)) {
+    return ["medium", "high", "xhigh"];
+  }
   if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) {
     return ["low", "high", "max"];
   }
@@ -2046,6 +2058,7 @@ const MINIMAL_RESTART_PROMPT =
 export {
   applySequentialToolCallPolicy,
   createToolExecutionGate,
+  getStreamIdleTimeoutMs,
   SEQUENTIAL_TOOL_CALL_INSTRUCTION,
   StreamIdleTimeoutError,
   withIdleTimeout,

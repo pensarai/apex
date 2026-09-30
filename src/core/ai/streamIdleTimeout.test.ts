@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createToolExecutionGate,
+  getStreamIdleTimeoutMs,
   StreamIdleTimeoutError,
   withIdleTimeout,
 } from "./ai";
@@ -8,6 +9,51 @@ import {
 // Minimal chunk shape used by the gate — mirrors what the wrapper sees
 // from the AI SDK's `fullStream` (only the fields we actually inspect).
 type Chunk = { type: string; toolCallId?: string; toolName?: string };
+
+describe("non-streaming model timeout", () => {
+  it.each([
+    "gpt-5.5-pro",
+    "gpt-5.5-pro-2026-04-23",
+  ])("allows %s to complete after the normal streaming idle limit", async (model) => {
+    vi.useFakeTimers();
+    try {
+      async function* delayedResponse() {
+        await new Promise((resolve) => setTimeout(resolve, 6 * 60 * 1000));
+        yield "completed";
+      }
+      const stream = withIdleTimeout(
+        delayedResponse(),
+        getStreamIdleTimeoutMs(model),
+      );
+      const response = stream.next();
+      await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+      expect(await response).toEqual({ value: "completed", done: false });
+      await stream.return(undefined);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["gpt-5.5-pro", 35],
+    ["gpt-5.4-mini", 5],
+  ] as const)("still bounds a stalled %s response", async (model, minutes) => {
+    vi.useFakeTimers();
+    try {
+      const stalled: AsyncIterable<string> = {
+        [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
+      };
+      const stream = withIdleTimeout(stalled, getStreamIdleTimeoutMs(model));
+      const rejection = expect(stream.next()).rejects.toThrow(
+        StreamIdleTimeoutError,
+      );
+      await vi.advanceTimersByTimeAsync(minutes * 60 * 1000);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe("withIdleTimeout", () => {
   it("passes through chunks when stream is healthy", async () => {

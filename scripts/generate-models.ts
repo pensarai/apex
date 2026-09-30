@@ -623,6 +623,8 @@ function main() {
 
   // Models available on the OpenAI API but not yet in the AI SDK type definitions
   appendMissing(openaiIds, [
+    "gpt-5.5-pro",
+    "gpt-5.5-pro-2026-04-23",
     "gpt-5.4-nano",
     "gpt-5.4-nano-2026-03-17",
     "gpt-5.4-mini",

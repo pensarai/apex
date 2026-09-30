@@ -11,8 +11,10 @@ import {
   type LanguageModel,
   type ModelMessage,
   type StreamTextResult,
+  simulateStreamingMiddleware,
   type TextStreamPart,
   type ToolSet,
+  wrapLanguageModel,
 } from "ai";
 // Importing through the api barrel would cycle: api → offesecAgent → offSecAgent
 // → ai → api. Use the leaf constants module directly.
@@ -199,7 +201,14 @@ export function getProviderModel(
       const openai = createOpenAI({
         apiKey: openAiAPIKey,
       });
-      providerModel = openai(model);
+      providerModel = openai.responses(model);
+      if (/^gpt-5\.5-pro(?:-|$)/.test(model)) {
+        // Pro supports Responses tool calls but cannot stream from the API.
+        providerModel = wrapLanguageModel({
+          model: providerModel,
+          middleware: simulateStreamingMiddleware(),
+        });
+      }
       break;
     }
 
