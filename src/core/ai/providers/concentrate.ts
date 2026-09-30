@@ -136,6 +136,7 @@ export function createConcentrateModel(
   });
   return withConcentrateDefaults(
     concentrate.responses(upstreamModelId),
-    modelId === CONCENTRATE_GLM_5_3_MODEL_ID,
+    modelId === CONCENTRATE_GLM_5_3_MODEL_ID ||
+      /^gpt-6[.-]/.test(upstreamModelId),
   );
 }

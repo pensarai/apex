@@ -12,6 +12,7 @@ type Chunk = { type: string; toolCallId?: string; toolName?: string };
 
 describe("non-streaming model timeout", () => {
   it.each([
+    "openai/gpt-5.5-pro",
     "gpt-5.5-pro",
     "gpt-5.5-pro-2026-04-23",
   ])("allows %s to complete after the normal streaming idle limit", async (model) => {
@@ -36,6 +37,7 @@ describe("non-streaming model timeout", () => {
 
   it.each([
     ["gpt-5.5-pro", 35],
+    ["openai/gpt-5.5-pro", 35],
     ["gpt-5.4-mini", 5],
   ] as const)("still bounds a stalled %s response", async (model, minutes) => {
     vi.useFakeTimers();
