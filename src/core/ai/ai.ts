@@ -131,6 +131,8 @@ export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 export type ThinkingEffort = "low" | "medium" | "high";
 
 const OPENAI_REASONING_MODEL_IDS = new Set([
+  "gpt-5.4-nano",
+  "gpt-5.4-nano-2026-03-17",
   "gpt-5.4-mini",
   "gpt-5.4-mini-2026-03-17",
   "gpt-5",
@@ -1079,7 +1081,7 @@ export function getOpenAIReasoningEfforts(
   if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) {
     return ["low", "high", "max"];
   }
-  if (/^gpt-5\.4-mini(?:-|$)/.test(modelId)) {
+  if (/^gpt-5\.4-(?:mini|nano)(?:-|$)/.test(modelId)) {
     return ["none", "low", "medium", "high", "xhigh"];
   }
   if (/^gpt-5\.6(?:\b|-)/.test(modelId)) {
