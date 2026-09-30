@@ -18,7 +18,25 @@ export function createAnthropicModel(
       body.thinking ??= {
         type: capabilities.alwaysOnThinking ? "adaptive" : "disabled",
       };
-      return globalThis.fetch(input, { ...init, body: JSON.stringify(body) });
+      const headers = new Headers(init?.headers);
+      if (capabilities.bindsThinking) {
+        // Context fitting can edit earlier turns; drop invalid bound blocks instead of failing.
+        body.thinking.block_binding = {
+          prefix_mismatch_behavior: "drop_block",
+        };
+        const beta = headers.get("anthropic-beta");
+        headers.set(
+          "anthropic-beta",
+          [beta, "thinking-binding-controls-2026-08-01"]
+            .filter(Boolean)
+            .join(","),
+        );
+      }
+      return globalThis.fetch(input, {
+        ...init,
+        headers,
+        body: JSON.stringify(body),
+      });
     }) as typeof fetch,
   }).chat(modelId);
 

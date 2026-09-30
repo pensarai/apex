@@ -1,6 +1,10 @@
-type ClaudeCapabilities = { alwaysOnThinking: boolean };
+type ClaudeCapabilities = {
+  alwaysOnThinking: boolean;
+  bindsThinking?: boolean;
+};
 
 const CLAUDE_CAPABILITIES: Record<string, ClaudeCapabilities> = {
+  "claude-fable-5-1": { alwaysOnThinking: true, bindsThinking: true },
   "claude-opus-5": { alwaysOnThinking: false },
   "claude-sonnet-5": { alwaysOnThinking: false },
   "claude-fable-5": { alwaysOnThinking: true },

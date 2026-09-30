@@ -11,7 +11,10 @@ import {
 import { getMaxOutputTokens } from "../models";
 import { getProviderModel } from "../utils";
 
+const boundModels = new Set(["claude-fable-5-1"]);
+
 const models = [
+  { id: "claude-fable-5-1", required: true },
   { id: "claude-opus-5", required: false },
   { id: "claude-sonnet-5", required: false },
   { id: "claude-fable-5", required: true },
@@ -83,6 +86,16 @@ describe.each(models)("Anthropic $id", ({ id, required }) => {
     if (!call) throw new Error("Expected a Claude request");
     expect(String(call[0])).toBe("https://api.anthropic.com/v1/messages");
     const body = JSON.parse(String(call[1]?.body));
+    if (boundModels.has(id)) {
+      expect(body.thinking.block_binding).toEqual({
+        prefix_mismatch_behavior: "drop_block",
+      });
+      expect(new Headers(call[1]?.headers).get("anthropic-beta")).toContain(
+        "thinking-binding-controls-2026-08-01",
+      );
+    } else {
+      expect(body.thinking.block_binding).toBeUndefined();
+    }
     expect(body).toMatchObject({
       model: id,
       max_tokens: 128_000,
