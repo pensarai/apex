@@ -64,7 +64,7 @@ describe("cacheBreakpointFor", () => {
     expect(bedrockClaude.length).toBeGreaterThan(0);
     for (const { id } of bedrockClaude) {
       const base = id.replace(/^(?:[a-z]{2,6}\.)?anthropic\./, "");
-      const isGen4Plus = /^claude-(?:opus|sonnet|haiku)-\d/.test(base);
+      const isGen4Plus = /^claude-(?:opus|sonnet|haiku|fable)-\d/.test(base);
       expect({ id, cached: cacheBreakpointFor(id) !== undefined }).toEqual({
         id,
         cached: isGen4Plus,
