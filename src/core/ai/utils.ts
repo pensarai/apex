@@ -47,6 +47,7 @@ import { runWithNativeRolloutOperation } from "./native-rollout-evidence";
 import { createConcentrateModel } from "./providers/concentrate";
 import { createCustomModel } from "./providers/custom";
 import { createHoonifyModel } from "./providers/hoonify";
+import { fetchOpenAIPro } from "./providers/openai-pro-fetch";
 import { createPensarModel } from "./providers/pensar";
 
 const log = scopedLogger(() => createLogger("ai:utils"));
@@ -200,6 +201,7 @@ export function getProviderModel(
     case "openai": {
       const openai = createOpenAI({
         apiKey: openAiAPIKey,
+        fetch: /^gpt-5\.5-pro(?:-|$)/.test(model) ? fetchOpenAIPro : undefined,
       });
       providerModel = openai.responses(model);
       if (/^gpt-5\.5-pro(?:-|$)/.test(model)) {
