@@ -9,7 +9,6 @@ export function getClaudeCapabilities(
 ): ClaudeCapabilities | undefined {
   const nativeId = modelId
     .replace(/^(concentrate:|anthropic\/)/, "")
-    .replace(/^(?:(?:us|eu|global)\.)?anthropic\./, "")
     .replace(/(\d)\.(\d)/g, "$1-$2");
   return CLAUDE_CAPABILITIES[nativeId];
 }

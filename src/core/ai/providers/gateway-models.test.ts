@@ -22,13 +22,7 @@ vi.mock("undici", async (importOriginal) => {
   };
 });
 
-const models: {
-  slug: string;
-  context: number;
-  openrouter: string;
-  concentrate: boolean;
-  mantleRegion?: string;
-}[] = [
+const models = [
   {
     slug: "claude-fable-5",
     context: 1000000,
@@ -46,21 +40,18 @@ const models: {
     context: 1050000,
     openrouter: "openai/gpt-6-luna",
     concentrate: true,
-    mantleRegion: "us-east-1",
   },
   {
     slug: "gpt-6-sol",
     context: 1050000,
     openrouter: "openai/gpt-6-sol",
     concentrate: true,
-    mantleRegion: "us-east-1",
   },
   {
     slug: "gpt-6-astra",
     context: 1050000,
     openrouter: "openai/gpt-6-astra",
     concentrate: true,
-    mantleRegion: "us-west-2",
   },
   {
     slug: "gpt-5.5-pro",
@@ -76,42 +67,29 @@ const models: {
   },
   {
     slug: "gpt-5.4-mini",
-    context: 400_000,
+    context: 400000,
     openrouter: "openai/gpt-5.4-mini",
     concentrate: true,
   },
 ];
-const routes = models.flatMap(
-  ({ slug, context, openrouter, concentrate, mantleRegion }) => [
-    {
-      id: openrouter,
-      upstream: openrouter,
-      context,
-      provider: "openrouter" as const,
-    },
-    ...(concentrate
-      ? [
-          {
-            id: `concentrate:${slug}`,
-            upstream: slug,
-            context,
-            provider: "concentrate" as const,
-          },
-        ]
-      : []),
-    ...(mantleRegion
-      ? [
-          {
-            id: `mantle:openai.${slug}`,
-            upstream: `openai.${slug}`,
-            context,
-            provider: "bedrock-mantle" as const,
-            region: mantleRegion,
-          },
-        ]
-      : []),
-  ],
-);
+const routes = models.flatMap(({ slug, context, openrouter, concentrate }) => [
+  {
+    id: openrouter,
+    upstream: openrouter,
+    context,
+    provider: "openrouter" as const,
+  },
+  ...(concentrate
+    ? [
+        {
+          id: `concentrate:${slug}`,
+          upstream: slug,
+          context,
+          provider: "concentrate" as const,
+        },
+      ]
+    : []),
+]);
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -226,20 +204,11 @@ function toolStream(upstream: string, openrouter: boolean) {
   );
 }
 
-describe.each(routes)("Gateway $id", ({
-  id,
-  upstream,
-  provider,
-  context,
-  ...route
-}) => {
+describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
   const openrouter = provider === "openrouter";
-  const mantle = provider === "bedrock-mantle";
-  const credentials = mantle
-    ? { bedrock: { apiKey: "test-bedrock-key", region: "us-east-2" } }
-    : openrouter
-      ? { openRouterAPIKey: "test-router-key" }
-      : { concentrateAPIKey: "sk-cn-test" };
+  const credentials = openrouter
+    ? { openRouterAPIKey: "test-router-key" }
+    : { concentrateAPIKey: "sk-cn-test" };
   const options = (): LanguageModelV3CallOptions => ({
     prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
     maxOutputTokens: getMaxOutputTokens(id),
@@ -263,7 +232,6 @@ describe.each(routes)("Gateway $id", ({
       getAvailableModels({
         responsibleUseAccepted: true,
         ...credentials,
-        ...(mantle ? { bedrockAPIKey: "test-bedrock-key" } : {}),
       }),
     );
     expect(available.find((m) => m.id === id)).toMatchObject({
@@ -322,18 +290,12 @@ describe.each(routes)("Gateway $id", ({
     if (!call) throw new Error("Expected gateway request");
     const [url, init] = call;
     expect(String(url)).toBe(
-      mantle
-        ? `https://bedrock-mantle.${"region" in route ? route.region : ""}.api.aws/openai/v1/responses`
-        : openrouter
-          ? "https://openrouter.ai/api/v1/chat/completions"
-          : "https://api.concentrate.ai/v1/responses",
+      openrouter
+        ? "https://openrouter.ai/api/v1/chat/completions"
+        : "https://api.concentrate.ai/v1/responses",
     );
     expect(new Headers(init?.headers).get("authorization")).toBe(
-      mantle
-        ? "Bearer test-bedrock-key"
-        : openrouter
-          ? "Bearer test-router-key"
-          : "Bearer sk-cn-test",
+      openrouter ? "Bearer test-router-key" : "Bearer sk-cn-test",
     );
     const body = JSON.parse(String(init?.body));
     expect(body.model).toBe(upstream);
@@ -345,7 +307,7 @@ describe.each(routes)("Gateway $id", ({
         response_format: { type: "json_schema" },
       });
     } else {
-      if (!mantle) expect(body.store).toBe(false);
+      expect(body.store).toBe(false);
       expect(body).toMatchObject({
         max_output_tokens: 128_000,
         tools: [{ type: "function", name: "check" }],
@@ -377,6 +339,30 @@ describe.each(routes)("Gateway $id", ({
   });
 
   if (upstream.includes("claude")) {
+    it.each([
+      true,
+      false,
+    ])("honors thinking preference %s without disabling required thinking", async (enableThinking) => {
+      const fetchMock = vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) =>
+          completedResponse(upstream, openrouter),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await getProviderModel(id, credentials).doGenerate({
+        ...options(),
+        providerOptions: buildReasoningProviderOptions(id, {
+          enableThinking,
+          thinkingEffort: "medium",
+        }),
+      });
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Expected thinking request");
+      const thinking = enableThinking || modelRequiresThinking(id);
+      const body = JSON.parse(String(call[1]?.body));
+      expect(body.reasoning.effort).toBe(thinking ? "medium" : "none");
+      if (openrouter) expect(body.reasoning.enabled).toBe(thinking);
+    });
+
     it("preserves encrypted reasoning with a tool result", async () => {
       const reasoning = {
         type: "reasoning.encrypted",

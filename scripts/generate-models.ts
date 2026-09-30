@@ -46,7 +46,6 @@ function extractUnionMembers(dtsPath: string, typeName: string): string[] {
 // ---------------------------------------------------------------------------
 
 const CONTEXT_LENGTHS: Record<string, number> = {
-  "anthropic.claude-fable-5": 1000000,
   "claude-fable-5": 1000000,
   // Anthropic – all Claude 3+ have 200k, older have 100k
   "claude-3": 200000,
@@ -682,15 +681,10 @@ function main() {
   );
   const bedrockRawIds = extractUnionMembers(bedrockDts, "BedrockChatModelId");
   // Deduplicate (SDK type has some duplicates)
-  // These models require an inference profile on bedrock-runtime.
-  const bedrockBaseIds = [...new Set(bedrockRawIds)].filter(
-    (id) => !["anthropic.claude-fable-5"].includes(id),
-  );
+  const bedrockBaseIds = [...new Set(bedrockRawIds)];
 
   // Models available on Bedrock but not yet in the AI SDK type definitions
   appendMissing(bedrockBaseIds, [
-    "us.anthropic.claude-fable-5",
-    "global.anthropic.claude-fable-5",
     "moonshotai.kimi-k2.5",
     "anthropic.claude-opus-4-7",
     "anthropic.claude-opus-4-8",
