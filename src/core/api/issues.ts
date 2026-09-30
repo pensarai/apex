@@ -249,10 +249,25 @@ export async function listPentestTargets(
   );
 }
 
-export async function dispatchPentest(opts?: {
+export interface DispatchPentestInput {
   branch?: string;
   scanLevel?: "priority" | "full";
-}): Promise<DispatchPentestResult> {
+  endpointIds?: string[];
+  [field: string]: unknown;
+}
+
+export interface PentestCapabilities {
+  launchInputVersion: number;
+  endpointIds: boolean;
+}
+
+export async function getPentestCapabilities(): Promise<PentestCapabilities> {
+  return apiRequest<PentestCapabilities>("GET", "/pentests/capabilities");
+}
+
+export async function dispatchPentest(
+  opts?: DispatchPentestInput,
+): Promise<DispatchPentestResult> {
   return apiRequest<DispatchPentestResult>("POST", "/pentests", opts);
 }
 
