@@ -59,6 +59,7 @@ import {
   withNativeRolloutEvidenceModel,
 } from "./native-rollout-evidence";
 import { CONCENTRATE_GLM_5_3_MODEL_ID } from "./providers/concentrate";
+import { OPENAI_PRO_TIMEOUT_MS } from "./providers/openai-pro-fetch";
 import { STREAM_DEBUG } from "./streamTelemetry";
 import {
   type AIAuthConfig,
@@ -475,7 +476,7 @@ const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 function getStreamIdleTimeoutMs(model: AIModel): number {
   // Pro cannot stream progress while reasoning; wait for its completed response.
   return /^gpt-5\.5-pro(?:-|$)/.test(model)
-    ? 35 * 60 * 1000
+    ? OPENAI_PRO_TIMEOUT_MS
     : STREAM_IDLE_TIMEOUT_MS;
 }
 
