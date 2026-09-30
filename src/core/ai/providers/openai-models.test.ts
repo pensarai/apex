@@ -21,6 +21,7 @@ vi.mock("undici", async (importOriginal) => {
 });
 
 const models = [
+  { ids: ["chat-latest"], context: 400_000, efforts: [] },
   {
     ids: ["gpt-6.1-sol"],
     context: 1050000,
@@ -162,7 +163,11 @@ describe.each(models)("OpenAI $ids", ({ ids, context, efforts }) => {
     expect(resolveExplicitCliModel({ model: id })).toBe(id);
     expect(getMaxOutputTokens(id)).toBe(128_000);
     expect(getOpenAIReasoningEfforts(id)).toEqual(efforts);
-    expect(efforts).toContain(normalizeOpenAIReasoningEffort(id, "ultra"));
+    if (efforts.length) {
+      expect(efforts).toContain(normalizeOpenAIReasoningEffort(id, "ultra"));
+    } else {
+      expect(normalizeOpenAIReasoningEffort(id, "ultra")).toBeUndefined();
+    }
   });
 
   it.each(
@@ -210,13 +215,16 @@ describe.each(models)("OpenAI $ids", ({ ids, context, efforts }) => {
     expect(new Headers(init?.headers).get("authorization")).toBe(
       "Bearer test-key",
     );
-    expect(JSON.parse(String(init?.body))).toMatchObject({
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({
       model: id,
       max_output_tokens: 128_000,
-      reasoning: { effort: "high" },
       tools: [{ type: "function", name: "check" }],
       text: { format: { type: "json_schema" } },
     });
+    expect(body.reasoning).toEqual(
+      efforts.length ? { effort: "high" } : undefined,
+    );
   });
 });
 
@@ -305,8 +313,10 @@ it.each(
   if (!first) throw new Error("Expected a streaming request");
   expect(JSON.parse(String(first[1]?.body))).toMatchObject({
     stream: true,
-    reasoning: { effort: "high" },
   });
+  expect(JSON.parse(String(first[1]?.body)).reasoning).toEqual(
+    getOpenAIReasoningEfforts(id).length ? { effort: "high" } : undefined,
+  );
   await model.doGenerate({
     prompt: [
       { role: "user", content: [{ type: "text", text: "Check" }] },

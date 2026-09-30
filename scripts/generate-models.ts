@@ -46,6 +46,7 @@ function extractUnionMembers(dtsPath: string, typeName: string): string[] {
 // ---------------------------------------------------------------------------
 
 const CONTEXT_LENGTHS: Record<string, number> = {
+  "chat-latest": 400000,
   "claude-sonnet-5-5": 1000000,
   "claude-opus-5-5": 1000000,
   "claude-fable-5-1": 1000000,
@@ -640,6 +641,7 @@ function main() {
 
   // Models available on the OpenAI API but not yet in the AI SDK type definitions
   appendMissing(openaiIds, [
+    "chat-latest",
     "gpt-6.1-sol",
     "gpt-6-luna",
     "gpt-6-sol",
