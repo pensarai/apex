@@ -23,6 +23,12 @@ vi.mock("undici", async (importOriginal) => {
 
 const models = [
   {
+    slug: "gpt-6-astra",
+    context: 1050000,
+    openrouter: "openai/gpt-6-astra",
+    concentrate: true,
+  },
+  {
     slug: "gpt-5.5-pro",
     context: 1050000,
     openrouter: "openai/gpt-5.5-pro",
@@ -36,7 +42,7 @@ const models = [
   },
   {
     slug: "gpt-5.4-mini",
-    context: 400_000,
+    context: 400000,
     openrouter: "openai/gpt-5.4-mini",
     concentrate: true,
   },
@@ -196,7 +202,10 @@ describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
 
   it("exposes only the configured route in the picker and CLI with its limits", () => {
     const available = getVisiblePickerModels(
-      getAvailableModels({ responsibleUseAccepted: true, ...credentials }),
+      getAvailableModels({
+        responsibleUseAccepted: true,
+        ...credentials,
+      }),
     );
     expect(available.find((m) => m.id === id)).toMatchObject({
       provider,
@@ -211,7 +220,7 @@ describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
     expect(getMaxOutputTokens(id)).toBe(128_000);
     expect(getOpenAIReasoningEfforts(id)).toContain("high");
     const nativeEfforts = getOpenAIReasoningEfforts(
-      upstream.replace(/^openai\//, ""),
+      upstream.replace(/^openai[/.]/, ""),
     );
     expect(getOpenAIReasoningEfforts(id)).toEqual(
       !openrouter && /^gpt-5\.4-(mini|nano)$/.test(upstream)
@@ -289,13 +298,31 @@ describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
         response_format: { type: "json_schema" },
       });
     } else {
+      expect(body.store).toBe(false);
       expect(body).toMatchObject({
-        store: false,
         max_output_tokens: 128_000,
         tools: [{ type: "function", name: "check" }],
         text: { format: { type: "json_schema" } },
       });
     }
+  });
+
+  it("preserves the highest supported reasoning effort through the SDK", async () => {
+    const effort = getOpenAIReasoningEfforts(id).at(-1);
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        completedResponse(upstream, openrouter),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await getProviderModel(id, credentials).doGenerate({
+      ...options(),
+      providerOptions: buildReasoningProviderOptions(id, {
+        openAIReasoningEffort: effort,
+      }),
+    });
+    const call = fetchMock.mock.calls[0];
+    if (!call) throw new Error("Expected reasoning request");
+    expect(JSON.parse(String(call[1]?.body)).reasoning.effort).toBe(effort);
   });
 
   it("streams tool calls and sends the next tool result through the same route", async () => {

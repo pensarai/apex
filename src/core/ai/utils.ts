@@ -7,6 +7,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
+  defaultSettingsMiddleware,
   generateText,
   type LanguageModel,
   type ModelMessage,
@@ -204,6 +205,19 @@ export function getProviderModel(
         fetch: /^gpt-5\.5-pro(?:-|$)/.test(model) ? fetchOpenAIPro : undefined,
       });
       providerModel = openai.responses(model);
+      if (/^gpt-6[.-]/.test(model)) {
+        // The pinned SDK recognizes reasoning models only through GPT-5.
+        providerModel = wrapLanguageModel({
+          model: providerModel,
+          middleware: defaultSettingsMiddleware({
+            settings: {
+              providerOptions: {
+                openai: { forceReasoning: true, reasoningEffort: "medium" },
+              },
+            },
+          }),
+        });
+      }
       if (/^gpt-5\.5-pro(?:-|$)/.test(model)) {
         // Pro supports Responses tool calls but cannot stream from the API.
         providerModel = wrapLanguageModel({
