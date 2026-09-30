@@ -12,7 +12,22 @@ import {
 import { getMaxOutputTokens } from "../models";
 import { getProviderModel } from "../utils";
 
+vi.mock("undici", async (importOriginal) => {
+  const original = await importOriginal<typeof import("undici")>();
+  return {
+    ...original,
+    fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+      globalThis.fetch(input, init),
+  };
+});
+
 const models = [
+  {
+    slug: "gpt-5.5-pro",
+    context: 1050000,
+    openrouter: "openai/gpt-5.5-pro",
+    concentrate: false,
+  },
   {
     slug: "gpt-5.4-nano",
     context: 400000,
@@ -195,6 +210,14 @@ describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
     expect(resolveExplicitCliModel({ model: id })).toBe(id);
     expect(getMaxOutputTokens(id)).toBe(128_000);
     expect(getOpenAIReasoningEfforts(id)).toContain("high");
+    const nativeEfforts = getOpenAIReasoningEfforts(
+      upstream.replace(/^openai\//, ""),
+    );
+    expect(getOpenAIReasoningEfforts(id)).toEqual(
+      !openrouter && /^gpt-5\.4-(mini|nano)$/.test(upstream)
+        ? nativeEfforts.filter((effort) => effort !== "xhigh")
+        : nativeEfforts,
+    );
   });
 
   if (!upstream.includes("claude")) {

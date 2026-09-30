@@ -11,8 +11,10 @@ import {
   type LanguageModel,
   type ModelMessage,
   type StreamTextResult,
+  simulateStreamingMiddleware,
   type TextStreamPart,
   type ToolSet,
+  wrapLanguageModel,
 } from "ai";
 // Importing through the api barrel would cycle: api → offesecAgent → offSecAgent
 // → ai → api. Use the leaf constants module directly.
@@ -45,6 +47,7 @@ import { runWithNativeRolloutOperation } from "./native-rollout-evidence";
 import { createConcentrateModel } from "./providers/concentrate";
 import { createCustomModel } from "./providers/custom";
 import { createHoonifyModel } from "./providers/hoonify";
+import { fetchOpenAIPro } from "./providers/openai-pro-fetch";
 import { createPensarModel } from "./providers/pensar";
 
 const log = scopedLogger(() => createLogger("ai:utils"));
@@ -198,14 +201,23 @@ export function getProviderModel(
     case "openai": {
       const openai = createOpenAI({
         apiKey: openAiAPIKey,
+        fetch: /^gpt-5\.5-pro(?:-|$)/.test(model) ? fetchOpenAIPro : undefined,
       });
-      providerModel = openai(model);
+      providerModel = openai.responses(model);
+      if (/^gpt-5\.5-pro(?:-|$)/.test(model)) {
+        // Pro supports Responses tool calls but cannot stream from the API.
+        providerModel = wrapLanguageModel({
+          model: providerModel,
+          middleware: simulateStreamingMiddleware(),
+        });
+      }
       break;
     }
 
     case "openrouter": {
       const openrouter = createOpenRouter({
         apiKey: openRouterAPIKey,
+        fetch: model === "openai/gpt-5.5-pro" ? fetchOpenAIPro : undefined,
       });
       providerModel = openrouter(model);
       break;

@@ -11,7 +11,21 @@ import {
 import { getMaxOutputTokens } from "../models";
 import { getProviderModel } from "../utils";
 
+vi.mock("undici", async (importOriginal) => {
+  const original = await importOriginal<typeof import("undici")>();
+  return {
+    ...original,
+    fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+      globalThis.fetch(input, init),
+  };
+});
+
 const models = [
+  {
+    ids: ["gpt-5.5-pro", "gpt-5.5-pro-2026-04-23"],
+    context: 1_050_000,
+    efforts: ["medium", "high", "xhigh"],
+  },
   {
     ids: ["gpt-5.4-nano", "gpt-5.4-nano-2026-03-17"],
     context: 400_000,
@@ -44,6 +58,72 @@ function completion(model: string) {
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+it.each([
+  "gpt-5.5-pro",
+  "gpt-5.5-pro-2026-04-23",
+])("adapts %s non-streaming tool calls into the agent stream", async (id) => {
+  const fetchMock = vi.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({
+        id: "resp_tool",
+        created_at: 1,
+        model: id,
+        output: [
+          {
+            type: "function_call",
+            id: "fc_test",
+            call_id: "call_test",
+            name: "check",
+            arguments: "{}",
+          },
+        ],
+        usage: { input_tokens: 12, output_tokens: 8 },
+      }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const model = getProviderModel(id, { openAiAPIKey: "test-key" });
+  const controller = new AbortController();
+  const abortSignal = controller.signal;
+  const { stream } = await model.doStream({
+    prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
+    tools: [
+      {
+        type: "function",
+        name: "check",
+        inputSchema: { type: "object", properties: {} },
+      },
+    ],
+    abortSignal,
+  });
+  const chunks = [];
+  const reader = stream.getReader();
+  for (let next = await reader.read(); !next.done; next = await reader.read()) {
+    chunks.push(next.value);
+  }
+  expect(chunks).toContainEqual(
+    expect.objectContaining({
+      type: "tool-call",
+      toolCallId: "call_test",
+      toolName: "check",
+      input: "{}",
+    }),
+  );
+  expect(chunks).toContainEqual(
+    expect.objectContaining({
+      type: "finish",
+      usage: expect.objectContaining({
+        inputTokens: expect.objectContaining({ total: 12 }),
+      }),
+    }),
+  );
+  const call = fetchMock.mock.calls[0];
+  if (!call) throw new Error("Expected a Pro request");
+  expect(JSON.parse(String(call[1]?.body)).stream).toBeUndefined();
+  expect(call[1]?.signal?.aborted).toBe(false);
+  controller.abort();
+  expect(call[1]?.signal?.aborted).toBe(true);
+});
 
 describe.each(models)("OpenAI $ids", ({ ids, context, efforts }) => {
   it.each(
