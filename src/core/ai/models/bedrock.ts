@@ -5,6 +5,18 @@ import type { ModelInfo } from "../ai";
 
 export const BEDROCK_MODELS: ModelInfo[] = [
   {
+    id: "us.anthropic.claude-fable-5",
+    name: "Claude Fable 5 (US)",
+    provider: "bedrock",
+    contextLength: 1000000,
+  },
+  {
+    id: "global.anthropic.claude-fable-5",
+    name: "Claude Fable 5 (Global)",
+    provider: "bedrock",
+    contextLength: 1000000,
+  },
+  {
     id: "amazon.titan-tg1-large",
     name: "Amazon Titan TG1 Large (Bedrock)",
     provider: "bedrock",
