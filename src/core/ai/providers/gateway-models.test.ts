@@ -26,6 +26,12 @@ vi.mock("undici", async (importOriginal) => {
 
 const models = [
   {
+    slug: "claude-opus-5-5",
+    context: 1000000,
+    openrouter: "anthropic/claude-opus-5.5",
+    concentrate: true,
+  },
+  {
     slug: "claude-fable-5-1",
     context: 1000000,
     openrouter: "anthropic/claude-fable-5.1",

@@ -4,6 +4,12 @@
 import type { ModelInfo } from "../ai";
 export const OPENROUTER_MODELS: ModelInfo[] = [
   {
+    id: "anthropic/claude-opus-5.5",
+    name: "Claude Opus 5.5",
+    provider: "openrouter",
+    contextLength: 1000000,
+  },
+  {
     id: "anthropic/claude-fable-5.1",
     name: "Claude Fable 5.1",
     provider: "openrouter",
