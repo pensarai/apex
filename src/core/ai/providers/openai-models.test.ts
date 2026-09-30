@@ -11,6 +11,15 @@ import {
 import { getMaxOutputTokens } from "../models";
 import { getProviderModel } from "../utils";
 
+vi.mock("undici", async (importOriginal) => {
+  const original = await importOriginal<typeof import("undici")>();
+  return {
+    ...original,
+    fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+      globalThis.fetch(input, init),
+  };
+});
+
 const models = [
   {
     ids: ["gpt-6-astra"],
@@ -79,7 +88,8 @@ it.each([
   );
   vi.stubGlobal("fetch", fetchMock);
   const model = getProviderModel(id, { openAiAPIKey: "test-key" });
-  const abortSignal = new AbortController().signal;
+  const controller = new AbortController();
+  const abortSignal = controller.signal;
   const { stream } = await model.doStream({
     prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
     tools: [
@@ -115,7 +125,9 @@ it.each([
   const call = fetchMock.mock.calls[0];
   if (!call) throw new Error("Expected a Pro request");
   expect(JSON.parse(String(call[1]?.body)).stream).toBeUndefined();
-  expect(call[1]?.signal).toBe(abortSignal);
+  expect(call[1]?.signal?.aborted).toBe(false);
+  controller.abort();
+  expect(call[1]?.signal?.aborted).toBe(true);
 });
 
 describe.each(models)("OpenAI $ids", ({ ids, context, efforts }) => {
