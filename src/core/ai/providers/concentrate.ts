@@ -5,6 +5,8 @@ import {
   type LanguageModelV3CallOptions,
 } from "@ai-sdk/provider";
 
+import { getClaudeCapabilities } from "../models";
+
 export const CONCENTRATE_BASE_URL = "https://api.concentrate.ai/v1";
 export const CONCENTRATE_GLM_5_3_MODEL_ID = "concentrate:glm-5.3";
 
@@ -136,6 +138,8 @@ export function createConcentrateModel(
   });
   return withConcentrateDefaults(
     concentrate.responses(upstreamModelId),
-    modelId === CONCENTRATE_GLM_5_3_MODEL_ID,
+    modelId === CONCENTRATE_GLM_5_3_MODEL_ID ||
+      /^gpt-6[.-]/.test(upstreamModelId) ||
+      !!getClaudeCapabilities(modelId),
   );
 }
