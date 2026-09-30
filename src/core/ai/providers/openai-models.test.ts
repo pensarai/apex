@@ -13,6 +13,11 @@ import { getProviderModel } from "../utils";
 
 const models = [
   {
+    ids: ["gpt-6-astra"],
+    context: 1050000,
+    efforts: ["low", "medium", "high", "xhigh", "max"],
+  },
+  {
     ids: ["gpt-5.5-pro", "gpt-5.5-pro-2026-04-23"],
     context: 1_050_000,
     efforts: ["medium", "high", "xhigh"],
@@ -186,4 +191,129 @@ describe.each(models)("OpenAI $ids", ({ ids, context, efforts }) => {
       text: { format: { type: "json_schema" } },
     });
   });
+});
+
+it.each(
+  models.flatMap((model) => model.ids).filter((id) => !id.includes("-pro")),
+)("streams %s tool calls and accepts the next tool result", async (id) => {
+  const item = {
+    status: "completed",
+    type: "function_call",
+    id: "fc_test",
+    call_id: "call_test",
+    name: "check",
+    arguments: "{}",
+  };
+  const events = [
+    {
+      type: "response.created",
+      response: { id: "resp_stream", created_at: 1, model: id },
+    },
+    {
+      type: "response.output_item.added",
+      output_index: 0,
+      item: { ...item, arguments: "" },
+    },
+    {
+      type: "response.function_call_arguments.delta",
+      output_index: 0,
+      item_id: "fc_test",
+      delta: "{}",
+    },
+    {
+      type: "response.function_call_arguments.done",
+      output_index: 0,
+      item_id: "fc_test",
+      arguments: "{}",
+    },
+    { type: "response.output_item.done", output_index: 0, item },
+    {
+      type: "response.completed",
+      response: {
+        id: "resp_stream",
+        created_at: 1,
+        model: id,
+        output: [item],
+        usage: { input_tokens: 12, output_tokens: 8 },
+      },
+    },
+  ];
+  const fetchMock = vi.fn(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (!JSON.parse(String(init?.body)).stream) return completion(id);
+      return new Response(
+        events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    },
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const model = getProviderModel(id, { openAiAPIKey: "test-key" });
+  const { stream } = await model.doStream({
+    prompt: [{ role: "user", content: [{ type: "text", text: "Check" }] }],
+    tools: [
+      {
+        type: "function",
+        name: "check",
+        inputSchema: { type: "object", properties: {} },
+      },
+    ],
+    providerOptions: buildReasoningProviderOptions(id, {
+      openAIReasoningEffort: "high",
+    }),
+  });
+  const chunks = [];
+  const reader = stream.getReader();
+  for (let next = await reader.read(); !next.done; next = await reader.read())
+    chunks.push(next.value);
+  expect(chunks).toContainEqual(
+    expect.objectContaining({
+      type: "tool-call",
+      toolCallId: "call_test",
+      toolName: "check",
+      input: "{}",
+    }),
+  );
+  const first = fetchMock.mock.calls[0];
+  if (!first) throw new Error("Expected a streaming request");
+  expect(JSON.parse(String(first[1]?.body))).toMatchObject({
+    stream: true,
+    reasoning: { effort: "high" },
+  });
+  await model.doGenerate({
+    prompt: [
+      { role: "user", content: [{ type: "text", text: "Check" }] },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call_test",
+            toolName: "check",
+            input: {},
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call_test",
+            toolName: "check",
+            output: { type: "json", value: { ok: true } },
+          },
+        ],
+      },
+    ],
+  });
+  const second = fetchMock.mock.calls[1];
+  if (!second) throw new Error("Expected a tool-result request");
+  expect(JSON.parse(String(second[1]?.body)).input).toContainEqual(
+    expect.objectContaining({
+      type: "function_call_output",
+      call_id: "call_test",
+      output: '{"ok":true}',
+    }),
+  );
 });

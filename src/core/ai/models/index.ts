@@ -150,7 +150,7 @@ function lookupOutputBudgetByPattern(modelId: string): number {
   // overflow class this PR closes. Defaults below come from each family's
   // documented max output; the per-model `contextLength` clamp in
   // `getMaxOutputTokens` handles legacy small-window variants.
-  if (modelId.includes("gpt-5")) {
+  if (modelId.includes("gpt-5") || /^gpt-6[.-]/.test(modelId)) {
     return 128_000;
   }
   if (modelId.includes("gpt-4.1")) {
