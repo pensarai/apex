@@ -12,6 +12,7 @@ import { getMaxOutputTokens } from "../models";
 import { getProviderModel } from "../utils";
 
 const models = [
+  { id: "claude-opus-5", required: false },
   { id: "claude-sonnet-5", required: false },
   { id: "claude-fable-5", required: true },
 ];
