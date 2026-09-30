@@ -10,6 +10,10 @@ import type { AIModel, ModelInfo } from "../ai";
 // Re-generate after bumping SDK packages: bun run generate:models
 import { ANTHROPIC_MODELS } from "./anthropic";
 import { BEDROCK_MODELS } from "./bedrock";
+import { getClaudeCapabilities } from "./claude-capabilities";
+
+export { getClaudeCapabilities } from "./claude-capabilities";
+
 import { CONCENTRATE_MODELS } from "./concentrate";
 import { GOOGLE_MODELS } from "./google";
 import { INCEPTION_MODELS } from "./inception";
@@ -94,6 +98,7 @@ export function getMaxOutputTokens(
 }
 
 function lookupOutputBudgetByPattern(modelId: string): number {
+  if (getClaudeCapabilities(modelId)) return 128_000;
   // OpenRouter uses dots in Claude version numbers (anthropic/claude-opus-4.6)
   // while native Anthropic uses dashes (claude-opus-4-6-20250929). Normalize
   // digit.digit sequences to dashes so all Claude patterns match both forms.

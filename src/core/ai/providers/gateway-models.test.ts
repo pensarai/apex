@@ -1,4 +1,5 @@
 import type { LanguageModelV3CallOptions } from "@ai-sdk/provider";
+import { generateText, jsonSchema, tool } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { getVisiblePickerModels } from "../../../tui/components/model-picker/model-visibility";
@@ -8,6 +9,8 @@ import {
   buildReasoningProviderOptions,
   generateObjectResponse,
   getOpenAIReasoningEfforts,
+  modelRequiresThinking,
+  modelSupportsThinking,
 } from "../ai";
 import { getMaxOutputTokens } from "../models";
 import { getProviderModel } from "../utils";
@@ -22,6 +25,12 @@ vi.mock("undici", async (importOriginal) => {
 });
 
 const models = [
+  {
+    slug: "claude-fable-5",
+    context: 1000000,
+    openrouter: "anthropic/claude-fable-5",
+    concentrate: true,
+  },
   {
     slug: "gpt-6.1-sol",
     context: 1050000,
@@ -215,6 +224,8 @@ describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
     toolChoice: { type: "auto" },
     providerOptions: buildReasoningProviderOptions(id, {
       openAIReasoningEffort: "high",
+      enableThinking: true,
+      thinkingEffort: "high",
     }),
   });
 
@@ -236,7 +247,16 @@ describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
     ).toBe(false);
     expect(resolveExplicitCliModel({ model: id })).toBe(id);
     expect(getMaxOutputTokens(id)).toBe(128_000);
-    expect(getOpenAIReasoningEfforts(id)).toContain("high");
+    if (upstream.includes("claude")) {
+      expect(modelSupportsThinking(id)).toBe(true);
+      expect(modelRequiresThinking(id)).toBe(
+        modelRequiresThinking(
+          upstream.replace(/^anthropic\//, "").replace(/(\d)\.(\d)/g, "$1-$2"),
+        ),
+      );
+    } else {
+      expect(getOpenAIReasoningEfforts(id)).toContain("high");
+    }
     const nativeEfforts = getOpenAIReasoningEfforts(
       upstream.replace(/^openai[/.]/, ""),
     );
@@ -326,7 +346,9 @@ describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
   });
 
   it("preserves the highest supported reasoning effort through the SDK", async () => {
-    const effort = getOpenAIReasoningEfforts(id).at(-1);
+    const effort = upstream.includes("claude")
+      ? "high"
+      : getOpenAIReasoningEfforts(id).at(-1);
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
         completedResponse(upstream, openrouter),
@@ -336,12 +358,180 @@ describe.each(routes)("Gateway $id", ({ id, upstream, provider, context }) => {
       ...options(),
       providerOptions: buildReasoningProviderOptions(id, {
         openAIReasoningEffort: effort,
+        enableThinking: true,
+        thinkingEffort: "high",
       }),
     });
     const call = fetchMock.mock.calls[0];
     if (!call) throw new Error("Expected reasoning request");
     expect(JSON.parse(String(call[1]?.body)).reasoning.effort).toBe(effort);
   });
+
+  if (upstream.includes("claude")) {
+    it.each([
+      true,
+      false,
+    ])("honors thinking preference %s without disabling required thinking", async (enableThinking) => {
+      const fetchMock = vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) =>
+          completedResponse(upstream, openrouter),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await getProviderModel(id, credentials).doGenerate({
+        ...options(),
+        providerOptions: buildReasoningProviderOptions(id, {
+          enableThinking,
+          thinkingEffort: "medium",
+        }),
+      });
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Expected thinking request");
+      const thinking = enableThinking || modelRequiresThinking(id);
+      const body = JSON.parse(String(call[1]?.body));
+      expect(body.reasoning.effort).toBe(thinking ? "medium" : "none");
+      if (openrouter) expect(body.reasoning.enabled).toBe(thinking);
+    });
+
+    it("uses valid default thinking for structured application calls", async () => {
+      const fetchMock = vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) =>
+          completedResponse(upstream, openrouter),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const output = await generateObjectResponse({
+        model: id,
+        authConfig: credentials,
+        prompt: "Check",
+        schema: z.object({ ok: z.boolean() }),
+        maxTokens: 128_000,
+      });
+      expect(output).toEqual({ ok: true });
+      const call = fetchMock.mock.calls[0];
+      if (!call) throw new Error("Expected structured Claude request");
+      const body = JSON.parse(String(call[1]?.body));
+      expect(body.reasoning.effort).toBe(
+        modelRequiresThinking(id) ? "high" : "none",
+      );
+      expect(
+        openrouter ? body.response_format.type : body.text.format.type,
+      ).toBe("json_schema");
+    });
+
+    it("preserves encrypted reasoning with a tool result", async () => {
+      const reasoning = {
+        type: "reasoning.encrypted",
+        data: "signed-context",
+        id: "rs_test",
+        format: "anthropic-claude-v1",
+        index: 0,
+      };
+      let requests = 0;
+      const fetchMock = vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) => {
+          if (requests++ > 0) return completedResponse(upstream, openrouter);
+          return Response.json(
+            openrouter
+              ? {
+                  id: "chat_test",
+                  created: 1,
+                  model: upstream,
+                  choices: [
+                    {
+                      index: 0,
+                      finish_reason: "tool_calls",
+                      message: {
+                        role: "assistant",
+                        content: null,
+                        reasoning: "Checking",
+                        reasoning_details: [reasoning],
+                        tool_calls: [
+                          {
+                            id: "call_test",
+                            type: "function",
+                            function: { name: "check", arguments: "{}" },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                  usage: {
+                    prompt_tokens: 12,
+                    completion_tokens: 8,
+                    total_tokens: 20,
+                  },
+                }
+              : {
+                  id: "resp_test",
+                  created_at: 1,
+                  model: upstream,
+                  output: [
+                    {
+                      type: "reasoning",
+                      id: "rs_test",
+                      encrypted_content: "signed-context",
+                      summary: [{ type: "summary_text", text: "Checking" }],
+                    },
+                    {
+                      type: "function_call",
+                      id: "fc_test",
+                      call_id: "call_test",
+                      name: "check",
+                      arguments: "{}",
+                    },
+                  ],
+                  usage: { input_tokens: 12, output_tokens: 8 },
+                },
+          );
+        },
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const settings = {
+        model: getProviderModel(id, credentials),
+        tools: {
+          check: tool({
+            inputSchema: jsonSchema({ type: "object", properties: {} }),
+          }),
+        },
+        providerOptions: options().providerOptions,
+      };
+      const first = await generateText({ ...settings, prompt: "Check" });
+      await generateText({
+        ...settings,
+        messages: [
+          { role: "user", content: "Check" },
+          ...first.response.messages,
+          {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call_test",
+                toolName: "check",
+                output: { type: "json", value: { ok: true } },
+              },
+            ],
+          },
+        ],
+      });
+      const call = fetchMock.mock.calls[1];
+      if (!call) throw new Error("Expected signed-thinking follow-up");
+      const body = JSON.parse(String(call[1]?.body));
+      if (openrouter)
+        expect(body.messages).toContainEqual(
+          expect.objectContaining({
+            role: "assistant",
+            reasoning_details: expect.arrayContaining([reasoning]),
+          }),
+        );
+      else
+        expect(body.input).toContainEqual(
+          expect.objectContaining({
+            type: "reasoning",
+            encrypted_content: "signed-context",
+          }),
+        );
+    });
+  }
 
   it("streams tool calls and sends the next tool result through the same route", async () => {
     const fetchMock = vi.fn(
