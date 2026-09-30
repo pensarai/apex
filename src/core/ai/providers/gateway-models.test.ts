@@ -23,6 +23,12 @@ vi.mock("undici", async (importOriginal) => {
 
 const models = [
   {
+    slug: "gpt-6.1-sol",
+    context: 1050000,
+    openrouter: "openai/gpt-6.1-sol",
+    concentrate: true,
+  },
+  {
     slug: "gpt-6-luna",
     context: 1050000,
     openrouter: "openai/gpt-6-luna",

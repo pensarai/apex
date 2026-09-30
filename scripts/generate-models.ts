@@ -57,6 +57,7 @@ const CONTEXT_LENGTHS: Record<string, number> = {
   "claude-instant": 100000,
 
   // OpenAI
+  "gpt-6.1": 1050000,
   "gpt-6": 1050000,
   "gpt-5.4-nano": 400000,
   "gpt-5.4-mini": 400000,
@@ -624,6 +625,7 @@ function main() {
 
   // Models available on the OpenAI API but not yet in the AI SDK type definitions
   appendMissing(openaiIds, [
+    "gpt-6.1-sol",
     "gpt-6-luna",
     "gpt-6-sol",
     "gpt-6-astra",

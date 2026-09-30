@@ -132,6 +132,7 @@ export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 export type ThinkingEffort = "low" | "medium" | "high";
 
 const OPENAI_REASONING_MODEL_IDS = new Set([
+  "gpt-6.1-sol",
   "gpt-6-luna",
   "gpt-6-sol",
   "gpt-6-astra",

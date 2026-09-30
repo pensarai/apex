@@ -5,6 +5,12 @@ import type { ModelInfo } from "../ai";
 
 export const OPENAI_MODELS: ModelInfo[] = [
   {
+    id: "gpt-6.1-sol",
+    name: "GPT-6.1-sol",
+    provider: "openai",
+    contextLength: 1050000,
+  },
+  {
     id: "gpt-6-luna",
     name: "GPT-6-luna",
     provider: "openai",
