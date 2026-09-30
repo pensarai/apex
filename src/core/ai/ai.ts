@@ -131,6 +131,8 @@ export const DEFAULT_OPENAI_REASONING_EFFORT: OpenAIReasoningEffort = "medium";
 export type ThinkingEffort = "low" | "medium" | "high";
 
 const OPENAI_REASONING_MODEL_IDS = new Set([
+  "gpt-5.4-mini",
+  "gpt-5.4-mini-2026-03-17",
   "gpt-5",
   "gpt-5-2025-08-07",
   "gpt-5.1",
@@ -1060,7 +1062,8 @@ export function modelSupportsAdaptiveThinking(modelId: string): boolean {
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
   if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) return true;
   const { provider } = getModelInfo(modelId);
-  if (provider !== "openai") return false;
+  if (!["openai", "openrouter", "concentrate"].includes(provider)) return false;
+  modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
   return (
     OPENAI_REASONING_MODEL_IDS.has(modelId) || /^o[134](?:\b|-)/.test(modelId)
   );
@@ -1076,6 +1079,13 @@ export function getOpenAIReasoningEfforts(
   if (!modelSupportsOpenAIReasoning(modelId)) return [];
   if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) {
     return ["low", "high", "max"];
+  }
+  if (/^concentrate:gpt-5\.4-mini$/.test(modelId)) {
+    return ["none", "low", "medium", "high"];
+  }
+  modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
+  if (/^gpt-5\.4-mini(?:-|$)/.test(modelId)) {
+    return ["none", "low", "medium", "high", "xhigh"];
   }
   if (/^gpt-5\.6(?:\b|-)/.test(modelId)) {
     return ["low", "medium", "high", "xhigh", "max", "ultra"];
@@ -1127,6 +1137,7 @@ export function normalizeOpenAIReasoningEffort(
  *   - `openai.reasoningEffort` — OpenAI/o-series reasoning models.
  */
 export type ReasoningProviderOptions = {
+  openrouter?: { reasoning: { effort: OpenAIReasoningEffort } };
   anthropic?: {
     thinking: { type: "adaptive" };
     // Soft effort hint for adaptive thinking; omitted when no level requested
@@ -1234,6 +1245,10 @@ export function buildReasoningProviderOptions(
   const effort = useThinking ? (opts.thinkingEffort ?? undefined) : undefined;
 
   if (!useThinking && !normalizedOpenAIEffort) return undefined;
+
+  if (getModelInfo(model).provider === "openrouter" && normalizedOpenAIEffort) {
+    return { openrouter: { reasoning: { effort: normalizedOpenAIEffort } } };
+  }
 
   return {
     ...(useThinking
@@ -1913,10 +1928,9 @@ export async function generateObjectResponse<T extends z.ZodType>(
       sessionId,
     },
   );
-  const normalizedOpenAIEffort = normalizeOpenAIReasoningEffort(
-    model,
+  const reasoningProviderOptions = buildReasoningProviderOptions(model, {
     openAIReasoningEffort,
-  );
+  });
   const openRouterProviderOptions =
     buildOpenRouterStructuredProviderOptions(model);
 
@@ -1944,16 +1958,17 @@ export async function generateObjectResponse<T extends z.ZodType>(
             maxOutputTokens: maxTokens,
             temperature,
             providerOptions:
-              normalizedOpenAIEffort || openRouterProviderOptions
+              reasoningProviderOptions || openRouterProviderOptions
                 ? {
-                    ...(normalizedOpenAIEffort
+                    ...reasoningProviderOptions,
+                    ...(openRouterProviderOptions
                       ? {
-                          openai: {
-                            reasoningEffort: normalizedOpenAIEffort,
+                          openrouter: {
+                            ...reasoningProviderOptions?.openrouter,
+                            ...openRouterProviderOptions.openrouter,
                           },
                         }
                       : {}),
-                    ...openRouterProviderOptions,
                   }
                 : undefined,
             maxRetries: 0,
