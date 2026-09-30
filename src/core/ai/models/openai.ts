@@ -400,4 +400,10 @@ export const OPENAI_MODELS: ModelInfo[] = [
     provider: "openai",
     contextLength: 200000,
   },
+  {
+    id: "chat-latest",
+    name: "chat (Latest)",
+    provider: "openai",
+    contextLength: 400000,
+  },
 ];

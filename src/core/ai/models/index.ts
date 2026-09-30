@@ -98,6 +98,7 @@ export function getMaxOutputTokens(
 }
 
 function lookupOutputBudgetByPattern(modelId: string): number {
+  if (modelId === "chat-latest") return 128_000;
   if (getClaudeCapabilities(modelId)) return 128_000;
   // OpenRouter uses dots in Claude version numbers (anthropic/claude-opus-4.6)
   // while native Anthropic uses dashes (claude-opus-4-6-20250929). Normalize
