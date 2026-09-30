@@ -15,5 +15,8 @@ const CLAUDE_CAPABILITIES: Record<string, ClaudeCapabilities> = {
 export function getClaudeCapabilities(
   modelId: string,
 ): ClaudeCapabilities | undefined {
-  return CLAUDE_CAPABILITIES[modelId];
+  const nativeId = modelId
+    .replace(/^(concentrate:|anthropic\/)/, "")
+    .replace(/(\d)\.(\d)/g, "$1-$2");
+  return CLAUDE_CAPABILITIES[nativeId];
 }
