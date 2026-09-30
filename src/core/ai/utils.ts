@@ -45,6 +45,7 @@ import {
 import { MANTLE_REGION, mantleBaseUrl, stripMantlePrefix } from "./mantle";
 import { getModelInfo } from "./models";
 import { runWithNativeRolloutOperation } from "./native-rollout-evidence";
+import { createAnthropicModel } from "./providers/anthropic";
 import { createConcentrateModel } from "./providers/concentrate";
 import { createCustomModel } from "./providers/custom";
 import { createHoonifyModel } from "./providers/hoonify";
@@ -308,9 +309,7 @@ export function getProviderModel(
     }
 
     case "anthropic":
-      providerModel = createAnthropic({
-        apiKey: anthropicAPIKey,
-      }).chat(model);
+      providerModel = createAnthropicModel(model, anthropicAPIKey);
       break;
 
     case "google": {

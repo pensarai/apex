@@ -106,4 +106,10 @@ export const ANTHROPIC_MODELS: ModelInfo[] = [
     provider: "anthropic",
     contextLength: 1000000,
   },
+  {
+    id: "claude-fable-5",
+    name: "Claude Fable 5",
+    provider: "anthropic",
+    contextLength: 1000000,
+  },
 ];

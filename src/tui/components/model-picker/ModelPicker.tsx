@@ -13,6 +13,7 @@ import {
   getOpenAIReasoningEfforts,
   getRecentModels,
   type ModelInfo,
+  modelRequiresThinking,
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,
   type OpenAIReasoningEffort,
@@ -258,7 +259,8 @@ export function ModelPicker({
     if (
       !isSearching &&
       onReasoningToggle &&
-      modelSupportsThinking(selectedModel.id)
+      modelSupportsThinking(selectedModel.id) &&
+      !modelRequiresThinking(selectedModel.id)
     ) {
       items.push({ type: "reasoning" });
     }
@@ -328,6 +330,7 @@ export function ModelPicker({
   }, [localUrl, localModelName, commitLocalConfig]);
 
   const thinkingSupported = modelSupportsThinking(selectedModel.id);
+  const thinkingRequired = modelRequiresThinking(selectedModel.id);
   const openAIReasoningSupported = modelSupportsOpenAIReasoning(
     selectedModel.id,
   );
@@ -864,8 +867,9 @@ export function ModelPicker({
         <box flexShrink={0} paddingTop={1}>
           <PickerRow id="reasoning-toggle">
             <text fg={isReasoningFocused ? colors.primary : colors.text}>
-              {reasoningEnabled ? "[x]" : "[ ]"} Extended Thinking
-              (Experimental)
+              {reasoningEnabled || thinkingRequired ? "[x]" : "[ ]"} Extended
+              Thinking
+              {thinkingRequired ? " (Always on)" : " (Experimental)"}
             </text>
           </PickerRow>
         </box>

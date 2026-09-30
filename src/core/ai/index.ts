@@ -20,6 +20,7 @@ export {
   getContextWindow,
   getOpenAIReasoningEfforts,
   modelRequiresReasoning,
+  modelRequiresThinking,
   modelSupportsAdaptiveThinking,
   modelSupportsOpenAIReasoning,
   modelSupportsThinking,

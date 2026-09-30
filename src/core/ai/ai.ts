@@ -50,6 +50,7 @@ import {
   truncateWithMarker,
 } from "./contextManagement";
 import {
+  getClaudeCapabilities,
   getMaxOutputTokens,
   getModelInfo,
   prefersSequentialToolCalls,
@@ -1036,6 +1037,10 @@ export interface ModelInfo {
   contextLength?: number;
 }
 
+export function modelRequiresThinking(modelId: string): boolean {
+  return getClaudeCapabilities(modelId)?.alwaysOnThinking ?? false;
+}
+
 /**
  * Check whether a model supports extended thinking based on its ID.
  *
@@ -1044,6 +1049,7 @@ export interface ModelInfo {
  * Pensar provider IDs.
  */
 export function modelSupportsThinking(modelId: string): boolean {
+  if (getClaudeCapabilities(modelId)) return true;
   // Normalize: strip provider prefixes so we match the base Claude model ID
   const normalized = modelId
     .replace(/^pensar:/, "")
@@ -1064,6 +1070,7 @@ export function modelSupportsThinking(modelId: string): boolean {
  * them at all.
  */
 export function modelSupportsAdaptiveThinking(modelId: string): boolean {
+  if (getClaudeCapabilities(modelId)) return true;
   const normalized = modelId
     .replace(/^pensar:/, "")
     .replace(/^(us\.|eu\.|global\.|ap\.)?anthropic\./, "");
@@ -1157,7 +1164,9 @@ export function normalizeOpenAIReasoningEffort(
  */
 export type ReasoningProviderOptions = {
   anthropic?: {
-    thinking: { type: "adaptive" };
+    thinking:
+      | { type: "adaptive"; display?: "summarized" }
+      | { type: "disabled" };
     // Soft effort hint for adaptive thinking; omitted when no level requested
     // (model defaults to "high"). Sibling of `thinking` per the AI SDK.
     effort?: ThinkingEffort;
@@ -1251,6 +1260,18 @@ export function buildReasoningProviderOptions(
     openAIReasoningEffort?: OpenAIReasoningEffort | null;
   },
 ): ReasoningProviderOptions | undefined {
+  const claude = getClaudeCapabilities(model);
+  if (claude) {
+    return {
+      anthropic: {
+        thinking:
+          opts.enableThinking || claude.alwaysOnThinking
+            ? { type: "adaptive", display: "summarized" }
+            : { type: "disabled" },
+        ...(opts.thinkingEffort ? { effort: opts.thinkingEffort } : {}),
+      },
+    };
+  }
   const useThinking =
     !!opts.enableThinking &&
     isAnthropicProvider(model) &&
