@@ -232,6 +232,7 @@ export function getProviderModel(
     case "openrouter": {
       const openrouter = createOpenRouter({
         apiKey: openRouterAPIKey,
+        fetch: model === "openai/gpt-5.5-pro" ? fetchOpenAIPro : undefined,
       });
       providerModel = openrouter(model);
       break;
