@@ -91,12 +91,21 @@ export function hasAnyProviderConfigured(config: Config): boolean {
 }
 
 function getModelsByProvider(providerId: ProviderType): ModelInfo[] {
-  return AVAILABLE_MODELS.filter((model) => model.provider === providerId);
+  return AVAILABLE_MODELS.filter(
+    (model) =>
+      model.provider === providerId ||
+      (providerId === "bedrock" && model.provider === "bedrock-mantle"),
+  );
 }
 
 export function getAvailableModels(config: Config): ModelInfo[] {
   const models = AVAILABLE_MODELS.filter((model) => {
-    return isProviderConfigured(model.provider as ProviderType, config);
+    return isProviderConfigured(
+      model.provider === "bedrock-mantle"
+        ? "bedrock"
+        : (model.provider as ProviderType),
+      config,
+    );
   });
 
   for (const [providerId, provider] of Object.entries(

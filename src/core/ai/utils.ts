@@ -42,7 +42,7 @@ import {
   extractTaskSummaryFromMessages,
   truncateWithMarker,
 } from "./contextManagement";
-import { MANTLE_REGION, mantleBaseUrl, stripMantlePrefix } from "./mantle";
+import { getMantleRegion, mantleBaseUrl, stripMantlePrefix } from "./mantle";
 import { getModelInfo } from "./models";
 import { runWithNativeRolloutOperation } from "./native-rollout-evidence";
 import { createConcentrateModel } from "./providers/concentrate";
@@ -231,6 +231,7 @@ export function getProviderModel(
     case "openrouter": {
       const openrouter = createOpenRouter({
         apiKey: openRouterAPIKey,
+        fetch: model === "openai/gpt-5.5-pro" ? fetchOpenAIPro : undefined,
       });
       providerModel = openrouter(model);
       break;
@@ -284,18 +285,17 @@ export function getProviderModel(
     }
 
     case "bedrock-mantle": {
-      // GPT-5.x on Bedrock Mantle: OpenAI Responses API only, region-locked to
-      // us-east-2, on the `/openai/v1` path. Authenticates via the same SigV4
-      // credential chain / keys as standard Bedrock.
+      // Mantle availability is model-specific; use its region for URL and signing.
       const bedrockFetch = (input: RequestInfo | URL, init?: RequestInit) =>
         globalThis.fetch(input, {
           ...init,
           signal: buildStreamingFetchSignal(init?.signal),
         });
+      const region = getMantleRegion(model);
       const mantle = createBedrockMantle({
         apiKey: bedrockApiKey,
-        region: MANTLE_REGION,
-        baseURL: mantleBaseUrl(),
+        region,
+        baseURL: mantleBaseUrl(region),
         accessKeyId: bedrockAccessKeyId,
         secretAccessKey: bedrockSecretAccessKey,
         sessionToken: bedrockSessionToken,
@@ -306,6 +306,18 @@ export function getProviderModel(
         fetch: bedrockFetch as typeof globalThis.fetch,
       });
       providerModel = mantle.responses(stripMantlePrefix(model));
+      if (/^mantle:openai\.gpt-6[.-]/.test(model)) {
+        providerModel = wrapLanguageModel({
+          model: providerModel,
+          middleware: defaultSettingsMiddleware({
+            settings: {
+              providerOptions: {
+                openai: { forceReasoning: true, reasoningEffort: "medium" },
+              },
+            },
+          }),
+        });
+      }
       break;
     }
 
