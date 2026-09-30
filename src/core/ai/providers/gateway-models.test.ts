@@ -14,6 +14,12 @@ import { getProviderModel } from "../utils";
 
 const models = [
   {
+    slug: "gpt-5.4-nano",
+    context: 400000,
+    openrouter: "openai/gpt-5.4-nano",
+    concentrate: true,
+  },
+  {
     slug: "gpt-5.4-mini",
     context: 400_000,
     openrouter: "openai/gpt-5.4-mini",
