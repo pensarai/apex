@@ -471,7 +471,7 @@ const STREAM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 function getStreamIdleTimeoutMs(model: AIModel): number {
   // Pro cannot stream progress while reasoning; wait for its completed response.
-  return /^gpt-5\.5-pro(?:-|$)/.test(model)
+  return /^(?:openai\/)?gpt-5\.5-pro(?:-|$)/.test(model)
     ? OPENAI_PRO_TIMEOUT_MS
     : STREAM_IDLE_TIMEOUT_MS;
 }
@@ -1074,7 +1074,8 @@ export function modelSupportsAdaptiveThinking(modelId: string): boolean {
 export function modelSupportsOpenAIReasoning(modelId: string): boolean {
   if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) return true;
   const { provider } = getModelInfo(modelId);
-  if (provider !== "openai") return false;
+  if (!["openai", "openrouter", "concentrate"].includes(provider)) return false;
+  modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
   return (
     OPENAI_REASONING_MODEL_IDS.has(modelId) || /^o[134](?:\b|-)/.test(modelId)
   );
@@ -1088,11 +1089,15 @@ export function getOpenAIReasoningEfforts(
   modelId: string,
 ): OpenAIReasoningEffort[] {
   if (!modelSupportsOpenAIReasoning(modelId)) return [];
-  if (/^gpt-5\.5-pro(?:-|$)/.test(modelId)) {
-    return ["medium", "high", "xhigh"];
-  }
   if (modelId === CONCENTRATE_GLM_5_3_MODEL_ID) {
     return ["low", "high", "max"];
+  }
+  if (/^concentrate:gpt-5\.4-(?:mini|nano)$/.test(modelId)) {
+    return ["none", "low", "medium", "high"];
+  }
+  modelId = modelId.replace(/^(openai\/|concentrate:)/, "");
+  if (/^gpt-5\.5-pro(?:-|$)/.test(modelId)) {
+    return ["medium", "high", "xhigh"];
   }
   if (/^gpt-5\.4-(?:mini|nano)(?:-|$)/.test(modelId)) {
     return ["none", "low", "medium", "high", "xhigh"];
@@ -1147,6 +1152,7 @@ export function normalizeOpenAIReasoningEffort(
  *   - `openai.reasoningEffort` — OpenAI/o-series reasoning models.
  */
 export type ReasoningProviderOptions = {
+  openrouter?: { reasoning: { effort: OpenAIReasoningEffort } };
   anthropic?: {
     thinking: { type: "adaptive" };
     // Soft effort hint for adaptive thinking; omitted when no level requested
@@ -1254,6 +1260,10 @@ export function buildReasoningProviderOptions(
   const effort = useThinking ? (opts.thinkingEffort ?? undefined) : undefined;
 
   if (!useThinking && !normalizedOpenAIEffort) return undefined;
+
+  if (getModelInfo(model).provider === "openrouter" && normalizedOpenAIEffort) {
+    return { openrouter: { reasoning: { effort: normalizedOpenAIEffort } } };
+  }
 
   return {
     ...(useThinking
