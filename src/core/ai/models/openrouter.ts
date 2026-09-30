@@ -4,6 +4,18 @@
 import type { ModelInfo } from "../ai";
 export const OPENROUTER_MODELS: ModelInfo[] = [
   {
+    id: "openai/gpt-5.4-nano",
+    name: "GPT-5.4 Nano",
+    provider: "openrouter",
+    contextLength: 400000,
+  },
+  {
+    id: "openai/gpt-5.4-mini",
+    name: "GPT-5.4 Mini",
+    provider: "openrouter",
+    contextLength: 400000,
+  },
+  {
     id: "anthropic/claude-haiku-4.5",
     name: "Claude Haiku 4.5",
     provider: "openrouter",
