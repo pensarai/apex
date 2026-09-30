@@ -29,16 +29,22 @@ export type GetMemoryResult = {
   memory: Memory | null;
 };
 
-export function getMemory(_ctx: ToolContext) {
+export function getMemory(ctx: ToolContext) {
   return tool({
     description: `Retrieve the full content of a memory by its category and id.
 
 Use list_memories first to discover available memories, then call this tool
 with the category and id from that listing to fetch full content.`,
     inputSchema: getMemoryInputSchema,
-    execute: async ({ category, id }): Promise<GetMemoryResult> => {
+    execute: async (
+      { category, id },
+      { toolCallId },
+    ): Promise<GetMemoryResult> => {
       try {
-        const memory = await coreGetMemory(category, id);
+        const memory = await coreGetMemory(category, id, {
+          sessionId: ctx.session.id,
+          toolCallId,
+        });
         if (!memory) {
           return {
             success: false,
