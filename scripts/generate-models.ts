@@ -624,6 +624,7 @@ function main() {
 
   // Models available on the OpenAI API but not yet in the AI SDK type definitions
   appendMissing(openaiIds, [
+    "gpt-6-luna",
     "gpt-6-sol",
     "gpt-6-astra",
     "gpt-5.5-pro",
