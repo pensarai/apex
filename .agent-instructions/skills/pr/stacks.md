@@ -2,6 +2,10 @@
 
 Use for any group called a stack, series, chain, or set of parallel PRs. Branch topology is an invariant; formatting follows it rather than defining it.
 
+## Decide whether to split
+
+A stack exists to make a large change easier to review. Split by concern, not by item: several small changes with the same shape, like adding a handful of models to a catalog, usually read best as one PR.
+
 ## Discover the topology
 
 For every PR, record `number`, `state`, `base.ref`, `base.sha`, `head.ref`, `head.sha`, and URL from the API. Also query native stack metadata when present:
