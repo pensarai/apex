@@ -1,14 +1,15 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { extractJavascriptEndpoints } from "../../specialized/attackSurface/jsExtraction";
+import type { ToolContext } from "./types";
 
 /**
  * Factory for the `extract_js_endpoints` tool.
  *
- * Thin wrapper around the existing jsExtraction helper.
- * No ToolContext needed — the helper is stateless.
+ * Thin wrapper around the existing jsExtraction helper, which routes its page
+ * fetch through `ctx`'s tool backend (design §3.2) — no bare host `fetch`.
  */
-export function extractJsEndpoints(_ctx: unknown) {
+export function extractJsEndpoints(ctx: ToolContext) {
   return tool({
     description: `Extract endpoint URLs from JavaScript code in a page using pattern matching.
 
@@ -37,7 +38,7 @@ Returns all discovered endpoint patterns.`,
         ),
     }),
     execute: async (params) => {
-      return extractJavascriptEndpoints(params);
+      return extractJavascriptEndpoints({ ...params, ctx });
     },
   });
 }

@@ -377,6 +377,7 @@ export async function generateThreatModelForEndpoint(
           model,
           authConfig: ctx.authConfig,
           abortSignal: childAbort.signal,
+          backends: ctx.backends,
           languageModelMiddleware: ctx.languageModelMiddleware,
           usageRecorder: ctx.usageRecorder,
           streamIdFactory: ctx.streamIdFactory,

@@ -65,10 +65,8 @@ Update options:
   --status <status>         New status
   --closed-reason <reason>  Reason for closing
   --closed-comments <text>  Additional comments
-  --disposition <value>     Why it is closed: resolved, duplicate, wont-fix,
-                            out-of-scope, risk-accepted
-  --duplicate-of <issueId>  The issue this one duplicates (UUID or label);
-                            required with --disposition duplicate
+  --disposition <value>     Why it is closed: resolved, wont-fix, out-of-scope,
+                            risk-accepted
   --false-positive          Flag as false positive
   --fp-reason <reason>      Reason for false positive flag
 
@@ -140,17 +138,6 @@ async function main(): Promise<void> {
       const closedDisposition = dispositionFlag as
         | ClosedDisposition
         | undefined;
-      const duplicateOf = getFlag("--duplicate-of", args);
-      if (closedDisposition === "duplicate" && duplicateOf === undefined) {
-        console.error(
-          "Error: --disposition duplicate requires --duplicate-of <issueId>",
-        );
-        return markCommandFailed();
-      }
-      if (duplicateOf !== undefined && closedDisposition !== "duplicate") {
-        console.error("Error: --duplicate-of requires --disposition duplicate");
-        return markCommandFailed();
-      }
       const userFlaggedFalsePositive = args.includes("--false-positive")
         ? true
         : undefined;
@@ -161,7 +148,6 @@ async function main(): Promise<void> {
         closedReason,
         closedComments,
         closedDisposition,
-        duplicateOf,
         userFlaggedFalsePositive,
         userFlaggedFalsePositiveReason,
       });

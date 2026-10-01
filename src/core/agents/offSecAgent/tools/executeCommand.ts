@@ -6,58 +6,14 @@ import {
   type PromptInjectionLibrary,
   redactPromptInjectionPayloads,
 } from "../../../prompt-injections";
-import {
-  assertCommandActionAllowed,
-  DestructiveActionError,
-} from "./destructiveGuard";
-import { readSandboxAgentEnv } from "./perCommandShell";
-import {
-  assertCommandInScope,
-  extractHostsFromCommand,
-  resolverSessionFromCtx,
-  ScopeViolationError,
-} from "./scopeGuard";
+import { resolveBackends } from "../../../tools/backends";
+import { redactSecretValues } from "../../../tools/backends/helpers";
+import type { ToolBackends } from "../../../tools/backends/types";
+import { extractHostsFromCommand, resolverSessionFromCtx } from "./scopeGuard";
 import { toolOutputForModel } from "./toolOutput";
 import type { ToolContext } from "./types";
 
 const DEFAULT_PROMPT_INJECTION_FILE_ENV = "APEX_PROMPT_INJECTION_FILE";
-
-/** Deadline applied when the model omits `timeout`. */
-export const DEFAULT_COMMAND_TIMEOUT_SECONDS = 120;
-export const MAX_COMMAND_TIMEOUT_SECONDS = 600;
-
-export type ExecuteCommandTimeoutValidation =
-  | { ok: true; seconds: number }
-  | { ok: false; error: string };
-
-/**
- * Explicit timeouts are seconds, taken literally: nonfinite, nonpositive, and
- * over-max values are rejected — never silently clamped or reinterpreted
- * (millisecond-style values like 30000 fail as over-max, by design).
- */
-export function validateExecuteCommandTimeout(
-  timeout: number,
-): ExecuteCommandTimeoutValidation {
-  if (!Number.isFinite(timeout)) {
-    return {
-      ok: false,
-      error: `Invalid timeout: must be a finite number of seconds (got ${timeout})`,
-    };
-  }
-  if (timeout <= 0) {
-    return {
-      ok: false,
-      error: `Invalid timeout: must be a positive number of seconds (got ${timeout})`,
-    };
-  }
-  if (timeout > MAX_COMMAND_TIMEOUT_SECONDS) {
-    return {
-      ok: false,
-      error: `Invalid timeout: ${timeout} exceeds the ${MAX_COMMAND_TIMEOUT_SECONDS}-second maximum — pass seconds, not milliseconds`,
-    };
-  }
-  return { ok: true, seconds: timeout };
-}
 
 /**
  * Placeholder ids models emit for the optional promptInjection pointer when
@@ -107,7 +63,7 @@ const executeCommandInputSchema = z.object({
     .number()
     .optional()
     .describe(
-      `Timeout in seconds (maximum ${MAX_COMMAND_TIMEOUT_SECONDS}; over-max and non-positive values are rejected, not clamped). If omitted, defaults to ${DEFAULT_COMMAND_TIMEOUT_SECONDS} seconds.`,
+      "Timeout in seconds. If omitted, the command runs until completion or abort.",
     ),
   allow_unprotected: z
     .boolean()
@@ -117,7 +73,7 @@ const executeCommandInputSchema = z.object({
     ),
 });
 
-export type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
+type ExecuteCommandInput = z.infer<typeof executeCommandInputSchema>;
 
 /**
  * Models sometimes fill the optional promptInjection pointer with placeholder
@@ -143,40 +99,22 @@ export type ExecuteCommandResult = {
   stdout: string;
   stderr: string;
   command: string;
-  exitCode?: number;
-  stdoutTruncated?: boolean;
-  stderrTruncated?: boolean;
+  outputFile?: string;
 };
-
-/**
- * Redact known secret values from command output. Longest-first to avoid
- * partial masking; skip values under 6 chars so they can't corrupt output.
- */
-export function redactSecretValues(text: string, secrets?: string[]): string {
-  if (!secrets?.length) return text;
-  let out = text;
-  for (const s of [...secrets]
-    .filter((v) => v && v.length >= 6)
-    .sort((a, b) => b.length - a.length)) {
-    out = out.split(s).join("[REDACTED]");
-  }
-  return out;
-}
 
 async function resolvePromptInjectionEnv(
   promptInjection: ExecuteCommandInput["promptInjection"],
   ctx: ToolContext,
+  backends: ToolBackends,
 ): Promise<
   | {
       envVars?: Record<string, string>;
       library?: PromptInjectionLibrary;
-      payloadContent?: string;
       error?: undefined;
     }
   | {
       envVars?: undefined;
       library?: PromptInjectionLibrary;
-      payloadContent?: undefined;
       error: string;
     }
 > {
@@ -196,6 +134,31 @@ async function resolvePromptInjectionEnv(
     };
   }
 
+  const envVar = normalized.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV;
+
+  // Sandboxed backends execute in a contained workspace where the host
+  // library's payload file path is not visible, so materialize the payload
+  // through the backend fs (rooted under the workspace-scoped artifacts dir,
+  // like document_vulnerability) and point the env var at the resolved path
+  // the backend actually wrote to.
+  if (backends.sandboxed) {
+    const sandboxPayloadPath = `/workspace/repo/.pensar/apex_payload_${Date.now()}.txt`;
+    const written = await backends.fs.write(
+      sandboxPayloadPath,
+      payloadContent,
+      {
+        mode: "overwrite",
+      },
+    );
+    if (!written.success) {
+      return {
+        library,
+        error: `Failed to materialize prompt injection payload in sandbox: ${written.error || "unknown error"}`,
+      };
+    }
+    return { library, envVars: { [envVar]: written.path } };
+  }
+
   const payloadFilePath = library.getPayloadFilePath(normalized.id);
   if (!payloadFilePath) {
     return {
@@ -206,13 +169,7 @@ async function resolvePromptInjectionEnv(
     };
   }
 
-  return {
-    library,
-    payloadContent,
-    envVars: {
-      [normalized.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV]: payloadFilePath,
-    },
-  };
+  return { library, envVars: { [envVar]: payloadFilePath } };
 }
 
 export function executeCommand(ctx: ToolContext) {
@@ -257,16 +214,9 @@ SSL/TLS TESTING:
 OUTPUT HANDLING:
 - Use 2>&1 to capture stderr
 - Use timeout command for long-running scans
-- The tool's timeout parameter is in SECONDS (default ${DEFAULT_COMMAND_TIMEOUT_SECONDS}, maximum ${MAX_COMMAND_TIMEOUT_SECONDS})
+- The tool's timeout parameter is in SECONDS, not milliseconds
 - Good timeout examples: 30, 60, 120
-- Values over ${MAX_COMMAND_TIMEOUT_SECONDS} (including millisecond-style values like 30000) are REJECTED, not reinterpreted
-- Each stream captures up to 1 MiB in memory; a verbose process is never
-  killed for output volume — capture keeps draining and reports truncation
-  honestly (capped output is labeled INCOMPLETE). For large evidence, redirect
-  the command's output directly to a file (e.g. \`... > scratchpad/scan.txt 2>&1\`)
-  and read targeted windows of it: with read_file/grep locally, or — when the
-  command ran in the sandbox, where those files live inside the sandbox — via
-  bounded execute_command reads like \`sed -n '1,200p' scratchpad/scan.txt\`.
+- Do NOT pass millisecond values like 30000 or 120000
 - If the tool's timeout is hit, the partial stdout the command had already
   produced is still returned (with exit code 124). It is safe to set a
   conservative timeout: you will not lose the bytes a fuzzer printed
@@ -321,38 +271,6 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
-      // Fail loud on invalid explicit timeouts — silently dropping or
-      // clamping them would reinterpret the caller's deadline.
-      let effectiveTimeout = DEFAULT_COMMAND_TIMEOUT_SECONDS;
-      if (timeout !== undefined) {
-        const validated = validateExecuteCommandTimeout(timeout);
-        if (!validated.ok) {
-          return {
-            success: false,
-            error: validated.error,
-            stdout: "",
-            stderr: validated.error,
-            command,
-          };
-        }
-        effectiveTimeout = validated.seconds;
-      }
-
-      try {
-        assertCommandInScope(command, ctx);
-      } catch (e) {
-        if (e instanceof ScopeViolationError) {
-          return {
-            success: false,
-            error: e.message,
-            stdout: "",
-            stderr: e.message,
-            command,
-          };
-        }
-        throw e;
-      }
-
       // Inject session headers into the shell command. Fail closed for
       // unknown tools / pipelines so configured headers aren't silently
       // dropped — agent can opt out with `allow_unprotected`.
@@ -378,32 +296,20 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
       const commandWithHeaders =
         inject.status === "injected" ? inject.command : command;
 
-      // Enforce the destructive-action guard on the header-injected command so
-      // a method-override header (e.g. `X-HTTP-Method-Override: DELETE`) added
-      // by the session/credential layer is classified, not just agent-authored
-      // flags. (Prompt-injection payloads are written to a temp file and
-      // referenced by env var below — never inlined into the command string —
-      // so their content is out of scope for this string classifier.)
-      try {
-        assertCommandActionAllowed(commandWithHeaders, ctx);
-      } catch (e) {
-        if (e instanceof DestructiveActionError) {
-          return {
-            success: false,
-            error: e.message,
-            stdout: "",
-            stderr: e.message,
-            command,
-          };
-        }
-        throw e;
-      }
+      // Engagement scope and the destructive-action block run inside the
+      // backend's ToolPolicy (design §3.2, Appendix M) — the header-injected
+      // command is what gets checked, matching a method-override header
+      // added by the session/credential layer.
+      const backends = resolveBackends(ctx);
 
       let promptInjectionLibrary: PromptInjectionLibrary | undefined;
       let promptInjectionEnvVars: Record<string, string> | undefined;
-      let promptInjectionPayloadContent: string | undefined;
       try {
-        const resolved = await resolvePromptInjectionEnv(promptInjection, ctx);
+        const resolved = await resolvePromptInjectionEnv(
+          promptInjection,
+          ctx,
+          backends,
+        );
         if (resolved.error) {
           return {
             success: false,
@@ -415,7 +321,6 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         }
         promptInjectionLibrary = resolved.library;
         promptInjectionEnvVars = resolved.envVars;
-        promptInjectionPayloadContent = resolved.payloadContent;
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         return {
@@ -427,158 +332,69 @@ IMPORTANT: Always analyze results and adjust your approach based on findings.`,
         };
       }
 
-      const redact = (value: string) => {
-        const stripped = promptInjectionLibrary
+      const redact = (value: string) =>
+        promptInjectionLibrary
           ? redactPromptInjectionPayloads(value, promptInjectionLibrary)
           : value;
-        return redactSecretValues(stripped, ctx.secretValues);
-      };
 
-      // Sandbox mode: route execution through the sandbox
-      if (ctx.sandbox) {
-        try {
-          // Explicit default cwd + approved configured agent env every
-          // invocation, via the existing sandbox interface. Per-agent
-          // configured env overrides the workspace blob; the injection env
-          // (payload pointer) overrides both. Process ownership/termination
-          // parity is the adapter's, not claimed here.
-          const ssmOpts: {
-            timeout: number;
-            cwd?: string;
-            envVars?: Record<string, string>;
-          } = {
-            timeout: effectiveTimeout,
-            cwd: ctx.agentCwd,
-            envVars: {
-              ...readSandboxAgentEnv(),
-              ...ctx.environmentVariables,
-            },
-          };
-
-          // If we have a prompt injection payload for sandbox mode, we need to write
-          // it to a temp file in the sandbox first, since the host file path won't
-          // be accessible from inside the sandbox.
-          if (promptInjectionPayloadContent && promptInjection) {
-            const envVarName =
-              promptInjection.envVar ?? DEFAULT_PROMPT_INJECTION_FILE_ENV;
-            const sandboxTempFile = `/tmp/apex_payload_${Date.now()}.txt`;
-
-            // Write the payload to a temp file in the sandbox
-            const escapedPayload = promptInjectionPayloadContent
-              .replace(/\\/g, "\\\\")
-              .replace(/'/g, "'\\''");
-            const writeCommand = `printf '%s' '${escapedPayload}' > ${sandboxTempFile}`;
-
-            // The payload-file write keeps its own 30s ceiling: 30s when the
-            // command timeout is omitted, and an explicit timeout can only
-            // tighten it — a printf must never outlive a 600s command cap.
-            const writeResult = await ctx.sandbox.execute(writeCommand, {
-              timeout: Math.min(effectiveTimeout, 30),
-            });
-
-            if (!writeResult.success) {
-              const errorMsg = `Failed to write prompt injection payload to sandbox: ${writeResult.stderr || "unknown error"}`;
-              return {
-                success: false,
-                error: errorMsg,
-                stdout: writeResult.stdout,
-                stderr: writeResult.stderr || errorMsg,
-                command,
-              };
+      let exitCode = 0;
+      let timedOut = false;
+      const stdoutChunks: string[] = [];
+      const stderrChunks: string[] = [];
+      try {
+        for await (const event of backends.command.run(commandWithHeaders, {
+          timeoutSeconds: timeout,
+          envVars: promptInjectionEnvVars,
+          abortSignal: ctx.abortSignal,
+        })) {
+          if (event.type === "stdout") {
+            stdoutChunks.push(event.bytes);
+            if (ctx.eventBus) {
+              ctx.eventBus.emit("command-output", {
+                data: redact(event.bytes),
+              });
             }
-
-            // Update env vars to point to the sandbox temp file
-            ssmOpts.envVars = {
-              ...ssmOpts.envVars,
-              [envVarName]: sandboxTempFile,
-            };
-          } else if (promptInjectionEnvVars) {
-            ssmOpts.envVars = { ...ssmOpts.envVars, ...promptInjectionEnvVars };
+          } else if (event.type === "stderr") {
+            stderrChunks.push(event.bytes);
+          } else if (event.type === "end") {
+            exitCode = event.exitCode;
+            timedOut = event.timedOut;
           }
-
-          const result = await ctx.sandbox.execute(commandWithHeaders, ssmOpts);
-          const stdout = redact(result.stdout) || "(no output)";
-          const stderr = redact(result.stderr || "");
-          return {
-            success: result.success,
-            error: !result.success ? stderr || "Command failed" : "",
-            stdout,
-            stderr,
-            command: redact(command),
-            exitCode: result.exitCode,
-          };
-        } catch (error: unknown) {
-          const msg = error instanceof Error ? error.message : String(error);
-          return {
-            success: false,
-            error: msg,
-            stdout: "",
-            stderr: msg,
-            command,
-          };
         }
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return {
+          success: false,
+          error: msg,
+          stdout: "",
+          stderr: msg,
+          command,
+        };
       }
 
-      // Local mode: per-command executor (fresh shell each invocation)
-      if (ctx.commandShell) {
-        try {
-          const onData = ctx.eventBus
-            ? (data: string) =>
-                ctx.eventBus?.emit("command-output", { data: redact(data) })
-            : undefined;
-          const result = await ctx.commandShell.execute(commandWithHeaders, {
-            cwd: ctx.agentCwd,
-            env: promptInjectionEnvVars,
-            timeoutSeconds: effectiveTimeout,
-            abortSignal: ctx.abortSignal,
-            onData,
-          });
-          const stdoutNote = result.stdoutTruncated
-            ? "stdout capture truncated at the byte limit"
-            : undefined;
-          const stderrNote = result.stderrTruncated
-            ? "stderr capture truncated at the byte limit"
-            : undefined;
-          const stdout =
-            (redact(result.stdout) || "(no output)") +
-            (stdoutNote ? `\n\n(INCOMPLETE — ${stdoutNote})` : "");
-          const stderr =
-            redact(result.stderr) +
-            (stderrNote ? `\n\n(INCOMPLETE — ${stderrNote})` : "");
-          return {
-            success: result.exitCode === 0,
-            error:
-              result.exitCode === 124
-                ? "Command timed out"
-                : result.exitCode === 130
-                  ? "Command aborted"
-                  : result.exitCode !== 0
-                    ? `Exit code: ${result.exitCode}`
-                    : "",
-            stdout,
-            stderr,
-            command: redact(command),
-            exitCode: result.exitCode,
-            stdoutTruncated: result.stdoutTruncated,
-            stderrTruncated: result.stderrTruncated,
-          };
-        } catch (error: unknown) {
-          const msg = error instanceof Error ? error.message : String(error);
-          return {
-            success: false,
-            error: msg,
-            stdout: "",
-            stderr: msg,
-            command,
-          };
-        }
-      }
+      // Chunks are redacted one at a time; a secret split across two only
+      // matches once they are joined.
+      const rawStdout = redactSecretValues(
+        redact(stdoutChunks.join("")),
+        ctx.secretValues,
+      );
+      const rawStderr = redactSecretValues(
+        redact(stderrChunks.join("")),
+        ctx.secretValues,
+      );
 
+      // The full output stays on the result; `toModelOutput` bounds only the
+      // model-facing rendering (spilling the overflow to a retained tool-output
+      // artifact the model can page back with read_file / grep).
       return {
-        success: false,
-        error: "No shell or sandbox available",
-        stdout: "",
-        stderr: "",
+        success: exitCode === 0,
+        error: timedOut
+          ? "Command timed out"
+          : exitCode !== 0
+            ? `Exit code: ${exitCode}`
+            : "",
+        stdout: rawStdout,
+        stderr: rawStderr,
         command,
       };
     },

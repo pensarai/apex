@@ -16,11 +16,11 @@ import type {
 import { createLogger } from "../../../logger/structured";
 import type { SessionInfo } from "../../../session";
 import { scopedLogger } from "../../../util/lazyLogger";
+import type { AgentHooks } from "../../offSecAgent";
 import {
   inProcessSubagentSpawner,
   type SubagentSpawner,
 } from "../../offSecAgent/subagentSpawner";
-import { CodeAgent } from "../codeAgent/agent";
 import { WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT } from "./prompts";
 import {
   type AppInfo,
@@ -79,6 +79,12 @@ interface SharedAgentOptions {
   agentLimiter?: AgentConcurrencyLimiter;
   /** Fan-out spawner. Defaults to the in-process spawner. */
   subagentSpawner?: SubagentSpawner;
+  /**
+   * The caller's full {@link AgentHooks} (backends, middleware, usage
+   * recorder, stream ids, inbox transports, extra tools, sandbox), forwarded
+   * to every per-endpoint CodeAgent this app documents.
+   */
+  hooks?: AgentHooks;
 }
 
 interface EndpointDocumentationInput extends SharedAgentOptions {
@@ -214,23 +220,13 @@ async function runEndpointDocumentationAgent(
     projectThreatModel,
     parentSubagentId,
     agentLimiter,
+    subagentSpawner,
+    hooks,
   } = opts;
 
   const subagentId = newSessionId();
   const displayMethod = getDocumentMethod(endpoint);
   const displayName = `${app.name}: ${displayMethod.join(",")} ${endpoint.path}`;
-
-  eventBus?.emit("subagent-spawn", {
-    subagentId,
-    name: displayName,
-    input: {
-      app: app.name,
-      type: "endpointDocumentation",
-      method: displayMethod,
-      path: endpoint.path,
-    },
-    parentSubagentId,
-  });
 
   const objective = buildEndpointDocumentationObjective({
     app,
@@ -239,42 +235,54 @@ async function runEndpointDocumentationAgent(
     frameworks,
   });
 
-  const agent = new CodeAgent<DiscoverySummary>({
-    codebasePath,
-    objective,
-    system: WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT,
-    model,
-    session,
-    authConfig,
-    abortSignal,
-    attackSurfaceRegistry,
-    eventBus,
-    subagentId,
-    subagentName: displayName,
-    onStepFinish: (event) => onStepFinish?.(event),
-    onCacheMetrics,
-    openAIReasoningEffort,
-    enableThinking,
-    thinkingEffort,
-    responseSchema: DiscoverySummarySchema,
-    // Hard-exclude tools an endpoint documentation agent must never use:
-    // - document_app: Phase 1 owns app discovery.
-    // - list_files / grep: route enumeration is surface's job; without this,
-    //   soft prompt guidance gets overridden by the model's discovery instinct
-    //   and the agent orients-first, looking like a discovery pass.
-    excludeTools: ["document_app", "list_files", "grep"],
-    projectThreatModel,
-  });
+  const spawner = subagentSpawner ?? inProcessSubagentSpawner;
+  const spawnChild = () =>
+    spawner.spawn<DiscoverySummary>({
+      spec: {
+        type: "code",
+        codebasePath,
+        objective,
+        system: WHITEBOX_ENDPOINT_DOCUMENTATION_SYSTEM_PROMPT,
+        // Hard-exclude tools an endpoint documentation agent must never use:
+        // - document_app: Phase 1 owns app discovery.
+        // - list_files / grep: route enumeration is surface's job; without this,
+        //   soft prompt guidance gets overridden by the model's discovery instinct
+        //   and the agent orients-first, looking like a discovery pass.
+        excludeTools: ["document_app", "list_files", "grep"],
+        responseSchema: DiscoverySummarySchema,
+        projectThreatModel,
+        attackSurfaceRegistry,
+      },
+      runtime: {
+        model,
+        session,
+        authConfig,
+        abortSignal,
+        enableThinking,
+        thinkingEffort,
+        openAIReasoningEffort,
+        onStepFinish,
+        onCacheMetrics,
+        backends: hooks?.backends,
+        sandbox: hooks?.sandbox,
+        languageModelMiddleware: hooks?.languageModelMiddleware,
+        usageRecorder: hooks?.usageRecorder,
+        streamIdFactory: hooks?.streamIdFactory,
+      },
+      subagentId,
+      subagentName: displayName,
+      parentBus: eventBus,
+      parentSubagentId,
+      lifecycleInput: {
+        app: app.name,
+        type: "endpointDocumentation",
+        method: displayMethod,
+        path: endpoint.path,
+      },
+    });
 
   try {
-    await (agentLimiter
-      ? agentLimiter(() => agent.consume())
-      : agent.consume());
-    eventBus?.emit("subagent-complete", {
-      subagentId,
-      status: "completed",
-      parentSubagentId,
-    });
+    await (agentLimiter ? agentLimiter(spawnChild) : spawnChild());
     return true;
   } catch (error) {
     log.error(
@@ -282,11 +290,6 @@ async function runEndpointDocumentationAgent(
       error instanceof Error ? error : undefined,
       { error: String(error) },
     );
-    eventBus?.emit("subagent-complete", {
-      subagentId,
-      status: "failed",
-      parentSubagentId,
-    });
     return false;
   }
 }

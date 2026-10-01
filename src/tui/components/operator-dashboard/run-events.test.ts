@@ -562,14 +562,22 @@ describe("createDisplayEventHandlers", () => {
       let timerCallbacks = 0;
       // Count actual callback executions, including empty-buffer interval ticks on the baseline.
       for (const timer of ["setTimeout", "setInterval"] as const) {
-        const schedule = globalThis[timer];
-        vi.spyOn(globalThis, timer).mockImplementation(
-          (callback, delay = 0, ...args) =>
-            schedule(() => {
-              timerCallbacks++;
-              callback(...args);
-            }, delay),
-        );
+        // spyOn over a union key yields a union of overloads; type the impl
+        // permissively and cast so the shared mock body type-checks.
+        const schedule = globalThis[timer] as (
+          handler: (...handlerArgs: unknown[]) => void,
+          ms?: number,
+          ...handlerArgs: unknown[]
+        ) => unknown;
+        vi.spyOn(globalThis, timer).mockImplementation(((
+          callback: (...callbackArgs: unknown[]) => void,
+          delay = 0,
+          ...args: unknown[]
+        ) =>
+          schedule(() => {
+            timerCallbacks++;
+            callback(...args);
+          }, delay)) as never);
       }
 
       const recording = createRecordingSink();

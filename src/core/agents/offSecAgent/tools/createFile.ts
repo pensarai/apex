@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { resolveFilePath, writeWorkspaceFile } from "./fileWorkspace";
+import { resolveBackends } from "../../../tools/backends/resolve";
 import type { ToolContext } from "./types";
 
 const createFileInputSchema = z.object({
@@ -35,20 +35,10 @@ Use update_file or apply_patch for changes to an existing file.`,
       content,
       overwrite = false,
     }): Promise<CreateFileResult> => {
-      let resolved = path;
-      try {
-        resolved = await resolveFilePath(ctx, path);
-        await writeWorkspaceFile(ctx, resolved, content, {
-          expected: overwrite ? undefined : null,
-        });
-        return { success: true, error: "", path: resolved };
-      } catch (error: unknown) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-          path: resolved,
-        };
-      }
+      const { fs } = resolveBackends(ctx);
+      return fs.write(path, content, {
+        mode: overwrite ? "overwrite" : "create",
+      });
     },
   });
 }

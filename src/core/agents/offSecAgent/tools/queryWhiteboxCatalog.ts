@@ -50,9 +50,13 @@ async function getCachedRepoProfile(
   if (pending) return pending;
   // One shared attempt per overlapping session/root miss. A failed
   // profileCodebase falls back to undefined for every waiter, and the entry
-  // is dropped so the next miss retries.
+  // is dropped so the next miss retries. Profiling runs through the injected
+  // command backend so it lands in the sandbox under the durable runtime.
   const attempt = (async () => {
-    const profile = await profileCodebase(rootPath).catch(() => undefined);
+    const profile = await profileCodebase(
+      rootPath,
+      ctx.backends?.command,
+    ).catch(() => undefined);
     if (profile) {
       evictExpiredProfileCache();
       if (profileCache.size >= PROFILE_CACHE_MAX_ENTRIES) {
