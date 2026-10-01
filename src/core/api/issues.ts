@@ -253,10 +253,15 @@ export async function listPentestTargets(
   );
 }
 
-export async function dispatchPentest(opts?: {
+export interface DispatchPentestInput {
   branch?: string;
   scanLevel?: "priority" | "full";
-}): Promise<DispatchPentestResult> {
+  endpointIds?: string[];
+}
+
+export async function dispatchPentest(
+  opts?: DispatchPentestInput,
+): Promise<DispatchPentestResult> {
   return apiRequest<DispatchPentestResult>("POST", "/pentests", opts);
 }
 
