@@ -1,12 +1,10 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import * as Storage from "../storage";
 
 export const MEMORY_CATEGORIES = ["app", "framework", "general"] as const;
 export type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
 
-/**
- * A single persisted memory entry stored in
- * ~/.pensar/memories/{category}/{id}.json
- */
+/** A persisted entry returned by the configured memory backend. */
 export interface Memory {
   /** Unique identifier (kebab-case slug) */
   id: string;
@@ -22,6 +20,46 @@ export interface Memory {
   createdAt: string;
   /** ISO-8601 timestamp of the last update */
   updatedAt: string;
+}
+
+export interface AddMemoryInput {
+  title: string;
+  content: string;
+  category?: MemoryCategory;
+  tags?: string[];
+}
+
+export interface MemoryListOptions {
+  category?: MemoryCategory;
+  tag?: string;
+}
+
+export interface MemoryOperationContext {
+  sessionId: string;
+  toolCallId: string;
+}
+
+export interface MemoryBackend {
+  add(input: AddMemoryInput, context?: MemoryOperationContext): Promise<Memory>;
+  list(
+    options?: MemoryListOptions,
+    context?: MemoryOperationContext,
+  ): Promise<MemorySummary[]>;
+  get(
+    category: MemoryCategory,
+    id: string,
+    context?: MemoryOperationContext,
+  ): Promise<Memory | null>;
+}
+
+const memoryBackend = new AsyncLocalStorage<MemoryBackend>();
+
+/**
+ * The backend is inherited by async child work and restored when the scope exits.
+ * @public
+ */
+export function withMemoryBackend<T>(backend: MemoryBackend, run: () => T): T {
+  return memoryBackend.run(backend, run);
 }
 
 const MEMORIES_PREFIX = "memories";
@@ -65,12 +103,12 @@ function validateId(id: string): void {
  *
  * @param input.category — "app", "framework", or "general" (default)
  */
-export async function addMemory(input: {
-  title: string;
-  content: string;
-  category?: MemoryCategory;
-  tags?: string[];
-}): Promise<Memory> {
+export async function addMemory(
+  input: AddMemoryInput,
+  context?: MemoryOperationContext,
+): Promise<Memory> {
+  const backend = memoryBackend.getStore();
+  if (backend) return backend.add(input, context);
   const category: MemoryCategory = input.category ?? "general";
   const id = makeId(input.title);
   const now = new Date().toISOString();
@@ -106,6 +144,8 @@ export async function addMemoryWithId(input: {
   category?: MemoryCategory;
   tags?: string[];
 }): Promise<Memory> {
+  if (memoryBackend.getStore())
+    throw new Error("addMemoryWithId is only supported by filesystem memory");
   validateId(input.id);
   const category: MemoryCategory = input.category ?? "general";
   const now = new Date().toISOString();
@@ -157,6 +197,8 @@ export async function deleteMemory(
   category: MemoryCategory,
   id: string,
 ): Promise<boolean> {
+  if (memoryBackend.getStore())
+    throw new Error("deleteMemory is only supported by filesystem memory");
   if (!isMemoryEnabled()) return false;
   validateId(id);
   // Check existence first — Storage.remove silently succeeds on missing files
@@ -173,7 +215,10 @@ export async function deleteMemory(
 export async function getMemory(
   category: MemoryCategory,
   id: string,
+  context?: MemoryOperationContext,
 ): Promise<Memory | null> {
+  const backend = memoryBackend.getStore();
+  if (backend) return backend.get(category, id, context);
   if (!isMemoryEnabled()) return null;
   validateId(id);
   try {
@@ -198,10 +243,12 @@ export interface MemorySummary {
  * - `category` — restrict to a single category; omit to list all.
  * - `tag` — further filter to entries containing this tag.
  */
-export async function listMemories(opts?: {
-  category?: MemoryCategory;
-  tag?: string;
-}): Promise<MemorySummary[]> {
+export async function listMemories(
+  opts?: MemoryListOptions,
+  context?: MemoryOperationContext,
+): Promise<MemorySummary[]> {
+  const backend = memoryBackend.getStore();
+  if (backend) return backend.list(opts, context);
   if (!isMemoryEnabled()) return [];
   const prefix = opts?.category
     ? [MEMORIES_PREFIX, opts.category]

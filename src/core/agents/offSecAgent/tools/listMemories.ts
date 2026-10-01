@@ -35,7 +35,7 @@ export type ListMemoriesResult = {
   count: number;
 };
 
-export function listMemories(_ctx: ToolContext) {
+export function listMemories(ctx: ToolContext) {
   return tool({
     description: `List saved memories, optionally filtered by category and/or tag.
 
@@ -43,9 +43,15 @@ Returns lightweight summaries (id, category, title, tags, createdAt) sorted by
 most recent first. Use the returned category + id with get_memory to retrieve
 full content.`,
     inputSchema: listMemoriesInputSchema,
-    execute: async ({ category, tag }): Promise<ListMemoriesResult> => {
+    execute: async (
+      { category, tag },
+      { toolCallId },
+    ): Promise<ListMemoriesResult> => {
       try {
-        const memories = await coreListMemories({ category, tag });
+        const memories = await coreListMemories(
+          { category, tag },
+          { sessionId: ctx.session.id, toolCallId },
+        );
         return {
           success: true,
           error: "",

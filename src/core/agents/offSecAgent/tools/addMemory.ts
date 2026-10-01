@@ -41,11 +41,12 @@ export type AddMemoryResult = {
   title?: string;
 };
 
-export function addMemory(_ctx: ToolContext) {
+export function addMemory(ctx: ToolContext) {
   return tool({
     description: `Save a piece of knowledge to persistent memory.
 
-Memories are stored across sessions in ~/.pensar/memories/ and survive restarts.
+Memories are stored across sessions by the configured memory backend.
+Standalone runs use ~/.pensar/memories/.
 They are organised into categories:
   - "app"       — application-specific notes (e.g. target quirks, endpoints)
   - "framework" — framework-specific notes (e.g. Rails tricks, Django patterns)
@@ -53,21 +54,21 @@ They are organised into categories:
 
 IMPORTANT: Before adding a new memory, always use list_memories first to check
 for existing memories that overlap with what you intend to save. If a relevant
-memory already exists, update it (delete + re-add) rather than creating a
-duplicate. This keeps the memory store clean and avoids conflicting entries.
+memory already exists, reuse it rather than creating a duplicate. This keeps the memory store clean and avoids conflicting entries.
 
 Use this to record reusable techniques, target-specific notes, credential
 patterns, useful payloads, or any information worth remembering for future
 engagements.`,
     inputSchema: addMemoryInputSchema,
-    execute: async ({
-      title,
-      content,
-      category,
-      tags,
-    }): Promise<AddMemoryResult> => {
+    execute: async (
+      { title, content, category, tags },
+      { toolCallId },
+    ): Promise<AddMemoryResult> => {
       try {
-        const memory = await coreAddMemory({ title, content, category, tags });
+        const memory = await coreAddMemory(
+          { title, content, category, tags },
+          { sessionId: ctx.session.id, toolCallId },
+        );
         return {
           success: true,
           error: "",
